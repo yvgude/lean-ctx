@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx prompt-segment`: one short, dim piece of the shell prompt —
 //! `◆ −1.2M tok ⛨ 3` for the project the shell is in.
 //!

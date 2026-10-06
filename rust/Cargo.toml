@@ -6,6 +6,7 @@ members = [
   ".",
   "crates/lean-ctx-ocla",
   "crates/lean-ctx-protocol",
+  "crates/leanctx-native-storage",
   "crates/lean-ctx-embed",
   # Grammar-addon cdylibs (#690, Phase 1c) — one crate per long-tail
   # tree-sitter grammar, built per-platform by grammar-addons.yml and
@@ -21,7 +22,7 @@ default-members = ["."]
 
 [package]
 name = "lean-ctx"
-version = "3.10.5"
+version = "3.11.0"
 edition = "2024"
 autobins = false
 description = "LeanCTX Engine: the open-source runtime for the Context Gateway for AI Systems. CLI, MCP server, and supported proxy integrations."
@@ -172,8 +173,8 @@ tree-sitter = [
 wasm = ["dep:wasmi"]
 
 [dependencies]
-lean-ctx-ocla = { path = "crates/lean-ctx-ocla", version = "1.0.1" }
-lean-ctx-protocol = { path = "crates/lean-ctx-protocol", version = "0.1.1" }
+lean-ctx-ocla = { path = "crates/lean-ctx-ocla", version = "3.0.0" }
+lean-ctx-protocol = { path = "crates/lean-ctx-protocol", version = "0.3.0" }
 rmcp = { version = "2", features = [
   "server",
   "client",
@@ -201,7 +202,8 @@ tokio = { version = "1.52", features = [
   "process",
 ] }
 serde = { version = "1.0", features = ["derive"] }
-serde_json = "1.0"
+# Durable observations must preserve finite IEEE-754 values when read back.
+serde_json = { version = "1.0", features = ["float_roundtrip"] }
 rustc-hash = "2.1"
 clap = { version = "4.5", features = ["derive"] }
 subtle = "2.6"
@@ -303,7 +305,7 @@ tokio-tungstenite = { version = "0.29", default-features = false, features = [
 # CryptoProvider. The tree pulls both aws-lc-rs (reqwest) and ring (ureq),
 # so rustls can't auto-pick one; we install aws-lc-rs explicitly at proxy start
 # (#597). Default features keep the aws_lc_rs provider available.
-rustls = { version = "0.23", optional = true }
+rustls = { version = "0.23.45", optional = true }
 tower-http = { version = "0.7", features = ["cors", "auth"], optional = true }
 # Non-optional since GH #727: `kind=skills` document blobs (featureless
 # context_package core) encode zstd bodies as base64 inside the pack JSON.
@@ -317,6 +319,7 @@ glob = "0.3"
 urlencoding = "2.1"
 rpassword = "7.5"
 ed25519-dalek = { version = "2.2", features = ["rand_core"] }
+zeroize = "1"
 getrandom = "0.4"
 uuid = { version = "1", features = ["v4"] }
 tempfile = "3.27"
@@ -421,11 +424,16 @@ debug = "line-tables-only"
 # on every rebuild — cuts incremental link time on Linux.
 split-debuginfo = "unpacked"
 
+# Keep the root crate's debug/test unwind tables within Apple's compact-unwind
+# limit without suppressing warnings or disabling debug/overflow checks.
+[profile.dev.package.lean-ctx]
+opt-level = 1
+
 # Hot, rarely rebuilt dependencies at full optimisation in dev/test builds: in
 # debug they cost whole seconds per call (Argon2id 64 MiB key derivation,
 # SHA-256 of the ~400 MB test binary, o200k tokenizer load), and many of those
-# calls run under the global test env lock. Semantics are unchanged; only our
-# own crate keeps fast, debuggable opt-level 0.
+# calls run under the global test env lock. Semantics are unchanged; our own
+# crate stays at the low opt-level above for fast, debuggable builds.
 [profile.dev.package.argon2]
 opt-level = 3
 [profile.dev.package.blake2]
@@ -455,22 +463,28 @@ strip = true
 panic = "unwind"
 
 [target.'cfg(windows)'.dependencies]
+leanctx-native-storage = { path = "crates/leanctx-native-storage", version = "=0.1.0" }
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
+  "Win32_Globalization",
   "Win32_System_Threading",
   "Win32_System_ProcessStatus",
   "Win32_System_SystemInformation",
   "Win32_System_JobObjects",
   "Win32_System_Diagnostics_ToolHelp",
   "Win32_Security",
+  "Win32_Security_Authorization",
   "Win32_System_Pipes",
   "Win32_Storage_FileSystem",
   "Wdk_Foundation",
   "Wdk_Storage_FileSystem",
+  "Wdk_System_SystemServices",
   "Win32_System_IO",
 ] }
-# See the macOS keyring entry below (#1391).
-keyring = { version = "3.6", default-features = false, features = ["windows-native"] }
+# OS keychain: the entitlement cache (all three platforms) and the key that
+# encrypts stored MCP OAuth credentials (#1391, macOS/Windows only — Linux
+# keeps a 0600 key file there). One entry per platform.
+keyring = { version = "3.6.3", default-features = false, features = ["windows-native"] }
 
 [target.'cfg(all(not(windows), not(target_env = "musl")))'.dependencies]
 # jemalloc's bundled C build requires atomics that are not consistently exposed
@@ -479,11 +493,12 @@ keyring = { version = "3.6", default-features = false, features = ["windows-nati
 tikv-jemallocator = { version = "0.7", optional = true }
 tikv-jemalloc-ctl = { version = "0.7", optional = true }
 
-# OS keychain for the key that encrypts stored MCP OAuth credentials (#1391).
-# Only the platforms with a native, always-present keychain: elsewhere keyring
-# would fall back to a volatile mock store, so those use a 0600 key file.
 [target.'cfg(target_os = "macos")'.dependencies]
-keyring = { version = "3.6", default-features = false, features = ["apple-native"] }
+keyring = { version = "3.6.3", default-features = false, features = ["apple-native"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+# Bundle libdbus for minimal CI images and static musl release targets.
+keyring = { version = "3.6.3", default-features = false, features = ["sync-secret-service", "vendored"] }
 
 [dev-dependencies]
 leanctx-verify = { path = "../packages/leanctx-verify" }
@@ -494,6 +509,7 @@ jsonschema = { version = "0.46", default-features = false }
 proptest = "1.11"
 serial_test = "3.5"
 tempfile = "3.27"
+tokio-rustls = "0.26"
 wat = "1.252"
 
 [[bench]]
@@ -508,11 +524,15 @@ harness = false
 name = "efficiency"
 harness = false
 
+# Protocol 0.2.0 is the in-tree migration release; keep workspace/root builds
+# on these exact local bytes until that release is published to crates.io.
+# Remove this entry only after publication and registry-version verification.
 # rmcp 2.0.0 keeps completed response-send tasks in a JoinSet until shutdown,
 # which grows RSS for long-lived MCP sessions. Keep this vendored patch until
 # modelcontextprotocol/rust-sdk ships the continuous drain fix.
 # Also patched: OAuth discovery ignores a 200 status page on the MCP endpoint
 # instead of reading it as resource metadata (#1391, transport/auth.rs).
 [patch.crates-io]
+lean-ctx-protocol = { path = "crates/lean-ctx-protocol" }
 rmcp = { path = "crates/vendor/rmcp" }
 rmcp-macros = { path = "crates/vendor/rmcp-macros" }

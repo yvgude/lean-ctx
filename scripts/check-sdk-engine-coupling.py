@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Engine <-> Agent-Tools-SDK version-coupling gate.
 
 `release.yml` checks out `Thinkery-AG/leanctx-sdk` at a pinned commit and runs

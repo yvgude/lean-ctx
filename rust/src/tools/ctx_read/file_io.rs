@@ -10,6 +10,84 @@ pub(crate) struct RootedRead {
 /// Defense-in-depth: verifies that the canonical path stays within the process's project root
 /// (if determinable) even though callers SHOULD have already jail-checked the path.
 pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
+    read_file_internal(path, "ctx_read", false)
+}
+
+/// Acquire an original source under its project authority through a rooted descriptor.
+/// Parsing and derived metadata must use the returned, admitted content.
+pub(crate) fn read_file_for_tool_rooted(
+    path: &str,
+    root: &str,
+    tool: &str,
+) -> Result<String, std::io::Error> {
+    let mut remaining = crate::core::limits::max_read_bytes();
+    read_file_for_tool_rooted_budgeted(path, root, tool, &mut remaining)
+}
+
+/// Charge original bytes, including rejected sources, before filtering can shrink them.
+pub(crate) fn read_file_for_tool_rooted_budgeted(
+    path: &str,
+    root: &str,
+    tool: &str,
+    remaining_bytes: &mut usize,
+) -> Result<String, std::io::Error> {
+    read_file_for_tool_rooted_with_path(path, root, tool, remaining_bytes).map(|read| read.content)
+}
+
+pub(crate) fn read_file_for_tool_rooted_with_path(
+    path: &str,
+    root: &str,
+    tool: &str,
+    remaining_bytes: &mut usize,
+) -> Result<RootedRead, std::io::Error> {
+    if crate::core::binary_detect::has_binary_extension(path) {
+        return Err(std::io::Error::other(
+            "source format is not inspectable as text",
+        ));
+    }
+    let authority = crate::core::policy::runtime::REQUEST_PROJECT
+        .try_with(|slot| slot.borrow().clone())
+        .ok()
+        .flatten()
+        .unwrap_or_else(|| std::path::PathBuf::from(root));
+    crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+        std::cell::RefCell::new(Some(authority)),
+        || {
+            crate::core::io_boundary::jail_and_check_path(
+                tool,
+                std::path::Path::new(path),
+                std::path::Path::new(root),
+            )
+            .map_err(|_| {
+                std::io::Error::new(
+                    std::io::ErrorKind::PermissionDenied,
+                    "source path withheld by policy",
+                )
+            })?;
+            let (file, canonical_path) =
+                open_rooted_nofollow(std::path::Path::new(path), std::path::Path::new(root))?;
+            let content = read_open_file_lossy_bounded(
+                file,
+                path,
+                false,
+                tool,
+                true,
+                *remaining_bytes,
+                Some(remaining_bytes),
+            )?;
+            Ok(RootedRead {
+                content,
+                canonical_path: canonical_path.to_string_lossy().into_owned(),
+            })
+        },
+    )
+}
+
+fn read_file_internal(
+    path: &str,
+    tool: &str,
+    enforce_policy: bool,
+) -> Result<String, std::io::Error> {
     if crate::core::binary_detect::has_binary_extension(path) {
         let msg = crate::core::binary_detect::binary_file_message(path);
         return Err(std::io::Error::other(msg));
@@ -18,7 +96,7 @@ pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
     {
         let canonical =
             crate::core::pathutil::safe_canonicalize_bounded(std::path::Path::new(path), 2000);
-        if let Ok(cwd) = std::env::current_dir() {
+        if let Some(cwd) = crate::core::policy::diagnostics::project() {
             let root = crate::core::pathutil::safe_canonicalize_bounded(&cwd, 2000);
             if !canonical.starts_with(&root) {
                 let allow = crate::core::pathjail::allow_paths_from_env_and_config();
@@ -26,17 +104,16 @@ pub fn read_file_lossy(path: &str) -> Result<String, std::io::Error> {
                     .is_ok_and(|d| canonical.starts_with(d));
                 let tmp_ok = canonical.starts_with(std::env::temp_dir());
                 if !allow.iter().any(|a| canonical.starts_with(a)) && !data_dir_ok && !tmp_ok {
-                    tracing::warn!(
-                        "defense-in-depth: path may escape project root: {}",
-                        canonical.display()
-                    );
+                    // Internal file-read workers may lack the MCP request scope.
+                    // Never put an untrusted path into this fallback diagnostic.
+                    tracing::warn!("defense-in-depth: read target may escape current project root");
                 }
             }
         }
     }
 
     let file = open_with_retry(path)?;
-    read_open_file_lossy(file, path)
+    read_open_file_lossy(file, path, false, tool, enforce_policy)
 }
 
 pub(crate) fn read_file_lossy_rooted(path: &str, root: &str) -> Result<RootedRead, std::io::Error> {
@@ -47,14 +124,50 @@ pub(crate) fn read_file_lossy_rooted(path: &str, root: &str) -> Result<RootedRea
     }
     let (file, canonical_path) =
         open_rooted_nofollow(std::path::Path::new(path), std::path::Path::new(root))?;
-    Ok(RootedRead {
-        content: read_open_file_lossy(file, path)?,
-        canonical_path: canonical_path.to_string_lossy().into_owned(),
-    })
+    crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+        std::cell::RefCell::new(Some(std::path::PathBuf::from(root))),
+        || {
+            Ok(RootedRead {
+                // A signed source snapshot must retain its original digest. If
+                // protection requires rewriting it, withhold this legacy path.
+                content: read_open_file_lossy(file, path, true, "ctx_read", true)?,
+                canonical_path: canonical_path.to_string_lossy().into_owned(),
+            })
+        },
+    )
 }
 
-fn read_open_file_lossy(file: std::fs::File, path: &str) -> Result<String, std::io::Error> {
-    let cap = crate::core::limits::max_read_bytes();
+fn read_open_file_lossy(
+    file: std::fs::File,
+    path: &str,
+    preserve_bytes: bool,
+    tool: &str,
+    enforce_policy: bool,
+) -> Result<String, std::io::Error> {
+    read_open_file_lossy_bounded(
+        file,
+        path,
+        preserve_bytes,
+        tool,
+        enforce_policy,
+        crate::core::limits::max_read_bytes(),
+        None,
+    )
+}
+
+fn read_open_file_lossy_bounded(
+    file: std::fs::File,
+    path: &str,
+    preserve_bytes: bool,
+    tool: &str,
+    enforce_policy: bool,
+    maximum_bytes: usize,
+    remaining_bytes: Option<&mut usize>,
+) -> Result<String, std::io::Error> {
+    let cap = maximum_bytes.min(crate::core::limits::max_read_bytes());
+    if cap == 0 {
+        return Err(std::io::Error::other("source read budget exhausted"));
+    }
     let meta = file
         .metadata()
         .map_err(|e| std::io::Error::other(format!("cannot stat open file descriptor: {e}")))?;
@@ -69,16 +182,58 @@ fn read_open_file_lossy(file: std::fs::File, path: &str) -> Result<String, std::
 
     use std::io::{BufRead, Read};
     let mut bytes = Vec::with_capacity(meta.len() as usize);
-    let mut reader = std::io::BufReader::new(file);
-    if crate::core::text_decode::looks_binary(reader.fill_buf()?) {
+    let mut reader = std::io::BufReader::with_capacity(cap.saturating_add(1).min(8192), file);
+    let prefix = reader.fill_buf()?;
+    if crate::core::text_decode::looks_binary(prefix) {
+        if let Some(remaining) = remaining_bytes {
+            *remaining = remaining.saturating_sub(prefix.len());
+        }
         return Err(std::io::Error::other(
             crate::core::binary_detect::binary_file_message(path),
         ));
     }
-    reader.read_to_end(&mut bytes)?;
+    let read_result = reader.take(cap as u64 + 1).read_to_end(&mut bytes);
+    if let Some(remaining) = remaining_bytes {
+        *remaining = remaining.saturating_sub(bytes.len());
+    }
+    read_result?;
+    if bytes.len() > cap {
+        return Err(std::io::Error::other(
+            "file exceeded the bounded read limit",
+        ));
+    }
     // Same decoding as the index readers, so every file `ctx_compose` or
     // `ctx_search` can return is readable here too (Windows ANSI, UTF-16).
-    Ok(crate::core::text_decode::decode(bytes))
+    // Only corrupt UTF-8 is lossy: Windows-1252 and UTF-16 decode faithfully,
+    // so policy scanning sees every byte of them.
+    let lossy = crate::core::text_decode::detect_encoding(&bytes)
+        == crate::core::text_decode::Encoding::Utf8Lossy;
+    let s = crate::core::text_decode::decode(bytes);
+    // Constrain agent acquisitions, not unrelated human/local filesystem reads.
+    // Detached read workers inherit this scope from TaskSpine::spawn_thread.
+    let agent_acquisition = enforce_policy
+        || crate::core::policy::runtime::REQUEST_PROJECT
+            .try_with(|slot| slot.borrow().is_some())
+            .unwrap_or(false);
+    if !agent_acquisition {
+        return Ok(s);
+    }
+    let s = if let Some(policy) = crate::core::policy::runtime::active() {
+        let outcome = crate::core::policy::content::evaluate_text(&s, &policy);
+        crate::server::policy_guard::audit_filter(tool, &outcome.audit, outcome.blocked);
+        if lossy || outcome.blocked || (preserve_bytes && outcome.text != s) {
+            return Err(std::io::Error::new(
+                std::io::ErrorKind::PermissionDenied,
+                "source content withheld by policy",
+            ));
+        }
+        outcome.text
+    } else {
+        s
+    };
+    // Context Gateway admission runs before any cache, compression or
+    // delivery sees the source, for every read mode.
+    crate::core::context_admission::admit_source(&s, path, preserve_bytes)
 }
 
 #[cfg(unix)]
@@ -170,7 +325,7 @@ fn open_rooted_nofollow(
     // SAFETY: the handle is live and buffer is writable for its full length.
     let length = unsafe {
         GetFinalPathNameByHandleW(
-            file.as_raw_handle() as _,
+            file.as_raw_handle().cast(),
             buffer.as_mut_ptr(),
             buffer.len() as u32,
             FILE_NAME_NORMALIZED | VOLUME_NAME_DOS,
@@ -370,6 +525,52 @@ fn open_nofollow(path: &str) -> Result<std::fs::File, std::io::Error> {
 #[cfg(test)]
 mod tests {
     use super::read_file_lossy_rooted;
+
+    #[test]
+    fn original_read_budget_counts_masked_and_blocked_content() {
+        let root = tempfile::tempdir().unwrap();
+        let policy_path = root.path().join("policy.toml");
+        std::fs::write(&policy_path,
+            "name = 'budget'\nversion = '1.0.0'\ndescription = 'fixture'\n[redaction]\nmasked = 'X+'\n[filters]\nclassification = 'block'\n").unwrap();
+        let pack = crate::core::policy::parse_file(&policy_path).unwrap();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(
+            crate::core::policy::resolve(&pack).unwrap(),
+        ));
+        let masked = root.path().join("masked.txt");
+        let blocked = root.path().join("blocked.txt");
+        std::fs::write(&masked, "X".repeat(512)).unwrap();
+        let blocked_text = format!("CONFIDENTIAL{}", " ".repeat(500));
+        std::fs::write(&blocked, &blocked_text).unwrap();
+        let mut remaining = 512 + blocked_text.len();
+        let content = super::read_file_for_tool_rooted_budgeted(
+            masked.to_str().unwrap(),
+            root.path().to_str().unwrap(),
+            "ctx_symbol",
+            &mut remaining,
+        )
+        .unwrap();
+        assert!(content.len() < 512);
+        assert_eq!(remaining, blocked_text.len());
+        assert!(
+            super::read_file_for_tool_rooted_budgeted(
+                blocked.to_str().unwrap(),
+                root.path().to_str().unwrap(),
+                "ctx_symbol",
+                &mut remaining,
+            )
+            .is_err()
+        );
+        assert_eq!(remaining, 0);
+        assert!(
+            super::read_file_for_tool_rooted_budgeted(
+                masked.to_str().unwrap(),
+                root.path().to_str().unwrap(),
+                "ctx_symbol",
+                &mut remaining,
+            )
+            .is_err()
+        );
+    }
 
     #[test]
     fn rooted_read_binds_content_to_canonical_in_root_source() {

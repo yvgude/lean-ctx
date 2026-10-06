@@ -22,6 +22,7 @@ pub(crate) struct KnowledgeConsolidationReport {
     pub session_items: usize,
     pub imported_decisions: usize,
     pub imported_findings: usize,
+    pub curation: Option<&'static str>,
     pub facts: usize,
     pub active_facts: usize,
     pub archived_facts: usize,
@@ -178,6 +179,7 @@ fn run_consolidation_locked(
         session_items: imported.total(),
         imported_decisions: imported.decisions,
         imported_findings: imported.findings,
+        curation: imported.curation,
         facts: knowledge.facts.len(),
         active_facts,
         archived_facts,
@@ -281,6 +283,7 @@ fn dry_run_report(
         session_items: imported.total(),
         imported_decisions: imported.decisions,
         imported_findings: imported.findings,
+        curation: imported.curation,
         facts: knowledge.facts.len(),
         active_facts,
         archived_facts,
@@ -422,8 +425,11 @@ pub(crate) fn format_consolidation_report(report: &KnowledgeConsolidationReport)
         ""
     };
 
+    let curation = report.curation.map_or_else(String::new, |status| {
+        format!("Pro memory selection: {status}\n")
+    });
     let body = format!(
-        "{banner}{session_line}\n\
+        "{banner}{session_line}\n{curation}\
          Facts: {} active, {} archived, {} total (target <= {}, archived-to-target {})\n\
          Patterns: {} (target <= {}, compacted {}), History: {} (target <= {}, compacted {})\n\
          Procedures: {} (target <= {}, compacted {})\n\

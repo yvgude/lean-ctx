@@ -4,7 +4,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use super::datasets::{humaneval, mbpp};
-use super::experiment::{Arm, ArmResult, FourArmExperiment, StudyConfig, TaskResult};
+use super::experiment::{Arm, ArmResult, StudyConfig, StudyExperiment, TaskResult};
 use super::llm_client::{self, LlmClientConfig};
 use super::report::StudyReport;
 use super::sandbox;
@@ -28,7 +28,7 @@ pub(crate) fn run_study(config: &StudyConfig, dataset_names: &[&str]) -> StudyRe
             })
             .collect();
 
-        experiments.push(FourArmExperiment {
+        experiments.push(StudyExperiment {
             config: config.clone(),
             dataset_name: name.to_string(),
             results,
@@ -58,7 +58,7 @@ fn run_arm(config: &StudyConfig, dataset: &str, arm: Arm) -> ArmResult {
 }
 
 fn build_llm_config(config: &StudyConfig, arm: Arm) -> Result<LlmClientConfig, String> {
-    let model = select_model(config, arm);
+    let model = config.reference_model.clone();
 
     if let Ok(key) = std::env::var("ANTHROPIC_API_KEY")
         && !key.is_empty()
@@ -71,13 +71,6 @@ fn build_llm_config(config: &StudyConfig, arm: Arm) -> Result<LlmClientConfig, S
     }
 
     Ok(LlmClientConfig::via_proxy_openai(&model))
-}
-
-fn select_model(config: &StudyConfig, arm: Arm) -> String {
-    match arm {
-        Arm::Control | Arm::CompressOnly => config.reference_model.clone(),
-        Arm::RouteOnly | Arm::Combined => config.tiers.standard.clone(),
-    }
 }
 
 fn run_humaneval(config: &StudyConfig, arm: Arm, llm_config: &LlmClientConfig) -> ArmResult {
@@ -252,7 +245,6 @@ where
                 cost_usd: 0.0,
                 model_used: llm_config.model.clone(),
                 compressed_tokens: None,
-                routing_tier: None,
                 latency_ms: 0,
                 error: Some(e),
             };
@@ -277,7 +269,6 @@ where
         cost_usd: cost,
         model_used: completion.model_used,
         compressed_tokens: None,
-        routing_tier: None,
         latency_ms: completion.latency_ms,
         error: if sandbox_result.passed {
             None

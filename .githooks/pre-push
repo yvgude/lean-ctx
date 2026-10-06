@@ -89,6 +89,13 @@ while read -r LOCAL_REF LOCAL_SHA REMOTE_REF REMOTE_SHA; do
         FILES=$(git diff --diff-filter=ACMR --name-only "$REMOTE_SHA..$LOCAL_SHA" 2>/dev/null || true)
     fi
 
+    # Pattern families (private receipts, docs/internal, archives) that exact
+    # .github-ignore entries cannot express. Fails closed without python3.
+    if [[ -n "$FILES" ]] && ! printf '%s\n' "$FILES" \
+        | python3 "$REPO_ROOT/scripts/check-no-internal-artifacts.py" --stdin-paths >/dev/null; then
+        VIOLATIONS+=("  (internal-artifact families listed above)")
+    fi
+
     for file in $FILES; do
         for pattern in "${BLOCKED[@]}"; do
             # Directory pattern (trailing slash): match prefix

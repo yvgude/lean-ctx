@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinResponseOptimizer — response dedup and cache via OCLA trait.
 //!
 //! Wraps `proxy/response_optimizer.rs` behind the canonical trait interface.
@@ -25,6 +26,10 @@ impl Default for BuiltinResponseOptimizer {
 }
 
 impl OclaService for BuiltinResponseOptimizer {
+    fn manifest(&self) -> crate::core::ocla::OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+        crate::core::ocla::capability_fabric::builtin_manifest(&self.capability())
+    }
+
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::ResponseOptimizer)
     }

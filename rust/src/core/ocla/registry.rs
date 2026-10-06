@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! OclaRegistry — singleton that wires all 15 builtin trait implementations.
 //!
 //! Provides `OclaRegistry::global()` for production code to access any OCLA
@@ -12,21 +13,23 @@ use lean_ctx_protocol::CapabilityManifestV1;
 #[cfg(test)]
 use std::cell::Cell;
 
+use super::adapters::registry::AdapterRegistry;
 use super::builtin::{
     agent_gateway::BuiltinAgentGateway, compression_provider::BuiltinCompressionProvider,
     config_tuner::BuiltinConfigTuner, connector_scheduler::BuiltinConnectorScheduler,
     delivery_registry::BuiltinDeliveryRegistry, efficiency_analyzer::BuiltinEfficiencyAnalyzer,
     experiment_runner::BuiltinExperimentRunner, intent_classifier::BuiltinIntentClassifier,
-    metrics_exporter::BuiltinMetricsExporter, model_router::BuiltinModelRouter,
-    observation_hook::BuiltinObservationHook, outcome_tracker::BuiltinOutcomeTracker,
-    response_optimizer::BuiltinResponseOptimizer, savings_ledger::BuiltinSavingsLedger,
-    usage_sink::BuiltinUsageSink,
+    metrics_exporter::BuiltinMetricsExporter, observation_hook::BuiltinObservationHook,
+    outcome_tracker::BuiltinOutcomeTracker, response_optimizer::BuiltinResponseOptimizer,
+    savings_ledger::BuiltinSavingsLedger, usage_sink::BuiltinUsageSink,
 };
+use super::capability_fabric::{normalize_manifest, service_manifest};
+use super::catalogue::{CatalogueEntry, TechnicalCatalogue};
 use super::policy_constraints::PolicyConstraints;
 use super::traits::{
     AgentGateway, CompressionProvider, ConfigTuner, ConnectorScheduler, DeliveryRegistry,
-    EfficiencyAnalyzer, ExperimentRunner, IntentClassifier, MetricsExporter, ModelRouter,
-    ObservationHook, OutcomeTracker, ResponseOptimizer, SavingsLedger, UsageSink,
+    EfficiencyAnalyzer, ExperimentRunner, IntentClassifier, MetricsExporter, ObservationHook,
+    OutcomeTracker, ResponseOptimizer, SavingsLedger, UsageSink,
 };
 
 static GLOBAL_REGISTRY: OnceLock<OclaRegistry> = OnceLock::new();
@@ -37,6 +40,8 @@ thread_local! {
 }
 
 pub struct OclaRegistry {
+    /// Versioned runtime adapters and non-executable external descriptors.
+    pub adapters: AdapterRegistry,
     pub observation_hook: Arc<dyn ObservationHook>,
     pub usage_sink: Arc<dyn UsageSink>,
     pub metrics_exporter: Arc<dyn MetricsExporter>,
@@ -45,7 +50,6 @@ pub struct OclaRegistry {
     pub outcome_tracker: Arc<dyn OutcomeTracker>,
     pub compression_provider: Arc<dyn CompressionProvider>,
     pub response_optimizer: Arc<dyn ResponseOptimizer>,
-    pub model_router: Arc<dyn ModelRouter>,
     pub efficiency_analyzer: Arc<dyn EfficiencyAnalyzer>,
     pub config_tuner: Arc<dyn ConfigTuner>,
     pub experiment_runner: Arc<dyn ExperimentRunner>,
@@ -72,7 +76,12 @@ impl OclaRegistry {
     }
 
     pub fn with_builtins() -> Self {
+        let adapters = AdapterRegistry::with_required_adapters([
+            Arc::new(super::adapters::NativeContextAdapter::new()),
+            Arc::new(super::adapters::PassthroughAdapter::new()),
+        ]);
         Self {
+            adapters,
             observation_hook: Arc::new(BuiltinObservationHook::new()),
             usage_sink: Arc::new(BuiltinUsageSink::new()),
             metrics_exporter: Arc::new(BuiltinMetricsExporter::new()),
@@ -81,7 +90,6 @@ impl OclaRegistry {
             outcome_tracker: Arc::new(BuiltinOutcomeTracker::new()),
             compression_provider: Arc::new(BuiltinCompressionProvider::new()),
             response_optimizer: Arc::new(BuiltinResponseOptimizer::new()),
-            model_router: Arc::new(BuiltinModelRouter::new()),
             efficiency_analyzer: Arc::new(BuiltinEfficiencyAnalyzer::new()),
             config_tuner: Arc::new(BuiltinConfigTuner::new()),
             experiment_runner: Arc::new(BuiltinExperimentRunner::new()),
@@ -91,26 +99,84 @@ impl OclaRegistry {
         }
     }
 
-    /// Lists capability manifests in the same deterministic order as the
-    /// registry's service fields.
-    pub fn manifests(&self) -> Vec<CapabilityManifestV1> {
-        vec![
-            self.observation_hook.manifest(),
-            self.usage_sink.manifest(),
-            self.metrics_exporter.manifest(),
-            self.savings_ledger.manifest(),
-            self.intent_classifier.manifest(),
-            self.outcome_tracker.manifest(),
-            self.compression_provider.manifest(),
-            self.response_optimizer.manifest(),
-            self.model_router.manifest(),
-            self.efficiency_analyzer.manifest(),
-            self.config_tuner.manifest(),
-            self.experiment_runner.manifest(),
-            self.connector_scheduler.manifest(),
-            self.agent_gateway.manifest(),
-            self.delivery_registry.manifest(),
+    fn builtin_services(&self) -> [&dyn super::traits::OclaService; 14] {
+        [
+            self.observation_hook.as_ref(),
+            self.usage_sink.as_ref(),
+            self.metrics_exporter.as_ref(),
+            self.savings_ledger.as_ref(),
+            self.intent_classifier.as_ref(),
+            self.outcome_tracker.as_ref(),
+            self.compression_provider.as_ref(),
+            self.response_optimizer.as_ref(),
+            self.efficiency_analyzer.as_ref(),
+            self.config_tuner.as_ref(),
+            self.experiment_runner.as_ref(),
+            self.connector_scheduler.as_ref(),
+            self.agent_gateway.as_ref(),
+            self.delivery_registry.as_ref(),
         ]
+    }
+
+    /// Builtin manifests retain the service-field order for existing callers.
+    pub fn manifests(&self) -> super::OclaResult<Vec<CapabilityManifestV1>> {
+        self.builtin_services()
+            .iter()
+            .map(|service| service_manifest(*service))
+            .collect()
+    }
+
+    /// Derive a single view from the actual service objects and adapter registry.
+    /// Missing, invalid, or ambiguous contracts fail closed without a partial view.
+    pub fn technical_catalogue(&self) -> super::OclaResult<TechnicalCatalogue> {
+        let mut catalogue = self.adapters.technical_catalogue()?;
+        for service in self.builtin_services() {
+            let manifest = service_manifest(service)?;
+            let available = service.capability().status != super::OclaCapabilityStatus::Unavailable
+                && manifest
+                    .support_matrix
+                    .values()
+                    .any(|support| support.supported);
+            if let Some(existing) = catalogue.capabilities.iter_mut().find(|entry| {
+                entry.capability_id == manifest.capability_id.as_str()
+                    && entry.version == manifest.version
+            }) {
+                if existing.manifest != manifest {
+                    return Err(super::OclaError::InvalidRequest(
+                        "ambiguous capability identity in technical catalogue".to_owned(),
+                    ));
+                }
+                // The pinned compression service and native adapter expose one contract.
+                // Neither representation may override an unavailable runtime binding.
+                existing.available &= available;
+                continue;
+            }
+            catalogue.capabilities.push(CatalogueEntry {
+                capability_id: manifest.capability_id.as_str().to_owned(),
+                version: manifest.version.clone(),
+                manifest,
+                available,
+            });
+        }
+        catalogue
+            .capabilities
+            .sort_by(|a, b| (&a.capability_id, &a.version).cmp(&(&b.capability_id, &b.version)));
+        Ok(catalogue)
+    }
+
+    /// Policy-admitted, available capabilities only; descriptors never authorize dispatch.
+    pub fn discover(
+        &self,
+        constraints: &PolicyConstraints,
+    ) -> super::OclaResult<Vec<CapabilityManifestV1>> {
+        let manifests = self
+            .technical_catalogue()?
+            .capabilities
+            .into_iter()
+            .filter(|entry| entry.available)
+            .map(|entry| entry.manifest)
+            .collect::<Vec<_>>();
+        Ok(discover_compatible(&manifests, constraints))
     }
 }
 
@@ -138,15 +204,28 @@ pub fn discover_compatible(
     registered: &[CapabilityManifestV1],
     constraints: &PolicyConstraints,
 ) -> Vec<CapabilityManifestV1> {
-    registered
-        .iter()
-        .filter(|manifest| {
-            constraints
-                .allowed_providers
-                .as_ref()
-                .is_none_or(|allowed| allowed.contains(&manifest.provider))
-        })
-        .cloned()
+    let mut contracts = std::collections::BTreeMap::new();
+    for manifest in registered {
+        let key = (
+            manifest.capability_id.as_str().to_owned(),
+            manifest.version.clone(),
+        );
+        let normalized = normalize_manifest(manifest.clone()).ok();
+        contracts
+            .entry(key)
+            .and_modify(|existing| {
+                // Resolve identity before policy filtering: an inadmissible or invalid
+                // duplicate cannot hide a conflicting contract for an admitted key.
+                if *existing != normalized {
+                    *existing = None;
+                }
+            })
+            .or_insert(normalized);
+    }
+    contracts
+        .into_values()
+        .flatten()
+        .filter(|manifest| constraints.permits_manifest(manifest).is_ok())
         .collect()
 }
 #[cfg(test)]
@@ -157,13 +236,169 @@ mod tests {
     };
     use crate::core::ocla::types::{
         AgentEnvelope, CompressionRequest, ConfigTuningRequest, ConnectorJob, EfficiencyAnalysis,
-        EfficiencySample, ExperimentRequest, IntentRequest, MetricPoint, ModelRouteRequest,
-        Observation, OclaCapabilityKind, OclaCapabilityStatus, OclaRequestContext, OclaResult,
+        EfficiencySample, ExperimentRequest, IntentRequest, MetricPoint, Observation,
+        OclaCapabilityKind, OclaCapabilityStatus, OclaError, OclaRequestContext, OclaResult,
         Outcome, ResponseOptimizationRequest, SavingsEvidence, UsageRecord,
     };
     use std::collections::BTreeMap;
     use std::sync::Arc;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[test]
+    fn builtin_catalogue_uses_explicit_contracts_and_registered_adapters() {
+        let registry = OclaRegistry::with_builtins();
+        let manifests = registry
+            .manifests()
+            .expect("builtin manifests should construct");
+        assert_eq!(manifests.len(), 14);
+        for manifest in manifests {
+            assert!(
+                normalize_manifest(manifest.clone()).is_ok(),
+                "{}",
+                manifest.capability_id.as_str()
+            );
+            assert!(
+                manifest
+                    .support_matrix
+                    .values()
+                    .any(|support| support.supported)
+            );
+        }
+        let catalogue = registry.technical_catalogue().unwrap();
+        assert_eq!(catalogue.capabilities.len(), 15);
+        assert!(catalogue.capabilities.iter().all(|entry| entry.available));
+        assert!(catalogue.models.is_empty());
+        assert!(catalogue.providers.is_empty());
+        assert_eq!(
+            registry
+                .discover(&PolicyConstraints::default())
+                .unwrap()
+                .len(),
+            15
+        );
+    }
+
+    struct UndeclaredObservation;
+
+    impl OclaService for UndeclaredObservation {
+        fn capability(&self) -> super::super::types::OclaCapability {
+            super::super::types::OclaCapability::available(OclaCapabilityKind::ObservationHook)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ObservationHook for UndeclaredObservation {
+        async fn observe(&self, _observation: Observation) -> OclaResult<()> {
+            Ok(())
+        }
+    }
+
+    struct InvalidManifestObservation;
+
+    impl OclaService for InvalidManifestObservation {
+        fn capability(&self) -> super::super::types::OclaCapability {
+            super::super::types::OclaCapability::available(OclaCapabilityKind::ObservationHook)
+        }
+
+        fn manifest(&self) -> OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+            let mut manifest =
+                super::super::capability_fabric::builtin_manifest(&self.capability())?;
+            manifest.support_matrix.clear();
+            Ok(manifest)
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ObservationHook for InvalidManifestObservation {
+        async fn observe(&self, _observation: Observation) -> OclaResult<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn omitted_manifest_never_becomes_a_placeholder_catalogue_entry() {
+        let mut registry = OclaRegistry::with_builtins();
+        registry.observation_hook = Arc::new(UndeclaredObservation);
+        assert!(matches!(
+            registry.manifests(),
+            Err(OclaError::Unavailable(OclaCapabilityKind::ObservationHook))
+        ));
+        assert!(matches!(
+            registry.technical_catalogue(),
+            Err(OclaError::Unavailable(OclaCapabilityKind::ObservationHook))
+        ));
+        assert!(registry.discover(&PolicyConstraints::default()).is_err());
+    }
+
+    #[test]
+    fn invalid_manifest_is_rejected_without_raw_manifest_fallback() {
+        let mut registry = OclaRegistry::with_builtins();
+        registry.observation_hook = Arc::new(InvalidManifestObservation);
+        assert!(matches!(
+            registry.manifests(),
+            Err(OclaError::InvalidRequest(_))
+        ));
+        assert!(matches!(
+            registry.technical_catalogue(),
+            Err(OclaError::InvalidRequest(_))
+        ));
+        assert!(registry.discover(&PolicyConstraints::default()).is_err());
+    }
+
+    struct BrokenManifestObservation;
+
+    impl OclaService for BrokenManifestObservation {
+        fn capability(&self) -> super::super::types::OclaCapability {
+            super::super::types::OclaCapability::available(OclaCapabilityKind::ObservationHook)
+        }
+
+        fn manifest(&self) -> OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+            Err(OclaError::InvalidRequest(
+                "broken observation manifest".to_owned(),
+            ))
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl ObservationHook for BrokenManifestObservation {
+        async fn observe(&self, _observation: Observation) -> OclaResult<()> {
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn broken_builtin_manifest_is_typed_and_does_not_yield_partial_catalogue() {
+        let mut registry = OclaRegistry::with_builtins();
+        registry.observation_hook = Arc::new(BrokenManifestObservation);
+
+        let manifests_error = registry
+            .manifests()
+            .expect_err("broken service manifest must fail discovery");
+        assert!(matches!(
+            manifests_error,
+            OclaError::InvalidRequest(message) if message == "broken observation manifest"
+        ));
+
+        let catalogue_error = registry
+            .technical_catalogue()
+            .expect_err("broken service manifest must prevent a partial catalogue");
+        assert!(matches!(
+            catalogue_error,
+            OclaError::InvalidRequest(message) if message == "broken observation manifest"
+        ));
+    }
+
+    #[test]
+    fn failed_required_adapters_prevent_builtin_catalogue_and_discovery() {
+        let mut registry = OclaRegistry::with_builtins();
+        registry.adapters = AdapterRegistry::with_required_adapters([
+            Arc::new(super::super::adapters::PassthroughAdapter::new()),
+            Arc::new(super::super::adapters::PassthroughAdapter::new()),
+        ]);
+        assert!(registry.technical_catalogue().is_err());
+        assert!(registry.discover(&PolicyConstraints::default()).is_err());
+        assert!(registry.adapters.list_available().is_empty());
+    }
 
     struct SpyEfficiency(Arc<AtomicUsize>);
     struct SpySavings(Arc<AtomicUsize>);
@@ -204,6 +439,10 @@ mod tests {
         fn record_savings(&self, evidence: SavingsEvidence) -> OclaResult<String> {
             self.0.fetch_add(1, Ordering::Relaxed);
             Ok(evidence.evidence_ref)
+        }
+
+        fn project_savings(&self, evidence: SavingsEvidence) -> OclaResult<String> {
+            self.record_savings(evidence)
         }
     }
 
@@ -253,10 +492,6 @@ mod tests {
         assert_eq!(
             reg.agent_gateway.capability().kind,
             OclaCapabilityKind::AgentGateway
-        );
-        assert_eq!(
-            reg.model_router.capability().kind,
-            OclaCapabilityKind::ModelRouter
         );
         assert_eq!(
             reg.delivery_registry.capability().kind,
@@ -309,10 +544,6 @@ mod tests {
             (
                 reg.response_optimizer.capability(),
                 OclaCapabilityKind::ResponseOptimizer,
-            ),
-            (
-                reg.model_router.capability(),
-                OclaCapabilityKind::ModelRouter,
             ),
             (
                 reg.efficiency_analyzer.capability(),
@@ -408,12 +639,6 @@ mod tests {
                     original_tokens: 10,
                     target_tokens: 5,
                 });
-            let _ = reg.model_router.route_model(ModelRouteRequest {
-                context: context(),
-                candidate_models: vec!["gpt-4o".into()],
-                maximum_cost_micros: None,
-                maximum_latency_ms: None,
-            });
             let _ = reg
                 .efficiency_analyzer
                 .analyze_efficiency(EfficiencySample {
@@ -453,6 +678,7 @@ mod tests {
             });
             reg.delivery_registry
                 .record_delivery(crate::core::ocla::types::DeliveryEntry {
+                    access: None,
                     blake3: [0u8; 12],
                     path: "test.rs".into(),
                     line_count: 42,
@@ -497,7 +723,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn mcp_tool_call_projects_to_observation_and_outcome_spies() {
+    async fn mcp_metrics_project_observation_but_leave_outcome_to_lifecycle() {
         let _dir = crate::core::data_dir::isolated_data_dir();
         let observation_calls = Arc::new(AtomicUsize::new(0));
         let outcome_calls = Arc::new(AtomicUsize::new(0));
@@ -512,7 +738,7 @@ mod tests {
             .await;
 
         assert_eq!(observation_calls.load(Ordering::Relaxed), 1);
-        assert_eq!(outcome_calls.load(Ordering::Relaxed), 1);
+        assert_eq!(outcome_calls.load(Ordering::Relaxed), 0);
     }
 
     #[test]

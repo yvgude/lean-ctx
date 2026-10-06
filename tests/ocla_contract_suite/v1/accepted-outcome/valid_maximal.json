@@ -20,15 +20,18 @@
     {
       "kind": "RuntimeLog",
       "uri": "evidence://outcome/01J5XKA5/build",
-      "digest": "sha256:build-01J5XKA5",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
       "signature_status": "NotSigned"
     },
     {
       "kind": "QualityMeasurement",
       "uri": "evidence://outcome/01J5XKA5/tests",
-      "digest": "sha256:tests-01J5XKA5",
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
       "signature_status": "Verified"
     }
   ],
-  "observed_at": "2026-08-09T10:34:12Z"
+  "observed_at": "2026-08-09T10:34:12Z",
+  "plan_id": "plan_01J5XK8H3C6F9J2L5N8Q1S4V7Y",
+  "receipt_id": "receipt_01J5XK9R4D7G0K3M6P9S2V5X8Z",
+  "decision_refs": ["decision_01J5XKB6F9J2M5P8S1V4Y7B0D"]
 }

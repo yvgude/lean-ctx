@@ -9,7 +9,10 @@ pub(crate) fn normalize_loaded_session(mut session: SessionState) -> SessionStat
         session.shell_cwd = None;
     }
 
-    if let (Some(root), Some(cwd)) = (&session.project_root, &session.shell_cwd) {
+    // An admitted checkpoint root cannot be replaced by a legacy cwd heuristic.
+    if session.canonical_checkpoint.is_none()
+        && let (Some(root), Some(cwd)) = (&session.project_root, &session.shell_cwd)
+    {
         let root_p = std::path::Path::new(root);
         let cwd_p = std::path::Path::new(cwd);
 
@@ -55,7 +58,7 @@ pub(crate) fn session_matches_project_root(
         if root_path == target_root {
             return true;
         }
-        if has_project_marker(&root_path) {
+        if session.canonical_checkpoint.is_some() || has_project_marker(&root_path) {
             return false;
         }
     }

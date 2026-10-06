@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Kernel policy enforcement modes.
 
 use serde::Deserialize;
@@ -149,6 +151,7 @@ pub mod tests {
             excluded: Vec::new(),
             deferred: Vec::new(),
             provider_stats: HashMap::new(),
+            origins: Default::default(),
         }
     }
 

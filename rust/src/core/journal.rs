@@ -1,6 +1,5 @@
+use crate::core::policy::diagnostics;
 use std::io::{Read, Seek, SeekFrom, Write};
-use std::path::PathBuf;
-use std::sync::{LazyLock, Mutex};
 
 use chrono::{Local, Utc};
 
@@ -9,59 +8,8 @@ use chrono::{Local, Utc};
 /// inspect and update.
 const MAX_ACTIVE_JOURNAL_BYTES: u64 = 4 * 1024 * 1024;
 const JOURNAL_TAIL_BYTES: u64 = 8 * 1024;
-const JOURNAL_LOCK_WAIT: std::time::Duration = std::time::Duration::from_millis(50);
-
-static JOURNAL_LOCK: LazyLock<Mutex<()>> = LazyLock::new(|| Mutex::new(()));
-
-fn journal_path() -> PathBuf {
-    crate::core::paths::state_dir()
-        .unwrap_or_else(|_| PathBuf::from(".lean-ctx"))
-        .join("journal.md")
-}
-
-fn journal_day_path() -> PathBuf {
-    crate::core::paths::state_dir()
-        .unwrap_or_else(|_| PathBuf::from(".lean-ctx"))
-        .join("journal.day")
-}
-
-fn journal_lock_path() -> PathBuf {
-    crate::core::paths::state_dir()
-        .unwrap_or_else(|_| PathBuf::from(".lean-ctx"))
-        .join("journal.lock")
-}
-
-/// Serialize journal maintenance briefly across MCP processes. Journaling is
-/// observational, so a contended lock is skipped instead of delaying a tool.
-fn with_journal_lock(f: impl FnOnce()) {
-    use fs2::FileExt;
-
-    let _local = JOURNAL_LOCK
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let Ok(lock) = std::fs::OpenOptions::new()
-        .create(true)
-        .truncate(false)
-        .write(true)
-        .open(journal_lock_path())
-    else {
-        return;
-    };
-    let deadline = std::time::Instant::now() + JOURNAL_LOCK_WAIT;
-    loop {
-        match lock.try_lock_exclusive() {
-            Ok(()) => break,
-            Err(error)
-                if crate::core::file_lock::is_contended(&error)
-                    && std::time::Instant::now() < deadline =>
-            {
-                std::thread::sleep(std::time::Duration::from_millis(5));
-            }
-            Err(_) => return,
-        }
-    }
-    f();
-    let _ = FileExt::unlock(&lock);
+fn journal_target() -> Option<diagnostics::Target> {
+    diagnostics::target(crate::core::paths::state_dir().ok()?.join("journal.md"))
 }
 
 fn active_journal_needs_rotation(path: &std::path::Path) -> bool {
@@ -77,12 +25,21 @@ fn rotate_active_journal_if_needed(path: &std::path::Path) {
     let archive_name = format!("journal-{}.md", Utc::now().format("%Y%m%dT%H%M%S%6fZ"));
     let archive = path.with_file_name(archive_name);
     if std::fs::rename(path, archive).is_ok() {
-        let _ = std::fs::remove_file(journal_day_path());
+        let _ = std::fs::remove_file(path.with_extension("day"));
     }
 }
 
-fn write_day_marker(today: &str) {
-    let _ = std::fs::write(journal_day_path(), today);
+fn write_day_marker(path: &std::path::Path, today: &str) {
+    let marker = path.with_extension("day");
+    // Replace a marker entry rather than following a link to another file.
+    let Some(parent) = marker.parent() else {
+        return;
+    };
+    if let Ok(mut file) = tempfile::NamedTempFile::new_in(parent) {
+        if file.write_all(today.as_bytes()).is_ok() {
+            let _ = file.persist(marker);
+        }
+    }
 }
 
 fn journal_tail_contains(path: &std::path::Path, needle: &str) -> bool {
@@ -109,25 +66,58 @@ fn is_enabled() -> bool {
 
 /// Append a human-readable entry to the activity journal.
 pub fn log(category: &str, message: &str) {
+    log_inner(category, message, None);
+}
+
+fn log_inner(category: &str, message: &str, tool: Option<&str>) {
     if !is_enabled() {
         return;
     }
-    with_journal_lock(|| {
-        let path = journal_path();
-        rotate_active_journal_if_needed(&path);
+    let Some(target) = journal_target() else {
+        return;
+    };
+    target.with_lock(|| {
+        let Some(fields) = diagnostics::fields(
+            &[
+                ("category", category),
+                ("message", message),
+                ("tool", tool.unwrap_or_default()),
+            ],
+            None,
+        ) else {
+            return;
+        };
+        let Some(safe) = target.inspect(tool, &fields) else {
+            return;
+        };
+        let category = safe["category"].as_str().unwrap_or_default();
+        let message = safe["message"].as_str().unwrap_or_default();
+        let message = if tool.is_some() {
+            format!(
+                "`{}` — {}",
+                safe["tool"].as_str().unwrap_or_default(),
+                message.lines().next().unwrap_or_default()
+            )
+        } else {
+            message.to_owned()
+        };
+        let path = &target.path;
+        rotate_active_journal_if_needed(path);
         let timestamp = Local::now().format("%Y-%m-%d %H:%M");
         let entry = format!("- **{timestamp}** [{category}] {message}\n");
+        let Some(serde_json::Value::String(entry)) =
+            target.inspect(tool, &serde_json::Value::String(entry))
+        else {
+            return;
+        };
         let needs_header = !path.exists();
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .append(true)
-            .open(&path);
+        let file = diagnostics::open_append(path);
 
         if let Ok(mut f) = file {
             if needs_header {
                 let date = Local::now().format("%Y-%m-%d").to_string();
                 let _ = writeln!(f, "# lean-ctx Activity Journal\n\n## {date}\n");
-                write_day_marker(&date);
+                write_day_marker(path, &date);
             }
             let _ = f.write_all(entry.as_bytes());
         }
@@ -139,24 +129,31 @@ pub fn maybe_day_separator() {
     if !is_enabled() {
         return;
     }
-    with_journal_lock(|| {
-        let path = journal_path();
+    let Some(target) = journal_target() else {
+        return;
+    };
+    target.with_lock(|| {
+        let path = &target.path;
         if !path.exists() {
             return;
         }
 
         let today = Local::now().format("%Y-%m-%d").to_string();
-        if std::fs::read_to_string(journal_day_path()).is_ok_and(|stored| stored.trim() == today) {
+        if crate::core::policy::files::read(&path.with_extension("day"), false)
+            .ok()
+            .flatten()
+            .is_some_and(|stored| stored.trim() == today)
+        {
             return;
         }
 
         let header = format!("## {today}");
-        if !journal_tail_contains(&path, &header)
-            && let Ok(mut f) = std::fs::OpenOptions::new().append(true).open(&path)
+        if !journal_tail_contains(path, &header)
+            && let Ok(mut f) = diagnostics::open_append(path)
         {
             let _ = writeln!(f, "\n{header}\n");
         }
-        write_day_marker(&today);
+        write_day_marker(path, &today);
     });
 }
 
@@ -168,16 +165,21 @@ pub fn log_tool_call(tool_name: &str, summary: &str) {
     ) {
         return;
     }
-    log("tool", &format!("`{tool_name}` — {summary}"));
+    log_inner("tool", summary, Some(tool_name));
 }
 
 /// Return the journal content for display.
 pub fn read_journal(tail_lines: usize) -> String {
-    let path = journal_path();
+    let Some(target) = journal_target() else {
+        return "Journal unavailable under current policy.".into();
+    };
+    let path = &target.path;
     if !path.exists() {
         return "No journal entries yet.".to_string();
     }
-    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    let Some(content) = target.read() else {
+        return "Journal withheld by current policy or storage checks.".into();
+    };
     if tail_lines == 0 {
         return content;
     }

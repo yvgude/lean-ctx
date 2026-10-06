@@ -98,6 +98,24 @@ fn merge_local_trusted_applies_sensitive() {
     assert_eq!(base.extra_roots, vec!["/etc"]);
 }
 
+/// The Context Gateway is global-only: not even a trusted workspace file can
+/// switch detectors off or loosen them.
+#[test]
+fn merge_local_never_weakens_the_context_gateway() {
+    for trusted in [false, true] {
+        let mut base = Config::default();
+        base.merge_local(
+            "[context_gateway]\nenabled = false\nsecrets = \"off\"\ninjection = \"off\"\n",
+            trusted,
+        );
+        assert_eq!(
+            base.context_gateway,
+            crate::core::context_admission::ContextGatewayConfig::default(),
+            "trusted={trusted}"
+        );
+    }
+}
+
 /// GH #833: untrusted workspace must not disable gitignore-respecting indexing.
 #[test]
 fn merge_local_untrusted_withholds_respect_gitignore_833() {

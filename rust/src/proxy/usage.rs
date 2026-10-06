@@ -18,7 +18,33 @@
 //! uncached input, output (incl. reasoning/thoughts), cache-read, cache-write.
 
 use futures::{Stream, StreamExt};
+use serde::{Deserialize, Serialize};
 use serde_json::Value;
+
+/// Where provider usage was observed, not an assertion of answer quality or
+/// successful generation. Terminal usage also accompanies failed responses.
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageBoundary {
+    BodyEnd,
+    ProviderTerminalUsage,
+    StreamEnd,
+    StreamError,
+}
+
+/// Payload-free local measurement. Unknown cost stays unknown; neither HTTP
+/// status nor receipt of usage supplies the private runtime's quality label.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+#[serde(deny_unknown_fields)]
+pub struct ResponseObservation {
+    pub schema_version: u8,
+    pub http_status: u16,
+    /// Monotonic elapsed time from upstream dispatch (including retries) to
+    /// the indicated usage boundary, not necessarily full response latency.
+    pub usage_observed_ms: u64,
+    pub boundary: UsageBoundary,
+    pub provider_cost_usd: Option<f64>,
+}
 
 /// LLM provider whose response shape a [`Scanner`] understands.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -75,6 +101,9 @@ pub struct RealUsage {
     /// it left for the upstream. `None` outside the forward path (e.g. tests
     /// that only parse response bodies).
     pub wire: Option<Box<WireContext>>,
+    /// Present only for measured upstream responses, never cache hits or
+    /// synthetic parser inputs. Kept local in the existing usage meter.
+    pub response_observation: Option<ResponseObservation>,
 }
 
 /// Request-side context the forward path knows and the response scanner does
@@ -195,6 +224,10 @@ pub struct Scanner {
     header_cost: Option<f64>,
     buf: Vec<u8>,
     usage: RealUsage,
+    terminal_usage_seen: bool,
+    anthropic_final_usage_seen: bool,
+    response_clock: Option<(std::time::Instant, u16)>,
+    stream_failed: bool,
 }
 
 impl Scanner {
@@ -207,10 +240,29 @@ impl Scanner {
             header_cost: None,
             buf: Vec::new(),
             usage: RealUsage::default(),
+            terminal_usage_seen: false,
+            anthropic_final_usage_seen: false,
+            response_clock: None,
+            stream_failed: false,
         }
     }
 
-    /// Tags the usage this scanner produces with its holdout arms (#895, #1905).
+    /// Starts measurement at the caller's actual upstream dispatch boundary.
+    #[must_use]
+    pub(crate) fn with_response_clock(
+        mut self,
+        started: Option<std::time::Instant>,
+        status: u16,
+    ) -> Self {
+        self.response_clock = started.map(|started| (started, status));
+        self
+    }
+
+    pub(super) fn mark_stream_error(&mut self) {
+        self.stream_failed = true;
+    }
+
+    /// Tags the usage this scanner produces with its output and compression holdout arms.
     #[must_use]
     pub fn with_cohort(mut self, cohort: super::holdout::Cohorts) -> Self {
         self.cohort = cohort;
@@ -259,9 +311,27 @@ impl Scanner {
         }
     }
 
+    /// A provider terminal measurement is independent of later transport EOF.
+    pub(super) fn has_terminal_usage(&self) -> bool {
+        self.terminal_usage_seen && (self.usage.is_meaningful() || self.header_cost.is_some())
+    }
+
+    /// Retain only an observed terminal measurement on an interrupted stream.
+    pub(super) fn finalize_terminal(self) -> Option<RealUsage> {
+        if self.has_terminal_usage() {
+            self.finalize_at(UsageBoundary::ProviderTerminalUsage)
+        } else {
+            None
+        }
+    }
+
     /// Consumes the scanner, flushing any trailing partial line (a final event
     /// may arrive without a newline) and returning the merged usage if any.
-    pub fn finalize(mut self) -> Option<RealUsage> {
+    pub fn finalize(self) -> Option<RealUsage> {
+        self.finalize_at(UsageBoundary::StreamEnd)
+    }
+
+    pub(crate) fn finalize_at(mut self, boundary: UsageBoundary) -> Option<RealUsage> {
         if !self.buf.is_empty() {
             let line = std::mem::take(&mut self.buf);
             self.scan_line(&line);
@@ -274,6 +344,20 @@ impl Scanner {
         if self.usage.is_meaningful() {
             self.usage.cohort = self.cohort;
             self.usage.wire = self.wire;
+            self.usage.response_observation =
+                self.response_clock
+                    .map(|(started, status)| ResponseObservation {
+                        schema_version: 1,
+                        http_status: status,
+                        usage_observed_ms: u64::try_from(started.elapsed().as_millis())
+                            .unwrap_or(u64::MAX),
+                        boundary: if self.stream_failed {
+                            UsageBoundary::StreamError
+                        } else {
+                            boundary
+                        },
+                        provider_cost_usd: self.usage.provider_cost_usd,
+                    });
             Some(self.usage)
         } else {
             None
@@ -319,7 +403,8 @@ impl Scanner {
         match self.provider {
             // Anthropic `message_start`/`message_delta` and OpenAI `usage`/
             // `response.*` events all contain the substring "usage".
-            Provider::Anthropic | Provider::OpenAi => s.contains("usage"),
+            Provider::Anthropic => s.contains("usage") || s.contains("message_stop"),
+            Provider::OpenAi => s.contains("usage"),
             Provider::Gemini => s.contains("usageMetadata"),
         }
     }
@@ -330,7 +415,50 @@ impl Scanner {
             Provider::OpenAi => absorb_openai(&mut self.usage, v),
             Provider::Gemini => absorb_gemini(&mut self.usage, v, self.url_model.as_deref()),
         }
+        match self.provider {
+            Provider::Anthropic => {
+                if v.get("type").and_then(Value::as_str) == Some("message_delta")
+                    && v.pointer("/usage/output_tokens")
+                        .and_then(Value::as_u64)
+                        .is_some()
+                {
+                    self.anthropic_final_usage_seen = true;
+                }
+                self.terminal_usage_seen |= self.anthropic_final_usage_seen
+                    && v.get("type").and_then(Value::as_str) == Some("message_stop");
+            }
+            Provider::OpenAi => {
+                let response_terminal = matches!(
+                    v.get("type").and_then(Value::as_str),
+                    Some("response.completed" | "response.incomplete" | "response.failed")
+                ) && has_reported_totals(
+                    v.pointer("/response/usage"),
+                    "input_tokens",
+                    "output_tokens",
+                );
+                let chat_terminal =
+                    has_reported_totals(v.get("usage"), "prompt_tokens", "completion_tokens")
+                        && v.get("choices")
+                            .and_then(Value::as_array)
+                            .is_some_and(Vec::is_empty);
+                self.terminal_usage_seen |= response_terminal || chat_terminal;
+            }
+            // finishReason is per candidate, not proof that the entire request
+            // has finished. Preserve EOF accounting without inventing a terminal.
+            Provider::Gemini => {}
+        }
     }
+}
+
+fn has_reported_totals(usage: Option<&Value>, input: &str, output: &str) -> bool {
+    usage.is_some_and(|usage| {
+        (usage.get(input).and_then(Value::as_u64).is_some()
+            && usage.get(output).and_then(Value::as_u64).is_some())
+            || usage
+                .get("cost")
+                .and_then(Value::as_f64)
+                .is_some_and(|cost| cost.is_finite() && cost >= 0.0)
+    })
 }
 
 /// Anthropic: model + input/cache live on `message` (streaming `message_start`
@@ -532,9 +660,22 @@ where
                     if let Some(s) = scanner.as_mut() {
                         s.feed(chunk.as_ref());
                     }
+                    if scanner.as_ref().is_some_and(Scanner::has_terminal_usage)
+                        && let Some(usage) = scanner.take().and_then(Scanner::finalize_terminal)
+                    {
+                        super::usage_meter::record(&usage);
+                    }
                     Some((Ok(chunk), (inner, scanner)))
                 }
-                Some(err) => Some((err, (inner, scanner))),
+                Some(err) => {
+                    if let Some(mut s) = scanner.take() {
+                        s.mark_stream_error();
+                        if let Some(usage) = s.finalize_at(UsageBoundary::StreamError) {
+                            super::usage_meter::record(&usage);
+                        }
+                    }
+                    Some((err, (inner, scanner)))
+                }
                 None => {
                     if let Some(s) = scanner.take()
                         && let Some(usage) = s.finalize()
@@ -892,6 +1033,167 @@ mod tests {
             Some("gemini-2.5-flash")
         );
         assert_eq!(gemini_model_from_path("/v1/chat/completions"), None);
+    }
+
+    #[test]
+    fn terminal_usage_requires_provider_completion_and_reported_totals() {
+        for kind in [
+            "response.completed",
+            "response.incomplete",
+            "response.failed",
+        ] {
+            let mut scanner = Scanner::new(Provider::OpenAi, None);
+            scanner.feed_body(serde_json::json!({
+                "type": kind,
+                "response": {"model": "terminal", "usage": {"input_tokens": 5, "output_tokens": 2}}
+            }).to_string().as_bytes());
+            assert!(scanner.has_terminal_usage());
+        }
+        for (provider, event) in [
+            (
+                Provider::OpenAi,
+                serde_json::json!({"type":"response.in_progress","response":{"usage":{"input_tokens":5,"output_tokens":2}}}),
+            ),
+            (
+                Provider::OpenAi,
+                serde_json::json!({"type":"response.completed","response":{"usage":{"input_tokens":5}}}),
+            ),
+            (
+                Provider::OpenAi,
+                serde_json::json!({"choices":[],"usage":null}),
+            ),
+            (
+                Provider::Gemini,
+                serde_json::json!({"candidates":[{"finishReason":"STOP"}],"usageMetadata":{"promptTokenCount":5,"candidatesTokenCount":2}}),
+            ),
+        ] {
+            let mut scanner = Scanner::new(provider, None);
+            scanner.feed_body(event.to_string().as_bytes());
+            assert!(!scanner.has_terminal_usage());
+        }
+        let mut chat = Scanner::new(Provider::OpenAi, None);
+        chat.feed_body(
+            br#"{"model":"chat","choices":[],"usage":{"prompt_tokens":5,"completion_tokens":2}}"#,
+        );
+        assert!(chat.has_terminal_usage());
+        let mut anthropic = Scanner::new(Provider::Anthropic, None);
+        anthropic.feed(b"data: {\"type\":\"message_start\",\"message\":{\"model\":\"anthropic\",\"usage\":{\"input_tokens\":5,\"output_tokens\":1}}}\n");
+        anthropic.feed(b"data: {\"type\":\"message_delta\",\"usage\":{\"output_tokens\":2}}\n");
+        assert!(!anthropic.has_terminal_usage());
+        anthropic.feed(b"data: {\"type\":\"message_stop\"}\n");
+        assert!(anthropic.has_terminal_usage());
+    }
+
+    fn terminal_usage_frame(model: &str) -> Vec<u8> {
+        format!(
+            "data: {}\n\n",
+            serde_json::json!({
+                "type": "response.completed",
+                "response": {
+                    "model": model,
+                    "usage": {
+                        "input_tokens": 120,
+                        "output_tokens": 7,
+                        "input_tokens_details": {"cached_tokens": 20},
+                        "cost": 0.0125
+                    }
+                }
+            })
+        )
+        .into_bytes()
+    }
+
+    fn measured_requests(model: &str) -> u64 {
+        super::super::usage_meter::snapshot()
+            .into_iter()
+            .find(|usage| usage.model == model)
+            .map_or(0, |usage| usage.requests)
+    }
+
+    #[tokio::test]
+    async fn terminal_usage_clean_eof_records_once() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let model = "terminal-evidence-clean-eof";
+        let before = measured_requests(model);
+        let frame = terminal_usage_frame(model);
+        let source = futures::stream::iter(vec![Ok::<_, ()>(frame.clone())]);
+        let mut teed = Box::pin(tee_stream(source, Scanner::new(Provider::OpenAi, None)));
+        assert_eq!(teed.next().await, Some(Ok(frame)));
+        assert_eq!(teed.next().await, None);
+        drop(teed);
+        assert_eq!(measured_requests(model), before + 1);
+    }
+
+    #[tokio::test]
+    async fn terminal_usage_received_before_drop_is_recorded_once() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let model = "terminal-evidence-client-drop";
+        let before = measured_requests(model);
+        let frame = terminal_usage_frame(model);
+        let source = futures::stream::iter(vec![Ok::<_, ()>(frame.clone())]);
+        let mut teed = Box::pin(tee_stream(source, Scanner::new(Provider::OpenAi, None)));
+        assert_eq!(teed.next().await, Some(Ok(frame)));
+        drop(teed);
+        assert_eq!(measured_requests(model), before + 1);
+    }
+
+    #[tokio::test]
+    async fn terminal_usage_received_before_error_is_recorded_once() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let model = "terminal-evidence-upstream-error";
+        let before = measured_requests(model);
+        let frame = terminal_usage_frame(model);
+        let source = futures::stream::iter(vec![Ok(frame.clone()), Err(())]);
+        let mut teed = Box::pin(tee_stream(source, Scanner::new(Provider::OpenAi, None)));
+        assert_eq!(teed.next().await, Some(Ok(frame)));
+        assert_eq!(teed.next().await, Some(Err(())));
+        drop(teed);
+        assert_eq!(measured_requests(model), before + 1);
+    }
+
+    #[tokio::test]
+    async fn terminal_usage_retains_header_cost_without_model_or_body_tokens() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let before = super::super::usage_meter::snapshot()
+            .into_iter()
+            .find(|usage| usage.model == "unknown");
+        let before_requests = before.as_ref().map_or(0, |usage| usage.requests);
+        let before_cost = before.as_ref().map_or(0.0, |usage| usage.cost_usd);
+        let frame = b"data: {\"type\":\"response.completed\",\"response\":{\"usage\":{\"input_tokens\":0,\"output_tokens\":0}}}\n".to_vec();
+        let source = futures::stream::iter(vec![Ok::<_, ()>(frame.clone())]);
+        let scanner = Scanner::new(Provider::OpenAi, None).with_header_cost(Some(0.0042));
+        let mut teed = Box::pin(tee_stream(source, scanner));
+        assert_eq!(teed.next().await, Some(Ok(frame)));
+        drop(teed);
+        let measured = super::super::usage_meter::snapshot()
+            .into_iter()
+            .find(|usage| usage.model == "unknown")
+            .unwrap();
+        assert_eq!(measured.requests, before_requests + 1);
+        assert!((measured.cost_usd - before_cost - 0.0042).abs() < 1e-9);
+    }
+
+    #[tokio::test]
+    async fn terminal_usage_partial_input_does_not_become_completed_spend_on_drop() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let model = "terminal-evidence-partial-input";
+        let before = measured_requests(model);
+        let frame = format!(
+            "data: {}\n\n",
+            serde_json::json!({
+                "type": "message_start",
+                "message": {
+                    "model": model,
+                    "usage": {"input_tokens": 5, "output_tokens": 1}
+                }
+            })
+        )
+        .into_bytes();
+        let source = futures::stream::iter(vec![Ok::<_, ()>(frame.clone())]);
+        let mut teed = Box::pin(tee_stream(source, Scanner::new(Provider::Anthropic, None)));
+        assert_eq!(teed.next().await, Some(Ok(frame)));
+        drop(teed);
+        assert_eq!(measured_requests(model), before);
     }
 
     #[tokio::test]

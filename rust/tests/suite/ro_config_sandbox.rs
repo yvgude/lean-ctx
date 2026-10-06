@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! GH #408 RO-config sandbox gate (brought forward from GL #607).
 //!
 //! With the config dir read-only and the data/state/cache categories split out
@@ -5,8 +7,8 @@
 //! anything into the config dir. This is the exact acceptance criterion from
 //! #408 (`--ro $XDG_CONFIG_HOME/lean-ctx`).
 //!
-//! `config_dir()` resets its own perms to `0o700` on access, so `chmod 0o500` is
-//! a best-effort RO simulation only — the real gate is the assertion that the
+//! Config reads preserve directory permissions; `chmod 0o500` is a best-effort
+//! RO simulation only — the real gate is the assertion that the
 //! config dir's contents are byte-identical afterwards: any stray write (e.g. a
 //! `stats.json` landing next to `config.toml`) fails the test. A captured agent
 //! session id is additionally asserted to land in the state dir at `0o600`, while
@@ -85,6 +87,7 @@ fn full_cycle_never_writes_into_readonly_config_dir() {
         .output()
         .expect("spawn lean-ctx -c");
 
+    let config_mode = std::fs::metadata(&config).unwrap().permissions().mode() & 0o777;
     // Restore perms so the tempdir can be cleaned up regardless of assertions.
     let _ = std::fs::set_permissions(&config, std::fs::Permissions::from_mode(0o700));
 
@@ -111,6 +114,10 @@ fn full_cycle_never_writes_into_readonly_config_dir() {
         before, after,
         "the config dir was modified during the cycle"
     );
+    assert_eq!(
+        config_mode, 0o500,
+        "reading config must not repair its permissions"
+    );
 
     // Proof that writes landed in the split categories: the captured session id
     // lives in the state dir, owner-only — never the RO/shareable config dir.
@@ -132,6 +139,48 @@ fn full_cycle_never_writes_into_readonly_config_dir() {
     );
     let mode = std::fs::metadata(&key_file).unwrap().permissions().mode();
     assert_eq!(mode & 0o777, 0o600, "captured key file must be owner-only");
+}
+
+#[test]
+fn readonly_config_resolution_preserves_single_directory_installs() {
+    for explicit_data_pin in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let single = root.path().join(if explicit_data_pin {
+            "custom"
+        } else {
+            ".lean-ctx"
+        });
+        let split = root.path().join("split-config");
+        std::fs::create_dir(&single).unwrap();
+        std::fs::write(single.join("stats.json"), "{}").unwrap();
+        std::fs::write(single.join("config.toml"), "compression_level = \"off\"\n").unwrap();
+        let mut command = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+        command
+            .args(["config", "path"])
+            .env_clear()
+            .env("HOME", root.path())
+            .env("PATH", "/usr/bin:/bin")
+            .env("XDG_CONFIG_HOME", &split)
+            .env("LEAN_CTX_HOOK_CHILD", "1")
+            .env("LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD", "0");
+        if explicit_data_pin {
+            command.env("LEAN_CTX_DATA_DIR", &single);
+        }
+        let output = command.output().expect("config path subprocess");
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+        assert!(
+            String::from_utf8_lossy(&output.stdout)
+                .contains(single.join("config.toml").to_str().unwrap())
+        );
+        assert!(
+            !split.exists(),
+            "a config path read must not create a second config home"
+        );
+    }
 }
 
 /// The companion to the RO gate: `doctor --fix` must be able to *reach* the

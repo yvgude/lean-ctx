@@ -1,5 +1,11 @@
 use std::path::PathBuf;
 
+#[allow(dead_code, unreachable_pub)]
+mod entitlement_cache;
+pub use entitlement_cache::EffectivePlan as VerifiedEffectivePlan;
+
+pub const ENTITLEMENT_DENIAL_PREFIX: &str = "Signed entitlement does not allow ";
+
 fn config_dir() -> PathBuf {
     // GH #439: data_dir() already honors LEAN_CTX_DATA_DIR + legacy/XDG, so the
     // cloud cache follows the migration instead of pinning ~/.lean-ctx.
@@ -159,13 +165,10 @@ fn now_unix() -> i64 {
         .as_secs() as i64
 }
 
-/// This machine's label: the hostname, attached as `X-Device-Label` to every
-/// sync push and sent with `login`/`register`. It began as display metadata for
-/// the device overview (GL #387) and now carries weight — the server scopes the
-/// API key it issues to this label, so a sign-in replaces only this machine's
-/// credential instead of the whole account's. The server still treats it as an
-/// opaque string: it sanitizes it, and falls back to an unlabelled key when it
-/// is empty rather than rejecting the request.
+/// This machine's legacy account-key label, sent with login/registration and
+/// attached as `X-Device-Label` to sync pushes. It lets the account service
+/// replace this machine's key without replacing the account's other keys.
+/// This display label is not the authenticated device identity of a v2 lease.
 fn device_label() -> String {
     gethostname::gethostname().to_string_lossy().into_owned()
 }
@@ -528,6 +531,9 @@ pub(crate) fn telemetry_v2_batch_with_timeout(
     {
         return Err("Telemetry sending is disabled".to_string());
     }
+    if crate::core::telemetry_consent::running_in_ci() {
+        return Err("Telemetry is not sent from CI".to_string());
+    }
     batch
         .validate()
         .map_err(|error| format!("Telemetry validation failed: {error:?}"))?;
@@ -842,12 +848,18 @@ pub fn fetch_leaderboard() -> Result<serde_json::Value, String> {
 
 pub fn is_cloud_user() -> bool {
     let path = config_dir().join("plan.txt");
-    std::fs::read_to_string(path).is_ok_and(|p| matches!(p.trim(), "cloud" | "pro"))
+    std::fs::read_to_string(path).is_ok_and(|value| plan_value_has_cloud_access(&value))
+}
+
+fn plan_value_has_cloud_access(value: &str) -> bool {
+    value.trim().eq_ignore_ascii_case("cloud")
+        || crate::core::billing::Plan::parse_known(value)
+            .is_some_and(|plan| plan.rank() >= crate::core::billing::Plan::Pro.rank())
 }
 
 /// Days a cached plan keeps granting its hosted entitlements while the billing
 /// backend is unreachable. Generous on purpose: a network blip or a weekend
-/// offline must never silently demote a paying user to Free.
+/// offline must never silently demote a paying user to Community.
 pub const PLAN_GRACE_DAYS: i64 = 14;
 
 fn plan_cache_path() -> PathBuf {
@@ -901,18 +913,17 @@ pub enum PlanSource {
     Live,
     /// Served from the local cache and still within the grace window.
     Cached,
-    /// Cached confirmation is past the grace window → demoted to Free.
+    /// Cached confirmation is past the grace window → demoted to Community.
     Expired,
-    /// No cached plan at all (never logged in / never synced) → Free.
+    /// No cached plan at all (never logged in / never synced) → Community.
     None,
 }
 
-/// A resolved plan plus its provenance. The plan here is only ever used for
-/// *display* and for gating **hosted** surfaces — it never gates a local
-/// capability (Local-Free Invariant; the local engine has no entitlement checks).
+/// A resolved plan plus provenance and donation/support recognition.
 #[derive(Debug, Clone)]
 pub struct EffectivePlan {
     pub plan: crate::core::billing::Plan,
+    pub supporter_recognition: bool,
     pub source: PlanSource,
     pub verified_at: Option<i64>,
     pub grace_days: i64,
@@ -939,7 +950,8 @@ pub fn resolve_effective_plan_cached() -> EffectivePlan {
     let grace_days = PLAN_GRACE_DAYS;
     let Some(cache) = cached_plan() else {
         return EffectivePlan {
-            plan: crate::core::billing::Plan::Free,
+            plan: crate::core::billing::Plan::Community,
+            supporter_recognition: false,
             source: PlanSource::None,
             verified_at: None,
             grace_days,
@@ -947,22 +959,59 @@ pub fn resolve_effective_plan_cached() -> EffectivePlan {
     };
     let (fresh, _age) = plan_within_grace(cache.verified_at, now_unix(), grace_days);
     if fresh {
+        let selection = crate::core::billing::Plan::parse_selection(&cache.plan);
         EffectivePlan {
-            plan: crate::core::billing::Plan::parse(&cache.plan),
+            plan: selection.plan,
+            supporter_recognition: selection.supporter_recognition,
             source: PlanSource::Cached,
             verified_at: Some(cache.verified_at),
             grace_days,
         }
     } else {
-        // Fail closed for *hosted* entitlements once grace lapses. Local features
-        // remain unaffected — they are never gated.
+        // Fail closed for paid entitlements once grace lapses. Explicit
+        // Community/Trust Core capabilities remain unaffected.
         EffectivePlan {
-            plan: crate::core::billing::Plan::Free,
+            plan: crate::core::billing::Plan::Community,
+            supporter_recognition: false,
             source: PlanSource::Expired,
             verified_at: Some(cache.verified_at),
             grace_days,
         }
     }
+}
+
+/// Authoritative, local-only paid-capability decision from a verified signed
+/// entitlement. Unsigned plan caches are display state and never reach here.
+#[must_use]
+pub fn signed_entitlement_allows(capability: &str) -> bool {
+    entitlement_cache::resolve_cached().allows(capability)
+}
+
+/// Resolve signed rights for reports without trusting unsigned display plans.
+#[must_use]
+pub fn resolve_verified_plan_cached() -> VerifiedEffectivePlan {
+    entitlement_cache::resolve_cached()
+}
+
+/// Refresh signed authority, retaining only cryptographically valid grace.
+#[must_use]
+pub fn refresh_verified_plan() -> VerifiedEffectivePlan {
+    entitlement_cache::refresh()
+}
+
+#[cfg(test)]
+pub(crate) fn install_test_signed_entitlement_paths(
+    trust: PathBuf,
+    credentials: PathBuf,
+    cache: PathBuf,
+    anchors: Vec<(String, [u8; 32])>,
+) -> impl Drop {
+    entitlement_cache::install_test_paths(trust, credentials, cache, anchors)
+}
+
+#[cfg(test)]
+pub(crate) fn accept_test_signed_entitlement(account: &str, bytes: &[u8]) {
+    entitlement_cache::accept_test_cache(account, bytes);
 }
 
 /// Best-effort *live* resolve: try the backend (refreshing the cache on success),
@@ -974,8 +1023,10 @@ pub fn refresh_effective_plan() -> EffectivePlan {
         && let Ok(plan_str) = fetch_plan()
     {
         let _ = save_plan(&plan_str);
+        let selection = crate::core::billing::Plan::parse_selection(&plan_str);
         return EffectivePlan {
-            plan: crate::core::billing::Plan::parse(&plan_str),
+            plan: selection.plan,
+            supporter_recognition: selection.supporter_recognition,
             source: PlanSource::Live,
             verified_at: Some(now_unix()),
             grace_days: PLAN_GRACE_DAYS,
@@ -1001,7 +1052,7 @@ pub fn fetch_plan() -> Result<String, String> {
     let json: serde_json::Value =
         serde_json::from_str(&resp_body).map_err(|e| format!("Invalid response: {e}"))?;
 
-    Ok(json["plan"].as_str().unwrap_or("free").to_string())
+    Ok(json["plan"].as_str().unwrap_or("community").to_string())
 }
 
 /// Start a Stripe Checkout session for the logged-in account and return the
@@ -1048,7 +1099,7 @@ fn parse_checkout_url(json: &serde_json::Value) -> Result<String, String> {
     {
         return Err("Billing returned an invalid checkout URL.".to_string());
     }
-    Ok(raw.to_string())
+    Ok(parsed.to_string())
 }
 
 pub fn push_commands(entries: &[serde_json::Value]) -> Result<String, String> {

@@ -1,10 +1,10 @@
 [package]
 name = "lean-ctx-ocla"
-version = "1.0.1"
+version = "3.0.0"
 edition = "2024"
 rust-version = "1.85"
 license = "Apache-2.0"
-description = "Open Context & Token Lifecycle Architecture — the stable, provider-neutral contract boundary (14 traits, canonical types, token envelopes) shared between lean-ctx-core (OSS) and lean-ctx-enterprise (proprietary)."
+description = "Open Context & Token Lifecycle Architecture — the provider-neutral contract boundary (capability traits, canonical types, token envelopes) shared between lean-ctx-core (OSS) and lean-ctx-enterprise (proprietary)."
 repository = "https://github.com/yvgude/lean-ctx"
 keywords = ["ocla", "llm", "tokens", "context", "contract"]
 categories = ["development-tools", "api-bindings"]
@@ -16,10 +16,13 @@ name = "lean_ctx_ocla"
 
 [dependencies]
 async-trait = "0.1"
+base64 = "0.22"
 blake3 = "1.8"
+ed25519-dalek = "2.2"
 getrandom = "0.4"
-lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.1.1" }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.3.0" }
 semver = "1.0.28"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
+sha2 = "0.11"
 thiserror = "2.0"

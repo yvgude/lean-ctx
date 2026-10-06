@@ -31,7 +31,8 @@ fn response() -> CachedResponse {
 fn insert_content(path: &std::path::Path, body: &str) -> FileState {
     std::fs::write(path, body).expect("write cached file");
     let state = FileState::from_path(path).expect("read file state");
-    content_cache::insert(path, state, Arc::from(body));
+    let admission = crate::core::context_admission::stores::StoreAdmission::current();
+    content_cache::insert(path, state, Arc::from(body), &admission);
     state
 }
 

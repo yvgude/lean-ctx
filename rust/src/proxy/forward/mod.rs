@@ -3,17 +3,19 @@
 use axum::{
     body::Body,
     extract::State,
-    http::{HeaderValue, Request, StatusCode},
+    http::{HeaderValue, Request, StatusCode, request::Parts},
     response::Response,
 };
 
 use super::ProxyState;
 use super::connector::schedule_provider_connector;
 use super::intent::classify_and_store_proxy_intent;
+use crate::core::context_admission::egress::{self, EgressBody, EgressOutcome, EgressTarget};
 
 #[cfg(feature = "shape-xlat")]
 mod xlat;
 
+mod driver;
 pub(crate) mod enterprise_headers;
 mod headers;
 mod prepare;
@@ -39,9 +41,6 @@ use super::codec::{
 };
 #[cfg(test)]
 #[allow(unused_imports)]
-use axum::http::request::Parts;
-#[cfg(test)]
-#[allow(unused_imports)]
 use headers::should_forward_request_header;
 #[cfg(test)]
 #[allow(unused_imports)]
@@ -54,6 +53,38 @@ pub use pipeline::{CompressionPipeline, PipelineReport, StageReport};
 const HEADROOM_COMPRESSED_HEADER: &str = "x-headroom-compressed";
 const OCLA_BUDGET_SCOPE_HEADER: &str = "x-ocla-budget-scope";
 const ESTIMATED_CHARS_PER_TOKEN: u64 = 4;
+
+/// Final egress control (G6): admit the body that is about to leave. A
+/// parsed body is admitted string by string and re-encoded only when the
+/// gateway changed something, so an unchanged request keeps its exact bytes
+/// (#1912); a body the proxy cannot parse is handled as an opaque payload.
+fn admit_egress(
+    parts: &Parts,
+    body: Vec<u8>,
+    parsed: Option<&serde_json::Value>,
+    provider: &str,
+    upstream_base: &str,
+) -> Result<(Vec<u8>, EgressOutcome), StatusCode> {
+    let target = EgressTarget {
+        provider,
+        model: parsed
+            .and_then(|doc| doc.get("model"))
+            .and_then(serde_json::Value::as_str),
+        upstream_base,
+    };
+    let outcome = match parsed {
+        Some(doc) => egress::admit_request(doc, &target),
+        None => egress::admit_opaque(body.len(), &target),
+    };
+    let body = match &outcome.body {
+        EgressBody::Rewritten(doc) => {
+            let logical = serde_json::to_vec(doc).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            prepare::encode_request_body(parts, logical)?
+        }
+        EgressBody::Unchanged | EgressBody::Refused(_) => body,
+    };
+    Ok((body, outcome))
+}
 
 /// Check whether an incoming request was already compressed by Headroom.
 pub(super) fn is_headroom_compressed(parts: &axum::http::request::Parts) -> bool {
@@ -69,6 +100,136 @@ pub(super) fn is_headroom_compressed(parts: &axum::http::request::Parts) -> bool
 /// agent as a hard `400` mid-task. Raised and made configurable via
 /// `LEAN_CTX_PROXY_MAX_BODY_MB`.
 const DEFAULT_MAX_BODY_MB: usize = 64;
+
+#[derive(Clone)]
+struct ProxyDispatchResult {
+    error: Option<StatusCode>,
+    response: std::sync::Arc<std::sync::Mutex<Option<Response>>>,
+    economics: crate::core::execution_lifecycle::ProxyEconomicsObservation,
+}
+
+struct ProxyContextIntent {
+    kernel_data: crate::core::context_kernel::proxy_bridge::ProxyRequestData,
+    #[cfg(feature = "enterprise")]
+    causal_session_id: String,
+    #[cfg(feature = "enterprise")]
+    causal_request: Option<serde_json::Value>,
+    #[cfg(feature = "enterprise")]
+    causal_turn_provided: u64,
+}
+
+#[derive(Clone, Copy)]
+enum ProxyTerminalKind {
+    CacheHit,
+}
+
+struct ProxyPrepared {
+    state: ProxyState,
+    extra_stream_types: Vec<String>,
+    usage_provider: crate::proxy::usage::Provider,
+    url_model: Option<String>,
+    cohort: crate::proxy::holdout::Cohorts,
+    wire: Option<Box<crate::proxy::usage::WireContext>>,
+    xlat: bool,
+    model: Option<String>,
+    cache_prompt_hash: String,
+    cache_alignment_score: u8,
+    headroom_compatible: bool,
+    determinism_audit: super::determinism_guard::DeterminismProof,
+    determinism_proof: super::determinism_guard::DeterminismProof,
+    pipeline_report: Option<PipelineReport>,
+    tokens_pruned: usize,
+    original_tokens: usize,
+    task_class: String,
+    content_dedup_tokens_saved: usize,
+    original_size: usize,
+    compressed_size: usize,
+    compression_candidate: bool,
+    tokens_saved: u64,
+    route: Option<crate::proxy::routing::RouteDecision>,
+    stats_label: String,
+    introspect: Option<(serde_json::Value, super::introspect::Provider)>,
+    prefix_replay: Option<(u64, Vec<u8>, Vec<serde_json::Value>, usize)>,
+    // A response confirms the send, independently of later response decoding.
+    upstream_send_succeeded: bool,
+    upstream_started: Option<std::time::Instant>,
+    context_ir: Option<ProxyContextIntent>,
+    terminal: Option<ProxyTerminalKind>,
+}
+
+struct AdmittedProxyRequest {
+    parts: Parts,
+    raw_body_bytes: axum::body::Bytes,
+    body_limit: usize,
+    #[cfg(feature = "enterprise")]
+    gate_rules: Option<super::policy_gate::GateRules>,
+}
+
+struct ProxyOutbound {
+    parts: Parts,
+    upstream_url: String,
+    upstream_base: String,
+    forwarded_body: Vec<u8>,
+    preserve_content_encoding: bool,
+    prepared: ProxyPrepared,
+}
+
+enum PreparedProxyRequest {
+    Upstream(Box<ProxyOutbound>),
+    Terminal(Box<ProxyPrimitive>),
+}
+
+enum ProxyPrimitive {
+    Upstream {
+        response: Result<reqwest::Response, StatusCode>,
+        prepared: ProxyPrepared,
+    },
+    Cache {
+        response: Response,
+        prepared: ProxyPrepared,
+    },
+    Policy {
+        response: Response,
+        original_tokens: usize,
+        trace_id: String,
+    },
+}
+
+struct ProxyProcessed {
+    result: ProxyDispatchResult,
+    prepared: Option<ProxyPrepared>,
+    skip_reason: Option<&'static str>,
+}
+
+struct ProxyDriver<'a, F> {
+    state: Option<ProxyState>,
+    request: Option<Request<Body>>,
+    admitted: Option<AdmittedProxyRequest>,
+    prepared_request: Option<PreparedProxyRequest>,
+    upstream_base: &'a str,
+    default_path: &'a str,
+    compress_body: Option<F>,
+    provider_label: &'a str,
+    extra_stream_types: Vec<String>,
+    trace_id: String,
+}
+
+fn proxy_dispatch_result(
+    response: Response,
+    tokens_pruned: usize,
+    original_tokens: usize,
+    task_class: &str,
+) -> ProxyDispatchResult {
+    ProxyDispatchResult {
+        error: None,
+        response: std::sync::Arc::new(std::sync::Mutex::new(Some(response))),
+        economics: crate::core::execution_lifecycle::ProxyEconomicsObservation {
+            tokens_pruned,
+            original_tokens,
+            task_class: task_class.to_owned(),
+        },
+    }
+}
 
 pub(super) fn max_body_bytes() -> usize {
     std::env::var("LEAN_CTX_PROXY_MAX_BODY_MB")
@@ -153,16 +314,113 @@ pub async fn forward_request(
     req: Request<Body>,
     upstream_base: &str,
     default_path: &str,
-    compress_body: impl FnOnce(serde_json::Value, usize) -> (Vec<u8>, usize, usize),
+    compress_body: impl FnOnce(serde_json::Value, usize) -> (Vec<u8>, usize, usize) + Send,
     provider_label: &str,
     extra_stream_types: &[&str],
 ) -> Result<Response, StatusCode> {
-    let (mut parts, body) = req.into_parts();
-    let trace_id = trace_id::extract_or_generate_trace_id(&parts.headers);
+    let trace_id = trace_id::extract_or_generate_trace_id(req.headers());
+    let (parts, body) = req.into_parts();
     let body_limit = super::bedrock::request_body_limit(&parts).unwrap_or_else(max_body_bytes);
-    let raw_body_bytes = axum::body::to_bytes(body, body_limit)
+    let body_bytes = axum::body::to_bytes(body, body_limit)
         .await
         .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
+    let request_scope = format!(
+        "proxy:{provider_label}:{}:{}:{}:{trace_id}",
+        parts.method,
+        parts.uri,
+        blake3::hash(&body_bytes).to_hex()
+    );
+    let req = Request::from_parts(parts, Body::from(body_bytes));
+    let lifecycle = crate::core::execution_lifecycle::ExecutionLifecycle::global();
+    let result = lifecycle
+        .run(
+            crate::core::execution_lifecycle::ToolRequest {
+                tool_name: "proxy_forward".to_owned(),
+                query: None,
+                session_id: trace_id.clone(),
+                agent_id: provider_label.to_owned(),
+                surface: crate::core::execution_lifecycle::ToolSurface::Proxy,
+                idempotency_key: Some(request_scope),
+            },
+            crate::core::execution_lifecycle::RuntimeContext {
+                client_name: Some(provider_label.to_owned()),
+                project_root: None,
+            },
+            crate::core::execution_lifecycle::ProductEntitlements::default(),
+            ProxyDriver {
+                state: Some(state),
+                request: Some(req),
+                admitted: None,
+                prepared_request: None,
+                upstream_base,
+                default_path,
+                compress_body: Some(compress_body),
+                provider_label,
+                extra_stream_types: extra_stream_types
+                    .iter()
+                    .map(|value| (*value).to_owned())
+                    .collect(),
+                trace_id,
+            },
+        )
+        .await;
+
+    let completed = match result {
+        Ok(completed) => completed,
+        Err(crate::core::execution_lifecycle::LifecycleRunError::Dispatch(status)) => {
+            return Err(status);
+        }
+        Err(
+            crate::core::execution_lifecycle::LifecycleRunError::Aborted(_)
+            | crate::core::execution_lifecycle::LifecycleRunError::ReplayTypeMismatch,
+        ) => {
+            return Err(StatusCode::CONFLICT);
+        }
+    };
+    if let Some(status) = completed.error {
+        return Err(status);
+    }
+    let mut response = completed
+        .response
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .take()
+        .ok_or(StatusCode::CONFLICT)?;
+    let value_metrics = super::value_gate_proxy::session_metrics();
+    let compression_ratio = super::value_gate_proxy::compression_ratio();
+    if let Ok(value) = HeaderValue::from_str(&format!("{compression_ratio:.4}")) {
+        response
+            .headers_mut()
+            .insert("x-leanctx-compression-ratio", value);
+    }
+    if let Some(session_cpao_micros) = value_metrics.session_cpao_micros
+        && let Ok(value) = HeaderValue::from_str(&session_cpao_micros.to_string())
+    {
+        response
+            .headers_mut()
+            .insert("x-leanctx-cpao-micros", value);
+    }
+    Ok(response)
+}
+
+#[allow(clippy::if_not_else)]
+async fn prepare_upstream_request(
+    State(state): State<ProxyState>,
+    admitted: AdmittedProxyRequest,
+    upstream_base: &str,
+    default_path: &str,
+    compress_body: impl FnOnce(serde_json::Value, usize) -> (Vec<u8>, usize, usize),
+    provider_label: &str,
+    extra_stream_types: &[&str],
+    trace_id: String,
+) -> Result<PreparedProxyRequest, StatusCode> {
+    let AdmittedProxyRequest {
+        mut parts,
+        raw_body_bytes,
+        body_limit,
+        #[cfg(feature = "enterprise")]
+        gate_rules,
+    } = admitted;
     let original_parsed =
         super::determinism_guard::parse_request_body(&raw_body_bytes, &parts, body_limit);
     let original_messages = original_parsed
@@ -199,41 +457,15 @@ pub async fn forward_request(
         std::str::from_utf8(&body_bytes).unwrap_or_default(),
     )
     .alignment_score;
-    let mut lineage = super::lineage::from_trusted_request(&parts, &body_bytes);
+    let mut lineage = super::lineage::from_trusted_request(&parts, &raw_body_bytes);
     if let Some(context) = lineage.as_mut() {
         context.trace_id.clone_from(&trace_id);
     }
 
-    // Org-policy gate (enterprise#25): under a signed + trusted + enforced org
-    // policy, refuse models outside the ceiling and requests over a hard
-    // budget — before any routing/compression work. No policy → no-op.
-    #[cfg(feature = "enterprise")]
-    let gate_rules = super::policy_gate::active_rules();
-    #[cfg(feature = "enterprise")]
-    if let Some(rules) = &gate_rules {
-        let tags = parts
-            .extensions
-            .get::<super::gateway_identity::GatewayTags>()
-            .cloned()
-            .unwrap_or_default();
-        let requested_model = prepare::requested_model_of(&parts, &body_bytes);
-        if let Err(refusal) = super::policy_gate::enforce(rules, requested_model.as_deref(), &tags)
-        {
-            tracing::warn!(
-                "lean-ctx gateway: org policy refused request ({refusal:?}) \
-                 person={:?} project={:?}",
-                tags.person,
-                tags.project
-            );
-            let mut response = super::policy_gate::refusal_response(&refusal, provider_label);
-            trace_id::inject_trace_id(&mut response, &trace_id);
-            return Ok(response);
-        }
-    }
-    // Active router (enterprise#13): may rewrite `model` in the parsed body
-    // (before compression, so exactly one serialization) and re-target the
-    // upstream within the same wire shape. Fail-open: any miss routes nothing.
-    // An org policy may exempt specific projects from downgrades (#25).
+    // Operator aliases: may rewrite `model` in the parsed body (before
+    // compression, so exactly one serialization) and re-target the upstream.
+    // Fail-open: any miss routes nothing. An org policy may exempt specific
+    // projects from alias rewrites that change the model (#25).
     let routing_rules = crate::core::config::Config::load().proxy.routing.clone();
     #[cfg(feature = "enterprise")]
     let downgrade_forbidden = gate_rules.as_ref().is_some_and(|rules| {
@@ -257,65 +489,14 @@ pub async fn forward_request(
             .path()
             .trim_end_matches('/')
             .ends_with("/v1/messages");
-    // Thompson sampling only selects configured model aliases. The existing
-    // rule router still resolves the alias to a provider and preserves all
-    // shape, credential, and enterprise-policy checks below.
-    let _thompson_task_class = pre_optimize_result
-        .as_ref()
-        .map_or_else(|| "unknown".to_owned(), |result| result.task_class.clone());
-    let _thompson_model: Option<String> = if route_upstreams
-        .as_ref()
-        .is_some_and(|upstreams| upstreams.providers.len() > 1)
-    {
-        let available_models: Vec<&str> =
-            routing_rules.aliases.keys().map(String::as_str).collect();
-        #[cfg(feature = "enterprise")]
-        {
-            if available_models.len() > 1 {
-                let selected = {
-                    let router = crate::core::model_router::global_model_router();
-                    let router = router
-                        .lock()
-                        .unwrap_or_else(std::sync::PoisonError::into_inner);
-                    router
-                        .select_model(&_thompson_task_class, &available_models)
-                        .to_owned()
-                };
-                serde_json::from_slice::<serde_json::Value>(&body_bytes)
-                    .ok()
-                    .as_mut()
-                    .and_then(serde_json::Value::as_object_mut)
-                    .map(|body| {
-                        body.insert(
-                            "model".to_owned(),
-                            serde_json::Value::String(selected.clone()),
-                        );
-                        if let Ok(rewritten) = serde_json::to_vec(body) {
-                            body_bytes = rewritten.into();
-                        }
-                        selected
-                    })
-            } else {
-                None
-            }
-        }
-        #[cfg(not(feature = "enterprise"))]
-        {
-            let _ = &available_models;
-            None::<String>
-        }
-    } else {
-        None
-    };
-
     let route_hook = |parsed: &mut serde_json::Value| {
         route_upstreams.as_ref().and_then(|up| {
             super::routing::route_request(parsed, provider_label, up, &routing_rules, xlat_ok)
         })
     };
-    if is_headroom_compressed(&parts) {
+    let headroom_compatible = is_headroom_compressed(&parts);
+    if headroom_compatible {
         super::anthropic::set_headroom_request(true);
-        super::prefix_cache_stats::record_headroom_compat();
     }
     let mut prepared = prepare::prepare_request_body(
         &parts,
@@ -338,6 +519,7 @@ pub async fn forward_request(
             guard.verify(before, &after)
         },
     );
+    let determinism_audit = determinism_proof.clone();
     let guard_reverted = !determinism_proof.is_stable;
     if guard_reverted {
         tracing::warn!(
@@ -346,7 +528,6 @@ pub async fn forward_request(
             modification_start_byte = determinism_proof.modification_start_byte,
             "lean-ctx determinism violation: reverting request modifications"
         );
-        super::determinism_guard::record_audit(&determinism_proof, true);
         // Safe mode is deliberately fail-closed for cache safety: resend exactly
         // what the caller supplied instead of allowing a cache-busting rewrite.
         prepared.body = raw_body_bytes.to_vec();
@@ -362,8 +543,9 @@ pub async fn forward_request(
             || guard.verify(&[], &[]),
             |before| guard.verify(before, before),
         );
-    } else {
-        super::determinism_guard::record_audit(&determinism_proof, false);
+    }
+    if !super::outbound_model_policy::allows_outbound(prepared.parsed.as_ref()) {
+        return Err(StatusCode::FORBIDDEN);
     }
     apply_ocla_budget_admission(&parts, prepared.body.len())?;
     let original_size = prepared.original_size;
@@ -384,6 +566,12 @@ pub async fn forward_request(
             .and_then(serde_json::Value::as_array_mut)
     {
         let messages_before_pipeline = messages.clone();
+        let active_user_before_pipeline = messages
+            .iter()
+            .rposition(|message| {
+                message.get("role").and_then(serde_json::Value::as_str) == Some("user")
+            })
+            .map(|index| (index, messages[index].clone()));
         let pipeline_config = crate::core::config::Config::load().proxy.pipeline.clone();
         // Knowledge routing is advisory: it runs after pre-triage but before
         // compression, has a hard latency budget, and any miss leaves the
@@ -454,6 +642,11 @@ pub async fn forward_request(
             *messages = messages_before_pipeline;
             tracing::warn!("compression pipeline failed; continuing with prepared request");
         }
+        if let Some((index, active_user)) = active_user_before_pipeline {
+            if let Some(current) = messages.get_mut(index) {
+                *current = active_user;
+            }
+        }
     }
 
     if let (Some(report), Some(parsed_body)) = (pipeline_report.as_ref(), prepared.parsed.as_mut())
@@ -489,23 +682,6 @@ pub async fn forward_request(
     let parsed = prepared.parsed;
     let intent_classification =
         classify_and_store_proxy_intent(&mut parts, parsed.as_ref(), lineage.as_ref(), &body_bytes);
-    #[cfg(feature = "enterprise")]
-    if let Some(request) = parsed.as_ref() {
-        let session_id = lineage
-            .as_ref()
-            .map_or(trace_id.as_str(), |context| context.session_id.as_str());
-        let turn_provided = super::value_gate_proxy::session_metrics()
-            .request_count
-            .saturating_add(1);
-        #[cfg(feature = "enterprise")]
-        if let Err(error) = crate::core::causal_attribution::record_proxy_context(
-            session_id,
-            request,
-            turn_provided,
-        ) {
-            tracing::debug!(%error, "causal attribution context recording failed");
-        }
-    }
     // Apply the routing decision to the wire: re-target the upstream and — for
     // registry providers holding their own key — swap the credential headers.
     let upstream_base = route
@@ -516,42 +692,32 @@ pub async fn forward_request(
         super::providers::inject_gateway_credential(provider, &mut parts.headers)?;
     }
     schedule_provider_connector(&parts, lineage.as_ref(), route.as_ref(), provider_label);
-    if let Some(ref parsed) = parsed {
-        let provider = match provider_label {
-            "Anthropic" | "Bedrock" => super::introspect::Provider::Anthropic,
-            "OpenAI" | "ChatGPT" => super::introspect::Provider::OpenAi,
-            _ => super::introspect::Provider::Gemini,
-        };
-        let breakdown = super::introspect::analyze_request(parsed, provider);
-        state.introspect.record(breakdown);
-    }
-    // #895 Track B: assign output-savings holdout from the same pristine parsed
-    // body that each provider's compressor receives. Only when active. The
-    // input-compression arm (#1905) was decided before any rewrite, above.
+    // #895 Track B: assign output savings from the pristine parsed body; #1905
+    // assigns input compression before rewrites so both arms survive the pipeline.
     let cohort = super::holdout::Cohorts {
         output: parsed
             .as_ref()
             .and_then(|p| prepare::cohort_arm(p, provider_label, default_path)),
         compression: compression_arm,
     };
-    if compression_candidate {
-        // Shape label drives compression/routing; stats identity may differ —
-        // Grok registry routes speak OpenAI shape but meter under "Grok".
-        let registry_id = parts
-            .extensions
-            .get::<super::providers::RegistryProviderId>()
-            .map(|r| r.id.as_str());
-        let stats_label = super::providers::stats_label(registry_id, provider_label);
-        state
-            .stats
-            .record_provider_request(stats_label, original_size, compressed_size);
-    }
+    // Shape label drives compression/routing; stats identity may differ —
+    // Grok registry routes speak OpenAI shape but meter under "Grok".
+    let registry_id = parts
+        .extensions
+        .get::<super::providers::RegistryProviderId>()
+        .map(|r| r.id.as_str());
+    let stats_label = super::providers::stats_label(registry_id, provider_label).to_owned();
 
     let tokens_saved = original_size.saturating_sub(compressed_size) as u64 / 4;
-    super::metrics::record_request(tokens_saved, compressed_size as u64);
-
-    // Context Kernel: record identity, coverage, ETPAO for this request.
-    {
+    #[cfg(feature = "enterprise")]
+    let causal_session_id = lineage
+        .as_ref()
+        .map_or_else(|| trace_id.clone(), |context| context.session_id.clone());
+    #[cfg(feature = "enterprise")]
+    let causal_turn_provided = super::value_gate_proxy::session_metrics()
+        .request_count
+        .saturating_add(1);
+    let context_ir = {
         let proxy_headers: Vec<(String, String)> = parts
             .headers
             .iter()
@@ -575,51 +741,85 @@ pub async fn forward_request(
             request_count: 1,
             ..Default::default()
         };
-
-        // Evidence pipeline: proxy data → envelope → normalizer → receipt chain.
-        let kernel_result =
-            crate::core::context_kernel::proxy_bridge::process_proxy_request(&kernel_data);
-        crate::core::context_kernel::envelope_wiring::process_proxy_evidence(
-            &kernel_data,
-            &kernel_result,
-        );
-    }
+        Some(ProxyContextIntent {
+            kernel_data,
+            #[cfg(feature = "enterprise")]
+            causal_session_id,
+            #[cfg(feature = "enterprise")]
+            causal_request: parsed.clone(),
+            #[cfg(feature = "enterprise")]
+            causal_turn_provided,
+        })
+    };
 
     let model = parsed
         .as_ref()
         .and_then(|v| v.get("model"))
-        .and_then(|m| m.as_str());
+        .and_then(|m| m.as_str())
+        .map(str::to_owned);
     let cache_prompt_hash = super::ocla_cache_bridge::prompt_hash(&body_bytes);
-    if let (Some(cache), Some(model)) = (&state.ocla_cache, model)
-        && let Some(cached) = cache.try_cache_hit(model, &cache_prompt_hash, 0.0, 0)
+    if let (Some(cache), Some(model)) = (&state.ocla_cache, model.clone())
+        && let Some(cached) = cache.try_cache_hit(&model, &cache_prompt_hash, 0.0, 0)
     {
-        if let Some(route_decision) = &route {
-            crate::proxy::routing_feedback::global_feedback().record_outcome_for_decision(
-                &route_decision.decision_id,
-                None,
-                tokens_saved,
-                0,
-            );
-        }
-        let mut response = Response::builder()
+        let response = Response::builder()
             .status(cached.status)
             .body(Body::from(cached.body))
             .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-        if let Ok(value) = HeaderValue::from_str(&cache_alignment_score.to_string()) {
-            response
-                .headers_mut()
-                .insert("x-leanctx-cache-alignment", value);
-        }
-        super::determinism_guard::apply_response_headers(&mut response, &determinism_proof);
-        trace_id::inject_trace_id(&mut response, &trace_id);
-        return Ok(response);
+        let introspect = parsed.as_ref().map(|parsed| {
+            let provider = match provider_label {
+                "Anthropic" | "Bedrock" => super::introspect::Provider::Anthropic,
+                "OpenAI" | "ChatGPT" => super::introspect::Provider::OpenAi,
+                _ => super::introspect::Provider::Gemini,
+            };
+            (parsed.clone(), provider)
+        });
+        let prepared = ProxyPrepared {
+            state,
+            extra_stream_types: extra_stream_types
+                .iter()
+                .map(|value| (*value).to_owned())
+                .collect(),
+            usage_provider: super::usage::Provider::from_label(provider_label),
+            url_model: None,
+            cohort,
+            wire: None,
+            xlat: route.as_ref().is_some_and(|decision| decision.xlat),
+            model: Some(model),
+            cache_prompt_hash,
+            cache_alignment_score,
+            headroom_compatible,
+            determinism_audit,
+            determinism_proof,
+            pipeline_report,
+            tokens_pruned: tokens_saved as usize,
+            original_tokens: original_size / 4,
+            task_class: pre_optimize_result.as_ref().map_or_else(
+                || {
+                    intent_classification.as_ref().map_or_else(
+                        || "unknown".to_owned(),
+                        |classification| classification._decision.intent.clone(),
+                    )
+                },
+                |result| result.task_class.clone(),
+            ),
+            content_dedup_tokens_saved,
+            original_size,
+            compressed_size,
+            compression_candidate,
+            tokens_saved,
+            route,
+            stats_label,
+            introspect,
+            prefix_replay: None,
+            upstream_send_succeeded: false,
+            upstream_started: None,
+            context_ir,
+            terminal: Some(ProxyTerminalKind::CacheHit),
+        };
+        return Ok(PreparedProxyRequest::Terminal(Box::new(
+            ProxyPrimitive::Cache { response, prepared },
+        )));
     }
-    super::cost::record(
-        model,
-        tokens_saved,
-        original_size as u64,
-        compressed_size as u64,
-    );
 
     // Cross-shape route (enterprise#16): the body now speaks OpenAI Chat
     // Completions — address the matching endpoint instead of the caller's
@@ -631,29 +831,39 @@ pub async fn forward_request(
         crate::proxy::codec::build_upstream_url(&parts, upstream_base, default_path)
     };
 
-    let counterfactual = if provider_label == "Anthropic" && !xlat {
-        super::counterfactual::maybe_spawn_probe(
-            &state.client,
-            &parts,
-            upstream_base,
-            parsed.as_ref(),
-            route.as_ref().map(|r| r.routed_from.as_str()),
-            compressed_size < original_size,
-        )
-    } else {
-        None
-    };
+    // G6: final egress control, on exactly the body that leaves — after
+    // compression, routing, translation and every cache-safety revert.
+    let (request_body, egress) = admit_egress(
+        &parts,
+        prepared.body,
+        parsed.as_ref(),
+        provider_label,
+        upstream_base,
+    )?;
+    let egress_agent = lineage.as_ref().map(|context| context.agent_id.clone());
+    if let EgressBody::Refused(refusal) = &egress.body {
+        tracing::warn!("lean-ctx proxy: {refusal} (see `lean-ctx inspect --proxy`)");
+        egress::finish_off_runtime(egress, None, original_size, egress_agent).await;
+        return Err(StatusCode::FORBIDDEN);
+    }
 
     let forwarded_body = super::bedrock::finalize_request(
         provider_label,
         &mut parts,
         &body_bytes,
-        prepared.body,
+        request_body,
         body_limit,
         &upstream_url,
     )?;
+    egress::finish_off_runtime(
+        egress,
+        Some(forwarded_body.clone()),
+        original_size,
+        egress_agent,
+    )
+    .await;
 
-    if let Some(ref pre) = parsed {
+    let prefix_replay = if let Some(ref pre) = parsed {
         let cfg_replay = crate::core::config::Config::load();
         if matches!(
             cfg_replay.proxy.resolved_proxy_mode(),
@@ -662,15 +872,16 @@ pub async fn forward_request(
             let system_val = pre.get("system");
             if let Some(msgs) = pre.get("messages").and_then(|m| m.as_array()) {
                 let conv_id = super::prefix_replay::conversation_id(system_val, msgs);
-                super::prefix_replay::record_forwarded(
-                    conv_id,
-                    forwarded_body.clone(),
-                    msgs,
-                    msgs.len(),
-                );
+                Some((conv_id, forwarded_body.clone(), msgs.clone(), msgs.len()))
+            } else {
+                None
             }
+        } else {
+            None
         }
-    }
+    } else {
+        None
+    };
 
     // Enterprise Suite: inject x-leanctx-* metadata headers before dispatch.
     {
@@ -691,25 +902,6 @@ pub async fn forward_request(
             enterprise_headers::inject(&mut parts, &enterprise_cfg, &meta);
         }
     }
-    let response = transport::send_upstream(
-        &state,
-        &parts,
-        &upstream_url,
-        forwarded_body,
-        provider_label,
-        preserve_content_encoding,
-    )
-    .await?;
-
-    if let Some(route_decision) = &route {
-        crate::proxy::routing_feedback::global_feedback().record_outcome_for_decision(
-            &route_decision.decision_id,
-            None,
-            tokens_saved,
-            0,
-        );
-    }
-
     // Measured usage: read the real model + billed tokens from the response.
     // Gemini puts the model in the URL path, not the request/response body.
     // Translated requests get OpenAI-shape responses regardless of the label.
@@ -739,7 +931,7 @@ pub async fn forward_request(
     if let Some(route) = &route {
         wire.routed_from = Some(route.routed_from.clone());
         if let Some(id) = &route.provider_id {
-            wire.provider = id.clone();
+            wire.provider.clone_from(id);
         }
         // Registry route targets carry their own local-inference flag
         // (shadow-rate billing); built-in targets keep the URL heuristic.
@@ -747,52 +939,15 @@ pub async fn forward_request(
             wire.is_local = local;
         }
     }
-    wire.counterfactual = counterfactual;
     let wire = Some(wire);
-    let mut response = transport::build_response(
-        response,
-        extra_stream_types,
-        usage_provider,
-        url_model,
-        cohort,
-        wire,
-        xlat,
-        state.ocla_cache.as_deref(),
-        model,
-        &cache_prompt_hash,
-    )
-    .await?;
-
-    // #1774: OpenAI answers a ChatGPT-subscription OAuth token on the platform
-    // `/v1` rail with `Missing scopes: api.responses.write` — a message about
-    // organization roles and API-key scopes that sends people hunting through
-    // their OpenAI settings for a permission that was never the problem. The real
-    // cause is the rail: a subscription token only authenticates against
-    // chatgpt.com.
-    //
-    // #1685 moved the clear-cut case off this path entirely: a JWT bearer on a
-    // stock `api.openai.com` upstream is now re-routed to the ChatGPT rail before
-    // it is sent (`openai_responses::chatgpt_rail_uri`). What still reaches here
-    // is the residue that cannot be re-routed safely — a configured gateway
-    // upstream, or a credential whose shape says nothing — so the annotation
-    // stays as the explanation of last resort.
-    if provider_label == "OpenAI" && response.status() == StatusCode::UNAUTHORIZED {
-        response = annotate_openai_scope_401(response).await;
-    }
-    #[cfg(feature = "enterprise")]
-    if let Some(model) = _thompson_model.as_deref() {
-        let router = crate::core::model_router::global_model_router();
-        let mut router = router
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
-        router.record_outcome(
-            model,
-            &_thompson_task_class,
-            response.status().is_success(),
-            0.0,
-        );
-    }
-
+    let introspect = parsed.as_ref().map(|parsed| {
+        let provider = match provider_label {
+            "Anthropic" | "Bedrock" => super::introspect::Provider::Anthropic,
+            "OpenAI" | "ChatGPT" => super::introspect::Provider::OpenAi,
+            _ => super::introspect::Provider::Gemini,
+        };
+        (parsed.clone(), provider)
+    });
     let (tokens_pruned, original_tokens, task_class) = pre_optimize_result.as_ref().map_or_else(
         || {
             let task_class = intent_classification
@@ -800,50 +955,89 @@ pub async fn forward_request(
                 .map_or("unknown", |classification| {
                     classification._decision.intent.as_str()
                 });
-            (tokens_saved as usize, original_size / 4, task_class)
+            (
+                tokens_saved as usize,
+                original_size / 4,
+                task_class.to_owned(),
+            )
         },
         |result| {
             (
                 result.tokens_pruned,
                 result.original_token_estimate,
-                result.task_class.as_str(),
+                result.task_class.clone(),
             )
         },
     );
-    super::value_gate_proxy::record_completion(tokens_pruned, original_tokens, task_class);
-    let value_metrics = super::value_gate_proxy::session_metrics();
-    let compression_ratio = super::value_gate_proxy::compression_ratio();
+    let upstream_base = upstream_base.to_owned();
+    let prepared = ProxyPrepared {
+        state,
+        extra_stream_types: extra_stream_types
+            .iter()
+            .map(|value| (*value).to_owned())
+            .collect(),
+        usage_provider,
+        url_model,
+        cohort,
+        wire,
+        xlat,
+        model,
+        cache_prompt_hash,
+        cache_alignment_score,
+        headroom_compatible,
+        determinism_audit,
+        determinism_proof,
+        pipeline_report,
+        tokens_pruned,
+        original_tokens,
+        task_class,
+        content_dedup_tokens_saved,
+        original_size,
+        compressed_size,
+        compression_candidate,
+        tokens_saved,
+        route,
+        stats_label,
+        introspect,
+        prefix_replay,
+        upstream_send_succeeded: false,
+        upstream_started: None,
+        context_ir,
+        terminal: None,
+    };
+    Ok(PreparedProxyRequest::Upstream(Box::new(ProxyOutbound {
+        parts,
+        upstream_url,
+        upstream_base,
+        forwarded_body,
+        preserve_content_encoding,
+        prepared,
+    })))
+}
+
+fn apply_response_headers(response: &mut Response, prepared: &ProxyPrepared) {
     let headers = response.headers_mut();
-    if let Ok(value) = HeaderValue::from_str(&tokens_pruned.to_string()) {
+    if let Ok(value) = HeaderValue::from_str(&prepared.tokens_pruned.to_string()) {
         headers.insert("x-leanctx-tokens-pruned", value);
     }
-    if let Ok(value) = HeaderValue::from_str(&content_dedup_tokens_saved.to_string()) {
+    if let Ok(value) = HeaderValue::from_str(&prepared.content_dedup_tokens_saved.to_string()) {
         headers.insert("x-leanctx-dedup-savings", value);
     }
-    if let Ok(value) = HeaderValue::from_str(&format!("{compression_ratio:.4}")) {
-        headers.insert("x-leanctx-compression-ratio", value);
-    }
-    if let Ok(value) = HeaderValue::from_str(task_class) {
+    if let Ok(value) = HeaderValue::from_str(&prepared.task_class) {
         headers.insert("x-leanctx-task-class", value);
     }
-    if let Some(rank) = super::leaderboard::rank_header_if_due() {
-        if let Ok(value) = HeaderValue::from_str(&rank) {
-            headers.insert("x-leanctx-rank", value);
-        }
-    }
-    if let Some(session_cpao_micros) = value_metrics.session_cpao_micros
-        && let Ok(value) = HeaderValue::from_str(&session_cpao_micros.to_string())
+    if let Some(rank) = super::leaderboard::rank_header_if_due()
+        && let Ok(value) = HeaderValue::from_str(&rank)
     {
-        headers.insert("x-leanctx-cpao-micros", value);
+        headers.insert("x-leanctx-rank", value);
     }
-    if let Ok(value) = HeaderValue::from_str(&cache_alignment_score.to_string()) {
+    if let Ok(value) = HeaderValue::from_str(&prepared.cache_alignment_score.to_string()) {
         headers.insert("x-leanctx-cache-alignment", value);
     }
-
-    if let Some(report) = pipeline_report.as_ref() {
+    if let Some(report) = prepared.pipeline_report.as_ref() {
         report.apply_response_headers(headers);
     }
-    if let Some(prepared_body) = parsed.as_ref() {
+    if let Some((prepared_body, _)) = prepared.introspect.as_ref() {
         let messages = prepared_body
             .get("messages")
             .or_else(|| prepared_body.get("input"))
@@ -861,7 +1055,6 @@ pub async fn forward_request(
             }
         }
     }
-    super::determinism_guard::apply_response_headers(&mut response, &determinism_proof);
-    trace_id::inject_trace_id(&mut response, &trace_id);
-    Ok(response)
+    super::determinism_guard::apply_response_headers(response, &prepared.determinism_proof);
+    trace_id::inject_trace_id(response, &prepared.determinism_proof.request_id);
 }

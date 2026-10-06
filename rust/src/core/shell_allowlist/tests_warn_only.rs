@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 use super::{allowlist_block_message, warn_only_reason};
 
 /// #1874: at `shell_security = "warn"` the command runs, so its log line must

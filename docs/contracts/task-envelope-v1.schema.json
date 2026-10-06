@@ -4,7 +4,7 @@
   "title": "LeanCTX TaskEnvelopeV1",
   "description": "Version-one task envelope with bounded opaque identifiers and trace lineage.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": [
     "schema_version",
     "task_id",

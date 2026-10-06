@@ -1,7 +1,14 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Runtime integration helpers for the Context Control Kernel.
 
-use super::enforce::{KernelMode, enforce_plan, resolve_mode};
-use super::orchestrator::ContextKernel;
+pub(crate) mod runtime;
+
+use super::autopilot::{
+    AdaptiveLearningState, AutopilotController, AutopilotDecision, AutopilotEconomics,
+    AutopilotInput, PreloadBudget, UserOverrides,
+};
+use super::enforce::{KernelMode, resolve_mode};
 use super::policy::ContextPolicy;
 use super::types::{ContextPlanV1, ContextReceiptV1, PlanEntry, ReceiptOutcome, RetrievalContext};
 
@@ -18,14 +25,23 @@ pub struct KernelVerdict {
 /// Result of kernel enrichment for compose integration.
 #[derive(Debug, Clone)]
 pub struct KernelEnrichment {
-    /// The selection plan that produced the injected blocks.
+    /// Legacy selection-plan view; not a task-bound execution or learning proof.
     pub plan: ContextPlanV1,
+    autopilot_decision: Option<AutopilotDecision>,
     /// Human-readable blocks suitable for compose output injection.
     pub blocks: String,
     /// Gate decision accompanying the backward-compatible blocks.
     pub verdict: KernelVerdict,
     /// Kernel policy mode used while producing this enrichment.
     pub enforced_mode: KernelMode,
+}
+
+impl KernelEnrichment {
+    /// Inspect the canonical planning decision behind this context supplement.
+    /// Other proposed policies are not evidence that a surface executed them.
+    pub fn autopilot_decision(&self) -> Option<&AutopilotDecision> {
+        self.autopilot_decision.as_ref()
+    }
 }
 /// Check whether `path` should be suppressed as already delivered.
 /// Returns `false` until the orchestrator exposes recent-delivery state.
@@ -40,8 +56,17 @@ pub fn kernel_enrich(
     project_root: &str,
     budget_tokens: usize,
 ) -> Option<KernelEnrichment> {
+    match runtime::current_handoff() {
+        runtime::KernelPlanningHandoff::Legacy => {}
+        runtime::KernelPlanningHandoff::Suppressed => return None,
+        runtime::KernelPlanningHandoff::Prepared(prepared) => {
+            return prepared.enrich(task, project_root, budget_tokens);
+        }
+    }
     let capped_budget = budget_tokens.min(150);
-    let kernel = ContextKernel::for_project(project_root);
+    if capped_budget == 0 {
+        return None;
+    }
     let ctx = RetrievalContext {
         query: task.to_owned(),
         task: Some(task.to_owned()),
@@ -53,7 +78,19 @@ pub fn kernel_enrich(
         max_candidates: 20,
     };
     let mode = resolve_mode(project_root);
-    let plan = enforce_plan_for_mode(kernel.plan(&ctx), &ContextPolicy::default(), mode);
+    let input = reference_input(ctx, mode).ok()?;
+    let decision = AutopilotController::for_project(project_root)
+        .plan(&input, None)
+        .ok()?;
+    enrichment_from_decision(decision, capped_budget, mode)
+}
+
+fn enrichment_from_decision(
+    decision: AutopilotDecision,
+    capped_budget: usize,
+    mode: KernelMode,
+) -> Option<KernelEnrichment> {
+    let plan = decision.context_plan.clone();
     let enrichments: Vec<&PlanEntry> = plan
         .selected
         .iter()
@@ -61,33 +98,51 @@ pub fn kernel_enrich(
         .collect();
 
     let blocks = format_enrichment_blocks(&enrichments);
-    enrichment_from_plan(plan, blocks, capped_budget, mode)
+    enrichment_from_plan(plan, blocks, capped_budget, mode).map(|mut enrichment| {
+        enrichment.autopilot_decision = Some(decision);
+        enrichment
+    })
 }
 
-fn enforce_plan_for_mode(
-    plan: ContextPlanV1,
-    policy: &ContextPolicy,
-    mode: KernelMode,
-) -> ContextPlanV1 {
-    if mode != KernelMode::Enforce {
-        return plan;
-    }
-
-    let result = enforce_plan(&plan, policy, mode);
-    if !result.blocked.is_empty() {
-        tracing::debug!(
-            blocked = result.blocked.len(),
-            "kernel enforce: plan entries blocked by policy"
-        );
-    }
-
-    ContextPlanV1 {
-        selected: result.allowed,
-        ..plan
-    }
+/// This legacy surface has no paid entitlement, outcome history, or cost evidence.
+/// Use the canonical reference planner without inventing those inputs or a TaskId.
+pub(crate) fn reference_input(
+    retrieval: RetrievalContext,
+    kernel_mode: KernelMode,
+) -> Result<AutopilotInput, super::policy::PolicyLoadError> {
+    let policy = ContextPolicy::from_config(&retrieval.project_root)?;
+    Ok(AutopilotInput {
+        retrieval,
+        evaluation_time: None,
+        task_class: crate::core::outcome::contracts::TaskClass::Investigation,
+        entitled_to_adaptive: false,
+        confidence_milli: 0,
+        configured_mode: None,
+        default_mode: "full".to_owned(),
+        security_forced_mode: None,
+        overrides: UserOverrides {
+            no_routing: true,
+            no_telemetry: true,
+            ..UserOverrides::default()
+        },
+        policy,
+        kernel_mode,
+        economics: AutopilotEconomics::default(),
+        learning: AdaptiveLearningState::default(),
+        available_providers: Vec::new(),
+        local_providers: Default::default(),
+        cached_preloads: Default::default(),
+        preload_budget: PreloadBudget {
+            max_items: 0,
+            ..PreloadBudget::default()
+        },
+        // A promoted policy belongs to one tenant/project scope; only callers
+        // that know the task's scope (its envelope) may attach it.
+        context_policy: None,
+    })
 }
 
-fn enrichment_from_plan(
+pub(super) fn enrichment_from_plan(
     plan: ContextPlanV1,
     blocks: String,
     budget: usize,
@@ -97,6 +152,7 @@ fn enrichment_from_plan(
     let blocks = verdict.supplement.clone()?;
     Some(KernelEnrichment {
         plan,
+        autopilot_decision: None,
         blocks,
         verdict,
         enforced_mode,
@@ -232,12 +288,18 @@ pub fn format_plan_summary(plan: &ContextPlanV1) -> String {
 pub mod tests {
     use std::collections::HashMap;
 
+    use crate::core::{
+        context_kernel::autopilot::{AdaptiveLearningState, PlannerTier},
+        data_dir::isolated_data_dir,
+        knowledge::ProjectKnowledge,
+        memory_policy::MemoryPolicy,
+    };
+
     use super::super::enforce::KernelMode;
-    use super::super::policy::ContextPolicy;
     use super::super::types::PlanBudget;
     use super::{
-        ContextPlanV1, PlanEntry, enforce_plan_for_mode, enrichment_from_plan,
-        format_enrichment_blocks, kernel_gate, truncate_to_token_budget, verdict_from_blocks,
+        ContextPlanV1, PlanEntry, enrichment_from_plan, format_enrichment_blocks, kernel_gate,
+        truncate_to_token_budget, verdict_from_blocks,
     };
 
     fn plan(selected: Vec<PlanEntry>) -> ContextPlanV1 {
@@ -253,6 +315,7 @@ pub mod tests {
             excluded: Vec::new(),
             deferred: Vec::new(),
             provider_stats: HashMap::new(),
+            origins: Default::default(),
         }
     }
 
@@ -319,44 +382,97 @@ pub mod tests {
         let blocks = format_enrichment_blocks(&[&item]);
         let enrichment = enrichment_from_plan(plan(vec![item]), blocks, 150, KernelMode::Shadow)
             .expect("entry should produce enrichment");
-        assert_eq!(enrichment.blocks, enrichment.verdict.supplement.unwrap());
+        assert_eq!(
+            enrichment.blocks,
+            enrichment
+                .verdict
+                .supplement
+                .as_deref()
+                .expect("legacy supplement")
+        );
         assert_eq!(enrichment.enforced_mode, KernelMode::Shadow);
+        assert!(enrichment.autopilot_decision().is_none());
     }
 
     #[test]
-    fn test_enforce_mode_blocks_policy_violations() {
-        let mut blocked = entry("blocked");
-        blocked.provider = "excluded.provider".to_owned();
-        let policy = ContextPolicy {
-            blocked_sources: vec![blocked.provider.clone()],
-            ..ContextPolicy::default()
-        };
-
-        let enforced = enforce_plan_for_mode(
-            plan(vec![entry("allowed"), blocked]),
-            &policy,
-            KernelMode::Enforce,
+    fn production_enrichment_uses_canonical_community_planning() {
+        let _data_dir = isolated_data_dir();
+        let root = tempfile::tempdir().expect("project root");
+        let project_root = root.path().to_str().expect("UTF-8 project root");
+        let mut knowledge = ProjectKnowledge::new(project_root);
+        knowledge.remember(
+            "architecture",
+            "renderer",
+            "Renderer uses typed immutable context decisions.",
+            "bridge-test",
+            1.0,
+            &MemoryPolicy::default(),
         );
+        knowledge.save().expect("persist real project knowledge");
 
-        assert_eq!(enforced.selected.len(), 1);
-        assert_eq!(enforced.selected[0].reason, "allowed");
+        let first = super::kernel_enrich("renderer context decisions", project_root, 500)
+            .expect("persisted knowledge is selected and delivered");
+        let second = super::kernel_enrich("renderer context decisions", project_root, 500)
+            .expect("same project state is available");
+        let decision = first
+            .autopilot_decision()
+            .expect("canonical decision retained");
+        assert_eq!(decision.tier, PlannerTier::Community);
+        assert!(decision.preloads.is_empty());
+        assert!(
+            decision
+                .reasons
+                .iter()
+                .any(|reason| reason.code == "community_reference")
+        );
+        assert_eq!(first.plan.plan_id, decision.context_plan.plan_id);
+        assert!(first.plan.budget.total_tokens <= 150);
+        assert!(first.verdict.budget_used <= 150);
+        assert!(first.blocks.contains("typed immutable context decisions"));
+        assert_eq!(
+            first.blocks,
+            first.verdict.supplement.as_deref().expect("supplement")
+        );
+        assert_eq!(first.blocks, second.blocks);
+        assert_eq!(
+            decision
+                .canonical_bytes()
+                .expect("first canonical decision"),
+            second
+                .autopilot_decision()
+                .expect("second decision")
+                .canonical_bytes()
+                .expect("second canonical decision")
+        );
     }
 
     #[test]
-    fn test_shadow_mode_allows_all_entries() {
-        let mut blocked = entry("blocked");
-        blocked.provider = "excluded.provider".to_owned();
-        let policy = ContextPolicy {
-            blocked_sources: vec![blocked.provider.clone()],
-            ..ContextPolicy::default()
-        };
-
-        let shadow = enforce_plan_for_mode(
-            plan(vec![entry("allowed"), blocked]),
-            &policy,
+    fn reference_adapter_cannot_enable_personalized_or_speculative_work() {
+        let _data_dir = isolated_data_dir();
+        let input = super::reference_input(
+            super::RetrievalContext {
+                query: "context lookup".to_owned(),
+                task: None,
+                project_root: "/not-used-by-this-test".to_owned(),
+                budget: crate::core::context_field::TokenBudget {
+                    total: 150,
+                    used: 0,
+                },
+                max_candidates: 20,
+            },
             KernelMode::Shadow,
-        );
+        )
+        .expect("isolated default policy");
+        assert!(!input.entitled_to_adaptive);
+        assert_eq!(input.learning, AdaptiveLearningState::default());
+        assert!(input.available_providers.is_empty());
+        assert_eq!(input.preload_budget.max_items, 0);
+        assert!(input.overrides.no_routing);
+        assert!(input.overrides.no_telemetry);
+    }
 
-        assert_eq!(shadow.selected.len(), 2);
+    #[test]
+    fn zero_budget_does_not_produce_context_or_a_decision() {
+        assert!(super::kernel_enrich("unused", "/not-used-by-zero-budget", 0).is_none());
     }
 }

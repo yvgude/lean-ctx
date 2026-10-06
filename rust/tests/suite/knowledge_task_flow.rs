@@ -2,10 +2,10 @@ use lean_ctx::core::context_kernel::{ContextState, enrich_with_knowledge};
 use lean_ctx::core::knowledge::KnowledgeQuery;
 use lean_ctx::core::knowledge::local_store::LocalKnowledgeStore;
 use lean_ctx::core::knowledge::store::KnowledgeStore;
+use lean_ctx_protocol::ExtensionsV1;
 use lean_ctx_protocol::knowledge::{
     AuthorityMetadata, KnowledgeObjectV1, KnowledgeSourceType, SourceReference,
 };
-use std::collections::BTreeMap;
 
 fn knowledge_object(id: &str, source_type: KnowledgeSourceType) -> KnowledgeObjectV1 {
     KnowledgeObjectV1 {
@@ -30,7 +30,7 @@ fn knowledge_object(id: &str, source_type: KnowledgeSourceType) -> KnowledgeObje
         evidence_digest: format!("evidence:{id}"),
         policy_ref: "policy:org-approved".to_owned(),
         evidence_refs: vec![format!("evidence-ref:{id}")],
-        extra: BTreeMap::new(),
+        extra: ExtensionsV1::default(),
     }
 }
 

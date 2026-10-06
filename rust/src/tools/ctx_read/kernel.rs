@@ -15,16 +15,14 @@ fn frame_kernel_blocks(blocks: &str, seen_hashes: &mut HashSet<String>) -> Strin
     dedup_kernel_blocks(&framed, seen_hashes)
 }
 
-/// Cross-store context from the Context Kernel for the active task, framed as
-/// one self-delimiting block for a batch read to append after its summary.
-///
-/// #1993: this used to be appended to every file's section, so it landed
-/// between file 1 and its `---` separator — in `raw` mode too. It depends on
-/// the task, not the file, so a batch carries it at most once.
+/// #1993: task-scoped kernel context is one trailer after a batch summary,
+/// never between file sections or in a raw file read.
 pub(crate) fn kernel_trailer(task: Option<&str>) -> Option<String> {
-    let (Some(task_str), Some(project_root)) =
-        (task, crate::core::config::Config::find_project_root())
-    else {
+    let (Some(task_str), Some(project_root)) = (
+        task,
+        crate::core::context_kernel::bridge::runtime::planned_project_root()
+            .or_else(crate::core::config::Config::find_project_root),
+    ) else {
         return None;
     };
 

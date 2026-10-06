@@ -134,6 +134,7 @@ fn bm25_ingest_content_chunks_increases_doc_count() {
         files: std::collections::HashMap::new(),
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
+        admission_policy: None,
     };
 
     let chunks = vec![
@@ -177,6 +178,7 @@ fn bm25_search_finds_ingested_provider_chunks() {
         files: std::collections::HashMap::new(),
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
+        admission_policy: None,
     };
 
     index.ingest_content_chunks(vec![
@@ -218,6 +220,7 @@ fn bm25_mixed_code_and_provider_chunks() {
         files: std::collections::HashMap::new(),
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
+        admission_policy: None,
     };
 
     index.ingest_content_chunks(vec![
@@ -266,6 +269,7 @@ fn bm25_external_chunk_count_accurate() {
         files: std::collections::HashMap::new(),
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
+        admission_policy: None,
     };
 
     index.ingest_content_chunks(vec![
@@ -316,6 +320,7 @@ fn bm25_ingest_zero_chunks_is_noop() {
         files: std::collections::HashMap::new(),
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
+        admission_policy: None,
     };
 
     let ingested = index.ingest_content_chunks(Vec::<ContentChunk>::new());
@@ -683,6 +688,7 @@ fn end_to_end_provider_to_bm25_search() {
         files: std::collections::HashMap::new(),
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
+        admission_policy: None,
     };
 
     let ingested = index.ingest_content_chunks(chunks);

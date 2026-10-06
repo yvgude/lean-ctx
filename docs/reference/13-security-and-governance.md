@@ -319,6 +319,163 @@ signals** (no speculative heuristics) to avoid false positives; `LEAN_CTX_SENSIT
 toggles enforcement for a single run. This section lives in the **global**
 `~/.lean-ctx/config.toml` only — an untrusted project file cannot lower the floor.
 
+### 4.2 Context Gateway admission — before cache and compression
+
+Output redaction (§4) masks credentials in what the model sees. **Context
+admission** acts earlier: a source file an agent acquires passes the built-in
+detectors *before* the session cache, the compressor or any read mode
+(`full`, `raw`, `map`, `lines:…`, …) touches it. This covers `ctx_read` and
+the tools sharing its admitted reader (`ctx_symbol`, `ctx_compose`,
+`ctx_execute`), search and index paths (`ctx_search`, the trigram index, the BM25 index behind
+`ctx_semantic_search`, dense-backend snippets, the shared content cache), every
+recovery path and provider data (see *Derived stores and recovery* below).
+(The CLI `lean-ctx read` used by shell hooks is not yet covered unless a
+policy pack is active; output redaction still applies there.) A credential cut
+in half by compression can therefore no longer slip past a pattern, and a
+search cannot surface a value the read would have masked. It is **on by
+default**.
+
+```toml
+[context_gateway]
+enabled = true              # LEAN_CTX_CONTEXT_GATEWAY=off disables for one run
+mode = "developer"          # governed|sovereign: unclassified content counts as internal
+secrets = "redact"          # off | warn | redact | block (patterns from [secret_detection])
+pii = "redact"              # checksum-validated only: AHV, IBAN, payment cards
+injection = "warn"          # prompt-injection heuristic; content stays, signal is shown
+classification = "warn"     # CONFIDENTIAL / TOP SECRET markings raise the level
+max_inspected_bytes = 8388608
+detector_timeout_ms = 2000
+hud = "auto"                # auto | in_band | status_line
+```
+
+- **Blocking sees the original.** A `block` is evaluated before any redaction
+  can hide what triggered it.
+- **Fail closed.** If a redaction leaves a detectable secret or PII value
+  behind, the content is withheld instead of delivered.
+- **Visible.** A read that was changed or flagged ends with one line such as
+  `[lean-ctx gateway: 1 secret(s) redacted · 2 PII value(s) redacted]`; a
+  withheld read names its reason codes (`injection.blocked`). Values never
+  appear in that line.
+- **Classified.** Each admission records a classification
+  (`public < internal < confidential < restricted`) — `.env`-style paths are
+  `restricted` — and one decision in the Context Gateway v1 vocabulary
+  (`docs/contracts/context-gateway-v1.md`).
+- **Honest coverage.** Detectors scan line-aligned chunks within
+  `max_inspected_bytes` (default 8 MiB) and `detector_timeout_ms` (default
+  2000 ms). A detector reports `complete` only when it saw every byte; a
+  budget, a timeout, an invalid custom pattern or an unreadable medium (an
+  image) is reported as `partial`, `timed_out`, `failed` or `unsupported` —
+  never as clean. In `developer` mode such content is delivered with a
+  "not fully inspected (…)" line; in `governed` and `sovereign` mode every
+  enabled detector is mandatory and the content is withheld.
+- **Global only.** Like `[sensitivity]`, this section is never taken from a
+  project-local `.lean-ctx.toml`, trusted or not.
+- `secret_detection.enabled = false` also switches the secrets detector off.
+
+`lean-ctx doctor` shows the effective state on its **Context gateway** line.
+
+#### Derived stores and recovery
+
+Everything lean-ctx keeps for later is built from admitted text only:
+
+- **Restricted content is never stored.** Withheld objects, `.env`-style and
+  other secret-like paths and content classified `restricted` never enter the
+  BM25 index, the trigram index, the shared content cache, archives and their
+  full-text index, the tee store, reference results, project knowledge,
+  handoffs (`ctx_share`) or provider artifacts. Everything else is stored
+  masked, so a search can never match a value the read would have masked.
+- **Stores are bound to the policy.** The persisted BM25 index records the
+  digest of the policy it was admitted under; an index from another policy —
+  or one written before admission existed — is rebuilt, never served.
+  Resident stores (content cache, trigram index) are dropped when the policy
+  changes, and a build still running under the old policy cannot repopulate
+  them. Archive full-text rows written before admission are dropped once.
+- **Recovery is re-authorized.** `ctx_expand` (archives, tee files,
+  references, `search_all`), `ctx_retrieve`, proxy in-band recovery (CCR) and
+  every `ctx_knowledge` view hand stored text back only after admitting it
+  again under the *current* policy. A tightened policy applies to old
+  records; withheld content is refused with its reason codes, never returned
+  in part.
+- **Providers are admitted before consolidation.** Issue bodies, titles,
+  references, metadata, extracted facts, graph edges and cache entries pass
+  the gateway before any of them reaches a store; an object with a withheld
+  field is dropped whole. Provider results shown to the model are admitted
+  like a file read and appear in the call's receipt.
+
+#### Proxy egress — the last check before a model provider
+
+With the BYOK proxy in the path, every request is admitted one final time on
+exactly the body that leaves the machine — after compression, routing,
+translation and every cache-safety revert. This covers Anthropic Messages,
+OpenAI Chat Completions and Responses (HTTP and WebSocket), Gemini, Bedrock,
+and the token-count probe used for counterfactual metering.
+
+- **Every content string** — system prompt, messages, tool results, tool
+  arguments — passes the gateway under the current policy. Masked values are
+  rewritten in place; a withheld object is replaced by
+  `[lean-ctx gateway: content withheld — <reasons>]`. Identifiers and
+  structure (`model`, `role`, `tool_use_id`, …) are never touched.
+- **Prompt caches stay warm.** Admission is deterministic, so a conversation
+  prefix is rewritten to the same bytes on every turn, and a request with
+  nothing to change is forwarded byte-identical.
+- **Sealed content is never rewritten.** Thinking blocks with a provider
+  signature and `encrypted_content` are inspected; a finding there is
+  delivered unchanged and flagged in `developer` mode and refuses the request
+  in `governed`/`sovereign` mode — rewriting would break the request.
+- **Honest about what it cannot read.** Images and other inline media, and
+  bodies the proxy cannot parse (opaque content encodings), are recorded as
+  not inspected; `governed`/`sovereign` mode refuses them.
+- **The destination is part of the decision.** Content classified
+  `restricted` (an explicit `TOP SECRET`/`SECRET`/`RESTRICTED` banner, a
+  credential delivered under `secrets = "warn"`) never goes to a remote model;
+  a local upstream (`localhost`, loopback) may receive it.
+- **One receipt per request** names the provider, model and locality, the
+  policy digest and the SHA-256 of the forwarded bytes: `lean-ctx inspect
+  --proxy`. A refused request answers `403` and its receipt names the reason.
+- Not model traffic, not inspected: the ChatGPT `/backend-api` passthrough
+  (account and pairing calls) and its remote-control WebSocket tunnel.
+
+#### Decision receipts and `lean-ctx inspect`
+
+Every tool call that admits a source produces one **Decision Receipt**: which
+sources were inspected, delivered or withheld, why (reason codes), what the
+detectors covered, the original and delivered token counts, the digest of the
+policy that decided and the SHA-256 of exactly the bytes that were returned.
+Receipts hold no content. They are stored content-addressed under the lean-ctx
+data directory (`gateway/receipts/<sha256>.json`), and any receipt with a
+security action is anchored by its digest in the signed audit trail.
+
+```bash
+lean-ctx inspect              # the latest round of this project, explained
+lean-ctx inspect --last 5     # the five newest rounds
+lean-ctx inspect --json       # machine-readable, with verification status
+lean-ctx inspect --task <ID>  # one task: plan, deliveries, cost and outcome
+```
+
+`--task` joins one task's entries in the execution ledger (task start, plan,
+context decision, model and engine invocations, signed receipts, outcome) with
+every Decision Receipt the gateway wrote for that task. Each missing link —
+no plan, no delivery, no outcome, an unverifiable ledger or receipt — is named
+as a gap; an outcome that was never recorded stays `unknown`. Lineage is looked
+up within the task's tenant/project scope (`--project-id`, `--tenant-id`;
+default: the current project root), so equal task ids in two projects never
+mix, and ledger entries are shown only when the task's envelope proves that
+scope.
+
+A receipt whose bytes no longer match its digest is reported as
+**NOT VERIFIED (tampered)** and not shown. The status line and `lean-ctx value`
+count the gateway's actions from the same receipts (secrets and personal data
+kept out of context, sources withheld, sources not fully inspected), proven
+from the audit trail.
+
+`hud = "auto"` (default) keeps pure redaction counts out of the model's
+context when lean-ctx's Claude Code status line is installed — the
+`[REDACTED:…]` markers already tell the model, the status line tells you.
+Notices the model must act on (prompt-injection signals, incomplete
+inspection, withheld content) are always delivered with the result.
+`hud = "in_band"` always appends the summary; `hud = "status_line"` never
+appends redaction counts.
+
 ---
 
 ## 5. Harden mode — force the compressed path

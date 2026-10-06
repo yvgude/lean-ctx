@@ -142,6 +142,28 @@ mod root_resolution_tests {
         assert_eq!(from_b_sub.unwrap(), (b, Some("src".to_string())));
         assert_eq!(from_a.unwrap(), (a, None), "paths inside the pin keep it");
     }
+
+    #[test]
+    fn request_authority_still_rejects_another_projects_path() {
+        let tmp = tempfile::tempdir().unwrap();
+        let a = tmp.path().join("authorized");
+        let b = tmp.path().join("foreign");
+        std::fs::create_dir_all(a.join("src")).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(a.clone())),
+            || {
+                assert_eq!(
+                    resolve_search_root(&a.join("src").to_string_lossy()).unwrap(),
+                    (a.canonicalize().unwrap(), Some("src".into()))
+                );
+                assert_eq!(
+                    resolve_search_root(&b.to_string_lossy()).unwrap_err(),
+                    "source path is outside the request authority"
+                );
+            },
+        );
+    }
 }
 
 #[cfg(all(test, feature = "embeddings"))]

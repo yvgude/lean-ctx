@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Exit-status mapping shared by every path that runs a child command (#1881).
 //!
 //! `ExitStatus::code()` is `None` when the child was terminated by a signal.

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Editor semantic bridges (VS Code, Cursor, Windsurf, …).
 //!
 //! The lean-ctx editor extension serves the JetBrains plugin's loopback HTTP

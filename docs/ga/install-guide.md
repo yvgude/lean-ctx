@@ -249,9 +249,9 @@ lean-ctx doctor integrations
 
 ### Downloads fail or checksum verification fails
 
-Check the proxy, firewall, DNS policy, and GitHub Releases access. Do not use
-`lean-ctx update --insecure` as a routine workaround; obtain the approved
-release archive and checksum through the organization’s artifact process.
+Check the proxy, firewall, DNS policy, and GitHub Releases access. Obtain the
+approved release archive, manifest, and checksum through the organization’s
+artifact process; updater verification is fail-closed and cannot be bypassed.
 
 ### The Docker gateway does not become healthy
 

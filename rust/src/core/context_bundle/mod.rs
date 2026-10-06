@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Budgeted context bundles for chat products (#1885).
 //!
 //! `lean-ctx pack --limit 128k` produces one self-contained XML document that

@@ -7,6 +7,8 @@ use serde::{Deserialize, Serialize};
 
 use super::{OclaError, OclaResult};
 
+pub use crate::core::agent_connector::traits::TaskRequest as AgentTaskRequest;
+
 /// Version of the public observation shape emitted by native adapters.
 pub const CAPABILITY_OBSERVATION_SCHEMA_VERSION: u32 = 1;
 
@@ -27,6 +29,7 @@ pub enum CapabilityInput {
         prompt: String,
         model: Option<String>,
     },
+    AgentTask(AgentTaskRequest),
 }
 
 impl CapabilityInput {
@@ -37,6 +40,7 @@ impl CapabilityInput {
             Self::ContextRequest { paths, .. } => paths.first().map(String::as_str).unwrap_or(""),
             Self::ShellCommand { command, .. } => command,
             Self::ModelRequest { prompt, .. } => prompt,
+            Self::AgentTask(request) => &request.prompt,
         }
     }
 }
@@ -88,7 +92,8 @@ impl PolicyConstraints {
                     ));
                 }
             }
-            CapabilityInput::ModelRequest { model, .. } => {
+            CapabilityInput::ModelRequest { model, .. }
+            | CapabilityInput::AgentTask(AgentTaskRequest { model, .. }) => {
                 if !self.allowed_models.is_empty()
                     && model.as_ref().is_none_or(|model| {
                         !self.allowed_models.iter().any(|allowed| allowed == model)
@@ -100,6 +105,17 @@ impl PolicyConstraints {
                 }
             }
             CapabilityInput::ShellCommand { .. } => {}
+        }
+        if let CapabilityInput::AgentTask(request) = input
+            && !self.allowed_paths.is_empty()
+            && !self
+                .allowed_paths
+                .iter()
+                .any(|path| std::path::Path::new(path) == request.working_dir)
+        {
+            return Err(OclaError::InvalidRequest(
+                "agent working directory is outside policy allowlist".into(),
+            ));
         }
         Ok(())
     }

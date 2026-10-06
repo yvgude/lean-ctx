@@ -70,6 +70,15 @@ outcome quality.
     ".github/workflows/release.yml": ["desc \"Local engine for the LeanCTX Context Gateway for AI Systems\""],
     "aur/lean-ctx/.SRCINFO": ["pkgdesc = LeanCTX Engine — open-source Context Gateway for AI Systems. Context selection, supported controls, and evidence through local integration paths."]
   },
+  "forbidden_text": {
+    "README.md": [
+      "83 MCP tools",
+      "79 MCP tools",
+      "lean-ctx addon search",
+      "Used in production by teams",
+      "have shipped (see above)"
+    ]
+  },
   "status_guarded_records": [
     "docs/cognition-interface.md",
     "docs/cognition-lab/plan-v1.md",

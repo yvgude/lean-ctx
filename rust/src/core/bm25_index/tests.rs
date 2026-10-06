@@ -2,7 +2,12 @@
 //! `super::*` resolves to the `bm25_index` module.
 
 use super::*;
+use crate::core::context_admission::stores::StoreAdmission;
 use tempfile::tempdir;
+
+fn admission() -> StoreAdmission {
+    StoreAdmission::current()
+}
 
 #[cfg(unix)]
 use std::os::unix::fs::PermissionsExt;
@@ -789,8 +794,8 @@ fn parallel_build_matches_sequential() {
     let files = write_parallel_corpus(root, 40);
 
     let hint = HashMap::new();
-    let seq = BM25Index::build_sequential(root, &hint, &files);
-    let par = BM25Index::build_parallel(root, &hint, &files);
+    let seq = BM25Index::build_sequential(root, &hint, &files, &admission());
+    let par = BM25Index::build_parallel(root, &hint, &files, &admission());
 
     assert!(par.doc_count > files.len(), "expected multiple chunks/file");
     assert_same_index(&seq, &par);
@@ -803,8 +808,8 @@ fn parallel_build_is_deterministic_across_runs() {
     let files = write_parallel_corpus(root, 48);
     let hint = HashMap::new();
 
-    let a = BM25Index::build_parallel(root, &hint, &files);
-    let b = BM25Index::build_parallel(root, &hint, &files);
+    let a = BM25Index::build_parallel(root, &hint, &files, &admission());
+    let b = BM25Index::build_parallel(root, &hint, &files, &admission());
     assert_same_index(&a, &b);
 }
 
@@ -818,8 +823,8 @@ fn parallel_build_batched_merge_matches_sequential() {
     let files = write_parallel_corpus(root, 40);
     let hint = HashMap::new();
 
-    let seq = BM25Index::build_sequential(root, &hint, &files);
-    let batched = BM25Index::build_parallel_batched(root, &hint, &files, 7);
+    let seq = BM25Index::build_sequential(root, &hint, &files, &admission());
+    let batched = BM25Index::build_parallel_batched(root, &hint, &files, 7, &admission());
     assert_same_index(&seq, &batched);
 }
 
@@ -838,7 +843,7 @@ fn build_from_directory_dispatches_parallel_and_matches_sequential() {
     );
 
     let public = BM25Index::build_from_directory(root);
-    let seq = BM25Index::build_sequential(root, &HashMap::new(), &files);
+    let seq = BM25Index::build_sequential(root, &HashMap::new(), &files, &admission());
     assert_same_index(&seq, &public);
 }
 
@@ -885,8 +890,10 @@ fn parallel_incremental_matches_sequential() {
         "corpus must trigger the parallel rebuild path"
     );
 
-    let seq = BM25Index::rebuild_incremental_sequential(root, &prev, &old_by_file, &files);
-    let par = BM25Index::rebuild_incremental_parallel(root, &prev, &old_by_file, &files);
+    let seq =
+        BM25Index::rebuild_incremental_sequential(root, &prev, &old_by_file, &files, &admission());
+    let par =
+        BM25Index::rebuild_incremental_parallel(root, &prev, &old_by_file, &files, &admission());
 
     // The whole contract: identical chunk order, postings, doc_freqs, file set.
     assert_same_index(&seq, &par);
@@ -928,7 +935,8 @@ fn rebuild_incremental_dispatches_parallel_and_matches_sequential() {
     assert!(files.len() >= super::build::PARALLEL_MIN_FILES);
 
     let public = BM25Index::rebuild_incremental(root, &prev);
-    let seq = BM25Index::rebuild_incremental_sequential(root, &prev, &old_by_file, &files);
+    let seq =
+        BM25Index::rebuild_incremental_sequential(root, &prev, &old_by_file, &files, &admission());
     assert_same_index(&seq, &public);
 }
 
@@ -966,13 +974,25 @@ fn parallel_incremental_rebuild_perf_gate() {
     let best = |f: &dyn Fn() -> std::time::Duration| (0..3).map(|_| f()).min().unwrap();
     let seq = best(&|| {
         let t = std::time::Instant::now();
-        let idx = BM25Index::rebuild_incremental_sequential(root, &prev, &old_by_file, &files);
+        let idx = BM25Index::rebuild_incremental_sequential(
+            root,
+            &prev,
+            &old_by_file,
+            &files,
+            &admission(),
+        );
         std::hint::black_box(&idx);
         t.elapsed()
     });
     let par = best(&|| {
         let t = std::time::Instant::now();
-        let idx = BM25Index::rebuild_incremental_parallel(root, &prev, &old_by_file, &files);
+        let idx = BM25Index::rebuild_incremental_parallel(
+            root,
+            &prev,
+            &old_by_file,
+            &files,
+            &admission(),
+        );
         std::hint::black_box(&idx);
         t.elapsed()
     });
@@ -1010,8 +1030,8 @@ fn parallel_build_search_parity() {
     let files = write_parallel_corpus(root, 40);
     let hint = HashMap::new();
 
-    let seq = BM25Index::build_sequential(root, &hint, &files);
-    let par = BM25Index::build_parallel(root, &hint, &files);
+    let seq = BM25Index::build_sequential(root, &hint, &files, &admission());
+    let par = BM25Index::build_parallel(root, &hint, &files, &admission());
 
     let q = "process item transform";
     let rs = seq.search(q, 10);

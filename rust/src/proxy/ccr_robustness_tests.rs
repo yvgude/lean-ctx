@@ -288,7 +288,9 @@ fn recovery_verifier_checks_resolved_bytes_digest_and_expiry() {
         RecoveryOutcome::Missing
     );
 
-    let reference = crate::server::reference_store::store("expired reference".to_string());
+    // Storage is admitted (G5): clean text is stored and yields a handle.
+    let reference = crate::server::reference_store::store("expired reference")
+        .expect("a clean reference is stored");
     crate::server::reference_store::expire_for_test(&reference);
     assert_eq!(
         verify_handle(&reference, None).outcome,

@@ -31,7 +31,7 @@ jobs:
     name: Narrative governance
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           persist-credentials: false
       - name: Enforce public product positioning
@@ -54,6 +54,40 @@ jobs:
           python3 -m pip install --quiet --disable-pip-version-check ruff
           python3 -m ruff check --select F scripts/ skills/
 
+  licensing-ip:
+    name: Licensing and IP boundaries
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      # The notices generator runs `cargo metadata --locked --offline`; a fresh
+      # runner has no crate cache, so fetch the locked set first (network here,
+      # never inside the generator).
+      - name: Fetch locked crates
+        run: cargo fetch --locked --manifest-path rust/Cargo.toml
+      - name: Validate license matrix and SPDX policy
+        run: python3 scripts/license-policy-check.py --root .
+      - name: Exercise fail-closed license policy cases
+        run: python3 -m unittest tests/test_license_policy.py
+      - name: Verify commercial-source provenance
+        run: |
+          git fetch --no-tags origin cla-signatures:refs/remotes/origin/cla-signatures
+          python3 -m unittest tests/test_ip_provenance_audit.py
+          python3 scripts/ip-provenance-audit.py --root .
+      - name: Verify dependency licenses and advisories
+        run: |
+          cargo install cargo-deny --version 0.19.6 --locked
+          cargo install cargo-cyclonedx --version 0.5.9 --locked
+          cargo deny --manifest-path rust/Cargo.toml check licenses
+          cargo deny --manifest-path rust/Cargo.toml check advisories
+      - name: Verify notices and CycloneDX drift
+        run: |
+          bash scripts/generate-sbom.sh --check
+          python3 scripts/generate-third-party-notices.py --root . --check
+
   package-assets:
     name: Published crate assets
     runs-on: ubuntu-latest
@@ -62,6 +96,18 @@ jobs:
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - name: Validate v3 fixture migration matrix
+        run: |
+          python3 scripts/tests/test_check_v3_fixture_migrations.py
+          python3 scripts/check-v3-fixture-migrations.py
+      - name: Test publish dependency graph gate
+        run: python3 scripts/tests/test_check_publish_dependency_graph.py
+      - name: Validate publish dependency graph
+        run: python3 scripts/check-publish-dependency-graph.py
+      - name: Test receipt authority gate
+        run: python3 scripts/tests/test_check_receipt_authority.py
+      - name: Validate receipt authority
+        run: python3 scripts/check-receipt-authority.py
       - name: Verify OCLA manifests are packaged
         working-directory: rust
         run: |
@@ -637,6 +683,23 @@ jobs:
         working-directory: rust
         run: cargo test --test main suite::adversarial_compression -- --nocapture
 
+  gateway-proof:
+    name: Gateway Proof (60 scenarios, 26 bypass paths)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }}
+          workspaces: rust -> target
+      # Every proven scenario/path names tests that must exist and pass; a
+      # release run (`--release`) additionally refuses while any is open.
+      - name: Run the gateway proof registry
+        run: python3 scripts/gateway-proof-gate.py --run
+
   bench:
     name: Benchmarks
     runs-on: ubuntu-latest
@@ -796,9 +859,53 @@ jobs:
       - name: Check bundled registry snapshots are canonical
         working-directory: rust
         run: cargo run --example gen_registry --features dev-tools -- --check
+      - name: Check v4 product capability classification and generated matrix
+        working-directory: rust
+        run: |
+          cargo test --test product_capability_classification
+          cargo run --quiet --example gen_product_capability_matrix
+          git diff --exit-code -- data/product-capabilities.toml ../docs/reference/generated/product-capabilities.md
       - name: Check committed testbench recording is current
         working-directory: rust
         run: cargo run --example gen_testbench_recording --features dev-tools -- --check
+
+  ip-provenance:
+    # Fail-closed IP/provenance gate: every tracked file must carry a
+    # classification in LICENSE_MATRIX.toml, so unclassified new source can
+    # never reach main. Deliberately one dedicated job — the checker is
+    # stdlib-only and platform-independent, so folding it into the Test matrix
+    # would pay for the identical audit two or three times per run.
+    # The release-only strict checks (counsel sign-off, SBOM, third-party
+    # notices) are NOT run here; release.yml owns them in its own
+    # ip-provenance job, which gates every published artifact.
+    name: IP Provenance Audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
+      # The checker invokes the notices generator (`cargo metadata --locked
+      # --offline`); fetch the locked crate set so it stays offline.
+      - name: Fetch locked crates
+        run: cargo fetch --locked --manifest-path rust/Cargo.toml
+      - name: Verify provenance checker contract
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Audit tracked-source classification
+        run: >-
+          python3 scripts/ip-provenance-audit.py --root .
+          --output "$RUNNER_TEMP/ip-provenance-report.json"
+      # The report is written before the exit code is decided, so it is
+      # evidence for a failing audit too — hence always().
+      - name: Upload provenance report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ip-provenance-report
+          path: ${{ runner.temp }}/ip-provenance-report.json
+          if-no-files-found: ignore
 
   delivery-security-gate:
     # Keep promotion evidence and the audited public-tree delta on the regular
@@ -820,6 +927,12 @@ jobs:
             --bin lean-ctx-ocla-verify
           python3 scripts/verify-ocla-contract-suite.py \
             --verifier clients/rust/lean-ctx-client/target/debug/lean-ctx-ocla-verify
+      - name: Verify team context v1 conformance fixtures
+        run: python3 scripts/verify-team-context-v1.py
+      - name: Verify team seat and value v1 conformance fixtures
+        run: |
+          python3 scripts/verify-team-seat-value-v1.py
+          python3 scripts/verify-team-seat-value-rust-parity.py
       - name: Verify signed delivery manifest contract
         run: |
           python3 scripts/verify-delivery-manifest.py \
@@ -865,13 +978,16 @@ jobs:
       - coverage
       - deny
       - adversarial
+      - gateway-proof
       - bench
       - quality-gate
       - doc
       - delivery-security-gate
       - narrative-governance
+      - licensing-ip
       - package-assets
       - evidence-verifier
+      - ip-provenance
     runs-on: ubuntu-latest
     steps:
       - name: Verify no required job failed

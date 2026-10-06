@@ -110,6 +110,7 @@ mod tests {
                 model_policy_ref: None,
                 context_state_ref: None,
                 outcome_contract_ref: None,
+                extensions: Default::default(),
             },
             context_bundle: ContextBundleV1::default(),
             available_capabilities: Vec::new(),

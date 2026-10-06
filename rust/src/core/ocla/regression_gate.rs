@@ -50,7 +50,7 @@ mod tests {
             OclaCapability::available(OclaCapabilityKind::CompressionProvider)
         }
 
-        fn manifest(&self) -> lean_ctx_protocol::CapabilityManifestV1 {
+        fn manifest(&self) -> OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
             self.provider.manifest()
         }
     }
@@ -106,6 +106,9 @@ mod tests {
 
     #[test]
     fn compression_dyn_dispatch_regression_gate() {
+        // Compression resolves process-global policy/runtime paths. Exclude
+        // environment edits from both timing samples and admission.
+        let _lock = crate::core::data_dir::test_env_lock();
         let project_root = project_root();
         let source_path = SOURCE_REF
             .strip_prefix("file:")

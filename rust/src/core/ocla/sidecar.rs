@@ -12,6 +12,10 @@ pub struct SidecarConfig {
     pub bind_addr: String,
     /// Optional bearer token required on every wire-API request.
     pub auth_token: Option<String>,
+    /// Tenant scope authorized by this sidecar credential for DLQ administration.
+    pub tenant_id: Option<String>,
+    /// Project scope authorized by this sidecar credential for DLQ administration.
+    pub project_id: Option<String>,
     /// PEM certificate chain for HTTPS.
     pub tls_cert_path: Option<PathBuf>,
     /// PEM private key for HTTPS.
@@ -25,6 +29,8 @@ impl Default for SidecarConfig {
         Self {
             bind_addr: "127.0.0.1:3334".to_string(),
             auth_token: None,
+            tenant_id: None,
+            project_id: None,
             tls_cert_path: None,
             tls_key_path: None,
             enabled: false,
@@ -73,13 +79,32 @@ mod http {
             ));
         }
 
+        let dlq_scope = match (config.tenant_id.as_deref(), config.project_id.as_deref()) {
+            (Some(tenant_id), Some(project_id)) => Some(
+                crate::core::a2a::dlq::DlqScope::new(tenant_id, project_id)
+                    .map_err(|error| anyhow!(error.to_string()))?,
+            ),
+            (None, None) => None,
+            _ => {
+                return Err(anyhow!(
+                    "sidecar tenant_id and project_id must be configured together"
+                ));
+            }
+        };
+
         let listener = TcpListener::bind(&config.bind_addr).await?;
-        axum::serve(listener, router(config.auth_token.as_deref())).await?;
+        axum::serve(listener, router(config.auth_token.as_deref(), dlq_scope)).await?;
         Ok(())
     }
 
-    fn router(auth_token: Option<&str>) -> Router {
-        let router = crate::core::ocla::wire_api::ocla_router();
+    fn router(
+        auth_token: Option<&str>,
+        dlq_scope: Option<crate::core::a2a::dlq::DlqScope>,
+    ) -> Router {
+        let router = dlq_scope.map_or_else(
+            crate::core::ocla::wire_api::ocla_router,
+            crate::core::ocla::wire_api::ocla_router_with_dlq,
+        );
         match auth_token.filter(|token| !token.is_empty()) {
             Some(token) => {
                 let expected = Arc::new(token.as_bytes().to_vec());
@@ -152,7 +177,7 @@ mod http {
                 if let Some(value) = authorization {
                     request = request.header(header::AUTHORIZATION, value);
                 }
-                let response = router(Some("secret"))
+                let response = router(Some("secret"), None)
                     .oneshot(request.body(Body::empty()).expect("request"))
                     .await
                     .expect("response");
@@ -162,7 +187,7 @@ mod http {
 
         #[tokio::test]
         async fn auth_accepts_matching_bearer_token() {
-            let response = router(Some("secret"))
+            let response = router(Some("secret"), None)
                 .oneshot(
                     Request::builder()
                         .method("GET")

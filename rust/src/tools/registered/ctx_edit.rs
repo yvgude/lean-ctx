@@ -6,6 +6,7 @@ use std::path::Path;
 
 use crate::server::tool_trait::{
     McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str, require_resolved_path,
+    tool_execution_error,
 };
 use crate::tool_defs::tool_def;
 
@@ -128,8 +129,9 @@ impl McpTool for CtxEditTool {
             // Heavy disk I/O — no global cache lock held here.
             let before = std::fs::read(&path).unwrap_or_default();
             let (output, effect) = crate::tools::ctx_edit::run_io(&edit_params, &last_mode);
+            let written = matches!(effect, crate::tools::ctx_edit::CacheEffect::Invalidate);
 
-            if matches!(effect, crate::tools::ctx_edit::CacheEffect::Invalidate) {
+            if written {
                 let after = std::fs::read(&path).unwrap_or_default();
                 observe_mcp_edit(ctx, &path, "ctx_edit", &before, &after);
             }
@@ -151,6 +153,13 @@ impl McpTool for CtxEditTool {
                         );
                     }
                 }
+            }
+
+            // Keep recovery/cache effects, but never report a rejected edit as
+            // successful or mark its file modified. Dispatch turns this into a
+            // filtered MCP tool error through the full output pipeline.
+            if !written {
+                return Err(tool_execution_error(output));
             }
 
             if let Some(session_lock) = ctx.session.as_ref() {

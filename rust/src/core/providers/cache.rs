@@ -1,9 +1,33 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use std::collections::HashMap;
 use std::sync::Mutex;
 use std::time::{Duration, Instant, SystemTime};
 
 const MAX_CACHE_ENTRIES: usize = 2048;
 const STALE_SERVE_GRACE: Duration = Duration::from_hours(1);
+
+/// Partition cached responses by the exact request and credential, not authorization state.
+/// Credential rotation misses the cache; same-credential revocation still follows cache TTL.
+pub(super) fn request_cache_key(
+    provider_id: &str,
+    request_url: &str,
+    credential: Option<&str>,
+) -> String {
+    let mut hasher = blake3::Hasher::new();
+    for component in [provider_id.as_bytes(), request_url.as_bytes()] {
+        hasher.update(&(component.len() as u64).to_be_bytes());
+        hasher.update(component);
+    }
+    let credential_marker = [u8::from(credential.is_some())];
+    hasher.update(&(credential_marker.len() as u64).to_be_bytes());
+    hasher.update(&credential_marker);
+    if let Some(credential) = credential {
+        hasher.update(&(credential.len() as u64).to_be_bytes());
+        hasher.update(credential.as_bytes());
+    }
+    format!("{provider_id}:request:v2:{}", hasher.finalize().to_hex())
+}
 
 static PROVIDER_CACHE: std::sync::LazyLock<Mutex<ProviderCache>> =
     std::sync::LazyLock::new(|| Mutex::new(ProviderCache::new()));
@@ -480,6 +504,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial(provider_request_cache)]
     fn test_cache_entry_count_accuracy() {
         invalidate_all();
         set_cached_with_provider("test:count", "value", 60, "test");
@@ -497,5 +522,107 @@ mod tests {
             last_fetch: None,
         };
         assert!((stats.hit_rate() - 0.75).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn request_cache_key_is_deterministic_and_principal_request_bound() {
+        let request = "https://gitlab.example/api/v4/projects/group%2Fproject/issues?per_page=20&state=opened";
+        let key = request_cache_key("gitlab", request, Some("principal-token"));
+
+        assert_eq!(
+            key,
+            request_cache_key("gitlab", request, Some("principal-token"))
+        );
+        assert_ne!(
+            key,
+            request_cache_key("gitlab", request, Some("other-principal-token"))
+        );
+        assert_ne!(
+            key,
+            request_cache_key(
+                "gitlab",
+                "https://gitlab.other/api/v4/projects/group%2Fproject/issues?per_page=20&state=opened",
+                Some("principal-token")
+            )
+        );
+        assert_ne!(
+            key,
+            request_cache_key(
+                "gitlab",
+                "https://gitlab.example/api/v4/projects/group%2Fproject/issues?per_page=20&state=closed",
+                Some("principal-token")
+            )
+        );
+        assert_ne!(
+            key,
+            request_cache_key("github", request, Some("principal-token"))
+        );
+        assert_ne!(key, request_cache_key("gitlab", request, None));
+        assert_ne!(key, request_cache_key("gitlab", request, Some("")));
+        assert_ne!(
+            request_cache_key("gitlab", request, None),
+            request_cache_key("gitlab", request, Some(""))
+        );
+        assert!(!key.contains("principal-token"));
+        assert!(!key.contains("gitlab.example"));
+        assert!(!key.contains("group%2Fproject"));
+    }
+
+    #[test]
+    fn request_cache_key_does_not_reuse_legacy_raw_key() {
+        let key = request_cache_key(
+            "gitlab",
+            "https://gitlab.example/api/v4/projects/group%2Fproject/issues?per_page=20&state=opened",
+            Some("principal-token"),
+        );
+        let legacy_key = "gitlab:issues:group/project:Some(\"opened\"):None:20";
+
+        assert_ne!(key, legacy_key);
+        assert!(key.starts_with("gitlab:request:v2:"));
+    }
+
+    #[test]
+    fn request_cache_key_isolates_fresh_and_stale_responses() {
+        let request = "https://gitlab.example/api/v4/projects/42/issues?state=opened";
+        let principal_key = request_cache_key("gitlab", request, Some("principal-token"));
+        let foreign_keys = [
+            request_cache_key("gitlab", request, Some("other-principal-token")),
+            request_cache_key("gitlab", request, None),
+            request_cache_key("gitlab", request, Some("")),
+            request_cache_key("github", request, Some("principal-token")),
+            request_cache_key(
+                "gitlab",
+                "https://gitlab.other/api/v4/projects/42/issues?state=opened",
+                Some("principal-token"),
+            ),
+            request_cache_key(
+                "gitlab",
+                "https://gitlab.example/api/v4/projects/42/issues?state=closed",
+                Some("principal-token"),
+            ),
+        ];
+        let mut cache = ProviderCache::new();
+        cache.set(
+            principal_key.clone(),
+            "principal response".into(),
+            Duration::from_mins(1),
+            "gitlab",
+        );
+        assert_eq!(cache.get(&principal_key), Some("principal response"));
+        for key in &foreign_keys {
+            assert_eq!(cache.get(key), None);
+        }
+        cache.move_to_stale(&principal_key, Instant::now());
+        assert_eq!(cache.get(&principal_key), Some("principal response"));
+        for key in &foreign_keys {
+            assert_eq!(cache.get(key), None);
+        }
+        cache.set(
+            "gitlab:issues:42:Some(\"opened\"):None:20".into(),
+            "legacy response".into(),
+            Duration::from_mins(1),
+            "gitlab",
+        );
+        assert_eq!(cache.get(&foreign_keys[0]), None);
     }
 }

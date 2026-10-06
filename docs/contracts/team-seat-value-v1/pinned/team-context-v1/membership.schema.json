@@ -1,0 +1,60 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "membership.schema.json",
+  "title": "LeanCTX Team Membership v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "scope",
+    "membership_id",
+    "member_id",
+    "role",
+    "state",
+    "version",
+    "valid_from",
+    "created_at",
+    "created_by",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "membership_id": { "$ref": "common.schema.json#/$defs/id" },
+    "member_id": { "$ref": "common.schema.json#/$defs/memberId" },
+    "role": { "$ref": "common.schema.json#/$defs/role" },
+    "state": { "enum": ["active", "suspended", "revoked"] },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "created_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "created_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "valid_from": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "valid_until": {
+      "$ref": "common.schema.json#/$defs/timestamp",
+      "description": "Exclusive end of the membership validity window. Absent means open-ended. Must be strictly greater than valid_from; see README 'Mandatory cross-field and cross-record validation'."
+    },
+    "revoked_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "revoked_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "revocation_reason_code": { "$ref": "common.schema.json#/$defs/reasonCode" },
+    "parent_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/idempotencyKey" }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/casLineage" },
+    {
+      "if": {
+        "properties": { "state": { "const": "revoked" } },
+        "required": ["state"]
+      },
+      "then": { "required": ["revoked_at", "revoked_by", "revocation_reason_code"] },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["revoked_at"] },
+            { "required": ["revoked_by"] },
+            { "required": ["revocation_reason_code"] }
+          ]
+        }
+      }
+    }
+  ]
+}

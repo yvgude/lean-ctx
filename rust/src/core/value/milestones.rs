@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Milestones: the rare moments lean-ctx speaks up on its own — a native
 //! desktop notification when a lifetime threshold is first crossed.
 //!

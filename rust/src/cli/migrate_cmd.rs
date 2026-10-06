@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! `lean-ctx migrate headroom` — zero-friction migration from Headroom.
 
 use std::{
@@ -10,7 +12,9 @@ use serde::Deserialize;
 #[derive(Debug, Clone)]
 pub(crate) struct MigrateArgs {
     pub source: String,
+    pub input: Option<PathBuf>,
     pub dry_run: bool,
+    pub rollback: bool,
     pub force: bool,
 }
 
@@ -32,12 +36,64 @@ struct HeadroomConfig {
 }
 
 pub(crate) fn cmd_migrate(args: &MigrateArgs) -> Result<(), String> {
+    if args.dry_run && args.rollback {
+        return Err(
+            "--dry-run and --rollback cannot be combined; no migration performed".to_string(),
+        );
+    }
     match args.source.as_str() {
         "headroom" => migrate_headroom(args),
+        "config" => migrate_config_rollback(args),
+        "task-receipt" => migrate_task_receipt(args),
         other => Err(format!(
-            "Unknown migration source: '{other}'. Supported: headroom"
+            "Unknown migration source: '{other}'. Supported: headroom, config, task-receipt"
         )),
     }
+}
+
+fn migrate_config_rollback(args: &MigrateArgs) -> Result<(), String> {
+    if !args.rollback {
+        return Err("config migration is automatic; use --rollback to restore it".to_string());
+    }
+    let path = args
+        .input
+        .clone()
+        .or_else(crate::core::config::Config::path)
+        .ok_or_else(|| "cannot resolve global config path".to_string())?;
+    crate::config_io::rollback_config_migration(&path)?;
+    println!("  ✓ Restored exact pre-v4 config: {}", path.display());
+    Ok(())
+}
+
+fn migrate_task_receipt(args: &MigrateArgs) -> Result<(), String> {
+    let source = args.input.as_deref().ok_or_else(|| {
+        "Usage: lean-ctx migrate task-receipt <legacy-task-directory>".to_string()
+    })?;
+    if args.rollback {
+        crate::core::task_receipt_migration::rollback_legacy_task_receipt(source)?;
+        println!("  ✓ Task/receipt migration record removed; legacy sources retained.");
+        return Ok(());
+    }
+    if args.dry_run {
+        let record = crate::core::task_receipt_migration::assess_legacy_task_receipt(source)?;
+        println!(
+            "  [dry-run] Validated task {} and legacy receipt {}; would write migration record",
+            record.task_id, record.receipt_id
+        );
+        return Ok(());
+    }
+    let result = crate::core::task_receipt_migration::migrate_legacy_task_receipt(source)?;
+    let status = if result.already_migrated {
+        "already migrated"
+    } else {
+        "migrated"
+    };
+    println!(
+        "  ✓ Task/receipt {status}: {}",
+        result.record_path.display()
+    );
+    println!("  Legacy receipt remains non-authoritative; canonical re-execution required.");
+    Ok(())
 }
 
 fn migrate_headroom(args: &MigrateArgs) -> Result<(), String> {
@@ -201,7 +257,9 @@ compression_level = 2
     fn dry_run_produces_no_side_effects() {
         let args = MigrateArgs {
             source: "headroom".into(),
+            input: None,
             dry_run: true,
+            rollback: false,
             force: false,
         };
         let result = cmd_migrate(&args);
@@ -212,11 +270,28 @@ compression_level = 2
     fn unknown_source_returns_error() {
         let args = MigrateArgs {
             source: "unknown-tool".into(),
+            input: None,
             dry_run: false,
+            rollback: false,
             force: false,
         };
         let result = cmd_migrate(&args);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("Unknown migration source"));
+    }
+
+    #[test]
+    fn config_rollback_requires_rollback_flag() {
+        let args = MigrateArgs {
+            source: "config".into(),
+            input: Some(PathBuf::from("config.toml")),
+            dry_run: false,
+            rollback: false,
+            force: false,
+        };
+
+        let error = cmd_migrate(&args).unwrap_err();
+
+        assert!(error.contains("use --rollback"));
     }
 }

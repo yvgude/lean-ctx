@@ -4,7 +4,7 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-lean-ctx registers **78 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
+lean-ctx registers **79 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_analyze`
 
@@ -206,8 +206,8 @@ Run code in sandbox (11 languages) — use when conditionals, multi-line or cros
 ANTIPATTERN: for simple one-liners, prefer ctx_shell (lower overhead, auto-compressed).
 language=shell supports multi-line scripts but shares ctx_shell's security policy.
 action=code (default) for one-shot; action=batch for parallel multi-language;
-action=file to process a project file (extension auto-detects).
-Pass intent to focus large output and save tokens. Languages: javascript,
+action=file to summarize admitted project text as data, without executing it.
+For code/batch, intent annotates large output; file records the intent alongside its preview. Languages: javascript,
 typescript, python, shell, ruby, go, rust, php, perl, r, elixir.
 
 Parameters: `action`, `code`, `intent`, `items`, `language`, `path`, `timeout`
@@ -491,7 +491,7 @@ ANTIPATTERN: not for file content — use ctx_compose/ctx_read instead.
 provider=id (github|gitlab|jira|mcp:<name>); resource=issues|pull_requests.
 Data flows through consolidation pipeline; results searchable via ctx_semantic_search.
 
-Parameters: `action`*, `iid`, `labels`, `limit`, `mode`, `provider`, `resource`, `state`, `status`
+Parameters: `action`*, `id`, `iid`, `labels`, `limit`, `mode`, `project`, `provider`, `query`, `resource`, `state`, `status`
 
 ## `ctx_quality`
 
@@ -692,6 +692,12 @@ Actions: stats (format=summary|json|both, default summary) | proof|v2 (format=su
 ANTIPATTERN: not for runtime verification during active development — use for periodic audit.
 
 Parameters: `action`, `format`
+
+## `ctx_work_graph`
+
+Free persistent project-scoped bounded local Work Graph for multi-agent execution. Actions: create|delegate|claim|execute|consume|complete|receipt|accept|fuse|attribution|value_report|cancel|get|observe|list. Observe returns compact state without context payloads or execution fences.
+
+Parameters: `accepted_nodes`, `action`*, `capsule_ref`, `claims`, `connector`, `cost_micros`, `execution_fence`, `expected_outcome_ref`, `graph_id`, `if_revision`, `max_attempts`, `max_concurrency`, `model`, `node_id`, `outcome`, `outcome_ref`, `parent_node_id`, `path_claims`, `policy_ref`, `receipt_id`, `stop_reason`, `task_ref`, `timeout_ms`, `to_agent`, `tokens`
 
 ## `shell`
 

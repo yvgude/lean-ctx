@@ -102,9 +102,8 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
         }
 
         // Multi-agent: on-demand collaboration
-        "ctx_agent" | "ctx_share" | "ctx_task" | "ctx_handoff" | "ctx_workflow" => {
-            ToolCategory::Session
-        }
+        "ctx_agent" | "ctx_share" | "ctx_task" | "ctx_handoff" | "ctx_workflow"
+        | "ctx_work_graph" => ToolCategory::Session,
 
         _ => ToolCategory::Core,
     }

@@ -24,7 +24,7 @@ pub fn cmd_session_action(args: &[String]) {
             let mut session = load_or_create_session();
             let out =
                 ctx_session::handle(&mut session, &[], "task", Some(desc), None, default_opts());
-            let _ = session.save();
+            require_session_save(&mut session);
             println!("{out}");
         }
         Some("finding") => {
@@ -49,7 +49,7 @@ pub fn cmd_session_action(args: &[String]) {
                 None,
                 default_opts(),
             );
-            let _ = session.save();
+            require_session_save(&mut session);
             println!("{out}");
         }
         Some("save") => {
@@ -65,8 +65,13 @@ pub fn cmd_session_action(args: &[String]) {
                 }
             }
             let mut session = load_or_create_session();
-            let out = ctx_session::handle(&mut session, &[], "save", None, None, default_opts());
-            println!("{out}");
+            match ctx_session::save_session(&mut session) {
+                Ok(out) => println!("{out}"),
+                Err(error) => {
+                    eprintln!("Session was not saved: {error}");
+                    std::process::exit(1);
+                }
+            }
         }
         Some("load") => {
             let id = args.get(1).map(String::as_str);
@@ -82,6 +87,7 @@ pub fn cmd_session_action(args: &[String]) {
                 }
             }
             let mut session = SessionState::new();
+            stamp_current_project_root(&mut session);
             let out = ctx_session::handle(&mut session, &[], "load", None, id, default_opts());
             println!("{out}");
         }
@@ -123,7 +129,7 @@ pub fn cmd_session_action(args: &[String]) {
                 None,
                 default_opts(),
             );
-            let _ = session.save();
+            require_session_save(&mut session);
             println!("{out}");
         }
         Some("dismiss-pro") => {
@@ -161,8 +167,20 @@ pub fn cmd_session_action(args: &[String]) {
     }
 }
 
+fn require_session_save(session: &mut SessionState) {
+    if let Err(error) = session.save() {
+        eprintln!("Session was not saved: {error}");
+        std::process::exit(1);
+    }
+}
+
 fn load_or_create_session() -> SessionState {
     let mut session = SessionState::load_latest().unwrap_or_default();
+    stamp_current_project_root(&mut session);
+    session
+}
+
+fn stamp_current_project_root(session: &mut SessionState) {
     // Stamp the project root on bare-CLI sessions the way the MCP daemon does
     // from its roots handshake. Without it a CLI-only flow
     // (`session task … ; snapshot create`) saves a rootless session that
@@ -174,7 +192,6 @@ fn load_or_create_session() -> SessionState {
     {
         session.project_root = Some(cwd.to_string_lossy().to_string());
     }
-    session
 }
 
 fn default_opts() -> SessionToolOptions<'static> {

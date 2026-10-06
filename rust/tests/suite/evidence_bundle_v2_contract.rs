@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::fs;

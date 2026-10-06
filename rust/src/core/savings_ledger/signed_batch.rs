@@ -173,7 +173,8 @@ impl SignedSavingsBatchV1 {
     /// together with the batch by [`Self::sign_with_key`].
     pub fn attach_security(&mut self, counts: SecurityCounts, evidence: Evidence) {
         self.security = Some(SecurityTallyV1 {
-            counts,
+            // Byte-identical to the tally server mirrors verify field by field.
+            counts: counts.signed_tally_projection(),
             audit_entries: evidence.entries,
             audit_first_hash: evidence.first_hash,
             audit_last_hash: evidence.last_hash,
@@ -531,6 +532,33 @@ mod tests {
                 .unwrap()
                 .contains("security"),
             "a batch without security events serializes exactly as before"
+        );
+    }
+
+    #[test]
+    fn gateway_kinds_never_change_the_signed_tally_bytes() {
+        // Server mirrors verify the tally field by field and predate the
+        // context-gateway kinds: those stay out, the bytes stay the old shape.
+        let mut b = batch();
+        b.attach_security(
+            SecurityCounts {
+                secrets_redacted: 2,
+                pii_redacted: 5,
+                content_withheld: 1,
+                coverage_incomplete: 3,
+                ..SecurityCounts::default()
+            },
+            Evidence::default(),
+        );
+        let counts = serde_json::to_value(b.security.as_ref().unwrap().counts).unwrap();
+        assert_eq!(
+            counts,
+            serde_json::json!({
+                "secrets_redacted": 2,
+                "shell_blocked": 0,
+                "path_blocked": 0,
+                "injection_flagged": 0
+            })
         );
     }
 

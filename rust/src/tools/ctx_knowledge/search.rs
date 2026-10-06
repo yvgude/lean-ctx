@@ -80,7 +80,8 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
 
             let knowledge_file = entry.path().join("knowledge.json");
             if let Ok(content) = std::fs::read_to_string(&knowledge_file)
-                && let Ok(knowledge) = serde_json::from_str::<ProjectKnowledge>(&content)
+                && let Ok(stored) = serde_json::from_str::<ProjectKnowledge>(&content)
+                && let Some(knowledge) = ProjectKnowledge::load(&stored.project_root)
             {
                 let is_foreign = current_project_hash
                     .as_ref()
@@ -125,7 +126,7 @@ pub(crate) fn handle_search(query: Option<&str>) -> String {
                 continue;
             }
             if let Ok(json) = std::fs::read_to_string(&path)
-                && let Ok(session) = serde_json::from_str::<SessionState>(&json)
+                && let Ok(session) = SessionState::from_storage_json(&json)
             {
                 for finding in &session.findings {
                     let searchable = finding.summary.to_lowercase();

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // One quiet status bar item: what lean-ctx did in this project.
 // Numbers come from `lean-ctx prompt-segment --json`; nothing is computed here.
 // Plus the semantic bridge: lean-ctx asks this editor's language features

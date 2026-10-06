@@ -1,8 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinObservationHook — keeps structured observations per session.
 //!
 //! Wraps the proxy observation path. Each `observe` call enriches the
-//! observation with delivered tokens and compression ratio, projects file
-//! reads onto the heatmap, and appends to a bounded per-session ring buffer.
+//! observation with delivered tokens and compression ratio and appends it to a
+//! bounded per-session ring buffer. File-access heatmap recording belongs to
+//! the unified execution lifecycle, so the hook has no side effects.
 
 use std::collections::{HashMap, VecDeque};
 use std::sync::Mutex;
@@ -83,23 +85,6 @@ impl BuiltinObservationHook {
             .insert(COMPRESSION_RATIO_MILLI.into(), ratio.to_string());
         (original, saved)
     }
-
-    fn project_heatmap(observation: &Observation, original: u64, saved: u64) {
-        let Some(path) = observation.context.content_ref.strip_prefix("file:") else {
-            return;
-        };
-        if path.is_empty() || original == 0 {
-            return;
-        }
-        let original = usize::try_from(original).unwrap_or(usize::MAX);
-        let saved = usize::try_from(saved).unwrap_or(usize::MAX);
-        crate::core::heatmap::record_file_access_with_agent(
-            path,
-            original,
-            saved.min(original),
-            Some(&observation.context.agent_id),
-        );
-    }
 }
 
 impl Default for BuiltinObservationHook {
@@ -109,6 +94,10 @@ impl Default for BuiltinObservationHook {
 }
 
 impl OclaService for BuiltinObservationHook {
+    fn manifest(&self) -> crate::core::ocla::OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+        crate::core::ocla::capability_fabric::builtin_manifest(&self.capability())
+    }
+
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::ObservationHook)
     }
@@ -117,10 +106,8 @@ impl OclaService for BuiltinObservationHook {
 #[async_trait::async_trait]
 impl ObservationHook for BuiltinObservationHook {
     async fn observe(&self, mut observation: Observation) -> OclaResult<()> {
-        let (original, saved) = Self::enrich(&mut observation);
+        Self::enrich(&mut observation);
         let session_id = observation.context.session_id.clone();
-        Self::project_heatmap(&observation, original, saved);
-
         let mut state = self
             .state
             .lock()
@@ -175,7 +162,7 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn observe_enriches_tokens_and_projects_file_access() {
+    async fn observe_enriches_tokens_without_projecting_side_effects() {
         let hook = BuiltinObservationHook::new();
         let mut context = ctx("s1");
         context.content_ref = "file:src/observed.rs".into();

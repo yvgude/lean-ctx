@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "fixtures": [
+    {
+      "id": "compatibility-fixture",
+      "family": "execution_receipt_v1",
+      "legacy_release": "v3",
+      "path": "rust/tests/fixtures/v3/execution-receipt-v1.json",
+      "migration": "read_only_compatibility_projection",
+      "authority": "non_authoritative",
+      "canonical_successor": "ReceiptDocumentV1",
+      "test": "rust/tests/v3_receipt_fixture_migration.rs"
+    },
+    {
+      "id": "task-spine-001",
+      "family": "execution_receipt_v1",
+      "legacy_release": "v3",
+      "path": "_archive/benchmarks/efficiency/task-spine-v1/tasks/task-001-python-bug/execution_receipt.json",
+      "migration": "read_only_compatibility_projection",
+      "authority": "non_authoritative",
+      "canonical_successor": "ReceiptDocumentV1",
+      "test": "rust/tests/suite/execution_receipt_roundtrip.rs"
+    },
+    {
+      "id": "task-spine-002",
+      "family": "execution_receipt_v1",
+      "legacy_release": "v3",
+      "path": "_archive/benchmarks/efficiency/task-spine-v1/tasks/task-002-rust-refactor/execution_receipt.json",
+      "migration": "read_only_compatibility_projection",
+      "authority": "non_authoritative",
+      "canonical_successor": "ReceiptDocumentV1",
+      "test": "rust/tests/suite/execution_receipt_roundtrip.rs"
+    },
+    {
+      "id": "task-spine-003",
+      "family": "execution_receipt_v1",
+      "legacy_release": "v3",
+      "path": "_archive/benchmarks/efficiency/task-spine-v1/tasks/task-003-typescript-tests/execution_receipt.json",
+      "migration": "read_only_compatibility_projection",
+      "authority": "non_authoritative",
+      "canonical_successor": "ReceiptDocumentV1",
+      "test": "rust/tests/suite/execution_receipt_roundtrip.rs"
+    },
+    {
+      "id": "task-spine-004",
+      "family": "execution_receipt_v1",
+      "legacy_release": "v3",
+      "path": "_archive/benchmarks/efficiency/task-spine-v1/tasks/task-004-documentation/execution_receipt.json",
+      "migration": "read_only_compatibility_projection",
+      "authority": "non_authoritative",
+      "canonical_successor": "ReceiptDocumentV1",
+      "test": "rust/tests/suite/execution_receipt_roundtrip.rs"
+    },
+    {
+      "id": "task-spine-005",
+      "family": "execution_receipt_v1",
+      "legacy_release": "v3",
+      "path": "_archive/benchmarks/efficiency/task-spine-v1/tasks/task-005-go-security/execution_receipt.json",
+      "migration": "read_only_compatibility_projection",
+      "authority": "non_authoritative",
+      "canonical_successor": "ReceiptDocumentV1",
+      "test": "rust/tests/suite/execution_receipt_roundtrip.rs"
+    },
+    {
+      "id": "task-spine-006",
+      "family": "execution_receipt_v1",
+      "legacy_release": "v3",
+      "path": "_archive/benchmarks/efficiency/task-spine-v1/tasks/task-006-react-feature/execution_receipt.json",
+      "migration": "read_only_compatibility_projection",
+      "authority": "non_authoritative",
+      "canonical_successor": "ReceiptDocumentV1",
+      "test": "rust/tests/suite/execution_receipt_roundtrip.rs"
+    },
+    {
+      "id": "task-spine-007",
+      "family": "execution_receipt_v1",
+      "legacy_release": "v3",
+      "path": "_archive/benchmarks/efficiency/task-spine-v1/tasks/task-007-rust-performance/execution_receipt.json",
+      "migration": "read_only_compatibility_projection",
+      "authority": "non_authoritative",
+      "canonical_successor": "ReceiptDocumentV1",
+      "test": "rust/tests/suite/execution_receipt_roundtrip.rs"
+    },
+    {
+      "id": "task-spine-008",
+      "family": "execution_receipt_v1",
+      "legacy_release": "v3",
+      "path": "_archive/benchmarks/efficiency/task-spine-v1/tasks/task-008-ci-fix/execution_receipt.json",
+      "migration": "read_only_compatibility_projection",
+      "authority": "non_authoritative",
+      "canonical_successor": "ReceiptDocumentV1",
+      "test": "rust/tests/suite/execution_receipt_roundtrip.rs"
+    },
+    {
+      "id": "task-spine-009",
+      "family": "execution_receipt_v1",
+      "legacy_release": "v3",
+      "path": "_archive/benchmarks/efficiency/task-spine-v1/tasks/task-009-fastapi-endpoint/execution_receipt.json",
+      "migration": "read_only_compatibility_projection",
+      "authority": "non_authoritative",
+      "canonical_successor": "ReceiptDocumentV1",
+      "test": "rust/tests/suite/execution_receipt_roundtrip.rs"
+    },
+    {
+      "id": "task-spine-010",
+      "family": "execution_receipt_v1",
+      "legacy_release": "v3",
+      "path": "_archive/benchmarks/efficiency/task-spine-v1/tasks/task-010-database-migration/execution_receipt.json",
+      "migration": "read_only_compatibility_projection",
+      "authority": "non_authoritative",
+      "canonical_successor": "ReceiptDocumentV1",
+      "test": "rust/tests/suite/execution_receipt_roundtrip.rs"
+    }
+  ],
+  "unsupported": [
+    {
+      "family": "unsigned_legacy_receipt_to_signed_receipt",
+      "reason": "A v3 signature and incomplete evidence cannot be promoted into canonical V4 trust; re-execution through the canonical producer is required."
+    }
+  ]
+}

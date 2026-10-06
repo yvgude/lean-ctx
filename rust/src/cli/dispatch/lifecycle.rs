@@ -165,7 +165,8 @@ pub(super) fn cmd_dev_install() {
         }
     }
 
-    let built_binary = resolve_cargo_target_dir(&cargo_root)
+    let target_dir = resolve_cargo_target_dir(&cargo_root);
+    let built_binary = target_dir
         .join("release")
         .join(format!("lean-ctx{}", std::env::consts::EXE_SUFFIX));
     if !built_binary.exists() {
@@ -179,7 +180,7 @@ pub(super) fn cmd_dev_install() {
         std::process::exit(1);
     }
 
-    let install_path = resolve_install_path();
+    let install_path = resolve_install_path(&target_dir);
     eprintln!("Installing to {}…", install_path.display());
 
     eprintln!("  Stopping all lean-ctx processes…");
@@ -407,16 +408,59 @@ fn move_locked_destination_aside(dst: &std::path::Path) {
 /// config files and workspace settings. Runs under a hard timeout (cargo may
 /// touch the network lock) and falls back to `<root>/target` on any failure.
 fn resolve_cargo_target_dir(cargo_root: &std::path::Path) -> std::path::PathBuf {
-    use crate::ipc;
+    // Prefer the explicit override: it is unambiguous and avoids asking Cargo
+    // for a potentially large metadata document just to recover one path.
+    if let Some(configured) = std::env::var_os("CARGO_TARGET_DIR") {
+        let path = std::path::PathBuf::from(configured);
+        return if path.is_absolute() {
+            path
+        } else {
+            cargo_root.join(path)
+        };
+    }
 
+    // `cargo metadata` can emit more than a pipe buffer for a workspace. The
+    // generic process helper intentionally reads only after exit and therefore
+    // can deadlock on that output; drain stdout on a reader thread while the
+    // child runs, preserving the hard timeout without truncating metadata.
     let mut cmd = std::process::Command::new("cargo");
     cmd.args(["metadata", "--no-deps", "--format-version=1"])
-        .current_dir(cargo_root);
-
-    ipc::process::run_with_timeout(cmd, std::time::Duration::from_secs(15))
-        .filter(|o| o.status.success())
-        .and_then(|o| target_dir_from_metadata(&String::from_utf8_lossy(&o.stdout)))
-        .unwrap_or_else(|| cargo_root.join("target"))
+        .current_dir(cargo_root)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    let Ok(mut child) = cmd.spawn() else {
+        return cargo_root.join("target");
+    };
+    let Some(mut stdout) = child.stdout.take() else {
+        let _ = child.kill();
+        let _ = child.wait();
+        return cargo_root.join("target");
+    };
+    let reader = std::thread::spawn(move || {
+        use std::io::Read;
+        let mut output = Vec::new();
+        let _ = stdout.read_to_end(&mut output);
+        output
+    });
+    let start = std::time::Instant::now();
+    let status = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break Some(status),
+            Ok(None) if start.elapsed() >= std::time::Duration::from_secs(15) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                break None;
+            }
+            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(50)),
+            Err(_) => break None,
+        }
+    };
+    let metadata = reader.join().ok().and_then(|output| {
+        status
+            .filter(std::process::ExitStatus::success)
+            .and_then(|_| target_dir_from_metadata(&String::from_utf8_lossy(&output)))
+    });
+    metadata.unwrap_or_else(|| cargo_root.join("target"))
 }
 
 /// Extract `target_directory` from `cargo metadata` JSON. Split out from
@@ -456,14 +500,12 @@ fn find_cargo_project_root_from(start: &std::path::Path) -> Option<std::path::Pa
     }
 }
 
-pub(super) fn resolve_install_path() -> std::path::PathBuf {
+pub(super) fn resolve_install_path(build_dir: &std::path::Path) -> std::path::PathBuf {
     if let Ok(exe) = std::env::current_exe()
         && let Ok(canonical) = exe.canonicalize()
+        && !is_build_artifact(&canonical, build_dir)
     {
-        let is_in_cargo_target = canonical.components().any(|c| c.as_os_str() == "target");
-        if !is_in_cargo_target && canonical.exists() {
-            return canonical;
-        }
+        return canonical;
     }
 
     if let Ok(home) = std::env::var("HOME") {
@@ -474,6 +516,17 @@ pub(super) fn resolve_install_path() -> std::path::PathBuf {
     }
 
     std::path::PathBuf::from("/usr/local/bin/lean-ctx")
+}
+
+/// A running binary inside the build output is never the install target:
+/// dev-install would copy the fresh build onto itself. Besides the literal
+/// `target` component, the resolved build dir covers a relocated
+/// `[build] target-dir` (e.g. a machine-wide `~/.cargo/shared-target`).
+fn is_build_artifact(exe: &std::path::Path, build_dir: &std::path::Path) -> bool {
+    let build_dir = build_dir
+        .canonicalize()
+        .unwrap_or_else(|_| build_dir.to_path_buf());
+    exe.starts_with(&build_dir) || exe.components().any(|c| c.as_os_str() == "target")
 }
 
 /// Returns true if a symlink target points into a Homebrew Cellar / linuxbrew
@@ -652,11 +705,48 @@ mod target_dir_tests {
     #[test]
     fn resolve_falls_back_to_root_target_without_manifest() {
         // No Cargo.toml at / — `cargo metadata` fails, the fallback must kick in.
+        let _env = crate::core::data_dir::test_env_lock();
+        let previous_target_dir = std::env::var_os("CARGO_TARGET_DIR");
+        crate::test_env::remove_var("CARGO_TARGET_DIR");
         let root = if cfg!(windows) { r"C:\" } else { "/" };
-        assert_eq!(
-            resolve_cargo_target_dir(Path::new(root)),
-            Path::new(root).join("target")
+        let resolved = resolve_cargo_target_dir(Path::new(root));
+        match previous_target_dir {
+            Some(value) => crate::test_env::set_var("CARGO_TARGET_DIR", value),
+            None => crate::test_env::remove_var("CARGO_TARGET_DIR"),
+        }
+        assert_eq!(resolved, Path::new(root).join("target"));
+    }
+
+    #[test]
+    fn relocated_build_dir_is_never_an_install_target() {
+        let shared = Path::new("/home/dev/.cargo/shared-target");
+        assert!(super::is_build_artifact(
+            &shared.join("release/lean-ctx"),
+            shared
+        ));
+        assert!(super::is_build_artifact(
+            Path::new("/src/lean-ctx/rust/target/release/lean-ctx"),
+            shared
+        ));
+        assert!(!super::is_build_artifact(
+            Path::new("/home/dev/.local/bin/lean-ctx"),
+            shared
+        ));
+    }
+
+    #[test]
+    fn running_build_output_is_not_chosen_as_install_path() {
+        // Test binaries always live in the resolved target dir, relocated or not.
+        let _env = crate::core::data_dir::test_env_lock();
+        let build_dir = resolve_cargo_target_dir(Path::new(env!("CARGO_MANIFEST_DIR")));
+        let exe = std::env::current_exe().unwrap().canonicalize().unwrap();
+        assert!(
+            super::is_build_artifact(&exe, &build_dir),
+            "{} not under {}",
+            exe.display(),
+            build_dir.display()
         );
+        assert_ne!(super::resolve_install_path(&build_dir), exe);
     }
 }
 
@@ -785,3 +875,4 @@ mod tests {
         );
     }
 }
+// SPDX-License-Identifier: Apache-2.0

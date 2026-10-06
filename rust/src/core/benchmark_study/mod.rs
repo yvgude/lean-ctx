@@ -1,8 +1,8 @@
-//! Combined savings benchmark study (E-Bench).
+//! Compression savings benchmark study (E-Bench).
 //!
-//! Four-arm experiment harness: Control / Compress / Route / Combined
+//! Two-arm experiment harness: Control / CompressOnly on one reference model
 //! against standard coding benchmarks (HumanEval, MBPP, SWE-bench).
-//! Proves lean-ctx multiplicative cost savings with quality retention.
+//! Measures lean-ctx cost savings and quality retention on the same model.
 
 pub(crate) mod analysis;
 pub(crate) mod datasets;

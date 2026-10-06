@@ -2,7 +2,7 @@
   "schema_version": 1,
   "outcome_id": "outcome_01J5XKA5E8H1L4N7Q0T3W6Z9B",
   "task_id": "task_01J5XK7Q2A6M8N4P0R3S5T7V9W",
-  "accepted": "accepted",
+  "accepted": "unknown",
   "signals": {
     "build": null,
     "tests": null,

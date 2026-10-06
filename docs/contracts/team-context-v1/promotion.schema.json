@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "promotion.schema.json",
+  "title": "LeanCTX Context Promotion v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "promotion_id",
+    "scope",
+    "object_id",
+    "object_digest",
+    "from_authority",
+    "to_authority",
+    "requested_by",
+    "requested_at",
+    "state",
+    "policy_digest",
+    "version",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "promotion_id": { "$ref": "common.schema.json#/$defs/id" },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "object_id": { "$ref": "common.schema.json#/$defs/id" },
+    "object_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "from_authority": { "$ref": "common.schema.json#/$defs/authorityState" },
+    "to_authority": {
+      "description": "Target authority. 'personal' is excluded: a promotion never lowers authority, demotion is expressed as supersession or expiry.",
+      "enum": ["team_candidate", "authoritative", "historical"]
+    },
+    "requested_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "requested_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "policy_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Record digest of the active same-scope promotion_authority policy the request was evaluated against."
+    },
+    "decided_by": {
+      "$ref": "common.schema.json#/$defs/memberId",
+      "description": "Deciding approver. MUST NOT equal requested_by; non-self-approval is a mandatory cross-record validation, see README."
+    },
+    "decided_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "decision_reason_code": { "$ref": "common.schema.json#/$defs/reasonCode" },
+    "decision_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Record digest of the same-scope, signed authority-decision that decided this promotion. The decision's promotion_id, object_id, object_digest and scope must match this record."
+    },
+    "state": {
+      "enum": ["pending", "approved", "rejected", "superseded", "expired"]
+    },
+    "valid_from": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "valid_until": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "parent_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/idempotencyKey" }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/casLineage" },
+    {
+      "if": {
+        "properties": { "state": { "enum": ["approved", "rejected"] } },
+        "required": ["state"]
+      },
+      "then": {
+        "required": ["decided_by", "decided_at", "decision_reason_code", "decision_digest"]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["decided_by"] },
+            { "required": ["decided_at"] },
+            { "required": ["decision_reason_code"] },
+            { "required": ["decision_digest"] }
+          ]
+        }
+      }
+    }
+  ]
+}

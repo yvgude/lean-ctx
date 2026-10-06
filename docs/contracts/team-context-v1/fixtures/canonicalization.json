@@ -1,0 +1,155 @@
+{
+  "fixture_kind": "team-context-v1/canonicalization",
+  "fixture_version": 1,
+  "non_secret": true,
+  "description": "Public, non-secret RFC 8785/JCS and detached-signing vectors.",
+  "spec": "RFC 8785 JSON Canonicalization Scheme (JCS)",
+  "vectors": [
+    {
+      "id": "ordering-integers-bools-null",
+      "description": "RFC 8785 JCS vector ordering-integers-bools-null",
+      "input": {
+        "z": 0,
+        "nested": {
+          "β": "é",
+          "a": null
+        },
+        "int": 42,
+        "bool": true,
+        "nil": null,
+        "neg": -7,
+        "a": "first"
+      },
+      "canonical_json": "{\"a\":\"first\",\"bool\":true,\"int\":42,\"neg\":-7,\"nested\":{\"a\":null,\"β\":\"é\"},\"nil\":null,\"z\":0}",
+      "canonical_utf8_base64": "eyJhIjoiZmlyc3QiLCJib29sIjp0cnVlLCJpbnQiOjQyLCJuZWciOi03LCJuZXN0ZWQiOnsiYSI6bnVsbCwizrIiOiLDqSJ9LCJuaWwiOm51bGwsInoiOjB9",
+      "canonical_utf8_byte_length": 90,
+      "sha256": "sha256:ff7e24b4238fa03c6620ddf95be799c81e07c1925cbaab798ba3b2ef9844065d"
+    },
+    {
+      "id": "unicode-escaping",
+      "description": "RFC 8785 JCS vector unicode-escaping",
+      "input": {
+        "text": "café 😀\n\t\"\\\u0001",
+        "slash": "/",
+        "line": " "
+      },
+      "canonical_json": "{\"line\":\" \",\"slash\":\"/\",\"text\":\"café 😀\\n\\t\\\"\\\\\\u0001\"}",
+      "canonical_utf8_base64": "eyJsaW5lIjoi4oCoIiwic2xhc2giOiIvIiwidGV4dCI6ImNhZsOpIPCfmIBcblx0XCJcXFx1MDAwMSJ9",
+      "canonical_utf8_byte_length": 60,
+      "sha256": "sha256:453139f5e2cb293e654e276e1cff81d22a4f69f9ee9e7913c41ad44cc68d42e9"
+    },
+    {
+      "id": "arrays-and-objects",
+      "description": "RFC 8785 JCS vector arrays-and-objects",
+      "input": {
+        "array": [
+          3,
+          false,
+          null,
+          {
+            "10": "ten",
+            "2": "two"
+          }
+        ],
+        "é": "accent",
+        "e": "plain",
+        "0": 0
+      },
+      "canonical_json": "{\"0\":0,\"array\":[3,false,null,{\"10\":\"ten\",\"2\":\"two\"}],\"e\":\"plain\",\"é\":\"accent\"}",
+      "canonical_utf8_base64": "eyIwIjowLCJhcnJheSI6WzMsZmFsc2UsbnVsbCx7IjEwIjoidGVuIiwiMiI6InR3byJ9XSwiZSI6InBsYWluIiwiw6kiOiJhY2NlbnQifQ",
+      "canonical_utf8_byte_length": 79,
+      "sha256": "sha256:9ae5c5d4d5a02aa4a3d89bf7e31a2e5e37386d8241afe05ed8c26347f69aa742"
+    },
+    {
+      "id": "signature-envelope-omission",
+      "description": "RFC 8785 JCS vector signature-envelope-omission",
+      "input": {
+        "v": 1,
+        "decision": "approved",
+        "signature_envelope_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "version": 1
+      },
+      "canonical_json": "{\"decision\":\"approved\",\"v\":1,\"version\":1}",
+      "canonical_utf8_base64": "eyJkZWNpc2lvbiI6ImFwcHJvdmVkIiwidiI6MSwidmVyc2lvbiI6MX0",
+      "canonical_utf8_byte_length": 41,
+      "sha256": "sha256:73cfa1a1bebca86f1f1d5656f790b0726288a276ee54d4a2f7d409c06cb0d11b",
+      "omit_members": [
+        "signature_envelope_digest"
+      ]
+    }
+  ],
+  "signing_inputs": [
+    {
+      "id": "authority-decision-omission-preimage",
+      "description": "Detached signature over the record digest with its own envelope reference omitted",
+      "signed_payload_kind": "authority-decision",
+      "record": {
+        "v": 1,
+        "decision_id": "ad-jcs-fixture",
+        "scope": {
+          "organization_id": "org-acme",
+          "project_id": "proj-leanctx",
+          "workspace_id": "ws-platform"
+        },
+        "decision": "approved",
+        "decided_by": "member:approver",
+        "decided_at": "2026-09-07T10:00:00Z",
+        "signature_envelope_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "version": 1,
+        "idempotency_key": "jcs-signing-fixture-0001"
+      },
+      "signed_payload_digest": "sha256:5cdcdf5291ae3462f1addbb2801d03addc44552db0c16a869a6164ca12cb0234",
+      "signing_string": "leanctx-team-context-v1:authority-decision:sha256:5cdcdf5291ae3462f1addbb2801d03addc44552db0c16a869a6164ca12cb0234",
+      "signing_string_utf8_base64": "bGVhbmN0eC10ZWFtLWNvbnRleHQtdjE6YXV0aG9yaXR5LWRlY2lzaW9uOnNoYTI1Njo1Y2RjZGY1MjkxYWUzNDYyZjFhZGRiYjI4MDFkMDNhZGRjNDQ1NTJkYjBjMTZhODY5YTYxNjRjYTEyY2IwMjM0",
+      "public_key": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+      "signature": "-d0jc5vpeogkcDrXcTGhPP26QvfbaeP2POOT8kM9aTImxPGvJgGATWzMLA5vGPoCc_JeBFva6TnSOVHHGY4OBw",
+      "expect_valid": true
+    },
+    {
+      "id": "reject-small-order-identity-forgery",
+      "description": "Identity public key and identity R with s=0 must be rejected for every message",
+      "signed_payload_kind": "authority-decision",
+      "record": {
+        "v": 1,
+        "decision_id": "ad-jcs-fixture",
+        "scope": {
+          "organization_id": "org-acme",
+          "project_id": "proj-leanctx",
+          "workspace_id": "ws-platform"
+        },
+        "decision": "approved",
+        "decided_by": "member:approver",
+        "decided_at": "2026-09-07T10:00:00Z",
+        "signature_envelope_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+        "version": 1,
+        "idempotency_key": "jcs-signing-fixture-0001"
+      },
+      "signed_payload_digest": "sha256:5cdcdf5291ae3462f1addbb2801d03addc44552db0c16a869a6164ca12cb0234",
+      "signing_string": "leanctx-team-context-v1:authority-decision:sha256:5cdcdf5291ae3462f1addbb2801d03addc44552db0c16a869a6164ca12cb0234",
+      "signing_string_utf8_base64": "bGVhbmN0eC10ZWFtLWNvbnRleHQtdjE6YXV0aG9yaXR5LWRlY2lzaW9uOnNoYTI1Njo1Y2RjZGY1MjkxYWUzNDYyZjFhZGRiYjI4MDFkMDNhZGRjNDQ1NTJkYjBjMTZhODY5YTYxNjRjYTEyY2IwMjM0",
+      "public_key": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "signature": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+      "expect_valid": false
+    }
+  ],
+  "negative_inputs": [
+    {
+      "id": "duplicate-json-member",
+      "kind": "json",
+      "value": "{\"fixture_kind\":\"good\",\"fixture_kind\":\"bad\"}",
+      "description": "Duplicate object names must fail instead of using last-write-wins."
+    },
+    {
+      "id": "padded-base64url",
+      "kind": "base64url-32",
+      "value": "AQAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=",
+      "description": "Padding is forbidden by the canonical wire grammar."
+    },
+    {
+      "id": "standard-base64-alphabet",
+      "kind": "base64url-32",
+      "value": "//////////////////////////////////////////8",
+      "description": "Standard base64 slash characters are not base64url."
+    }
+  ]
+}

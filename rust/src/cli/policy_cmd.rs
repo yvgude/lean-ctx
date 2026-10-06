@@ -23,6 +23,7 @@ pub(crate) fn cmd_policy(args: &[String]) {
         Some("coverage") => cmd_coverage(&args[1..]),
         Some("enforce") => crate::cli::policy_enforce_cmd::cmd_enforce(&args[1..]),
         Some("org") => crate::cli::policy_org_cmd::cmd_policy_org(&args[1..]),
+        Some("personal") => crate::cli::policy_personal_cmd::run(&args[1..]),
         Some("-h" | "--help") | None => print_help(),
         Some(other) => {
             eprintln!("policy: unknown subcommand '{other}'\n");
@@ -51,6 +52,9 @@ USAGE:\n\
                                        Evaluate a tool call against the active\n\
                                        policy (deny/egress/redact/filter) and\n\
                                        record audit evidence — no server needed\n\
+  lean-ctx policy personal <status|preview|apply>\n\
+                                       Prepare and publish personal Pro rules;\n\
+                                       see 'policy personal --help'\n\
   lean-ctx policy org <key|sign|verify|trust|install|status>\n\
                                        Central, signed org policy distribution\n\
                                        (un-bypassable floor); see `policy org -h`\n\n\

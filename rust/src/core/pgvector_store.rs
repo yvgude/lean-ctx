@@ -19,14 +19,24 @@ use serde::Deserialize;
 
 use crate::core::bm25_index::{BM25Index, CodeChunk};
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub(crate) struct PgvectorConfig {
     /// PostgreSQL connection string (postgres://user:pass@host:port/db).
     pub url: String,
-    /// Connect timeout for each psql invocation (seconds).
+    /// Connect timeout and child-wait deadline for each psql invocation (seconds).
     pub timeout_secs: u64,
     /// Table name prefix; the project namespace hash and dimensions are appended.
     pub table_prefix: String,
+}
+
+impl std::fmt::Debug for PgvectorConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("PgvectorConfig")
+            .field("url", &"[redacted]")
+            .field("timeout_secs", &self.timeout_secs)
+            .field("table_prefix", &self.table_prefix)
+            .finish()
+    }
 }
 
 impl PgvectorConfig {
@@ -189,8 +199,7 @@ impl PgvectorStore {
             if line.is_empty() {
                 continue;
             }
-            let row: PgRow = serde_json::from_str(line)
-                .map_err(|e| format!("invalid pgvector row json: {e}"))?;
+            let row = parse_row(line)?;
             out.push(PgvectorHit {
                 score: row.score,
                 file_path: row.file_path,
@@ -263,7 +272,8 @@ impl PgvectorStore {
     }
 
     /// Run SQL through `psql` via a temp file (`-f`) so statement size is not
-    /// limited by ARG_MAX. Returns stdout (tuples-only, unaligned).
+    /// limited by ARG_MAX. Uses the catalog provider's bounded, private capture.
+    /// A deadline/error does not imply rollback of already executed SQL.
     fn run_sql(&self, sql: &str) -> Result<String, String> {
         let mut tmp = tempfile::NamedTempFile::new()
             .map_err(|e| format!("pgvector: temp file failed: {e}"))?;
@@ -272,25 +282,31 @@ impl PgvectorStore {
         tmp.flush()
             .map_err(|e| format!("pgvector: temp flush failed: {e}"))?;
 
-        let output = std::process::Command::new("psql")
-            .arg(&self.cfg.url)
-            .args(["-X", "-q", "-v", "ON_ERROR_STOP=1", "-t", "-A", "-f"])
-            .arg(tmp.path())
-            .env("PGCONNECT_TIMEOUT", self.cfg.timeout_secs.to_string())
-            .output()
-            .map_err(|e| {
-                format!("pgvector: failed to run psql (is the PostgreSQL client installed?): {e}")
-            })?;
+        crate::core::providers::postgres::run_psql(
+            &mut self.sql_command(tmp.path()),
+            std::time::Duration::from_secs(self.cfg.timeout_secs),
+        )
+    }
 
-        if !output.status.success() {
-            let stderr = String::from_utf8_lossy(&output.stderr);
-            return Err(format!("pgvector: psql error: {}", stderr.trim()));
-        }
-        Ok(String::from_utf8_lossy(&output.stdout).into_owned())
+    fn sql_command(&self, sql_path: &Path) -> std::process::Command {
+        let mut command = std::process::Command::new("psql");
+        command
+            .arg(&self.cfg.url)
+            .args(["-X", "-w", "-q", "-v", "ON_ERROR_STOP=1", "-t", "-A", "-f"])
+            .arg(sql_path)
+            .env("PGCONNECT_TIMEOUT", self.cfg.timeout_secs.to_string())
+            .env("PGCLIENTENCODING", "UTF8")
+            .stdin(std::process::Stdio::null());
+        command
     }
 }
 
 const UPSERT_BATCH_ROWS: usize = 256;
+
+fn parse_row(line: &str) -> Result<PgRow, String> {
+    // Serde diagnostics can include a database field's original value.
+    serde_json::from_str(line).map_err(|_| "pgvector: invalid search result".to_owned())
+}
 
 /// One `(id, 'file', 'symbol', 'kind', start, end, '[...]'::vector)` row.
 fn values_row_for_chunk(chunk: &CodeChunk, vector: &[f32]) -> Result<String, String> {
@@ -389,6 +405,65 @@ mod tests {
             content: "fn x() {}".to_string(),
             tokens: vec![],
             token_count: 0,
+        }
+    }
+
+    #[test]
+    fn psql_command_is_noninteractive_and_config_debug_omits_connection() {
+        let store = PgvectorStore {
+            cfg: PgvectorConfig {
+                url: "private-connection-marker".to_string(),
+                timeout_secs: 7,
+                table_prefix: "lctx_test_".to_string(),
+            },
+        };
+        let command = store.sql_command(Path::new("query.sql"));
+        assert_eq!(command.get_program(), "psql");
+        let args: Vec<_> = command.get_args().collect();
+        assert_eq!(
+            args,
+            [
+                "private-connection-marker",
+                "-X",
+                "-w",
+                "-q",
+                "-v",
+                "ON_ERROR_STOP=1",
+                "-t",
+                "-A",
+                "-f",
+                "query.sql"
+            ]
+        );
+        let env: std::collections::BTreeMap<_, _> = command.get_envs().collect();
+        assert_eq!(
+            env[std::ffi::OsStr::new("PGCONNECT_TIMEOUT")],
+            Some(std::ffi::OsStr::new("7"))
+        );
+        assert_eq!(
+            env[std::ffi::OsStr::new("PGCLIENTENCODING")],
+            Some(std::ffi::OsStr::new("UTF8"))
+        );
+        assert!(!format!("{store:?}").contains("private-connection-marker"));
+        assert!(!format!("{:?}", store.cfg).contains("private-connection-marker"));
+    }
+
+    #[test]
+    fn row_parse_failure_does_not_disclose_database_values() {
+        let valid = serde_json::json!({
+            "score": 0.5, "file_path": "src/a.rs", "symbol_name": "a",
+            "kind": "Function", "start_line": 1, "end_line": 2
+        });
+        assert_eq!(parse_row(&valid.to_string()).unwrap().file_path, "src/a.rs");
+        let mut malformed = valid;
+        malformed["score"] = serde_json::json!("private-row-marker");
+        for text in [
+            malformed.to_string(),
+            "invalid private-row-marker".to_string(),
+        ] {
+            let error = parse_row(&text).err().unwrap();
+            assert_eq!(error, "pgvector: invalid search result");
+            assert!(!error.contains("private-row-marker"));
         }
     }
 

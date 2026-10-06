@@ -45,6 +45,19 @@ impl SessionState {
         };
 
         let mut lines = Vec::new();
+        if self
+            .evidence
+            .iter()
+            .any(|item| item.key == "personal_context_copy")
+        {
+            lines.push("COPIED CONTEXT: historical user notes; not verified facts, execution approvals or source-access grants.".into());
+        }
+        if self.last_save_failed {
+            lines.push(
+                "PERSISTENCE FAILED: unsaved changes retained; resolve conflict or retry storage."
+                    .into(),
+            );
+        }
         lines.push(format!(
             "SESSION v{} | {} | {} calls | {} tok saved",
             self.version, duration_str, self.stats.total_tool_calls, self.stats.total_tokens_saved

@@ -4,7 +4,7 @@
   "title": "LeanCTX AcceptedOutcomeV1",
   "description": "Version-one tri-state outcome observation and verification signals.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": [
     "schema_version",
     "outcome_id",
@@ -33,7 +33,10 @@
       "type": "array",
       "items": { "$ref": "#/$defs/evidenceRef" }
     },
-    "observed_at": { "type": "string", "format": "date-time", "minLength": 1 }
+    "observed_at": { "type": "string", "format": "date-time", "minLength": 1 },
+    "plan_id": { "anyOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+    "receipt_id": { "anyOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+    "decision_refs": { "type": "array", "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } }
   },
   "$defs": {
     "identifier": {
@@ -44,7 +47,7 @@
     },
     "signals": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": [
         "build",
         "tests",
@@ -74,9 +77,10 @@
     },
     "evidenceRef": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["kind", "uri", "digest", "signature_status"],
       "properties": {
+        "schema_version": { "anyOf": [{ "const": 1 }, { "type": "null" }] },
         "kind": {
           "type": "string",
           "enum": [
@@ -87,13 +91,42 @@
             "ExperimentOutcome"
           ]
         },
-        "uri": { "type": "string", "minLength": 1 },
-        "digest": { "type": "string", "minLength": 1 },
+        "uri": { "$ref": "#/$defs/identifier" },
+        "digest": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+        "media_type": { "type": ["string", "null"], "minLength": 1, "maxLength": 256 },
         "signature_status": {
           "type": "string",
           "enum": ["Verified", "Unverified", "NotSigned"]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["schema_version"],
+            "properties": { "schema_version": { "const": 1 } }
+          },
+          "then": {
+            "properties": {
+              "digest": {
+                "type": "string",
+                "pattern": "^(?:(?:sha256|blake3):)?[0-9A-Fa-f]{64}$",
+                "maxLength": 256
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "digest": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" }
+            }
+          }
+        }
+      ]
     }
-  }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "accepted": { "enum": ["accepted", "rejected"] } }, "required": ["accepted"] },
+      "then": { "properties": { "evidence_refs": { "minItems": 1 } } }
+    }
+  ]
 }

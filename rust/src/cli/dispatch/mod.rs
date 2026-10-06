@@ -40,6 +40,15 @@ pub fn run() {
         args.remove(1);
     }
 
+    match crate::cli::codex_protected_cmd::protected_gitlab_dispatch(&args) {
+        Ok(Some(code)) => std::process::exit(code),
+        Ok(None) => {}
+        Err(error) => {
+            eprintln!("Error: {error}");
+            std::process::exit(1);
+        }
+    }
+
     if !is_server_mode(&args) {
         restore_sigpipe_default();
     }
@@ -47,6 +56,14 @@ pub fn run() {
     let enters_mcp = args.len() == 1 || args.get(1).is_some_and(|a| a == "mcp");
     if !enters_mcp {
         crate::core::logging::init_logging();
+    }
+    // Default-on telemetry is disclosed once on the first interactive command;
+    // setup and `telemetry` print the same disclosure themselves.
+    if !enters_mcp
+        && !is_server_mode(&args)
+        && !matches!(args.get(1).map(String::as_str), Some("setup" | "telemetry"))
+    {
+        crate::core::telemetry_consent::maybe_show_notice();
     }
 
     if args.len() > 1 {
@@ -82,6 +99,13 @@ pub fn run() {
             }
             "learning" => {
                 cmd_learning(&rest);
+                return;
+            }
+            "autopilot" => {
+                let code = crate::cli::autopilot_cmd::cmd_autopilot(&rest);
+                if code != 0 {
+                    std::process::exit(code);
+                }
                 return;
             }
             "conformance" | "selftest" => {
@@ -167,6 +191,28 @@ pub fn run() {
                 crate::cli::cmd_pack(&rest);
                 return;
             }
+            "migrate" => {
+                let Some(source) = rest.first() else {
+                    eprintln!("Usage: lean-ctx migrate <headroom|config|task-receipt> [source]");
+                    std::process::exit(2);
+                };
+                let migrate_args = crate::cli::migrate_cmd::MigrateArgs {
+                    source: source.clone(),
+                    input: rest
+                        .iter()
+                        .skip(1)
+                        .find(|arg| !arg.starts_with("--"))
+                        .map(Into::into),
+                    dry_run: rest.iter().any(|arg| arg == "--dry-run"),
+                    rollback: rest.iter().any(|arg| arg == "--rollback"),
+                    force: rest.iter().any(|arg| arg == "--force"),
+                };
+                if let Err(error) = crate::cli::migrate_cmd::cmd_migrate(&migrate_args) {
+                    eprintln!("Migration failed: {error}");
+                    std::process::exit(1);
+                }
+                return;
+            }
             "policy" => {
                 crate::cli::cmd_policy(&rest);
                 return;
@@ -229,6 +275,10 @@ pub fn run() {
             }
             "statusline" => {
                 crate::cli::cmd_statusline(&rest);
+                return;
+            }
+            "inspect" => {
+                crate::cli::cmd_inspect(&rest);
                 return;
             }
             "snapshot" => {
@@ -382,8 +432,10 @@ pub fn run() {
                 return;
             }
             "read" => {
-                super::cmd_read(&rest);
-                core::tool_lifecycle::flush_all();
+                let success = super::cmd_read(&rest);
+                if !success {
+                    std::process::exit(1);
+                }
                 return;
             }
             "call" => {
@@ -392,32 +444,26 @@ pub fn run() {
             }
             "diff" => {
                 super::cmd_diff(&rest);
-                core::tool_lifecycle::flush_all();
                 return;
             }
             "grep" => {
                 super::cmd_grep(&rest);
-                core::tool_lifecycle::flush_all();
                 return;
             }
             "glob" => {
                 super::cmd_glob(&rest);
-                core::stats::flush();
                 return;
             }
             "find" => {
                 super::cmd_find(&rest);
-                core::tool_lifecycle::flush_all();
                 return;
             }
             "ls" => {
                 super::cmd_ls(&rest);
-                core::tool_lifecycle::flush_all();
                 return;
             }
             "deps" => {
                 super::cmd_deps(&rest);
-                core::tool_lifecycle::flush_all();
                 return;
             }
             "discover" => {
@@ -707,6 +753,13 @@ pub fn run() {
                 }
                 return;
             }
+            "codex-protected" => {
+                let code = super::cmd_codex_protected(&rest);
+                if code != 0 {
+                    std::process::exit(code);
+                }
+                return;
+            }
             "harden" => {
                 super::harden::run(&rest);
                 return;
@@ -738,11 +791,16 @@ pub fn run() {
             }
             "hook" => {
                 hook_handlers::mark_hook_environment();
+                let action = rest.first().map_or("help", std::string::String::as_str);
+                // Security admission precedes compression bypasses, runtime-env
+                // capture, and the legacy fail-open watchdogs.
+                if hook_handlers::handle_protected_gate(action) {
+                    return;
+                }
                 // Hooks run inside the agent shell environment, so they can see
                 // runtime/session vars (e.g. CODEX_THREAD_ID) that the long-lived
                 // MCP server process never receives. Bridge them for ctx_shell (#370).
                 core::agent_runtime_env::capture();
-                let action = rest.first().map_or("help", std::string::String::as_str);
                 // Gating hooks (rewrite/redirect) self-bound their work and FAIL OPEN
                 // inside the handler (#1035), so they must NOT also carry the
                 // force-exit watchdog (which would `exit(1)` with no decision and
@@ -763,7 +821,34 @@ pub fn run() {
                     "redirect" => hook_handlers::handle_redirect(),
                     "deny" => hook_handlers::handle_deny(),
                     "read-dedup" => hook_handlers::handle_read_dedup(),
-                    "observe" => hook_handlers::handle_observe(),
+                    "observe" => {
+                        let lifecycle = external_lifecycle_guard(
+                            "hook_observe",
+                            None,
+                            core::execution_lifecycle::ToolSurface::Hook,
+                        );
+                        let _ = lifecycle
+                            .context()
+                            .advance(core::execution_lifecycle::LifecycleStage::DispatchPrimitive);
+                        hook_handlers::handle_observe();
+                        let _ = lifecycle.context().skip(
+                            core::execution_lifecycle::LifecycleStage::ReversiblePostProcess,
+                            "hook observation has no output transform",
+                        );
+                        let _ = lifecycle.context().skip(
+                            core::execution_lifecycle::LifecycleStage::RecordContextIr,
+                            "hook observation has no Context IR intent",
+                        );
+                        let _ = lifecycle.context().skip(
+                            core::execution_lifecycle::LifecycleStage::RecordLedger,
+                            "hook observation has no ledger intent",
+                        );
+                        let _ = lifecycle.complete(
+                            core::execution_lifecycle::CompletionObservation::tool_result(
+                                0, 0, "hook", true,
+                            ),
+                        );
+                    }
                     "post-commit" => hook_handlers::handle_post_commit(),
                     "copilot" => hook_handlers::handle_copilot(),
                     "codex-pretooluse" => hook_handlers::handle_codex_pretooluse(),
@@ -939,6 +1024,13 @@ fn print_setup_help() {
     println!("Usage: lean-ctx setup [options]");
     println!();
     println!("Guided setup: shell hook, agent hooks/rules, MCP registrations.");
+    println!("Protected Codex: setup codex-protected --project <DIR> [--policy-pack <NAME>]");
+    println!(
+        "  Checks a separate protected session; add --start to launch. See subcommand --help."
+    );
+    println!(
+        "Optional proprietary runtime: setup runtime <configure|status|sync-configured|rollback-configured|activate-configured|activate-personal|renew-configured|deactivate>. Installation/activation requires --accept-proprietary; rollback-configured restores the retained production version. Staging-only operator commands additionally require --staging.\nSharing (requires --accept-proprietary): share-identity; share-invite --recipient ACCOUNT_UUID --output ABSOLUTE_PRIVATE_FILE [--context-id UUID --revision N --expires-at RFC3339]; share-publish --project ABSOLUTE_DIRECTORY --invitation ABSOLUTE_PRIVATE_FILE; share-continue --project ABSOLUTE_DIRECTORY --invitation ABSOLUTE_PRIVATE_FILE [--expected-head SHA256]. Omit expected-head only for an empty destination. Transfer invitation files confidentially to their named recipient."
+    );
     println!("Interactive by default; runs non-interactively without a TTY.");
     println!();
     println!("Options:");
@@ -1027,31 +1119,138 @@ fn handle_exec(args: &[String], rest: &[String]) -> ! {
     } else {
         core::runtime_flags::enable_compress();
     }
-    let code = shell::exec(&command);
-    core::tool_lifecycle::flush_all();
+    let code = execute_cli_shell("exec", &command, None, false)
+        .map_or_else(|code| code, |(observation, _)| observation.exit_code);
     std::process::exit(code);
 }
 
 fn handle_track(args: &[String]) -> ! {
     let cmd_args = &args[2..];
-    let code = if cmd_args.len() > 1 {
-        shell::exec_argv(cmd_args)
+    let command = shell::join_command(cmd_args);
+    let is_passthrough = crate::shell::reentry::should_pass_through();
+    if cmd_args.len() <= 1 && is_passthrough {
+        passthrough(cmd_args.first().map_or("", String::as_str));
+    }
+    let (command, argv) = if cmd_args.len() > 1 {
+        (command.as_str(), Some(cmd_args))
     } else {
-        let command = cmd_args[0].clone();
-        if crate::shell::reentry::should_pass_through() {
-            passthrough(&command);
-        }
-        shell::exec(&command)
+        (cmd_args.first().map_or("", String::as_str), None)
     };
-    core::tool_lifecycle::flush_all();
+    let code = execute_cli_shell("track", command, argv, is_passthrough)
+        .map_or_else(|code| code, |(observation, _)| observation.exit_code);
     std::process::exit(code);
 }
 
+fn execute_cli_shell(
+    name: &str,
+    command: &str,
+    argv: Option<&[String]>,
+    is_passthrough: bool,
+) -> Result<
+    (
+        shell::ShellDispatchObservation,
+        Option<core::execution_lifecycle::LifecycleGuard<'static>>,
+    ),
+    i32,
+> {
+    let prepared = match argv {
+        Some(args) => shell::prepare_exec_argv(args),
+        None => shell::prepare_exec(command),
+    }?;
+    let lifecycle = (!is_passthrough).then(|| {
+        external_lifecycle_guard(
+            name,
+            Some(command),
+            core::execution_lifecycle::ToolSurface::Cli,
+        )
+    });
+    if let Some(guard) = &lifecycle {
+        let _ = guard
+            .context()
+            .advance(core::execution_lifecycle::LifecycleStage::DispatchPrimitive);
+    }
+    let observation = shell::execute_prepared(prepared);
+    if let Some(guard) = &lifecycle {
+        use core::execution_lifecycle::LifecycleStage;
+        for stage in [
+            LifecycleStage::ReversiblePostProcess,
+            LifecycleStage::RecordContextIr,
+            LifecycleStage::RecordLedger,
+            LifecycleStage::RecordEvidence,
+        ] {
+            let _ = guard
+                .context()
+                .skip(stage, "CLI shell adapter has no artifact observation");
+        }
+        let _ = guard.complete(cli_shell_completion(observation.exit_code));
+    }
+    Ok((observation, lifecycle))
+}
+
+fn cli_shell_completion(code: i32) -> core::execution_lifecycle::CompletionObservation {
+    let mut observation =
+        core::execution_lifecycle::CompletionObservation::tool_result(0, 0, "cli-shell", code == 0);
+    "local".clone_into(&mut observation.provider);
+    observation.outcome_signals.clear();
+    observation
+}
+
+#[cfg(all(test, unix))]
+#[path = "cli_shell_admission_tests.rs"]
+mod cli_shell_admission_tests;
+
+pub(super) fn external_lifecycle_guard(
+    tool_name: &str,
+    query: Option<&str>,
+    surface: core::execution_lifecycle::ToolSurface,
+) -> core::execution_lifecycle::LifecycleGuard<'static> {
+    let session_id = std::env::var("CODEX_THREAD_ID")
+        .or_else(|_| std::env::var("CLAUDE_SESSION_ID"))
+        .unwrap_or_else(|_| format!("cli-{}", std::process::id()));
+    let project_root = std::env::current_dir()
+        .ok()
+        .map(|path| path.to_string_lossy().into_owned());
+    let lifecycle = core::execution_lifecycle::ExecutionLifecycle::global();
+    let context = lifecycle.begin(
+        core::execution_lifecycle::ToolRequest {
+            tool_name: tool_name.to_owned(),
+            query: query.map(str::to_owned),
+            session_id,
+            agent_id: "cli".to_owned(),
+            surface,
+            idempotency_key: None,
+        },
+        core::execution_lifecycle::RuntimeContext {
+            client_name: Some("lean-ctx-cli".to_owned()),
+            project_root,
+        },
+        core::execution_lifecycle::ProductEntitlements::default(),
+    );
+    core::execution_lifecycle::LifecycleGuard::new(lifecycle, context)
+}
+
 fn handle_setup(rest: &[String]) {
+    if rest.first().map(String::as_str) == Some("codex-protected") {
+        let code = super::cmd_setup_codex_protected(&rest[1..]);
+        if code != 0 {
+            std::process::exit(code);
+        }
+        return;
+    }
     // Safety (#476 class): `--help`/`-h` — or any unknown flag — must NEVER
     // fall through to a real setup run that mutates shell + agent configs.
     if rest.iter().any(|a| a == "--help" || a == "-h") {
         print_setup_help();
+        return;
+    }
+    if rest == ["runtime", "configure"] || rest == ["runtime", "configure", "--staging"] {
+        if !setup::configure_runtime() {
+            std::process::exit(2);
+        }
+        return;
+    }
+    if rest.first().map(String::as_str) == Some("runtime") {
+        crate::cli::cmd_engine(rest);
         return;
     }
     const KNOWN: &[&str] = &[
@@ -1064,11 +1263,8 @@ fn handle_setup(rest: &[String]) {
         "--skip-rules",
         "--no-agent-aliases",
     ];
-    if let Some(unknown) = rest
-        .iter()
-        .find(|a| a.starts_with('-') && !KNOWN.contains(&a.as_str()))
-    {
-        eprintln!("setup: unknown flag '{unknown}'\n");
+    if let Some(unknown) = rest.iter().find(|a| !KNOWN.contains(&a.as_str())) {
+        eprintln!("setup: unknown flag or argument '{unknown}'\n");
         print_setup_help();
         std::process::exit(2);
     }
@@ -1205,7 +1401,15 @@ fn restore_sigpipe_default() {
 #[cfg(not(unix))]
 fn restore_sigpipe_default() {}
 
+/// Run the command raw in the user's shell. Pass-through only skips lean-ctx
+/// compression; the allowlist is a security boundary and applies exactly as on
+/// the compress path. An agent process can inherit `LEAN_CTX_WRAPPED` from a
+/// wrapped parent, so every Bash-hook rewrite to `lean-ctx -c` landed here and
+/// ran unchecked (GH #2004, a regression of the #1408 fix).
 fn passthrough(command: &str) -> ! {
+    if let Some(code) = shell::exec::allowlist_gate(command) {
+        std::process::exit(code);
+    }
     let (shell, flag) = shell::shell_and_flag();
     let mut cmd = std::process::Command::new(&shell);
     cmd.arg(&flag).arg(command);
@@ -1228,195 +1432,7 @@ pub(super) fn run_async<F: std::future::Future>(future: F) -> F::Output {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        capability_banner, concise_help_text, is_server_mode, quickstart_text,
-        resolve_worker_threads,
-    };
-    use serial_test::serial;
-
-    fn args_of(parts: &[&str]) -> Vec<String> {
-        parts.iter().map(|s| (*s).to_string()).collect()
-    }
-
-    #[test]
-    fn server_modes_keep_ignored_sigpipe() {
-        for mode in ["mcp", "daemon", "proxy", "serve", "watch", "dashboard"] {
-            assert!(
-                is_server_mode(&args_of(&["lean-ctx", mode])),
-                "{mode} must count as server mode"
-            );
-        }
-        // Bare invocation = MCP server spawned by a client.
-        assert!(is_server_mode(&args_of(&["lean-ctx"])));
-    }
-
-    #[test]
-    fn cli_modes_restore_default_sigpipe() {
-        for mode in ["doctor", "-c", "status", "ls", "grep", "gain", "help"] {
-            assert!(
-                !is_server_mode(&args_of(&["lean-ctx", mode])),
-                "{mode} must count as CLI mode (SIGPIPE default)"
-            );
-        }
-    }
-
-    #[test]
-    fn quickstart_is_short_and_points_to_setup() {
-        let q = quickstart_text();
-        assert!(q.contains("lean-ctx wrap"), "quickstart must point to wrap");
-        assert!(q.contains("lean-ctx help"), "quickstart must point to help");
-        // Must stay a *quickstart*, not the full reference — keep it tight.
-        assert!(
-            q.lines().count() <= 16,
-            "quickstart should be short; got {} lines",
-            q.lines().count()
-        );
-        assert!(
-            !q.contains("COMMANDS:"),
-            "quickstart must not inline the full command reference"
-        );
-    }
-
-    #[test]
-    fn concise_help_is_short_and_points_to_full() {
-        let h = concise_help_text();
-        assert!(h.contains("lean-ctx wrap"), "must lead with wrap");
-        assert!(
-            h.contains("lean-ctx help all"),
-            "must point to full reference"
-        );
-        assert!(
-            h.contains("lean-ctx tools"),
-            "must surface the tools profile command"
-        );
-        // Concise means concise — keep it well under the full reference.
-        assert!(
-            h.lines().count() <= 40,
-            "concise help should stay short; got {} lines",
-            h.lines().count()
-        );
-        assert!(
-            !h.contains("SHELL HOOK PATTERNS"),
-            "concise help must not inline the full pattern catalog"
-        );
-    }
-
-    #[test]
-    fn capability_banner_tool_count_matches_registry() {
-        let n = crate::server::registry::tool_count();
-        let banner = capability_banner();
-        assert!(
-            banner.contains(&format!("{n} MCP tools")),
-            "banner must show the live registry count ({n}); got: {banner}"
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn worker_threads_default_clamps_low() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
-        assert_eq!(resolve_worker_threads(1), 1);
-    }
-
-    #[test]
-    #[serial]
-    fn worker_threads_default_clamps_high() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
-        assert_eq!(resolve_worker_threads(32), 4);
-    }
-
-    #[test]
-    #[serial]
-    fn worker_threads_default_passthrough() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
-        assert_eq!(resolve_worker_threads(3), 3);
-    }
-
-    #[test]
-    #[serial]
-    fn worker_threads_env_override() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_WORKER_THREADS", "12");
-        assert_eq!(resolve_worker_threads(2), 12);
-        crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
-    }
-
-    #[test]
-    #[serial]
-    fn worker_threads_env_invalid_falls_back() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var("LEAN_CTX_WORKER_THREADS", "not_a_number");
-        assert_eq!(resolve_worker_threads(3), 3);
-        crate::test_env::remove_var("LEAN_CTX_WORKER_THREADS");
-    }
-}
+mod tests;
 
 #[cfg(test)]
-mod env_prefix_tests {
-    use super::extract_and_apply_env_prefix;
-    use serial_test::serial;
-
-    #[test]
-    #[serial]
-    fn extracts_lean_ctx_disabled() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
-        let result = extract_and_apply_env_prefix("LEAN_CTX_DISABLED=1 cargo test --lib");
-        assert_eq!(result, "cargo test --lib");
-        assert_eq!(std::env::var("LEAN_CTX_DISABLED").unwrap(), "1");
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
-    }
-
-    #[test]
-    #[serial]
-    fn ignores_non_lean_ctx_vars() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("FOO");
-        let result = extract_and_apply_env_prefix("FOO=bar cargo test --lib");
-        assert_eq!(result, "cargo test --lib");
-        assert!(
-            std::env::var("FOO").is_err(),
-            "FOO must not be set in process env"
-        );
-    }
-
-    #[test]
-    #[serial]
-    fn extracts_multiple_lean_ctx_vars() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
-        crate::test_env::remove_var("LEAN_CTX_ACTIVE");
-        let result =
-            extract_and_apply_env_prefix("LEAN_CTX_DISABLED=1 LEAN_CTX_ACTIVE=1 cargo test --lib");
-        assert_eq!(result, "cargo test --lib");
-        assert_eq!(std::env::var("LEAN_CTX_DISABLED").unwrap(), "1");
-        assert_eq!(std::env::var("LEAN_CTX_ACTIVE").unwrap(), "1");
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
-        crate::test_env::remove_var("LEAN_CTX_ACTIVE");
-    }
-
-    #[test]
-    #[serial]
-    fn no_prefix_returns_unchanged() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        let result = extract_and_apply_env_prefix("cargo test --lib");
-        assert_eq!(result, "cargo test --lib");
-    }
-
-    #[test]
-    #[serial]
-    fn mixed_vars_extracts_only_lean_ctx() {
-        let _env_lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::remove_var("FOO");
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
-        let result = extract_and_apply_env_prefix("FOO=bar LEAN_CTX_DISABLED=1 cargo test --lib");
-        assert_eq!(result, "cargo test --lib");
-        assert_eq!(std::env::var("LEAN_CTX_DISABLED").unwrap(), "1");
-        assert!(std::env::var("FOO").is_err());
-        crate::test_env::remove_var("LEAN_CTX_DISABLED");
-    }
-}
+mod env_prefix_tests;

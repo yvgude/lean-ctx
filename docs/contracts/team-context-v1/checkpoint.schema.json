@@ -1,0 +1,78 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "checkpoint.schema.json",
+  "title": "LeanCTX Workspace Checkpoint v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "checkpoint_id",
+    "scope",
+    "created_by",
+    "created_at",
+    "classification",
+    "checkpoint_state",
+    "object_digests",
+    "receipt_digests",
+    "version",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "checkpoint_id": { "$ref": "common.schema.json#/$defs/id" },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "created_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "created_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "classification": { "$ref": "common.schema.json#/$defs/classification" },
+    "checkpoint_state": {
+      "$ref": "common.schema.json#/$defs/checkpointState",
+      "description": "Checkpoint manifest lifecycle. Deliberately not named authority_state and deliberately disjoint from the object authority vocabulary; the authority of each listed object is read from that object's own authority_state."
+    },
+    "object_digests": {
+      "description": "Record digests of the authoritative object heads committed by this checkpoint, ascending lexicographic order, no duplicates.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/recordDigest" }
+    },
+    "receipt_digests": {
+      "description": "Record digests of the receipts covered by this checkpoint, ascending lexicographic order, no duplicates.",
+      "type": "array",
+      "maxItems": 4096,
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/recordDigest" }
+    },
+    "sealed_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "superseded_by": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Cross-object supersession: record digest of the checkpoint that replaced this one."
+    },
+    "signature_envelope_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Optional in v1. When present, references a signature-envelope whose signed_payload_kind is 'checkpoint'."
+    },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "parent_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/idempotencyKey" }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/casLineage" },
+    {
+      "if": {
+        "properties": { "checkpoint_state": { "enum": ["sealed", "superseded", "expired"] } },
+        "required": ["checkpoint_state"]
+      },
+      "then": { "required": ["sealed_at"] },
+      "else": { "not": { "required": ["sealed_at"] } }
+    },
+    {
+      "if": {
+        "properties": { "checkpoint_state": { "const": "superseded" } },
+        "required": ["checkpoint_state"]
+      },
+      "then": { "required": ["superseded_by"] },
+      "else": { "not": { "required": ["superseded_by"] } }
+    }
+  ]
+}

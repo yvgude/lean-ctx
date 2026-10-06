@@ -118,7 +118,9 @@ mod golden_workloads {
             ],
         };
         let kernel = ContextKernel::new(vec![Box::new(knowledge), Box::new(memory)]);
-        let plan = kernel.plan(&retrieval_ctx("auth middleware bypass debug sequence", 300));
+        let plan = kernel
+            .plan(&retrieval_ctx("auth middleware bypass debug sequence", 300))
+            .expect("valid auth workload plan");
 
         assert!(
             plan.selected
@@ -179,10 +181,12 @@ mod golden_workloads {
             ],
         };
         let kernel = ContextKernel::new(vec![Box::new(provider)]);
-        let plan = kernel.plan(&retrieval_ctx(
-            "cache invalidation Redis connection pool current task add caching",
-            300,
-        ));
+        let plan = kernel
+            .plan(&retrieval_ctx(
+                "cache invalidation Redis connection pool current task add caching",
+                300,
+            ))
+            .expect("valid caching workload plan");
 
         for id in ["cache-invalidation", "redis-pool", "current-cache-task"] {
             assert!(
@@ -211,7 +215,9 @@ mod golden_workloads {
             ],
         };
         let kernel = ContextKernel::new(vec![Box::new(provider)]);
-        let plan = kernel.plan(&retrieval_ctx("item", 200));
+        let plan = kernel
+            .plan(&retrieval_ctx("item", 200))
+            .expect("valid budget workload plan");
 
         assert_eq!(plan.selected.len(), 2);
         assert!(

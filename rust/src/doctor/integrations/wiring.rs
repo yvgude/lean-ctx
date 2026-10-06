@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Shared low-level checks: MCP JSON entries, binary/hook reference
 //! matching, rules files, activity probes.
 
@@ -351,38 +352,48 @@ pub(crate) fn skill_not_applicable_note() -> NamedCheck {
 /// Most recent real `ctx_*` MCP tool call from the event log ("12m ago" /
 /// "never"). #593: the clearest signal of whether the agent actually drives
 /// lean-ctx through MCP — an empty `watch` plus "never" means the agent is using
-/// native tools instead of `ctx_*`, not that lean-ctx is broken. Never fails
-/// (informational), and reads the live event log so it is naturally dynamic.
+/// native tools instead of `ctx_*`, not that lean-ctx is broken. An unreadable
+/// canonical store is reported as unavailable, not as "never" or stale activity.
 pub(crate) fn last_ctx_call_check() -> NamedCheck {
-    let detail = match last_ctx_call_ago() {
-        Some(ago) => format!("{ago} (most recent ctx_* MCP call)"),
-        None => "never — the agent has not called any ctx_* MCP tool yet".to_string(),
+    let (ok, detail) = match last_ctx_call_ago() {
+        Ok(Some(ago)) => (true, format!("{ago} (most recent ctx_* MCP call)")),
+        Ok(None) => (
+            true,
+            "never — the agent has not called any ctx_* MCP tool yet".to_string(),
+        ),
+        Err(error) => (false, format!("unavailable — {error}")),
     };
     NamedCheck {
         name: "Last ctx_* call".to_string(),
-        ok: true,
+        ok,
         detail,
     }
 }
 
-pub(crate) fn last_ctx_call_ago() -> Option<String> {
-    let path = crate::core::paths::state_dir().ok()?.join("events.jsonl");
-    let content = std::fs::read_to_string(&path).ok()?;
-    let ts = content
-        .lines()
+pub(crate) fn last_ctx_call_ago()
+-> Result<Option<String>, crate::core::context_os::ObservationPersistenceError> {
+    let Some(ts) = crate::core::events::try_load_events_from_file(10_000)?
+        .into_iter()
         .rev()
-        .filter_map(|l| serde_json::from_str::<crate::core::events::LeanCtxEvent>(l).ok())
         .find_map(|ev| match ev.kind {
             crate::core::events::EventKind::ToolCall { tool, .. } if tool.starts_with("ctx_") => {
                 Some(ev.timestamp)
             }
             _ => None,
+        })
+    else {
+        return Ok(None);
+    };
+    let parsed =
+        chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%dT%H:%M:%S%.3f").map_err(|_| {
+            crate::core::context_os::ObservationPersistenceError::InvalidRow(
+                "invalid legacy tool-call timestamp".into(),
+            )
         })?;
-    let parsed = chrono::NaiveDateTime::parse_from_str(&ts, "%Y-%m-%dT%H:%M:%S%.3f").ok()?;
     let delta = chrono::Local::now()
         .naive_local()
         .signed_duration_since(parsed);
-    Some(humanize_ago(delta))
+    Ok(Some(humanize_ago(delta)))
 }
 
 pub(crate) fn humanize_ago(d: chrono::Duration) -> String {
@@ -422,6 +433,20 @@ pub(crate) fn rules_path_for(name: &str, home: &std::path::Path) -> Option<std::
 mod tests {
     use super::*;
     use crate::core::config::{RulesInjection, RulesScope};
+
+    #[test]
+    fn last_ctx_call_reads_canonical_compatibility_observations() {
+        let id = crate::core::events::emit(crate::core::events::EventKind::ToolCall {
+            tool: "ctx_observation_regression".into(),
+            tokens_original: 4,
+            tokens_saved: 2,
+            mode: None,
+            duration_ms: 1,
+            path: None,
+        });
+        assert_ne!(id, 0);
+        assert!(last_ctx_call_ago().unwrap().is_some());
+    }
 
     // --- #1598: MSYS vs native Windows spelling of the same wrapper binary ---
 

@@ -1,49 +1,27 @@
-//! Active request router (enterprise#13) — alias + intent-tier model rewrite
-//! in the forward path, **fail-open by construction**.
+// SPDX-License-Identifier: Apache-2.0
+//! Explicit model targets — operator-written aliases in the forward path.
 //!
-//! Runs between body parse and body compression: it may replace the `model`
-//! field and re-target the request to another upstream of the **same wire
-//! shape** — or, with the `shape-xlat` feature (enterprise#16), route an
-//! Anthropic `/v1/messages` request onto an OpenAI-shape upstream with the
-//! translation flag set. The decision is recorded as `routed_from` on the
-//! usage record, so savings attribution can prove what the router did
-//! (enterprise#15/#19).
+//! Runs between body parse and body compression: an exact alias match
+//! (`[proxy.routing.aliases]`, [`RoutingRules`]) may replace the `model` field
+//! and re-target the request to another upstream of the **same wire shape** —
+//! or, with the `shape-xlat` feature (enterprise#16), route an Anthropic
+//! `/v1/messages` request onto an OpenAI-shape upstream with the translation
+//! flag set. `"acme/fast" = "foundry:gpt-4o-mini"` gives clients a stable org
+//! name for an approved endpoint; a `local` target keeps traffic on-device.
 //!
-//! Two rule sources (`[proxy.routing]`, [`RoutingRules`]):
-//!
-//! 1. **Aliases** — exact requested-model match. `"acme/fast" = "foundry:gpt-4o-mini"`
-//!    gives clients a stable org-level name; `"claude-opus-4-5" = "claude-sonnet-4-5"`
-//!    transparently downgrades a concrete model.
-//! 2. **Tiers** — intent classification of the request's last user message
-//!    (`intent_engine::classify` → `route_intent` → `fast|standard|premium`)
-//!    picks the target from the `tiers` table. Unset/empty tier = keep the
-//!    requested model.
-//!
-//! Every failure mode — no rules, no model field, unknown target provider,
-//! shape mismatch, unextractable query — routes nothing: the request forwards
-//! unchanged. A routing bug can cost savings, never availability.
+//! LeanCTX never picks a model on its own. The rewrite is recorded as
+//! `routed_from` on the usage record so the operator can see it happened.
+//! Missing rules/model and unavailable target shapes leave the body unchanged.
 
-use super::routing_feedback::global_feedback;
 use crate::core::config::{
     ResolvedProvider, RoutingRules, Upstreams, WireShape, parse_route_target,
 };
-use crate::core::ocla::registry::OclaRegistry;
-use crate::core::ocla::types::{ModelRouteRequest, OclaRequestContext};
 
-#[cfg(test)]
-use crate::core::ocla::builtin::model_router::BuiltinModelRouter;
-#[cfg(test)]
-use crate::core::ocla::registry::with_test_registry;
-#[cfg(test)]
-use std::sync::Arc;
-
-/// What the router decided for one request. Applied by the forward path:
+/// What an alias resolved to for one request. Applied by the forward path:
 /// `model` already swapped in the body by [`route_request`]; the caller
 /// re-targets the upstream and injects the registry credential if set.
 #[derive(Debug, Clone, PartialEq)]
 pub struct RouteDecision {
-    /// Feedback correlation id unique to this routed request.
-    pub decision_id: String,
     /// Model now in the body.
     pub model: String,
     /// Originally requested model (usage record `routed_from`).
@@ -65,14 +43,9 @@ pub struct RouteDecision {
     pub xlat: bool,
 }
 
-/// Maximum user-message prefix fed to the intent classifier. Classification is
-/// keyword/structure based; a bounded prefix keeps it O(1) per request.
-const CLASSIFY_QUERY_CAP: usize = 2000;
-
-/// Applies the routing rules to a parsed request body. On a routing decision
-/// the body's `model` field is rewritten in place and the full decision is
-/// returned; on any miss/failure the body is untouched and `None` is returned
-/// (fail-open passthrough).
+/// Applies the alias rules to a parsed request body. On a match the body's
+/// `model` field is rewritten in place and the decision is returned; without a
+/// match or reachable target the body is untouched and `None` is returned.
 ///
 /// `xlat_ok` — the caller vouches that this request may be shape-translated
 /// (exact messages-create path, `shape-xlat` compiled in). Subpaths like
@@ -85,10 +58,6 @@ pub fn route_request(
     rules: &RoutingRules,
     xlat_ok: bool,
 ) -> Option<RouteDecision> {
-    if global_feedback().should_use_fallback() {
-        tracing::warn!("routing quality below threshold, using fallback");
-        return None;
-    }
     if !rules.is_active() {
         return None;
     }
@@ -99,53 +68,13 @@ pub fn route_request(
         "OpenAI" => WireShape::OpenAi,
         _ => return None,
     };
-    let requested = parsed.get("model")?.as_str()?.trim().to_string();
-    if requested.is_empty() {
-        return None;
-    }
-
-    #[cfg(test)]
-    let _registry_guard = {
-        let mut registry = OclaRegistry::with_builtins();
-        registry.model_router = Arc::new(BuiltinModelRouter::with_rules(rules.clone()));
-        Some(with_test_registry(registry))
-    };
-
-    let target = rules.aliases.get(&requested).cloned().or_else(|| {
-        let content_ref = extract_user_query(parsed, request_shape)?;
-        let request_id = format!(
-            "proxy-routing:{}",
-            blake3::hash(&serde_json::to_vec(parsed).ok()?).to_hex()
-        );
-        let request = ModelRouteRequest {
-            context: OclaRequestContext {
-                request_id,
-                session_id: "proxy-routing".into(),
-                agent_id: "proxy-routing".into(),
-                content_ref,
-                tenant_id: None,
-                trace_id: "tr-unit".into(),
-                task_id: None,
-                parent_task_id: None,
-            },
-            candidate_models: vec![requested.clone()],
-            maximum_cost_micros: None,
-            maximum_latency_ms: None,
-        };
-        let decision = tokio::task::block_in_place(|| {
-            tokio::runtime::Handle::current()
-                .block_on(OclaRegistry::global().model_router.route_model(request))
-        })
-        .ok()?;
-        if decision.model == requested {
-            None
-        } else if decision.provider.is_empty() {
-            Some(decision.model)
-        } else {
-            Some(format!("{}:{}", decision.provider, decision.model))
-        }
-    })?;
-    let (provider, new_model) = parse_route_target(&target)?;
+    let requested = parsed
+        .get("model")
+        .and_then(serde_json::Value::as_str)?
+        .trim()
+        .to_string();
+    let target = rules.aliases.get(&requested)?;
+    let (provider, new_model) = parse_route_target(target)?;
     let new_model = new_model.to_string();
 
     let resolved = match provider {
@@ -158,14 +87,7 @@ pub fn route_request(
     }
 
     parsed["model"] = serde_json::Value::String(new_model.clone());
-    let route_reason = if rules.aliases.contains_key(&requested) {
-        "alias"
-    } else {
-        "intent_tier"
-    };
-    let decision_id = global_feedback().record_decision(&requested, &new_model, route_reason);
-    let decision = RouteDecision {
-        decision_id,
+    Some(RouteDecision {
         model: new_model,
         routed_from: requested,
         provider_id: resolved.provider_id,
@@ -173,8 +95,7 @@ pub fn route_request(
         credential: resolved.credential,
         local: resolved.local,
         xlat: resolved.xlat,
-    };
-    Some(decision)
+    })
 }
 
 /// A resolved route target. `Default` = model-only rewrite (upstream unchanged).
@@ -278,62 +199,6 @@ fn can_translate(
     false
 }
 
-/// Extracts the newest user-authored text from a request body — the router's
-/// classification input. Handles the two body-addressed dialects:
-///
-/// - Anthropic Messages / OpenAI Chat: `messages[]`, last `role == "user"`,
-///   content as string or text-part array.
-/// - OpenAI Responses: `input` as string, or `input[]` items with
-///   `role == "user"` and `content[]` parts (`input_text`/`text`).
-fn extract_user_query(parsed: &serde_json::Value, shape: WireShape) -> Option<String> {
-    debug_assert!(matches!(shape, WireShape::Anthropic | WireShape::OpenAi));
-    let items = parsed.get("messages").or_else(|| parsed.get("input"))?;
-
-    // OpenAI Responses shorthand: `"input": "plain text"`.
-    if let Some(text) = items.as_str() {
-        return non_empty_prefix(text);
-    }
-    let items = items.as_array()?;
-    let last_user = items.iter().rev().find(|m| {
-        m.get("role").and_then(|r| r.as_str()) == Some("user")
-            || (m.get("type").and_then(|t| t.as_str()) == Some("message")
-                && m.get("role").and_then(|r| r.as_str()) == Some("user"))
-    })?;
-    let content = last_user.get("content")?;
-    if let Some(text) = content.as_str() {
-        return non_empty_prefix(text);
-    }
-    let parts = content.as_array()?;
-    let mut buf = String::new();
-    for part in parts {
-        let is_text = matches!(
-            part.get("type").and_then(|t| t.as_str()),
-            Some("text" | "input_text")
-        );
-        if is_text && let Some(t) = part.get("text").and_then(|t| t.as_str()) {
-            if !buf.is_empty() {
-                buf.push(' ');
-            }
-            buf.push_str(t);
-            if buf.len() >= CLASSIFY_QUERY_CAP {
-                break;
-            }
-        }
-    }
-    non_empty_prefix(&buf)
-}
-fn non_empty_prefix(text: &str) -> Option<String> {
-    let trimmed = text.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    let mut end = trimmed.len().min(CLASSIFY_QUERY_CAP);
-    while !trimmed.is_char_boundary(end) {
-        end -= 1;
-    }
-    Some(trimmed[..end].to_string())
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -366,38 +231,15 @@ mod tests {
         }
     }
 
-    fn rules(aliases: &[(&str, &str)], tiers: &[(&str, &str)]) -> RoutingRules {
+    fn rules(aliases: &[(&str, &str)]) -> RoutingRules {
         RoutingRules {
             enabled: Some(true),
             aliases: aliases
                 .iter()
                 .map(|(k, v)| (k.to_string(), v.to_string()))
                 .collect(),
-            tiers: tiers
-                .iter()
-                .map(|(k, v)| (k.to_string(), v.to_string()))
-                .collect(),
+            ..RoutingRules::default()
         }
-    }
-
-    #[test]
-    fn route_decision_does_not_record_feedback_before_outcome() {
-        let feedback = global_feedback();
-        let before = feedback.stats();
-        let mut body = json!({"model":"expensive","messages":[{"role":"user","content":"hi"}]});
-
-        let decision = route_request(
-            &mut body,
-            "OpenAI",
-            &upstreams_with_foundry(),
-            &rules(&[("expensive", "fast")], &[]),
-            false,
-        )
-        .expect("alias should route");
-
-        assert_eq!(decision.routed_from, "expensive");
-        assert_eq!(decision.model, "fast");
-        assert_eq!(feedback.stats(), before);
     }
 
     #[test]
@@ -407,7 +249,7 @@ mod tests {
             &mut body,
             "OpenAI",
             &upstreams_with_foundry(),
-            &rules(&[("acme/fast", "foundry:gpt-4o-mini")], &[]),
+            &rules(&[("acme/fast", "foundry:gpt-4o-mini")]),
             false,
         )
         .expect("routed");
@@ -432,7 +274,7 @@ mod tests {
             &mut body,
             "Anthropic",
             &upstreams_with_foundry(),
-            &rules(&[("claude-opus-4-5", "claude-sonnet-4-5")], &[]),
+            &rules(&[("claude-opus-4-5", "claude-sonnet-4-5")]),
             false,
         )
         .expect("routed");
@@ -453,7 +295,7 @@ mod tests {
             &mut body,
             "Anthropic",
             &upstreams_with_foundry(),
-            &rules(&[("claude-opus-4-5", "foundry:gpt-4o-mini")], &[]),
+            &rules(&[("claude-opus-4-5", "foundry:gpt-4o-mini")]),
             false,
         );
         assert_eq!(d, None);
@@ -471,7 +313,7 @@ mod tests {
             &mut body,
             "Anthropic",
             &upstreams_with_foundry(),
-            &rules(&[("claude-opus-4-5", "foundry:gpt-4o-mini")], &[]),
+            &rules(&[("claude-opus-4-5", "foundry:gpt-4o-mini")]),
             true,
         )
         .expect("cross-shape route with translation");
@@ -486,7 +328,7 @@ mod tests {
             &mut body2,
             "OpenAI",
             &upstreams_with_foundry(),
-            &rules(&[("acme/fast", "foundry:gpt-4o-mini")], &[]),
+            &rules(&[("acme/fast", "foundry:gpt-4o-mini")]),
             true,
         )
         .expect("within-shape route");
@@ -514,7 +356,7 @@ mod tests {
             &mut body,
             "Anthropic",
             &upstreams,
-            &rules(&[("claude-opus-4-5", "openaiish:gpt-4o-mini")], &[]),
+            &rules(&[("claude-opus-4-5", "openaiish:gpt-4o-mini")]),
             true,
         );
         assert_eq!(d, None);
@@ -526,7 +368,7 @@ mod tests {
             &mut body,
             "Anthropic",
             &upstreams,
-            &rules(&[("claude-opus-4-5", "openaiish:llama3.3")], &[]),
+            &rules(&[("claude-opus-4-5", "openaiish:llama3.3")]),
             true,
         )
         .expect("local cross-shape target routes");
@@ -543,7 +385,7 @@ mod tests {
             &mut body,
             "OpenAI",
             &upstreams_with_foundry(),
-            &rules(&[("gpt-5.2", "claudeish:claude-sonnet-4-5")], &[]),
+            &rules(&[("gpt-5.2", "claudeish:claude-sonnet-4-5")]),
             true,
         );
         assert_eq!(d, None);
@@ -558,119 +400,19 @@ mod tests {
                 &mut body,
                 "OpenAI",
                 &upstreams_with_foundry(),
-                &rules(&[("m", "nope:x")], &[]),
+                &rules(&[("m", "nope:x")]),
                 false,
             ),
             None
         );
         // enabled=false → inactive even with rules present.
-        let mut off = rules(&[("m", "foundry:x")], &[]);
+        let mut off = rules(&[("m", "foundry:x")]);
         off.enabled = Some(false);
         assert_eq!(
             route_request(&mut body, "OpenAI", &upstreams_with_foundry(), &off, false),
             None
         );
         assert_eq!(body, before);
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    async fn tier_downgrade_routes_simple_queries_to_cheap_model() {
-        // An explore-style question lands on a non-premium tier (fast, or
-        // standard when the classifier hedges on low confidence). Both map to
-        // the cheap target here — this test pins the routing mechanics; tier
-        // assignment itself is covered by the intent_engine tests.
-        let mut body = json!({
-            "model": "gpt-5.2",
-            "messages": [
-                {"role":"system","content":"be helpful"},
-                {"role":"user","content":"where is the config file for the proxy?"}
-            ]
-        });
-        let d = route_request(
-            &mut body,
-            "OpenAI",
-            &upstreams_with_foundry(),
-            &rules(
-                &[],
-                &[("fast", "foundry:phi-4"), ("standard", "foundry:phi-4")],
-            ),
-            false,
-        )
-        .expect("non-premium query must route");
-        assert_eq!(body["model"], "phi-4");
-        assert_eq!(d.routed_from, "gpt-5.2");
-        assert_eq!(d.provider_id.as_deref(), Some("foundry"));
-    }
-
-    #[tokio::test(flavor = "multi_thread", worker_threads = 1)]
-    async fn premium_tier_unset_keeps_requested_model() {
-        // Generation work classifies premium; with no premium target the
-        // request passes through untouched.
-        let mut body = json!({
-            "model": "gpt-5.2",
-            "messages": [{"role":"user","content":
-                "implement a new distributed lock manager with leader election and fencing tokens"}]
-        });
-        let before = body.clone();
-        let d = route_request(
-            &mut body,
-            "OpenAI",
-            &upstreams_with_foundry(),
-            &rules(&[], &[("fast", "foundry:phi-4"), ("premium", "")]),
-            false,
-        );
-        assert_eq!(d, None);
-        assert_eq!(body, before);
-    }
-
-    #[test]
-    fn responses_input_string_and_items_are_extractable() {
-        let s = json!({"model":"m","input":"quick question about rust"});
-        assert!(extract_user_query(&s, WireShape::OpenAi).is_some());
-
-        let items = json!({"model":"m","input":[
-            {"type":"message","role":"user","content":[{"type":"input_text","text":"what does this do"}]}
-        ]});
-        assert_eq!(
-            extract_user_query(&items, WireShape::OpenAi).as_deref(),
-            Some("what does this do")
-        );
-
-        let anthropic = json!({"model":"m","messages":[
-            {"role":"user","content":[{"type":"text","text":"first"}]},
-            {"role":"assistant","content":"a"},
-            {"role":"user","content":[{"type":"text","text":"latest question"}]}
-        ]});
-        assert_eq!(
-            extract_user_query(&anthropic, WireShape::Anthropic).as_deref(),
-            Some("latest question")
-        );
-    }
-
-    #[test]
-    fn missing_model_or_query_is_passthrough() {
-        let mut no_model = json!({"messages":[{"role":"user","content":"hi"}]});
-        assert_eq!(
-            route_request(
-                &mut no_model,
-                "OpenAI",
-                &upstreams_with_foundry(),
-                &rules(&[], &[("fast", "foundry:phi-4")]),
-                false,
-            ),
-            None
-        );
-        let mut no_user = json!({"model":"m","messages":[{"role":"system","content":"x"}]});
-        assert_eq!(
-            route_request(
-                &mut no_user,
-                "OpenAI",
-                &upstreams_with_foundry(),
-                &rules(&[], &[("fast", "foundry:phi-4")]),
-                false,
-            ),
-            None
-        );
     }
 
     #[test]
@@ -682,7 +424,7 @@ mod tests {
                     &mut body,
                     label,
                     &upstreams_with_foundry(),
-                    &rules(&[("m", "x")], &[]),
+                    &rules(&[("m", "x")]),
                     false,
                 ),
                 None,
@@ -692,11 +434,26 @@ mod tests {
     }
 
     #[test]
-    fn poor_feedback_triggers_fallback() {
-        let feedback = crate::proxy::routing_feedback::RoutingFeedback::new();
-        for _ in 0..20 {
-            feedback.record_outcome("expensive", "fast", Some(0.4), 0, 0);
-        }
-        assert!(feedback.should_use_fallback());
+    fn a_removed_tier_table_never_rewrites_the_model() {
+        // v4 removed automatic model selection: a legacy `[proxy.routing.tiers]`
+        // table must neither activate the router nor change the request.
+        let mut legacy = rules(&[]);
+        legacy
+            .tiers
+            .insert("fast".to_string(), "foundry:phi-4".to_string());
+        assert!(!legacy.is_active());
+        let mut body = json!({"model":"gpt-5.2","messages":[{"role":"user","content":"where is the config?"}]});
+        let before = body.clone();
+        assert_eq!(
+            route_request(
+                &mut body,
+                "OpenAI",
+                &upstreams_with_foundry(),
+                &legacy,
+                false
+            ),
+            None
+        );
+        assert_eq!(body, before);
     }
 }

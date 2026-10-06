@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Mirror a `graph_index` [`ProjectIndex`] into the SQLite property graph.
 //!
 //! The "one extractor → one store" path (#682.1): the mature graph_index
@@ -92,9 +93,10 @@ fn json_str(s: &str) -> String {
 /// statement, which on a real repo (thousands of symbols) is pathologically
 /// slow.
 pub fn populate_from_project_index(graph: &CodeGraph, index: &ProjectIndex) -> anyhow::Result<()> {
-    graph.clear_code_graph()?;
-
     let tx = graph.connection().unchecked_transaction()?;
+    // Removal and replacement share the same commit: failures retain the old
+    // graph, and other connections never observe an intermediate empty store.
+    graph.clear_code_graph()?;
 
     // 1) Files → file nodes + file_catalog (the `pg_populated` gate needs the
     //    catalog; the nodes anchor edges and symbol containment).
@@ -307,6 +309,67 @@ mod tests {
             "provider cross-source edges survive a code-graph rebuild"
         );
         assert_eq!(pg.file_catalog_count().unwrap(), 3, "code graph rebuilt");
+    }
+
+    #[test]
+    fn mirror_failure_preserves_previous_graph_and_provider_edges() {
+        for failure in [
+            "BEFORE INSERT ON file_catalog",
+            "BEFORE DELETE ON file_catalog",
+        ] {
+            let dir = tempfile::tempdir().unwrap();
+            let path = dir.path().join("graph.db");
+            let graph = CodeGraph::try_open(&path).unwrap();
+            populate_from_project_index(&graph, &fixture_index()).unwrap();
+            graph
+                .upsert_cross_source_edge("src/a.rs", "github:issue/42", "mentioned_in", 1.0)
+                .unwrap();
+            let observer = CodeGraph::try_open(&path).unwrap();
+            graph
+                .connection()
+                .execute_batch(&format!(
+                    "CREATE TRIGGER reject_rebuild {failure} BEGIN \
+                     SELECT RAISE(ABORT, 'rebuild storage failure'); END;"
+                ))
+                .unwrap();
+            let mut replacement = ProjectIndex::new("/test");
+            replacement
+                .files
+                .insert("replacement.rs".into(), file_entry("replacement.rs"));
+
+            let error = populate_from_project_index(&graph, &replacement).unwrap_err();
+            assert!(error.to_string().contains("rebuild storage failure"));
+            // Read through a separate connection: failed replacement must not
+            // expose a cleared or partially replaced committed graph.
+            assert_eq!(observer.file_catalog_count().unwrap(), 3, "{failure}");
+            assert_eq!(observer.symbol_count().unwrap(), 2, "{failure}");
+            assert_eq!(observer.edge_count().unwrap(), 2, "{failure}");
+            assert_eq!(observer.cross_source_edge_count().unwrap(), 1, "{failure}");
+            assert!(
+                observer
+                    .get_file_catalog("replacement.rs")
+                    .unwrap()
+                    .is_none()
+            );
+            let provider = GraphProvider::PropertyGraph(observer);
+            let mut files = provider.file_paths();
+            files.sort();
+            assert_eq!(files, ["src/a.rs", "src/b.rs", "src/c.rs"], "{failure}");
+        }
+    }
+
+    #[test]
+    fn mirror_transaction_admission_failure_has_no_side_effects() {
+        let graph = CodeGraph::open_in_memory().unwrap();
+        populate_from_project_index(&graph, &fixture_index()).unwrap();
+        let outer = graph.connection().unchecked_transaction().unwrap();
+
+        assert!(populate_from_project_index(&graph, &ProjectIndex::new("/test")).is_err());
+        assert_eq!(graph.file_catalog_count().unwrap(), 3);
+        assert_eq!(graph.symbol_count().unwrap(), 2);
+        assert_eq!(graph.edge_count().unwrap(), 2);
+        outer.commit().unwrap();
+        assert_eq!(graph.file_catalog_count().unwrap(), 3);
     }
 
     #[test]

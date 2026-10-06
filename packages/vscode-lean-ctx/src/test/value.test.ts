@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { strict as assert } from "node:assert";
 import { test } from "node:test";
 import { escapeMarkdown, parsePayload, statusText, tooltipMarkdown } from "../value";

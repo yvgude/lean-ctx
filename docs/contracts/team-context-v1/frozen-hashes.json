@@ -1,0 +1,31 @@
+{
+  "manifest_version": 1,
+  "algorithm": "sha256",
+  "excludes": [
+    "frozen-hashes.json"
+  ],
+  "files": {
+    "../../../scripts/verify-team-context-v1.py": "5df932374f44c32bdbf6598825498f54e30a2dee42eecc9bfbe79015525f74ee",
+    "README.md": "159042d2d68f69156da9f654ca7d0914b609d16857abe7797712ee9469a09740",
+    "authority-decision.schema.json": "88122f50993ea9cc0e366e47f8a7af927a2a3d7f92726acfa29f5037f369c7da",
+    "checkpoint.schema.json": "56cec70850a7a891582172f4c5f89433f3587d96915f749d05835d6c8c870c09",
+    "common.schema.json": "f193647f2652fff7553240e2cf9ee692f4fd4883deee2ac1d3295703ae5405a0",
+    "conflict.schema.json": "8c7e5e060ba48550241ee3ee55e08c07459d66dcb955405fde4f04435f09064f",
+    "context-object.schema.json": "c6618e71433195162f37072e2294b1865002cf8ebabaf34bec350f9e5743c62e",
+    "fixtures/canonicalization.json": "db85af71404c0d6e893751c09cd0229a2963ad2e932dc39c7440dab967725c74",
+    "fixtures/cross-record-cases.json": "ea4530d2d8c19d79f4a6c7aa412bf19b49f5a6dca52fb8c9897474ec5ad06d43",
+    "fixtures/pseudonyms.json": "d8169d0b0c98783ca4773c466fc7b8464c4f4a9f7fb73ee3654b8f62426ed793",
+    "invite.schema.json": "372ba50aacac2e9fca21ebec098f15cdcbd765c5a7f79a6939304653ff8d6e6d",
+    "lease.schema.json": "fbaec837c1316023ea4af78bdeaf774688fc9556425e37487821b31faa071d82",
+    "member.schema.json": "d09a792b517479f2ace013914798c5ef5990a21a4f6dcf01bcc09170c10607b8",
+    "membership.schema.json": "a8df7bc224660e9d35af7ff61d7dc702fc4d5b17382600dbad59ece3bddefab9",
+    "organization.schema.json": "7d508a04c98dfebc6dcba1b17477bad70ed56594ab73bb3ca07e7bc07f236774",
+    "policy.schema.json": "2b655d4e46c1b349b8ae0d348b53d8117853b647d0a7c4ac516f16bbbaac4c9e",
+    "promotion.schema.json": "cd03cae8127c17a2cccb6a52e83171e5698cd9049abb05d98bf15e9d5183bec0",
+    "provenance.schema.json": "c143ae123fa01d1303fc91e6b0ccd12a8aa4790a50724c45720b993dcdb215c0",
+    "signature-envelope.schema.json": "d870f59f9236bdf919d5242fe5b5f6004d9262f35456f9b39aacb5cb2981261b",
+    "team-receipt.schema.json": "ff2e590cfb42493e963cb667da7baf3ef2593e0ea20225eb564d572806de880f",
+    "workspace-role.schema.json": "8e9417744060cafd9fba0d4af00b0b14765308fafd6c7d44bf5d1c1a5ff4ca56",
+    "workspace.schema.json": "9062213175b8ee7f9c4c35c778e28e6b5901dc7d2c74968d88b272b746cb9a7f"
+  }
+}

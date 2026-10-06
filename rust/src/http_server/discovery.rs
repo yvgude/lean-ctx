@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `/.well-known/mcp-server.json`: the MCP server card (#1913).
 
 use axum::Json;
@@ -91,7 +92,7 @@ mod tests {
         };
 
         for (require_auth, scheme) in [(true, "bearer"), (false, "none")] {
-            let app = build_app_router_with_auth(&cfg, require_auth);
+            let app = build_app_router_with_auth(&cfg, require_auth, None);
             let req = Request::builder()
                 .method("GET")
                 .uri("/.well-known/agent.json")

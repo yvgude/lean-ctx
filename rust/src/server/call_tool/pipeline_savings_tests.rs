@@ -1,12 +1,8 @@
-//! Savings/triage/budget unit tests for `pipeline.rs`.
-//!
-//! Split out to keep `pipeline.rs` under the 1500-line LOC gate; the module
-//! stays a child of `pipeline` via `#[path]`, so `use super::…` still resolves
-//! to the pipeline internals it exercises.
+// SPDX-License-Identifier: Apache-2.0
 
 use super::{
-    apply_task_triage_filter, compression_tracker_tokens, triage_bypass_requested,
-    verbatim_requested,
+    apply_task_triage_filter, compression_tracker_tokens, mcp_error_category, shell_error_category,
+    triage_bypass_requested, verbatim_requested,
 };
 
 #[test]
@@ -33,15 +29,20 @@ fn triage_filter_rewrites_raw_output_and_tracks_removed_lines() {
         context_need_milli: 400,
         ..Default::default()
     };
-    let mut context = Some(crate::core::decision_loop_runtime::TaskContext {
-        task_id: String::new(),
-        session_id: String::new(),
-        triage_class: String::new(),
-        profile_intent: String::new(),
-        profile_complexity: String::new(),
-        filtered_lines: 0,
-        start_time: std::time::Instant::now(),
-    });
+    let mut context = Some(
+        crate::core::execution_lifecycle::ExecutionLifecycle::default().begin(
+            crate::core::execution_lifecycle::ToolRequest {
+                tool_name: "ctx_search".into(),
+                query: Some("content".into()),
+                session_id: "triage-filter-test".into(),
+                agent_id: "test".into(),
+                surface: crate::core::execution_lifecycle::ToolSurface::Mcp,
+                idempotency_key: None,
+            },
+            crate::core::execution_lifecycle::RuntimeContext::default(),
+            crate::core::execution_lifecycle::ProductEntitlements::default(),
+        ),
+    );
     let raw = format!("// boilerplate\n{}", "content\n".repeat(100));
 
     let filtered = apply_task_triage_filter(raw, Some(&profile), &mut context, 2);
@@ -126,6 +127,64 @@ fn other_tools_never_claim_the_verbatim_budget() {
     let raw_flag = args(&[("raw", serde_json::Value::Bool(true))]);
     assert!(!verbatim_requested("ctx_search", Some(&raw_flag)));
     assert!(!verbatim_requested("ctx_compose", Some(&raw_flag)));
+}
+
+#[test]
+fn shell_error_categories_use_typed_outcomes_not_output_strings() {
+    use crate::core::telemetry_v2::ErrorCategory;
+    use crate::server::tool_trait::{BackgroundJobState, BackgroundShellOutcome, ShellOutcome};
+
+    assert_eq!(shell_error_category(None, "secret error"), None);
+    assert_eq!(
+        shell_error_category(Some(&ShellOutcome::Exit(0)), "error"),
+        None
+    );
+    assert_eq!(
+        shell_error_category(Some(&ShellOutcome::Blocked), "arbitrary details"),
+        Some(ErrorCategory::Authorization)
+    );
+    assert_eq!(
+        shell_error_category(Some(&ShellOutcome::Exit(124)), "[exit:124]"),
+        Some(ErrorCategory::Timeout)
+    );
+    assert_eq!(
+        shell_error_category(Some(&ShellOutcome::Exit(2)), "provider timeout"),
+        Some(ErrorCategory::Internal)
+    );
+    assert_eq!(
+        shell_error_category(Some(&ShellOutcome::Exit(1)), "grep found no matches"),
+        None
+    );
+    let failed_background = ShellOutcome::Background(BackgroundShellOutcome {
+        state: BackgroundJobState::Failed,
+        exit_code: Some(124),
+        job_id: "opaque-job".into(),
+        archive_id: None,
+        archive_truncated: None,
+        captured_chars: None,
+        archived_chars: None,
+        summary: "typed summary".into(),
+        is_error: true,
+        display: None,
+    });
+    assert_eq!(
+        shell_error_category(Some(&failed_background), "arbitrary details"),
+        Some(ErrorCategory::Timeout)
+    );
+}
+
+#[test]
+fn mcp_error_categories_use_protocol_codes() {
+    use crate::core::telemetry_v2::ErrorCategory;
+
+    assert_eq!(
+        mcp_error_category(rmcp::model::ErrorCode::INVALID_PARAMS),
+        ErrorCategory::Validation
+    );
+    assert_eq!(
+        mcp_error_category(rmcp::model::ErrorCode::INTERNAL_ERROR),
+        ErrorCategory::Internal
+    );
 }
 
 /// #1812: `inline` is the same request as `raw` — verbatim command output.

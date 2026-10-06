@@ -1,3 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
+
+mod snapshot;
+
+use rmcp::ErrorData;
+use serde_json::{Map, Value};
+
 use crate::core::consolidation;
 use crate::core::providers::cache as provider_cache;
 use crate::core::providers::config::GitLabConfig;
@@ -34,6 +41,38 @@ pub fn handle(args: &serde_json::Map<String, serde_json::Value>, ctx: &ToolConte
             format!("Unknown action: {action}. Available: {available}")
         }
     }
+}
+
+pub(crate) fn is_snapshot_request(args: &serde_json::Map<String, serde_json::Value>) -> bool {
+    args.get("action").and_then(serde_json::Value::as_str) == Some("query")
+        && args.get("mode").and_then(serde_json::Value::as_str) == Some("snapshot")
+}
+
+pub(crate) fn is_snapshot_call(name: &str, args: Option<&Map<String, Value>>) -> bool {
+    if name == "ctx_provider" {
+        return args.is_some_and(is_snapshot_request);
+    }
+    if !matches!(name, "ctx" | "ctx_call") {
+        return false;
+    }
+    let Ok((resolved_name, resolved_args)) =
+        crate::tools::registered::ctx_call::resolve(name, args)
+    else {
+        return false;
+    };
+    resolved_name == "ctx_provider" && resolved_args.as_ref().is_some_and(is_snapshot_request)
+}
+
+pub(crate) fn ensure_snapshot_output(
+    name: &str,
+    args: Option<&Map<String, Value>>,
+    text: &str,
+) -> Result<(), ErrorData> {
+    if !is_snapshot_call(name, args) {
+        return Ok(());
+    }
+    snapshot::validate_output(text)
+        .map_err(|_| ErrorData::internal_error("snapshot output validation failed", None))
 }
 
 // ---------------------------------------------------------------------------
@@ -410,34 +449,71 @@ fn handle_registry_query(
         &ctx.project_root,
     )));
 
+    let mode = args
+        .get("mode")
+        .and_then(|v| v.as_str())
+        .unwrap_or("compact");
     let Some(provider_id) = args.get("provider").and_then(|v| v.as_str()) else {
-        return "Error: 'provider' is required for action=query".to_string();
+        return if mode == "snapshot" {
+            snapshot::invalid_request("provider is required")
+        } else {
+            "Error: 'provider' is required for action=query".to_string()
+        };
     };
     let Some(resource) = args.get("resource").and_then(|v| v.as_str()) else {
-        return "Error: 'resource' is required for action=query".to_string();
+        return if mode == "snapshot" {
+            snapshot::invalid_request("resource is required")
+        } else {
+            "Error: 'resource' is required for action=query".to_string()
+        };
     };
 
+    let limit = if mode == "snapshot" {
+        if args.keys().any(|key| {
+            !matches!(
+                key.as_str(),
+                "action"
+                    | "mode"
+                    | "provider"
+                    | "resource"
+                    | "project"
+                    | "state"
+                    | "query"
+                    | "id"
+                    | "limit"
+            )
+        }) || ["project", "state", "query", "id"]
+            .iter()
+            .any(|key| args.get(*key).is_some_and(|value| !value.is_string()))
+        {
+            return snapshot::invalid_request("unknown snapshot field or invalid filter type");
+        }
+        match args.get("limit") {
+            None => None,
+            Some(value) => match value.as_u64().and_then(|limit| usize::try_from(limit).ok()) {
+                Some(limit) => Some(limit),
+                None => return snapshot::invalid_request("limit must be a non-negative integer"),
+            },
+        }
+    } else {
+        args.get("limit")
+            .and_then(serde_json::Value::as_u64)
+            .and_then(|limit| usize::try_from(limit).ok())
+    };
     let params = ProviderParams {
         project: args
             .get("project")
             .and_then(|v| v.as_str())
             .map(String::from),
         state: args.get("state").and_then(|v| v.as_str()).map(String::from),
-        limit: args
-            .get("limit")
-            .and_then(serde_json::Value::as_u64)
-            .map(|n| n as usize),
+        limit,
         query: args.get("query").and_then(|v| v.as_str()).map(String::from),
         id: args.get("id").and_then(|v| v.as_str()).map(String::from),
     };
 
-    let mode = args
-        .get("mode")
-        .and_then(|v| v.as_str())
-        .unwrap_or("compact");
-
     match mode {
         "chunks" => handle_registry_chunks(provider_id, resource, &params, ctx),
+        "snapshot" => snapshot::handle(provider_id, resource, &params, ctx),
         _ => handle_registry_compact(provider_id, resource, &params, ctx),
     }
 }
@@ -448,14 +524,11 @@ fn handle_registry_compact(
     params: &ProviderParams,
     ctx: &ToolContext,
 ) -> String {
-    match global_registry().execute_as_chunks(provider_id, resource, params) {
-        Ok(chunks) => {
+    match global_registry().execute_bound(provider_id, resource, params) {
+        Ok(bound) => {
+            let chunks = bound.chunks(&bound.result);
             consolidate_to_session(&chunks, ctx);
-            let result = global_registry().execute(provider_id, resource, params);
-            match result {
-                Ok(r) => format_result(&r),
-                Err(_) => format_chunks_compact(&chunks, provider_id, resource),
-            }
+            format_result(&bound.result)
         }
         Err(e) => format!("Error: {e}"),
     }
@@ -485,7 +558,10 @@ fn handle_registry_chunks(
                     c.file_path, c.kind, c.token_count, refs
                 ));
             }
-            out
+            // References are provider data too (URLs can carry tokens).
+            let origin = format!("provider:{provider_id}/{resource}");
+            crate::core::context_admission::admit_source(&out, &origin, false)
+                .unwrap_or_else(|error| format!("ERROR: {error}"))
         }
         Err(e) => format!("Error: {e}"),
     }
@@ -598,28 +674,23 @@ pub fn apply_artifacts_to_stores(
     );
 }
 
-fn format_chunks_compact(
-    chunks: &[crate::core::content_chunk::ContentChunk],
-    provider_id: &str,
-    resource: &str,
-) -> String {
-    let mut out = format!("{} results from {provider_id}/{resource}:\n", chunks.len());
-    for c in chunks {
-        out.push_str(&format!(
-            "  #{} {}\n",
-            c.file_path.rsplit('/').next().unwrap_or("?"),
-            c.symbol_name
-        ));
-    }
-    out
+// ---------------------------------------------------------------------------
+// Legacy GitLab handlers share the immutable session authority.
+// ---------------------------------------------------------------------------
+
+fn legacy_gitlab_config(
+    args: &serde_json::Map<String, serde_json::Value>,
+) -> Result<GitLabConfig, String> {
+    let project = args
+        .get("project")
+        .map(|value| value.as_str().ok_or("project must be a string"))
+        .transpose()?;
+    crate::core::providers::selected_gitlab::check_project(project)?;
+    GitLabConfig::from_session()
 }
 
-// ---------------------------------------------------------------------------
-// Legacy GitLab handlers (unchanged)
-// ---------------------------------------------------------------------------
-
 fn handle_gitlab_issues(args: &serde_json::Map<String, serde_json::Value>) -> String {
-    let config = match GitLabConfig::from_env() {
+    let config = match legacy_gitlab_config(args) {
         Ok(c) => c,
         Err(e) => return format!("Error: {e}"),
     };
@@ -637,7 +708,7 @@ fn handle_gitlab_issues(args: &serde_json::Map<String, serde_json::Value>) -> St
 }
 
 fn handle_gitlab_issue(args: &serde_json::Map<String, serde_json::Value>) -> String {
-    let config = match GitLabConfig::from_env() {
+    let config = match legacy_gitlab_config(args) {
         Ok(c) => c,
         Err(e) => return format!("Error: {e}"),
     };
@@ -656,7 +727,7 @@ fn handle_gitlab_issue(args: &serde_json::Map<String, serde_json::Value>) -> Str
 }
 
 fn handle_gitlab_mrs(args: &serde_json::Map<String, serde_json::Value>) -> String {
-    let config = match GitLabConfig::from_env() {
+    let config = match legacy_gitlab_config(args) {
         Ok(c) => c,
         Err(e) => return format!("Error: {e}"),
     };
@@ -673,7 +744,7 @@ fn handle_gitlab_mrs(args: &serde_json::Map<String, serde_json::Value>) -> Strin
 }
 
 fn handle_gitlab_pipelines(args: &serde_json::Map<String, serde_json::Value>) -> String {
-    let config = match GitLabConfig::from_env() {
+    let config = match legacy_gitlab_config(args) {
         Ok(c) => c,
         Err(e) => return format!("Error: {e}"),
     };
@@ -690,5 +761,10 @@ fn handle_gitlab_pipelines(args: &serde_json::Map<String, serde_json::Value>) ->
 }
 
 fn format_result(result: &ProviderResult) -> String {
-    crate::core::redaction::redact_text_if_enabled(&result.format_compact())
+    let text = crate::core::redaction::redact_text_if_enabled(&result.format_compact());
+    // Provider content is delivered like a source read: admitted under the
+    // current policy and recorded in the call's receipt (G5, cases 37–40).
+    let origin = format!("provider:{}/{}", result.provider, result.resource_type);
+    crate::core::context_admission::admit_source(&text, &origin, false)
+        .unwrap_or_else(|error| format!("ERROR: {error}"))
 }

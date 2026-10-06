@@ -1016,6 +1016,41 @@ fn scan_respects_gitignore_without_git_dir() {
     );
 }
 
+/// Bypass path "graph": the graph carries identifiers and edges, never a
+/// credential's value, even when the source declares one inline.
+#[test]
+fn graph_index_never_holds_a_credential_value() {
+    let _env = crate::core::data_dir::test_env_lock();
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    std::fs::create_dir_all(root.join("src")).unwrap();
+    let credential = concat!("AK", "IAQ3EGRZ7GRAPHXKEY");
+    std::fs::write(
+        root.join("src/config.rs"),
+        format!(
+            "pub const AWS_ACCESS_KEY_ID: &str = \"{credential}\";\n\
+             pub fn client() -> Client {{ Client::new(AWS_ACCESS_KEY_ID) }}\n"
+        ),
+    )
+    .unwrap();
+    std::fs::write(
+        root.join("src/app.js"),
+        "import { client } from './config';\n",
+    )
+    .unwrap();
+    let root_s = normalize_project_root(&root.to_string_lossy());
+    let idx = scan(&root_s);
+    assert!(
+        idx.files.keys().any(|p| p.contains("config.rs")),
+        "the source is indexed"
+    );
+    let stored = serde_json::to_string(&idx).expect("serialize index");
+    assert!(
+        !stored.contains(credential),
+        "the graph index holds the credential"
+    );
+}
+
 #[test]
 fn safe_scan_root_rejects_broad_dir_without_repos() {
     let tmp = tempdir().unwrap();
@@ -1086,8 +1121,8 @@ fn scan_targets_parallel_matches_sequential() {
     let targets = write_scan_corpus(td.path(), 40);
     let previous = PreviousSymbols::new();
 
-    let seq = process_scan_targets(&targets, &previous, None, false);
-    let par = process_scan_targets(&targets, &previous, None, true);
+    let seq = process_scan_targets(&targets, &previous, None, false, &StoreAdmission::current());
+    let par = process_scan_targets(&targets, &previous, None, true, &StoreAdmission::current());
 
     assert_eq!(par.len(), targets.len(), "all files processed");
     assert!(par.iter().all(|r| !r.reused), "cold scan parses every file");
@@ -1104,7 +1139,13 @@ fn scan_targets_parallel_reuse_path_matches_sequential() {
     let targets = write_scan_corpus(td.path(), 36);
 
     // Cold scan, then synthesize the prior-index state it would have produced.
-    let cold = process_scan_targets(&targets, &PreviousSymbols::new(), None, false);
+    let cold = process_scan_targets(
+        &targets,
+        &PreviousSymbols::new(),
+        None,
+        false,
+        &StoreAdmission::current(),
+    );
     let mut existing = ProjectIndex::new(&td.path().to_string_lossy());
     for r in &cold {
         existing.files.insert(r.rel.clone(), r.file_entry.clone());
@@ -1116,8 +1157,20 @@ fn scan_targets_parallel_reuse_path_matches_sequential() {
     // Unchanged files must be reused identically on both paths without cloning
     // the complete previous symbol table.
     let previous = previous_symbols_by_file(&existing);
-    let seq = process_scan_targets(&targets, &previous, Some(&existing), false);
-    let par = process_scan_targets(&targets, &previous, Some(&existing), true);
+    let seq = process_scan_targets(
+        &targets,
+        &previous,
+        Some(&existing),
+        false,
+        &StoreAdmission::current(),
+    );
+    let par = process_scan_targets(
+        &targets,
+        &previous,
+        Some(&existing),
+        true,
+        &StoreAdmission::current(),
+    );
     assert!(par.iter().all(|r| r.reused), "unchanged files are reused");
     assert_eq!(seq, par, "parallel reuse must equal sequential reuse");
 }

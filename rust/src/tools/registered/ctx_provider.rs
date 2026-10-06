@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
@@ -35,7 +37,10 @@ impl McpTool for CtxProviderTool {
                         "type": "string",
                         "description": "issues|pull_requests|paths|template|show"
                     },
-                    "mode": { "type": "string", "description": "compact|chunks" },
+                    "project": { "type": "string", "description": "Provider project/repository identifier" },
+                    "query": { "type": "string", "description": "Provider-side search query" },
+                    "id": { "type": "string", "description": "Provider resource identifier" },
+                    "mode": { "type": "string", "description": "compact|chunks|snapshot (versioned bounded JSON)" },
                     "state": { "type": "string", "description": "open|closed|merged|all" },
                     "labels": { "type": "string", "description": "Comma-separated labels" },
                     "iid": { "type": "integer", "description": "Issue/MR IID" },
@@ -53,6 +58,18 @@ impl McpTool for CtxProviderTool {
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
         let result = crate::tools::ctx_provider::handle(args, ctx);
-        Ok(ToolOutput::simple(result))
+        if crate::tools::ctx_provider::is_snapshot_request(args) {
+            let original_tokens = crate::core::tokens::count_tokens(&result);
+            let mut output = ToolOutput::simple(result);
+            output.original_tokens = original_tokens;
+            output.mode = Some("snapshot".to_owned());
+            Ok(output)
+        } else {
+            Ok(ToolOutput::simple(result))
+        }
+    }
+
+    fn produces_machine_readable(&self, args: Option<&Map<String, Value>>) -> bool {
+        args.is_some_and(crate::tools::ctx_provider::is_snapshot_request)
     }
 }

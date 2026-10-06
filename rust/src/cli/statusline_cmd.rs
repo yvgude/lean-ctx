@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx statusline`: the Claude Code status line (`statusLine.command`).
 //!
 //! Reads the host's JSON from stdin, finds the lean-ctx snapshot of the

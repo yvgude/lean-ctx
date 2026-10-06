@@ -1,34 +1,39 @@
 use std::path::Path;
 
+pub(crate) const CANDIDATES: &[&str] = &[
+    "package.json",
+    "Cargo.toml",
+    "requirements.txt",
+    "go.mod",
+    "Gemfile",
+    "pyproject.toml",
+];
+
 pub fn compress(path: &str) -> Option<String> {
     let content = std::fs::read_to_string(path).ok()?;
+    compress_content(path, &content)
+}
+
+/// Render already admitted manifest text without reopening its source.
+pub(crate) fn compress_content(path: &str, content: &str) -> Option<String> {
     let filename = Path::new(path)
         .file_name()
         .and_then(|n| n.to_str())
         .unwrap_or(path);
 
     match filename {
-        "package.json" => compress_package_json(&content),
-        "Cargo.toml" => compress_cargo_toml(&content),
-        "requirements.txt" => compress_requirements(&content),
-        "go.mod" => compress_go_mod(&content),
-        "Gemfile" => compress_gemfile(&content),
-        "pyproject.toml" => compress_pyproject(&content),
+        "package.json" => compress_package_json(content),
+        "Cargo.toml" => compress_cargo_toml(content),
+        "requirements.txt" => compress_requirements(content),
+        "go.mod" => compress_go_mod(content),
+        "Gemfile" => compress_gemfile(content),
+        "pyproject.toml" => compress_pyproject(content),
         _ => None,
     }
 }
 
 pub fn detect_and_compress(dir: &str) -> Option<String> {
-    let candidates = [
-        "package.json",
-        "Cargo.toml",
-        "requirements.txt",
-        "go.mod",
-        "Gemfile",
-        "pyproject.toml",
-    ];
-
-    for name in &candidates {
+    for name in CANDIDATES {
         let path = format!("{}/{}", dir.trim_end_matches('/'), name);
         if Path::new(&path).exists()
             && let Some(result) = compress(&path)

@@ -81,6 +81,7 @@ fn entry_to_chunk(e: &CatalogEntry) -> ContentChunk {
         params = e.params,
     );
     ContentChunk {
+        origin: None,
         file_path: e.namespaced.clone(),
         symbol_name: e.tool.clone(),
         kind: crate::core::bm25_index::ChunkKind::Other,

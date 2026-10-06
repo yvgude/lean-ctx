@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Round-trip and signature checks for the public Task Spine v1 cohort.
 
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};

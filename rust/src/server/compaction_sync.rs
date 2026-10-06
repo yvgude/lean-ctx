@@ -8,20 +8,24 @@ pub static LAST_COMPACTION_TS: AtomicU64 = AtomicU64::new(0);
 
 /// Effective cache policy: "aggressive" (default), "safe", or "off".
 pub fn effective_cache_policy() -> &'static str {
-    static POLICY: std::sync::OnceLock<String> = std::sync::OnceLock::new();
-    POLICY.get_or_init(|| {
-        if let Ok(v) = std::env::var("LEAN_CTX_CACHE_POLICY") {
-            let v = v.trim().to_lowercase();
-            if matches!(v.as_str(), "aggressive" | "safe" | "off") {
-                return v;
-            }
-        }
-        let cfg = crate::core::config::Config::load();
-        cfg.cache_policy
-            .as_deref()
-            .unwrap_or("aggressive")
-            .to_lowercase()
-    })
+    // Resolve on each call: tests and embedded callers may change the
+    // process override between engine instances; a process-wide OnceLock
+    // would permanently retain the first caller's policy.
+    let value = std::env::var("LEAN_CTX_CACHE_POLICY")
+        .ok()
+        .map(|v| v.trim().to_lowercase())
+        .filter(|v| matches!(v.as_str(), "aggressive" | "safe" | "off"))
+        .or_else(|| {
+            crate::core::config::Config::load()
+                .cache_policy
+                .map(|v| v.to_lowercase())
+        })
+        .unwrap_or_else(|| "aggressive".to_string());
+    match value.as_str() {
+        "safe" => "safe",
+        "off" => "off",
+        _ => "aggressive",
+    }
 }
 
 /// Check if a host compaction event occurred since our last check.

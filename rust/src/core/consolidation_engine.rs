@@ -73,6 +73,9 @@ pub struct ConsolidateOptions {
     pub emit_event: bool,
     /// Compute the report without mutating knowledge, archives or the session.
     pub dry_run: bool,
+    /// Optional private selection for bounded scheduled imports; never used with
+    /// a watermark, which would otherwise skip unselected session entries.
+    pub private_curation: bool,
 }
 
 impl ConsolidateOptions {
@@ -92,6 +95,7 @@ impl ConsolidateOptions {
             reclaim_stores: true,
             emit_event: false,
             dry_run: false,
+            private_curation: false,
         }
     }
 
@@ -110,6 +114,7 @@ impl ConsolidateOptions {
             reclaim_stores: false,
             emit_event: true,
             dry_run: false,
+            private_curation: true,
         }
     }
 
@@ -127,6 +132,7 @@ impl ConsolidateOptions {
             reclaim_stores: false,
             emit_event: false,
             dry_run: false,
+            private_curation: false,
         }
     }
 
@@ -143,6 +149,7 @@ impl ConsolidateOptions {
 pub struct ImportCounts {
     pub decisions: usize,
     pub findings: usize,
+    pub curation: Option<&'static str>,
 }
 
 impl ImportCounts {
@@ -152,7 +159,7 @@ impl ImportCounts {
 }
 
 /// The single session→knowledge import. Operates on an already-locked
-/// `knowledge` (no I/O, no lock), so both the locked orchestrator and the
+/// `knowledge` (no nested knowledge lock), so both the locked orchestrator and the
 /// cognition loop — which holds the knowledge lock across all its steps — share
 /// one implementation. `watermark` (incremental mode) imports only newer items.
 pub fn import_session_into(
@@ -170,6 +177,17 @@ pub fn import_session_into(
         .filter(|d| is_new(d.timestamp))
         .collect();
     decisions.sort_by_key(|d| std::cmp::Reverse(d.timestamp));
+    let mut findings: Vec<&Finding> = session
+        .findings
+        .iter()
+        .filter(|f| is_new(f.timestamp))
+        .collect();
+    findings.sort_by_key(|f| std::cmp::Reverse(f.timestamp));
+    let curation = if opts.private_curation && !opts.incremental && watermark.is_none() {
+        curate(knowledge, &mut decisions, &mut findings, opts)
+    } else {
+        None
+    };
     if let Some(n) = opts.decision_budget {
         decisions.truncate(n);
     }
@@ -187,12 +205,6 @@ pub fn import_session_into(
         decision_count += 1;
     }
 
-    let mut findings: Vec<&Finding> = session
-        .findings
-        .iter()
-        .filter(|f| is_new(f.timestamp))
-        .collect();
-    findings.sort_by_key(|f| std::cmp::Reverse(f.timestamp));
     let mut finding_count = 0;
     for f in &findings {
         if opts.finding_budget.is_some_and(|n| finding_count >= n) {
@@ -224,7 +236,70 @@ pub fn import_session_into(
     ImportCounts {
         decisions: decision_count,
         findings: finding_count,
+        curation,
     }
+}
+
+/// Build a bounded metadata projection before any import mutates knowledge.
+/// Failure keeps the original OSS input lists; selected views never replace or
+/// advance the original session, and structured session facts keep their path.
+fn curate(
+    knowledge: &ProjectKnowledge,
+    decisions: &mut Vec<&crate::core::session::Decision>,
+    findings: &mut Vec<&Finding>,
+    opts: &ConsolidateOptions,
+) -> Option<&'static str> {
+    use crate::core::intelligence_runtime::memory_curation::{Candidate, select};
+    let known = |category: &str, key: &str, value: &str| {
+        knowledge.facts.iter().any(|fact| {
+            fact.is_current() && fact.category == category && fact.key == key && fact.value == value
+        })
+    };
+    let now = Utc::now();
+    let age = |timestamp: DateTime<Utc>| (now - timestamp).num_days().clamp(0, 36500) as u16;
+    let mut candidates = Vec::with_capacity(128);
+    for d in decisions.iter().take(64) {
+        candidates.push(Candidate {
+            candidate_id: candidates.len(),
+            decision: true,
+            salience: crate::core::memory_salience::text_salience(&d.summary).min(100) as u8,
+            known: known("decision", &slug_key(&d.summary, 50), &d.summary),
+            age_days: age(d.timestamp),
+        });
+    }
+    let decision_count = candidates.len();
+    for f in findings.iter().take(64) {
+        candidates.push(Candidate {
+            candidate_id: candidates.len(),
+            decision: false,
+            salience: crate::core::memory_salience::text_salience(&f.summary).min(100) as u8,
+            known: known("finding", &finding_key(f), &f.summary),
+            age_days: age(f.timestamp),
+        });
+    }
+    let Ok(selected) = select(
+        &candidates,
+        opts.decision_budget.unwrap_or(32),
+        opts.finding_budget.unwrap_or(32),
+    )?
+    else {
+        return Some("unavailable; standard local consolidation used");
+    };
+    *decisions = decisions
+        .iter()
+        .take(64)
+        .enumerate()
+        .filter(|(index, _)| selected.binary_search(index).is_ok())
+        .map(|(_, item)| *item)
+        .collect();
+    *findings = findings
+        .iter()
+        .take(64)
+        .enumerate()
+        .filter(|(index, _)| selected.binary_search(&(decision_count + index)).is_ok())
+        .map(|(_, item)| *item)
+        .collect();
+    Some("novel_salience_v1; original session retained")
 }
 
 /// Stable knowledge key for a session finding: `file[:line]` when located, else a

@@ -238,8 +238,16 @@ fn cached_or_walk(
 mod tests {
     use super::*;
 
+    /// The cross-agent cache serves no stub while any policy is active, and
+    /// policy tests set one process-wide under the test env lock. Tests that
+    /// assert a cache hit take the same lock so they never run inside one.
+    fn no_policy_window() -> crate::core::data_dir::TestEnvGuard {
+        crate::core::data_dir::test_env_lock()
+    }
+
     #[test]
     fn glob_adapter_records_then_serves_a_cross_agent_reference() {
+        let _window = no_policy_window();
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(directory.path().join("cached.rs"), "fn cached() {}\n").unwrap();
         let path = directory.path().to_string_lossy();
@@ -289,6 +297,7 @@ mod tests {
     /// for the dedup mechanism itself).
     #[test]
     fn same_pattern_repeated_uses_cache() {
+        let _window = no_policy_window();
         let dir = tempfile::tempdir().unwrap();
         std::fs::write(dir.path().join("x.ts"), "export {}").unwrap();
         let path = dir.path().to_string_lossy();

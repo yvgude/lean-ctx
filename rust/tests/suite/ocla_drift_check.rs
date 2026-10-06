@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Drift gate for the standalone OSS OCLA contract crate.
 
 use sha2::{Digest, Sha256};

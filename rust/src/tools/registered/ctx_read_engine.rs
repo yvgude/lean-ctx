@@ -22,6 +22,12 @@ struct CapturedSource {
 }
 
 impl SourceSnapshot {
+    pub(super) fn code_hint(&self, path: &str) -> Option<String> {
+        let snapshot = self.0.lock().ok()?;
+        let source = snapshot.as_ref()?;
+        crate::core::intelligence_runtime::code_security::note(path, &source.input)
+    }
+
     fn capture_rooted(&self, source: crate::tools::ctx_read::RootedRead) {
         let mut snapshot = self
             .0
@@ -37,7 +43,7 @@ impl SourceSnapshot {
         self,
         project_root: &str,
         policy_admission: EnginePolicyAdmissionV1,
-    ) -> Result<(), String> {
+    ) -> Result<String, String> {
         let snapshot = self
             .0
             .lock()
@@ -50,11 +56,14 @@ impl SourceSnapshot {
         self,
         project_root: &str,
         policy_admission: Option<EnginePolicyAdmissionV1>,
+        output: &mut String,
     ) -> Option<String> {
-        policy_admission.and_then(|admission| {
-            self.record(project_root, admission)
-                .err()
-                .map(|error| stable_warning(&error))
+        policy_admission.and_then(|admission| match self.record(project_root, admission) {
+            Ok(verified_output) => {
+                *output = verified_output;
+                None
+            }
+            Err(error) => Some(stable_warning(&error)),
         })
     }
 }
@@ -66,7 +75,16 @@ pub(super) fn read_source(
     snapshot: &SourceSnapshot,
 ) -> Result<String, std::io::Error> {
     if !enabled {
-        return crate::tools::ctx_read::read_file_lossy(path);
+        let content = crate::tools::ctx_read::read_file_lossy(path)?;
+        if crate::core::intelligence_runtime::code_security::enabled_for(path) {
+            // A transient copy of the admitted input only. Hints never enter
+            // the source/cache/receipt payload and cached reads are not rescanned.
+            snapshot.capture_rooted(crate::tools::ctx_read::RootedRead {
+                content: content.clone(),
+                canonical_path: path.to_owned(),
+            });
+        }
+        return Ok(content);
     }
     let source = crate::tools::ctx_read::read_file_lossy_rooted(path, project_root)?;
     let content = source.content.clone();
@@ -348,7 +366,7 @@ fn record_aggressive_snapshot(
     snapshot: Option<CapturedSource>,
     project_root: &str,
     policy_admission: EnginePolicyAdmissionV1,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let source = snapshot.ok_or_else(|| "Engine v1 source snapshot unavailable".to_owned())?;
     record_aggressive_invocation(
         project_root,
@@ -381,12 +399,33 @@ fn record_aggressive_invocation(
     path: &str,
     input: &str,
     policy_admission: EnginePolicyAdmissionV1,
-) -> Result<(), String> {
+) -> Result<String, String> {
     let engine = NativeContextEngine::with_root(project_root)?;
-    let (_, observation) =
-        engine.execute_ctx_read_rooted_snapshot(path, input, policy_admission)?;
+    let capture = crate::server::native_receipts::current_capture();
+    let (invocation, observation) = if let Some(task) =
+        crate::core::task_spine::TaskSpine::scoped_current()
+    {
+        let plan = crate::core::engine_interface::planning::native_plan(&task, &policy_admission)?;
+        if let Some(capture) = &capture {
+            capture.begin(&task, &plan)?;
+        }
+        engine.execute_ctx_read_rooted_snapshot_with_plan(
+            path,
+            input,
+            policy_admission,
+            &task,
+            &plan,
+        )?
+    } else {
+        // Legacy unscoped callers remain explicitly unplanned.
+        if capture.is_some() {
+            return Err("mcp_receipt_scoped_task_required".into());
+        }
+        engine.execute_ctx_read_rooted_snapshot(path, input, policy_admission)?
+    };
     let receipt_link = observation
         .receipt_link
+        .as_ref()
         .ok_or_else(|| "native Engine terminal observation omitted its receipt link".to_owned())?;
     if observation.status != EngineObservationStatusV1::Succeeded {
         let recovery_ref = observation
@@ -405,7 +444,12 @@ fn record_aggressive_invocation(
         receipt_ref = receipt_link.receipt_ref.as_str(),
         "ctx_read Engine observation recorded"
     );
-    Ok(())
+    let view = crate::core::engine_interface::verified_output_view(&invocation, &observation)
+        .map_err(|error| format!("Engine verified output unavailable: {error:?}"))?;
+    if let Some(capture) = capture {
+        capture.complete(invocation, observation)?;
+    }
+    Ok(view.text)
 }
 
 #[cfg(test)]
@@ -565,5 +609,79 @@ mod tests {
         let output = std::fs::read_to_string(output_path).unwrap();
         assert!(output.contains("cache_snapshot_marker"));
         assert!(!output.contains("changed_disk_marker"));
+    }
+
+    #[test]
+    fn scoped_bridge_delivers_verified_output_and_never_promotes_legacy_task_identity() {
+        use crate::core::task_spine::TaskSpine;
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("bound.rs");
+        let source = "fn bound_bridge_marker() {}\n".repeat(40);
+        std::fs::write(&file, &source).unwrap();
+        let task = TaskSpine::create_envelope("read", "bridge-session", "bridge-agent");
+        assert!(TaskSpine::scoped_current().is_none());
+        let run = || {
+            let snapshot = SourceSnapshot::default();
+            read_source(
+                true,
+                &file.to_string_lossy(),
+                &dir.path().to_string_lossy(),
+                &snapshot,
+            )
+            .unwrap();
+            let mut output = "unrelated legacy output".to_owned();
+            let warning = snapshot.record_if_enabled(
+                &dir.path().to_string_lossy(),
+                Some(admission_from_gate(&gate(false, None), "aggressive").unwrap()),
+                &mut output,
+            );
+            assert!(warning.is_none());
+            assert!(output.contains("bound_bridge_marker"));
+            assert!(!output.contains("unrelated legacy output"));
+            output
+        };
+        let planned_output = TaskSpine::sync_scope(Some(task.clone()), run);
+        assert_eq!(run(), planned_output);
+        let data = crate::core::data_dir::lean_ctx_data_dir().unwrap();
+        let artifacts: Vec<serde_json::Value> =
+            std::fs::read_dir(data.join("engine-interface/v1/receipts"))
+                .unwrap()
+                .map(|entry| {
+                    serde_json::from_slice(&std::fs::read(entry.unwrap().path()).unwrap()).unwrap()
+                })
+                .collect();
+        assert_eq!(artifacts.len(), 2);
+        let task_digest = crate::core::canonical::canonical_serialize(&task);
+        let expected = format!(
+            "task:sha256:{}",
+            crate::core::agent_identity::hex_encode(&Sha256::digest(task_digest))
+        );
+        let bound: Vec<_> = artifacts
+            .iter()
+            .filter(|artifact| {
+                artifact["invocation"]["source_refs"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|r| r.as_str() == Some(&expected))
+            })
+            .collect();
+        assert_eq!(
+            bound.len(),
+            1,
+            "legacy thread-local identity must not create a canonical plan"
+        );
+        let output_digest = bound[0]["observation"]["output_digest"]
+            .as_str()
+            .unwrap()
+            .strip_prefix("sha256:")
+            .unwrap();
+        let persisted = std::fs::read_to_string(
+            data.join("engine-interface/v1/outputs")
+                .join(format!("{output_digest}.txt")),
+        )
+        .unwrap();
+        assert_eq!(planned_output, persisted);
     }
 }

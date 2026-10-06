@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! The "no compression applied" banner for raw fallbacks, and the `auto`
 //! request scope that silences it (#1587, #1910). Split out of `render`.
 

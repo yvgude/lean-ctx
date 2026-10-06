@@ -1,0 +1,37 @@
+{
+  "schema_version": 1,
+  "receipt_id": "receipt-v3-fixture",
+  "task_id": "task-v3-fixture",
+  "plan_id": "plan-v3-fixture",
+  "context_balance": {
+    "original_tokens": 100,
+    "materialized_tokens": 80,
+    "delivered_tokens": 60,
+    "provider_billed_tokens": 60
+  },
+  "fresh_input_tokens": 40,
+  "cached_input_tokens": 20,
+  "output_tokens": 10,
+  "reasoning_tokens": 5,
+  "requested_model": "legacy-model",
+  "selected_model": "legacy-model",
+  "provider": "legacy-provider",
+  "model_calls": 1,
+  "retries": 0,
+  "latency_ms": 25,
+  "actual_cost_micros": 100,
+  "baseline_cost_micros": 150,
+  "avoided_cost_micros": 50,
+  "etpao_milli": 1000,
+  "knowledge_refs": [],
+  "decision_refs": [],
+  "evidence_refs": [
+    {
+      "kind": "RuntimeLog",
+      "uri": "urn:lean-ctx:v3:fixture:runtime-log",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "signature_status": "NotSigned"
+    }
+  ],
+  "signature": "legacy-compatibility-only"
+}

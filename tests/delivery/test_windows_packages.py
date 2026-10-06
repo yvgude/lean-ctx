@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 """Archive integrity checks must reject missing, duplicate and changed engines."""
 import importlib.util
 from pathlib import Path

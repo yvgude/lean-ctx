@@ -276,6 +276,9 @@ pub(crate) struct BenchmarkOutcome {
     /// agent path. Its absence keeps a recommendation observed, never verified.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub execution_receipt_ref: Option<String>,
+    /// Measurements from the actual capability invocation, not quality or receipt evidence.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub capability_observation: Option<crate::core::ocla::invocation::CapabilityObservationV1>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -378,6 +381,7 @@ mod tests {
                 output_digest: "digest".into(),
             }),
             execution_receipt_ref: Some("receipt:test".into()),
+            capability_observation: None,
         }
     }
 

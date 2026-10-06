@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Semantic code-intelligence mode (`semantic_mode` in `config.toml`).
 
 use serde::{Deserialize, Serialize};

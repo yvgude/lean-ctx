@@ -24,5 +24,11 @@
   "expected_quality_milli": 970,
   "expected_latency_ms": 20000,
   "policy_decision_ref": "decision://policy/01J5XK8H",
-  "scheduler_decision_ref": "decision://scheduler/01J5XK8H"
+  "scheduler_decision_ref": "decision://scheduler/01J5XK8H",
+  "executor_agent_id": "agent://leanctx/codex",
+  "context_plan_id": "context-plan_01J5XK8A2B3C4D5E6F7G8H9J0K",
+  "capability_bindings": [
+    { "capability_id": "capability://leanctx/code-context", "version": "1.0.0" },
+    { "capability_id": "capability://leanctx/tool-output-optimizer", "version": "1.0.0" }
+  ]
 }

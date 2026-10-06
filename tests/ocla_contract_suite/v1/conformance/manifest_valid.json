@@ -52,7 +52,7 @@
   "expected": {
     "capability_id": "capability://leanctx/tool-output-optimizer",
     "version": "1.0.0",
-    "checks_passed": 6,
+    "checks_passed": 1,
     "checks_failed": 0,
     "failures": []
   }

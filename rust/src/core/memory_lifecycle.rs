@@ -523,6 +523,16 @@ fn build_digest(members: &[&KnowledgeFact], now: DateTime<Utc>) -> KnowledgeFact
 
     let sensitivity = crate::core::sensitivity::classify_content(&value);
     KnowledgeFact {
+        origin: if members
+            .iter()
+            .all(|f| f.origin == crate::core::knowledge::FactOrigin::Local)
+        {
+            crate::core::knowledge::FactOrigin::Local
+        } else {
+            crate::core::knowledge::FactOrigin::Derived(
+                members.iter().map(|f| f.origin.clone()).collect(),
+            )
+        },
         category,
         key,
         value,
@@ -568,7 +578,7 @@ pub fn run_lifecycle(
     let (compacted, archived) = compact(facts, config);
 
     if !archived.is_empty() {
-        let _ = archive_facts(&archived);
+        archive_facts(&archived)?;
     }
 
     // Capacity reclaim (#995): facts settle at headroom via the single capacity
@@ -673,6 +683,7 @@ pub mod tests {
 
     fn make_fact(category: &str, key: &str, value: &str, confidence: f32) -> KnowledgeFact {
         KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: category.to_string(),
             key: key.to_string(),
             value: value.to_string(),
@@ -707,6 +718,7 @@ pub mod tests {
     ) -> KnowledgeFact {
         let past = Utc::now() - Duration::days(days_old);
         KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: category.to_string(),
             key: key.to_string(),
             value: value.to_string(),
@@ -1034,22 +1046,24 @@ pub mod tests {
 
     #[test]
     fn full_lifecycle_run() {
-        let config = LifecycleConfig {
-            max_facts: 5,
-            ..Default::default()
-        };
+        with_temp_data_dir(|| {
+            let config = LifecycleConfig {
+                max_facts: 5,
+                ..Default::default()
+            };
 
-        let mut facts = vec![
-            make_fact("arch", "db", "PostgreSQL", 0.9),
-            make_fact("arch", "cache", "Redis", 0.8),
-            make_old_fact("arch", "old1", "thing1", 0.2, 50),
-            make_old_fact("arch", "old2", "thing2", 0.15, 60),
-            make_fact("ops", "deploy", "docker compose", 0.7),
-        ];
+            let mut facts = vec![
+                make_fact("arch", "db", "PostgreSQL", 0.9),
+                make_fact("arch", "cache", "Redis", 0.8),
+                make_old_fact("arch", "old1", "thing1", 0.2, 50),
+                make_old_fact("arch", "old2", "thing2", 0.15, 60),
+                make_fact("ops", "deploy", "docker compose", 0.7),
+            ];
 
-        let report = run_lifecycle(&mut facts, &config).expect("lifecycle succeeds");
-        assert!(report.remaining_facts <= config.max_facts);
-        assert!(report.decayed_count > 0 || report.compacted_count > 0);
+            let report = run_lifecycle(&mut facts, &config).expect("lifecycle succeeds");
+            assert!(report.remaining_facts <= config.max_facts);
+            assert!(report.decayed_count > 0 || report.compacted_count > 0);
+        });
     }
 
     #[test]

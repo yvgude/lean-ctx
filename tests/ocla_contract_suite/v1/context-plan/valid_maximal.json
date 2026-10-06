@@ -1,0 +1,42 @@
+{
+  "schema_version": 1,
+  "context_plan_id": "context-plan_01J5XK8A2B3C4D5E6F7G8H9J0K",
+  "task_id": "task_01J5XK7Q2A6M8N4P0R3S5T7V9W",
+  "budget_tokens": 200,
+  "selections": [
+    {
+      "source_ref": "source-a",
+      "provider": "local",
+      "disposition": "selected",
+      "token_count": 120,
+      "sha256_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "reason_codes": ["required"],
+      "reason_detail": "required by task contract"
+    },
+    {
+      "source_ref": "source-b",
+      "provider": "local",
+      "disposition": "excluded",
+      "token_count": 0,
+      "reason_codes": ["budget_exceeded"]
+    }
+  ],
+  "provider_stats": {
+    "local": {
+      "candidates_offered": 2,
+      "candidates_selected": 1,
+      "tokens_used": 120
+    }
+  },
+  "policy_decision_refs": ["decision-context-1"],
+  "evidence": [
+    {
+      "schema_version": 1,
+      "kind": "RuntimeLog",
+      "uri": "urn:evidence:context-plan-1",
+      "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "signature_status": "NotSigned",
+      "media_type": "application/json"
+    }
+  ]
+}

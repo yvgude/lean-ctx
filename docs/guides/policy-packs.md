@@ -101,6 +101,64 @@ lean-ctx policy show project        # the resolved, effective policy
 - `extends` to unknown packs, cycles, chains deeper than 8
 - allow/deny overlaps
 
+## Personal Pro rules (staging)
+
+The installed Pro runtime prepares personal mask/block rules; their resulting
+policy stays in the existing `.lean-ctx/policy.toml`. Existing OSS regex rules
+remain available. Published protection keeps working after a license expires;
+preparing or publishing a new Pro rule set requires `personal_protection`.
+
+```json
+{"schema_version":1,"rules":[
+  {"id":"customer","action":"mask","matcher":{"kind":"field","names":["customer_number","Kundennummer"]}},
+  {"id":"restricted","action":"block","matcher":{"kind":"pattern","pattern":"RESTRICTED-[0-9]{6}"}}
+]}
+```
+
+```bash
+lean-ctx policy personal preview rules.json
+lean-ctx policy personal preview rules.json --stdin < sample.txt
+lean-ctx policy personal status
+lean-ctx policy personal apply rules.json --expected-sha256 <current-policy-sha256>
+```
+
+Omit `--expected-sha256` only when creating the first project policy. Updates
+replace only previously recorded managed personal rules and preserve other local
+settings, including older hand-authored `personal_*` rules. A name collision
+with an unmanaged rule is refused; organizational restrictions still apply. The reported SHA-256 is
+the publication revision. Concurrent cooperative publishers serialize, and a
+stale revision refuses the update. Files remain private and publication is atomic.
+The project and policy directory must belong to the current user and must not be
+writable by other users; unsafe existing permissions are refused, never changed
+implicitly.
+
+Field selectors match literal labels in single-line JSON, key=value and colon
+text, including quoted values with escaped quotes. They mask the whole
+assignment. They do not decode escaped JSON keys, XML, multiline values or other
+document structures; masked output is context text, not necessarily valid JSON.
+Use explicit patterns for other text conventions. Rule sets contain at most32
+rules and use bounded regex compilation; no programs or project tests are run.
+
+The shared open policy format also supports `[filters.blocked_patterns]`:
+named regexes block original content before any redaction. Inherited and
+organization patterns accumulate, including same-name collisions. Exceeding
+resolved rule bounds refuses protected output. Preview with `--stdin` returns
+only filtered sample text or a block decision. No source content goes to the
+private compiler, network, product analytics or model through this command.
+Preview also retains the current policy until publication; previewing a weaker
+draft does not release currently blocked material, and a policy change while
+reading the sample refuses the result.
+
+Direct `lean-ctx read` calls under an active project policy check access and
+original source content before rendering any mode, including `raw` and line
+ranges. They reacquire the source rather than reuse legacy daemon/disk results
+without a caller-policy receipt, and recheck policy authority before output.
+Compression fallbacks receive only admitted text. A read outside the project,
+uninspectable content or a failed policy check returns no content. These reads
+measure compression from the admitted text; they do not count removed sensitive
+bytes as compression savings. This CLI read behavior does not qualify every
+legacy CLI command or replace the separate protected Codex/SDK release gates.
+
 ## Automated CGB coverage
 
 ```bash

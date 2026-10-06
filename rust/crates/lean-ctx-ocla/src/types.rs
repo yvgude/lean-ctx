@@ -344,7 +344,6 @@ pub enum OclaCapabilityKind {
     OutcomeTracker,
     CompressionProvider,
     ResponseOptimizer,
-    ModelRouter,
     EfficiencyAnalyzer,
     ConfigTuner,
     ExperimentRunner,
@@ -354,7 +353,7 @@ pub enum OclaCapabilityKind {
 }
 
 impl OclaCapabilityKind {
-    pub const ALL: [Self; 15] = [
+    pub const ALL: [Self; 14] = [
         Self::ObservationHook,
         Self::UsageSink,
         Self::MetricsExporter,
@@ -363,7 +362,6 @@ impl OclaCapabilityKind {
         Self::OutcomeTracker,
         Self::CompressionProvider,
         Self::ResponseOptimizer,
-        Self::ModelRouter,
         Self::EfficiencyAnalyzer,
         Self::ConfigTuner,
         Self::ExperimentRunner,
@@ -540,30 +538,6 @@ pub struct ResponseOptimizationResult {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct ModelRouteRequest {
-    /// [PII] Request context containing correlation identifiers.
-    pub context: OclaRequestContext,
-    /// [INTERNAL] Candidate model names.
-    pub candidate_models: Vec<String>,
-    /// [INTERNAL] Maximum permitted cost metric.
-    pub maximum_cost_micros: Option<u64>,
-    /// [INTERNAL] Maximum permitted latency metric.
-    pub maximum_latency_ms: Option<u64>,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
-pub struct RoutingDecision {
-    /// [INTERNAL] Selected model name.
-    pub model: String,
-    /// [PUBLIC] Provider name.
-    pub provider: String,
-    /// [INTERNAL] Reasoning budget token count.
-    pub reasoning_budget_tokens: u64,
-    /// [INTERNAL] Internal decision reference.
-    pub decision_ref: String,
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct EfficiencySample {
     /// [PII] Request context containing correlation identifiers.
     pub context: OclaRequestContext,
@@ -713,6 +687,9 @@ pub struct ScheduledJob {
 /// Cross-agent delivery record: tracks that file content was read by an agent.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeliveryRecord {
+    /// [INTERNAL] Explicit access namespace; absent only for legacy deliveries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<crate::delivery_scope::DeliveryAccessV1>,
     /// [INTERNAL] Content-derived digest.
     pub blake3: [u8; 12],
     /// [PII] File path.
@@ -742,6 +719,9 @@ pub struct DeliveryRecord {
 /// Entry for recording a new delivery.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeliveryEntry {
+    /// [INTERNAL] Explicit access namespace; absent only for legacy deliveries.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access: Option<crate::delivery_scope::DeliveryAccessV1>,
     /// [INTERNAL] Content-derived digest.
     pub blake3: [u8; 12],
     /// [PII] File path.

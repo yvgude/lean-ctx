@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Value surface: makes what lean-ctx did visible outside the dashboard —
 //! subtly, outside the model's context, and with every number provable.
 //!

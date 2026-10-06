@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinDeliveryRegistry — cross-agent shared read cache.
 //!
 //! Tracks which files have been read (and compressed) by any agent process.
@@ -21,6 +22,8 @@ use crate::core::ocla::types::{
 
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 struct DeliveryKey {
+    private_owner: Option<String>,
+    access: Option<lean_ctx_ocla::delivery_scope::DeliveryAccessV1>,
     blake3: [u8; 12],
     path: String,
 }
@@ -164,14 +167,18 @@ impl BuiltinDeliveryRegistry {
 
     fn mtime_index_insert(&self, path: &str, mtime: u64, blake3: [u8; 12]) {
         let mut entries = self.mtime_index.entry(path.to_string()).or_default();
-        if !entries.iter().any(|(m, h)| *m == mtime && *h == blake3) {
-            entries.push((mtime, blake3));
-        }
+        // One occurrence per stored key, including distinct owners and scopes.
+        entries.push((mtime, blake3));
     }
 
     fn mtime_index_remove(&self, path: &str, mtime: u64, blake3: [u8; 12]) {
         if let Some(mut entries) = self.mtime_index.get_mut(path) {
-            entries.retain(|(m, h)| !(*m == mtime && *h == blake3));
+            if let Some(position) = entries
+                .iter()
+                .position(|(m, h)| *m == mtime && *h == blake3)
+            {
+                entries.swap_remove(position);
+            }
             if entries.is_empty() {
                 drop(entries);
                 self.mtime_index.remove(path);
@@ -192,12 +199,53 @@ impl BuiltinDeliveryRegistry {
 }
 
 impl OclaService for BuiltinDeliveryRegistry {
+    fn manifest(&self) -> crate::core::ocla::OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+        crate::core::ocla::capability_fabric::builtin_manifest(&self.capability())
+    }
+
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::DeliveryRegistry)
     }
 }
 
 impl DeliveryRegistry for BuiltinDeliveryRegistry {
+    fn check_scoped_delivery(
+        &self,
+        blake3: &[u8; 12],
+        path: &str,
+        scope: &lean_ctx_ocla::delivery_scope::DeliveryScopeV1,
+        requester_agent_id: &str,
+        requester_conversation_id: Option<&str>,
+    ) -> Option<DeliveryRecord> {
+        use lean_ctx_ocla::delivery_scope::{DeliveryAccessV1, DeliveryPrivacyV1};
+        if path.trim().is_empty() || path.len() > 4096 || path.contains('\0') {
+            return None;
+        }
+        let now = Self::now_epoch();
+        for privacy in [DeliveryPrivacyV1::Private, DeliveryPrivacyV1::Project] {
+            let key = DeliveryKey {
+                private_owner: (privacy == DeliveryPrivacyV1::Private)
+                    .then(|| requester_agent_id.to_owned()),
+                access: Some(DeliveryAccessV1 {
+                    scope: scope.clone(),
+                    privacy,
+                }),
+                blake3: *blake3,
+                path: path.into(),
+            };
+            let Some(record) = self.store.get(&key).map(|entry| entry.clone()) else {
+                continue;
+            };
+            if !self.is_expired_at(&record, now)
+                && privacy.permits(scope, scope, &record.agent_id, requester_agent_id)
+                && requester_conversation_id.is_none_or(|id| id != record.conversation_id)
+            {
+                return Some(record);
+            }
+        }
+        None
+    }
+
     fn check_delivery(
         &self,
         blake3: &[u8; 12],
@@ -209,11 +257,13 @@ impl DeliveryRegistry for BuiltinDeliveryRegistry {
         let candidates: Vec<_> = if path.is_empty() {
             self.store
                 .iter()
-                .filter(|entry| entry.key().blake3 == *blake3)
+                .filter(|entry| entry.key().access.is_none() && entry.key().blake3 == *blake3)
                 .map(|entry| (entry.key().clone(), entry.value().clone()))
                 .collect()
         } else {
             let key = DeliveryKey {
+                private_owner: None,
+                access: None,
                 blake3: *blake3,
                 path: path.to_string(),
             };
@@ -228,9 +278,15 @@ impl DeliveryRegistry for BuiltinDeliveryRegistry {
         for (key, record) in candidates {
             if self.is_expired_at(&record, now) {
                 let mut index = self.eviction_index.lock().expect("delivery index poisoned");
-                self.mtime_index_remove(&key.path, record.mtime, key.blake3);
-                self.store.remove(&key);
-                index.remove(&key);
+                // Recheck under the writer lock: a concurrent refresh may have
+                // replaced the expired snapshot collected above.
+                if let Some((_, expired)) = self
+                    .store
+                    .remove_if(&key, |_, current| self.is_expired_at(current, now))
+                {
+                    self.mtime_index_remove(&key.path, expired.mtime, key.blake3);
+                    index.remove(&key);
+                }
                 continue;
             }
             if requester_agent_id.is_some_and(|agent| agent == record.agent_id) {
@@ -267,11 +323,20 @@ impl DeliveryRegistry for BuiltinDeliveryRegistry {
             };
         }
         let key = DeliveryKey {
+            private_owner: entry
+                .access
+                .as_ref()
+                .filter(|access| {
+                    access.privacy == lean_ctx_ocla::delivery_scope::DeliveryPrivacyV1::Private
+                })
+                .map(|_| entry.agent_id.clone()),
+            access: entry.access.clone(),
             blake3: entry.blake3,
             path: entry.path.clone(),
         };
         let record_mtime = entry.mtime;
         let record = DeliveryRecord {
+            access: entry.access,
             blake3: entry.blake3,
             path: entry.path,
             line_count: entry.line_count,
@@ -293,7 +358,9 @@ impl DeliveryRegistry for BuiltinDeliveryRegistry {
             }
         };
         if already_existed {
-            self.store.insert(key.clone(), record);
+            if let Some(previous) = self.store.insert(key.clone(), record) {
+                self.mtime_index_remove(&key.path, previous.mtime, key.blake3);
+            }
             index.remove(&key);
         } else {
             self.evict_oldest_if_full_locked(&mut index);
@@ -330,8 +397,112 @@ impl DeliveryRegistry for BuiltinDeliveryRegistry {
 mod tests {
     use super::*;
 
+    #[test]
+    fn scoped_records_are_isolated_from_legacy_and_other_namespaces() {
+        use lean_ctx_ocla::delivery_scope::{DeliveryAccessV1, DeliveryPrivacyV1, DeliveryScopeV1};
+        let reg = BuiltinDeliveryRegistry::with_config(8, 10);
+        let scope = DeliveryScopeV1::new("account".into(), "project".into()).unwrap();
+        let foreign = DeliveryScopeV1::new("foreign".into(), "project".into()).unwrap();
+        let other_project = DeliveryScopeV1::new("account".into(), "other".into()).unwrap();
+        let mut entry = test_entry("shared.rs", "owner", [17; 12], 1);
+        entry.access = Some(DeliveryAccessV1 {
+            scope: scope.clone(),
+            privacy: DeliveryPrivacyV1::Project,
+        });
+        reg.record_delivery(entry.clone());
+        assert!(
+            reg.check_delivery(&[17; 12], 1, "shared.rs", Some("reader"), None)
+                .is_none()
+        );
+        assert!(
+            reg.check_delivery(&[17; 12], 1, "", Some("reader"), None)
+                .is_none()
+        );
+        assert!(
+            reg.check_scoped_delivery(&[17; 12], "shared.rs", &foreign, "reader", None)
+                .is_none()
+        );
+        assert!(
+            reg.check_scoped_delivery(&[17; 12], "shared.rs", &other_project, "reader", None)
+                .is_none()
+        );
+        assert!(
+            reg.check_scoped_delivery(&[17; 12], "shared.rs", &scope, "reader", None)
+                .is_some()
+        );
+        entry.agent_id = "foreign-owner".into();
+        entry.access.as_mut().unwrap().scope = foreign.clone();
+        reg.record_delivery(entry);
+        assert_eq!(
+            reg.check_scoped_delivery(&[17; 12], "shared.rs", &scope, "reader", None)
+                .unwrap()
+                .agent_id,
+            "owner"
+        );
+        assert_eq!(
+            reg.check_scoped_delivery(&[17; 12], "shared.rs", &foreign, "reader", None)
+                .unwrap()
+                .agent_id,
+            "foreign-owner"
+        );
+    }
+
+    #[test]
+    fn private_delivery_requires_owning_agent() {
+        use lean_ctx_ocla::delivery_scope::{DeliveryAccessV1, DeliveryPrivacyV1, DeliveryScopeV1};
+        let reg = BuiltinDeliveryRegistry::with_config(8, 10);
+        let scope = DeliveryScopeV1::new("account".into(), "project".into()).unwrap();
+        let mut entry = test_entry("private.rs", "owner", [18; 12], 1);
+        entry.access = Some(DeliveryAccessV1 {
+            scope: scope.clone(),
+            privacy: DeliveryPrivacyV1::Private,
+        });
+        reg.record_delivery(entry);
+        assert!(
+            reg.check_scoped_delivery(&[18; 12], "private.rs", &scope, "other", None)
+                .is_none()
+        );
+        assert!(
+            reg.check_scoped_delivery(&[18; 12], "private.rs", &scope, "owner", None)
+                .is_some()
+        );
+        assert!(
+            reg.check_scoped_delivery(&[18; 12], "", &scope, "owner", None)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn private_owners_do_not_overwrite_each_other() {
+        use lean_ctx_ocla::delivery_scope::{DeliveryAccessV1, DeliveryPrivacyV1, DeliveryScopeV1};
+        let reg = BuiltinDeliveryRegistry::with_config(8, 10);
+        let scope = DeliveryScopeV1::new("account".into(), "project".into()).unwrap();
+        for owner in ["alice", "bob"] {
+            let mut entry = test_entry("private.rs", owner, [18; 12], 1);
+            entry.access = Some(DeliveryAccessV1 {
+                scope: scope.clone(),
+                privacy: DeliveryPrivacyV1::Private,
+            });
+            entry.relay_content = Some(format!("context for {owner}"));
+            reg.record_delivery(entry);
+        }
+        assert_eq!(reg.delivery_stats().total_entries, 2);
+        for owner in ["alice", "bob"] {
+            let record = reg
+                .check_scoped_delivery(&[18; 12], "private.rs", &scope, owner, None)
+                .unwrap();
+            assert_eq!(record.agent_id, owner);
+            assert_eq!(record.relay_content, Some(format!("context for {owner}")));
+        }
+        assert!(
+            reg.check_scoped_delivery(&[18; 12], "private.rs", &scope, "outsider", None)
+                .is_none()
+        );
+    }
+
     fn test_entry(path: &str, agent: &str, hash: [u8; 12], mtime: u64) -> DeliveryEntry {
         DeliveryEntry {
+            access: None,
             blake3: hash,
             path: path.into(),
             line_count: 100,
@@ -503,8 +674,10 @@ mod tests {
         let hash = [8u8; 12];
         reg.record_delivery(test_entry("old.rs", "agent-a", hash, 1000));
         let key = DeliveryKey {
+            private_owner: None,
             blake3: hash,
             path: "old.rs".into(),
+            access: None,
         };
         if let Some(mut record) = reg.store.get_mut(&key) {
             record.read_at = BuiltinDeliveryRegistry::now_epoch().saturating_sub(61);
@@ -543,8 +716,10 @@ mod tests {
         reg.record_delivery(test_entry("ttl.rs", "agent-ttl", hash, 1000));
 
         let key = DeliveryKey {
+            private_owner: None,
             blake3: hash,
             path: "ttl.rs".into(),
+            access: None,
         };
         reg.store.get_mut(&key).unwrap().read_at =
             BuiltinDeliveryRegistry::now_epoch().saturating_sub(120);
@@ -565,10 +740,14 @@ mod tests {
 
         let past = BuiltinDeliveryRegistry::now_epoch().saturating_sub(120);
         let key_a = DeliveryKey {
+            private_owner: None,
+            access: None,
             blake3: [20u8; 12],
             path: "a.rs".into(),
         };
         let key_b = DeliveryKey {
+            private_owner: None,
+            access: None,
             blake3: [21u8; 12],
             path: "b.rs".into(),
         };
@@ -614,6 +793,46 @@ mod tests {
             !reg.has_candidate("a.rs", 100),
             "evicted entry must be removed from mtime_index"
         );
+    }
+
+    #[test]
+    fn mtime_index_preserves_other_private_owners_after_eviction() {
+        use lean_ctx_ocla::delivery_scope::{DeliveryAccessV1, DeliveryPrivacyV1, DeliveryScopeV1};
+        let reg = BuiltinDeliveryRegistry::with_limits(2, 3600);
+        let scope = DeliveryScopeV1::new("account".into(), "project".into()).unwrap();
+        for owner in ["alice", "bob"] {
+            let mut entry = test_entry("shared.rs", owner, [1; 12], 100);
+            entry.access = Some(DeliveryAccessV1 {
+                scope: scope.clone(),
+                privacy: DeliveryPrivacyV1::Private,
+            });
+            reg.record_delivery(entry);
+        }
+        reg.record_delivery(test_entry("new.rs", "charlie", [2; 12], 200));
+        assert!(reg.has_candidate("shared.rs", 100));
+        assert!(
+            reg.check_scoped_delivery(&[1; 12], "shared.rs", &scope, "bob", None)
+                .is_some()
+        );
+        assert!(
+            reg.check_scoped_delivery(&[1; 12], "shared.rs", &scope, "alice", None)
+                .is_none()
+        );
+        reg.record_delivery(test_entry("last.rs", "charlie", [3; 12], 300));
+        assert!(!reg.has_candidate("shared.rs", 100));
+    }
+
+    #[test]
+    fn mtime_index_refresh_does_not_leak_candidates() {
+        let reg = BuiltinDeliveryRegistry::with_limits(1, 3600);
+        for mtime in [100, 100, 200, 200] {
+            reg.record_delivery(test_entry("same.rs", "owner", [1; 12], mtime));
+        }
+        assert!(!reg.has_candidate("same.rs", 100));
+        assert!(reg.has_candidate("same.rs", 200));
+        assert_eq!(reg.mtime_index.get("same.rs").unwrap().len(), 1);
+        reg.record_delivery(test_entry("replacement.rs", "owner", [2; 12], 300));
+        assert!(!reg.has_candidate("same.rs", 200));
     }
 
     #[test]

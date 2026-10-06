@@ -28,7 +28,10 @@ Source files:
 ```bash
 lean-ctx update             # check + install latest
 lean-ctx update --check     # only report whether an update exists
-lean-ctx update --insecure  # skip checksum verification (not recommended)
+lean-ctx update --pin 3.9.20 # persist a release pin and install it
+lean-ctx update --unpin     # follow latest again
+lean-ctx update --status    # show active/retained binary receipt
+lean-ctx update --rollback  # restore the retained previous binary
 lean-ctx update --skip-rules # update without touching your rules files
 ```
 
@@ -40,13 +43,13 @@ lean-ctx update --skip-rules # update without touching your rules files
    refresh** (`post_update_rewire`) so your wiring stays correct after an editor
    update — unless `--check`.
 3. If newer: downloads the platform asset (`platform_asset_name` resolves
-   os/arch, including glibc vs musl on Linux), **verifies the SHA256 checksum**
-   (refuses to install an unverifiable binary unless `--insecure`), then
-   replaces the running binary safely:
-   - macOS: unlink-then-rename (avoids SIGKILL from code-page revalidation),
-     then re-`codesign`.
-   - Windows: rename-out / rename-in, with a deferred `.bat` updater if the
-     binary is locked by a running editor MCP server.
+   os/arch, including glibc vs musl on Linux), **requires and verifies the
+   release manifest, SBOM, and SHA256SUMS**, then stages the current executable in a
+   state receipt before the same-filesystem atomic replacement. Missing, stale,
+   or mismatched metadata is fail-closed; there is no checksum bypass.
+   The receipt retains the prior binary and its digest for `--rollback`.
+   Windows still uses rename-out / rename-in, with a deferred `.bat` updater if
+   the binary is locked by a running editor MCP server.
 4. Runs `post_update_rewire(skip_rules)`.
 
 ### `post_update_rewire` — why your settings are safe
@@ -191,6 +194,13 @@ lean-ctx cache prune         # remove oversized/quarantined/orphaned indexes (BM
 Use `cache invalidate <file>` for surgical eviction (e.g. a file changed outside
 the watcher); `cache reset --project` wipes only the current project's cache,
 while `cache reset` wipes everything.
+
+CLI cache updates share a bounded cross-process file lock and replace the store
+atomically. Unavailable, malformed, or unwritable cache storage makes reads return
+full content; explicit cache commands instead exit with an error and do not claim
+successful eviction. Malformed cache bytes are preserved for recovery. If a
+refactor has already changed files but cache eviction fails, its error explicitly
+reports those changes rather than implying a rollback or complete success.
 
 **Golden output — `lean-ctx cache stats`** reports the read cache size and how
 often re-reads were served from it (each hit is a ~13-token read instead of a

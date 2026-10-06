@@ -213,11 +213,12 @@ where
             || matches!(item, TxJsonRpcMessage::<R>::Error(_));
         let termination = self.termination.clone();
         async move {
-            sender.send(item).await?;
+            let result = sender.send(item).await;
             if terminate {
+                // A disconnected caller must still release the one-shot service.
                 termination.add_permits(1);
             }
-            Ok(())
+            result
         }
     }
 

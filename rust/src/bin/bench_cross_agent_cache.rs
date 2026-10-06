@@ -91,6 +91,7 @@ fn main() {
                 agent_tokens += STUB_TOKENS;
             } else {
                 registry.record_delivery(DeliveryEntry {
+                    access: None,
                     blake3: file.blake3,
                     path: file.path.clone(),
                     line_count: file.lines,

@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "seat-usage.schema.json",
+  "title": "SeatUsageV1", "type": "object", "additionalProperties": false,
+  "required": ["v", "usage_id", "organization_id", "entitlement_digest", "period_start", "period_end", "allocated_seats", "active_memberships", "peak_active_seats", "allocation_digests", "source", "observed_at", "watermark", "evidence_digests", "signature_envelope_digest", "idempotency_key"],
+  "properties": {
+    "v": {"const": 1}, "usage_id": {"$ref": "common.schema.json#/$defs/id"}, "organization_id": {"$ref": "common.schema.json#/$defs/id"},
+    "entitlement_digest": {"$ref": "common.schema.json#/$defs/digest"}, "period_start": {"$ref": "common.schema.json#/$defs/timestamp"}, "period_end": {"$ref": "common.schema.json#/$defs/timestamp"},
+    "allocated_seats": {"$ref": "common.schema.json#/$defs/quantity"}, "active_memberships": {"$ref": "common.schema.json#/$defs/quantity"}, "peak_active_seats": {"$ref": "common.schema.json#/$defs/quantity"},
+    "allocation_digests": {"type": "array", "maxItems": 4096, "uniqueItems": true, "items": {"$ref": "common.schema.json#/$defs/digest"}},
+    "source": {"enum": ["calculated", "reconciled"]}, "observed_at": {"$ref": "common.schema.json#/$defs/timestamp"},
+    "watermark": {"type": "object", "additionalProperties": false, "required": ["event_sequence", "late_arrival_cutoff"], "properties": {"event_sequence": {"type": "integer", "minimum": 0, "maximum": 9007199254740991}, "late_arrival_cutoff": {"$ref": "common.schema.json#/$defs/timestamp"}}},
+    "evidence_digests": {"type": "array", "maxItems": 4096, "uniqueItems": true, "items": {"$ref": "common.schema.json#/$defs/evidenceDigest"}},
+    "corrects_digest": {"$ref": "common.schema.json#/$defs/digest"}, "signature_envelope_digest": {"$ref": "common.schema.json#/$defs/digest"}, "idempotency_key": {"$ref": "common.schema.json#/$defs/idempotencyKey"}
+  }
+}

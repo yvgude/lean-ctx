@@ -17,7 +17,7 @@ fn grep_pattern_with_pipe_falls_through_to_native_grep() {
     // quoting this test used to check now happens inside the `-c` wrap.
     assert_eq!(
         rewrite_candidate("grep -r \"TODO|FIXME\" .", "lean-ctx"),
-        Some("lean-ctx -c 'grep -r \"TODO|FIXME\" .'".to_string())
+        Some(expect_wrapped("grep -r \"TODO|FIXME\" .", "lean-ctx"))
     );
 }
 
@@ -46,7 +46,7 @@ fn grep_pattern_with_parens_falls_through_to_native_grep() {
     // group, so `func()` would match the text `func` (#1827).
     assert_eq!(
         rewrite_candidate("grep -n \"func()\" file.rs", "lean-ctx"),
-        Some("lean-ctx -c 'grep -n \"func()\" file.rs'".to_string())
+        Some(expect_wrapped("grep -n \"func()\" file.rs", "lean-ctx"))
     );
 }
 

@@ -1,17 +1,21 @@
-//! Validated pure join between admitted task/plan and local Engine lineage.
+// SPDX-License-Identifier: Apache-2.0
+//! Validated join between admitted task/plan and local Engine lineage.
 
 use std::collections::BTreeSet;
 use std::fmt;
 
 use lean_ctx_protocol::{
-    EngineReceiptLinkV1, ExecutionPlanV1, ProtocolReference, ReceiptCapabilityLinkV1,
-    ReceiptLineageV1, Sha256Digest, TaskEnvelopeV1,
+    EngineContextSourcePlanResponseV1, EngineReceiptLinkV1, ExecutionPlanV1, ProtocolReference,
+    ReceiptCapabilityLinkV1, ReceiptLineageV1, Sha256Digest, TaskEnvelopeV1,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
 use crate::core::canonical;
 use crate::core::engine_interface::VerifiedEngineReceiptV1;
+
+const SOURCE_MATERIALIZATION_INPUT_PREFIX: &str = "input:source-materialization-sha256:";
+const SOURCE_PLAN_EVIDENCE_PREFIX: &str = "artifact://execution/evidence/";
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct ReceiptDocumentInputsV1 {
@@ -65,16 +69,14 @@ pub(crate) fn join_receipt_document_inputs(
     if plan.task_id != task.task_id {
         return fail("execution plan task_id does not match task envelope");
     }
-    if !plan
-        .capability_ids
-        .contains(&invocation.operation.capability_id)
+    if plan.capability_ids != [invocation.operation.capability_id.clone()]
+        || plan.capability_bindings.len() != 1
+        || plan.capability_bindings[0].capability_id != invocation.operation.capability_id
+        || plan.capability_bindings[0].version != invocation.operation.capability_version.as_str()
     {
         return fail("execution plan does not admit the invoked capability");
     }
-    if plan
-        .policy_decision_ref
-        .as_deref()
-        .is_some_and(|reference| reference != invocation.policy_admission.policy_ref.as_str())
+    if plan.policy_decision_ref.as_deref() != Some(invocation.policy_admission.policy_ref.as_str())
     {
         return fail("execution plan policy decision disagrees with Engine admission");
     }
@@ -90,6 +92,52 @@ pub(crate) fn join_receipt_document_inputs(
         .collect::<BTreeSet<_>>();
     if invocation_sources != observation_sources {
         return fail("Engine observation source lineage is not the exact invocation lineage");
+    }
+    let bindings = crate::core::engine_interface::planning::binding_refs(task, plan)
+        .map_err(ReceiptDocumentAdapterError)?;
+    if !bindings
+        .iter()
+        .all(|reference| invocation_sources.contains(reference.as_str()))
+    {
+        return fail("Engine invocation did not bind this task and plan before execution");
+    }
+    if invocation_sources.iter().any(|reference| {
+        (reference.starts_with("task:") || reference.starts_with("plan:"))
+            && !bindings
+                .iter()
+                .any(|binding| binding.as_str() == *reference)
+    }) {
+        return fail("Engine invocation mixes foreign task or plan bindings");
+    }
+    if invocation.operation.capability_id.as_str() == crate::core::engine_interface::CAPABILITY_ID {
+        crate::core::engine_interface::planning::validate_native_plan(
+            task,
+            plan,
+            &invocation.policy_admission,
+        )
+        .map_err(ReceiptDocumentAdapterError)?;
+        if invocation
+            .input_ref
+            .as_str()
+            .starts_with(SOURCE_MATERIALIZATION_INPUT_PREFIX)
+        {
+            validate_materialized_source_lineage(
+                task,
+                plan,
+                invocation,
+                &invocation_sources,
+                &bindings,
+            )?;
+        } else if invocation_sources.len() != 4
+            || !invocation_sources.contains(invocation.input_ref.as_str())
+            || invocation_sources
+                .iter()
+                .filter(|reference| reference.starts_with("source:canonical-path-sha256:"))
+                .count()
+                != 1
+        {
+            return fail("native Engine receipt has unexpected source dependencies");
+        }
     }
     let invocation_ref = canonical_digest(invocation);
     let lineage = ReceiptLineageV1 {
@@ -114,6 +162,84 @@ pub(crate) fn join_receipt_document_inputs(
         input_ref: invocation.input_ref.clone(),
         input_digest: invocation.input_digest.clone(),
     })
+}
+
+/// Validate the bounded lineage shape used when the Engine executes an
+/// already-materialized source snapshot.  The descriptor-only source-plan
+/// artifact is the authoritative bundle for all selected source bindings; the
+/// invocation carries only one evidence ref, keeping the protocol's 32-ref
+/// lineage bound independent of the source count.
+fn validate_materialized_source_lineage(
+    task: &TaskEnvelopeV1,
+    plan: &ExecutionPlanV1,
+    invocation: &lean_ctx_protocol::EngineInvocationV1,
+    invocation_sources: &BTreeSet<&str>,
+    bindings: &[ProtocolReference; 2],
+) -> Result<(), ReceiptDocumentAdapterError> {
+    let input_hex = invocation
+        .input_ref
+        .as_str()
+        .strip_prefix(SOURCE_MATERIALIZATION_INPUT_PREFIX)
+        .ok_or_else(|| {
+            ReceiptDocumentAdapterError("materialized input ref is not canonical".into())
+        })?;
+    let input_digest = Sha256Digest::new(format!("sha256:{input_hex}")).map_err(protocol_error)?;
+    if input_digest != invocation.input_digest {
+        return fail("materialized input ref does not bind the invocation digest");
+    }
+
+    let evidence_refs = invocation
+        .source_refs
+        .iter()
+        .filter_map(|reference| {
+            reference
+                .as_str()
+                .strip_prefix(SOURCE_PLAN_EVIDENCE_PREFIX)
+                .map(|digest| (reference.as_str(), digest))
+        })
+        .collect::<Vec<_>>();
+    if evidence_refs.len() != 1 {
+        return fail("materialized source invocation must contain one source-plan evidence ref");
+    }
+    let (evidence_ref, evidence_hex) = evidence_refs[0];
+    let evidence_digest =
+        Sha256Digest::new(format!("sha256:{evidence_hex}")).map_err(protocol_error)?;
+    let evidence_bytes = crate::core::engine_artifact::read_content(
+        "execution/evidence",
+        evidence_digest.hex(),
+        "json",
+    )
+    .map_err(|_| {
+        ReceiptDocumentAdapterError("materialized source-plan evidence unavailable".into())
+    })?;
+    let mut deserializer = serde_json::Deserializer::from_slice(&evidence_bytes);
+    let source_plan = EngineContextSourcePlanResponseV1::deserialize(&mut deserializer)
+        .map_err(protocol_error)?;
+    deserializer.end().map_err(protocol_error)?;
+    if canonical::canonical_serialize(&source_plan) != evidence_bytes {
+        return fail("materialized source-plan evidence is not canonical");
+    }
+    source_plan.validate_binding().map_err(protocol_error)?;
+    if source_plan.result.plan.task_id != task.task_id
+        || plan.context_plan_id.as_ref() != Some(&source_plan.result.plan.context_plan_id)
+        || plan.context_token_limit() != Some(source_plan.result.plan.budget_tokens)
+    {
+        return fail("materialized source-plan evidence does not bind the execution plan");
+    }
+    crate::core::engine_interface::planning::context_binding::validate_projection(
+        plan,
+        &source_plan.result.plan,
+    )
+    .map_err(ReceiptDocumentAdapterError)?;
+
+    let mut expected_sources = BTreeSet::new();
+    expected_sources.insert(invocation.input_ref.as_str());
+    expected_sources.insert(evidence_ref);
+    expected_sources.extend(bindings.iter().map(ProtocolReference::as_str));
+    if expected_sources != *invocation_sources {
+        return fail("materialized source invocation has unexpected source dependencies");
+    }
+    Ok(())
 }
 
 fn canonical_digest<T: Serialize>(value: &T) -> Sha256Digest {
@@ -205,12 +331,14 @@ mod tests {
             model_policy_ref: None,
             context_state_ref: None,
             outcome_contract_ref: None,
+            extensions: Default::default(),
         };
         let plan = ExecutionPlanV1 {
             schema_version: 1,
             plan_id: PlanId::new("plan-1").unwrap(),
             task_id,
             context_budget_tokens: 100,
+            context_budget_policy: None,
             context_strategy: ContextStrategy::Balanced,
             knowledge_refs: Vec::new(),
             capability_ids: vec![capability_id.clone()],
@@ -221,10 +349,19 @@ mod tests {
             fallback_refs: Vec::new(),
             stop_condition: StopCondition::OnCompletion,
             expected_cost_micros: 1,
+            estimates: None,
             expected_quality_milli: 500,
             expected_latency_ms: 1,
             policy_decision_ref: Some(policy_ref.as_str().to_owned()),
             scheduler_decision_ref: None,
+            executor_agent_id: None,
+            context_plan_id: None,
+            capability_bindings: vec![lean_ctx_protocol::CapabilityBindingV1 {
+                capability_id: capability_id.clone(),
+                version: "1.0.0".to_owned(),
+                manifest_digest: None,
+            }],
+            extensions: Default::default(),
         };
         let invocation_id = lean_ctx_protocol::EngineInvocationIdV1::new("invocation-1").unwrap();
         let invocation = EngineInvocationV1 {
@@ -240,7 +377,13 @@ mod tests {
             },
             input_ref: input_ref.clone(),
             input_digest,
-            source_refs: vec![input_ref, source_ref.clone()],
+            source_refs: {
+                let mut refs = vec![input_ref, source_ref.clone()];
+                refs.extend(
+                    crate::core::engine_interface::planning::binding_refs(&task, &plan).unwrap(),
+                );
+                refs
+            },
             policy_admission: EnginePolicyAdmissionV1 {
                 policy_ref,
                 decision: EnginePolicyDecisionV1::Admitted,
@@ -252,7 +395,7 @@ mod tests {
             status: EngineObservationStatusV1::Succeeded,
             output_ref: Some(reference("output:1")),
             output_digest: Some(digest('c')),
-            source_lineage: vec![reference("input:1"), source_ref],
+            source_lineage: invocation.source_refs.clone(),
             measurements: Vec::new(),
             failure: None,
             receipt_link: None,
@@ -381,6 +524,58 @@ mod tests {
         ] {
             assert_receipt_ref_rejected(&receipt_ref);
         }
+    }
+
+    #[test]
+    fn canonical_publication_rejects_post_execution_task_or_plan_substitution() {
+        let fixture = fixture();
+        let link = fixture.observation.receipt_link.as_ref().unwrap();
+        let mut changed_task = fixture.task.clone();
+        changed_task.intent = Some("different intent, same task id".into());
+        assert!(
+            join_receipt_document_inputs(&changed_task, &fixture.plan, &fixture.verified, link)
+                .is_err()
+        );
+        let mut changed_plan = fixture.plan.clone();
+        changed_plan.context_budget_tokens += 1;
+        assert!(
+            join_receipt_document_inputs(&fixture.task, &changed_plan, &fixture.verified, link)
+                .is_err()
+        );
+        let mut unbound = fixture.invocation.clone();
+        unbound.source_refs.retain(|reference| {
+            !reference.as_str().starts_with("task:") && !reference.as_str().starts_with("plan:")
+        });
+        let mut observation = fixture.verified.observation().clone();
+        observation.source_lineage = unbound.source_refs.clone();
+        let (verified, link) = persist_verified(&unbound, &observation);
+        assert!(
+            join_receipt_document_inputs(&fixture.task, &fixture.plan, &verified, &link).is_err()
+        );
+    }
+
+    #[test]
+    fn canonical_join_rejects_missing_policy_binding_and_foreign_task_lineage() {
+        let fixture = fixture();
+        let link = fixture.observation.receipt_link.as_ref().unwrap();
+        let mut plan = fixture.plan.clone();
+        plan.policy_decision_ref = None;
+        assert!(
+            join_receipt_document_inputs(&fixture.task, &plan, &fixture.verified, link).is_err()
+        );
+        plan = fixture.plan.clone();
+        plan.capability_bindings.clear();
+        assert!(
+            join_receipt_document_inputs(&fixture.task, &plan, &fixture.verified, link).is_err()
+        );
+        let mut invocation = fixture.invocation.clone();
+        invocation.source_refs.push(reference("task:foreign"));
+        let mut observation = fixture.verified.observation().clone();
+        observation.source_lineage = invocation.source_refs.clone();
+        let (verified, link) = persist_verified(&invocation, &observation);
+        assert!(
+            join_receipt_document_inputs(&fixture.task, &fixture.plan, &verified, &link).is_err()
+        );
     }
 
     #[test]

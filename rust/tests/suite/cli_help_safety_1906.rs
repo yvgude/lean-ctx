@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! #1906: `lean-ctx <command> --help` (and a lone `-h`) must describe the
 //! command and change nothing. Before the dispatcher guard, `secure --help`
 //! rewrote the config, `proof --help` wrote proof artifacts, `skillify --help`

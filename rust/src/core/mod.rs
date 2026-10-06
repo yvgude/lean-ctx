@@ -22,6 +22,7 @@ pub(crate) mod engine_artifact;
 pub(crate) mod engine_interface;
 #[allow(dead_code)]
 pub(crate) mod engine_receipt_artifact;
+pub mod enterprise_handshake;
 pub mod entropy;
 pub mod etpao;
 pub mod eval_ab;
@@ -34,21 +35,25 @@ pub mod html_crush;
 pub mod ib;
 pub mod import;
 pub mod integration_proof;
+pub(crate) mod intelligence_runtime;
 #[allow(dead_code)]
 pub(crate) mod invocation_admission;
 pub mod json_crush;
 pub(crate) mod markdown_compact;
+pub(crate) mod migration_lock;
 pub mod output_sanitizer;
 #[allow(dead_code)]
 pub mod policy;
 pub mod pop_pruning;
 pub mod preservation;
 pub mod pro_triggers;
+pub(crate) mod process_capture;
 pub mod process_guard;
 pub(crate) mod protect;
 pub mod rabin_karp;
 #[allow(dead_code)]
 pub(crate) mod read_provenance;
+pub mod read_reuse_operator;
 #[allow(dead_code)]
 pub(crate) mod receipt_document_adapter;
 pub mod relevance_tracker;
@@ -60,6 +65,7 @@ pub(crate) mod rules_overhead;
 pub(crate) mod rules_sections;
 pub(crate) mod rules_validation;
 pub(crate) mod runtime_flags;
+pub mod search_group_operator;
 pub mod shared_context;
 pub mod solution_auto_capture;
 pub mod solution_commercial;
@@ -69,9 +75,14 @@ pub mod solution_tracker;
 pub mod solution_types;
 pub(crate) mod structured_read;
 pub mod tabular_crush;
+pub(crate) mod task_receipt_migration;
 pub mod verbosity;
 #[allow(unreachable_pub)]
 pub mod wasserstein;
+#[cfg(windows)]
+pub(crate) mod windows_file;
+#[cfg(windows)]
+pub(crate) mod windows_private;
 pub mod yaml_crush;
 
 // ---------------------------------------------------------------------------
@@ -112,6 +123,7 @@ pub(crate) mod repomap;
 // ---------------------------------------------------------------------------
 // Domain: Context
 // ---------------------------------------------------------------------------
+pub mod context_admission;
 pub mod context_artifacts;
 pub(crate) mod context_bundle;
 pub(crate) mod context_compiler;
@@ -121,6 +133,9 @@ pub mod context_handles;
 pub mod context_ir;
 // Accidental historical surface retained for source compatibility. Public
 // embedders should use `crate::engine::ContextEngine` or `lean-ctx-sdk`.
+pub mod context_checkpoint;
+#[allow(dead_code)]
+pub(crate) mod context_checkpoint_projection;
 #[doc(hidden)]
 pub mod context_kernel;
 pub mod context_ledger;
@@ -135,6 +150,7 @@ pub mod context_proof_v2;
 pub mod context_quality;
 pub mod context_radar;
 pub(crate) mod context_snapshot;
+pub(crate) mod context_store;
 pub mod cross_source_edges;
 pub mod cross_source_hints;
 pub(crate) mod customer_proof_v2;
@@ -145,6 +161,7 @@ pub(crate) mod customer_proof_v2;
 pub mod claim_extractor;
 pub(crate) mod cognition_loop;
 pub(crate) mod cognition_scheduler;
+pub mod execution_ledger;
 pub mod knowledge;
 pub(crate) mod knowledge_bootstrap;
 pub mod knowledge_bridge;
@@ -240,11 +257,12 @@ mod decision_loop_integration_test;
 pub mod decision_loop_runtime;
 #[cfg(test)]
 mod decision_loop_runtime_tests;
+pub mod execution_lifecycle;
+pub mod execution_protocol;
 pub mod litm_calibration;
 pub mod measurement;
 pub mod mode_predictor;
 pub(crate) mod model_registry;
-pub mod model_router;
 pub mod shadow;
 pub mod task_relevance;
 pub mod task_spine;
@@ -260,8 +278,8 @@ pub mod benchmark_compare;
 #[allow(dead_code)]
 pub(crate) mod benchmark_spec;
 pub(crate) mod benchmark_study;
-/// Commercial-plane billing substrate (`billing-plane-v1`): plans, entitlements,
-/// and usage metering derived from the signed savings ledger. Never gates local.
+/// v4 billing-plane substrate: canonical plans, registry-backed entitlements,
+/// and usage metering derived from the signed savings ledger.
 pub mod billing;
 #[allow(dead_code)]
 pub(crate) mod calibrator;
@@ -357,14 +375,19 @@ pub mod hebbian_cache;
 pub mod hnsw;
 pub mod home;
 pub mod homeostasis;
+pub mod host_coverage;
 pub(crate) mod immune_detector;
 pub mod live_evidence_ledger;
 pub mod mcp_catalog;
 pub mod metering;
 pub mod nudge;
 pub mod ocla;
+pub mod ocla_bus;
 pub(crate) mod quality_benchmark;
 pub(crate) mod qubo_select;
+pub mod work_graph;
+pub(crate) mod work_graph_executor;
+pub mod work_graph_store;
 
 pub(crate) mod agent_registry;
 pub mod compliance;
@@ -427,9 +450,15 @@ pub mod pathutil;
 pub mod persona;
 pub mod pipeline;
 pub(crate) mod portable_binary;
+pub mod product_capabilities;
 pub(crate) mod profile_suggest;
 pub mod profiles;
 pub(crate) mod project_hash;
+/// Supervised execution channel for protected sessions (macOS refuses nested
+/// Seatbelt profiles, so command children are started by the launcher's
+/// wrapper, outside the MCP sandbox).
+#[cfg(unix)]
+pub(crate) mod protected_execution;
 pub mod protocol;
 pub mod provenance;
 pub mod provider_bandit;
@@ -478,6 +507,7 @@ pub mod tcc_guard_sandbox;
 pub mod tdd_schema;
 pub mod telemetry;
 pub mod telemetry_aggregate;
+pub mod telemetry_consent;
 pub(crate) mod telemetry_ledger;
 pub mod telemetry_v2;
 pub mod terse;

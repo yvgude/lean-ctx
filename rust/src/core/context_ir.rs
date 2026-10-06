@@ -186,13 +186,16 @@ impl ContextIrV1 {
     }
 
     pub fn save(&self) {
-        if let Ok(dir) = crate::core::paths::cache_dir() {
-            let path = dir.join(STORE_FILENAME);
-            if let Ok(json) = serde_json::to_string_pretty(self) {
-                let json = crate::core::redaction::redact_text(&json);
-                let _ = std::fs::write(path, json);
-            }
-        }
+        let _ = self.try_save();
+    }
+
+    /// Report persistence failure to lifecycle owners instead of acknowledging
+    /// an artifact merely because a best-effort save was attempted.
+    pub(crate) fn try_save(&self) -> anyhow::Result<()> {
+        let dir = crate::core::paths::cache_dir().map_err(anyhow::Error::msg)?;
+        let json = serde_json::to_string_pretty(self)?;
+        let json = crate::core::redaction::redact_text(&json);
+        crate::config_io::write_atomic(&dir.join(STORE_FILENAME), &json).map_err(anyhow::Error::msg)
     }
 
     pub fn load() -> Self {

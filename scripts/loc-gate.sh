@@ -16,7 +16,6 @@ TEST_LIMIT=3000
 # Legacy files awaiting their split. Paths relative to repo root.
 # These grew 2-10 lines over from r35-r42 feature work. Split in Wave B.
 ALLOWLIST=(
-  "rust/src/cli/config_cmd.rs"
   "rust/src/cli/completions/spec.rs"
   "rust/src/core/config/sections.rs"
 )

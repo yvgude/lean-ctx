@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Release-asset selection: which archive `update` / `enable-gpu` downloads
 //! for the host OS, architecture, libc and build flavour (CPU or CUDA).
 

@@ -31,10 +31,8 @@ pub(super) fn exec_buffered(
     #[cfg(windows)]
     {
         if super::platform::is_powershell(shell) {
-            let ps_script = format!(
-                "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {}",
-                command
-            );
+            let ps_script =
+                format!("[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; {command}");
             match tempfile::Builder::new()
                 .prefix("lean-ctx-ps-")
                 .suffix(".ps1")

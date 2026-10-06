@@ -11,6 +11,7 @@ mod overhead;
 mod report;
 mod workspace_scope;
 
+pub(crate) use checks::configured_host_coverage;
 #[allow(clippy::wildcard_imports)]
 use checks::*;
 #[allow(clippy::wildcard_imports)]
@@ -374,6 +375,8 @@ fn run_inner(json: bool) -> u32 {
     // of the jail + shell gating above (#507).
     let secret_detection = secret_detection_outcome();
     board.check(&secret_detection);
+    let context_gateway = context_gateway_outcome();
+    board.check(&context_gateway);
 
     // 5b3c) Managed addon binaries (GH #725): receipt path + sha256 pin +
     // revocation, so binhash-gate refusals surface here instead of at first
@@ -685,6 +688,16 @@ fn run_inner(json: bool) -> u32 {
     if let Some(ref check) = subscription_conflict {
         board.check(check);
     }
+
+    // 21a) Removed automatic model routing: a leftover tier table routes nothing.
+    if let Some(ref check) = removed_routing_tiers_outcome() {
+        board.check(check);
+    }
+
+    // 21b) Context gateway coverage per configured host (G7): enforced only
+    // where model traffic is proxy-routed; never claims more than it sees.
+    let coverage_check = gateway_coverage_outcome();
+    board.check(&coverage_check);
 
     // 22) Deprecation register (CONTRACTS.md policy, GL #394): warn about
     // every surface this build deprecates, with replacement and removal floor.

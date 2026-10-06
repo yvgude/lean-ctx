@@ -20,13 +20,13 @@
   "expected": {
     "capability_id": "capability://leanctx/remote-restricted",
     "version": "1.0.0",
-    "checks_passed": 5,
+    "checks_passed": 0,
     "checks_failed": 1,
     "failures": [
       {
-        "check": "classification_constraints",
-        "expected": "data movement, execution location, and classifications are compatible",
-        "actual": "remote execution cannot accept restricted data"
+        "check": "manifest_contract",
+        "expected": "valid canonical capability contract",
+        "actual": "Restricted data is incompatible with Remote data movement"
       }
     ]
   }

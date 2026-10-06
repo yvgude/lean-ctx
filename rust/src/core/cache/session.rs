@@ -173,19 +173,35 @@ impl SessionCache {
     /// a handover file edited between two agents — silently feeding it stale
     /// context. Validation uses the entry's stored absolute `path`, because a
     /// caller's `path` may be relative and resolve against a different CWD.
-    pub fn current_full_content(&self, path: &str) -> Option<(String, usize)> {
+    ///
+    /// Either copy is handed out as a new delivery: it passes the context
+    /// gateway under the *current* policy, with the entry's path (G5, recovery
+    /// is re-authorized). `Some(Err(reason))` is content-free: the gateway
+    /// withholds the content.
+    pub fn current_full_content(&self, path: &str) -> Option<Result<(String, usize), String>> {
         let entry = self.entries.get(&normalize_key(path))?;
-        if is_cache_entry_stale_verified(&entry.path, entry.stored_mtime, &entry.hash)
-            && let Ok(fresh) = crate::core::io_boundary::read_file_lossy(&entry.path)
-        {
-            // Cache is behind disk → serve the current bytes. If the file is now
-            // unreadable (deleted/permission), fall through to the cached copy:
-            // last-known content beats nothing, and that fall-through is not the
-            // staleness bug (it only fires when there is no current content).
-            let tokens = count_tokens(&fresh);
-            return Some((fresh, tokens));
-        }
-        Some((entry.content()?, entry.original_tokens))
+        let (text, tokens) =
+            if is_cache_entry_stale_verified(&entry.path, entry.stored_mtime, &entry.hash)
+                && let Ok(fresh) = crate::core::io_boundary::read_file_lossy(&entry.path)
+            {
+                // Cache is behind disk → serve the current bytes. If the file is now
+                // unreadable (deleted/permission), fall through to the cached copy:
+                // last-known content beats nothing, and that fall-through is not the
+                // staleness bug (it only fires when there is no current content).
+                (fresh, None)
+            } else {
+                (entry.content()?, Some(entry.original_tokens))
+            };
+        Some(
+            crate::core::context_admission::admit_source(&text, &entry.path, false)
+                .map(|admitted| {
+                    let tokens = tokens
+                        .filter(|_| admitted == text)
+                        .unwrap_or_else(|| count_tokens(&admitted));
+                    (admitted, tokens)
+                })
+                .map_err(|error| error.to_string()),
+        )
     }
 
     /// Records a cache hit, updates access stats, and emits a cache-hit event.

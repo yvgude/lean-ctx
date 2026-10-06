@@ -23,6 +23,8 @@ const MAX_LEASE_DURATION_MS: u64 = 60 * 60 * 1_000;
 pub enum AgentLeaseResourceKindV1 {
     Path,
     Symbol,
+    /// Fences one claimed local Work Graph node during external execution.
+    WorkGraphNode,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
@@ -119,6 +121,24 @@ impl AgentLeaseRegistryV1 {
                 expires_at_epoch_ms: existing.expires_at_epoch_ms,
             });
         }
+        // Only the path: namespace has hierarchical semantics; other references
+        // remain opaque. Exact replays were handled above.
+        if request.resource_kind == AgentLeaseResourceKindV1::Path
+            && request.resource_ref.starts_with("path:")
+            && let Some(existing) = self.leases.values().find(|lease| {
+                lease.request.resource_kind == AgentLeaseResourceKindV1::Path
+                    && crate::core::work_graph::path_claims_overlap(
+                        &lease.request.resource_ref,
+                        &request.resource_ref,
+                    )
+            })
+        {
+            return Ok(AgentLeaseAcquireV1::HeldBy {
+                owner_agent_id: existing.request.owner_agent_id.clone(),
+                lease_ref: existing.lease_ref.clone(),
+                expires_at_epoch_ms: existing.expires_at_epoch_ms,
+            });
+        }
         if self.leases.len() >= self.max_leases {
             return Err(AgentLeaseError::CapacityExceeded(self.max_leases));
         }
@@ -154,6 +174,45 @@ impl AgentLeaseRegistryV1 {
         }
         self.leases.remove(&key);
         Ok(true)
+    }
+
+    /// Extend an active lease without changing its fencing token.
+    ///
+    /// Renewals are owner- and token-bound, so a delayed worker cannot extend
+    /// a lease that has already been reclaimed. Keeping the token stable makes
+    /// periodic heartbeats idempotent; a reclaim after expiry always receives
+    /// a new token from `acquire`.
+    pub fn renew(
+        &mut self,
+        resource_kind: AgentLeaseResourceKindV1,
+        resource_ref: &str,
+        owner_agent_id: &str,
+        lease_ref: &str,
+        duration_ms: u64,
+        now_epoch_ms: u64,
+    ) -> Result<AgentLeaseV1, AgentLeaseError> {
+        opaque_ref("resource_ref", resource_ref)?;
+        agent_id(owner_agent_id)?;
+        if duration_ms == 0 || duration_ms > MAX_LEASE_DURATION_MS {
+            return Err(AgentLeaseError::Invalid(format!(
+                "duration_ms must be between 1 and {MAX_LEASE_DURATION_MS}"
+            )));
+        }
+        let key = (resource_kind, resource_ref.to_string());
+        let Some(existing) = self.leases.get(&key) else {
+            return Err(AgentLeaseError::NotFound);
+        };
+        if !existing.is_active_at(now_epoch_ms) {
+            self.leases.remove(&key);
+            return Err(AgentLeaseError::Expired);
+        }
+        if existing.request.owner_agent_id != owner_agent_id || existing.lease_ref != lease_ref {
+            return Err(AgentLeaseError::NotOwner);
+        }
+        let existing = self.leases.get_mut(&key).expect("lease checked above");
+        existing.request.duration_ms = duration_ms;
+        existing.expires_at_epoch_ms = now_epoch_ms.saturating_add(duration_ms);
+        Ok(existing.clone())
     }
 
     #[must_use]
@@ -274,6 +333,28 @@ pub fn release_shared(
     })
 }
 
+/// Renews an owned lease in the machine-wide registry without rotating its
+/// fencing token. Renewal must use the same store as acquisition, otherwise a
+/// lease held by another process could never be renewed.
+pub fn renew_shared(
+    resource_kind: AgentLeaseResourceKindV1,
+    resource_ref: &str,
+    owner_agent_id: &str,
+    lease_ref: &str,
+    duration_ms: u64,
+) -> Result<AgentLeaseV1, AgentLeaseError> {
+    with_shared_registry(|registry, now| {
+        registry.renew(
+            resource_kind,
+            resource_ref,
+            owner_agent_id,
+            lease_ref,
+            duration_ms,
+            now,
+        )
+    })
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 fn compute_lease_ref(
@@ -319,6 +400,10 @@ pub enum AgentLeaseError {
     CapacityExceeded(usize),
     #[error("not owner or mismatched lease_ref")]
     NotOwner,
+    #[error("lease not found")]
+    NotFound,
+    #[error("lease expired")]
+    Expired,
     #[error("serialization failed: {0}")]
     Serialize(String),
     #[error("lease store: {0}")]
@@ -361,6 +446,36 @@ pub mod tests {
     }
 
     #[test]
+    fn hierarchical_paths_block_both_orders_without_prefix_false_positives() {
+        for (held, incoming) in [
+            ("path:project/src", "path:project/src/main.rs"),
+            ("path:project/src/main.rs", "path:project/src"),
+        ] {
+            let mut reg = AgentLeaseRegistryV1::default();
+            let mut first = request("agent-a", "request:a");
+            first.resource_ref = held.into();
+            let granted = reg.acquire(first.clone(), 1).unwrap();
+            assert_eq!(reg.acquire(first, 2).unwrap(), granted);
+            for owner in ["agent-a", "agent-b"] {
+                let mut competing = request(owner, "request:b");
+                competing.resource_ref = incoming.into();
+                assert!(matches!(
+                    reg.acquire(competing, 2).unwrap(),
+                    AgentLeaseAcquireV1::HeldBy { .. }
+                ));
+            }
+            for independent in ["path:project/src-other", "path:other-project/src"] {
+                let mut next = request("agent-b", "request:c");
+                next.resource_ref = independent.into();
+                assert!(matches!(
+                    reg.acquire(next, 2).unwrap(),
+                    AgentLeaseAcquireV1::Granted(_)
+                ));
+            }
+        }
+    }
+
+    #[test]
     fn expiry_frees_resource() {
         let mut reg = AgentLeaseRegistryV1::default();
         let _ = reg.acquire(request("agent-a", "request:a"), 10).unwrap();
@@ -398,6 +513,54 @@ pub mod tests {
             )
             .unwrap()
         );
+    }
+
+    #[test]
+    fn renew_extends_owned_lease_without_rotating_fence() {
+        let mut reg = AgentLeaseRegistryV1::default();
+        let AgentLeaseAcquireV1::Granted(granted) =
+            reg.acquire(request("agent-a", "request:a"), 10).unwrap()
+        else {
+            panic!("expected grant")
+        };
+        let renewed = reg
+            .renew(
+                AgentLeaseResourceKindV1::Path,
+                "pathref:src-core-main",
+                "agent-a",
+                &granted.lease_ref,
+                500,
+                50,
+            )
+            .unwrap();
+        assert_eq!(renewed.lease_ref, granted.lease_ref);
+        assert_eq!(renewed.expires_at_epoch_ms, 550);
+        assert!(renewed.is_active_at(549));
+    }
+
+    #[test]
+    fn renew_rejects_expired_token_and_allows_reclaim() {
+        let mut reg = AgentLeaseRegistryV1::default();
+        let AgentLeaseAcquireV1::Granted(granted) =
+            reg.acquire(request("agent-a", "request:a"), 10).unwrap()
+        else {
+            panic!("expected grant")
+        };
+        assert!(matches!(
+            reg.renew(
+                AgentLeaseResourceKindV1::Path,
+                "pathref:src-core-main",
+                "agent-a",
+                &granted.lease_ref,
+                500,
+                110,
+            ),
+            Err(AgentLeaseError::Expired)
+        ));
+        assert!(matches!(
+            reg.acquire(request("agent-b", "request:b"), 111),
+            Ok(AgentLeaseAcquireV1::Granted(_))
+        ));
     }
 
     #[test]
@@ -470,3 +633,4 @@ pub mod tests {
         );
     }
 }
+// SPDX-License-Identifier: Apache-2.0

@@ -2,6 +2,36 @@ use rmcp::ErrorData;
 use rmcp::model::{ContentBlock, Tool};
 use serde_json::{Map, Value};
 
+/// Internal handler-to-dispatch signal for an executed operation that failed.
+/// Unlike invalid arguments, its body can contain file excerpts and must pass
+/// the full content pipeline before becoming an MCP `isError` result.
+pub(crate) const TOOL_EXECUTION_ERROR: rmcp::model::ErrorCode = rmcp::model::ErrorCode(-32071);
+
+pub(crate) fn tool_execution_error(message: String) -> ErrorData {
+    ErrorData::new(TOOL_EXECUTION_ERROR, message, None)
+}
+
+/// Path arguments shared by MCP dispatch and the embedded Engine boundary.
+pub const PATH_LIKE_KEYS: &[&str] = &[
+    "path",
+    "project_root",
+    "root",
+    "file",
+    "directory",
+    "dir",
+    "target",
+    "source",
+    "destination",
+    "old_path",
+    "new_path",
+    "file_path",
+    "from",
+    "to",
+    "base_path",
+    "config_path",
+    "output",
+];
+
 /// Stable states exposed by `ctx_shell(background_action="status")`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum BackgroundJobState {

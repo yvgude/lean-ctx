@@ -38,6 +38,14 @@ This contract covers:
 - `ctx_impact action=status` reports whether the graph looks **fresh** or **stale**.
 - Staleness is determined by comparing build metadata (git head/dirty) to current repo state when available.
 
+### Property-graph mirror replacement
+
+The index-to-property-graph mirror clears and replaces code nodes, edges and
+the file catalog in one SQLite transaction. A failed clear, insert or commit
+retains the previously committed graph; readers do not observe the temporary
+empty state between removal and insertion. Provider cross-source edges are
+preserved. Failure to begin the transaction has no graph side effects.
+
 ## Determinism (MUST)
 
 Same repo snapshot + same policies ⇒ same **logical outputs** (stable ordering + stable truncation).
@@ -83,4 +91,3 @@ Graph tool outputs are capped by hard budgets (see `rust/src/core/budgets.rs`) t
 - Graph DB + meta are written **only** under the project’s `.lean-ctx/` directory.
 - Proof artifacts are redacted before writing (same safety policy as other proof exports).
 - No secrets must appear in graph artifacts, logs, or exports.
-

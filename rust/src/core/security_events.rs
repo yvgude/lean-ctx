@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Provable security events for the value surface.
 //!
 //! lean-ctx's default-on protections (secret redaction, the shell allowlist,
@@ -37,6 +38,12 @@ pub enum SecurityKind {
     PathBlocked,
     /// Tool output matched prompt-injection patterns and was flagged.
     InjectionFlagged,
+    /// A checksum-validated PII value was masked by the context gateway.
+    PiiRedacted,
+    /// The context gateway withheld a source entirely.
+    ContentWithheld,
+    /// A source was delivered although a detector did not inspect all of it.
+    CoverageIncomplete,
 }
 
 impl SecurityKind {
@@ -47,35 +54,57 @@ impl SecurityKind {
             Self::ShellBlocked => "shell_blocked",
             Self::PathBlocked => "path_blocked",
             Self::InjectionFlagged => "injection_flagged",
+            Self::PiiRedacted => "pii_redacted",
+            Self::ContentWithheld => "content_withheld",
+            Self::CoverageIncomplete => "coverage_incomplete",
         }
     }
 
+    /// Existing trail event types only: an unknown variant would read as
+    /// tampering to an older verifier, so the kind lives in `action`.
     fn audit_event_type(self) -> crate::core::audit_trail::AuditEventType {
         use crate::core::audit_trail::AuditEventType;
         match self {
-            Self::SecretRedacted => AuditEventType::SecretDetected,
-            Self::ShellBlocked => AuditEventType::ToolDenied,
+            Self::SecretRedacted | Self::PiiRedacted => AuditEventType::SecretDetected,
+            Self::ShellBlocked | Self::ContentWithheld => AuditEventType::ToolDenied,
             Self::PathBlocked => AuditEventType::PathJailViolation,
-            Self::InjectionFlagged => AuditEventType::SecurityViolation,
+            Self::InjectionFlagged | Self::CoverageIncomplete => AuditEventType::SecurityViolation,
         }
     }
 
     /// Parses the `action` prefix written by [`record`] back into a kind.
     pub fn from_action(action: &str) -> Option<Self> {
         let kind = action.split(':').next()?;
-        [
-            Self::SecretRedacted,
-            Self::ShellBlocked,
-            Self::PathBlocked,
-            Self::InjectionFlagged,
-        ]
-        .into_iter()
-        .find(|k| k.as_str() == kind)
+        Self::ALL.into_iter().find(|k| k.as_str() == kind)
     }
+
+    /// Kinds a signed savings-batch tally carries; server mirrors verify the
+    /// tally field by field and predate the context-gateway kinds.
+    #[must_use]
+    pub const fn in_signed_tally(self) -> bool {
+        matches!(
+            self,
+            Self::SecretRedacted | Self::ShellBlocked | Self::PathBlocked | Self::InjectionFlagged
+        )
+    }
+
+    const ALL: [Self; 7] = [
+        Self::SecretRedacted,
+        Self::ShellBlocked,
+        Self::PathBlocked,
+        Self::InjectionFlagged,
+        Self::PiiRedacted,
+        Self::ContentWithheld,
+        Self::CoverageIncomplete,
+    ];
 }
 
 /// Per-kind event counts. Persisted inside `SessionStats`, so every field is
 /// `serde(default)` and old session files load unchanged.
+///
+/// The context-gateway kinds are written only when non-zero: every count
+/// serialized before they existed keeps its exact bytes (signed tallies, see
+/// [`Self::signed_tally_projection`]).
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct SecurityCounts {
@@ -83,61 +112,104 @@ pub struct SecurityCounts {
     pub shell_blocked: u64,
     pub path_blocked: u64,
     pub injection_flagged: u64,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub pii_redacted: u64,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub content_withheld: u64,
+    #[serde(skip_serializing_if = "is_zero")]
+    pub coverage_incomplete: u64,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn is_zero(n: &u64) -> bool {
+    *n == 0
 }
 
 impl SecurityCounts {
-    pub fn add(&mut self, kind: SecurityKind, n: u64) {
-        let slot = match kind {
+    /// The counts a signed savings-batch tally carries. Server mirrors verify
+    /// the tally field by field and do not know the gateway kinds yet, so they
+    /// are left out (zero, hence not serialized) instead of breaking the
+    /// signature; the audit trail still proves them locally.
+    #[must_use]
+    pub fn signed_tally_projection(&self) -> Self {
+        Self {
+            pii_redacted: 0,
+            content_withheld: 0,
+            coverage_incomplete: 0,
+            ..*self
+        }
+    }
+
+    pub const ZERO: Self = Self {
+        secrets_redacted: 0,
+        shell_blocked: 0,
+        path_blocked: 0,
+        injection_flagged: 0,
+        pii_redacted: 0,
+        content_withheld: 0,
+        coverage_incomplete: 0,
+    };
+
+    fn slot(&mut self, kind: SecurityKind) -> &mut u64 {
+        match kind {
             SecurityKind::SecretRedacted => &mut self.secrets_redacted,
             SecurityKind::ShellBlocked => &mut self.shell_blocked,
             SecurityKind::PathBlocked => &mut self.path_blocked,
             SecurityKind::InjectionFlagged => &mut self.injection_flagged,
-        };
+            SecurityKind::PiiRedacted => &mut self.pii_redacted,
+            SecurityKind::ContentWithheld => &mut self.content_withheld,
+            SecurityKind::CoverageIncomplete => &mut self.coverage_incomplete,
+        }
+    }
+
+    fn get(&self, kind: SecurityKind) -> u64 {
+        match kind {
+            SecurityKind::SecretRedacted => self.secrets_redacted,
+            SecurityKind::ShellBlocked => self.shell_blocked,
+            SecurityKind::PathBlocked => self.path_blocked,
+            SecurityKind::InjectionFlagged => self.injection_flagged,
+            SecurityKind::PiiRedacted => self.pii_redacted,
+            SecurityKind::ContentWithheld => self.content_withheld,
+            SecurityKind::CoverageIncomplete => self.coverage_incomplete,
+        }
+    }
+
+    pub fn add(&mut self, kind: SecurityKind, n: u64) {
+        let slot = self.slot(kind);
         *slot = slot.saturating_add(n);
     }
 
     pub fn merge(&mut self, other: &Self) {
-        self.secrets_redacted = self.secrets_redacted.saturating_add(other.secrets_redacted);
-        self.shell_blocked = self.shell_blocked.saturating_add(other.shell_blocked);
-        self.path_blocked = self.path_blocked.saturating_add(other.path_blocked);
-        self.injection_flagged = self
-            .injection_flagged
-            .saturating_add(other.injection_flagged);
+        for kind in SecurityKind::ALL {
+            self.add(kind, other.get(kind));
+        }
     }
 
     /// Events since `base` (a counter never goes below zero).
     #[must_use]
     pub fn since(&self, base: &Self) -> Self {
-        Self {
-            secrets_redacted: self.secrets_redacted.saturating_sub(base.secrets_redacted),
-            shell_blocked: self.shell_blocked.saturating_sub(base.shell_blocked),
-            path_blocked: self.path_blocked.saturating_sub(base.path_blocked),
-            injection_flagged: self
-                .injection_flagged
-                .saturating_sub(base.injection_flagged),
+        let mut out = Self::ZERO;
+        for kind in SecurityKind::ALL {
+            *out.slot(kind) = self.get(kind).saturating_sub(base.get(kind));
         }
+        out
     }
 
     pub fn total(&self) -> u64 {
-        self.secrets_redacted
-            .saturating_add(self.shell_blocked)
-            .saturating_add(self.path_blocked)
-            .saturating_add(self.injection_flagged)
+        SecurityKind::ALL
+            .into_iter()
+            .fold(0u64, |sum, kind| sum.saturating_add(self.get(kind)))
     }
 
     pub fn is_empty(&self) -> bool {
         self.total() == 0
     }
 
-    fn iter(&self) -> impl Iterator<Item = (SecurityKind, u64)> {
-        [
-            (SecurityKind::SecretRedacted, self.secrets_redacted),
-            (SecurityKind::ShellBlocked, self.shell_blocked),
-            (SecurityKind::PathBlocked, self.path_blocked),
-            (SecurityKind::InjectionFlagged, self.injection_flagged),
-        ]
-        .into_iter()
-        .filter(|(_, n)| *n > 0)
+    fn iter(&self) -> impl Iterator<Item = (SecurityKind, u64)> + '_ {
+        SecurityKind::ALL
+            .into_iter()
+            .map(|kind| (kind, self.get(kind)))
+            .filter(|(_, n)| *n > 0)
     }
 }
 
@@ -174,12 +246,7 @@ pub fn collect<T>(f: impl FnOnce() -> T) -> (T, SecurityCounts) {
 }
 
 /// Counts recorded since the MCP server last drained them into its session.
-static PENDING: Mutex<SecurityCounts> = Mutex::new(SecurityCounts {
-    secrets_redacted: 0,
-    shell_blocked: 0,
-    path_blocked: 0,
-    injection_flagged: 0,
-});
+static PENDING: Mutex<SecurityCounts> = Mutex::new(SecurityCounts::ZERO);
 
 /// Records one tool result's security tally: one audit-trail entry per kind
 /// (the proof) plus the pending session counters (the display).
@@ -207,6 +274,24 @@ pub fn record(tool: &str, agent_id: &str, counts: &SecurityCounts) {
     if let Ok(mut pending) = PENDING.lock() {
         pending.merge(counts);
     }
+}
+
+/// Anchors a Context Gateway receipt in the signed, hash-chained audit trail:
+/// the digest in the hashed `action` binds the stored receipt to the chain.
+/// Not a counted kind (`parse_action` ignores it), so nothing is counted twice.
+pub fn anchor_receipt(tool: &str, agent_id: &str, receipt_sha256_hex: &str) {
+    let session = crate::core::value::current_session()
+        .map(|id| format!("|session={id}"))
+        .unwrap_or_default();
+    crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
+        agent_id: agent_id.to_string(),
+        tool: tool.to_string(),
+        action: Some(format!("gateway_receipt:{receipt_sha256_hex}{session}")),
+        input_hash: String::new(),
+        output_tokens: 0,
+        role: crate::core::roles::active_role_name(),
+        event_type: crate::core::audit_trail::AuditEventType::ToolCall,
+    });
 }
 
 /// Convenience for a single event recorded outside a handler (dispatch layer).

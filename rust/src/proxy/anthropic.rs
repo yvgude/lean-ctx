@@ -508,11 +508,13 @@ pub(super) fn compress_request_body(
 
     // Prefix replay: if this is an append-only turn, overlay the cached
     // forwarded prefix bytes with the fresh delta for byte-identical prefix.
-    let system_val_replay = doc.get("system");
+    let system_val_replay = doc.get("system").cloned();
     let msgs_replay = doc.get("messages").and_then(Value::as_array);
     let out = if let Some(msgs) = msgs_replay {
-        let conv_id = prefix_replay::conversation_id(system_val_replay, msgs);
-        if let Some(delta) = prefix_replay::detect_append_only(conv_id, msgs) {
+        let conv_id = prefix_replay::conversation_id(system_val_replay.as_ref(), msgs);
+        if let Some(delta) = prefix_replay::detect_append_only(conv_id, msgs)
+            && delta.delta_start < msgs.len()
+        {
             let delta_msgs = &msgs[delta.delta_start..];
             if let Some(replayed) = prefix_replay::overlay_prefix(&delta.prefix_bytes, delta_msgs) {
                 prefix_cache_stats::record_replay_hit();

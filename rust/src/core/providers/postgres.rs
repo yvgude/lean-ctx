@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! PostgreSQL provider — database schema introspection via `psql`.
 //!
 //! Extracts table/column definitions from `information_schema` to make
@@ -9,6 +10,11 @@
 //!   - Or individual: `PGHOST`, `PGPORT`, `PGDATABASE`, `PGUSER`, `PGPASSWORD`
 
 use crate::core::providers::{ContextProvider, ProviderItem, ProviderParams, ProviderResult};
+
+const MAX_TABLES: usize = 100;
+const MAX_STDOUT_BYTES: usize = 1_048_576;
+const MAX_STDERR_BYTES: usize = 16_384;
+const QUERY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
 
 pub struct PostgresProvider {
     available: bool,
@@ -91,14 +97,19 @@ fn list_tables(params: &ProviderParams) -> Result<ProviderResult, String> {
     let schema = params.state.as_deref().unwrap_or("public");
     validate_pg_identifier(schema)?;
     let limit = params.limit.unwrap_or(50);
+    if !(1..=MAX_TABLES).contains(&limit) {
+        return Err(format!(
+            "PostgreSQL table limit must be between 1 and {MAX_TABLES}"
+        ));
+    }
+    let column_limit = limit * 20; // bounded before multiplication
 
     let query = format!(
         "SELECT table_name, column_name, data_type, is_nullable \
          FROM information_schema.columns \
          WHERE table_schema = '{schema}' \
          ORDER BY table_name, ordinal_position \
-         LIMIT {limit_cols};",
-        limit_cols = limit * 20, // ~20 columns per table avg
+         LIMIT {column_limit};",
     );
 
     let mut cmd = std::process::Command::new("psql");
@@ -107,23 +118,68 @@ fn list_tables(params: &ProviderParams) -> Result<ProviderResult, String> {
         cmd.arg(&url);
     }
 
-    let output = cmd
-        .args(["-t", "-A", "-F", "|", "-c", &query])
-        .output()
-        .map_err(|e| format!("Failed to run psql: {e}"))?;
+    cmd.args([
+        "-X",
+        "-w",
+        "-v",
+        "ON_ERROR_STOP=1",
+        "-t",
+        "-A",
+        "-F",
+        "|",
+        "-c",
+        &query,
+    ])
+    .env("PGCLIENTENCODING", "UTF8")
+    .stdin(std::process::Stdio::null());
+    let stdout = run_psql(&mut cmd, QUERY_TIMEOUT)?;
+    parse_tables(&stdout, schema, limit, column_limit)
+}
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(format!("psql error: {stderr}"));
+/// Shared bounded execution for catalog introspection and the pgvector backend.
+pub(in crate::core) fn run_psql(
+    command: &mut std::process::Command,
+    timeout: std::time::Duration,
+) -> Result<String, String> {
+    let captured = crate::core::process_capture::run_with_output_limits(
+        command,
+        Some(timeout),
+        MAX_STDOUT_BYTES,
+        MAX_STDERR_BYTES,
+    )
+    .map_err(|_| "PostgreSQL command failed or exceeded its output bound".to_owned())?;
+    if captured.timed_out {
+        return Err("PostgreSQL command exceeded its deadline".to_owned());
     }
+    if captured.cancelled || !captured.output.status.success() {
+        // Database diagnostics can echo connection credentials, SQL or row data.
+        return Err("PostgreSQL command failed; database diagnostics withheld".to_owned());
+    }
+    String::from_utf8(captured.output.stdout)
+        .map_err(|_| "PostgreSQL returned invalid UTF-8".to_owned())
+}
 
-    let stdout = String::from_utf8_lossy(&output.stdout);
+fn parse_tables(
+    stdout: &str,
+    schema: &str,
+    limit: usize,
+    column_limit: usize,
+) -> Result<ProviderResult, String> {
     let mut tables: std::collections::BTreeMap<String, Vec<String>> =
         std::collections::BTreeMap::new();
-
+    let mut column_count = 0;
     for line in stdout.lines() {
+        if line.is_empty() {
+            continue;
+        }
         let parts: Vec<&str> = line.split('|').collect();
-        if parts.len() >= 3 {
+        if parts.len() == 4
+            && !parts[0].trim().is_empty()
+            && !parts[1].trim().is_empty()
+            && !parts[2].trim().is_empty()
+            && matches!(parts[3].trim(), "YES" | "NO")
+        {
+            column_count += 1;
             let table = parts[0].trim();
             let col = parts[1].trim();
             let dtype = parts[2].trim();
@@ -134,6 +190,8 @@ fn list_tables(params: &ProviderParams) -> Result<ProviderResult, String> {
                 .entry(table.to_string())
                 .or_default()
                 .push(format!("  {col}: {dtype}{null_marker}"));
+        } else {
+            return Err("PostgreSQL returned an invalid schema record".to_owned());
         }
     }
 
@@ -157,12 +215,13 @@ fn list_tables(params: &ProviderParams) -> Result<ProviderResult, String> {
         })
         .collect();
 
+    let truncated = column_count >= column_limit || tables.len() > limit;
     Ok(ProviderResult {
         provider: "postgres".into(),
         resource_type: "schemas".into(),
         items,
-        total_count: Some(tables.len()),
-        truncated: tables.len() > limit,
+        total_count: (!truncated).then_some(tables.len()),
+        truncated,
     })
 }
 
@@ -233,5 +292,84 @@ mod tests {
         };
         let err = list_tables(&params).unwrap_err();
         assert!(err.contains("Invalid PostgreSQL schema identifier"));
+    }
+
+    #[test]
+    fn table_limits_reject_overflow_and_empty_requests_before_dispatch() {
+        for limit in [0, MAX_TABLES + 1, usize::MAX] {
+            let params = ProviderParams {
+                limit: Some(limit),
+                ..Default::default()
+            };
+            assert!(list_tables(&params).unwrap_err().contains("table limit"));
+        }
+    }
+
+    #[test]
+    fn schema_column_cap_is_reported_as_incomplete_not_a_total() {
+        let result = parse_tables("orders|id|integer|NO\n", "public", 1, 1).unwrap();
+        assert!(result.truncated);
+        assert_eq!(result.total_count, None);
+        let complete = parse_tables("orders|id|integer|NO\n", "public", 1, 20).unwrap();
+        assert!(!complete.truncated);
+        assert_eq!(complete.total_count, Some(1));
+        assert_eq!(
+            complete.items[0].body.as_deref(),
+            Some("public.orders\n  id: integer")
+        );
+        for invalid in [
+            "orders|partial\n",
+            "orders|id||NO\n",
+            "orders|id|  |NO\n",
+            "orders|id|integer|\n",
+            "orders|id|integer|UNKNOWN\n",
+        ] {
+            assert!(parse_tables(invalid, "public", 1, 20).is_err());
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_failure_does_not_disclose_database_diagnostics() {
+        let mut command = std::process::Command::new("/bin/sh");
+        command.args(["-c", "printf 'private-diagnostic-marker' >&2; exit 1"]);
+        let error = run_psql(&mut command, QUERY_TIMEOUT).unwrap_err();
+        assert!(error.contains("diagnostics withheld"));
+        assert!(!error.contains("private-diagnostic-marker"));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_capture_rejects_oversized_stdout_and_stderr() {
+        for script in [
+            "/bin/dd if=/dev/zero bs=1048577 count=1 2>/dev/null",
+            "/bin/dd if=/dev/zero bs=16385 count=1 1>&2 2>/dev/null",
+        ] {
+            let mut command = std::process::Command::new("/bin/sh");
+            command.args(["-c", script]);
+            assert!(
+                run_psql(&mut command, QUERY_TIMEOUT)
+                    .unwrap_err()
+                    .contains("output bound")
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_capture_has_a_deadline_and_rejects_invalid_utf8() {
+        let mut command = std::process::Command::new("/bin/sleep");
+        command.arg("20");
+        let started = std::time::Instant::now();
+        let error = run_psql(&mut command, std::time::Duration::from_millis(20)).unwrap_err();
+        assert!(error.contains("deadline"));
+        assert!(started.elapsed() < std::time::Duration::from_secs(5));
+        let mut command = std::process::Command::new("/bin/sh");
+        command.args(["-c", "printf '\\377'"]);
+        assert!(
+            run_psql(&mut command, QUERY_TIMEOUT)
+                .unwrap_err()
+                .contains("invalid UTF-8")
+        );
     }
 }

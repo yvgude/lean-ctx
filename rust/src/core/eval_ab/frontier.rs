@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Deterministic comparison of several lean-ctx treatments against one shared baseline.
 
 use std::collections::HashSet;
@@ -8,10 +9,11 @@ use serde::Serialize;
 
 use super::conditions::{Condition, assemble};
 use super::model::{ModelFingerprint, ModelRunner};
-use super::report::{AbReport, AbStats, PairRecord, Verdict};
+use super::report::{AbReport, AbStats, PairRecord, PowerStatus, Verdict};
 use super::scorers::score_task;
 use super::suite::EvalSuite;
 use super::{AbRunConfig, build_request};
+use crate::core::context_quality::tier::EvidenceTier;
 
 pub const FRONTIER_KIND: &str = "lean-ctx.eval-frontier-report";
 pub const FRONTIER_SCHEMA_VERSION: u32 = 1;
@@ -26,6 +28,11 @@ pub struct FrontierStrategyResult {
     pub token_reduction_percent: f64,
     pub stats: AbStats,
     pub verdict: Verdict,
+    /// Kind of evidence behind the verdict (fixture, replay or live run).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub evidence_tier: Option<EvidenceTier>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub power: Option<PowerStatus>,
     pub records: Vec<PairRecord>,
 }
 
@@ -91,14 +98,13 @@ impl FrontierReport {
 pub fn parse_strategies(names: &str) -> Result<Vec<Condition>> {
     let strategies = names
         .split(',')
-        .map(|name| match name.trim() {
-            "lean_ctx" => Ok(Condition::LeanCtx),
-            "json_crush" => Ok(Condition::JsonCrush),
-            "tabular_crush" => Ok(Condition::TabularCrush),
-            "yaml_crush" => Ok(Condition::YamlCrush),
-            other => bail!(
-                "unknown strategy {other:?}; choose lean_ctx, json_crush, tabular_crush, or yaml_crush"
+        .map(|name| match Condition::from_label(name.trim()) {
+            Some(Condition::Baseline) | None => bail!(
+                "unknown strategy {:?}; choose lean_ctx, json_crush, tabular_crush, yaml_crush, \
+                 read_full, read_map or read_signatures",
+                name.trim()
             ),
+            Some(condition) => Ok(condition),
         })
         .collect::<Result<Vec<_>>>()?;
     canonical_strategies(strategies)
@@ -198,6 +204,8 @@ pub fn run_frontier(
             token_reduction_percent,
             stats: paired.stats,
             verdict: paired.verdict,
+            evidence_tier: paired.evidence_tier,
+            power: paired.power,
             records: paired.records,
         });
     }
@@ -247,6 +255,8 @@ mod tests {
             Condition::JsonCrush,
             Condition::TabularCrush,
             Condition::YamlCrush,
+            Condition::ReadFull,
+            Condition::ReadMap,
         ] {
             let context = assemble(condition, &workspace, task.query(), 4000).unwrap();
             let request = build_request(&context.text, &task.prompt);
@@ -260,6 +270,8 @@ mod tests {
             Condition::TabularCrush,
             Condition::LeanCtx,
             Condition::JsonCrush,
+            Condition::ReadMap,
+            Condition::ReadFull,
         ];
         let first = run_frontier(
             &suite,
@@ -285,11 +297,48 @@ mod tests {
             .collect();
         assert_eq!(
             names,
-            ["json_crush", "lean_ctx", "tabular_crush", "yaml_crush"]
+            [
+                "json_crush",
+                "lean_ctx",
+                "read_full",
+                "read_map",
+                "tabular_crush",
+                "yaml_crush"
+            ]
         );
         assert_eq!(first.render_table(), second.render_table());
         assert_eq!(first.to_json(), second.to_json());
         assert!(!first.to_json().contains("created_at"));
+
+        // Only read strategies become context-policy evidence: no suite name,
+        // fixture answers stay tier A, and the newest run replaces the older.
+        use crate::core::eval_ab::strategy_evaluations::{from_frontier, load_in, save_in};
+        use lean_ctx_protocol::context_gateway::QualityEvidenceTierV1;
+        use lean_ctx_protocol::context_policy_evidence::ReadStrategyV1;
+        let evaluations = from_frontier(&first);
+        let strategies: Vec<_> = evaluations.iter().map(|e| e.strategy).collect();
+        assert_eq!(strategies, [ReadStrategyV1::Full, ReadStrategyV1::Map]);
+        assert!(
+            evaluations
+                .iter()
+                .all(|e| e.evidence_tier == QualityEvidenceTierV1::Mechanism && !e.powered)
+        );
+        assert!(
+            !serde_json::to_string(&evaluations)
+                .unwrap()
+                .contains("fixture-suite")
+        );
+        let store = root
+            .path()
+            .join("eval")
+            .join("strategy-evaluations-v1.json");
+        save_in(&store, evaluations.clone()).unwrap();
+        let mut newer = evaluations[1].clone();
+        newer.pairs = 99;
+        save_in(&store, vec![newer]).unwrap();
+        let stored = load_in(&store);
+        assert_eq!(stored.len(), 2);
+        assert_eq!(stored[1].pairs, 99, "the newest run per strategy wins");
     }
 
     #[test]

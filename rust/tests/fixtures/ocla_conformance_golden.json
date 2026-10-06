@@ -2,47 +2,47 @@
   "invocation_failure_policy.json": {
     "capability_id": "capability://leanctx/tool-output-optimizer",
     "version": "1.0.0",
-    "checks_passed": 10,
+    "checks_passed": 5,
     "checks_failed": 0,
     "failures": []
   },
   "invocation_failure_timeout.json": {
     "capability_id": "capability://leanctx/tool-output-optimizer",
     "version": "1.0.0",
-    "checks_passed": 10,
-    "checks_failed": 0,
+    "checks_passed": 4,
+    "checks_failed": 1,
     "failures": [
       {
-        "check": "warning:latency_within_bounds",
-        "expected": "0..=250 ms",
-        "actual": "300 ms"
+        "check": "latency_within_bounds",
+        "expected": "latency within declared unsigned max_ms",
+        "actual": "300 ms; bounds={\"max_ms\":250,\"min_ms\":0}"
       }
     ]
   },
   "invocation_success.json": {
     "capability_id": "capability://leanctx/tool-output-optimizer",
     "version": "1.0.0",
-    "checks_passed": 10,
+    "checks_passed": 5,
     "checks_failed": 0,
     "failures": []
   },
   "manifest_invalid_classification.json": {
     "capability_id": "capability://leanctx/remote-restricted",
     "version": "1.0.0",
-    "checks_passed": 5,
+    "checks_passed": 0,
     "checks_failed": 1,
     "failures": [
       {
-        "check": "classification_constraints",
-        "expected": "data movement, execution location, and classifications are compatible",
-        "actual": "remote execution cannot accept restricted data"
+        "check": "manifest_contract",
+        "expected": "valid canonical capability contract",
+        "actual": "Restricted data is incompatible with Remote data movement"
       }
     ]
   },
   "manifest_valid.json": {
     "capability_id": "capability://leanctx/tool-output-optimizer",
     "version": "1.0.0",
-    "checks_passed": 6,
+    "checks_passed": 1,
     "checks_failed": 0,
     "failures": []
   }

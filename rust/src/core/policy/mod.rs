@@ -21,7 +21,9 @@
 //!   deliberate posture choice, not an accumulating set).
 
 pub mod builtin;
+pub mod content;
 pub mod coverage;
+pub(crate) mod diagnostics;
 pub mod floor;
 pub mod org;
 pub mod runtime;
@@ -30,6 +32,8 @@ use std::collections::{BTreeMap, BTreeSet};
 use std::path::Path;
 
 use serde::{Deserialize, Serialize};
+
+pub(crate) mod files;
 
 /// Maximum `extends` chain depth (defense against runaway chains; built-ins
 /// use at most 2).
@@ -132,6 +136,14 @@ pub struct FilterRules {
     /// Accumulates down the `extends` chain (a child may add, never drop).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub blocked_labels: Vec<String>,
+    /// Named inbound block patterns. Evaluated on original content before any
+    /// masking; inherited and organizational restrictions accumulate.
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub blocked_patterns: BTreeMap<String, String>,
+    /// Ownership of locally published personal rules; never infer ownership from
+    /// a prefix used by an existing hand-authored policy.
+    #[serde(default, skip_serializing_if = "BTreeSet::is_empty")]
+    pub managed_personal_rules: BTreeSet<String>,
 }
 
 impl FilterRules {
@@ -142,6 +154,27 @@ impl FilterRules {
             && self.classification.is_none()
             && self.injection.is_none()
             && self.blocked_labels.is_empty()
+            && self.blocked_patterns.is_empty()
+            && self.managed_personal_rules.is_empty()
+    }
+}
+
+/// Same-name restrictions retain both patterns. Bounds are checked again when
+/// compiling the resolved policy; oversized composition denies all access.
+pub(super) fn merge_block_patterns(
+    target: &mut BTreeMap<String, String>,
+    incoming: &BTreeMap<String, String>,
+) {
+    for (name, pattern) in incoming {
+        match target.get_mut(name) {
+            Some(previous) if previous != pattern => {
+                *previous = format!("(?:{previous})|(?:{pattern})");
+            }
+            Some(_) => {}
+            None => {
+                target.insert(name.clone(), pattern.clone());
+            }
+        }
     }
 }
 
@@ -185,6 +218,11 @@ pub struct RoutingPolicyRules {
     /// merge then intersects org vs. local, see `floor`).
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub allowed_models: Vec<String>,
+    /// Additional conjunctive ceilings. Every group must match; an empty
+    /// group denies every model. Preserves glob intersections without turning
+    /// a disjoint intersection into the unrestricted empty primary list.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub model_ceiling_groups: Vec<Vec<String>>,
     /// Projects whose requests the router must never downgrade to a cheaper
     /// tier (`["security", "prod"]`). Accumulates down the chain.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -195,8 +233,61 @@ impl RoutingPolicyRules {
     /// True when no routing governance is configured.
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        self.allowed_models.is_empty() && self.forbid_downgrade_for.is_empty()
+        self.allowed_models.is_empty()
+            && self.model_ceiling_groups.is_empty()
+            && self.forbid_downgrade_for.is_empty()
     }
+
+    /// Apply all inherited ceilings to one explicitly selected model.
+    #[must_use]
+    pub fn model_allowed(&self, model: &str) -> bool {
+        model_allowed_by_ceilings(&self.allowed_models, &self.model_ceiling_groups, model)
+    }
+}
+
+/// Keep the first occurrence of every exact conjunction, including deny-all
+/// empty groups. Reapplying a floor must not multiply identical checks.
+fn unique_model_ceilings<'a>(groups: impl Iterator<Item = &'a Vec<String>>) -> Vec<Vec<String>> {
+    let mut seen = std::collections::BTreeSet::new();
+    groups
+        .filter(|group| seen.insert(*group))
+        .cloned()
+        .collect()
+}
+
+pub(crate) fn model_allowed_by_ceilings(
+    primary: &[String],
+    groups: &[Vec<String>],
+    model: &str,
+) -> bool {
+    let matches = |patterns: &[String]| {
+        patterns
+            .iter()
+            .any(|pattern| model_pattern_matches(pattern, model))
+    };
+    (primary.is_empty() || matches(primary)) && groups.iter().all(|group| matches(group))
+}
+
+/// Glob-lite matching shared by project admission and the gateway.
+pub(crate) fn model_pattern_matches(pattern: &str, model: &str) -> bool {
+    let pattern = pattern.trim().as_bytes();
+    let model = model.trim().as_bytes();
+    // Dynamic programming avoids exponential wildcard backtracking.
+    let mut matched = vec![false; model.len() + 1];
+    matched[0] = true;
+    for &byte in pattern {
+        if byte == b'*' {
+            for index in 1..=model.len() {
+                matched[index] |= matched[index - 1];
+            }
+        } else {
+            for index in (1..=model.len()).rev() {
+                matched[index] = matched[index - 1] && model[index - 1] == byte;
+            }
+            matched[0] = false;
+        }
+    }
+    matched[model.len()]
 }
 
 /// The `[budgets]` section — hard org spend caps (enterprise#25, Doc 08 §4.3).
@@ -355,8 +446,9 @@ pub fn parse(toml_text: &str) -> Result<PolicyPack, PolicyError> {
 /// Parse a pack from a file path. Read errors surface as [`PolicyError::Toml`]
 /// with the OS message — the CLI shows them verbatim.
 pub fn parse_file(path: &Path) -> Result<PolicyPack, PolicyError> {
-    let text = std::fs::read_to_string(path)
-        .map_err(|e| PolicyError::Toml(format!("{}: {e}", path.display())))?;
+    let text = files::read(path, true)
+        .map_err(PolicyError::Toml)?
+        .ok_or_else(|| PolicyError::Toml("policy input is missing".into()))?;
     parse(&text)
 }
 
@@ -399,8 +491,46 @@ pub fn validate(pack: &PolicyPack) -> Result<(), PolicyError> {
             return Err(PolicyError::AllowDenyOverlap(overlap));
         }
     }
-    for (name, pattern) in &pack.redaction {
-        if let Err(e) = regex::Regex::new(pattern) {
+    if pack.redaction.len() + pack.filters.blocked_patterns.len() > content::MAX_REDACTION_RULES
+        || pack.egress.forbidden_patterns.len() > content::MAX_REDACTION_RULES
+        || pack.filters.managed_personal_rules.len() > 32
+    {
+        return Err(PolicyError::BadRegex {
+            pattern_name: "policy".into(),
+            error: "too many policy patterns".into(),
+        });
+    }
+    if pack.filters.managed_personal_rules.iter().any(|name| {
+        !name.starts_with("personal_")
+            || name.len() <= 9
+            || name.len() > content::MAX_RULE_LABEL_BYTES
+            || !name
+                .bytes()
+                .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b"_-".contains(&b))
+            || (!pack.redaction.contains_key(name)
+                && !pack.filters.blocked_patterns.contains_key(name))
+    }) {
+        return Err(PolicyError::BadRegex {
+            pattern_name: "policy".into(),
+            error: "invalid personal rule ownership".into(),
+        });
+    }
+    for (name, pattern) in pack.redaction.iter().chain(&pack.filters.blocked_patterns) {
+        if name.is_empty()
+            || name.len() > content::MAX_RULE_LABEL_BYTES
+            || name.chars().any(char::is_control)
+            || pattern.len() > content::MAX_RULE_PATTERN_BYTES
+        {
+            return Err(PolicyError::BadRegex {
+                pattern_name: "redaction".into(),
+                error: "policy pattern bounds exceeded".into(),
+            });
+        }
+        if let Err(e) = regex::RegexBuilder::new(pattern)
+            .size_limit(1024 * 1024)
+            .dfa_size_limit(1024 * 1024)
+            .build()
+        {
             return Err(PolicyError::BadRegex {
                 pattern_name: name.clone(),
                 error: e.to_string(),
@@ -411,7 +541,17 @@ pub fn validate(pack: &PolicyPack) -> Result<(), PolicyError> {
     validate_filter_action("classification", pack.filters.classification.as_deref())?;
     validate_filter_action("injection", pack.filters.injection.as_deref())?;
     for pattern in &pack.egress.forbidden_patterns {
-        if let Err(e) = regex::Regex::new(pattern) {
+        if pattern.len() > content::MAX_RULE_PATTERN_BYTES {
+            return Err(PolicyError::BadRegex {
+                pattern_name: "egress.forbidden_patterns".into(),
+                error: "policy pattern bounds exceeded".into(),
+            });
+        }
+        if let Err(e) = regex::RegexBuilder::new(pattern)
+            .size_limit(1024 * 1024)
+            .dfa_size_limit(1024 * 1024)
+            .build()
+        {
             return Err(PolicyError::BadRegex {
                 pattern_name: format!("egress.forbidden_patterns: {pattern}"),
                 error: e.to_string(),
@@ -422,6 +562,7 @@ pub fn validate(pack: &PolicyPack) -> Result<(), PolicyError> {
         .routing
         .allowed_models
         .iter()
+        .chain(pack.routing.model_ceiling_groups.iter().flatten())
         .any(|p| p.trim().is_empty())
     {
         return Err(PolicyError::EmptyModelPattern);
@@ -550,6 +691,14 @@ pub fn resolve(pack: &PolicyPack) -> Result<ResolvedPolicy, PolicyError> {
                 resolved.filters.blocked_labels.push(label.clone());
             }
         }
+        merge_block_patterns(
+            &mut resolved.filters.blocked_patterns,
+            &layer.filters.blocked_patterns,
+        );
+        resolved
+            .filters
+            .managed_personal_rules
+            .clone_from(&layer.filters.managed_personal_rules);
         // Egress: forbidden patterns accumulate; scalars override (child wins).
         for pattern in &layer.egress.forbidden_patterns {
             if !resolved.egress.forbidden_patterns.contains(pattern) {
@@ -568,6 +717,13 @@ pub fn resolve(pack: &PolicyPack) -> Result<ResolvedPolicy, PolicyError> {
                 resolved.routing.allowed_models.push(pattern.clone());
             }
         }
+        resolved.routing.model_ceiling_groups = unique_model_ceilings(
+            resolved
+                .routing
+                .model_ceiling_groups
+                .iter()
+                .chain(layer.routing.model_ceiling_groups.iter()),
+        );
         for project in &layer.routing.forbid_downgrade_for {
             if !resolved.routing.forbid_downgrade_for.contains(project) {
                 resolved.routing.forbid_downgrade_for.push(project.clone());

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Exit-code and environment handling shared by the CLI-backed tools.
 //
 // Kept free of Pi imports so the rules are unit-testable on their own: the

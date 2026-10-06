@@ -78,6 +78,9 @@ pub struct Config {
     pub response_shaping: ResponseShapingConfig,
     #[serde(default)]
     pub ocla: OclaConfig,
+    /// Global-only, explicit consent and independent pins for optional local code.
+    #[serde(default)]
+    pub intelligence_runtime: IntelligenceRuntimeConfig,
     /// Counterfactual Shadow Mode reporting (`[shadow]`), opt-in.
     #[serde(default)]
     pub shadow: ShadowConfig,
@@ -191,11 +194,10 @@ pub struct Config {
     /// Override via LCTX_NO_DEGRADE=1 env var.
     #[serde(default)]
     pub no_degrade: bool,
-    /// Serve explicit `full`/`lines:N-M` re-reads of session-cached files as
-    /// deltas: when the file changed on disk since it was cached, the read
-    /// returns `mode=diff` instead of re-emitting content the model already
-    /// holds. First reads are unaffected; `fresh=true` always bypasses.
-    /// Opt-in. Override via LCTX_DELTA_EXPLICIT=1/0 env var.
+    /// Legacy opt-in delta preference. Concrete per-call full/lines requests
+    /// take precedence and stay fresh; this cannot replace their content with
+    /// a delta. Use mode=auto or mode=diff for reduced re-reads.
+    /// Retained for configuration compatibility. LCTX_DELTA_EXPLICIT=1/0 overrides.
     #[serde(default)]
     pub delta_explicit: bool,
     /// Persistent profile name. Checked after LEAN_CTX_PROFILE env var.
@@ -673,6 +675,11 @@ pub struct Config {
     /// Disabled by default → fully no-op until `sensitivity.enabled = true`.
     #[serde(default)]
     pub sensitivity: crate::core::sensitivity::SensitivityConfig,
+    /// Context Gateway admission (`[context_gateway]`): built-in detectors
+    /// that run on every governed source before caching or compression.
+    /// On by default. Global-only: a project-local file cannot weaken it.
+    #[serde(default)]
+    pub context_gateway: crate::core::context_admission::ContextGatewayConfig,
     /// MCP Tool-Catalog Gateway (#210): aggregate + query-route downstream MCP
     /// servers. Global-only (never merged from project-local config) and a full
     /// no-op until `gateway.enabled = true`.

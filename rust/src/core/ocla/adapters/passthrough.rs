@@ -90,6 +90,9 @@ impl CapabilityAdapter for PassthroughAdapter {
             CapabilityInput::ModelRequest { prompt, .. } => {
                 invoke_passthrough_text(&invocation, &prompt, start)
             }
+            CapabilityInput::AgentTask(_) => Err(OclaError::InvalidRequest(
+                "passthrough cannot execute agent tasks".into(),
+            )),
         }
     }
 
@@ -115,7 +118,8 @@ mod tests {
                 workdir: None,
             },
             policy_constraints: PolicyConstraints::default(),
-            timeout_ms: 100,
+            // This test checks content identity, not machine-dependent tokenizer startup time.
+            timeout_ms: 0,
         };
         let result = adapter.invoke(invocation).expect("passthrough invocation");
         assert!(result.success);

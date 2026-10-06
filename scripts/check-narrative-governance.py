@@ -139,6 +139,22 @@ def validate_contract(contract: dict[str, Any]) -> list[str]:
                     f"{CONTRACT}: required_text fragments must be non-empty strings: {relative_path!r}"
                 )
 
+    forbidden_text = contract.get("forbidden_text")
+    if not isinstance(forbidden_text, dict):
+        failures.append(f"{CONTRACT}: forbidden_text must be an object")
+    else:
+        for relative_path, fragments in forbidden_text.items():
+            if not isinstance(relative_path, str) or not is_public_path(relative_path):
+                failures.append(
+                    f"{CONTRACT}: forbidden_text path must be public: {relative_path!r}"
+                )
+            if not isinstance(fragments, list) or not all(
+                isinstance(fragment, str) and fragment for fragment in fragments
+            ):
+                failures.append(
+                    f"{CONTRACT}: forbidden_text fragments must be non-empty strings: {relative_path!r}"
+                )
+
     status_records = contract.get("status_guarded_records")
     if not _public_path_list(status_records):
         failures.append(f"{CONTRACT}: status_guarded_records must contain public paths")
@@ -689,6 +705,20 @@ def check_repository(root: Path) -> list[str]:
         _check_narrative(relative_path, "\n\n".join(values), contract, failures)
 
     _check_primary_content(contract, contents, failures)
+
+    forbidden_text = contract.get("forbidden_text", {})
+    if isinstance(forbidden_text, dict):
+        for relative_path, forbidden_fragments in forbidden_text.items():
+            if not isinstance(relative_path, str) or not isinstance(forbidden_fragments, list):
+                continue
+            content = read(relative_path, root, failures)
+            if content is None:
+                continue
+            for fragment in forbidden_fragments:
+                if isinstance(fragment, str) and fragment in content:
+                    failures.append(
+                        f"{relative_path}: forbidden public claim {fragment!r}"
+                    )
 
     status_pattern = re.compile(
         r"(?im)^.{0,3}(?:\*\*)?status(?:\*\*)?\s*:\s*"

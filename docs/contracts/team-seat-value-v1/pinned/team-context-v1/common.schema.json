@@ -1,0 +1,167 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "common.schema.json",
+  "title": "LeanCTX Team Context Common Types v1",
+  "description": "Shared type library for team-context-v1. This file defines no record; it is referenced by every record schema. Digest definitions are distinguished by preimage class; see README 'Digest and preimage table'.",
+  "$defs": {
+    "id": {
+      "type": "string",
+      "description": "Untyped tenant-scoped identifier. Colons are excluded so an untyped id can never collide with a typed namespace such as 'member:' or 'key:'.",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,126}[a-z0-9]$",
+      "minLength": 2,
+      "maxLength": 128
+    },
+    "memberId": {
+      "type": "string",
+      "description": "Typed member namespace. Disjoint from $defs/id and from every other typed namespace.",
+      "pattern": "^member:[a-z0-9][a-z0-9._-]{0,119}$",
+      "minLength": 8,
+      "maxLength": 127
+    },
+    "keyId": {
+      "type": "string",
+      "description": "Typed signing-key namespace. Disjoint from $defs/id and $defs/memberId.",
+      "pattern": "^key:[a-z0-9][a-z0-9._-]{0,119}$",
+      "minLength": 5,
+      "maxLength": 124
+    },
+    "timestamp": {
+      "type": "string",
+      "description": "Canonical UTC RFC 3339 instant. The pattern is asserted because 'format' is annotation-only under the 2020-12 default vocabulary. Only the 'Z' designator is admitted: a numeric offset denotes the same instant but different JCS bytes and therefore a different record digest.",
+      "format": "date-time",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$",
+      "minLength": 20,
+      "maxLength": 30
+    },
+    "sha256Digest": {
+      "type": "string",
+      "description": "Grammar only: lowercase 'sha256:' followed by 64 lowercase hexadecimal characters. Never reference this definition directly from a record; reference the preimage-specific definition instead.",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "hmacSha256Digest": {
+      "type": "string",
+      "description": "Grammar only: lowercase 'hmac-sha256:' followed by 64 lowercase hexadecimal characters. The distinct prefix makes an unsalted SHA-256 of an identifier structurally unrepresentable where a pseudonym is required.",
+      "pattern": "^hmac-sha256:[0-9a-f]{64}$"
+    },
+    "recordDigest": {
+      "$ref": "#/$defs/sha256Digest",
+      "description": "SHA-256 over RFC 8785 JCS canonical bytes of a complete, validated team-context-v1 record."
+    },
+    "contentDigest": {
+      "$ref": "#/$defs/sha256Digest",
+      "description": "SHA-256 over the canonical bytes of a referenced payload that is not itself a team-context-v1 record (context content, policy rule document, source descriptor). JCS applies when the payload is JSON; otherwise the raw octet stream is hashed."
+    },
+    "canonicalBytesDigest": {
+      "$ref": "#/$defs/sha256Digest",
+      "description": "SHA-256 over the RFC 8785 JCS canonical bytes of an operation's request or response body, as admitted by the server after the request-body limit."
+    },
+    "nonceDigest": {
+      "$ref": "#/$defs/sha256Digest",
+      "description": "SHA-256 over a single-use nonce whose preimage is at least 128 bits from a CSPRNG. The preimage is never stored, logged or returned."
+    },
+    "pseudonymDigest": {
+      "$ref": "#/$defs/hmacSha256Digest",
+      "description": "HMAC-SHA-256(per-tenant pepper, NFC(lowercase(subject identifier))). The pepper is at least 256 bits from a CSPRNG, is unique per organization, is stored outside the record store and is never emitted. Pepper rotation is a versioned policy decision that rewrites the derived pseudonyms."
+    },
+    "idempotencyKey": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{16,128}$"
+    },
+    "reasonCode": {
+      "type": "string",
+      "description": "Bounded enumerable reason token. Free text, paths, prompts and secrets are forbidden.",
+      "pattern": "^[a-z][a-z0-9._-]{1,63}$"
+    },
+    "version": {
+      "type": "integer",
+      "description": "Monotonic per-record CAS version. Version 1 is the genesis record and carries no parent_digest; every version above 1 carries the record digest of its immediate predecessor.",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "classification": {
+      "enum": ["public", "internal", "confidential", "restricted"]
+    },
+    "role": {
+      "enum": ["owner", "admin", "approver", "member", "viewer"]
+    },
+    "authorityState": {
+      "description": "Authority lifecycle of a shared context object. Used wherever object authority is meant; a checkpoint uses $defs/checkpointState instead.",
+      "enum": ["personal", "team_candidate", "authoritative", "historical"]
+    },
+    "checkpointState": {
+      "description": "Lifecycle of a workspace checkpoint manifest. Deliberately disjoint from $defs/authorityState so a checkpoint state can never be mistaken for object authority.",
+      "enum": ["draft", "sealed", "superseded", "expired"]
+    },
+    "approvalState": {
+      "enum": ["not_required", "pending", "approved", "rejected"]
+    },
+    "contextObjectType": {
+      "enum": ["decision", "knowledge", "gotcha", "policy", "performance_profile"]
+    },
+    "provenanceObjectType": {
+      "enum": [
+        "decision",
+        "knowledge",
+        "gotcha",
+        "policy",
+        "performance_profile",
+        "checkpoint",
+        "receipt"
+      ]
+    },
+    "sourceKind": {
+      "enum": ["personal", "workspace", "import", "agent", "system"]
+    },
+    "action": {
+      "description": "Single shared action vocabulary. $defs/action is both the unit of authorization granted by workspace-role.allowed_actions and the operation_kind recorded by team-receipt, so every receipt-bearing operation is grantable and every grantable action is receipt-bearing.",
+      "enum": [
+        "checkpoint.create",
+        "conflict.resolve",
+        "context.delete",
+        "context.export",
+        "context.read",
+        "context.redact",
+        "context.submit",
+        "invite.consume",
+        "invite.issue",
+        "lease.grant",
+        "lease.revoke",
+        "membership.change",
+        "organization.create",
+        "policy.change",
+        "promotion.decide",
+        "promotion.request",
+        "provenance.read",
+        "receipt.read",
+        "role.change",
+        "workspace.create",
+        "workspace.read"
+      ]
+    },
+    "scope": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["organization_id", "workspace_id"],
+      "properties": {
+        "organization_id": { "$ref": "#/$defs/id" },
+        "workspace_id": { "$ref": "#/$defs/id" },
+        "project_id": { "$ref": "#/$defs/id" },
+        "task_id": { "$ref": "#/$defs/id" },
+        "plan_id": { "$ref": "#/$defs/id" }
+      }
+    },
+    "casLineage": {
+      "description": "Genesis and compare-and-swap lineage rule, applied via allOf by every mutable record. version = 1 is the genesis record and MUST NOT carry parent_digest; version > 1 MUST carry the record digest of its immediate predecessor. No sentinel digest exists, so cross-implementation digest determinism is preserved.",
+      "if": {
+        "properties": { "version": { "const": 1 } },
+        "required": ["version"]
+      },
+      "then": {
+        "not": { "required": ["parent_digest"] }
+      },
+      "else": {
+        "required": ["parent_digest"]
+      }
+    }
+  }
+}

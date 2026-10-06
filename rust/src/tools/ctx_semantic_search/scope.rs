@@ -24,11 +24,26 @@ pub(crate) fn resolve_search_root(path: &str) -> Result<(PathBuf, Option<String>
     } else {
         raw
     };
+    if let Some(authority) = crate::core::policy::runtime::REQUEST_PROJECT
+        .try_with(|slot| slot.borrow().clone())
+        .ok()
+        .flatten()
+    {
+        let root = authority
+            .canonicalize()
+            .map_err(|_| "source authority unavailable")?;
+        let requested = raw_dir
+            .canonicalize()
+            .map_err(|_| "source path unavailable")?;
+        if !requested.starts_with(&root) {
+            return Err("source path is outside the request authority".into());
+        }
+        let subdir = search_subdir_filter(&root, &requested);
+        return Ok((root, subdir));
+    }
+    // A local default only claims paths inside it; request authority above
+    // remains binding even when the caller supplies another project (#1875).
     let raw_str = raw_dir.to_string_lossy();
-    // #1875: a pinned root (`LEAN_CTX_PROJECT_ROOT` / config `project_root`)
-    // only claims paths inside it. `detect_project_root_or_cwd` returns the pin
-    // for *any* path, so a session rooted in another project searched the
-    // pinned project's corpus while regex/symbol searched its own.
     let root = match pinned_project_root() {
         Some(pinned) if !path_is_within(raw_dir, Path::new(&pinned)) => {
             crate::core::protocol::detect_project_root(&raw_str).unwrap_or_else(|| raw_str.into())

@@ -11,7 +11,7 @@
 //! lifetime-cumulative spend counter: [`resume_from_disk`] seeds the in-memory
 //! totals on proxy startup so a restart never zeroes the user's measured spend.
 
-use std::collections::HashMap;
+use std::collections::{HashMap, VecDeque};
 use std::sync::{Mutex, OnceLock};
 
 use serde::{Deserialize, Serialize};
@@ -61,6 +61,11 @@ pub struct ModelUsage {
     /// instead of a table estimate. `serde(default)` keeps older files loadable.
     #[serde(default)]
     pub measured: MeasuredSlice,
+    /// Recent factual response measurements, not quality/training labels.
+    /// This local diagnostic history must not be pooled into private ranking:
+    /// it has no verified actor/endpoint scope or user-accepted outcome yet.
+    #[serde(default)]
+    pub response_observations: VecDeque<super::usage::ResponseObservation>,
 }
 
 /// Token/cost sums of the turns that reported a measured provider charge.
@@ -88,6 +93,9 @@ impl MeasuredSlice {
 
 impl ModelUsage {
     fn add(&mut self, u: &super::usage::RealUsage) {
+        if let Some(observation) = &u.response_observation {
+            self.add_observation(observation.clone());
+        }
         self.requests += 1;
         self.input_tokens += u.input_tokens;
         self.output_tokens += u.output_tokens;
@@ -121,6 +129,14 @@ impl ModelUsage {
 
     fn billable_tokens(&self) -> u64 {
         self.input_tokens + self.output_tokens + self.cache_read_tokens + self.cache_write_tokens
+    }
+
+    fn add_observation(&mut self, observation: super::usage::ResponseObservation) {
+        const MAX_RESPONSE_OBSERVATIONS: usize = 32;
+        self.response_observations.push_back(observation);
+        while self.response_observations.len() > MAX_RESPONSE_OBSERVATIONS {
+            self.response_observations.pop_front();
+        }
     }
 }
 
@@ -271,6 +287,9 @@ pub fn resume_from_disk() {
         acc.counterfactual_input_tokens += usage.counterfactual_input_tokens;
         acc.counterfactual_billed_tokens += usage.counterfactual_billed_tokens;
         acc.measured.merge(&usage.measured);
+        for observation in usage.response_observations {
+            acc.add_observation(observation);
+        }
     }
     drop(map);
     let mut cohorts = cohort_store()
@@ -345,15 +364,9 @@ pub fn record(u: &super::usage::RealUsage) {
         super::policy_gate::record_spend(wire.person.as_deref(), wire.project.as_deref(), cost_usd);
     }
 
-    // Mechanism attribution into the local savings ledger (enterprise#19).
-    // Routing: the gateway served a cheaper model than requested — value the
-    // rate delta on the measured input tokens. Caching: provider prompt-cache
-    // reads billed below the input rate. Both best-effort, never blocking.
-    if let Some(wire) = u.wire.as_deref()
-        && let Some(routed_from) = wire.routed_from.as_deref()
-    {
-        crate::core::savings_ledger::record_routing_event(routed_from, &u.model, u.input_tokens);
-    }
+    // Mechanism attribution into the local savings ledger (enterprise#19):
+    // provider prompt-cache reads billed below the input rate. Best-effort,
+    // never blocking. A model swap is never booked as a LeanCTX saving.
     if u.cache_read_tokens > 0 {
         let cost = crate::core::gain::model_pricing::ModelPricing::load()
             .quote(Some(&u.model))

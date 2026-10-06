@@ -1828,9 +1828,11 @@ fn bench_session_prepare_save_is_cpu_only() {
         prepare_us / 100
     );
 
+    // The counter is cleared only when a write is acknowledged, so a failed
+    // background write can never drop pending changes.
     assert_eq!(
-        session.stats.unsaved_changes, 0,
-        "prepare_save must reset unsaved_changes"
+        session.stats.unsaved_changes, 5,
+        "prepare_save must keep unsaved_changes until the write is acknowledged"
     );
 }
 
@@ -1848,14 +1850,15 @@ fn bench_session_save_semantics() {
     }
     assert!(session.should_save(), "should_save after 6 mutations");
 
+    let pending = session.stats.unsaved_changes;
     let prepared = session.prepare_save().expect("prepare_save");
     assert_eq!(
-        session.stats.unsaved_changes, 0,
-        "prepare_save must reset counter immediately (for async path)"
+        session.stats.unsaved_changes, pending,
+        "prepare_save must not drop pending changes before the write is acknowledged"
     );
     assert!(
-        !session.should_save(),
-        "should_save must be false after prepare_save"
+        session.should_save(),
+        "an unacknowledged save keeps the session due for saving"
     );
 
     let write_result = prepared.write_to_disk();

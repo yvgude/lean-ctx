@@ -1,5 +1,6 @@
 //! HTTP route handlers for the LeanCTX dashboard API.
 
+mod agent_control;
 mod agents;
 mod context;
 mod doctor;
@@ -173,6 +174,19 @@ pub fn route_response(
     }
     if path == "/favicon.ico" {
         return ("204 No Content", "text/plain", String::new());
+    }
+
+    // The HTTP boundary already verified the bearer and CSRF headers. Unlike
+    // passive dashboard views, execution control is unavailable in no-auth mode.
+    if path == "/api/agents/work-graph" {
+        if token.is_none() {
+            return (
+                "403 Forbidden",
+                "application/json",
+                r#"{"error":"authenticated dashboard required"}"#.into(),
+            );
+        }
+        return agent_control::handle(method, body);
     }
 
     // Response cache: return cached response for expensive read-only routes.

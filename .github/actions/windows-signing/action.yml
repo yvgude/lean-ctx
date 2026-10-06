@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 name: Sign Windows engine
 description: Sign and verify the Windows engine with Thinkery AG's Azure certificate.
 inputs:

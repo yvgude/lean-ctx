@@ -392,6 +392,69 @@ fn production_snapshot_refuses_a_source_outside_the_engine_root() {
 }
 
 #[test]
+fn rooted_snapshot_canonicalizes_verbatim_sources_and_rejects_escapes() {
+    let _data_dir = data_dir::isolated_data_dir();
+    let parent = tempfile::tempdir().expect("source parent");
+    let root = parent.path().join("root");
+    let outside = parent.path().join("outside");
+    std::fs::create_dir_all(&root).expect("engine root");
+    std::fs::create_dir_all(&outside).expect("outside root");
+    let source = root.join("fixture.md");
+    let outside_source = outside.join("escape.md");
+    std::fs::write(&source, "inside transport source").expect("source fixture");
+    std::fs::write(&outside_source, "outside transport source").expect("outside fixture");
+
+    let engine = NativeContextEngine::with_root(&root).expect("secure Engine root");
+    let admission = EnginePolicyAdmissionV1 {
+        policy_ref: ProtocolReference::new("policy:ctx-read-context-gate-v1:fixture")
+            .expect("policy ref"),
+        decision: EnginePolicyDecisionV1::Admitted,
+    };
+    let canonical_source = std::fs::canonicalize(&source).expect("canonical source");
+    let case_variant_source = if cfg!(windows) {
+        canonical_source.to_string_lossy().to_ascii_uppercase()
+    } else {
+        canonical_source.to_string_lossy().into_owned()
+    };
+    let rooted = engine
+        .execute_ctx_read_rooted_snapshot(
+            &case_variant_source,
+            "materialized source snapshot",
+            admission.clone(),
+        )
+        .expect("verbatim canonical source is inside the bound root");
+    assert_eq!(rooted.1.status, EngineObservationStatusV1::Succeeded);
+
+    let transported = execute_transport_context_view(&root, &case_variant_source)
+        .expect("transport accepts the same canonical source form");
+    assert_eq!(transported.view.text, "inside transport source");
+
+    let traversal = root.join("../outside/escape.md");
+    let missing_traversal = root.join("../outside/not-created.md");
+    for candidate in [
+        std::fs::canonicalize(&outside_source).expect("canonical outside source"),
+        traversal,
+        missing_traversal,
+    ] {
+        assert_eq!(
+            engine
+                .execute_ctx_read_rooted_snapshot(
+                    &candidate.to_string_lossy(),
+                    "outside source snapshot",
+                    admission.clone(),
+                )
+                .unwrap_err(),
+            "ctx_read Engine source is outside its rooted boundary"
+        );
+    }
+    assert_eq!(
+        execute_transport_context_view(&root, &outside_source.to_string_lossy())
+            .expect_err("transport rejects a source outside the bound root"),
+        EngineTransportError::SourceOutsideRoot
+    );
+}
+
+#[test]
 fn materialized_execution_enforces_a_real_host_deadline() {
     let _data_dir = data_dir::isolated_data_dir();
     let root = tempfile::tempdir().expect("native adapter root");

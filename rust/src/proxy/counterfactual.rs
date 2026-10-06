@@ -132,7 +132,15 @@ pub(crate) fn maybe_spawn_probe(
     {
         return None;
     }
-    let body = probe_body(original?, original_model)?;
+    // The probe is a second egress to the provider: it carries the admitted
+    // request, never content the gateway masked or withheld (G6).
+    let target = crate::core::context_admission::egress::EgressTarget {
+        provider: "Anthropic",
+        model: original_model,
+        upstream_base,
+    };
+    let admitted = crate::core::context_admission::egress::admitted_copy(original?, &target)?;
+    let body = probe_body(&admitted, original_model)?;
 
     let url = format!(
         "{}/v1/messages/count_tokens",

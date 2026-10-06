@@ -583,24 +583,16 @@ pub(super) fn detect_function_def(segment: &str) -> Option<String> {
     None
 }
 
-/// #1488: extract the body commands from a function definition segment.
-/// Given `greet() { echo hi; echo bye; }`, returns `["echo hi", "echo bye"]`.
-pub(super) fn extract_function_body_commands(segment: &str) -> Vec<String> {
+/// #1488: the text between the outer `{` and `}` of a function definition
+/// segment — `greet() { echo hi; echo bye; }` gives ` echo hi; echo bye; `.
+/// The allowlist expands it like a top-level command line, so control flow in
+/// a body (`for … do … done`, `if … then … fi`) is not mistaken for commands
+/// (GH #2002).
+pub(super) fn function_body(segment: &str) -> Option<&str> {
     let trimmed = segment.trim();
-    // Find the opening `{` and closing `}`
-    let Some(open) = trimmed.find('{') else {
-        return vec![];
-    };
-    let Some(close) = trimmed.rfind('}').filter(|&i| i > open) else {
-        return vec![];
-    };
-    let body = &trimmed[open + 1..close];
-    // Split the body on `;` (simple split — nested braces are rare in
-    // single-line function defs, and the allowlist already handles segments).
-    body.split(';')
-        .map(|s| s.trim().to_string())
-        .filter(|s| !s.is_empty())
-        .collect()
+    let open = trimmed.find('{')?;
+    let close = trimmed.rfind('}').filter(|&i| i > open)?;
+    Some(&trimmed[open + 1..close])
 }
 
 /// Shell builtins that legitimately export or mutate environment variables.

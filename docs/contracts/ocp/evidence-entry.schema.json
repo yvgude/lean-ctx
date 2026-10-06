@@ -2,6 +2,15 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://opencontextprotocol.org/schemas/v0.1/evidence-entry.schema.json",
   "title": "OCP Part 4 — Evidence chain entry",
+  "$comment": "Additive evolution rule: `event_type` grows over time. The chain hash covers agent_id, tool, action, input_hash, output_tokens, role and event_type as raw JSON values, so an entry can be link-verified WITHOUT understanding its event_type. A reader that meets an unknown label MUST verify the links and report the entry as unknown-but-chained; it MUST NOT report chain tampering. See x-ocp-additive-event-types for the reader version each label first requires.",
+  "x-ocp-additive-event-types": {
+    "agent_registered": "lean-ctx >= 3.9.0",
+    "agent_suspended": "lean-ctx >= 3.9.0",
+    "agent_resumed": "lean-ctx >= 3.9.0",
+    "agent_decommissioned": "lean-ctx >= 3.9.0",
+    "agent_drift_detected": "lean-ctx >= 3.9.20",
+    "agent_drift_acknowledged": "lean-ctx >= 3.9.20"
+  },
   "type": "object",
   "required": [
     "timestamp", "agent_id", "tool", "input_hash", "output_tokens",
@@ -20,6 +29,7 @@
     "role": { "type": "string", "minLength": 1 },
     "event_type": {
       "type": "string",
+      "maxLength": 64,
       "oneOf": [
         {
           "enum": [
@@ -27,7 +37,8 @@
             "budget_exceeded", "cross_project_access", "rate_limited",
             "security_violation", "role_changed", "secret_detected",
             "agent_registered", "agent_suspended", "agent_resumed",
-            "agent_decommissioned"
+            "agent_decommissioned", "agent_drift_detected",
+            "agent_drift_acknowledged"
           ]
         },
         { "pattern": "^x-[a-z][a-z0-9_]*$" }
@@ -42,6 +53,19 @@
     "entry_hash": { "$ref": "#/$defs/sha256hex" },
     "signature": { "$ref": "#/$defs/ed25519hex" }
   },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "event_type": {
+            "enum": ["agent_drift_detected", "agent_drift_acknowledged"]
+          }
+        },
+        "required": ["event_type"]
+      },
+      "then": { "required": ["signature"] }
+    }
+  ],
   "additionalProperties": false,
   "$defs": {
     "sha256hex": { "type": "string", "pattern": "^[0-9a-f]{64}$" },

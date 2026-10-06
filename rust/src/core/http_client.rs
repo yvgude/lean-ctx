@@ -25,11 +25,41 @@ pub(crate) fn ureq_agent_with_timeouts(
     timeout_connect: Option<Duration>,
     timeout_recv_response: Option<Duration>,
 ) -> ureq::Agent {
-    ureq::config::Config::builder()
+    agent_with_redirect_policy(
+        timeout_resolve,
+        timeout_connect,
+        timeout_recv_response,
+        false,
+    )
+}
+
+/// Source credentials and request bodies must stay at the selected endpoint.
+pub(crate) fn ureq_agent_without_redirects(
+    timeout_resolve: Option<Duration>,
+    timeout_connect: Option<Duration>,
+    timeout_recv_response: Option<Duration>,
+) -> ureq::Agent {
+    agent_with_redirect_policy(
+        timeout_resolve,
+        timeout_connect,
+        timeout_recv_response,
+        true,
+    )
+}
+
+fn agent_with_redirect_policy(
+    timeout_resolve: Option<Duration>,
+    timeout_connect: Option<Duration>,
+    timeout_recv_response: Option<Duration>,
+    deny_redirects: bool,
+) -> ureq::Agent {
+    let mut config = ureq::config::Config::builder()
         .tls_config(platform_tls_config())
         .timeout_resolve(timeout_resolve)
         .timeout_connect(timeout_connect)
-        .timeout_recv_response(timeout_recv_response)
-        .build()
-        .into()
+        .timeout_recv_response(timeout_recv_response);
+    if deny_redirects {
+        config = config.max_redirects(0);
+    }
+    config.build().into()
 }

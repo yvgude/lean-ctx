@@ -1,6 +1,6 @@
 {
   "name": "lean-ctx-bin",
-  "version": "3.10.5",
+  "version": "3.11.0",
   "description": "LeanCTX Engine — the open-source runtime for the Context Gateway for AI Systems. Select context, apply supported controls, and inspect evidence. No Rust required.",
   "keywords": [
     "lean-ctx",

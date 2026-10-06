@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 name: Security Check
 
 on:
@@ -108,58 +109,19 @@ jobs:
             exit 1
           fi
 
+      # Canonical boundary guard: reads .github-ignore and rejects every tracked
+      # blocked path. No hand-maintained list, no exceptions, never advisory.
       - name: Proprietary code guardrail
-        run: |
-          echo "## Proprietary Code Guard" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          LEAK=0
+        run: python3 scripts/check-no-internal-artifacts.py --public --root .
 
-          # Keep in sync with .github-ignore. Business/monetization dirs are
-          # gitignored locally; listing them here is server-side defense-in-depth
-          # in case the local pre-push hook is not installed.
-          PRIVATE_PATHS="cloud/ docker-compose.yml .gitlab-ci.yml deploy.sh DEVELOPMENT.md Makefile.deploy docs/business/ memory-bank/ discord-bot/ n8n-workflows/ lab/ server.md"
-          for path in $PRIVATE_PATHS; do
-            if [ -e "$path" ]; then
-              echo "::error::PROPRIETARY CODE DETECTED: $path exists in the GitHub repository!"
-              echo "- **$path** — must not be on GitHub" >> $GITHUB_STEP_SUMMARY
-              LEAK=1
-            fi
-          done
+      # The license check runs the notices generator with `cargo metadata
+      # --locked --offline`; a fresh runner has no crate cache, so fetch the
+      # locked set here (network in this step, never inside the generator).
+      - name: Fetch locked crates
+        run: cargo fetch --locked --manifest-path rust/Cargo.toml
 
-          if [ "$LEAK" -eq 1 ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "These paths belong on GitLab only. See .github-ignore." >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-
-          echo "No proprietary code found." >> $GITHUB_STEP_SUMMARY
-
-      - name: Commercial-plane guard
-        run: |
-          echo "## Commercial-plane Guard" >> $GITHUB_STEP_SUMMARY
-          echo "" >> $GITHUB_STEP_SUMMARY
-          LEAK=0
-
-          # Billing/licensing logic lives in the private lean-ctx-cloud repo
-          # (oss-plane-separation-v1). core/billing/ is partially OPEN (metering,
-          # plans, mod), so we name the specific commercial files rather than the
-          # whole directory — the path guard above can't blanket-block them.
-          COMMERCIAL_PATHS="rust/src/core/license rust/src/core/licensing/keygen.rs rust/src/cli/license_cmd.rs rust/src/core/billing/success_fee.rs rust/src/core/billing/stripe_invoice.rs docs/contracts/license-v1.md docs/contracts/success-fee-invoice-v1.md"
-          for path in $COMMERCIAL_PATHS; do
-            if [ -e "$path" ]; then
-              echo "::error::COMMERCIAL CODE DETECTED: $path belongs in lean-ctx-cloud, not the open engine!"
-              echo "- **$path** — implement in lean-ctx-cloud" >> $GITHUB_STEP_SUMMARY
-              LEAK=1
-            fi
-          done
-
-          if [ "$LEAK" -eq 1 ]; then
-            echo "" >> $GITHUB_STEP_SUMMARY
-            echo "The open engine bills nothing and issues no licenses; it only emits the signed savings ledger. See .github-ignore." >> $GITHUB_STEP_SUMMARY
-            exit 1
-          fi
-
-          echo "No commercial-plane code found." >> $GITHUB_STEP_SUMMARY
+      - name: Mixed-license and private-service guard
+        run: python3 scripts/license-policy-check.py --root .
 
       - name: Critical files check
         if: github.event_name == 'pull_request'
@@ -186,6 +148,9 @@ jobs:
         run: |
           set -o pipefail
           cargo install cargo-audit
+          cargo install cargo-deny --version 0.19.6 --locked
+          cargo deny --manifest-path rust/Cargo.toml check licenses
+          cargo deny --manifest-path rust/Cargo.toml check advisories
           cd rust && cargo audit 2>&1 | tee audit-output.txt
           AUDIT_EXIT=${PIPESTATUS[0]}
           echo "" >> $GITHUB_STEP_SUMMARY

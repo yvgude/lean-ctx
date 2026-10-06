@@ -1,9 +1,15 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Internal proof bridge from one native OCLA capability to Engine Interface v1.
 //!
 //! This module is deliberately crate-private. It proves the local Engine
 //! contract without promoting an SDK façade, an agent loop, or Cloud semantics.
 
 use std::path::{Path, PathBuf};
+
+pub(crate) mod context_plan;
+pub(crate) mod planning;
+pub(crate) mod source_execution;
 
 use lean_ctx_protocol::{
     CapabilityId, EngineFailureCodeV1, EngineFailureV1, EngineInterfaceV1, EngineInvocationIdV1,
@@ -22,17 +28,18 @@ use crate::core::ocla::adapters::native_context::{
 use crate::core::ocla::invocation::{CapabilityInput, CapabilityInvocation, PolicyConstraints};
 
 const ENGINE_ID: &str = "lean-ctx-local";
-const CAPABILITY_ID: &str = "capability://leanctx/context-optimization";
-const CAPABILITY_VERSION: &str = "1.0.0";
+pub(crate) const CAPABILITY_ID: &str = "capability://leanctx/context-optimization";
+pub(crate) const CAPABILITY_VERSION: &str = "1.0.0";
 const RECEIPT_DIRECTORY: &str = "engine-interface/v1/receipts";
 const OUTPUT_DIRECTORY: &str = "engine-interface/v1/outputs";
 const RECOVERY_DIRECTORY: &str = "engine-interface/v1/recovery";
 pub(crate) const ENGINE_TRANSPORT_VERSION: u32 = 1;
 pub(crate) const ENGINE_INTERFACE_VERSION: &str = "1.0.0";
-const ENGINE_TRANSPORT_POLICY_REF: &str = "policy:engine-transport-v1:admitted";
+pub(crate) const ENGINE_TRANSPORT_POLICY_REF: &str = "policy:engine-transport-v1:admitted";
 const INPUT_REF_PREFIX: &str = "input:ctx-read-snapshot-sha256:";
 const SOURCE_REF_PREFIX: &str = "source:canonical-path-sha256:";
 const MAX_TRANSPORT_VIEW_BYTES: usize = 1024 * 1024;
+pub(crate) const MAX_TRANSPORT_BUDGET_TOKENS: u64 = MAX_TRANSPORT_VIEW_BYTES as u64;
 
 use super::engine_artifact as artifact_store;
 
@@ -95,13 +102,21 @@ pub(crate) struct EngineTransportResult {
     pub(crate) recovery: EngineTransportRecoveryDescriptor,
 }
 
-pub(super) fn persist_engine_artifact_content(
+pub(crate) fn persist_engine_artifact_content(
     directory: &str,
     digest: &str,
     extension: &str,
     bytes: &[u8],
 ) -> Result<std::fs::File, String> {
     artifact_store::persist_content(directory, digest, extension, bytes)
+}
+
+#[cfg(windows)]
+pub(crate) fn open_engine_artifact_lock(
+    directory: &str,
+    digest: &str,
+) -> Result<std::fs::File, String> {
+    artifact_store::open_lock(directory, digest)
 }
 
 /// Inputs intentionally retained inside the local Engine proof boundary.
@@ -423,17 +438,105 @@ impl NativeContextEngine {
         raw_input: &str,
         policy_admission: EnginePolicyAdmissionV1,
     ) -> Result<(EngineInvocationV1, EngineObservationV1), String> {
+        self.execute_ctx_read_rooted_snapshot_with_budget(
+            rooted_path,
+            raw_input,
+            policy_admission,
+            None,
+            None,
+        )
+    }
+
+    pub(crate) fn execute_ctx_read_rooted_snapshot_with_plan(
+        &self,
+        rooted_path: &str,
+        raw_input: &str,
+        policy_admission: EnginePolicyAdmissionV1,
+        task: &lean_ctx_protocol::TaskEnvelopeV1,
+        plan: &lean_ctx_protocol::ExecutionPlanV1,
+    ) -> Result<(EngineInvocationV1, EngineObservationV1), String> {
+        planning::validate_native_plan(task, plan, &policy_admission)?;
+        self.execute_ctx_read_rooted_snapshot_with_budget(
+            rooted_path,
+            raw_input,
+            policy_admission,
+            plan.context_token_limit(),
+            Some((task, plan)),
+        )
+    }
+
+    fn execute_ctx_read_rooted_snapshot_with_budget(
+        &self,
+        rooted_path: &str,
+        raw_input: &str,
+        policy_admission: EnginePolicyAdmissionV1,
+        budget_tokens: Option<u64>,
+        binding: Option<(
+            &lean_ctx_protocol::TaskEnvelopeV1,
+            &lean_ctx_protocol::ExecutionPlanV1,
+        )>,
+    ) -> Result<(EngineInvocationV1, EngineObservationV1), String> {
         let root = self.adapter.root();
         let rooted_path = Path::new(rooted_path);
-        if !rooted_path.is_absolute() || !rooted_path.starts_with(root) {
+        if !rooted_path.is_absolute() {
             return Err("ctx_read Engine source is outside its rooted boundary".to_owned());
         }
-        let (request, input) = NativeContextEngineRequest::ctx_read_snapshot_canonical(
-            rooted_path,
+        if contains_symlink_component(rooted_path, root) {
+            return Err("ctx_read Engine source is outside its rooted boundary".to_owned());
+        }
+        // The Engine binds its root through `canonicalize_secure` before building
+        // the adapter. Bring caller-supplied paths into that same form before
+        // comparing: on Windows std::fs::canonicalize may return a `\\?\` path, while pathjail and
+        // canonicalize_secure strip that prefix. Resolving here also collapses
+        // short-name, case, and reparse-point aliases before the component-boundary
+        // check; it does not broaden the root.
+        let rooted_path = crate::core::pathutil::canonicalize_secure(rooted_path)
+            .or_else(|error| {
+                if error.kind() == std::io::ErrorKind::NotFound {
+                    unresolved_rooted_path(rooted_path, root).ok_or(error)
+                } else {
+                    Err(error)
+                }
+            })
+            .map_err(|_| "ctx_read Engine source is outside its rooted boundary".to_owned())?;
+        if !rooted_path.starts_with(root) {
+            return Err("ctx_read Engine source is outside its rooted boundary".to_owned());
+        }
+        let (mut request, input) = NativeContextEngineRequest::ctx_read_snapshot_canonical(
+            &rooted_path,
             raw_input,
             30_000,
             policy_admission,
         )?;
+        if let Some(budget) = budget_tokens {
+            if budget == 0 {
+                return Err("ctx_read Engine budget must be positive".to_owned());
+            }
+            let identity = sha256_digest(&canonical::canonical_serialize(&(
+                "ctx-read-budget-v1",
+                &request.invocation_id,
+                budget,
+            )))?;
+            request.invocation_id =
+                EngineInvocationIdV1::new(format!("engine-invocation-{}", &identity.hex()[..32]))
+                    .map_err(|error| error.to_string())?;
+            request.budget_tokens = Some(budget);
+        }
+        if let Some((task, plan)) = binding {
+            // Persist and bind the admitted documents before the adapter can execute.
+            planning::persist_evidence(task)?;
+            planning::persist_evidence(plan)?;
+            let refs = planning::binding_refs(task, plan)?;
+            let identity = sha256_digest(&canonical::canonical_serialize(&(
+                "ctx-read-plan-v1",
+                &request.invocation_id,
+                &refs,
+            )))?;
+            request.invocation_id =
+                EngineInvocationIdV1::new(format!("engine-invocation-{}", &identity.hex()[..32]))
+                    .map_err(|error| error.to_string())?;
+            request.source_refs.extend(refs);
+        }
         self.execute_materialized(request, &input)
     }
 
@@ -583,6 +686,38 @@ pub(crate) fn execute_transport_context_view(
     root: &Path,
     path: &str,
 ) -> Result<EngineTransportResult, EngineTransportError> {
+    execute_transport_context_view_with_budget(root, path, None)
+}
+
+pub(crate) fn execute_transport_context_view_with_budget(
+    root: &Path,
+    path: &str,
+    budget_tokens: Option<u64>,
+) -> Result<EngineTransportResult, EngineTransportError> {
+    execute_transport_context_view_bound(root, path, budget_tokens, None)
+}
+
+pub(crate) fn execute_transport_context_view_with_plan(
+    root: &Path,
+    path: &str,
+    task: &lean_ctx_protocol::TaskEnvelopeV1,
+    plan: &lean_ctx_protocol::ExecutionPlanV1,
+) -> Result<EngineTransportResult, EngineTransportError> {
+    execute_transport_context_view_bound(root, path, plan.context_token_limit(), Some((task, plan)))
+}
+
+fn execute_transport_context_view_bound(
+    root: &Path,
+    path: &str,
+    budget_tokens: Option<u64>,
+    binding: Option<(
+        &lean_ctx_protocol::TaskEnvelopeV1,
+        &lean_ctx_protocol::ExecutionPlanV1,
+    )>,
+) -> Result<EngineTransportResult, EngineTransportError> {
+    if budget_tokens.is_some_and(|budget| budget == 0 || budget > MAX_TRANSPORT_BUDGET_TOKENS) {
+        return Err(EngineTransportError::InvalidRequest);
+    }
     let root = bind_transport_root(root)?;
     let (input, canonical_path) = read_transport_source(&root, path)?;
     if input.len() > MAX_TRANSPORT_VIEW_BYTES {
@@ -599,8 +734,18 @@ pub(crate) fn execute_transport_context_view(
     };
     let engine =
         NativeContextEngine::with_root(&root).map_err(|_| EngineTransportError::UnsafeRoot)?;
+    if let Some((task, plan)) = binding {
+        planning::validate_native_plan(task, plan, &policy_admission)
+            .map_err(|_| EngineTransportError::InvalidRequest)?;
+    }
     let (invocation, observation) = engine
-        .execute_ctx_read_rooted_snapshot(&canonical_path, &input, policy_admission)
+        .execute_ctx_read_rooted_snapshot_with_budget(
+            &canonical_path,
+            &input,
+            policy_admission,
+            budget_tokens,
+            binding,
+        )
         .map_err(|_| EngineTransportError::Internal)?;
 
     let recovered_digest = parse_input_recovery_ref(&invocation.input_ref)?;
@@ -611,6 +756,28 @@ pub(crate) fn execute_transport_context_view(
         return Err(EngineTransportError::ObservationMismatch);
     }
 
+    let view = verified_output_view(&invocation, &observation)?;
+    let recovery_ref = invocation.input_ref.clone();
+    Ok(EngineTransportResult {
+        view,
+        invocation: Some(invocation),
+        observation: Some(observation),
+        recovery: EngineTransportRecoveryDescriptor {
+            recovery_ref,
+            source_ref,
+            source_digest,
+        },
+    })
+}
+
+/// Read only the content-addressed output bound by the verified terminal receipt.
+pub(crate) fn verified_output_view(
+    invocation: &EngineInvocationV1,
+    observation: &EngineObservationV1,
+) -> Result<EngineTransportView, EngineTransportError> {
+    if observation.status != EngineObservationStatusV1::Succeeded {
+        return Err(EngineTransportError::ObservationMismatch);
+    }
     let receipt_link = observation
         .receipt_link
         .as_ref()
@@ -624,7 +791,7 @@ pub(crate) fn execute_transport_context_view(
     expected_observation.receipt_link = None;
     read_verified_engine_receipt(
         &receipt_link.receipt_digest,
-        &invocation,
+        invocation,
         &expected_observation,
     )
     .map_err(|_| EngineTransportError::ReceiptMismatch)?;
@@ -649,21 +816,10 @@ pub(crate) fn execute_transport_context_view(
     }
     let output_text =
         String::from_utf8(output).map_err(|_| EngineTransportError::UnsupportedInput)?;
-    let recovery_ref = invocation.input_ref.clone();
-
-    Ok(EngineTransportResult {
-        view: EngineTransportView {
-            text: output_text,
-            output_ref: observation.output_ref.clone(),
-            output_digest: Some(output_digest),
-        },
-        invocation: Some(invocation),
-        observation: Some(observation),
-        recovery: EngineTransportRecoveryDescriptor {
-            recovery_ref,
-            source_ref,
-            source_digest,
-        },
+    Ok(EngineTransportView {
+        text: output_text,
+        output_ref: observation.output_ref.clone(),
+        output_digest: Some(output_digest),
     })
 }
 
@@ -711,7 +867,7 @@ pub(crate) fn recover_transport_source(
     })
 }
 
-fn bind_transport_root(root: &Path) -> Result<PathBuf, EngineTransportError> {
+pub(crate) fn bind_transport_root(root: &Path) -> Result<PathBuf, EngineTransportError> {
     if root.as_os_str().is_empty() || crate::core::pathutil::is_broad_or_unsafe_root(root) {
         return Err(EngineTransportError::UnsafeRoot);
     }
@@ -736,26 +892,35 @@ fn read_transport_source(
     } else {
         root.join(requested)
     };
-    // Reject a lexically outside absolute source before platform-specific
-    // canonicalization so the public transport error remains deterministic.
-    if !candidate.starts_with(root) {
+    let jailed = crate::core::pathjail::jail_path(&candidate, root)
+        .map_err(|_| EngineTransportError::SourceOutsideRoot)?;
+    // PathJail also admits its allowed extra roots (e.g. the temp dir); the
+    // Engine transport is bound to `root` only. Classify "outside" before the
+    // symlink walk, which treats any path it cannot place under root as unsafe.
+    if relative_path_under_root(&candidate, root).is_none() && !jailed.starts_with(root) {
         return Err(EngineTransportError::SourceOutsideRoot);
     }
-    crate::core::pathjail::jail_path(&candidate, root)
-        .map_err(|_| EngineTransportError::SourceOutsideRoot)?;
     if contains_symlink_component(&candidate, root) {
         return Err(EngineTransportError::SourceSymlink);
     }
+    // PathJail validates the caller's spelling. The transport's component walk
+    // rejects symlink/reparse points, then the same canonicalizer used to bind
+    // the Engine root prevents verbatim prefixes, drive-letter case, and
+    // short-name aliases from looking outside the root.
+    if !jailed.starts_with(root) {
+        return Err(EngineTransportError::SourceOutsideRoot);
+    }
     let rooted = crate::tools::ctx_read::read_file_lossy_rooted(
-        &candidate.to_string_lossy(),
+        &jailed.to_string_lossy(),
         &root.to_string_lossy(),
     )
     .map_err(|error| classify_source_error(&error))?;
-    let canonical = Path::new(&rooted.canonical_path);
+    let canonical = crate::core::pathutil::canonicalize_secure(Path::new(&rooted.canonical_path))
+        .map_err(|_| EngineTransportError::SourceOutsideRoot)?;
     if !canonical.starts_with(root) {
         return Err(EngineTransportError::SourceOutsideRoot);
     }
-    Ok((rooted.content, rooted.canonical_path))
+    Ok((rooted.content, canonical.to_string_lossy().into_owned()))
 }
 
 fn classify_source_error(error: &std::io::Error) -> EngineTransportError {
@@ -771,7 +936,7 @@ fn classify_source_error(error: &std::io::Error) -> EngineTransportError {
 }
 
 fn contains_symlink_component(path: &Path, root: &Path) -> bool {
-    let Ok(relative) = path.strip_prefix(root) else {
+    let Some(relative) = relative_path_under_root(path, root) else {
         return true;
     };
     let mut current = root.to_path_buf();
@@ -786,7 +951,7 @@ fn contains_symlink_component(path: &Path, root: &Path) -> bool {
             std::path::Component::Normal(name) => {
                 current.push(name);
                 if std::fs::symlink_metadata(&current)
-                    .is_ok_and(|metadata| metadata.file_type().is_symlink())
+                    .is_ok_and(|metadata| crate::core::pathutil::is_symlink_or_reparse(&metadata))
                 {
                     return true;
                 }
@@ -795,6 +960,87 @@ fn contains_symlink_component(path: &Path, root: &Path) -> bool {
         }
     }
     false
+}
+
+fn relative_path_under_root(path: &Path, root: &Path) -> Option<PathBuf> {
+    if let Ok(relative) = path.strip_prefix(root) {
+        return Some(relative.to_path_buf());
+    }
+
+    #[cfg(windows)]
+    {
+        use std::path::Component;
+
+        // Absolute Windows aliases can spell the same root with a verbatim
+        // prefix, separator, or case variation. Compare path components (rather
+        // than a string prefix) to retain a safe root boundary, then walk the
+        // original root plus the relative components to inspect reparse points.
+        let normalized_path =
+            crate::core::pathutil::normalize_tool_path_lexical(&path.to_string_lossy())
+                .to_lowercase();
+        let normalized_root =
+            crate::core::pathutil::normalize_tool_path_lexical(&root.to_string_lossy())
+                .to_lowercase();
+        let path_components: Vec<_> = Path::new(&normalized_path).components().collect();
+        let root_components: Vec<_> = Path::new(&normalized_root).components().collect();
+        if path_components.len() < root_components.len()
+            || !path_components
+                .iter()
+                .zip(&root_components)
+                .all(|(path, root)| path.as_os_str() == root.as_os_str())
+        {
+            // Short-name aliases do not have the root's lexical component
+            // spelling. Resolve them before the reparse walk; the caller still
+            // performs the strict canonical component-boundary check.
+            let canonical = crate::core::pathutil::canonicalize_secure(path).ok()?;
+            if !canonical.starts_with(root) {
+                return None;
+            }
+            return canonical.strip_prefix(root).ok().map(Path::to_path_buf);
+        }
+
+        let mut relative = PathBuf::new();
+        for component in path_components.into_iter().skip(root_components.len()) {
+            match component {
+                Component::CurDir => {}
+                Component::ParentDir => relative.push(".."),
+                Component::Normal(name) => relative.push(name),
+                Component::Prefix(_) | Component::RootDir => return None,
+            }
+        }
+        Some(relative)
+    }
+
+    #[cfg(not(windows))]
+    {
+        None
+    }
+}
+
+fn unresolved_rooted_path(path: &Path, root: &Path) -> Option<PathBuf> {
+    for ancestor in path.ancestors() {
+        if let Ok(mut rooted) = crate::core::pathutil::canonicalize_secure(ancestor) {
+            if !rooted.starts_with(root) {
+                return None;
+            }
+            for component in path.strip_prefix(ancestor).ok()?.components() {
+                match component {
+                    std::path::Component::CurDir => {}
+                    std::path::Component::ParentDir => {
+                        if rooted == root || !rooted.pop() {
+                            return None;
+                        }
+                    }
+                    std::path::Component::Normal(name) => rooted.push(name),
+                    std::path::Component::Prefix(_) | std::path::Component::RootDir => {
+                        return None;
+                    }
+                }
+            }
+            return rooted.starts_with(root).then_some(rooted);
+        }
+    }
+    None
 }
 
 fn source_reference(canonical_path: &str) -> Result<ProtocolReference, EngineTransportError> {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 use std::path::Path;
 
 use super::{BundleOptions, Placement, Unit, build};
@@ -25,7 +26,23 @@ fn options(root: &Path, limit: usize, intent: &str) -> BundleOptions {
     opts
 }
 
-fn project() -> tempfile::TempDir {
+/// A demo project plus an isolated data dir for its whole lifetime: `build`
+/// scans and persists the graph index there, so without isolation a first and
+/// second build could read different indexes written by concurrent tests —
+/// and would write into the developer's real data dir.
+struct Project {
+    root: tempfile::TempDir,
+    _data: crate::core::data_dir::IsolatedDataDir,
+}
+
+impl Project {
+    fn path(&self) -> &Path {
+        self.root.path()
+    }
+}
+
+fn project() -> Project {
+    let data = crate::core::data_dir::isolated_data_dir();
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     for name in ["alpha", "beta", "gamma", "delta", "epsilon", "zeta"] {
@@ -33,7 +50,10 @@ fn project() -> tempfile::TempDir {
     }
     write(root, "src/billing.rs", &rust_file("invoice", 20));
     write(root, "README.md", "# Demo\n\nA demo project.\n");
-    tmp
+    Project {
+        root: tmp,
+        _data: data,
+    }
 }
 
 #[test]
@@ -95,6 +115,7 @@ fn output_is_deterministic() {
 
 #[test]
 fn files_with_secrets_are_withheld_unless_the_check_is_off() {
+    let _data = crate::core::data_dir::isolated_data_dir();
     let tmp = tempfile::tempdir().unwrap();
     let root = tmp.path();
     let key = concat!("AK", "IAIOSFODNN7EXAMPLE");

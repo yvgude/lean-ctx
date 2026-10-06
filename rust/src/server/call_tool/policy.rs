@@ -29,7 +29,7 @@ const ROOTS_LIST_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1
 const ROOTS_LIST_MAX_ATTEMPTS: u32 = 3;
 
 impl LeanCtxServer {
-    pub(super) fn guard_role_and_policy(name: &str) -> Option<CallToolResult> {
+    pub(crate) fn guard_role_and_policy(name: &str) -> Option<CallToolResult> {
         let role_check = role_guard::check_tool_access(name);
         if let Some(denied) = role_guard::into_call_tool_result(&role_check) {
             tracing::warn!(
@@ -55,7 +55,7 @@ impl LeanCtxServer {
         None
     }
 
-    pub(super) fn guard_egress(
+    pub(crate) fn guard_egress(
         guard_name: &str,
         guard_args: Option<&serde_json::Map<String, serde_json::Value>>,
     ) -> Option<CallToolResult> {

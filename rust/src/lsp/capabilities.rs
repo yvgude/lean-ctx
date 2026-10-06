@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! What a concrete semantic backend can actually do.
 //!
 //! LSP servers advertise their features in the `initialize` handshake; the

@@ -296,6 +296,35 @@ pub(crate) fn secret_detection_outcome() -> Outcome {
         ),
     }
 }
+
+/// Reports Context Gateway admission: which built-in detectors run on every
+/// agent read before caching or compression, and how each one acts.
+pub(crate) fn context_gateway_outcome() -> Outcome {
+    let cfg = crate::core::config::Config::load_arc();
+    let gw = &cfg.context_gateway;
+    if !gw.enabled_effective() {
+        return Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}Context gateway{RST}  {YELLOW}off{RST}  {DIM}(reads reach caches and the model without admission; re-enable: [context_gateway] enabled = true){RST}"
+            ),
+        };
+    }
+    let secrets = if cfg.secret_detection.enabled {
+        gw.secrets.as_str()
+    } else {
+        "off"
+    };
+    Outcome {
+        ok: true,
+        line: format!(
+            "{BOLD}Context gateway{RST}  {GREEN}on{RST}  {DIM}(secrets={secrets} pii={} injection={} classification={} — admitted before cache/compression){RST}",
+            gw.pii.as_str(),
+            gw.injection.as_str(),
+            gw.classification.as_str(),
+        ),
+    }
+}
 /// Reports IDE permission inheritance: when on, lean-ctx mirrors the host IDE's
 /// bash/read/edit/grep permission rules onto its own tools, so `ctx_shell` honors
 /// a `rm *: ask`/`deny` rule instead of forming a parallel, ungoverned path.

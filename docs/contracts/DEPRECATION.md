@@ -5,7 +5,7 @@
 ### Timeline
 
 1. **Announce** — Add `deprecated: true` to the schema, publish a release note, and add an SDK warning.
-2. **Migration Window** — Allow 6 months for major versions and 3 months for minor versions.
+2. **Migration Window** — Support a superseded public wire major for at least 12 months; additive V1 fields remain accepted throughout the V1 support line.
 3. **Removal** — Archive the schema file to `docs/contracts/archive/`.
 
 ### SDK Impact
@@ -34,7 +34,7 @@
 
 | Engine | TS SDK | Python SDK | Go SDK | Wire Schema |
 |---|---|---|---|---|
-| 3.9.x | 0.1.x | 0.1.x | 0.1.x | v1 |
+| 3.10.x | 0.1.x | 0.1.x | 0.1.x | v1 |
 
 ## Contract Pack
 

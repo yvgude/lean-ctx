@@ -98,7 +98,7 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 
 | Command | Purpose |
 |---------|---------|
-| `update` (`--self-update`, `upgrade`) | Self-update; `--check`, `--insecure`, `--skip-rules`, `--schedule [off\|status\|notify\|<h>h]` |
+| `update` (`--self-update`, `upgrade`) | Verified self-update; `--check`, `--pin <version>`, `--unpin`, `--status`, `--rollback`, `--skip-rules`, `--schedule [off\|status\|notify\|<h>h]` |
 | `stop` | Stop ALL lean-ctx processes (LaunchAgent-safe) |
 | `restart` | Restart daemon (apply config.toml) |
 | `dev-install` | Build release + atomic install + restart (dev) |

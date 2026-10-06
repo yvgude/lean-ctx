@@ -145,6 +145,32 @@ impl ContextProvider for ConfigProvider {
         self.config.cache_ttl_secs
     }
 
+    fn reuse_binding(&self, action: &str, _params: &ProviderParams) -> Option<String> {
+        let resource = self.config.resources.get(action)?;
+        if !resource.method.eq_ignore_ascii_case("GET") {
+            return None;
+        }
+        let auth = ResolvedAuth::from_config(&self.config.auth).ok()?;
+        super::provenance::digest(&serde_json::json!({
+            "version": 1, "provider": self.id, "base_url": self.config.base_url,
+            "resource": resource, "credential_digest": auth.binding_digest(),
+        }))
+    }
+
+    fn reacquire_item(
+        &self,
+        action: &str,
+        params: &ProviderParams,
+        item_id: &str,
+    ) -> Result<ProviderResult, String> {
+        if self.reuse_binding(action, params).is_none() {
+            return Err("resource does not support read-only reauthorization".into());
+        }
+        let mut result = self.execute(action, params)?;
+        result.items.retain(|item| item.id == item_id);
+        Ok(result)
+    }
+
     fn requires_auth(&self) -> bool {
         !matches!(self.config.auth, schema::AuthConfig::None)
     }

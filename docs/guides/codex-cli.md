@@ -16,6 +16,52 @@ Complete guide to setting up and optimally using lean-ctx with Codex CLI (OpenAI
 | Rules file | `~/.codex/instructions.md` (shared block) |
 | Setup command | `lean-ctx init --agent codex` |
 
+## Protected project session
+
+For a session whose controlled context must pass the project's LeanCTX policy,
+use the explicit protected setup. The qualified combination is currently macOS
+and Codex CLI **0.156.1**; other versions/platforms are refused. Interactive login,
+refresh and consent still require release qualification.
+
+For a project without `.lean-ctx/policy.toml`, first review a built-in pack:
+
+```bash
+lean-ctx policy list
+lean-ctx policy show baseline --toml
+lean-ctx setup codex-protected --project /path/to/project --policy-pack baseline
+```
+
+This creates that selected policy with owner-only permissions and checks the
+protected session configuration. It never replaces an existing policy. Review
+and customize the file for your data: a preset does not identify your customer
+number format automatically. If a later check fails, the created policy remains
+available for review; no Codex session is started.
+
+For a project with an existing policy, omit `--policy-pack`:
+
+```bash
+lean-ctx setup codex-protected --project /path/to/project --check
+```
+
+Checks do not read Codex login credentials or start model calls. `--check` cannot
+be combined with policy creation or session start. After reviewing the policy,
+log in through your normal Codex installation if needed, then start explicitly:
+
+```bash
+codex login
+lean-ctx setup codex-protected --project /path/to/project --start
+```
+
+`--codex /path/to/codex` selects an executable; the same version check applies.
+The protected path creates a temporary isolated Codex home and workspace, routes
+project access through LeanCTX MCP, and removes the temporary session on normal
+exit. Missing credentials or failed checks stop the launch. It does not alter
+global editor configuration or start/restart the global daemon or proxy.
+
+This is a controlled-context boundary, not general network isolation for arbitrary
+programs or separately exposed unauthenticated services. The ordinary hybrid
+setup below remains available; hooks alone do not provide this protected path.
+
 ## Quick Setup
 
 ```bash

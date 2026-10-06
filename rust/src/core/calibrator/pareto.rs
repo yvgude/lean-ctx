@@ -145,6 +145,7 @@ mod tests {
                     output_digest: "passed".into(),
                 }),
                 execution_receipt_ref: None,
+                capability_observation: None,
             },
             BenchmarkOutcome {
                 task_id: "failed".into(),
@@ -164,6 +165,7 @@ mod tests {
                     output_digest: "failed".into(),
                 }),
                 execution_receipt_ref: None,
+                capability_observation: None,
             },
         ];
         let benchmark = BenchmarkResult {

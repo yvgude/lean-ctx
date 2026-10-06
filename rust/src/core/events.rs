@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::io::Write;
@@ -5,17 +7,18 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock};
 
 const RING_CAPACITY: usize = 1000;
+#[cfg(test)]
 const JSONL_MAX_LINES: usize = 10_000;
 const EVENT_ID_BLOCK_SIZE: u64 = 1_024;
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct LeanCtxEvent {
     pub id: u64,
     pub timestamp: String,
     pub kind: EventKind,
 }
 
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "type")]
 pub enum EventKind {
     ToolCall {
@@ -118,29 +121,18 @@ impl EventBus {
         }
     }
 
-    fn emit(&self, kind: EventKind) -> u64 {
-        let id = next_event_id();
-        let event = LeanCtxEvent {
-            id,
-            timestamp: chrono::Local::now()
-                .format("%Y-%m-%dT%H:%M:%S%.3f")
-                .to_string(),
-            kind,
+    fn record(&self, event: LeanCtxEvent) {
+        let Ok(mut ring) = crate::core::context_os::observation::lock_observation(&self.ring)
+        else {
+            tracing::warn!(
+                "legacy projection unavailable; committed observation retained in ContextBus"
+            );
+            return;
         };
-
-        {
-            let mut ring = self
-                .ring
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
-            if ring.len() >= RING_CAPACITY {
-                ring.pop_front();
-            }
-            ring.push_back(event.clone());
+        if ring.len() >= RING_CAPACITY {
+            ring.pop_front();
         }
-
-        append_jsonl(&event);
-        id
+        ring.push_back(event);
     }
 
     fn events_since(&self, after_id: u64) -> Vec<LeanCtxEvent> {
@@ -331,14 +323,7 @@ fn is_test_environment() -> bool {
     })
 }
 
-fn append_jsonl(event: &LeanCtxEvent) {
-    if is_test_environment() {
-        return;
-    }
-    let Some(path) = jsonl_path() else { return };
-    let _ = append_jsonl_at(&path, event);
-}
-
+#[cfg(test)]
 fn append_jsonl_at(path: &std::path::Path, event: &LeanCtxEvent) -> std::io::Result<()> {
     use fs2::FileExt;
     use std::io::Write;
@@ -386,8 +371,39 @@ fn append_jsonl_at(path: &std::path::Path, event: &LeanCtxEvent) -> std::io::Res
 
 // --- Public API ---
 
+/// Persist a legacy event as a canonical local observation.
+///
+/// This compatibility adapter deliberately never appends to `events.jsonl`;
+/// that journal remains an immutable historical read source.
+pub fn emit_compatibility(kind: EventKind) -> u64 {
+    let id = next_event_id();
+    let event = LeanCtxEvent {
+        id,
+        timestamp: chrono::Local::now()
+            .format("%Y-%m-%dT%H:%M:%S%.3f")
+            .to_string(),
+        kind,
+    };
+    match crate::core::context_os::try_runtime().and_then(|runtime| {
+        runtime.bus.append_legacy_observation(
+            crate::core::context_os::observation::producer_instance(),
+            &event,
+        )
+    }) {
+        Ok(_) => {
+            bus().record(event);
+            id
+        }
+        Err(error) => {
+            tracing::warn!("canonical legacy observation persistence failed: {error}");
+            0
+        }
+    }
+}
+
+/// Backward-compatible spelling for the explicit legacy compatibility adapter.
 pub fn emit(kind: EventKind) -> u64 {
-    bus().emit(kind)
+    emit_compatibility(kind)
 }
 
 pub fn events_since(after_id: u64) -> Vec<LeanCtxEvent> {
@@ -406,43 +422,67 @@ struct FileEventCache {
     events: Vec<LeanCtxEvent>,
 }
 
-/// File-backed event load with a process-local cache keyed on (path, mtime, len).
-/// The dashboard polls this every 3 s; without the cache each poll re-read
-/// and re-parsed the entire JSONL (up to 10k lines) even when nothing changed.
-pub fn load_events_from_file(n: usize) -> Vec<LeanCtxEvent> {
+fn load_historical_events(
+    path: &std::path::Path,
+) -> Result<Vec<LeanCtxEvent>, crate::core::context_os::ObservationPersistenceError> {
     static CACHE: OnceLock<Mutex<FileEventCache>> = OnceLock::new();
-    let Some(path) = jsonl_path() else {
-        return Vec::new();
+    let metadata = match std::fs::metadata(path) {
+        Ok(metadata) => metadata,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(Vec::new()),
+        Err(error) => return Err(error.into()),
     };
-    let (mtime, len) = match std::fs::metadata(&path) {
-        Ok(m) => (m.modified().ok(), m.len()),
-        Err(_) => return Vec::new(),
-    };
-
+    let (mtime, len) = (metadata.modified().ok(), metadata.len());
     let cache = CACHE.get_or_init(|| Mutex::new(FileEventCache::default()));
-    let mut guard = match cache.lock() {
-        Ok(g) => g,
-        Err(poisoned) => poisoned.into_inner(),
-    };
-
-    let fresh =
-        guard.path.as_deref() == Some(path.as_path()) && guard.mtime == mtime && guard.len == len;
+    let mut guard = crate::core::context_os::observation::lock_observation(cache)?;
+    let fresh = guard.path.as_deref() == Some(path) && guard.mtime == mtime && guard.len == len;
     if !fresh {
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            return Vec::new();
-        };
-        guard.events = content
+        let content = std::fs::read_to_string(path)?;
+        let events = content
             .lines()
-            .filter(|l| !l.trim().is_empty())
-            .filter_map(|l| serde_json::from_str(l).ok())
-            .collect();
-        guard.path = Some(path);
+            .filter(|line| !line.trim().is_empty())
+            .map(serde_json::from_str)
+            .collect::<Result<Vec<_>, _>>()?;
+        // Replace the cache only after every nonempty record validates.
+        guard.events = events;
+        guard.path = Some(path.to_path_buf());
         guard.mtime = mtime;
         guard.len = len;
     }
+    Ok(guard.events.clone())
+}
 
-    let start = guard.events.len().saturating_sub(n);
-    guard.events[start..].to_vec()
+/// Compatibility reader: an unavailable canonical store returns no events,
+/// never apparently current history. Use the fallible API to inspect the error.
+pub fn load_events_from_file(n: usize) -> Vec<LeanCtxEvent> {
+    match try_load_events_from_file(n) {
+        Ok(events) => events,
+        Err(error) => {
+            tracing::warn!("canonical event history unavailable: {error}");
+            Vec::new()
+        }
+    }
+}
+
+/// Merge immutable historical JSONL with validated canonical observations.
+pub fn try_load_events_from_file(
+    n: usize,
+) -> Result<Vec<LeanCtxEvent>, crate::core::context_os::ObservationPersistenceError> {
+    let mut events = jsonl_path()
+        .map(|path| load_historical_events(&path))
+        .transpose()?
+        .unwrap_or_default();
+
+    let compatibility = crate::core::context_os::try_runtime()?
+        .bus
+        .read_legacy_observations(n.max(1))?;
+    events.extend(compatibility);
+    // Historical file order predates the canonical cursor. Block-allocated
+    // IDs from concurrent producers do not encode append order.
+    // Never discard distinct records just because historical/fallback IDs
+    // collide. The legacy projection omits producer identity, so even equal
+    // projected payloads cannot establish that two observations are duplicates.
+    let start = events.len().saturating_sub(n);
+    Ok(events[start..].to_vec())
 }
 
 pub fn emit_tool_call(
@@ -643,24 +683,24 @@ mod tests {
     /// The (path, mtime, len) cache must never serve stale events: appending a
     /// line changes the file length, which has nanosecond-independent
     /// granularity (unlike mtime), so new events show up on the next poll.
+    /// An isolated journal keeps unrelated canonical emissions from evicting
+    /// these historical fixtures from the merged public reader's result window.
     #[test]
     fn load_events_from_file_sees_appended_events() {
-        let path = jsonl_path().expect("test sandbox data dir");
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).expect("create data dir");
-        }
+        let directory = tempfile::tempdir().expect("isolated historical journal");
+        let path = directory.path().join("events.jsonl");
 
         let line_a = r#"{"id":900001,"timestamp":"2026-06-12T08:00:00.000","kind":{"type":"CacheHit","path":"cached_a.rs","saved_tokens":42}}"#;
         std::fs::write(&path, format!("{line_a}\n")).expect("write events.jsonl");
 
-        let first = load_events_from_file(50);
+        let first = load_historical_events(&path).expect("read initial historical events");
         assert!(
             first.iter().any(|e| e.id == 900_001),
             "initial load should parse the seeded event"
         );
 
         // Second call with unchanged file exercises the cached branch.
-        let cached = load_events_from_file(50);
+        let cached = load_historical_events(&path).expect("read cached historical events");
         assert_eq!(cached.len(), first.len());
 
         let line_b = r#"{"id":900002,"timestamp":"2026-06-12T08:00:01.000","kind":{"type":"CacheHit","path":"cached_b.rs","saved_tokens":7}}"#;
@@ -673,7 +713,7 @@ mod tests {
             writeln!(f, "{line_b}").expect("append line");
         }
 
-        let second = load_events_from_file(50);
+        let second = load_historical_events(&path).expect("read appended historical events");
         assert!(
             second.iter().any(|e| e.id == 900_002),
             "append must invalidate the cache and surface the new event"

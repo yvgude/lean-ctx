@@ -21,6 +21,7 @@ use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
+use crate::core::policy::diagnostics;
 use serde_json::{Map, Value};
 
 /// Rotate once the log crosses this size, keeping a single `.1` backup so the
@@ -69,16 +70,20 @@ pub(crate) fn is_enabled() -> bool {
 /// resolved or the `logs/` directory cannot be created.
 #[must_use]
 pub(crate) fn log_path() -> Option<PathBuf> {
-    let dir = crate::core::paths::state_dir().ok()?.join("logs");
-    std::fs::create_dir_all(&dir).ok()?;
-    Some(dir.join("debug.log"))
+    let path = log_target()?.path;
+    std::fs::create_dir_all(path.parent()?).ok()?;
+    Some(path)
+}
+
+fn log_target() -> Option<diagnostics::Target> {
+    diagnostics::target(crate::core::paths::state_dir().ok()?.join("logs/debug.log"))
 }
 
 /// Record an MCP tool call handled by the lean-ctx server.
 pub(crate) fn log_mcp_call(
     tool: &str,
     args: Option<&Map<String, Value>>,
-    result_first_line: &str,
+    result_text: &str,
     result_bytes: usize,
     saved_tokens: usize,
     elapsed: Duration,
@@ -86,12 +91,25 @@ pub(crate) fn log_mcp_call(
     if !is_enabled() {
         return;
     }
-    let args_summary = summarize_args(args);
-    let preview = clamp(&redact(result_first_line));
-    append(&format!(
-        "mcp  {tool}({args_summary}) -> {preview} [{result_bytes}B, saved≈{saved_tokens} tok, {}ms]",
-        elapsed.as_millis()
-    ));
+    let Some(fields) = diagnostics::fields(&[("tool", tool), ("result", result_text)], args) else {
+        return;
+    };
+    write_record(Some(tool), &fields, |record| {
+        let args_summary = summarize_args(record.get("args").and_then(Value::as_object));
+        let preview = clamp(&redact(
+            record["result"]
+                .as_str()
+                .unwrap_or_default()
+                .lines()
+                .next()
+                .unwrap_or_default(),
+        ));
+        format!(
+            "mcp  {}({args_summary}) -> {preview} [{result_bytes}B, saved≈{saved_tokens} tok, {}ms]",
+            record["tool"].as_str().unwrap_or_default(),
+            elapsed.as_millis()
+        )
+    });
 }
 
 /// Record an MCP tool call that failed before producing a result.
@@ -99,11 +117,17 @@ pub(crate) fn log_mcp_error(tool: &str, args: Option<&Map<String, Value>>, error
     if !is_enabled() {
         return;
     }
-    let args_summary = summarize_args(args);
-    append(&format!(
-        "mcp  {tool}({args_summary}) -> ERROR: {}",
-        clamp(&redact(error))
-    ));
+    let Some(fields) = diagnostics::fields(&[("tool", tool), ("error", error)], args) else {
+        return;
+    };
+    write_record(Some(tool), &fields, |record| {
+        let args_summary = summarize_args(record.get("args").and_then(Value::as_object));
+        format!(
+            "mcp  {}({args_summary}) -> ERROR: {}",
+            record["tool"].as_str().unwrap_or_default(),
+            clamp(&redact(record["error"].as_str().unwrap_or_default()))
+        )
+    });
 }
 
 /// Record a hook routing decision for an intercepted native tool call.
@@ -120,27 +144,45 @@ pub(crate) fn log_hook_decision(
     if !is_enabled() {
         return;
     }
-    append(&format!(
-        "hook {event} {tool} -> {} ({reason}): {}",
-        route.label(),
-        clamp(&redact(subject))
-    ));
+    let Some(fields) = diagnostics::fields(
+        &[
+            ("event", event),
+            ("tool", tool),
+            ("subject", subject),
+            ("reason", reason),
+        ],
+        None,
+    ) else {
+        return;
+    };
+    write_record(None, &fields, |record| {
+        format!(
+            "hook {} {} -> {} ({}): {}",
+            record["event"].as_str().unwrap_or_default(),
+            record["tool"].as_str().unwrap_or_default(),
+            route.label(),
+            record["reason"].as_str().unwrap_or_default(),
+            clamp(&redact(record["subject"].as_str().unwrap_or_default()))
+        )
+    });
 }
 
 /// Return the log content for display (most-recent `tail_lines`, `0` = all).
 #[must_use]
 pub(crate) fn read_log(tail_lines: usize) -> String {
-    let Some(path) = log_path() else {
+    let Some(target) = log_target() else {
         return "Debug log unavailable (state dir not resolvable).".to_string();
     };
+    let path = &target.path;
     if !path.exists() {
-        return format!(
+        return String::from(
             "No debug-log entries yet. Enable with `LEAN_CTX_DEBUG_LOG=1` or \
-             `lean-ctx config set debug_log true`, then re-run your tool calls.\nPath: {}",
-            path.display()
+             `lean-ctx config set debug_log true`, then re-run your tool calls.",
         );
     }
-    let content = std::fs::read_to_string(&path).unwrap_or_default();
+    let Some(content) = target.read() else {
+        return "Debug log withheld by current policy or storage checks.".into();
+    };
     if tail_lines == 0 {
         return content;
     }
@@ -213,7 +255,7 @@ fn summarize_args(args: Option<&Map<String, Value>>) -> String {
         .map(|k| {
             let rendered = match map.get(*k) {
                 Some(Value::String(s)) => format!("{:?}", clamp(&redact(s))),
-                Some(other) => clamp(&other.to_string()),
+                Some(other) => clamp(&redact(&other.to_string())),
                 None => String::new(),
             };
             format!("{k}={rendered}")
@@ -231,18 +273,25 @@ fn rotate_if_large(path: &Path) {
     }
 }
 
-fn append(message: &str) {
-    let Some(path) = log_path() else {
+fn write_record(tool: Option<&str>, record: &Value, render: impl FnOnce(&Value) -> String) {
+    let Some(target) = log_target() else {
         return;
     };
-    rotate_if_large(&path);
-    let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
-    let line = format!("{ts} {message}\n");
-    let _ = std::fs::OpenOptions::new()
-        .create(true)
-        .append(true)
-        .open(&path)
-        .and_then(|mut f| f.write_all(line.as_bytes()));
+    target.with_lock(|| {
+        let Some(record) = target.inspect(tool, record) else {
+            return;
+        };
+        let message = render(&record);
+        // Inspect formatting too; raw fields were checked before truncation.
+        let Some(Value::String(message)) = target.inspect(tool, &Value::String(message)) else {
+            return;
+        };
+        rotate_if_large(&target.path);
+        let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S%.3f");
+        let line = format!("{ts} {message}\n");
+        let _ =
+            diagnostics::open_append(&target.path).and_then(|mut f| f.write_all(line.as_bytes()));
+    });
 }
 
 #[cfg(test)]

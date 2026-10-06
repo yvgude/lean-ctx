@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Native desktop notifications without a new dependency: `osascript` on
 //! macOS, `notify-send` on Linux desktops, a WinRT toast via PowerShell on
 //! Windows. Title and body are passed as arguments or environment variables,

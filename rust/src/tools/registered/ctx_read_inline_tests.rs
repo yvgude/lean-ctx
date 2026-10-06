@@ -126,9 +126,10 @@ fn per_file_lock_allows_parallel_different_paths() {
     assert!(max_concurrent.load(Ordering::SeqCst) > 1);
 }
 
-/// #1909: a content-free delivery recorded by *another* agent in another
-/// conversation must never be served as a stub — the requester's context does
-/// not hold that content. The MCP handler has to fall through to a real read.
+/// #1909: a content-free delivery recorded by *another* agent must never be
+/// served as a stub — the requester's context does not hold that content. The
+/// MCP handler has to fall through to a real read. Unlike main's legacy-mode
+/// exception, a metadata-only record is never usable context here.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn mcp_ctx_read_withholds_content_free_cross_agent_stub() {
     use crate::core::cache::SessionCache;
@@ -138,9 +139,6 @@ async fn mcp_ctx_read_withholds_content_free_cross_agent_stub() {
     use std::sync::Arc;
     use tokio::sync::RwLock;
 
-    if !crate::core::conversation::scope_enabled() {
-        return; // legacy mode keeps content-free stubs by contract
-    }
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("cross-agent-mcp.rs");
     std::fs::write(&file, "fn only_the_remote_agent_read_this() {}\n").unwrap();
@@ -153,6 +151,7 @@ async fn mcp_ctx_read_withholds_content_free_cross_agent_stub() {
     OclaRegistry::global()
         .delivery_registry
         .record_delivery(DeliveryEntry {
+            access: None,
             blake3: fp.hash,
             path: path.clone(),
             line_count: fp.line_count,
@@ -233,7 +232,7 @@ async fn mcp_aggressive_read_records_deterministic_engine_receipt() {
         .expect("real ctx_read aggressive path succeeds");
     assert_eq!(output.mode.as_deref(), Some("aggressive"));
     assert!(output.text.contains("stable_engine_path"));
-    assert_eq!(output.text, legacy.text);
+    assert!(legacy.text.contains("stable_engine_path"));
     let repeated = tokio::task::block_in_place(|| CtxReadTool.handle(&args, &ctx))
         .expect("repeated real ctx_read aggressive path succeeds");
     assert_eq!(repeated.text, output.text);
@@ -250,6 +249,21 @@ async fn mcp_aggressive_read_records_deterministic_engine_receipt() {
     );
     let receipt_bytes = std::fs::read(&receipts[0]).unwrap();
     let receipt: serde_json::Value = serde_json::from_slice(&receipt_bytes).unwrap();
+    let output_digest = receipt["observation"]["output_digest"]
+        .as_str()
+        .unwrap()
+        .strip_prefix("sha256:")
+        .unwrap();
+    let verified_output = std::fs::read_to_string(
+        data_dir
+            .join("engine-interface/v1/outputs")
+            .join(format!("{output_digest}.txt")),
+    )
+    .unwrap();
+    assert_eq!(
+        output.text, verified_output,
+        "v1 delivers Engine content, not the legacy rendering"
+    );
     assert_eq!(receipt["observation"]["status"], "succeeded");
     assert!(
         receipt["invocation"]["policy_admission"]["policy_ref"]
@@ -456,15 +470,25 @@ async fn omitted_engine_interface_preserves_legacy_image_and_binary_paths() {
     .clone();
     let image_output = tokio::task::block_in_place(|| CtxReadTool.handle(&image_args, &image_ctx))
         .expect("omitted Engine interface must preserve image passthrough");
-    assert_eq!(image_output.content_blocks.as_ref().map(Vec::len), Some(2));
     let direct_image = read_image_file(&image.to_string_lossy())
         .expect("legacy image helper must remain authoritative");
     assert_eq!(image_output.text, direct_image.text);
     assert_eq!(image_output.path, direct_image.path);
     assert_eq!(image_output.mode, direct_image.mode);
+    // The image payload is the legacy helper's, byte for byte; the Context
+    // Gateway only appends its "not inspected" note (developer mode, case 22).
+    let blocks = image_output.content_blocks.as_ref().expect("image blocks");
+    let direct_blocks = direct_image.content_blocks.as_ref().expect("image blocks");
+    assert_eq!(blocks.len(), direct_blocks.len() + 1);
     assert_eq!(
-        serde_json::to_value(&image_output.content_blocks).unwrap(),
-        serde_json::to_value(&direct_image.content_blocks).unwrap()
+        serde_json::to_value(&blocks[..direct_blocks.len()]).unwrap(),
+        serde_json::to_value(direct_blocks).unwrap()
+    );
+    assert!(
+        blocks
+            .last()
+            .and_then(|block| block.as_text())
+            .is_some_and(|text| text.text.contains("coverage.unsupported_media"))
     );
 
     let binary = dir.path().join("legacy-binary.bin");
@@ -702,7 +726,11 @@ async fn contended_cache_lock_degrades_to_uncached_read() {
     let holder = std::thread::spawn(move || {
         let _guard = cache.blocking_write();
         locked_tx.send(()).unwrap();
-        let _ = release_rx.recv_timeout(std::time::Duration::from_secs(20));
+        // Hold the lock until the read has returned — under a loaded full
+        // suite the read can outlast any fixed hold, and a holder that let go
+        // early would turn this into an uncontended read (and the release send
+        // below into a SendError). The bound only guards a hung read.
+        let _ = release_rx.recv_timeout(std::time::Duration::from_mins(5));
     });
     locked_rx.recv().unwrap();
 
@@ -711,7 +739,9 @@ async fn contended_cache_lock_degrades_to_uncached_read() {
         .unwrap()
         .clone();
     let result = tokio::task::block_in_place(|| CtxReadTool.handle(&args, &ctx));
-    release_tx.send(()).unwrap();
+    release_tx
+        .send(())
+        .expect("the lock was still held for the whole read");
     holder.join().unwrap();
 
     let output = result.expect("a contended cache lock must not fail the read");
@@ -1313,6 +1343,7 @@ async fn mcp_ctx_read_serves_relay_content_from_another_agent() {
     OclaRegistry::global()
         .delivery_registry
         .record_delivery(DeliveryEntry {
+            access: None,
             blake3: blake3_prefix,
             path: path.clone(),
             line_count: 4,

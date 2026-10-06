@@ -11,6 +11,7 @@ pub mod cache_coordinator;
 pub mod cache_delivery;
 pub mod cache_tiers;
 pub mod cache_types;
+pub mod capability_fabric;
 pub mod capsule;
 pub mod catalogue;
 pub mod compose_cache;
@@ -27,8 +28,6 @@ pub mod reference_scheduler;
 pub mod registry;
 pub mod regression_gate;
 pub mod response_cache;
-pub mod routing_experiment;
-pub mod routing_quality;
 #[cfg(feature = "http-server")]
 pub mod runtime;
 pub mod scheduler_service;
@@ -43,12 +42,8 @@ pub mod wire_api;
 pub mod wire_middleware;
 pub mod wire_stream;
 
-pub mod traits {
-    pub use lean_ctx_ocla::traits::*;
-}
-pub mod types {
-    pub use lean_ctx_ocla::types::*;
-}
+pub mod traits;
+pub mod types;
 
 pub use catalogue::{CatalogueEntry, ModelEntry, ProviderEntry, TechnicalCatalogue};
 pub use policy_constraints::PolicyConstraints;

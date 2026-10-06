@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! OAuth for HTTP MCP servers (#1391).
 //!
 //! Some servers — TwinMind is the reported one — accept only a token obtained

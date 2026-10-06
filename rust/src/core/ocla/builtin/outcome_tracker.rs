@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinOutcomeTracker — captures accept/reject/partial signals.
 //!
 //! Records outcome feedback in a bounded buffer.
@@ -40,6 +41,10 @@ impl Default for BuiltinOutcomeTracker {
 }
 
 impl OclaService for BuiltinOutcomeTracker {
+    fn manifest(&self) -> crate::core::ocla::OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+        crate::core::ocla::capability_fabric::builtin_manifest(&self.capability())
+    }
+
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::OutcomeTracker)
     }

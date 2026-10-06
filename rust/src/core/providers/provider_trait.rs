@@ -22,6 +22,23 @@ pub trait ContextProvider: Send + Sync {
     /// Execute a provider action and return structured results.
     fn execute(&self, action: &str, params: &ProviderParams) -> Result<ProviderResult, String>;
 
+    /// Stable, credential-bound identity of a read-only resource. A name alone
+    /// does not authorize reuse; providers without this contract remain unbound.
+    fn reuse_binding(&self, _action: &str, _params: &ProviderParams) -> Option<String> {
+        None
+    }
+
+    /// Fetch current evidence for one previously observed item. Never implement
+    /// this with a cached result or a project-only permission probe.
+    fn reacquire_item(
+        &self,
+        _action: &str,
+        _params: &ProviderParams,
+        _item_id: &str,
+    ) -> Result<ProviderResult, String> {
+        Err("provider does not support current item authorization".into())
+    }
+
     /// TTL for caching results from this provider (in seconds).
     fn cache_ttl_secs(&self) -> u64 {
         120
@@ -37,7 +54,7 @@ pub trait ContextProvider: Send + Sync {
 }
 
 /// Parameters passed to a provider action.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize, PartialEq, Eq)]
 pub struct ProviderParams {
     pub project: Option<String>,
     pub state: Option<String>,

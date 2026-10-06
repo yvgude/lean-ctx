@@ -1,5 +1,4 @@
 use crate::core::cache::{ReuseOutcome, SessionCache};
-use crate::core::heatmap;
 use crate::core::ocla::cache_types::{CacheKeyBuilder, FileReadKey};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
@@ -21,7 +20,7 @@ pub fn handle_with_task(
 
 const DEFAULT_MAX_MULTI_READ_BYTES: usize = 512 * 1024;
 
-fn max_multi_read_bytes() -> usize {
+pub(crate) fn max_multi_read_bytes() -> usize {
     std::env::var("LCTX_MAX_MULTI_READ_BYTES")
         .ok()
         .and_then(|v| v.parse().ok())
@@ -133,7 +132,11 @@ pub fn handle_with_task_fresh_result(
             .or_else(|| cache.get(path).map(|entry| entry.original_tokens))
             .unwrap_or(0);
         let sent = count_tokens(&chunk);
-        heatmap::record_file_access(path, original, original.saturating_sub(sent));
+        crate::core::execution_lifecycle::record_heatmap_access(
+            path,
+            original,
+            original.saturating_sub(sent),
+        );
         // Verified ledger (#685): model-correct counts. The default O200kBase model
         // reuses the o200k counts above (same BPE + cache key → zero extra work); a
         // resolved Claude/Gemini/Llama model re-tokenizes the raw source (from the
@@ -228,6 +231,10 @@ mod tests {
 
     #[test]
     fn multi_read_deduplicates_each_file_with_cross_agent_references() {
+        // Cross-agent references are withheld under a content policy; other
+        // tests install one process-wide, so serialize and pin "no policy".
+        let _env = crate::core::data_dir::test_env_lock();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let directory = tempfile::tempdir().unwrap();
         let first = directory.path().join("first.rs");
         let second = directory.path().join("second.rs");

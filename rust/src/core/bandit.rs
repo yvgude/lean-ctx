@@ -235,7 +235,10 @@ impl BanditStore {
             std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
         }
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        std::fs::write(path, json).map_err(|e| e.to_string())
+        // A torn file parses as nothing and `load` falls back to an empty
+        // store, which the next save would persist over the learned state.
+        crate::core::atomic_fs::try_atomic_write(&path, json.as_bytes(), None)
+            .map_err(|e| e.to_string())
     }
 
     /// Converts legacy key formats to the unified `domain:ext:bucket` scheme.

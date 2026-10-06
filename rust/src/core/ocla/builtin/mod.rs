@@ -14,7 +14,6 @@ pub mod experiment_executor;
 pub mod experiment_runner;
 pub mod intent_classifier;
 pub mod metrics_exporter;
-pub mod model_router;
 pub mod observation_hook;
 pub mod outcome_tracker;
 pub mod response_optimizer;

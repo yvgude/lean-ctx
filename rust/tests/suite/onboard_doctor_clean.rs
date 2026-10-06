@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Golden-path contract (zero-config excellence): `lean-ctx onboard --yes` on a
 //! fresh machine with detected-but-unconfigured agents must leave `doctor` fully
 //! green — no "run: lean-ctx setup" follow-ups, no dead loops.
@@ -71,11 +73,20 @@ fn onboard_yes_leaves_doctor_fully_green() {
         String::from_utf8_lossy(&onboard.stderr)
     );
 
+    let env_script = home.join("cfg/env.sh");
+    assert!(
+        env_script.is_file(),
+        "onboard must install its shell environment"
+    );
+    // A subprocess cannot export into its parent. Model the documented Docker
+    // environment for the next invocation, without weakening doctor checks.
     let doctor = Command::new(bin)
         .arg("doctor")
         .current_dir(&proj)
         .env_clear()
         .envs(envs.iter().map(|(k, v)| (k.as_str(), v.as_str())))
+        .env("BASH_ENV", &env_script)
+        .env("CLAUDE_ENV_FILE", &env_script)
         .output()
         .expect("doctor spawn");
     let stdout = String::from_utf8_lossy(&doctor.stdout);

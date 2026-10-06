@@ -8,6 +8,14 @@ use crate::core::knowledge::KnowledgeFact;
 /// Persistent session state tracking task, findings, files, decisions, and stats.
 #[derive(Serialize, Deserialize, Clone, Debug)]
 pub struct SessionState {
+    /// Present only after admitted canonical adoption or validated local reload.
+    /// Public legacy serializers remain projections, not a second authority.
+    #[serde(skip)]
+    pub(crate) canonical_checkpoint: Option<Box<crate::core::context_checkpoint::CanonicalSession>>,
+    #[serde(skip)]
+    pub(crate) save_gate: std::sync::Arc<tokio::sync::Mutex<()>>,
+    #[serde(skip)]
+    pub(crate) last_save_failed: bool,
     pub id: String,
     pub version: u32,
     pub started_at: DateTime<Utc>,
@@ -208,6 +216,8 @@ pub(crate) struct LatestPointer {
 /// Created by `SessionState::prepare_save()` while holding the write lock,
 /// then written via `write_to_disk()` after the lock is released.
 pub struct PreparedSave {
+    pub(crate) canonical: bool,
+    pub(crate) expected_storage_digest: Option<lean_ctx_protocol::Sha256Digest>,
     pub(crate) dir: PathBuf,
     pub(crate) id: String,
     /// Monotonic in-memory version captured with the serialized payload. It

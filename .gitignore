@@ -92,6 +92,7 @@ markdownai/
 /docs/internal/
 /docs/internal.zip
 /docs/internal*.zip
+/.legal-private/
 .codex/vision-input/
 .codex/vision-output/
 .cursor/skills/focus-contract/

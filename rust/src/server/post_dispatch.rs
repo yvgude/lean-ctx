@@ -27,22 +27,23 @@ impl LeanCtxServer {
         let input = helpers::canonical_args_string(args);
         let input_md5 = helpers::hash_fast(&input);
         let output_md5 = helpers::hash_fast(result_text);
-        let agent_id = self.agent_id.read().await.clone();
+        // A server-wide last-task snapshot is not an execution identity: another
+        // concurrent call may have replaced it while this call was running.
+        let envelope = crate::core::task_spine::TaskSpine::current();
+        let agent_id = if let Some(task) = envelope.as_ref() {
+            Some(task.agent_id.as_str().to_owned())
+        } else {
+            self.agent_id.read().await.clone()
+        };
         let client_name = self.client_name.read().await.clone();
-        let task_id = self
-            .task_envelope
-            .read()
-            .await
-            .as_ref()
-            .map(|envelope| envelope.task_id.as_str().to_owned())
-            .or_else(crate::core::task_spine::TaskSpine::task_id);
+        let task_id = envelope.as_ref().map(|envelope| envelope.task_id.as_str());
         let mut explicit_intent: Option<(
             crate::core::intent_protocol::IntentRecord,
             Option<String>,
             String,
         )> = None;
 
-        let pending_session_save = {
+        let session_save_due = {
             let empty_args = serde_json::Map::new();
             let args_map = args.unwrap_or(&empty_args);
             let mut session = self.session.write().await;
@@ -53,7 +54,7 @@ impl LeanCtxServer {
                 &output_md5,
                 agent_id.as_deref(),
                 Some(&client_name),
-                task_id.as_deref(),
+                task_id,
             );
 
             if let Some(intent) = crate::core::intent_protocol::infer_from_tool_call(
@@ -71,11 +72,7 @@ impl LeanCtxServer {
                     explicit_intent = Some((intent, root, sid));
                 }
             }
-            if session.should_save() {
-                session.prepare_save().ok()
-            } else {
-                None
-            }
+            session.should_save()
         };
 
         if crate::core::cognitive_gate::full_science_enabled() {
@@ -98,18 +95,21 @@ impl LeanCtxServer {
             });
         }
 
-        if let Some(prepared) = pending_session_save {
+        if session_save_due {
             let ir_clone = self.context_ir.clone();
-            tokio::task::spawn_blocking(move || {
-                let _ = prepared.write_to_disk();
-                if let Some(ir) = ir_clone
-                    && let Ok(ir_guard) = ir.try_read()
-                {
-                    ir_guard.save();
-                }
-                // Flush the persistent stub index on the same batch cadence so
-                // recent full deliveries survive a restart as cheap stubs (#955).
-                crate::core::read_stub_index::persist();
+            let session = self.session.clone();
+            tokio::spawn(async move {
+                crate::core::session::SessionState::save_shared_logged(session).await;
+                tokio::task::spawn_blocking(move || {
+                    if let Some(ir) = ir_clone
+                        && let Ok(ir_guard) = ir.try_read()
+                    {
+                        ir_guard.save();
+                    }
+                    // Flush the persistent stub index on the same batch cadence so
+                    // recent full deliveries survive a restart as cheap stubs (#955).
+                    crate::core::read_stub_index::persist();
+                });
             });
         }
 

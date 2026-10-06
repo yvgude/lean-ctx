@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Tests for `call_graph` (split out for the LOC gate).
 
 use super::*;

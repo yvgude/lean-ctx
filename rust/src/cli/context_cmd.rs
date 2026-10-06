@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! CLI subcommands for Context Field Theory tools:
 //! `lean-ctx control`, `lean-ctx plan`, `lean-ctx compile`.
 
@@ -71,13 +73,11 @@ pub(crate) fn cmd_plan(args: &[String]) {
     } else {
         args[0].clone()
     };
-    let budget = flag_value(args, "--budget");
+    let budget = budget_value(args);
 
     let mut json = serde_json::json!({ "task": task });
-    if let Some(b) = &budget
-        && let Ok(n) = b.parse::<u64>()
-    {
-        json["budget"] = serde_json::Value::Number(n.into());
+    if let Some(budget) = budget {
+        json["budget"] = serde_json::json!(budget);
     }
 
     #[cfg(unix)]
@@ -94,21 +94,18 @@ pub(crate) fn cmd_plan(args: &[String]) {
     let ledger = ContextLedger::load();
     let policies = PolicySet::defaults();
 
-    let args_map = build_map(&[("task", Some(task)), ("budget", budget)]);
-    let result = crate::tools::ctx_plan::handle(Some(&args_map), &ledger, &policies);
+    let result = crate::tools::ctx_plan::handle(json.as_object(), &ledger, &policies);
 
     println!("{result}");
 }
 
 pub(crate) fn cmd_compile(args: &[String]) {
     let mode = flag_value(args, "--mode").unwrap_or_else(|| "handles".to_string());
-    let budget = flag_value(args, "--budget");
+    let budget = budget_value(args);
 
     let mut json = serde_json::json!({ "mode": mode });
-    if let Some(b) = &budget
-        && let Ok(n) = b.parse::<u64>()
-    {
-        json["budget"] = serde_json::Value::Number(n.into());
+    if let Some(budget) = budget {
+        json["budget"] = serde_json::json!(budget);
     }
 
     #[cfg(unix)]
@@ -126,8 +123,7 @@ pub(crate) fn cmd_compile(args: &[String]) {
     let ledger = ContextLedger::load();
     let policies = PolicySet::defaults();
 
-    let args_map = build_map(&[("mode", Some(mode)), ("budget", budget)]);
-    let result = crate::tools::ctx_compile::handle(Some(&args_map), &ledger, &policies);
+    let result = crate::tools::ctx_compile::handle(json.as_object(), &ledger, &policies);
 
     println!("{result}");
 }
@@ -137,6 +133,31 @@ fn flag_value(args: &[String], flag: &str) -> Option<String> {
         .position(|a| a == flag)
         .and_then(|i| args.get(i + 1))
         .cloned()
+}
+
+/// A supplied hard budget must never silently fall back to the default.
+fn budget_value(args: &[String]) -> Option<usize> {
+    let mut budget = None;
+    for (index, argument) in args.iter().enumerate() {
+        let value = if argument == "--budget" {
+            args.get(index + 1).map(String::as_str)
+        } else if let Some(value) = argument.strip_prefix("--budget=") {
+            Some(value)
+        } else {
+            continue;
+        };
+        let parsed = value
+            .filter(|value| !value.is_empty() && value.bytes().all(|byte| byte.is_ascii_digit()))
+            .and_then(|value| value.parse::<usize>().ok());
+        if budget.is_some() || parsed.is_none() {
+            eprintln!(
+                "invalid_budget: supply --budget once with a nonnegative integer that fits this platform"
+            );
+            std::process::exit(2);
+        }
+        budget = parsed;
+    }
+    budget
 }
 
 fn build_map(pairs: &[(&str, Option<String>)]) -> serde_json::Map<String, serde_json::Value> {

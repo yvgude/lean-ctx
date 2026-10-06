@@ -1,0 +1,1398 @@
+{
+  "fixture_kind": "team-seat-value-v1/cross-record-histories",
+  "fixture_version": 1,
+  "histories": [
+    {
+      "envelopes": [
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-entitlement-001",
+          "idempotency_key": "history-envelope-seat-entitlement-001",
+          "issuer_id": "issuer:billing-01",
+          "key_epoch": 1,
+          "key_id": "key:billing-01",
+          "key_purpose": "billing-entitlement",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:889b361c2c1dabe76b9defdeb7d5061526964f83c45bfcbda4db0b7a7538d7a0",
+          "payload_kind": "seat-entitlement",
+          "public_key": "H5QD8VXN7olF5KkSZb-FciWMprNo8kWa20QQcKN9P_k",
+          "signature": "-UeY95fa-RXMWdKV4P1sy5h8VmRjLmooJwGWHDARL7Vp0Tz-QMxbsCUOfTBh7a5r866U70akDbQ5GAHW5ZN1Cg",
+          "signed_at": "2026-02-01T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-entitlement-002",
+          "idempotency_key": "history-envelope-seat-entitlement-002",
+          "issuer_id": "issuer:billing-01",
+          "key_epoch": 1,
+          "key_id": "key:billing-01",
+          "key_purpose": "billing-entitlement",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "payload_kind": "seat-entitlement",
+          "public_key": "H5QD8VXN7olF5KkSZb-FciWMprNo8kWa20QQcKN9P_k",
+          "signature": "d_fckQv4p9aqlrHeI8lxkKCFcj65HW4Y1n3ucZ-c2JTK95R7dykudrj2bl4uQ0p-ar03ZTi6_1XobaqjQGGLDw",
+          "signed_at": "2026-02-02T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-entitlement-003",
+          "idempotency_key": "history-envelope-seat-entitlement-003",
+          "issuer_id": "issuer:billing-01",
+          "key_epoch": 1,
+          "key_id": "key:billing-01",
+          "key_purpose": "billing-entitlement",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:58f6365ddb4b9ef5825aaa985aa1dd7c8a553e9d65d0a1986b6650d2fca56c9c",
+          "payload_kind": "seat-entitlement",
+          "public_key": "H5QD8VXN7olF5KkSZb-FciWMprNo8kWa20QQcKN9P_k",
+          "signature": "dEqwKIoJlC8_0TxZ3N3a6r9W2KeQvJ1vsSLKTmSCwIL1lUUFmsV-f-s7MqQpNIaJ_Cv1MJQMel0Fun2Q9I-0DA",
+          "signed_at": "2026-02-03T00:00:00Z",
+          "v": 1
+        }
+      ],
+      "family": "entitlement-lineage",
+      "head_digest": "sha256:58f6365ddb4b9ef5825aaa985aa1dd7c8a553e9d65d0a1986b6650d2fca56c9c",
+      "id": "entitlement-successor-revoked-valid",
+      "records": [
+        {
+          "billing_account_digest": "hmac-sha256:eab6fa1de4c93070e9eb39b3167c82b21b8df14943139bf9454002149d5f5c6a",
+          "catalog_digest": "sha256:892e93fe341fb33342f6f52c374f3392c0475e997971617e35c2a007dedcbb9a",
+          "effective_at": "2026-01-01T00:00:00Z",
+          "entitlement_id": "entitlement-001",
+          "expires_at": "2026-02-01T00:00:00Z",
+          "grace_until": "2026-02-08T00:00:00Z",
+          "idempotency_key": "entitlement-issue-001",
+          "issued_at": "2026-01-01T00:00:01Z",
+          "issuer_id": "issuer:billing-01",
+          "organization_id": "org-demo",
+          "plan": "team",
+          "seat_limit": {
+            "kind": "finite",
+            "value": 3
+          },
+          "sequence": 1,
+          "signature_envelope_digest": "sha256:609b7028fd92835c1a0ce95f5bc3b43c2440b044c8321609758a19c2b1897f0d",
+          "source": "subscription",
+          "v": 1
+        },
+        {
+          "billing_account_digest": "hmac-sha256:eab6fa1de4c93070e9eb39b3167c82b21b8df14943139bf9454002149d5f5c6a",
+          "catalog_digest": "sha256:892e93fe341fb33342f6f52c374f3392c0475e997971617e35c2a007dedcbb9a",
+          "effective_at": "2026-01-12T00:00:00Z",
+          "entitlement_id": "entitlement-001",
+          "expires_at": "2026-02-12T00:00:00Z",
+          "grace_until": "2026-02-19T00:00:00Z",
+          "idempotency_key": "entitlement-history-002",
+          "issued_at": "2026-01-12T00:00:00Z",
+          "issuer_id": "issuer:billing-01",
+          "organization_id": "org-demo",
+          "plan": "team",
+          "predecessor_digest": "sha256:889b361c2c1dabe76b9defdeb7d5061526964f83c45bfcbda4db0b7a7538d7a0",
+          "seat_limit": {
+            "kind": "finite",
+            "value": 5
+          },
+          "sequence": 2,
+          "signature_envelope_digest": "sha256:d1235e905a11f274610d149d9b4625c246ebfb96597e33246f289c569ba58cbd",
+          "source": "subscription",
+          "v": 1
+        },
+        {
+          "billing_account_digest": "hmac-sha256:eab6fa1de4c93070e9eb39b3167c82b21b8df14943139bf9454002149d5f5c6a",
+          "catalog_digest": "sha256:892e93fe341fb33342f6f52c374f3392c0475e997971617e35c2a007dedcbb9a",
+          "effective_at": "2026-01-13T00:00:00Z",
+          "entitlement_id": "entitlement-001",
+          "expires_at": "2026-02-13T00:00:00Z",
+          "grace_until": "2026-02-20T00:00:00Z",
+          "idempotency_key": "entitlement-history-003",
+          "issued_at": "2026-01-13T00:00:00Z",
+          "issuer_id": "issuer:billing-01",
+          "organization_id": "org-demo",
+          "plan": "team",
+          "predecessor_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "reason_code": "billing.revoked",
+          "revoked_at": "2026-01-13T00:00:00Z",
+          "seat_limit": {
+            "kind": "finite",
+            "value": 6
+          },
+          "sequence": 3,
+          "signature_envelope_digest": "sha256:f814a961af5738277445d5caa109337d983192006bf01f5fd24db050f18b76ef",
+          "source": "subscription",
+          "v": 1
+        }
+      ],
+      "status": "valid"
+    },
+    {
+      "envelopes": [
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-entitlement-001",
+          "idempotency_key": "history-envelope-seat-entitlement-001",
+          "issuer_id": "issuer:billing-01",
+          "key_epoch": 1,
+          "key_id": "key:billing-01",
+          "key_purpose": "billing-entitlement",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:889b361c2c1dabe76b9defdeb7d5061526964f83c45bfcbda4db0b7a7538d7a0",
+          "payload_kind": "seat-entitlement",
+          "public_key": "H5QD8VXN7olF5KkSZb-FciWMprNo8kWa20QQcKN9P_k",
+          "signature": "-UeY95fa-RXMWdKV4P1sy5h8VmRjLmooJwGWHDARL7Vp0Tz-QMxbsCUOfTBh7a5r866U70akDbQ5GAHW5ZN1Cg",
+          "signed_at": "2026-02-01T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-entitlement-002",
+          "idempotency_key": "history-envelope-seat-entitlement-002",
+          "issuer_id": "issuer:billing-01",
+          "key_epoch": 1,
+          "key_id": "key:billing-01",
+          "key_purpose": "billing-entitlement",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "payload_kind": "seat-entitlement",
+          "public_key": "H5QD8VXN7olF5KkSZb-FciWMprNo8kWa20QQcKN9P_k",
+          "signature": "d_fckQv4p9aqlrHeI8lxkKCFcj65HW4Y1n3ucZ-c2JTK95R7dykudrj2bl4uQ0p-ar03ZTi6_1XobaqjQGGLDw",
+          "signed_at": "2026-02-02T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-entitlement-004",
+          "idempotency_key": "history-envelope-seat-entitlement-004",
+          "issuer_id": "issuer:billing-01",
+          "key_epoch": 1,
+          "key_id": "key:billing-01",
+          "key_purpose": "billing-entitlement",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:1d51807d947031625276017eb22512030f23d3cdadb2ff932b41b0251016a0c3",
+          "payload_kind": "seat-entitlement",
+          "public_key": "H5QD8VXN7olF5KkSZb-FciWMprNo8kWa20QQcKN9P_k",
+          "signature": "1I4bYNUQnnZkY_jYfie7gCnG0Xfh6RkKbDYyGRds7UZbyKzbXYBA5sy3eY-CuzHItqIe0QrygnZTTJN8pDzfBg",
+          "signed_at": "2026-02-04T00:00:00Z",
+          "v": 1
+        }
+      ],
+      "family": "entitlement-fork",
+      "id": "entitlement-fork-invalid",
+      "reason": "two-authoritative-successors-share-predecessor",
+      "records": [
+        {
+          "billing_account_digest": "hmac-sha256:eab6fa1de4c93070e9eb39b3167c82b21b8df14943139bf9454002149d5f5c6a",
+          "catalog_digest": "sha256:892e93fe341fb33342f6f52c374f3392c0475e997971617e35c2a007dedcbb9a",
+          "effective_at": "2026-01-01T00:00:00Z",
+          "entitlement_id": "entitlement-001",
+          "expires_at": "2026-02-01T00:00:00Z",
+          "grace_until": "2026-02-08T00:00:00Z",
+          "idempotency_key": "entitlement-issue-001",
+          "issued_at": "2026-01-01T00:00:01Z",
+          "issuer_id": "issuer:billing-01",
+          "organization_id": "org-demo",
+          "plan": "team",
+          "seat_limit": {
+            "kind": "finite",
+            "value": 3
+          },
+          "sequence": 1,
+          "signature_envelope_digest": "sha256:609b7028fd92835c1a0ce95f5bc3b43c2440b044c8321609758a19c2b1897f0d",
+          "source": "subscription",
+          "v": 1
+        },
+        {
+          "billing_account_digest": "hmac-sha256:eab6fa1de4c93070e9eb39b3167c82b21b8df14943139bf9454002149d5f5c6a",
+          "catalog_digest": "sha256:892e93fe341fb33342f6f52c374f3392c0475e997971617e35c2a007dedcbb9a",
+          "effective_at": "2026-01-12T00:00:00Z",
+          "entitlement_id": "entitlement-001",
+          "expires_at": "2026-02-12T00:00:00Z",
+          "grace_until": "2026-02-19T00:00:00Z",
+          "idempotency_key": "entitlement-history-002",
+          "issued_at": "2026-01-12T00:00:00Z",
+          "issuer_id": "issuer:billing-01",
+          "organization_id": "org-demo",
+          "plan": "team",
+          "predecessor_digest": "sha256:889b361c2c1dabe76b9defdeb7d5061526964f83c45bfcbda4db0b7a7538d7a0",
+          "seat_limit": {
+            "kind": "finite",
+            "value": 5
+          },
+          "sequence": 2,
+          "signature_envelope_digest": "sha256:d1235e905a11f274610d149d9b4625c246ebfb96597e33246f289c569ba58cbd",
+          "source": "subscription",
+          "v": 1
+        },
+        {
+          "billing_account_digest": "hmac-sha256:eab6fa1de4c93070e9eb39b3167c82b21b8df14943139bf9454002149d5f5c6a",
+          "catalog_digest": "sha256:892e93fe341fb33342f6f52c374f3392c0475e997971617e35c2a007dedcbb9a",
+          "effective_at": "2026-01-12T00:00:00Z",
+          "entitlement_id": "entitlement-001",
+          "expires_at": "2026-02-12T00:00:00Z",
+          "grace_until": "2026-02-19T00:00:00Z",
+          "idempotency_key": "entitlement-history-004",
+          "issued_at": "2026-01-12T00:00:00Z",
+          "issuer_id": "issuer:billing-01",
+          "organization_id": "org-demo",
+          "plan": "team",
+          "predecessor_digest": "sha256:889b361c2c1dabe76b9defdeb7d5061526964f83c45bfcbda4db0b7a7538d7a0",
+          "seat_limit": {
+            "kind": "finite",
+            "value": 99
+          },
+          "sequence": 2,
+          "signature_envelope_digest": "sha256:2d3415811d8328b4dc315b026ed7608fa94b696af0d619e3127c7f3558008374",
+          "source": "subscription",
+          "v": 1
+        }
+      ],
+      "status": "invalid"
+    },
+    {
+      "envelopes": [
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-entitlement-001",
+          "idempotency_key": "history-envelope-seat-entitlement-001",
+          "issuer_id": "issuer:billing-01",
+          "key_epoch": 1,
+          "key_id": "key:billing-01",
+          "key_purpose": "billing-entitlement",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:889b361c2c1dabe76b9defdeb7d5061526964f83c45bfcbda4db0b7a7538d7a0",
+          "payload_kind": "seat-entitlement",
+          "public_key": "H5QD8VXN7olF5KkSZb-FciWMprNo8kWa20QQcKN9P_k",
+          "signature": "-UeY95fa-RXMWdKV4P1sy5h8VmRjLmooJwGWHDARL7Vp0Tz-QMxbsCUOfTBh7a5r866U70akDbQ5GAHW5ZN1Cg",
+          "signed_at": "2026-02-01T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-entitlement-005",
+          "idempotency_key": "history-envelope-seat-entitlement-005",
+          "issuer_id": "issuer:billing-01",
+          "key_epoch": 1,
+          "key_id": "key:billing-01",
+          "key_purpose": "billing-entitlement",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:3985e0a5a794824ae5e3150a7bc1c5166e3dd165b9e1ce4e2e1d8f5dc1fe5205",
+          "payload_kind": "seat-entitlement",
+          "public_key": "H5QD8VXN7olF5KkSZb-FciWMprNo8kWa20QQcKN9P_k",
+          "signature": "VCSeD6TUGX1CgX8YG3n4OsJxajYcScxdp2UbUv0V2DPNvuOfxGHT_7Es8oiIq589zpUCfO58IY67cuRFQ-g_Dw",
+          "signed_at": "2026-02-05T00:00:00Z",
+          "v": 1
+        }
+      ],
+      "family": "entitlement-time",
+      "id": "entitlement-time-edge-invalid",
+      "reason": "effective-before-expiry-required",
+      "records": [
+        {
+          "billing_account_digest": "hmac-sha256:eab6fa1de4c93070e9eb39b3167c82b21b8df14943139bf9454002149d5f5c6a",
+          "catalog_digest": "sha256:892e93fe341fb33342f6f52c374f3392c0475e997971617e35c2a007dedcbb9a",
+          "effective_at": "2026-01-01T00:00:00Z",
+          "entitlement_id": "entitlement-001",
+          "expires_at": "2026-02-01T00:00:00Z",
+          "grace_until": "2026-02-08T00:00:00Z",
+          "idempotency_key": "entitlement-issue-001",
+          "issued_at": "2026-01-01T00:00:01Z",
+          "issuer_id": "issuer:billing-01",
+          "organization_id": "org-demo",
+          "plan": "team",
+          "seat_limit": {
+            "kind": "finite",
+            "value": 3
+          },
+          "sequence": 1,
+          "signature_envelope_digest": "sha256:609b7028fd92835c1a0ce95f5bc3b43c2440b044c8321609758a19c2b1897f0d",
+          "source": "subscription",
+          "v": 1
+        },
+        {
+          "billing_account_digest": "hmac-sha256:eab6fa1de4c93070e9eb39b3167c82b21b8df14943139bf9454002149d5f5c6a",
+          "catalog_digest": "sha256:892e93fe341fb33342f6f52c374f3392c0475e997971617e35c2a007dedcbb9a",
+          "effective_at": "2026-01-12T00:00:00Z",
+          "entitlement_id": "entitlement-history-bad-time",
+          "expires_at": "2026-01-12T00:00:00Z",
+          "grace_until": "2026-02-19T00:00:00Z",
+          "idempotency_key": "entitlement-history-002",
+          "issued_at": "2026-01-12T00:00:00Z",
+          "issuer_id": "issuer:billing-01",
+          "organization_id": "org-demo",
+          "plan": "team",
+          "predecessor_digest": "sha256:889b361c2c1dabe76b9defdeb7d5061526964f83c45bfcbda4db0b7a7538d7a0",
+          "seat_limit": {
+            "kind": "finite",
+            "value": 5
+          },
+          "sequence": 2,
+          "signature_envelope_digest": "sha256:2f93c6db2d2d4b76ef827ce23abe95938f4e5d1502109e7f0f6ec7fdbba5b1fa",
+          "source": "subscription",
+          "v": 1
+        }
+      ],
+      "status": "invalid"
+    },
+    {
+      "envelopes": [
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-limit-decision-010",
+          "idempotency_key": "history-envelope-seat-limit-decision-010",
+          "issuer_id": "issuer:seat-01",
+          "key_epoch": 1,
+          "key_id": "key:seat-01",
+          "key_purpose": "seat-authority",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:e60ced281f21eb8adb8bcd4010a7c649cbfe26e4625e39725b5b9f19185f59e2",
+          "payload_kind": "seat-limit-decision",
+          "public_key": "eYNxxbnnZJFZofT4LH5K3-M3LSBVbjwCz8c-70eFfaw",
+          "signature": "w8dU6StnFmnC1P9rz1DsIq69VAA6TgGKndMhvcrGcuO66A_Hygn5Sxjx0uvezBFtbOyUb5tN314_Ga19dE-GBg",
+          "signed_at": "2026-02-10T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-limit-decision-011",
+          "idempotency_key": "history-envelope-seat-limit-decision-011",
+          "issuer_id": "issuer:seat-01",
+          "key_epoch": 1,
+          "key_id": "key:seat-01",
+          "key_purpose": "seat-authority",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:f1c31e76fdd0f8a8af057d87b5c88368f20e5e55f209291ccd8595bf92bd9602",
+          "payload_kind": "seat-limit-decision",
+          "public_key": "eYNxxbnnZJFZofT4LH5K3-M3LSBVbjwCz8c-70eFfaw",
+          "signature": "PwaHGzsrkRcrBiI4DCrH9OJYdMPF8saAG5vpxI52MHrjyg7lTzdyRL3LVS7oDJcnqpovF0HQQX93FHvR015NCw",
+          "signed_at": "2026-02-11T00:00:00Z",
+          "v": 1
+        }
+      ],
+      "family": "effective-limit",
+      "id": "decision-effective-limit-valid-invalid",
+      "invalid_ids": [
+        "decision-effective-limit-invalid"
+      ],
+      "records": [
+        {
+          "action": "seat.allocate",
+          "allocated_before": 0,
+          "allocation_request": {
+            "member_id": "member:alice",
+            "membership_digest": "sha256:32081cc9508740fa54b6cb0194d8c3a3e253f1de73d7a0c225814d593324ac83",
+            "request_nonce_digest": "sha256:43e8db855e7b663106671f6aa8c51400bfb03b56257cd9bde381a70dde628128",
+            "scope": {
+              "organization_id": "org-demo",
+              "workspace_id": "workspace-demo"
+            }
+          },
+          "allocation_request_digest": "sha256:5565a55331aa1fdcddf4147b189da9de3cccbd0bb83277e0411a14532bc2da28",
+          "decided_at": "2026-01-12T00:00:00Z",
+          "decision_id": "decision-history-010",
+          "effective_limit": 5,
+          "entitlement_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "idempotency_key": "decision-history-010",
+          "membership_digest": "sha256:32081cc9508740fa54b6cb0194d8c3a3e253f1de73d7a0c225814d593324ac83",
+          "outcome": "allowed",
+          "reason_code": "within_limit",
+          "requested_delta": 1,
+          "scope": {
+            "organization_id": "org-demo",
+            "workspace_id": "workspace-demo"
+          },
+          "signature_envelope_digest": "sha256:2a1e4e8a888aae98da4aea9c41c6e41edf4638938c4af81341a2103aebd9645b",
+          "v": 1
+        },
+        {
+          "action": "seat.allocate",
+          "allocated_before": 0,
+          "allocation_request": {
+            "member_id": "member:alice",
+            "membership_digest": "sha256:32081cc9508740fa54b6cb0194d8c3a3e253f1de73d7a0c225814d593324ac83",
+            "request_nonce_digest": "sha256:43e8db855e7b663106671f6aa8c51400bfb03b56257cd9bde381a70dde628128",
+            "scope": {
+              "organization_id": "org-demo",
+              "workspace_id": "workspace-demo"
+            }
+          },
+          "allocation_request_digest": "sha256:5565a55331aa1fdcddf4147b189da9de3cccbd0bb83277e0411a14532bc2da28",
+          "decided_at": "2026-01-12T00:00:00Z",
+          "decision_id": "decision-effective-limit-invalid",
+          "effective_limit": 99,
+          "entitlement_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "idempotency_key": "decision-history-011",
+          "membership_digest": "sha256:32081cc9508740fa54b6cb0194d8c3a3e253f1de73d7a0c225814d593324ac83",
+          "outcome": "allowed",
+          "reason_code": "within_limit",
+          "requested_delta": 1,
+          "scope": {
+            "organization_id": "org-demo",
+            "workspace_id": "workspace-demo"
+          },
+          "signature_envelope_digest": "sha256:a9b6241330ceaac92f5145f8d869ea413fe85a68b01e447e6e77eca49a77560c",
+          "v": 1
+        }
+      ],
+      "status": "mixed",
+      "valid_ids": [
+        "decision-history-010"
+      ]
+    },
+    {
+      "envelopes": [
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-entitlement-001",
+          "idempotency_key": "history-envelope-seat-entitlement-001",
+          "issuer_id": "issuer:billing-01",
+          "key_epoch": 1,
+          "key_id": "key:billing-01",
+          "key_purpose": "billing-entitlement",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:889b361c2c1dabe76b9defdeb7d5061526964f83c45bfcbda4db0b7a7538d7a0",
+          "payload_kind": "seat-entitlement",
+          "public_key": "H5QD8VXN7olF5KkSZb-FciWMprNo8kWa20QQcKN9P_k",
+          "signature": "-UeY95fa-RXMWdKV4P1sy5h8VmRjLmooJwGWHDARL7Vp0Tz-QMxbsCUOfTBh7a5r866U70akDbQ5GAHW5ZN1Cg",
+          "signed_at": "2026-02-01T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-entitlement-002",
+          "idempotency_key": "history-envelope-seat-entitlement-002",
+          "issuer_id": "issuer:billing-01",
+          "key_epoch": 1,
+          "key_id": "key:billing-01",
+          "key_purpose": "billing-entitlement",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "payload_kind": "seat-entitlement",
+          "public_key": "H5QD8VXN7olF5KkSZb-FciWMprNo8kWa20QQcKN9P_k",
+          "signature": "d_fckQv4p9aqlrHeI8lxkKCFcj65HW4Y1n3ucZ-c2JTK95R7dykudrj2bl4uQ0p-ar03ZTi6_1XobaqjQGGLDw",
+          "signed_at": "2026-02-02T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-limit-decision-012",
+          "idempotency_key": "history-envelope-seat-limit-decision-012",
+          "issuer_id": "issuer:seat-01",
+          "key_epoch": 1,
+          "key_id": "key:seat-01",
+          "key_purpose": "seat-authority",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:3d5ed4534bde7c7bfde9193775f27bbc0a303fe58767f1951354232bb871890e",
+          "payload_kind": "seat-limit-decision",
+          "public_key": "eYNxxbnnZJFZofT4LH5K3-M3LSBVbjwCz8c-70eFfaw",
+          "signature": "XbNpFHuswdLp3lssV5jNmT8tpyOAHljX3jw1_VxE7eIyb2AtC5xI1yYTeEyE77WYhKUznPhjNhSk8jOcpXhhDA",
+          "signed_at": "2026-02-12T00:00:00Z",
+          "v": 1
+        }
+      ],
+      "family": "stale-head",
+      "id": "stale-head-decision-invalid",
+      "reason": "decision-must-reference-current-entitlement-head",
+      "records": [
+        {
+          "billing_account_digest": "hmac-sha256:eab6fa1de4c93070e9eb39b3167c82b21b8df14943139bf9454002149d5f5c6a",
+          "catalog_digest": "sha256:892e93fe341fb33342f6f52c374f3392c0475e997971617e35c2a007dedcbb9a",
+          "effective_at": "2026-01-01T00:00:00Z",
+          "entitlement_id": "entitlement-001",
+          "expires_at": "2026-02-01T00:00:00Z",
+          "grace_until": "2026-02-08T00:00:00Z",
+          "idempotency_key": "entitlement-issue-001",
+          "issued_at": "2026-01-01T00:00:01Z",
+          "issuer_id": "issuer:billing-01",
+          "organization_id": "org-demo",
+          "plan": "team",
+          "seat_limit": {
+            "kind": "finite",
+            "value": 3
+          },
+          "sequence": 1,
+          "signature_envelope_digest": "sha256:609b7028fd92835c1a0ce95f5bc3b43c2440b044c8321609758a19c2b1897f0d",
+          "source": "subscription",
+          "v": 1
+        },
+        {
+          "billing_account_digest": "hmac-sha256:eab6fa1de4c93070e9eb39b3167c82b21b8df14943139bf9454002149d5f5c6a",
+          "catalog_digest": "sha256:892e93fe341fb33342f6f52c374f3392c0475e997971617e35c2a007dedcbb9a",
+          "effective_at": "2026-01-12T00:00:00Z",
+          "entitlement_id": "entitlement-001",
+          "expires_at": "2026-02-12T00:00:00Z",
+          "grace_until": "2026-02-19T00:00:00Z",
+          "idempotency_key": "entitlement-history-002",
+          "issued_at": "2026-01-12T00:00:00Z",
+          "issuer_id": "issuer:billing-01",
+          "organization_id": "org-demo",
+          "plan": "team",
+          "predecessor_digest": "sha256:889b361c2c1dabe76b9defdeb7d5061526964f83c45bfcbda4db0b7a7538d7a0",
+          "seat_limit": {
+            "kind": "finite",
+            "value": 5
+          },
+          "sequence": 2,
+          "signature_envelope_digest": "sha256:d1235e905a11f274610d149d9b4625c246ebfb96597e33246f289c569ba58cbd",
+          "source": "subscription",
+          "v": 1
+        },
+        {
+          "action": "seat.allocate",
+          "allocated_before": 0,
+          "allocation_request": {
+            "member_id": "member:alice",
+            "membership_digest": "sha256:32081cc9508740fa54b6cb0194d8c3a3e253f1de73d7a0c225814d593324ac83",
+            "request_nonce_digest": "sha256:43e8db855e7b663106671f6aa8c51400bfb03b56257cd9bde381a70dde628128",
+            "scope": {
+              "organization_id": "org-demo",
+              "workspace_id": "workspace-demo"
+            }
+          },
+          "allocation_request_digest": "sha256:5565a55331aa1fdcddf4147b189da9de3cccbd0bb83277e0411a14532bc2da28",
+          "decided_at": "2026-01-02T00:00:00Z",
+          "decision_id": "decision-stale-head-invalid",
+          "effective_limit": 3,
+          "entitlement_digest": "sha256:889b361c2c1dabe76b9defdeb7d5061526964f83c45bfcbda4db0b7a7538d7a0",
+          "idempotency_key": "decision-history-012",
+          "membership_digest": "sha256:32081cc9508740fa54b6cb0194d8c3a3e253f1de73d7a0c225814d593324ac83",
+          "outcome": "allowed",
+          "reason_code": "within_limit",
+          "requested_delta": 1,
+          "scope": {
+            "organization_id": "org-demo",
+            "workspace_id": "workspace-demo"
+          },
+          "signature_envelope_digest": "sha256:8fee8d976c5bf1cd84729fe435887d3573c26b3f59e819bb0ca5922a6ed856e0",
+          "v": 1
+        }
+      ],
+      "status": "invalid"
+    },
+    {
+      "envelopes": [
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-allocation-020",
+          "idempotency_key": "history-envelope-seat-allocation-020",
+          "issuer_id": "issuer:seat-01",
+          "key_epoch": 1,
+          "key_id": "key:seat-01",
+          "key_purpose": "seat-authority",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:0c9f09e8e67421861b6e44874a0014d5a9cc2aadb35bff650e153f0abcc50560",
+          "payload_kind": "seat-allocation",
+          "public_key": "eYNxxbnnZJFZofT4LH5K3-M3LSBVbjwCz8c-70eFfaw",
+          "signature": "PcVB7X4uiPCtpDJB9tSQhDINNix5QNFDC5UnwV1w5XDZDp2wq6XNnFbEz7J2IDQWoGYF2cwkozDBlPO26iWQDg",
+          "signed_at": "2026-02-20T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-allocation-021",
+          "idempotency_key": "history-envelope-seat-allocation-021",
+          "issuer_id": "issuer:seat-01",
+          "key_epoch": 1,
+          "key_id": "key:seat-01",
+          "key_purpose": "seat-authority",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:d3772af9db39c8d9cc8f35eb8cf755918e53bdb36756889de32cfbda876ff84f",
+          "payload_kind": "seat-allocation",
+          "public_key": "eYNxxbnnZJFZofT4LH5K3-M3LSBVbjwCz8c-70eFfaw",
+          "signature": "iemqH5n4-xQfCqL6_bYNGPar68HMFI3dtQXPVjZBI9ImiEkCsrV04eX5cf-a9NcWCcgkDP2CJ07mwFmRKOcHCA",
+          "signed_at": "2026-02-21T00:00:00Z",
+          "v": 1
+        }
+      ],
+      "family": "allocation-cas",
+      "head_digest": "sha256:d3772af9db39c8d9cc8f35eb8cf755918e53bdb36756889de32cfbda876ff84f",
+      "id": "allocation-cas-release-valid",
+      "records": [
+        {
+          "allocated_at": "2026-01-02T00:00:01Z",
+          "allocated_by": "member:alice",
+          "allocation_id": "allocation-history-020",
+          "entitlement_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "idempotency_key": "allocation-history-020",
+          "limit_decision_digest": "sha256:d6d806292d6d180150106fc35f036fab6c94fa7dcf5d4d32df96d7a0a614c17c",
+          "member_id": "member:alice",
+          "membership_digest": "sha256:32081cc9508740fa54b6cb0194d8c3a3e253f1de73d7a0c225814d593324ac83",
+          "scope": {
+            "organization_id": "org-demo",
+            "workspace_id": "workspace-demo"
+          },
+          "signature_envelope_digest": "sha256:7d566e9d9a3343b23f9de9c68c35e046180f5175a17adff434e6350713193042",
+          "state": "active",
+          "v": 1,
+          "version": 1
+        },
+        {
+          "allocated_at": "2026-01-02T00:00:01Z",
+          "allocated_by": "member:alice",
+          "allocation_id": "allocation-history-020",
+          "ended_at": "2026-02-20T00:00:00Z",
+          "ended_by": "member:alice",
+          "entitlement_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "idempotency_key": "allocation-history-021",
+          "limit_decision_digest": "sha256:d6d806292d6d180150106fc35f036fab6c94fa7dcf5d4d32df96d7a0a614c17c",
+          "member_id": "member:alice",
+          "membership_digest": "sha256:32081cc9508740fa54b6cb0194d8c3a3e253f1de73d7a0c225814d593324ac83",
+          "parent_digest": "sha256:0c9f09e8e67421861b6e44874a0014d5a9cc2aadb35bff650e153f0abcc50560",
+          "reason_code": "membership.revoked",
+          "scope": {
+            "organization_id": "org-demo",
+            "workspace_id": "workspace-demo"
+          },
+          "signature_envelope_digest": "sha256:a638fcea1eb3ba857fbcb8e5e44eaa5a42b8178efa5d16271ff0d7ba6819ea06",
+          "state": "released",
+          "v": 1,
+          "version": 2
+        }
+      ],
+      "status": "valid"
+    },
+    {
+      "envelopes": [
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-allocation-020",
+          "idempotency_key": "history-envelope-seat-allocation-020",
+          "issuer_id": "issuer:seat-01",
+          "key_epoch": 1,
+          "key_id": "key:seat-01",
+          "key_purpose": "seat-authority",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:0c9f09e8e67421861b6e44874a0014d5a9cc2aadb35bff650e153f0abcc50560",
+          "payload_kind": "seat-allocation",
+          "public_key": "eYNxxbnnZJFZofT4LH5K3-M3LSBVbjwCz8c-70eFfaw",
+          "signature": "PcVB7X4uiPCtpDJB9tSQhDINNix5QNFDC5UnwV1w5XDZDp2wq6XNnFbEz7J2IDQWoGYF2cwkozDBlPO26iWQDg",
+          "signed_at": "2026-02-20T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-allocation-022",
+          "idempotency_key": "history-envelope-seat-allocation-022",
+          "issuer_id": "issuer:seat-01",
+          "key_epoch": 1,
+          "key_id": "key:seat-01",
+          "key_purpose": "seat-authority",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:9435d2b06310e48027326769dc5252e57908482f7e57e5e201287f37efafeca3",
+          "payload_kind": "seat-allocation",
+          "public_key": "eYNxxbnnZJFZofT4LH5K3-M3LSBVbjwCz8c-70eFfaw",
+          "signature": "KvWYlWJ90-x3E9Jxoxs-SEbdM67LTbYiHmqor7PsQHAwUKwP3XS0ea6ha4SqapFgui8Badb_WjmP5SwJz2h9Cw",
+          "signed_at": "2026-02-22T00:00:00Z",
+          "v": 1
+        }
+      ],
+      "family": "allocation-uniqueness-cas",
+      "id": "allocation-uniqueness-fork-invalid",
+      "reason": "one-active-per-entitlement-member-and-one-cas-winner",
+      "records": [
+        {
+          "allocated_at": "2026-01-02T00:00:01Z",
+          "allocated_by": "member:alice",
+          "allocation_id": "allocation-history-020",
+          "entitlement_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "idempotency_key": "allocation-history-020",
+          "limit_decision_digest": "sha256:d6d806292d6d180150106fc35f036fab6c94fa7dcf5d4d32df96d7a0a614c17c",
+          "member_id": "member:alice",
+          "membership_digest": "sha256:32081cc9508740fa54b6cb0194d8c3a3e253f1de73d7a0c225814d593324ac83",
+          "scope": {
+            "organization_id": "org-demo",
+            "workspace_id": "workspace-demo"
+          },
+          "signature_envelope_digest": "sha256:7d566e9d9a3343b23f9de9c68c35e046180f5175a17adff434e6350713193042",
+          "state": "active",
+          "v": 1,
+          "version": 1
+        },
+        {
+          "allocated_at": "2026-01-02T00:00:01Z",
+          "allocated_by": "member:alice",
+          "allocation_id": "allocation-history-022",
+          "entitlement_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "idempotency_key": "allocation-history-022",
+          "limit_decision_digest": "sha256:d6d806292d6d180150106fc35f036fab6c94fa7dcf5d4d32df96d7a0a614c17c",
+          "member_id": "member:bob",
+          "membership_digest": "sha256:32081cc9508740fa54b6cb0194d8c3a3e253f1de73d7a0c225814d593324ac83",
+          "parent_digest": "sha256:0c9f09e8e67421861b6e44874a0014d5a9cc2aadb35bff650e153f0abcc50560",
+          "scope": {
+            "organization_id": "org-demo",
+            "workspace_id": "workspace-demo"
+          },
+          "signature_envelope_digest": "sha256:a7005b03ff23f597a218ac53cdfa3441111b4a525a085d58a7efbc406963926f",
+          "state": "active",
+          "v": 1,
+          "version": 2
+        }
+      ],
+      "status": "invalid"
+    },
+    {
+      "envelopes": [
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-usage-030",
+          "idempotency_key": "history-envelope-seat-usage-030",
+          "issuer_id": "issuer:value-01",
+          "key_epoch": 1,
+          "key_id": "key:value-01",
+          "key_purpose": "value-attestation",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:867d6e5a646be92cecedfec586551c2a13f956d01a36e1c0ef517601048c1afa",
+          "payload_kind": "seat-usage",
+          "public_key": "nodS4TfciPhzIvBilWlhyb3kfnlCW2tSB6o0GO9yyOk",
+          "signature": "jwn6UIehbdUjYl2VI8hNK17WnXkD198Qof2_Tiwx3JbFRFKbwHtE7sL-nR5_WWdatRkCy6vH6-D--S-MDOTDBQ",
+          "signed_at": "2026-02-28T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-usage-031",
+          "idempotency_key": "history-envelope-seat-usage-031",
+          "issuer_id": "issuer:value-01",
+          "key_epoch": 1,
+          "key_id": "key:value-01",
+          "key_purpose": "value-attestation",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:4311b3dda77e2aeba4165e38bcdcff8f7e1b6d280c85e4184888bbde84d608fa",
+          "payload_kind": "seat-usage",
+          "public_key": "nodS4TfciPhzIvBilWlhyb3kfnlCW2tSB6o0GO9yyOk",
+          "signature": "NjGv33xRYbChpPQ3Zrtpx1MQEGW5ujI99vxb0G34Msn6MOuKq62TFfJ_APNmCo5TsYdcwWuip2OqVVO5gCt0CQ",
+          "signed_at": "2026-02-28T00:00:00Z",
+          "v": 1
+        }
+      ],
+      "family": "usage-correction-watermark",
+      "id": "usage-correction-valid",
+      "records": [
+        {
+          "active_memberships": 1,
+          "allocated_seats": 1,
+          "allocation_digests": [
+            "sha256:0c9f09e8e67421861b6e44874a0014d5a9cc2aadb35bff650e153f0abcc50560"
+          ],
+          "entitlement_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "evidence_digests": [
+            "sha256:e0adcf8be3ac0a4e6a1566afb449e74312e169beeeacb065a399f6bfa119387f"
+          ],
+          "idempotency_key": "usage-history-030",
+          "observed_at": "2026-01-03T00:00:01Z",
+          "organization_id": "org-demo",
+          "peak_active_seats": 1,
+          "period_end": "2026-01-03T00:00:00Z",
+          "period_start": "2026-01-02T00:00:00Z",
+          "signature_envelope_digest": "sha256:d17e9896aa47e6a08e1d2100c757c55d32cf6b911d2374edfe7fe057a7a9193c",
+          "source": "calculated",
+          "usage_id": "usage-history-030",
+          "v": 1,
+          "watermark": {
+            "event_sequence": 1,
+            "late_arrival_cutoff": "2026-01-03T00:00:00Z"
+          }
+        },
+        {
+          "active_memberships": 1,
+          "allocated_seats": 1,
+          "allocation_digests": [
+            "sha256:9df56abce22e5591760882581c929fd0e1a84c9e67c885486a5c78624ed80fc3"
+          ],
+          "corrects_digest": "sha256:867d6e5a646be92cecedfec586551c2a13f956d01a36e1c0ef517601048c1afa",
+          "entitlement_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "evidence_digests": [
+            "sha256:e0adcf8be3ac0a4e6a1566afb449e74312e169beeeacb065a399f6bfa119387f"
+          ],
+          "idempotency_key": "usage-history-031",
+          "observed_at": "2026-01-03T00:00:01Z",
+          "organization_id": "org-demo",
+          "peak_active_seats": 1,
+          "period_end": "2026-01-03T00:00:00Z",
+          "period_start": "2026-01-02T00:00:00Z",
+          "signature_envelope_digest": "sha256:7b6626b1e65fec4f60dc413daa620b41c20dab19792d672868e5f0300154cb43",
+          "source": "reconciled",
+          "usage_id": "usage-history-031",
+          "v": 1,
+          "watermark": {
+            "event_sequence": 1,
+            "late_arrival_cutoff": "2026-01-03T00:00:00Z"
+          }
+        }
+      ],
+      "replacement": "sha256:4311b3dda77e2aeba4165e38bcdcff8f7e1b6d280c85e4184888bbde84d608fa",
+      "status": "valid"
+    },
+    {
+      "envelopes": [
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-usage-030",
+          "idempotency_key": "history-envelope-seat-usage-030",
+          "issuer_id": "issuer:value-01",
+          "key_epoch": 1,
+          "key_id": "key:value-01",
+          "key_purpose": "value-attestation",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:867d6e5a646be92cecedfec586551c2a13f956d01a36e1c0ef517601048c1afa",
+          "payload_kind": "seat-usage",
+          "public_key": "nodS4TfciPhzIvBilWlhyb3kfnlCW2tSB6o0GO9yyOk",
+          "signature": "jwn6UIehbdUjYl2VI8hNK17WnXkD198Qof2_Tiwx3JbFRFKbwHtE7sL-nR5_WWdatRkCy6vH6-D--S-MDOTDBQ",
+          "signed_at": "2026-02-28T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-seat-usage-032",
+          "idempotency_key": "history-envelope-seat-usage-032",
+          "issuer_id": "issuer:value-01",
+          "key_epoch": 1,
+          "key_id": "key:value-01",
+          "key_purpose": "value-attestation",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:f3bc918a4b0b6af05359231bc0dffe31ad04cab26418f7bb075f4c2d0fce1766",
+          "payload_kind": "seat-usage",
+          "public_key": "nodS4TfciPhzIvBilWlhyb3kfnlCW2tSB6o0GO9yyOk",
+          "signature": "pJNkF1RgBxG3BQjt6Gy2vHBDwncaFSGjMAhWG3vd2fAbzHXZUyfwqicoU1LNsloVDxnJGJzwma-wA_FCEhPkBg",
+          "signed_at": "2026-02-28T00:00:00Z",
+          "v": 1
+        }
+      ],
+      "family": "usage-correction-watermark",
+      "id": "usage-late-append-invalid",
+      "reason": "closed-watermark-requires-reconciled-correction",
+      "records": [
+        {
+          "active_memberships": 1,
+          "allocated_seats": 1,
+          "allocation_digests": [
+            "sha256:0c9f09e8e67421861b6e44874a0014d5a9cc2aadb35bff650e153f0abcc50560"
+          ],
+          "entitlement_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "evidence_digests": [
+            "sha256:e0adcf8be3ac0a4e6a1566afb449e74312e169beeeacb065a399f6bfa119387f"
+          ],
+          "idempotency_key": "usage-history-030",
+          "observed_at": "2026-01-03T00:00:01Z",
+          "organization_id": "org-demo",
+          "peak_active_seats": 1,
+          "period_end": "2026-01-03T00:00:00Z",
+          "period_start": "2026-01-02T00:00:00Z",
+          "signature_envelope_digest": "sha256:d17e9896aa47e6a08e1d2100c757c55d32cf6b911d2374edfe7fe057a7a9193c",
+          "source": "calculated",
+          "usage_id": "usage-history-030",
+          "v": 1,
+          "watermark": {
+            "event_sequence": 1,
+            "late_arrival_cutoff": "2026-01-03T00:00:00Z"
+          }
+        },
+        {
+          "active_memberships": 1,
+          "allocated_seats": 1,
+          "allocation_digests": [
+            "sha256:9df56abce22e5591760882581c929fd0e1a84c9e67c885486a5c78624ed80fc3"
+          ],
+          "entitlement_digest": "sha256:2c2d9551488371b96f0483dbd085bb9686d4b872225c8f8fe2c3c2ef0ff6c7ea",
+          "evidence_digests": [
+            "sha256:e0adcf8be3ac0a4e6a1566afb449e74312e169beeeacb065a399f6bfa119387f"
+          ],
+          "idempotency_key": "usage-history-032",
+          "observed_at": "2026-01-03T00:00:01Z",
+          "organization_id": "org-demo",
+          "peak_active_seats": 1,
+          "period_end": "2026-01-03T00:00:00Z",
+          "period_start": "2026-01-02T00:00:00Z",
+          "signature_envelope_digest": "sha256:506d6ca1f5dec0e8144f50ff857cecdb3281a89515a37be96689d8b89cb6ed1a",
+          "source": "calculated",
+          "usage_id": "usage-history-032",
+          "v": 1,
+          "watermark": {
+            "event_sequence": 1,
+            "late_arrival_cutoff": "2026-01-03T00:00:00Z"
+          }
+        }
+      ],
+      "status": "invalid"
+    },
+    {
+      "envelopes": [
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-team-value-aggregate-040",
+          "idempotency_key": "history-envelope-team-value-aggregate-040",
+          "issuer_id": "issuer:value-01",
+          "key_epoch": 1,
+          "key_id": "key:value-01",
+          "key_purpose": "value-attestation",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:990f06b92607bcba8948e8be9cb7613537442b3f81e31bb4c8ce93fda8a1cc13",
+          "payload_kind": "team-value-aggregate",
+          "public_key": "nodS4TfciPhzIvBilWlhyb3kfnlCW2tSB6o0GO9yyOk",
+          "signature": "RalpeMn5TU0NPSj3cDXaLAorGShO9EHDnTHUi3Lw9PbDD19ylAUoXSlF_JuZA7B1N0baDqG0kC7oMsJKvq64DA",
+          "signed_at": "2026-02-28T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-team-value-aggregate-041",
+          "idempotency_key": "history-envelope-team-value-aggregate-041",
+          "issuer_id": "issuer:value-01",
+          "key_epoch": 1,
+          "key_id": "key:value-01",
+          "key_purpose": "value-attestation",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:8a15649743bb8d331af155883422b2e56a6deff179df3f6a467662e86258f1a5",
+          "payload_kind": "team-value-aggregate",
+          "public_key": "nodS4TfciPhzIvBilWlhyb3kfnlCW2tSB6o0GO9yyOk",
+          "signature": "UOF3gmEIbfDSWomtfH1PTV5aJuaq-v1YmG1et_l7bYoYl2p5DROv_nLo4q5F8ky--dkVdjL3R4TXB10TMNJyDw",
+          "signed_at": "2026-02-28T00:00:00Z",
+          "v": 1
+        }
+      ],
+      "family": "aggregate-cas-conservation",
+      "id": "aggregate-correction-valid",
+      "records": [
+        {
+          "aggregate_id": "aggregate-history-040",
+          "currency": "USD",
+          "generated_at": "2026-01-03T00:00:02Z",
+          "idempotency_key": "aggregate-history-040",
+          "input_digests": [
+            "sha256:867d6e5a646be92cecedfec586551c2a13f956d01a36e1c0ef517601048c1afa"
+          ],
+          "methodology_digest": "sha256:918d4059f67cdf07235c218d2e846da1c8f3b2eefff9462fbd383e88ef2c5e17",
+          "period_end": "2026-01-03T00:00:00Z",
+          "period_start": "2026-01-02T00:00:00Z",
+          "price_table_digest": "sha256:bbf9fa04f4591bacaf702638f26dd3670a054ccd66b6cc2a5bdd2cbbbfd16fa3",
+          "scope": {
+            "organization_id": "org-demo",
+            "workspace_id": "workspace-demo"
+          },
+          "signature_envelope_digest": "sha256:2825d477f95269b4c86328af2524415bbbe497a89a481937b3a5e59d3f3cefc8",
+          "source_watermark": 1,
+          "v": 1,
+          "value_facts": [
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "total_cost",
+              "value": {
+                "coefficient": "120",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "accepted_path_cost",
+              "value": {
+                "coefficient": "100",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:a35329d9fcf8ac27b7cc76e05764409a0712f9bd4ec81a6c4a0c985e9f36f6aa",
+              "metric": "waste_cost",
+              "value": {
+                "coefficient": "20",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "total_tokens",
+              "value": {
+                "coefficient": "100",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "accepted_path_tokens",
+              "value": {
+                "coefficient": "80",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "waste_tokens",
+              "value": {
+                "coefficient": "20",
+                "currency": "USD",
+                "scale": 2
+              }
+            }
+          ],
+          "version": 1
+        },
+        {
+          "aggregate_id": "aggregate-history-040",
+          "currency": "USD",
+          "generated_at": "2026-01-03T00:00:02Z",
+          "idempotency_key": "aggregate-history-041",
+          "input_digests": [
+            "sha256:4311b3dda77e2aeba4165e38bcdcff8f7e1b6d280c85e4184888bbde84d608fa"
+          ],
+          "methodology_digest": "sha256:918d4059f67cdf07235c218d2e846da1c8f3b2eefff9462fbd383e88ef2c5e17",
+          "parent_digest": "sha256:990f06b92607bcba8948e8be9cb7613537442b3f81e31bb4c8ce93fda8a1cc13",
+          "period_end": "2026-01-03T00:00:00Z",
+          "period_start": "2026-01-02T00:00:00Z",
+          "price_table_digest": "sha256:bbf9fa04f4591bacaf702638f26dd3670a054ccd66b6cc2a5bdd2cbbbfd16fa3",
+          "scope": {
+            "organization_id": "org-demo",
+            "workspace_id": "workspace-demo"
+          },
+          "signature_envelope_digest": "sha256:8bb59c2e930df5129c43550869e6eac1cee41c3678cbcc06a78f3b49f9ada1f4",
+          "source_watermark": 1,
+          "v": 1,
+          "value_facts": [
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "total_cost",
+              "value": {
+                "coefficient": "120",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "accepted_path_cost",
+              "value": {
+                "coefficient": "100",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:a35329d9fcf8ac27b7cc76e05764409a0712f9bd4ec81a6c4a0c985e9f36f6aa",
+              "metric": "waste_cost",
+              "value": {
+                "coefficient": "20",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "total_tokens",
+              "value": {
+                "coefficient": "100",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "accepted_path_tokens",
+              "value": {
+                "coefficient": "80",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "waste_tokens",
+              "value": {
+                "coefficient": "20",
+                "currency": "USD",
+                "scale": 2
+              }
+            }
+          ],
+          "version": 2
+        }
+      ],
+      "replacement": "sha256:8a15649743bb8d331af155883422b2e56a6deff179df3f6a467662e86258f1a5",
+      "status": "valid"
+    },
+    {
+      "envelopes": [
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-team-value-aggregate-040",
+          "idempotency_key": "history-envelope-team-value-aggregate-040",
+          "issuer_id": "issuer:value-01",
+          "key_epoch": 1,
+          "key_id": "key:value-01",
+          "key_purpose": "value-attestation",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:990f06b92607bcba8948e8be9cb7613537442b3f81e31bb4c8ce93fda8a1cc13",
+          "payload_kind": "team-value-aggregate",
+          "public_key": "nodS4TfciPhzIvBilWlhyb3kfnlCW2tSB6o0GO9yyOk",
+          "signature": "RalpeMn5TU0NPSj3cDXaLAorGShO9EHDnTHUi3Lw9PbDD19ylAUoXSlF_JuZA7B1N0baDqG0kC7oMsJKvq64DA",
+          "signed_at": "2026-02-28T00:00:00Z",
+          "v": 1
+        },
+        {
+          "alg": "ed25519",
+          "envelope_id": "history-envelope-team-value-aggregate-042",
+          "idempotency_key": "history-envelope-team-value-aggregate-042",
+          "issuer_id": "issuer:value-01",
+          "key_epoch": 1,
+          "key_id": "key:value-01",
+          "key_purpose": "value-attestation",
+          "organization_id": "org-demo",
+          "payload_digest": "sha256:73d8ecca144a6c94057e397c5dbe7e95146e077ac9e1a9112bf5ecec0546cbda",
+          "payload_kind": "team-value-aggregate",
+          "public_key": "nodS4TfciPhzIvBilWlhyb3kfnlCW2tSB6o0GO9yyOk",
+          "signature": "9PK0zKz2l70nwC6VC5n4S9fPg06KzCZcrHWTMMf6OPkxrPDhhIK7vhdVxnX-32SwTsxTqv0of8MfhV-KilfcDw",
+          "signed_at": "2026-02-28T00:00:00Z",
+          "v": 1
+        }
+      ],
+      "family": "aggregate-cas-conservation",
+      "id": "aggregate-cas-fork-invalid",
+      "reason": "one-current-head-per-parent",
+      "records": [
+        {
+          "aggregate_id": "aggregate-history-040",
+          "currency": "USD",
+          "generated_at": "2026-01-03T00:00:02Z",
+          "idempotency_key": "aggregate-history-040",
+          "input_digests": [
+            "sha256:867d6e5a646be92cecedfec586551c2a13f956d01a36e1c0ef517601048c1afa"
+          ],
+          "methodology_digest": "sha256:918d4059f67cdf07235c218d2e846da1c8f3b2eefff9462fbd383e88ef2c5e17",
+          "period_end": "2026-01-03T00:00:00Z",
+          "period_start": "2026-01-02T00:00:00Z",
+          "price_table_digest": "sha256:bbf9fa04f4591bacaf702638f26dd3670a054ccd66b6cc2a5bdd2cbbbfd16fa3",
+          "scope": {
+            "organization_id": "org-demo",
+            "workspace_id": "workspace-demo"
+          },
+          "signature_envelope_digest": "sha256:2825d477f95269b4c86328af2524415bbbe497a89a481937b3a5e59d3f3cefc8",
+          "source_watermark": 1,
+          "v": 1,
+          "value_facts": [
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "total_cost",
+              "value": {
+                "coefficient": "120",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "accepted_path_cost",
+              "value": {
+                "coefficient": "100",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:a35329d9fcf8ac27b7cc76e05764409a0712f9bd4ec81a6c4a0c985e9f36f6aa",
+              "metric": "waste_cost",
+              "value": {
+                "coefficient": "20",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "total_tokens",
+              "value": {
+                "coefficient": "100",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "accepted_path_tokens",
+              "value": {
+                "coefficient": "80",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "waste_tokens",
+              "value": {
+                "coefficient": "20",
+                "currency": "USD",
+                "scale": 2
+              }
+            }
+          ],
+          "version": 1
+        },
+        {
+          "aggregate_id": "aggregate-history-fork",
+          "currency": "USD",
+          "generated_at": "2026-01-03T00:00:02Z",
+          "idempotency_key": "aggregate-history-042",
+          "input_digests": [
+            "sha256:4311b3dda77e2aeba4165e38bcdcff8f7e1b6d280c85e4184888bbde84d608fa"
+          ],
+          "methodology_digest": "sha256:918d4059f67cdf07235c218d2e846da1c8f3b2eefff9462fbd383e88ef2c5e17",
+          "parent_digest": "sha256:990f06b92607bcba8948e8be9cb7613537442b3f81e31bb4c8ce93fda8a1cc13",
+          "period_end": "2026-01-03T00:00:00Z",
+          "period_start": "2026-01-02T00:00:00Z",
+          "price_table_digest": "sha256:bbf9fa04f4591bacaf702638f26dd3670a054ccd66b6cc2a5bdd2cbbbfd16fa3",
+          "scope": {
+            "organization_id": "org-demo",
+            "workspace_id": "workspace-demo"
+          },
+          "signature_envelope_digest": "sha256:26496761f61e7bf04e40ac04e6ac25f1b26703fd9988cddccb85c933dbbec6ea",
+          "source_watermark": 1,
+          "v": 1,
+          "value_facts": [
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "total_cost",
+              "value": {
+                "coefficient": "120",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "accepted_path_cost",
+              "value": {
+                "coefficient": "100",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:a35329d9fcf8ac27b7cc76e05764409a0712f9bd4ec81a6c4a0c985e9f36f6aa",
+              "metric": "waste_cost",
+              "value": {
+                "coefficient": "20",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "total_tokens",
+              "value": {
+                "coefficient": "100",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "accepted_path_tokens",
+              "value": {
+                "coefficient": "80",
+                "currency": "USD",
+                "scale": 2
+              }
+            },
+            {
+              "kind": "measured",
+              "measurement_evidence_digest": "sha256:d8e03d6542e05934cc20a4ef7a48491e5fe94d60e5f3dc75d6fd7438b173a2c1",
+              "metric": "waste_tokens",
+              "value": {
+                "coefficient": "20",
+                "currency": "USD",
+                "scale": 2
+              }
+            }
+          ],
+          "version": 2
+        }
+      ],
+      "status": "invalid"
+    },
+    {
+      "events": [
+        {
+          "operation": "quota_lock",
+          "step": 1,
+          "winner": "invite-consume"
+        },
+        {
+          "operation": "allocation_commit",
+          "step": 2,
+          "winner": "invite-consume"
+        },
+        {
+          "operation": "loser",
+          "result": "conflict",
+          "step": 3
+        }
+      ],
+      "family": "race",
+      "id": "invite-final-seat-race",
+      "status": "valid"
+    },
+    {
+      "events": [
+        {
+          "atomic": true,
+          "operation": "membership.revoke",
+          "step": 1
+        },
+        {
+          "atomic": true,
+          "operation": "allocation.terminate",
+          "step": 2
+        },
+        {
+          "operation": "new-member.allocate",
+          "requires": "new-active-membership",
+          "step": 3
+        }
+      ],
+      "family": "race",
+      "id": "membership-revocation-transfer-race",
+      "status": "valid"
+    }
+  ],
+  "lineage_rules": [
+    "successor-sequence-plus-one",
+    "predecessor-current-head",
+    "fork-single-authoritative-head",
+    "stale-head-rejected",
+    "revocation-denies-new-allocation",
+    "effective-before-expiry",
+    "decision-effective-limit",
+    "allocation-one-active-per-member",
+    "allocation-cas-immediate-parent",
+    "usage-correction-replaces",
+    "usage-watermark-closes-input-set",
+    "aggregate-cas-replaces-head",
+    "aggregate-shared-ancestor-once",
+    "race-loser-no-state-mutation"
+  ]
+}

@@ -194,7 +194,9 @@ fn run_with_connector(
     connector: Box<dyn AgentConnector>,
     format: &str,
 ) -> anyhow::Result<(i32, String)> {
-    let result = LocalRunner::new(config, connector).run(spec)?;
+    let result =
+        LocalRunner::for_live_benchmark(config, connector, spec.configuration.model.clone())?
+            .run(spec)?;
     let output = if format == "json" {
         report::format_json(&result)
     } else {

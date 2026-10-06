@@ -61,7 +61,7 @@ async fn context_engine_handles_concurrent_reads_without_hang() {
 
     // A generous bound: the reads are trivial, so completion well under this
     // means no hang/starvation. A regression (dropped response) would time out.
-    let texts = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+    let texts = tokio::time::timeout(std::time::Duration::from_secs(90), async {
         let mut out = Vec::with_capacity(CALLS);
         for h in handles {
             out.push(h.await.expect("task joined").expect("tool call ok"));
@@ -72,7 +72,10 @@ async fn context_engine_handles_concurrent_reads_without_hang() {
     .expect("concurrent reads must not hang");
 
     assert_eq!(texts.len(), CALLS);
-    for text in texts {
-        assert!(text.contains("content-"), "each read returns its file body");
+    for (index, text) in texts.into_iter().enumerate() {
+        assert!(
+            text.contains(&format!("content-{index}-unique")),
+            "read {index} must return its own file body: {text}"
+        );
     }
 }

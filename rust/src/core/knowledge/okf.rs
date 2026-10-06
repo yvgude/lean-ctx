@@ -199,6 +199,10 @@ fn concept_frontmatter(f: &KnowledgeFact) -> Vec<(String, Value)> {
     ));
 
     let mut extra: BTreeMap<String, Value> = BTreeMap::new();
+    extra.insert(
+        "leanctx_origin".into(),
+        serde_json::to_value(&f.origin).unwrap_or(Value::Null),
+    );
     extra.insert("leanctx_archetype".into(), f.archetype.as_type_str().into());
     extra.insert("leanctx_category".into(), f.category.clone().into());
     extra.insert("leanctx_confidence".into(), clean_f32(f.confidence));
@@ -423,6 +427,11 @@ fn build_fact(fm: &Map<String, Value>, body: &str, category: String, key: String
         .unwrap_or_else(|| sensitivity::classify_content(&value));
 
     KnowledgeFact {
+        origin: super::source_view::imported_origin(
+            &fm.get("leanctx_origin")
+                .and_then(|value| serde_json::from_value(value.clone()).ok())
+                .unwrap_or_default(),
+        ),
         category,
         key,
         value,
@@ -722,6 +731,7 @@ mod tests {
     ) -> KnowledgeFact {
         let now = Utc::now();
         KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: category.into(),
             key: key.into(),
             value: value.into(),

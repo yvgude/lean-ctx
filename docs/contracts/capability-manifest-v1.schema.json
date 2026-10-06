@@ -34,14 +34,29 @@
         "provider",
         "context_source",
         "validator",
+        "agent_connector",
+        "model_provider",
+        "knowledge_provider",
+        "outcome_evaluator",
+        "cost_estimator",
+        "quality_estimator",
+        "policy_gate",
         "scheduler",
+        "read_compression_strategy",
+        "search_retrieval",
+        "agent_runtime",
+        "addon",
+        "remote_capability",
+        "shell_output_optimization",
         "other"
       ]
     },
     "version": { "type": "string", "minLength": 1 },
-    "surfaces": { "type": "array", "items": { "type": "string" } },
+    "surfaces": { "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
     "support_matrix": {
       "type": "object",
+      "maxProperties": 256,
+      "propertyNames": { "$ref": "#/$defs/identifier" },
       "additionalProperties": { "$ref": "#/$defs/surfaceSupport" }
     },
     "local": { "type": "boolean" },
@@ -60,6 +75,8 @@
     },
     "supported_classifications": {
       "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true,
       "items": {
         "type": "string",
         "enum": ["Public", "Internal", "Confidential", "Restricted"]
@@ -70,6 +87,39 @@
     "output_schema_ref": { "type": ["string", "null"] },
     "conformance_version": { "type": "integer", "minimum": 0 }
   },
+  "allOf": [
+    {
+      "anyOf": [
+        { "properties": { "local": { "const": true } }, "required": ["local"] },
+        { "properties": { "remote": { "const": true } }, "required": ["remote"] }
+      ]
+    },
+    {
+      "if": { "properties": { "remote": { "const": true } }, "required": ["remote"] },
+      "then": {
+        "properties": {
+          "data_movement": { "enum": ["remote", "cross_region"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "remote": { "const": false } }, "required": ["remote"] },
+      "then": {
+        "properties": {
+          "data_movement": { "enum": ["none", "local_only"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "supported_classifications": { "contains": { "enum": ["Confidential", "Restricted"] } } } },
+      "then": {
+        "properties": {
+          "remote": { "const": false },
+          "data_movement": { "enum": ["none", "local_only"] }
+        }
+      }
+    }
+  ],
   "$defs": {
     "identifier": {
       "type": "string",

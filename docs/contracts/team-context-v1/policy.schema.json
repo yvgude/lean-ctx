@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "policy.schema.json",
+  "title": "LeanCTX Team Context Policy v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "policy_id",
+    "scope",
+    "policy_kind",
+    "rules_digest",
+    "created_by",
+    "created_at",
+    "state",
+    "valid_from",
+    "signature_envelope_digest",
+    "version",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "policy_id": { "$ref": "common.schema.json#/$defs/id" },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "policy_kind": {
+      "enum": [
+        "source_allowlist",
+        "promotion_authority",
+        "retention",
+        "export",
+        "telemetry",
+        "provider",
+        "classification"
+      ]
+    },
+    "rules_digest": {
+      "$ref": "common.schema.json#/$defs/contentDigest",
+      "description": "Digest of the policy rule document; the rule bytes themselves are not part of this record."
+    },
+    "created_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "created_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "state": { "enum": ["active", "superseded", "expired", "revoked"] },
+    "valid_from": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "valid_until": {
+      "$ref": "common.schema.json#/$defs/timestamp",
+      "description": "Exclusive end of the validity window. Absent means open-ended. Must be strictly greater than valid_from."
+    },
+    "supersedes": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Cross-object supersession: record digest of the policy this one replaces."
+    },
+    "superseded_by": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Cross-object supersession: record digest of the policy that replaced this one."
+    },
+    "revoked_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "revoked_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "revocation_reason_code": { "$ref": "common.schema.json#/$defs/reasonCode" },
+    "signature_envelope_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Record digest of the signature-envelope whose signed_payload_kind is 'policy' and whose signed_payload_digest is this record's digest with signature_envelope_digest omitted."
+    },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "parent_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/idempotencyKey" }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/casLineage" },
+    {
+      "if": {
+        "properties": { "state": { "const": "revoked" } },
+        "required": ["state"]
+      },
+      "then": { "required": ["revoked_by", "revoked_at", "revocation_reason_code"] },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["revoked_by"] },
+            { "required": ["revoked_at"] },
+            { "required": ["revocation_reason_code"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "state": { "const": "superseded" } },
+        "required": ["state"]
+      },
+      "then": { "required": ["superseded_by"] }
+    },
+    {
+      "if": {
+        "properties": { "state": { "const": "expired" } },
+        "required": ["state"]
+      },
+      "then": { "required": ["valid_until"] }
+    }
+  ]
+}

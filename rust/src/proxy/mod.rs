@@ -58,7 +58,10 @@ pub mod gateway_identity;
 pub mod google;
 pub mod history_prune;
 pub mod holdout;
+#[cfg(test)]
+mod host_journey_tests;
 pub mod image_compression;
+pub mod inference_manifest_operator;
 #[cfg(test)]
 mod integration_tests;
 mod intent;
@@ -67,12 +70,12 @@ pub mod latency_guard;
 pub mod leaderboard;
 mod lineage;
 pub mod metrics;
-pub mod model_router;
 pub mod models_api;
 pub mod ocla_cache_bridge;
 pub mod openai;
 pub mod openai_responses;
 pub mod openai_responses_ws;
+pub mod outbound_model_policy;
 pub mod output_savings;
 pub mod pii;
 pub mod pipeline_bench;
@@ -86,15 +89,19 @@ pub mod prose;
 pub mod prose_compress;
 pub mod prose_patterns;
 pub mod prose_ranker;
+pub(crate) mod provider_headers;
 pub mod providers;
 pub mod quality_lab_api;
 pub mod reasoning_budget;
+#[cfg(test)]
+mod reference_tests;
 pub mod response_optimizer;
 #[allow(dead_code)]
 pub(crate) mod response_shaper;
 pub mod rollout;
 pub mod routing;
-pub mod routing_feedback;
+#[doc(hidden)]
+pub mod sensitive_transport;
 #[cfg(feature = "shape-xlat")]
 pub mod shape_xlat;
 #[allow(dead_code)]
@@ -116,6 +123,8 @@ pub mod usage_parity;
 pub mod usage_sink;
 pub mod value_gate_proxy;
 pub mod verbosity;
+#[cfg(test)]
+mod via_p0_characterization_tests;
 pub mod web_app;
 #[allow(dead_code)]
 pub(crate) mod web_app_middleware;

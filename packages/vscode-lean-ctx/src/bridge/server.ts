@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Loopback HTTP server of the semantic bridge. No `vscode` import.
 
 import { timingSafeEqual } from "crypto";

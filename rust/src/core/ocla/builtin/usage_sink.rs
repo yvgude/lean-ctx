@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinUsageSink — accumulates measured token usage.
 //!
 //! Wraps the existing `proxy/usage_sink.rs` / `proxy/usage.rs` path behind
@@ -45,6 +46,10 @@ impl Default for BuiltinUsageSink {
 }
 
 impl OclaService for BuiltinUsageSink {
+    fn manifest(&self) -> crate::core::ocla::OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+        crate::core::ocla::capability_fabric::builtin_manifest(&self.capability())
+    }
+
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::UsageSink)
     }

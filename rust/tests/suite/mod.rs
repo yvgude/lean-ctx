@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Integration tests merged into one binary (tests/main.rs) so target/
 //! holds one linked test artifact instead of ~100 (was 17-25 GB of disk).
 //! Add new integration tests as modules here, NOT as new tests/*.rs files —
@@ -13,6 +15,7 @@ mod benchmark_compare_integration;
 mod capabilities_contract_up_to_date;
 mod capability_comparison_fixtures;
 mod cli_anti_inflation;
+mod cli_cache_errors;
 mod cli_characterization;
 mod cli_help_safety_1906;
 mod cloud_pro_features_e2e;
@@ -66,6 +69,8 @@ mod mcp_fast_initialize_669;
 mod mcp_manifest_up_to_date;
 mod mcp_optout_281;
 mod mcp_preinit_method_not_found_1454;
+#[path = "mcp_fast_initialize_669/process.rs"]
+mod mcp_process;
 #[cfg(unix)]
 mod mcp_pty_startup_1595;
 mod metrics_contract;
@@ -90,6 +95,7 @@ mod provider_wiring_proof;
 mod proxy_smoke;
 mod quick_settings_427;
 mod read_fidelity;
+mod read_observation_acceptance;
 mod reference_docs_drift;
 mod reranking_scenarios;
 mod retrieval_eval;

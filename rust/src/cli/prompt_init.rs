@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx init --prompt [off]`: puts the value segment into the shell
 //! prompt — zsh right prompt, bash `PS1` prefix, fish right prompt.
 //!

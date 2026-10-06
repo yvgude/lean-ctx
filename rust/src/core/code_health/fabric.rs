@@ -90,6 +90,7 @@ pub fn build_artifacts(health: &ProjectHealth) -> ConsolidationArtifacts {
             })),
         ));
         artifacts.facts.push(ExtractedFact {
+            origin: crate::core::knowledge::FactOrigin::Unverified,
             category: FACT_CATEGORY.to_string(),
             key: id,
             value: format!("cognitive complexity {} (line {})", h.cognitive, h.line),

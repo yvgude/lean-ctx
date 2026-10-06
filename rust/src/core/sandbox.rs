@@ -471,6 +471,55 @@ fn execute_with_stdin(
     }
     cmd.arg(code);
     apply_sandbox_env(&mut cmd, runtime);
+    run_runtime_command(cmd, timeout)
+}
+
+/// All level-zero interpreter, compiler and compiled-program launches pass
+/// here. A protected MCP process must delegate even when optional sandboxing
+/// is disabled; it must never spawn a child with access to its context store.
+fn run_runtime_command(mut cmd: Command, timeout: u64) -> Result<(String, String, i32), String> {
+    #[cfg(unix)]
+    {
+        use crate::core::protected_execution::{Mode, launch_mode};
+        match launch_mode()? {
+            Mode::Brokered(client) => {
+                let executable = resolve_program_path(&cmd)?;
+                let executable = executable.to_str().ok_or("runtime path is not UTF-8")?;
+                let args: Vec<&str> = cmd
+                    .get_args()
+                    .map(|arg| arg.to_str().ok_or("runtime argument is not UTF-8"))
+                    .collect::<Result<_, _>>()?;
+                let env: Vec<(String, String)> = cmd
+                    .get_envs()
+                    .filter_map(|(key, value)| value.map(|value| (key, value)))
+                    .map(|(key, value)| {
+                        Ok((
+                            key.to_str()
+                                .ok_or("runtime environment key is not UTF-8")?
+                                .to_owned(),
+                            value
+                                .to_str()
+                                .ok_or("runtime environment value is not UTF-8")?
+                                .to_owned(),
+                        ))
+                    })
+                    .collect::<Result<_, String>>()?;
+                return client.session_program(
+                    executable,
+                    &args,
+                    &env,
+                    timeout,
+                    cmd.get_current_dir(),
+                );
+            }
+            Mode::Sandboxed(_) => {
+                return Err("runtime execution must use the supervised program channel".into());
+            }
+            Mode::Direct => {}
+        }
+    }
+    #[cfg(not(unix))]
+    let _protected = crate::cli::protected_child_prefix()?;
     // GH #1347: isolate child into its own process group so an interactive
     // shell (bash -ic) cannot SIGTSTP the MCP server, and close stdin to
     // prevent terminal job-control attempts.
@@ -480,14 +529,53 @@ fn execute_with_stdin(
     #[cfg(unix)]
     cmd.process_group(0);
 
+    let program = cmd.get_program().to_string_lossy().into_owned();
     let output = wait_with_timeout(&mut cmd, timeout, |e| {
-        format!("Failed to spawn {}: {e}", runtime.command)
+        format!("Failed to spawn {program}: {e}")
     })?;
     Ok((
         crate::shell::decode_output(&output.stdout),
         crate::shell::decode_output(&output.stderr),
         crate::shell::exit_status::exit_code(output.status),
     ))
+}
+
+#[cfg(unix)]
+fn resolve_program_path(cmd: &Command) -> Result<std::path::PathBuf, String> {
+    use std::os::unix::fs::PermissionsExt;
+    let program = std::path::Path::new(cmd.get_program());
+    if program.is_absolute() {
+        return Ok(program.to_path_buf());
+    }
+    let cwd = cmd
+        .get_current_dir()
+        .map(std::path::Path::to_path_buf)
+        .unwrap_or(std::env::current_dir().map_err(|_| "runtime working directory unavailable")?);
+    if program.components().count() > 1 {
+        return Ok(cwd.join(program));
+    }
+    let path = cmd
+        .get_envs()
+        .find(|(key, _)| *key == "PATH")
+        .and_then(|(_, value)| value.map(std::ffi::OsStr::to_os_string))
+        .or_else(|| std::env::var_os("PATH"))
+        .ok_or("runtime PATH unavailable")?;
+    for directory in std::env::split_paths(&path) {
+        let directory = if directory.is_absolute() {
+            directory
+        } else {
+            cwd.join(directory)
+        };
+        let candidate = directory.join(program);
+        if candidate
+            .metadata()
+            .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
+        {
+            // Preserve argv[0] for shims such as rustup's rustc symlink.
+            return Ok(candidate);
+        }
+    }
+    Err("runtime executable unavailable".into())
 }
 
 fn execute_with_file(
@@ -519,20 +607,7 @@ fn execute_with_file(
         }
         cmd.arg(&file_path);
         apply_sandbox_env(&mut cmd, runtime);
-        cmd.stdin(std::process::Stdio::null());
-        cmd.stdout(std::process::Stdio::piped());
-        cmd.stderr(std::process::Stdio::piped());
-        #[cfg(unix)]
-        cmd.process_group(0);
-
-        let output = wait_with_timeout(&mut cmd, timeout, |e| {
-            format!("Failed to spawn {}: {e}", runtime.command)
-        })?;
-        Ok((
-            crate::shell::decode_output(&output.stdout),
-            crate::shell::decode_output(&output.stderr),
-            crate::shell::exit_status::exit_code(output.status),
-        ))
+        run_runtime_command(cmd, timeout)
     };
 
     let _ = std::fs::remove_file(&file_path);
@@ -556,18 +631,11 @@ fn execute_rust(
     }
     compile_cmd.env("LEAN_CTX_SANDBOX", "1");
 
-    let compile = compile_cmd
-        .output()
-        .map_err(|e| format!("rustc not found: {e}"))?;
+    let (_, stderr, code) = run_runtime_command(compile_cmd, timeout)?;
 
-    if !compile.status.success() {
-        let stderr = crate::shell::decode_output(&compile.stderr);
+    if code != 0 {
         let _ = std::fs::remove_file(&binary_path);
-        return Ok((
-            String::new(),
-            stderr,
-            crate::shell::exit_status::exit_code(compile.status),
-        ));
+        return Ok((String::new(), stderr, code));
     }
 
     let mut run_cmd = Command::new(&binary_path);
@@ -579,22 +647,9 @@ fn execute_rust(
         }
     }
     run_cmd.env("LEAN_CTX_SANDBOX", "1");
-    run_cmd.stdin(std::process::Stdio::null());
-    run_cmd.stdout(std::process::Stdio::piped());
-    run_cmd.stderr(std::process::Stdio::piped());
-    #[cfg(unix)]
-    run_cmd.process_group(0);
-
-    let output = wait_with_timeout(&mut run_cmd, timeout, |e| {
-        format!("Failed to run compiled binary: {e}")
-    })?;
+    let result = run_runtime_command(run_cmd, timeout);
     let _ = std::fs::remove_file(&binary_path);
-
-    Ok((
-        crate::shell::decode_output(&output.stdout),
-        crate::shell::decode_output(&output.stderr),
-        crate::shell::exit_status::exit_code(output.status),
-    ))
+    result
 }
 
 fn wait_with_timeout(
@@ -736,8 +791,42 @@ pub mod tests {
         find_binary(&["python3", "python"]).is_some()
     }
 
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn level_zero_interpreters_and_compilers_require_the_protected_channel() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let isolation = crate::core::data_dir::isolated_data_dir();
+        let _session = crate::cli::pin_synthetic_session(isolation.path()).unwrap();
+        let runtime = RuntimeConfig {
+            command: "/bin/sh".into(),
+            args: vec!["-c".into()],
+            needs_temp_file: false,
+            file_extension: "sh".into(),
+            env: HashMap::new(),
+        };
+        let stdin_error = execute_with_stdin(&runtime, "printf bypass", 1, None).unwrap_err();
+        assert!(
+            stdin_error.contains("supervised execution channel"),
+            "{stdin_error}"
+        );
+        let file_error = execute_with_file(&runtime, "printf bypass", 1, None).unwrap_err();
+        assert!(
+            file_error.contains("supervised execution channel"),
+            "{file_error}"
+        );
+        let source = tempfile::Builder::new().suffix(".rs").tempfile().unwrap();
+        std::fs::write(source.path(), "fn main() {}\n").unwrap();
+        let rust_error = execute_rust(source.path(), 1, None).unwrap_err();
+        assert!(
+            rust_error.contains("supervised execution channel"),
+            "{rust_error}"
+        );
+        assert!(!source.path().with_extension("").exists());
+    }
+
     #[test]
     fn execute_python_hello() {
+        let _lock = crate::core::data_dir::test_env_lock();
         if !python_available() {
             return;
         }
@@ -753,6 +842,7 @@ pub mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn execute_in_resolves_relative_paths_against_the_given_directory() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().expect("tempdir");
         std::fs::write(dir.path().join("only-here.txt"), "x").expect("write marker");
 
@@ -774,6 +864,7 @@ pub mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn execute_in_reports_a_missing_directory_instead_of_falling_back() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let dir = tempfile::tempdir().expect("tempdir");
         let missing = dir.path().join("does-not-exist");
 
@@ -788,6 +879,7 @@ pub mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn execute_shell_echo() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let result = execute("shell", "echo 'test output'", None);
         assert_eq!(result.exit_code, 0);
         assert!(result.stdout.contains("test output"));
@@ -838,6 +930,7 @@ pub mod tests {
 
     #[test]
     fn execute_python_error() {
+        let _lock = crate::core::data_dir::test_env_lock();
         if !python_available() {
             return;
         }
@@ -848,6 +941,7 @@ pub mod tests {
 
     #[test]
     fn execute_with_timeout() {
+        let _lock = crate::core::data_dir::test_env_lock();
         if !python_available() {
             return;
         }
@@ -863,6 +957,7 @@ pub mod tests {
     /// GH #1504: partial stdout emitted before a timeout must be preserved.
     #[test]
     fn timeout_preserves_partial_output() {
+        let _lock = crate::core::data_dir::test_env_lock();
         if !python_available() {
             return;
         }
@@ -907,6 +1002,7 @@ pub mod tests {
 
     #[test]
     fn sandbox_env_is_set() {
+        let _lock = crate::core::data_dir::test_env_lock();
         if !python_available() {
             return;
         }
@@ -922,6 +1018,7 @@ pub mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn batch_execute_multiple() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let items = vec![
             ("python".to_string(), "print(1+1)".to_string()),
             ("shell".to_string(), "echo hello".to_string()),

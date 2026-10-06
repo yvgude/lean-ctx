@@ -31,6 +31,13 @@ pub fn generated_docs() -> Vec<(&'static str, String)> {
     vec![
         ("mcp-tools.md", mcp_tools_markdown()),
         ("config-keys.md", config_keys_markdown()),
+        (
+            "host-coverage.md",
+            format!(
+                "{DO_NOT_EDIT}\n\n{}",
+                crate::core::host_coverage::matrix_markdown()
+            ),
+        ),
     ]
 }
 
@@ -261,9 +268,7 @@ mod tests {
 
     #[test]
     fn generated_docs_are_nonempty_and_named() {
-        let docs = generated_docs();
-        assert_eq!(docs.len(), 2);
-        for (name, body) in docs {
+        for (name, body) in generated_docs() {
             assert!(
                 std::path::Path::new(name)
                     .extension()

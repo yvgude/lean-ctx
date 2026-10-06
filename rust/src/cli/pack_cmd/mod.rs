@@ -64,6 +64,8 @@ pub(crate) fn cmd_pack(args: &[String]) {
         "checkpoint-seal" => checkpoint::cmd_pack_checkpoint_seal(args),
         "checkpoint-inspect" => checkpoint::cmd_pack_checkpoint_inspect(args),
         "snapshot-v1-inspect" => checkpoint::cmd_pack_snapshot_v1_inspect(args),
+        "migrate" => cmd_pack_migrate(args),
+        "rollback" => cmd_pack_rollback(args),
         "auto-load" => cmd_pack_auto_load(args),
         "publish" => cmd_pack_publish(args),
         "send" => cmd_pack_send(args, &project_root),
@@ -93,9 +95,11 @@ fn print_usage() {
          \x20 export   <name>[@version] [--output=<path>] [--sign] [--private] [--allow-secrets]  Export to .{ext} file (--sign: ed25519, required for publish; --private: hidden on the hosted registry; secret scan blocks credential-shaped content unless --allow-secrets)\n\
          \x20 import   <file.{ext}> [--apply]            Import from file\n\
          \x20 verify   <file.{ext}> [...]                Verify integrity + signature, no install (spec \u{a7}8/\u{a7}9; exit 1 on failure)\n\
-         \x20 checkpoint-seal --checkpoint=<payload.json> --output=<file.{ext}> --name=<name> [--version=<v>] [--unsigned]\n\
+         \x20 checkpoint-seal (--checkpoint=<payload.json> | --session=<id>) --output=<file.{ext}> --name=<name> [--version=<v>] [--unsigned]\n\
          \x20 checkpoint-inspect <file.{ext}>             Verify and emit the open checkpoint envelope as bounded JSON\n\
          \x20 snapshot-v1-inspect <file.json>              Verify bounded signed SnapshotV1 migration input\n\
+         \x20 migrate  <file.lctxpkg>                    Verify and copy legacy package byte-for-byte to .{ext}\n\
+         \x20 rollback <file.ctxpkg.migration.json>      Remove a verified migrated copy and retain its legacy source\n\
          \x20 install  <name>[@version] [--file=<path>]    Apply package to current project\n\
          \x20 install  <ns>/<name>[@version]              Install from the hosted registry\n\
          \x20                                             (ctxpkg.com; verifies sha256 + signature, pins in ctxpkg.lock,\n\

@@ -16,6 +16,7 @@ use crate::core::content_chunk::ContentChunk;
 /// A knowledge fact extracted from provider data, ready for `ProjectKnowledge.remember()`.
 #[derive(Debug, Clone)]
 pub struct ExtractedFact {
+    pub origin: crate::core::knowledge::FactOrigin,
     pub category: String,
     pub key: String,
     pub value: String,
@@ -32,6 +33,7 @@ pub fn extract_facts(chunks: &[ContentChunk]) -> Vec<ExtractedFact> {
         }
 
         let provider = chunk.provider_id().unwrap_or("unknown");
+        let start = facts.len();
         match chunk.kind {
             crate::core::bm25_index::ChunkKind::Issue
             | crate::core::bm25_index::ChunkKind::Ticket => {
@@ -47,6 +49,14 @@ pub fn extract_facts(chunks: &[ContentChunk]) -> Vec<ExtractedFact> {
                 extract_db_facts(chunk, provider, &mut facts);
             }
             _ => {}
+        }
+        for fact in &mut facts[start..] {
+            fact.origin = chunk
+                .origin
+                .clone()
+                .map_or(crate::core::knowledge::FactOrigin::Unverified, |origin| {
+                    crate::core::knowledge::FactOrigin::Provider(Box::new(origin))
+                });
         }
     }
 
@@ -88,6 +98,7 @@ fn extract_issue_facts(chunk: &ContentChunk, provider: &str, facts: &mut Vec<Ext
         .unwrap_or(&chunk.file_path);
 
     facts.push(ExtractedFact {
+        origin: crate::core::knowledge::FactOrigin::Unverified,
         category: category.to_string(),
         key: format!("{provider}#{issue_id}"),
         value: format!("{} [{}]", chunk.symbol_name, state),
@@ -96,6 +107,7 @@ fn extract_issue_facts(chunk: &ContentChunk, provider: &str, facts: &mut Vec<Ext
 
     for ref_path in &chunk.references {
         facts.push(ExtractedFact {
+            origin: crate::core::knowledge::FactOrigin::Unverified,
             category: "file_mentions".to_string(),
             key: ref_path.clone(),
             value: format!(
@@ -121,6 +133,7 @@ fn extract_pr_facts(chunk: &ContentChunk, provider: &str, facts: &mut Vec<Extrac
         .unwrap_or(&chunk.file_path);
 
     facts.push(ExtractedFact {
+        origin: crate::core::knowledge::FactOrigin::Unverified,
         category: "recent_changes".to_string(),
         key: format!("{provider}#PR{pr_id}"),
         value: format!("{} [{}]", chunk.symbol_name, state),
@@ -129,6 +142,7 @@ fn extract_pr_facts(chunk: &ContentChunk, provider: &str, facts: &mut Vec<Extrac
 
     for ref_path in &chunk.references {
         facts.push(ExtractedFact {
+            origin: crate::core::knowledge::FactOrigin::Unverified,
             category: "changed_files".to_string(),
             key: ref_path.clone(),
             value: format!("Changed in PR {provider}#{pr_id}: {}", chunk.symbol_name),
@@ -145,6 +159,7 @@ fn extract_wiki_facts(chunk: &ContentChunk, provider: &str, facts: &mut Vec<Extr
         .unwrap_or(&chunk.file_path);
 
     facts.push(ExtractedFact {
+        origin: crate::core::knowledge::FactOrigin::Unverified,
         category: "documentation".to_string(),
         key: format!("{provider}#{page_id}"),
         value: chunk.symbol_name.clone(),
@@ -153,6 +168,7 @@ fn extract_wiki_facts(chunk: &ContentChunk, provider: &str, facts: &mut Vec<Extr
 
     for ref_path in &chunk.references {
         facts.push(ExtractedFact {
+            origin: crate::core::knowledge::FactOrigin::Unverified,
             category: "documented_files".to_string(),
             key: ref_path.clone(),
             value: format!("Documented in {provider}#{page_id}: {}", chunk.symbol_name),
@@ -169,6 +185,7 @@ fn extract_db_facts(chunk: &ContentChunk, provider: &str, facts: &mut Vec<Extrac
         .unwrap_or(&chunk.file_path);
 
     facts.push(ExtractedFact {
+        origin: crate::core::knowledge::FactOrigin::Unverified,
         category: "data_model".to_string(),
         key: format!("{provider}#{table_id}"),
         value: chunk.symbol_name.clone(),

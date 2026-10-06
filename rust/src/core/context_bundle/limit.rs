@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Output budget: a size limit and the unit it is measured in.
 
 use std::fmt;

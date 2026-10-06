@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Unit tests for the ctx_shell guard, compression and auth-flow detection.
 //!
 //! Split out of `ctx_shell.rs` (#1768 grew it past the 1500-line LOC gate).

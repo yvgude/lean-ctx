@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
@@ -437,6 +439,9 @@ pub(crate) fn write_checkpoint_bundle(
     output: &Path,
     signing_key: Option<&ed25519_dalek::SigningKey>,
 ) -> Result<PackageManifest, String> {
+    if !crate::core::contracts::is_package_file(output) {
+        return Err("checkpoint output requires a supported package extension".into());
+    }
     super::verify::validate_kind_coherence(&manifest, &content)
         .map_err(|errors| errors.join("; "))?;
     let checkpoint = content
@@ -461,28 +466,28 @@ pub(crate) fn write_checkpoint_bundle(
         content,
     };
     let json = serde_json::to_string_pretty(&bundle).map_err(|error| error.to_string())?;
+    let report = super::verify::verify_package_text(&json);
+    if !report.valid() {
+        return Err(format!(
+            "checkpoint package failed verification before writing: {}",
+            report.errors.join("; ")
+        ));
+    }
     if let Some(parent) = output.parent() {
         std::fs::create_dir_all(parent).map_err(|error| format!("create output dir: {error}"))?;
     }
     atomic_write(output, json.as_bytes())?;
-    let report = super::verify::verify_package_file(output)?;
-    if !report.valid() {
-        return Err(format!(
-            "written checkpoint package failed verification: {}",
-            report.errors.join("; ")
-        ));
-    }
     Ok(manifest)
 }
 
 pub(crate) fn read_checkpoint_bundle(
     path: &Path,
 ) -> Result<(PackageManifest, CheckpointPackageContentV1), String> {
-    let report = super::verify::verify_package_file(path)?;
+    let json = super::verify::read_package_text(path)?;
+    let report = super::verify::verify_package_text(&json);
     if !report.valid() {
         return Err(report.errors.join("; "));
     }
-    let json = std::fs::read_to_string(path).map_err(|error| format!("read package: {error}"))?;
     let bundle: ExportBundle =
         serde_json::from_str(&json).map_err(|error| format!("parse package: {error}"))?;
     let checkpoint = bundle
@@ -490,6 +495,31 @@ pub(crate) fn read_checkpoint_bundle(
         .checkpoint
         .ok_or("package has no checkpoint content")?;
     Ok((bundle.manifest, checkpoint))
+}
+
+/// Validate a network context package without installing it. The transport
+/// authenticates its sender separately; executable addons use the consent gate.
+pub(crate) fn parse_context_transfer(
+    json: &str,
+) -> Result<(PackageManifest, PackageContent), String> {
+    if json.len() as u64 > crate::core::contracts::MAX_PACKAGE_FILE_BYTES {
+        return Err("context package exceeds the package size limit".into());
+    }
+    let bundle: ExportBundle =
+        serde_json::from_str(json).map_err(|error| format!("parse package: {error}"))?;
+    bundle
+        .manifest
+        .validate()
+        .map_err(|errors| errors.join("; "))?;
+    super::verify::validate_kind_coherence(&bundle.manifest, &bundle.content)
+        .map_err(|errors| errors.join("; "))?;
+    if bundle.manifest.kind == super::manifest::PackageKind::Addon {
+        return Err(
+            "addon packages require explicit capability consent and the addon trust chain".into(),
+        );
+    }
+    LocalRegistry::verify_bundle_integrity(&bundle, json)?;
+    Ok((bundle.manifest, bundle.content))
 }
 
 use super::verify::{compact_json_text, extract_top_level_value_text};
@@ -690,6 +720,16 @@ mod tests {
         assert!(bytes > 0);
 
         let reg2 = LocalRegistry::open_at(&dir.path().join("other")).unwrap();
+        let json = std::fs::read_to_string(&export_path).unwrap();
+        parse_context_transfer(&json).unwrap();
+        for key in ["content", "cont\\u0065nt", "manifest"] {
+            let duplicate = format!(
+                "{},\"{key}\":{{}}}}",
+                json.trim_end().strip_suffix('}').unwrap()
+            );
+            let error = parse_context_transfer(&duplicate).unwrap_err();
+            assert!(error.contains("duplicate field"), "{key}: {error}");
+        }
         let imported = reg2.import_from_file(&export_path).unwrap();
         assert_eq!(imported.name, "export-test");
         assert_eq!(reg2.list().unwrap().len(), 1);

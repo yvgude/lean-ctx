@@ -18,6 +18,7 @@ pub(crate) mod loader;
 pub(crate) mod lockfile;
 #[allow(dead_code)]
 pub(crate) mod manifest;
+pub(crate) mod migration;
 #[allow(dead_code)]
 pub(crate) mod registry;
 pub(crate) mod remote;

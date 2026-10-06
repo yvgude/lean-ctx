@@ -1,0 +1,29 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "seat-value-signature-envelope.schema.json",
+  "title": "SeatValueSignatureEnvelopeV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "envelope_id", "organization_id", "alg", "key_id", "key_epoch", "key_purpose", "issuer_id", "payload_kind", "payload_digest", "public_key", "signature", "signed_at", "idempotency_key"],
+  "properties": {
+    "v": {"const": 1},
+    "envelope_id": {"$ref": "common.schema.json#/$defs/id"},
+    "organization_id": {"$ref": "common.schema.json#/$defs/id"},
+    "alg": {"const": "ed25519"},
+    "key_id": {"$ref": "common.schema.json#/$defs/keyId"},
+    "key_epoch": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "key_purpose": {"enum": ["billing-entitlement", "seat-authority", "value-attestation"]},
+    "issuer_id": {"$ref": "common.schema.json#/$defs/issuerId"},
+    "payload_kind": {"$ref": "common.schema.json#/$defs/signedKind"},
+    "payload_digest": {"$ref": "common.schema.json#/$defs/digest"},
+    "public_key": {"type": "string", "pattern": "^[A-Za-z0-9_-]{43}$"},
+    "signature": {"type": "string", "pattern": "^[A-Za-z0-9_-]{86}$"},
+    "signed_at": {"$ref": "common.schema.json#/$defs/timestamp"},
+    "idempotency_key": {"$ref": "common.schema.json#/$defs/idempotencyKey"}
+  },
+  "allOf": [
+    {"if": {"properties": {"payload_kind": {"const": "seat-entitlement"}}, "required": ["payload_kind"]}, "then": {"properties": {"key_purpose": {"const": "billing-entitlement"}}}},
+    {"if": {"properties": {"payload_kind": {"enum": ["seat-limit-decision", "seat-allocation"]}}, "required": ["payload_kind"]}, "then": {"properties": {"key_purpose": {"const": "seat-authority"}}}},
+    {"if": {"properties": {"payload_kind": {"enum": ["seat-usage", "team-value-aggregate"]}}, "required": ["payload_kind"]}, "then": {"properties": {"key_purpose": {"const": "value-attestation"}}}}
+  ]
+}

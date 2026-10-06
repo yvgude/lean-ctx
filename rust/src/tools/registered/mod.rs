@@ -84,6 +84,7 @@ pub mod ctx_transcript_compact;
 pub mod ctx_tree;
 pub mod ctx_url_read;
 pub mod ctx_verify;
+pub mod ctx_work_graph;
 pub mod ctx_workflow;
 pub mod shell_alias;
 

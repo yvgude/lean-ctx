@@ -114,7 +114,12 @@ fn concurrent_appends_do_not_fork_the_chain() {
         .map(|t| {
             std::thread::spawn(move || {
                 for i in 0..25 {
-                    audit_trail::record(AuditEntryData {
+                    // `record` is fire-and-forget by design (a bounded lock wait
+                    // may drop an entry under heavy contention). `try_record`
+                    // appends nothing on Err, so retrying is safe; the chain must
+                    // still hold every entry without forking.
+                    let mut attempts = 0;
+                    while audit_trail::try_record(AuditEntryData {
                         agent_id: format!("agent-{t}"),
                         tool: format!("tool-{i}"),
                         action: None,
@@ -122,7 +127,12 @@ fn concurrent_appends_do_not_fork_the_chain() {
                         output_tokens: i,
                         role: "developer".into(),
                         event_type: AuditEventType::ToolCall,
-                    });
+                    })
+                    .is_err()
+                    {
+                        attempts += 1;
+                        assert!(attempts < 200, "append never acquired the trail lock");
+                    }
                 }
             })
         })

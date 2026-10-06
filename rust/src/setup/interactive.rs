@@ -53,11 +53,11 @@ pub fn run_setup() {
     let allow_rule_steering =
         inject_rules && !crate::core::config::Config::load().declines_rule_steering();
 
-    terminal_ui::print_step_header(1, 13, "Shell Hook");
+    terminal_ui::print_step_header(1, 14, "Shell Hook");
     crate::cli::cmd_init(&["--global".to_string()]);
     crate::shell_hook::install_all(false);
 
-    terminal_ui::print_step_header(2, 13, "Daemon");
+    terminal_ui::print_step_header(2, 14, "Daemon");
     if crate::daemon::is_daemon_running() {
         terminal_ui::print_status_ok("Daemon running — restarting with current binary…");
         let _ = crate::daemon::stop_daemon();
@@ -69,7 +69,7 @@ pub fn run_setup() {
         terminal_ui::print_status_warn(&format!("Daemon start failed: {e}"));
     }
 
-    terminal_ui::print_step_header(3, 13, "AI Tool Detection");
+    terminal_ui::print_step_header(3, 14, "AI Tool Detection");
 
     let targets = crate::core::editor_registry::build_targets(&home);
     // #281: in MCP-disabled environments (`auto_update_mcp = false`) editors are
@@ -156,7 +156,7 @@ pub fn run_setup() {
 
     configure_plan_mode_settings(&newly_configured, &already_configured);
 
-    terminal_ui::print_step_header(4, 13, "Agent Rules");
+    terminal_ui::print_step_header(4, 14, "Agent Rules");
     let rules_result = if inject_rules {
         let r = crate::rules_inject::inject_all_rules(&home);
         for name in &r.injected {
@@ -205,7 +205,7 @@ pub fn run_setup() {
         }
     }
 
-    terminal_ui::print_step_header(5, 13, "API Proxy (optional)");
+    terminal_ui::print_step_header(5, 14, "API Proxy (optional)");
     {
         let cfg = crate::core::config::Config::load();
         let proxy_port = crate::proxy_setup::default_port();
@@ -261,7 +261,7 @@ pub fn run_setup() {
         }
     }
 
-    terminal_ui::print_step_header(6, 13, "IDE Config Access (optional)");
+    terminal_ui::print_step_header(6, 14, "IDE Config Access (optional)");
     {
         let cfg = crate::core::config::Config::load();
         match cfg.allow_ide_config_dirs {
@@ -311,7 +311,7 @@ pub fn run_setup() {
         }
     }
 
-    terminal_ui::print_step_header(7, 13, "Skill Files");
+    terminal_ui::print_step_header(7, 14, "Skill Files");
     if inject_skills {
         let skill_result = install_skill_files(&home);
         for (name, installed) in &skill_result {
@@ -334,7 +334,7 @@ pub fn run_setup() {
         );
     }
 
-    terminal_ui::print_step_header(8, 13, "Environment Check");
+    terminal_ui::print_step_header(8, 14, "Environment Check");
     let lean_dir = crate::core::data_dir::lean_ctx_data_dir()
         .unwrap_or_else(|_| home.join(".config/lean-ctx"));
     if lean_dir.exists() {
@@ -373,45 +373,44 @@ pub fn run_setup() {
     // marker can never re-collapse config/data/state/cache later (GL #623).
     crate::core::layout_pin::heal();
 
-    terminal_ui::print_step_header(9, 13, "Help Improve lean-ctx");
-    println!("  Share anonymous telemetry to make lean-ctx better:");
-    println!("  [2m  • Version, OS, architecture, random install ID[0m");
-    println!("  [2m  • Compression patterns: file-type, size bucket, mode, ratio[0m");
-    println!("  [1mNo code, no file names, no personal data — ever.[0m");
-    println!("  [2mInspect anytime: lean-ctx telemetry show[0m");
+    terminal_ui::print_step_header(9, 14, "Help Improve lean-ctx");
+    println!("  lean-ctx sends anonymous usage telemetry (on by default):");
+    for line in crate::core::telemetry_consent::disclosure_lines() {
+        println!("  [2m  {line}[0m");
+    }
+    println!("  [2mSee the exact payload anytime: lean-ctx telemetry show[0m");
     println!();
-    print!("  Enable anonymous telemetry? [1m[y/N][0m ");
+    print!("  Keep anonymous telemetry on? [1m[Y/n][0m ");
     use std::io::Write;
     std::io::stdout().flush().ok();
 
+    // Enter keeps the default; only an explicit "n"/"no" opts out. Either
+    // answer is persisted, so a "no" survives every later upgrade.
     let mut input = String::new();
-    let contribute = if std::io::stdin().read_line(&mut input).is_ok() {
-        let answer = input.trim().to_lowercase();
-        answer == "y" || answer == "yes"
-    } else {
-        false
+    let keep = match std::io::stdin().read_line(&mut input) {
+        Ok(_) => !matches!(input.trim().to_lowercase().as_str(), "n" | "no"),
+        Err(_) => true,
     };
-
-    if contribute {
-        let config_path = crate::core::config::Config::path()
-            .unwrap_or_else(|| home.join(".config/lean-ctx").join("config.toml"));
-        if let Some(dir) = config_path.parent() {
-            let _ = std::fs::create_dir_all(dir);
-        }
-        let mut config_content = std::fs::read_to_string(&config_path).unwrap_or_default();
-        if !config_content.contains("[telemetry]") {
-            if !config_content.ends_with('\n') {
-                config_content.push('\n');
+    match crate::core::telemetry_consent::persist_choice(keep) {
+        Ok(()) => {
+            crate::core::telemetry_consent::mark_notice_seen();
+            if keep {
+                terminal_ui::print_status_ok(
+                    "On — thank you! Turn off anytime: lean-ctx telemetry off",
+                );
+            } else {
+                terminal_ui::print_status_skip(
+                    "Off — nothing is sent. Re-enable: lean-ctx telemetry on",
+                );
             }
-            config_content.push_str("\n[telemetry]\nenabled = true\n");
         }
-        let _ = crate::config_io::write_atomic_with_backup(&config_path, &config_content);
-        terminal_ui::print_status_ok("Enabled — thank you!");
-    } else {
-        terminal_ui::print_status_skip("Skipped — enable later with: lean-ctx telemetry on");
+        Err(error) => terminal_ui::print_status_skip(&format!(
+            "Could not save your choice ({error}); run lean-ctx telemetry {}",
+            if keep { "on" } else { "off" }
+        )),
     }
 
-    terminal_ui::print_step_header(10, 13, "Auto-Updates");
+    terminal_ui::print_step_header(10, 14, "Auto-Updates");
     println!("  Keep lean-ctx up to date automatically.");
     println!("  \x1b[1mChecks GitHub every 6h, installs only when a new release exists.\x1b[0m");
     println!(
@@ -447,13 +446,13 @@ pub fn run_setup() {
         terminal_ui::print_status_skip("Skipped — enable later: lean-ctx update --schedule");
     }
 
-    terminal_ui::print_step_header(11, 13, "Tool Profile");
+    terminal_ui::print_step_header(11, 14, "Tool Profile");
     configure_tool_profile();
 
-    terminal_ui::print_step_header(12, 13, "Advanced Tuning (optional)");
+    terminal_ui::print_step_header(12, 14, "Advanced Tuning (optional)");
     configure_premium_features(&home);
 
-    terminal_ui::print_step_header(13, 13, "Code Intelligence");
+    terminal_ui::print_step_header(13, 14, "Code Intelligence");
     let cwd = std::env::current_dir().ok();
     let cwd_is_home = cwd
         .as_ref()
@@ -539,6 +538,9 @@ pub fn run_setup() {
         }
         println!("  \x1b[2mDisable with: lean-ctx setup --no-auto-approve\x1b[0m");
     }
+
+    terminal_ui::print_step_header(14, 14, "Intelligence Runtime (optional)");
+    super::intelligence::configure_runtime();
 
     println!();
     println!(

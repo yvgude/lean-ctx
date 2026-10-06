@@ -18,7 +18,15 @@ static STARTED_AT: OnceLock<Instant> = OnceLock::new();
 static DLQ: OnceLock<DeadLetterQueue> = OnceLock::new();
 
 pub(crate) fn dead_letter_queue() -> &'static DeadLetterQueue {
-    DLQ.get_or_init(DeadLetterQueue::new)
+    DLQ.get_or_init(|| {
+        #[cfg(test)]
+        {
+            DeadLetterQueue::new()
+        }
+        #[cfg(not(test))]
+        DeadLetterQueue::persistent_default()
+            .unwrap_or_else(|error| DeadLetterQueue::unavailable(error.to_string()))
+    })
 }
 
 #[derive(Clone, Debug, Default, Eq, PartialEq, Serialize)]
@@ -96,9 +104,6 @@ pub fn check_system_health() -> SystemHealth {
     components.push(poll_capability("response_optimizer", || {
         registry.response_optimizer.capability()
     }));
-    components.push(poll_capability("model_router", || {
-        registry.model_router.capability()
-    }));
     components.push(poll_capability("efficiency_analyzer", || {
         registry.efficiency_analyzer.capability()
     }));
@@ -114,6 +119,27 @@ pub fn check_system_health() -> SystemHealth {
     components.push(poll_capability("agent_gateway", || {
         registry.agent_gateway.capability()
     }));
+    components.push(poll_capability("delivery_registry", || {
+        registry.delivery_registry.capability()
+    }));
+    match registry.adapters.health_check_all() {
+        Ok(adapters) => components.extend(adapters.into_iter().map(|adapter| ComponentHealth {
+            name: adapter.key.as_string(),
+            status: if adapter.healthy {
+                HealthStatus::Healthy
+            } else {
+                HealthStatus::Unhealthy("adapter unavailable or contract invalid".into())
+            },
+            latency_ms: None,
+            details: None,
+        })),
+        Err(_) => components.push(ComponentHealth {
+            name: "capability_adapters".into(),
+            status: HealthStatus::Unhealthy("adapter registry unavailable".into()),
+            latency_ms: None,
+            details: None,
+        }),
+    }
 
     components.push(check_a2a_bus());
     components.push(check_ledger());
@@ -136,15 +162,16 @@ pub fn check_system_health() -> SystemHealth {
 /// [`check_system_health`].
 #[doc(hidden)]
 pub fn seed_agent_registry(id: &str, role: Option<&str>, root: &str) -> Result<(), String> {
-    crate::core::agents::AgentRegistry::mutate_locked(|registry| registry.register(id, role, root))
-        .map(|_| ())
+    crate::core::agents::AgentRegistry::mutate_locked(|registry| {
+        registry.register(id, role, root, None)
+    })
+    .map(|_| ())
 }
 
 fn poll_capability<F>(name: &str, poll: F) -> ComponentHealth
 where
     F: FnOnce() -> OclaCapability,
 {
-    let started_at = Instant::now();
     let capability = poll();
     let status = match capability.status {
         OclaCapabilityStatus::Available => HealthStatus::Healthy,
@@ -158,7 +185,8 @@ where
     ComponentHealth {
         name: name.to_string(),
         status,
-        latency_ms: Some(started_at.elapsed().as_millis() as u64),
+        // Reading a declared status does not measure runtime invocation latency.
+        latency_ms: None,
         details: None,
     }
 }
@@ -215,11 +243,24 @@ fn check_budget() -> ComponentHealth {
 
 fn check_dlq(queue: &DeadLetterQueue) -> ComponentHealth {
     let started_at = Instant::now();
-    let stats = queue.stats();
-    let status = if stats.total > 500 {
-        HealthStatus::Unhealthy(format!("DLQ contains {} entries", stats.total))
-    } else if stats.total > 100 {
-        HealthStatus::Degraded(format!("DLQ contains {} entries", stats.total))
+    let Ok(stats) = queue.stats(None) else {
+        return ComponentHealth {
+            name: "dlq".into(),
+            status: HealthStatus::Unhealthy("DLQ store is unavailable".into()),
+            latency_ms: Some(started_at.elapsed().as_millis() as u64),
+            details: None,
+        };
+    };
+    let status = if stats.max_scope_depth > 950 {
+        HealthStatus::Unhealthy(format!(
+            "DLQ scope contains {} entries",
+            stats.max_scope_depth
+        ))
+    } else if stats.max_scope_depth > 800 {
+        HealthStatus::Degraded(format!(
+            "DLQ scope contains {} entries",
+            stats.max_scope_depth
+        ))
     } else {
         HealthStatus::Healthy
     };
@@ -431,7 +472,24 @@ mod tests {
     #[test]
     fn system_health_reports_all_components() {
         let report = check_system_health();
-        assert_eq!(report.components.len(), 21);
+        assert_eq!(
+            report.components.len(),
+            OclaCapabilityKind::ALL.len() + 7 + OclaRegistry::global().adapters.len()
+        );
+        assert!(
+            report
+                .components
+                .iter()
+                .any(|component| component.name == "delivery_registry")
+        );
+        for key in OclaRegistry::global().adapters.keys() {
+            assert!(
+                report
+                    .components
+                    .iter()
+                    .any(|component| component.name == key.as_string())
+            );
+        }
         assert_eq!(report.version, OCLA_API_VERSION);
     }
 
@@ -442,32 +500,46 @@ mod tests {
         assert_eq!(healthy.status, HealthStatus::Healthy);
         assert_eq!(healthy.details.as_ref().expect("details").total, 0);
 
-        for index in 0..101 {
-            queue.enqueue(crate::core::a2a::dlq::DeadLetter {
-                id: index.to_string(),
-                original_message: "message".into(),
-                target_agent: "agent".into(),
-                error: "error".into(),
-                attempts: 1,
-                first_failed_at: "2026-01-01T00:00:00Z".into(),
-                last_failed_at: "2026-01-01T00:00:00Z".into(),
-            });
+        for index in 0..801 {
+            queue
+                .enqueue(crate::core::a2a::dlq::DeadLetter {
+                    id: index.to_string(),
+                    peer_id: "legacy".into(),
+                    delivery_id: index.to_string(),
+                    tenant_id: "tenant-a".into(),
+                    project_id: "project-a".into(),
+                    delivery: crate::core::a2a::dlq::DeadLetterDelivery::LocalAgentBus,
+                    original_message: "message".into(),
+                    target_agent: "agent".into(),
+                    error: "error".into(),
+                    attempts: 1,
+                    first_failed_at: "2026-01-01T00:00:00Z".into(),
+                    last_failed_at: "2026-01-01T00:00:00Z".into(),
+                })
+                .unwrap();
         }
         assert!(matches!(
             check_dlq(&queue).status,
             HealthStatus::Degraded(_)
         ));
 
-        for index in 101..501 {
-            queue.enqueue(crate::core::a2a::dlq::DeadLetter {
-                id: index.to_string(),
-                original_message: "message".into(),
-                target_agent: "agent".into(),
-                error: "error".into(),
-                attempts: 1,
-                first_failed_at: "2026-01-01T00:00:00Z".into(),
-                last_failed_at: "2026-01-01T00:00:00Z".into(),
-            });
+        for index in 801..951 {
+            queue
+                .enqueue(crate::core::a2a::dlq::DeadLetter {
+                    id: index.to_string(),
+                    peer_id: "legacy".into(),
+                    delivery_id: index.to_string(),
+                    tenant_id: "tenant-a".into(),
+                    project_id: "project-a".into(),
+                    delivery: crate::core::a2a::dlq::DeadLetterDelivery::LocalAgentBus,
+                    original_message: "message".into(),
+                    target_agent: "agent".into(),
+                    error: "error".into(),
+                    attempts: 1,
+                    first_failed_at: "2026-01-01T00:00:00Z".into(),
+                    last_failed_at: "2026-01-01T00:00:00Z".into(),
+                })
+                .unwrap();
         }
         assert!(matches!(
             check_dlq(&queue).status,

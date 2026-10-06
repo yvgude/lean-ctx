@@ -644,6 +644,54 @@ mod tests {
     }
 
     #[test]
+    fn unicode_signature_material_is_rejected() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("unicode-bundle.zip");
+        for field in ["public_key", "signature"] {
+            for malformed in ["\u{1f512}", "0\u{20ac}", "\u{e9}\u{e9}"] {
+                let mut manifest = json!({
+                    "bundle": "evidence-bundle",
+                    "version": 1,
+                    "files": [],
+                    "signing": {
+                        "algorithm": "ed25519",
+                        "public_key": "00".repeat(32),
+                        "signed_digest": "",
+                        "signature": ""
+                    }
+                });
+                if field == "public_key" {
+                    manifest["signing"][field] = json!(malformed);
+                }
+                let digest = sha256_hex(&canonical_json(&manifest).unwrap());
+                manifest["signing"]["signed_digest"] = json!(digest);
+                manifest["signing"]["signature"] = json!("00".repeat(64));
+                manifest["signing"][field] = json!(malformed);
+                let mut zip = zip::ZipWriter::new(File::create(&path).unwrap());
+                zip.start_file("manifest.json", zip::write::SimpleFileOptions::default())
+                    .unwrap();
+                zip.write_all(&canonical_json(&manifest).unwrap()).unwrap();
+                zip.finish().unwrap();
+
+                let result = execute_verify(&command(path.clone())).unwrap();
+                assert!(result.manifest_intact, "{result:?}");
+                assert!(!result.bundle_valid);
+                assert!(!result.signature_valid);
+                let expected = if field == "public_key" {
+                    "invalid manifest public key: non-ASCII hex string".to_string()
+                } else {
+                    format!(
+                        "invalid manifest signature: signature must be 64 bytes (hex or base64), got {} chars",
+                        malformed.len()
+                    )
+                };
+                assert_eq!(result.errors, vec![expected]);
+                assert!(result.warnings.is_empty());
+            }
+        }
+    }
+
+    #[test]
     fn tampered_file_fails_hash_check() {
         let path = fixture("tampered-file", true, false, false, false);
         let result = execute_verify(&command(path.clone())).unwrap();

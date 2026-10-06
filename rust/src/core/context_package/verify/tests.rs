@@ -5,6 +5,24 @@ use crate::core::context_package::manifest::{
 };
 use chrono::Utc;
 
+#[test]
+fn self_hashed_but_malformed_content_fails_structure() {
+    let doc = signed_bundle_doc();
+    let mut value: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    value["content"] = serde_json::json!({"knowledge": "not-an-array"});
+    value["manifest"]["signature"] = serde_json::Value::Null;
+    let content = serde_json::to_string(&value["content"]).unwrap();
+    let content_hash = sha256_hex(content.as_bytes());
+    value["manifest"]["integrity"]["content_hash"] = content_hash.clone().into();
+    value["manifest"]["integrity"]["byte_size"] = content.len().into();
+    value["manifest"]["integrity"]["sha256"] =
+        sha256_hex(format!("vt-pkg:1.0.0:{content_hash}").as_bytes()).into();
+
+    let report = verify_package_text(&serde_json::to_string(&value).unwrap());
+    assert_eq!(report.structure, CheckOutcome::Fail);
+    assert!(report.errors[0].starts_with("content does not parse:"));
+}
+
 fn signed_bundle_doc() -> String {
     let content = PackageContent::default();
     // Arbitrary content text: verification hashes the document bytes and

@@ -195,6 +195,7 @@ fn scenario_bug_investigation_full_pipeline() {
         files: std::collections::HashMap::new(),
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
+        admission_policy: None,
     };
     let mut edges: Vec<IndexEdge> = Vec::new();
     let mut cache = SessionCache::new();

@@ -60,6 +60,8 @@ pub fn merge_floor(org: &ResolvedPolicy, local: Option<&ResolvedPolicy>) -> Reso
         redaction.insert(name.clone(), pattern.clone());
     }
 
+    let mut blocked_patterns = org.filters.blocked_patterns.clone();
+    super::merge_block_patterns(&mut blocked_patterns, &local.filters.blocked_patterns);
     let filters = FilterRules {
         pii: stricter_action(org.filters.pii.as_ref(), local.filters.pii.as_ref()),
         classification: stricter_action(
@@ -71,6 +73,8 @@ pub fn merge_floor(org: &ResolvedPolicy, local: Option<&ResolvedPolicy>) -> Reso
             local.filters.injection.as_ref(),
         ),
         blocked_labels: union(&org.filters.blocked_labels, &local.filters.blocked_labels),
+        blocked_patterns,
+        managed_personal_rules: local.filters.managed_personal_rules.clone(),
     };
 
     let egress = EgressRules {
@@ -88,10 +92,8 @@ pub fn merge_floor(org: &ResolvedPolicy, local: Option<&ResolvedPolicy>) -> Reso
     // Gateway governance (enterprise#25): the model ceiling can only narrow,
     // downgrade exemptions accumulate, spend caps take the stricter side.
     let routing = RoutingPolicyRules {
-        allowed_models: merge_allowed_models(
-            &org.routing.allowed_models,
-            &local.routing.allowed_models,
-        ),
+        allowed_models: org.routing.allowed_models.clone(),
+        model_ceiling_groups: merge_model_ceilings(&org.routing, &local.routing),
         forbid_downgrade_for: union(
             &org.routing.forbid_downgrade_for,
             &local.routing.forbid_downgrade_for,
@@ -141,14 +143,15 @@ pub fn merge_floor(org: &ResolvedPolicy, local: Option<&ResolvedPolicy>) -> Reso
     }
 }
 
-/// Intersect two model ceilings; one-sided lists win as-is. An empty list
-/// means "no restriction", so it never erases the other side's ceiling.
-fn merge_allowed_models(org: &[String], local: &[String]) -> Vec<String> {
-    match (org.is_empty(), local.is_empty()) {
-        (true, _) => local.to_vec(),
-        (_, true) => org.to_vec(),
-        (false, false) => org.iter().filter(|p| local.contains(p)).cloned().collect(),
-    }
+/// Preserve each ceiling as a conjunction of pattern disjunctions. Literal
+/// string intersection is not glob intersection and loses deny-all semantics.
+fn merge_model_ceilings(org: &RoutingPolicyRules, local: &RoutingPolicyRules) -> Vec<Vec<String>> {
+    super::unique_model_ceilings(
+        org.model_ceiling_groups
+            .iter()
+            .chain((!local.allowed_models.is_empty()).then_some(&local.allowed_models))
+            .chain(local.model_ceiling_groups.iter()),
+    )
 }
 
 /// Stricter (smaller) of two optional USD caps.
@@ -363,7 +366,9 @@ mod tests {
         local.budgets.max_requests_per_minute_per_person = Some(120); // weaker
 
         let m = merge_floor(&org, Some(&local));
-        assert_eq!(m.routing.allowed_models, vec!["claude-*".to_string()]);
+        assert!(m.routing.model_allowed("claude-opus-5"));
+        assert!(!m.routing.model_allowed("gpt-4o-mini"));
+        assert!(!m.routing.model_allowed("o3"));
         assert_eq!(
             m.routing.forbid_downgrade_for,
             vec!["prod".to_string(), "security".to_string()]
@@ -380,5 +385,74 @@ mod tests {
         let local = rp("local"); // no ceiling of its own
         let m = merge_floor(&org, Some(&local));
         assert_eq!(m.routing.allowed_models, vec!["claude-*".to_string()]);
+    }
+
+    #[test]
+    fn disjoint_model_ceilings_deny_instead_of_becoming_unrestricted() {
+        let mut org = rp("org");
+        org.routing.allowed_models = vec!["claude-*".into()];
+        let mut local = rp("local");
+        local.routing.allowed_models = vec!["gpt-*".into()];
+        let merged = merge_floor(&org, Some(&local));
+        for model in ["claude-opus-5", "gpt-5", "unlisted"] {
+            assert!(!merged.routing.model_allowed(model), "{model}");
+        }
+        let roundtrip: RoutingPolicyRules =
+            serde_json::from_str(&serde_json::to_string(&merged.routing).unwrap()).unwrap();
+        assert!(!roundtrip.model_allowed("unlisted"));
+        assert!(!roundtrip.model_allowed("claude-opus-5"));
+    }
+
+    #[test]
+    fn overlapping_globs_and_nested_floors_preserve_every_ceiling() {
+        let mut org = rp("org");
+        org.routing.allowed_models = vec!["claude-*".into()];
+        let mut local = rp("local");
+        local.routing.allowed_models = vec!["*-opus-*".into()];
+        let merged = merge_floor(&org, Some(&local));
+        assert!(merged.routing.model_allowed("claude-opus-5"));
+        assert!(!merged.routing.model_allowed("claude-sonnet-5"));
+        assert!(!merged.routing.model_allowed("other-opus-5"));
+        let mut third = rp("third");
+        third.routing.allowed_models = vec!["*-5".into()];
+        let nested = merge_floor(&merged, Some(&third));
+        assert!(nested.routing.model_allowed("claude-opus-5"));
+        assert!(!nested.routing.model_allowed("claude-opus-4"));
+        assert!(!nested.routing.model_allowed("other-opus-5"));
+        third.routing.model_ceiling_groups = vec![Vec::new()];
+        assert!(
+            !merge_floor(&nested, Some(&third))
+                .routing
+                .model_allowed("claude-opus-5")
+        );
+    }
+
+    #[test]
+    fn repeated_floors_do_not_multiply_identical_model_groups() {
+        let mut org = rp("org");
+        org.routing.allowed_models = vec!["claude-*".into()];
+        let mut local = rp("local");
+        local.routing.allowed_models = vec!["*-opus-*".into()];
+        local.routing.model_ceiling_groups = vec![vec!["*-5".into()], vec!["*-5".into()]];
+        let mut merged = merge_floor(&org, Some(&local));
+        let expected = vec![vec!["*-opus-*".to_string()], vec!["*-5".to_string()]];
+        for _ in 0..32 {
+            merged = merge_floor(&merged, Some(&local));
+            assert_eq!(merged.routing.model_ceiling_groups, expected);
+            assert!(merged.routing.model_allowed("claude-opus-5"));
+            assert!(!merged.routing.model_allowed("claude-opus-4"));
+        }
+        local.routing.model_ceiling_groups = vec![Vec::new(), Vec::new()];
+        let denied = merge_floor(&merged, Some(&local));
+        assert_eq!(
+            denied
+                .routing
+                .model_ceiling_groups
+                .iter()
+                .filter(|g| g.is_empty())
+                .count(),
+            1
+        );
+        assert!(!denied.routing.model_allowed("claude-opus-5"));
     }
 }

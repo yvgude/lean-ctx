@@ -21,8 +21,8 @@ impl McpTool for CtxExecuteTool {
              ANTIPATTERN: for simple one-liners, prefer ctx_shell (lower overhead, auto-compressed).\n\
              language=shell supports multi-line scripts but shares ctx_shell's security policy.\n\
              action=code (default) for one-shot; action=batch for parallel multi-language;\n\
-             action=file to process a project file (extension auto-detects).\n\
-             Pass intent to focus large output and save tokens. Languages: javascript,\n\
+             action=file to summarize admitted project text as data, without executing it.\n\
+             For code/batch, intent annotates large output; file records the intent alongside its preview. Languages: javascript,\n\
              typescript, python, shell, ruby, go, rust, php, perl, r, elixir.",
             json!({
                 "type": "object",
@@ -53,7 +53,7 @@ impl McpTool for CtxExecuteTool {
                     },
                     "path": {
                         "type": "string",
-                        "description": "File path for action=file (language auto-detected)."
+                        "description": "Project text file for action=file; content is inspected, never executed."
                     }
                 },
                 "oneOf": [

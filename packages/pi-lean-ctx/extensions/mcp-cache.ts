@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 import { createHash, randomUUID } from "node:crypto";
 import {
   accessSync,
@@ -17,7 +19,7 @@ import type { McpTool } from "./mcp-bridge.js";
 /** Bump when the on-disk cache representation changes incompatibly. */
 export const MCP_SCHEMA_CACHE_FORMAT_VERSION = 1;
 /** Bump when the Pi extension's schema-producing behavior changes. */
-export const PI_EXTENSION_VERSION = "3.10.5";
+export const PI_EXTENSION_VERSION = "3.11.0";
 /** MCP client/server contract version used by the embedded bridge. */
 export const MCP_ENGINE_VERSION = "2.0.0";
 

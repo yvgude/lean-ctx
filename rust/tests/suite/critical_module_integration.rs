@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Integration tests for modules identified as critical during the architecture audit.
 // Covers: pathjail, degradation_policy, gotcha_tracker/learn, cache CCR.
 

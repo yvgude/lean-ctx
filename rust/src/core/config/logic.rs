@@ -591,34 +591,66 @@ impl Config {
     where
         F: FnOnce(&mut Self),
     {
+        Self::try_update_global(|config| {
+            f(config);
+            Ok(())
+        })
+    }
+
+    /// Fallible mutation using the same preserving writer; refusal never saves.
+    pub fn try_update_global<F>(f: F) -> std::result::Result<Self, super::error::LeanCtxError>
+    where
+        F: FnOnce(&mut Self) -> std::result::Result<(), super::error::LeanCtxError>,
+    {
         let path = Self::path().ok_or_else(|| {
             super::error::LeanCtxError::Config("cannot determine home directory".into())
         })?;
-        Self::update_global_at(&path, f)
+        Self::try_update_global_at(&path, f)
     }
 
-    /// Path-parameterized core of [`Config::update_global`] (unit-testable).
-    pub(super) fn update_global_at<F>(
+    /// Path-parameterized core of [`Config::update_global`].
+    ///
+    /// Production callers that already know the config path (the cloud
+    /// background persist step) share this with the tests, so the tested code
+    /// path is the shipped one.
+    pub(crate) fn update_global_at<F>(
         path: &Path,
         f: F,
     ) -> std::result::Result<Self, super::error::LeanCtxError>
     where
         F: FnOnce(&mut Self),
     {
-        let mut cfg = match std::fs::read_to_string(path) {
-            Ok(raw) if !raw.trim().is_empty() => toml::from_str::<Self>(&raw).map_err(|e| {
-                super::error::LeanCtxError::Config(
-                    format!(
-                        "refusing to modify an unparseable config.toml ({e}); fix it \
-                     manually or run `lean-ctx doctor --fix`, then retry"
-                    )
-                    .into(),
-                )
-            })?,
-            _ => Self::default(),
-        };
-        f(&mut cfg);
-        cfg.save_to(path)?;
+        Self::try_update_global_at(path, |config| {
+            f(config);
+            Ok(())
+        })
+    }
+
+    /// Runs the whole read-modify-write under one hold of the config write
+    /// lock (LR-TEL-01).
+    ///
+    /// This function always loaded the global file straight from disk
+    /// (`try_load_global_from` — no `Config::CACHE`, no project-local merge)
+    /// and still does; that part is unchanged. What changed is that the load
+    /// and the save now happen inside **one** critical section. Previously a
+    /// concurrent writer could commit in the window between them and be
+    /// overwritten by this call's save.
+    ///
+    /// `f` must be pure in-memory mutation. It runs while an OS file lock is
+    /// held, so no network, no I/O, and no nested config write belongs inside
+    /// it — the lock is not reentrant and the wait is bounded.
+    fn try_update_global_at<F>(
+        path: &Path,
+        f: F,
+    ) -> std::result::Result<Self, super::error::LeanCtxError>
+    where
+        F: FnOnce(&mut Self) -> std::result::Result<(), super::error::LeanCtxError>,
+    {
+        let guard = crate::config_io::ConfigWriteGuard::acquire(path)
+            .map_err(super::error::LeanCtxError::Config)?;
+        let mut cfg = Self::try_load_global_from(guard.path())?;
+        f(&mut cfg)?;
+        cfg.save_to_locked(&guard)?;
         Ok(cfg)
     }
 
@@ -635,10 +667,43 @@ impl Config {
     }
 
     /// Path-parameterized core of [`Config::save`] (unit-testable).
+    ///
+    /// Takes the guard itself, then writes through the same guarded path as
+    /// [`Self::save_to_locked`], so a standalone save and a save inside an
+    /// update land on the identical resolved file.
     pub(super) fn save_to(
         &self,
         path: &Path,
     ) -> std::result::Result<(), super::error::LeanCtxError> {
+        let guard = crate::config_io::ConfigWriteGuard::acquire(path)
+            .map_err(super::error::LeanCtxError::Config)?;
+        self.save_to_locked(&guard)
+    }
+
+    /// [`Self::save_to`] for callers already inside a critical section.
+    ///
+    /// Takes the guard by reference rather than a path: the destination is the
+    /// guard's bound path, so a guarded save cannot be aimed at a file the
+    /// guard is not excluding, and the non-reentrant lock is never acquired
+    /// twice on one call path.
+    pub(super) fn save_to_locked(
+        &self,
+        guard: &crate::config_io::ConfigWriteGuard,
+    ) -> std::result::Result<(), super::error::LeanCtxError> {
+        let (content, defaults) = self.render_for_save(guard.path())?;
+        guard
+            .write_toml_preserving_minimal(&content, &defaults)
+            .map_err(super::error::LeanCtxError::Config)?;
+        Ok(())
+    }
+
+    /// Renders `(content, defaults)` for the minimal-preserving writer and
+    /// ensures the parent directory exists. Shared by both save entry points so
+    /// they stay byte-identical in what they emit.
+    fn render_for_save(
+        &self,
+        path: &Path,
+    ) -> std::result::Result<(String, String), super::error::LeanCtxError> {
         if let Some(parent) = path.parent() {
             std::fs::create_dir_all(parent)?;
         }
@@ -651,9 +716,7 @@ impl Config {
         let baseline = toml::from_str::<Self>("").unwrap_or_else(|_| Self::default());
         let defaults = toml::to_string_pretty(&baseline)
             .map_err(|e| super::error::LeanCtxError::Config(e.to_string().into()))?;
-        crate::config_io::write_toml_preserving_minimal(path, &content, &defaults)
-            .map_err(|e| super::error::LeanCtxError::Config(e.into()))?;
-        Ok(())
+        Ok((content, defaults))
     }
 
     /// Formats the current config as a human-readable string with file paths.

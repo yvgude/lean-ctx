@@ -41,6 +41,17 @@ ctx_radar format=json         # machine-readable, for dashboards
 the live context window across system prompt, message history, tool schemas, file
 reads, and shell output. Pair it with `ctx_metrics` for cumulative savings.
 
+Read metrics are observations, not task acceptance. CLI and MCP reads retain
+mode statistics, token measurements and access history, but neither delivery nor
+bounce rate supplies task-completion feedback. The CLI's OCLA read observation
+has no acceptance or quality score; ETPAO requires an actual acceptance signal.
+Legacy feedback files are preserved, not rewritten by reads. A read does not
+supply the validated execution protocol required by canonical outcome learning.
+For local MCP diagnostics, `LEAN_CTX_LOG=lean_ctx::read_observation=debug`
+emits `read_observation_worker_completed` after the detached observation worker
+returns without a panic. This fixed event contains no paths or content and does
+not assert successful persistence or acceptance; it is not product telemetry.
+
 ---
 
 ## 2. Context Field Theory — actively shape the window
@@ -94,8 +105,15 @@ Knapsack + Boltzmann view-selection: compiles the actual context to send under a
 budget, choosing per-file *views* (handles, compressed, or full).
 
 ```bash
-lean-ctx compile --mode=compressed --budget=6000
+lean-ctx compile --mode compressed --budget=6000
 ```
+
+For both CLI commands, `--budget N` and `--budget=N` accept a nonnegative
+integer that fits the platform; zero is an explicit zero budget. Missing values,
+invalid, overflowing or duplicate budget values exit with `invalid_budget`
+instead of falling back to the default. Daemon and local fallback receive the
+same numeric budget. Pinned items cannot exceed the compilation budget: when
+no declared view fits, they are excluded with an explicit reason.
 
 Together these form a pipeline: **radar** (measure) → **plan** (allocate) →
 **compile** (materialize) → **control/ledger** (adjust).

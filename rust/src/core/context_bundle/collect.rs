@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Candidate collection: which files a bundle may draw from.
 //!
 //! The walk honours `.gitignore`/`.ignore` and the shared content-walk filter

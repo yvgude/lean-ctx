@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinMetricsExporter — batches MetricPoints for local consumption.
 //!
 //! Wraps `proxy/metrics.rs` behind the OCLA trait. Metrics are stored in a
@@ -71,6 +72,10 @@ impl Default for BuiltinMetricsExporter {
 }
 
 impl OclaService for BuiltinMetricsExporter {
+    fn manifest(&self) -> crate::core::ocla::OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+        crate::core::ocla::capability_fabric::builtin_manifest(&self.capability())
+    }
+
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::MetricsExporter)
     }

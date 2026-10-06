@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared tool lifecycle — ensures CLI and MCP paths have identical side effects.
 //!
 //! The MCP server dispatcher handles session, ledger, heatmap, intent detection,
@@ -50,7 +52,7 @@ pub(crate) fn usable_root(root: Option<&str>) -> Option<&str> {
 /// MCP dispatcher applies before handing content to the IR store
 /// (`server/call_tool.rs`), kept identical so CLI- and MCP-recorded IR items are
 /// byte-compatible. `ContextIrV1::record` redacts and further caps it.
-fn ir_excerpt(text: &str) -> &str {
+pub(crate) fn ir_excerpt(text: &str) -> &str {
     const MAX: usize = 200;
     if text.len() <= MAX {
         return text;
@@ -77,11 +79,51 @@ pub(crate) fn record_file_read(
     duration: std::time::Duration,
     output_excerpt: &str,
 ) {
+    record_file_read_accounting(
+        path,
+        mode,
+        original_tokens,
+        output_tokens,
+        is_cache_hit,
+        duration,
+    );
+    let mut ir = ContextIrV1::load();
+    ir.record(RecordIrInput {
+        kind: ContextIrSourceKindV1::Read,
+        tool: "ctx_read",
+        client_name: None,
+        agent_id: None,
+        path: Some(path),
+        command: None,
+        pattern: Some(mode),
+        input_tokens: original_tokens,
+        output_tokens,
+        duration,
+        content_excerpt: ir_excerpt(output_excerpt),
+    });
+    ir.save();
+    record_file_read_projection(path, mode, original_tokens, output_tokens);
+    if mode == "aggressive" && original_tokens > output_tokens {
+        maybe_periodic_flush();
+    }
+    maybe_periodic_flush();
+}
+
+/// Compatibility accounting without IR persistence or an independent flush.
+/// The CLI lifecycle calls this once in its accounting stage.
+pub(crate) fn record_file_read_accounting(
+    path: &str,
+    mode: &str,
+    original_tokens: usize,
+    output_tokens: usize,
+    is_cache_hit: bool,
+    duration: std::time::Duration,
+) {
     let saved = original_tokens.saturating_sub(output_tokens);
     let tool_key = format!("cli_{mode}");
 
     stats::record(&tool_key, original_tokens, output_tokens);
-    heatmap::record_file_access(path, original_tokens, saved);
+    crate::core::execution_lifecycle::record_heatmap_access(path, original_tokens, saved);
 
     // Emit event so the live dashboard feed sees hook-intercepted reads.
     crate::core::events::emit_tool_call(
@@ -154,41 +196,21 @@ pub(crate) fn record_file_read(
     }
 
     // Learning sinks the MCP read path runs in a background thread but the CLI
-    // path historically skipped — the mode predictor never trained, the
-    // compression feedback loop stayed blind and dashboard anomaly signals were
-    // missing for every shadow-mode (`view`/`grep` → `lean-ctx read`) hook read
+    // path historically skipped — the mode predictor never trained and dashboard
+    // anomaly signals were missing for shadow-mode (`view`/`grep` → `lean-ctx read`)
+    // hook reads
     // (#550). Run inline: a single-shot CLI process must finish them before it
     // flushes and exits, so the off-hot-path thread the daemon uses is moot here.
-    record_read_learning(
-        path,
-        mode,
-        original_tokens,
-        output_tokens,
-        is_cache_hit,
-        &learning_root,
-    );
+    record_read_learning(path, mode, original_tokens, output_tokens, &learning_root);
+}
 
-    // Context IR lineage (#566): the MCP dispatcher records provenance for every
-    // tool call (`server/call_tool.rs`), but the shadow-mode hook's single-shot
-    // `lean-ctx read` bypassed it. Disk-backed load→record→save persists the
-    // entry before the process exits. `mode` rides the IR `pattern` slot to match
-    // the MCP read path (which stores its `mode` arg there).
-    let mut ir = ContextIrV1::load();
-    ir.record(RecordIrInput {
-        kind: ContextIrSourceKindV1::Read,
-        tool: "ctx_read",
-        client_name: None,
-        agent_id: None,
-        path: Some(path),
-        command: None,
-        pattern: Some(mode),
-        input_tokens: original_tokens,
-        output_tokens,
-        duration,
-        content_excerpt: ir_excerpt(output_excerpt),
-    });
-    ir.save();
-
+pub(crate) fn record_file_read_projection(
+    path: &str,
+    mode: &str,
+    original_tokens: usize,
+    output_tokens: usize,
+) {
+    let saved = original_tokens.saturating_sub(output_tokens);
     // OCLA CompressionProvider runtime projection: for aggressive-mode reads with
     // positive savings, record the compression event through the canonical OCLA
     // capability so the registry tracks real compression evidence.
@@ -197,15 +219,13 @@ pub(crate) fn record_file_read(
     }
     if mode == "aggressive" && saved > 0 {
         project_ocla_compression(path, original_tokens as u64, output_tokens as u64);
-        maybe_periodic_flush();
     }
-    maybe_periodic_flush();
 }
 
 /// Replicate the MCP read path's learning side effects (`registered/ctx_read.rs`
 /// background thread) for the standalone CLI path (#550): mode-predictor
-/// training, the compression feedback outcome and the per-call anomaly metric.
-/// All three are disk-backed and therefore work from a single-shot process; the
+/// training and the per-call anomaly metric, not task-acceptance feedback.
+/// Both are disk-backed and therefore work from a single-shot process; the
 /// in-memory-only detectors (loop/correction) and the bounce/adaptive signals
 /// that require routing through `ctx_read::handle` are tracked separately.
 fn record_read_learning(
@@ -213,35 +233,21 @@ fn record_read_learning(
     resolved_mode: &str,
     original_tokens: usize,
     output_tokens: usize,
-    is_cache_hit: bool,
     project_root: &str,
 ) {
-    let task_completed = crate::core::bounce_tracker::global()
-        .lock()
-        .ok()
-        .and_then(|bt| bt.bounce_rate_for_extension(path))
-        .is_none_or(|rate| rate < 0.30);
-    let saved = original_tokens.saturating_sub(output_tokens);
-
-    // Route the realized read through the OCLA efficiency capability so the
-    // production CLI path records the same ETPAO semantics as the contract.
-    // The analyzer is local and deterministic; failure keeps the legacy ratio.
+    // Delivery, compression ratio and bounce rate are not task acceptance.
+    // The canonical execution protocol alone admits outcome-based learning.
     let ocla_density = ocla_read_density(
         path,
         resolved_mode,
         original_tokens,
         output_tokens,
-        task_completed,
+        None,
         project_root,
     );
-    record_outcome(
-        path,
-        resolved_mode,
-        original_tokens,
-        saved,
-        task_completed,
-        project_root,
-    );
+    let _ = crate::core::ocla::OclaRegistry::global()
+        .outcome_tracker
+        .record_outcome(read_observation(path, resolved_mode, project_root));
 
     // Mode predictor: train auto-mode selection on the realized compression
     // density, exactly as the MCP background thread does.
@@ -264,35 +270,6 @@ fn record_read_learning(
     predictor.record(sig, outcome);
     predictor.save();
 
-    // Compression feedback: the per-language outcome the adaptive thresholds and
-    // bounce-aware tuning learn from. `total_turns`/`total_reads` are 1 — the
-    // accurate count for this single-shot invocation, not a placeholder.
-    let ext = std::path::Path::new(path)
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_string();
-    let thresholds = crate::core::adaptive_thresholds::thresholds_for_path(path);
-    let feedback_outcome = crate::core::feedback::CompressionOutcome {
-        session_id: format!("{}", std::process::id()),
-        language: ext,
-        entropy_threshold: thresholds.bpe_entropy,
-        jaccard_threshold: thresholds.jaccard,
-        total_turns: 1,
-        tokens_saved: saved as u64,
-        tokens_original: original_tokens as u64,
-        cache_hits: u32::from(is_cache_hit),
-        total_reads: 1,
-        // A compressed read only counts as task-completing when this extension
-        // is not in a high-bounce state (#593); unknown stays optimistic so the
-        // cold start matches the MCP path. 0.30 mirrors BOUNCE_RATE_THRESHOLD.
-        task_completed,
-        timestamp: chrono::Local::now().to_rfc3339(),
-    };
-    let mut store = crate::core::feedback::FeedbackStore::load();
-    store.project_root = Some(project_root.to_string());
-    store.record_outcome(feedback_outcome);
-
     // Anomaly detector: the same per-call metric the MCP post-dispatch records.
     // `save_debounced` writes on the first call of a fresh process (last-save
     // marker starts at 0), so the single shadow read persists before exit.
@@ -300,14 +277,11 @@ fn record_read_learning(
     crate::core::anomaly::save_debounced();
 }
 
-fn record_outcome(
+fn read_observation(
     path: &str,
     resolved_mode: &str,
-    original_tokens: usize,
-    saved: usize,
-    task_completed: bool,
     project_root: &str,
-) {
+) -> crate::core::ocla::Outcome {
     let context = crate::core::ocla::OclaRequestContext {
         request_id: format!("cli-read:{path}:{resolved_mode}"),
         session_id: SessionState::load_latest()
@@ -319,16 +293,12 @@ fn record_outcome(
         task_id: None,
         parent_task_id: None,
     };
-    let outcome = crate::core::ocla::Outcome {
+    crate::core::ocla::Outcome {
         context,
-        accepted: Some(task_completed),
-        quality_score_milli: (original_tokens > 0)
-            .then(|| ((saved as u64 * 1000) / original_tokens as u64).min(1000) as u16),
+        accepted: None,
+        quality_score_milli: None,
         outcome_ref: Some(format!("read:{project_root}:{resolved_mode}")),
-    };
-    let _ = crate::core::ocla::OclaRegistry::global()
-        .outcome_tracker
-        .record_outcome(outcome);
+    }
 }
 
 /// Compute read density through the production OCLA efficiency capability.
@@ -338,7 +308,7 @@ fn ocla_read_density(
     resolved_mode: &str,
     original_tokens: usize,
     output_tokens: usize,
-    task_completed: bool,
+    task_completed: Option<bool>,
     project_root: &str,
 ) -> Option<f64> {
     let analyzer = crate::core::ocla::OclaRegistry::global()
@@ -361,7 +331,7 @@ fn read_density_with_analyzer(
     resolved_mode: &str,
     original_tokens: usize,
     output_tokens: usize,
-    task_completed: bool,
+    task_completed: Option<bool>,
     project_root: &str,
 ) -> Option<f64> {
     analyzer
@@ -378,7 +348,7 @@ fn read_density_with_analyzer(
             },
             original_tokens: original_tokens as u64,
             delivered_tokens: output_tokens as u64,
-            accepted: Some(task_completed),
+            accepted: task_completed,
             cache_reads: 0,
             cache_hits: 0,
         })
@@ -393,6 +363,7 @@ fn read_density_with_analyzer(
 /// stats series; `observed_tokens` (raw measured match lines, no factor) feeds
 /// the verified ledger (GL #479 D2). `pattern`/`path`/`duration`/`output_excerpt`
 /// feed the Context IR lineage (#566).
+#[cfg(test)]
 pub(crate) fn record_search(
     modeled_baseline: usize,
     observed_tokens: usize,
@@ -401,6 +372,38 @@ pub(crate) fn record_search(
     path: &str,
     duration: std::time::Duration,
     output_excerpt: &str,
+) {
+    record_search_accounting(
+        modeled_baseline,
+        observed_tokens,
+        output_tokens,
+        path,
+        duration,
+    );
+    let mut ir = ContextIrV1::load();
+    ir.record(RecordIrInput {
+        kind: ContextIrSourceKindV1::Search,
+        tool: "ctx_search",
+        client_name: None,
+        agent_id: None,
+        path: Some(path),
+        command: None,
+        pattern: Some(pattern),
+        input_tokens: observed_tokens,
+        output_tokens,
+        duration,
+        content_excerpt: ir_excerpt(output_excerpt),
+    });
+    ir.save();
+}
+
+/// Existing search bookkeeping, separated from the IR writer for stage ownership.
+pub(crate) fn record_search_accounting(
+    modeled_baseline: usize,
+    observed_tokens: usize,
+    output_tokens: usize,
+    path: &str,
+    duration: std::time::Duration,
 ) {
     stats::record("cli_grep", modeled_baseline, output_tokens);
 
@@ -442,25 +445,6 @@ pub(crate) fn record_search(
     // left dashboard signals blind to shadow-mode (`grep` → `lean-ctx grep`) hooks.
     crate::core::anomaly::record_metric("tokens_per_call", output_tokens as f64);
     crate::core::anomaly::save_debounced();
-
-    // Context IR lineage for shadow-mode `grep` → `lean-ctx grep` (#566). The
-    // raw matched-line estimate (`observed_tokens`) is the IR input so the stored
-    // compression ratio reads matches-in / sent-out.
-    let mut ir = ContextIrV1::load();
-    ir.record(RecordIrInput {
-        kind: ContextIrSourceKindV1::Search,
-        tool: "ctx_search",
-        client_name: None,
-        agent_id: None,
-        path: Some(path),
-        command: None,
-        pattern: Some(pattern),
-        input_tokens: observed_tokens,
-        output_tokens,
-        duration,
-        content_excerpt: ir_excerpt(output_excerpt),
-    });
-    ir.save();
 }
 
 /// Record a tree/ls operation with full Context OS side effects.
@@ -625,7 +609,7 @@ fn project_ocla_compression(path: &str, source_tokens: u64, output_tokens: u64) 
     let _ = reg.compression_provider.compress(request);
 }
 
-/// Project a realized read-savings event into the OCLA SavingsLedger.
+/// Project a caller-accounted read-savings observation into OCLA summaries.
 /// Best-effort: silently drops if the provider is unavailable. Canonical
 /// production callsite for the savings-evidence capability.
 fn project_ocla_savings(path: &str, original_tokens: u64, output_tokens: u64) {
@@ -652,7 +636,7 @@ fn project_ocla_savings(path: &str, original_tokens: u64, output_tokens: u64) {
     };
     let _ = OclaRegistry::global()
         .savings_ledger
-        .record_savings(evidence);
+        .project_savings(evidence);
 }
 
 /// Truncate a shell command to a short label suitable for the context ledger.
@@ -708,11 +692,11 @@ mod tests {
 
     #[test]
     fn ocla_read_density_uses_etpao_for_accepted_reads() {
-        let result = ocla_read_density("src/main.rs", "aggressive", 1000, 250, true, ".");
+        let result = ocla_read_density("src/main.rs", "aggressive", 1000, 250, Some(true), ".");
         assert!(result.is_some(), "accepted read must produce ETPAO");
         assert!(result.unwrap() > 0.0, "ETPAO must be positive");
         assert_eq!(
-            ocla_read_density("src/main.rs", "aggressive", 1000, 250, false, "."),
+            ocla_read_density("src/main.rs", "aggressive", 1000, 250, Some(false), "."),
             None,
             "unaccepted read must not produce ETPAO"
         );
@@ -724,10 +708,28 @@ mod tests {
             calls: AtomicUsize::new(0),
         };
         assert_eq!(
-            read_density_with_analyzer(&spy, "src/main.rs", "full", 1000, 375, true, "."),
+            read_density_with_analyzer(&spy, "src/main.rs", "full", 1000, 375, Some(true), "."),
             Some(0.375)
         );
         assert_eq!(spy.calls.load(Ordering::Relaxed), 1);
+    }
+
+    #[test]
+    fn read_observation_does_not_invent_acceptance_or_quality() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let outcome = read_observation("sample.rs", "full", "/project");
+        assert_eq!(outcome.accepted, None);
+        assert_eq!(outcome.quality_score_milli, None);
+        assert_eq!(outcome.context.content_ref, "file:sample.rs");
+        assert_eq!(outcome.outcome_ref.as_deref(), Some("read:/project:full"));
+    }
+
+    #[test]
+    fn ocla_read_density_has_no_etpao_without_acceptance() {
+        assert_eq!(
+            ocla_read_density("sample.rs", "full", 1000, 250, None, "/project"),
+            None
+        );
     }
 
     #[test]
@@ -787,10 +789,13 @@ mod tests {
     }
 
     #[test]
-    fn cli_read_persists_learning_sinks_to_disk() {
+    fn cli_read_persists_observation_sinks_to_disk() {
         // #550 regression: a single-shot CLI read must leave the mode predictor,
-        // compression feedback and heatmap on disk. The daemon used to be the
-        // only path that flushed them, so shadow-mode hook reads (`view`/`grep` →
+        // and heatmap on disk. Task acceptance cannot be inferred from a read;
+        // the real-process read_observation_acceptance test guards historical
+        // feedback preservation and absence of fabricated completion records.
+        // The daemon used to be the only path that flushed them, so hook reads
+        // (`view`/`grep` →
         // `lean-ctx read`) recorded nothing and `lean-ctx heatmap` stayed empty.
         let dir = crate::core::data_dir::isolated_data_dir();
         let file = dir.path().join("sample.rs");
@@ -813,10 +818,6 @@ mod tests {
         assert!(
             data.join("mode_stats.json").exists(),
             "mode predictor must persist after a CLI read + flush"
-        );
-        assert!(
-            state.join("feedback.json").exists(),
-            "compression feedback must persist after a CLI read + flush"
         );
         assert!(
             state.join("heatmap.json").exists(),

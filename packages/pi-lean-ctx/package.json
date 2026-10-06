@@ -1,6 +1,6 @@
 {
   "name": "pi-lean-ctx",
-  "version": "3.10.5",
+  "version": "3.11.0",
   "description": "Pi Coding Agent integration for LeanCTX Engine, the Context Gateway for AI Systems. Routes supported tools through context selection, controls, and a persistent MCP session.",
   "keywords": [
     "pi-package",

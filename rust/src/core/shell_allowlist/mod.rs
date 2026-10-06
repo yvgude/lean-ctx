@@ -53,6 +53,8 @@ mod tests;
 #[cfg(test)]
 mod tests_conditionals;
 #[cfg(test)]
+mod tests_heredoc_quotes;
+#[cfg(test)]
 mod tests_multiword;
 #[cfg(test)]
 mod tests_pipe_target;

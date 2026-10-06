@@ -76,10 +76,9 @@ fn tool_names(manifest: &Value) -> Vec<String> {
         .unwrap_or_default()
 }
 
-/// Always-on local capabilities — free, ungated, unconditionally available in
-/// every build. The heart of the Local-Free Invariant (RFC §6): these must
-/// never depend on an account, license, or plan.
-pub const LOCAL_ALWAYS_ON_FEATURES: &[&str] = &[
+/// Always-on Community capabilities. They are explicit Trust Core product
+/// records rather than capabilities inferred to be free because they are local.
+pub const COMMUNITY_ALWAYS_ON_FEATURES: &[&str] = &[
     "compression",
     "caching",
     "knowledge",
@@ -88,15 +87,12 @@ pub const LOCAL_ALWAYS_ON_FEATURES: &[&str] = &[
     "sensitivity_floor",
     "savings_ledger",
     "audit_trail",
-    // Cost/intent routing (classify -> tier -> model). Lowering your own bill
-    // is a local capability by contract (11-core-vs-enterprise-boundary §5);
-    // org-wide *enforced* budgets/policies are the commercial add-on.
     "routing",
+    "team_seat_value_v1",
 ];
 
-/// Local capabilities that are free but gated by *compilation* only (Cargo
-/// features) — never by account/license/plan.
-pub const LOCAL_OPTIONAL_FEATURES: &[&str] = &[
+/// Community capabilities gated only by compilation.
+pub const COMMUNITY_OPTIONAL_FEATURES: &[&str] = &[
     "ast_compression",
     "semantic_search",
     "http_server",
@@ -117,7 +113,10 @@ fn features() -> Value {
         "sensitivity_floor": true,
         "savings_ledger": true,
         "audit_trail": true,
+        // The advertised primitive is deterministic Community routing.
+        // Personalized adaptive routing has its own Pro capability ID.
         "routing": true,
+        "team_seat_value_v1": true,
         "ast_compression": cfg!(feature = "tree-sitter"),
         "semantic_search": cfg!(feature = "embeddings"),
         "http_server": cfg!(feature = "http-server"),
@@ -195,39 +194,35 @@ mod tests {
     }
 
     #[test]
-    fn feature_keys_partition_into_local_and_commercial() {
-        // Every advertised feature must be classified as local (always-on or
-        // compile-optional) or commercial — no unclassified flag. This keeps the
-        // Local-Free Invariant lists honest as features are added.
+    fn every_advertised_feature_has_an_explicit_product_record() {
         let v = capabilities_value();
-        let keys: std::collections::BTreeSet<String> = v["features"]
-            .as_object()
-            .expect("features object")
-            .keys()
-            .cloned()
-            .collect();
-        let mut classified: std::collections::BTreeSet<String> = std::collections::BTreeSet::new();
-        for k in LOCAL_ALWAYS_ON_FEATURES
-            .iter()
-            .chain(LOCAL_OPTIONAL_FEATURES)
-        {
-            classified.insert((*k).to_string());
+        for key in v["features"].as_object().expect("features object").keys() {
+            assert!(
+                crate::core::product_capabilities::registry()
+                    .find(key)
+                    .is_some(),
+                "server feature '{key}' lacks product classification"
+            );
         }
-        assert_eq!(
-            keys, classified,
-            "every feature must be classified local vs commercial (Local-Free Invariant)"
-        );
     }
 
     #[test]
-    fn local_always_on_features_are_unconditionally_true() {
+    fn community_always_on_features_are_available_without_an_account() {
         let v = capabilities_value();
-        for key in LOCAL_ALWAYS_ON_FEATURES {
+        for key in COMMUNITY_ALWAYS_ON_FEATURES {
             assert_eq!(
                 v["features"][key],
                 json!(true),
-                "local capability '{key}' must be free + always on"
+                "Community capability '{key}' must be available"
             );
+            let capability = crate::core::product_capabilities::registry()
+                .find(key)
+                .expect("feature classified");
+            assert_eq!(
+                capability.minimum_plan(),
+                crate::core::billing::Plan::Community
+            );
+            assert!(!capability.account_required);
         }
     }
 
@@ -237,6 +232,11 @@ mod tests {
         // Always-on capabilities are unconditionally true.
         assert_eq!(v["features"]["compression"], json!(true));
         assert_eq!(v["features"]["savings_ledger"], json!(true));
+        assert_eq!(v["features"]["team_seat_value_v1"], json!(true));
+        assert_eq!(
+            v["contracts"]["leanctx.contract.team_seat_value_v1.schema_version"],
+            json!(1)
+        );
         // Feature-gated flags mirror the compile-time cfg.
         assert_eq!(
             v["features"]["semantic_search"],

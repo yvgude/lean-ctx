@@ -1,9 +1,10 @@
+pub(crate) mod capability;
 pub(crate) mod claude;
 pub(crate) mod codex;
 pub(crate) mod cursor;
 pub(crate) mod detection;
 pub(crate) mod receipt;
-mod timeout;
+pub(crate) mod timeout;
 pub(crate) mod traits;
 
 pub(crate) fn detect_and_create_connectors() -> Vec<Box<dyn traits::AgentConnector>> {

@@ -333,7 +333,18 @@ impl FromStr for ReadMode {
 /// to remove.
 #[must_use]
 pub(crate) fn canonicalize_tail_mode(mode: &str) -> Option<String> {
-    let count = mode.trim().strip_prefix('-')?;
+    let trimmed = mode.trim();
+    // GH #2000: the schema documents the bare comma multi-select (`5,10-20`)
+    // next to `-N`, and it had the same failure: no `lines:` prefix, so it
+    // parsed as an unknown mode and the whole file came back unmarked. Only a
+    // payload `parse_line_multi` accepts is rewritten, so garbage still reaches
+    // the unknown-mode path.
+    if trimmed.contains(',') {
+        return parse_line_multi(trimmed)
+            .ok()
+            .map(|payload| format!("lines:{payload}"));
+    }
+    let count = trimmed.strip_prefix('-')?;
     (!count.is_empty() && count.chars().all(|c| c.is_ascii_digit()))
         .then(|| format!("lines:-{count}"))
 }

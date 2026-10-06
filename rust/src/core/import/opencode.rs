@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! OpenCode session-history import.
 
 use std::collections::HashSet;

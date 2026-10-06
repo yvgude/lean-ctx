@@ -32,6 +32,12 @@ impl Config {
                     return;
                 }
             };
+        // Workspace trust never grants authority to select executable code or
+        // accept a proprietary license on the user's behalf.
+        if local.intelligence_runtime != IntelligenceRuntimeConfig::default() {
+            local.intelligence_runtime = IntelligenceRuntimeConfig::default();
+            tracing::warn!("project intelligence_runtime overrides ignored: global-only setting");
+        }
         if !trusted {
             let withheld = strip_sensitive_overrides(&mut local);
             if !withheld.is_empty() {

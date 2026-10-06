@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Shared renderers for the value surface. Subtle by construction: one dim
 //! line, no exclamation, nothing when there is nothing measured to say.
 
@@ -134,6 +135,28 @@ pub fn security_phrases(counts: &SecurityCounts) -> Vec<String> {
             )
         ));
     }
+    if counts.pii_redacted > 0 {
+        out.push(format!(
+            "{} kept out of context",
+            plural(
+                counts.pii_redacted,
+                "personal data value",
+                "personal data values"
+            )
+        ));
+    }
+    if counts.content_withheld > 0 {
+        out.push(format!(
+            "{} withheld",
+            plural(counts.content_withheld, "source", "sources")
+        ));
+    }
+    if counts.coverage_incomplete > 0 {
+        out.push(format!(
+            "{} not fully inspected",
+            plural(counts.coverage_incomplete, "source", "sources")
+        ));
+    }
     out
 }
 
@@ -218,6 +241,7 @@ mod tests {
             shell_blocked: 2,
             path_blocked: 1,
             injection_flagged: 3,
+            ..SecurityCounts::ZERO
         };
         let text = security_phrases(&counts).join(", ");
         assert_eq!(
@@ -226,5 +250,20 @@ mod tests {
              1 path outside the project blocked, 3 prompt-injection patterns flagged"
         );
         assert!(!text.contains("neutraliz"));
+    }
+
+    #[test]
+    fn gateway_phrases_say_what_happened_without_overclaiming() {
+        let counts = SecurityCounts {
+            pii_redacted: 2,
+            content_withheld: 1,
+            coverage_incomplete: 1,
+            ..SecurityCounts::ZERO
+        };
+        assert_eq!(
+            security_phrases(&counts).join(", "),
+            "2 personal data values kept out of context, 1 source withheld, \
+             1 source not fully inspected"
+        );
     }
 }

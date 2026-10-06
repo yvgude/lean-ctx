@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! #1930: PowerShell statements, expressions and script blocks.
 
 use super::ps_statements::HostGuard;

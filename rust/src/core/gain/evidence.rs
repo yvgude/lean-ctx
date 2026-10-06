@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! How strong is a gain number? Economic evidence levels for gain reporting.
 //!
 //! Tool-output token reduction is not a provider bill reduction: the provider bill

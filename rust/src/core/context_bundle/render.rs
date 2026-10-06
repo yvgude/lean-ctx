@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Output rendering: the XML bundle and the directory tree.
 //!
 //! The format follows the Repomix convention chat models already know: a

@@ -267,11 +267,23 @@ fn form_encode(pairs: &[(&str, &str)]) -> Vec<u8> {
 // ---------------------------------------------------------------------------
 
 fn post_token(body: &[u8]) -> Result<TokenResponse, String> {
-    let text = ureq::post(TOKEN_URL)
+    post_token_at(TOKEN_URL, body)
+}
+
+fn post_token_at(url: &str, body: &[u8]) -> Result<TokenResponse, String> {
+    let response = super::hardened_http::hardened_agent()
+        .post(url)
         .header("Content-Type", "application/x-www-form-urlencoded")
         .header("Accept", "application/json")
         .send(body)
-        .map_err(|e| format!("Jira OAuth token request failed: {e}"))?
+        .map_err(|e| format!("Jira OAuth token request failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "Jira OAuth token request failed: HTTP {}",
+            response.status().as_u16()
+        ));
+    }
+    let text = response
         .into_body()
         .read_to_string()
         .map_err(|e| format!("Jira OAuth token read error: {e}"))?;
@@ -301,15 +313,63 @@ fn refresh_tokens(app: &OAuthApp, refresh_token: &str) -> Result<TokenResponse, 
 
 /// Fetches the cloud sites the consenting user can access.
 pub fn accessible_resources(access_token: &str) -> Result<Vec<CloudResource>, String> {
-    let text = ureq::get(RESOURCES_URL)
+    accessible_resources_at(RESOURCES_URL, access_token)
+}
+
+fn accessible_resources_at(url: &str, access_token: &str) -> Result<Vec<CloudResource>, String> {
+    let response = super::hardened_http::hardened_agent()
+        .get(url)
         .header("Authorization", &format!("Bearer {access_token}"))
         .header("Accept", "application/json")
         .call()
-        .map_err(|e| format!("Jira accessible-resources request failed: {e}"))?
+        .map_err(|e| format!("Jira accessible-resources request failed: {e}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "Jira accessible-resources request failed: HTTP {}",
+            response.status().as_u16()
+        ));
+    }
+    let text = response
         .into_body()
         .read_to_string()
         .map_err(|e| format!("Jira accessible-resources read error: {e}"))?;
     serde_json::from_str(&text).map_err(|e| format!("Jira accessible-resources parse error: {e}"))
+}
+
+#[cfg(test)]
+#[test]
+fn oauth_redirects_do_not_forward_refresh_body_or_bearer() {
+    use super::hardened_http::redirect_tests::Server;
+    let target = Server::new(200, None, "[]");
+    let body = "client_secret=synthetic-secret&refresh_token=synthetic-refresh";
+    for status in [301, 302, 303, 307, 308] {
+        let origin = Server::new(status, Some(&target.url), body);
+        let token_error = post_token_at(&origin.url, body.as_bytes()).unwrap_err();
+        let resources_error = accessible_resources_at(&origin.url, "synthetic-bearer").unwrap_err();
+        for error in [token_error, resources_error] {
+            assert!(error.contains(&status.to_string()));
+            assert!(!error.contains("synthetic"));
+        }
+        assert!(origin.received_body(body));
+        assert_eq!(origin.count(), 2);
+        assert_eq!(target.count(), 0);
+    }
+    assert!(
+        accessible_resources_at(&target.url, "synthetic-bearer")
+            .unwrap()
+            .is_empty()
+    );
+    let token = Server::new(
+        200,
+        None,
+        r#"{"access_token":"synthetic-new","expires_in":3600,"token_type":"Bearer"}"#,
+    );
+    assert_eq!(
+        post_token_at(&token.url, body.as_bytes())
+            .unwrap()
+            .access_token,
+        "synthetic-new"
+    );
 }
 
 // ---------------------------------------------------------------------------

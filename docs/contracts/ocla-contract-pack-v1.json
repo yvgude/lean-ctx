@@ -26,15 +26,15 @@
     },
     {
       "path": "docs/contracts/DEPRECATION.md",
-      "sha256": "5b8856f92bff0ceda04a0a8b9bf03f6d23c57c9de27aa68e7983347a2110fbea"
+      "sha256": "8eb19ce8a4cfd04046b0e19d92bf0af9d81c740a53d116522e2d05284e5b7c09"
     },
     {
       "path": "docs/contracts/README.md",
-      "sha256": "881f392aa55a0b6073cb9f5a9df08d40ef6ccd6d81fa2eaad889d139316da071"
+      "sha256": "8b1628db858c4a004d00b170e4df963dd579e65ce6e92b182b08e6e988dc7d96"
     },
     {
       "path": "docs/contracts/capabilities-contract-v1.md",
-      "sha256": "d66eb5bdcdaf3740c4ef9ab3cd945bf6b6bd5224fa2c1d0c25b7fbc750c57979"
+      "sha256": "48c5658df7c4c8023fb20a1898777e13658bb6bad9f049e0820fc30652d0097d"
     },
     {
       "path": "docs/contracts/certification-levels-v1.md",

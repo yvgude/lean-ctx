@@ -87,6 +87,17 @@ pub fn get_or_load(cache: &SharedBm25Cache, root: &Path) -> Arc<BM25Index> {
     index
 }
 
+/// The cached index for `root`, fresh or stale, without triggering a refresh.
+pub fn peek(cache: &SharedBm25Cache, root: &Path) -> Option<Arc<BM25Index>> {
+    let guard = cache
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    guard
+        .as_ref()
+        .filter(|entry| entry.root == root)
+        .map(|entry| Arc::clone(&entry.index))
+}
+
 /// Get index from cache (fresh or stale), triggering background rebuild if stale.
 /// Returns None only if no cache entry exists at all.
 pub fn get_or_background(cache: &SharedBm25Cache, root: &Path) -> Option<Arc<BM25Index>> {

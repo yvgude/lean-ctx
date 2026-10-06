@@ -7,11 +7,9 @@
 use std::collections::BTreeMap;
 use std::fmt::Write as _;
 use std::fs;
-use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Child, Command, ExitStatus, Stdio};
+use std::process::{Command, ExitStatus, Stdio};
 use std::sync::{Arc, Mutex, OnceLock};
-use std::thread;
 use std::time::{Duration, Instant};
 
 use serde::{Deserialize, Serialize};
@@ -221,12 +219,6 @@ struct ProcessOutput {
     stderr: String,
     status: ExitStatus,
     elapsed_ms: u64,
-}
-
-#[derive(Debug)]
-struct CaptureResult {
-    bytes: Vec<u8>,
-    overflowed: bool,
 }
 
 /// External shell optimizer kept outside the production adapter registry.
@@ -890,109 +882,23 @@ fn run_bounded_process(
     capture_bytes: usize,
 ) -> Result<ProcessOutput, String> {
     let mut command = Command::new(executable);
-    command
-        .args(args)
-        .current_dir(cwd)
-        .stdin(Stdio::null())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped());
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        command.process_group(0);
-    }
+    command.args(args).current_dir(cwd).stdin(Stdio::null());
     let started = Instant::now();
-    let mut child = command
-        .spawn()
-        .map_err(|error| format!("could not start RTK process: {error}"))?;
-    let stdout = spawn_capture(child.stdout.take(), capture_bytes);
-    let stderr = spawn_capture(child.stderr.take(), capture_bytes.min(64 * 1024));
-    let status = wait_with_timeout(&mut child, timeout_ms)?;
-    let stdout = stdout
-        .join()
-        .map_err(|_| "RTK stdout capture thread panicked".to_string())?;
-    let stderr = stderr
-        .join()
-        .map_err(|_| "RTK stderr capture thread panicked".to_string())?;
-    if stdout.overflowed || stderr.overflowed {
-        return Err(format!(
-            "RTK output exceeded the capture bound ({capture_bytes} bytes)"
-        ));
+    let captured = crate::core::process_capture::run_with_output_limits(
+        &mut command,
+        (timeout_ms != 0).then(|| Duration::from_millis(timeout_ms)),
+        capture_bytes,
+        capture_bytes.min(64 * 1024),
+    )?;
+    if captured.timed_out {
+        return Err(format!("RTK process timed out after {timeout_ms}ms"));
     }
     Ok(ProcessOutput {
-        stdout: String::from_utf8_lossy(&stdout.bytes).into_owned(),
-        stderr: String::from_utf8_lossy(&stderr.bytes).into_owned(),
-        status,
+        stdout: String::from_utf8_lossy(&captured.output.stdout).into_owned(),
+        stderr: String::from_utf8_lossy(&captured.output.stderr).into_owned(),
+        status: captured.output.status,
         elapsed_ms: started.elapsed().as_millis() as u64,
     })
-}
-
-fn spawn_capture<R>(reader: Option<R>, limit: usize) -> thread::JoinHandle<CaptureResult>
-where
-    R: Read + Send + 'static,
-{
-    thread::spawn(move || {
-        let Some(mut reader) = reader else {
-            return CaptureResult {
-                bytes: Vec::new(),
-                overflowed: false,
-            };
-        };
-        let mut bytes = Vec::new();
-        let mut buffer = [0_u8; 8192];
-        let mut overflowed = false;
-        loop {
-            match reader.read(&mut buffer) {
-                Ok(0) | Err(_) => break,
-                Ok(read) => {
-                    if bytes.len() < limit {
-                        let keep = read.min(limit - bytes.len());
-                        bytes.extend_from_slice(&buffer[..keep]);
-                        if keep < read {
-                            overflowed = true;
-                            break;
-                        }
-                    } else {
-                        overflowed = true;
-                        break;
-                    }
-                }
-            }
-        }
-        CaptureResult { bytes, overflowed }
-    })
-}
-
-fn wait_with_timeout(child: &mut Child, timeout_ms: u64) -> Result<ExitStatus, String> {
-    let started = Instant::now();
-    loop {
-        match child.try_wait() {
-            Ok(Some(status)) => return Ok(status),
-            Ok(None) => {
-                if timeout_ms != 0 && started.elapsed() >= Duration::from_millis(timeout_ms) {
-                    kill_process_tree(child);
-                    let _ = child.wait();
-                    return Err(format!("RTK process timed out after {timeout_ms}ms"));
-                }
-                thread::sleep(Duration::from_millis(5));
-            }
-            Err(error) => return Err(format!("could not wait for RTK process: {error}")),
-        }
-    }
-}
-
-fn kill_process_tree(child: &mut Child) {
-    #[cfg(unix)]
-    {
-        // SAFETY: the child was started as its own process group above.
-        unsafe {
-            libc::kill(-(child.id() as libc::pid_t), libc::SIGKILL);
-        }
-    }
-    #[cfg(not(unix))]
-    {
-        let _ = child.kill();
-    }
 }
 
 #[cfg(test)]
@@ -1115,6 +1021,105 @@ mod tests {
         );
         assert!(failure.fallback_available);
         assert!(failure.evidence_ref.is_some());
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_capture_does_not_wait_for_inherited_output_handles() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let started = std::time::Instant::now();
+        let output = super::run_bounded_process(
+            std::path::Path::new("/bin/sh"),
+            &["-c".to_owned(), "sleep 2 & printf ready".to_owned()],
+            directory.path(),
+            100,
+            1024,
+        )
+        .expect("parent completed successfully");
+        assert!(output.status.success());
+        assert_eq!(output.stdout, "ready");
+        assert!(
+            started.elapsed() < std::time::Duration::from_secs(1),
+            "completed parent must not wait for a descendant's inherited pipe"
+        );
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_capture_preserves_status_streams_and_zero_timeout() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let output = super::run_bounded_process(
+            std::path::Path::new("/bin/sh"),
+            &[
+                "-c".to_owned(),
+                "sleep 0.02; printf good; printf bad >&2; exit 7".to_owned(),
+            ],
+            directory.path(),
+            0,
+            4,
+        )
+        .expect("zero timeout is unlimited, not immediate cancellation");
+        assert_eq!(output.status.code(), Some(7));
+        assert_eq!(output.stdout, "good");
+        assert_eq!(output.stderr, "bad");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_capture_rejects_stdout_and_stderr_overflow() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        for script in ["printf four", "printf four >&2"] {
+            let failure = super::run_bounded_process(
+                std::path::Path::new("/bin/sh"),
+                &["-c".to_owned(), script.to_owned()],
+                directory.path(),
+                100,
+                3,
+            )
+            .err()
+            .expect("oversized output cannot be admitted");
+            assert_eq!(
+                super::failure_mode_for_reason(&failure),
+                crate::core::ocla::invocation::CapabilityFailureMode::InvalidOutput
+            );
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_capture_stops_oversized_writer_without_timeout() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let started = std::time::Instant::now();
+        let failure = super::run_bounded_process(
+            std::path::Path::new("/bin/sh"),
+            &["-c".to_owned(), "printf four; sleep 2".to_owned()],
+            directory.path(),
+            0,
+            3,
+        )
+        .err()
+        .expect("overflow must stop the writer even without a time limit");
+        assert_eq!(
+            super::failure_mode_for_reason(&failure),
+            crate::core::ocla::invocation::CapabilityFailureMode::InvalidOutput
+        );
+        assert!(started.elapsed() < std::time::Duration::from_secs(1));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn process_capture_preserves_separate_stderr_ceiling() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let failure = super::run_bounded_process(
+            std::path::Path::new("/bin/sh"),
+            &["-c".to_owned(), "head -c 65537 /dev/zero >&2".to_owned()],
+            directory.path(),
+            1000,
+            128 * 1024,
+        )
+        .err()
+        .expect("stderr remains limited to 64KiB even with a larger stdout limit");
+        assert!(failure.contains("stderr output exceeded"), "{failure}");
     }
 
     #[test]

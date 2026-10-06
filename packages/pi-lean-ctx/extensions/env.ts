@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 /**
  * Environment sanitisation for spawns that go through the host's bash tool.
  *

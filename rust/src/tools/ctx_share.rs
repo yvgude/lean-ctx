@@ -49,7 +49,7 @@ fn sanitize_for_filename(s: &str) -> String {
 /// Reads `path` (absolute or relative to `project_root`) only if it resolves
 /// inside the project root after symlink resolution — the jail that keeps a
 /// share from carrying files outside the workspace (enterprise#28).
-fn read_within_root(path: &str, project_root: &str) -> Option<(String, String, usize)> {
+fn read_within_root(path: &str, project_root: &str) -> Option<(String, String)> {
     let root =
         crate::core::pathutil::canonicalize_secure(std::path::Path::new(project_root)).ok()?;
     let candidate = std::path::Path::new(path);
@@ -64,8 +64,7 @@ fn read_within_root(path: &str, project_root: &str) -> Option<(String, String, u
     }
     let resolved_str = resolved.to_string_lossy().to_string();
     let content = crate::core::io_boundary::read_file_lossy(&resolved_str).ok()?;
-    let tokens = crate::core::tokens::count_tokens(&content);
-    Some((resolved_str, content, tokens))
+    Some((resolved_str, content))
 }
 
 pub fn handle(
@@ -105,52 +104,74 @@ fn handle_push(
 
     let mut shared_files = Vec::new();
     let mut not_found = Vec::new();
+    let mut withheld = Vec::new();
+    // A handover is persisted for another agent: a derived store. Only
+    // admitted text enters it, never withheld or restricted content (G5, E3).
+    let admission = crate::core::context_admission::stores::StoreAdmission::current();
 
     for path in &path_list {
         // Revalidate against disk before handing the file to another agent: a
         // stale cached copy would silently pass an outdated handover file to the
         // receiving agent. `current_full_content` re-reads when the cache is
         // behind disk, so the receiver always gets the current content.
-        if let Some((content, tokens)) = cache.current_full_content(path) {
-            let canonical = cache
-                .get(path)
-                .map_or_else(|| (*path).to_string(), |entry| entry.path.clone());
-            shared_files.push(SharedFile {
-                path: canonical,
-                content,
-                mode: "full".to_string(),
-                tokens,
-            });
-            continue;
-        }
-        // Not in this instance's cache — org flows (team server, enterprise#28)
-        // run each call on a fresh instance, so fall back to a direct read,
-        // jailed to the project root: a share must never exfiltrate files
-        // outside the workspace.
-        if let Some((canonical, content, tokens)) = read_within_root(path, project_root) {
-            shared_files.push(SharedFile {
-                path: canonical,
-                content,
-                mode: "full".to_string(),
-                tokens,
-            });
-        } else {
+        let found = match cache.current_full_content(path) {
+            Some(Ok((content, _))) => {
+                let canonical = cache
+                    .get(path)
+                    .map_or_else(|| (*path).to_string(), |entry| entry.path.clone());
+                Some((canonical, content))
+            }
+            Some(Err(_)) => {
+                withheld.push(*path);
+                continue;
+            }
+            // Not in this instance's cache — org flows (team server,
+            // enterprise#28) run each call on a fresh instance, so fall back to
+            // a direct read, jailed to the project root: a share must never
+            // exfiltrate files outside the workspace.
+            None => read_within_root(path, project_root),
+        };
+        let Some((canonical, content)) = found else {
             not_found.push(*path);
-        }
+            continue;
+        };
+        let Some(content) = admission.admit(&content, std::path::Path::new(&canonical)) else {
+            withheld.push(*path);
+            continue;
+        };
+        let tokens = crate::core::tokens::count_tokens(&content);
+        shared_files.push(SharedFile {
+            path: canonical,
+            content,
+            mode: "full".to_string(),
+            tokens,
+        });
     }
 
     if shared_files.is_empty() {
-        return format!(
-            "No shareable files found (not cached, and not readable inside the project root).\nNot found: {}",
-            not_found.join(", ")
+        let mut out = String::from(
+            "No shareable files found (not cached, and not readable inside the project root).",
         );
+        if !not_found.is_empty() {
+            out.push_str(&format!("\nNot found: {}", not_found.join(", ")));
+        }
+        if !withheld.is_empty() {
+            out.push_str(&format!(
+                "\nWithheld by the context gateway: {}",
+                withheld.join(", ")
+            ));
+        }
+        return out;
     }
 
+    // The note travels with the handover, so it is admitted like the files.
+    let admitted_message = message.map(|m| admission.admit_text(m));
+    let message_withheld = matches!(admitted_message, Some(None));
     let context = SharedContext {
         from_agent: from.to_string(),
         to_agent: to_agent.map(String::from),
         files: shared_files.clone(),
-        message: message.map(String::from),
+        message: admitted_message.flatten(),
         timestamp: chrono::Utc::now().to_rfc3339(),
     };
 
@@ -191,6 +212,15 @@ fn handle_push(
             "\nNot in cache (skipped): {}",
             not_found.join(", ")
         ));
+    }
+    if !withheld.is_empty() {
+        result.push_str(&format!(
+            "\nWithheld by the context gateway (skipped): {}",
+            withheld.join(", ")
+        ));
+    }
+    if message_withheld {
+        result.push_str("\nMessage withheld by the context gateway (not shared).");
     }
 
     result

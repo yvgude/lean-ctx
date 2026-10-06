@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx <command> --help` must describe the command, never run it (#1906).
 //!
 //! Most handlers never looked at `--help`: `secure --help` rewrote the config,
@@ -18,6 +19,7 @@ use super::help::full_help_text;
 /// `--help` anywhere later (`index build --help`) still goes to the guard,
 /// because sub-actions are not all help-aware.
 const SELF_HELP: &[&[&str]] = &[
+    &["autopilot"],
     &["spend"],
     &["savings"],
     &["output-savings", "output_savings"],
@@ -37,6 +39,7 @@ const SELF_HELP: &[&[&str]] = &[
     &["value"],
     &["prompt-segment"],
     &["statusline"],
+    &["inspect"],
     &["claude-mod", "claude_mod"],
     &["eval"],
     &["compliance"],
@@ -70,8 +73,6 @@ const SELF_HELP: &[&[&str]] = &[
     &["security"],
     &["trust"],
     &["untrust"],
-    &["cache"],
-    &["terse", "compression"],
     &["update", "--self-update"],
     &["doctor"],
     &["harden"],
@@ -102,6 +103,13 @@ const EXEMPT: &[&[&str]] = &[
 /// Arms answered from the `help all` reference. Each needs at least one
 /// reference line whose leading word is one of its names.
 const GUARDED: &[&[&str]] = &[
+    // Their bare form reads live state, which takes a lock / touches the
+    // project index, so `--help` must never reach the handler.
+    &["cache"],
+    &["terse", "compression"],
+    &["migrate"],
+    // Launches an interactive Codex session; `--help` must never start it.
+    &["codex-protected"],
     &["badge"],
     &["shell", "--shell"],
     &["gain"],

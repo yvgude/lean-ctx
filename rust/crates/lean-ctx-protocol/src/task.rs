@@ -1,7 +1,7 @@
 //! Task admission and lineage contract.
 
 use crate::common::{
-    AgentId, ProjectId, SessionId, TaskId, TenantId, TraceId, ValidationError,
+    AgentId, ExtensionsV1, ProjectId, SessionId, TaskId, TenantId, TraceId, ValidationError,
     deserialize_optional_milliunit, deserialize_schema_version, validate_milliunit,
     validate_schema_version,
 };
@@ -31,7 +31,6 @@ pub enum RiskClass {
 
 /// Canonical task envelope for a V1 execution lineage.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct TaskEnvelopeV1 {
     #[serde(deserialize_with = "deserialize_schema_version")]
     pub schema_version: u32,
@@ -72,17 +71,73 @@ pub struct TaskEnvelopeV1 {
     pub context_state_ref: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub outcome_contract_ref: Option<String>,
+    /// Unknown additive V1 fields retained for lossless forwarding.
+    #[serde(default, flatten)]
+    pub extensions: ExtensionsV1,
 }
+
+const TASK_RESERVED_FIELDS: &[&str] = &[
+    "schema_version",
+    "task_id",
+    "trace_id",
+    "project_id",
+    "session_id",
+    "agent_id",
+    "complexity",
+    "created_at",
+    "parent_task_id",
+    "tenant_id",
+    "intent",
+    "task_class",
+    "risk_class",
+    "quality_requirement_milli",
+    "cost_budget_micros",
+    "latency_budget_ms",
+    "data_classification",
+    "region_policy_ref",
+    "model_policy_ref",
+    "context_state_ref",
+    "outcome_contract_ref",
+];
 
 impl TaskEnvelopeV1 {
     /// Schema version represented by this type.
     pub const SCHEMA_VERSION: u32 = 1;
 
+    /// Compact UTF-8 JSON with recursively sorted object keys. These bytes
+    /// retain all additive fields and identify the complete task, not just its ID.
+    pub fn canonical_bytes(&self) -> Result<Vec<u8>, ValidationError> {
+        self.validate()?;
+        let value = serde_json::to_value(self)
+            .map_err(|error| ValidationError::new(format!("serialize task envelope: {error}")))?;
+        serde_json::to_vec(&crate::receipt_document::sort_json(value))
+            .map_err(|error| ValidationError::new(format!("canonicalize task envelope: {error}")))
+    }
+
     /// Validate invariants that also apply to values constructed in Rust.
     pub fn validate(&self) -> Result<(), ValidationError> {
+        self.extensions.validate_reserved(TASK_RESERVED_FIELDS)?;
         validate_schema_version(self.schema_version)?;
+        if self.parent_task_id.as_ref() == Some(&self.task_id) {
+            return Err(ValidationError::new("task cannot be its own parent"));
+        }
         if let Some(value) = self.quality_requirement_milli {
             validate_milliunit(value, "quality_requirement_milli")?;
+        }
+        if self.parent_task_id.as_ref() == Some(&self.task_id) {
+            return Err(ValidationError::new("task cannot be its own parent"));
+        }
+        for (value, field) in [
+            (&self.intent, "intent"),
+            (&self.task_class, "task_class"),
+            (&self.region_policy_ref, "region_policy_ref"),
+            (&self.model_policy_ref, "model_policy_ref"),
+            (&self.context_state_ref, "context_state_ref"),
+            (&self.outcome_contract_ref, "outcome_contract_ref"),
+        ] {
+            if let Some(value) = value {
+                crate::validate_bounded_string(value, field)?;
+            }
         }
         Ok(())
     }
@@ -141,6 +196,7 @@ mod tests {
             model_policy_ref: Some("policy:model".to_owned()),
             context_state_ref: Some("context:state".to_owned()),
             outcome_contract_ref: Some("contract:outcome".to_owned()),
+            extensions: Default::default(),
         };
         let json = serde_json::to_string(&task).expect("task should serialize");
         let decoded: TaskEnvelopeV1 = serde_json::from_str(&json).expect("task should deserialize");
@@ -162,5 +218,55 @@ mod tests {
             "quality_requirement_milli": 1001
         }"#;
         assert!(serde_json::from_str::<TaskEnvelopeV1>(json).is_err());
+    }
+
+    #[test]
+    fn extension_reservation_is_scoped_to_this_dto() {
+        let mut task: TaskEnvelopeV1 = serde_json::from_value(serde_json::json!({
+            "schema_version": 1,
+            "task_id": "task-1",
+            "trace_id": "trace-1",
+            "project_id": "project-1",
+            "session_id": "session-1",
+            "agent_id": "agent-1",
+            "complexity": "low",
+            "created_at": "2026-08-09T12:00:00Z"
+        }))
+        .expect("task should deserialize");
+        task.extensions
+            .insert("provider", serde_json::Value::from("future"))
+            .expect("provider is not a task field");
+        task.validate()
+            .expect("cross-DTO key should remain available");
+        task.extensions
+            .insert("task_id", serde_json::Value::from("shadow"))
+            .expect("insert is checked by the owning DTO");
+        assert!(task.validate().is_err());
+    }
+
+    #[test]
+    fn self_parent_is_rejected_by_task_and_child_validation() {
+        let mut task: TaskEnvelopeV1 = serde_json::from_value(serde_json::json!({
+            "schema_version": 1,
+            "task_id": "task-1",
+            "trace_id": "trace-1",
+            "project_id": "project-1",
+            "session_id": "session-1",
+            "agent_id": "agent-1",
+            "complexity": "low",
+            "created_at": "2026-08-09T12:00:00Z"
+        }))
+        .expect("valid fixture");
+        let parent = task.clone();
+        task.parent_task_id = Some(task.task_id.clone());
+        assert!(task.validate().is_err());
+        assert!(task.validate_child_of(&parent).is_err());
+
+        task.task_id = id("task-2");
+        assert!(task.validate_child_of(&parent).is_ok());
+
+        let mut invalid_parent = parent;
+        invalid_parent.parent_task_id = Some(invalid_parent.task_id.clone());
+        assert!(task.validate_child_of(&invalid_parent).is_err());
     }
 }

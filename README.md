@@ -33,7 +33,7 @@ The **LeanCTX SDK** embeds supported Engine capabilities in your application.
   <a href="https://crates.io/crates/lean-ctx"><img src="https://img.shields.io/crates/d/lean-ctx?color=%23e6522c" alt="Downloads"></a>
   <a href="https://www.npmjs.com/package/lean-ctx-bin"><img src="https://img.shields.io/npm/v/lean-ctx-bin?label=npm&color=%23cb3837" alt="npm"></a>
   <a href="https://aur.archlinux.org/packages/lean-ctx"><img src="https://img.shields.io/aur/version/lean-ctx?color=%231793d1" alt="AUR"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue.svg" alt="License"></a>
+  <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-Mixed-blue.svg" alt="Mixed license"></a>
   <a href="https://discord.gg/pTHkG9Hew9"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
   <a href="https://x.com/leanctx"><img src="https://img.shields.io/badge/𝕏-Follow-000000?logo=x&logoColor=white" alt="X/Twitter"></a>
   <a href="#privacy--security"><img src="https://img.shields.io/badge/Telemetry-Configurable-blue?logo=shield&logoColor=white" alt="Configurable telemetry"></a>
@@ -213,29 +213,29 @@ lean-ctx shadow --latest
 ```
 
 <details>
-<summary><strong>Full feature list (complete MCP tool set)</strong></summary>
+<summary><strong>Feature overview (see generated MCP registry for the current count)</strong></summary>
 
 - **Web & Research** (`ctx_url_read`): pull a public web page, PDF, or YouTube transcript into context as compressed, citation-backed text — `facts`/`quotes` return claims with a confidence score + source URL, relevance-ranked research-compression distils to a token budget, SSRF-guarded (http/https only)
 - **Graph-Powered Intelligence**: hybrid search (BM25 + embeddings + graph proximity via RRF), incremental git-diff updates
 - **LSP Refactoring** (`ctx_refactor`): language-server-powered rename, references, go-to-definition via rust-analyzer, typescript-language-server, pylsp, gopls
-- **Multi-Agent** (`ctx_agent`, `ctx_handoff`): agent handoff with context transfer bundles, diary system, synchronized shared state
+- **Multi-Agent — Research** (`ctx_agent`, `ctx_handoff`): experimental local agent handoff with context transfer bundles, diary system, and shared state; not a hosted or generally available team service
 - **Archive Full-Text Search** (`ctx_expand search_all`): FTS5-powered cross-archive search over all previously archived tool outputs
 - **PR Context Packs**: `lean-ctx pack --pr` builds a PR-ready context pack (changed files, related tests, impact, artifacts)
-- **Context Packages**: `lean-ctx pack create` bundles Knowledge + Graph + Session into portable `.ctxpkg` files with SHA-256 integrity
-- **Context Time Machine**: `lean-ctx snapshot create|list|show|verify|restore|publish|import` — git-anchored, ed25519-signed snapshots of the layer state (lineage, ledger Φ, ROI, session) on an append-only timeline; replay them in the dashboard, `restore` to resume a session (and `--git` to check out the commit), or `publish`/`import` a signed snapshot to share it ([concept →](docs/concepts/context-time-machine.md))
-- **Observability**: `lean-ctx gain --live` for live context metrics, `lean-ctx wrapped` for weekly/monthly summaries (`gain --svg`/`--share` for a shareable card or self-hostable page), and `lean-ctx dashboard` for the browser Context Manager
-- **Savings ledger**: `lean-ctx savings` is an auditable, per-event ledger of local token counts (tokenizer transparency, bounce-netting, tamper-evident SHA-256 chain) — local-only, on by default; provider-measured savings need the proxy with counterfactual metering
+- **Context Packages — Research**: `lean-ctx pack create` bundles local Knowledge, Graph and Session state into `.ctxpkg` files with SHA-256 integrity; this is experimental local packaging, not a generally available Context Kits or hosted sharing product
+- **Context Time Machine — Research**: `lean-ctx snapshot create|list|show|verify|restore|publish|import` handles git-anchored, signed local snapshots and file-based sharing; dashboard replay and restore are experimental, and hosted history or a hosted registry is not a generally available product ([concept →](docs/concepts/context-time-machine.md))
+- **Observability**: `lean-ctx gain --live`, `lean-ctx wrapped`, `lean-ctx watch` and the browser dashboard show local activity and recorded context metrics; `gain --svg`/`--share` creates a shareable card or self-hostable page
+- **Verified savings**: `lean-ctx savings` is a local per-event ledger with tokenizer transparency, bounce-netting and a tamper-evident SHA-256 chain; provider-measured savings require the proxy's counterfactual holdout
 - **HTTP mode**: `lean-ctx serve` for Streamable HTTP MCP + `/v1/tools/call` (used by the Cookbook and external clients)
 
 </details>
 
-## Addons — extend the engine, or run the ecosystem through one gateway
+## Addons — Research preview
 
-You don't have to choose between LeanCTX and the other context tools you already
-like. An **addon** is a signed package carrying either a sandboxed WASM module
-that runs *inside* the context pipeline, or an `[mcp]` declaration that wires an
-external MCP server into the gateway — after which LeanCTX treats what it returns
-like your own reads instead of just proxying it.
+Addon manifests and gateway integration remain experimental Research interfaces.
+Local `addon release|add|list` commands handle signed packages; they do not
+provide a public marketplace, hosted registry, managed distribution or `addon
+search`. A package can carry a sandboxed WASM module or an `[mcp]` declaration
+for an external server.
 
 ```bash
 lean-ctx addon release ./my-addon   # build a signed .ctxpkg — no artifact host, no CI
@@ -256,17 +256,19 @@ lean-ctx addon list                 # what's installed, what loads, what's wired
 - **Folded in, not just proxied** — opt-in post-processing runs addon output through the same pipeline as your code: compress to a budget, spill oversized blobs to a `ctx_expand` handle, index into BM25 / graph / knowledge. A typed `integration` routes specific tools straight into `ctx_expand`, `ctx_callgraph` and `ctx_knowledge`.
 - **Untrusted by default** — addon results pass through secret scrubbing and are tagged untrusted in the integration pipeline. Scrubbing covers configured detection patterns, not every possible secret.
 
-There is deliberately **no marketplace** and no `addon search`: LeanCTX does not
-host, curate or rank addons. A package is a file you install, or one you fetch
-from a registry you name. See the
-**[addon guide](docs/guides/addons.md)** for the full walkthrough.
+The local workflow verifies signatures and module hashes, shows the publisher
+key and declared command before installation, and never installs the external
+server. Opt-in post-processing can send addon results through compression,
+`ctx_expand`, BM25, graph and knowledge. Results remain untrusted; configured
+secret scrubbing does not cover every possible secret. See the
+**[status-qualified addon guide](docs/guides/addons.md)** for the boundary.
 
 ## Research directions
 
 LeanCTX remains the Context Gateway for AI Systems. These research directions
 extend its context capabilities; they are not supported product commitments.
 
-- **Hosted context history** — explore versioned distribution and replay beyond the existing local snapshot mechanisms. Hosted registries remain Research. ([Historical concept →](docs/concepts/context-time-machine.md))
+- **Hosted context history** — local snapshot create/show/verify/restore and signed file-based sharing are experimental Research; a hosted registry and model-view comparison remain future work. ([concept →](docs/concepts/context-time-machine.md))
 - **Context as Code** — declarative pipelines, profiles, and policies in TOML, versioned like infrastructure
 - **Unified Context Graph** — code, tests, commits, CI runs, and knowledge entries in a single semantic graph
 - **Cross-agent context controls** — explore context roles, budgets, and permissions while the host retains agent scheduling and workflow execution
@@ -486,14 +488,15 @@ Shared message bus, diaries, knowledge, and deterministic handoffs.
 <tr>
 <td width="50%" valign="top">
 
-### 🏢 Share across a team / CI
+### 🏢 Explore team and CI context — Research
 *"One shared index, headless in pipelines."*
 
 ```bash
 lean-ctx team serve --config team.toml
 lean-ctx bootstrap            # zero-prompt CI setup
 ```
-Scoped tokens, optional cloud sync, verifiable context gates.
+Experimental local team-server path with scoped tokens and verifiable context
+gates; no hosted team or cloud service is publicly available.
 → **[Journey 9 — Team, Cloud & CI](docs/reference/09-team-cloud-ci.md)**
 
 </td>
@@ -531,7 +534,7 @@ All analytics live in the CLI/dashboard — never burning agent tokens.
 ### 📚 The full reference
 *"I want to read everything."*
 
-Every command and the complete MCP tool set, organized as user journeys, plus
+Every command and the generated MCP registry, organized as user journeys, plus
 appendices for the [CLI map](docs/reference/appendix-cli-map.md),
 [MCP tools](docs/reference/appendix-mcp-tools.md), and
 [paths & config](docs/reference/appendix-paths-and-config.md).
@@ -680,6 +683,7 @@ quality as `unknown`. What each number can and cannot show, per data path:
 
 - [GitHub activity](https://github.com/yvgude/lean-ctx) and [releases](https://github.com/yvgude/lean-ctx/releases) show the current repository counts and release history.
 - [Supported integration paths](docs/integrations/installation-matrix.md) distinguish verified setups from protocol compatibility.
+- [Generated MCP registry](docs/reference/appendix-mcp-tools.md) shows the current tool count and status.
 - [Published metrics](https://leanctx.com/metrics/) state their measurement scope; adoption counts do not establish savings or outcome quality.
 
 ## Docs
@@ -753,4 +757,6 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md). Easy first PR: propose a new CLI 
 
 ## License
 
-Apache License 2.0 — see [LICENSE](LICENSE).
+Mixed licensing: the Trust Core remains Apache-2.0 while explicitly mapped v4
+modules may use commercial source-visible terms. See [LICENSE.md](LICENSE.md)
+and [LICENSE_MATRIX.toml](LICENSE_MATRIX.toml).

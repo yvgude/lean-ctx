@@ -100,7 +100,9 @@ impl ValueGateStore {
         fs::create_dir_all(path.parent().unwrap_or_else(|| Path::new(".")))?;
         Self::rotate_if_needed(path, json.len() as u64 + 1)?;
         let mut file = OpenOptions::new().create(true).append(true).open(path)?;
-        writeln!(file, "{json}")
+        // One write of the whole line: with O_APPEND, concurrent writers can
+        // then never interleave inside a record, as `writeln!` might.
+        file.write_all(format!("{json}\n").as_bytes())
     }
 
     pub(crate) fn load_from_path(path: &Path) -> Vec<ValueAssessment> {

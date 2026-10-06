@@ -3,18 +3,66 @@ use std::process::{Command, Stdio};
 
 use crate::core::config;
 
-/// Execute a command from pre-split argv without going through `sh -c`.
-/// Used by `-t` mode when the shell hook passes `"$@"` — arguments are
-/// already correctly split by the user's shell, so re-serializing them
-/// into a string and re-parsing via `sh -c` would risk mangling complex
-/// quoted arguments (em-dashes, `#`, nested quotes, etc.).
-pub fn exec_argv(args: &[String]) -> i32 {
+/// An allowlist-admitted shell execution that owns the effective command or
+/// the original pre-split argv.
+pub(crate) enum PreparedShellExecution {
+    Shell {
+        command: String,
+        collapsed_nested: bool,
+    },
+    DirectArgv(Vec<String>),
+    /// #1834: a host OS-sandbox launcher whose inner script already passed the
+    /// allowlist; the launcher itself runs verbatim.
+    SandboxLauncher(Vec<String>),
+}
+
+/// Result of dispatching an admitted shell execution.
+#[derive(Debug, Eq, PartialEq)]
+pub(crate) struct ShellDispatchObservation {
+    pub(crate) exit_code: i32,
+    pub(crate) child_dispatch_attempted: bool,
+}
+
+/// Prepare a shell command, applying wrapper unwrapping, nested-command
+/// collapsing, and the allowlist gate exactly once.
+pub(crate) fn prepare_exec(command: &str) -> Result<PreparedShellExecution, i32> {
+    if let Some(code) = reject_if_exec_depth_exceeded() {
+        return Err(code);
+    }
+
+    // #1834 (Path C): the host's OS-sandbox launcher (`env … sandbox-exec …
+    // /bin/zsh -c '<Path B>'`, Claude Code `sandbox.enabled`). Unwrapping it
+    // would run the real command outside the sandbox, and gating the launcher
+    // as a whole hard-blocks every call on the inner `eval`. Gate the script
+    // inside it here — exactly as Path A/B would — then run the launcher
+    // verbatim. This gate is the one that counts: the inner shell may be bash,
+    // which never reads `.zshenv`, so its re-entry is only for compression.
+    // See `agent_wrapper::os_sandbox_launcher_argv`.
+    if let Some(argv) = super::super::agent_wrapper::os_sandbox_launcher_argv(command) {
+        if let Some(code) = allowlist_gate(&sandbox_launcher_gated_command(&argv)) {
+            return Err(code);
+        }
+        return Ok(PreparedShellExecution::SandboxLauncher(argv));
+    }
+
+    let (command, collapsed_nested) = prepare_shell_command(command);
+    if let Some(code) = allowlist_gate(&command) {
+        return Err(code);
+    }
+    Ok(PreparedShellExecution::Shell {
+        command,
+        collapsed_nested,
+    })
+}
+
+/// Prepare pre-split argv without reparsing it through a shell.
+pub(crate) fn prepare_exec_argv(args: &[String]) -> Result<PreparedShellExecution, i32> {
     if args.is_empty() {
-        return 127;
+        return Err(127);
     }
 
     if let Some(code) = reject_if_exec_depth_exceeded() {
-        return code;
+        return Err(code);
     }
 
     // Quote-safe join used only for the allowlist/policy *checks*; execution
@@ -25,25 +73,66 @@ pub fn exec_argv(args: &[String]) -> i32 {
 
     // #595: unwrap a host command wrapper (eval + cwd snapshot) before any
     // checks so the real command — not the wrapper — is gated and run. The `-t`
-    // path cannot exec a compound argv, so route the rebuild through `exec`.
+    // path cannot exec a compound argv, so route the rebuild through the shell
+    // form while retaining the single admission gate.
     if let Some(u) = super::super::agent_wrapper::unwrap_agent_wrapper(&joined) {
-        return exec(&u.rebuild());
+        let (command, collapsed_nested) = prepare_shell_command(&u.rebuild());
+        if let Some(code) = allowlist_gate(&command) {
+            return Err(code);
+        }
+        return Ok(PreparedShellExecution::Shell {
+            command,
+            collapsed_nested,
+        });
     }
 
     // The `-t` track path is the agent's default shell hook
     // (`_lc() { lean-ctx -t "$@" }`), so it MUST enforce the same allowlist
-    // boundary as `-c` (see `exec`). Previously it skipped the check entirely,
-    // letting every aliased multi-arg invocation (`_lc git …`) bypass the
-    // restriction that `lean-ctx -c` enforces (GH security audit, finding 1).
+    // boundary as the `-c` path. The direct argv remains byte-faithful.
     if let Some(code) = allowlist_gate(&joined) {
-        return code;
+        return Err(code);
     }
 
+    Ok(PreparedShellExecution::DirectArgv(args.to_vec()))
+}
+
+/// Execute an allowlist-admitted value through the existing post-gate routes.
+/// Admission is complete before this function runs; no allowlist check belongs
+/// here. Dispatch is considered attempted before entering a child helper, so a
+/// spawn failure with exit `127` is still an attempted dispatch.
+pub(crate) fn execute_prepared(prepared: PreparedShellExecution) -> ShellDispatchObservation {
+    let exit_code = match prepared {
+        PreparedShellExecution::Shell {
+            command,
+            collapsed_nested,
+        } => execute_shell_post_gate(&command, collapsed_nested),
+        PreparedShellExecution::DirectArgv(args) => execute_argv_post_gate(&args),
+        PreparedShellExecution::SandboxLauncher(argv) => exec_sandbox_launcher(&argv),
+    };
+
+    ShellDispatchObservation {
+        exit_code,
+        child_dispatch_attempted: true,
+    }
+}
+
+/// Execute a command from pre-split argv without going through `sh -c`.
+/// Used by `-t` mode when the shell hook passes `"$@"` — arguments are
+/// already correctly split by the user's shell, so re-serializing them
+/// into a string and re-parsing via `sh -c` would risk mangling complex
+/// quoted arguments (em-dashes, `#`, nested quotes, etc.).
+pub fn exec_argv(args: &[String]) -> i32 {
+    prepare_exec_argv(args)
+        .map_or_else(|code| code, |prepared| execute_prepared(prepared).exit_code)
+}
+
+fn execute_argv_post_gate(args: &[String]) -> i32 {
     if super::super::reentry::should_pass_through() {
         return exec_direct(args);
     }
 
     let cfg = config::Config::load();
+    let joined = super::super::platform::join_command(args);
     let policy = super::super::output_policy::classify(&joined, &cfg.excluded_commands);
 
     if policy.is_protected() {
@@ -230,7 +319,11 @@ fn command_has_file_redirect(cmd: &str) -> bool {
 /// Returns `Some(126)` when the command is blocked and the caller must return
 /// that exit code; `None` when execution may proceed (allowed, or warn-only for
 /// an interactive human — see [`allowlist_must_enforce`]).
-fn allowlist_gate(command: &str) -> Option<i32> {
+///
+/// Also the gate of the CLI pass-through path (`lean-ctx -c` / `-t` under an
+/// inherited `LEAN_CTX_WRAPPED` or `LEAN_CTX_DISABLED`), which skips
+/// compression but must never skip this boundary (GH #2004).
+pub(crate) fn allowlist_gate(command: &str) -> Option<i32> {
     if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(command) {
         if allowlist_must_enforce() {
             eprintln!("{msg}");
@@ -257,25 +350,10 @@ fn allowlist_gate(command: &str) -> Option<i32> {
 }
 
 pub fn exec(command: &str) -> i32 {
-    if let Some(code) = reject_if_exec_depth_exceeded() {
-        return code;
-    }
+    prepare_exec(command).map_or_else(|code| code, |prepared| execute_prepared(prepared).exit_code)
+}
 
-    // #1834 (Path C): the host's OS-sandbox launcher (`env … sandbox-exec …
-    // /bin/zsh -c '<Path B>'`, Claude Code `sandbox.enabled`). Unwrapping it
-    // would run the real command outside the sandbox, and gating the launcher
-    // as a whole hard-blocks every call on the inner `eval`. Gate the script
-    // inside it here — exactly as Path A/B would — then run the launcher
-    // verbatim. This gate is the one that counts: the inner shell may be bash,
-    // which never reads `.zshenv`, so its re-entry is only for compression.
-    // See `agent_wrapper::os_sandbox_launcher_argv`.
-    if let Some(argv) = super::super::agent_wrapper::os_sandbox_launcher_argv(command) {
-        if let Some(code) = allowlist_gate(&sandbox_launcher_gated_command(&argv)) {
-            return code;
-        }
-        return exec_sandbox_launcher(&argv);
-    }
-
+fn prepare_shell_command(command: &str) -> (String, bool) {
     // #595: when the agent wraps its command in host scaffolding
     // (`… && eval '<cmd>' … && pwd -P >| …-cwd`), look through it so the allowlist
     // and compression act on the REAL command, not the wrapper — whose `eval` the
@@ -293,10 +371,10 @@ pub fn exec(command: &str) -> i32 {
         command
     };
 
-    if let Some(code) = allowlist_gate(command) {
-        return code;
-    }
+    (command.to_string(), collapsed_nested)
+}
 
+fn execute_shell_post_gate(command: &str, collapsed_nested: bool) -> i32 {
     let (shell, shell_flag) = super::super::platform::shell_and_flag();
     let command = crate::tools::ctx_shell::normalize_command_for_shell(command);
     // #1286: keep the zsh preamble (`setopt nonomatch noequals; `) OUT of the
@@ -649,6 +727,120 @@ mod exec_tests {
     fn exec_argv_empty_returns_127() {
         let code = super::exec_argv(&[]);
         assert_eq!(code, 127);
+    }
+
+    #[test]
+    fn prepare_exec_denies_before_dispatch() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_ACTIVE");
+        crate::test_env::remove_var("LEAN_CTX_DISABLED");
+        crate::test_env::remove_var("LEAN_CTX_ALLOWLIST_WARN_ONLY");
+        crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
+        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "git");
+
+        let prepared = super::prepare_exec("xxd");
+
+        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+
+        assert!(matches!(prepared, Err(126)));
+    }
+
+    #[test]
+    fn prepare_exec_argv_empty_returns_127() {
+        assert!(matches!(super::prepare_exec_argv(&[]), Err(127)));
+    }
+
+    #[test]
+    fn execute_prepared_spawn_failure_is_attempted() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_ACTIVE");
+        crate::test_env::remove_var("LEAN_CTX_DISABLED");
+        crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
+        crate::test_env::set_var(
+            "LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE",
+            "__lean_ctx_phase5_missing_binary__",
+        );
+
+        let prepared =
+            super::prepare_exec_argv(&["__lean_ctx_phase5_missing_binary__".to_string()])
+                .expect("test binary name is allowlisted");
+        let observation = super::execute_prepared(prepared);
+
+        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+
+        assert_eq!(observation.exit_code, 127);
+        assert!(observation.child_dispatch_attempted);
+    }
+
+    #[test]
+    fn execute_prepared_reports_child_exit() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_ACTIVE");
+        crate::test_env::remove_var("LEAN_CTX_DISABLED");
+        crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
+        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "true");
+
+        let prepared = super::prepare_exec_argv(&["true".to_string()]).unwrap();
+        let observation = super::execute_prepared(prepared);
+
+        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+
+        assert_eq!(observation.exit_code, 0);
+        assert!(observation.child_dispatch_attempted);
+    }
+
+    #[test]
+    fn prepare_exec_argv_preserves_special_argument_bytes() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_ACTIVE");
+        crate::test_env::remove_var("LEAN_CTX_DISABLED");
+        crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
+        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "printf");
+        let args = vec![
+            "printf".to_string(),
+            "%s|%s|%s".to_string(),
+            "hello world".to_string(),
+            "it's here".to_string(),
+            "a \"quoted\" thing; $HOME".to_string(),
+        ];
+
+        let prepared = super::prepare_exec_argv(&args).unwrap();
+
+        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+
+        match prepared {
+            super::PreparedShellExecution::DirectArgv(actual) => assert_eq!(actual, args),
+            super::PreparedShellExecution::Shell { .. }
+            | super::PreparedShellExecution::SandboxLauncher(_) => {
+                panic!("direct argv must not be reparsed as a shell command")
+            }
+        }
+    }
+
+    #[test]
+    fn compatibility_wrappers_match_for_allowlisted_command() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_ACTIVE");
+        crate::test_env::remove_var("LEAN_CTX_DISABLED");
+        crate::test_env::set_var("LEAN_CTX_HOOK_CHILD", "1");
+        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "true");
+        // The shell path runs `$SHELL -c`; an installed rc hook (zsh sources
+        // ~/.zshenv even non-interactively) would re-exec the *installed*
+        // binary under the developer's real config. Keep the test hermetic.
+        crate::test_env::set_var("LEAN_CTX_NO_HOOK", "1");
+
+        let shell_code = super::exec("true");
+        let argv_code = super::exec_argv(&["true".to_string()]);
+
+        crate::test_env::remove_var("LEAN_CTX_HOOK_CHILD");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+        crate::test_env::remove_var("LEAN_CTX_NO_HOOK");
+
+        assert_eq!(shell_code, argv_code);
     }
 
     #[test]

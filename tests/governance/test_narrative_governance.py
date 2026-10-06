@@ -51,6 +51,7 @@ def valid_contract() -> dict[str, object]:
             "docs/what-is-leanctx.md",
         ],
         "required_text": {"README.md": ["Get started", "Real-world scenarios"]},
+        "forbidden_text": {},
         "status_guarded_records": [],
         "feature_statuses": {"ContextKits": "Research"},
         "canonical_reference": "docs/POSITIONING_CANONICAL.md",
@@ -182,12 +183,67 @@ def write_fixture(root: Path) -> None:
 
 
 class NarrativeGovernanceTests(unittest.TestCase):
+    def run_archived_guard(self, mutate=None) -> subprocess.CompletedProcess[str]:
+        tree = subprocess.check_output(["git", "write-tree"], cwd=ROOT, text=True).strip()
+        archive = subprocess.check_output(
+            ["git", "archive", "--format=tar", tree], cwd=ROOT
+        )
+
+        with tempfile.TemporaryDirectory() as temporary_directory:
+            archive_root = Path(temporary_directory).resolve()
+            with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+                for member in tar.getmembers():
+                    destination = (archive_root / member.name).resolve()
+                    self.assertFalse(member.issym() or member.islnk())
+                    self.assertTrue(
+                        destination == archive_root or archive_root in destination.parents
+                    )
+                tar.extractall(archive_root)
+            if mutate is not None:
+                mutate(archive_root)
+            return subprocess.run(
+                ["python3", str(archive_root / "scripts/check-narrative-governance.py")],
+                cwd=archive_root,
+                check=False,
+                capture_output=True,
+                text=True,
+            )
+
     def test_clean_archive_contains_current_checker_and_contract(self) -> None:
+        result = self.run_archived_guard()
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn("Narrative governance passed.", result.stdout)
+
+    def test_forbidden_public_claim_fails_closed(self) -> None:
+        def add_stale_claim(archive_root: Path) -> None:
+            readme = archive_root / "README.md"
+            readme.write_text(
+                readme.read_text(encoding="utf-8") + "\n83 MCP tools\n",
+                encoding="utf-8",
+            )
+
+        result = self.run_archived_guard(add_stale_claim)
+        self.assertNotEqual(result.returncode, 0)
+        self.assertIn("forbidden public claim '83 MCP tools'", result.stderr)
+    def test_clean_worktree_archive_contains_current_checker_and_contract(self) -> None:
         with tempfile.TemporaryDirectory() as temporary_directory:
             index_path = Path(temporary_directory) / "index"
             env = {**os.environ, "GIT_INDEX_FILE": str(index_path)}
             subprocess.run(["git", "read-tree", "HEAD"], cwd=ROOT, env=env, check=True)
-            subprocess.run(["git", "add", "--all"], cwd=ROOT, env=env, check=True)
+            subprocess.run(
+                [
+                    "git",
+                    "add",
+                    "--all",
+                    "--",
+                    ".",
+                    ":(exclude,glob)**/.k*",
+                    ":(exclude,glob)**/TASK*",
+                ],
+                cwd=ROOT,
+                env=env,
+                check=True,
+            )
             tree = subprocess.check_output(
                 ["git", "write-tree"], cwd=ROOT, env=env, text=True
             ).strip()

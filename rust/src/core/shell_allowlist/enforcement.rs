@@ -867,7 +867,12 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
         // invocation — check the body commands instead of the function name.
         if let Some(fn_name) = super::tokenizer::detect_function_def(seg) {
             local_functions.push(fn_name);
-            let body_cmds = super::tokenizer::extract_function_body_commands(seg);
+            // GH #2002: expand the body like a top-level line, so `for`/`if`/
+            // `while`/`case` in it are control flow, not commands to gate.
+            let body_cmds = match super::tokenizer::function_body(seg) {
+                Some(body) => expand_to_leaf_segments(body)?,
+                None => Vec::new(),
+            };
             for body_seg in &body_cmds {
                 check_inline_env_block(body_seg)?;
                 let body_tokens = extract_command_tokens_from_segment(body_seg);
@@ -882,7 +887,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
                 }
                 if !matches_allowlist_entry(&body_tokens, allowlist) {
                     return Err(format!(
-                        "[BLOCKED — DO NOT RETRY] '{body_base}' (inside function body) is not in the                          shell allowlist.\nFix (additive, keeps the defaults): run  lean-ctx allow {body_base}",
+                        "[BLOCKED — DO NOT RETRY] '{body_base}' (inside function body) is not in the shell allowlist.\nFix (additive, keeps the defaults): run  lean-ctx allow {body_base}",
                     ).into());
                 }
                 check_interpreter_abuse(body_seg, allowlist)?;

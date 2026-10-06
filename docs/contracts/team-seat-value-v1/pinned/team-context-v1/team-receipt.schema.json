@@ -1,0 +1,58 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "team-receipt.schema.json",
+  "title": "LeanCTX Team Receipt v1",
+  "description": "Privacy-safe operation and outcome evidence. operation_kind is the shared action vocabulary, so every receipt-bearing operation is also grantable by workspace-role.allowed_actions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "receipt_id",
+    "scope",
+    "operation_kind",
+    "actor_digest",
+    "input_digest",
+    "outcome",
+    "created_at",
+    "policy_digest",
+    "signature_envelope_digest",
+    "version",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "receipt_id": { "$ref": "common.schema.json#/$defs/id" },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "operation_kind": { "$ref": "common.schema.json#/$defs/action" },
+    "actor_digest": { "$ref": "common.schema.json#/$defs/pseudonymDigest" },
+    "input_digest": { "$ref": "common.schema.json#/$defs/canonicalBytesDigest" },
+    "output_digest": { "$ref": "common.schema.json#/$defs/canonicalBytesDigest" },
+    "outcome": {
+      "enum": ["accepted", "rejected", "conflict", "expired", "cancelled"]
+    },
+    "reason_code": { "$ref": "common.schema.json#/$defs/reasonCode" },
+    "created_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "policy_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "signature_envelope_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Record digest of the signature-envelope whose signed_payload_kind is 'team-receipt' and whose signed_payload_digest is this record's digest with signature_envelope_digest omitted."
+    },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "parent_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "idempotency_key": {
+      "$ref": "common.schema.json#/$defs/idempotencyKey",
+      "description": "Echo of the originating operation's idempotency key, so duplicate suppression is auditable from the receipt alone."
+    }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/casLineage" },
+    {
+      "if": {
+        "properties": { "outcome": { "const": "accepted" } },
+        "required": ["outcome"]
+      },
+      "then": { "required": ["output_digest"] },
+      "else": { "required": ["reason_code"] }
+    }
+  ]
+}

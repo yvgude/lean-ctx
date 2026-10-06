@@ -64,13 +64,13 @@
   "expected": {
     "capability_id": "capability://leanctx/tool-output-optimizer",
     "version": "1.0.0",
-    "checks_passed": 10,
-    "checks_failed": 0,
+    "checks_passed": 4,
+    "checks_failed": 1,
     "failures": [
       {
-        "check": "warning:latency_within_bounds",
-        "expected": "0..=250 ms",
-        "actual": "300 ms"
+        "check": "latency_within_bounds",
+        "expected": "latency within declared unsigned max_ms",
+        "actual": "300 ms; bounds={\"max_ms\":250,\"min_ms\":0}"
       }
     ]
   }

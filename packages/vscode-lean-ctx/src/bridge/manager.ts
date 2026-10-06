@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Runs one semantic bridge per local workspace folder while
 // `leanctx.semanticBridge.enabled` is on, and announces each to lean-ctx.
 

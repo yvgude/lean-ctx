@@ -141,6 +141,13 @@ pub fn handle_filtered(
     const MAX_REGEX_SIZE: usize = 1 << 20; // 1 MiB DFA limit
 
     let redact = crate::core::redaction::redaction_enabled_for_active_role();
+    let protected = crate::core::policy::runtime::active().is_some();
+    let protected_root = crate::core::policy::diagnostics::project();
+    // Observed before any resident store is consulted: a changed admission
+    // policy drops the content cache and trigram index first (G5).
+    let admission = crate::core::context_admission::stores::StoreAdmission::current();
+    let mut protected_budget = crate::core::limits::max_read_bytes()
+        .min(crate::core::policy::content::MAX_PROTECTED_CONTENT_BYTES);
     if pattern.len() > MAX_PATTERN_LEN {
         return SearchOutcome::error(format!(
             "ERROR: pattern too long ({} > {MAX_PATTERN_LEN} chars)",
@@ -190,6 +197,7 @@ pub fn handle_filtered(
     // counting them (#1917).
     let mut skipped_size_files: Vec<String> = Vec::new();
     let mut files_skipped_encoding = 0u32;
+    let mut files_withheld = 0u32;
     let mut skipped_boundary_files: Vec<(String, &'static str)> = Vec::new();
     let mut files_skipped_special = 0u32;
     let mut deadline_hit = false;
@@ -207,11 +215,13 @@ pub fn handle_filtered(
     // are still verified line-by-line with the same regex — so results are
     // identical. Missing/stale index → returns None and triggers a background
     // (re)build; this call uses the walk fallback.
-    // Files the filters admit when the index narrowed the candidates; the
-    // walk and the full-list path scan their whole scope, so `None` there.
+    // Files the filters admit when the index narrowed candidates; the walk
+    // path scans its whole scope, so `None` there. Protected searches bypass
+    // legacy unbound indexes and admit original source before matching.
     let mut narrowed_scope: Option<usize> = None;
-    let used_index = if let Some(idx) =
-        crate::core::search_index::get_fresh(dir, respect_gitignore, allow_secret_paths)
+    let used_index = if !protected
+        && let Some(idx) =
+            crate::core::search_index::get_fresh(dir, respect_gitignore, allow_secret_paths)
     {
         let candidates = idx.candidate_paths(pattern, &include_patterns, root);
         if matches!(
@@ -361,28 +371,57 @@ pub fn handle_filtered(
         // in-memory hit. On a miss (cold cache / evicted) read once and publish
         // it for the next caller. `(mtime, size)` validation guarantees we never
         // verify against stale bytes.
-        let content: std::sync::Arc<str> =
-            if let Some(cached) = state.and_then(|s| crate::core::content_cache::get(path, s)) {
-                crate::core::cache::record_search_content_read(true);
-                cached
+        let content: std::sync::Arc<str> = if protected {
+            let admitted = protected_root.as_ref().and_then(|root| {
+                crate::tools::ctx_read::read_file_for_tool_rooted_budgeted(
+                    path.to_str()?,
+                    root.to_str()?,
+                    "ctx_search",
+                    &mut protected_budget,
+                )
+                .ok()
+            });
+            if let Some(text) = admitted {
+                std::sync::Arc::from(text)
             } else {
-                if state.is_some() {
-                    crate::core::cache::record_search_content_read(false);
-                }
-                let Ok(text) = crate::core::text_decode::read_text(path) else {
-                    files_skipped_encoding += 1;
-                    continue;
-                };
-                let arc: std::sync::Arc<str> = std::sync::Arc::from(text);
-                // An explicitly named file above the walk cap is read once and
-                // not published: it would evict the whole shared cache.
-                if let Some(s) = state
-                    && arc.len() as u64 <= MAX_FILE_SIZE
-                {
-                    crate::core::content_cache::insert(path, s, std::sync::Arc::clone(&arc));
-                }
-                arc
+                // No source path or diagnostic payload is disclosed for
+                // an unreadable or policy-withheld original.
+                files_withheld += 1;
+                continue;
+            }
+        } else if let Some(cached) = state.and_then(|s| crate::core::content_cache::get(path, s)) {
+            crate::core::cache::record_search_content_read(true);
+            cached
+        } else {
+            if state.is_some() {
+                crate::core::cache::record_search_content_read(false);
+            }
+            let Ok(text) = crate::core::text_decode::read_text(path) else {
+                files_skipped_encoding += 1;
+                continue;
             };
+            // Search matches only ever come from admitted text: a masked value
+            // cannot be found, and a withheld or restricted source is skipped
+            // without disclosing it (G5).
+            let Some(text) = admission.admit(&text, path) else {
+                files_withheld += 1;
+                continue;
+            };
+            let arc: std::sync::Arc<str> = std::sync::Arc::from(text);
+            // An explicitly named file above the walk cap is read once and
+            // not published: it would evict the whole shared cache.
+            if let Some(s) = state
+                && arc.len() as u64 <= MAX_FILE_SIZE
+            {
+                crate::core::content_cache::insert(
+                    path,
+                    s,
+                    std::sync::Arc::clone(&arc),
+                    &admission,
+                );
+            }
+            arc
+        };
 
         files_searched += 1;
         // Enclosing-symbol spans for this file, computed lazily on the first hit
@@ -459,9 +498,14 @@ pub fn handle_filtered(
     let files_covered = files_searched.saturating_add(index_pruned);
 
     if matches.is_empty() {
-        // #1994: same "(scanned N)" as a hit, so an empty filter and a
-        // genuine miss no longer print byte-identical lines.
+        // Match the hit response's scoped scan count, including candidates the
+        // index ruled out, while retaining policy-withheld visibility.
         let mut msg = format!("0 matches for '{pattern}' (scanned {files_covered} files)");
+        if files_withheld > 0 {
+            msg.push_str(&format!(
+                " ({files_withheld} sources withheld under policy)"
+            ));
+        }
         if files_in_scope == 0 {
             msg.push_str(&empty_scope_note(dir, include, exclude));
         }
@@ -539,6 +583,11 @@ pub fn handle_filtered(
         );
     }
     result.push_str(&matches.join("\n"));
+    if files_withheld > 0 {
+        result.push_str(&format!(
+            "\n({files_withheld} sources withheld under policy)"
+        ));
+    }
 
     if files_skipped_size > 0 {
         result.push_str(&format!(

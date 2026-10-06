@@ -45,7 +45,7 @@ pub(super) fn handle(
         // plan cache only — no network on this hot path, never gates anything.
         "/api/billing-badge" => {
             let eff = crate::cloud_client::resolve_effective_plan_cached();
-            let supporter = !matches!(eff.plan, crate::core::billing::Plan::Free);
+            let supporter = eff.supporter_recognition;
             let source = match eff.source {
                 crate::cloud_client::PlanSource::Live => "live",
                 crate::cloud_client::PlanSource::Cached => "cached",

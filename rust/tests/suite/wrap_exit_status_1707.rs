@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! GH #1707: a failed `wrap` must not exit 0.
 //!
 //! The unit tests in `cli::wrap_cmd` cover what `cmd_wrap` *returns*. They

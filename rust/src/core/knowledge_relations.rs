@@ -156,7 +156,10 @@ impl KnowledgeRelationGraph {
         self.rebuild_index();
 
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        std::fs::write(&path, json).map_err(|e| e.to_string())
+        // `load` treats an unparsable file as absent; a torn write must not
+        // turn into an empty graph that the next save persists.
+        crate::core::atomic_fs::try_atomic_write(&path, json.as_bytes(), None)
+            .map_err(|e| e.to_string())
     }
 
     pub fn upsert_edge(

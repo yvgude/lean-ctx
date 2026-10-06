@@ -32,7 +32,7 @@ pub struct Aggregation {
     pub redacted: usize,
     /// Other non-`ToolCall` security events (path-jail, budget, rate-limit, …).
     pub other_security: usize,
-    /// `(event_label, count)` for every event type seen, sorted by label.
+    /// Top `(event_label, count)` rows, bounded and deterministically sorted.
     pub by_event: Vec<(String, usize)>,
     /// `(tool, blocked_count)` for blocked actions, top rows by count.
     pub by_tool_blocked: Vec<(String, usize)>,
@@ -44,10 +44,12 @@ pub struct Aggregation {
 
 /// Cap on `by_tool_blocked` rows embedded in a report (keeps it bounded).
 const MAX_TOOL_ROWS: usize = 12;
+/// Cap on distinct event labels embedded in one report.
+const MAX_EVENT_ROWS: usize = 32;
 
 /// Stable snake_case label for an event type (matches the on-disk encoding,
 /// without depending on serde formatting on the hot path).
-pub fn event_label(ev: &AuditEventType) -> &'static str {
+pub fn event_label(ev: &AuditEventType) -> &str {
     match ev {
         AuditEventType::ToolCall => "tool_call",
         AuditEventType::ToolDenied => "tool_denied",
@@ -62,6 +64,9 @@ pub fn event_label(ev: &AuditEventType) -> &'static str {
         AuditEventType::AgentSuspended => "agent_suspended",
         AuditEventType::AgentResumed => "agent_resumed",
         AuditEventType::AgentDecommissioned => "agent_decommissioned",
+        AuditEventType::AgentDriftDetected => "agent_drift_detected",
+        AuditEventType::AgentDriftAcknowledged => "agent_drift_acknowledged",
+        AuditEventType::Unknown(label) => label,
     }
 }
 
@@ -134,8 +139,8 @@ pub fn aggregate_str(
     }
 
     agg.anchor_prev_hash = anchor.unwrap_or_else(|| "genesis".to_string());
-    agg.by_event = events.into_iter().collect();
-    agg.by_tool_blocked = top_rows(tools);
+    agg.by_event = top_rows(events, MAX_EVENT_ROWS);
+    agg.by_tool_blocked = top_rows(tools, MAX_TOOL_ROWS);
     Ok(agg)
 }
 
@@ -155,10 +160,10 @@ fn empty() -> Aggregation {
 
 /// Sort `(tool, count)` by count desc then tool asc (stable, deterministic),
 /// capped at [`MAX_TOOL_ROWS`].
-fn top_rows(map: BTreeMap<String, usize>) -> Vec<(String, usize)> {
+fn top_rows(map: BTreeMap<String, usize>, limit: usize) -> Vec<(String, usize)> {
     let mut rows: Vec<(String, usize)> = map.into_iter().collect();
     rows.sort_by(|a, b| b.1.cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    rows.truncate(MAX_TOOL_ROWS);
+    rows.truncate(limit);
     rows
 }
 
@@ -302,5 +307,69 @@ mod tests {
         assert_eq!(agg.entries, 2);
         assert_eq!(agg.blocked, 1);
         assert_eq!(agg.redacted, 1);
+    }
+
+    #[test]
+    fn preserves_unknown_additive_security_event_in_compliance_counts() {
+        let raw = line(
+            "2026-06-01T10:00:00+00:00",
+            "x-future_security_event",
+            "agent_registry",
+            "genesis",
+            "h1",
+        );
+        let agg = aggregate_str(
+            &raw,
+            ts("2026-06-01T00:00:00+00:00"),
+            ts("2026-06-02T00:00:00+00:00"),
+        )
+        .unwrap();
+        assert_eq!(agg.entries, 1);
+        assert_eq!(agg.other_security, 1);
+        assert_eq!(
+            agg.by_event,
+            vec![("x-future_security_event".to_string(), 1)]
+        );
+    }
+
+    #[test]
+    fn rejects_unnamespaced_unknown_security_event() {
+        let raw = line(
+            "2026-06-01T10:00:00+00:00",
+            "agent_future_observed",
+            "agent_registry",
+            "genesis",
+            "h1",
+        );
+        let agg = aggregate_str(
+            &raw,
+            ts("2026-06-01T00:00:00+00:00"),
+            ts("2026-06-02T00:00:00+00:00"),
+        )
+        .unwrap();
+        assert_eq!(agg, super::empty());
+    }
+
+    #[test]
+    fn distinct_extension_event_rows_are_bounded() {
+        let raw = (0..40)
+            .map(|index| {
+                line(
+                    "2026-06-01T10:00:00+00:00",
+                    &format!("x-event_{index}"),
+                    "agent_registry",
+                    "genesis",
+                    "h1",
+                )
+            })
+            .collect::<String>();
+        let agg = aggregate_str(
+            &raw,
+            ts("2026-06-01T00:00:00+00:00"),
+            ts("2026-06-02T00:00:00+00:00"),
+        )
+        .unwrap();
+        assert_eq!(agg.entries, 40);
+        assert_eq!(agg.by_event.len(), MAX_EVENT_ROWS);
     }
 }

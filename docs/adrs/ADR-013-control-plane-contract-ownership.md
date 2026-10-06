@@ -8,9 +8,12 @@ historical multi-SDK support inventory below.
 ## Context
 
 lean-ctx already exposes several representations of the same public contract.
-Rust structures and validation live in paths such as
-`rust/src/core/contracts.rs`, `rust/src/core/ocla/types.rs`, and
-`rust/src/core/ocla/wire.rs`. The OpenAPI projection is assembled in
+Canonical OCLA traits, structures, and validation live in the standalone
+`rust/crates/lean-ctx-ocla/src/` crate; language-neutral protocol contracts live
+in `rust/crates/lean-ctx-protocol/`. The engine-facing paths
+`rust/src/core/ocla/traits.rs` and `rust/src/core/ocla/types.rs` are compatibility
+reexports only. The version registry remains in `rust/src/core/contracts.rs`,
+and the OpenAPI projection is assembled in
 `rust/src/core/openapi.rs`; committed JSON Schemas include
 `docs/contracts/ocla-wire-v1.schema.json` and
 `docs/contracts/ocla-agent-envelope-v1.schema.json`. The binary transport
@@ -47,12 +50,15 @@ generated SDKs and language bindings
 
 1. **Rust types are the semantic source of truth.** Shared control-plane
    types, validation rules, version constants, enum meanings, and field
-   ownership are defined in the protocol surface under
-   `rust/crates/lean-ctx-protocol/`. During the transition, existing runtime
-   types in `rust/src/core/ocla/types.rs` and the version registry in
-   `rust/src/core/contracts.rs` remain the implementation reference for their
-   already-published contracts. A projection cannot introduce a field or
-   invariant that has no Rust definition.
+   ownership are defined in the canonical Rust crates: OCLA capability traits
+   and runtime types in `rust/crates/lean-ctx-ocla/src/traits.rs` and
+   `rust/crates/lean-ctx-ocla/src/types.rs`, and language-neutral protocol
+   contracts in `rust/crates/lean-ctx-protocol/`. During the transition, the
+   version registry in `rust/src/core/contracts.rs` remains the implementation
+   reference for its already-published contracts. The engine paths
+   `rust/src/core/ocla/traits.rs` and `rust/src/core/ocla/types.rs` are
+   compatibility reexports only; they do not own semantics. A projection
+   cannot introduce a field or invariant that has no Rust definition.
 2. **JSON Schema and OpenAPI are the language-neutral contract projection.**
    The committed schemas under `docs/contracts/`, the OCLA schema projection in
    `rust/src/core/ocla/wire.rs`, and the endpoint projection in

@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "common.schema.json",
+  "title": "LeanCTX Team Seat Value Common v1",
+  "$defs": {
+    "id": {"type": "string", "pattern": "^[a-z0-9][a-z0-9._-]{0,126}[a-z0-9]$", "minLength": 2, "maxLength": 128},
+    "issuerId": {"type": "string", "pattern": "^issuer:[a-z0-9][a-z0-9._-]{0,119}$", "minLength": 8, "maxLength": 127},
+    "memberId": {"type": "string", "pattern": "^member:[a-z0-9][a-z0-9._-]{0,119}$", "minLength": 8, "maxLength": 127},
+    "keyId": {"type": "string", "pattern": "^key:[a-z0-9][a-z0-9._-]{0,119}$", "minLength": 5, "maxLength": 124},
+    "timestamp": {"type": "string", "format": "date-time", "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,9})?Z$", "minLength": 20, "maxLength": 30},
+    "digest": {"type": "string", "pattern": "^sha256:[0-9a-f]{64}$"},
+    "pseudonym": {"type": "string", "pattern": "^hmac-sha256:[0-9a-f]{64}$"},
+    "billingDigest": {"type": "string", "pattern": "^hmac-sha256:[0-9a-f]{64}$"},
+    "catalogDigest": {"$ref": "#/$defs/digest"},
+    "priceDigest": {"$ref": "#/$defs/digest"},
+    "methodologyDigest": {"$ref": "#/$defs/digest"},
+    "evidenceDigest": {"$ref": "#/$defs/digest"},
+    "acceptedOutcomeDigest": {"$ref": "#/$defs/digest"},
+    "idempotencyKey": {"type": "string", "minLength": 16, "maxLength": 128, "pattern": "^[A-Za-z0-9._:-]{16,128}$"},
+    "reasonCode": {"type": "string", "pattern": "^[a-z][a-z0-9._-]{1,63}$"},
+    "scope": {"type": "object", "additionalProperties": false, "required": ["organization_id", "workspace_id"], "properties": {"organization_id": {"$ref": "#/$defs/id"}, "workspace_id": {"$ref": "#/$defs/id"}}},
+    "version": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "sequence": {"type": "integer", "minimum": 1, "maximum": 9007199254740991},
+    "quantity": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "money": {"type": "object", "additionalProperties": false, "required": ["currency", "coefficient", "scale"], "properties": {"currency": {"type": "string", "pattern": "^[A-Z]{3}$"}, "coefficient": {"type": "string", "pattern": "^(0|-?[1-9][0-9]{0,38})$"}, "scale": {"type": "integer", "minimum": 0, "maximum": 18}}},
+    "action": {"enum": ["entitlement.issue", "entitlement.renew", "entitlement.revoke", "seat.allocate", "seat.release", "seat.revoke", "seat.reconcile", "value.aggregate.generate", "value.aggregate.correct", "value.dashboard.read"]},
+    "signedKind": {"enum": ["seat-entitlement", "seat-limit-decision", "seat-allocation", "seat-usage", "team-value-aggregate"]},
+    "cas": {"if": {"properties": {"version": {"const": 1}}, "required": ["version"]}, "then": {"not": {"required": ["parent_digest"]}}, "else": {"required": ["parent_digest"]}}
+  }
+}

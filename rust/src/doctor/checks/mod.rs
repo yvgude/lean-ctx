@@ -6,6 +6,7 @@
 
 mod addons;
 mod clients;
+mod coverage;
 mod environment;
 mod providers;
 mod proxy;
@@ -14,6 +15,7 @@ mod storage;
 
 pub(crate) use addons::*;
 pub(crate) use clients::*;
+pub(crate) use coverage::*;
 pub(crate) use environment::*;
 pub(crate) use providers::*;
 pub(crate) use proxy::*;

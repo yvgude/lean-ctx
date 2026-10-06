@@ -586,6 +586,7 @@ mod tests {
 
     #[test]
     fn compatibility_warning_when_version_too_low() {
+        let _isolated = crate::core::data_dir::isolated_data_dir();
         let mut manifest = test_manifest(vec![PackageLayer::Knowledge]);
         manifest.compatibility.min_lean_ctx_version = Some("99.0.0".into());
 
@@ -611,6 +612,7 @@ mod tests {
 
     #[test]
     fn dependency_warning_for_required_deps() {
+        let _isolated = crate::core::data_dir::isolated_data_dir();
         let mut manifest = test_manifest(vec![PackageLayer::Knowledge]);
         manifest.dependencies.push(PackageDependency {
             name: "missing-pkg".into(),
@@ -640,6 +642,7 @@ mod tests {
 
     #[test]
     fn optional_dependency_no_warning() {
+        let _isolated = crate::core::data_dir::isolated_data_dir();
         let mut manifest = test_manifest(vec![PackageLayer::Knowledge]);
         manifest.dependencies.push(PackageDependency {
             name: "optional-pkg".into(),
@@ -695,6 +698,7 @@ mod tests {
 
     #[test]
     fn v2_graph_import_creates_local_graph() {
+        let _isolated = crate::core::data_dir::isolated_data_dir();
         use crate::core::context_package::graph_model::{ContextEdge, ContextGraph, ContextNode};
 
         let mut graph = ContextGraph::new();
@@ -748,6 +752,7 @@ mod tests {
 
     #[test]
     fn v2_graph_import_merges_with_existing() {
+        let _isolated = crate::core::data_dir::isolated_data_dir();
         use crate::core::context_package::graph_model::{ContextGraph, ContextNode};
 
         // Both imports must resolve the same data directory while other tests mutate env.

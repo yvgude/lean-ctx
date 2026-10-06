@@ -471,7 +471,9 @@ impl EmbeddingIndex {
         std::fs::create_dir_all(&dir)?;
         // Binary (postcard) — compact, fast, deterministic.
         let data = postcard::to_allocvec(self).map_err(std::io::Error::other)?;
-        std::fs::write(dir.join("embeddings.bin"), data)?;
+        // `load` deletes an undecodable index; a torn write would force a
+        // full re-embed instead of costing nothing.
+        crate::core::atomic_fs::try_atomic_write(&dir.join("embeddings.bin"), &data, None)?;
         Ok(())
     }
 

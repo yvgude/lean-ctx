@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Rewrite decisions for a host's PowerShell tool (#1848).
 //!
 //! The Bash path's two outputs are both wrong for PowerShell:

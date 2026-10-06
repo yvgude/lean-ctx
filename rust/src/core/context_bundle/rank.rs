@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Relevance ranking: which candidates deserve the budget first.
 //!
 //! Three signals, all deterministic:

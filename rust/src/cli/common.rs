@@ -97,68 +97,6 @@ pub(crate) fn format_tokens_cli(tokens: u64) -> String {
     }
 }
 
-pub(crate) fn cli_track_read(
-    path: &str,
-    mode: &str,
-    original_tokens: usize,
-    output_tokens: usize,
-    output: &str,
-    duration: std::time::Duration,
-) {
-    crate::core::tool_lifecycle::record_file_read(
-        path,
-        mode,
-        original_tokens,
-        output_tokens,
-        false,
-        duration,
-        output,
-    );
-}
-
-pub(crate) fn cli_track_read_cached(
-    path: &str,
-    mode: &str,
-    original_tokens: usize,
-    output_tokens: usize,
-    output: &str,
-    duration: std::time::Duration,
-) {
-    crate::core::tool_lifecycle::record_file_read(
-        path,
-        mode,
-        original_tokens,
-        output_tokens,
-        true,
-        duration,
-        output,
-    );
-}
-
-pub(crate) fn cli_track_search(
-    modeled_baseline: usize,
-    observed_tokens: usize,
-    output_tokens: usize,
-    pattern: &str,
-    path: &str,
-    output: &str,
-    duration: std::time::Duration,
-) {
-    crate::core::tool_lifecycle::record_search(
-        modeled_baseline,
-        observed_tokens,
-        output_tokens,
-        pattern,
-        path,
-        duration,
-        output,
-    );
-}
-
-pub(crate) fn cli_track_tree(original_tokens: usize, output_tokens: usize) {
-    crate::core::tool_lifecycle::record_tree(original_tokens, output_tokens);
-}
-
 pub(crate) fn detect_project_root(args: &[String]) -> String {
     let mut it = args.iter().peekable();
     while let Some(a) = it.next() {

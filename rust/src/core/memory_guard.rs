@@ -113,12 +113,14 @@ fn windows_rss_for_handle(process: windows_sys::Win32::Foundation::HANDLE) -> Op
         K32GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS,
     };
 
-    let mut counters = PROCESS_MEMORY_COUNTERS::default();
-    counters.cb = std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32;
+    let mut counters = PROCESS_MEMORY_COUNTERS {
+        cb: std::mem::size_of::<PROCESS_MEMORY_COUNTERS>() as u32,
+        ..PROCESS_MEMORY_COUNTERS::default()
+    };
 
-    // SAFETY: `counters` has the documented size in `cb` and remains valid and
-    // writable for the duration of the call.
-    let ok = unsafe { K32GetProcessMemoryInfo(process, &mut counters, counters.cb) };
+    // SAFETY: callers pass the current-process pseudo-handle or a live handle
+    // returned by OpenProcess; `counters` is correctly sized and writable.
+    let ok = unsafe { K32GetProcessMemoryInfo(process, &raw mut counters, counters.cb) };
 
     if ok == 0 {
         None
@@ -131,11 +133,13 @@ fn windows_rss_for_handle(process: windows_sys::Win32::Foundation::HANDLE) -> Op
 fn windows_system_ram() -> Option<u64> {
     use windows_sys::Win32::System::SystemInformation::{GlobalMemoryStatusEx, MEMORYSTATUSEX};
 
-    let mut status = MEMORYSTATUSEX::default();
-    status.dwLength = std::mem::size_of::<MEMORYSTATUSEX>() as u32;
+    let mut status = MEMORYSTATUSEX {
+        dwLength: std::mem::size_of::<MEMORYSTATUSEX>() as u32,
+        ..MEMORYSTATUSEX::default()
+    };
 
     // SAFETY: `status` has the required `dwLength` and is writable for the call.
-    let ok = unsafe { GlobalMemoryStatusEx(&mut status) };
+    let ok = unsafe { GlobalMemoryStatusEx(&raw mut status) };
 
     if ok == 0 {
         None

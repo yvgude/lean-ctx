@@ -90,10 +90,44 @@ jobs:
         run: python3 tests/delivery/test_rehearse_delivery.py
       - name: Verify deterministic Python Engine wheel builder
         run: python3 -m unittest tests.delivery.test_python_engine_wheel tests.delivery.test_windows_packages -v
+      - name: Verify public source archive boundary
+        run: python3 -m unittest tests.delivery.test_source_archive -v
+
+  ip-provenance-gate:
+    # Strict IP/provenance gate. On top of the classification audit that CI
+    # already runs on every push, `--release-strict` demands the artifacts that
+    # only matter when we ship: counsel sign-off, an SBOM, and approved
+    # third-party notices. Nothing may be built or published before it passes,
+    # so `build` — and therefore release/publish-crates/publish-npm/homebrew,
+    # which all chain off it — depends on this job.
+    name: Release gates (IP provenance, strict)
+    needs: delivery-gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify provenance checker contract
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Strict IP provenance audit
+        run: >-
+          python3 scripts/ip-provenance-audit.py --root . --release-strict
+          --output "$RUNNER_TEMP/ip-provenance-release-report.json"
+      # The report is written before the exit code is decided, so a blocked
+      # release still leaves the machine-readable list of blockers behind.
+      - name: Upload strict provenance report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ip-provenance-release-report
+          path: ${{ runner.temp }}/ip-provenance-release-report.json
+          if-no-files-found: ignore
 
   build:
     name: Build ${{ matrix.artifact || matrix.target }}
-    needs: delivery-gate
+    needs: ip-provenance-gate
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -104,6 +138,7 @@ jobs:
             jemalloc: false
             wheel_distribution: thinkery-leanctx-engine
             wheel_platform: manylinux_2_35_x86_64
+            smoke: true
           - target: x86_64-unknown-linux-gnu
             artifact: x86_64-unknown-linux-gnu-cuda
             os: ubuntu-22.04
@@ -146,7 +181,7 @@ jobs:
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
         with:
           repository: Thinkery-AG/leanctx-sdk
-          ref: 207a742e1cdf281952fe8cb74ea6ba87d8696f6a
+          ref: 0efd7f3f61cd60fcac6766a2033376f409b8684f
           path: sdk-agent-tools
           persist-credentials: false
 
@@ -158,6 +193,40 @@ jobs:
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
+
+      - name: Configure optional production runtime channel
+        shell: bash
+        env:
+          LEANCTX_PRODUCTION_RUNTIME_CHANNEL_URL: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_URL }}
+          LEANCTX_PRODUCTION_RUNTIME_CHANNEL_SIGNATURE_URL: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_SIGNATURE_URL }}
+          LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX }}
+        run: |
+          python - <<'PY'
+          import os, re
+          from urllib.parse import urlsplit
+          names = (
+              "LEANCTX_PRODUCTION_RUNTIME_CHANNEL_URL",
+              "LEANCTX_PRODUCTION_RUNTIME_CHANNEL_SIGNATURE_URL",
+              "LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX",
+          )
+          values = [os.environ.get(name, "") for name in names]
+          if not any(values):
+              print("Community build: no production runtime channel configured")
+              raise SystemExit(0)
+          if not all(values):
+              raise SystemExit("Production runtime channel requires all three repository variables")
+          for value in values[:2]:
+              if len(value) > 2048 or any(not 33 <= ord(c) < 127 or c in '@?#\\"' for c in value):
+                  raise SystemExit("Invalid production runtime channel URL")
+              url = urlsplit(value)
+              if url.scheme != "https" or not url.hostname:
+                  raise SystemExit("Production runtime channel requires HTTPS URLs")
+          if not re.fullmatch(r"[0-9a-f]{64}", values[2]):
+              raise SystemExit("Invalid production runtime channel public key")
+          with open(os.environ["GITHUB_ENV"], "a", encoding="utf-8") as output:
+              output.writelines(f"{name}={value}\n" for name, value in zip(names, values))
+          print("Production runtime channel configured from repository variables")
+          PY
 
       - name: Install musl tools
         if: matrix.musl == true && matrix.zig != true
@@ -331,6 +400,55 @@ jobs:
             sdk-agent-tools/scripts/verify_agent_context_e2e.py \
             --engine "$wheel_engine" \
             --expected-engine-version "${GITHUB_REF_NAME#v}"
+      - name: Install and inspect packaged artifact (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          set -euo pipefail
+          artifact="${{ matrix.artifact || matrix.target }}"
+          archive="lean-ctx-${artifact}.tar.gz"
+          install_root="${RUNNER_TEMP}/lean-ctx-package-${artifact}"
+          entries="$(tar -tzf "$archive")"
+          test "$entries" = "lean-ctx"
+          mkdir -p "$install_root/bin"
+          tar -xzf "$archive" -C "$install_root"
+          test -f "$install_root/lean-ctx"
+          test ! -L "$install_root/lean-ctx"
+          install -m 0755 "$install_root/lean-ctx" "$install_root/bin/lean-ctx"
+          test -x "$install_root/bin/lean-ctx"
+          if [[ "${{ matrix.smoke }}" == "true" ]]; then
+            "$install_root/bin/lean-ctx" --version
+          fi
+
+      - name: Install and inspect packaged artifact (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $artifact = "${{ matrix.artifact || matrix.target }}"
+          $archive = "lean-ctx-${artifact}.zip"
+          $installRoot = Join-Path $env:RUNNER_TEMP "lean-ctx-package-${artifact}"
+          Expand-Archive -Path $archive -DestinationPath $installRoot
+          $expected = Join-Path $installRoot 'lean-ctx.exe'
+          $rootEntries = @(Get-ChildItem -LiteralPath $installRoot -Force)
+          $files = @(Get-ChildItem -Path $installRoot -Recurse -File)
+          if ($rootEntries.Count -ne 1 -or $files.Count -ne 1 -or
+              $files[0].FullName -ne $expected) {
+            throw "package must contain exactly one root-level lean-ctx.exe payload"
+          }
+          $bin = Join-Path $installRoot 'bin'
+          New-Item -ItemType Directory -Path $bin | Out-Null
+          $installed = Join-Path $bin 'lean-ctx.exe'
+          Copy-Item -LiteralPath $files[0].FullName -Destination $installed
+          if (-not (Test-Path -LiteralPath $installed -PathType Leaf)) {
+            throw "packaged executable was not installed"
+          }
+          if ('${{ matrix.smoke }}' -eq 'true') {
+            & $installed --version
+            if ($LASTEXITCODE -ne 0) {
+              throw "installed packaged executable smoke test failed"
+            }
+          }
 
       - name: Upload artifact
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -397,8 +515,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4 # v4
         with:
-          persist-credentials: false
           fetch-depth: 0
+          persist-credentials: false
 
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
@@ -411,11 +529,22 @@ jobs:
 
       - name: Create stable source tarball
         run: |
+          set -euo pipefail
+          SOURCE_COMMIT="$(git rev-parse --verify "${GITHUB_SHA}^{commit}")"
+          test "$(git rev-parse HEAD)" = "$SOURCE_COMMIT"
+          test "$(git rev-parse --verify "refs/tags/${GITHUB_REF_NAME}^{commit}")" = "$SOURCE_COMMIT"
+          # The guard checks the index and working policy; bind both to the archive.
+          git diff --quiet HEAD --
+          git diff --cached --quiet HEAD --
+          python3 scripts/check-no-internal-artifacts.py --public --root .
           VERSION="${GITHUB_REF_NAME#v}"
-          git archive --format=tar.gz --prefix="lean-ctx-${VERSION}/" "${GITHUB_REF_NAME}" -o "lean-ctx-${VERSION}-source.tar.gz"
+          git archive --format=tar.gz --prefix="lean-ctx-${VERSION}/" "$SOURCE_COMMIT" -o "lean-ctx-${VERSION}-source.tar.gz"
 
-      - name: Generate checksums
-        run: sha256sum lean-ctx-*.tar.gz lean-ctx-*.zip thinkery_leanctx_engine*.whl > SHA256SUMS
+      - name: Generate release inventory, checksums and manifest
+        run: |
+          python3 scripts/generate-release-manifest.py \
+            --tag "${GITHUB_REF_NAME}" \
+            --commit "${GITHUB_SHA}"
 
       - name: Sign release artifacts with cosign
         uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
@@ -429,39 +558,41 @@ jobs:
         env:
           COSIGN_EXPERIMENTAL: "1"
 
-      - name: Generate SBOM
+      - name: Verify release SBOM artifact
         run: |
-          cd rust
-          cargo tree --locked --prefix none --no-dedupe \
-            --format "{p} {l}" > ../SBOM.txt
-          cd ..
-          echo "SBOM generated with $(wc -l < SBOM.txt) entries"
+          test -s SBOM.cdx.json
+          python3 scripts/ip-provenance-audit.py --root . --release-strict \
+            --output "$RUNNER_TEMP/ip-provenance-release-build-report.json"
 
-      - name: Generate release manifest
+      - name: Upload post-build provenance report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ip-provenance-release-build-report
+          path: ${{ runner.temp }}/ip-provenance-release-build-report.json
+          if-no-files-found: ignore
+
+      - name: Cosign sign release manifest
         run: |
-          python3 -c "
-          import json, hashlib, datetime, pathlib
-          artifacts = {}
-          release_files = [*pathlib.Path('.').glob('lean-ctx-*'),
-                           *pathlib.Path('.').glob('thinkery_leanctx_engine*.whl')]
-          for f in sorted(release_files):
-              h = hashlib.sha256(f.read_bytes()).hexdigest()
-              artifacts[f.name] = {'sha256': h, 'size': f.stat().st_size}
-          sbom_h = hashlib.sha256(pathlib.Path('SBOM.txt').read_bytes()).hexdigest()
-          manifest = {
-              'schema_version': 'leanctx.release-manifest/v1',
-              'tag': '${{ github.ref_name }}',
-              'commit': '${{ github.sha }}',
-              'timestamp': datetime.datetime.utcnow().isoformat() + 'Z',
-              'artifacts': artifacts,
-              'sbom_sha256': sbom_h,
-              'checksums_sha256': hashlib.sha256(
-                  pathlib.Path('SHA256SUMS').read_bytes()).hexdigest()
-          }
-          pathlib.Path('release-manifest.json').write_text(
-              json.dumps(manifest, indent=2) + '\n')
-          print(json.dumps(manifest, indent=2))
-          "
+          cosign sign-blob --yes \
+            --oidc-issuer https://token.actions.githubusercontent.com \
+            --output-signature release-manifest.json.sig \
+            --output-certificate release-manifest.json.pem \
+            release-manifest.json
+        env:
+          COSIGN_EXPERIMENTAL: "1"
+
+      - name: Validate complete upload inventory
+        id: assets
+        run: |
+          set -euo pipefail
+          FILES=$(python3 scripts/verify-release-integrity.py upload-list \
+            --tag "${GITHUB_REF_NAME}" --dir .)
+          {
+            echo "files<<LEANCTX_ASSETS_EOF"
+            echo "$FILES"
+            echo "LEANCTX_ASSETS_EOF"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Extract release notes from CHANGELOG
         id: notes
@@ -512,15 +643,8 @@ jobs:
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           body: ${{ steps.notes.outputs.body }}
-          files: |
-            lean-ctx-*.tar.gz
-            lean-ctx-*.zip
-            thinkery_leanctx_engine*.whl
-            SHA256SUMS
-            SHA256SUMS.sig
-            SHA256SUMS.pem
-            SBOM.txt
-            release-manifest.json
+          files: ${{ steps.assets.outputs.files }}
+          fail_on_unmatched_files: true
 
   jetbrains-plugin:
     # Build the JetBrains/IntelliJ plugin and attach it to the GitHub Release as a
@@ -602,6 +726,14 @@ jobs:
                "https://crates.io/api/v1/crates/lean-ctx-protocol/${PROTO_VERSION}" >/dev/null 2>&1; then
             echo "Publishing lean-ctx-protocol ${PROTO_VERSION} to crates.io first..."
             cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p lean-ctx-protocol
+            echo "Waiting 30s for crates.io index propagation..."
+            sleep 30
+          fi
+          STORAGE_VERSION="$(grep -m1 '^version' crates/leanctx-native-storage/Cargo.toml | sed -E 's/.*"([^"]+)".*/\1/')"
+          if ! curl -fsSL -H "User-Agent: lean-ctx-release" \
+               "https://crates.io/api/v1/crates/leanctx-native-storage/${STORAGE_VERSION}" >/dev/null 2>&1; then
+            echo "Publishing leanctx-native-storage ${STORAGE_VERSION} to crates.io first..."
+            cargo publish --allow-dirty --token "${CARGO_REGISTRY_TOKEN}" -p leanctx-native-storage
             echo "Waiting 30s for crates.io index propagation..."
             sleep 30
           fi

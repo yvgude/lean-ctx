@@ -151,6 +151,9 @@ pub struct SearchIndex {
     /// Signature of the on-disk corpus this index was built from — the freshness
     /// truth checked on every [`get_fresh`] (see [`corpus_signature`]).
     signature: u64,
+    /// Admission-policy epoch the indexed text was admitted under (G5): an
+    /// index from an older policy is never served.
+    policy_epoch: u64,
 }
 
 impl SearchIndex {
@@ -173,6 +176,8 @@ impl SearchIndex {
         let mut sig_sum: u64 = 0;
         let mut file_count: usize = 0;
         let mut aborted = false;
+        // One admission policy for the whole build (G5).
+        let admission = crate::core::context_admission::stores::StoreAdmission::current();
 
         walk_index_corpus(
             root,
@@ -194,12 +199,19 @@ impl SearchIndex {
                 {
                     cached
                 } else {
-                    let Ok(text) = crate::core::text_decode::read_text(path) else {
+                    // Only admitted text enters the shared cache; withheld and
+                    // restricted sources are never searchable (G5, E3).
+                    let Some(text) = admission.read(path) else {
                         return true;
                     };
                     let arc: std::sync::Arc<str> = std::sync::Arc::from(text);
                     if let Some(s) = state {
-                        crate::core::content_cache::insert(path, s, std::sync::Arc::clone(&arc));
+                        crate::core::content_cache::insert(
+                            path,
+                            s,
+                            std::sync::Arc::clone(&arc),
+                            &admission,
+                        );
                     }
                     arc
                 };
@@ -243,11 +255,14 @@ impl SearchIndex {
             respect_gitignore,
             allow_secret_paths,
             signature: finalize_sig(sig_sum, file_count),
+            policy_epoch: admission.epoch(),
         })
     }
 
     fn config_matches(&self, respect_gitignore: bool, allow_secret_paths: bool) -> bool {
-        self.respect_gitignore == respect_gitignore && self.allow_secret_paths == allow_secret_paths
+        self.respect_gitignore == respect_gitignore
+            && self.allow_secret_paths == allow_secret_paths
+            && self.policy_epoch == crate::core::context_admission::stores::current_epoch()
     }
 
     /// Candidate files for `pattern`, filtered by the `include` glob (matched
@@ -593,7 +608,11 @@ fn finalize_sig(sum: u64, count: usize) -> u64 {
 /// additions, renames and deletions — so a stale candidate set can never
 /// silently drop a real match. `None` mirrors a non-indexable root (the caller
 /// then walks directly).
-fn corpus_signature(root: &str, respect_gitignore: bool, allow_secret_paths: bool) -> Option<u64> {
+pub(crate) fn corpus_signature(
+    root: &str,
+    respect_gitignore: bool,
+    allow_secret_paths: bool,
+) -> Option<u64> {
     let mut sum: u64 = 0;
     let mut count: usize = 0;
     walk_index_corpus(
@@ -1192,6 +1211,7 @@ mod tests {
             respect_gitignore: true,
             allow_secret_paths: false,
             signature: 0, // freshness is not exercised by candidate_paths
+            policy_epoch: crate::core::context_admission::stores::current_epoch(),
         };
         assert!(
             matches!(idx.narrowing, Narrowing::Blooms(_)),
@@ -1355,6 +1375,25 @@ mod tests {
         );
         // Re-derivation is deterministic for an unchanged corpus.
         assert_eq!(sig, corpus_signature(&root, true, false).unwrap());
+    }
+
+    #[test]
+    fn corpus_signature_and_index_include_searchable_hidden_files() {
+        let dir = corpus();
+        let root = dir.path().to_string_lossy().to_string();
+        let hidden = dir.path().join(".searchable.txt");
+        std::fs::write(&hidden, "hiddenmarker before\n").unwrap();
+        let index = SearchIndex::build(&root, true, false).expect("index builds");
+        assert!(
+            index
+                .candidate_paths("hiddenmarker", &[], dir.path())
+                .into_paths()
+                .contains(&hidden)
+        );
+        let before = corpus_signature(&root, true, false).unwrap();
+        assert_eq!(index.signature, before);
+        std::fs::write(&hidden, "hiddenmarker after an edit\n").unwrap();
+        assert_ne!(before, corpus_signature(&root, true, false).unwrap());
     }
 
     #[test]

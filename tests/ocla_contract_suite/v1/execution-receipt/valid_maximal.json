@@ -32,15 +32,29 @@
     {
       "kind": "ProviderReceipt",
       "uri": "evidence://receipt/01J5XK9R/provider-usage",
-      "digest": "sha256:provider-usage-01J5XK9R",
+      "digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
       "signature_status": "Verified"
     },
     {
       "kind": "QualityMeasurement",
       "uri": "evidence://receipt/01J5XK9R/quality",
-      "digest": "sha256:quality-01J5XK9R",
+      "digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
       "signature_status": "NotSigned"
     }
   ],
-  "signature": "sig_01J5XK9R4D7G0K3M6P9S2V5X8Z"
+  "signature": "sig_01J5XK9R4D7G0K3M6P9S2V5X8Z",
+  "executor_agent_id": "agent://leanctx/codex",
+  "attempt_id": "attempt-1",
+  "context_plan_id": "context-plan_01J5XK8A2B3C4D5E6F7G8H9J0K",
+  "context_receipt_ref": "context-receipt://01J5XK9R",
+  "capability_bindings": [
+    { "capability_id": "capability://leanctx/code-context", "version": "1.0.0" },
+    { "capability_id": "capability://leanctx/tool-output-optimizer", "version": "1.0.0" }
+  ],
+  "observations": {
+    "model_calls": 1,
+    "retries": 0,
+    "latency_ms": 18200,
+    "actual_cost_micros": 150000
+  }
 }

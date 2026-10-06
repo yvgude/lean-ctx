@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! The `ctx_read` MCP tool definition. Split out of `ctx_read.rs` to keep that
 //! file under the #660 LOC gate.
 

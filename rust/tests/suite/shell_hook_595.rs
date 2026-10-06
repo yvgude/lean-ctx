@@ -190,3 +190,58 @@ fn model_chosen_eval_without_cwd_marker_still_blocks() {
         "blocked eval must never execute its payload"
     );
 }
+
+/// `lean-ctx <flag> <command>` as an agent process that inherited the markers
+/// of a lean-ctx-wrapped parent, which routes `-c` / `-t` to pass-through.
+fn run_wrapped(flag: &str, command: &str, home: &Path) -> Output {
+    Command::new(env!("CARGO_BIN_EXE_lean-ctx"))
+        .args([flag, command])
+        .env("HOME", home)
+        .env("LEAN_CTX_WRAPPED", "1")
+        .env("LEAN_CTX_ACTIVE", "1")
+        .env_remove("LEAN_CTX_HOOK_CHILD")
+        .env_remove("LEAN_CTX_DISABLED")
+        .env_remove("LEAN_CTX_ALLOWLIST_WARN_ONLY")
+        .output()
+        .expect("failed to spawn lean-ctx binary")
+}
+
+#[test]
+fn pass_through_still_enforces_the_allowlist() {
+    // SECURITY regression (GH #2004): an inherited LEAN_CTX_WRAPPED sent every
+    // Bash-hook rewrite to the pass-through path, which ran the command without
+    // the allowlist. Pass-through may skip compression, never the boundary.
+    let tmp = tempfile::tempdir().unwrap();
+    for flag in ["-c", "-t"] {
+        for command in [
+            "eval 'echo should-not-run'",
+            "lean_ctx_gh2004_not_allowlisted --version",
+            "true && lean_ctx_gh2004_not_allowlisted",
+        ] {
+            let out = run_wrapped(flag, command, tmp.path());
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            assert_eq!(
+                out.status.code(),
+                Some(126),
+                "`lean-ctx {flag} {command}` must be blocked under pass-through; stderr: {stderr}"
+            );
+            assert!(
+                !String::from_utf8_lossy(&out.stdout).contains("should-not-run"),
+                "a blocked command must never execute under pass-through"
+            );
+        }
+    }
+}
+
+#[test]
+fn pass_through_still_runs_allowed_commands() {
+    let tmp = tempfile::tempdir().unwrap();
+    for flag in ["-c", "-t"] {
+        let out = run_wrapped(flag, "echo gh2004-allowed", tmp.path());
+        assert_eq!(out.status.code(), Some(0), "flag {flag}");
+        assert!(
+            String::from_utf8_lossy(&out.stdout).contains("gh2004-allowed"),
+            "an allowlisted command must still run under pass-through ({flag})"
+        );
+    }
+}

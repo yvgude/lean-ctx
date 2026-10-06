@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { strict as assert } from "node:assert";
 import * as fs from "node:fs";
 import * as http from "node:http";

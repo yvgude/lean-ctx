@@ -317,9 +317,33 @@ impl Escalation {
     }
 }
 
+/// An edit failed after a compressed read: charge the task whose read it was.
+/// When this process no longer knows that read, the current task's signals
+/// become unknown rather than silently clean.
+fn charge_compressed_read(path: &str, last_mode: &str) {
+    use crate::core::context_store::task_signals::{self, Signal};
+    if matches!(last_mode, "full" | "diff") {
+        return;
+    }
+    let last = crate::core::bounce_tracker::global()
+        .lock()
+        .ok()
+        .and_then(|tracker| tracker.last_read(path));
+    match last {
+        Some((true, Some(origin))) => task_signals::record(&origin, Signal::EditFailure),
+        // The model saw the file in full since: not the compressed read's failure.
+        Some((false, _)) => {}
+        Some((true, None)) | None => task_signals::record_unattributed(),
+    }
+}
+
 fn record_outcome_with(path: &str, last_mode: &str, success: bool, esc: Escalation) {
     if last_mode.is_empty() {
         return;
+    }
+    // Before the edit store's lock: the bounce tracker is never locked under it.
+    if !success && last_mode != esc.target_mode() {
+        charge_compressed_read(path, last_mode);
     }
     let ext = ext_of(path);
     let Ok(mut store) = global().lock() else {

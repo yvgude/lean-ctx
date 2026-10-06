@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Parsing and presentation of `lean-ctx prompt-segment --json` (schema 1).
 // Pure: no `vscode` import, so it runs under `node --test`.
 

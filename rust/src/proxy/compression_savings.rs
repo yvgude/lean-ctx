@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Input-compression savings from the `[proxy] compression_holdout` (#1905).
 //!
 //! Shadow Mode simulates its baseline from the treatment's own numbers, so its

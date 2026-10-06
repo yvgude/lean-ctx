@@ -20,6 +20,11 @@ pub(crate) fn save_package(
 ) -> Result<PathBuf, String> {
     let pkg = build_package(session, project_root, agent_id, description);
     let json = serde_json::to_string_pretty(&pkg).map_err(|e| e.to_string())?;
+    // A package is a portable derived store (findings, decisions, knowledge):
+    // admitted as a whole, and only written if it still parses (G5, E3).
+    let json = crate::core::context_admission::recovery::admit_for_storage(&json)
+        .filter(|admitted| serde_json::from_str::<ContextPackage>(admitted).is_ok())
+        .ok_or("package withheld by the context gateway")?;
 
     let path = output_path.map_or_else(|| default_path(project_root, &session.id), PathBuf::from);
 
@@ -72,6 +77,7 @@ fn load_knowledge_facts(project_root: &str) -> Vec<KnowledgeFact> {
         .filter(|f| f.is_current() && f.confidence >= 0.5)
         .take(100)
         .map(|f| KnowledgeFact {
+            origin: f.origin.clone(),
             category: f.category.clone(),
             key: f.key.clone(),
             value: f.value.clone(),

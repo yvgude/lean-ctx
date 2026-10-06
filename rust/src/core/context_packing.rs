@@ -45,6 +45,21 @@ pub(crate) fn greedy_max_coverage<F>(
 where
     F: Fn(&str) -> f64,
 {
+    greedy_scored_coverage(items, budget, term_weight, |_| 1.0)
+}
+
+/// The same host-owned budget/coverage selection with optional bounded item
+/// priorities. Scores never supply content, identities or additional authority.
+pub(crate) fn greedy_scored_coverage<F, S>(
+    items: &[CoverageItem],
+    budget: usize,
+    term_weight: F,
+    item_score: S,
+) -> Vec<usize>
+where
+    F: Fn(&str) -> f64,
+    S: Fn(usize) -> f64,
+{
     let mut covered: HashSet<&str> = HashSet::new();
     let mut selected: Vec<usize> = Vec::new();
     let mut remaining: Vec<usize> = (0..items.len()).collect();
@@ -55,7 +70,12 @@ where
 
         for (pos, &idx) in remaining.iter().enumerate() {
             let item = &items[idx];
-            if item.cost == 0 || spent + item.cost > budget {
+            let priority = item_score(idx);
+            if item.cost == 0
+                || item.cost > budget - spent
+                || !priority.is_finite()
+                || priority <= 0.0
+            {
                 continue;
             }
             // Marginal gain = weight of newly covered terms.
@@ -68,7 +88,7 @@ where
             if gain <= 0.0 {
                 continue;
             }
-            let gain_per_cost = gain / item.cost as f64;
+            let gain_per_cost = gain * priority / item.cost as f64;
             let take = match best {
                 Some((_, _, best_gpc)) => gain_per_cost > best_gpc,
                 None => true,
@@ -158,5 +178,16 @@ mod tests {
         let items = vec![item(&["a"], 0), item(&["b"], 1)];
         let sel = greedy_max_coverage(&items, 5, |_| 1.0);
         assert_eq!(sel, vec![1]);
+    }
+
+    #[test]
+    fn scores_change_priority_without_overriding_budget_or_finiteness() {
+        let items = vec![item(&["a"], 1), item(&["b"], 1), item(&["c"], usize::MAX)];
+        let selected =
+            greedy_scored_coverage(&items, 2, |_| 1.0, |index| [0.1, 0.9, f64::INFINITY][index]);
+        assert_eq!(selected, vec![1, 0]);
+        let selected =
+            greedy_scored_coverage(&items, 1, |_| 1.0, |index| [f64::NAN, 0.9, 1.0][index]);
+        assert_eq!(selected, vec![1]);
     }
 }

@@ -295,11 +295,9 @@ pub fn related_files(
     }
 
     let mut results: Vec<(String, f64)> = scores.into_iter().collect();
-    results.sort_by(|a, b| {
-        b.1.partial_cmp(&a.1)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.0.cmp(&b.0))
-    });
+    // Equal weights are common; break ties by path so the cut below does not
+    // depend on hash order (planning must be identical across processes).
+    results.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
     results.truncate(limit);
     Ok(results)
 }

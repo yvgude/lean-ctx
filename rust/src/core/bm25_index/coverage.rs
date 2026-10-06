@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx index why <file>`: explain whether a file is in the search corpus
 //! and, if not, which rule dropped it.
 //!
@@ -62,6 +63,9 @@ pub(crate) enum Exclusion {
         error: String,
     },
     Minified,
+    /// The context gateway does not admit the file into derived stores
+    /// (restricted or withheld, G5); it is deliberately absent.
+    WithheldByGateway,
 }
 
 impl Exclusion {
@@ -101,6 +105,11 @@ impl Exclusion {
             Self::NoExtractableText => "document yielded no extractable text".into(),
             Self::Unreadable { error } => format!("cannot be read: {error}"),
             Self::Minified => "looks minified/bundled (very long lines)".into(),
+            Self::WithheldByGateway => {
+                "withheld by the context gateway (restricted or not admissible); \
+                 never stored in an index"
+                    .into()
+            }
         }
     }
 
@@ -131,6 +140,9 @@ impl Exclusion {
             | Self::NoExtractableText
             | Self::Unreadable { .. }
             | Self::Minified => return None,
+            Self::WithheldByGateway => {
+                "lean-ctx inspect explains the decision; ctx_read shows what may be read"
+            }
         };
         Some(remedy.to_string())
     }
@@ -385,7 +397,15 @@ fn content_exclusion(target: &Path) -> Option<Exclusion> {
             }
         }
     };
-    looks_minified(&content).then_some(Exclusion::Minified)
+    if looks_minified(&content) {
+        return Some(Exclusion::Minified);
+    }
+    // Same store admission the build applies (G5): a file the gateway keeps
+    // out of every index must be explained as such, not reported as missing.
+    crate::core::context_admission::stores::StoreAdmission::current()
+        .admit(&content, target)
+        .is_none()
+        .then_some(Exclusion::WithheldByGateway)
 }
 
 fn index_state(root: &Path, rel: &str, target: &Path) -> IndexState {
@@ -627,6 +647,25 @@ mod tests {
         let minified = format!("var x={};\n", "1+".repeat(40_000));
         write(dir.path(), "bundle.js", minified.as_bytes());
         assert_eq!(reason(dir.path(), "bundle.js"), Some(Exclusion::Minified));
+    }
+
+    /// G5: a file the gateway keeps out of every index is explained as such —
+    /// not reported as indexable and then silently missing.
+    #[test]
+    fn a_file_withheld_by_the_gateway_is_explained() {
+        let dir = project();
+        write(
+            dir.path(),
+            "plans.md",
+            b"*** TOP SECRET ***\nlaunch window\n",
+        );
+        write(dir.path(), "notes.md", b"plain release notes\n");
+        assert_eq!(
+            reason(dir.path(), "plans.md"),
+            Some(Exclusion::WithheldByGateway)
+        );
+        assert_eq!(reason(dir.path(), "notes.md"), None);
+        assert!(Exclusion::WithheldByGateway.remedy().is_some());
     }
 
     #[test]

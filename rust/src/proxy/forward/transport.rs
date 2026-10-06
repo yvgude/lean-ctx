@@ -67,6 +67,7 @@ pub(crate) async fn send_upstream(
 #[allow(clippy::too_many_arguments)]
 pub(crate) async fn build_response(
     response: reqwest::Response,
+    upstream_started: Option<std::time::Instant>,
     extra_stream_types: &[&str],
     usage_provider: crate::proxy::usage::Provider,
     url_model: Option<String>,
@@ -100,6 +101,7 @@ pub(crate) async fn build_response(
 
     if is_stream {
         let scanner = crate::proxy::usage::Scanner::new(usage_provider, url_model)
+            .with_response_clock(upstream_started, status.as_u16())
             .with_cohort(cohort)
             .with_wire_context(wire)
             .with_header_cost(header_cost);
@@ -134,17 +136,19 @@ pub(crate) async fn build_response(
         .and_then(|wire| wire.ocla_request_context())
         .cloned();
     let mut scanner = crate::proxy::usage::Scanner::new(usage_provider, url_model)
+        .with_response_clock(upstream_started, status.as_u16())
         .with_cohort(cohort)
         .with_wire_context(wire)
         .with_header_cost(header_cost);
     scanner.feed_body(&resp_bytes);
-    let measured_output_tokens = if let Some(usage) = scanner.finalize() {
-        let output_tokens = usage.output_tokens;
-        crate::proxy::usage_meter::record(&usage);
-        output_tokens
-    } else {
-        u64::try_from(resp_bytes.len().saturating_add(3)).unwrap_or(u64::MAX) / 4
-    };
+    let measured_output_tokens =
+        if let Some(usage) = scanner.finalize_at(crate::proxy::usage::UsageBoundary::BodyEnd) {
+            let output_tokens = usage.output_tokens;
+            crate::proxy::usage_meter::record(&usage);
+            output_tokens
+        } else {
+            u64::try_from(resp_bytes.len().saturating_add(3)).unwrap_or(u64::MAX) / 4
+        };
 
     if let Some(context) = ocla_context {
         let request = crate::core::ocla::types::ResponseOptimizationRequest {

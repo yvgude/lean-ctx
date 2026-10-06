@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! The lean-ctx Claude Code mod (`integrations/claude-code-mod`): distribution
 //! and lifecycle.
 //!

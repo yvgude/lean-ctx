@@ -349,7 +349,25 @@ fn plan_cache_roundtrips_through_json() {
 }
 
 #[test]
-fn cached_resolve_grants_within_grace_then_expires_to_free() {
+fn cloud_access_handles_canonical_and_legacy_plan_values() {
+    for value in [
+        "pro",
+        "team",
+        "business",
+        "biz",
+        "enterprise",
+        "ent",
+        "cloud",
+    ] {
+        assert!(plan_value_has_cloud_access(value), "{value}");
+    }
+    for value in ["community", "free", "supporter", "sponsor", "unknown"] {
+        assert!(!plan_value_has_cloud_access(value), "{value}");
+    }
+}
+
+#[test]
+fn cached_resolve_grants_within_grace_then_expires_to_community() {
     // Isolate all dirs (config + cache) so the resolver reads only the cache
     // this test writes, not a developer's real plan cache.
     let _iso = crate::core::data_dir::isolated_data_dir();
@@ -360,22 +378,22 @@ fn cached_resolve_grants_within_grace_then_expires_to_free() {
     assert_eq!(eff.plan, Plan::Pro);
     assert_eq!(eff.source, PlanSource::Cached);
 
-    // Backdate beyond grace → hosted entitlements fail closed to Free.
+    // Backdate beyond grace → paid entitlements fail closed to Community.
     let stale = PlanCache {
         plan: "pro".into(),
         verified_at: now_unix() - (PLAN_GRACE_DAYS + 1) * 86_400,
     };
     std::fs::write(plan_cache_path(), serde_json::to_string(&stale).unwrap()).unwrap();
     let eff = resolve_effective_plan_cached();
-    assert_eq!(eff.plan, Plan::Free);
+    assert_eq!(eff.plan, Plan::Community);
     assert_eq!(eff.source, PlanSource::Expired);
 }
 
 #[test]
-fn no_cache_resolves_to_free_none() {
+fn no_cache_resolves_to_community_none() {
     let _iso = crate::core::data_dir::isolated_data_dir();
     let eff = resolve_effective_plan_cached();
-    assert_eq!(eff.plan, Plan::Free);
+    assert_eq!(eff.plan, Plan::Community);
     assert_eq!(eff.source, PlanSource::None);
 }
 

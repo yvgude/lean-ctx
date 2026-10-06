@@ -1,6 +1,6 @@
 //! Publication-ready analysis: bootstrap CI, per-arm breakdown, blog rendering.
 
-use super::experiment::{Arm, FourArmExperiment};
+use super::experiment::{Arm, StudyExperiment};
 use super::report::StudyReport;
 use super::stats::bootstrap::{DEFAULT_ITERATIONS, DEFAULT_SEED, bootstrap_ci};
 use super::stats::significance::non_inferiority_test;
@@ -26,7 +26,7 @@ pub(crate) struct HeadlineMetrics {
     pub total_datasets: usize,
 }
 
-/// Per-dataset four-arm breakdown with CIs.
+/// Per-dataset arm breakdown with CIs.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct DatasetAnalysis {
     pub dataset: String,
@@ -76,9 +76,9 @@ impl PublicationAnalysis {
     pub(crate) fn to_blog_markdown(&self) -> String {
         let mut md = String::new();
         md.push_str("---\n");
-        md.push_str("title: \"Combined Savings Benchmark: Compression × Routing\"\n");
+        md.push_str("title: \"Compression Savings Benchmark\"\n");
         md.push_str(
-            "description: \"Four-arm study proving lean-ctx multiplicative cost savings\"\n",
+            "description: \"Two-arm study of lean-ctx compression cost and quality on the same model\"\n",
         );
         md.push_str("---\n\n");
 
@@ -96,13 +96,11 @@ impl PublicationAnalysis {
         ));
 
         md.push_str("## Study Design\n\n");
-        md.push_str("Four-arm factorial:\n\n");
-        md.push_str("| Arm | Compression | Routing |\n");
-        md.push_str("|---|---|---|\n");
-        md.push_str("| Control | - | - |\n");
-        md.push_str("| CompressOnly | lean-ctx | - |\n");
-        md.push_str("| RouteOnly | - | intent-tier |\n");
-        md.push_str("| Combined | lean-ctx | intent-tier |\n\n");
+        md.push_str("Two arms on the same reference model:\n\n");
+        md.push_str("| Arm | Compression |\n");
+        md.push_str("|---|---|\n");
+        md.push_str("| Control | - |\n");
+        md.push_str("| CompressOnly | lean-ctx |\n\n");
 
         for ds in &self.per_dataset {
             md.push_str(&format!("## {}\n\n", ds.dataset));
@@ -125,7 +123,7 @@ impl PublicationAnalysis {
 
         md.push_str("## Non-Inferiority Test\n\n");
         md.push_str(&format!(
-            "- Null hypothesis: Combined arm regresses > {:.1}% below Control\n",
+            "- Null hypothesis: compressed arm regresses > {:.1}% below Control\n",
             self.non_inferiority.epsilon * 100.0,
         ));
         md.push_str(&format!(
@@ -152,7 +150,7 @@ impl PublicationAnalysis {
     }
 }
 
-fn analyze_experiment(exp: &FourArmExperiment) -> DatasetAnalysis {
+fn analyze_experiment(exp: &StudyExperiment) -> DatasetAnalysis {
     let arms = exp
         .results
         .iter()
@@ -203,19 +201,19 @@ fn compute_headline(report: &StudyReport, datasets: &[DatasetAnalysis]) -> Headl
     let total_datasets = datasets.len();
 
     let mut all_control_pass: Vec<f64> = Vec::new();
-    let mut all_combined_pass: Vec<f64> = Vec::new();
+    let mut all_compressed_pass: Vec<f64> = Vec::new();
     let mut all_savings: Vec<f64> = Vec::new();
 
     for exp in &report.experiments {
         let ctrl = exp.results.iter().find(|r| r.arm == Arm::Control);
-        let comb = exp.results.iter().find(|r| r.arm == Arm::Combined);
+        let comp = exp.results.iter().find(|r| r.arm == Arm::CompressOnly);
 
-        if let (Some(c), Some(b)) = (ctrl, comb) {
+        if let (Some(c), Some(b)) = (ctrl, comp) {
             for t in &c.task_results {
                 all_control_pass.push(if t.passed { 1.0 } else { 0.0 });
             }
             for t in &b.task_results {
-                all_combined_pass.push(if t.passed { 1.0 } else { 0.0 });
+                all_compressed_pass.push(if t.passed { 1.0 } else { 0.0 });
             }
             if c.cost_per_1k() > 0.0 {
                 all_savings.push((1.0 - b.cost_per_1k() / c.cost_per_1k()) * 100.0);
@@ -229,7 +227,7 @@ fn compute_headline(report: &StudyReport, datasets: &[DatasetAnalysis]) -> Headl
 
     let quality_values: Vec<f64> = all_control_pass
         .iter()
-        .zip(&all_combined_pass)
+        .zip(&all_compressed_pass)
         .map(|(c, b)| if *c > 0.0 { b / c * 100.0 } else { 100.0 })
         .collect();
     let quality_ci = bootstrap_ci(&quality_values, DEFAULT_ITERATIONS, DEFAULT_SEED);
@@ -244,27 +242,27 @@ fn compute_headline(report: &StudyReport, datasets: &[DatasetAnalysis]) -> Headl
     }
 }
 
-fn compute_non_inferiority(experiments: &[FourArmExperiment]) -> NonInferiorityResult {
+fn compute_non_inferiority(experiments: &[StudyExperiment]) -> NonInferiorityResult {
     let mut control_scores: Vec<f64> = Vec::new();
-    let mut combined_scores: Vec<f64> = Vec::new();
+    let mut compressed_scores: Vec<f64> = Vec::new();
 
     for exp in experiments {
         let ctrl = exp.results.iter().find(|r| r.arm == Arm::Control);
-        let comb = exp.results.iter().find(|r| r.arm == Arm::Combined);
+        let comp = exp.results.iter().find(|r| r.arm == Arm::CompressOnly);
 
-        if let (Some(c), Some(b)) = (ctrl, comb) {
+        if let (Some(c), Some(b)) = (ctrl, comp) {
             for t in &c.task_results {
                 control_scores.push(if t.passed { 1.0 } else { 0.0 });
             }
             for t in &b.task_results {
-                combined_scores.push(if t.passed { 1.0 } else { 0.0 });
+                compressed_scores.push(if t.passed { 1.0 } else { 0.0 });
             }
         }
     }
 
     let epsilon = 0.03;
 
-    if control_scores.is_empty() || combined_scores.is_empty() {
+    if control_scores.is_empty() || compressed_scores.is_empty() {
         return NonInferiorityResult {
             is_non_inferior: false,
             epsilon,
@@ -274,11 +272,11 @@ fn compute_non_inferiority(experiments: &[FourArmExperiment]) -> NonInferiorityR
         };
     }
 
-    let ni = non_inferiority_test(&control_scores, &combined_scores, epsilon);
+    let ni = non_inferiority_test(&control_scores, &compressed_scores, epsilon);
 
     let diffs: Vec<f64> = control_scores
         .iter()
-        .zip(&combined_scores)
+        .zip(&compressed_scores)
         .map(|(c, b)| b - c)
         .collect();
     let diff_mean = diffs.iter().sum::<f64>() / diffs.len() as f64;
@@ -296,8 +294,6 @@ fn arm_display(arm: Arm) -> &'static str {
     match arm {
         Arm::Control => "Control",
         Arm::CompressOnly => "Compress Only",
-        Arm::RouteOnly => "Route Only",
-        Arm::Combined => "**Combined**",
     }
 }
 
@@ -305,9 +301,9 @@ fn methodology_text() -> String {
     "Each task was evaluated by generating a completion via the Anthropic API, then executing \
      the test harness in a sandboxed Python subprocess. Bootstrap confidence intervals use \
      2000 iterations with a fixed SplitMix64 seed for reproducibility. Non-inferiority is \
-     tested with ε = 3% (Combined must not regress more than 3 percentage points below Control). \
+     tested with ε = 3% (CompressOnly must not regress more than 3 percentage points below Control). \
      Cost is computed from actual API token counts × published pricing. Compression uses lean-ctx \
-     with default settings; routing uses the configured intent-tier mapping."
+     with default settings; both arms use the same reference model."
         .to_string()
 }
 
@@ -325,14 +321,13 @@ mod tests {
             cost_usd: cost,
             model_used: "claude-sonnet-4".into(),
             compressed_tokens: None,
-            routing_tier: None,
             latency_ms: 500,
             error: None,
         }
     }
 
-    fn make_experiment() -> FourArmExperiment {
-        FourArmExperiment {
+    fn make_experiment() -> StudyExperiment {
+        StudyExperiment {
             config: StudyConfig::default(),
             dataset_name: "test_data".into(),
             results: vec![
@@ -350,7 +345,7 @@ mod tests {
                     ],
                 },
                 ArmResult {
-                    arm: Arm::Combined,
+                    arm: Arm::CompressOnly,
                     tasks_total: 3,
                     tasks_passed: 3,
                     total_input_tokens: 1500,

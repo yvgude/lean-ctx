@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 use std::fs;
 use std::time::Instant;
 
@@ -82,7 +83,9 @@ fn compression_provider_uses_the_full_registry_capability_path() {
         "../../../docs/contracts/ocla/capability-manifests/leanctx/context-optimization-v1.json"
     ))
     .expect("pinned compression manifest should parse");
-    let direct_manifest = provider.manifest();
+    let direct_manifest = provider
+        .manifest()
+        .expect("compression manifest should construct");
     direct_manifest
         .validate()
         .expect("compression manifest should be valid");
@@ -92,6 +95,7 @@ fn compression_provider_uses_the_full_registry_capability_path() {
     assert!(
         registry
             .manifests()
+            .expect("registry manifests should construct")
             .into_iter()
             .any(|manifest| manifest == expected),
         "registry manifests should include the compression capability contract"

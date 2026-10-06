@@ -104,16 +104,15 @@ pub struct LeanCtxServer {
     pub last_call: Arc<RwLock<Instant>>,
     pub agent_id: Arc<RwLock<Option<String>>>,
     pub task_envelope: Arc<RwLock<Option<lean_ctx_protocol::TaskEnvelopeV1>>>,
+    /// Installed by the trusted host before serving; never sourced from tool arguments.
+    pub(crate) native_receipt_authority:
+        Option<Arc<crate::core::execution_ledger::host::HostReceiptAuthority>>,
     pub(crate) presence_agent_id: Arc<RwLock<Option<String>>>,
     /// The role this session resolved at `initialize` (#1766). The fail-closed
     /// presence retry re-registers with it instead of the construction-time
-    /// `context-engine` placeholder, which silently moved a `reviewer` (or a
-    /// `coder`) out of worker-capacity accounting.
+    /// `context-engine` placeholder, which silently turned a `reviewer` (or a
+    /// `coder`) into a context engine.
     pub(crate) presence_role: Arc<RwLock<Option<String>>>,
-    /// True while the session is admitted read-only because the machine-wide
-    /// mutating cap was full when it registered (#1765). Read-only tools run;
-    /// the first mutating call retries the real role.
-    pub(crate) presence_read_only: Arc<std::sync::atomic::AtomicBool>,
     pub client_name: Arc<RwLock<String>>,
     pub autonomy: Arc<crate::core::autonomy::AutonomyState>,
     pub loop_detector: Arc<RwLock<crate::core::loop_detection::LoopDetector>>,

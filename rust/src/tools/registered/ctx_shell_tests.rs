@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 use super::{
     CtxShellTool, collect_extra_env, detect_heredoc_reroute, format_background_state,
     is_timeout_notice_only, resolve_effective_cwd, shell_access_denial, should_auto_background,

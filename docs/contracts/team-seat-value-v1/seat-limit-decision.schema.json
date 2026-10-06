@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "seat-limit-decision.schema.json",
+  "title": "SeatLimitDecisionV1", "type": "object", "additionalProperties": false,
+  "required": ["v", "decision_id", "scope", "action", "entitlement_digest", "membership_digest", "allocation_request", "allocation_request_digest", "allocated_before", "requested_delta", "effective_limit", "outcome", "reason_code", "decided_at", "signature_envelope_digest", "idempotency_key"],
+  "properties": {
+    "v": {"const": 1}, "decision_id": {"$ref": "common.schema.json#/$defs/id"}, "scope": {"$ref": "common.schema.json#/$defs/scope"},
+    "action": {"const": "seat.allocate"}, "entitlement_digest": {"$ref": "common.schema.json#/$defs/digest"}, "membership_digest": {"$ref": "common.schema.json#/$defs/digest"},
+    "allocation_request": {"type": "object", "additionalProperties": false, "required": ["scope", "member_id", "membership_digest", "request_nonce_digest"], "properties": {"scope": {"$ref": "common.schema.json#/$defs/scope"}, "member_id": {"$ref": "common.schema.json#/$defs/memberId"}, "membership_digest": {"$ref": "common.schema.json#/$defs/digest"}, "request_nonce_digest": {"$ref": "common.schema.json#/$defs/digest"}}},
+    "allocation_request_digest": {"$ref": "common.schema.json#/$defs/digest"},
+    "allocated_before": {"$ref": "common.schema.json#/$defs/quantity"}, "requested_delta": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}, "effective_limit": {"$ref": "common.schema.json#/$defs/quantity"},
+    "outcome": {"enum": ["allowed", "denied"]}, "reason_code": {"$ref": "common.schema.json#/$defs/reasonCode"}, "decided_at": {"$ref": "common.schema.json#/$defs/timestamp"},
+    "signature_envelope_digest": {"$ref": "common.schema.json#/$defs/digest"}, "idempotency_key": {"$ref": "common.schema.json#/$defs/idempotencyKey"}
+  }
+}

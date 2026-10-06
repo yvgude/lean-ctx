@@ -2,6 +2,8 @@
 
 use std::sync::Arc;
 
+use lean_ctx_protocol::AcceptanceState;
+
 use super::{
     decision_loop::{DecisionLoop, DecisionResult, protocol_profile},
     evidence_ledger::EvidenceLedgerV1,
@@ -34,6 +36,7 @@ pub struct TaskProof {
     pub bundle_candidates: usize,
     pub receipt_sources: Vec<String>,
     pub cost_micros: u64,
+    pub acceptance_state: AcceptanceState,
     pub outcome_accepted: bool,
     pub cpao_micros: Option<u64>,
     pub evidence_stages: Vec<String>,
@@ -65,7 +68,7 @@ pub fn prove_decision_loop() -> ProofResult {
             None,
         );
         let (cost, signals) = simulated_execution(index);
-        loop_.complete_task(&mut result, cost, signals);
+        loop_.complete_simulated_task(&mut result, cost, signals);
         let evidence_stages = record_evidence_chain(&mut evidence_ledger, &result, &routing);
         tasks.push(task_proof(
             query,
@@ -109,10 +112,7 @@ fn record_evidence_chain(
         result.envelope.intent.as_deref().unwrap_or_default(),
         &result.profile.intent,
         &routing.receipt.receipt_id,
-        result
-            .assessment
-            .as_ref()
-            .map_or("", |assessment| assessment.model.as_str()),
+        acceptance_label(result.acceptance_state),
     ];
     for (stage, detail) in EVIDENCE_STAGES.iter().zip(details) {
         ledger.record_manual_with_task(
@@ -183,10 +183,7 @@ fn task_proof(
     receipt_sources: Vec<String>,
     evidence_stages: Vec<String>,
 ) -> TaskProof {
-    let assessment = result
-        .assessment
-        .as_ref()
-        .expect("completed decision has assessment");
+    let cost = result.cost.as_ref().expect("completed decision has cost");
     TaskProof {
         task_id: result.task_id.clone(),
         query: query.into(),
@@ -199,16 +196,35 @@ fn task_proof(
             .collect(),
         bundle_candidates: candidates.len(),
         receipt_sources,
-        cost_micros: assessment.cost_micros,
-        outcome_accepted: assessment.outcome_accepted,
-        cpao_micros: assessment.cpao_micros,
+        cost_micros: cost.estimated_cost_micros,
+        acceptance_state: result.acceptance_state,
+        outcome_accepted: result.acceptance_state == AcceptanceState::Accepted,
+        cpao_micros: result
+            .assessment
+            .as_ref()
+            .and_then(|assessment| assessment.cpao_micros),
         evidence_stages,
+    }
+}
+
+const fn acceptance_label(state: AcceptanceState) -> &'static str {
+    match state {
+        AcceptanceState::Accepted => "accepted",
+        AcceptanceState::Rejected => "rejected",
+        AcceptanceState::Unknown => "unknown",
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    // Keep fixture state isolated even though proof value assessment is
+    // in-memory; other proof stages may still write process-local state.
+    fn prove_decision_loop() -> ProofResult {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        super::prove_decision_loop()
+    }
 
     #[test]
     fn test_proof_all_tasks_complete() {
@@ -277,6 +293,13 @@ mod tests {
     }
 
     #[test]
+    fn incomplete_test_addition_evidence_remains_unknown() {
+        let proof = prove_decision_loop();
+        assert_eq!(proof.tasks[2].acceptance_state, AcceptanceState::Unknown);
+        assert!(proof.tasks[2].cpao_micros.is_none());
+    }
+
+    #[test]
     fn test_proof_bundles_non_empty() {
         let proof = prove_decision_loop();
         assert!(proof.tasks[0].bundle_candidates > 0 && proof.tasks[3].bundle_candidates > 0);
@@ -300,12 +323,73 @@ mod tests {
     }
 
     #[test]
+    fn test_proof_simulation_does_not_persist_fake_evidence() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let proof = super::prove_decision_loop();
+
+        assert!(proof.evidence_chain_complete);
+        assert!(!crate::core::value_gate::ValueGateStore::persist_path().exists());
+        assert!(
+            !crate::core::paths::data_dir()
+                .unwrap()
+                .join("policy_outcomes.jsonl")
+                .exists()
+        );
+    }
+
+    #[test]
+    fn test_proof_preserves_existing_recorded_value_evidence() {
+        use crate::core::value_gate::{TaskOutcome, ValueGate, ValueGateStore};
+
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let (cost, signals) = simulated_execution(0);
+        let task_id = "recorded-before-self-test";
+        let assessment = ValueGate::evaluate_task(
+            task_id,
+            &cost,
+            &TaskOutcome {
+                task_id: task_id.into(),
+                completed: true,
+                signals,
+            },
+        );
+        let ledger = ValueGateStore::persist_path();
+        let before = std::fs::read(&ledger).unwrap();
+        assert_eq!(ValueGateStore::load_from_disk(), vec![assessment.clone()]);
+
+        let proof = super::prove_decision_loop();
+
+        assert!(proof.evidence_chain_complete);
+        assert_eq!(std::fs::read(&ledger).unwrap(), before);
+        assert_eq!(ValueGateStore::load_from_disk(), vec![assessment]);
+    }
+
+    #[test]
+    fn test_prove_outputs_are_labeled_simulated_self_test() {
+        let proof = prove_decision_loop();
+        for format in ["json", "table", "markdown"] {
+            let output = crate::cli::prove::render(&proof, format).unwrap();
+            assert!(output.contains("SIMULATED SELF-TEST ONLY"));
+            assert!(output.contains("NOT ACTUAL PAID EXECUTION OR PRODUCTION ACCEPTANCE"));
+        }
+
+        let json: serde_json::Value =
+            serde_json::from_str(&crate::cli::prove::render(&proof, "json").unwrap()).unwrap();
+        assert_eq!(json["execution_mode"], "simulated_self_test");
+        assert_eq!(
+            json["disclaimer"],
+            "NOT ACTUAL PAID EXECUTION OR PRODUCTION ACCEPTANCE"
+        );
+    }
+
+    #[test]
     fn test_prove_evidence_complete() {
         assert!(prove_decision_loop().evidence_chain_complete);
     }
 
     #[test]
     fn e2e_propagates_task_id_through_every_stage() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
         let loop_ = DecisionLoop::default();
         let mut result = loop_.execute_task("fix LEAN-42 in src/main.rs", "e2e", "agent");
         let router = KnowledgeRouter {

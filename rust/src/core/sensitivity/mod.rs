@@ -64,6 +64,18 @@ impl SensitivityLevel {
     }
 }
 
+/// Projection onto the Context Gateway lattice; secrets are `Restricted`.
+impl From<SensitivityLevel> for lean_ctx_protocol::context_gateway::ClassificationV1 {
+    fn from(level: SensitivityLevel) -> Self {
+        match level {
+            SensitivityLevel::Public => Self::Public,
+            SensitivityLevel::Internal => Self::Internal,
+            SensitivityLevel::Confidential => Self::Confidential,
+            SensitivityLevel::Secret => Self::Restricted,
+        }
+    }
+}
+
 /// What to do when an item meets or exceeds the floor.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default, Hash)]
 #[serde(rename_all = "snake_case")]
@@ -221,6 +233,24 @@ mod tests {
         assert!(SensitivityLevel::Public < SensitivityLevel::Internal);
         assert!(SensitivityLevel::Internal < SensitivityLevel::Confidential);
         assert!(SensitivityLevel::Confidential < SensitivityLevel::Secret);
+    }
+
+    #[test]
+    fn gateway_projection_preserves_order_and_restricts_secrets() {
+        use lean_ctx_protocol::context_gateway::ClassificationV1;
+        let levels = [
+            SensitivityLevel::Public,
+            SensitivityLevel::Internal,
+            SensitivityLevel::Confidential,
+            SensitivityLevel::Secret,
+        ];
+        for pair in levels.windows(2) {
+            assert!(ClassificationV1::from(pair[0]) < ClassificationV1::from(pair[1]));
+        }
+        assert_eq!(
+            ClassificationV1::from(SensitivityLevel::Secret),
+            ClassificationV1::Restricted
+        );
     }
 
     #[test]

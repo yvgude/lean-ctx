@@ -19,6 +19,25 @@ pub enum ResolvedAuth {
 }
 
 impl ResolvedAuth {
+    /// Bind a source to the resolved credential without making credentials
+    /// serializable. Length framing separates fields and authentication kinds.
+    pub(super) fn binding_digest(&self) -> String {
+        let fields: Vec<&str> = match self {
+            Self::Bearer(token) => vec!["bearer", token],
+            Self::ApiKeyHeader { header, value } => vec!["api-key-header", header, value],
+            Self::ApiKeyQuery { param, value } => vec!["api-key-query", param, value],
+            Self::Basic { username, password } => vec!["basic", username, password],
+            Self::CustomHeader { header, value } => vec!["custom-header", header, value],
+            Self::None => vec!["none"],
+        };
+        let mut hash = blake3::Hasher::new_derive_key("leanctx.provider.credential-binding.v1");
+        for field in fields {
+            hash.update(&(field.len() as u64).to_le_bytes());
+            hash.update(field.as_bytes());
+        }
+        hash.finalize().to_hex().to_string()
+    }
+
     /// Resolve auth credentials from environment variables.
     pub fn from_config(auth: &AuthConfig) -> Result<Self, String> {
         match auth {
@@ -200,13 +219,14 @@ pub fn execute_request(
     let url = build_url(base_url, resource, interp_params, auth);
     let headers = collect_headers(auth, &resource.headers);
     let method = resource.method.to_uppercase();
+    let agent = crate::core::providers::hardened_http::hardened_agent();
 
     let (status, body) = match method.as_str() {
         "POST" | "PUT" | "PATCH" => {
             let mut req = match method.as_str() {
-                "PUT" => ureq::put(&url),
-                "PATCH" => ureq::patch(&url),
-                _ => ureq::post(&url),
+                "PUT" => agent.put(&url),
+                "PATCH" => agent.patch(&url),
+                _ => agent.post(&url),
             };
             for (k, v) in &headers {
                 req = req.header(k, v);
@@ -215,6 +235,9 @@ pub fn execute_request(
                 .send_empty()
                 .map_err(|e| format!("HTTP request failed: {e}"))?;
             let st = status_to_u16(res.status());
+            if !(200..300).contains(&st) {
+                return Err(format!("API returned status {st}"));
+            }
             let b = res
                 .into_body()
                 .read_to_string()
@@ -223,9 +246,9 @@ pub fn execute_request(
         }
         _ => {
             let mut req = if method == "DELETE" {
-                ureq::delete(&url)
+                agent.delete(&url)
             } else {
-                ureq::get(&url)
+                agent.get(&url)
             };
             for (k, v) in &headers {
                 req = req.header(k, v);
@@ -234,6 +257,9 @@ pub fn execute_request(
                 .call()
                 .map_err(|e| format!("HTTP request failed: {e}"))?;
             let st = status_to_u16(res.status());
+            if !(200..300).contains(&st) {
+                return Err(format!("API returned status {st}"));
+            }
             let b = res
                 .into_body()
                 .read_to_string()

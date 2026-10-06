@@ -39,6 +39,10 @@ pub(crate) struct AgentEntry {
     /// again when an unrelated process receives the same PID.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub process_identity: Option<ProcessIdentity>,
+    /// Optional explicit binding to the durable identity registry. Generated
+    /// presence IDs remain independent and unchanged for legacy callers.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub durable_identity_id: Option<String>,
     pub status: AgentStatus,
     pub status_message: Option<String>,
 }

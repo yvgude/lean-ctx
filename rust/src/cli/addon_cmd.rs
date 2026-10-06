@@ -855,8 +855,8 @@ mod tests {
     #[test]
     fn positional_skips_flags_and_the_verb() {
         let args: Vec<String> = ["addon", "add", "--yes", "pack.ctxpkg"]
-            .iter()
-            .map(ToString::to_string)
+            .into_iter()
+            .map(str::to_owned)
             .collect();
         assert_eq!(positional(&args, "add"), Some("pack.ctxpkg".into()));
     }
@@ -864,14 +864,14 @@ mod tests {
     #[test]
     fn flag_value_accepts_both_spellings() {
         let split: Vec<String> = ["release", ".", "--output", "out.ctxpkg"]
-            .iter()
-            .map(ToString::to_string)
+            .into_iter()
+            .map(str::to_owned)
             .collect();
         assert_eq!(flag_value(&split, "--output"), Some("out.ctxpkg".into()));
 
         let joined: Vec<String> = ["release", ".", "--output=out.ctxpkg"]
-            .iter()
-            .map(ToString::to_string)
+            .into_iter()
+            .map(str::to_owned)
             .collect();
         assert_eq!(flag_value(&joined, "--output"), Some("out.ctxpkg".into()));
     }

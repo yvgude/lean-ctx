@@ -314,6 +314,9 @@ pub fn is_read_only_path(candidate: &Path) -> bool {
 /// in-place memory-compaction writer, and the refactor IDE pre-write gate), so
 /// a "read-only" root cannot be written through any tool. Reads are unaffected.
 pub fn enforce_writable(candidate: &Path) -> Result<(), String> {
+    // This boundary covers caller-selected edit/backup/export destinations.
+    // Engine-owned knowledge persistence uses its own authorized store writer.
+    crate::cli::enforce_protected_store_path(candidate)?;
     if is_read_only_path(candidate) {
         return Err(format!(
             "path is inside a read-only root — writes are denied (read_only_roots): {}",
@@ -524,6 +527,17 @@ pub fn jail_path_with_roots(
         return Err(PathJailError::NullByte);
     }
 
+    // Runtime context is reached through authorized knowledge/recovery APIs,
+    // never by widening a model-directed file read to the Engine's own store.
+    // Apply this before no-jail/config/implicit runtime allow-list shortcuts.
+    let absolute = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        jail_root.join(candidate)
+    };
+    crate::cli::enforce_protected_store_path(&absolute)
+        .map_err(|reason| PathJailError::ProtectedContext { reason })?;
+
     #[cfg(feature = "no-jail")]
     {
         let _ = (jail_root, extra_roots);
@@ -653,7 +667,82 @@ pub fn jail_path_with_roots(
             }
         }
 
+        crate::cli::enforce_protected_store_path(&out)
+            .map_err(|reason| PathJailError::ProtectedContext { reason })?;
         Ok(out)
+    }
+}
+
+#[cfg(all(test, target_os = "macos"))]
+mod protected_store_tests {
+    use super::*;
+
+    #[test]
+    fn runtime_store_is_not_reopened_by_implicit_or_explicit_roots() {
+        let isolated = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let store = isolated.path().join("knowledge");
+        std::fs::create_dir_all(&store).unwrap();
+        let fact = store.join("facts.json");
+        std::fs::write(&fact, "private stored context").unwrap();
+        let code = project.path().join("main.rs");
+        std::fs::write(&code, "fn main() {}\n").unwrap();
+        assert!(
+            jail_path(&fact, project.path()).is_ok(),
+            "Community keeps its existing runtime access"
+        );
+        let _protected = crate::cli::pin_synthetic_session(isolated.path()).unwrap();
+        let roots = vec![isolated.path().to_string_lossy().into_owned()];
+        for candidate in [&fact, &store, &isolated.path().to_path_buf()] {
+            assert!(
+                matches!(
+                    jail_path_with_roots(candidate, project.path(), &roots),
+                    Err(PathJailError::ProtectedContext { .. })
+                ),
+                "{candidate:?}"
+            );
+        }
+        assert!(jail_path(&code, project.path()).is_ok());
+        assert!(jail_path_with_roots(Path::new("facts.json"), &store, &roots).is_err());
+        // Raw backup paths enter the shared atomic writer without the dispatch
+        // resolver; they must not overwrite a hidden record or create a sibling.
+        for target in [&fact, &store.join("new/backup.json")] {
+            assert!(
+                crate::tools::edit_io::write_atomic_bytes_with_permissions(
+                    target,
+                    b"forged local context",
+                    None,
+                )
+                .is_err()
+            );
+        }
+        assert_eq!(
+            std::fs::read_to_string(&fact).unwrap(),
+            "private stored context"
+        );
+        assert!(!store.join("new").exists());
+        crate::tools::edit_io::write_atomic_bytes_with_permissions(&code, b"fn main() {}\n", None)
+            .unwrap();
+        // Internal storage is unaffected by the model-directed path resolver.
+        std::fs::write(&fact, "retained internal update").unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&fact).unwrap(),
+            "retained internal update"
+        );
+    }
+
+    #[test]
+    fn missing_child_profile_never_falls_back_to_the_normal_jail() {
+        let isolated = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let code = project.path().join("main.rs");
+        std::fs::write(&code, "fn main() {}\n").unwrap();
+        let _protected = crate::cli::pin_synthetic_session(isolated.path()).unwrap();
+        crate::test_env::remove_var(crate::cli::CHILD_PROFILE_ENV);
+        assert!(matches!(
+            jail_path(&code, project.path()),
+            Err(PathJailError::ProtectedContext { .. })
+        ));
     }
 }
 
@@ -661,7 +750,12 @@ pub fn jail_path_with_roots(
 fn is_under_prefix_windows(path: &Path, prefix: &Path) -> bool {
     let path_str = normalize_windows_path(&path.to_string_lossy());
     let prefix_str = normalize_windows_path(&prefix.to_string_lossy());
-    path_str.starts_with(&prefix_str)
+    let prefix_str = prefix_str.trim_end_matches('\\');
+    // Component boundary: `c:\proj` must not admit `c:\proj-evil\x`.
+    path_str == prefix_str
+        || path_str
+            .strip_prefix(prefix_str)
+            .is_some_and(|rest| rest.starts_with('\\'))
 }
 
 #[cfg(windows)]
@@ -683,6 +777,10 @@ fn reject_symlink_on_windows(path: &Path) -> Result<(), PathJailError> {
     }
     Ok(())
 }
+
+#[cfg(all(test, windows))]
+#[path = "pathjail_windows_tests.rs"]
+mod windows_prefix_tests;
 
 #[cfg(test)]
 mod tests {

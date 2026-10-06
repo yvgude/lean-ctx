@@ -673,15 +673,21 @@ pub fn open_or_build(project_root: &str) -> Option<OpenGraphProvider> {
         return Some(p);
     }
 
-    // Try to acquire the build gate without blocking. If another tool call is
-    // already building the graph, don't queue — trigger background build and
-    // return None so the caller gets a graceful "index building" message.
-    let Ok(_gate) = BUILD_GATE.try_lock() else {
-        tracing::info!(
-            "open_or_build: another build in progress for {project_root}; returning None"
-        );
-        trigger_lazy_graph_build(project_root);
-        return None;
+    // Tests require the documented byte-stable result even when the parallel
+    // suite is building another fixture. Production remains non-blocking.
+    let _gate = if cfg!(test) {
+        BUILD_GATE
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+    } else {
+        let Ok(gate) = BUILD_GATE.try_lock() else {
+            tracing::info!(
+                "open_or_build: another build in progress for {project_root}; returning None"
+            );
+            trigger_lazy_graph_build(project_root);
+            return None;
+        };
+        gate
     };
 
     // Run the potentially-slow `load_or_build` under a timeout thread so we

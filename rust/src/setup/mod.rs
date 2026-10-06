@@ -1,6 +1,8 @@
 mod env_guard;
 mod first_run;
 mod index_build;
+mod intelligence;
+pub(crate) use intelligence::configure_runtime;
 mod interactive;
 mod onboard;
 mod options;

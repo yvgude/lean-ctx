@@ -157,9 +157,13 @@ pub struct AgentsConfig {
     pub scratchpad_default_ttl_hours: u64,
     /// Logical session timeout (seconds).
     pub logical_session_ttl_seconds: u64,
-    /// Machine-wide cap for simultaneously admitted MCP workers (1–15).
+    /// Legacy registration-cap setting retained for config compatibility only.
+    /// Presence registration ignores this value; WorkGraph execution has its
+    /// own concurrency, lease, and budget admission checks.
     pub max_concurrent_workers: usize,
-    /// Machine-wide cap for workers whose role can mutate project state.
+    /// Legacy mutating-slot cap retained for config compatibility only.
+    /// Presence registration ignores this value, so no session is refused or
+    /// demoted to read-only (#1765); builds and tests stay serialized below.
     pub max_concurrent_mutating_workers: usize,
     /// Active worker lease. Missing heartbeats release capacity automatically.
     pub active_worker_lease_seconds: u64,
@@ -615,6 +619,10 @@ pub struct UpdatesConfig {
     pub auto_update: bool,
     pub check_interval_hours: u64,
     pub notify_only: bool,
+    /// Persistent release pin used by manual and scheduled update checks.
+    /// `None` follows the latest release; values are normalized without `v`.
+    #[serde(default)]
+    pub pinned_version: Option<String>,
 }
 
 impl Default for UpdatesConfig {
@@ -623,6 +631,7 @@ impl Default for UpdatesConfig {
             auto_update: false,
             check_interval_hours: 6,
             notify_only: false,
+            pinned_version: None,
         }
     }
 }

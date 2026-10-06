@@ -1,0 +1,988 @@
+{
+  "fixture_kind": "team-context-v1/cross-record-cases",
+  "fixture_version": 1,
+  "non_secret": true,
+  "description": "Complete schema-valid workflow plus schema-valid adversarial mutations for every mandatory rule.",
+  "interpretations": {
+    "scope": "Every materialized case is validated against its bundled record schema before cross-record evaluation.",
+    "acceptance": "All accept cases use a complete graph that exercises every rule precondition.",
+    "rejection": "Each reject case applies an explicit schema-valid mutation to that graph."
+  },
+  "rules": [
+    {
+      "rule": 1,
+      "name": "Non-self-approval",
+      "summary": "Approver differs from requester and mirrored fields agree."
+    },
+    {
+      "rule": 2,
+      "name": "Same-scope approval",
+      "summary": "Approval graph has one exact scope."
+    },
+    {
+      "rule": 3,
+      "name": "Approver authority",
+      "summary": "Active membership and role grant cover decision time."
+    },
+    {
+      "rule": 4,
+      "name": "Signer binding",
+      "summary": "Strict signature binds record and privacy-safe signer."
+    },
+    {
+      "rule": 5,
+      "name": "Policy agreement",
+      "summary": "Promotion and decision bind one active policy."
+    },
+    {
+      "rule": 6,
+      "name": "Object linkage",
+      "summary": "Authoritative object binds approved immediate predecessor."
+    },
+    {
+      "rule": 7,
+      "name": "Conflict winner",
+      "summary": "Conflict resolves typed same-scope branches."
+    },
+    {
+      "rule": 8,
+      "name": "Validity ordering",
+      "summary": "All time windows are strictly ordered."
+    },
+    {
+      "rule": 9,
+      "name": "Provenance agreement",
+      "summary": "Provenance binds object omission-preimage without a digest cycle."
+    },
+    {
+      "rule": 10,
+      "name": "Lease derivation",
+      "summary": "Active lease binds active valid membership and role."
+    },
+    {
+      "rule": 11,
+      "name": "CAS",
+      "summary": "CAS predecessor matches type, identity, scope and version."
+    },
+    {
+      "rule": 12,
+      "name": "Array canonicalization",
+      "summary": "Signed arrays are sorted and unique."
+    }
+  ],
+  "record_sets": {
+    "complete-valid": {
+      "policy": {
+        "type": "policy",
+        "record": {
+          "created_at": "2026-09-07T10:15:00Z",
+          "created_by": "member:root",
+          "idempotency_key": "policy-promotion-authority-0001",
+          "policy_id": "pol-promotion-authority",
+          "policy_kind": "promotion_authority",
+          "rules_digest": "sha256:2f31ebe42cdb52df54e619a01224c20fd1129c9421925ac5f1e9b6d5df6f4887",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "signature_envelope_digest": "sha256:aabcea98418dd7fc81ef5dea351756fdcc087374c8fcc51f434776c7ac2a6d0c",
+          "state": "active",
+          "v": 1,
+          "valid_from": "2026-09-07T10:15:00Z",
+          "version": 1
+        }
+      },
+      "policy_envelope": {
+        "type": "signature-envelope",
+        "record": {
+          "v": 1,
+          "envelope_id": "sig-policy-fixture",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "alg": "ed25519",
+          "key_id": "key:fixture-authority",
+          "key_epoch": 3,
+          "public_key": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+          "signed_payload_kind": "policy",
+          "signed_payload_digest": "sha256:81e47d70da8c582c29ac87840913bd85147ade7c6506682804dc53a1c8a3eac3",
+          "signature": "2Zen66vEXMGEaDcOO9d3qM6-df6OXPI-ogA3PEYfTPqV7JA0RyVFczPW5Ec8LKLyummuOzlZAn-grNAuspudBQ",
+          "signed_at": "2026-09-07T10:15:00Z",
+          "version": 1,
+          "idempotency_key": "signature-policy-fixture-0001",
+          "signed_by": "member:root"
+        }
+      },
+      "promotion_v1": {
+        "type": "promotion",
+        "record": {
+          "from_authority": "team_candidate",
+          "idempotency_key": "promotion-fixture-request-0001",
+          "object_digest": "sha256:f219e8f07c6cac6de69c3ef6e18823f2707c6f02f4bee2d4fd511c74e735dbe5",
+          "object_id": "co-retry-budget",
+          "policy_digest": "sha256:5b71cb4ca63b13acaad60ac3bd2e3e76c35216ab3bd4b4841f7d1a465f7aec99",
+          "promotion_id": "pr-retry-budget-01",
+          "requested_at": "2026-09-07T10:00:00Z",
+          "requested_by": "member:b2",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "state": "pending",
+          "to_authority": "authoritative",
+          "v": 1,
+          "version": 1
+        }
+      },
+      "decision": {
+        "type": "authority-decision",
+        "record": {
+          "decided_at": "2026-09-07T10:15:00Z",
+          "decided_by": "member:a1",
+          "decision": "approved",
+          "decision_id": "ad-retry-budget-01",
+          "idempotency_key": "authority-fixture-decision-0001",
+          "object_digest": "sha256:f219e8f07c6cac6de69c3ef6e18823f2707c6f02f4bee2d4fd511c74e735dbe5",
+          "object_id": "co-retry-budget",
+          "policy_digest": "sha256:5b71cb4ca63b13acaad60ac3bd2e3e76c35216ab3bd4b4841f7d1a465f7aec99",
+          "promotion_digest": "sha256:9d457222104a49bcb1c877a225c38544f4192c5c1b061d7632f47ec728bdc4fc",
+          "promotion_id": "pr-retry-budget-01",
+          "reason_code": "policy.satisfied",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "signature_envelope_digest": "sha256:34e6f89bf88d5b7a37fa779c31f077518a667a4d7191e75bb74b0fe29a478812",
+          "v": 1,
+          "version": 1
+        }
+      },
+      "decision_envelope": {
+        "type": "signature-envelope",
+        "record": {
+          "v": 1,
+          "envelope_id": "sig-decision-fixture",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "alg": "ed25519",
+          "key_id": "key:fixture-authority",
+          "key_epoch": 3,
+          "public_key": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+          "signed_payload_kind": "authority-decision",
+          "signed_payload_digest": "sha256:36256c306d19c50de8a3895f9e995220e58f9c7a88eef03e863176e44bae59d9",
+          "signature": "Ooo6WPlpnTvxJkYyQtavaxMOv7RgLVUseEe-S_iXkXWOyi5vf4YboisbNtXDIILqLxBqfqGGVpPmFmg6nqo9Ag",
+          "signed_at": "2026-09-07T10:15:00Z",
+          "version": 1,
+          "idempotency_key": "signature-decision-fixture-0001",
+          "signed_by": "member:a1"
+        }
+      },
+      "membership": {
+        "type": "membership",
+        "record": {
+          "created_at": "2026-09-07T10:15:00Z",
+          "created_by": "member:root",
+          "idempotency_key": "membership-a1-platform-0001",
+          "member_id": "member:a1",
+          "membership_id": "ms-a1-platform",
+          "role": "approver",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "state": "active",
+          "v": 1,
+          "valid_from": "2026-09-07T09:00:00Z",
+          "version": 1,
+          "valid_until": "2026-09-08T00:00:00Z"
+        }
+      },
+      "role_binding": {
+        "type": "workspace-role",
+        "record": {
+          "allowed_actions": [
+            "checkpoint.create",
+            "conflict.resolve",
+            "context.read",
+            "context.submit",
+            "promotion.decide",
+            "promotion.request",
+            "provenance.read",
+            "receipt.read",
+            "workspace.read"
+          ],
+          "created_at": "2026-09-07T10:15:00Z",
+          "created_by": "member:root",
+          "idempotency_key": "rolebind-approver-0001",
+          "policy_digest": "sha256:5b71cb4ca63b13acaad60ac3bd2e3e76c35216ab3bd4b4841f7d1a465f7aec99",
+          "role": "approver",
+          "role_binding_id": "rb-platform-approver",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "state": "active",
+          "v": 1,
+          "valid_from": "2026-09-07T09:00:00Z",
+          "version": 1,
+          "valid_until": "2026-09-08T00:00:00Z"
+        }
+      },
+      "lease": {
+        "type": "lease",
+        "record": {
+          "expires_at": "2026-09-07T11:15:00Z",
+          "granted_at": "2026-09-07T10:15:00Z",
+          "granted_by": "member:root",
+          "idempotency_key": "lease-a1-platform-0001",
+          "lease_id": "lease-a1-platform-01",
+          "member_id": "member:a1",
+          "membership_digest": "sha256:86f3ad69d6af03909dd46d566b20d27f5419b249823022ee4f4c3fea6476d6a1",
+          "role": "approver",
+          "role_binding_digest": "sha256:3c1a8b81dc786a482f167fd25dca8fc8336b35e0f0ace157d931ec7a9f7475d2",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "state": "active",
+          "v": 1,
+          "version": 1
+        }
+      },
+      "object_v2": {
+        "type": "context-object",
+        "record": {
+          "approval_state": "pending",
+          "author": "member:b2",
+          "authority_state": "team_candidate",
+          "classification": "internal",
+          "content_digest": "sha256:b356e642aaf59bc84dc2098e9f29cf1a5366adace24fb3727243df0789853044",
+          "created_at": "2026-09-07T10:15:00Z",
+          "idempotency_key": "object-candidate-fixture-0001",
+          "lifecycle_state": "active",
+          "object_id": "co-retry-budget",
+          "object_type": "decision",
+          "provenance_digest": "sha256:145e5e71922309bc77f3da587a121d55d5f6dcb2b6f4dbcd051fc4d5e1a572a3",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "source": "workspace",
+          "v": 1,
+          "valid_from": "2026-09-07T10:00:00Z",
+          "version": 1
+        }
+      },
+      "object_v3": {
+        "type": "context-object",
+        "record": {
+          "approval_state": "approved",
+          "author": "member:b2",
+          "authority_decision_digest": "sha256:331e86337aee88aa9068484e6bddb2e6254f15b7a29ff652f0f14a06be62ce6a",
+          "authority_state": "authoritative",
+          "classification": "internal",
+          "content_digest": "sha256:b356e642aaf59bc84dc2098e9f29cf1a5366adace24fb3727243df0789853044",
+          "created_at": "2026-09-07T10:15:00Z",
+          "idempotency_key": "object-authoritative-fixture-0002",
+          "lifecycle_state": "active",
+          "object_id": "co-retry-budget",
+          "object_type": "decision",
+          "parent_digest": "sha256:f219e8f07c6cac6de69c3ef6e18823f2707c6f02f4bee2d4fd511c74e735dbe5",
+          "provenance_digest": "sha256:2fff03b6dc04422ae37f0f921e72713b8a847cbd651ac042faab9a876bb0960f",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "source": "workspace",
+          "supersedes": "sha256:df8f0becb5bb880095b349c0f39359fc910e5cd2688281bec69dcfe113908814",
+          "v": 1,
+          "valid_from": "2026-09-07T10:15:00Z",
+          "version": 2
+        }
+      },
+      "object_right": {
+        "type": "context-object",
+        "record": {
+          "approval_state": "pending",
+          "author": "member:b2",
+          "authority_state": "team_candidate",
+          "classification": "internal",
+          "content_digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "created_at": "2026-09-07T10:15:00Z",
+          "idempotency_key": "object-alternative-fixture-0001",
+          "lifecycle_state": "active",
+          "object_id": "co-alternative",
+          "object_type": "decision",
+          "provenance_digest": "sha256:60f04be263ed1d649d571a0dc4d2b6e110814a18080d91a2937a6eda8d590f02",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "source": "workspace",
+          "v": 1,
+          "valid_from": "2026-09-07T10:00:00Z",
+          "version": 1
+        }
+      },
+      "provenance_candidate": {
+        "type": "provenance",
+        "record": {
+          "author": "member:b2",
+          "authority_state": "team_candidate",
+          "classification": "internal",
+          "created_at": "2026-09-07T10:15:00Z",
+          "idempotency_key": "provenance-candidate-0001",
+          "object_digest": "sha256:e920c52b9d2708fcb338c985626c4706fdb7c40b09f5c0bb31b7618e1cdb0e35",
+          "object_id": "co-retry-budget",
+          "object_type": "decision",
+          "provenance_id": "pv-candidate",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "source_digest": "sha256:0f2829d3808bac303eafd0d555e9a9b5c2bec2df80463de72922fe01de84234e",
+          "source_kind": "workspace",
+          "v": 1,
+          "valid_from": "2026-09-07T10:00:00Z",
+          "version": 1
+        }
+      },
+      "provenance": {
+        "type": "provenance",
+        "record": {
+          "author": "member:b2",
+          "authority_decision_digest": "sha256:331e86337aee88aa9068484e6bddb2e6254f15b7a29ff652f0f14a06be62ce6a",
+          "authority_state": "authoritative",
+          "classification": "internal",
+          "created_at": "2026-09-07T10:15:00Z",
+          "idempotency_key": "provenance-authoritative-0001",
+          "object_digest": "sha256:2a0f26dcfec00785fbac6453bf4468ea67a2a267c05e65e2e930a8d01dfe6661",
+          "object_id": "co-retry-budget",
+          "object_type": "decision",
+          "provenance_id": "pv-authoritative",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "source_digest": "sha256:0f2829d3808bac303eafd0d555e9a9b5c2bec2df80463de72922fe01de84234e",
+          "source_kind": "workspace",
+          "v": 1,
+          "valid_from": "2026-09-07T10:15:00Z",
+          "version": 1
+        }
+      },
+      "provenance_right": {
+        "type": "provenance",
+        "record": {
+          "author": "member:b2",
+          "authority_state": "team_candidate",
+          "classification": "internal",
+          "created_at": "2026-09-07T10:15:00Z",
+          "idempotency_key": "provenance-alternative-0001",
+          "object_digest": "sha256:32b28e21993c6bbce4e7911bf9d583d9499d047aac3889f05dd2b060b0b51242",
+          "object_id": "co-alternative",
+          "object_type": "decision",
+          "provenance_id": "pv-alternative",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "source_digest": "sha256:0f2829d3808bac303eafd0d555e9a9b5c2bec2df80463de72922fe01de84234e",
+          "source_kind": "workspace",
+          "v": 1,
+          "valid_from": "2026-09-07T10:00:00Z",
+          "version": 1
+        }
+      },
+      "conflict": {
+        "type": "conflict",
+        "record": {
+          "conflict_id": "cf-retry-budget-timeout",
+          "detected_at": "2026-09-07T09:50:00Z",
+          "idempotency_key": "conflict-fixture-resolve-0001",
+          "left_digest": "sha256:fe776c69d97c28c07c013fc5f909fbd682fd3e940422ec70c681e276e848e1d8",
+          "left_object_id": "co-retry-budget",
+          "reason_code": "authority.explicit",
+          "resolution_policy": "manual_authority",
+          "resolved_at": "2026-09-07T10:15:00Z",
+          "resolved_by": "member:a1",
+          "right_digest": "sha256:fdf182f65fb87200835604e18c518fbb8ac66afa91d70781f7a68a5f366dcdd0",
+          "right_object_id": "co-alternative",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "state": "resolved",
+          "v": 1,
+          "version": 1,
+          "winner": "left"
+        }
+      },
+      "receipt": {
+        "type": "team-receipt",
+        "record": {
+          "actor_digest": "hmac-sha256:707b2e996060995ad034c453bf79d83e3b5b6fddd051b9df6f3cd9336b1515e7",
+          "created_at": "2026-09-07T10:15:00Z",
+          "idempotency_key": "promotion-retry-budget-decide-0002",
+          "input_digest": "sha256:c354812e610d66764fd5f930493349476523ea9a517ceb09a14c6faaca20ff99",
+          "operation_kind": "promotion.decide",
+          "outcome": "accepted",
+          "output_digest": "sha256:6c919d3dffcb4db78c090511fa2382f4abee8fb980c5e5d049f447be2c29fece",
+          "policy_digest": "sha256:5b71cb4ca63b13acaad60ac3bd2e3e76c35216ab3bd4b4841f7d1a465f7aec99",
+          "receipt_id": "rc-promotion-decide-01",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "signature_envelope_digest": "sha256:f314a5e8cc288f66afab428879fbb91e2f5730a3a0d0c99f4e442e6b17c07ba7",
+          "v": 1,
+          "version": 1
+        }
+      },
+      "receipt_envelope": {
+        "type": "signature-envelope",
+        "record": {
+          "v": 1,
+          "envelope_id": "sig-receipt-fixture",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "alg": "ed25519",
+          "key_id": "key:fixture-authority",
+          "key_epoch": 3,
+          "public_key": "11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo",
+          "signed_payload_kind": "team-receipt",
+          "signed_payload_digest": "sha256:bcd764053be60cfb166861b723d10c6d24c3edd76e1f70cd883ef1c65e2d1faa",
+          "signature": "agsDWSFcLD0M-il4KRGdION21xetN1GM8DjEflBwq6wNJGSiuPLtQHBaveCVhmL9Z1wH3FlVRKX42nPZD-3pCQ",
+          "signed_at": "2026-09-07T10:15:00Z",
+          "version": 1,
+          "idempotency_key": "signature-receipt-fixture-0001",
+          "signed_by_digest": "hmac-sha256:707b2e996060995ad034c453bf79d83e3b5b6fddd051b9df6f3cd9336b1515e7"
+        }
+      }
+    }
+  },
+  "cases": [
+    {
+      "case_id": "accept-rule-01-complete",
+      "rule": 1,
+      "expect": "accept",
+      "description": "Complete schema-valid workflow exercises rule 1.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid"
+    },
+    {
+      "case_id": "accept-rule-02-complete",
+      "rule": 2,
+      "expect": "accept",
+      "description": "Complete schema-valid workflow exercises rule 2.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid"
+    },
+    {
+      "case_id": "accept-rule-03-complete",
+      "rule": 3,
+      "expect": "accept",
+      "description": "Complete schema-valid workflow exercises rule 3.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid"
+    },
+    {
+      "case_id": "accept-rule-04-complete",
+      "rule": 4,
+      "expect": "accept",
+      "description": "Complete schema-valid workflow exercises rule 4.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid"
+    },
+    {
+      "case_id": "accept-rule-05-complete",
+      "rule": 5,
+      "expect": "accept",
+      "description": "Complete schema-valid workflow exercises rule 5.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid"
+    },
+    {
+      "case_id": "accept-rule-06-complete",
+      "rule": 6,
+      "expect": "accept",
+      "description": "Complete schema-valid workflow exercises rule 6.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid"
+    },
+    {
+      "case_id": "accept-rule-07-complete",
+      "rule": 7,
+      "expect": "accept",
+      "description": "Complete schema-valid workflow exercises rule 7.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid"
+    },
+    {
+      "case_id": "accept-rule-08-complete",
+      "rule": 8,
+      "expect": "accept",
+      "description": "Complete schema-valid workflow exercises rule 8.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid"
+    },
+    {
+      "case_id": "accept-rule-09-complete",
+      "rule": 9,
+      "expect": "accept",
+      "description": "Complete schema-valid workflow exercises rule 9.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid"
+    },
+    {
+      "case_id": "accept-rule-10-complete",
+      "rule": 10,
+      "expect": "accept",
+      "description": "Complete schema-valid workflow exercises rule 10.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid"
+    },
+    {
+      "case_id": "accept-rule-11-complete",
+      "rule": 11,
+      "expect": "accept",
+      "description": "Complete schema-valid workflow exercises rule 11.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid"
+    },
+    {
+      "case_id": "accept-rule-12-complete",
+      "rule": 12,
+      "expect": "accept",
+      "description": "Complete schema-valid workflow exercises rule 12.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid"
+    },
+    {
+      "case_id": "reject-rule-01-adversarial",
+      "rule": 1,
+      "expect": "reject",
+      "description": "Schema-valid mutation violates rule 1.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid",
+      "mutations": [
+        {
+          "op": "set",
+          "label": "promotion_v1",
+          "field": "requested_by",
+          "value": "member:a1"
+        }
+      ],
+      "expected_violations": [
+        1
+      ]
+    },
+    {
+      "case_id": "reject-rule-02-adversarial",
+      "rule": 2,
+      "expect": "reject",
+      "description": "Schema-valid mutation violates rule 2.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid",
+      "mutations": [
+        {
+          "op": "set",
+          "label": "promotion_v1",
+          "field": "scope",
+          "value": {
+            "organization_id": "other",
+            "workspace_id": "platform",
+            "project_id": "lean-ctx"
+          }
+        }
+      ],
+      "expected_violations": [
+        1,
+        2
+      ]
+    },
+    {
+      "case_id": "reject-rule-03-adversarial",
+      "rule": 3,
+      "expect": "reject",
+      "description": "Schema-valid mutation violates rule 3.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid",
+      "mutations": [
+        {
+          "op": "delete_record",
+          "label": "membership"
+        }
+      ],
+      "expected_violations": [
+        3,
+        10
+      ]
+    },
+    {
+      "case_id": "reject-rule-04-adversarial",
+      "rule": 4,
+      "expect": "reject",
+      "description": "Schema-valid mutation violates rule 4.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid",
+      "mutations": [
+        {
+          "op": "set",
+          "label": "decision_envelope",
+          "field": "signature",
+          "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+        }
+      ],
+      "expected_violations": [
+        4
+      ]
+    },
+    {
+      "case_id": "reject-rule-05-adversarial",
+      "rule": 5,
+      "expect": "reject",
+      "description": "Schema-valid mutation violates rule 5.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid",
+      "mutations": [
+        {
+          "op": "set",
+          "label": "promotion_v1",
+          "field": "policy_digest",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "expected_violations": [
+        1,
+        5
+      ]
+    },
+    {
+      "case_id": "reject-rule-06-adversarial",
+      "rule": 6,
+      "expect": "reject",
+      "description": "Schema-valid mutation violates rule 6.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid",
+      "mutations": [
+        {
+          "op": "set",
+          "label": "object_v3",
+          "field": "authority_decision_digest",
+          "value": "sha256:0000000000000000000000000000000000000000000000000000000000000000"
+        }
+      ],
+      "expected_violations": [
+        6,
+        7,
+        9
+      ]
+    },
+    {
+      "case_id": "reject-rule-07-adversarial",
+      "rule": 7,
+      "expect": "reject",
+      "description": "Schema-valid mutation violates rule 7.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid",
+      "mutations": [
+        {
+          "op": "set",
+          "label": "conflict",
+          "field": "right_digest",
+          "value": "sha256:86f3ad69d6af03909dd46d566b20d27f5419b249823022ee4f4c3fea6476d6a1"
+        }
+      ],
+      "expected_violations": [
+        7
+      ]
+    },
+    {
+      "case_id": "reject-rule-08-adversarial",
+      "rule": 8,
+      "expect": "reject",
+      "description": "Schema-valid mutation violates rule 8.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid",
+      "mutations": [
+        {
+          "op": "set",
+          "label": "membership",
+          "field": "valid_until",
+          "value": "2026-09-07T08:00:00Z"
+        }
+      ],
+      "expected_violations": [
+        3,
+        8,
+        10
+      ]
+    },
+    {
+      "case_id": "reject-rule-09-adversarial",
+      "rule": 9,
+      "expect": "reject",
+      "description": "Schema-valid mutation violates rule 9.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid",
+      "mutations": [
+        {
+          "op": "set",
+          "label": "provenance",
+          "field": "classification",
+          "value": "confidential"
+        }
+      ],
+      "expected_violations": [
+        9
+      ]
+    },
+    {
+      "case_id": "reject-rule-10-adversarial",
+      "rule": 10,
+      "expect": "reject",
+      "description": "Schema-valid mutation violates rule 10.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid",
+      "mutations": [
+        {
+          "op": "set",
+          "label": "lease",
+          "field": "membership_digest",
+          "value": "sha256:5b71cb4ca63b13acaad60ac3bd2e3e76c35216ab3bd4b4841f7d1a465f7aec99"
+        }
+      ],
+      "expected_violations": [
+        10
+      ]
+    },
+    {
+      "case_id": "reject-rule-11-adversarial",
+      "rule": 11,
+      "expect": "reject",
+      "description": "Schema-valid mutation violates rule 11.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid",
+      "mutations": [
+        {
+          "op": "set",
+          "label": "object_v3",
+          "field": "parent_digest",
+          "value": "sha256:fdf182f65fb87200835604e18c518fbb8ac66afa91d70781f7a68a5f366dcdd0"
+        }
+      ],
+      "expected_violations": [
+        6,
+        7,
+        9,
+        11
+      ]
+    },
+    {
+      "case_id": "reject-rule-12-adversarial",
+      "rule": 12,
+      "expect": "reject",
+      "description": "Schema-valid mutation violates rule 12.",
+      "tenant": {
+        "min_key_epoch": 1
+      },
+      "record_set": "complete-valid",
+      "mutations": [
+        {
+          "op": "set",
+          "label": "role_binding",
+          "field": "allowed_actions",
+          "value": [
+            "promotion.decide",
+            "context.read"
+          ]
+        }
+      ],
+      "expected_violations": [
+        10,
+        12
+      ]
+    },
+    {
+      "case_id": "reject-rule-10-suspended-membership-source",
+      "rule": 10,
+      "expect": "reject",
+      "description": "An active lease cannot derive from a suspended membership even when its digest is exact.",
+      "tenant": { "min_key_epoch": 1 },
+      "record_set": "complete-valid",
+      "mutations": [
+        { "op": "set", "label": "membership", "field": "state", "value": "suspended" },
+        { "op": "set", "label": "lease", "field": "membership_digest", "value": "sha256:78aa6c4cf20fbe7f008ac8f5fdc976469c6805fa150289d018e12ad6aa3a7091" }
+      ],
+      "expected_violations": [3, 10]
+    },
+    {
+      "case_id": "reject-rule-10-superseded-role-source",
+      "rule": 10,
+      "expect": "reject",
+      "description": "An active lease cannot derive from a superseded role binding even when its digest is exact.",
+      "tenant": { "min_key_epoch": 1 },
+      "record_set": "complete-valid",
+      "mutations": [
+        { "op": "set", "label": "role_binding", "field": "state", "value": "superseded" },
+        { "op": "set", "label": "role_binding", "field": "superseded_by", "value": "sha256:4444444444444444444444444444444444444444444444444444444444444444" },
+        { "op": "set", "label": "lease", "field": "role_binding_digest", "value": "sha256:ed735e8213c47e27cde53e33203b461f4510309a1d5bde11a02cbacbdbf44c6f" }
+      ],
+      "expected_violations": [3, 10]
+    },
+    {
+      "case_id": "reject-rule-04-receipt-signer-mismatch",
+      "rule": 4,
+      "expect": "reject",
+      "description": "A receipt envelope signer pseudonym must equal the receipt actor pseudonym even when the envelope reference is exact.",
+      "tenant": { "min_key_epoch": 1 },
+      "record_set": "complete-valid",
+      "mutations": [
+        { "op": "set", "label": "receipt_envelope", "field": "signed_by_digest", "value": "hmac-sha256:8888888888888888888888888888888888888888888888888888888888888888" },
+        { "op": "set", "label": "receipt", "field": "signature_envelope_digest", "value": "sha256:684c8cece34f6ba3fc7155ce64c6a6958b33e85feceb0fab43870bc9373e3864" }
+      ],
+      "expected_violations": [4]
+    }
+  ],
+  "supplementary_cases": [
+    {
+      "case_id": "idempotency-identical-replay",
+      "topic": "idempotency",
+      "expect": "accept",
+      "description": "Same scoped key replays identical canonical bytes.",
+      "operations": [
+        {
+          "label": "first",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "operation_kind": "promotion.request",
+          "idempotency_key": "idem-fixture-0001",
+          "request_body": {
+            "a": 1,
+            "b": 2
+          }
+        },
+        {
+          "label": "retry",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "operation_kind": "promotion.request",
+          "idempotency_key": "idem-fixture-0001",
+          "request_body": {
+            "b": 2,
+            "a": 1
+          }
+        }
+      ]
+    },
+    {
+      "case_id": "idempotency-byte-drift",
+      "topic": "idempotency",
+      "expect": "reject",
+      "description": "Same scoped key rejects changed canonical bytes.",
+      "operations": [
+        {
+          "label": "first",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "operation_kind": "promotion.request",
+          "idempotency_key": "idem-fixture-0002",
+          "request_body": {
+            "decision": "one"
+          }
+        },
+        {
+          "label": "drift",
+          "scope": {
+            "organization_id": "acme",
+            "project_id": "lean-ctx",
+            "workspace_id": "platform"
+          },
+          "operation_kind": "promotion.request",
+          "idempotency_key": "idem-fixture-0002",
+          "request_body": {
+            "decision": "two"
+          }
+        }
+      ]
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 
@@ -37,14 +39,21 @@ pub(crate) struct PackageContent {
 }
 
 pub(crate) const CHECKPOINT_PACKAGE_SCHEMA_V1: &str = "leanctx.ctxpkg-checkpoint/v1";
+/// Carries the public live checkpoint, not the historical SDK envelope.
+pub(crate) const CHECKPOINT_PACKAGE_SCHEMA_V2: &str = "leanctx.ctxpkg-checkpoint/v2";
+/// Carries canonical V2 with artifact lineage; never demoted to live V1.
+pub(crate) const CHECKPOINT_PACKAGE_SCHEMA_V3: &str = "leanctx.ctxpkg-checkpoint/v3";
+/// Carries canonical Unicode V3; older carrier versions remain strict.
+pub(crate) const CHECKPOINT_PACKAGE_SCHEMA_V4: &str = "leanctx.ctxpkg-checkpoint/v4";
 pub(crate) const MAX_CHECKPOINT_PACKAGE_BYTES: usize = 8 * 1024 * 1024;
 pub(crate) const MAX_CHECKPOINT_SOURCES: usize = 128;
 pub(crate) const MAX_CHECKPOINT_ENTRIES: usize = 256;
 pub(crate) const MAX_CHECKPOINT_REFS: usize = 4096;
 pub(crate) const MAX_CHECKPOINT_PACKAGE_PINS: usize = 128;
 
-/// Open mechanism-level carrier. Product lifecycle meaning remains in the
-/// private SDK; Engine validates structure, bounds and cryptographic identity.
+/// Versioned mechanism-level carrier. Schema v1 holds the historical SDK
+/// envelope; schemas v2/v3/v4 hold canonical live V1/V2/V3 respectively.
+/// Package integrity alone does not authorize session adoption.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct CheckpointPackageContentV1 {

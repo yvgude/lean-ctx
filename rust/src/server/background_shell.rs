@@ -211,8 +211,8 @@ fn start_inner(
 
 /// Outcome of a foreground run that is allowed to detach on a soft cap.
 pub enum ForegroundResult {
-    /// The command finished within the soft cap; output is returned inline and
-    /// the job has been removed from the registry.
+    /// The command finished within the soft cap; output is returned inline.
+    /// Other coalesced foreground/background callers retain their result.
     Finished { output: String, exit_code: i32 },
     /// The command was still running at the soft cap and was left running as a
     /// pollable background job (#1106).

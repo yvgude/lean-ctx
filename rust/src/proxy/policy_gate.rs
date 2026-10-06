@@ -1,6 +1,7 @@
 //! Org-policy gateway gate (enterprise#25) — model ceiling + hard budgets,
-//! enforced in the forward path **only** under a signed, trusted,
-//! `enforced = true` org policy ([`crate::core::policy::org`]).
+//! enforced in the forward path under a signed, trusted,
+//! `enforced = true` org policy ([`crate::core::policy::org`]). Invalid
+//! configured policy fails closed before forwarding.
 //!
 //! Three governance controls, all from the policy's new sections (Doc 08 §4.3):
 //!
@@ -22,8 +23,8 @@
 //! cover multi-replica deployments to the seeding interval's precision.
 //!
 //! Design guarantees:
-//! - **Local-free invariant:** without an installed + pinned + enforced org
-//!   policy this module is a no-op — a solo user's traffic is never gated.
+//! - **Local-free invariant:** without a configured org policy this module is
+//!   a no-op. A configured but unverifiable policy is an error, not absence.
 //! - **Fail-open on infrastructure:** seeding errors only degrade precision
 //!   (in-process counting continues); they never block traffic.
 //! - **O(1) per request:** the policy snapshot is cached with a short TTL;
@@ -47,6 +48,7 @@ const SNAPSHOT_TTL: Duration = Duration::from_mins(1);
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct GateRules {
     pub allowed_models: Vec<String>,
+    pub model_ceiling_groups: Vec<Vec<String>>,
     pub forbid_downgrade_for: Vec<String>,
     pub max_cost_usd_per_person_per_day: Option<f64>,
     pub max_cost_usd_per_project_per_month: Option<f64>,
@@ -60,6 +62,7 @@ impl GateRules {
         }
         Some(Self {
             allowed_models: routing.allowed_models.clone(),
+            model_ceiling_groups: routing.model_ceiling_groups.clone(),
             forbid_downgrade_for: routing.forbid_downgrade_for.clone(),
             max_cost_usd_per_person_per_day: budgets.max_cost_usd_per_person_per_day,
             max_cost_usd_per_project_per_month: budgets.max_cost_usd_per_project_per_month,
@@ -69,7 +72,7 @@ impl GateRules {
 }
 
 struct CachedSnapshot {
-    rules: Option<GateRules>,
+    rules: Result<Option<GateRules>, String>,
     loaded_at: Instant,
 }
 
@@ -88,17 +91,40 @@ enum TestOverride {
 #[cfg(test)]
 static TEST_OVERRIDE: Mutex<TestOverride> = Mutex::new(TestOverride::Unset);
 
+#[cfg(test)]
+thread_local! {
+    static TEST_POLICY_ERROR: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+}
+
+/// Thread-bound fault injection, restored even if the test panics.
+#[cfg(test)]
+pub(super) fn test_policy_error() -> impl Drop {
+    struct Guard(bool, std::marker::PhantomData<std::rc::Rc<()>>);
+    impl Drop for Guard {
+        fn drop(&mut self) {
+            TEST_POLICY_ERROR.with(|value| value.set(self.0));
+        }
+    }
+    Guard(
+        TEST_POLICY_ERROR.with(|value| value.replace(true)),
+        std::marker::PhantomData,
+    )
+}
+
 /// The active governance rules, from cache or a fresh policy load.
-/// `None` = no enforced org governance → the gate is a no-op.
-#[must_use]
-pub fn active_rules() -> Option<GateRules> {
+/// `Ok(None)` = no enforced org governance; `Err` must refuse forwarding.
+pub fn active_rules() -> Result<Option<GateRules>, String> {
+    #[cfg(test)]
+    if TEST_POLICY_ERROR.with(std::cell::Cell::get) {
+        return Err("injected org policy verification failure".into());
+    }
     #[cfg(test)]
     if let TestOverride::Pinned(pinned) = TEST_OVERRIDE
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
         .clone()
     {
-        return pinned;
+        return Ok(pinned);
     }
     {
         let guard = SNAPSHOT
@@ -110,8 +136,8 @@ pub fn active_rules() -> Option<GateRules> {
             return cached.rules.clone();
         }
     }
-    let rules = crate::core::policy::org::active_resolved()
-        .and_then(|p| GateRules::from_policy(&p.routing, &p.budgets));
+    let rules = crate::core::policy::org::active_resolved_checked()
+        .map(|policy| policy.and_then(|p| GateRules::from_policy(&p.routing, &p.budgets)));
     let mut guard = SNAPSHOT
         .write()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -141,30 +167,20 @@ pub fn test_clear_rules() {
 
 /// Glob-lite match: `*` matches any run of characters; everything else is
 /// literal (models are flat names — no need for full glob semantics).
+#[cfg(test)]
 fn pattern_matches(pattern: &str, model: &str) -> bool {
-    fn rec(p: &[u8], m: &[u8]) -> bool {
-        match p.first() {
-            None => m.is_empty(),
-            Some(b'*') => {
-                // Try every possible consumption length (bounded: model names
-                // are short) — classic backtracking glob.
-                (0..=m.len()).any(|k| rec(&p[1..], &m[k..]))
-            }
-            Some(&c) => m.first() == Some(&c) && rec(&p[1..], &m[1..]),
-        }
-    }
-    rec(pattern.trim().as_bytes(), model.trim().as_bytes())
+    crate::core::policy::model_pattern_matches(pattern, model)
 }
 
 /// Whether the requested model passes the ceiling. An empty allowlist means
 /// "no restriction".
 #[must_use]
 pub fn model_allowed(rules: &GateRules, model: &str) -> bool {
-    rules.allowed_models.is_empty()
-        || rules
-            .allowed_models
-            .iter()
-            .any(|p| pattern_matches(p, model))
+    crate::core::policy::model_allowed_by_ceilings(
+        &rules.allowed_models,
+        &rules.model_ceiling_groups,
+        model,
+    )
 }
 
 /// Whether the router must not downgrade this project's requests.
@@ -553,6 +569,7 @@ mod tests {
     fn rules() -> GateRules {
         GateRules {
             allowed_models: vec!["claude-*".into(), "gpt-4o-mini".into()],
+            model_ceiling_groups: Vec::new(),
             forbid_downgrade_for: vec!["prod".into()],
             max_cost_usd_per_person_per_day: Some(50.0),
             max_cost_usd_per_project_per_month: Some(1000.0),
@@ -575,6 +592,25 @@ mod tests {
         assert!(!pattern_matches("claude-*", "gpt-5.2"));
         assert!(!pattern_matches("gpt-4o-mini", "gpt-4o"));
         assert!(pattern_matches("*sonnet*", "claude-sonnet-4-5"));
+    }
+
+    #[test]
+    fn gateway_preserves_conjunctive_model_ceilings() {
+        let routing = RoutingPolicyRules {
+            allowed_models: vec!["claude-*".into()],
+            model_ceiling_groups: vec![vec!["*-opus-*".into()]],
+            ..Default::default()
+        };
+        let rules = GateRules::from_policy(&routing, &BudgetRules::default()).unwrap();
+        assert!(model_allowed(&rules, "claude-opus-5"));
+        assert!(!model_allowed(&rules, "claude-sonnet-5"));
+        assert!(!model_allowed(&rules, "gpt-opus-5"));
+        let denied = RoutingPolicyRules {
+            model_ceiling_groups: vec![Vec::new()],
+            ..Default::default()
+        };
+        let rules = GateRules::from_policy(&denied, &BudgetRules::default()).unwrap();
+        assert!(!model_allowed(&rules, "anything"));
     }
 
     #[test]

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinSavingsLedger — records compression savings with evidence refs.
 //!
 //! Wraps `core/savings_ledger/` behind the OCLA trait. Evidence references
@@ -89,6 +90,10 @@ impl Default for BuiltinSavingsLedger {
 }
 
 impl OclaService for BuiltinSavingsLedger {
+    fn manifest(&self) -> crate::core::ocla::OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+        crate::core::ocla::capability_fabric::builtin_manifest(&self.capability())
+    }
+
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::SavingsLedger)
     }
@@ -106,6 +111,10 @@ impl SavingsLedger for BuiltinSavingsLedger {
             );
         });
 
+        self.project_savings(evidence)
+    }
+
+    fn project_savings(&self, evidence: SavingsEvidence) -> OclaResult<String> {
         let saved = evidence
             .original_tokens
             .saturating_sub(evidence.delivered_tokens);

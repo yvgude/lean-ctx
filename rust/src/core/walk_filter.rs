@@ -38,8 +38,7 @@ const AGENT_COPY_DIR_NAMES: &[&str] = &[".worktrees", ".codex-worktrees", ".clau
 pub(crate) fn explicit_walk_root(root: &std::path::Path) -> std::path::PathBuf {
     #[cfg(windows)]
     {
-        return crate::core::pathutil::canonicalize_raw(root)
-            .unwrap_or_else(|_| root.to_path_buf());
+        crate::core::pathutil::canonicalize_raw(root).unwrap_or_else(|_| root.to_path_buf())
     }
     #[cfg(not(windows))]
     {

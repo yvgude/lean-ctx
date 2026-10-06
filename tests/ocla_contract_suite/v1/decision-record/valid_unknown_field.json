@@ -3,6 +3,7 @@
   "decision_id": "decision_01J5XKB6F9J2M5P8S1V4Y7B0D",
   "task_id": "task_01J5XK7Q2A6M8N4P0R3S5T7V9W",
   "plan_id": "plan_01J5XK8H3C6F9J2L5N8Q1S4V7Y",
+  "decision_stage": "planning",
   "decision_kind": "scheduling",
   "input_refs": [],
   "constraint_refs": [],

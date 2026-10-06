@@ -46,6 +46,8 @@ pub(crate) struct SessionSlice {
 /// A knowledge fact (compact, portable representation).
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct KnowledgeFact {
+    #[serde(default)]
+    pub origin: crate::core::knowledge::FactOrigin,
     pub category: String,
     pub key: String,
     pub value: String,

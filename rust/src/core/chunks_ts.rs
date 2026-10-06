@@ -121,6 +121,25 @@ pub(crate) fn for_each_chunk_node(
     file_ext: &str,
     mut visitor: impl FnMut(Node, &str, ChunkKind, usize, usize),
 ) -> Option<()> {
+    for_each_chunk_node_while(
+        content,
+        file_ext,
+        || true,
+        |node, name, kind, start, end| {
+            visitor(node, name, kind, start, end);
+            true
+        },
+    )
+}
+
+/// Stop capture traversal as soon as the consumer reaches its work budget.
+#[cfg(feature = "tree-sitter")]
+pub(crate) fn for_each_chunk_node_while(
+    content: &str,
+    file_ext: &str,
+    mut continue_scan: impl FnMut() -> bool,
+    mut visitor: impl FnMut(Node, &str, ChunkKind, usize, usize) -> bool,
+) -> Option<()> {
     let language = get_language(file_ext)?;
 
     thread_local! {
@@ -143,6 +162,10 @@ pub(crate) fn for_each_chunk_node(
     let mut seen_ranges = Vec::new();
 
     while let Some(m) = matches.next() {
+        // Budget admission precedes even containment/deduplication work.
+        if !continue_scan() {
+            break;
+        }
         let mut chunk_node: Option<Node> = None;
         let mut name_text = String::new();
 
@@ -174,7 +197,9 @@ pub(crate) fn for_each_chunk_node(
             seen_ranges.push(range);
 
             let kind = node_kind_to_chunk_kind(node.kind());
-            visitor(node, name_text.as_str(), kind, start_row0 + 1, end_row0 + 1);
+            if !visitor(node, name_text.as_str(), kind, start_row0 + 1, end_row0 + 1) {
+                break;
+            }
         }
     }
 

@@ -4,15 +4,15 @@
 //! response accounting.  It keeps the join deterministic, carries references
 //! instead of child receipt payloads, and hashes only canonical JSON.
 
-use std::collections::BTreeMap;
-
 use anyhow::{Result, anyhow};
 use lean_ctx_protocol::{
     ContextBalanceV1, EvidenceKind, EvidenceRefV1, ExecutionReceiptV1, PlanId, ReceiptId,
     SignatureStatus, TaskId,
 };
 use serde::{Deserialize, Serialize};
-use serde_json::{Map, Value};
+use serde_json::Value;
+
+use crate::core::canonical::canonical_serialize;
 
 pub use super::provider_normalization::NormalizedUsage;
 
@@ -95,7 +95,8 @@ impl ModelInvocation {
     }
 }
 
-/// Joins context balances, normalized provider usage, and model observations.
+/// P21 legacy compatibility only: new production writers use
+/// `ReceiptDocumentV1` through the execution ledger.
 #[derive(Debug, Clone)]
 pub struct ReceiptBuilder {
     task_id: String,
@@ -290,6 +291,18 @@ impl ReceiptBuilder {
             decision_refs,
             evidence_refs,
             signature: String::new(),
+            executor_agent_id: None,
+            attempt_id: None,
+            context_plan_id: None,
+            context_receipt_ref: None,
+            capability_bindings: Vec::new(),
+            observations: lean_ctx_protocol::ExecutionObservationsV1 {
+                model_calls: Some(model_calls),
+                retries: Some(retries),
+                latency_ms: Some(latency_ms),
+                actual_cost_micros: actual_cost,
+            },
+            extensions: Default::default(),
         };
 
         let receipt_id = blake3::hash(&canonical_bytes(&receipt, true))
@@ -366,16 +379,24 @@ fn aggregate_baseline_cost(invocations: &[ModelInvocation]) -> Option<u64> {
 }
 
 fn evidence_ref_for_id(ref_id: String) -> EvidenceRefV1 {
-    let digest = if ref_id.starts_with("blake3:") || ref_id.starts_with("sha") {
+    let raw_digest = ref_id
+        .strip_prefix("sha256:")
+        .or_else(|| ref_id.strip_prefix("blake3:"));
+    let digest = if raw_digest.is_some_and(|digest| {
+        digest.len() == 64 && digest.bytes().all(|byte| byte.is_ascii_hexdigit())
+    }) {
         ref_id.clone()
     } else {
         format!("blake3:{}", blake3::hash(ref_id.as_bytes()).to_hex())
     };
     EvidenceRefV1 {
+        schema_version: Some(1),
         kind: EvidenceKind::RuntimeLog,
         uri: ref_id,
         digest,
         signature_status: SignatureStatus::NotSigned,
+        media_type: None,
+        extensions: Default::default(),
     }
 }
 
@@ -387,23 +408,7 @@ fn canonical_bytes(receipt: &ExecutionReceiptV1, exclude_receipt_id: bool) -> Ve
             object.remove("receipt_id");
         }
     }
-    let value = canonicalize(value);
-    serde_json::to_vec(&value).expect("canonical receipt JSON is serializable")
-}
-
-fn canonicalize(value: Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(values.into_iter().map(canonicalize).collect()),
-        Value::Object(values) => {
-            let sorted: BTreeMap<String, Value> = values.into_iter().collect();
-            let mut canonical = Map::new();
-            for (key, value) in sorted {
-                canonical.insert(key, canonicalize(value));
-            }
-            Value::Object(canonical)
-        }
-        value => value,
-    }
+    canonical_serialize(&value)
 }
 
 #[cfg(test)]

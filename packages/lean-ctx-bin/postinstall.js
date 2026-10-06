@@ -313,6 +313,9 @@ function printSuccess() {
   console.log("\x1b[1m\u2502\x1b[0m                                                     \x1b[1m\u2502\x1b[0m");
   console.log("\x1b[1m\u2502\x1b[0m  Full control: \x1b[2mlean-ctx setup\x1b[0m                        \x1b[1m\u2502\x1b[0m");
   console.log("\x1b[1m\u2502\x1b[0m  \x1b[2mDocs: https://leanctx.com/docs\x1b[0m                     \x1b[1m\u2502\x1b[0m");
+  console.log("\x1b[1m\u2502\x1b[0m                                                     \x1b[1m\u2502\x1b[0m");
+  console.log("\x1b[1m\u2502\x1b[0m  Telemetry: anonymous usage counts, on by default.  \x1b[1m\u2502\x1b[0m");
+  console.log("\x1b[1m\u2502\x1b[0m  \x1b[2mSee/turn off: lean-ctx telemetry show | off\x1b[0m        \x1b[1m\u2502\x1b[0m");
   console.log("\x1b[1m\u2514\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2518\x1b[0m");
 }
 

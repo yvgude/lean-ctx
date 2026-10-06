@@ -53,7 +53,8 @@ fn is_shell_tool_covers_all_ide_variants() {
         );
     }
 }
-// --- Andi's real-world pattern ---
+// BRE metacharacters whose meaning differs from the Rust regex crate must stay
+// on native grep; egrep and plain unambiguous grep patterns keep the fast path.
 #[test]
 fn andis_real_world_grep_keeps_bre_alternation_on_native_grep() {
     // This test used to assert the opposite: that `\|` was rewritten onto

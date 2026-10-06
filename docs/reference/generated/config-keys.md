@@ -34,7 +34,7 @@ Top-level configuration keys
 - `dashboard_auth` (bool, default `true`) — Require Bearer-token auth for the dashboard (default true). Set false for no-auth mode protected by Sec-Fetch-Site/Origin/Host checks. Override per-run with --no-auth or LEAN_CTX_DASHBOARD_AUTH
 - `debug_log` (bool, default `false` — env `LEAN_CTX_DEBUG_LOG`) — Opt-in (default off): write a human-readable debug log of intercepted MCP tool calls and hook routing decisions (lean-ctx vs native, with the reason) to <state_dir>/logs/debug.log. View with `lean-ctx debug-log`
 - `default_tool_categories` (string[], default `[]`) — Tool categories active by default. `core` is the default; `session` enables experimental local collaboration tools only when explicitly listed. Override via LCTX_DEFAULT_CATEGORIES
-- `delta_explicit` (boolean, default `false`) — Serve explicit full/lines re-reads of changed cached files as diffs (opt-in). Override via LCTX_DELTA_EXPLICIT=1
+- `delta_explicit` (boolean, default `false`) — Legacy delta preference (opt-in); concrete per-call full/lines requests remain fresh and exact. Use mode=auto or mode=diff for reduced re-reads. Override via LCTX_DELTA_EXPLICIT=1
 - `disabled_tools` (string[], default `[]`) — Tools to exclude from the MCP tool list
 - `enable_wakeup_ctx` (bool, default `true`) — Append wakeup briefing (facts, session summary) to ctx_overview output. Set false to reduce context bloat when calling ctx_overview frequently.
 - `excluded_commands` (string[], default `[]`) — Commands to exclude from shell hook interception
@@ -165,6 +165,20 @@ Fixed-context budget accounting (#964)
 - `proactive_expansion_max_age_secs` (u64, default `3600`) — Maximum age of CCR content eligible for proactive expansion
 - `proactive_expansion_threshold` (f64, default `0.6`) — Minimum normalized BM25 score for proactive expansion
 
+## `[context_gateway]`
+
+Context Gateway admission: built-in detectors, on by default, global-only
+
+- `classification` (enum: off | warn | redact | block, default `warn`) — Action for explicit markings such as CONFIDENTIAL (redact = withhold)
+- `detector_timeout_ms` (u64, default `2000`) — Per-detector time budget; a detector that runs out reports timed_out, never clean
+- `enabled` (bool, default `true` — env `LEAN_CTX_CONTEXT_GATEWAY`) — Run context admission on every governed source before caching or compression
+- `hud` (enum: auto | in_band | status_line, default `auto`) — Where redaction counts appear: auto keeps them out of the model's context when the Claude Code status line shows lean-ctx
+- `injection` (enum: off | warn | redact | block, default `warn`) — Action for prompt-injection heuristic (OWASP LLM01)
+- `max_inspected_bytes` (usize, default `8388608`) — Bytes each detector inspects per object; beyond it coverage is partial (withheld in governed/sovereign mode)
+- `mode` (enum: developer | governed | sovereign, default `developer`) — Governed and sovereign treat unclassified content as internal, never public
+- `pii` (enum: off | warn | redact | block, default `redact`) — Action for checksum-validated PII: AHV, IBAN, payment cards
+- `secrets` (enum: off | warn | redact | block, default `redact`) — Action for credentials and keys (patterns from [secret_detection])
+
 ## `[cost]`
 
 Model declaration for measured-vs-estimated cost reporting
@@ -267,6 +281,22 @@ Index-time file filters: declare the retrieval corpus explicitly (BM25 + graph +
 - `exclude` (string[], default `[]`) — Globs dropped from the index corpus (root-relative, forward slashes), e.g. ["**/*.csv", "fixtures/**"]. Wins over include. CLI --exclude appends per run. Excluded files produce no chunks, graph nodes, or embeddings.
 - `include` (string[], default `[]`) — When non-empty, ONLY matching files enter the index corpus, e.g. ["**/*.rs", "**/*.ts"]. Empty = no restriction. CLI --include replaces this set per run.
 - `respect_gitignore` (bool, default `true`) — Honor .gitignore / global gitignore / .git/info/exclude during index walks. false indexes ignored files too (the vendor-directory guard still applies). CLI override: --no-gitignore / --respect-gitignore.
+
+## `[intelligence_runtime]`
+
+Global-only optional runtime consent and independent staging pins; project overrides never apply
+
+- `accept_proprietary` (bool, default `false`) — Explicit user acceptance of the separately licensed runtime
+- `channel_root_key_hex` (string, default `""`) — Independently provisioned catalog root; never learned from a download
+- `channel_signature_url` (string, default `""`) — Detached staging catalog signature URL
+- `channel_url` (string, default `""`) — Explicit staging catalog URL; fetched only after consent
+- `context_policy_apply` (bool, default `false`) — Apply the promoted read-strategy policy in planning instead of recording it in shadow; security and explicit choices still win
+- `enabled` (bool, default `false`) — Opt in to the verified local runtime
+- `license_configuration` (string, default `""`) — Explicit user-global path to private license configuration; saved after installed device provisioning
+- `manifest_sha256` (string, default `""`) — Independently selected manifest digest
+- `root` (string, default `""`) — Absolute private installation root
+- `staging` (bool, default `false`) — Staging-only delivery; not production release approval
+- `trust_key_hex` (string, default `""`) — Independently provisioned Ed25519 public key, lowercase hex
 
 ## `[llm]`
 
@@ -536,6 +566,7 @@ Automatic update configuration
 - `auto_update` (bool, default `false`) — Enable automatic updates (requires explicit opt-in)
 - `check_interval_hours` (u64, default `6`) — How often to check for updates (hours)
 - `notify_only` (bool, default `false`) — Only notify about updates, don't install automatically
+- `pinned_version` (string|null, default `null`) — Release version used by update commands and scheduled updates; unset follows latest
 
 ## `[value_display]`
 

@@ -28,6 +28,7 @@ use serde_json::Value;
 use tokio::sync::broadcast;
 use tokio::time::{Duration, Instant};
 
+use crate::core::a2a::relay::RelayPeerTableV1;
 use crate::core::context_os::ContextOsMetrics;
 use crate::engine::ContextEngine;
 use crate::tools::LeanCtxServer;
@@ -35,6 +36,16 @@ use crate::tools::LeanCtxServer;
 mod config;
 mod discovery;
 mod handlers;
+mod relay_rate;
+mod relay_replay;
+mod relay_replay_async;
+#[cfg(test)]
+mod relay_tls_tests;
+mod remote_replay;
+mod scoped_delivery;
+mod task_control;
+#[cfg(test)]
+mod task_control_tests;
 #[allow(clippy::wildcard_imports)]
 use handlers::*;
 
@@ -42,6 +53,7 @@ pub mod kernel_api;
 
 pub use config::HttpServerConfig;
 use config::sanitize_id;
+pub use relay_rate::{RelayQuota, RelayQuotaConfig};
 
 /// Wrapper stream that calls `record_sse_disconnect` on drop.
 use std::pin::Pin;
@@ -68,11 +80,23 @@ impl<I> Drop for SseDisconnectGuard<I> {
     }
 }
 
+type RequestConcurrencyLease = Arc<tokio::sync::OwnedSemaphorePermit>;
+
 #[derive(Clone)]
 struct AppState {
     token: Option<String>,
+    a2a_signing_key: Option<String>,
+    a2a_recipient_id: Option<String>,
+    a2a_tenant_id: Option<String>,
+    a2a_project_id: Option<String>,
+    a2a_peers: Arc<RelayPeerTableV1>,
+    relay_quotas: Option<Arc<tokio::sync::Mutex<relay_rate::RelayQuotaState>>>,
+    /// Configured Ed25519 peer trust and capability grants. Sender-provided
+    /// capability claims are never authority; only this policy is.
+    a2a_task_authority: Arc<crate::core::a2a::task::TaskAuthorityConfigV1>,
     concurrency: Arc<tokio::sync::Semaphore>,
     rate: Arc<RateLimiter>,
+    remote_replays: Arc<remote_replay::RemoteReplayGuard>,
     project_root: String,
     timeout: Duration,
     server: LeanCtxServer,
@@ -126,6 +150,12 @@ async fn auth_middleware(
     next: Next,
 ) -> Response {
     if state.token.is_none() {
+        return next.run(req).await;
+    }
+
+    // Relay deliveries authenticate against their selected peer channel; the
+    // general server bearer must not become a second singleton authority.
+    if req.uri().path() == "/a2a/deliver" && !state.a2a_peers.peers.is_empty() {
         return next.run(req).await;
     }
 
@@ -203,12 +233,14 @@ async fn rate_limit_middleware(
 
 async fn concurrency_middleware(
     State(state): State<AppState>,
-    req: Request<axum::body::Body>,
+    mut req: Request<axum::body::Body>,
     next: Next,
 ) -> Response {
     let Ok(permit) = state.concurrency.clone().try_acquire_owned() else {
         return StatusCode::TOO_MANY_REQUESTS.into_response();
     };
+    let permit = Arc::new(permit);
+    req.extensions_mut().insert(permit.clone());
     let resp = next.run(req).await;
     drop(permit);
     resp
@@ -283,6 +315,10 @@ struct EventsQuery {
     /// When set, only matching events are delivered via SSE.
     #[serde(default)]
     kind: Option<String>,
+    /// Agent identity used for directed-event visibility. Without an identity,
+    /// SSE exposes broadcast events only.
+    #[serde(default)]
+    agent_id: Option<String>,
 }
 
 async fn v1_manifest(State(state): State<AppState>) -> impl IntoResponse {
@@ -385,35 +421,39 @@ async fn v1_events(
     let limit = q.limit.unwrap_or(200).min(1000);
     let redaction = RedactionLevel::RefsOnly;
 
-    let kind_filter: Option<Vec<String>> = q
-        .kind
+    let kind_filter: Option<Vec<String>> = q.kind.as_deref().map(|k| {
+        k.split(',')
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect()
+    });
+    let agent_id = q
+        .agent_id
         .as_deref()
-        .map(|k| k.split(',').map(|s| s.trim().to_string()).collect());
+        .map(str::trim)
+        .filter(|id| !id.is_empty())
+        .map(str::to_string);
+    let event_filter = crate::core::context_os::TopicFilter {
+        kinds: kind_filter.as_ref().map(|kinds| {
+            kinds
+                .iter()
+                .map(|kind| crate::core::context_os::ContextEventKindV1::parse(kind))
+                .collect()
+        }),
+        agent_id: agent_id.clone(),
+        include_directed: agent_id.is_some(),
+        ..Default::default()
+    };
 
     let rt = crate::core::context_os::runtime();
     let replay = rt.bus.read(&ws, &ch, since, limit);
+    let replay: Vec<_> = replay
+        .into_iter()
+        .filter(|event| event_filter.matches(event))
+        .collect();
 
-    let replay = if let Some(ref kinds) = kind_filter {
-        replay
-            .into_iter()
-            .filter(|ev| kinds.contains(&ev.kind))
-            .collect()
-    } else {
-        replay
-    };
-
-    let rx = if let Some(ref kinds) = kind_filter {
-        let kind_refs: Vec<&str> = kinds.iter().map(String::as_str).collect();
-        let filter = crate::core::context_os::TopicFilter::kinds(&kind_refs);
-        if let Some(sub) = rt.bus.subscribe_filtered(&ws, &ch, filter) {
-            crate::core::context_os::SubscriptionKind::Filtered(sub)
-        } else {
-            tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
-            let (_, rx) = broadcast::channel::<ContextEventV1>(1);
-            crate::core::context_os::SubscriptionKind::Unfiltered(rx)
-        }
-    } else if let Some(sub) = rt.bus.subscribe(&ws, &ch) {
-        crate::core::context_os::SubscriptionKind::Unfiltered(sub)
+    let rx = if let Some(sub) = rt.bus.subscribe_filtered(&ws, &ch, event_filter.clone()) {
+        crate::core::context_os::SubscriptionKind::Filtered(sub)
     } else {
         tracing::warn!("SSE subscriber limit reached for {ws}/{ch}");
         let (_, rx) = broadcast::channel::<ContextEventV1>(1);
@@ -432,6 +472,7 @@ async fn v1_events(
         (
             pending,
             rx,
+            event_filter,
             ws.clone(),
             ch.clone(),
             since,
@@ -439,7 +480,7 @@ async fn v1_events(
             bus,
             metrics,
         ),
-        |(mut pending, mut rx, ws, ch, mut last_id, redaction, bus, metrics)| async move {
+        |(mut pending, mut rx, event_filter, ws, ch, mut last_id, redaction, bus, metrics)| async move {
             if let Some(mut ev) = pending.pop_front() {
                 last_id = ev.id;
                 redact_event_payload(&mut ev, redaction);
@@ -450,7 +491,17 @@ async fn v1_events(
                     .data(data);
                 return Some((
                     Ok(evt),
-                    (pending, rx, ws, ch, last_id, redaction, bus, metrics),
+                    (
+                        pending,
+                        rx,
+                        event_filter,
+                        ws,
+                        ch,
+                        last_id,
+                        redaction,
+                        bus,
+                        metrics,
+                    ),
                 ));
             }
 
@@ -458,6 +509,9 @@ async fn v1_events(
                 match rx.recv().await {
                     Ok(mut ev) if ev.id > last_id => {
                         last_id = ev.id;
+                        if !event_filter.matches(&ev) {
+                            continue;
+                        }
                         redact_event_payload(&mut ev, redaction);
                         let data = serde_json::to_string(&ev).unwrap_or_else(|_| "{}".to_string());
                         let evt = SseEvent::default()
@@ -466,7 +520,17 @@ async fn v1_events(
                             .data(data);
                         return Some((
                             Ok(evt),
-                            (pending, rx, ws, ch, last_id, redaction, bus, metrics),
+                            (
+                                pending,
+                                rx,
+                                event_filter,
+                                ws,
+                                ch,
+                                last_id,
+                                redaction,
+                                bus,
+                                metrics,
+                            ),
                         ));
                     }
                     Ok(_) => {}
@@ -476,7 +540,9 @@ async fn v1_events(
                         metrics.record_events_replayed(missed.len() as u64);
                         for ev in missed {
                             last_id = last_id.max(ev.id);
-                            pending.push_back(ev);
+                            if event_filter.matches(&ev) {
+                                pending.push_back(ev);
+                            }
                         }
                     }
                 }
@@ -613,7 +679,7 @@ async fn v1_metrics(State(_state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-async fn a2a_jsonrpc(Json(body): Json<Value>) -> impl IntoResponse {
+async fn a2a_jsonrpc(State(state): State<AppState>, Json(body): Json<Value>) -> impl IntoResponse {
     let req: crate::core::a2a::a2a_compat::JsonRpcRequest = match serde_json::from_value(body) {
         Ok(r) => r,
         Err(e) => {
@@ -628,7 +694,16 @@ async fn a2a_jsonrpc(Json(body): Json<Value>) -> impl IntoResponse {
             );
         }
     };
-    let resp = crate::core::a2a::a2a_compat::handle_a2a_jsonrpc(&req);
+    let resp = match crate::core::a2a::task::TaskStore::scoped_path(&state.project_root) {
+        Ok(path) => crate::core::a2a::a2a_compat::handle_a2a_jsonrpc_at_path(&req, &path),
+        Err(error) => {
+            tracing::warn!("A2A project scope error: {error}");
+            crate::core::a2a::a2a_compat::JsonRpcResponse::server_error(
+                req.id.clone(),
+                "task storage unavailable",
+            )
+        }
+    };
     let json = serde_json::to_value(resp).unwrap_or_default();
     (StatusCode::OK, Json(json))
 }
@@ -655,7 +730,7 @@ async fn v1_agents_register(State(state): State<AppState>, Json(body): Json<Valu
         .unwrap_or(&state.project_root);
 
     match crate::core::agents::AgentRegistry::mutate_locked(|registry| {
-        registry.register(agent_type, role, project_root)
+        registry.register(agent_type, role, project_root, None)
     }) {
         Ok((_, agent_id)) => (
             StatusCode::CREATED,
@@ -783,20 +858,36 @@ async fn v1_agents_events_sse()
     Sse::new(stream).keep_alive(KeepAlive::new().interval(Duration::from_secs(15)))
 }
 
-fn build_app_router(cfg: &HttpServerConfig) -> Router {
-    build_app_router_with_auth(cfg, true)
+fn build_app_router(
+    cfg: &HttpServerConfig,
+    receipt_authority: Option<Arc<crate::core::execution_ledger::host::HostReceiptAuthority>>,
+) -> Router {
+    build_app_router_with_auth(cfg, true, receipt_authority)
 }
 
-fn build_app_router_with_auth(cfg: &HttpServerConfig, require_auth: bool) -> Router {
+#[cfg(test)]
+pub(crate) fn build_delivery_test_router(cfg: &HttpServerConfig) -> Router {
+    build_app_router_with_auth(cfg, false, None)
+}
+
+fn build_app_router_with_auth(
+    cfg: &HttpServerConfig,
+    require_auth: bool,
+    receipt_authority: Option<Arc<crate::core::execution_ledger::host::HostReceiptAuthority>>,
+) -> Router {
     let project_root = cfg.project_root.to_string_lossy().to_string();
     let service_project_root = project_root.clone();
-    let service_factory = move || -> Result<LeanCtxServer, std::io::Error> {
-        Ok(LeanCtxServer::new_shared_with_context(
-            &service_project_root,
-            "default",
-            "default",
-        ))
+    // REST and Streamable HTTP share the same startup authority snapshot.
+    let server_factory = move || {
+        let mut server =
+            LeanCtxServer::new_shared_with_context(&service_project_root, "default", "default");
+        server
+            .native_receipt_authority
+            .clone_from(&receipt_authority);
+        server
     };
+    let rest_server = server_factory();
+    let service_factory = move || -> Result<LeanCtxServer, std::io::Error> { Ok(server_factory()) };
     let mcp_http = StreamableHttpService::new(
         service_factory,
         Arc::new(
@@ -805,23 +896,56 @@ fn build_app_router_with_auth(cfg: &HttpServerConfig, require_auth: bool) -> Rou
         cfg.mcp_http_config(),
     );
 
-    let rest_server = LeanCtxServer::new_shared_with_context(&project_root, "default", "default");
-
     let state = AppState {
         token: if require_auth {
             cfg.effective_auth_token()
         } else {
             None
         },
+        a2a_signing_key: cfg.a2a_signing_key.clone(),
+        a2a_recipient_id: cfg.a2a_recipient_id.clone(),
+        a2a_tenant_id: cfg.a2a_tenant_id.clone(),
+        a2a_project_id: cfg.a2a_project_id.clone(),
+        a2a_peers: Arc::new(cfg.a2a_peers.clone()),
+        relay_quotas: match cfg.relay_quota_state() {
+            Ok(state) => state.map(|state| Arc::new(tokio::sync::Mutex::new(state))),
+            Err(error) => {
+                tracing::error!("relay quota configuration rejected: {error}");
+                None
+            }
+        },
+        a2a_task_authority: Arc::new(cfg.a2a_task_authority.clone()),
         concurrency: Arc::new(tokio::sync::Semaphore::new(cfg.max_concurrency.max(1))),
         rate: Arc::new(RateLimiter::new(cfg.max_rps, cfg.rate_burst)),
+        remote_replays: Arc::new(remote_replay::RemoteReplayGuard::new(
+            &project_root,
+            handlers::REMOTE_REPLAY_RETENTION_SECONDS,
+        )),
         project_root,
         timeout: Duration::from_millis(cfg.request_timeout_ms.max(1)),
         server: rest_server,
     };
 
+    let ocla = match (
+        state.token.as_ref(),
+        state.a2a_tenant_id.as_deref(),
+        state.a2a_project_id.as_deref(),
+    ) {
+        (Some(_), Some(tenant_id), Some(project_id)) => {
+            match crate::core::a2a::dlq::DlqScope::new(tenant_id, project_id) {
+                Ok(scope) => crate::core::ocla::wire_api::ocla_router_with_dlq(scope),
+                Err(_) => crate::core::ocla::wire_api::ocla_router(),
+            }
+        }
+        _ => crate::core::ocla::wire_api::ocla_router(),
+    };
+
     Router::new()
         .route("/health", get(health))
+        .route(
+            "/ocla/v1/delivery/scoped",
+            axum::routing::post(scoped_delivery::execute),
+        )
         .route("/v1/shutdown", axum::routing::post(v1_shutdown))
         .route("/v1/index/ensure", axum::routing::post(v1_index_ensure))
         .route("/v1/manifest", get(v1_manifest))
@@ -837,6 +961,7 @@ fn build_app_router_with_auth(cfg: &HttpServerConfig, require_auth: bool) -> Rou
         .route("/v1/events/lineage", get(v1_events_lineage))
         .route("/v1/audit/events", get(v1_audit_events))
         .route("/v1/a2a/handoff", axum::routing::post(v1_a2a_handoff))
+        .route("/a2a/deliver", axum::routing::post(handlers::a2a_deliver))
         .route("/v1/a2a/agent-card", get(v1_a2a_agent_card))
         .route("/.well-known/agent.json", get(v1_a2a_agent_card))
         .route(
@@ -872,7 +997,7 @@ fn build_app_router_with_auth(cfg: &HttpServerConfig, require_auth: bool) -> Rou
             "/v1/kernel/reset",
             axum::routing::post(kernel_api::reset_state),
         )
-        .merge(crate::core::ocla::wire_api::ocla_router().with_state(()))
+        .merge(ocla.with_state(()))
         .fallback_service(mcp_http)
         .layer(axum::extract::DefaultBodyLimit::max(cfg.max_body_bytes))
         .layer(middleware::from_fn_with_state(
@@ -893,6 +1018,8 @@ fn build_app_router_with_auth(cfg: &HttpServerConfig, require_auth: bool) -> Rou
 pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
     crate::core::protocol::set_mcp_context(true);
     cfg.validate()?;
+    let receipt_authority = crate::server::native_receipts::load_configured_host_authority()
+        .map_err(anyhow::Error::msg)?;
 
     // Surface any path-jail relaxation inherited from the launch env or config,
     // so a loosened boundary is never silent (GH security audit, finding 3).
@@ -917,7 +1044,7 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
         .parse()
         .context("invalid host/port")?;
 
-    let app = build_app_router(&cfg);
+    let app = build_app_router(&cfg, receipt_authority);
 
     let listener = tokio::net::TcpListener::bind(addr)
         .await
@@ -970,6 +1097,8 @@ impl axum::serve::Listener for crate::ipc::NamedPipeListener {
 /// Named Pipes on Windows).
 pub async fn serve_ipc(cfg: HttpServerConfig, addr: crate::ipc::DaemonAddr) -> Result<()> {
     cfg.validate()?;
+    let receipt_authority = crate::server::native_receipts::load_configured_host_authority()
+        .map_err(anyhow::Error::msg)?;
 
     crate::core::savings_autopush::spawn_if_enabled();
     crate::cloud_sync::spawn_daemon_telemetry();
@@ -977,7 +1106,7 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: crate::ipc::DaemonAddr) -> R
     match addr {
         #[cfg(unix)]
         crate::ipc::DaemonAddr::Unix(ref path) => {
-            let app = build_app_router_with_auth(&cfg, false);
+            let app = build_app_router_with_auth(&cfg, false, receipt_authority);
             let listener = crate::ipc::bind_listener(&addr)?;
 
             tracing::info!(
@@ -996,7 +1125,7 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: crate::ipc::DaemonAddr) -> R
         }
         #[cfg(windows)]
         crate::ipc::DaemonAddr::NamedPipe(ref name) => {
-            let app = build_app_router_with_auth(&cfg, false);
+            let app = build_app_router_with_auth(&cfg, false, receipt_authority);
             let listener = crate::ipc::bind_listener(&addr)?;
 
             tracing::info!(
@@ -1017,397 +1146,11 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: crate::ipc::DaemonAddr) -> R
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::body::Body;
-    use axum::http::Request;
-    use futures::StreamExt;
-    use rmcp::transport::{StreamableHttpServerConfig, StreamableHttpService};
-    use serde_json::json;
-    use tower::ServiceExt;
+mod cancellation_tests;
 
-    async fn read_first_sse_message(body: Body) -> String {
-        let mut stream = body.into_data_stream();
-        let mut buf: Vec<u8> = Vec::new();
-        for _ in 0..32 {
-            let next = tokio::time::timeout(Duration::from_secs(2), stream.next()).await;
-            let Ok(Some(Ok(bytes))) = next else {
-                break;
-            };
-            buf.extend_from_slice(&bytes);
-            if buf.windows(2).any(|w| w == b"\n\n") {
-                break;
-            }
-        }
-        String::from_utf8_lossy(&buf).to_string()
-    }
+#[cfg(test)]
+mod native_receipt_tests;
 
-    #[tokio::test]
-    async fn agent_lifecycle_endpoints_reject_unknown_presence() {
-        let _isolated_data_dir = crate::core::data_dir::isolated_data_dir();
-
-        let heartbeat = v1_agents_heartbeat(Json(json!({"agent_id": "missing-agent"}))).await;
-        assert_eq!(heartbeat.status(), StatusCode::NOT_FOUND);
-
-        let deregister = v1_agents_deregister(Json(json!({"agent_id": "missing-agent"}))).await;
-        assert_eq!(deregister.status(), StatusCode::NOT_FOUND);
-    }
-
-    #[test]
-    fn index_ensure_body_parses_root_and_optional_extra_roots() {
-        // Wire contract for the #460 daemon delegation endpoint: camelCase
-        // `extraRoots`, optional and defaulting to empty. daemon_client serializes
-        // exactly this shape, so a drift here silently breaks delegation.
-        let full: IndexEnsureBody =
-            serde_json::from_str(r#"{"root":"/a","extraRoots":["/b","/c"]}"#).unwrap();
-        assert_eq!(full.root, "/a");
-        assert_eq!(full.extra_roots, vec!["/b".to_string(), "/c".to_string()]);
-
-        let minimal: IndexEnsureBody = serde_json::from_str(r#"{"root":"/a"}"#).unwrap();
-        assert_eq!(minimal.root, "/a");
-        assert!(minimal.extra_roots.is_empty());
-    }
-
-    #[tokio::test]
-    async fn ipc_router_allows_local_tools_without_bearer_header() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let cfg = HttpServerConfig {
-            project_root: dir.path().to_path_buf(),
-            auth_token: Some("secret".to_string()),
-            ..HttpServerConfig::default()
-        };
-        let app = build_app_router_with_auth(&cfg, false);
-
-        let body = json!({
-            "name": "ctx_cache",
-            "arguments": { "action": "stats" }
-        })
-        .to_string();
-        let req = Request::builder()
-            .method("POST")
-            .uri("/v1/tools/call")
-            .header("Host", "localhost")
-            .header("Content-Type", "application/json")
-            .body(Body::from(body))
-            .expect("request");
-
-        let resp = app.oneshot(req).await.expect("resp");
-        assert_ne!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn auth_token_blocks_requests_without_bearer_header() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root_str = dir.path().to_string_lossy().to_string();
-        let service_project_root = root_str.clone();
-        let service_factory = move || -> Result<LeanCtxServer, std::io::Error> {
-            Ok(LeanCtxServer::new_shared_with_context(
-                &service_project_root,
-                "default",
-                "default",
-            ))
-        };
-        let cfg = StreamableHttpServerConfig::default()
-            .with_stateful_mode(false)
-            .with_json_response(true);
-
-        let mcp_http = StreamableHttpService::new(
-            service_factory,
-            Arc::new(
-                rmcp::transport::streamable_http_server::session::local::LocalSessionManager::default(),
-            ),
-            cfg,
-        );
-
-        let state = AppState {
-            token: Some("secret".to_string()),
-            concurrency: Arc::new(tokio::sync::Semaphore::new(4)),
-            rate: Arc::new(RateLimiter::new(50, 100)),
-            project_root: root_str.clone(),
-            timeout: Duration::from_secs(30),
-            server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
-        };
-
-        let app = Router::new()
-            .fallback_service(mcp_http)
-            .layer(middleware::from_fn_with_state(
-                state.clone(),
-                auth_middleware,
-            ))
-            .with_state(state);
-
-        let body = json!({
-            "jsonrpc": "2.0",
-            "id": 1,
-            "method": "tools/list",
-            "params": {}
-        })
-        .to_string();
-
-        let req = Request::builder()
-            .method("POST")
-            .uri("/")
-            .header("Host", "localhost")
-            .header("Accept", "application/json, text/event-stream")
-            .header("Content-Type", "application/json")
-            .body(Body::from(body))
-            .expect("request");
-
-        let resp = app.clone().oneshot(req).await.expect("resp");
-        assert_eq!(resp.status(), StatusCode::UNAUTHORIZED);
-    }
-
-    #[tokio::test]
-    async fn mcp_service_factory_isolates_per_client_state() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root_str = dir.path().to_string_lossy().to_string();
-
-        // Mirrors the serve() setup: service_factory must create a fresh server per MCP session.
-        let service_project_root = root_str.clone();
-        let service_factory = move || -> Result<LeanCtxServer, std::convert::Infallible> {
-            Ok(LeanCtxServer::new_shared_with_context(
-                &service_project_root,
-                "default",
-                "default",
-            ))
-        };
-
-        let s1 = service_factory().expect("server 1");
-        let s2 = service_factory().expect("server 2");
-
-        // If the two servers accidentally share the same Arc-backed fields, these writes would
-        // clobber each other. This test stays independent of rmcp's InitializeRequestParams API.
-        *s1.client_name.write().await = "client-a".to_string();
-        *s2.client_name.write().await = "client-b".to_string();
-
-        let a = s1.client_name.read().await.clone();
-        let b = s2.client_name.read().await.clone();
-        assert_eq!(a, "client-a");
-        assert_eq!(b, "client-b");
-    }
-
-    #[tokio::test]
-    async fn rate_limit_returns_429_when_exhausted() {
-        let state = AppState {
-            token: None,
-            concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
-            rate: Arc::new(RateLimiter::new(1, 1)),
-            project_root: ".".to_string(),
-            timeout: Duration::from_secs(30),
-            server: LeanCtxServer::new_shared_with_context(".", "default", "default"),
-        };
-
-        let app = Router::new()
-            .route("/limited", get(|| async { (StatusCode::OK, "ok\n") }))
-            .layer(middleware::from_fn_with_state(
-                state.clone(),
-                rate_limit_middleware,
-            ))
-            .with_state(state);
-
-        let req1 = Request::builder()
-            .method("GET")
-            .uri("/limited")
-            .header("Host", "localhost")
-            .body(Body::empty())
-            .expect("req1");
-        let resp1 = app.clone().oneshot(req1).await.expect("resp1");
-        assert_eq!(resp1.status(), StatusCode::OK);
-
-        let req2 = Request::builder()
-            .method("GET")
-            .uri("/limited")
-            .header("Host", "localhost")
-            .body(Body::empty())
-            .expect("req2");
-        let resp2 = app.clone().oneshot(req2).await.expect("resp2");
-        assert_eq!(resp2.status(), StatusCode::TOO_MANY_REQUESTS);
-    }
-
-    #[tokio::test]
-    async fn audit_events_endpoint_returns_json() {
-        // The endpoint reads process-global audit paths. Isolate and serialize
-        // the environment so concurrent tests cannot replace its data directory.
-        let _isolated_data_dir = crate::core::data_dir::isolated_data_dir();
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root_str = dir.path().to_string_lossy().to_string();
-
-        let state = AppState {
-            token: None,
-            concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
-            rate: Arc::new(RateLimiter::new(50, 100)),
-            project_root: root_str.clone(),
-            timeout: Duration::from_secs(30),
-            server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
-        };
-
-        let app = Router::new()
-            .route("/v1/audit/events", get(v1_audit_events))
-            .with_state(state);
-
-        let req = Request::builder()
-            .method("GET")
-            .uri("/v1/audit/events?limit=10")
-            .header("Host", "localhost")
-            .body(Body::empty())
-            .unwrap();
-
-        let resp = app.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let body = axum::body::to_bytes(resp.into_body(), 1_000_000)
-            .await
-            .unwrap();
-        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert!(json.get("cross_project_events").unwrap().is_array());
-        assert!(json.get("audit_trail").unwrap().is_array());
-    }
-
-    #[tokio::test]
-    async fn capabilities_endpoint_returns_contract() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root_str = dir.path().to_string_lossy().to_string();
-
-        let state = AppState {
-            token: None,
-            concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
-            rate: Arc::new(RateLimiter::new(50, 100)),
-            project_root: root_str.clone(),
-            timeout: Duration::from_secs(30),
-            server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
-        };
-
-        let app = Router::new()
-            .route("/v1/capabilities", get(v1_capabilities))
-            .with_state(state);
-
-        let req = Request::builder()
-            .method("GET")
-            .uri("/v1/capabilities")
-            .header("Host", "localhost")
-            .body(Body::empty())
-            .unwrap();
-
-        let resp = app.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let body = axum::body::to_bytes(resp.into_body(), 1_000_000)
-            .await
-            .unwrap();
-        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(json["contract_version"], json!(1));
-        assert!(json["tools"]["total"].as_u64().unwrap() > 0);
-        assert!(json["features"]["compression"].as_bool().unwrap());
-        assert!(json["contracts"].is_object());
-    }
-
-    #[tokio::test]
-    async fn cache_stats_endpoint_returns_live_shape() {
-        let app = Router::new().route("/v1/cache/stats", get(v1_cache_stats));
-        let request = Request::builder()
-            .method("GET")
-            .uri("/v1/cache/stats")
-            .body(Body::empty())
-            .unwrap();
-        let response = app.oneshot(request).await.unwrap();
-        assert_eq!(response.status(), StatusCode::OK);
-        let body = axum::body::to_bytes(response.into_body(), 1_000_000)
-            .await
-            .unwrap();
-        let value: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert!(value["l1"]["entries"].is_u64());
-        assert!(value["l2"]["hit_rate"].is_number());
-        assert!(value["l3"]["bytes"].is_u64());
-        assert!(value["delivery"]["references_served"].is_u64());
-        assert!(value["by_kind"]["shell_command"].is_object());
-    }
-
-    #[tokio::test]
-    async fn openapi_endpoint_returns_spec() {
-        let dir = tempfile::tempdir().expect("tempdir");
-        let root_str = dir.path().to_string_lossy().to_string();
-
-        let state = AppState {
-            token: None,
-            concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
-            rate: Arc::new(RateLimiter::new(50, 100)),
-            project_root: root_str.clone(),
-            timeout: Duration::from_secs(30),
-            server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
-        };
-
-        let app = Router::new()
-            .route("/v1/openapi.json", get(v1_openapi))
-            .with_state(state);
-
-        let req = Request::builder()
-            .method("GET")
-            .uri("/v1/openapi.json")
-            .header("Host", "localhost")
-            .body(Body::empty())
-            .unwrap();
-
-        let resp = app.oneshot(req).await.unwrap();
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let body = axum::body::to_bytes(resp.into_body(), 1_000_000)
-            .await
-            .unwrap();
-        let json: serde_json::Value = serde_json::from_slice(&body).unwrap();
-        assert_eq!(json["openapi"], json!("3.0.3"));
-        assert!(json["paths"]["/v1/capabilities"]["get"].is_object());
-        assert!(json["paths"]["/v1/openapi.json"]["get"].is_object());
-    }
-
-    #[tokio::test]
-    async fn events_endpoint_replays_tool_call_event() {
-        use crate::core::context_os::{self, ContextEventKindV1};
-
-        let dir = tempfile::tempdir().expect("tempdir");
-        std::fs::create_dir_all(dir.path().join(".git")).expect("git marker");
-        std::fs::write(dir.path().join("a.txt"), "ok").expect("file");
-        let root_str = dir.path().to_string_lossy().to_string();
-        let workspace = format!("ws-events-{}", std::process::id());
-        let channel = format!("ch-events-{}", std::process::id());
-
-        let state = AppState {
-            token: None,
-            concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
-            rate: Arc::new(RateLimiter::new(50, 100)),
-            project_root: root_str.clone(),
-            timeout: Duration::from_secs(30),
-            server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
-        };
-
-        let app = Router::new()
-            .route("/v1/events", get(v1_events))
-            .with_state(state);
-
-        // Directly append an event to the bus — no fire-and-forget timing dependency.
-        let rt = context_os::runtime();
-        rt.bus.append(
-            &workspace,
-            &channel,
-            &ContextEventKindV1::ToolCallRecorded,
-            Some("test-agent"),
-            json!({"tool": "ctx_session", "action": "status"}),
-        );
-
-        let req = Request::builder()
-            .method("GET")
-            .uri(format!(
-                "/v1/events?workspaceId={workspace}&channelId={channel}&since=0&limit=1"
-            ))
-            .header("Host", "localhost")
-            .header("Accept", "text/event-stream")
-            .body(Body::empty())
-            .expect("req");
-        let resp = app.clone().oneshot(req).await.expect("events");
-        assert_eq!(resp.status(), StatusCode::OK);
-
-        let msg = read_first_sse_message(resp.into_body()).await;
-        assert!(msg.contains("event: tool_call_recorded"), "msg={msg:?}");
-        assert!(msg.contains(&format!("\"{workspace}\"")), "msg={msg:?}");
-        assert!(msg.contains(&format!("\"{channel}\"")), "msg={msg:?}");
-    }
-}
+#[cfg(test)]
+#[path = "main_http_tests.rs"]
+mod tests;

@@ -46,7 +46,10 @@ pub struct SimpleFactEntry {
 
 /// Parse import data: tries native `ProjectKnowledge` first, then simple `[{...}]` array.
 pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
-    if let Ok(pk) = serde_json::from_str::<ProjectKnowledge>(data) {
+    if let Ok(mut pk) = serde_json::from_str::<ProjectKnowledge>(data) {
+        for fact in &mut pk.facts {
+            fact.origin = super::source_view::imported_origin(&fact.origin);
+        }
         return Ok(pk.facts);
     }
 
@@ -55,6 +58,7 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
         let facts = entries
             .into_iter()
             .map(|e| KnowledgeFact {
+                origin: super::FactOrigin::Unverified,
                 archetype: KnowledgeArchetype::infer_from_category(&e.category),
                 sensitivity: crate::core::sensitivity::classify_content(&e.value),
                 category: e.category,
@@ -91,6 +95,7 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
         if let Ok(entry) = serde_json::from_str::<SimpleFactEntry>(line) {
             let now = Utc::now();
             facts.push(KnowledgeFact {
+                origin: super::FactOrigin::Unverified,
                 archetype: KnowledgeArchetype::infer_from_category(&entry.category),
                 sensitivity: crate::core::sensitivity::classify_content(&entry.value),
                 category: entry.category,
@@ -131,6 +136,7 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
 fn imported_fact(source: &KnowledgeFact, session_id: &str) -> KnowledgeFact {
     let now = Utc::now();
     KnowledgeFact {
+        origin: super::source_view::imported_origin(&source.origin),
         category: source.category.clone(),
         key: source.key.clone(),
         value: source.value.clone(),

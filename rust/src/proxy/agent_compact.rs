@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Applies the agent's compaction directive to a request (#1570 P1).
 //!
 //! Cache-safe by construction — the exact properties DCP lacks:

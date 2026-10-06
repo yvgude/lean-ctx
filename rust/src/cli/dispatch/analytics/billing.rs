@@ -1,5 +1,5 @@
-//! `lean-ctx billing` — read-only commercial-plane reporting (EPIC 13.6):
-//! plans, entitlements, metered usage. Never gates the local plane.
+//! `lean-ctx billing` — read-only v4 product-plan reporting:
+//! plans, classified entitlements, and metered usage.
 
 use super::savings::savings_agent_id;
 use crate::core;
@@ -7,8 +7,8 @@ use crate::core;
 /// `lean-ctx billing <plans|entitlements|usage|settlement>` — read-only
 /// commercial-plane reporting and offline settlement-evidence verification.
 /// substrate (EPIC 13.6). All subcommands are **informational and read-only**:
-/// they describe plans/entitlements and meter local savings. The local plane is
-/// never gated — there are no entitlement checks here, only reporting.
+/// they describe plans/entitlements and meter savings. Community Trust Core
+/// remains accountless; local paid capabilities are registry-classified.
 ///
 /// Pricing, invoicing and Stripe live in the private control-plane
 /// (`lean-ctx-cloud`), never in the open engine (see
@@ -35,12 +35,13 @@ pub(in crate::cli::dispatch) fn cmd_billing(rest: &[String]) {
 /// machine: the effective plan (with offline-grace provenance), the hosted
 /// entitlements it grants, and the local ROI headline. Read-only; it best-effort
 /// refreshes the plan from the backend and falls back to the cached-with-grace
-/// plan when offline. Never gates anything local.
+/// plan when offline. This reporting command does not itself enforce access.
 fn cmd_billing_status(json: bool) {
     use crate::cloud_client::PlanSource;
-    let eff = crate::cloud_client::refresh_effective_plan();
+    let eff = crate::cloud_client::refresh_verified_plan();
     let logged_in = crate::cloud_client::is_logged_in();
-    let e = eff.plan.entitlements();
+    let mut e = eff.entitlements();
+    e.supporter |= eff.supporter_recognition;
     let roi = core::savings_ledger::roi_report(&savings_agent_id());
 
     if json {
@@ -74,7 +75,7 @@ fn cmd_billing_status(json: bool) {
         if logged_in {
             "logged in"
         } else {
-            "not logged in (Free)"
+            "not logged in (Community)"
         }
     );
     println!("  cloud_sync:   {}", yesno(e.cloud_sync));
@@ -122,21 +123,14 @@ fn plan_source_label(source: crate::cloud_client::PlanSource) -> &'static str {
 }
 
 /// Human provenance line: how fresh the plan is and how long the offline grace
-/// keeps it valid.
-fn plan_source_detail(eff: &crate::cloud_client::EffectivePlan) -> String {
+/// was verified. Never infer remaining validity from local cache age.
+fn plan_source_detail(eff: &crate::cloud_client::VerifiedEffectivePlan) -> String {
     use crate::cloud_client::PlanSource;
     match eff.source {
         PlanSource::Live => "live".to_string(),
-        PlanSource::Cached => match eff.verified_at {
-            Some(v) => {
-                let age_days = (chrono::Utc::now().timestamp() - v).max(0) / 86_400;
-                let remaining = (eff.grace_days - age_days).max(0);
-                format!("cached — verified {age_days}d ago, valid {remaining}d more")
-            }
-            None => "cached".to_string(),
-        },
+        PlanSource::Cached => format!("cached — {}", eff.verification_status),
         PlanSource::Expired => "cached plan expired".to_string(),
-        PlanSource::None => "no account".to_string(),
+        PlanSource::None => format!("unverified — {}", eff.verification_status),
     }
 }
 
@@ -153,7 +147,7 @@ fn cmd_billing_plans(json: bool) {
         print_json_or_die(&plans, "plans");
         return;
     }
-    println!("lean-ctx plans (commercial plane — additive, never gates local):\n");
+    println!("lean-ctx plans (Community → Pro → Team → Enterprise):\n");
     for e in &plans {
         println!("  {} — seats: {}", e.plan.as_str(), quota(e.seats));
         println!(
@@ -167,12 +161,16 @@ fn cmd_billing_plans(json: bool) {
             e.sso_oidc, e.sso_scim, e.audit_retention_days, e.revenue_share, e.supporter
         );
     }
-    println!("\nThe Personal plane (local engine) is free + ungated regardless of plan.");
+    println!(
+        "\nCommunity Trust Core is accountless; paid local capabilities are explicitly classified."
+    );
 }
 
 fn cmd_billing_entitlements(plan_arg: Option<&str>, json: bool) {
-    let plan = core::billing::Plan::parse(plan_arg.unwrap_or("free"));
-    let e = plan.entitlements();
+    let selection = core::billing::Plan::parse_selection(plan_arg.unwrap_or("community"));
+    let plan = selection.plan;
+    let mut e = plan.entitlements();
+    e.supporter |= selection.supporter_recognition;
     if json {
         print_json_or_die(&e, "entitlements");
         return;

@@ -1,6 +1,8 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Shared types for the Context Control Kernel.
 
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -158,6 +160,17 @@ pub enum SensitivityLevel {
     Restricted,
 }
 
+impl From<SensitivityLevel> for lean_ctx_protocol::context_gateway::ClassificationV1 {
+    fn from(level: SensitivityLevel) -> Self {
+        match level {
+            SensitivityLevel::Public => Self::Public,
+            SensitivityLevel::Internal => Self::Internal,
+            SensitivityLevel::Confidential => Self::Confidential,
+            SensitivityLevel::Restricted => Self::Restricted,
+        }
+    }
+}
+
 /// Side-effect policy for candidate enumeration.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SideEffectPolicy {
@@ -187,6 +200,22 @@ pub trait CandidateProvider: Send + Sync {
     fn side_effect_policy(&self) -> SideEffectPolicy;
 }
 
+/// Kernel-owned binding of one object to its registered provider and source metadata.
+///
+/// This is intentionally internal: public V1 projections continue to expose only
+/// their existing alias-keyed fields.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub(crate) struct ContextOriginV1 {
+    pub provider_id: String,
+    pub source: String,
+    pub content_ref: String,
+    pub sensitivity: SensitivityLevel,
+    pub provenance: Provenance,
+    /// True only after this enumerated origin passes kernel admission checks.
+    #[serde(default)]
+    pub admitted: bool,
+}
+
 /// A compiled plan for context delivery.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ContextPlanV1 {
@@ -197,6 +226,8 @@ pub struct ContextPlanV1 {
     pub excluded: Vec<ExcludedEntry>,
     pub deferred: Vec<DeferredEntry>,
     pub provider_stats: HashMap<String, ProviderStat>,
+    #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
+    pub(crate) origins: BTreeMap<String, Vec<ContextOriginV1>>,
 }
 
 impl ContextPlanV1 {
@@ -214,6 +245,7 @@ impl ContextPlanV1 {
             excluded: Vec::new(),
             deferred: Vec::new(),
             provider_stats: HashMap::new(),
+            origins: BTreeMap::new(),
         }
     }
 }

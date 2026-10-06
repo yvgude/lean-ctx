@@ -93,6 +93,7 @@ mod tests {
     use super::*;
     use crate::core::knowledge::query::KnowledgeQuery;
     use chrono::{Duration, Utc};
+    use lean_ctx_protocol::ExtensionsV1;
     use lean_ctx_protocol::knowledge::{
         AuthorityMetadata, ClassificationLevel, DataClassification, KnowledgeSourceType,
         SourceReference, ValidityWindow,
@@ -128,10 +129,13 @@ mod tests {
             evidence_digest: format!("evidence:{id}"),
             policy_ref: "policy:local".to_owned(),
             evidence_refs: vec![format!("evidence-ref:{id}")],
-            extra: std::collections::BTreeMap::from([(
-                "tags".to_owned(),
-                serde_json::json!([tag]),
-            )]),
+            extra: {
+                let mut extra = ExtensionsV1::default();
+                extra
+                    .insert("tags", serde_json::json!([tag]))
+                    .expect("extension should be valid");
+                extra
+            },
         }
     }
 

@@ -120,19 +120,29 @@ pub(crate) struct FileLock {
 
 impl FileLock {
     pub(crate) fn acquire(path: &std::path::Path) -> Result<Self, String> {
+        const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(750);
+        Self::acquire_with_timeout(path, TIMEOUT)
+    }
+
+    pub(crate) fn acquire_with_timeout(
+        path: &std::path::Path,
+        timeout: std::time::Duration,
+    ) -> Result<Self, String> {
         use fs2::FileExt;
 
-        const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(750);
         const RETRY: std::time::Duration = std::time::Duration::from_millis(25);
 
-        let file = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
+        let mut options = std::fs::OpenOptions::new();
+        options.create(true).truncate(false).read(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+        }
+        let file = options
             .open(path)
             .map_err(|error| format!("agent registry lock {}: {error}", path.display()))?;
-        let deadline = std::time::Instant::now() + TIMEOUT;
+        let deadline = std::time::Instant::now() + timeout;
         loop {
             match file.try_lock_exclusive() {
                 Ok(()) => return Ok(Self { file }),
@@ -145,7 +155,7 @@ impl FileLock {
                 Err(error) if crate::core::file_lock::is_contended(&error) => {
                     return Err(format!(
                         "agent registry lock timed out after {}ms",
-                        TIMEOUT.as_millis()
+                        timeout.as_millis()
                     ));
                 }
                 Err(error) => return Err(format!("agent registry lock: {error}")),

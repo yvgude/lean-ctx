@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! End-to-end coverage for the Solution Intelligence `ctx_optimize` surface.
 
 use std::path::PathBuf;

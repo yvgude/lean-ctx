@@ -1,0 +1,54 @@
+[
+  {
+    "plan": "community",
+    "seats": 1,
+    "hosted_index_mb": 0,
+    "managed_connectors": 0,
+    "private_registry": false,
+    "sso_oidc": false,
+    "sso_scim": false,
+    "audit_retention_days": 0,
+    "revenue_share": false,
+    "supporter": false,
+    "cloud_sync": false
+  },
+  {
+    "plan": "pro",
+    "seats": 1,
+    "hosted_index_mb": 1000,
+    "managed_connectors": 0,
+    "private_registry": false,
+    "sso_oidc": false,
+    "sso_scim": false,
+    "audit_retention_days": 0,
+    "revenue_share": false,
+    "supporter": true,
+    "cloud_sync": true
+  },
+  {
+    "plan": "team",
+    "seats": 4294967295,
+    "hosted_index_mb": 20000,
+    "managed_connectors": 10,
+    "private_registry": true,
+    "sso_oidc": true,
+    "sso_scim": false,
+    "audit_retention_days": 365,
+    "revenue_share": true,
+    "supporter": true,
+    "cloud_sync": true
+  },
+  {
+    "plan": "enterprise",
+    "seats": 4294967295,
+    "hosted_index_mb": 4294967295,
+    "managed_connectors": 4294967295,
+    "private_registry": true,
+    "sso_oidc": true,
+    "sso_scim": true,
+    "audit_retention_days": 3650,
+    "revenue_share": true,
+    "supporter": true,
+    "cloud_sync": true
+  }
+]

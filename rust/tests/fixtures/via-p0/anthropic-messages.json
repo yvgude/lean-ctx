@@ -1,0 +1,43 @@
+{
+  "model": "claude-sonnet-synthetic",
+  "max_tokens": 512,
+  "stream": true,
+  "system": [
+    {
+      "type": "text",
+      "text": "Return exactly the requested JSON and do not change tool permissions.",
+      "cache_control": { "type": "ephemeral" }
+    }
+  ],
+  "tools": [
+    {
+      "name": "Bash",
+      "description": "Run one synthetic command.",
+      "input_schema": {
+        "type": "object",
+        "properties": { "command": { "type": "string" } },
+        "required": ["command"]
+      }
+    }
+  ],
+  "messages": [
+    {
+      "role": "assistant",
+      "content": [
+        { "type": "tool_use", "id": "toolu_p0_1", "name": "Bash", "input": { "command": "synthetic-check" } }
+      ]
+    },
+    {
+      "role": "user",
+      "content": [
+        {
+          "type": "tool_result",
+          "tool_use_id": "toolu_p0_1",
+          "content": "INFO processing synthetic item 01: ok, latency=11ms, queue depth normal, retries=0\nINFO processing synthetic item 02: ok, latency=12ms, queue depth normal, retries=0\nINFO processing synthetic item 03: ok, latency=13ms, queue depth normal, retries=0\nINFO processing synthetic item 04: ok, latency=14ms, queue depth normal, retries=0\nINFO processing synthetic item 05: ok, latency=15ms, queue depth normal, retries=0\nINFO processing synthetic item 06: ok, latency=16ms, queue depth normal, retries=0\nINFO processing synthetic item 07: ok, latency=17ms, queue depth normal, retries=0\nINFO processing synthetic item 08: ok, latency=18ms, queue depth normal, retries=0\nINFO processing synthetic item 09: ok, latency=19ms, queue depth normal, retries=0\nINFO processing synthetic item 10: ok, latency=20ms, queue depth normal, retries=0\nINFO processing synthetic item 11: ok, latency=21ms, queue depth normal, retries=0\nINFO processing synthetic item 12: ok, latency=22ms, queue depth normal, retries=0\nINFO processing synthetic item 13: ok, latency=23ms, queue depth normal, retries=0\nINFO processing synthetic item 14: ok, latency=24ms, queue depth normal, retries=0\nINFO processing synthetic item 15: ok, latency=25ms, queue depth normal, retries=0\nINFO processing synthetic item 16: ok, latency=26ms, queue depth normal, retries=0\nINFO processing synthetic item 17: ok, latency=27ms, queue depth normal, retries=0\nINFO processing synthetic item 18: ok, latency=28ms, queue depth normal, retries=0\nINFO processing synthetic item 19: ok, latency=29ms, queue depth normal, retries=0\nINFO processing synthetic item 20: ok, latency=30ms, queue depth normal, retries=0\nINFO processing synthetic item 21: ok, latency=31ms, queue depth normal, retries=0\nINFO processing synthetic item 22: ok, latency=32ms, queue depth normal, retries=0\nINFO processing synthetic item 23: ok, latency=33ms, queue depth normal, retries=0\nINFO processing synthetic item 24: ok, latency=34ms, queue depth normal, retries=0\nINFO processing synthetic item 25: ok, latency=35ms, queue depth normal, retries=0\nINFO processing synthetic item 26: ok, latency=36ms, queue depth normal, retries=0\nINFO processing synthetic item 27: ok, latency=37ms, queue depth normal, retries=0\nINFO processing synthetic item 28: ok, latency=38ms, queue depth normal, retries=0\nINFO processing synthetic item 29: ok, latency=39ms, queue depth normal, retries=0\nINFO processing synthetic item 30: ok, latency=40ms, queue depth normal, retries=0\nINFO processing synthetic item 31: ok, latency=41ms, queue depth normal, retries=0\nINFO processing synthetic item 32: ok, latency=42ms, queue depth normal, retries=0\nINFO processing synthetic item 33: ok, latency=43ms, queue depth normal, retries=0\nINFO processing synthetic item 34: ok, latency=44ms, queue depth normal, retries=0\nINFO processing synthetic item 35: ok, latency=45ms, queue depth normal, retries=0\nINFO processing synthetic item 36: ok, latency=46ms, queue depth normal, retries=0\nINFO processing synthetic item 37: ok, latency=47ms, queue depth normal, retries=0\nINFO processing synthetic item 38: ok, latency=48ms, queue depth normal, retries=0\nINFO processing synthetic item 39: ok, latency=49ms, queue depth normal, retries=0\nINFO processing synthetic item 40: ok, latency=50ms, queue depth normal, retries=0\n"
+        }
+      ]
+    },
+    { "role": "assistant", "content": [{ "type": "text", "text": "The synthetic check completed." }] },
+    { "role": "user", "content": [{ "type": "text", "text": "Return the final status now." }] }
+  ]
+}

@@ -58,6 +58,11 @@ impl SearchAction {
     }
 }
 
+/// Share action aliases/inference with pre-dispatch planning and response caching.
+pub(crate) fn uses_kernel_context(args: &Map<String, Value>) -> bool {
+    SearchAction::resolve(args) == SearchAction::Semantic
+}
+
 impl McpTool for CtxSearchTool {
     fn name(&self) -> &'static str {
         "ctx_search"
@@ -386,6 +391,19 @@ fn prime_bm25_cache(ctx: &ToolContext) {
 
 /// `action=semantic` — meaning-based search, routed to the shared core fn.
 fn handle_semantic(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutput, ErrorData> {
+    let path = resolve_path_or_root(ctx)?;
+    crate::core::policy::runtime::with_project_source_view(&path, || {
+        handle_semantic_in_view(args, ctx)
+    })
+    .map_err(|_| {
+        ErrorData::internal_error("Search source authority changed or is unavailable", None)
+    })?
+}
+
+fn handle_semantic_in_view(
+    args: &Map<String, Value>,
+    ctx: &ToolContext,
+) -> Result<ToolOutput, ErrorData> {
     let query = get_str(args, "query")
         .ok_or_else(|| ErrorData::invalid_params("query is required for action=semantic", None))?;
     let path = resolve_path_or_root(ctx)?;
@@ -411,8 +429,9 @@ fn handle_semantic(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
         )
     });
 
-    // Context Kernel: enrich semantic search with cross-store context
-    {
+    // Legacy cross-store blocks have no current original-source provenance.
+    // Keep them out of protected results, including explicit mode refusals.
+    if !crate::core::policy::runtime::is_active() && !result.starts_with("ERR:") {
         let kernel_budget = 100;
         if let Some(enrichment) =
             crate::core::context_kernel::bridge::kernel_enrich(&query, &path, kernel_budget)
@@ -585,9 +604,12 @@ fn cached_or_search(
         allow_secret_paths,
         anchored,
     );
-    let key = builder.cache_key();
-    if let Some(entry) =
-        crate::core::ocla::cache_delivery::check(&key, &builder.validator(), "ctx_search")
+    if let Some(builder) = &builder
+        && let Some(entry) = crate::core::ocla::cache_delivery::check(
+            &builder.cache_key(),
+            &builder.validator(),
+            "ctx_search",
+        )
     {
         let text = crate::core::ocla::cache_delivery::stub(&entry, "regex search");
         return crate::tools::ctx_search::SearchOutcome {
@@ -609,9 +631,11 @@ fn cached_or_search(
         exclude,
         exclude_pattern,
     );
-    if !outcome.text.starts_with("ERROR:") {
+    if !outcome.text.starts_with("ERROR:")
+        && let Some(builder) = builder
+    {
         crate::core::ocla::cache_delivery::record(
-            key,
+            builder.cache_key(),
             crate::core::ocla::cache_types::DeliveryKind::SearchQuery,
             builder.validator(),
             Some(builder.path),
@@ -633,9 +657,20 @@ fn regex_cache_builder(
     respect_gitignore: bool,
     allow_secret_paths: bool,
     anchored: bool,
-) -> SearchQueryKey {
+) -> Option<SearchQueryKey> {
+    if crate::core::policy::runtime::active().is_some() {
+        return None;
+    }
     let canonical = crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(path));
-    SearchQueryKey {
+    // Directory mtime does not change when an existing source is rewritten.
+    // Reuse the index's bounded metadata walk; an uncheckable corpus is never
+    // eligible for a legacy delivery stub, including after policy removal.
+    let revision = crate::core::search_index::corpus_signature(
+        &canonical.to_string_lossy(),
+        respect_gitignore,
+        allow_secret_paths,
+    )?;
+    Some(SearchQueryKey {
         pattern: pattern.into(),
         include: format!(
             "{}\\x1fmax:{max}\\x1fgitignore:{respect_gitignore}\\x1fsecret:{allow_secret_paths}\\x1fanchored:{anchored}",
@@ -647,22 +682,8 @@ fn regex_cache_builder(
             exclude_pattern.unwrap_or_default()
         ),
         path: canonical.to_string_lossy().into_owned(),
-        // Regex searches do not rely on embedding state. The root mtime gives
-        // their immutable query key a cheap revision when the file universe changes.
-        index_rev: directory_mtime_ns(&canonical)
-            .unwrap_or_default()
-            .to_string(),
-    }
-}
-
-fn directory_mtime_ns(path: &std::path::Path) -> Option<u128> {
-    std::fs::metadata(path)
-        .ok()?
-        .modified()
-        .ok()?
-        .duration_since(std::time::UNIX_EPOCH)
-        .ok()
-        .map(|duration| duration.as_nanos())
+        index_rev: revision.to_string(),
+    })
 }
 
 #[cfg(test)]
@@ -671,6 +692,7 @@ mod cache_delivery_tests {
 
     #[test]
     fn regex_adapter_records_then_serves_a_cross_agent_reference() {
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let directory = tempfile::tempdir().unwrap();
         std::fs::write(
             directory.path().join("cached.rs"),
@@ -711,6 +733,27 @@ mod cache_delivery_tests {
             "{}",
             second.text
         );
+        // Same path, changed contents: the directory mtime alone misses this.
+        std::fs::write(
+            directory.path().join("cached.rs"),
+            "fn cache_delivery_probe_updated() {}\n",
+        )
+        .unwrap();
+        let updated = search_single(
+            "cache_delivery_probe",
+            &path,
+            Some("*.rs"),
+            20,
+            crate::tools::CrpMode::Off,
+            true,
+            true,
+            false,
+            None,
+            None,
+        )
+        .unwrap();
+        assert!(updated.text.contains("cache_delivery_probe_updated"));
+        assert!(!updated.text.contains("[cross-agent cache"));
     }
 }
 

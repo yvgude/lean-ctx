@@ -32,6 +32,25 @@ pub(crate) fn handle_remember(
         derived_key.as_str()
     };
     let conf = confidence.unwrap_or(0.8);
+    let safe_value = match crate::core::knowledge::protection::current(project_root) {
+        Ok(Some(active)) => {
+            let fields = serde_json::json!({"category":cat,"key":k,"value":v,"session":session_id});
+            let Some(safe) = crate::core::policy::diagnostics::inspect(&fields, Some(&active))
+            else {
+                return "Error: knowledge input withheld by current policy".into();
+            };
+            if ["category", "key", "session"]
+                .iter()
+                .any(|field| safe[*field] != fields[*field])
+            {
+                return "Error: knowledge identity requires a policy-safe key".into();
+            }
+            safe["value"].as_str().unwrap_or_default().to_owned()
+        }
+        Ok(None) => v.to_owned(),
+        Err(error) => return format!("Error: {error}"),
+    };
+    let v = safe_value.as_str();
     let (v, _secret_matches) = crate::core::secret_detection::scan_and_redact_from_config(v);
     let v = v.as_str();
     let policy = match load_policy_or_error() {
@@ -51,7 +70,7 @@ pub(crate) fn handle_remember(
         r
     }) {
         Ok(pair) => pair,
-        Err(e) => return format!("Remembered [{cat}] {k}: {v}\n(save failed: {e})"),
+        Err(e) => return format!("Error: knowledge was not saved: {e}"),
     };
 
     // A low-salience rejection persists nothing — return before the
@@ -761,8 +780,10 @@ mod tests {
 
     #[test]
     fn remember_without_key_derives_one() {
+        let _isolated = crate::core::data_dir::isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
         let out = handle_remember(
-            "/tmp/test-remember-derived-key",
+            root.path().to_str().unwrap(),
             Some("decision"),
             None,
             Some("uses BTreeSet for deterministic iteration"),

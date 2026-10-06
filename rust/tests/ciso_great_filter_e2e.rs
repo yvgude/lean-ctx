@@ -6,8 +6,9 @@
 //!
 //! 1. **#674 central, signed distribution** — an admin authors a CISO pack and
 //!    ships it as an Ed25519-signed `OrgPolicyV1`. A signed-but-untrusted
-//!    artifact is *not* applied (fail-open); once the org key is trust-pinned it
-//!    becomes an un-bypassable enforcement floor.
+//!    artifact is *not* applied: the configured but untrusted policy fails
+//!    closed for agent operations while recovery tools remain available. Once
+//!    the org key is trust-pinned it becomes an enforcement floor.
 //! 2. **#673 runtime enforcement** — a denied tool is blocked; **#676** egress
 //!    DLP stops a forbidden prod-DB action before dispatch; **#675** inbound
 //!    filters detect + redact PII; pack `[redaction]` scrubs an employee id.
@@ -94,11 +95,31 @@ fn great_filter_golden_path_enforces_and_attests() {
 
     org::store::install(&artifact).expect("install signed artifact");
 
-    // A signed-but-untrusted artifact must NOT be enforced (fail-open).
+    // A configured but untrusted artifact must not grant admission or supply
+    // policy rules. The runtime deliberately fails closed, not open; pinning
+    // the signer below is what authorizes applying the actual org policy.
+    assert_eq!(
+        org::active_resolved_checked().unwrap_err(),
+        "org policy signer is not pinned for this organization",
+        "the rejection must be the missing org trust anchor"
+    );
     runtime::reload();
+    let rejected = runtime::active().expect("untrusted configured policy fails closed");
     assert!(
-        runtime::active().is_none(),
-        "untrusted org policy is not enforced"
+        !rejected.tool_allowed("ctx_read") && !rejected.tool_allowed("ctx_url_read"),
+        "untrusted configured policy must not allow ordinary agent operations"
+    );
+    assert!(
+        rejected.redaction.is_empty(),
+        "untrusted artifact rules are not applied"
+    );
+    assert!(
+        policy_guard::check_tool_access("ctx_read").blocked,
+        "agent admission fails closed before trust pinning"
+    );
+    assert!(
+        !policy_guard::check_tool_access("ctx_session").blocked,
+        "recovery remains available before trust pinning"
     );
 
     // Pin the org's key out-of-band → the floor becomes un-bypassable.
@@ -166,10 +187,9 @@ fn great_filter_golden_path_enforces_and_attests() {
         pack: None,
     };
     let mut report = compliance_report::build(&spec).expect("build compliance report");
-    assert!(
-        report.enforcement.blocked >= 2,
-        "tool-deny + egress block counted (got {})",
-        report.enforcement.blocked
+    assert_eq!(
+        report.enforcement.blocked, 3,
+        "pre-trust denial + trusted tool-deny + egress block must each be counted"
     );
     assert!(
         report.enforcement.redacted >= 1,

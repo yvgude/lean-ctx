@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Retention probes: did the facts a reader needs survive a transformation?
 //!
 //! A probe is one atomic, deterministically extracted fact of the original text (an

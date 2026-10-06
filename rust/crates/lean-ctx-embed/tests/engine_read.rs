@@ -91,6 +91,167 @@ fn pathjail_rejects_escape() {
 }
 
 #[test]
+fn instance_boundary_rejects_existing_and_missing_external_paths() {
+    let _guard = engine_guard();
+    let dir = temp_project();
+    let outside = temp_project();
+    let engine = Engine::builder(&dir).build().expect("engine builds");
+    for path in [outside.join("src/main.rs"), outside.join("missing.rs")] {
+        let err = engine
+            .read(path.to_string_lossy(), ReadMode::Full)
+            .unwrap_err();
+        assert!(matches!(err, lean_ctx_embed::Error::Path(_)), "{err:?}");
+
+        let mut args = serde_json::Map::new();
+        args.insert("path".into(), path.to_string_lossy().into_owned().into());
+        let err = engine.call("ctx_read", args).unwrap_err();
+        assert!(matches!(err, lean_ctx_embed::Error::Path(_)), "{err:?}");
+    }
+    // Missing files inside the boundary still reach the ordinary read error.
+    let err = engine.read("missing.rs", ReadMode::Full).unwrap_err();
+    assert!(matches!(err, lean_ctx_embed::Error::Tool { .. }), "{err:?}");
+    fs::remove_dir_all(&outside).unwrap();
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn instance_boundary_checks_multi_path_aliases_and_shapes() {
+    let _guard = engine_guard();
+    let dir = temp_project();
+    let outside = temp_project();
+    let engine = Engine::builder(&dir).build().expect("engine builds");
+    let external = outside.join("src/main.rs").to_string_lossy().into_owned();
+    for args in [
+        serde_json::json!({"paths": [external]}),
+        serde_json::json!({"paths": ["src/main.rs", external]}),
+        serde_json::json!({"file_path": external}),
+        serde_json::json!({"root": external}),
+        serde_json::json!({"path": [external]}),
+        serde_json::json!({"paths": external}),
+        serde_json::json!({"paths": [null]}),
+        serde_json::json!({"repo": "outside", "path": "src/main.rs"}),
+    ] {
+        let err = engine
+            .call("ctx_read", args.as_object().unwrap().clone())
+            .unwrap_err();
+        assert!(
+            matches!(err, lean_ctx_embed::Error::Path(_)),
+            "{args}: {err:?}"
+        );
+    }
+    for err in [
+        engine.search("helper", Some(&external)).unwrap_err(),
+        engine.tree(Some(&external)).unwrap_err(),
+        engine.outline(&external).unwrap_err(),
+    ] {
+        assert!(matches!(err, lean_ctx_embed::Error::Path(_)), "{err:?}");
+    }
+    fs::remove_dir_all(&outside).unwrap();
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn raw_call_does_not_grant_new_registry_tools_or_host_handles() {
+    let _guard = engine_guard();
+    let dir = temp_project();
+    let engine = Engine::builder(&dir).build().expect("engine builds");
+    for (tool, args) in [
+        (
+            "ctx_multi_repo",
+            serde_json::json!({"action":"add_root", "roots":["/outside"]}),
+        ),
+        (
+            "ctx_patch",
+            serde_json::json!({"path":"src/main.rs", "patch":"replacement"}),
+        ),
+        (
+            "ctx_refactor",
+            serde_json::json!({"action":"rename", "from":"helper", "to":"renamed"}),
+        ),
+        (
+            "ctx_search",
+            serde_json::json!({"action":"symbol", "handle":"outside-handle"}),
+        ),
+    ] {
+        let err = engine
+            .call(tool, args.as_object().unwrap().clone())
+            .unwrap_err();
+        assert!(
+            matches!(err, lean_ctx_embed::Error::NotPermitted(_)),
+            "{tool}: {err:?}"
+        );
+    }
+    assert!(
+        fs::read_to_string(dir.join("src/main.rs"))
+            .unwrap()
+            .contains("pub fn helper")
+    );
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[test]
+fn instance_boundary_ignores_host_extra_path_permission() {
+    let _guard = engine_guard();
+    if std::env::var_os("LEANCTX_EMBED_BOUNDARY_TEST_CHILD").is_none() {
+        // Supply host permission before the child starts any runtime threads;
+        // never mutate this process's environment around a live Engine.
+        let output = std::process::Command::new(std::env::current_exe().unwrap())
+            .args([
+                "--exact",
+                "instance_boundary_ignores_host_extra_path_permission",
+                "--nocapture",
+            ])
+            .env("LEANCTX_EMBED_BOUNDARY_TEST_CHILD", "1")
+            .env("LEAN_CTX_ALLOW_PATH", std::env::temp_dir())
+            .env_remove("LCTX_ALLOW_PATH")
+            .output()
+            .unwrap();
+        assert!(
+            output.status.success(),
+            "{}\n{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+        return;
+    }
+    let dir = temp_project();
+    let outside = temp_project();
+    let engine = Engine::builder(&dir).build().expect("engine builds");
+    let result = engine.read(
+        outside.join("src/main.rs").to_string_lossy(),
+        ReadMode::Full,
+    );
+    let err = result.unwrap_err();
+    assert!(
+        matches!(&err, lean_ctx_embed::Error::Path(message)
+            if message == "path escapes the embedded engine project root"),
+        "the instance boundary must reject a host-authorized path: {err:?}"
+    );
+    fs::remove_dir_all(&outside).unwrap();
+    fs::remove_dir_all(&dir).unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn instance_boundary_rejects_symlink_escape_and_dangling_symlink() {
+    let _guard = engine_guard();
+    let dir = temp_project();
+    let outside = temp_project();
+    std::os::unix::fs::symlink(&outside, dir.join("outside")).unwrap();
+    std::os::unix::fs::symlink(outside.join("absent.rs"), dir.join("dangling.rs")).unwrap();
+    let engine = Engine::builder(&dir).build().expect("engine builds");
+    for path in ["outside/src/main.rs", "outside/missing.rs", "dangling.rs"] {
+        let err = engine.read(path, ReadMode::Full).unwrap_err();
+        assert!(
+            matches!(err, lean_ctx_embed::Error::Path(_)),
+            "{path}: {err:?}"
+        );
+    }
+    fs::remove_dir_all(&dir).unwrap();
+    fs::remove_dir_all(&outside).unwrap();
+}
+
+#[test]
 fn search_finds_symbol() {
     let _guard = engine_guard();
     let dir = temp_project();

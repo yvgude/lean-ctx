@@ -1,10 +1,33 @@
-use std::io::Read;
+use std::io::{Read, Write};
+use std::path::{Path, PathBuf};
+
+#[cfg(test)]
+use fs2::FileExt;
+use serde::{Deserialize, Serialize};
+
+#[path = "updater/flow.rs"]
+mod flow;
+#[path = "updater/transaction.rs"]
+mod transaction;
+
+use transaction::{
+    acquire_update_lock, execute_prepared_transaction, prepare_update_transaction,
+    recover_pending_transaction, rollback_to_previous,
+};
+#[cfg(test)]
+use transaction::{cleanup_orphaned_prepared_files, orphan_prepared_paths, write_update_receipt};
 
 mod platform;
 use platform::{gpu_next_steps, gpu_platform_asset_name, platform_asset_name};
 
 const GITHUB_API_RELEASES: &str = "https://api.github.com/repos/yvgude/lean-ctx/releases/latest";
 const CURRENT_VERSION: &str = env!("CARGO_PKG_VERSION");
+const UPDATE_RECEIPT_SCHEMA: &str = "leanctx.update-receipt/v2";
+const LEGACY_UPDATE_RECEIPT_SCHEMA: &str = "leanctx.update-receipt/v1";
+const UPDATE_RECEIPT_FILE: &str = "update-receipt.json";
+const UPDATE_TRANSACTION_SCHEMA: &str = "leanctx.update-transaction/v1";
+const UPDATE_TRANSACTION_FILE: &str = "update-transaction.json";
+const UPDATE_LOCK_FILE: &str = "update.lock";
 
 pub(crate) fn run(args: &[String]) {
     run_with_mode(args, UpdateMode::Normal);
@@ -20,18 +43,22 @@ enum UpdateMode {
     EnableGpu,
 }
 
-/// Flags `update` / `enable-gpu` understand. Anything else starting with `-`
-/// is refused: the command replaces the installed binary, so a typo or a
-/// `--help` must never fall through to a real update.
+/// Flags understood by the update flow. Reject typos before the flow can
+/// change the scheduler, config, or installed binary.
 const KNOWN_FLAGS: &[&str] = &[
     "--check",
-    "--insecure",
     "--quiet",
     "--skip-rules",
     "--scheduled",
     "--schedule",
-    // No effect, accepted as before: the Windows deferred-update script tells
-    // users to run `update --force`, and older docs mention `--rewire`.
+    "--insecure", // Preserve the flow's explicit refusal for this removed option.
+    "--status",
+    "--rollback",
+    "--unpin",
+    "--pin",
+    "--recover-update",
+    "--lock-held",
+    // Accepted for compatibility with older scripts and docs.
     "--force",
     "--rewire",
 ];
@@ -44,12 +71,13 @@ enum FlagCheck<'a> {
 }
 
 fn check_flags(args: &[String]) -> FlagCheck<'_> {
-    if args.iter().any(|a| a == "--help" || a == "-h") {
+    if args.iter().any(|arg| arg == "--help" || arg == "-h") {
         return FlagCheck::Help;
     }
+
     args.iter()
         .map(String::as_str)
-        .find(|a| a.starts_with('-') && !KNOWN_FLAGS.contains(a))
+        .find(|arg| arg.starts_with('-') && !KNOWN_FLAGS.contains(arg))
         .map_or(FlagCheck::Run, FlagCheck::Unknown)
 }
 
@@ -61,18 +89,21 @@ fn command_name(mode: UpdateMode) -> &'static str {
 }
 
 fn print_help(mode: UpdateMode) {
-    let cmd = command_name(mode);
-    println!("Usage: lean-ctx {cmd} [VERSION] [OPTIONS]");
+    let command = command_name(mode);
+    println!("Usage: lean-ctx {command} [VERSION] [OPTIONS]");
     println!();
-    println!("  VERSION                install this release (e.g. 3.10.3) instead of the latest");
+    println!("  VERSION                install this release instead of the latest");
     println!("  --check                only report whether an update is available");
-    println!("  --quiet                print nothing unless something changes");
+    println!("  --quiet                suppress output unless something changes");
     println!("  --skip-rules           do not refresh agent rules after updating");
-    println!("  --insecure             install even if the download fails its checksum check");
+    println!("  --pin VERSION          pin and install this release");
+    println!("  --unpin                clear the release pin");
+    println!("  --status               show the pin and retained binary receipt");
+    println!("  --rollback             restore the retained verified binary");
     println!("  --schedule [N|Nh]      install automatic updates every N hours (default 6)");
     println!("  --schedule notify      only notify about updates");
     println!("  --schedule status      show the update schedule");
-    println!("  --schedule off         disable automatic updates");
+    println!("  --schedule off|disable disable automatic updates");
     println!("  -h, --help             show this help");
 }
 
@@ -92,346 +123,62 @@ fn run_with_mode(args: &[String], mode: UpdateMode) {
             std::process::exit(2);
         }
     }
-    let mut check_only = args.iter().any(|a| a == "--check");
-    let insecure = args.iter().any(|a| a == "--insecure");
-    let quiet = args.iter().any(|a| a == "--quiet");
-    let skip_rules = args.iter().any(|a| a == "--skip-rules");
-    // The scheduler invokes `update --quiet --scheduled`. `--quiet` alone also
-    // marks an automatic run for backward compatibility with schedulers that
-    // were installed before `--scheduled` existed.
-    let scheduled = args.iter().any(|a| a == "--scheduled");
 
-    // Handle --schedule subcommand
-    if let Some(pos) = args.iter().position(|a| a == "--schedule") {
-        let sub = args.get(pos + 1).map_or("", String::as_str);
-        match sub {
-            "off" | "disable" => {
-                if let Err(e) = crate::core::update_scheduler::remove_schedule() {
-                    eprintln!("  \x1b[31m✗\x1b[0m Failed to disable auto-updates: {e}");
-                    std::process::exit(1);
-                }
-                crate::core::update_scheduler::set_auto_update(false, false, 6);
-                println!("  \x1b[32m✓\x1b[0m Auto-updates disabled.");
-                println!("  \x1b[2mRe-enable anytime: lean-ctx update --schedule\x1b[0m");
-                return;
-            }
-            "status" => {
-                let info = crate::core::update_scheduler::schedule_status();
-                println!();
-                println!("  {info}");
-                println!();
-                return;
-            }
-            "notify" => {
-                let cfg = crate::core::config::Config::load();
-                let hours = cfg.updates.check_interval_hours;
-                match crate::core::update_scheduler::install_schedule(hours) {
-                    Ok(info) => {
-                        crate::core::update_scheduler::set_auto_update(true, true, hours);
-                        println!("  \x1b[32m✓\x1b[0m Update notifications enabled ({info})");
-                        println!(
-                            "  \x1b[2mYou'll be notified but updates won't install automatically.\x1b[0m"
-                        );
-                    }
-                    Err(e) => {
-                        eprintln!("  \x1b[31m✗\x1b[0m {e}");
-                        std::process::exit(1);
-                    }
-                }
-                return;
-            }
-            _ => {
-                let hours = if sub.is_empty() {
-                    6
-                } else {
-                    sub.trim_end_matches('h')
-                        .parse::<u64>()
-                        .unwrap_or(6)
-                        .clamp(1, 168)
-                };
-                match crate::core::update_scheduler::install_schedule(hours) {
-                    Ok(info) => {
-                        crate::core::update_scheduler::set_auto_update(true, false, hours);
-                        println!();
-                        println!("  \x1b[32m✓\x1b[0m {info}");
-                        println!("  \x1b[2mDisable anytime: lean-ctx update --schedule off\x1b[0m");
-                        println!();
-                    }
-                    Err(e) => {
-                        eprintln!("  \x1b[31m✗\x1b[0m Failed to enable auto-updates: {e}");
-                        std::process::exit(1);
-                    }
-                }
-                return;
-            }
-        }
+    flow::run_with_mode(args, mode);
+}
+
+#[cfg(test)]
+mod argument_guard_tests {
+    use super::{FlagCheck, UpdateMode, check_flags, command_name};
+
+    fn args(values: &[&str]) -> Vec<String> {
+        values.iter().map(ToString::to_string).collect()
     }
 
-    // #447: `lean-ctx update <version>` installs a specific tagged release
-    // instead of the latest (e.g. to compare against an older build). Only the
-    // binary is swapped — data, config and logs are left untouched, exactly
-    // like a normal update.
-    let target_version: Option<String> = match parse_target_version(args) {
-        None => None,
-        Some(v) if looks_like_version(v) => Some(v.trim_start_matches('v').to_string()),
-        Some(other) => {
-            eprintln!("  \x1b[31m✗\x1b[0m '{other}' is not a valid version.");
-            eprintln!(
-                "  \x1b[2mUsage: lean-ctx update [<version>]   (e.g. lean-ctx update 3.8.5)\x1b[0m"
-            );
-            eprintln!(
-                "  \x1b[2mAvailable versions: https://github.com/yvgude/lean-ctx/releases\x1b[0m"
-            );
-            std::process::exit(1);
-        }
-    };
-    let pinned = target_version.is_some();
-
-    // #335: An automatic run (`--quiet`/`--scheduled`) must obey config.toml.
-    // A user who sets `updates.auto_update = false` after a scheduler was
-    // installed expects auto-updates to stop. Since editing config doesn't
-    // uninstall the scheduler, the next scheduled tick re-checks config here,
-    // self-heals (removes the orphaned scheduler) and bails. `notify_only`
-    // downgrades the run to a check (never installs). Manual `lean-ctx update`
-    // (no `--quiet`/`--scheduled`) is an explicit action and always proceeds.
-    if (quiet || scheduled) && !check_only {
-        let cfg = crate::core::config::Config::load();
-        match automatic_update_gate(cfg.updates.auto_update, cfg.updates.notify_only) {
-            AutoUpdateGate::Skip => {
-                if let Err(e) = crate::core::update_scheduler::remove_schedule() {
-                    tracing::warn!(
-                        "auto-update disabled in config; failed to remove orphaned scheduler: {e}"
-                    );
-                } else {
-                    tracing::info!(
-                        "auto-update disabled (updates.auto_update=false): skipped scheduled update and removed orphaned scheduler"
-                    );
-                }
-                return;
-            }
-            AutoUpdateGate::NotifyOnly => {
-                check_only = true;
-            }
-            AutoUpdateGate::Proceed => {}
-        }
-    }
-
-    if !quiet {
-        println!();
-        let title = match mode {
-            UpdateMode::Normal => "lean-ctx updater",
-            UpdateMode::EnableGpu => "lean-ctx GPU enablement",
-        };
-        println!("  \x1b[1m◆ {title}\x1b[0m  \x1b[2mv{CURRENT_VERSION}\x1b[0m");
-        println!("  \x1b[2mChecking github.com/yvgude/lean-ctx …\x1b[0m");
-    }
-
-    let release = match fetch_release(target_version.as_deref()) {
-        Ok(r) => r,
-        Err(e) => {
-            if let Some(v) = &target_version {
-                tracing::error!("Could not fetch lean-ctx v{v}: {e}");
-                tracing::error!(
-                    "Check the version exists: https://github.com/yvgude/lean-ctx/releases"
-                );
-            } else {
-                tracing::error!("Error fetching release info: {e}");
-            }
-            std::process::exit(1);
-        }
-    };
-
-    let target_tag = if let Some(t) = release["tag_name"].as_str() {
-        t.trim_start_matches('v').to_string()
-    } else {
-        tracing::error!("Could not parse release tag from GitHub API.");
-        std::process::exit(1);
-    };
-
-    if target_tag == CURRENT_VERSION && mode == UpdateMode::Normal {
-        if quiet {
-            return;
-        }
-        if pinned {
-            println!("  \x1b[32m✓\x1b[0m Already on v{CURRENT_VERSION}.");
-        } else {
-            println!("  \x1b[32m✓\x1b[0m Already up to date (v{CURRENT_VERSION}).");
-        }
-        println!(
-            "  \x1b[2mIf your IDE still uses an older version, restart it to reconnect the MCP server.\x1b[0m"
+    #[test]
+    fn help_never_falls_through_to_an_update() {
+        assert_eq!(check_flags(&args(&["--help"])), FlagCheck::Help);
+        assert_eq!(check_flags(&args(&["-h"])), FlagCheck::Help);
+        assert_eq!(
+            check_flags(&args(&["--schedule", "off", "--broken", "--help"])),
+            FlagCheck::Help
         );
-        println!();
-        if !check_only {
-            if skip_rules {
-                println!(
-                    "  \x1b[36m\x1b[1mRefreshing setup (shell hook, MCP configs — rules skipped)…\x1b[0m"
-                );
-            } else {
-                println!(
-                    "  \x1b[36m\x1b[1mRefreshing setup (shell hook, MCP configs, rules)…\x1b[0m"
-                );
-            }
-            post_update_rewire(skip_rules);
-            println!();
-        }
-        return;
+        assert_eq!(command_name(UpdateMode::Normal), "update");
+        assert_eq!(command_name(UpdateMode::EnableGpu), "enable-gpu");
     }
 
-    if !quiet {
-        if pinned {
-            println!(
-                "  Switching: v{CURRENT_VERSION} → \x1b[1;36mv{target_tag}\x1b[0m  \x1b[2m(data & logs preserved)\x1b[0m"
-            );
-        } else if target_tag == CURRENT_VERSION {
-            println!("  Installing GPU binary for v{CURRENT_VERSION}…");
-        } else {
-            println!("  Update available: v{CURRENT_VERSION} → \x1b[1;32mv{target_tag}\x1b[0m");
-        }
-    }
-
-    let asset_name = match mode {
-        UpdateMode::Normal => platform_asset_name(),
-        UpdateMode::EnableGpu => match gpu_platform_asset_name() {
-            Ok(name) => name,
-            Err(e) => {
-                tracing::error!("{e}");
-                std::process::exit(1);
-            }
-        },
-    };
-
-    if check_only {
-        match mode {
-            UpdateMode::Normal if pinned => {
-                println!("Run 'lean-ctx update {target_tag}' to install.");
-            }
-            UpdateMode::Normal => println!("Run 'lean-ctx update' to install."),
-            UpdateMode::EnableGpu => println!("Run 'lean-ctx enable-gpu' to install {asset_name}."),
-        }
-        return;
-    }
-
-    if !quiet {
-        println!("  \x1b[2mDownloading {asset_name} …\x1b[0m");
-    }
-
-    let Some(download_url) = find_asset_url(&release, &asset_name) else {
-        tracing::error!(
-            "No binary found for this platform ({asset_name}) in v{target_tag}. Download manually: https://github.com/yvgude/lean-ctx/releases"
+    #[test]
+    fn unknown_flags_are_refused() {
+        assert_eq!(
+            check_flags(&args(&["--chek"])),
+            FlagCheck::Unknown("--chek")
         );
-        std::process::exit(1);
-    };
-
-    let bytes = match download_bytes(&download_url) {
-        Ok(b) => b,
-        Err(e) => {
-            tracing::error!("Download failed: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    if let Err(e) = verify_download_integrity(&release, &asset_name, &bytes) {
-        if insecure {
-            tracing::warn!("Integrity verification failed: {e}");
-            tracing::warn!("Proceeding due to --insecure");
-        } else {
-            tracing::error!("Integrity verification failed: {e}");
-            tracing::error!(
-                "Refusing to install an unverifiable binary. Re-run with `lean-ctx update --insecure` or download manually: https://github.com/yvgude/lean-ctx/releases"
-            );
-            std::process::exit(1);
-        }
-    }
-
-    let current_exe = match std::env::current_exe() {
-        Ok(p) => p,
-        Err(e) => {
-            tracing::error!("Cannot locate current executable: {e}");
-            std::process::exit(1);
-        }
-    };
-
-    if let Err(e) = replace_binary(&bytes, &asset_name, &current_exe) {
-        tracing::error!("Failed to replace binary: {e}");
-        tracing::warn!("Continuing with a setup refresh so your wiring stays correct");
-        post_update_rewire(skip_rules);
-        std::process::exit(1);
-    }
-
-    if quiet {
-        println!("  lean-ctx v{CURRENT_VERSION} → v{target_tag}");
-    } else {
-        println!();
-        if pinned {
-            println!("  \x1b[1;32m✓ Now running lean-ctx v{target_tag}\x1b[0m");
-        } else if mode == UpdateMode::EnableGpu {
-            println!("  \x1b[1;32m✓ Enabled lean-ctx GPU binary v{target_tag}\x1b[0m");
-        } else {
-            println!("  \x1b[1;32m✓ Updated to lean-ctx v{target_tag}\x1b[0m");
-        }
-        println!("  \x1b[2mBinary: {}\x1b[0m", current_exe.display());
-        if mode == UpdateMode::EnableGpu {
-            for line in gpu_next_steps(std::env::consts::OS) {
-                println!("  \x1b[2m{line}\x1b[0m");
-            }
-        }
-    }
-
-    if !quiet {
-        println!();
-        if skip_rules {
-            println!(
-                "  \x1b[36m\x1b[1mRefreshing setup (shell hook, MCP configs — rules skipped)…\x1b[0m"
-            );
-        } else {
-            println!("  \x1b[36m\x1b[1mRefreshing setup (shell hook, MCP configs, rules)…\x1b[0m");
-        }
-    }
-    post_update_rewire(skip_rules);
-
-    if !quiet {
-        println!();
-        crate::terminal_ui::print_logo_animated();
-        println!();
-        println!(
-            "  \x1b[33m\x1b[1m⟳ Restart your IDE and shell to activate the new version.\x1b[0m"
-        );
-        println!(
-            "    \x1b[2mClose and re-open Cursor, VS Code, Claude Code, etc. completely.\x1b[0m"
-        );
-        println!("    \x1b[2mThe MCP server must reconnect to use the updated binary.\x1b[0m");
-        println!(
-            "    \x1b[2m{}\x1b[0m",
-            crate::shell_hook::reload_aliases_hint()
+        assert_eq!(
+            check_flags(&args(&["3.10.3", "--forse"])),
+            FlagCheck::Unknown("--forse")
         );
     }
-    println!();
 
-    if !quiet
-        && !crate::core::update_scheduler::has_user_decided()
-        && std::io::IsTerminal::is_terminal(&std::io::stdin())
-    {
-        print!("  Want to get updates like this automatically? \x1b[1m[y/N]\x1b[0m ");
-        use std::io::Write;
-        std::io::stdout().flush().ok();
-        let mut input = String::new();
-        if std::io::stdin().read_line(&mut input).is_ok() {
-            let answer = input.trim().to_lowercase();
-            if answer == "y" || answer == "yes" {
-                let cfg = crate::core::config::Config::load();
-                let hours = cfg.updates.check_interval_hours;
-                match crate::core::update_scheduler::install_schedule(hours) {
-                    Ok(info) => {
-                        crate::core::update_scheduler::set_auto_update(true, false, hours);
-                        println!("  \x1b[32m✓\x1b[0m {info}");
-                        println!("  \x1b[2mDisable anytime: lean-ctx update --schedule off\x1b[0m");
-                    }
-                    Err(e) => println!("  \x1b[33m⚠\x1b[0m Could not set up scheduler: {e}"),
-                }
-            } else {
-                crate::core::update_scheduler::set_auto_update(false, false, 6);
-                println!("  \x1b[2m○ Skipped — enable later: lean-ctx update --schedule\x1b[0m");
-            }
+    #[test]
+    fn scheduler_and_known_invocations_still_run() {
+        for ok in [
+            &[][..],
+            &["--quiet", "--scheduled"][..],
+            &["--check"][..],
+            &["3.10.3", "--skip-rules"][..],
+            &["--schedule", "12h"][..],
+            &["--schedule", "off"][..],
+            &["--schedule", "disable"][..],
+            &["--status"][..],
+            &["--rollback"][..],
+            &["--pin", "3.10.3"][..],
+            &["--unpin"][..],
+            &["--recover-update", "--lock-held"][..],
+            &["--insecure"][..],
+            &["--force"][..],
+            &["--rewire"][..],
+        ] {
+            assert_eq!(check_flags(&args(ok)), FlagCheck::Run, "{ok:?}");
         }
     }
 }
@@ -459,11 +206,73 @@ fn automatic_update_gate(auto_update: bool, notify_only: bool) -> AutoUpdateGate
     }
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct UpdateReceipt {
+    schema_version: String,
+    active: BinaryReceipt,
+    previous: BinaryReceipt,
+    #[serde(default)]
+    receipt_sha256: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+struct BinaryReceipt {
+    version: String,
+    asset: String,
+    sha256: String,
+    size: u64,
+    path: String,
+    manifest_sha256: Option<String>,
+    archive_sha256: Option<String>,
+    #[serde(default)]
+    release_commit: Option<String>,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct VerifiedArtifact {
+    archive_sha256: String,
+    manifest_sha256: String,
+    release_commit: String,
+    payload_sha256: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct PreparedTransaction {
+    schema_version: String,
+    operation: String,
+    current_path: String,
+    previous_path: String,
+    staged_path: String,
+    backup_path: String,
+    old_active: BinaryReceipt,
+    target_active: BinaryReceipt,
+    target_previous: BinaryReceipt,
+    transaction_sha256: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+struct ReleaseManifest {
+    schema_version: String,
+    tag: String,
+    commit: String,
+    artifacts: std::collections::HashMap<String, ManifestArtifact>,
+    sbom_sha256: String,
+    checksums_sha256: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct ManifestArtifact {
+    sha256: String,
+    size: u64,
+    #[serde(default)]
+    payload_sha256: Option<String>,
+}
+
 fn verify_download_integrity(
     release: &serde_json::Value,
     asset_name: &str,
     bytes: &[u8],
-) -> Result<(), String> {
+) -> Result<VerifiedArtifact, String> {
     #[cfg(not(feature = "secure-update"))]
     {
         let _ = (release, asset_name, bytes);
@@ -472,79 +281,259 @@ fn verify_download_integrity(
 
     #[cfg(feature = "secure-update")]
     {
+        let release_tag = release["tag_name"]
+            .as_str()
+            .ok_or_else(|| "release metadata has no tag_name".to_string())?;
+        let manifest_url = find_asset_url(release, "release-manifest.json")
+            .ok_or_else(|| "release-manifest.json is required for binary updates".to_string())?;
+        let manifest_bytes = download_bytes(&manifest_url)?;
+        let manifest_signature_url = find_asset_url(release, "release-manifest.json.sig")
+            .ok_or_else(|| {
+                "release-manifest.json.sig is required for binary updates".to_string()
+            })?;
+        let manifest_certificate_url = find_asset_url(release, "release-manifest.json.pem")
+            .ok_or_else(|| {
+                "release-manifest.json.pem is required for binary updates".to_string()
+            })?;
+        verify_cosign_signature(
+            &manifest_bytes,
+            &download_bytes(&manifest_signature_url)?,
+            &download_bytes(&manifest_certificate_url)?,
+            release_tag,
+        )?;
+        let manifest_sha256 = sha256_hex(&manifest_bytes);
+        let manifest: ReleaseManifest = serde_json::from_slice(&manifest_bytes)
+            .map_err(|e| format!("invalid release-manifest.json: {e}"))?;
+        validate_manifest(&manifest, release_tag, asset_name)?;
+        let artifact = manifest
+            .artifacts
+            .get(asset_name)
+            .ok_or_else(|| format!("manifest has no artifact entry for {asset_name}"))?;
         let computed = sha256_hex(bytes);
-
-        let Some((checksum_url, kind)) = find_checksum_asset_url(release, asset_name) else {
-            return Err(
-                "no checksum asset found for this release (expected SHA256SUMS or *.sha256)"
-                    .to_string(),
-            );
-        };
-        let checksum_bytes = download_bytes(&checksum_url)?;
-        let checksum_text = String::from_utf8_lossy(&checksum_bytes).to_string();
-
-        let expected = match kind {
-            ChecksumAssetKind::SingleSha256 => parse_single_sha256(&checksum_text),
-            ChecksumAssetKind::Sha256Sums => parse_sha256sums(&checksum_text, asset_name),
-        }
-        .ok_or_else(|| format!("checksum file did not contain an entry for {asset_name}"))?;
-
-        if !constant_time_eq(computed.as_bytes(), expected.as_bytes()) {
+        if bytes.len() as u64 != artifact.size {
             return Err(format!(
-                "sha256 mismatch for {asset_name}: expected {expected}, got {computed}"
+                "size mismatch for {asset_name}: expected {}, got {}",
+                artifact.size,
+                bytes.len()
             ));
         }
-        Ok(())
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-enum ChecksumAssetKind {
-    Sha256Sums,
-    SingleSha256,
-}
-
-fn find_checksum_asset_url(
-    release: &serde_json::Value,
-    asset_name: &str,
-) -> Option<(String, ChecksumAssetKind)> {
-    // Prefer per-asset checksum (asset.ext.sha256) if present.
-    let candidates = [
-        format!("{asset_name}.sha256"),
-        format!("{asset_name}.sha256.txt"),
-        "SHA256SUMS".to_string(),
-        "SHA256SUMS.txt".to_string(),
-        "sha256sums.txt".to_string(),
-        "checksums.txt".to_string(),
-    ];
-
-    for c in candidates {
-        if let Some(url) = find_asset_url(release, &c) {
-            let kind = if c.to_lowercase().contains("sha256sums")
-                || c.to_uppercase() == "SHA256SUMS"
-                || c.to_lowercase().contains("checksums")
-            {
-                ChecksumAssetKind::Sha256Sums
-            } else {
-                ChecksumAssetKind::SingleSha256
-            };
-            return Some((url, kind));
+        if !constant_time_eq(computed.as_bytes(), artifact.sha256.as_bytes()) {
+            return Err(format!(
+                "sha256 mismatch for {asset_name}: expected {}, got {computed}",
+                artifact.sha256
+            ));
         }
+
+        let checksum_url = find_asset_url(release, "SHA256SUMS")
+            .ok_or_else(|| "SHA256SUMS is required for binary updates".to_string())?;
+        let checksum_bytes = download_bytes(&checksum_url)?;
+        let signature_url = find_asset_url(release, "SHA256SUMS.sig")
+            .ok_or_else(|| "SHA256SUMS.sig is required for binary updates".to_string())?;
+        let signature_bytes = download_bytes(&signature_url)?;
+        let certificate_url = find_asset_url(release, "SHA256SUMS.pem")
+            .ok_or_else(|| "SHA256SUMS.pem is required for binary updates".to_string())?;
+        let certificate_bytes = download_bytes(&certificate_url)?;
+        verify_cosign_signature(
+            &checksum_bytes,
+            &signature_bytes,
+            &certificate_bytes,
+            release_tag,
+        )?;
+        verify_release_commit(release_tag, &manifest.commit)?;
+        let checksum_sha256 = sha256_hex(&checksum_bytes);
+        if !constant_time_eq(
+            checksum_sha256.as_bytes(),
+            manifest.checksums_sha256.to_ascii_lowercase().as_bytes(),
+        ) {
+            return Err("SHA256SUMS digest does not match release manifest".to_string());
+        }
+        let sbom_url = find_asset_url(release, "SBOM.cdx.json")
+            .ok_or_else(|| "SBOM.cdx.json is required for binary updates".to_string())?;
+        let sbom_sha256 = sha256_hex(&download_bytes(&sbom_url)?);
+        if !constant_time_eq(
+            sbom_sha256.as_bytes(),
+            manifest.sbom_sha256.to_ascii_lowercase().as_bytes(),
+        ) {
+            return Err("SBOM digest does not match release manifest".to_string());
+        }
+        let checksum_text = String::from_utf8(checksum_bytes)
+            .map_err(|_| "SHA256SUMS is not valid UTF-8".to_string())?;
+        let expected = parse_sha256sums(&checksum_text, asset_name)
+            .ok_or_else(|| format!("SHA256SUMS has no unique entry for {asset_name}"))?;
+        if !constant_time_eq(expected.as_bytes(), computed.as_bytes())
+            || !constant_time_eq(expected.as_bytes(), artifact.sha256.as_bytes())
+        {
+            return Err(format!("SHA256SUMS digest mismatch for {asset_name}"));
+        }
+        Ok(VerifiedArtifact {
+            archive_sha256: computed,
+            manifest_sha256,
+            release_commit: manifest.commit,
+            payload_sha256: artifact.payload_sha256.clone().ok_or_else(|| {
+                format!("release manifest omits extracted payload digest for {asset_name}")
+            })?,
+        })
     }
-    None
 }
 
-fn parse_single_sha256(text: &str) -> Option<String> {
-    let t = text.trim();
-    let first = t.split_whitespace().next().unwrap_or("").trim();
-    if first.len() == 64 && first.chars().all(|c| c.is_ascii_hexdigit()) {
-        Some(first.to_ascii_lowercase())
-    } else {
-        None
+fn cosign_identity_for_tag(release_tag: &str) -> String {
+    let escaped_tag = regex::escape(release_tag);
+    format!(
+        "^https://github\\.com/yvgude/lean-ctx/\\.github/workflows/release\\.yml@refs/tags/{escaped_tag}$"
+    )
+}
+
+fn verify_cosign_signature(
+    checksums: &[u8],
+    signature: &[u8],
+    certificate: &[u8],
+    release_tag: &str,
+) -> Result<(), String> {
+    let directory =
+        tempfile::tempdir().map_err(|e| format!("cannot create signature workspace: {e}"))?;
+    let checksum_path = directory.path().join("SHA256SUMS");
+    let signature_path = directory.path().join("SHA256SUMS.sig");
+    let certificate_path = directory.path().join("SHA256SUMS.pem");
+    std::fs::write(&checksum_path, checksums).map_err(|e| e.to_string())?;
+    std::fs::write(&signature_path, signature).map_err(|e| e.to_string())?;
+    std::fs::write(&certificate_path, certificate).map_err(|e| e.to_string())?;
+    let output = std::process::Command::new("cosign")
+        .args([
+            "verify-blob",
+            "--signature",
+            signature_path.to_str().unwrap_or(""),
+            "--certificate",
+            certificate_path.to_str().unwrap_or(""),
+            "--certificate-identity-regexp",
+            &cosign_identity_for_tag(release_tag),
+            "--certificate-oidc-issuer",
+            "https://token.actions.githubusercontent.com",
+            checksum_path.to_str().unwrap_or(""),
+        ])
+        .output()
+        .map_err(|e| format!("cosign is unavailable; refusing unsigned release: {e}"))?;
+    if !output.status.success() {
+        let detail = String::from_utf8_lossy(&output.stderr);
+        return Err(format!(
+            "cosign release signature verification failed: {detail}"
+        ));
     }
+    Ok(())
+}
+
+fn fetch_api_json(url: &str) -> Result<serde_json::Value, String> {
+    const API_PREFIX: &str = "https://api.github.com/repos/yvgude/lean-ctx/";
+    if !url.starts_with(API_PREFIX) {
+        return Err(format!(
+            "refusing GitHub API URL outside canonical repository: {url}"
+        ));
+    }
+    let response = https_agent()
+        .get(url)
+        .header("User-Agent", &format!("lean-ctx/{CURRENT_VERSION}"))
+        .header("Accept", "application/vnd.github.v3+json")
+        .call()
+        .map_err(|e| e.to_string())?;
+    response
+        .into_body()
+        .read_to_string()
+        .map_err(|e| e.to_string())
+        .and_then(|body| serde_json::from_str(&body).map_err(|e| e.to_string()))
+}
+
+fn verify_release_commit(release_tag: &str, expected_commit: &str) -> Result<(), String> {
+    let tag = release_tag.trim_start_matches('v');
+    let reference = fetch_api_json(&format!(
+        "https://api.github.com/repos/yvgude/lean-ctx/git/ref/tags/v{tag}"
+    ))?;
+    let object = reference
+        .get("object")
+        .ok_or_else(|| "GitHub tag reference has no object".to_string())?;
+    let object_sha = object
+        .get("sha")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| "GitHub tag reference has no object SHA".to_string())?;
+    let commit = match object.get("type").and_then(serde_json::Value::as_str) {
+        Some("commit") => object_sha.to_string(),
+        Some("tag") => {
+            let tag_object = fetch_api_json(&format!(
+                "https://api.github.com/repos/yvgude/lean-ctx/git/tags/{object_sha}"
+            ))?;
+            tag_object["object"]["sha"]
+                .as_str()
+                .ok_or_else(|| "annotated GitHub tag has no commit object".to_string())?
+                .to_string()
+        }
+        Some(other) => return Err(format!("unsupported GitHub tag object type `{other}`")),
+        None => return Err("GitHub tag reference has no object type".to_string()),
+    };
+    if commit.len() != 40
+        || !commit.chars().all(|c| c.is_ascii_hexdigit())
+        || !constant_time_eq(
+            commit.to_ascii_lowercase().as_bytes(),
+            expected_commit.to_ascii_lowercase().as_bytes(),
+        )
+    {
+        return Err("release manifest commit does not match the signed GitHub tag".to_string());
+    }
+    Ok(())
+}
+
+fn validate_manifest(
+    manifest: &ReleaseManifest,
+    release_tag: &str,
+    asset_name: &str,
+) -> Result<(), String> {
+    if manifest.schema_version != "leanctx.release-manifest/v1" {
+        return Err(format!(
+            "unsupported release manifest schema `{}`",
+            manifest.schema_version
+        ));
+    }
+    if manifest.tag.trim_start_matches('v') != release_tag.trim_start_matches('v') {
+        return Err(format!(
+            "manifest tag `{}` does not match release tag `{release_tag}`",
+            manifest.tag
+        ));
+    }
+    if manifest.commit.len() != 40 || !manifest.commit.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err("release manifest commit is not a 40-character hexadecimal SHA".to_string());
+    }
+    if manifest.checksums_sha256.len() != 64
+        || !manifest
+            .checksums_sha256
+            .chars()
+            .all(|c| c.is_ascii_hexdigit())
+    {
+        return Err("release manifest has an invalid checksums_sha256 digest".to_string());
+    }
+    if manifest.sbom_sha256.len() != 64
+        || !manifest.sbom_sha256.chars().all(|c| c.is_ascii_hexdigit())
+    {
+        return Err("release manifest has an invalid sbom_sha256 digest".to_string());
+    }
+    let artifact = manifest
+        .artifacts
+        .get(asset_name)
+        .ok_or_else(|| format!("release manifest omits {asset_name}"))?;
+    if artifact.sha256.len() != 64 || !artifact.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!(
+            "release manifest has invalid digest for {asset_name}"
+        ));
+    }
+    let payload_sha256 = artifact.payload_sha256.as_ref().ok_or_else(|| {
+        format!("release manifest omits extracted payload digest for {asset_name}")
+    })?;
+    if payload_sha256.len() != 64 || !payload_sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+        return Err(format!(
+            "release manifest has invalid extracted payload digest for {asset_name}"
+        ));
+    }
+    Ok(())
 }
 
 fn parse_sha256sums(text: &str, asset_name: &str) -> Option<String> {
+    let mut found = None;
     for line in text.lines() {
         let l = line.trim();
         if l.is_empty() || l.starts_with('#') {
@@ -553,14 +542,17 @@ fn parse_sha256sums(text: &str, asset_name: &str) -> Option<String> {
         let mut parts = l.split_whitespace();
         let hash = parts.next().unwrap_or("");
         let file = parts.next().unwrap_or("");
-        if file == asset_name && hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
-            return Some(hash.to_ascii_lowercase());
+        if file == asset_name {
+            if found.is_some() || hash.len() != 64 || !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+                return None;
+            }
+            found = Some(hash.to_ascii_lowercase());
         }
     }
-    None
+    found
 }
 
-fn sha256_hex(bytes: &[u8]) -> String {
+pub(crate) fn sha256_hex(bytes: &[u8]) -> String {
     use sha2::{Digest, Sha256};
     let mut h = Sha256::new();
     h.update(bytes);
@@ -586,6 +578,278 @@ fn hex_lower(bytes: &[u8]) -> String {
         out.push(HEX[(b & 0x0f) as usize] as char);
     }
     out
+}
+
+fn canonical_state_dir() -> Result<PathBuf, String> {
+    let state = crate::core::paths::state_dir()?;
+    std::fs::create_dir_all(&state).map_err(|e| {
+        format!(
+            "cannot create update state directory {}: {e}",
+            state.display()
+        )
+    })?;
+    reject_symlink(&state)?;
+    std::fs::canonicalize(&state).map_err(|e| format!("cannot resolve state directory: {e}"))
+}
+
+fn update_layout(state_dir: &Path) -> Result<(), String> {
+    let updates = state_dir.join("updates");
+    let previous = updates.join("previous");
+    let staged = updates.join("staged");
+    for directory in [&updates, &previous, &staged] {
+        std::fs::create_dir_all(directory).map_err(|e| {
+            format!(
+                "cannot create update directory {}: {e}",
+                directory.display()
+            )
+        })?;
+        reject_symlink(directory)?;
+    }
+    Ok(())
+}
+
+fn update_transaction_path() -> Result<PathBuf, String> {
+    let state = canonical_state_dir()?;
+    update_layout(&state)?;
+    let path = state.join(UPDATE_TRANSACTION_FILE);
+    reject_symlink_if_present(&path)?;
+    Ok(path)
+}
+
+fn update_lock_path() -> Result<PathBuf, String> {
+    let state = canonical_state_dir()?;
+    update_layout(&state)?;
+    let path = state.join(UPDATE_LOCK_FILE);
+    reject_symlink_if_present(&path)?;
+    Ok(path)
+}
+
+fn staged_update_path(operation: &str, backup: bool) -> Result<PathBuf, String> {
+    if operation != "update" && operation != "rollback" {
+        return Err(format!("unsupported update operation `{operation}`"));
+    }
+    let state = canonical_state_dir()?;
+    update_layout(&state)?;
+    let suffix = if backup { "backup" } else { "target" };
+    Ok(state
+        .join("updates")
+        .join("staged")
+        .join(format!("{operation}-{suffix}.bin")))
+}
+
+fn previous_binary_path(state_path: &Path, current_exe: &Path) -> Result<PathBuf, String> {
+    let name = current_exe
+        .file_name()
+        .ok_or_else(|| "current executable has no file name".to_string())?;
+    Ok(state_path.join("updates").join("previous").join(name))
+}
+
+fn canonical_current_exe(current_exe: &Path) -> Result<PathBuf, String> {
+    let metadata = std::fs::symlink_metadata(current_exe).map_err(|e| {
+        format!(
+            "cannot inspect current executable {}: {e}",
+            current_exe.display()
+        )
+    })?;
+    if metadata.file_type().is_symlink() {
+        return Err("current executable is a symlink; refusing update".to_string());
+    }
+    std::fs::canonicalize(current_exe).map_err(|e| {
+        format!(
+            "cannot resolve current executable {}: {e}",
+            current_exe.display()
+        )
+    })
+}
+
+fn reject_symlink(path: &Path) -> Result<(), String> {
+    let metadata = std::fs::symlink_metadata(path)
+        .map_err(|e| format!("cannot inspect update path {}: {e}", path.display()))?;
+    if metadata.file_type().is_symlink() {
+        return Err(format!("update path is a symlink: {}", path.display()));
+    }
+    Ok(())
+}
+
+fn reject_symlink_if_present(path: &Path) -> Result<(), String> {
+    match std::fs::symlink_metadata(path) {
+        Ok(metadata) if metadata.file_type().is_symlink() => {
+            Err(format!("update path is a symlink: {}", path.display()))
+        }
+        Ok(_) => Ok(()),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(()),
+        Err(e) => Err(format!(
+            "cannot inspect update path {}: {e}",
+            path.display()
+        )),
+    }
+}
+
+fn ensure_no_symlink_under(root: &Path, path: &Path) -> Result<(), String> {
+    let relative = path
+        .strip_prefix(root)
+        .map_err(|_| format!("update path escapes state directory: {}", path.display()))?;
+    let root = std::fs::canonicalize(root)
+        .map_err(|e| format!("cannot resolve update root {}: {e}", root.display()))?;
+    let mut cursor = root;
+    for component in relative.components() {
+        match component {
+            std::path::Component::Normal(component) => cursor.push(component),
+            std::path::Component::CurDir => continue,
+            _ => {
+                return Err(format!(
+                    "update path contains unsafe component: {}",
+                    path.display()
+                ));
+            }
+        }
+        reject_symlink_if_present(&cursor)?;
+    }
+    Ok(())
+}
+
+fn canonical_update_paths(current_exe: &Path) -> Result<(PathBuf, PathBuf, PathBuf), String> {
+    let state = canonical_state_dir()?;
+    update_layout(&state)?;
+    let current = canonical_current_exe(current_exe)?;
+    let receipt = state.join(UPDATE_RECEIPT_FILE);
+    let previous = previous_binary_path(&state, &current)?;
+    ensure_no_symlink_under(&state, &receipt)?;
+    ensure_no_symlink_under(&state, &previous)?;
+    Ok((state, receipt, previous))
+}
+
+fn validate_receipt_paths(
+    receipt: &UpdateReceipt,
+    state_dir: &Path,
+    current_exe: &Path,
+) -> Result<(), String> {
+    let current = canonical_current_exe(current_exe)?;
+    let previous = previous_binary_path(state_dir, &current)?;
+    if Path::new(&receipt.active.path) != current {
+        return Err("active receipt path is not the canonical executable".to_string());
+    }
+    if Path::new(&receipt.previous.path) != previous {
+        return Err("previous receipt path is not the canonical retained binary".to_string());
+    }
+    ensure_no_symlink_under(state_dir, &previous)?;
+    Ok(())
+}
+
+fn load_update_receipt() -> Result<Option<UpdateReceipt>, String> {
+    let current = std::env::current_exe().map_err(|e| e.to_string())?;
+    load_update_receipt_for(&current)
+}
+
+fn load_update_receipt_for(current_exe: &Path) -> Result<Option<UpdateReceipt>, String> {
+    let (state, path, _) = canonical_update_paths(current_exe)?;
+    let raw = match std::fs::read_to_string(&path) {
+        Ok(raw) => raw,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(e) => return Err(format!("{}: {e}", path.display())),
+    };
+    let receipt: UpdateReceipt =
+        serde_json::from_str(&raw).map_err(|e| format!("invalid {}: {e}", path.display()))?;
+    validate_receipt(&receipt)?;
+    validate_receipt_integrity(&receipt)?;
+    validate_receipt_paths(&receipt, &state, current_exe)?;
+    Ok(Some(receipt))
+}
+
+fn validate_receipt(receipt: &UpdateReceipt) -> Result<(), String> {
+    if receipt.schema_version != UPDATE_RECEIPT_SCHEMA
+        && receipt.schema_version != LEGACY_UPDATE_RECEIPT_SCHEMA
+    {
+        return Err(format!(
+            "unsupported update receipt schema `{}`",
+            receipt.schema_version
+        ));
+    }
+    for (label, binary) in [("active", &receipt.active), ("previous", &receipt.previous)] {
+        if binary.sha256.len() != 64 || !binary.sha256.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Err(format!("{label} receipt has an invalid binary digest"));
+        }
+        if binary.size == 0 || binary.path.trim().is_empty() || binary.version.trim().is_empty() {
+            return Err(format!("{label} receipt has missing identity or size"));
+        }
+        if let Some(digest) = &binary.manifest_sha256
+            && (digest.len() != 64 || !digest.chars().all(|c| c.is_ascii_hexdigit()))
+        {
+            return Err(format!("{label} receipt has an invalid manifest digest"));
+        }
+        if let Some(digest) = &binary.archive_sha256
+            && (digest.len() != 64 || !digest.chars().all(|c| c.is_ascii_hexdigit()))
+        {
+            return Err(format!("{label} receipt has an invalid archive digest"));
+        }
+        if let Some(commit) = &binary.release_commit
+            && (commit.len() != 40 || !commit.chars().all(|c| c.is_ascii_hexdigit()))
+        {
+            return Err(format!("{label} receipt has an invalid release commit"));
+        }
+    }
+    if let Some(digest) = &receipt.receipt_sha256
+        && (digest.len() != 64 || !digest.chars().all(|c| c.is_ascii_hexdigit()))
+    {
+        return Err("update receipt has an invalid integrity digest".to_string());
+    }
+    Ok(())
+}
+
+fn receipt_digest(receipt: &UpdateReceipt) -> Result<String, String> {
+    let mut unsigned = receipt.clone();
+    unsigned.receipt_sha256 = None;
+    let bytes = serde_json::to_vec(&unsigned).map_err(|e| e.to_string())?;
+    Ok(sha256_hex(&bytes))
+}
+
+fn validate_receipt_integrity(receipt: &UpdateReceipt) -> Result<(), String> {
+    if receipt.schema_version == LEGACY_UPDATE_RECEIPT_SCHEMA {
+        return Ok(());
+    }
+    let actual = receipt
+        .receipt_sha256
+        .as_deref()
+        .ok_or_else(|| "v2 update receipt is missing its integrity digest".to_string())?;
+    let expected = receipt_digest(receipt)?;
+    if !constant_time_eq(actual.as_bytes(), expected.as_bytes()) {
+        return Err("update receipt integrity digest mismatch".to_string());
+    }
+    Ok(())
+}
+
+pub(crate) fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String> {
+    let parent = path
+        .parent()
+        .ok_or_else(|| format!("{} has no parent directory", path.display()))?;
+    std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+    reject_symlink_if_present(parent)?;
+    reject_symlink_if_present(path)?;
+    let name = path
+        .file_name()
+        .and_then(|n| n.to_str())
+        .ok_or_else(|| format!("{} has no valid file name", path.display()))?;
+    let tmp = parent.join(format!(".{name}.tmp"));
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&tmp)
+        .map_err(|e| format!("{}: {e}", tmp.display()))?;
+    let result = (|| {
+        file.write_all(bytes).map_err(|e| e.to_string())?;
+        file.sync_all().map_err(|e| e.to_string())?;
+        drop(file);
+        std::fs::rename(&tmp, path).map_err(|e| e.to_string())?;
+        #[cfg(unix)]
+        std::fs::File::open(parent)
+            .and_then(|dir| dir.sync_all())
+            .map_err(|e| e.to_string())?;
+        Ok::<(), String>(())
+    })();
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result.map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// #828: One-time migration — enable `shadow_mode` for users who never
@@ -895,6 +1159,9 @@ fn find_asset_url(release: &serde_json::Value, asset_name: &str) -> Option<Strin
 }
 
 fn download_bytes(url: &str) -> Result<Vec<u8>, String> {
+    if !url.starts_with("https://github.com/yvgude/lean-ctx/") {
+        return Err(format!("refusing release asset from unexpected URL: {url}"));
+    }
     let response = https_agent()
         .get(url)
         .header("User-Agent", &format!("lean-ctx/{CURRENT_VERSION}"))
@@ -910,27 +1177,35 @@ fn download_bytes(url: &str) -> Result<Vec<u8>, String> {
     Ok(bytes)
 }
 
-fn replace_binary(
-    archive_bytes: &[u8],
-    asset_name: &str,
-    current_exe: &std::path::Path,
-) -> Result<(), String> {
-    let binary_bytes = if std::path::Path::new(asset_name)
+fn extract_binary(archive_bytes: &[u8], asset_name: &str) -> Result<Vec<u8>, String> {
+    if Path::new(asset_name)
         .extension()
         .is_some_and(|e| e.eq_ignore_ascii_case("zip"))
     {
-        extract_from_zip(archive_bytes)?
+        extract_from_zip(archive_bytes)
     } else {
-        extract_from_tar_gz(archive_bytes)?
-    };
+        extract_from_tar_gz(archive_bytes)
+    }
+}
 
-    let tmp_path = current_exe.with_extension("tmp");
-    std::fs::write(&tmp_path, &binary_bytes).map_err(|e| e.to_string())?;
-
+fn replace_staged_binary(
+    staged_path: &std::path::Path,
+    current_exe: &std::path::Path,
+) -> Result<(), String> {
+    reject_symlink_if_present(staged_path)?;
+    let staged = std::fs::metadata(staged_path).map_err(|e| {
+        format!(
+            "cannot inspect staged binary {}: {e}",
+            staged_path.display()
+        )
+    })?;
+    if staged.len() == 0 {
+        return Err("refusing to install an empty staged binary".to_string());
+    }
     #[cfg(unix)]
     {
         use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&tmp_path, std::fs::Permissions::from_mode(0o755));
+        let _ = std::fs::set_permissions(staged_path, std::fs::Permissions::from_mode(0o755));
     }
 
     // On Windows, a running executable can be renamed but not overwritten.
@@ -940,61 +1215,48 @@ fn replace_binary(
     #[cfg(windows)]
     {
         let old_path = current_exe.with_extension("old.exe");
-        let _ = std::fs::remove_file(&old_path);
+        if old_path.exists() {
+            return Err(format!(
+                "stale Windows rollback binary exists: {}",
+                old_path.display()
+            ));
+        }
 
-        match std::fs::rename(current_exe, &old_path) {
-            Ok(()) => {
-                if let Err(e) = std::fs::rename(&tmp_path, current_exe) {
+        if let Ok(()) = std::fs::rename(current_exe, &old_path) {
+            if let Err(e) = std::fs::rename(staged_path, current_exe) {
+                let _ = std::fs::rename(&old_path, current_exe);
+                return Err(format!("Cannot place new binary: {e}"));
+            }
+            Ok(())
+        } else {
+            // Binary is locked. Try to stop managed processes first.
+            eprintln!("\nBinary is locked. Stopping managed lean-ctx processes...");
+            stop_managed_windows_processes();
+
+            // Brief wait for processes to release file handles.
+            std::thread::sleep(std::time::Duration::from_millis(1500));
+
+            // Retry after stopping.
+            if let Ok(()) = std::fs::rename(current_exe, &old_path) {
+                if let Err(e) = std::fs::rename(staged_path, current_exe) {
                     let _ = std::fs::rename(&old_path, current_exe);
-                    let _ = std::fs::remove_file(&tmp_path);
                     return Err(format!("Cannot place new binary: {e}"));
                 }
-                let _ = std::fs::remove_file(&old_path);
-                return Ok(());
-            }
-            Err(_) => {
-                // Binary is locked. Try to stop managed processes first.
-                eprintln!("\nBinary is locked. Stopping managed lean-ctx processes...");
-                stop_managed_windows_processes();
-
-                // Brief wait for processes to release file handles.
-                std::thread::sleep(std::time::Duration::from_millis(1500));
-
-                // Retry after stopping.
-                let _ = std::fs::remove_file(&old_path);
-                match std::fs::rename(current_exe, &old_path) {
-                    Ok(()) => {
-                        if let Err(e) = std::fs::rename(&tmp_path, current_exe) {
-                            let _ = std::fs::rename(&old_path, current_exe);
-                            let _ = std::fs::remove_file(&tmp_path);
-                            return Err(format!("Cannot place new binary: {e}"));
-                        }
-                        let _ = std::fs::remove_file(&old_path);
-                        return Ok(());
-                    }
-                    Err(_) => {
-                        // Still locked (likely MCP server held by editor).
-                        print_blocking_processes(current_exe);
-                        return deferred_windows_update(&tmp_path, current_exe);
-                    }
-                }
+                Ok(())
+            } else {
+                // Still locked (likely MCP server held by editor).
+                print_blocking_processes(current_exe);
+                deferred_windows_update(staged_path, current_exe)
             }
         }
     }
 
     #[cfg(not(windows))]
     {
-        // On macOS, rename-over-running-binary causes SIGKILL because the kernel
-        // re-validates code pages against the (now different) on-disk file.
-        // Unlinking first is safe: the kernel keeps the old memory-mapped pages
-        // from the deleted inode, while the new file gets a fresh inode at the path.
-        #[cfg(target_os = "macos")]
-        {
-            let _ = std::fs::remove_file(current_exe);
-        }
-
-        std::fs::rename(&tmp_path, current_exe).map_err(|e| {
-            let _ = std::fs::remove_file(&tmp_path);
+        // Same-filesystem rename is atomic and retains the old inode on
+        // Unix/macOS, so a failed swap cannot leave the install path absent.
+        std::fs::rename(staged_path, current_exe).map_err(|e| {
+            let _ = std::fs::remove_file(staged_path);
             format!("Cannot replace binary (permission denied?): {e}")
         })?;
 
@@ -1083,20 +1345,26 @@ fn deferred_windows_update(
     staged_path: &std::path::Path,
     target_exe: &std::path::Path,
 ) -> Result<(), String> {
-    let pending_path = target_exe.with_file_name("lean-ctx-pending.exe");
-    std::fs::rename(staged_path, &pending_path).map_err(|e| {
-        let _ = std::fs::remove_file(staged_path);
-        format!("Cannot stage update: {e}")
-    })?;
-
     let target_str = target_exe.display().to_string();
-    let pending_str = pending_path.display().to_string();
+    let staged_str = staged_path.display().to_string();
     let old_str = target_exe.with_extension("old.exe").display().to_string();
+    let transaction_str = update_transaction_path()?.display().to_string();
+    let lock_str = update_lock_path()?.display().to_string();
+    let old_path = target_exe.with_extension("old.exe");
+    reject_symlink_if_present(&old_path)?;
     let max_retries = 60;
 
-    let script = generate_deferred_bat_script(&target_str, &pending_str, &old_str, max_retries);
+    let script = generate_deferred_bat_script(
+        &target_str,
+        &staged_str,
+        &old_str,
+        &transaction_str,
+        &lock_str,
+        max_retries,
+    );
 
     let script_path = target_exe.with_file_name("lean-ctx-update.bat");
+    reject_symlink_if_present(&script_path)?;
     std::fs::write(&script_path, &script)
         .map_err(|e| format!("Cannot write update script: {e}"))?;
 
@@ -1110,7 +1378,9 @@ fn deferred_windows_update(
     println!("\nIf it times out, run: lean-ctx update");
     println!("Update script: {}", script_path.display());
 
-    Ok(())
+    // The helper runs after this process exits; do not commit a receipt that
+    // claims the staged file is active before the helper has completed the swap.
+    Err("update deferred until the running Windows binary is released".to_string())
 }
 
 fn extract_from_tar_gz(data: &[u8]) -> Result<Vec<u8>, String> {
@@ -1155,8 +1425,10 @@ fn extract_from_zip(data: &[u8]) -> Result<Vec<u8>, String> {
 #[cfg(any(windows, test))]
 fn generate_deferred_bat_script(
     target: &str,
-    pending: &str,
+    staged: &str,
     old: &str,
+    transaction: &str,
+    lock: &str,
     max_retries: u32,
 ) -> String {
     format!(
@@ -1164,6 +1436,11 @@ fn generate_deferred_bat_script(
 setlocal
 set "RETRIES=0"
 set "MAX_RETRIES={max_retries}"
+set "LEANCTX_UPDATE_LOCK={lock}"
+set "LEANCTX_UPDATE_TARGET={target}"
+set "LEANCTX_UPDATE_STAGED={staged}"
+set "LEANCTX_UPDATE_OLD={old}"
+set "LEANCTX_UPDATE_TRANSACTION={transaction}"
 
 echo lean-ctx update: waiting for binary to be released (timeout: %MAX_RETRIES%s)...
 echo.
@@ -1178,7 +1455,8 @@ echo.
 if %RETRIES% GEQ %MAX_RETRIES% goto timeout
 set /a RETRIES+=1
 timeout /t 1 /nobreak >nul
-move /Y "{target}" "{old}" >nul 2>&1
+powershell.exe -NoProfile -NonInteractive -ExecutionPolicy Bypass -Command ^
+  "$ErrorActionPreference = 'Stop'; $lock = $null; $targetMoved = $false; $stagedMoved = $false; try {{ $lock = [System.IO.File]::Open($env:LEANCTX_UPDATE_LOCK, [System.IO.FileMode]::OpenOrCreate, [System.IO.FileAccess]::ReadWrite, [System.IO.FileShare]::None); Move-Item -LiteralPath $env:LEANCTX_UPDATE_TARGET -Destination $env:LEANCTX_UPDATE_OLD -Force; $targetMoved = $true; Move-Item -LiteralPath $env:LEANCTX_UPDATE_STAGED -Destination $env:LEANCTX_UPDATE_TARGET -Force; $stagedMoved = $true; & $env:LEANCTX_UPDATE_TARGET update --recover-update --lock-held; if ($LASTEXITCODE -ne 0) {{ throw 'receipt recovery failed' }}; if (Test-Path -LiteralPath $env:LEANCTX_UPDATE_OLD) {{ Remove-Item -LiteralPath $env:LEANCTX_UPDATE_OLD -Force -ErrorAction SilentlyContinue }} }} catch {{ if ($stagedMoved -and (Test-Path -LiteralPath $env:LEANCTX_UPDATE_TARGET) -and -not (Test-Path -LiteralPath $env:LEANCTX_UPDATE_STAGED)) {{ Move-Item -LiteralPath $env:LEANCTX_UPDATE_TARGET -Destination $env:LEANCTX_UPDATE_STAGED -Force }}; if ($targetMoved -and (Test-Path -LiteralPath $env:LEANCTX_UPDATE_OLD) -and -not (Test-Path -LiteralPath $env:LEANCTX_UPDATE_TARGET)) {{ Move-Item -LiteralPath $env:LEANCTX_UPDATE_OLD -Destination $env:LEANCTX_UPDATE_TARGET -Force }}; exit 1 }} finally {{ if ($null -ne $lock) {{ $lock.Dispose() }} }}"
 if errorlevel 1 (
     if %RETRIES% EQU 10 echo   Still waiting... (%RETRIES%/%MAX_RETRIES%s)
     if %RETRIES% EQU 30 echo   Still waiting... (%RETRIES%/%MAX_RETRIES%s) — try closing your editor
@@ -1186,16 +1464,6 @@ if errorlevel 1 (
     goto retry
 )
 
-move /Y "{pending}" "{target}" >nul 2>&1
-if errorlevel 1 (
-    move /Y "{old}" "{target}" >nul 2>&1
-    echo.
-    echo Update failed: could not place new binary.
-    echo Please close all editors and run: lean-ctx update
-    pause
-    exit /b 1
-)
-del /f "{old}" >nul 2>&1
 echo.
 echo Updated successfully!
 goto cleanup
@@ -1203,11 +1471,11 @@ goto cleanup
 :timeout
 echo.
 echo Update timed out after %MAX_RETRIES% seconds.
-echo The new binary is staged at: {pending}
+echo The new binary is staged at: {staged}
 echo.
 echo To complete the update manually:
 echo   1. Close your editor (Cursor, VS Code, etc.)
-echo   2. Run: move /Y "{pending}" "{target}"
+echo   2. Run: lean-ctx update
 echo.
 echo Or run: lean-ctx update --force
 echo.
@@ -1221,171 +1489,5 @@ del "%~f0" >nul 2>&1
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn auto_update_disabled_skips_and_cleans_up() {
-        // #335: auto_update=false → scheduled run must not install.
-        assert_eq!(automatic_update_gate(false, false), AutoUpdateGate::Skip);
-        // auto_update=false wins even if notify_only is also set.
-        assert_eq!(automatic_update_gate(false, true), AutoUpdateGate::Skip);
-    }
-
-    #[test]
-    fn notify_only_downgrades_to_check() {
-        assert_eq!(
-            automatic_update_gate(true, true),
-            AutoUpdateGate::NotifyOnly
-        );
-    }
-
-    #[test]
-    fn auto_update_enabled_proceeds() {
-        assert_eq!(automatic_update_gate(true, false), AutoUpdateGate::Proceed);
-    }
-
-    #[test]
-    fn bat_script_has_timeout_guard() {
-        let script = generate_deferred_bat_script(
-            r"C:\bin\lean-ctx.exe",
-            r"C:\bin\lean-ctx-pending.exe",
-            r"C:\bin\lean-ctx.old.exe",
-            60,
-        );
-        assert!(script.contains("set \"MAX_RETRIES=60\""));
-        assert!(script.contains(":timeout"), "must have timeout label");
-        assert!(
-            script.contains("timed out after"),
-            "must show timeout message"
-        );
-    }
-
-    #[test]
-    fn bat_script_shows_blocking_processes() {
-        let script = generate_deferred_bat_script("t", "p", "o", 30);
-        assert!(script.contains("tasklist"), "must list blocking processes");
-        assert!(
-            script.contains("lean-ctx stop"),
-            "must suggest lean-ctx stop"
-        );
-    }
-
-    #[test]
-    fn bat_script_has_progress_indicators() {
-        let script = generate_deferred_bat_script("t", "p", "o", 60);
-        assert!(script.contains("Still waiting"));
-        assert!(script.contains("RETRIES"));
-    }
-
-    #[test]
-    fn bat_script_provides_manual_recovery() {
-        let script = generate_deferred_bat_script(
-            r"C:\bin\lean-ctx.exe",
-            r"C:\bin\lean-ctx-pending.exe",
-            r"C:\bin\lean-ctx.old.exe",
-            60,
-        );
-        assert!(script.contains(r"move /Y"));
-        assert!(
-            script.contains("lean-ctx-pending.exe"),
-            "must show where the pending binary is"
-        );
-        assert!(
-            script.contains("lean-ctx update"),
-            "must suggest re-running update"
-        );
-    }
-
-    #[test]
-    fn bat_script_no_infinite_loop() {
-        let script = generate_deferred_bat_script("t", "p", "o", 10);
-        assert!(script.contains("if %RETRIES% GEQ %MAX_RETRIES% goto timeout"));
-        assert!(
-            !script.contains(":retry\ntimeout"),
-            "must not be an infinite loop"
-        );
-    }
-
-    #[test]
-    fn release_url_latest_when_no_version() {
-        // #447: no pin → the canonical "latest" endpoint.
-        assert_eq!(release_api_url(None), GITHUB_API_RELEASES);
-    }
-
-    #[test]
-    fn release_url_pins_specific_tag() {
-        // #447: a bare version pins the `v`-prefixed tag …
-        assert_eq!(
-            release_api_url(Some("3.8.5")),
-            "https://api.github.com/repos/yvgude/lean-ctx/releases/tags/v3.8.5"
-        );
-        // … and an already-`v`-prefixed version is normalised, not doubled.
-        assert_eq!(
-            release_api_url(Some("v3.8.5")),
-            "https://api.github.com/repos/yvgude/lean-ctx/releases/tags/v3.8.5"
-        );
-    }
-
-    #[test]
-    fn parse_target_version_peels_positional_only() {
-        let flags_only = [String::from("--check"), String::from("--quiet")];
-        assert_eq!(parse_target_version(&flags_only), None);
-
-        let with_version = [String::from("3.8.5"), String::from("--check")];
-        assert_eq!(parse_target_version(&with_version), Some("3.8.5"));
-
-        // Order-independent: the positional is found after leading flags.
-        let flag_then_version = [String::from("--insecure"), String::from("v3.8.5")];
-        assert_eq!(parse_target_version(&flag_then_version), Some("v3.8.5"));
-    }
-
-    #[test]
-    fn looks_like_version_accepts_releases_rejects_typos() {
-        assert!(looks_like_version("3.8.5"));
-        assert!(looks_like_version("v3.8.5"));
-        assert!(looks_like_version("3.8.5-rc1"));
-        // Not versions: flags, words, and bare majors (too ambiguous to pin).
-        assert!(!looks_like_version("--check"));
-        assert!(!looks_like_version("latest"));
-        assert!(!looks_like_version("3"));
-    }
-
-    fn args(v: &[&str]) -> Vec<String> {
-        v.iter().map(ToString::to_string).collect()
-    }
-
-    #[test]
-    fn help_never_falls_through_to_an_update() {
-        assert_eq!(check_flags(&args(&["--help"])), FlagCheck::Help);
-        assert_eq!(check_flags(&args(&["-h"])), FlagCheck::Help);
-        assert_eq!(check_flags(&args(&["--check", "--help"])), FlagCheck::Help);
-    }
-
-    #[test]
-    fn unknown_flags_are_refused() {
-        assert_eq!(
-            check_flags(&args(&["--chek"])),
-            FlagCheck::Unknown("--chek")
-        );
-        assert_eq!(
-            check_flags(&args(&["3.10.3", "--forse"])),
-            FlagCheck::Unknown("--forse")
-        );
-    }
-
-    #[test]
-    fn scheduler_and_known_invocations_still_run() {
-        for ok in [
-            &[][..],
-            &["--quiet", "--scheduled"][..],
-            &["--check"][..],
-            &["3.10.3", "--insecure", "--skip-rules"][..],
-            &["--schedule", "12h"][..],
-            &["--schedule", "off"][..],
-            &["--force"][..],
-        ] {
-            assert_eq!(check_flags(&args(ok)), FlagCheck::Run, "{ok:?}");
-        }
-    }
-}
+#[path = "updater/tests.rs"]
+mod tests;

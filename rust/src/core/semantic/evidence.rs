@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Typed evidence attached to graph edges (`Edge.metadata`).
 //!
 //! An edge says *that* two things are related; its evidence says *how sure*

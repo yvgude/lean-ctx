@@ -131,6 +131,9 @@ mod triage_bypass_tests {
 
 mod shell_outcome_tests {
     use super::*;
+    // GH #2005; lives in `call_tool/tests/shell_outcome_tests/`.
+    #[cfg(not(windows))]
+    mod expand_unpolled;
     #[cfg(not(windows))]
     use crate::server::call_tool::dispatch_and_post_process;
     use crate::server::tool_trait::{McpTool, ShellOutcome, ToolContext};
@@ -1112,7 +1115,7 @@ mod shell_outcome_tests {
 
     #[tokio::test(flavor = "multi_thread")]
     #[cfg(not(windows))]
-    async fn background_archive_is_created_after_policy_and_input_filters() {
+    async fn unbound_background_recovery_is_withheld_after_policy_and_input_filters() {
         const POLICY_PATTERN: &str = "MES1609_POLICY_PII_7F3A9C2E";
         const TEST_CARD: &str = "4111111111111111";
         let _data_dir = crate::core::data_dir::isolated_data_dir();
@@ -1127,18 +1130,22 @@ mod shell_outcome_tests {
         let result = pipeline_background_status(&job_id, false, false, false).await;
 
         let structured = structured_of(&result);
-        let archive_id = structured["archiveId"]
-            .as_str()
-            .expect("secured background output must be archived");
-        assert_eq!(crate::core::archive::list_entries(None).len(), 1);
-        assert_eq!(structured["archiveTruncated"], serde_json::json!(false));
-        let archived = crate::core::archive::retrieve(archive_id)
-            .expect("structured archiveId must remain retrievable");
-        assert!(!archived.contains(POLICY_PATTERN));
-        assert!(!archived.contains(TEST_CARD));
-        assert!(archived.contains("[REDACTED:mes1609_policy]"));
-        assert!(archived.contains("[REDACTED:card]"));
-        assert!(!text_of(&result).contains(POLICY_PATTERN));
+        assert!(structured.get("archiveId").is_none());
+        assert!(structured.get("archiveTruncated").is_none());
+        assert!(structured.get("archivedChars").is_none());
+        assert!(structured["capturedChars"].as_u64().unwrap() > 0);
+        assert!(
+            structured["summary"]
+                .as_str()
+                .unwrap()
+                .contains("archive unavailable")
+        );
+        assert!(crate::core::archive::list_entries(None).is_empty());
+        let displayed = text_of(&result);
+        assert!(!displayed.contains(POLICY_PATTERN));
+        assert!(!displayed.contains(TEST_CARD));
+        assert!(displayed.contains("[REDACTED:mes1609_policy]"));
+        assert!(displayed.contains("[REDACTED:card]"));
         assert!(
             crate::core::audit_trail::load_recent(10)
                 .iter()
@@ -1160,6 +1167,9 @@ mod shell_outcome_tests {
     #[test]
     #[cfg(not(windows))]
     fn scoped_policy_overrides_serialize_parallel_mutation() {
+        // The deliberately active global overrides below must not leak into
+        // other tests that hold isolated data/config state but use live policy.
+        let _data = crate::core::data_dir::test_env_lock();
         let (first_ready_tx, first_ready_rx) = std::sync::mpsc::channel();
         let (release_first_tx, release_first_rx) = std::sync::mpsc::channel();
         let first = std::thread::spawn(move || {
@@ -1411,10 +1421,16 @@ mod shell_outcome_tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
+        // Letters, not digits: a digit run can pass the Luhn check, and the
+        // gateway's card detector would then redact it before the policy rule
+        // sees the whole marker.
         let nonce_text = nonce
             .to_string()
             .chars()
-            .map(|digit| digit.to_string())
+            .map(|digit| {
+                let value = digit.to_digit(10).unwrap_or(0);
+                char::from_digit(value + 10, 36).unwrap_or('x').to_string()
+            })
             .collect::<Vec<_>>()
             .join("-");
         let secret = format!("cobalt badger egress marker {nonce_text} private note");
@@ -1460,7 +1476,13 @@ mod shell_outcome_tests {
     /// in isolation and never create model-visible MCP replies.
     #[test]
     fn registered_tool_dispatch_has_one_outbound_pipeline_entry() {
-        const TEST_ONLY_EXEMPTIONS: &[&str] = &["call_tool/tests.rs"];
+        // Test-only fixtures that call a handler directly. `task_lineage_tests`
+        // wraps ctx_read in a rendezvous tool that is itself dispatched through
+        // the one production entry, so it adds no second outbound path.
+        const TEST_ONLY_EXEMPTIONS: &[&str] = &[
+            "call_tool/tests.rs",
+            "call_tool/guarded/task_lineage_tests.rs",
+        ];
 
         let server_dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src/server");
         for exemption in TEST_ONLY_EXEMPTIONS {
@@ -1516,9 +1538,18 @@ mod shell_outcome_tests {
         let cli_agent_tools = include_str!("../../cli/agent_tools_cmd.rs");
         let embed_engine = include_str!("../../../crates/lean-ctx-embed/src/engine.rs");
         assert!(server_handler.contains("self.call_tool_guarded(request)"));
-        assert!(guarded.contains("dispatch_and_post_process("));
-        assert!(pipeline.contains("server.dispatch_tool(name, args, minimal).await"));
-        assert!(pipeline.contains("policy_guard::redact_result(&result_text)"));
+        // The guarded lifecycle driver runs the one pipeline in its two
+        // stages: dispatch, then reversible post-processing.
+        assert!(guarded.contains("super::pipeline::dispatch_primitive("));
+        assert!(guarded.contains("super::pipeline::reversible_post_process("));
+        // Dispatch runs under source-authority capture; content decisions go
+        // through the shared policy guard (redaction or withholding) and the
+        // sensitivity floor.
+        assert!(
+            pipeline
+                .contains("authority::capture(server.dispatch_tool(name, args, minimal)).await")
+        );
+        assert!(pipeline.contains("policy_guard::protect_result(name, &result_text)"));
         assert!(pipeline.contains("sensitivity::enforce_text"));
         assert!(dispatch.contains("_ => self.dispatch_inner(name, args, minimal).await"));
         assert!(dispatch.contains("r.get_arc(name)"));
@@ -1606,6 +1637,10 @@ mod response_cache_tests {
 
     #[test]
     fn cache_keys_include_arguments_and_project_scope() {
+        // The key binds the active policy; pin "no policy" so a concurrent
+        // test's override cannot change the key between the calls.
+        let _env = crate::core::data_dir::test_env_lock();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let base = response_cache_key("ctx_search", Some(&arguments()), "/project").unwrap();
         let other_root = response_cache_key("ctx_search", Some(&arguments()), "/other").unwrap();
         let other_args = Map::from_iter([("path".to_owned(), json!("src/main.rs"))]);

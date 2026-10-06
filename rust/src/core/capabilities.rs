@@ -50,7 +50,7 @@ pub fn required_capabilities(tool_name: &str) -> &'static [Capability] {
         // is not a cross-project data flow. AgentManage keeps it (like
         // ctx_handoff) out of read-only roles (reviewer/ci/minimal).
         "ctx_handoff" | "ctx_share" => &[Capability::KnowledgeRead, Capability::AgentManage],
-        "ctx_agent" | "ctx_task" => &[Capability::AgentManage],
+        "ctx_agent" | "ctx_task" | "ctx_work_graph" => &[Capability::AgentManage],
         "ctx_session" | "ctx" => &[],
         _ => &[Capability::FsRead],
     }
@@ -113,7 +113,11 @@ fn capabilities_from_role(role_name: &str) -> HashSet<Capability> {
         caps.insert(Capability::KnowledgeRead);
         caps.insert(Capability::KnowledgeWrite);
     }
-    if has_tool("ctx_agent") || has_tool("ctx_task") || has_tool("ctx_handoff") {
+    if has_tool("ctx_agent")
+        || has_tool("ctx_task")
+        || has_tool("ctx_handoff")
+        || has_tool("ctx_work_graph")
+    {
         caps.insert(Capability::AgentManage);
     }
     if role.io.allow_cross_project_search {

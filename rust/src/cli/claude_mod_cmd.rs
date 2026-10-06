@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx claude-mod` — install, refresh, inspect or remove the lean-ctx
 //! Claude Code mod (see `hooks::agents::claude_mod`).
 

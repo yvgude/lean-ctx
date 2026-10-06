@@ -170,10 +170,30 @@ fn probe_endpoint(provider_type: &str, endpoint: &str) -> Result<(), String> {
         ),
         _ => agent.get(endpoint),
     };
-    request
+    let response = request
         .call()
-        .map(|_| ())
-        .map_err(|error| format!("{provider_type} connectivity probe failed: {error}"))
+        .map_err(|error| format!("{provider_type} connectivity probe failed: {error}"))?;
+    if !response.status().is_success() {
+        return Err(format!(
+            "{provider_type} connectivity probe failed: HTTP {}",
+            response.status().as_u16()
+        ));
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+#[test]
+fn health_probe_rejects_redirects_without_contacting_the_target() {
+    use super::hardened_http::redirect_tests::Server;
+    let target = Server::new(200, None, "[]");
+    let origin = Server::new(302, Some(&target.url), "synthetic-private-error");
+    let error = probe_endpoint("fixture", &origin.url).unwrap_err();
+    assert!(error.contains("302"));
+    assert!(!error.contains("synthetic-private-error"));
+    assert_eq!(origin.count(), 1);
+    assert_eq!(target.count(), 0);
+    assert!(probe_endpoint("fixture", &target.url).is_ok());
 }
 
 fn cache_health(provider_id: &str) -> (bool, Option<u64>) {

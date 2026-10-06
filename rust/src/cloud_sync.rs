@@ -75,6 +75,65 @@ pub fn classify_outcomes(results: &[Result<(), String>]) -> AutoSyncOutcome {
     AutoSyncOutcome::Synced
 }
 
+/// The only state `cloud_background_tasks` persists: the per-surface "last
+/// done" stamps produced during this run.
+///
+/// Collected while the network work happens **outside** any lock, then applied
+/// to a freshly loaded config inside one short locked closure. Keeping this a
+/// delta instead of a mutated full `Config` is what stops the background task
+/// from writing back a snapshot taken before the network I/O and thereby
+/// reverting a telemetry preference the user changed in the meantime
+/// (LR-TEL-01).
+#[derive(Debug, Default, Clone)]
+pub(crate) struct CloudBackgroundDelta {
+    pub(crate) last_heartbeat: Option<String>,
+    pub(crate) last_sync: Option<String>,
+    pub(crate) last_gain_sync: Option<String>,
+    pub(crate) last_model_pull: Option<String>,
+    pub(crate) last_auto_sync: Option<String>,
+    pub(crate) last_index_push: Vec<(String, String)>,
+}
+
+impl CloudBackgroundDelta {
+    /// Nothing was produced this run, so skip the write — and the lock — entirely.
+    pub(crate) fn is_empty(&self) -> bool {
+        self.last_heartbeat.is_none()
+            && self.last_sync.is_none()
+            && self.last_gain_sync.is_none()
+            && self.last_model_pull.is_none()
+            && self.last_auto_sync.is_none()
+            && self.last_index_push.is_empty()
+    }
+
+    /// Applies only the stamps this run produced. Every other field of `config`
+    /// — notably the whole `telemetry` preference triple — is left exactly as it
+    /// was loaded from disk, so a concurrent opt-out survives.
+    pub(crate) fn apply(&self, config: &mut Config) {
+        // Pure field assignment: this runs while the config write lock is held.
+        if let Some(bucket) = &self.last_heartbeat {
+            config.telemetry.last_heartbeat = Some(bucket.clone());
+        }
+        if let Some(day) = &self.last_sync {
+            config.cloud.last_sync = Some(day.clone());
+        }
+        if let Some(day) = &self.last_gain_sync {
+            config.cloud.last_gain_sync = Some(day.clone());
+        }
+        if let Some(day) = &self.last_model_pull {
+            config.cloud.last_model_pull = Some(day.clone());
+        }
+        if let Some(day) = &self.last_auto_sync {
+            config.cloud.last_auto_sync = Some(day.clone());
+        }
+        for (project_hash, day) in &self.last_index_push {
+            config
+                .cloud
+                .last_index_push
+                .insert(project_hash.clone(), day.clone());
+        }
+    }
+}
+
 /// Network budget for the send that runs as the MCP server exits.
 pub const EXIT_TELEMETRY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
 const BACKGROUND_TELEMETRY_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(10);
@@ -188,10 +247,13 @@ fn daemon_telemetry_tick() {
 }
 
 pub fn cloud_background_tasks() {
-    // Persist path: read global-only so the daily background save never leaks a
-    // project-local override into the global config (#443).
-    let mut config = Config::load_global();
-    let before = config.clone();
+    // Decision snapshot only. Read global-only so the daily background save
+    // never leaks a project-local override into the global config (#443), and
+    // never written back: the persist below re-loads under the lock and applies
+    // `delta` instead (LR-TEL-01). This also keeps edits made while the pass is
+    // busy on the network (#1934).
+    let config = Config::load_global();
+    let mut delta = CloudBackgroundDelta::default();
     let today = chrono::Local::now().format("%Y-%m-%d").to_string();
 
     let already_synced = config
@@ -211,6 +273,8 @@ pub fn cloud_background_tasks() {
         .is_some_and(|d| d == today);
 
     // Anonymous usage telemetry: cumulative daily totals, resent as they grow.
+    // The acknowledged bucket goes into `delta`, never into this snapshot, so
+    // a concurrent opt-out is not reverted by the persist below (LR-TEL-01).
     if telemetry_send_eligible() {
         if let Err(error) = crate::core::telemetry_aggregate::record_current_version() {
             tracing::debug!("telemetry version aggregate unavailable: {error}");
@@ -218,7 +282,7 @@ pub fn cloud_background_tasks() {
         if let Some(bucket) =
             send_telemetry(crate::core::telemetry_aggregate::SendTrigger::Periodic)
         {
-            config.telemetry.last_heartbeat = Some(bucket);
+            delta.last_heartbeat = Some(bucket);
         }
     }
 
@@ -230,7 +294,7 @@ pub fn cloud_background_tasks() {
                 let result = crate::cloud_client::sync_stats(&entries);
                 record_sync_telemetry(&result);
                 if result.is_ok() {
-                    config.cloud.last_sync = Some(today.clone());
+                    delta.last_sync = Some(today.clone());
                 }
             }
         }
@@ -259,7 +323,7 @@ pub fn cloud_background_tasks() {
             let result = crate::cloud_client::push_gain(&[entry]);
             record_sync_telemetry(&result);
             if result.is_ok() {
-                config.cloud.last_gain_sync = Some(today.clone());
+                delta.last_gain_sync = Some(today.clone());
             }
         }
 
@@ -269,14 +333,14 @@ pub fn cloud_background_tasks() {
             });
             record_sync_telemetry(&result);
             if result.is_ok() {
-                config.cloud.last_model_pull = Some(today.clone());
+                delta.last_model_pull = Some(today.clone());
             }
         }
 
         // Opt-in Personal-Cloud auto-push (GL #384): silent, once per day,
         // offline-tolerant. A network failure leaves the slot open so the
         // next background cycle retries; a Pro gate consumes it (one quiet
-        // attempt per day on a Free account, never error spam).
+        // attempt per day on a Community account, never error spam).
         if should_auto_sync(
             config.cloud.auto_sync,
             true,
@@ -284,7 +348,7 @@ pub fn cloud_background_tasks() {
             &today,
         ) && consumes_daily_slot(auto_sync_personal_cloud())
         {
-            config.cloud.last_auto_sync = Some(today.clone());
+            delta.last_auto_sync = Some(today.clone());
         }
 
         // Opt-in hosted-index auto-push (GL #392): once per project per day,
@@ -308,17 +372,11 @@ pub fn cloud_background_tasks() {
                 match result {
                     Ok((hash, bytes)) => {
                         tracing::debug!(project = %hash, bytes, "auto-index: pushed");
-                        config
-                            .cloud
-                            .last_index_push
-                            .insert(project_hash, today.clone());
+                        delta.last_index_push.push((project_hash, today.clone()));
                     }
                     Err(e) if e.contains("Pro") || e.contains("Quota") => {
                         tracing::debug!(error = %e, "auto-index: gated, retry tomorrow");
-                        config
-                            .cloud
-                            .last_index_push
-                            .insert(project_hash, today.clone());
+                        delta.last_index_push.push((project_hash, today.clone()));
                     }
                     Err(e) => {
                         tracing::debug!(error = %e, "auto-index: push failed, slot stays open");
@@ -328,75 +386,38 @@ pub fn cloud_background_tasks() {
         }
     }
 
-    if let Err(e) = persist_background_stamps(&before, &config) {
+    if let Err(e) = persist_background_delta(&delta) {
         tracing::warn!("could not persist cloud background state: {e}");
     }
 }
 
-/// Write back only the bookkeeping stamps this pass changed.
-///
-/// The pass holds its config snapshot across network calls that can take
-/// seconds. Saving the whole snapshot reverted every edit made meanwhile — a
-/// `lean-ctx config set`, the dashboard, an editor — and in tests it wrote a
-/// stale config into whichever isolated config dir was current at the time
-/// (the Windows in-band CCR flake, #1934). `update_global` re-reads the file
-/// at write time, so only the stamps change; an unchanged pass writes nothing.
-fn persist_background_stamps(
-    before: &Config,
-    after: &Config,
+/// Persist step of [`cloud_background_tasks`]: resolves the global config path
+/// and delegates to [`persist_background_delta_at`].
+fn persist_background_delta(
+    delta: &CloudBackgroundDelta,
 ) -> Result<(), crate::core::error::LeanCtxError> {
-    fn adopt<T: PartialEq + Clone>(before: &T, after: &T, fresh: &mut T) {
-        if before != after {
-            fresh.clone_from(after);
-        }
-    }
+    let path = Config::path().ok_or_else(|| {
+        crate::core::error::LeanCtxError::Config("cannot determine home directory".to_string())
+    })?;
+    persist_background_delta_at(&path, delta)
+}
 
-    let (b, a) = (&before.cloud, &after.cloud);
-    let changed_index_pushes: Vec<(&String, &String)> = a
-        .last_index_push
-        .iter()
-        .filter(|(project, day)| b.last_index_push.get(*project) != Some(*day))
-        .collect();
-    if before.telemetry.last_heartbeat == after.telemetry.last_heartbeat
-        && b.last_sync == a.last_sync
-        && b.last_gain_sync == a.last_gain_sync
-        && b.last_model_pull == a.last_model_pull
-        && b.last_auto_sync == a.last_auto_sync
-        && changed_index_pushes.is_empty()
-    {
+/// Path-parameterized core of the persist step — the production code path,
+/// shared with its regression test.
+///
+/// Re-loads the config from disk under the write lock and applies only the
+/// stamps this run produced, so a telemetry choice committed during the network
+/// work above is the base we mutate rather than something we overwrite. All
+/// network work has already finished; nothing here does I/O beyond the guarded
+/// config write.
+pub(crate) fn persist_background_delta_at(
+    path: &std::path::Path,
+    delta: &CloudBackgroundDelta,
+) -> Result<(), crate::core::error::LeanCtxError> {
+    if delta.is_empty() {
         return Ok(());
     }
-
-    Config::update_global(|fresh| {
-        adopt(
-            &before.telemetry.last_heartbeat,
-            &after.telemetry.last_heartbeat,
-            &mut fresh.telemetry.last_heartbeat,
-        );
-        adopt(&b.last_sync, &a.last_sync, &mut fresh.cloud.last_sync);
-        adopt(
-            &b.last_gain_sync,
-            &a.last_gain_sync,
-            &mut fresh.cloud.last_gain_sync,
-        );
-        adopt(
-            &b.last_model_pull,
-            &a.last_model_pull,
-            &mut fresh.cloud.last_model_pull,
-        );
-        adopt(
-            &b.last_auto_sync,
-            &a.last_auto_sync,
-            &mut fresh.cloud.last_auto_sync,
-        );
-        for (project, day) in changed_index_pushes {
-            fresh
-                .cloud
-                .last_index_push
-                .insert(project.clone(), day.clone());
-        }
-    })
-    .map(|_| ())
+    Config::update_global_at(path, |on_disk| delta.apply(on_disk)).map(|_| ())
 }
 
 fn telemetry_ledger_endpoint() -> String {
@@ -849,13 +870,14 @@ mod tests {
     #[test]
     fn background_pass_keeps_edits_made_while_it_ran() {
         let _iso = crate::core::data_dir::isolated_data_dir();
-        let before = Config::load_global();
-        let mut after = before.clone();
-        after.cloud.last_sync = Some("2026-09-30".into());
+        let delta = CloudBackgroundDelta {
+            last_sync: Some("2026-09-30".into()),
+            ..CloudBackgroundDelta::default()
+        };
 
         // Meanwhile the user turns a setting on.
         Config::update_global(|c| c.proxy.ccr_inband = Some(true)).unwrap();
-        persist_background_stamps(&before, &after).unwrap();
+        persist_background_delta(&delta).unwrap();
 
         let on_disk = Config::load_global();
         assert_eq!(on_disk.proxy.ccr_inband, Some(true), "the edit survived");

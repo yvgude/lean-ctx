@@ -1,4 +1,4 @@
-//! Persistent anonymous installation identifier for opt-in telemetry.
+//! Persistent anonymous installation identifier for default-on telemetry.
 //!
 //! Generates a random UUID v4 on first call and persists it as a plain-text
 //! file in the data directory. The ID is never derived from hardware, OS

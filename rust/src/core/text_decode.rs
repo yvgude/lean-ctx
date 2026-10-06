@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Source-text decoding shared by every reader that feeds the indexes.
 //!
 //! `std::fs::read_to_string` rejects anything that is not strict UTF-8, and the

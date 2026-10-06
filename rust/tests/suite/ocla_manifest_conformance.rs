@@ -1,5 +1,7 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Repository conformance checks for OCLA capability manifests.
 
+use lean_ctx::core::ocla::{OclaError, adapters::AdapterRegistry};
 use lean_ctx_ocla::manifest::validate_manifest;
 use lean_ctx_protocol::CapabilityManifestV1;
 use std::{
@@ -7,27 +9,6 @@ use std::{
     fs,
     path::{Path, PathBuf},
 };
-
-#[derive(Debug, PartialEq, Eq)]
-enum MockRegistryError {
-    DuplicateCapabilityId(String),
-}
-
-#[derive(Default)]
-struct MockRegistry {
-    capability_ids: BTreeSet<String>,
-}
-
-impl MockRegistry {
-    fn register(&mut self, manifest: &CapabilityManifestV1) -> Result<(), MockRegistryError> {
-        let capability_id = manifest.capability_id.as_str().to_owned();
-        if self.capability_ids.insert(capability_id.clone()) {
-            Ok(())
-        } else {
-            Err(MockRegistryError::DuplicateCapabilityId(capability_id))
-        }
-    }
-}
 
 fn manifest_paths(directory: &Path) -> Vec<PathBuf> {
     let mut paths = Vec::new();
@@ -69,7 +50,9 @@ fn repository_manifests_deserialize_and_validate() {
         "repository must publish capability manifests"
     );
 
-    let mut registry = MockRegistry::default();
+    let registry = AdapterRegistry::new();
+    let mut capability_ids = BTreeSet::new();
+    let mut registered_keys = Vec::new();
     for path in paths {
         let manifest = load_manifest(&path);
         assert_eq!(manifest.schema_version, 1, "{}", path.display());
@@ -82,27 +65,54 @@ fn repository_manifests_deserialize_and_validate() {
         validate_manifest(&manifest)
             .unwrap_or_else(|error| panic!("validate {}: {error}", path.display()));
         registry
-            .register(&manifest)
+            .register_descriptor(manifest.clone())
             .unwrap_or_else(|error| panic!("register {}: {error:?}", path.display()));
+        let capability_id = manifest.capability_id.as_str().to_owned();
+        assert!(
+            capability_ids.insert(capability_id.clone()),
+            "duplicate capability ID in {}: {capability_id}",
+            path.display()
+        );
+        registered_keys.push((capability_id, manifest.version.clone()));
+    }
+
+    assert_eq!(registry.len(), registered_keys.len());
+    assert!(
+        registry.list_available().is_empty(),
+        "metadata-only descriptors must not be executable"
+    );
+    for (capability_id, version) in registered_keys {
+        assert!(
+            registry.lookup(&capability_id, &version).is_none(),
+            "metadata-only descriptor must not resolve to an adapter: {capability_id}@{version}"
+        );
     }
 }
 
 #[test]
-fn mock_registry_rejects_duplicate_capability_ids() {
+fn real_registry_rejects_duplicate_capability_id_and_version() {
     let path = manifest_paths(&manifest_directory())
         .into_iter()
         .next()
         .expect("repository must publish a capability manifest");
     let manifest = load_manifest(&path);
-    let mut registry = MockRegistry::default();
+    let registry = AdapterRegistry::new();
 
     registry
-        .register(&manifest)
+        .register_descriptor(manifest.clone())
         .expect("first registration succeeds");
-    assert_eq!(
-        registry.register(&manifest),
-        Err(MockRegistryError::DuplicateCapabilityId(
-            manifest.capability_id.as_str().to_owned()
-        ))
-    );
+    let error = registry
+        .register_descriptor(manifest.clone())
+        .expect_err("duplicate ID/version registration must fail");
+    match error {
+        OclaError::InvalidRequest(message) => assert_eq!(
+            message,
+            format!(
+                "adapter already registered: {}@{}",
+                manifest.capability_id.as_str(),
+                manifest.version
+            )
+        ),
+        other => panic!("duplicate registration returned unexpected error: {other:?}"),
+    }
 }

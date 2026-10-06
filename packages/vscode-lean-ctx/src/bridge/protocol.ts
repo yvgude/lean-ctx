@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Wire protocol of the semantic bridge — the read-only navigation subset of
 // the JetBrains plugin's HTTP protocol, so lean-ctx uses one client for both.
 // No `vscode` import: the editor side is behind `Navigator`.

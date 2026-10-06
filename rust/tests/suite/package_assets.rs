@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Shipping assets must stay identical to their repository specifications.
 
 use std::{fs, path::Path};

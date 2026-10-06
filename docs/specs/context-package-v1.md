@@ -1,6 +1,6 @@
 # Context Package Specification v1
 
-**Status:** Draft  
+**Status:** Stable — canonical package contract for LeanCTX v4
 **Schema Version:** 1  
 **Format:** `.ctxpkg` (JSON)  
 **Max File Size:** 10 MB  
@@ -240,6 +240,10 @@ The signature is hex-encoded. Verification uses constant-time comparison.
 ## Legacy Compatibility
 
 Files with the `.lctxpkg` extension (used before v3.6.14) are accepted for import with the same schema.
+Use `lean-ctx pack migrate <file.lctxpkg>` to verify and create the canonical
+`.ctxpkg` filename without changing package bytes or invalidating signatures.
+The source file remains the rollback copy and a SHA-256 migration receipt binds
+the two names.
 
 ## Reference Implementation
 

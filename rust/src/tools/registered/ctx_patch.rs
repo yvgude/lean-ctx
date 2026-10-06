@@ -4,6 +4,7 @@ use serde_json::{Map, Value, json};
 
 use crate::server::tool_trait::{
     McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str, require_resolved_path,
+    tool_execution_error,
 };
 use crate::tool_defs::tool_def;
 
@@ -162,7 +163,8 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
             allow_lossy_utf8,
             validate_syntax,
         };
-        let output = apply_one(ctx, &patch_params)?;
+        let output =
+            apply_one(ctx, &patch_params).map_err(|error| with_prior_edits(error, &texts))?;
         texts.push(format!("[{path}]\n{output}"));
     }
 
@@ -235,19 +237,16 @@ fn handle_mixed_batch(
         };
         flush_anchored_run(args, ctx, &mut run, &mut texts)?;
 
-        let (sub_args, sub_ctx) = delegated_op_call(args, obj, ctx, i, kind)?;
+        let (sub_args, sub_ctx) = delegated_op_call(args, obj, ctx, i, kind)
+            .map_err(|error| with_prior_edits(error, &texts))?;
         let out = if kind == "replace_unique" {
             delegate_replace_unique(&sub_args, &sub_ctx)
         } else {
             delegate_replace_symbol(&sub_args, &sub_ctx)
         }
-        .map_err(|e| {
-            let applied = if texts.is_empty() {
-                ""
-            } else {
-                " (earlier ops in this batch were already applied)"
-            };
-            ErrorData::invalid_params(format!("ops[{i}] ({kind}): {}{applied}", e.message), None)
+        .map_err(|mut e| {
+            e.message = format!("ops[{i}] ({kind}): {}", e.message).into();
+            with_prior_edits(e, &texts)
         })?;
         let label = get_str(&sub_args, "path").unwrap_or_else(|| kind.to_string());
         texts.push(format!("[{label}]\n{}", out.text));
@@ -269,8 +268,27 @@ fn flush_anchored_run(
     }
     let mut sub = args.clone();
     sub.insert("ops".into(), Value::Array(std::mem::take(run)));
-    texts.push(handle_anchored(&sub, ctx)?.text);
+    texts.push(
+        handle_anchored(&sub, ctx)
+            .map_err(|error| with_prior_edits(error, texts))?
+            .text,
+    );
     Ok(())
+}
+
+/// A cross-file or mixed batch is not a transaction across completed runs.
+/// Preserve their receipts when a later edit fails, and stop before more writes.
+fn with_prior_edits(mut error: ErrorData, texts: &[String]) -> ErrorData {
+    if !texts.is_empty() {
+        error.code = crate::server::tool_trait::TOOL_EXECUTION_ERROR;
+        error.message = format!(
+            "{}\nEarlier ops in this batch were already applied:\n{}",
+            error.message,
+            texts.join("\n\n")
+        )
+        .into();
+    }
+    error
 }
 
 /// Build the (args, ctx) for one delegated batch op: the op object inherits the
@@ -511,8 +529,9 @@ fn apply_one(
         // Heavy disk I/O — no global cache lock held here.
         let before = std::fs::read(&path).unwrap_or_default();
         let (output, effect) = crate::tools::ctx_patch::run_io(params, &last_mode);
+        let written = matches!(effect, crate::tools::ctx_edit::CacheEffect::Invalidate);
 
-        if matches!(effect, crate::tools::ctx_edit::CacheEffect::Invalidate) {
+        if written {
             let after = std::fs::read(&path).unwrap_or_default();
             super::ctx_edit::observe_mcp_edit(ctx, &path, "ctx_patch", &before, &after);
         }
@@ -531,6 +550,10 @@ fn apply_one(
                     );
                 }
             }
+        }
+
+        if !written {
+            return Err(tool_execution_error(output));
         }
 
         if let Some(session_lock) = ctx.session.as_ref() {
@@ -577,6 +600,9 @@ fn delegate_replace_symbol(
     let args_value = Value::Object(refactor_args);
     let result = crate::tools::ctx_refactor::handle(&args_value, &ctx.project_root, &abs_path);
     let changed = !result.starts_with("ERROR") && !result.starts_with("CONFLICT");
+    if !changed {
+        return Err(tool_execution_error(result));
+    }
 
     Ok(ToolOutput {
         text: result,
@@ -633,7 +659,7 @@ fn handle_replace_all(
     let dry_run = get_bool(args, "dry_run").unwrap_or(false);
 
     let content = std::fs::read_to_string(&path)
-        .map_err(|e| ErrorData::internal_error(format!("cannot read {path}: {e}"), None))?;
+        .map_err(|e| tool_execution_error(format!("cannot read {path}: {e}")))?;
 
     let count = content.matches(find.as_str()).count();
     if count == 0 {
@@ -655,7 +681,7 @@ fn handle_replace_all(
 
     let new_content = content.replace(find.as_str(), &replace);
     crate::config_io::write_atomic(std::path::Path::new(&path), &new_content)
-        .map_err(|e| ErrorData::internal_error(format!("write failed: {e}"), None))?;
+        .map_err(|e| tool_execution_error(format!("write failed: {e}")))?;
     super::ctx_edit::observe_mcp_edit(
         ctx,
         &path,

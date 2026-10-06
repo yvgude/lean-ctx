@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Cache-lock contention handling for `ctx_read`: the lock deadline, the
 //! prepare-phase outcome, and the uncached fallback a read degrades to when
 //! the global cache write lock stays contended past its deadline.

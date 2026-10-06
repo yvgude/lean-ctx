@@ -27,6 +27,7 @@ docs/internal/
 docs/internal.zip
 .codex/vision-input/
 .codex/vision-output/
+.legal-private/
 .cursor/skills/focus-contract/
 docs/archive/
 
@@ -37,11 +38,10 @@ discord-bot/
 n8n-workflows/
 lab/
 
-# ── Commercial plane (lives in the private lean-ctx-cloud repo) ──
-# These modules were relocated out of the open engine (oss-plane-separation-v1).
-# The engine bills nothing and issues no licenses; it only emits the signed
-# savings ledger. Re-adding any of these to the OSS engine is a leak —
-# implement billing/licensing in lean-ctx-cloud instead.
+# ── Private service authority plane (lives in lean-ctx-cloud) ──
+# Billing authority, private-key issuance, and provider integration remain
+# private services. Commercial implementations remain in private components;
+# LICENSE_MATRIX.toml describes the Apache host and rejects private classes.
 # NB: core/billing/ stays partially OPEN (metering, plans, mod), so we list the
 # specific commercial files rather than the whole directory.
 # NB: core/licensing/ stays partially OPEN (mod.rs = types + Ed25519 verify,
@@ -52,5 +52,48 @@ rust/src/core/licensing/keygen.rs
 rust/src/cli/license_cmd.rs
 rust/src/core/billing/success_fee.rs
 rust/src/core/billing/stripe_invoice.rs
-docs/contracts/license-v1.md
-docs/contracts/success-fee-invoice-v1.md
+
+# ── Private commercial plane and retained, non-operative legal drafts ──
+# The public host keeps its Apache rights. These implementations, draft terms
+# and private decision records are not part of the Apache source distribution.
+docs/internal/
+rust/src/cloud_server/
+rust/src/commercial/
+rust/src/team/
+rust/src/enterprise/
+commercial/
+enterprise/
+private/
+services/private/
+private-runtime-build/
+LICENSES/LeanCTX-Commercial-Source-License-2.0.txt
+LICENSES/LicenseRef-LeanCTX-Commercial-Source-2.0.txt
+LICENSES/Thinkery-Free-Runtime-License-1.0-DRAFT.txt
+LICENSES-LeanCTX-Commercial-Source-License-2.0.txt
+ee/LICENSE
+LEGAL_REVIEW_REQUIRED.md
+TRADEMARKS.md
+legal/cla/CLA-v2.md
+legal/release-approval.toml
+
+# ── Private v4 delivery plane (GitLab-only) ──
+# Receipts under docs/contracts/v4-*.md and docs/architecture/V4_* are blocked
+# as whole families by scripts/check-no-internal-artifacts.py (the pre-push
+# hook runs it). These exact paths name the remaining private tooling.
+docs/contracts/ccp-session-bundle-v1.md
+scripts/v4-cutover.sh
+scripts/v4-worktree-audit.py
+scripts/test_v4_worktree_audit.py
+tests/delivery/test_v4_cutover.py
+ci/build_pro_linux_arm64.py
+
+# cloud_client/ is the Apache verification client, not an entitlement issuer.
+# product/capabilities.toml is its public registry source, also embedded in
+# rust/data/product-capabilities.toml. Both are public-trust-core-runtime in
+# LICENSE_MATRIX.toml and required by the standalone public build and tests.
+# Their inclusion changes neither the legal rollout gate nor private-service
+# exclusions above; it does not authorize a v4 publication before approval.
+# The export ships them only as the public projection (D7): run
+#   cd rust && cargo run --example gen_product_capability_matrix -- --public
+# so non-public records carry no moat, Aha, maturity or private source path
+# while every ID, price class and right stays intact for fail-closed gating.

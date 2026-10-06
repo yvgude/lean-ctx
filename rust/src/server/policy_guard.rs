@@ -15,6 +15,9 @@ use rmcp::model::{CallToolResult, ContentBlock};
 
 use crate::core::policy::runtime::{self, ActivePolicy};
 
+mod release;
+pub(crate) use release::release_result;
+
 /// Tools that can never be policy-denied (mirror role_guard's session/meta
 /// exemption), so a pack can't lock the operator out of fixing the policy.
 const EXEMPT_TOOLS: &[&str] = &["ctx", "ctx_session", "ctx_policy"];
@@ -28,7 +31,11 @@ pub struct PolicyCheckResult {
 /// Check whether `tool_name` is allowed by the active policy pack, recording an
 /// audit entry on denial (same APIs as [`super::role_guard`]).
 pub fn check_tool_access(tool_name: &str) -> PolicyCheckResult {
-    let check = evaluate(runtime::active().as_deref(), tool_name);
+    let check = evaluate_with_exemptions(
+        runtime::active().as_deref(),
+        tool_name,
+        std::env::var_os(runtime::REQUIRED_POLICY_ROOT_ENV).is_none(),
+    );
     if check.blocked
         && let Some(policy) = &check.policy_name
     {
@@ -51,8 +58,19 @@ pub fn check_tool_access(tool_name: &str) -> PolicyCheckResult {
 }
 
 /// Pure decision (no side effects) — the audit-free core, unit-tested directly.
+#[cfg(test)]
 fn evaluate(active: Option<&ActivePolicy>, tool_name: &str) -> PolicyCheckResult {
-    if EXEMPT_TOOLS.contains(&tool_name) {
+    evaluate_with_exemptions(active, tool_name, true)
+}
+
+fn evaluate_with_exemptions(
+    active: Option<&ActivePolicy>,
+    tool_name: &str,
+    allow_operator_recovery: bool,
+) -> PolicyCheckResult {
+    // Protected MCP clients are not the operator. Recovery remains available
+    // through the human's separate CLI, never by relaxing the model's boundary.
+    if allow_operator_recovery && EXEMPT_TOOLS.contains(&tool_name) {
         return PolicyCheckResult {
             blocked: false,
             policy_name: None,
@@ -114,11 +132,39 @@ pub fn redact_result(text: &str) -> (String, usize) {
     }
 }
 
+/// Shared content decision for mutable tool output. A denial never echoes the
+/// input; structured/signed callers use `content::evaluate_text` directly and
+/// reject rewrites before computing their final digest.
+pub fn protect_result(tool: &str, text: &str) -> Result<String, &'static str> {
+    let Some(active) = runtime::active() else {
+        return Ok(text.to_owned());
+    };
+    let outcome = crate::core::policy::content::evaluate_text(text, &active);
+    audit_filter(tool, &outcome.audit, outcome.blocked);
+    if outcome.blocked {
+        return Err("[POLICY BLOCKED] Content withheld by the active context policy.");
+    }
+    let mut text = outcome.text;
+    for warning in outcome.warnings {
+        let rendered = format!("[FILTER] {warning}");
+        if !text.lines().any(|line| line == rendered) {
+            text.push_str("\n\n");
+            text.push_str(&rendered);
+        }
+    }
+    Ok(text)
+}
+
 /// Apply the policy-pack and built-in secret redactors to text sent to a model
-/// by protocol surfaces outside the MCP tool pipeline.
+/// by protocol surfaces outside the MCP tool pipeline, then admit it through
+/// the context gateway like any other delivery: PII is masked, withheld
+/// content is replaced by a content-free reason, and the decision is recorded
+/// in the current call's receipt when one is open.
 pub fn redact_model_text(text: &str) -> String {
     let (policy_redacted, _) = redact_result(text);
-    crate::core::redaction::redact_text_if_enabled(&policy_redacted)
+    let redacted = crate::core::redaction::redact_text_if_enabled(&policy_redacted);
+    crate::core::context_admission::admit_source(&redacted, "protocol:model-text", false)
+        .unwrap_or_else(|error| format!("[lean-ctx gateway: {error}]"))
 }
 
 /// Audit a content-filter decision (GL #675). **Privacy-preserving**: records
@@ -231,6 +277,15 @@ mod tests {
         for t in ["ctx", "ctx_session", "ctx_policy"] {
             assert!(!evaluate(Some(&p), t).blocked, "{t} must be exempt");
         }
+    }
+
+    #[test]
+    fn protected_clients_cannot_use_operator_recovery_exemptions() {
+        let p = active(Some(vec!["ctx_read"]), vec![]);
+        for tool in EXEMPT_TOOLS {
+            assert!(evaluate_with_exemptions(Some(&p), tool, false).blocked);
+        }
+        assert!(!evaluate_with_exemptions(Some(&p), "ctx_read", false).blocked);
     }
 
     #[test]

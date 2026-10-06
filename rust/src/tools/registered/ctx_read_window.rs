@@ -215,6 +215,39 @@ mod tests {
         }
     }
 
+    // GH #2000: the schema documents `5,10-20=multi` without a prefix; the bare
+    // form fell through to an unknown mode and returned the whole file.
+    #[test]
+    fn bare_multi_select_canonicalizes_to_lines_form() {
+        for (input, expected) in [
+            ("3,7", "lines:3,7"),
+            ("3,7-9", "lines:3,7-9"),
+            ("105,125,784-835", "lines:105,125,784-835"),
+            ("5, 10-20", "lines:5, 10-20"),
+            ("1-3,-5", "lines:1-3,-5"),
+        ] {
+            assert_eq!(
+                canonicalize_tail_mode(Some(input.to_string())),
+                Some(expected.to_string()),
+                "{input} is the documented multi-select spelling"
+            );
+        }
+        // The canonical result must parse as the multi-select it names.
+        let mode: crate::tools::ctx_read::ReadMode = "lines:3,7-9".parse().unwrap();
+        assert_eq!(mode.to_string(), "lines:3,7-9");
+    }
+
+    #[test]
+    fn comma_shapes_that_are_not_line_selections_are_left_alone() {
+        for mode in ["lines:3,7", "3,x", ",", "3,,7", "full,signatures", "3-,7"] {
+            assert_eq!(
+                canonicalize_tail_mode(Some(mode.to_string())),
+                Some(mode.to_string()),
+                "{mode} must not be reinterpreted as a line selection"
+            );
+        }
+    }
+
     #[test]
     fn canonical_and_other_modes_pass_through_untouched() {
         for mode in [

@@ -1,0 +1,36 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "seat-entitlement.schema.json",
+  "title": "SeatEntitlementV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["v", "entitlement_id", "organization_id", "plan", "source", "billing_account_digest", "seat_limit", "effective_at", "expires_at", "grace_until", "catalog_digest", "issuer_id", "sequence", "issued_at", "signature_envelope_digest", "idempotency_key"],
+  "properties": {
+    "v": {"const": 1},
+    "entitlement_id": {"$ref": "common.schema.json#/$defs/id"},
+    "organization_id": {"$ref": "common.schema.json#/$defs/id"},
+    "plan": {"enum": ["team", "enterprise"]},
+    "source": {"enum": ["subscription", "offline_enterprise"]},
+    "billing_account_digest": {"$ref": "common.schema.json#/$defs/billingDigest"},
+    "seat_limit": {"oneOf": [
+      {"type": "object", "additionalProperties": false, "required": ["kind", "value"], "properties": {"kind": {"const": "finite"}, "value": {"type": "integer", "minimum": 1, "maximum": 9007199254740991}}},
+      {"type": "object", "additionalProperties": false, "required": ["kind"], "properties": {"kind": {"const": "unlimited"}}}
+    ]},
+    "effective_at": {"$ref": "common.schema.json#/$defs/timestamp"},
+    "expires_at": {"$ref": "common.schema.json#/$defs/timestamp"},
+    "grace_until": {"$ref": "common.schema.json#/$defs/timestamp"},
+    "catalog_digest": {"$ref": "common.schema.json#/$defs/catalogDigest"},
+    "issuer_id": {"$ref": "common.schema.json#/$defs/issuerId"},
+    "sequence": {"$ref": "common.schema.json#/$defs/sequence"},
+    "predecessor_digest": {"$ref": "common.schema.json#/$defs/digest"},
+    "revoked_at": {"$ref": "common.schema.json#/$defs/timestamp"},
+    "reason_code": {"$ref": "common.schema.json#/$defs/reasonCode"},
+    "issued_at": {"$ref": "common.schema.json#/$defs/timestamp"},
+    "signature_envelope_digest": {"$ref": "common.schema.json#/$defs/digest"},
+    "idempotency_key": {"$ref": "common.schema.json#/$defs/idempotencyKey"}
+  },
+  "allOf": [
+    {"if": {"properties": {"sequence": {"const": 1}}, "required": ["sequence"]}, "then": {"not": {"required": ["predecessor_digest"]}}, "else": {"required": ["predecessor_digest"]}},
+    {"if": {"required": ["revoked_at"]}, "then": {"required": ["reason_code"]}, "else": {"not": {"required": ["reason_code"]}}}
+  ]
+}

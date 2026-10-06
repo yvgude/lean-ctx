@@ -5,6 +5,8 @@
 
 use std::sync::{Mutex, PoisonError};
 
+use lean_ctx_protocol::AcceptanceState;
+
 /// Aggregate value metrics for the proxy process's current session.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct ProxyValueMetrics {
@@ -14,6 +16,8 @@ pub struct ProxyValueMetrics {
     pub last_task_class: Option<String>,
     pub cost_micros_estimate: u64,
     pub session_cpao_micros: Option<u64>,
+    pub accepted_outcome_count: u64,
+    pub unknown_outcome_count: u64,
 }
 
 static PROXY_VALUE_METRICS: Mutex<ProxyValueMetrics> = Mutex::new(ProxyValueMetrics {
@@ -23,10 +27,17 @@ static PROXY_VALUE_METRICS: Mutex<ProxyValueMetrics> = Mutex::new(ProxyValueMetr
     last_task_class: None,
     cost_micros_estimate: 0,
     session_cpao_micros: None,
+    accepted_outcome_count: 0,
+    unknown_outcome_count: 0,
 });
 
 /// Records a completed proxy request in the current process session.
-pub fn record_completion(tokens_pruned: usize, original_tokens: usize, task_class: &str) {
+pub fn record_completion(
+    tokens_pruned: usize,
+    original_tokens: usize,
+    task_class: &str,
+    acceptance: AcceptanceState,
+) {
     let mut metrics = PROXY_VALUE_METRICS
         .lock()
         .unwrap_or_else(PoisonError::into_inner);
@@ -40,7 +51,18 @@ pub fn record_completion(tokens_pruned: usize, original_tokens: usize, task_clas
     metrics.last_task_class = Some(task_class.to_owned());
     let cost_micros = (original_tokens as u64).saturating_mul(3) / 1_000;
     metrics.cost_micros_estimate = metrics.cost_micros_estimate.saturating_add(cost_micros);
-    metrics.session_cpao_micros = Some(metrics.cost_micros_estimate / metrics.request_count);
+    match acceptance {
+        AcceptanceState::Accepted => {
+            metrics.accepted_outcome_count = metrics.accepted_outcome_count.saturating_add(1);
+            metrics.session_cpao_micros =
+                Some(metrics.cost_micros_estimate / metrics.accepted_outcome_count);
+        }
+        AcceptanceState::Unknown => {
+            metrics.unknown_outcome_count = metrics.unknown_outcome_count.saturating_add(1);
+            metrics.session_cpao_micros = None;
+        }
+        AcceptanceState::Rejected => metrics.session_cpao_micros = None,
+    }
     tracing::debug!(
         task_class,
         tokens_pruned,
@@ -84,8 +106,8 @@ mod tests {
         let _guard = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
         reset_session();
 
-        record_completion(20, 100, "coding_fix");
-        record_completion(30, 200, "coding_new");
+        record_completion(20, 100, "coding_fix", AcceptanceState::Unknown);
+        record_completion(30, 200, "coding_new", AcceptanceState::Unknown);
 
         let metrics = session_metrics();
         assert_eq!(metrics.request_count, 2);
@@ -93,14 +115,15 @@ mod tests {
         assert_eq!(metrics.total_original_tokens, 300);
         assert_eq!(metrics.last_task_class.as_deref(), Some("coding_new"));
         assert_eq!(metrics.cost_micros_estimate, 0);
-        assert_eq!(metrics.session_cpao_micros, Some(0));
+        assert_eq!(metrics.session_cpao_micros, None);
+        assert_eq!(metrics.unknown_outcome_count, 2);
     }
 
     #[test]
     fn session_metrics_returns_a_clone() {
         let _guard = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
         reset_session();
-        record_completion(20, 100, "coding_fix");
+        record_completion(20, 100, "coding_fix", AcceptanceState::Unknown);
 
         let mut snapshot = session_metrics();
         snapshot.request_count = 0;
@@ -121,8 +144,8 @@ mod tests {
     fn compression_ratio_uses_session_totals() {
         let _guard = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
         reset_session();
-        record_completion(25, 100, "coding_fix");
-        record_completion(50, 200, "coding_new");
+        record_completion(25, 100, "coding_fix", AcceptanceState::Unknown);
+        record_completion(50, 200, "coding_new", AcceptanceState::Unknown);
 
         assert_eq!(compression_ratio(), 0.25);
     }
@@ -132,8 +155,8 @@ mod tests {
         let _guard = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
         reset_session();
 
-        record_completion(0, 1_000, "coding_fix");
-        record_completion(0, 2_000, "coding_new");
+        record_completion(0, 1_000, "coding_fix", AcceptanceState::Accepted);
+        record_completion(0, 2_000, "coding_new", AcceptanceState::Accepted);
 
         let metrics = session_metrics();
         assert_eq!(metrics.cost_micros_estimate, 9);
@@ -143,7 +166,7 @@ mod tests {
     #[test]
     fn reset_session_clears_all_metrics() {
         let _guard = TEST_LOCK.lock().unwrap_or_else(PoisonError::into_inner);
-        record_completion(20, 1_000, "coding_fix");
+        record_completion(20, 1_000, "coding_fix", AcceptanceState::Unknown);
 
         reset_session();
 

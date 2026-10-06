@@ -73,6 +73,11 @@ pub(crate) fn read_footer(file_path: &str) -> Option<String> {
 /// pointer without the coaching.
 #[must_use]
 pub(crate) fn handle_clause(id: &str, on_disk_path: Option<&str>) -> String {
+    if on_disk_path.is_some_and(|path| {
+        crate::cli::enforce_protected_store_path(std::path::Path::new(path)).is_err()
+    }) {
+        return format!("full: ctx_expand(id=\"{id}\")");
+    }
     match (tier(), on_disk_path) {
         (RecoveryHints::Off, Some(p)) => format!("full: {p}"),
         (RecoveryHints::Off, None) => format!("full: ctx_expand(id=\"{id}\")"),
@@ -84,6 +89,19 @@ pub(crate) fn handle_clause(id: &str, on_disk_path: Option<&str>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn protected_runtime_recovery_does_not_recommend_raw_file_access() {
+        let isolated = crate::core::data_dir::isolated_data_dir();
+        let artifact = isolated.path().join("tee/output.log");
+        let path = artifact.to_str().unwrap();
+        let _pin = crate::cli::pin_synthetic_session(isolated.path()).unwrap();
+        let hint = handle_clause("fixture-archive", Some(path));
+        assert!(hint.contains("ctx_expand"));
+        assert!(!hint.contains("directly"));
+        assert!(!hint.contains(path));
+    }
     use crate::core::data_dir::test_env_lock;
 
     /// The env override forces a tier regardless of profile/config — the knob ops

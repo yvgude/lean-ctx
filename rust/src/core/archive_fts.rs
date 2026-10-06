@@ -144,7 +144,41 @@ fn try_open_db(path: &std::path::Path) -> Result<Connection, rusqlite::Error> {
              archive_id UNINDEXED
          );",
     )?;
+    invalidate_unadmitted_rows(&conn)?;
     Ok(conn)
+}
+
+/// `user_version` from which every indexed row was admitted by the context
+/// gateway before it was stored (G5).
+const ADMITTED_SCHEMA_VERSION: i64 = 1;
+
+/// Rows indexed before archives were admitted can hold raw credentials. They
+/// are derived data — the archive files stay and recovery re-admits them — so
+/// the index drops them once instead of serving their snippets (G5, E3).
+fn invalidate_unadmitted_rows(conn: &Connection) -> Result<(), rusqlite::Error> {
+    let version = |conn: &Connection| -> Result<i64, rusqlite::Error> {
+        conn.query_row("PRAGMA user_version", [], |row| row.get(0))
+    };
+    if version(conn)? >= ADMITTED_SCHEMA_VERSION {
+        return Ok(());
+    }
+    // Re-checked under the write lock: another process may have migrated
+    // (and indexed admitted rows) in between.
+    conn.execute_batch("BEGIN IMMEDIATE")?;
+    let migrated = (|| {
+        if version(conn)? < ADMITTED_SCHEMA_VERSION {
+            conn.execute_batch(&format!(
+                "DELETE FROM archive_fts;
+                 DELETE FROM archive_meta;
+                 PRAGMA user_version = {ADMITTED_SCHEMA_VERSION};"
+            ))?;
+        }
+        conn.execute_batch("COMMIT")
+    })();
+    if migrated.is_err() {
+        let _ = conn.execute_batch("ROLLBACK");
+    }
+    migrated
 }
 
 fn is_transient_sqlite_error(e: &rusqlite::Error) -> bool {
@@ -162,7 +196,9 @@ fn is_transient_sqlite_error(e: &rusqlite::Error) -> bool {
 }
 
 pub fn index_entry(archive_id: &str, tool: &str, command: &str, content: &str) {
-    if super::archive::is_protected(archive_id) {
+    // Source-bound archives must never enter the persistent, unattributed FTS
+    // corpus, including when metadata is missing or an older caller indexes one.
+    if archive_id.len() == 64 || super::archive::is_protected(archive_id) {
         return;
     }
     let Some(mut guard) = DB.lock().ok() else {
@@ -312,18 +348,99 @@ pub struct FtsResult {
 }
 
 pub fn search(query: &str, limit: usize) -> Vec<FtsResult> {
-    let Some(mut guard) = DB.lock().ok() else {
-        return Vec::new();
-    };
-    let Some(conn) = guard.current() else {
-        return Vec::new();
-    };
+    super::policy::runtime::with_source_view(|| search_current(query, limit)).unwrap_or_default()
+}
 
+fn search_current(query: &str, limit: usize) -> Vec<FtsResult> {
+    let results = search_admitted(query, limit);
+    if super::policy::runtime::is_active() {
+        return results;
+    }
+    let legacy =
+        with_legacy_index(|conn| search_connection(conn, query, limit)).unwrap_or_default();
+    // BM25 scores from different corpora are not comparable. Interleave by
+    // within-corpus position, with admitted results first at an equal position.
+    let mut ranked: Vec<_> = results
+        .into_iter()
+        .enumerate()
+        .map(|(i, r)| (i, 0, r))
+        .chain(legacy.into_iter().enumerate().map(|(i, r)| (i, 1, r)))
+        .collect();
+    ranked.sort_by_key(|(position, corpus, _)| (*position, *corpus));
+    ranked
+        .into_iter()
+        .take(limit)
+        .map(|(_, _, result)| result)
+        .collect()
+}
+
+fn search_admitted(query: &str, limit: usize) -> Vec<FtsResult> {
+    let entries = super::archive::admitted_entries(None);
+    if entries.is_empty() {
+        return Vec::new();
+    }
+    let Ok(conn) = Connection::open_in_memory() else {
+        return Vec::new();
+    };
+    if conn
+        .execute_batch(
+            "CREATE VIRTUAL TABLE archive_fts USING fts5(tool, command, content, archive_id UNINDEXED)",
+        )
+        .is_err()
+    {
+        return Vec::new();
+    }
+    // Hidden archives never contribute snippets, terms, ranking or counts.
+    for (entry, content) in entries {
+        if conn
+            .execute(
+                "INSERT INTO archive_fts (archive_id,tool,command,content) VALUES (?1,?2,?3,?4)",
+                params![entry.id, entry.tool, entry.command, content],
+            )
+            .is_err()
+        {
+            return Vec::new();
+        }
+    }
+    search_connection(&conn, query, limit)
+}
+
+/// Remove only derived index rows from the reserved bound-archive namespace.
+/// The transaction keeps obsolete rows out of both snippets and BM25 statistics,
+/// even when another process still has the database open. Archive files remain.
+fn with_legacy_index<T>(operation: impl FnOnce(&Connection) -> T) -> Option<T> {
+    let mut guard = DB.lock().ok()?;
+    let conn = guard.current()?;
+    let transaction = conn.unchecked_transaction().ok()?;
+    let obsolete: bool = transaction
+        .query_row(
+            "SELECT EXISTS(SELECT 1 FROM archive_meta WHERE length(archive_id) = 64)
+          OR EXISTS(SELECT 1 FROM archive_fts WHERE length(archive_id) = 64)",
+            [],
+            |row| row.get(0),
+        )
+        .ok()?;
+    // Healthy Community queries remain read-only and can run alongside a WAL
+    // writer. Purging is needed only for obsolete derived source-bound rows.
+    if obsolete {
+        transaction
+            .execute("DELETE FROM archive_meta WHERE length(archive_id) = 64", [])
+            .ok()?;
+        transaction
+            .execute("DELETE FROM archive_fts WHERE length(archive_id) = 64", [])
+            .ok()?;
+    }
+    let result = operation(&transaction);
+    transaction.commit().ok()?;
+    Some(result)
+}
+
+fn search_connection(conn: &Connection, query: &str, limit: usize) -> Vec<FtsResult> {
     let Ok(mut stmt) = conn.prepare(
         "SELECT archive_id, tool, command, snippet(archive_fts, 2, '»', '«', '…', 40), rank
          FROM archive_fts
          WHERE archive_fts MATCH ?1
-         ORDER BY rank
+          ORDER BY rank, archive_id
          LIMIT ?2",
     ) else {
         return Vec::new();
@@ -344,16 +461,22 @@ pub fn search(query: &str, limit: usize) -> Vec<FtsResult> {
 }
 
 pub fn entry_count() -> usize {
-    let Some(mut guard) = DB.lock().ok() else {
-        return 0;
-    };
-    let Some(conn) = guard.current() else {
-        return 0;
-    };
-    conn.query_row("SELECT COUNT(*) FROM archive_meta", [], |row| {
-        row.get::<_, i64>(0)
-    })
-    .unwrap_or(0) as usize
+    super::policy::runtime::with_source_view(entry_count_current).unwrap_or_default()
+}
+
+fn entry_count_current() -> usize {
+    let bound = super::archive::admitted_entries(None).len();
+    if super::policy::runtime::is_active() {
+        return bound;
+    }
+    bound
+        + with_legacy_index(|conn| {
+            conn.query_row("SELECT COUNT(*) FROM archive_meta", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .unwrap_or(0) as usize
+        })
+        .unwrap_or(0)
 }
 
 #[cfg(test)]

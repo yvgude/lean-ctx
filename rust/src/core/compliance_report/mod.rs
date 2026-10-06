@@ -173,8 +173,8 @@ fn build_owasp() -> OwaspSection {
 
 /// Retention posture: the pack's declared intent vs. the effective plan window.
 fn build_retention(resolved: &ResolvedPolicy) -> RetentionSection {
-    let eff = crate::cloud_client::resolve_effective_plan_cached();
-    let plan_days = eff.plan.entitlements().audit_retention_days;
+    let eff = crate::cloud_client::resolve_verified_plan_cached();
+    let plan_days = eff.entitlements().audit_retention_days;
     let plan_covers_policy = resolved
         .audit_retention_days
         .map(|declared| plan_days >= declared);

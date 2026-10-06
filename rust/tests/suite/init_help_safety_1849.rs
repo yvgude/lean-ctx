@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! #1849: `lean-ctx init --help` (and `-h`) must print usage and write
 //! NOTHING. The `init` arm passed every argument straight to `cmd_init`,
 //! which never looked for `--help`, so `init --agent claude --help` ran a real

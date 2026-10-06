@@ -93,17 +93,21 @@ fn digits_of(s: &str) -> Vec<u8> {
         .collect()
 }
 
+/// A card-shaped (see `card_layout_plausible`), Luhn-valid candidate.
+fn is_card(candidate: &str) -> bool {
+    crate::core::input_filters::pii::card_layout_plausible(candidate)
+        && luhn_valid(&digits_of(candidate))
+}
+
 fn has_credit_card(content: &str) -> bool {
-    card_re()
-        .find_iter(content)
-        .any(|m| luhn_valid(&digits_of(m.as_str())))
+    card_re().find_iter(content).any(|m| is_card(m.as_str()))
 }
 
 fn redact_credit_cards(text: &str) -> String {
     card_re()
         .replace_all(text, |caps: &regex::Captures| {
             let m = caps.get(0).map(|x| x.as_str()).unwrap_or_default();
-            if luhn_valid(&digits_of(m)) {
+            if is_card(m) {
                 "[REDACTED:card]".to_string()
             } else {
                 m.to_string()
@@ -224,6 +228,17 @@ mod tests {
         assert!(red.contains("[REDACTED:iban]"));
         assert!(red.contains("end"));
         assert!(!red.contains("4111 1111 1111 1111"));
+    }
+
+    #[test]
+    fn timestamped_names_are_not_cards_even_when_luhn_valid() {
+        let stamp = (0..10)
+            .map(|d| format!("20261006-16153{d}"))
+            .find(|s| luhn_valid(&digits_of(s)))
+            .expect("one check digit makes the stamp Luhn-valid");
+        let text = format!("session {stamp} archived");
+        assert!(!has_credit_card(&text));
+        assert_eq!(redact_credit_cards(&text), text);
     }
 
     #[test]

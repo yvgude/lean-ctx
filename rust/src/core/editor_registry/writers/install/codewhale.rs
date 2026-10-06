@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! CodeWhale MCP config writer (GH #1402).
 //!
 //! CodeWhale reads its user-level server list from `~/.codewhale/mcp.json`

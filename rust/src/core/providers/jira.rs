@@ -221,19 +221,26 @@ fn jira_request(
     url: &str,
     body: Option<&[u8]>,
 ) -> Result<String, String> {
+    let agent = super::hardened_http::hardened_agent();
     let resp = match method {
-        "POST" => ureq::post(url)
+        "POST" => agent
+            .post(url)
             .header("Authorization", auth_header)
             .header("Accept", "application/json")
             .header("Content-Type", "application/json")
             .send(body.unwrap_or(&[]))
             .map_err(|ref e| jira_error_with_hint(e))?,
-        _ => ureq::get(url)
+        _ => agent
+            .get(url)
             .header("Authorization", auth_header)
             .header("Accept", "application/json")
             .call()
             .map_err(|ref e| jira_error_with_hint(e))?,
     };
+
+    if !resp.status().is_success() {
+        return Err(format!("Jira API error: HTTP {}", resp.status().as_u16()));
+    }
 
     resp.into_body()
         .read_to_string()
@@ -253,6 +260,42 @@ fn jira_error_with_hint(e: &ureq::Error) -> String {
         _ => "",
     };
     format!("Jira API error: {e}{hint}")
+}
+
+#[cfg(test)]
+#[test]
+fn jira_requests_keep_credentials_and_body_at_selected_origin() {
+    use super::hardened_http::redirect_tests::Server;
+    let target = Server::new(200, None, "{}");
+    let body = "synthetic-private-jira-query";
+    for status in [301, 302, 303, 307, 308] {
+        let origin = Server::new(status, Some(&target.url), body);
+        for method in ["GET", "POST"] {
+            let error = jira_request(
+                "Bearer synthetic-token",
+                method,
+                &origin.url,
+                Some(body.as_bytes()),
+            )
+            .unwrap_err();
+            assert!(error.contains(&status.to_string()));
+            assert!(!error.contains(body));
+        }
+        assert_eq!(origin.count(), 2);
+        assert!(origin.received_body(body));
+        assert_eq!(target.count(), 0);
+    }
+    assert_eq!(
+        jira_request(
+            "Bearer synthetic-token",
+            "POST",
+            &target.url,
+            Some(body.as_bytes())
+        )
+        .unwrap(),
+        "{}"
+    );
+    assert!(target.received_body(body));
 }
 
 // ---------------------------------------------------------------------------

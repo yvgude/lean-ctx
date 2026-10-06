@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Typed XDG base-directory resolvers for lean-ctx (GH #408 / GL #602).
 //!
 //! Historically every lean-ctx file joined onto a single [`lean_ctx_data_dir`]
@@ -41,10 +43,28 @@ fn env_path(name: &str) -> Option<PathBuf> {
         .map(PathBuf::from)
 }
 
+/// The per-process directory overrides. Any of them makes this process run on
+/// directories other than the install's default layout.
+const DIR_OVERRIDES: [&str; 4] = [
+    "LEAN_CTX_CONFIG_DIR",
+    "LEAN_CTX_DATA_DIR",
+    "LEAN_CTX_STATE_DIR",
+    "LEAN_CTX_CACHE_DIR",
+];
+
+/// `true` when a directory override is set. Layout healing that moves files in
+/// the *default* locations (`~/.lean-ctx`, the XDG config dir, the layout pin)
+/// must then do nothing: the override applies to this process only, and the
+/// default locations belong to the real install (GH #2007).
+#[must_use]
+pub(crate) fn dir_override_active() -> bool {
+    DIR_OVERRIDES.iter().any(|name| env_path(name).is_some())
+}
+
 /// Resolves an XDG base directory (e.g. `~/.config`), honoring the `env_name`
 /// override and falling back to `$HOME/<home_fallback>`. Returns the base only;
 /// callers append `lean-ctx`.
-fn xdg_base(env_name: &str, home_fallback: &str) -> Result<PathBuf, String> {
+pub(crate) fn xdg_base(env_name: &str, home_fallback: &str) -> Result<PathBuf, String> {
     if let Some(p) = env_path(env_name) {
         return Ok(p);
     }
@@ -149,10 +169,21 @@ fn single_dir_override_fs(
 }
 
 /// Shared resolver for the config/state/cache categories.
+fn category_dir(cat_env: &str, xdg_env: &str, home_fallback: &str) -> Result<PathBuf, String> {
+    let dir = resolve_category_dir(cat_env, xdg_env, home_fallback)?;
+    ensure_dir_permissions(&dir);
+    Ok(dir)
+}
+
+/// The same category identity, without creating or changing the resolved directory.
 // Under `#[cfg(test)]` the body always succeeds (returns the sandbox); the
 // fallible XDG resolution only runs in real builds.
 #[cfg_attr(test, allow(clippy::unnecessary_wraps))]
-fn category_dir(cat_env: &str, xdg_env: &str, home_fallback: &str) -> Result<PathBuf, String> {
+fn resolve_category_dir(
+    cat_env: &str,
+    xdg_env: &str,
+    home_fallback: &str,
+) -> Result<PathBuf, String> {
     let category_override = env_path(cat_env);
 
     // A category override always wins, even under #[cfg(test)] — this lets the
@@ -160,7 +191,6 @@ fn category_dir(cat_env: &str, xdg_env: &str, home_fallback: &str) -> Result<Pat
     #[cfg(test)]
     {
         if let Some(p) = category_override {
-            ensure_dir_permissions(&p);
             return Ok(p);
         }
         // Unit tests share one per-process sandbox so stray store writes can't
@@ -172,9 +202,7 @@ fn category_dir(cat_env: &str, xdg_env: &str, home_fallback: &str) -> Result<Pat
     #[cfg(not(test))]
     {
         let base = xdg_base(xdg_env, home_fallback)?;
-        let dir = resolve(category_override, single_dir_override(), &base);
-        ensure_dir_permissions(&dir);
-        Ok(dir)
+        Ok(resolve(category_override, single_dir_override(), &base))
     }
 }
 
@@ -182,6 +210,11 @@ fn category_dir(cat_env: &str, xdg_env: &str, home_fallback: &str) -> Result<Pat
 /// Override: `LEAN_CTX_CONFIG_DIR`; default `$XDG_CONFIG_HOME/lean-ctx`.
 pub fn config_dir() -> Result<PathBuf, String> {
     category_dir("LEAN_CTX_CONFIG_DIR", "XDG_CONFIG_HOME", ".config")
+}
+
+/// Resolve CONFIG without creating directories or repairing permissions.
+pub fn config_dir_read_only() -> Result<PathBuf, String> {
+    resolve_category_dir("LEAN_CTX_CONFIG_DIR", "XDG_CONFIG_HOME", ".config")
 }
 
 /// Resolve a member (a file or sub-directory) of the config dir, adopting a copy
@@ -271,10 +304,20 @@ pub fn state_dir() -> Result<PathBuf, String> {
     category_dir("LEAN_CTX_STATE_DIR", "XDG_STATE_HOME", ".local/state")
 }
 
+/// Resolve STATE without creating directories or repairing permissions.
+pub(crate) fn state_dir_read_only() -> Result<PathBuf, String> {
+    resolve_category_dir("LEAN_CTX_STATE_DIR", "XDG_STATE_HOME", ".local/state")
+}
+
 /// Cache directory — semantic cache, models, learned patterns. tmpfs-safe.
 /// Override: `LEAN_CTX_CACHE_DIR`; default `$XDG_CACHE_HOME/lean-ctx`.
 pub fn cache_dir() -> Result<PathBuf, String> {
     category_dir("LEAN_CTX_CACHE_DIR", "XDG_CACHE_HOME", ".cache")
+}
+
+/// Resolve CACHE without creating directories or repairing permissions.
+pub(crate) fn cache_dir_read_only() -> Result<PathBuf, String> {
+    resolve_category_dir("LEAN_CTX_CACHE_DIR", "XDG_CACHE_HOME", ".cache")
 }
 
 /// Runtime directory — `daemon.pid`, `daemon.sock`. `$XDG_RUNTIME_DIR/lean-ctx`.
@@ -320,6 +363,11 @@ pub(crate) fn xdg_config_lean_ctx_dir() -> Option<PathBuf> {
 
 /// Split target for the data category (`$XDG_DATA_HOME/lean-ctx`).
 pub(crate) fn data_split_target() -> Result<PathBuf, String> {
+    raw_category_dir("LEAN_CTX_DATA_DIR", "XDG_DATA_HOME", ".local/share")
+}
+
+/// Resolve DATA without creating directories or repairing permissions.
+pub fn data_dir_read_only() -> Result<PathBuf, String> {
     raw_category_dir("LEAN_CTX_DATA_DIR", "XDG_DATA_HOME", ".local/share")
 }
 

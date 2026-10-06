@@ -1,9 +1,13 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use chrono::Utc;
 use serde::{Deserialize, Serialize};
+use sha2::{Digest as _, Sha256};
 
 use super::heuristics::{normalize_loaded_session, session_matches_project_root};
 use super::paths::sessions_dir;
-use super::state::{BATCH_SAVE_INTERVAL, extract_session_facts};
+use super::save_outcome::SaveOutcome;
+use super::state::extract_session_facts;
 #[allow(clippy::wildcard_imports)]
 use super::types::*;
 
@@ -19,6 +23,11 @@ const SAVE_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5)
 /// The wedged-holder test waits this out under the global test env lock.
 #[cfg(test)]
 const SAVE_LOCK_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(1);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum SessionScopeError {
+    ProjectRootMismatch,
+}
 
 #[derive(Debug, Default, Deserialize, Serialize)]
 struct ProjectSessionIndex {
@@ -47,6 +56,27 @@ fn normalized_safe_project_root(project_root: &str) -> Option<String> {
     )
 }
 
+/// Normalize a receiving project root without accepting an implicit CWD.
+///
+/// The legacy loader intentionally accepts relative roots for compatibility;
+/// session replacement must not use that heuristic as an authority because a
+/// relative value can resolve to a different process working directory.
+fn normalized_strict_project_root(project_root: &str) -> Option<String> {
+    let path = std::path::Path::new(project_root);
+    if project_root.trim().is_empty()
+        || !path.is_absolute()
+        || crate::core::pathutil::is_broad_or_unsafe_root(path)
+    {
+        return None;
+    }
+
+    let normalized = crate::core::pathutil::safe_canonicalize_or_self(path);
+    if !normalized.is_absolute() || crate::core::pathutil::is_broad_or_unsafe_root(&normalized) {
+        return None;
+    }
+    Some(normalized.to_string_lossy().to_string())
+}
+
 fn project_index_path(dir: &std::path::Path, project_root: &str) -> std::path::PathBuf {
     let key = blake3::hash(project_root.as_bytes()).to_hex();
     dir.join("project-index").join(format!("{key}.json"))
@@ -57,6 +87,115 @@ fn read_project_index(dir: &std::path::Path, project_root: &str) -> Option<Proje
         .ok()
         .and_then(|json| serde_json::from_str::<ProjectSessionIndex>(&json).ok())
         .filter(|index| index.version == 1 && index.project_root == project_root)
+}
+
+fn project_head_from_bytes(
+    id: &str,
+    project_root: &str,
+    bytes: &[u8],
+) -> Result<(String, String), String> {
+    let json =
+        std::str::from_utf8(bytes).map_err(|_| "corrupt project session head".to_string())?;
+    let session = SessionState::from_storage_json(json)
+        .map(normalize_loaded_session)
+        .map_err(|_| "corrupt project session head".to_string())?;
+    if session.id != id {
+        return Err("corrupt project session head id".to_string());
+    }
+    if !session_matches_project_root(&session, std::path::Path::new(project_root)) {
+        return Err("project session head root mismatch".to_string());
+    }
+    let digest = Sha256::digest(bytes);
+    Ok((session.id, format!("sha256:{}", hex::encode(digest))))
+}
+
+/// Resolve the canonical project head without changing the index. Callers hold
+/// the project lock so a save cannot move the index between selection and read.
+fn read_project_head_locked(
+    dir: &std::path::Path,
+    project_root: &str,
+) -> Result<Option<(String, String)>, String> {
+    if project_index_path(dir, project_root).exists()
+        && read_project_index(dir, project_root).is_none()
+    {
+        return Err("corrupt project session index".to_string());
+    }
+    if let Some(index) = read_project_index(dir, project_root)
+        && let Some(id) = index.session_ids.last()
+    {
+        validate_session_id(id).map_err(|_| "invalid project session index head".to_string())?;
+        let path = dir.join(format!("{id}.json"));
+        match std::fs::read(path) {
+            Ok(bytes) => {
+                let json = std::str::from_utf8(&bytes)
+                    .map_err(|_| "corrupt project session head".to_string())?;
+                let session = SessionState::from_storage_json(json)
+                    .map(normalize_loaded_session)
+                    .map_err(|_| "corrupt project session head".to_string())?;
+                if session.id.as_str() != id.as_str() {
+                    return Err("corrupt project session head id".to_string());
+                }
+                let Some(session_root) = session.project_root.as_deref() else {
+                    return Err("unsafe project session head root".to_string());
+                };
+                if normalized_safe_project_root(session_root).is_none() {
+                    return Err("unsafe project session head root".to_string());
+                }
+                if session_matches_project_root(&session, std::path::Path::new(project_root)) {
+                    let digest = Sha256::digest(&bytes);
+                    return Ok(Some((
+                        session.id,
+                        format!("sha256:{}", hex::encode(digest)),
+                    )));
+                }
+                // A safe but stale index entry follows the existing loader's
+                // repair semantics; the scan below remains read-only for CAS.
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(error) => return Err(format!("read project session head: {error}")),
+        }
+    }
+
+    let entries = match std::fs::read_dir(dir) {
+        Ok(entries) => entries,
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+        Err(error) => return Err(format!("scan project sessions: {error}")),
+    };
+    let mut matches = Vec::new();
+    for entry in entries {
+        let entry = entry.map_err(|error| format!("scan project sessions: {error}"))?;
+        let path = entry.path();
+        if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
+            continue;
+        }
+        let Some(id) = path.file_stem().and_then(|stem| stem.to_str()) else {
+            continue;
+        };
+        if id == "latest" || id.starts_with('.') {
+            continue;
+        }
+        let bytes = match std::fs::read(&path) {
+            Ok(bytes) => bytes,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+            Err(error) => return Err(format!("read project session: {error}")),
+        };
+        let json = std::str::from_utf8(&bytes)
+            .map_err(|_| "unreadable session during project recovery".to_string())?;
+        let session = SessionState::from_storage_json(json)
+            .map(normalize_loaded_session)
+            .map_err(|_| "unreadable session during project recovery".to_string())?;
+        if session.id != id {
+            continue;
+        }
+        if session_matches_project_root(&session, std::path::Path::new(project_root)) {
+            matches.push((session.updated_at, session.id, bytes));
+        }
+    }
+    matches.sort_by_key(|(updated_at, _, _)| *updated_at);
+    matches
+        .pop()
+        .map(|(_, id, bytes)| project_head_from_bytes(&id, project_root, &bytes))
+        .transpose()
 }
 
 fn write_project_index(
@@ -96,35 +235,39 @@ fn with_project_index_lock<T>(
     result
 }
 
-/// Update one project's bounded warm-history index under a short, local lock.
-/// The index is strictly an acceleration structure: a failure never invalidates
-/// the already-committed session save.
-fn update_project_index(dir: &std::path::Path, project_root: &str, id: &str) -> Result<(), String> {
-    with_project_index_lock(dir, project_root, |index_path| {
-        let mut index =
-            read_project_index(dir, project_root).unwrap_or_else(|| ProjectSessionIndex {
-                version: 1,
-                project_root: project_root.to_string(),
-                session_ids: Vec::new(),
-                verified_empty: false,
-            });
-        index.verified_empty = false;
-        index.session_ids.retain(|existing| existing != id);
-        index.session_ids.push(id.to_string());
-        let excess = index
-            .session_ids
-            .len()
-            .saturating_sub(PROJECT_HISTORY_LIMIT);
-        if excess > 0 {
-            index.session_ids.drain(..excess);
-        }
-        write_project_index(index_path, &index)
-    })
+/// Update one project's bounded warm-history index while its project lock is
+/// already held. The index remains an acceleration structure.
+fn update_project_index_locked(
+    dir: &std::path::Path,
+    project_root: &str,
+    index_path: &std::path::Path,
+    id: &str,
+) -> Result<(), String> {
+    let mut index = read_project_index(dir, project_root).unwrap_or_else(|| ProjectSessionIndex {
+        version: 1,
+        project_root: project_root.to_string(),
+        session_ids: Vec::new(),
+        verified_empty: false,
+    });
+    index.verified_empty = false;
+    index.session_ids.retain(|existing| existing != id);
+    index.session_ids.push(id.to_string());
+    let excess = index
+        .session_ids
+        .len()
+        .saturating_sub(PROJECT_HISTORY_LIMIT);
+    if excess > 0 {
+        index.session_ids.drain(..excess);
+    }
+    write_project_index(index_path, &index)
 }
 
 fn repair_project_index(dir: &std::path::Path, project_root: &str) -> Option<SessionState> {
+    // Scan outside the short index lock. A save can proceed during a slow scan;
+    // its index entry is merged below before the repaired index is written.
+    let entries = std::fs::read_dir(dir).ok()?;
     let mut matches = Vec::new();
-    for entry in std::fs::read_dir(dir).ok()?.flatten() {
+    for entry in entries.flatten() {
         let path = entry.path();
         if path.extension().and_then(|extension| extension.to_str()) != Some("json") {
             continue;
@@ -145,14 +288,14 @@ fn repair_project_index(dir: &std::path::Path, project_root: &str) -> Option<Ses
     matches.sort_by_key(|session| session.updated_at);
     let latest = matches.last().cloned();
     let scanned_ids: Vec<String> = matches.iter().map(|session| session.id.clone()).collect();
-    if let Err(error) = with_project_index_lock(dir, project_root, |index_path| {
+    let result = with_project_index_lock(dir, project_root, |index_path| {
         // The scan ran outside the lock; a save may have indexed a session in the
         // meantime. Merge instead of overwriting so that id is never lost, but drop
         // ids whose file is gone (the reason this repair ran).
         let mut session_ids = scanned_ids;
         if let Some(current) = read_project_index(dir, project_root) {
             for id in current.session_ids {
-                if !dir.join(format!("{id}.json")).is_file() {
+                if validate_session_id(&id).is_err() || !dir.join(format!("{id}.json")).is_file() {
                     continue;
                 }
                 session_ids.retain(|existing| existing != &id);
@@ -169,11 +312,13 @@ fn repair_project_index(dir: &std::path::Path, project_root: &str) -> Option<Ses
                 verified_empty: session_ids.is_empty(),
                 session_ids,
             },
-        )
-    }) {
+        )?;
+        Ok(latest)
+    });
+    if let Err(error) = &result {
         tracing::debug!("lean-ctx: session project index repair skipped: {error}");
     }
-    latest
+    result.ok().flatten()
 }
 
 #[cfg(unix)]
@@ -232,11 +377,71 @@ impl PreparedSave {
     /// unbounded wait keeps whatever it holds until the other side lets go
     /// (#1783).
     pub fn write_to_disk(self) -> Result<(), String> {
-        use fs2::FileExt;
+        self.write_to_disk_with_policy(false).result
+    }
 
+    pub(super) fn write_to_disk_with_policy(self, require_new: bool) -> SaveOutcome {
+        let mut outcome = SaveOutcome::new(&self);
+        outcome.result = self.write_primary_and_pointers(require_new, &mut outcome);
+        outcome
+    }
+
+    fn write_new_if_project_head(
+        self,
+        expected: Option<&(String, String)>,
+    ) -> Result<Option<SaveOutcome>, String> {
+        let Some(project_root) = self.project_index_root.clone() else {
+            return Err("project head publication requires a safe project root".to_string());
+        };
+        let dir = self.dir.clone();
+        let mut outcome = SaveOutcome::new(&self);
+        let published = with_project_index_lock(&dir, &project_root, |index_path| {
+            let current = read_project_head_locked(&dir, &project_root)?;
+            if current.as_ref() != expected {
+                return Ok(false);
+            }
+            outcome.result = self.write_primary_and_pointers_locked(
+                true,
+                &mut outcome,
+                Some((&project_root, index_path)),
+            );
+            Ok(true)
+        })?;
+        if published {
+            Ok(Some(outcome))
+        } else {
+            Ok(None)
+        }
+    }
+
+    fn write_primary_and_pointers(
+        self,
+        require_new: bool,
+        outcome: &mut SaveOutcome,
+    ) -> Result<(), String> {
         if !self.dir.exists() {
             std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
         }
+        if let Some(project_root) = self.project_index_root.clone() {
+            let dir = self.dir.clone();
+            return with_project_index_lock(&dir, &project_root, |index_path| {
+                self.write_primary_and_pointers_locked(
+                    require_new,
+                    outcome,
+                    Some((&project_root, index_path)),
+                )
+            });
+        }
+        self.write_primary_and_pointers_locked(require_new, outcome, None)
+    }
+
+    fn write_primary_and_pointers_locked(
+        self,
+        require_new: bool,
+        outcome: &mut SaveOutcome,
+        project_index: Option<(&str, &std::path::Path)>,
+    ) -> Result<(), String> {
+        use fs2::FileExt;
         let lock_path = self.dir.join(format!(".{}.save.lock", self.id));
         let lock = std::fs::OpenOptions::new()
             .create(true)
@@ -249,16 +454,56 @@ impl PreparedSave {
 
         let result = (|| {
             let path = self.dir.join(format!("{}.json", self.id));
-            if persisted_session_version(&path).is_some_and(|version| version > self.version) {
+            if require_new && path.try_exists().map_err(|error| error.to_string())? {
+                return Err("import destination already exists".to_string());
+            }
+            if !self.canonical
+                && persisted_session_version(&path).is_some_and(|version| version > self.version)
+            {
                 return Ok(());
             }
+            let previous = match std::fs::read(&path) {
+                Ok(bytes) => Some(bytes),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+                Err(error) => return Err(error.to_string()),
+            };
+            let json = crate::core::context_checkpoint::prepare_session_checkpoint_commit(
+                &self.json,
+                previous.as_deref(),
+            )?;
+            let committed = SessionState::from_storage_json(&json)?.canonical_checkpoint;
+            outcome.primary_sha256 = Some(hex::encode(Sha256::digest(json.as_bytes())));
             let tmp = self.dir.join(format!(".{}.json.tmp", self.id));
-            std::fs::write(&tmp, &self.json).map_err(|e| e.to_string())?;
+            if require_new {
+                use std::io::Write as _;
+                let mut options = std::fs::OpenOptions::new();
+                options.write(true).create_new(true);
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::OpenOptionsExt as _;
+                    options.mode(0o600);
+                }
+                let mut file = options.open(&tmp).map_err(|error| error.to_string())?;
+                file.write_all(json.as_bytes())
+                    .map_err(|error| error.to_string())?;
+                file.sync_all().map_err(|error| error.to_string())?;
+            } else {
+                std::fs::write(&tmp, &json).map_err(|e| e.to_string())?;
+            }
             restrict_file_permissions(&tmp);
-            std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+            if require_new {
+                // Atomic no-replace publication, including non-cooperating
+                // writers that do not acquire this session's file lock.
+                std::fs::hard_link(&tmp, &path).map_err(|error| error.to_string())?;
+                outcome.committed = committed;
+                std::fs::remove_file(&tmp).map_err(|error| error.to_string())?;
+            } else {
+                std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
+                outcome.committed = committed;
+            }
 
             let latest_path = self.dir.join("latest.json");
-            let latest_tmp = self.dir.join(".latest.json.tmp");
+            let latest_tmp = self.dir.join(format!(".{}.latest.tmp", self.id));
             std::fs::write(&latest_tmp, &self.pointer_json).map_err(|e| e.to_string())?;
             restrict_file_permissions(&latest_tmp);
             std::fs::rename(&latest_tmp, &latest_path).map_err(|e| e.to_string())?;
@@ -275,8 +520,9 @@ impl PreparedSave {
                     restrict_file_permissions(&snap_path);
                 }
             }
-            if let Some(project_root) = self.project_index_root.as_deref()
-                && let Err(error) = update_project_index(&self.dir, project_root, &self.id)
+            if let Some((project_root, index_path)) = project_index
+                && let Err(error) =
+                    update_project_index_locked(&self.dir, project_root, index_path, &self.id)
             {
                 tracing::debug!("lean-ctx: session warm-history index update skipped: {error}");
             }
@@ -293,6 +539,74 @@ fn persisted_session_version(path: &std::path::Path) -> Option<u32> {
 }
 
 impl SessionState {
+    /// Return the exact persisted project head and its primary-file SHA-256.
+    ///
+    /// The project index is consulted first, with the existing repair scan
+    /// semantics used read-only when the index is absent or stale.
+    pub(crate) fn project_head(project_root: &str) -> Result<Option<(String, String)>, String> {
+        let Some(project_root) = normalized_safe_project_root(project_root) else {
+            return Err("unsafe project root".to_string());
+        };
+        let dir = sessions_dir().ok_or("cannot determine home directory")?;
+        with_project_index_lock(&dir, &project_root, |_| {
+            read_project_head_locked(&dir, &project_root)
+        })
+    }
+
+    /// Load the selected session and hash the exact primary file bytes together.
+    /// If the primary changes after head selection, fail closed for caller retry.
+    pub(crate) fn load_project_head_snapshot(
+        project_root: &str,
+    ) -> Result<Option<(Self, String)>, String> {
+        let Some(project_root) = normalized_safe_project_root(project_root) else {
+            return Err("unsafe project root".to_string());
+        };
+        let dir = sessions_dir().ok_or("cannot determine home directory")?;
+        with_project_index_lock(&dir, &project_root, |_| {
+            let Some((id, expected_digest)) = read_project_head_locked(&dir, &project_root)? else {
+                return Ok(None);
+            };
+            let path = dir.join(format!("{id}.json"));
+            let bytes = std::fs::read(path)
+                .map_err(|_| "project session head changed; retry".to_string())?;
+            let actual_hex = hex::encode(Sha256::digest(&bytes));
+            if expected_digest != format!("sha256:{actual_hex}") {
+                return Err("project session head changed; retry".to_string());
+            }
+            let json = std::str::from_utf8(&bytes)
+                .map_err(|_| "corrupt project session head".to_string())?;
+            let session = SessionState::from_storage_json(json)
+                .map(normalize_loaded_session)
+                .map_err(|_| "corrupt project session head".to_string())?;
+            if session.id != id
+                || !session_matches_project_root(&session, std::path::Path::new(&project_root))
+            {
+                return Err("project session head changed; retry".to_string());
+            }
+            Ok(Some((session, actual_hex)))
+        })
+    }
+
+    /// Return the current project root only when it is an absolute, non-broad
+    /// root normalized with the same path rules as scoped session loading.
+    pub(crate) fn strict_project_root(&self) -> Option<String> {
+        self.project_root
+            .as_deref()
+            .and_then(normalized_strict_project_root)
+    }
+
+    /// Compare a loaded session against an already trusted normalized root.
+    ///
+    /// Re-normalizing the expected value keeps this helper safe for callers
+    /// that do not hold the receiving-root invariant themselves.
+    pub(crate) fn has_exact_project_root(&self, expected_root: &str) -> bool {
+        let Some(expected_root) = normalized_strict_project_root(expected_root) else {
+            return false;
+        };
+        self.strict_project_root()
+            .is_some_and(|actual_root| actual_root == expected_root)
+    }
+
     /// Counts locally recorded decisions from the trailing seven days.
     #[must_use]
     pub fn decision_count_this_week() -> u64 {
@@ -309,20 +623,63 @@ impl SessionState {
 
     /// Serializes and writes the session state to disk synchronously.
     pub fn save(&mut self) -> Result<(), String> {
-        let prepared = self.prepare_save()?;
-        match prepared.write_to_disk() {
-            Ok(()) => Ok(()),
-            Err(e) => {
-                self.stats.unsaved_changes = BATCH_SAVE_INTERVAL;
-                Err(e)
+        let prepared = self
+            .prepare_save()
+            .inspect_err(|_| self.note_save_failure())?;
+        self.acknowledge_save(prepared.write_to_disk_with_policy(false))
+    }
+
+    /// Import publication never replaces an existing session archive. A failure
+    /// after primary publication may retain a new recovery candidate, not erase
+    /// the previous live session or source archive.
+    pub(crate) fn save_new(&mut self) -> Result<(), String> {
+        let prepared = self
+            .prepare_save()
+            .inspect_err(|_| self.note_save_failure())?;
+        self.acknowledge_save(prepared.write_to_disk_with_policy(true))
+    }
+
+    /// Publish a new project session only when the persisted project head still
+    /// equals `expected`; a conflict leaves all session files and pointers alone.
+    pub(crate) fn save_new_if_project_head(
+        &mut self,
+        expected: Option<&(String, String)>,
+    ) -> Result<bool, String> {
+        self.save_new_if_project_head_with_digest(expected)
+            .map(|committed| committed.is_some())
+    }
+
+    /// Publish with the existing project-head CAS and return the exact primary
+    /// session file digest produced by this commit.
+    pub(crate) fn save_new_if_project_head_with_digest(
+        &mut self,
+        expected: Option<&(String, String)>,
+    ) -> Result<Option<String>, String> {
+        let prepared = self
+            .prepare_save()
+            .inspect_err(|_| self.note_save_failure())?;
+        match prepared.write_new_if_project_head(expected) {
+            Ok(Some(outcome)) => {
+                let digest = outcome
+                    .primary_sha256
+                    .clone()
+                    .ok_or_else(|| "committed session digest unavailable".to_string())?;
+                self.acknowledge_save(outcome)?;
+                Ok(Some(digest))
+            }
+            Ok(None) => Ok(None),
+            Err(error) => {
+                self.note_save_failure();
+                Err(error)
             }
         }
     }
 
-    /// Serialize session state while holding the lock (CPU-only), reset the
-    /// unsaved counter, and return a `PreparedSave` whose I/O can be deferred
+    /// Serialize session state while holding the lock (CPU-only), retaining the
+    /// unsaved counter until acknowledged, and return I/O that can be deferred
     /// to a background thread via `write_to_disk()`.
     pub fn prepare_save(&mut self) -> Result<PreparedSave, String> {
+        validate_session_id(&self.id)?;
         if self
             .project_root
             .as_deref()
@@ -338,15 +695,17 @@ impl SessionState {
         } else {
             None
         };
-        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        let (json, _) = self.storage_json()?;
         let pointer_json = serde_json::to_string(&LatestPointer {
             id: self.id.clone(),
         })
         .map_err(|e| e.to_string())?;
-        self.stats.unsaved_changes = 0;
-        // #717: arm the time-based flush window.
-        self.last_flush = Some(std::time::Instant::now());
         Ok(PreparedSave {
+            canonical: self.canonical_checkpoint.is_some(),
+            expected_storage_digest: self
+                .canonical_checkpoint
+                .as_ref()
+                .and_then(|binding| binding.storage_digest.clone()),
             dir,
             id: self.id.clone(),
             version: self.version,
@@ -367,7 +726,7 @@ impl SessionState {
     /// not acceptable under concurrent agent load. New saves populate the
     /// index; legacy sessions remain available through explicit session tools.
     pub(crate) fn load_recent_for_project_root(project_root: &str, limit: usize) -> Vec<Self> {
-        let Some(project_root) = normalized_safe_project_root(project_root) else {
+        let Some(project_root) = normalized_strict_project_root(project_root) else {
             return Vec::new();
         };
         let Some(dir) = sessions_dir() else {
@@ -386,7 +745,11 @@ impl SessionState {
             .iter()
             .rev()
             .take(limit.min(PROJECT_HISTORY_LIMIT))
-            .filter_map(|id| Self::load_by_id(id))
+            .filter_map(|id| {
+                Self::load_by_id_for_project_root(id, &project_root)
+                    .ok()
+                    .flatten()
+            })
             .collect()
     }
 
@@ -446,14 +809,37 @@ impl SessionState {
         repair_project_index(&dir, &target_root)
     }
 
-    /// Loads a specific session from disk by its unique ID.
-    pub fn load_by_id(id: &str) -> Option<Self> {
+    fn load_by_id_raw(id: &str) -> Option<Self> {
         validate_session_id(id).ok()?;
         let dir = sessions_dir()?;
         let path = dir.join(format!("{id}.json"));
         let json = std::fs::read_to_string(&path).ok()?;
-        let session: Self = serde_json::from_str(&json).ok()?;
-        Some(normalize_loaded_session(session))
+        Self::from_storage_json(&json).ok()
+    }
+
+    /// Loads a specific session only when its persisted root already matches
+    /// the receiving root; legacy normalization runs after that check.
+    pub(crate) fn load_by_id_for_project_root(
+        id: &str,
+        expected_root: &str,
+    ) -> Result<Option<Self>, SessionScopeError> {
+        let Some(session) = Self::load_by_id_raw(id) else {
+            return Ok(None);
+        };
+        if !session.has_exact_project_root(expected_root) {
+            return Err(SessionScopeError::ProjectRootMismatch);
+        }
+        let persisted_project_root = session.project_root.clone();
+        let mut normalized = normalize_loaded_session(session);
+        // Keep the persisted spelling that was checked above; legacy
+        // normalization may otherwise replace an admitted root from shell_cwd.
+        normalized.project_root = persisted_project_root;
+        Ok(Some(normalized))
+    }
+
+    /// Loads a specific session from disk by its unique ID.
+    pub fn load_by_id(id: &str) -> Option<Self> {
+        Self::load_by_id_raw(id).map(normalize_loaded_session)
     }
 
     /// Deletes a saved session and its compaction snapshot.
@@ -524,7 +910,7 @@ impl SessionState {
                     continue;
                 }
                 if let Ok(json) = std::fs::read_to_string(&path)
-                    && let Ok(session) = serde_json::from_str::<SessionState>(&json)
+                    && let Ok(session) = SessionState::from_storage_json(&json)
                 {
                     summaries.push(SessionSummary {
                         id: session.id,
@@ -672,12 +1058,14 @@ mod tests {
         write_project_index,
     };
     use chrono::{Duration, Utc};
+    use sha2::{Digest as _, Sha256};
 
     #[test]
     fn recent_project_sessions_use_bounded_index_without_scanning_legacy_store() {
         let _data = crate::core::data_dir::isolated_data_dir();
         let project = tempfile::tempdir().expect("project tempdir");
         let root = project.path().to_string_lossy().to_string();
+        assert_eq!(SessionState::project_head(&root), Ok(None));
 
         for id in ["first", "second", "third"] {
             let mut session = SessionState::new();
@@ -1007,6 +1395,71 @@ mod tests {
                 .expect("load persisted session")
                 .version,
             expected_version
+        );
+    }
+
+    #[test]
+    fn project_head_cas_conflict_preserves_live_files_and_success_returns_exact_digest() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().expect("project tempdir");
+        let root = project.path().to_string_lossy().to_string();
+
+        let mut initial = SessionState::new();
+        initial.id = "cas-initial".to_string();
+        initial.project_root = Some(root.clone());
+        initial.save().expect("save initial project session");
+        let stale_head = SessionState::project_head(&root)
+            .expect("read initial project head")
+            .expect("initial head exists");
+
+        let mut local = SessionState::new();
+        local.id = "cas-local".to_string();
+        local.project_root = Some(root.clone());
+        local.save().expect("save competing local session");
+
+        let sessions = crate::core::session::paths::sessions_dir().expect("sessions dir");
+        let latest_path = sessions.join("latest.json");
+        let index_path = project_index_path(
+            &sessions,
+            &normalized_safe_project_root(&root).expect("safe root"),
+        );
+        let latest_before_conflict = std::fs::read(&latest_path).expect("latest pointer");
+        let index_before_conflict = std::fs::read(&index_path).expect("project index");
+
+        let mut candidate = SessionState::new();
+        candidate.id = "cas-candidate".to_string();
+        candidate.project_root = Some(root.clone());
+        assert!(
+            !candidate
+                .save_new_if_project_head(Some(&stale_head))
+                .expect("stale head is a conflict")
+        );
+        assert!(!sessions.join("cas-candidate.json").exists());
+        assert_eq!(
+            std::fs::read(&latest_path).expect("latest after conflict"),
+            latest_before_conflict
+        );
+        assert_eq!(
+            std::fs::read(&index_path).expect("index after conflict"),
+            index_before_conflict
+        );
+
+        let current_head = SessionState::project_head(&root)
+            .expect("read current project head")
+            .expect("current head exists");
+        assert!(
+            candidate
+                .save_new_if_project_head(Some(&current_head))
+                .expect("publish against current head")
+        );
+        let persisted =
+            std::fs::read(sessions.join("cas-candidate.json")).expect("published primary");
+        assert_eq!(
+            SessionState::project_head(&root).expect("read published project head"),
+            Some((
+                "cas-candidate".to_string(),
+                format!("sha256:{}", hex::encode(Sha256::digest(&persisted))),
+            ))
         );
     }
 }

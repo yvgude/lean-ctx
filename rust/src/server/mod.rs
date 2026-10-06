@@ -10,6 +10,7 @@ pub(crate) mod execute;
 mod file_resource;
 pub mod helpers;
 pub mod multi_path;
+pub(crate) mod native_receipts;
 pub mod notifications;
 pub mod permission_inheritance;
 pub mod policy_guard;

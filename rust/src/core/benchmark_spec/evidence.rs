@@ -226,6 +226,7 @@ mod tests {
             max_turns: None,
             profile_name: Some("coder".into()),
             profile_hash: Some("profile-hash".into()),
+            delivery_profile: None,
         }
     }
 
@@ -248,6 +249,20 @@ mod tests {
                 output_digest: "digest".into(),
             }),
             execution_receipt_ref: receipt_reference,
+            capability_observation: Some(crate::core::ocla::invocation::CapabilityObservationV1 {
+                schema_version:
+                    crate::core::ocla::invocation::CAPABILITY_OBSERVATION_SCHEMA_VERSION,
+                task_id: "task-1".into(),
+                capability_id: "test.agent".into(),
+                capability_version: "1.0.0".into(),
+                success: true,
+                input_tokens: 3,
+                output_tokens: 2,
+                latency_ms: 47,
+                failure_mode: None,
+                output_ref: Some(crate::core::ocla::invocation::evidence_ref("answer")),
+                metrics: std::collections::BTreeMap::new(),
+            }),
         }];
         BenchmarkResult {
             spec_id: "proof-workload".into(),
@@ -365,6 +380,24 @@ mod tests {
         );
         let file = std::fs::File::open(&bundle.path).expect("open evidence bundle");
         let mut archive = zip::ZipArchive::new(file).expect("open evidence archive");
+        let mut result_bytes = Vec::new();
+        archive
+            .by_name("arms/baseline/benchmark-result.json")
+            .unwrap()
+            .read_to_end(&mut result_bytes)
+            .unwrap();
+        assert_eq!(result_bytes, canonical_serialize(&benchmark));
+        let decoded: BenchmarkResult = serde_json::from_slice(&result_bytes).unwrap();
+        assert_eq!(
+            decoded.outcomes[0].capability_observation,
+            benchmark.outcomes[0].capability_observation
+        );
+        let mut without_observation = benchmark.clone();
+        without_observation.outcomes[0].capability_observation = None;
+        assert_ne!(
+            blake3::hash(&result_bytes),
+            blake3::hash(&canonical_serialize(&without_observation))
+        );
         let mut manifest = Vec::new();
         archive
             .by_name("manifest.json")

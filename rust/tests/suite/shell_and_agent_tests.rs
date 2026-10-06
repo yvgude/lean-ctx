@@ -52,6 +52,10 @@ fn run_hook_test(
     let mut cmd = Command::new(lean_ctx_bin());
     cmd.args(args)
         .env_remove("LEAN_CTX_DISABLED")
+        // These scenarios exercise rewrite mode, not the developer's installed
+        // deny/shadow policy. No global configuration is changed.
+        .env("LEAN_CTX_SHELL_HOOK_MODE", "rewrite")
+        .env("LEAN_CTX_TOOL_SURFACE", "mcp")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());

@@ -2,828 +2,121 @@
 
 All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
-
-Published release entries preserve historical wording and behavior. For current
-product, privacy, and evidence boundaries, use the
-[canonical positioning](docs/POSITIONING_CANONICAL.md) and [security policy](SECURITY.md).
+Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/POSITIONING_CANONICAL.md).
 
 ## [Unreleased]
 
-### Fixed — the repo map no longer links calls by bare name
+## [3.11.0] — 2026-10-04
 
-- `ctx_repomap` bound every call to the first same-named definition it saw,
-  so five `save()` methods produced arbitrary file dependencies. It now uses
-  the property graph's call edges (scope-bound, semantically verified, vetoed
-  guesses removed), or the caller-scope resolution without a graph; an
-  ambiguous name yields no edge.
+### Highlights
 
-### Fixed — calls no longer bind across languages
+- Context Gateway admission screens supported reads, derived stores, and supported proxy requests by default, and reports when content was not fully inspected.
+- Semantic code views use language-server evidence when available, label uncertain relationships, and avoid linking same-named symbols across language families.
+- The optional Claude Code mod shapes large native Bash output, wakes a turn when a watched background job finishes, and restores lean-ctx session context after compaction.
+- CLI reads use the same path boundary as MCP reads, command help is side-effect free, and multi-word shell allowlist entries are scoped to their subcommand.
+- Anonymous telemetry v2 reports bounded usage aggregates without prompts, source text, paths, commands, or tool arguments, with explicit opt-outs.
+- Windows indexing accepts legacy UTF-16 and Windows-1252 text, and Windows CUDA embeddings report missing CUDA 12/cuDNN 9 libraries by name.
+- The Context Store links one task's plan, delivery and outcome, measures read strategies per workload, and records a learned read policy in shadow unless you opt in.
+- `lean-ctx pack --limit` produces a bounded context bundle, and `lean-ctx index why` explains why a file is or is not indexed.
 
-- A call resolved by name could land on a same-named definition in another
-  language (a Rust `measure()` call on a shell function). Callees now resolve
-  only to definitions in the caller's language family (TypeScript/JavaScript/
-  Vue/Svelte, C/C++, JVM, Lua/Luau count as one each); with none, the call
-  stays unresolved. `GRAPH_ENGINE_VERSION` 7 rebuilds graphs holding such edges.
+### Upgrade notes
 
-### Added — negotiated semantic features in status, doctor and dashboard
+- **Context Gateway:** admission is on by default. Set `LEAN_CTX_CONTEXT_GATEWAY=off` for one run, or set `context_gateway.enabled = false` in the global config to disable it persistently. The CLI `lean-ctx read` path used by shell hooks is outside gateway admission unless a policy pack is active; output redaction still applies.
+- **Telemetry:** v2 is on by default. Setup now asks "Keep anonymous telemetry on? [Y/n]" and lists what is sent; answering `n` stores an explicit opt-out that every later upgrade keeps. Earlier versions did not store a declined prompt, so an installation that declined before 3.11.0 is on after the upgrade: the first interactive command shows a one-time notice with the full list, and `lean-ctx telemetry off` turns it off. Disable it any time with `DO_NOT_TRACK=1`, `LEAN_CTX_TELEMETRY=off`, or `lean-ctx telemetry off`; an earlier explicit opt-out remains in effect. CI jobs (`CI`, `GITHUB_ACTIONS`, `GITLAB_CI`, and other common CI markers) never collect or send telemetry; `LEAN_CTX_TELEMETRY_IN_CI=1` opts a non-CI machine with such a marker back in. Use `lean-ctx telemetry status|show|history|purge-local|delete-remote|reset-id` to inspect or manage its payload and ledger.
+- **Indexes:** `GRAPH_ENGINE_VERSION` and graph `INDEX_VERSION` are now 7. Existing graph indexes rebuild before use; do not reuse a version 6 graph.
+- **Semantic mode:** `semantic_mode = "auto"` is the default. It uses running language servers or a live IDE; it does not start servers unless `semantic_mode = "eager"` is selected in a trusted workspace. Use `semantic_mode = "off"` to disable semantic enrichment.
+- **Shell allowlist:** multi-word entries now match the exact command unless they end in *. For example, use `"git status *"` for prefix matching. Set `shell_allowlist_subcommand_scoping = false` to restore the former base-binary matching.
+- **Other new defaults:** `intelligence_runtime.context_policy_apply = false`. The `engine-context-store-v1` contract and `context-gateway-v1` vocabulary are experimental, not stable compatibility promises.
+- **Claude Code mod:** the mod is installed explicitly. When active, set its `keep_hook_context` option to retain lean-ctx hook context, or `shape_native_output` to disable native Bash shaping.
+- **Removed runtime paths:** automatic model routing is gone; a leftover `proxy.routing.tiers` table is ignored and reported by `lean-ctx doctor`. Rust embedders importing removed internal modules must move to `ContextEngine` or `lean-ctx-sdk`.
+- **Removed shell cache:** the opt-in shell output cache was removed; legacy config files still load, but `shell_cache_enabled` no longer enables cached results.
 
-- Per language, `ctx_graph status`, `lean-ctx doctor` and the dashboard graph
-  legend show what the last language server or IDE started for it actually
-  offered (`offers definition, references, implementations; no type
-  hierarchy`), recorded at backend start.
+### Security
 
-### Fixed — hooks no longer re-parse every saved session in projects without one
+- **lean-ctx -c and -t enforce the shell allowlist under pass-through (#2004).** An agent process can inherit LEAN_CTX_WRAPPED from a wrapped parent; lean-ctx -c then passed the command through raw and skipped the allowlist, so a command ctx_shell blocks ran through the Bash-hook rewrite. Pass-through now skips only compression; the allowlist applies on every route, with the same warn-only rule for an interactive terminal.
+- **Graph summaries are admitted before indexing.** The graph index no longer stores each file's first source line verbatim; summaries pass admission, and files with secret-like paths receive no summary. The graph index version advances to 7.
+- **Context Gateway admission (experimental).** Reads through ctx_read in every mode, plus its shared readers, pass built-in secret, checksum-validated PII, prompt-injection, and classification checks before caching, compression, rendering, or indexing. Search, recovery, and provider paths use admitted content as well. Redactions and withheld reads report reason codes without exposing values; blocking evaluates the original text and withholds content if a redaction leaves a detectable value behind.
+  - BM25/trigram indexes, dense snippets, caches, archives and their full-text index, tee/reference results, project knowledge, handoffs, and provider artifacts store admitted text only. Policy changes invalidate affected indexes and caches; recovery is rechecked under the current policy.
+  - The local BYOK proxy applies admission to parsed content for supported Anthropic, OpenAI Chat/Responses (including WebSocket), Gemini, and Bedrock request paths, including token-count probes. Provider-sealed fields are not rewritten. Media, malformed bodies, partial scans under max_inspected_bytes, detector timeouts, and invalid custom patterns are reported as not fully inspected; governed/sovereign modes withhold those cases. Restricted content is not sent to a remote model.
+  - lean-ctx inspect reports receipt-backed sources, detector coverage, and delivered/withheld outcomes. Receipts include the policy digest and returned-byte digest; tampered receipts are not displayed. context_gateway.hud = auto keeps pure-redaction counts out of the installed Claude Code status line.
+- **Secret redaction covers more forms.** Detection now includes AWS session keys, fine-grained GitHub and GitLab tokens, Anthropic/OpenAI keys, JWTs, Slack/Stripe/npm tokens, private-key blocks, URL-encoded and JSON-escaped values, and secrets split by zero-width or full-width characters. UUIDs and already-masked values are left intact. MCP resources, prompts, lean-ctx call, the agent-tools CLI, and the embed crate use the same output-redaction path.
+- **Recovery handles are verified before use.** Tee, archive, reference-store, and context-ledger handles are checked for resolution, expiry, digest match, and path escape without exposing content; policy refusals are reported as unavailable to the model rather than as broken handles.
+- **CLI reads and shell allowlists enforce their stated boundaries (#1901, #1903, #1906, #1419, #1930).**
+  - lean-ctx read uses the MCP ctx_read PathJail and secret-path rules. Broad roots are refused unless path_jail = false; relative paths resolve from the current directory. Shell rewrites leave refused reads on the native command, and worktrees under .claude/worktrees are treated as projects.
+  - lean-ctx COMMAND --help prints help without running the command; only handlers with verified side-effect-free help receive the flag. upgrade --check only checks.
+  - Multi-word allowlist entries such as "git status" match that command only; add a trailing * for a prefix. Binary-specific entries take precedence over project-root auto-allow. lean-ctx doctor reports entries whose meaning changed or is shadowed; the compatibility switch is trust-gated.
+  - PowerShell statements are split and checked at their executable commands, including conditions, expressions, and script-block bodies. Only read-only .NET members count as inert; file writers, process starters, and compilers remain blocked. Under bash or zsh, operators and script blocks keep their native meaning; only single inert operands are treated as inert PowerShell.
 
-- In a project with no saved session, every `hook rewrite` / `hook redirect`
-  (each agent Bash and Read call) loaded the config, which resolves the project
-  root through the latest session, and found the project index empty. An empty
-  index was treated as "unknown", so each hook process re-parsed the whole
-  session store. Measured on a store with 7,361 sessions (283 MB): a Bash
-  rewrite hook took 2.7 s and a Read redirect 2.7 s (median); with this fix
-  both take ~25 ms.
-- A full-store scan that finds no session now records that in the project
-  index (`verified_empty`). The next save for the project clears it. An empty
-  index without that mark (older versions, a damaged file) is still repaired.
-- The repair merges with the index under its lock instead of overwriting it, so
-  a session saved while the scan ran keeps its index entry.
+### Added
 
-### Changed — `benchmark dual-arm` is labelled a synthetic upper bound
+- **Gateway proof registry and source planning.** A proof registry maps admission cases and bypass checks to their tests, and the release gate can refuse while a proof entry is open. engine context-plan-sources omits caller-supplied sources unrelated to the task even when budget remains; it drops stop words, splits identifiers, and keeps sources related by task terms. lean-ctx inspect shows receipt-derived redaction, withholding, and source-use facts. A local claims catalog records what the release can say and what it does not claim.
+- **Per-host gateway coverage.** lean-ctx doctor reports whether each configured host is enforced, partial, MCP-only/not observable, or unsupported; partial means lean-ctx tools and rewritten shell commands are covered while host-native file tools can bypass admission, and not_observable means MCP-only. lean-ctx inspect shows the same coverage. The generated matrix does not claim observation without an integration that provides it. Claude Code traffic is enforced only with an Anthropic API key; Pro/Max sign-in cannot be proxied. Credential-forwarding journeys for Claude Code /v1/messages and Codex subscription /backend-api/codex/responses show a tool-result credential withheld while the rest of the turn proceeds.
+- **Claude Code mod (#1981, #1986, #1989, #1991, #1997, #1998).** lean-ctx claude-mod install|status|uninstall manages an embedded local plugin for Claude Code 2.1.287 or later; interactive setup offers installation, while non-interactive setup and update only refresh an existing install. MCP is marked always-load, and the mod shapes native Bash output of at least 2,000 characters with fail-open behavior. The shell deny lets Bash(run_in_background) through only when the exact command passes the enforced allowlist; ctx_shape remains an internal hook rather than a listed tool.
+  - A configurable set of tool descriptions is front-loaded while the rest is deferred. A watched ctx_shell background job wakes the model once instead of requiring status polling; the mod also answers a bare sleep N while a job is watched.
+  - SessionStart/UserPromptSubmit attachments authored by lean-ctx are removed to avoid repeating the same guidance; other hooks and non-lean-ctx text pass through. Use keep_hook_context to opt out. /leanctx shows session-only request, token, ToolSearch, wake, and dropped-context counts; it does not persist them or send telemetry.
+  - Before main-conversation compaction, the mod saves session state and asks the summarizer to keep recovery handles and still-reporting job IDs. The first following prompt carries that state once; user compaction instructions and subagent compactions are preserved. Plugin versions include a content hash, and doctor recognizes Claude Code's normalized cache directory name.
+- **Semantic code intelligence (#1976, #1979, #1983, #1990, #1996).** Tree-sitter remains the baseline; semantic_mode = auto uses an already-running language server or live IDE to verify uncertain structure, with bounded background refreshes that do not interrupt a backend call. Call edges carry evidence and are shown as verified, resolved, or heuristic; ambiguous callees do not bind to the alphabetically first match. Per-language capability status appears in ctx_graph status and lean-ctx doctor.
+  - ctx_impact propagates exact and weaker name-match paths separately. ctx_repomap uses verified graph call edges or caller-scope resolution, and an ambiguous name or vetoed guess does not become a link. Calls are bound within the caller's language family.
+  - implements and extends relations are collected where a backend offers them; references are checked on demand by ctx_impact rather than stored as graph edges. TypeScript 7 projects use tsc --lsp --stdio; older projects use typescript-language-server.
+  - A VS Code/Cursor/Windsurf extension bridges the editor's existing language features through a per-workspace, token-protected, read-only local navigation endpoint. It does not edit files, start servers, or displace a live server or IDE.
+- **Context Store (experimental contract `engine-context-store-v1`).** One task's plan → delivery → outcome lineage, joined from the execution ledger and Decision Receipts and scoped per tenant/project, is shown by `lean-ctx inspect --task` and `lean-ctx engine context-lineage`; missing links are listed as gaps rather than filled in.
+  - Read-strategy evidence per workload: quality, security (deliveries without full inspection) and runtime friction (re-reads, expansions, failed edits after a compressed read) are measured per task, and anything unmeasured is reported as unmeasured. Available through `lean-ctx autopilot evidence`, `lean-ctx engine context-policy-evidence` and `lean-ctx eval frontier --save-evidence`.
+  - `lean-ctx autopilot policy status|promote|monitor|rollback` keeps a promoted read-strategy policy (active plus last stable) supplied by the optional licensed runtime. Planning records it in shadow only; `intelligence_runtime.context_policy_apply = true` applies it, and security rules and explicit user choices still take precedence.
+  - The context kernel also draws on the BM25 search index and the code graph; it never builds or refreshes an index while planning. Surprise, graph proximity and redundancy are measured from the candidate set.
+- **lean-ctx pack --limit (#1885).** Writes a deterministic, self-contained XML bundle under a hard character or token cap, ranking files by the task and import graph. It can include current curated knowledge, with that material counted inside the cap; secret-bearing files and secret-like paths are withheld. Emit modes, output files, clipboard, stats, include/ignore globs, and ctx_pack action=bundle are supported. Exit 1 means even the frame could not fit; exit 2 means invalid flags.
+- **Browser OAuth for HTTP MCP servers (#1391).** `lean-ctx addon auth NAME` supports OAuth 2.1 discovery, registration, PKCE, loopback redirect, token attachment, and refresh; --status, --logout, and --no-browser are available. Credentials are encrypted per server using the macOS Keychain, Windows Credential Manager, or a Linux 0600 key file. OAuth declarations on stdio servers or alongside an Authorization header are refused.
+- **`lean-ctx index why FILE`.** Explains which indexing rule included or excluded a file, reports encoding and BM25 chunk/freshness information for eligible files, supports --json, and exits 1 for an excluded file. MCP: `ctx_index action=why path=FILE`.
+- **Windows CUDA embeddings.** The x86_64 Windows CUDA build is installed and retained by enable-gpu and update. CUDA 12/cuDNN 9 libraries can be loaded from installed pip wheels, the CUDA Toolkit, or the cuDNN installer without changing PATH; CPU-fallback diagnostics name missing DLLs and explain that CUDA 13 alone does not provide CUDA 12 DLLs.
+- **Clearer ONNX Runtime setup diagnostics.** ORT_DYLIB_PATH errors identify whether the variable is absent or malformed and explain process versus MCP configuration scope. Hints identify JSON control characters, quotes, and unexpanded %VAR%, $VAR, or ~ values. lean-ctx embeddings status reports the selected runtime, version check, and execution-provider policy, with platform-specific setup guidance.
 
-- Its baseline never uses the provider's prompt cache, while agent hosts cache
-  the prefix with or without lean-ctx. The report now says it is an upper bound,
-  not lean-ctx on vs. off, and the JSON carries
-  `"comparison": "synthetic_upper_bound"`. The README no longer quotes its
-  percentage as a saving.
-- New [measurement scope](docs/concepts/measurement-scope.md) page: what each
-  data path (tool path, proxy, embedded) can observe and which evidence level a
-  savings, reach or quality figure can reach.
+### Changed
 
-### Added — lean-ctx inside Claude Code (turn economy)
+- **One capability registry.** Capability IDs remain stable lookup names, while one registry determines which capabilities are backed by the local source tree and how their availability is described.
+- **Local use remains accountless.** Signing in alone no longer enables shared agent-presence or lease paths; a single developer's local Runtime remains available without an account.
+- **Quality evidence reports its limits (#1905).** Eval/A-B/footprint/frontier reports label runs with fewer than 30 paired tasks or without bootstrap as underpowered; --gate fails those runs. --mechanism is for small wiring fixtures, fails only on regression, and cannot support a quality claim. Non-regression is reported as NON-INFERIOR, and schema v2 reports evidence tiers from mechanism through production; fixture recordings are mechanism evidence only. Shadow reports identify their baseline as simulated and describe outcome acceptance relative to that baseline.
+  - Footprint pruning requires powered real-model evidence. --export and --compare evaluate the same tasks against a baseline. eval frontier compares strategies against one baseline and guards against leaking gold answers into task metadata.
+  - **quality-lab** uses representation_grade, which describes representation fidelity rather than task quality. Its receipt reports retention, recovery, security, and task-quality dimensions, with unmeasured dimensions shown as UNMEASURED; --gate also fails when a critical fact is lost. quality_floor and max_context_tokens remain offline-only; other profile constraint fields are not read.
+- **Prompt-cache requests stay stable (#1912).** Complexity-driven thinking blocks stay consistent across turns, are capped at half of max_tokens, and respect the client's OpenAI reasoning_effort; requests with max_tokens below 2048 do not receive an injected block. Unchanged or reverted proxy requests forward the client's original bytes, and rewritten gzip/zstd bodies are re-encoded. A warm conversation does not alternate between compressed and uncompressed system prompts.
+- **Anonymous telemetry v2 is on by default.** The former opt-in heartbeat is replaced by a typed batch. It sends version, platform, a random installation ID, client family, integration/embedding state, bounded daily built-in-tool call/failure counts, and coarse session/sync/error aggregates; tool calls are now counted in production. It never sends prompts, code, file contents, paths, commands, tool arguments, or foreign MCP tool names. Counters are per UTC day; resends replace daily totals. An unreadable config fails closed and prior opt-outs remain effective. Setup, `telemetry on` and a one-time notice on the first interactive command show the same list of what is sent; a declined setup prompt is stored as an explicit opt-out; CI jobs never collect or send.
+- **Agent registration records presence without a session cap (#1765).** New sessions keep their explicit role and available tools regardless of how many other sessions are present. Build and test commands remain serialized where they run; cargo_build_jobs and shared_cargo_target still apply. agents.max_concurrent_mutating_workers remains readable for compatibility but is no longer used.
+- **Public copy is consistent across shipped surfaces (#1987).** README, current documentation, package descriptions, help, and skill templates now use one product category and state implementation and evidence boundaries consistently. Measurement documentation distinguishes local hash-chain integrity from an explicitly signed batch export and describes what each comparison measures.
+- **Compression holdout is available as an opt-in measurement (#1977).** proxy.compression_holdout / LEAN_CTX_PROXY_COMPRESSION_HOLDOUT defaults to 0; a deterministic conversation cohort forwards the control arm without input compression and records token counts for both arms. The report is pending until each arm has 30 turns, then reports a reduction with a Welch 95% interval. Quality remains unknown in every state, and the holdout does not change thresholds or policy.
 
-- `lean-ctx claude-mod install|status|uninstall`: installs the lean-ctx Claude
-  Code mod (Claude Code 2.1.287+) from a local marketplace the binary writes —
-  no download, version-locked to the engine. `lean-ctx setup` offers it
-  interactively and refreshes an existing install; unattended runs and updates
-  never install it. `lean-ctx doctor` shows its state.
-- The mod wakes the model when `ctx_shell` background jobs finish instead of
-  leaving it to `sleep`/status polling (~19 % of all model requests in a
-  30-day corpus), shapes large native Bash stdout through lean-ctx, keeps a
-  configurable core of lean-ctx tools in front of ToolSearch, prefixes the
-  lean-ctx skill with the session's live facts, and adds `/leanctx`.
-- The mod coordinates compaction: lean-ctx saves its session first, the
-  summarizer is told to keep lean-ctx's recovery handles and running job ids
-  (alongside your own `/compact` instructions), and the next prompt carries the
-  lean-ctx session state once.
-- `ctx_shape`: internal host hook that compresses a native tool's output with
-  the real command line (command-aware patterns, secret redaction, policy
-  filters, recovery handle). Never advertised and refused through `ctx_call`.
+### Removed
+
+- **Automatic model routing.** Intent-tier selection, routing-quality fallback, Thompson-sampling feedback, the OCLA ModelRouter, built-in router registry/API/health entries, routing evals, experiment arms, and routing savings are removed. A released runtime package can still be recognized, but its model-ranking capability is not invoked. Existing routing ledger events and previously recorded history remain readable/exportable; operator-written aliases, outbound allow/deny policy, model ceilings, budgets, rate limits, and reasoning budgets remain. A stale proxy.routing.tiers table is ignored and reported by lean-ctx doctor.
+- **Unused modules and unsupported proof claims (#1914, #1915, #1923).** Uncalled internals were removed, including core::solution_rules, predictive_prefetch, multiscale_index, context_column, adaptive_chunking, cognitive_load, graph_features, progressive_compression, structural_diff, structural_tokenizer, adaptive_compression, agent_attribution, cache_diagnostics, chain_compression, content_handle, cross_customer_learning, delta_response, evidence_classification, evidence_flow, fleet_analytics, json_sample, negative_knowledge, query_aware, rule_scorer, session_budget, token_calibration, the unused context-kernel feedback, learning and attribution modules, the marginal-information gate, attention placement, MDL selector, gamma cover, predictive-coding deltas, attention-weighted context assembly, U-curve attention model, semantic chunk reorder, and io_boundary::read_file_scanned.
+  - The execution ledger and work graph are kept: they back the Context Store lineage and Decision Receipts.
+  - No CLI command, MCP tool, configuration key, or contract was removed by these module deletions. Rust embedders that imported the internal paths must drop those imports; core::solution_types and the OCP export adapter remain. The supported embedding surfaces are ContextEngine and lean-ctx-sdk.
+  - ctx_verify action=proof no longer reports Lean4 or FormallyVerified; its highest level is PolicyChecked. Empty BM25 indexes report empty, and graph metadata-file size is no longer presented as graph-index size. review no longer sets the no-op layout.enabled; no layout driver or regulated role is available, and regulated redaction belongs to policy-pack filters. Documentation and source comments no longer claim cognitive-mode savings or Jira access without evidence.
+- **Opt-in shell result cache (#1982).** Cached shell results are removed because command output depends on workspace state outside the old cache key; old config files still load.
 
 ### Fixed
 
-- A successful build (e.g. `cargo build`) now has its progress lines folded
-  like a failing one; it used to ship every `Compiling …` line, also through
-  `ctx_shell`.
-- Claude Code native installs (`~/.local/share/claude/versions/…`) are now a
-  trusted `claude` location, so `claude mcp add-json` is used there instead of
-  silently falling back to editing `~/.claude.json`. The trust check matches
-  path components under the home directory or fixed system prefixes on every
-  platform; a project-local `node_modules/.bin/claude` is no longer trusted.
-
-### Added — evidence-aware semantic code intelligence (ADR-015)
-
-- Every call edge in the property graph now records how it is known:
-  `verified` (a language server or JetBrains IDE resolved it), `resolved`
-  (bound by the caller's scope) or `heuristic` (a project-unique name match).
-  Ranking, `ctx_impact` and `ctx_callgraph` weigh edges accordingly; ambiguous
-  names are no longer linked to an arbitrary same-named definition.
-- `semantic_mode` (`auto` default, `eager`, `off`): `auto` uses language
-  servers already running in a lean-ctx process or an attached JetBrains IDE
-  and never starts one; `eager` may start them, in trusted workspaces only.
-  Supported standalone servers: rust-analyzer, TypeScript (≥ 7 natively via
-  `tsc --lsp`, ≤ 6 via typescript-language-server), pylsp, gopls. Nothing is
-  installed automatically.
-- Language servers verify ambiguous calls, veto name-match guesses that
-  actually target a library, and add `implements` edges. Answers are cached
-  per call site and reused until the code they depend on changes. On large
-  repositories a background pass (1000 lookups / 60 s) asks one call site
-  of every caller-file/target pair before a second one, guessed edges
-  first, so coverage grows as fast as the budget allows.
-- `ctx_graph status`, `lean-ctx doctor` and the dashboard graph legend show
-  the verified share per language and whether its server can run.
-- `ctx_impact` marks files reachable only through name matches
-  (`(name match only)`, JSON `weak_files`); its propagation is now exact and
-  deterministic.
-- `extends` edges (subclass → base class, type → supertype) where the backend
-  offers a type hierarchy; language servers now answer type-hierarchy
-  requests too (`ctx_refactor action=type_hierarchy` no longer needs a
-  JetBrains IDE).
-- `ctx_impact` asks the backend who really uses the symbols of the analysed
-  file (`textDocument/references`, bounded, cached) and records verified
-  `references` edges; the answer appears as a `Semantic check:` line (JSON
-  `semantic_references`).
-- **Editor bridge:** the VS Code / Cursor / Windsurf extension (0.4.0) serves
-  the editor's go-to-definition, references, implementations and type
-  hierarchy to lean-ctx on `127.0.0.1` behind a per-window token, so `auto`
-  mode verifies with whatever language extensions are installed — no language
-  server setup. Read-only, confined to the workspace folder, off with
-  `leanctx.semanticBridge.enabled = false`. New CLI: `lean-ctx editor-bridge
-  dir`.
-- Guide: [docs/guides/semantic-intelligence.md](docs/guides/semantic-intelligence.md).
-
-### Fixed — JetBrains bridge on Windows
-
-- IDE answers (definitions, references, implementations) were dropped on
-  Windows: the backend kept the project root in verbatim form (`\\?\C:\…`),
-  so no returned location mapped back to a project file, and call sites
-  went out as absolute instead of project-relative paths.
-- IDE locations outside the project (libraries, SDKs) arrive as absolute
-  paths and were rejoined onto the project root, so a call into a library
-  read as "no answer" instead of "external" and its name-match guess was not
-  vetoed.
-
-### Fixed — paths with spaces or non-ASCII characters in semantic lookups
-
-- File URIs were built without percent-encoding, so any path with a space or
-  a non-ASCII character (a project in "My Projects", an editor installed as
-  "Visual Studio Code.app") produced an invalid URI: language-server and IDE
-  answers for such files were silently dropped.
-
-### Changed — quality evidence states what it can prove (#1905)
-
-- **Breaking for CI users of `--gate`:** `lean-ctx eval ab` / `testbench` /
-  `footprint` / `frontier` report `UNDERPOWERED` for a run with fewer than 30
-  paired tasks (or no bootstrap) instead of `NO REGRESSION`, and `--gate` now
-  fails it. Add `--mechanism` to keep a tiny fixture suite as a wiring check —
-  it then fails only on `REGRESSED` and never backs a quality claim. A
-  regression fails at any size. The non-regression label is `NON-INFERIOR`.
-  Reports (schema v2, additive; v1 artifacts still verify) carry an evidence
-  tier — A mechanism, B deterministic, C recorded replay, D live run,
-  E production — and `eval verify` prints whether a quality claim is
-  supported. Fixture recordings are always tier A.
-- `eval footprint` recommends pruning an injected element only on powered
-  evidence from a real model; underpowered or fixture-only runs keep it.
-- `lean-ctx eval footprint --export <file>` writes this build's injected
-  footprint (rules, tool schemas, wakeup); `--compare <file>` runs a paired
-  evaluation of that baseline against the current build on the same tasks and
-  reports the verdict next to the per-request token delta, so a smaller
-  footprint ships only with non-inferior evidence.
-- New `lean-ctx eval frontier`: scores several lean-ctx strategies against one
-  shared baseline and prints quality delta vs. token reduction per strategy.
-  Suites gain an optional `task_class` field and a guard that fails when a
-  gold answer leaks into task metadata; `rust/eval/quality-suite.ndjson` is a
-  one-task-per-class mechanism fixture.
-- `lean-ctx quality-lab`: the `Premium/Good/…` "quality grade" is now a
-  `representation_grade` (`Excellent/Good/…`, schema v2; v1 JSON still
-  parses). It grades savings and structural fidelity, not task quality, and
-  the report says so. With `--original/--compressed` it now prints a Context
-  Quality receipt (retention, recovery, security, task quality — unmeasured
-  dimensions shown as `UNMEASURED`), and `--gate` also fails when a critical
-  fact is lost.
-- Terse compression of shell/tool output falls back to the original when the
-  final text (after dictionaries and the auto-dictionary) drops a critical
-  fact (error code, failing-test count, failure status, problem location).
-  Facts are matched as whole tokens; reversible rewrites (`FAIL`, the
-  auto-dictionary legend) count as kept.
-- Contract: [docs/contracts/context-quality-v1.md](docs/contracts/context-quality-v1.md).
-
-### Fixed — wide source directories inside a project are searchable (#1984)
-
-- `ctx_search`, `ctx_tree` and `ctx_glob` refused a directory with more than
-  50 subdirectories and no project marker of its own as "broad or
-  privacy-protected", even when it sat inside a project (for example
-  `rust/src/core`, whose markers live in `rust/` and the repo root). A
-  project marker in an ancestor now counts. Directories outside any project
-  keep the protection.
-
-### Fixed — tool output is never served stale or replaced by a dead reference (#1980)
-
-- `ctx_shell` no longer replays results from its opt-in result cache
-  (`[cache] shell_cache_enabled`). The cache keyed `ls`, `find`, `rg`,
-  `git status` and `cargo test` without the workspace state they read, so after
-  a file change it returned the old output verbatim. It also mapped every
-  absolute cwd and every path outside the project to one key. The setting is
-  removed; configs that still set it keep loading.
-- The proxy no longer remembers tool results across requests. A result re-sent
-  with the history matched its own earlier copy and was replaced by
-  `[unchanged since turn N …]` / `[Content unchanged since turn N …]`, which
-  removed it from the model's context for every client without a
-  `cache_control` breakpoint on the latest message.
-- Near-duplicate tool output used to become
-  `[Similar to turn N, key differences: ~1 line modified]`, which hid the
-  changed value (for example a rebuilt binary's date in `ls -l`). Dedup now
-  works within one request and is lossless: an exact repeat references the
-  earlier result by its tool-call id, and a near duplicate carries the changed
-  lines verbatim, only when that halves its size. The two newest tool outputs
-  always stay verbatim.
-
-### Fixed — `gain` no longer reports a bill saving it cannot see
-
-- When the proxy is not in the provider request path (for example a Claude
-  Code subscription, where only hooks and MCP tools pass through lean-ctx),
-  `lean-ctx gain` used to show the gross tool-output savings as the "net bill
-  impact" and an ROI. It now says the provider bill impact is unknown, shows
-  the gross figure as a local estimate on observed tool output, and leaves ROI
-  unavailable. `ctx_gain` JSON gains `economic_evidence` (local estimate …
-  paired control), `provider_path_observed` and `net_bill_impact_tokens/usd`
-  (`null` when not observable); existing keys are unchanged.
-
-### Changed — the savings ledger no longer calls its numbers "verified"
-
-- The ledger signature proves a record was not altered; the numbers in it are
-  local token counts (before vs. after lean-ctx), not provider-billed usage.
-  `lean-ctx roi` (terminal and Markdown) is now titled "Recorded Savings" and
-  states that basis, `lean-ctx savings` shows "SIGNED SAVINGS LEDGER", the
-  cockpit says "recorded savings today", and FinOps FOCUS credit rows read
-  "LeanCTX recorded savings (hash-chained ledger, local token counts)".
-  Provider-measured savings remain the counterfactual-metering pair (#701) in
-  `lean-ctx proxy status`. JSON keys and metric names (`saved_verified`) are
-  unchanged.
-- `SavingsEvent::quality_signal` uses one set of compression bands for every
-  writer (≥ 70 / 50 / 30 % removed) and is documented as a compression measure.
-
-### Changed — reach is reported against what lean-ctx observed
-
-- The cockpit and the reach widget show one number from one source: the share
-  of today's *observed* tool calls routed through lean-ctx, where observed =
-  routed calls + native shell calls a hook let pass. Native calls that bypass
-  every hook are shown as unknown, so the share is never presented as a share
-  of all agent activity. `/api/session` gains `compression_session.reach`.
-- The former adoption widget counted non-`ctx_*` MCP calls as "native
-  passthrough"; that figure and its `/api/stats` keys (`adoption_pct`,
-  `ctx_tool_calls`, `native_passthrough`) are removed.
-- The dashboard reads only today's tail of `metering.jsonl` (backwards) instead
-  of the whole file on every refresh; the file reaches tens of MB.
-- "All-time tokens saved" is labelled as a local estimate on lean-ctx traffic.
-
-### Security — secret redaction covers more forms
-
-- Redaction now also catches AWS `ASIA…` session keys, GitHub fine-grained
-  and GitLab tokens, Anthropic/OpenAI keys, JWTs, Slack, Stripe and npm
-  tokens, EC/DSA/OpenSSH private keys, URL-encoded and JSON-escaped values,
-  and secrets split by zero-width or full-width characters. A private-key
-  block is now replaced whole, markers included. UUIDs and already-masked
-  values are no longer redacted. A measured corpus (false negatives and false
-  positives per class) guards this in `cargo test`.
-- MCP resources, prompts, `lean-ctx call`, the agent-tools CLI and the embed
-  crate pass returned text through the same redaction as registered tools;
-  a structural test fails if a tool is dispatched around the shared pipeline.
-  The LLM proxy rails are covered by the Context Gateway work, not here.
-
-### Changed — recovery verification
-
-- Recovery handles (tee, archive, reference store, context ledger) can be
-  verified — resolves, not expired, digest matches, no path escape — without
-  exposing content. Policy refusals count as "not recoverable for the model",
-  not as a broken mechanism.
-
-### Added — a real holdout arm for the proxy's input compression (#1905)
-
-- `[proxy] compression_holdout` (env `LEAN_CTX_PROXY_COMPRESSION_HOLDOUT`,
-  default `0`, opt-in) forwards a deterministic fraction of conversations
-  **uncompressed**. The arm is decided once, on the caller's pristine body,
-  and skips every input-compression stage: pre-optimization, conversation
-  shaping, agent compaction, tool-result dedup, the provider compressors and
-  the compression pipeline. Cache-only features run the same in both arms.
-- The cohort is salted independently of `output_holdout`, so both experiments
-  can run at once without confounding each other.
-- Both arms are metered by whole-prompt tokens (billed input plus cache reads
-  and writes). `lean-ctx output-savings` reports the measured reduction with a
-  95 % confidence interval once each arm has 30 turns, "pending" before that,
-  and never an estimate. Answer quality is reported as `unknown`: the holdout
-  measures prompt size, not quality. Only token counts are stored.
-- Unlike Shadow Mode, whose baseline is simulated from the treatment's own
-  numbers, this is a real uncompressed baseline.
-
-### Fixed — lean-ctx never touches another gateway's endpoint (#1972)
-
-- `lean-ctx uninstall` deleted `ANTHROPIC_BASE_URL` from Claude Code's
-  settings even when it pointed at a different gateway (e.g. Omniroute on
-  `localhost:20128`), and `proxy enable` overwrote such a local gateway without
-  `--force`. Every loopback URL was treated as lean-ctx's proxy.
-- A URL now counts as lean-ctx's only on a lean-ctx proxy port (configured,
-  UID-derived, or the historical 4444). Install, uninstall, `proxy cleanup`,
-  `doctor` / `doctor --fix` and the Claude, Codex, Pi and Grok wiring all use
-  that rule; any other endpoint, local or remote, is kept unless `--force`.
-- Codex: a kept `openai_base_url` is no longer followed by a second
-  lean-ctx copy, which would have made `config.toml` unparseable.
-
-### Fixed — `lean-ctx-status` reports OFF after `lean-ctx-off` (#1971)
-
-- `lean-ctx-off` sets `LEAN_CTX_ENABLED=0`, but `lean-ctx-status` only checked
-  that the variable was set and kept printing `ON` (bash, zsh and fish). It
-  now reads the value, and its exit status is 0 for ON and 1 for OFF/DISABLED,
-  so scripts can test it.
-
-### Fixed — `ctx_read` keeps a `-N` tail window under `raw=true` (#1965)
-
-- `mode="-3", raw=true` returned the whole file from line 1, with no header
-  and no notice, instead of the last 3 lines. The tail spelling is now
-  canonicalized to `lines:-N` before the raw alias runs, so `-N` behaves like
-  `lines:-N` and `lines:N-M` already did (#1490): verbatim bytes of the
-  requested window.
-
-### Removed — the orphaned `core::solution_rules` module (#1923)
-
-- `core::solution_rules` built a third copy of the solution-efficiency ladder
-  that no code path read; the live rule blocks come from
-  `SolutionConfig::ladder_text()` (`rules_canonical`, `instructions`,
-  `ctx_optimize`), which honour `solution.intensity`. Removing it changes no
-  runtime behaviour. `core::solution_types` stays: it is the documented
-  backward-compatible re-export of the Solution Intelligence types for library
-  users.
-
-### Fixed — shell hooks follow package-manager upgrades (#1959)
-
-- `_lc: command not found` came back after an upgrade through FreeBSD
-  ports, AUR, Homebrew or `cargo install`. Only `init`, `setup`, `update`
-  and `doctor --fix` rewrote the installed `shell-hook.*` files, so the
-  hook an older build wrote stayed in place — with aliases that call
-  `_lc`, which agent shells that drop `_`-prefixed functions cannot
-  resolve (#1898).
-- The MCP server now refreshes installed shell hooks on start, next to
-  the agent hooks. It only rewrites hook files that exist and are stale,
-  never an rc file, and skips everything when the shell hook is
-  disabled. A refreshed bash/zsh hook also refreshes `env.sh` (if
-  present) and the `_lc` PATH shims.
-
-### Fixed — the background cloud pass no longer reverts config edits (#1934)
-
-- The daily background pass (telemetry, stats/gain sync, model pull,
-  auto-push) read the config, worked on the network for up to several
-  seconds, and wrote the whole snapshot back. A change made in the
-  meantime was silently undone: `lean-ctx config set`, the dashboard, or
-  an editor. It now writes back only the timestamps it set, and nothing
-  at all when it set none.
-- Tests: this was the cause of the intermittent Windows failure of
-  `inband_ccr_emit_echo_splice_round_trip`. A pass started by a server
-  test wrote its stale config into another test's isolated config dir.
-- Tests: `build_from_directory_dispatches_parallel_and_matches_sequential`
-  could fail with 41 files listed but 3 indexed. The `bm25_max_files`
-  test pointed the process-wide config at a `bm25_max_files = 3` file,
-  so the cap applied to tests running at the same time. It now passes
-  the cap as a `Config` value. The test that only checked
-  `len() <= 5000` for 10 files was removed; the config test covers the
-  cap.
-
-### Added — browser OAuth login for HTTP MCP servers (#1391)
-
-- `lean-ctx addon auth <name>` logs in to an HTTP MCP server that requires
-  OAuth 2.1 (discovery, dynamic client registration, PKCE, loopback
-  redirect). The gateway then attaches the token and refreshes it.
-  `--status`, `--logout` and `--no-browser` are available.
-- Addon manifests declare it with `[mcp] auth = "oauth"` and optional
-  `scopes`. `auth` on a `stdio` server, or together with an `Authorization`
-  header, is refused.
-- Credentials are encrypted per server. The key is in the macOS Keychain or
-  the Windows Credential Manager; on Linux it is a `0600` key file.
-  `addon remove` deletes the credentials; an upgrade keeps the login.
-- The vendored rmcp no longer mistakes a `200` status page on the MCP
-  endpoint for OAuth resource metadata, which made discovery fail for
-  servers such as TwinMind before the well-known path was tried.
-
-### Security — PowerShell statements pass the shell allowlist, script blocks are checked (#1930)
-
-- The shell allowlist split multi-line PowerShell into fragments and rejected
-  ordinary statements as mis-splits, so the whole pipeline failed:
-  - `if ($t) { … }` and `try { … } catch { … }`
-  - `$t.Actions`, `$p.WaitForExit()` and `@(Select-String …)`
-  - `[Environment]::GetEnvironmentVariable('Path','User')`
-
-  These statements now pass. The commands inside them are what gets checked:
-  conditions, loop sources, `( … )`, `@( … )` and `$( … )` groups, and the
-  bodies of `{ … }` blocks.
-- Script blocks handed to a cmdlet are validated. Before,
-  `Get-ChildItem | ForEach-Object { Remove-Item $_ }` passed the allowlist
-  and the destructive cmdlet ran unchecked. So did `% { … }`,
-  `Where-Object { … }`, `@{e={ … }}`, `foreach (…) { … }` and a
-  `for (…) { … }` loop after another command.
-- Only read-only .NET members count as inert: `[Environment]`,
-  `[IO.Path]` and `[Math]` reads, `.Trim()`, `.WaitForExit()`, and similar.
-  Writers, process starters and compilers stay blocked:
-  `[IO.File]::WriteAllText`, `[Diagnostics.Process]::Start`,
-  `[scriptblock]::Create`, and calls through `$ExecutionContext`. So does
-  anything else lean-ctx cannot read.
-- Operators, casts and assignments are read as PowerShell only when the
-  command runs under PowerShell. Under bash or zsh, `($y -f 'x')` runs `$y`
-  as a command, and zsh runs `if (…) { … }` natively, so there only single
-  operands (`$t.Actions`, `($t)`, `@(cmd)`) are treated as inert.
-
-### Fixed — proxy keeps the prompt-cache prefix byte-stable (#1912)
-
-- Effort routing no longer busts the Anthropic cache: the complexity score is
-  session-stable, so the injected `thinking` block stays identical across
-  turns. The thinking budget is capped at half of `max_tokens`, so requests
-  with `max_tokens` below 2048 get no injection. A client-set OpenAI
-  `reasoning_effort` is never overridden.
-- When a guard reverts the compression, or nothing changed, the proxy forwards
-  the client's original bytes instead of a re-serialized body. gzip/zstd
-  bodies are re-encoded correctly after a rewrite.
-- Compressing the system prompt of a warm (client-cached) conversation is now
-  priced: it only happens when the per-turn cache-read saving repays the
-  one-off cache re-write within the conversation's observed length. Once a
-  conversation is compressed, it stays compressed, so the prefix never flips.
-- Model prices come from the current pricing table (Opus 4.5: $5/M input)
-  instead of a stale hard-coded list.
-- Docs: removed the unmeasured "~5-15% extra savings" claim; OpenAI caching
-  discounts are now described as "up to 90% on GPT-5-family".
-
-### Fixed — `ctx_read` stubs only claim content the caller actually has (#1904, #1909)
-
-- Every Claude Code process has `CLAUDECODE=1`, and that constant was used as
-  the cross-agent delivery id, so all Claude Code clients on a machine counted
-  as one agent. Delivery now uses its own per-process id: `LEAN_CTX_AGENT_ID`,
-  then `CURSOR_TASK_ID`, then `claude-<pid>`, `codex-<pid>` or `local-<pid>`.
-- A content-free cross-agent stub ("already in your context") is only served
-  when the delivery provably reached the caller's conversation. Agent B in a
-  new conversation now gets the content, never a stub pointing at agent A's
-  context. Relayed content is only reused for the view that was asked for, so
-  a `signatures` request is never answered with a `map`.
-- The MCP path recorded deliveries with a hard-coded line count of `0`. CLI,
-  daemon and MCP now record the same content snapshot.
-- Under Claude Code, sub-agents share their parent's lean-ctx process, so a
-  process scope cannot tell which agent is asking. Re-read stubs are withheld
-  there and each re-read returns the (compressed) content. `LEAN_CTX_SCOPE`
-  opts back in for integrations that run one agent per process. The
-  CLAUDE.md block (v10) drops the "re-reads ~13 tokens" claim.
-
-### Security — `lean-ctx read` is jailed like `ctx_read`; `--help` never runs a command (#1901, #1903, #1906)
-
-- `lean-ctx read` enforces the same boundary as MCP `ctx_read`, with the same
-  error text: the PathJail (project root, `allow_paths`, extra and read-only
-  roots, the lean-ctx state dir) and the secret-path policy. Before, it read
-  files outside the project with only a warning. A relative path resolves
-  against the current directory. A broad root (home, `/`, an agent config
-  dir) is refused unless `path_jail = false`.
-- Shell-hook rewrites leave a `cat` that the jailed read would refuse on the
-  native command, so a working command never turns into an access error.
-- A git worktree under `<repo>/.claude/worktrees/<name>` counts as a project,
-  not as agent config.
-- `lean-ctx <command> --help` prints help and never runs the command. Before,
-  `pack --help` built a PR pack, `secure --help` rewrote the config,
-  `proof --help` wrote proof artifacts, `skillify --help` generated rules and
-  `upgrade --help` installed a release. The dispatcher now answers `--help`
-  centrally from the `help all` reference. It passes the flag on only to
-  handlers whose own help is verified side-effect free, and a test fails when
-  a new command is left unclassified.
-- `upgrade` forwards its arguments to `update`, so `upgrade --check` only
-  checks.
-- `init --agent claude` no longer stacks another solution-rules block on
-  every run when CLAUDE.md prose mentions the `<!-- lean-ctx -->` marker. Only
-  whole marker lines count as blocks, and a strip removes the solution block
-  together with the lean-ctx block.
-
-### Fixed — `ctx_read` compression never costs more than the raw file (#1910, #1911)
-
-- `entropy` mode now compresses real source. It used to keep every line of a
-  typical Rust file, and `aggressiveness` had no effect. Lines are now dropped
-  against a file-relative surprise floor, so the default saves roughly 10–35%
-  and higher `aggressiveness` drops strictly more.
-- An `auto` read that resolves to a mode unable to shrink the file now returns
-  the bare file, never banner + file. Such reads used to cost more than raw on
-  ~600-token files. Explicit mode requests keep the "no compression applied"
-  banner. When the file exceeds the per-turn budget, the banner now says the
-  content is truncated and names `raw=true`.
-- `auto` and explicit reads of the same mode no longer share a cache entry, so
-  a banner-free fallback is never replayed to an explicit request, or the other
-  way round.
-- `html_` CCR handles from the proxy now resolve in `ctx_expand`.
-- `map` exports keep nested Rust generics intact.
-- The edit-quality penalty now escalates a mode with repeated edit failures
-  straight to `full`, as documented. It no longer steps down to a lossier
-  `signatures` or `map` view.
-- `entropy` reads are deterministic. Once `entropy` actually dropped lines,
-  two things made two reads of the same file differ, which defeats provider
-  prompt caching:
-  - the semantic line filter ran only while the embedding model happened to
-    be loaded;
-  - the learned thresholds (feedback, quality learner, bandit arm) shift
-    between calls.
-
-  Reads now use the per-language threshold adjusted by the file's own
-  compressibility, plus `aggressiveness`. The semantic filter is off for
-  reads.
-
-### Fixed — quality claims match what the gates can show (#1905)
-
-- `lean-ctx eval ab` reports now print `POWER: underpowered` when a run has
-  fewer than 30 paired tasks, so a small replay reads as a pipeline check, not
-  as evidence that compression keeps answer quality.
-- Shadow reports say the baseline is simulated from the same outcome signals.
-  "Quality maintained" became "Outcome acceptance not below baseline", and
-  recommendations no longer claim quality was kept. The evidence export uses
-  the same wording.
-- The profile `constraints` docs state that `quality_floor` and
-  `max_context_tokens` are offline-only (benchmark and calibrate) and that the
-  other constraint fields are not read yet.
-- README: the CI testbench and A/B replays are described as mechanism gates,
-  and Shadow Mode as a simulated baseline. The archived E-Bench v2 report now
-  names the model its result files record (gpt-5.6-terra, not GPT-4.1).
-- Still open from #1905: a powered with/without study. The real holdout arm
-  for compression is listed above.
-
-### Added — `lean-ctx pack --limit`: one bundle that fits a chat box (#1885)
-
-- `lean-ctx pack [path] --limit 128k` writes one self-contained XML document
-  (`<bundle>` with `<task>`, `<summary>`, `<directory_structure>`, optional
-  `<knowledge>`, `<files>`) for pasting into a web chat or piping to an agent.
-  The limit is a hard cap on the whole document, measured in characters
-  (default, what chat inputs count) or `o200k_base` tokens (`--unit tokens`);
-  `128000`, `128k` and `2M` are accepted.
-- Files are ranked by the task (`--intent "…"`, default: the session task)
-  and the import graph (personalized PageRank from the matching files), with
-  intent-specific boosts (review: changed files; explore: README/manifests).
-  The best files go in full, the next tier as signatures, the rest appear
-  only in the tree, which collapses to directory counts when it gets too big.
-- Selection honours `.gitignore`/`.ignore`, skips lockfiles, minified files,
-  binaries and files over 512 KiB, and takes `--include`/`--ignore` globs.
-  Files with detected secrets and secret-like paths (`.env`, keys) are
-  withheld and listed in the summary; `--no-security-check` needs `--force`.
-- `--emit plain` prints only the allocation report (which file, which view,
-  why), `--emit both` sends the report to stderr and the XML to stdout.
-  `-o <file>`, `--copy` (clipboard) and `--stats` (`files= chars= tokens=`)
-  are supported. Output is deterministic. Exit `1` when even the frame does
-  not fit the limit (the output is still written), `2` on bad flags.
-- `--with-knowledge[=decision,architecture,…]` appends current, public,
-  curated project facts (`--with-auto` adds machine-derived ones,
-  `--knowledge-limit` caps the count). Unlike the proposal, knowledge counts
-  toward the limit so the paste never overflows.
-- MCP: `ctx_pack action=bundle` with the same options (`path`, `limit`,
-  `unit`, `intent`, `emit`, `include`, `ignore`, `with_knowledge`, `file`);
-  the secret check is always on there.
-- Not yet: `--compress`, `--truncate`, `--strip-comments`, `--trim-base64`,
-  `--show-line-numbers`.
-
-### Removed — 24 core modules that no code path used (#1923)
-
-- These `lean_ctx::core` modules had no caller in the binary, the tests, the
-  benches, the other workspace crates or `lean-ctx-sdk`; they were compiled
-  and shipped, but never ran:
-  - `adaptive_chunking`, `cognitive_load`, `graph_features`,
-    `progressive_compression`, `structural_diff`, `structural_tokenizer` —
-    listed as added "Context Runtime research modules" in an earlier release;
-    no read, search or compression path ever called them.
-  - `adaptive_compression`, `agent_attribution`, `cache_diagnostics`,
-    `chain_compression`, `content_handle`, `cross_customer_learning`,
-    `delta_response`, `evidence_classification`, `evidence_flow`,
-    `execution_ledger`, `fleet_analytics`, `json_sample`,
-    `negative_knowledge`, `query_aware`, `rule_scorer`, `session_budget`,
-    `token_calibration`, `work_graph`.
-- About 12,500 lines less to build and maintain. No CLI command, MCP tool,
-  config key or contract changes. Rust embedders that imported one of these
-  paths directly must drop the import; `crate::engine::ContextEngine` and
-  `lean-ctx-sdk` are the supported embedding surfaces.
-- `rust/LOCK_ORDERING.md` drops lock L88 (`HANDLES`), which lived in the
-  removed `content_handle`.
-- `predictive_prefetch`, `multiscale_index` and `context_column` are removed
-  as well. Only tests referenced them; those tests went with them, and the
-  rest of `neuro_physics_scenarios.rs` and `context_cortex_phase1.rs` stays.
-  `ctx_prefetch` never used `predictive_prefetch`.
-- Kept on purpose: `ocp` is the documented Open Context Protocol export
-  adapter (schemas in `docs/contracts/ocp/`), a library boundary even though
-  no binary path calls it. Still open: `solution_rules` and `solution_types`,
-  which sit next to the Pro code and need that work first.
-
-### Fixed — the agent surface advertises only what actually works (#1913)
-
-- `/.well-known/agent.json` and `/.well-known/mcp-server.json` list only tools
-  that are callable through `tools/list` and `/v1/tools`, and a test holds the
-  three in sync. The agent card's authentication schemes now match what `/a2a`
-  enforces.
-- `/a2a` no longer takes the sender from `message.role`, so `"role":"user"` is
-  never recorded as an agent id. `message/send` is supported, and
-  `tasks/cancel` is refused for a task the caller does not own.
-- `ctx_agent` leases live in `<data_dir>/agents/leases.json` under a file lock.
-  A second lean-ctx process gets `Lease HELD` for a path another agent holds.
-  Before, each MCP server had its own in-memory table. A corrupt lease store
-  fails closed instead of handing out held resources.
-- The `ctx_agent` action enum had a merged
-  `receive_knowledge|lease_acquire|lease_release` entry and was missing
-  `export` and `poll_events`. The enum now comes from the dispatcher's action
-  list, and the schema documents `ttl_hours`.
-- Removed `OclaBus` and its event schema. It was never enabled, so every emit
-  was a no-op that production could not observe.
-- The self-pilot evidence reports its 43 agents as registered identities, not
-  as agent-bus coordination.
-
-### Fixed — Windows: a timed-out or cancelled command no longer leaves processes behind (#1920)
-
-- On Windows, `ctx_shell`, `ctx_execute` and the sandbox only ended the shell
-  itself on timeout or cancel. A process the shell had started, such as the
-  `python -` behind a heredoc, kept running on its own and could spin a core
-  for hours. Every command now runs in a private job object: a timeout or
-  cancel ends the whole process tree, and the tree also ends when lean-ctx
-  exits unexpectedly. A command that exits normally still leaves deliberately
-  started background processes running, as on Unix.
-
-### Fixed — integration tests no longer touch the developer's real `~/.lean-ctx`
-
-- The merged integration-test binary links the library without `cfg(test)`,
-  so the unit-test data-dir sandbox and scope guard did not apply: every local
-  `cargo test --test main` wrote stats, metering and telemetry identity into
-  the real data dir, and read the live `active_transcript.json` of the agent
-  session running it. That switched read-cache stubs on and made tests fail
-  locally that pass in CI. A pre-`main` constructor now points the binary at a
-  per-process temp data dir (unless `LEAN_CTX_DATA_DIR` is set) and removes the
-  ambient agent-scope variables.
-
-### Security — shell allowlist now scopes multi-word entries to their subcommand (#1419)
-
-- A multi-word `shell_allowlist`/`shell_allowlist_extra` entry like
-  `"git status"` previously granted the whole `git` binary — `git stash`,
-  `git push`, `git reset --hard` all passed, because only the base binary
-  name was ever compared. Matching is now token-based: a multi-word entry
-  with no trailing `*` matches only that exact command; add a trailing `*`
-  (`"terraform plan *"`) for prefix matching with any/no further arguments.
-  Single-word entries (`"cargo"`) are unaffected — they still match the
-  whole binary, as before.
-  Before: `shell_allowlist_extra = ["git status"]` also allowed `git stash`.
-  After: it allows only `git status`; use `"git status *"` for the old
-  prefix behavior.
-- Closed a related bypass: a scoped binary that also happens to live under
-  the project root (e.g. `.venv/bin/pip`) could skip scoping entirely via
-  the project-root auto-allow. An allowlist entry naming a binary now always
-  takes precedence over that auto-allow.
-- `lean-ctx doctor` gained two new advisories: multi-word entries whose
-  meaning changed (no trailing `*`), and entries shadowed by a broader one
-  already in effect (e.g. the default `"git"` makes a narrower `"git
-  status"` entry a no-op). Both are informational; neither blocks anything.
-- Compat/rollback: set `shell_allowlist_subcommand_scoping = false` to
-  restore the old base-binary-only matching. Trust-gated — an untrusted
-  workspace's local config cannot set this.
-
-### Fixed — hook rewrites no longer hide content from agents (#1916, #1917, #1918)
-
-- #1916: a subagent's first read of a file its parent (or a sibling) already
-  read was replaced by an "already in context" stub, although the subagent had
-  never seen the content. Read dedup is now keyed per agent within a session;
-  the parent's own re-reads are still deduplicated.
-- #1917: `grep NEEDLE big.log` reported "0 matches" when the named file was
-  larger than 512 KB, because the directory-walk size cap also applied to a
-  file named explicitly. A single named file is now searched up to 64 MB.
-  Skipped large files are named in the note, and `lean-ctx grep` exits `2`
-  (not `1`, "not found") when the search skipped files or hit its time
-  budget, and on errors.
-- #1918: commands with unquoted globs (`cat *.md`, `grep x src/*.rs`) were
-  rewritten to `lean-ctx read`/`grep`, which received the literal pattern
-  instead of the shell's expansion. They are now wrapped as a whole so the
-  shell still expands the glob. Quoted patterns (`'foo.*bar'`,
-  `"weird[1].md"`) still take the direct rewrite.
-
-### Changed — anonymous product telemetry v2, on by default
-
-- The opt-in v1 heartbeat is replaced by a strict, typed batch
-  (`telemetry_v2`). It is on by default, as accepted at installation.
-  `DO_NOT_TRACK`, `LEAN_CTX_TELEMETRY=off`, and `lean-ctx telemetry off` all
-  stop it, and an unreadable config fails closed. An explicit earlier opt-out
-  is kept.
-- Usage reaches the server during the day, not only once per day: counters are
-  kept per UTC day, and every send restates the full running total of each day,
-  so resends replace rather than add up. The MCP server sends periodically and
-  on shutdown, spaced and capped below the server's daily limit; unsent past
-  days follow under their own date. Users active for a single day are counted
-  too.
-- Sent: version, OS/arch, a random installation ID, and the AI client family.
-  Clients now come from the MCP handshake: Claude, Codex, Cursor, Gemini,
-  Windsurf, Zed, VS Code/Copilot, Kiro, Antigravity, CodeBuddy, CodeWhale.
-  The batch also carries the integration mode, the embeddings state, daily
-  call and failure counts per built-in lean-ctx tool, and coarse
-  session/sync/error aggregates. Never sent: prompts, code, file contents,
-  paths, commands, tool arguments, or foreign MCP tool names. Every field is a
-  closed enum or a bounded counter; see
-  `docs/privacy/TELEMETRY-DATA-DICTIONARY.md`.
-- `lean-ctx telemetry show|history|purge-local|delete-remote|reset-id`
-  inspects the exact pending payload and the local send ledger, and deletes
-  it locally or remotely.
-- Fixed: tool calls were never counted in production, so every usage
-  aggregate reported zero.
-
-### Fixed — claims now match what the code does (#1914, #1915)
-
-- `ctx_verify action=proof` no longer reports "Lean4 proof verification" or
-  the `FormallyVerified` level. It ran no Lean toolchain: it added four
-  hard-coded "proved" claims, one naming a theorem that does not exist. The
-  report now lists only claims checked at runtime, and its highest level is
-  `PolicyChecked`. The README no longer mentions a "4-layer verification
-  engine".
-- `lean-ctx index status` reports a BM25 index with zero chunks as `empty`
-  instead of `ready`, and prints its chunk count. The Graph Index line no
-  longer shows the size of its metadata file as the index size.
-- Removed modules that no tool path ever called, together with the tests that
-  only exercised them: the marginal information gate, attention placement,
-  MDL selector, gamma cover, predictive-coding deltas, attention-weighted
-  context assembly, the U-curve attention model, the semantic chunk reorder,
-  and `io_boundary::read_file_scanned`. Earlier release notes described
-  several of them as shipped. Among them: the "Marginal Information Gate"
-  (3.9.13, #1308) never suppressed a response, and the
-  "research modules" (3.5.16) were never wired in. Removing them changes no
-  runtime behavior.
-- The built-in `review` profile no longer sets `layout.enabled = true`. No
-  layout driver exists; the key is still accepted but has no effect (see
-  `docs/contracts/attention-layout-driver-v1.md`). The non-overridable
-  redaction for a `regulated` role (#1358) was never active, and no such role
-  exists. Regulated deployments get redaction from policy-pack `[filters]`.
-- Source comments no longer claim unmeasured cognitive-mode savings or that
-  lean-ctx cannot read Jira.
-
-### Fixed — parallel first reads no longer fail with "cache lock contention"
-
-- The first `ctx_read` of a session built the tokenizer while it held the
-  global cache lock. That takes seconds on a cold start. Every other read that
-  started at the same moment, for example a subagent reading a set of files in
-  parallel, waited behind it. Past the 10-second deadline those reads failed
-  with "cache lock contention for … — retry in a moment". The tokenizer and the
-  path-protection config are now loaded before the lock is taken, so the lock
-  is held for under a millisecond.
-- A read that still cannot get the lock in time returns the file without
-  caching it. Before, the read failed. The same applies to a cache hit: it is
-  delivered even when its bookkeeping cannot get the lock.
-- Every tenth tool call ran the Pro usage scan, which reads every saved
-  session from disk. The scan ran on the server's async workers and held the
-  session lock the whole time. With a long session history, all tool calls
-  running in parallel stalled behind it. The scan now works on a copy of the
-  two fields it needs, runs in the background, and never runs twice at once.
-
-### Fixed — files in legacy Windows encodings are indexed
-
-- Source files that are not strict UTF-8 were skipped silently by every index:
-  BM25, the semantic index, the graph, and `ctx_search`. Examples are
-  Windows-1252 "ANSI" files from Windows editors and UTF-16 files from
-  Visual Studio and PowerShell. On Windows projects, `ctx_compose` then
-  answered "no match" for code that was on disk. These files are now decoded:
-  - UTF-16 LE/BE by byte-order mark;
-  - valid UTF-8 unchanged, with any UTF-8 BOM stripped;
-  - UTF-8 with a few corrupt bytes decoded lossily;
-  - everything else as Windows-1252, so line numbers stay exact.
-- Binary detection (a NUL byte in the first 8 KiB) no longer rejects UTF-16
-  text. Run `lean-ctx index build` once so the affected files are added.
-
-### Added — `lean-ctx index why <file>`
-
-- Explains whether a file is in the search corpus and, if not, which rule
-  dropped it and how to change that. It covers the full chain: gitignore,
-  vendor and agent directories, walk depth, the lockfile/binary type,
-  built-in and `extra_ignore_patterns`, the `[index]` filter,
-  `bm25_max_files`, the 2 MiB limit, binary content, and minified bundles.
-  The checks reuse the indexer's own rules, so the diagnosis and the actual
-  indexing cannot drift apart. An eligible file shows its detected encoding
-  and whether BM25 has it, with its chunk count and freshness. The command
-  prints JSON with `--json` and exits with 1 when the file is excluded.
-  MCP: `ctx_index action=why path=<file>`.
-
-### Added — GPU embeddings on Windows
-
-- Releases ship a CUDA build for Windows (`lean-ctx-x86_64-pc-windows-msvc-cuda.zip`,
-  PyPI `thinkery-leanctx-engine-cuda` for `win_amd64`). `lean-ctx enable-gpu`
-  installs it on x86_64 Windows as it already did on x86_64 GNU/Linux, and
-  `lean-ctx update` keeps a CUDA build on the CUDA asset.
-- The CUDA 12 / cuDNN 9 libraries are found without `PATH` or
-  `LD_LIBRARY_PATH` changes. When ONNX Runtime's CUDA provider does not load
-  on the first try, lean-ctx preloads them from the pip `nvidia-*` wheels that
-  `pip install "onnxruntime-gpu[cuda,cudnn]"` installs. On Windows it also
-  looks in the CUDA Toolkit (`CUDA_PATH`, `CUDA_PATH_V12_*`) and the cuDNN 9
-  installer (`%ProgramFiles%\NVIDIA\CUDNN\v9.*\bin\12.*`), and loads the
-  provider with its own directory on the DLL search path.
-- On Windows, the CPU-fallback warning lists the missing DLLs (for example
-  `cudnn64_9*.dll`) instead of only `os error 126`. It also gives
-  Windows-specific install steps and warns that a CUDA 13 toolkit alone does
-  not provide the `*64_12.dll` files.
-
-### Improved — clearer ONNX Runtime diagnostics
-
-- The "not found" error says that `ORT_DYLIB_PATH` is not set in this process.
-  It explains that an MCP config `env` block reaches only the MCP server and
-  not terminal commands such as `lean-ctx index build-semantic`. It also shows
-  how to set the variable permanently: a PowerShell user variable on Windows
-  and a shell profile on Linux and macOS. For JSON configs, it shows that a
-  Windows path needs escaped backslashes.
-- A mangled `ORT_DYLIB_PATH` gets a hint that names the cause:
-  - control characters from a single backslash in JSON (`C:\new\…`);
-  - surrounding quotes;
-  - `%VAR%`, `$VAR` or `~`, which are not expanded.
-- `lean-ctx embeddings status` shows whether `ORT_DYLIB_PATH` is set in this
-  process, and on CUDA builds whether the CUDA runtime loads. On CPU-only
-  builds it points at `lean-ctx enable-gpu` when the selected ONNX Runtime has
-  CUDA support.
-- After `lean-ctx enable-gpu`, the next steps are specific to each platform
-  and use `pip install "onnxruntime-gpu[cuda,cudnn]"`.
-
-### Fixed — ONNX Runtime from pip is found
-
-- lean-ctx now finds the `onnxruntime` / `onnxruntime-gpu` pip wheels on its
-  own (`site-packages/onnxruntime/capi/` in the active venv or conda env,
-  `PYTHONPATH`, the user site and the system site dirs). No interpreter is run.
-- `ORT_DYLIB_PATH` accepts the directory that holds the library, not only the
-  file.
-- Versioned library names (`libonnxruntime.so.1.24.1`,
-  `libonnxruntime.1.24.1.dylib`) are recognized in every searched directory,
-  including Debian runtime packages.
-- The "not found" error, the index-build failure and `lean-ctx help` no longer
-  point at the removed `lean-ctx embeddings provision`. The error names the
-  required ONNX Runtime version, where pip puts the library, that MCP servers
-  read `ORT_DYLIB_PATH` from the editor's MCP `env` block, and the GPU path
-  (`lean-ctx enable-gpu` + `LEAN_CTX_ORT_EXECUTION_PROVIDER=gpu`).
-- `lean-ctx embeddings status` shows which runtime is used, its version check
-  and the execution-provider policy.
+- **ctx_read honours the documented bare multi-select (#2000).** mode="3,7-9" selects those lines like lines:3,7-9 instead of falling through to a full read; malformed comma payloads still reach the unknown-mode path.
+- **Control flow inside a shell function body passes the allowlist (#2002).** A function body is expanded like a top-level line, so for, if, while and case are control flow and only the commands inside them are checked; the block message no longer contains a stray run of spaces.
+- **A heredoc after a multi-line quoted string is recognised (#2003).** The heredoc scanner keeps the quote state across lines, so `echo "a⏎b"; cat <<'EOF'` no longer gates the heredoc body as commands; an apostrophe in a comment cannot hide a later heredoc.
+- **A directory override never touches the real install (#2007).** With LEAN_CTX_CONFIG_DIR, LEAN_CTX_DATA_DIR, LEAN_CTX_STATE_DIR or LEAN_CTX_CACHE_DIR set, startup layout healing no longer moves the default ~/.lean-ctx or XDG config files or writes the layout pin; previously a scratch run renamed the real ~/.lean-ctx/config.toml to config.toml.superseded.
+- **MCP startup no longer waits on recently used files (#2006).** Collecting the cache-warming history resolved every recently touched file synchronously before the server answered initialize; with the project on a network drive that took 95-150 s. It now runs on the warming thread before that thread takes the cache lock, and each session's project root is resolved once instead of once per file. Daily background housekeeping removes orphaned session save locks and prunes stores above 300 sessions by session_retention_days (at least 1 day; the newest session per project and the latest pointer are kept).
+- **ctx_expand(id=<jobId>) works without a status poll (#2005).** A finished background job is archived on expand; a running job is reported as still running and an unknown ID as nonexistent, instead of "unavailable or expired" for all three.
+- **gain no longer presents an estimate as a bill saving.** When the provider request path is not observed, lean-ctx gain reports provider bill impact as unknown, labels gross tool-output savings as a local estimate, and leaves ROI unavailable. ctx_gain exposes the evidence type, provider-path observability, and null net bill impact when it cannot be observed.
+- **Other gateways keep their endpoint (#1972).** Install, uninstall, cleanup, doctor, and supported host wiring treat only configured, UID-derived, or historical lean-ctx ports as lean-ctx endpoints. Other local or remote URLs are preserved unless --force is used; Codex no longer receives a duplicate base URL.
+- **lean-ctx-status reflects OFF (#1971).** Bash, zsh, and fish read the value of LEAN_CTX_ENABLED; the command exits 0 for ON and 1 for OFF/DISABLED.
+- **Raw tail windows stay bounded (#1965).** mode=-N, raw=true returns the requested final lines verbatim, like lines:-N, rather than the whole file.
+- **Package upgrades refresh stale shell hooks (#1959).** On MCP server start, existing stale hook files are refreshed without rewriting shell rc files; disabled hooks are skipped, and present env.sh and _lc PATH shims are refreshed with bash/zsh hooks.
+- **Background maintenance preserves config edits (#1934).** It writes only timestamps it changed and writes nothing when none changed, so concurrent config set or editor changes are not overwritten. Test configuration is passed directly instead of leaking through process-wide state.
+- **Read stubs are only reused by the caller that received them (#1904, #1909).** Delivery IDs are per process rather than shared across Claude Code processes. A content-free “already in your context” stub is returned only when delivery to that conversation is known; Claude Code subagent re-reads return compressed content. Relayed content must match the requested view. LEAN_CTX_SCOPE opts back in for integrations that run one agent per process.
+- **Compressed reads do not expand output or silently lose facts (#1910, #1911).** Auto mode falls back to bare file content when a mode cannot shrink it; explicit modes keep their notice. Over-budget reads name the truncation and raw=true. Cache entries distinguish auto from explicit modes. Entropy filtering is deterministic and uses file-relative thresholds; higher aggressiveness drops more. Terse shell/tool output falls back when compression would lose critical status, error, count, or location facts. Proxy CCR handles resolve in ctx_expand, map exports preserve nested Rust generics, and repeated edit failures escalate to full mode.
+- **The agent surface reports callable operations (#1913).** Agent cards list tools that are available through the public tool endpoints, authentication descriptions match enforced /a2a checks, and task cancellation is limited to the caller's own task. Agent action schemas follow the dispatcher's actions; the inactive OclaBus no-op was removed.
+- **Windows timeouts stop child processes (#1920).** ctx_shell, ctx_execute, and sandbox commands run in a private job object, so timeout, cancellation, or an unexpected lean-ctx exit ends the process tree. Deliberately started background processes still survive a normally completed command, as on Unix.
+- **Integration tests use an isolated data directory.** The cargo test --test main binary uses a per-process temporary data directory unless LEAN_CTX_DATA_DIR is set, and clears ambient agent-scope variables.
+- **Hook rewrites preserve visible content (#1916, #1917, #1918).** Read dedup is per agent; a named file can be searched up to 64 MB, skipped files and timeouts are reported, and lean-ctx grep exits 2 when the search was incomplete or errored. Unquoted shell globs are expanded by the shell before a whole-command rewrite; quoted patterns keep the direct rewrite.
+- **Parallel first reads no longer fail on cache contention.** Tokenizer and path-protection config load before the cache lock; if a read cannot obtain the lock in time, its content is returned without caching.
+- **Legacy Windows text encodings are indexed.** UTF-16 LE/BE, UTF-8 with or without a BOM, lossy UTF-8, and Windows-1252 are decoded with line numbers preserved. NUL-byte binary detection no longer rejects UTF-16 text; run lean-ctx index build once to add affected files.
+- **Pip ONNX Runtime libraries are found.** lean-ctx locates onnxruntime and onnxruntime-gpu libraries in active environments, PYTHONPATH, user sites, and system sites without running an interpreter. ORT_DYLIB_PATH accepts a containing directory, and versioned library names are recognized.
+- **Write refusals, batch reads, and zero-hit search are precise (#1995; fixes #1992, #1993, #1994).** Redirect/tee/heredoc/download refusals explain the read-before-write path and are unchanged by smaller commands or raw=true. Batch ctx_read appends kernel enrichment once after the summary and never in raw mode; supplements stop on line boundaries, and out-of-project episodes are not offered. ctx_search zero-hit output reports its scanned scope, index-pruned files count as covered, empty scopes explain why, and comma-separated include values are glob lists.
+- **Wide project source directories are valid scan roots (#1985; tracked in #1984).** A broad directory inside a marked project can be searched using its ancestor project marker; directories without a marker in their ancestry remain protected.
+- **Shell and proxy outputs are not replayed from stale state (#1982).** Shell commands run again against current workspace state. Proxy dedup is stateless across requests and replaces output only with a same-request reference or reconstructable line delta; the newest two outputs remain verbatim, outputs without a tool-call ID are not referenced, and dedup runs after compression.
 
 ## [3.10.5] — 2026-09-27
 

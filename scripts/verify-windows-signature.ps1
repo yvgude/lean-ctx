@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 param([Parameter(Mandatory = $true)][string]$Path)
 $ErrorActionPreference = 'Stop'
 $signature = Get-AuthenticodeSignature -LiteralPath $Path

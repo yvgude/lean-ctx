@@ -14,15 +14,36 @@
 mod shell_security {
     use lean_ctx::core::shell_allowlist::check_shell_allowlist;
 
+    struct ScopedEnv(&'static str, Option<std::ffi::OsString>);
+
+    impl ScopedEnv {
+        fn set(name: &'static str, value: &str) -> Self {
+            let previous = std::env::var_os(name);
+            // SAFETY: shell-security scenarios serialize their environment access.
+            unsafe { std::env::set_var(name, value) };
+            Self(name, previous)
+        }
+    }
+
+    impl Drop for ScopedEnv {
+        fn drop(&mut self) {
+            // SAFETY: the same serial guard remains held, including during unwinding.
+            unsafe {
+                match &self.1 {
+                    Some(value) => std::env::set_var(self.0, value),
+                    None => std::env::remove_var(self.0),
+                }
+            }
+        }
+    }
+
     /// Override the allowlist completely (bypasses config defaults) for deterministic tests.
     fn check(command: &str, allowlist: &[&str]) -> Result<(), String> {
-        let val = allowlist.join(",");
-        // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
-        unsafe { std::env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", &val) };
-        let result = check_shell_allowlist(command).map_err(|err| err.to_string());
-        // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
-        unsafe { std::env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE") };
-        result
+        // Exercise actual enforcement even when the developer deliberately runs
+        // their installed runtime in warn/off mode; do not change that runtime.
+        let _mode = ScopedEnv::set("LEAN_CTX_SHELL_SECURITY", "enforce");
+        let _allowlist = ScopedEnv::set("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", &allowlist.join(","));
+        check_shell_allowlist(command).map_err(|err| err.to_string())
     }
 
     #[test]
@@ -113,15 +134,11 @@ mod shell_security {
     #[test]
     #[serial_test::serial]
     fn scenario_empty_allowlist_passes_safe_commands() {
-        // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
-        unsafe { std::env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "") };
-        assert!(check_shell_allowlist("anything goes here").is_ok());
-        assert!(check_shell_allowlist("ls -la").is_ok());
+        assert!(check("anything goes here", &[]).is_ok());
+        assert!(check("ls -la", &[]).is_ok());
         // Unconditionally blocked commands (eval, exec, source) are still rejected
-        assert!(check_shell_allowlist("eval 'rm -rf /'").is_err());
-        assert!(check_shell_allowlist("exec /bin/bash").is_err());
-        // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
-        unsafe { std::env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE") };
+        assert!(check("eval 'rm -rf /'", &[]).is_err());
+        assert!(check("exec /bin/bash", &[]).is_err());
     }
 }
 

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use std::path::{Path, PathBuf};
 
 use crate::core::context_package::PackageLayer;
@@ -9,27 +11,35 @@ const MAX_CHECKPOINT_PACKAGE_BYTES: u64 = 16 * 1024 * 1024;
 
 pub(super) fn cmd_pack_checkpoint_seal(args: &[String]) {
     let input = flag(args, "--checkpoint");
+    let session = flag(args, "--session");
     let output = flag(args, "--output");
     let name = flag(args, "--name");
     let version = flag(args, "--version").unwrap_or_else(|| "1.0.0".into());
     let unsigned = args.iter().any(|arg| arg == "--unsigned");
-    let (Some(input), Some(output), Some(name)) = (input, output, name) else {
+    let (Some(output), Some(name)) = (output, name) else {
         fail(
-            "Usage: lean-ctx pack checkpoint-seal --checkpoint=<payload.json> --output=<file.ctxpkg> --name=<name> [--version=<v>] [--unsigned]",
+            "Usage: lean-ctx pack checkpoint-seal (--checkpoint=<payload.json> | --session=<id>) --output=<file.ctxpkg> --name=<name> [--version=<v>] [--unsigned]",
         );
     };
 
-    require_bounded_regular_file(
-        Path::new(&input),
-        MAX_CHECKPOINT_INPUT_BYTES,
-        "checkpoint payload",
-    );
-    let raw = std::fs::read_to_string(&input)
-        .unwrap_or_else(|error| fail(&format!("read checkpoint payload: {error}")));
-    let checkpoint: CheckpointPackageContentV1 = serde_json::from_str(&raw)
-        .unwrap_or_else(|error| fail(&format!("parse checkpoint payload: {error}")));
+    let (checkpoint, output) = match (input, session) {
+        (Some(input), None) => {
+            require_bounded_regular_file(
+                Path::new(&input),
+                MAX_CHECKPOINT_INPUT_BYTES,
+                "checkpoint payload",
+            );
+            let raw = std::fs::read_to_string(&input)
+                .unwrap_or_else(|error| fail(&format!("read checkpoint payload: {error}")));
+            let checkpoint = serde_json::from_str(&raw)
+                .unwrap_or_else(|error| fail(&format!("parse checkpoint payload: {error}")));
+            (checkpoint, PathBuf::from(output))
+        }
+        (None, Some(id)) => checkpoint_from_session(&id, Path::new(&output)),
+        _ => fail("exactly one of --checkpoint or --session is required"),
+    };
     let (manifest, content) = crate::core::context_package::PackageBuilder::new(&name, &version)
-        .description("Portable ContextCheckpointV2")
+        .description("Portable context checkpoint")
         .checkpoint(checkpoint)
         .build()
         .unwrap_or_else(|error| fail(&format!("build checkpoint package: {error}")));
@@ -46,7 +56,7 @@ pub(super) fn cmd_pack_checkpoint_seal(args: &[String]) {
     let manifest = crate::core::context_package::registry::write_checkpoint_bundle(
         manifest,
         content,
-        Path::new(&output),
+        &output,
         signing_key.as_ref(),
     )
     .unwrap_or_else(|error| fail(&format!("seal checkpoint package: {error}")));
@@ -54,7 +64,7 @@ pub(super) fn cmd_pack_checkpoint_seal(args: &[String]) {
         "{}",
         serde_json::to_string(&serde_json::json!({
             "schema_version": "leanctx.ctxpkg-checkpoint-seal/v1",
-            "path": PathBuf::from(output),
+            "path": output,
             "name": manifest.name,
             "version": manifest.version,
             "package_digest": format!("sha256:{}", manifest.integrity.sha256),
@@ -63,6 +73,62 @@ pub(super) fn cmd_pack_checkpoint_seal(args: &[String]) {
         }))
         .expect("seal result serializes")
     );
+}
+
+fn checkpoint_from_session(id: &str, output: &Path) -> (CheckpointPackageContentV1, PathBuf) {
+    // Like full session export: no implicit redaction or runtime role escalation.
+    if crate::core::roles::active_role_name() != "admin" {
+        fail("canonical session checkpoint export requires role 'admin'");
+    }
+    let (checkpoint, root) =
+        crate::core::session::SessionState::canonical_checkpoint_for_export(id)
+            .unwrap_or_else(|error| fail(&error));
+    let root = Path::new(&root);
+    let candidate = if output.is_absolute() {
+        output.to_path_buf()
+    } else {
+        root.join(output)
+    };
+    let (output, _) =
+        crate::core::io_boundary::jail_and_check_path("pack.checkpoint-seal", &candidate, root)
+            .unwrap_or_else(|error| fail(&error));
+    // The jail also admits lean-ctx's own data/state dirs and configured allow
+    // paths; a session export belongs inside the session's project only.
+    // Both sides go through the same canonicalizer, so Windows verbatim,
+    // case and short-name spellings compare equal component by component.
+    let canonical_root = crate::core::pathutil::canonicalize_secure(root)
+        .unwrap_or_else(|_| fail("session project root is unavailable"));
+    let inside = output
+        .parent()
+        .and_then(|parent| crate::core::pathutil::canonicalize_secure(parent).ok())
+        .is_some_and(|parent| parent.starts_with(&canonical_root));
+    if !inside {
+        fail("canonical session checkpoint export must stay inside the session project root");
+    }
+    crate::core::pathjail::enforce_writable(&output).unwrap_or_else(|error| fail(&error));
+    let (schema_version, checkpoint) = if let Some(checkpoint) = checkpoint.as_v2() {
+        (
+            crate::core::context_package::content::CHECKPOINT_PACKAGE_SCHEMA_V3,
+            serde_json::to_value(checkpoint),
+        )
+    } else if let Some(checkpoint) = checkpoint.as_v3() {
+        (
+            crate::core::context_package::content::CHECKPOINT_PACKAGE_SCHEMA_V4,
+            serde_json::to_value(checkpoint),
+        )
+    } else {
+        fail("unsupported canonical checkpoint version")
+    };
+    (
+        CheckpointPackageContentV1 {
+            schema_version: schema_version.into(),
+            checkpoint: checkpoint
+                .unwrap_or_else(|error| fail(&format!("encode checkpoint: {error}"))),
+            migration_provenance: None,
+            non_portable_fields: Vec::new(),
+        },
+        output,
+    )
 }
 
 pub(super) fn cmd_pack_checkpoint_inspect(args: &[String]) {

@@ -47,7 +47,8 @@ pub(crate) fn is_xdg_pinned() -> bool {
 
 /// Pin this install to the XDG layout — but only when it genuinely *is* XDG:
 ///
-/// - skips when `LEAN_CTX_DATA_DIR` is set (a deliberate single-dir choice);
+/// - skips when a directory override (`LEAN_CTX_CONFIG_DIR`, `_DATA_DIR`,
+///   `_STATE_DIR`, `_CACHE_DIR`) is set: it applies to this process only;
 /// - skips while a legacy `~/.lean-ctx` or mixed `$XDG_CONFIG_HOME/lean-ctx`
 ///   still holds data markers (a real single-dir/mixed install that must keep
 ///   resolving in place until `doctor --fix` splits it);
@@ -56,7 +57,8 @@ pub(crate) fn is_xdg_pinned() -> bool {
 /// Idempotent: a no-op once the pin already says `xdg`. Safe to call from any
 /// startup path.
 pub(crate) fn ensure_pinned() {
-    if std::env::var_os("LEAN_CTX_DATA_DIR").is_some() {
+    // Any directory override, not only the data dir (GH #2007).
+    if crate::core::paths::dir_override_active() {
         return;
     }
     // `single_dir_override` returns `Some` only for an unpinned legacy/mixed

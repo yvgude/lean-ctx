@@ -15,6 +15,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+use crate::core::context_admission::stores::StoreAdmission;
 use rayon::prelude::*;
 
 /// Below this file count the rayon pool setup outweighs the win, so the
@@ -122,6 +123,7 @@ fn prepare_file(
     root: &Path,
     rel: &str,
     content_hint: &HashMap<String, String>,
+    admission: &StoreAdmission,
 ) -> Option<PreparedFile> {
     if crate::core::memory_guard::abort_requested() {
         return None;
@@ -145,28 +147,27 @@ fn prepare_file(
                 if text.is_empty() {
                     return None;
                 }
-                std::borrow::Cow::Owned(text)
+                // Derived store: only admitted text, never restricted (E3).
+                std::borrow::Cow::Owned(admission.admit(&text, &abs)?)
             }
             Err(_) => return None,
         }
     } else if let Some(cached) = content_hint.get(rel) {
-        std::borrow::Cow::Borrowed(cached.as_str())
+        std::borrow::Cow::Owned(admission.admit(cached, &abs)?)
     } else if let Some(arc) = crate::core::content_cache::get(&abs, cache_state) {
+        // The shared cache only ever holds admitted text.
         crate::core::cache::record_search_content_read(true);
         std::borrow::Cow::Owned(arc.to_string())
     } else {
         crate::core::cache::record_search_content_read(false);
-        match crate::core::text_decode::read_text(&abs) {
-            Ok(c) => {
-                crate::core::content_cache::insert(
-                    &abs,
-                    cache_state,
-                    std::sync::Arc::from(c.as_str()),
-                );
-                std::borrow::Cow::Owned(c)
-            }
-            Err(_) => return None,
-        }
+        let c = admission.read(&abs)?;
+        crate::core::content_cache::insert(
+            &abs,
+            cache_state,
+            std::sync::Arc::from(c.as_str()),
+            admission,
+        );
+        std::borrow::Cow::Owned(c)
     };
 
     if crate::core::memory_guard::abort_requested() {
@@ -209,6 +210,7 @@ fn prepare_incremental_file(
     old_by_file: &HashMap<String, Vec<CodeChunk>>,
     content_hint: &HashMap<String, String>,
     rel: &str,
+    admission: &StoreAdmission,
 ) -> Option<PreparedFile> {
     if crate::core::memory_guard::abort_requested() {
         return None;
@@ -232,7 +234,7 @@ fn prepare_incremental_file(
     // resolution live in `prepare_file`; for a changed file the resident content
     // cache fails its (mtime, size) validation and falls through to a fresh disk
     // read, so the bytes match the sequential path's direct read.
-    prepare_file(root, rel, content_hint)
+    prepare_file(root, rel, content_hint, admission)
 }
 
 impl BM25Index {
@@ -244,8 +246,9 @@ impl BM25Index {
         root: &Path,
         content_hint: &HashMap<String, String>,
         files: &[String],
+        admission: &StoreAdmission,
     ) -> Self {
-        Self::build_parallel_batched(root, content_hint, files, MAX_BATCH_FILES)
+        Self::build_parallel_batched(root, content_hint, files, MAX_BATCH_FILES, admission)
     }
 
     /// Batch-size-injectable core of [`Self::build_parallel`]. `max_batch_size`
@@ -256,6 +259,7 @@ impl BM25Index {
         content_hint: &HashMap<String, String>,
         files: &[String],
         max_batch_size: usize,
+        admission: &StoreAdmission,
     ) -> Self {
         let mut index = Self::new();
         let max_batch_size = max_batch_size.clamp(1, MAX_BATCH_FILES);
@@ -271,7 +275,7 @@ impl BM25Index {
             let batch_end = (files_done + adaptive_size).min(files.len());
             let prepared: Vec<Option<PreparedFile>> = files[files_done..batch_end]
                 .par_iter()
-                .map(|rel| prepare_file(root, rel, content_hint))
+                .map(|rel| prepare_file(root, rel, content_hint, admission))
                 .collect();
             for pf in prepared.into_iter().flatten() {
                 for pc in pf.chunks {
@@ -300,6 +304,7 @@ impl BM25Index {
         prev: &BM25Index,
         old_by_file: &HashMap<String, Vec<CodeChunk>>,
         files: &[String],
+        admission: &StoreAdmission,
     ) -> Self {
         // No per-build content hint for a rebuild; `prepare_file` falls back to the
         // resident content cache (validated) then disk.
@@ -318,7 +323,9 @@ impl BM25Index {
             let batch_end = (files_done + batch_size).min(files.len());
             let prepared: Vec<Option<PreparedFile>> = files[files_done..batch_end]
                 .par_iter()
-                .map(|rel| prepare_incremental_file(root, prev, old_by_file, &empty_hint, rel))
+                .map(|rel| {
+                    prepare_incremental_file(root, prev, old_by_file, &empty_hint, rel, admission)
+                })
                 .collect();
             for pf in prepared.into_iter().flatten() {
                 for pc in pf.chunks {
@@ -340,6 +347,7 @@ impl BM25Index {
         root: &Path,
         content_hint: &HashMap<String, String>,
         files: &[String],
+        admission: &StoreAdmission,
     ) -> Self {
         let mut index = Self::new();
         let mut cache_hits = 0usize;
@@ -380,36 +388,38 @@ impl BM25Index {
                 size_bytes: state.size_bytes,
             };
             let content = if crate::core::extractors::is_binary_document(&abs) {
-                match std::fs::read(&abs) {
-                    Ok(bytes) => {
-                        let text = crate::core::extractors::extract(&abs, &bytes).text;
-                        if text.is_empty() {
-                            continue;
-                        }
-                        std::borrow::Cow::Owned(text)
-                    }
-                    Err(_) => continue,
-                }
+                let admitted = std::fs::read(&abs).ok().and_then(|bytes| {
+                    let text = crate::core::extractors::extract(&abs, &bytes).text;
+                    (!text.is_empty()).then_some(text)
+                });
+                // Derived store: only admitted text, never restricted (E3).
+                let Some(text) = admitted.and_then(|text| admission.admit(&text, &abs)) else {
+                    continue;
+                };
+                std::borrow::Cow::Owned(text)
             } else if let Some(cached) = content_hint.get(rel) {
                 cache_hits += 1;
-                std::borrow::Cow::Borrowed(cached.as_str())
+                let Some(text) = admission.admit(cached, &abs) else {
+                    continue;
+                };
+                std::borrow::Cow::Owned(text)
             } else if let Some(arc) = crate::core::content_cache::get(&abs, cache_state) {
+                // The shared cache only ever holds admitted text.
                 crate::core::cache::record_search_content_read(true);
                 cache_hits += 1;
                 std::borrow::Cow::Owned(arc.to_string())
             } else {
                 crate::core::cache::record_search_content_read(false);
-                match crate::core::text_decode::read_text(&abs) {
-                    Ok(c) => {
-                        crate::core::content_cache::insert(
-                            &abs,
-                            cache_state,
-                            std::sync::Arc::from(c.as_str()),
-                        );
-                        std::borrow::Cow::Owned(c)
-                    }
-                    Err(_) => continue,
-                }
+                let Some(c) = admission.read(&abs) else {
+                    continue;
+                };
+                crate::core::content_cache::insert(
+                    &abs,
+                    cache_state,
+                    std::sync::Arc::from(c.as_str()),
+                    admission,
+                );
+                std::borrow::Cow::Owned(c)
             };
 
             // #1739: see `prepare_file` — same predicate, same position.

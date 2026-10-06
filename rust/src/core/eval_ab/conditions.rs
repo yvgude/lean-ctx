@@ -55,6 +55,15 @@ pub enum Condition {
     /// Measures yaml_crush's token savings and its answer-preservation floor in
     /// isolation (#985).
     YamlCrush,
+    /// BM25-ranked files rendered by the `ctx_read` read mode `full`: the
+    /// comparison arm for the read-strategy conditions below.
+    ReadFull,
+    /// BM25-ranked files rendered by the read mode `map`. Measures the read
+    /// strategy the planner may choose, so context-policy evidence can carry a
+    /// task evaluation of exactly that strategy.
+    ReadMap,
+    /// BM25-ranked files rendered by the read mode `signatures`.
+    ReadSignatures,
 }
 
 impl Condition {
@@ -66,6 +75,35 @@ impl Condition {
             Condition::JsonCrush => "json_crush",
             Condition::TabularCrush => "tabular_crush",
             Condition::YamlCrush => "yaml_crush",
+            Condition::ReadFull => "read_full",
+            Condition::ReadMap => "read_map",
+            Condition::ReadSignatures => "read_signatures",
+        }
+    }
+
+    /// Parse a CLI condition label.
+    pub fn from_label(label: &str) -> Option<Self> {
+        [
+            Condition::Baseline,
+            Condition::LeanCtx,
+            Condition::JsonCrush,
+            Condition::TabularCrush,
+            Condition::YamlCrush,
+            Condition::ReadFull,
+            Condition::ReadMap,
+            Condition::ReadSignatures,
+        ]
+        .into_iter()
+        .find(|condition| condition.label() == label)
+    }
+
+    /// The read mode a read-strategy condition renders with.
+    pub fn read_mode(self) -> Option<&'static str> {
+        match self {
+            Condition::ReadFull => Some("full"),
+            Condition::ReadMap => Some("map"),
+            Condition::ReadSignatures => Some("signatures"),
+            _ => None,
         }
     }
 }
@@ -96,8 +134,32 @@ pub fn assemble(
         Condition::JsonCrush => json_crush_entries(workspace, query),
         Condition::TabularCrush => tabular_crush_entries(workspace, query),
         Condition::YamlCrush => yaml_crush_entries(workspace, query),
+        Condition::ReadFull | Condition::ReadMap | Condition::ReadSignatures => {
+            let mode = condition.read_mode().unwrap_or("full");
+            ranked_entries(workspace, query, |content, ext| {
+                read_mode_render(content, ext, mode)
+            })
+        }
     };
     Ok(pack(&entries, budget))
+}
+
+/// Render one file exactly as `ctx_read` would in `mode` — header, body and
+/// footer as the model receives them in practice.
+fn read_mode_render(content: &str, ext: Option<&str>, mode: &str) -> String {
+    let ext = ext.unwrap_or("");
+    let (output, _) = crate::tools::ctx_read::render::process_mode(
+        content,
+        mode,
+        "",
+        "",
+        ext,
+        count_tokens(content),
+        crate::core::protocol::CrpMode::Off,
+        "",
+        None,
+    );
+    output
 }
 
 /// `(relpath, rendered_content)` in baseline order: every text file, path-sorted, raw.

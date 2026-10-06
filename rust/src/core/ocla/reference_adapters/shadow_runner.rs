@@ -496,8 +496,16 @@ mod tests {
             file.sync_all().expect("flush fake RTK");
         }
         let hash = super::super::rtk_shell::sha256_file(&binary).expect("hash fake RTK");
-        // Allow process startup under suite load; both test budgets stay finite,
-        // and production keeps its fixed version-probe cap.
+        // Bound fixture preparation separately; this exercises observation pairing,
+        // while production retains its fixed version-probe deadline.
+        let prepared = crate::core::process_capture::run_with_output_limits(
+            std::process::Command::new(&binary).arg("--version"),
+            Some(std::time::Duration::from_secs(10)),
+            16 * 1024,
+            16 * 1024,
+        )
+        .expect("prepare RTK fixture");
+        assert!(!prepared.timed_out && prepared.output.status.success());
         let adapter = RtkShellAdapter::new(
             RtkConfig::new(&binary)
                 .with_pins("1.2.3", hash)
@@ -521,7 +529,7 @@ mod tests {
         assert!(report.native_observation.output_ref.is_some());
         assert!(
             report.rtk_observation.output_ref.is_some(),
-            "RTK failure: {:?}; observation: {:?}",
+            "RTK output missing: {:?}; observation: {:?}",
             report.rtk_failure,
             report.rtk_observation
         );

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! #1793: `[[ … ]]` conditionals validate as shell *syntax*, not as a command.
 //!
 //! Split out of `tests.rs` to keep that file under the LOC gate. These cover

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! A delegation wrapper's own option values are not the delegated command.
 //!
 //! `env -u git python3 -c …` runs `python3`, not `git`: `git` is the value of

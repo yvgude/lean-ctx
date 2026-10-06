@@ -1,10 +1,28 @@
 use std::path::Path;
 
-use crate::core::graph_provider::{self, FileInfo, GraphProvider, SymbolInfo};
+use crate::core::graph_provider::{self, SymbolInfo};
 use crate::core::protocol;
 use crate::core::tokens::count_tokens;
 
 pub fn handle(
+    name: &str,
+    file: Option<&str>,
+    kind: Option<&str>,
+    project_root: &str,
+) -> (String, usize) {
+    crate::core::policy::runtime::with_project_source_view(project_root, || {
+        handle_in_view(name, file, kind, project_root)
+    })
+    .unwrap_or_else(|_| {
+        (
+            "Symbol output withheld: source authority changed or could not be verified."
+                .to_string(),
+            0,
+        )
+    })
+}
+
+fn handle_in_view(
     name: &str,
     file: Option<&str>,
     kind: Option<&str>,
@@ -23,39 +41,7 @@ pub fn handle(
 
     let matches = gp.find_symbols(name, file, kind);
 
-    if matches.is_empty() {
-        return (
-            format!(
-                "Symbol '{name}' not found in index ({} symbols indexed, root={project_root}). \
-                 Try ctx_search(pattern=\"{name}\") for a broader search.",
-                gp.symbol_count()
-            ),
-            0,
-        );
-    }
-
-    if matches.len() == 1 {
-        return render_single(&matches[0], gp, project_root);
-    }
-
-    if matches.len() <= 5 {
-        return render_multiple(&matches, gp, project_root);
-    }
-
-    let mut out = format!(
-        "{} matches for '{name}'. Narrow with file= or kind=:\n",
-        matches.len()
-    );
-    for m in matches.iter().take(20) {
-        out.push_str(&format!(
-            "  {}::{} ({}:L{}-{})\n",
-            m.file, m.name, m.kind, m.start_line, m.end_line
-        ));
-    }
-    if matches.len() > 20 {
-        out.push_str(&format!("  ... and {} more\n", matches.len() - 20));
-    }
-    (out, 0)
+    render_admitted(&admit_symbols(&matches, project_root))
 }
 
 /// Render the body of the symbol named `name` that best matches the full task.
@@ -64,15 +50,28 @@ pub fn best_symbol_snippet_for_task(
     task: &str,
     project_root: &str,
 ) -> Option<(String, usize)> {
+    crate::core::policy::runtime::with_project_source_view(project_root, || {
+        best_symbol_snippet_in_view(name, task, project_root)
+    })
+    .ok()
+    .flatten()
+}
+
+fn best_symbol_snippet_in_view(
+    name: &str,
+    task: &str,
+    project_root: &str,
+) -> Option<(String, usize)> {
     let open = graph_provider::open_best_effort(project_root)?;
     let gp = &open.provider;
     let candidates = gp.find_symbols(name, None, None);
-    let scores: Vec<usize> = candidates
+    let admitted = admit_symbols(&candidates, project_root);
+    let scores: Vec<usize> = admitted
         .iter()
-        .map(|candidate| symbol_task_score(candidate, task))
+        .map(|candidate| symbol_task_score(&candidate.symbol, task))
         .collect();
     let index = first_highest_score(&scores)?;
-    let (rendered, _full_file_tokens) = render_single(&candidates[index], gp, project_root);
+    let (rendered, _) = render_content(&admitted[index].symbol, &admitted[index].content);
     let emitted_tokens = count_tokens(&rendered);
     Some((rendered, emitted_tokens))
 }
@@ -124,6 +123,22 @@ fn symbol_task_score(symbol: &SymbolInfo, task: &str) -> usize {
 /// actionable message (tokens = 0) when the handle is malformed, the graph is
 /// unavailable, or nothing resolves.
 pub fn render_by_handle(handle: &str, project_root: &str) -> (String, usize) {
+    if crate::core::handle::SymbolHandle::parse(handle).is_none() {
+        return render_handle_in_view(handle, project_root);
+    }
+    crate::core::policy::runtime::with_project_source_view(project_root, || {
+        render_handle_in_view(handle, project_root)
+    })
+    .unwrap_or_else(|_| {
+        (
+            "Symbol output withheld: source authority changed or could not be verified."
+                .to_string(),
+            0,
+        )
+    })
+}
+
+fn render_handle_in_view(handle: &str, project_root: &str) -> (String, usize) {
     let Some(parsed) = crate::core::handle::SymbolHandle::parse(handle) else {
         return (
             format!(
@@ -141,7 +156,18 @@ pub fn render_by_handle(handle: &str, project_root: &str) -> (String, usize) {
     };
     let gp = &open.provider;
     match gp.find_symbol_by_handle(&parsed) {
-        Some(sym) => render_single(&sym, gp, project_root),
+        Some(sym) => {
+            let admitted = admit_symbols(&[sym], project_root);
+            let closest = admitted.iter().min_by_key(|entry| {
+                parsed
+                    .line
+                    .map_or(0, |line| entry.symbol.start_line.abs_diff(line))
+            });
+            closest.map_or_else(
+                || render_admitted(&[]),
+                |entry| render_content(&entry.symbol, &entry.content),
+            )
+        }
         None => (
             format!(
                 "No symbol for handle '{handle}'. \
@@ -153,29 +179,117 @@ pub fn render_by_handle(handle: &str, project_root: &str) -> (String, usize) {
     }
 }
 
-fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (String, usize) {
-    let abs_path = resolve_file_path(&sym.file, project_root);
+struct AdmittedSymbol {
+    symbol: SymbolInfo,
+    content: std::sync::Arc<str>,
+}
 
-    if let Err(e) = crate::core::pathjail::jail_path(
-        std::path::Path::new(&abs_path),
-        std::path::Path::new(project_root),
-    ) {
+/// An index is a discovery hint, never authorization to reveal its metadata.
+/// Reparse bounded current sources after policy evaluation, including before
+/// disambiguation lists and stable-handle rendering. Do not persist this view.
+fn admit_symbols(candidates: &[SymbolInfo], project_root: &str) -> Vec<AdmittedSymbol> {
+    const MAX_FILES: usize = 32;
+    const MAX_BYTES: usize = 8 * 1024 * 1024;
+    let mut files = std::collections::BTreeSet::new();
+    let identities: std::collections::HashSet<_> = candidates
+        .iter()
+        .take(256)
+        .map(|candidate| {
+            (
+                candidate.file.as_str(),
+                candidate.name.as_str(),
+                candidate.kind.as_str(),
+            )
+        })
+        .collect();
+    let mut remaining_bytes = MAX_BYTES;
+    let mut admitted = Vec::new();
+    for candidate in candidates.iter().take(256) {
+        if !files.insert(candidate.file.clone()) {
+            continue;
+        }
+        if files.len() > MAX_FILES || remaining_bytes == 0 {
+            break;
+        }
+        let path = resolve_file_path(&candidate.file, project_root);
+        let Ok(content) = crate::tools::ctx_read::read_file_for_tool_rooted_budgeted(
+            &path,
+            project_root,
+            "ctx_symbol",
+            &mut remaining_bytes,
+        ) else {
+            continue;
+        };
+        let extension = Path::new(&candidate.file)
+            .extension()
+            .and_then(std::ffi::OsStr::to_str)
+            .unwrap_or("");
+        let signatures = crate::core::signatures::extract_signatures(&content, extension);
+        let content: std::sync::Arc<str> = content.into();
+        for signature in signatures {
+            if !identities.contains(&(
+                candidate.file.as_str(),
+                signature.name.as_str(),
+                signature.kind,
+            )) {
+                continue;
+            }
+            let (start_line, end_line) = signature
+                .start_line
+                .zip(signature.end_line)
+                .unwrap_or_else(|| {
+                    crate::core::graph_index::find_symbol_range(&content, &signature)
+                });
+            admitted.push(AdmittedSymbol {
+                symbol: SymbolInfo {
+                    name: signature.name,
+                    file: candidate.file.clone(),
+                    kind: signature.kind.to_string(),
+                    start_line,
+                    end_line,
+                    is_exported: signature.is_exported,
+                },
+                content: content.clone(),
+            });
+            if admitted.len() >= 256 {
+                return admitted;
+            }
+        }
+    }
+    admitted
+}
+
+fn render_admitted(symbols: &[AdmittedSymbol]) -> (String, usize) {
+    if symbols.is_empty() {
         return (
-            format!("Symbol '{}': path blocked by jail: {e}", sym.name),
+            "No matching symbol from an admissible current source.".to_string(),
             0,
         );
     }
+    if symbols.len() > 5 {
+        let mut out =
+            "Matching symbols from admissible current sources; narrow with file= or kind=:\n"
+                .to_string();
+        for entry in symbols.iter().take(20) {
+            let m = &entry.symbol;
+            out.push_str(&format!(
+                "  {}::{} ({}:L{}-{})\n",
+                m.file, m.name, m.kind, m.start_line, m.end_line
+            ));
+        }
+        return (out, 0);
+    }
+    let mut out = Vec::new();
+    let mut original = 0;
+    for entry in symbols {
+        let (text, tokens) = render_content(&entry.symbol, &entry.content);
+        out.push(text);
+        original = original.max(tokens);
+    }
+    (out.join("\n---\n\n"), original)
+}
 
-    let Ok(content) = std::fs::read_to_string(&abs_path) else {
-        return (
-            format!(
-                "Symbol '{}' found at {}:L{}-{} but file unreadable",
-                sym.name, sym.file, sym.start_line, sym.end_line
-            ),
-            0,
-        );
-    };
-
+fn render_content(sym: &SymbolInfo, content: &str) -> (String, usize) {
     let lines: Vec<&str> = content.lines().collect();
     let start = sym.start_line.saturating_sub(1).min(lines.len());
     let end = sym.end_line.min(lines.len());
@@ -200,11 +314,11 @@ fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (S
         .collect::<Vec<_>>()
         .join("\n");
 
-    let full_tokens = count_tokens(&content);
+    let full_tokens = count_tokens(content);
     let snippet_tokens = count_tokens(&snippet);
 
     let vis = if sym.is_exported { "+" } else { "-" };
-    let cc_note = symbol_cc_note(&content, &sym.file, &sym.name, sym.start_line);
+    let cc_note = symbol_cc_note(content, &sym.file, &sym.name, sym.start_line);
     // Lead with the stable handle (`path#name@Lline`) so the agent can re-target
     // this exact symbol next turn via ctx_search(action="symbol", handle=…).
     let handle = crate::core::handle::emit(&sym.file, &sym.name, sym.start_line);
@@ -213,15 +327,12 @@ fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (S
         sym.kind, sym.start_line, sym.end_line
     );
 
-    let file_info: Option<FileInfo> = gp.get_file_entry(&sym.file);
-    let ctx = if let Some(f) = file_info {
-        format!(
-            "File: {} ({} lines, {} tokens)",
-            sym.file, f.line_count, f.token_count
-        )
-    } else {
-        format!("File: {}", sym.file)
-    };
+    let ctx = format!(
+        "File: {} ({} lines, {} tokens)",
+        sym.file,
+        lines.len(),
+        full_tokens
+    );
 
     let savings = protocol::format_savings(full_tokens, snippet_tokens);
 
@@ -229,26 +340,6 @@ fn render_single(sym: &SymbolInfo, gp: &GraphProvider, project_root: &str) -> (S
         format!("{header}\n{ctx}\n\n{snippet}\n{savings}"),
         full_tokens,
     )
-}
-
-fn render_multiple(
-    symbols: &[SymbolInfo],
-    gp: &GraphProvider,
-    project_root: &str,
-) -> (String, usize) {
-    let mut out = String::new();
-    let mut total_original = 0usize;
-
-    for (i, sym) in symbols.iter().enumerate() {
-        if i > 0 {
-            out.push_str("\n---\n\n");
-        }
-        let (rendered, orig) = render_single(sym, gp, project_root);
-        out.push_str(&rendered);
-        total_original = total_original.max(orig);
-    }
-
-    (out, total_original)
 }
 
 /// Optional ` · cc=NN` suffix for a symbol header — the code-health complexity
@@ -288,6 +379,7 @@ fn resolve_file_path(relative: &str, project_root: &str) -> String {
 mod tests {
     use super::*;
     use crate::core::graph_index::{ProjectIndex, SymbolEntry};
+    use crate::core::graph_provider::GraphProvider;
 
     fn test_provider() -> GraphProvider {
         let mut index = ProjectIndex::new("/tmp/test");
@@ -384,7 +476,7 @@ mod tests {
             .into_iter()
             .next()
             .unwrap();
-        let (out, _) = render_single(&sym, &gp, tmp.path().to_str().unwrap());
+        let (out, _) = render_admitted(&admit_symbols(&[sym], tmp.path().to_str().unwrap()));
         assert!(
             out.contains("src/lib.rs#Config@L1"),
             "header must carry the stable handle, got: {out}"
@@ -426,5 +518,27 @@ mod tests {
         assert_eq!(first_highest_score(&[0, 0, 0]), Some(0));
         assert_eq!(first_highest_score(&[2, 7, 7]), Some(1));
         assert_eq!(first_highest_score(&[]), None);
+    }
+
+    #[test]
+    fn admitted_symbol_recomputes_span_and_rejects_removed_names() {
+        let dir = tempfile::tempdir().unwrap();
+        let source = dir.path().join("source.rs");
+        std::fs::write(&source, "// moved\n\npub fn current() {}\n").unwrap();
+        let root = dir.path().to_str().unwrap();
+        let indexed = SymbolInfo {
+            name: "current".into(),
+            file: "source.rs".into(),
+            kind: "fn".into(),
+            start_line: 1,
+            end_line: 1,
+            is_exported: false,
+        };
+        let admitted = admit_symbols(std::slice::from_ref(&indexed), root);
+        assert_eq!(admitted.len(), 1);
+        assert_eq!(admitted[0].symbol.start_line, 3);
+        assert!(admitted[0].symbol.is_exported);
+        std::fs::write(&source, "pub fn renamed() {}\n").unwrap();
+        assert!(admit_symbols(&[indexed], root).is_empty());
     }
 }

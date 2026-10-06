@@ -56,11 +56,17 @@ pub(super) fn handle(
 
 fn build_agents_json() -> String {
     let mut registry = crate::core::agents::AgentRegistry::load_or_create();
+    let project_roots: std::collections::BTreeSet<_> = registry
+        .agents
+        .iter()
+        .map(|agent| agent.project_root.clone())
+        .filter(|root| !root.is_empty())
+        .collect();
     let cfg = crate::core::config::Config::load().agents;
     registry.cleanup_stale(cfg.presence_ttl_hours);
     registry.cleanup_stale_logical_sessions(cfg.logical_session_ttl_seconds);
 
-    let transports: Vec<serde_json::Value> = registry
+    let live_agents: Vec<_> = registry
         .agents
         .iter()
         .filter(|agent| {
@@ -69,10 +75,14 @@ fn build_agents_json() -> String {
                     crate::ipc::process::matches_identity(agent.pid, identity)
                 })
         })
+        .collect();
+    let transports: Vec<serde_json::Value> = live_agents
+        .iter()
         .map(|a| {
             let age_min = (chrono::Utc::now() - a.last_active).num_minutes().max(0);
             serde_json::json!({
                 "id": a.agent_id,
+                "project_root": a.project_root,
                 "type": a.agent_type,
                 "role": a.role,
                 "status": format!("{}", a.status),
@@ -104,7 +114,19 @@ fn build_agents_json() -> String {
         .logical_session_telemetry_seen
         .then_some(logical_sessions.len());
 
-    let pending_msgs = registry.scratchpad.len();
+    // Retained history is not an inbox backlog. A pending delivery must have
+    // a live, project-scoped recipient that has not read the message.
+    let now = chrono::Utc::now();
+    let pending_msgs = registry
+        .scratchpad
+        .iter()
+        .filter(|message| {
+            message.expires_at.is_none_or(|expiry| expiry > now)
+                && live_agents.iter().any(|agent| {
+                    pending_for_recipient(message, &agent.agent_id, &agent.project_root)
+                })
+        })
+        .count();
     let shared_dir = crate::core::data_dir::lean_ctx_data_dir()
         .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".lean-ctx"))
         .join("agents")
@@ -117,6 +139,7 @@ fn build_agents_json() -> String {
 
     serde_json::json!({
         "transports": transports,
+        "project_roots": project_roots,
         "transport_count": transports.len(),
         "logical_sessions": logical_sessions,
         "logical_session_count": logical_session_count,
@@ -126,9 +149,22 @@ fn build_agents_json() -> String {
         "agents": transports,
         "total_active": transports.len(),
         "pending_messages": pending_msgs,
+        "retained_messages": registry.scratchpad.len(),
+        "execution_presence_available": false,
         "shared_contexts": shared_count
     })
     .to_string()
+}
+
+fn pending_for_recipient(
+    message: &crate::core::agents::ScratchpadEntry,
+    agent_id: &str,
+    project_root: &str,
+) -> bool {
+    message.project_root.as_deref() == Some(project_root)
+        && message.to_agent.as_deref().is_none_or(|id| id == agent_id)
+        && message.from_agent != agent_id
+        && !message.read_by.iter().any(|id| id == agent_id)
 }
 
 #[derive(serde::Deserialize)]
@@ -327,6 +363,27 @@ struct ToolAgg {
 #[cfg(test)]
 mod tests {
     use super::{handle, local_event_ts_to_utc};
+
+    #[test]
+    fn pending_delivery_is_recipient_and_project_scoped() {
+        let mut message: crate::core::agents::ScratchpadEntry =
+            serde_json::from_value(serde_json::json!({
+                "id": "message-1", "from_agent": "sender", "to_agent": "worker",
+                "category": "request", "message": "task", "project_root": "/repo",
+                "timestamp": "2026-01-01T00:00:00Z", "read_by": []
+            }))
+            .expect("valid message");
+        assert!(super::pending_for_recipient(&message, "worker", "/repo"));
+        assert!(!super::pending_for_recipient(&message, "other", "/repo"));
+        assert!(!super::pending_for_recipient(&message, "worker", "/other"));
+        message.read_by.push("worker".into());
+        assert!(!super::pending_for_recipient(&message, "worker", "/repo"));
+        message.to_agent = None;
+        assert!(super::pending_for_recipient(&message, "other", "/repo"));
+        assert!(!super::pending_for_recipient(&message, "sender", "/repo"));
+        message.project_root = None;
+        assert!(!super::pending_for_recipient(&message, "other", "/repo"));
+    }
 
     /// GL #479 D3: event timestamps are local wall-clock strings; interpreting
     /// "now" as local must yield an age of ~0 — not a negative UTC-offset age.

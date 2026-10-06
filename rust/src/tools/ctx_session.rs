@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use crate::core::session::SessionState;
 
 #[derive(Clone, Copy, Debug)]
@@ -136,25 +138,45 @@ fn handle_handoff(session: &SessionState) -> String {
 }
 
 fn handle_load(session: &mut SessionState, session_id: Option<&str>) -> String {
-    {
-        let loaded = if let Some(id) = session_id {
-            SessionState::load_by_id(id)
-        } else {
-            SessionState::load_latest()
-        };
+    const SCOPE_DENIED: &str = "ERROR: session load denied: scoped session unavailable or mismatched; live session unchanged.";
 
-        if let Some(prev) = loaded {
-            let summary = prev.format_compact();
-            *session = prev;
-            format!("Session loaded.\n{summary}")
-        } else {
-            let id_str = session_id.unwrap_or("latest");
-            format!("No session found (id: {id_str}). Starting fresh.")
+    let Some(receiving_root) = session.strict_project_root() else {
+        return SCOPE_DENIED.to_string();
+    };
+
+    let loaded = if let Some(id) = session_id {
+        SessionState::load_by_id_for_project_root(id, &receiving_root)
+    } else {
+        match SessionState::load_latest_for_project_root(&receiving_root) {
+            Some(selected) => {
+                SessionState::load_by_id_for_project_root(&selected.id, &receiving_root)
+            }
+            None => Ok(None),
         }
-    }
+    };
+
+    let Ok(loaded) = loaded else {
+        return SCOPE_DENIED.to_string();
+    };
+
+    let Some(mut prev) = loaded else {
+        return SCOPE_DENIED.to_string();
+    };
+
+    // These fields come from the live MCP roots/shell and must not be replaced
+    // by persisted state, even after the loaded session passes scope matching.
+    prev.extra_roots.clone_from(&session.extra_roots);
+    prev.shell_cwd.clone_from(&session.shell_cwd);
+    let summary = prev.format_compact();
+    *session = prev;
+    format!("Session loaded.\n{summary}")
 }
 
 fn handle_save(session: &mut SessionState) -> String {
+    save_session(session).unwrap_or_else(|error| format!("Save failed: {error}"))
+}
+
+pub(crate) fn save_session(session: &mut SessionState) -> Result<String, String> {
     match session.save() {
         Ok(()) => {
             let mut out = format!("Session {} saved (v{}).", session.id, session.version);
@@ -166,9 +188,9 @@ fn handle_save(session: &mut SessionState) -> String {
                 }
                 out.push_str("\n  Dismiss: lean-ctx session dismiss-pro");
             }
-            out
+            Ok(out)
         }
-        Err(e) => format!("Save failed: {e}"),
+        Err(error) => Err(error),
     }
 }
 
@@ -185,6 +207,9 @@ fn handle_export(
     value: Option<&str>,
     opts: SessionToolOptions<'_>,
 ) -> String {
+    if session.canonical_checkpoint.is_some() {
+        return "ERROR: a canonical checkpoint requires a versioned carrier; legacy bundle export would discard its current lineage.".into();
+    }
     {
         let requested_privacy =
             crate::core::ccp_session_bundle::BundlePrivacyV1::parse(opts.privacy);
@@ -321,53 +346,53 @@ fn handle_import(
             Err(e) => return format!("Import failed: {e}"),
         };
 
-        // Replayability hint: compare project identity hashes (best-effort).
+        // A legacy identity hash is a scope check, not signer admission. Never
+        // overwrite a foreign project's session after only displaying a warning.
         let current_root_hash = crate::core::project_hash::hash_project_root(&root);
         let current_identity_hash = crate::core::project_hash::project_identity(&root)
             .as_deref()
-            .map(|s| {
-                use md5::{Digest, Md5};
-                let mut h = Md5::new();
-                h.update(s.as_bytes());
-                crate::core::agent_identity::hex_encode(&h.finalize())
-            });
+            .map(crate::core::hasher::hash_str);
 
-        let mut warning: Option<String> = None;
-        if let Some(ref exported) = bundle.project.project_root_hash
-            && exported != &current_root_hash
-        {
-            warning = Some(
-                "WARNING: project_root_hash mismatch (importing into different project root)."
-                    .to_string(),
-            );
-        }
-        if let (Some(exported), Some(current)) = (
+        let matching_scope = match (
             bundle.project.project_identity_hash.as_ref(),
             current_identity_hash.as_ref(),
-        ) && exported != current
-        {
-            warning = Some("WARNING: project_identity_hash mismatch (importing into different project identity).".to_string());
+        ) {
+            (Some(exported), Some(current)) => exported == current,
+            _ => bundle.project.project_root_hash.as_ref() == Some(&current_root_hash),
+        };
+        if !matching_scope {
+            return "Import failed: project scope mismatch; live session unchanged.".to_string();
         }
 
+        let mut candidate = session.clone();
         let report = crate::core::ccp_session_bundle::import_bundle_v1_into_session(
-            session,
+            &mut candidate,
             &bundle,
             Some(&root),
         );
-        let _ = session.save();
+        // Import into a new identity, preserving both the current session and
+        // any existing archive bearing the untrusted source identity.
+        if let Err(error) = candidate.save_new() {
+            return format!(
+                "Import failed: {error}; live session unchanged; recovery candidate: {}.",
+                candidate.id
+            );
+        }
+        *session = candidate;
 
-        let mut out = format!(
+        format!(
             "CCP session bundle imported.\n\
 session_id: {}\n\
+source_session_id: {}\n\
 version: {}\n\
 files_touched: {}\n\
 stale_files: {}\n",
-            report.session_id, report.version, report.files_touched, report.stale_files
-        );
-        if let Some(w) = warning {
-            out.push_str(&format!("{w}\n"));
-        }
-        out
+            report.session_id,
+            report.source_session_id,
+            report.version,
+            report.files_touched,
+            report.stale_files
+        )
     }
 }
 
@@ -421,7 +446,9 @@ fn handle_decision(session: &mut SessionState, value: Option<&str>) -> String {
 
 fn handle_reset(session: &mut SessionState) -> String {
     {
-        let _ = session.save();
+        if let Err(error) = session.save() {
+            return format!("Reset refused: current session was not saved: {error}");
+        }
         let old_id = session.id.clone();
         *session = SessionState::new();
         crate::core::budget_tracker::BudgetTracker::global().reset();

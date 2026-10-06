@@ -4,6 +4,10 @@ use std::{fs, path::Path};
 
 use crate::core::integration_proof::{ProofResult, TaskProof, prove_decision_loop};
 
+const SIMULATION_MODE: &str = "simulated_self_test";
+const SIMULATION_LABEL: &str = "SIMULATED SELF-TEST ONLY";
+const SIMULATION_DISCLAIMER: &str = "NOT ACTUAL PAID EXECUTION OR PRODUCTION ACCEPTANCE";
+
 #[rustfmt::skip]
 pub(crate) fn cmd_prove(args: &[String]) {
     if args.first().is_some_and(|a| a == "speed") {
@@ -51,15 +55,31 @@ fn parse(args: &[String]) -> Option<(&str, Option<&str>)> {
 
 fn usage() {
     println!(
-        "Generate auditable decision-loop evidence.\n\nUsage: lean-ctx prove [--format <table|json|markdown>] [--output FILE]\n       lean-ctx prove speed --suite FILE [--runs N]   (signed A/B latency proof; see `prove speed --help`)\n\nExamples:\n  lean-ctx prove\n  lean-ctx prove --format markdown --output proof.md\n  lean-ctx prove --format json"
+        "Generate simulated/self-test decision-loop evidence only; not actual paid execution or production acceptance.\n\nUsage: lean-ctx prove [--format <table|json|markdown>] [--output FILE]\n       lean-ctx prove speed --suite FILE [--runs N]   (signed A/B latency proof; see `prove speed --help`)\n\nExamples:\n  lean-ctx prove\n  lean-ctx prove --format markdown --output proof.md\n  lean-ctx prove --format json"
     );
 }
 
 pub(crate) fn render(proof: &ProofResult, format: &str) -> Option<String> {
     match format {
-        "json" => serde_json::to_string_pretty(proof)
-            .ok()
-            .map(|json| format!("{json}\n")),
+        "json" => {
+            let mut value = serde_json::to_value(proof).ok()?;
+            let object = value.as_object_mut()?;
+            object.insert(
+                "execution_mode".into(),
+                serde_json::Value::String(SIMULATION_MODE.into()),
+            );
+            object.insert(
+                "label".into(),
+                serde_json::Value::String(SIMULATION_LABEL.into()),
+            );
+            object.insert(
+                "disclaimer".into(),
+                serde_json::Value::String(SIMULATION_DISCLAIMER.into()),
+            );
+            serde_json::to_string_pretty(&value)
+                .ok()
+                .map(|json| format!("{json}\n"))
+        }
         "table" => Some(human(proof, false)),
         "markdown" => Some(human(proof, true)),
         _ => None,
@@ -69,9 +89,9 @@ pub(crate) fn render(proof: &ProofResult, format: &str) -> Option<String> {
 #[rustfmt::skip]
 fn human(proof: &ProofResult, markdown: bool) -> String {
     let mut out = if markdown {
-        format!("# LeanCTX Decision Loop Proof\n\n{}\n\n| Task ID | Query | Intent | Complexity | References | Bundle candidates | Cost | Outcome | CPAO |\n|---|---|---|---|---:|---:|---:|---|---:|\n", summary(proof))
+        format!("# LeanCTX Decision Loop Proof — {SIMULATION_LABEL}\n\n{SIMULATION_DISCLAIMER}\n\n{}\n\n| Task ID | Query | Intent | Complexity | References | Bundle candidates | Cost | Outcome | CPAO |\n|---|---|---|---|---:|---:|---:|---|---:|\n", summary(proof))
     } else {
-        format!("LeanCTX Decision Loop Proof\n{}\n\n{:<12} {:<40} {:<12} {:<10} {:>4} {:>7} {:>8} {:<9} {:>8}\n{}\n", summary(proof), "TASK ID", "QUERY", "INTENT", "COMPLEXITY", "REFS", "BUNDLES", "COST", "OUTCOME", "CPAO", "-".repeat(132))
+        format!("LeanCTX Decision Loop Proof — {SIMULATION_LABEL}\n{SIMULATION_DISCLAIMER}\n\n{}\n\n{:<12} {:<40} {:<12} {:<10} {:>4} {:>7} {:>8} {:<9} {:>8}\n{}\n", summary(proof), "TASK ID", "QUERY", "INTENT", "COMPLEXITY", "REFS", "BUNDLES", "COST", "OUTCOME", "CPAO", "-".repeat(132))
     };
     for task in &proof.tasks {
         out.push_str(&row(task, markdown));
@@ -83,7 +103,8 @@ fn human(proof: &ProofResult, markdown: bool) -> String {
 #[rustfmt::skip]
 fn row(task: &TaskProof, markdown: bool) -> String {
     let (id, query, intent, complexity) = (short(&task.task_id, 12), short(&task.query, 40), short(&task.profile_intent, 12), short(&task.profile_complexity, 10));
-    let (refs, bundles, cost, outcome, cpao) = (task.references_found.len(), task.bundle_candidates, task.cost_micros, if task.outcome_accepted { "accepted" } else { "rejected" }, cpao(task.cpao_micros));
+    let outcome = match task.acceptance_state { lean_ctx_protocol::AcceptanceState::Accepted => "accepted", lean_ctx_protocol::AcceptanceState::Rejected => "rejected", lean_ctx_protocol::AcceptanceState::Unknown => "unknown" };
+    let (refs, bundles, cost, cpao) = (task.references_found.len(), task.bundle_candidates, task.cost_micros, cpao(task.cpao_micros));
     if markdown {
         format!("| {id} | {query} | {intent} | {complexity} | {refs} | {bundles} | {cost} | {outcome} | {cpao} |\n")
     } else {

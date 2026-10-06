@@ -72,3 +72,28 @@ fn vscode_intent_never_falls_back_to_browser() {
     assert_ne!(super::vscode_fallback_open_mode(false), "browser");
     assert_ne!(super::vscode_fallback_open_mode(true), "browser");
 }
+
+#[test]
+fn task_authority_policy_reader_is_bounded() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let path = dir.path().join("authority.json");
+    std::fs::write(
+        &path,
+        vec![b'x'; (crate::core::a2a::task::policy_file::MAX_BYTES + 1) as usize],
+    )
+    .expect("write oversized policy");
+    assert!(super::read_a2a_task_authority(&path).is_err());
+}
+
+#[cfg(unix)]
+#[test]
+fn task_authority_policy_reader_rejects_symlinks() {
+    use std::os::unix::fs::symlink;
+
+    let dir = tempfile::tempdir().expect("tempdir");
+    let target = dir.path().join("target.json");
+    let link = dir.path().join("authority.json");
+    std::fs::write(&target, "{}").expect("write target");
+    symlink(&target, &link).expect("symlink");
+    assert!(super::read_a2a_task_authority(&link).is_err());
+}

@@ -17,31 +17,69 @@ pub(crate) fn is_enabled() -> bool {
 
 /// Persist an auto-finding as a knowledge fact if auto-capture is enabled.
 pub(crate) fn capture_finding(project_root: &str, finding: &AutoFinding) {
+    capture_finding_from_tool(project_root, finding, "ctx_knowledge", &finding.summary);
+}
+
+pub(crate) fn capture_finding_from_tool(
+    project_root: &str,
+    finding: &AutoFinding,
+    source_tool: &str,
+    original_content: &str,
+) {
     if !is_enabled() {
         return;
     }
-
-    let category = classify_category(&finding.summary);
-    let key = derive_key(finding);
-
-    let Ok(policy) = crate::core::config::Config::load().memory_policy_effective() else {
-        return;
-    };
 
     // Load-modify-save under the shared in-process + cross-process lock so this
     // background capture never clobbers facts a concurrent foreground
     // `remember`/`relate` commits in between (issue #326): a bare
     // `load_or_create` + `save` loads a stale (possibly empty) snapshot and its
     // save silently drops just-written facts.
-    let _ = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
-        knowledge.remember(
-            &category,
-            &key,
-            &finding.summary,
-            "auto-capture",
-            0.6,
-            &policy,
-        );
+    let _ = ProjectKnowledge::with_project_lock_checked(project_root, || {
+        if !is_enabled() {
+            return;
+        }
+        let Ok(policy) = crate::core::config::Config::load().memory_policy_effective() else {
+            return;
+        };
+        let Ok(active) =
+            crate::core::policy::runtime::for_project(std::path::Path::new(project_root))
+        else {
+            return;
+        };
+        if active
+            .as_ref()
+            .is_some_and(|p| !p.tool_allowed("ctx_knowledge") || !p.tool_allowed(source_tool))
+        {
+            return;
+        }
+        if active.as_ref().is_some_and(|policy| {
+            crate::core::policy::content::evaluate_text(original_content, policy).blocked
+        }) {
+            return;
+        }
+        let Some(safe) = crate::core::policy::diagnostics::inspect(
+            &serde_json::json!({"file":finding.file,"summary":finding.summary}),
+            active.as_deref(),
+        ) else {
+            return;
+        };
+        let summary = safe["summary"].as_str().unwrap_or_default();
+        let category = classify_category(summary);
+        let key = derive_key(finding);
+        let key_needs_masking = active.as_ref().is_some_and(|active| {
+            crate::core::policy::content::evaluate_text(&key, active).text != key
+        });
+        let key = if key_needs_masking {
+            format!("auto:{}", blake3::hash(key.as_bytes()).to_hex())
+        } else {
+            key
+        };
+        let Ok(mut knowledge) = ProjectKnowledge::load_for_checked_capture(project_root) else {
+            return;
+        };
+        knowledge.remember(&category, &key, summary, "auto-capture", 0.6, &policy);
+        let _ = knowledge.save_policy_checked(source_tool, original_content);
     });
 }
 

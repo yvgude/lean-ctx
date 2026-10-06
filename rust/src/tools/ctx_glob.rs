@@ -53,6 +53,7 @@ pub fn handle(
 
     let mut matches = Vec::new();
     let mut files_walked = 0u32;
+    let protected = crate::core::policy::runtime::active().is_some();
 
     // Vendor dirs (node_modules, …) follow the gitignore toggle: explicitly
     // disabling gitignore is the escape hatch to look inside them (#400).
@@ -75,7 +76,10 @@ pub fn handle(
         .sort_by_file_path(std::path::Path::cmp)
         .build();
 
-    for entry in walker.filter_map(std::result::Result::ok) {
+    for (visited, entry) in walker.filter_map(std::result::Result::ok).enumerate() {
+        if protected && visited >= 20_000 {
+            return ("ERROR: protected directory walk limit exceeded".into(), 0);
+        }
         if matches.len() >= max {
             break;
         }
@@ -98,13 +102,22 @@ pub fn handle(
             continue;
         }
 
-        let rel_path = path.strip_prefix(root).unwrap_or(path);
+        let admitted = if protected {
+            match crate::server::policy_guard::protect_result("ctx_glob", &path.to_string_lossy()) {
+                Ok(path) => path,
+                Err(_) => continue,
+            }
+        } else {
+            path.to_string_lossy().into_owned()
+        };
+        let rel_path = Path::new(&admitted)
+            .strip_prefix(root)
+            .unwrap_or(Path::new(&admitted));
         let rel_str = rel_path.to_string_lossy();
 
         if glob_matcher.matches(&rel_str) {
-            let short_path =
-                protocol::shorten_path_relative(&path.to_string_lossy(), &root.to_string_lossy());
-            matches.push((short_path, path.to_string_lossy().to_string()));
+            let short_path = protocol::shorten_path_relative(&admitted, &root.to_string_lossy());
+            matches.push((short_path, admitted));
         }
     }
 

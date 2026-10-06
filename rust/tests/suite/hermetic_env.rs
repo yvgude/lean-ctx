@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Hermetic environment for the merged integration-test binary.
 //!
 //! Unit tests get this from `#[cfg(test)]` inside the library: the data-dir

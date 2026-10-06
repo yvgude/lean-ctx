@@ -70,6 +70,8 @@ fn start_dashboard() -> Dashboard {
         .env_remove("LEAN_CTX_TOOL_PROFILE")
         .env_remove("LEAN_CTX_COMPRESSION")
         .env_remove("LEAN_CTX_TERSE_AGENT")
+        .env_remove("LEAN_CTX_OUTPUT_DENSITY")
+        .env_remove("LEAN_CTX_CONFIG_PROFILE")
         .env_remove("LEAN_CTX_STRUCTURE_FIRST")
         .stdin(Stdio::null())
         .stdout(Stdio::null())
@@ -210,7 +212,21 @@ fn settings_endpoint_persists_and_enforces_auth() {
         assert!(body.contains(key), "settings payload missing {key}: {body}");
     }
 
-    // POST flips terse_agent and echoes the fresh state from the source of truth.
+    // Exercise a real change even when the default canonical level is max.
+    let (status, body) = http(
+        dash.port,
+        "POST",
+        "/api/settings",
+        TOKEN,
+        Some(r#"{"key":"terse_agent","value":"off"}"#),
+    )
+    .expect("POST legacy off");
+    assert_eq!(status, 200, "{body}");
+    let off: serde_json::Value = serde_json::from_str(&body).unwrap();
+    assert_eq!(off["settings"]["compression_level"]["value"], "off");
+    assert_eq!(off["settings"]["terse_agent"]["value"], "off");
+
+    // POST maps the legacy input to canonical compression and echoes it.
     let (status, body) = http(
         dash.port,
         "POST",
@@ -235,10 +251,8 @@ fn settings_endpoint_persists_and_enforces_auth() {
 
     // …and it actually landed in config.toml on disk.
     let cfg = std::fs::read_to_string(dash.config.join("config.toml")).unwrap_or_default();
-    assert!(
-        cfg.contains("terse_agent") && cfg.to_lowercase().contains("ultra"),
-        "config.toml must record terse_agent=ultra; got:\n{cfg}"
-    );
+    let persisted: toml::Value = toml::from_str(&cfg).expect("persisted config");
+    assert_eq!(persisted["compression_level"].as_str(), Some("max"));
 
     // Auth gate: a wrong Bearer token is rejected with 401.
     let (status, _body) =

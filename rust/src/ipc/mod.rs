@@ -1,4 +1,5 @@
 pub mod process;
+pub mod runtime;
 
 #[cfg(unix)]
 mod unix;
@@ -11,6 +12,10 @@ pub use windows::NamedPipeListener;
 use std::path::PathBuf;
 
 use anyhow::Result;
+#[cfg(unix)]
+use anyhow::anyhow;
+#[cfg(unix)]
+use tokio::io::AsyncWriteExt;
 
 /// Platform-independent daemon address.
 #[derive(Debug, Clone)]
@@ -85,6 +90,19 @@ pub async fn connect(addr: &DaemonAddr) -> Result<tokio::net::UnixStream> {
     }
 }
 
+/// Connect to a private runtime socket and send its versioned handshake.
+#[cfg(unix)]
+pub async fn connect_enterprise(
+    path: &std::path::Path,
+    handshake: &crate::core::enterprise_handshake::RuntimeHandshake,
+) -> Result<tokio::net::UnixStream> {
+    let mut stream = unix::connect(path).await?;
+    let frame = handshake.encode_frame().map_err(|error| anyhow!(error))?;
+    stream.write_all(&frame).await?;
+    stream.flush().await?;
+    Ok(stream)
+}
+
 /// Bind a listener on the given Windows named pipe address.
 #[cfg(windows)]
 pub fn bind_listener(addr: &DaemonAddr) -> Result<NamedPipeListener> {
@@ -123,5 +141,24 @@ mod tests {
             ));
             cleanup(&addr);
         }
+    }
+
+    #[cfg(unix)]
+    #[tokio::test]
+    async fn enterprise_connect_sends_versioned_frame() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("enterprise.sock");
+        let listener = unix::bind_listener(&path).unwrap();
+        let handshake = crate::core::enterprise_handshake::RuntimeHandshake::public([]);
+        let client = connect_enterprise(&path, &handshake);
+        let server = listener.accept();
+        let (client, accepted) = tokio::join!(client, server);
+        let _client = client.unwrap();
+        let (mut stream, _) = accepted.unwrap();
+        use tokio::io::AsyncReadExt;
+        let mut length = [0_u8; 4];
+        stream.read_exact(&mut length).await.unwrap();
+        let len = u32::from_be_bytes(length) as usize;
+        assert_eq!(len, handshake.encode_frame().unwrap().len() - 4);
     }
 }

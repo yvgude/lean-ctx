@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Invalidation propagation across kernel plans, receipts, and candidates.
 
 use std::collections::HashMap;
@@ -180,6 +182,7 @@ pub mod tests {
             excluded: Vec::new(),
             deferred: Vec::new(),
             provider_stats: HashMap::new(),
+            origins: Default::default(),
         }
     }
 

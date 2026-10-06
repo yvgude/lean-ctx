@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinConfigTuner — proposes configuration adjustments.
 //!
 //! Wraps `core/config/mod.rs` tuning logic behind the OCLA trait. Generates
@@ -62,6 +63,10 @@ impl Default for BuiltinConfigTuner {
 }
 
 impl OclaService for BuiltinConfigTuner {
+    fn manifest(&self) -> crate::core::ocla::OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+        crate::core::ocla::capability_fabric::builtin_manifest(&self.capability())
+    }
+
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::ConfigTuner)
     }

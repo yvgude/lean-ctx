@@ -164,10 +164,10 @@ pub(crate) fn summarize(
     out.push_str("--- retrieve full output ---\n");
     // Non-MCP route first: the verbatim blob is a real file any tool can read,
     // for agents/orgs where MCP is unavailable or forbidden.
-    out.push_str(&format!(
-        "Direct:  read {} directly (no MCP)\n",
-        crate::core::archive::content_path_str(archive_id)
-    ));
+    let path = crate::core::archive::content_path_str(archive_id);
+    if crate::cli::enforce_protected_store_path(std::path::Path::new(&path)).is_ok() {
+        out.push_str(&format!("Direct:  read {path} directly (no MCP)\n"));
+    }
     out.push_str(&format!("Full:    ctx_expand(id=\"{archive_id}\")\n"));
     out.push_str(&format!(
         "Range:   ctx_expand(id=\"{archive_id}\", start_line=1, end_line=80)\n"
@@ -181,6 +181,30 @@ pub(crate) fn summarize(
     out.push_str(&format!(
         "JSON:    ctx_expand(id=\"{archive_id}\", json_keys=true)"
     ));
+    out
+}
+
+/// Keep the context bound even when output cannot safely be archived. The
+/// preview makes no lossless-recovery promise and contains no fabricated handle.
+pub(crate) fn summarize_unavailable(full: &str, tool: &str, output_tokens: usize) -> String {
+    let head_end = full.floor_char_boundary(LONG_LINE_HEAD_CHARS.min(full.len()));
+    let mut out = format!(
+        "[Firewalled {tool} output — {} chars, {output_tokens} tok; recovery unavailable]\n--- preview ---\n{}",
+        full.chars().count(),
+        &full[..head_end],
+    );
+    if full.len() > head_end {
+        out.push_str("\n… (omitted; not archived) …\n");
+        let tail_start = full.ceil_char_boundary(
+            full.len()
+                .saturating_sub(LONG_LINE_TAIL_CHARS)
+                .max(head_end),
+        );
+        out.push_str(&full[tail_start..]);
+    }
+    out.push_str(
+        "\nFull recovery is unavailable. Re-run with a narrower query or output selection.",
+    );
     out
 }
 

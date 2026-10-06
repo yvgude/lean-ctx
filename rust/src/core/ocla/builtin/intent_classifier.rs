@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinIntentClassifier — classifies request intent from candidates.
 //!
 //! Wraps `core/intent_engine.rs` behind the OCLA trait. Selects the
@@ -24,6 +25,10 @@ impl Default for BuiltinIntentClassifier {
 }
 
 impl OclaService for BuiltinIntentClassifier {
+    fn manifest(&self) -> crate::core::ocla::OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+        crate::core::ocla::capability_fabric::builtin_manifest(&self.capability())
+    }
+
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::IntentClassifier)
     }

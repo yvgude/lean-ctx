@@ -141,7 +141,8 @@ impl McpTool for CtxSemanticSearchTool {
                 ctx.crp_mode,
             )
         } else {
-            crate::tools::ctx_semantic_search::handle(
+            crate::tools::ctx_semantic_search::handle_for_tool(
+                "ctx_semantic_search",
                 &query,
                 &path,
                 top_k,

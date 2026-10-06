@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "invite.schema.json",
+  "title": "LeanCTX Team Invite v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "scope",
+    "invite_id",
+    "recipient_digest",
+    "role",
+    "state",
+    "created_by",
+    "created_at",
+    "expires_at",
+    "nonce_digest",
+    "version",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "invite_id": { "$ref": "common.schema.json#/$defs/id" },
+    "recipient_digest": { "$ref": "common.schema.json#/$defs/pseudonymDigest" },
+    "role": { "$ref": "common.schema.json#/$defs/role" },
+    "state": { "enum": ["pending", "accepted", "expired", "revoked"] },
+    "created_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "created_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "expires_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "accepted_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "accepted_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "membership_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Record digest of the membership created by consuming this invite."
+    },
+    "revoked_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "revoked_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "revocation_reason_code": { "$ref": "common.schema.json#/$defs/reasonCode" },
+    "nonce_digest": { "$ref": "common.schema.json#/$defs/nonceDigest" },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "parent_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/idempotencyKey" }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/casLineage" },
+    {
+      "if": {
+        "properties": { "state": { "const": "accepted" } },
+        "required": ["state"]
+      },
+      "then": { "required": ["accepted_by", "accepted_at", "membership_digest"] },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["accepted_by"] },
+            { "required": ["accepted_at"] },
+            { "required": ["membership_digest"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "state": { "const": "revoked" } },
+        "required": ["state"]
+      },
+      "then": { "required": ["revoked_by", "revoked_at", "revocation_reason_code"] },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["revoked_by"] },
+            { "required": ["revoked_at"] },
+            { "required": ["revocation_reason_code"] }
+          ]
+        }
+      }
+    }
+  ]
+}

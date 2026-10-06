@@ -38,63 +38,113 @@ pub fn handle_in(
     )
 }
 
-/// Reads a file from disk, detects its language, and executes a processing script.
-///
-/// `project_root` is used for pathjail validation. If `None`, the current
-/// directory is used as the jail root. Precondition failures (path rejected,
-/// unreadable, too large) never execute anything and report `Blocked`.
+/// Summarize admitted file content as data, without executing it or creating
+/// a plaintext temporary copy. Source rules run before statistics or previews.
 pub fn handle_file(
     path: &str,
     intent: Option<&str>,
     project_root: Option<&str>,
 ) -> (String, ShellOutcome) {
-    let jail_root = match project_root {
-        Some(r) => std::path::PathBuf::from(r),
-        None => std::env::current_dir().unwrap_or_else(|_| std::path::PathBuf::from(".")),
+    let root = match project_root {
+        Some(root) => std::path::PathBuf::from(root),
+        None => match std::env::current_dir() {
+            Ok(root) => root,
+            Err(_) => return ("Source project unavailable".into(), ShellOutcome::Blocked),
+        },
     };
-    let candidate = std::path::Path::new(path);
-    let jailed = match crate::core::pathjail::jail_path(candidate, &jail_root) {
-        Ok(p) => p,
-        Err(e) => return (format!("Path rejected: {e}"), ShellOutcome::Blocked),
-    };
-    let path_str = jailed.to_string_lossy();
-
-    let cap = crate::core::limits::max_read_bytes();
-    let meta = match std::fs::metadata(&*jailed) {
-        Ok(m) => m,
-        Err(e) => {
-            return (
-                format!("Error reading {path_str}: {e}"),
-                ShellOutcome::Blocked,
-            );
+    let result =
+        crate::core::policy::runtime::with_project_source_view(&root.to_string_lossy(), || {
+            handle_file_in_view(path, intent, &root)
+        });
+    match result {
+        Ok((text, outcome, authority)) => {
+            if let Some(authority) = authority {
+                authority.publish();
+            }
+            (text, outcome)
         }
-    };
-    if meta.len() > cap as u64 {
-        return (
-            format!(
-                "File too large ({} bytes, limit {cap} bytes). Use a line-range read instead.",
-                meta.len()
-            ),
+        Err(_) => (
+            "File processing withheld: source authority changed or could not be verified.".into(),
             ShellOutcome::Blocked,
-        );
+        ),
     }
-    let content = match std::fs::read_to_string(&*jailed) {
-        Ok(c) => c,
-        Err(e) => {
+}
+
+fn handle_file_in_view(
+    path: &str,
+    intent: Option<&str>,
+    root: &std::path::Path,
+) -> (
+    String,
+    ShellOutcome,
+    Option<crate::core::archive::authority::ArchiveAuthority>,
+) {
+    let mut remaining = crate::core::limits::max_read_bytes();
+    let read = match crate::tools::ctx_read::read_file_for_tool_rooted_with_path(
+        path,
+        &root.to_string_lossy(),
+        "ctx_execute",
+        &mut remaining,
+    ) {
+        Ok(content) => content,
+        Err(error) => {
             return (
-                format!("Error reading {path_str}: {e}"),
+                format!("File processing refused: {error}"),
                 ShellOutcome::Blocked,
+                None,
             );
         }
     };
-
-    let language = detect_language_from_extension(path);
-    let code = build_file_processing_script(&language, &content, intent);
-    let result = sandbox::execute(&language, &code, None);
+    let authority = crate::core::archive::authority::ArchiveAuthority::file(
+        root,
+        &read.canonical_path,
+        "ctx_execute",
+        &read.content,
+    );
     (
-        format_result(&result, intent),
-        ShellOutcome::Exit(result.exit_code),
+        summarize_file_content(&read.content, intent),
+        ShellOutcome::Exit(0),
+        authority,
     )
+}
+
+fn summarize_file_content(content: &str, intent: Option<&str>) -> String {
+    let lines = content.lines();
+    let count = lines.clone().count();
+    let mut output = format!(
+        "Admitted text: {count} lines, {} bytes, {} words (after decoding and filtering)\n",
+        content.len(),
+        content.split_whitespace().count(),
+    );
+    if let Some(intent) = intent {
+        output.push_str(&format!("Intent: {}\n", sanitize_intent(intent)));
+    }
+    // At most six lines of 1024 Unicode characters each; do not collect the
+    // entire source into a second line buffer just to produce a preview.
+    let append = |output: &mut String, line: &str| {
+        if let Some((end, _)) = line.char_indices().nth(1024) {
+            output.push_str(&line[..end]);
+            output.push_str(" [line truncated]");
+        } else {
+            output.push_str(line);
+        }
+        output.push('\n');
+    };
+    if count <= 6 {
+        for line in lines {
+            append(&mut output, line);
+        }
+    } else {
+        for line in lines.clone().take(3) {
+            append(&mut output, line);
+        }
+        output.push_str(&format!("... {} middle lines omitted ...\n", count - 6));
+        let tail: Vec<_> = lines.rev().take(3).collect();
+        for line in tail.into_iter().rev() {
+            append(&mut output, line);
+        }
+    }
+    output
 }
 
 /// Executes multiple (language, code) pairs in parallel and returns aggregated
@@ -177,106 +227,11 @@ fn format_result(result: &SandboxResult, intent: Option<&str>) -> String {
     parts.join("\n")
 }
 
-fn detect_language_from_extension(path: &str) -> String {
-    let ext = path.rsplit('.').next().unwrap_or("");
-    match ext {
-        "js" | "mjs" | "cjs" => "javascript",
-        "ts" | "mts" | "cts" => "typescript",
-        "py" | "json" | "csv" | "log" | "txt" | "xml" | "yaml" | "yml" | "md" | "html" => "python",
-        "rb" => "ruby",
-        "go" => "go",
-        "rs" => "rust",
-        "php" => "php",
-        "pl" => "perl",
-        "r" | "R" => "r",
-        "ex" | "exs" => "elixir",
-        _ => "shell",
-    }
-    .to_string()
-}
-
 fn sanitize_intent(raw: &str) -> String {
     raw.chars()
         .filter(|c| c.is_alphanumeric() || *c == ' ' || *c == '-' || *c == '_' || *c == '.')
         .take(200)
         .collect()
-}
-
-/// Escape a path for safe embedding inside a Python raw double-quoted string.
-/// Handles embedded double-quotes which would break `r"..."`.
-fn escape_for_python_raw(path: &str) -> String {
-    path.replace('"', r#"\" + '"' + r""#)
-}
-
-/// Escape a path for safe embedding inside a shell double-quoted string.
-/// Handles `$`, backtick, `\`, and `"` which are special inside double quotes.
-fn escape_for_shell_dq(path: &str) -> String {
-    let mut out = String::with_capacity(path.len());
-    for ch in path.chars() {
-        match ch {
-            '$' | '`' | '"' | '\\' => {
-                out.push('\\');
-                out.push(ch);
-            }
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
-fn build_file_processing_script(language: &str, content: &str, intent: Option<&str>) -> String {
-    let Ok(tmp) = tempfile::Builder::new()
-        .prefix("lean-ctx-exec-")
-        .suffix(".dat")
-        .tempfile()
-    else {
-        return "echo 'lean-ctx: failed to create temp file'".to_string();
-    };
-    let _ = std::fs::write(tmp.path(), content);
-    let tmp_path = tmp.path().to_string_lossy().to_string();
-    let _keep = tmp.into_temp_path();
-    let intent_str = sanitize_intent(intent.unwrap_or("summarize the content"));
-
-    if language == "python" {
-        let py_path = escape_for_python_raw(&tmp_path);
-        format!(
-            r#"
-    import os
-
-    with open(r"{py_path}", "r", encoding="utf-8") as f:
-        data = f.read()
-    os.remove(r"{py_path}")
-
-    lines = data.strip().split('\n')
-    total_lines = len(lines)
-    total_bytes = len(data.encode('utf-8'))
-
-    word_count = sum(len(line.split()) for line in lines)
-
-    print(f"{{total_lines}} lines, {{total_bytes}} bytes, {{word_count}} words")
-    print("Intent: {intent_str}")
-
-    if total_lines > 10:
-        print(f"First 3: {{lines[:3]}}")
-        print(f"Last 3: {{lines[-3:]}}")
-    "#
-        )
-    } else {
-        let sh_path = escape_for_shell_dq(&tmp_path);
-        format!(
-            r#"
-    data=$(cat "{sh_path}")
-    rm -f "{sh_path}"
-    lines=$(echo "$data" | wc -l | tr -d ' ')
-    bytes=$(echo "$data" | wc -c | tr -d ' ')
-    echo "$lines lines, $bytes bytes"
-    echo 'Intent: {intent_str}'
-    echo "$data" | head -3
-    echo "..."
-    echo "$data" | tail -3
-    "#
-        )
-    }
 }
 
 #[cfg(test)]
@@ -285,6 +240,7 @@ mod tests {
 
     #[test]
     fn handle_simple_python() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let (result, outcome) = handle("python", "print(2 + 2)", None, None);
         assert!(result.contains('4'));
         assert!(result.contains("python"));
@@ -293,6 +249,7 @@ mod tests {
 
     #[test]
     fn handle_with_intent() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let (result, _) = handle(
             "python",
             "print('found 5 errors')",
@@ -304,6 +261,7 @@ mod tests {
 
     #[test]
     fn handle_error_shows_stderr() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let (result, outcome) = handle("python", "raise Exception('boom')", None, None);
         assert!(result.contains("EXIT"));
         assert!(result.contains("boom"));
@@ -350,46 +308,9 @@ mod tests {
     }
 
     #[test]
-    fn detect_language_from_path() {
-        assert_eq!(detect_language_from_extension("test.py"), "python");
-        assert_eq!(detect_language_from_extension("test.js"), "javascript");
-        assert_eq!(detect_language_from_extension("test.rs"), "rust");
-        assert_eq!(detect_language_from_extension("test.csv"), "python");
-        assert_eq!(detect_language_from_extension("test.log"), "python");
-    }
-
-    #[test]
-    fn escape_shell_dq_handles_special_chars() {
-        assert_eq!(escape_for_shell_dq(r"C:\tmp\file"), r"C:\\tmp\\file");
-        assert_eq!(escape_for_shell_dq("/tmp/normal"), "/tmp/normal");
-        assert_eq!(escape_for_shell_dq("path with $VAR"), r"path with \$VAR");
-        assert_eq!(escape_for_shell_dq(r#"path"quote"#), r#"path\"quote"#);
-        assert_eq!(escape_for_shell_dq("has `backtick`"), r"has \`backtick\`");
-    }
-
-    #[test]
-    fn escape_python_raw_handles_quotes() {
-        assert_eq!(escape_for_python_raw("/tmp/normal"), "/tmp/normal");
-        assert_eq!(escape_for_python_raw(r"C:\Users\test"), r"C:\Users\test");
-    }
-
-    #[test]
-    fn script_with_spaces_in_path() {
-        let script = build_file_processing_script("shell", "test data", None);
-        let lines: Vec<&str> = script.lines().collect();
-        for line in &lines {
-            if line.contains("cat ") || line.contains("rm -f") {
-                assert!(
-                    line.contains('"'),
-                    "path must be double-quoted in shell script: {line}"
-                );
-            }
-        }
-    }
-
-    #[test]
     #[cfg(not(target_os = "windows"))]
     fn batch_multiple_tasks() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let items = vec![
             ("python".to_string(), "print('task1')".to_string()),
             ("shell".to_string(), "echo task2".to_string()),
@@ -404,6 +325,7 @@ mod tests {
     #[test]
     #[cfg(not(target_os = "windows"))]
     fn batch_with_failing_task_reports_failure() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let items = vec![
             ("python".to_string(), "print('ok')".to_string()),
             ("python".to_string(), "raise SystemExit(3)".to_string()),
@@ -424,3 +346,7 @@ mod tests {
         assert!(!result.is_empty());
     }
 }
+
+#[cfg(test)]
+#[path = "ctx_execute_file_tests.rs"]
+mod file_tests;

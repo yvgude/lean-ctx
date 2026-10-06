@@ -1,0 +1,122 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanctx.com/schemas/lean-ctx-protocol/v1/context-plan.json",
+  "title": "LeanCTX ContextPlanProjectionV1",
+  "description": "Deterministic public projection of the context kernel's semantic V1 plan.",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "context_plan_id",
+    "task_id",
+    "budget_tokens",
+    "selections"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "context_plan_id": { "$ref": "#/$defs/identifier" },
+    "task_id": { "$ref": "#/$defs/identifier" },
+    "projection_digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$"
+    },
+    "budget_tokens": { "type": "integer", "minimum": 0 },
+    "selections": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/selection" }
+    },
+    "provider_stats": {
+      "type": "object",
+      "propertyNames": { "$ref": "#/$defs/identifier" },
+      "additionalProperties": { "$ref": "#/$defs/providerStats" }
+    },
+    "policy_decision_refs": {
+      "type": "array",
+      "maxItems": 256,
+      "uniqueItems": true,
+      "items": { "$ref": "#/$defs/identifier" }
+    },
+    "evidence": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/evidenceRef" }
+    }
+  },
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_ref", "provider", "disposition", "token_count", "reason_codes"],
+      "properties": {
+        "source_ref": { "$ref": "#/$defs/identifier" },
+        "provider": { "$ref": "#/$defs/identifier" },
+        "disposition": { "type": "string", "enum": ["selected", "excluded", "deferred"] },
+        "token_count": { "type": "integer", "minimum": 0 },
+        "sha256_digest": { "type": ["string", "null"], "pattern": "^(?:sha256:)?[0-9A-Fa-f]{64}$" },
+        "reason_codes": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "enum": ["relevant", "required", "cache_hit", "budget_exceeded", "lower_utility", "policy_excluded", "deferred_for_later", "other"]
+          }
+        },
+        "reason_detail": { "type": ["string", "null"], "minLength": 1, "maxLength": 256 }
+      }
+    },
+    "providerStats": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["candidates_offered", "candidates_selected", "tokens_used"],
+      "properties": {
+        "candidates_offered": { "type": "integer", "minimum": 0 },
+        "candidates_selected": { "type": "integer", "minimum": 0 },
+        "tokens_used": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "evidenceRef": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["kind", "uri", "digest", "signature_status"],
+      "properties": {
+        "schema_version": { "anyOf": [{ "const": 1 }, { "type": "null" }] },
+        "kind": { "type": "string", "enum": ["ProviderReceipt", "RuntimeLog", "SignedBatch", "QualityMeasurement", "ExperimentOutcome"] },
+        "uri": { "$ref": "#/$defs/identifier" },
+        "digest": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+        "signature_status": { "type": "string", "enum": ["Verified", "Unverified", "NotSigned"] },
+        "media_type": { "type": ["string", "null"], "minLength": 1, "maxLength": 256 }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["schema_version"],
+            "properties": { "schema_version": { "const": 1 } }
+          },
+          "then": {
+            "properties": {
+              "digest": {
+                "type": "string",
+                "pattern": "^(?:(?:sha256|blake3):)?[0-9A-Fa-f]{64}$",
+                "maxLength": 256
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "digest": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

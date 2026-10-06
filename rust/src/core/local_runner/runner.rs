@@ -1,7 +1,9 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use anyhow::Result;
 
+use crate::core::agent_connector::capability::{AgentConnectorAdapter, AgentExecutionPolicy};
 use crate::core::agent_connector::traits::{AgentConnector, TaskRequest, TaskResult};
 #[cfg(test)]
 use crate::core::agent_connector::traits::{AgentInfo, TokenUsage};
@@ -11,6 +13,8 @@ use crate::core::benchmark_spec::types::{
 };
 use crate::core::eval_ab::scorers::{CodeScorer, Scorer, score_task};
 use crate::core::eval_ab::suite::{Domain, Task as EvaluationTask};
+use crate::core::ocla::adapters::AdapterRegistry;
+use crate::core::ocla::invocation::PolicyConstraints;
 
 const DEFAULT_TIMEOUT_MS: u64 = 300_000;
 
@@ -28,6 +32,9 @@ impl MockConnector {
 
 #[cfg(test)]
 impl AgentConnector for MockConnector {
+    fn supports_model_selection(&self) -> bool {
+        true
+    }
     fn info(&self) -> AgentInfo {
         AgentInfo {
             name: "mock".into(),
@@ -38,7 +45,7 @@ impl AgentConnector for MockConnector {
         }
     }
 
-    fn health_check(&self) -> Result<bool> {
+    fn health_check_with_timeout(&self, _timeout_ms: u64) -> Result<bool> {
         Ok(true)
     }
 
@@ -60,6 +67,7 @@ impl AgentConnector for MockConnector {
             }),
             provider_cost_micros: None,
             execution_receipt_ref: None,
+            termination: None,
         })
     }
 
@@ -113,13 +121,44 @@ pub(crate) enum RunProgress {
 #[allow(dead_code)]
 pub(crate) struct LocalRunner {
     config: RunConfig,
-    connector: Box<dyn AgentConnector>,
+    connector: Arc<AgentConnectorAdapter>,
+    adapters: AdapterRegistry,
 }
 
 #[allow(dead_code)]
 impl LocalRunner {
-    pub(crate) fn new(config: RunConfig, connector: Box<dyn AgentConnector>) -> Self {
-        Self { config, connector }
+    pub(crate) fn with_policy(
+        config: RunConfig,
+        connector: Box<dyn AgentConnector>,
+        policy: AgentExecutionPolicy,
+    ) -> Result<Self> {
+        let connector = Arc::new(AgentConnectorAdapter::new(Arc::from(connector), policy)?);
+        let adapters = AdapterRegistry::new();
+        adapters.register_arc(connector.clone())?;
+        Ok(Self {
+            config,
+            connector,
+            adapters,
+        })
+    }
+
+    /// Only the explicitly selected live benchmark/calibration host calls this.
+    /// Directory admission bounds the initial cwd, not the agent's filesystem access.
+    pub(crate) fn for_live_benchmark(
+        config: RunConfig,
+        connector: Box<dyn AgentConnector>,
+        model: Option<String>,
+    ) -> Result<Self> {
+        let policy = AgentExecutionPolicy::new(
+            &config.working_dir,
+            PolicyConstraints {
+                allow_remote: true,
+                allowed_models: model.into_iter().collect(),
+                ..PolicyConstraints::default()
+            },
+            3_600_000,
+        )?;
+        Self::with_policy(config, connector, policy)
     }
 
     pub(crate) fn run(&self, spec: &BenchmarkSpecV1) -> Result<BenchmarkResult> {
@@ -169,8 +208,13 @@ impl LocalRunner {
                     task_id: task.id.clone(),
                 });
                 let request = self.task_request_for_profile(spec, task, profile_name);
-                let result = self.connector.execute(&request)?;
-                let outcome = outcome_from_task_result(task, &result, &self.config.working_dir)?;
+                let invocation = self.connector.invocation(request);
+                let (result, common) = self
+                    .connector
+                    .execute_registered(&self.adapters, &invocation)?;
+                let mut outcome =
+                    outcome_from_task_result(task, &result, &self.config.working_dir)?;
+                outcome.capability_observation = Some(common.observation);
                 let passed = outcome.passed;
                 on_progress(RunProgress::TaskComplete {
                     task_id: task.id.clone(),
@@ -223,6 +267,7 @@ impl LocalRunner {
             max_turns: None,
             profile_name: Some(profile_name.to_owned()),
             profile_hash: spec.configuration.profile_hash.clone(),
+            delivery_profile: None,
         }
     }
 }
@@ -274,6 +319,7 @@ fn outcome_from_task_result(
         error,
         evaluation,
         execution_receipt_ref: result.execution_receipt_ref.clone(),
+        capability_observation: None,
     })
 }
 
@@ -401,19 +447,185 @@ mod tests {
 
     #[test]
     fn new_runner_sets_config() {
-        let runner = LocalRunner::new(RunConfig::default(), Box::new(MockConnector::new(true)));
+        let runner = LocalRunner::for_live_benchmark(
+            RunConfig::default(),
+            Box::new(MockConnector::new(true)),
+            None,
+        )
+        .unwrap();
         assert_eq!(runner.config.profile_name, "coder");
     }
 
     #[test]
     fn run_with_mock_connector() {
-        let runner = LocalRunner::new(RunConfig::default(), Box::new(MockConnector::new(true)));
+        let runner = LocalRunner::for_live_benchmark(
+            RunConfig::default(),
+            Box::new(MockConnector::new(true)),
+            None,
+        )
+        .unwrap();
         let result = runner.run(&test_spec()).unwrap();
         assert_eq!(result.outcomes.len(), 2);
         assert!(result.outcomes.iter().all(|o| o.passed));
         assert_eq!(result.summary.passed_tasks, 2);
         assert!(result.summary.quality_evaluated);
         assert!(!result.summary.receipt_evidence_complete);
+    }
+
+    #[test]
+    fn repeated_observations_do_not_promote_process_success_to_quality() {
+        let runner = LocalRunner::for_live_benchmark(
+            RunConfig::default(),
+            Box::new(MockConnector::new(true)),
+            None,
+        )
+        .unwrap();
+        let mut spec = test_spec();
+        spec.configuration.repeats = 2;
+        for task in &mut spec.suite.tasks {
+            task.evaluation = None;
+        }
+        let result = runner.run(&spec).unwrap();
+        let ids: Vec<_> = result
+            .outcomes
+            .iter()
+            .map(|outcome| {
+                let observation = outcome.capability_observation.as_ref().unwrap();
+                assert!(observation.success);
+                assert_eq!(observation.task_id, outcome.task_id);
+                assert!(!outcome.passed);
+                assert!(outcome.evaluation.is_none());
+                assert!(outcome.execution_receipt_ref.is_none());
+                outcome.task_id.as_str()
+            })
+            .collect();
+        assert_eq!(ids, ["t1", "t2", "t1", "t2"]);
+        assert!(!result.summary.quality_evaluated);
+        assert!(!result.summary.quality_floor_met);
+        assert!(!result.summary.receipt_evidence_complete);
+    }
+
+    #[test]
+    fn failed_invocation_observation_is_retained_without_receipt_promotion() {
+        use crate::core::ocla::invocation::CapabilityFailureMode;
+        let runner = LocalRunner::for_live_benchmark(
+            RunConfig::default(),
+            Box::new(MockConnector::new(false)),
+            None,
+        )
+        .unwrap();
+        let result = runner.run(&test_spec()).unwrap();
+        assert_eq!(result.outcomes.len(), 2);
+        for outcome in &result.outcomes {
+            let observation = outcome.capability_observation.as_ref().unwrap();
+            assert!(!observation.success);
+            assert_eq!(
+                observation.failure_mode,
+                Some(CapabilityFailureMode::Internal)
+            );
+            assert!(outcome.error.is_some());
+            assert!(outcome.execution_receipt_ref.is_none());
+        }
+        assert!(!result.summary.receipt_evidence_complete);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn live_runner_executes_its_registered_real_process_and_denies_unadmitted_host() {
+        use crate::core::agent_connector::codex::CodexConnector;
+        use crate::core::ocla::invocation::CapabilityAdapter;
+        use std::os::unix::fs::PermissionsExt;
+        let root = tempfile::tempdir().unwrap();
+        let executable = root.path().join("fixture-codex");
+        std::fs::write(&executable, "#!/bin/sh\nprintf call >> \"$0.calls\"\nif [ \"$1\" = '--version' ]; then printf 'fixture 1.0'; exit 0; fi\nprintf task >> \"$0.tasks\"\nprintf 'task output'\n").unwrap();
+        std::fs::set_permissions(&executable, std::fs::Permissions::from_mode(0o700)).unwrap();
+        // A fresh executable can undergo OS security assessment before its
+        // first instruction. Prepare this known fixture once, without changing
+        // the production probe deadline or retrying the operation under test.
+        let prepared = crate::core::process_capture::run_with_timeout(
+            std::process::Command::new(&executable).arg("--version"),
+            std::time::Duration::from_secs(10),
+        )
+        .expect("capture fixture readiness diagnostics");
+        assert!(
+            !prepared.timed_out && prepared.output.status.success(),
+            "fixture preparation failed: timeout={}, status={:?}, stdout={:?}, stderr={:?}",
+            prepared.timed_out,
+            prepared.output.status,
+            String::from_utf8_lossy(&prepared.output.stdout),
+            String::from_utf8_lossy(&prepared.output.stderr),
+        );
+        assert_eq!(prepared.output.stdout, b"fixture 1.0");
+        let calls_path = root.path().join("fixture-codex.calls");
+        let prepared_calls = std::fs::read(&calls_path).unwrap();
+        assert_eq!(prepared_calls, b"call");
+        assert!(!root.path().join("fixture-codex.tasks").exists());
+        let info = AgentInfo {
+            name: "codex".into(),
+            version: Some("fixture 1.0".into()),
+            path: executable.clone(),
+            capabilities: vec![],
+            available: true,
+        };
+        let config = RunConfig {
+            working_dir: root.path().to_owned(),
+            ..RunConfig::default()
+        };
+        let policy =
+            AgentExecutionPolicy::new(root.path(), PolicyConstraints::default(), 300_000).unwrap();
+        let denied = LocalRunner::with_policy(
+            config.clone(),
+            Box::new(CodexConnector::new(info.clone())),
+            policy,
+        )
+        .unwrap();
+        assert!(denied.run(&test_spec()).is_err());
+        assert_eq!(std::fs::read(&calls_path).unwrap(), prepared_calls);
+        let runner =
+            LocalRunner::for_live_benchmark(config, Box::new(CodexConnector::new(info)), None)
+                .unwrap();
+        let manifest = runner.connector.manifest();
+        let registered = runner
+            .adapters
+            .lookup(manifest.capability_id.as_str(), &manifest.version)
+            .unwrap();
+        let expected: Arc<dyn CapabilityAdapter> = runner.connector.clone();
+        assert!(Arc::ptr_eq(&registered, &expected));
+        let spec = test_spec();
+        let result = runner.run(&spec).unwrap();
+        assert_eq!(result.outcomes.len(), 2);
+        assert_eq!(
+            std::fs::read_to_string(root.path().join("fixture-codex.tasks")).unwrap(),
+            "tasktask"
+        );
+        let json: serde_json::Value =
+            serde_json::from_str(&crate::core::benchmark_spec::report::format_json(&result))
+                .unwrap();
+        for (index, (task, outcome)) in spec.suite.tasks.iter().zip(&result.outcomes).enumerate() {
+            use crate::core::ocla::invocation::{CapabilityObservationV1, evidence_ref};
+            let actual = outcome.capability_observation.as_ref().unwrap();
+            let request = runner.task_request_for_profile(&spec, task, &runner.config.profile_name);
+            let input_tokens = crate::core::tokens::count_tokens(&request.prompt) as u64;
+            let invocation = runner.connector.invocation(request);
+            let mut expected = CapabilityObservationV1::success(
+                &invocation,
+                input_tokens,
+                crate::core::tokens::count_tokens("task output") as u64,
+                actual.latency_ms,
+                Some(evidence_ref("task output")),
+            );
+            expected
+                .metrics
+                .insert("local_payload_token_measurement".into(), 1);
+            assert_eq!(actual, &expected);
+            assert!(actual.latency_ms <= invocation.timeout_ms);
+            assert!(actual.latency_ms >= outcome.latency_ms);
+            assert!(outcome.execution_receipt_ref.is_none());
+            assert_eq!(
+                json["outcomes"][index]["capability_observation"],
+                serde_json::to_value(expected).unwrap()
+            );
+        }
     }
 
     #[test]
@@ -432,6 +644,7 @@ mod tests {
             tokens_used: None,
             provider_cost_micros: None,
             execution_receipt_ref: Some("receipt:task-1".into()),
+            termination: None,
         };
 
         let outcome = outcome_from_task_result(&task, &result, std::path::Path::new("."))
@@ -511,6 +724,7 @@ mod tests {
             }),
             provider_cost_micros: Some(42),
             execution_receipt_ref: Some("receipt:task-1".into()),
+            termination: None,
         };
 
         let outcome = outcome_from_task_result(&task, &result, std::path::Path::new("."))
@@ -530,7 +744,12 @@ mod tests {
     fn missing_evaluator_blocks_quality_floor() {
         let mut spec = test_spec();
         spec.suite.tasks[0].evaluation = None;
-        let runner = LocalRunner::new(RunConfig::default(), Box::new(MockConnector::new(true)));
+        let runner = LocalRunner::for_live_benchmark(
+            RunConfig::default(),
+            Box::new(MockConnector::new(true)),
+            None,
+        )
+        .unwrap();
 
         let result = runner
             .run(&spec)
@@ -543,7 +762,12 @@ mod tests {
 
     #[test]
     fn task_request_uses_task_timeout_then_default() {
-        let runner = LocalRunner::new(RunConfig::default(), Box::new(MockConnector::new(true)));
+        let runner = LocalRunner::for_live_benchmark(
+            RunConfig::default(),
+            Box::new(MockConnector::new(true)),
+            None,
+        )
+        .unwrap();
         let spec = test_spec();
 
         assert_eq!(
@@ -567,7 +791,12 @@ mod tests {
 
     #[test]
     fn task_request_uses_explicit_run_profile() {
-        let runner = LocalRunner::new(RunConfig::default(), Box::new(MockConnector::new(true)));
+        let runner = LocalRunner::for_live_benchmark(
+            RunConfig::default(),
+            Box::new(MockConnector::new(true)),
+            None,
+        )
+        .unwrap();
         let spec = test_spec();
         let request = runner.task_request_for_profile(&spec, &spec.suite.tasks[0], "benchmark-a");
 
@@ -577,7 +806,12 @@ mod tests {
     #[test]
     fn progress_callback_fires() {
         let counter = AtomicUsize::new(0);
-        let runner = LocalRunner::new(RunConfig::default(), Box::new(MockConnector::new(true)));
+        let runner = LocalRunner::for_live_benchmark(
+            RunConfig::default(),
+            Box::new(MockConnector::new(true)),
+            None,
+        )
+        .unwrap();
         runner
             .run_with_progress(&test_spec(), |_| {
                 counter.fetch_add(1, Ordering::Relaxed);

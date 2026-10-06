@@ -178,12 +178,27 @@ pub fn get(path: &Path, current: FileState) -> Option<Arc<str>> {
 /// Insert (or replace) the content for `path` at version `state`. Skipped while
 /// the process is under memory pressure or when the cache is disabled, so the
 /// cache never *adds* to a memory problem.
-pub fn insert(path: &Path, state: FileState, content: Arc<str>) {
+///
+/// `content` must be what `admitted_by` admitted: the cache only ever holds
+/// admitted text (Context Gateway, G5). Text admitted under a policy that is
+/// no longer the observed one is refused, so a build that outlived a policy
+/// change cannot repopulate the cache with it.
+pub fn insert(
+    path: &Path,
+    state: FileState,
+    content: Arc<str>,
+    admitted_by: &crate::core::context_admission::stores::StoreAdmission,
+) {
     if disabled() || crate::core::memory_guard::is_under_pressure() {
         return;
     }
     let len = content.len();
     let mut c = lock();
+    // Checked under the lock: a policy change advances the epoch before it
+    // clears the cache, so this entry is either refused here or cleared.
+    if !admitted_by.is_current() {
+        return;
+    }
     // A single file larger than the whole budget would thrash eviction — skip it.
     if len > c.budget_bytes {
         return;
@@ -205,12 +220,15 @@ pub fn insert(path: &Path, state: FileState, content: Arc<str>) {
 /// the explicit [`get`]/[`insert`] pair so they keep their own skip rules).
 pub fn get_or_read(path: &Path) -> Option<Arc<str>> {
     let state = FileState::from_path(path)?;
+    // Observed first: a changed policy drops the cache before it can hit.
+    let admission = crate::core::context_admission::stores::StoreAdmission::current();
     if let Some(hit) = get(path, state) {
         return Some(hit);
     }
-    let content = crate::core::text_decode::read_text(path).ok()?;
+    // The cache only ever holds admitted text (Context Gateway, G5).
+    let content = admission.read(path)?;
     let arc: Arc<str> = Arc::from(content);
-    insert(path, state, Arc::clone(&arc));
+    insert(path, state, Arc::clone(&arc), &admission);
     Some(arc)
 }
 
@@ -284,7 +302,12 @@ pub fn stats() -> CacheStats {
 #[cfg(test)]
 pub mod tests {
     use super::*;
+    use crate::core::context_admission::stores::StoreAdmission;
     use serial_test::serial;
+
+    fn admitted() -> StoreAdmission {
+        StoreAdmission::current()
+    }
 
     /// The cache is a process-wide global and tests mutate it (and the budget
     /// env var). Serialize them so they cannot observe each other's state.
@@ -314,7 +337,7 @@ pub mod tests {
         let p = write(dir.path(), "a.rs", "fn main() {}\n");
         let state = FileState::from_path(&p).unwrap();
         assert!(get(&p, state).is_none(), "cold cache must miss");
-        insert(&p, state, Arc::from("fn main() {}\n"));
+        insert(&p, state, Arc::from("fn main() {}\n"), &admitted());
         let got = get(&p, state).expect("warm cache must hit");
         assert_eq!(&*got, "fn main() {}\n");
     }
@@ -340,7 +363,7 @@ pub mod tests {
             .load(std::sync::atomic::Ordering::Relaxed);
 
         assert!(get(&p, state).is_none());
-        insert(&p, state, Arc::from("cold\n"));
+        insert(&p, state, Arc::from("cold\n"), &admitted());
         assert!(get(&p, stale_state).is_none());
 
         let local_after = stats();
@@ -363,7 +386,7 @@ pub mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "warm.rs", "warm\n");
         let state = FileState::from_path(&p).unwrap();
-        insert(&p, state, Arc::from("warm\n"));
+        insert(&p, state, Arc::from("warm\n"), &admitted());
         let local_before = stats();
         let central = crate::core::telemetry::global_metrics();
         let hits_before = central
@@ -392,7 +415,7 @@ pub mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "a.rs", "v1\n");
         let s1 = FileState::from_path(&p).unwrap();
-        insert(&p, s1, Arc::from("v1\n"));
+        insert(&p, s1, Arc::from("v1\n"), &admitted());
         assert!(get(&p, s1).is_some());
 
         // Different size ⇒ different state ⇒ miss, and the stale entry is dropped.
@@ -407,7 +430,7 @@ pub mod tests {
         );
 
         // Different mtime ⇒ miss as well.
-        insert(&p, s1, Arc::from("v1\n"));
+        insert(&p, s1, Arc::from("v1\n"), &admitted());
         let s_newer = FileState {
             mtime_ms: s1.mtime_ms + 1,
             ..s1
@@ -426,18 +449,23 @@ pub mod tests {
         let p = write(dir.path(), "a.rs", "hello world\n");
 
         let state = FileState::from_path(&p).unwrap();
-        assert!(
-            get(&p, state).is_none(),
-            "a fresh cache must not already hold the file"
-        );
-
+        assert!(get(&p, state).is_none(), "first read starts cold");
         let first = get_or_read(&p).unwrap();
         assert_eq!(&*first, "hello world\n");
         assert!(
-            get(&p, state).is_some(),
-            "the first read must populate the cache for this path and state"
+            Arc::ptr_eq(&first, &get(&p, state).expect("first read inserts")),
+            "the populated entry retains the returned allocation"
         );
 
+        // Other readers can populate unrelated paths between these calls.
+        // Global insertion counters cannot prove a hit for this specific file.
+        let other = write(dir.path(), "other.rs", "unrelated\n");
+        insert(
+            &other,
+            FileState::from_path(&other).unwrap(),
+            Arc::from("unrelated\n"),
+            &admitted(),
+        );
         let second = get_or_read(&p).unwrap();
         assert_eq!(&*second, "hello world\n");
         // Allocation identity, not counter arithmetic: a cache hit clones the
@@ -467,12 +495,27 @@ pub mod tests {
         let sb = FileState::from_path(&pb).unwrap();
         let sc = FileState::from_path(&pc).unwrap();
 
-        insert(&pa, sa, Arc::from("aaaaaaaaaaaaaaaaaaaaaaaaaaaa"));
+        insert(
+            &pa,
+            sa,
+            Arc::from("aaaaaaaaaaaaaaaaaaaaaaaaaaaa"),
+            &admitted(),
+        );
         // Touch a so b becomes the LRU victim.
         let _ = get(&pa, sa);
-        insert(&pb, sb, Arc::from("bbbbbbbbbbbbbbbbbbbbbbbbbbbb"));
+        insert(
+            &pb,
+            sb,
+            Arc::from("bbbbbbbbbbbbbbbbbbbbbbbbbbbb"),
+            &admitted(),
+        );
         let _ = get(&pa, sa);
-        insert(&pc, sc, Arc::from("cccccccccccccccccccccccccccc"));
+        insert(
+            &pc,
+            sc,
+            Arc::from("cccccccccccccccccccccccccccc"),
+            &admitted(),
+        );
 
         let st = stats();
         assert!(st.bytes <= 64, "cache must respect byte budget: {st:?}");
@@ -492,7 +535,7 @@ pub mod tests {
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "a.rs", "x\n");
         let state = FileState::from_path(&p).unwrap();
-        insert(&p, state, Arc::from("x\n"));
+        insert(&p, state, Arc::from("x\n"), &admitted());
         assert!(get(&p, state).is_none(), "zero-budget cache is a no-op");
         crate::test_env::remove_var("LEAN_CTX_CONTENT_CACHE_MB");
     }

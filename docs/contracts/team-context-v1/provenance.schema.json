@@ -1,0 +1,86 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "provenance.schema.json",
+  "title": "LeanCTX Team Provenance v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "provenance_id",
+    "scope",
+    "object_id",
+    "object_type",
+    "object_digest",
+    "source_kind",
+    "source_digest",
+    "author",
+    "created_at",
+    "valid_from",
+    "classification",
+    "authority_state",
+    "version",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "provenance_id": { "$ref": "common.schema.json#/$defs/id" },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "object_id": { "$ref": "common.schema.json#/$defs/id" },
+    "object_type": { "$ref": "common.schema.json#/$defs/provenanceObjectType" },
+    "object_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Digest of the subject context-object after omitting provenance_digest. This breaks the otherwise circular object-to-provenance digest dependency."
+    },
+    "source_kind": { "$ref": "common.schema.json#/$defs/sourceKind" },
+    "source_digest": {
+      "$ref": "common.schema.json#/$defs/contentDigest",
+      "description": "Digest of the bounded source descriptor. The descriptor itself carries identifiers, enums and digests only; raw context, prompts, paths and credentials are forbidden."
+    },
+    "author": { "$ref": "common.schema.json#/$defs/memberId" },
+    "created_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "classification": { "$ref": "common.schema.json#/$defs/classification" },
+    "authority_state": { "$ref": "common.schema.json#/$defs/authorityState" },
+    "supersedes": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Cross-object supersession: record digest of the object this provenance's subject replaces."
+    },
+    "superseded_by": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Cross-object supersession: record digest of the object that replaced this provenance's subject."
+    },
+    "valid_from": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "valid_until": {
+      "$ref": "common.schema.json#/$defs/timestamp",
+      "description": "Exclusive end of the validity window. Absent means open-ended. Must be strictly greater than valid_from and must equal the subject object's valid_until."
+    },
+    "authority_decision_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Record digest of the approved, signed, same-scope authority-decision. Single lineage vocabulary: this is the same field name used by context-object."
+    },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "parent_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/idempotencyKey" }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/casLineage" },
+    {
+      "if": {
+        "properties": { "authority_state": { "const": "authoritative" } },
+        "required": ["authority_state"]
+      },
+      "then": { "required": ["authority_decision_digest"] }
+    },
+    {
+      "if": {
+        "properties": { "authority_state": { "const": "historical" } },
+        "required": ["authority_state"]
+      },
+      "then": {
+        "anyOf": [
+          { "required": ["superseded_by"] },
+          { "required": ["valid_until"] }
+        ]
+      }
+    }
+  ]
+}

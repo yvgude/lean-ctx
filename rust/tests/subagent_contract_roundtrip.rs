@@ -16,6 +16,7 @@ fn agent(
         action,
         None,
         None,
+        None,
         project_root,
         Some("parent-1"),
         message,

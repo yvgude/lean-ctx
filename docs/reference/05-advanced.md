@@ -294,13 +294,13 @@ default_project = "billing"      # optional
 - Compute a key's hash with `shasum -a 256` (or `sha256sum`):
   `printf '%s' "gk-alice-secret" | shasum -a 256`.
 
-**Active routing — `[proxy.routing]`.** The gateway can rewrite the requested
-model in-flight: exact **aliases** (stable org names, transparent swaps) and
-intent-based **tier downgrades** (the last user message is classified
-`fast|standard|premium`; the tier picks a target). Targets are `"model"` (same
-upstream) or `"provider:model"` (re-target to a `[[proxy.providers]]` entry or a
-built-in `anthropic|openai|gemini` — same wire shape only; cross-shape
-translation is not in M1):
+**Explicit model targets — `[proxy.routing]`.** The gateway can map an exact
+requested model to a fixed target you write down — a stable org name for an
+approved endpoint, or a local model that keeps traffic on-device. LeanCTX never
+chooses a model on its own: automatic intent- or cost-based selection was
+removed in v4. Targets are `"model"` (same upstream) or `"provider:model"`
+(re-target to a `[[proxy.providers]]` entry or a built-in
+`anthropic|openai|gemini`):
 
 ```toml
 [proxy.routing]
@@ -308,21 +308,18 @@ enabled = true
 
 [proxy.routing.aliases]
 "acme/fast" = "foundry:Phi-4-mini-instruct"   # stable org-level model name
-"claude-opus-4-5" = "claude-sonnet-4-5"       # transparent downgrade, same upstream
-
-[proxy.routing.tiers]
-fast     = "foundry:Phi-4-mini-instruct"      # explore/debug-style requests
-standard = ""                                 # "" / absent = keep requested model
-premium  = ""                                 # premium work is never auto-downgraded
+"acme/local" = "ollama:llama3.3"              # keep this traffic on a local model
 ```
 
-- **Fail-open by construction:** any miss (rule/classification/unknown provider/
-  shape mismatch) forwards the request unchanged — a routing bug can cost
-  savings, never availability. Aliases win over tiers.
-- Routed usage events carry `routed_from` (the originally requested model) and
-  the serving provider, so the savings ledger can prove what the router did.
-- Gemini (model in URL path) and the ChatGPT/Codex OAuth route stay passthrough
-  in M1.
+- **Fail-open by construction:** an unknown alias, unknown provider or shape
+  mismatch forwards the request unchanged.
+- Rewritten usage events carry `routed_from` (the originally requested model)
+  and the serving provider, so you can see every rewrite.
+- A leftover `[proxy.routing.tiers]` table is ignored; `lean-ctx doctor` reports it.
+- Which models a request may reach at all is enforced separately, on the final
+  outgoing body, by `router-policy.toml` (`model_allowlist` / `model_denylist`)
+  and by signed policy packs (`[routing].allowed_models`).
+- Gemini (model in URL path) and the ChatGPT/Codex OAuth route stay passthrough.
 
 **Loopback-open mode** (`proxy_loopback_open`). When enabled, the proxy skips
 ALL authentication on loopback-bound listeners. MCP clients, browser dashboards,

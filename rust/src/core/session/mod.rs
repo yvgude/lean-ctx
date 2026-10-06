@@ -1,9 +1,11 @@
 mod compaction;
 mod heuristics;
+pub(crate) mod housekeeping;
 mod journal;
 mod paths;
 mod persistence;
 pub mod playbook;
+mod save_outcome;
 mod state;
 pub(crate) use journal::AttachSessionJournalV1;
 pub(crate) use state::extract_session_facts;
@@ -21,6 +23,26 @@ mod tests {
     use super::paths::{extract_cd_target, sessions_dir};
     use super::types::*;
     use chrono::{Duration, Utc};
+
+    /// Bypass path "memory": findings and decisions the agent records are
+    /// recalled into later context, so a credential never enters them.
+    #[test]
+    fn session_memory_never_stores_a_credential() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let credential = concat!("AK", "IAQ3EGRZ7MEMORYKEY");
+        let mut session = SessionState::new();
+        session.add_finding(Some("deploy.env"), Some(3), &format!("key is {credential}"));
+        session.add_decision(
+            &format!("rotate {credential}"),
+            Some(&format!("it leaked as {credential}")),
+        );
+        let stored = serde_json::to_string(&session).expect("serialize session");
+        assert!(
+            !stored.contains(credential),
+            "session memory kept the credential"
+        );
+        assert!(stored.contains("key is"), "the finding itself is kept");
+    }
 
     #[test]
     fn load_latest_for_broad_root_returns_none_without_scanning() {

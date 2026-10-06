@@ -131,7 +131,23 @@ impl SharedSessionStore {
     }
 }
 
-fn persist_session_to_disk(key: &SharedSessionKey, _project_root: &str, session: &SessionState) {
+fn persist_session_to_disk(key: &SharedSessionKey, project_root: &str, session: &SessionState) {
+    // Canonical shared data is a projection of the committed primary owner,
+    // never a second place to advance a checkpoint from a pending snapshot.
+    let committed = if session.canonical_checkpoint.is_some() {
+        let Some(committed) = SessionState::load_by_id(&session.id) else {
+            return;
+        };
+        if committed.version != session.version
+            || committed.project_root.as_deref() != Some(project_root)
+        {
+            return;
+        }
+        Some(committed)
+    } else {
+        None
+    };
+    let session = committed.as_ref().unwrap_or(session);
     let Some(dir) = shared_session_dir(key) else {
         return;
     };
@@ -139,7 +155,7 @@ fn persist_session_to_disk(key: &SharedSessionKey, _project_root: &str, session:
     let state_path = dir.join("session.json");
     let tmp = dir.join("session.json.tmp");
 
-    if let Ok(json) = serde_json::to_string_pretty(session) {
+    if let Ok((json, _)) = session.storage_json() {
         let _ = std::fs::write(&tmp, json);
         let _ = std::fs::rename(&tmp, &state_path);
     }
@@ -177,7 +193,12 @@ fn load_session_from_disk(project_root: &str, key: &SharedSessionKey) -> Option<
     let dir = shared_session_dir(key)?;
     let state_path = dir.join("session.json");
     let json = std::fs::read_to_string(&state_path).ok()?;
-    let mut session: SessionState = serde_json::from_str(&json).ok()?;
+    let mut session = SessionState::from_storage_json(&json).ok()?;
+    if session.canonical_checkpoint.is_some()
+        && session.project_root.as_deref() != Some(project_root)
+    {
+        return None;
+    }
     // Safety: enforce project_root from the current server.
     session.project_root = Some(project_root.to_string());
     Some(session)

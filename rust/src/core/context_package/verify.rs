@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Standalone package verification (spec §8 integrity, §9 signing).
 //!
 //! `lean-ctx pack verify` and the import path share these primitives. All
@@ -9,14 +11,15 @@ use sha2::{Digest, Sha256};
 use std::path::Path;
 
 use super::content::{
-    CHECKPOINT_PACKAGE_SCHEMA_V1, CheckpointPackageContentV1, MAX_CHECKPOINT_ENTRIES,
-    MAX_CHECKPOINT_PACKAGE_BYTES, MAX_CHECKPOINT_PACKAGE_PINS, MAX_CHECKPOINT_REFS,
+    MAX_CHECKPOINT_ENTRIES, MAX_CHECKPOINT_PACKAGE_PINS, MAX_CHECKPOINT_REFS,
     MAX_CHECKPOINT_SOURCES, PackageContent,
 };
 use super::manifest::{PackageKind, PackageLayer, PackageManifest};
 
 mod addon;
+mod checkpoint;
 mod text;
+use checkpoint::validate_checkpoint_content;
 pub(crate) use text::compact_json_text;
 
 /// Extract the exact text of one top-level member's value from a JSON object
@@ -174,56 +177,6 @@ pub(crate) fn validate_kind_coherence(
         Ok(())
     } else {
         Err(errors)
-    }
-}
-
-fn validate_checkpoint_content(portable: &CheckpointPackageContentV1, errors: &mut Vec<String>) {
-    if portable.schema_version != CHECKPOINT_PACKAGE_SCHEMA_V1 {
-        errors.push(format!(
-            "unsupported checkpoint package schema `{}`",
-            portable.schema_version
-        ));
-        return;
-    }
-    let Ok(encoded) = serde_json::to_vec(portable) else {
-        errors.push("checkpoint content is not canonical JSON".into());
-        return;
-    };
-    if encoded.len() > MAX_CHECKPOINT_PACKAGE_BYTES {
-        errors.push(format!(
-            "checkpoint content exceeds {MAX_CHECKPOINT_PACKAGE_BYTES} byte cap"
-        ));
-        return;
-    }
-    validate_checkpoint_object(&portable.checkpoint, errors);
-    validate_migration_provenance(
-        portable.migration_provenance.as_ref(),
-        &portable.checkpoint,
-        errors,
-    );
-
-    let mut absolute_paths = Vec::new();
-    collect_non_portable_paths(&portable.checkpoint, "$.checkpoint", &mut absolute_paths);
-    absolute_paths.sort();
-    absolute_paths.dedup();
-    let mut declared = portable.non_portable_fields.clone();
-    declared.sort();
-    declared.dedup();
-    if declared != portable.non_portable_fields
-        || declared.len() > 256
-        || declared
-            .iter()
-            .any(|item| item.is_empty() || item.len() > 1024 || item.chars().any(char::is_control))
-        || declared != absolute_paths
-    {
-        errors.push(
-            "non_portable_fields must exactly classify every machine-local absolute path".into(),
-        );
-    }
-
-    let portable_text = serde_json::to_string(portable).unwrap_or_default();
-    if !crate::core::secret_detection::detect_secrets(&portable_text).is_empty() {
-        errors.push("checkpoint content contains credential-shaped material".into());
     }
 }
 
@@ -1468,6 +1421,13 @@ pub(crate) fn verify_package_text(doc: &str) -> VerifyReport {
 
 /// Read and verify a `.ctxpkg` file (size- and extension-gated like import).
 pub(crate) fn verify_package_file(path: &Path) -> Result<VerifyReport, String> {
+    Ok(verify_package_text(&read_package_text(path)?))
+}
+
+/// Read once so a caller can verify and decode the same bounded document.
+pub(crate) fn read_package_text(path: &Path) -> Result<String, String> {
+    use std::io::Read;
+
     if !crate::core::contracts::is_package_file(path) {
         let ext = path
             .extension()
@@ -1480,6 +1440,9 @@ pub(crate) fn verify_package_file(path: &Path) -> Result<VerifyReport, String> {
         ));
     }
     let meta = std::fs::metadata(path).map_err(|e| format!("stat package file: {e}"))?;
+    if !meta.is_file() {
+        return Err("package input must be a regular file".into());
+    }
     if meta.len() > crate::core::contracts::MAX_PACKAGE_FILE_BYTES {
         return Err(format!(
             "package file too large ({} bytes, max {} bytes)",
@@ -1487,8 +1450,15 @@ pub(crate) fn verify_package_file(path: &Path) -> Result<VerifyReport, String> {
             crate::core::contracts::MAX_PACKAGE_FILE_BYTES,
         ));
     }
-    let doc = std::fs::read_to_string(path).map_err(|e| format!("read package file: {e}"))?;
-    Ok(verify_package_text(&doc))
+    let file = std::fs::File::open(path).map_err(|e| format!("open package file: {e}"))?;
+    let mut doc = String::new();
+    file.take(crate::core::contracts::MAX_PACKAGE_FILE_BYTES + 1)
+        .read_to_string(&mut doc)
+        .map_err(|e| format!("read package file: {e}"))?;
+    if doc.len() as u64 > crate::core::contracts::MAX_PACKAGE_FILE_BYTES {
+        return Err("package file exceeded size limit while reading".into());
+    }
+    Ok(doc)
 }
 
 #[cfg(test)]

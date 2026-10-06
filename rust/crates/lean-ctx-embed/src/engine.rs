@@ -27,6 +27,11 @@
 //! - **Write/exec gated** — `ctx_edit`/`ctx_fill` need [`EngineBuilder::allow_write`];
 //!   `ctx_shell`/`ctx_execute` need [`EngineBuilder::allow_exec`].
 //!
+//! Path validation is not an OS sandbox: it does not prevent a concurrent
+//! filesystem writer from swapping a checked path before a handler opens it,
+//! and cannot distinguish hard links. Explicitly enabled shell execution is
+//! not confined by a path-argument check. Dangling symlinks fail closed.
+//!
 //! ## Runtime constraint
 //!
 //! Engine methods are synchronous and drive their own multi-threaded Tokio
@@ -53,6 +58,17 @@ use crate::read::ReadMode;
 const WRITE_TOOLS: &[&str] = &["ctx_edit", "ctx_fill"];
 /// Command-executing tools, gated behind [`EngineBuilder::allow_exec`].
 const EXEC_TOOLS: &[&str] = &["ctx_shell", "ctx_execute", "shell"];
+/// Explicitly admitted root-scoped read surfaces. Registering another MCP tool
+/// must not silently grant it embedded write, execution, or host-registry access.
+const READ_TOOLS: &[&str] = &[
+    "ctx_read",
+    "ctx_multi_read",
+    "ctx_search",
+    "ctx_symbol",
+    "ctx_tree",
+    "ctx_outline",
+    "ctx_glob",
+];
 
 /// Builds an [`Engine`] with explicit, safe-by-default configuration.
 #[derive(Debug, Clone)]
@@ -112,9 +128,10 @@ impl EngineBuilder {
     /// Returns [`Error::Init`] if the project root does not exist / is not a
     /// directory, or the runtime cannot be built.
     pub fn build(self) -> Result<Engine, Error> {
-        let project_root = std::fs::canonicalize(&self.project_root).map_err(|e| {
-            Error::Init(format!("project root {}: {e}", self.project_root.display()))
-        })?;
+        let project_root = lean_ctx::core::pathutil::canonicalize_secure(&self.project_root)
+            .map_err(|e| {
+                Error::Init(format!("project root {}: {e}", self.project_root.display()))
+            })?;
         if !project_root.is_dir() {
             return Err(Error::Init(format!(
                 "project root {} is not a directory",
@@ -132,10 +149,12 @@ impl EngineBuilder {
             .build()
             .map_err(|e| Error::Init(format!("tokio runtime: {e}")))?;
 
+        let mut session = SessionState::new();
+        session.project_root = Some(project_root.clone());
         Ok(Engine {
             project_root,
             cache: Arc::new(RwLock::new(SessionCache::new())),
-            session: Arc::new(RwLock::new(SessionState::new())),
+            session: Arc::new(RwLock::new(session)),
             registry: build_registry(),
             crp_mode: CrpMode::Off,
             allow_write: self.allow_write,
@@ -198,11 +217,9 @@ impl Engine {
         let mut args = Map::new();
         args.insert("pattern".into(), Value::String(pattern.to_string()));
         let mut ctx = self.base_ctx();
-        if let Some(dir) = subdir {
-            let resolved = self.resolve(dir)?;
-            args.insert("path".into(), Value::String(resolved.clone()));
-            ctx.resolved_paths.insert("path".into(), resolved);
-        }
+        let resolved = self.resolve(subdir.unwrap_or("."))?;
+        args.insert("path".into(), Value::String(resolved.clone()));
+        ctx.resolved_paths.insert("path".into(), resolved);
         self.dispatch("ctx_search", args, ctx).map(|o| o.text)
     }
 
@@ -237,18 +254,20 @@ impl Engine {
     pub fn tree(&self, subdir: Option<&str>) -> Result<String, Error> {
         let mut args = Map::new();
         let mut ctx = self.base_ctx();
-        if let Some(dir) = subdir {
-            let resolved = self.resolve(dir)?;
-            args.insert("path".into(), Value::String(resolved.clone()));
-            ctx.resolved_paths.insert("path".into(), resolved);
-        }
+        let resolved = self.resolve(subdir.unwrap_or("."))?;
+        args.insert("path".into(), Value::String(resolved.clone()));
+        ctx.resolved_paths.insert("path".into(), resolved);
         self.dispatch("ctx_tree", args, ctx).map(|o| o.text)
     }
 
-    /// Escape hatch: call any registered tool by name with raw JSON arguments.
+    /// Call an admitted read tool by name with raw JSON arguments.
     ///
-    /// A string `path` argument is `PathJail`-resolved before dispatch. Write and
-    /// exec tools require the matching builder opt-in.
+    /// Standard path-like arguments and every `paths` array member are resolved
+    /// within this instance before dispatch. Invalid path shapes and host repo
+    /// aliases are rejected. Write and exec tools require the builder opt-in.
+    /// Other registered MCP tools are not implicitly authorized by this SDK;
+    /// host registry/configuration mutation requires the ordinary MCP interface
+    /// and its host policy. Symbol handles from host registries are not admitted.
     ///
     /// # Errors
     /// [`Error::NotPermitted`] when a gated tool is not enabled,
@@ -261,25 +280,105 @@ impl Engine {
         if WRITE_TOOLS.contains(&tool) && !self.allow_write {
             return Err(Error::NotPermitted(tool.to_string()));
         }
+        if !self.registry.contains(tool) {
+            return Err(Error::UnknownTool(tool.to_string()));
+        }
+        if !READ_TOOLS.contains(&tool)
+            && !WRITE_TOOLS.contains(&tool)
+            && !EXEC_TOOLS.contains(&tool)
+        {
+            return Err(Error::NotPermitted(tool.to_string()));
+        }
+        if args.contains_key("handle") {
+            return Err(Error::NotPermitted("host symbol handles".into()));
+        }
 
         let mut ctx = self.base_ctx();
-        if let Some(Value::String(raw)) = args.get("path").cloned() {
-            let resolved = self.resolve(&raw)?;
-            args.insert("path".into(), Value::String(resolved.clone()));
-            ctx.resolved_paths.insert("path".into(), resolved);
+        // Repo aliases can override explicit paths inside handlers. An embedded
+        // instance has one root, not the host's multi-repo registry.
+        if args.contains_key("repo") {
+            return Err(Error::Path(
+                "repo aliases are not permitted by the embedded engine".into(),
+            ));
+        }
+        for key in lean_ctx::server::tool_trait::PATH_LIKE_KEYS {
+            if let Some(value) = args.get(*key) {
+                let raw = value
+                    .as_str()
+                    .ok_or_else(|| Error::Path(format!("{key} must be a string")))?;
+                let resolved = self.resolve(raw)?;
+                args.insert((*key).into(), Value::String(resolved.clone()));
+                ctx.resolved_paths.insert((*key).into(), resolved);
+            }
+        }
+        if let Some(value) = args.get_mut("paths") {
+            let paths = value
+                .as_array_mut()
+                .ok_or_else(|| Error::Path("paths must be a string array".into()))?;
+            for path in paths {
+                let raw = path
+                    .as_str()
+                    .ok_or_else(|| Error::Path("paths must contain only strings".into()))?;
+                *path = Value::String(self.resolve(raw)?);
+            }
+        }
+        if !ctx.resolved_paths.contains_key("path") && !ctx.resolved_paths.contains_key("file_path")
+        {
+            ctx.resolved_paths.insert("path".into(), self.resolve(".")?);
         }
         self.dispatch(tool, args, ctx).map(Output::from)
     }
 
     /// `PathJail`-resolve a raw path against the project root.
     fn resolve(&self, raw: &str) -> Result<String, Error> {
-        lean_ctx::core::path_resolve::resolve_tool_path_with_roots(
+        let resolved = lean_ctx::core::path_resolve::resolve_tool_path_with_roots(
             Some(&self.project_root),
             None,
             raw,
             &[],
         )
-        .map_err(Error::Path)
+        .map_err(Error::Path)?;
+
+        // The embedding contract confines reads to this engine's root even if
+        // Cargo feature unification enables the CLI's `no-jail` escape hatch,
+        // or the host configuration grants additional roots. Do not mutate the
+        // host's global security settings to enforce this instance boundary.
+        let mut ancestor = if resolved.is_empty() || resolved == "." {
+            PathBuf::from(&self.project_root)
+        } else {
+            PathBuf::from(resolved)
+        };
+        let mut missing = Vec::new();
+        loop {
+            match std::fs::symlink_metadata(&ancestor) {
+                Ok(_) => break,
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    let name = ancestor.file_name().ok_or_else(|| {
+                        Error::Path("cannot resolve path within the engine root".into())
+                    })?;
+                    missing.push(name.to_owned());
+                    if !ancestor.pop() {
+                        return Err(Error::Path("path has no existing ancestor".into()));
+                    }
+                }
+                Err(error) => return Err(Error::Path(error.to_string())),
+            }
+        }
+        let mut canonical = lean_ctx::core::pathutil::canonicalize_secure(&ancestor)
+            .map_err(|error| Error::Path(error.to_string()))?;
+        if !canonical.starts_with(Path::new(&self.project_root)) {
+            return Err(Error::Path(
+                "path escapes the embedded engine project root".into(),
+            ));
+        }
+        for part in missing.into_iter().rev() {
+            canonical.push(part);
+        }
+        lean_ctx::core::io_boundary::check_secret_path_for_tool("resolve_path", &canonical)
+            .map_err(Error::Path)?;
+        Ok(lean_ctx::core::pathutil::normalize_tool_path(
+            &canonical.to_string_lossy().replace('\\', "/"),
+        ))
     }
 
     /// A [`ToolContext`] wired to the shared cache/session for this engine.

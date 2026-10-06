@@ -1,9 +1,65 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Tests for dashboard auth, host allow-list, CSRF and token handling.
 
 use super::routes::helpers::{detect_project_root_for_dashboard, normalize_dashboard_demo_path};
 #[allow(clippy::wildcard_imports)]
 use super::*;
 use tempfile::tempdir;
+
+#[cfg(unix)]
+mod control_lifecycle;
+
+#[tokio::test]
+async fn work_graph_control_enforces_http_auth_and_csrf() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    for (auth_enabled, headers, expected) in [
+        (true, "", "401 Unauthorized"),
+        (true, "Authorization: Bearer wrong\r\n", "401 Unauthorized"),
+        (
+            true,
+            "Authorization: Bearer control-test\r\nOrigin: https://attacker.invalid\r\n",
+            "403 Forbidden",
+        ),
+        (false, "", "403 Forbidden"),
+        (
+            true,
+            "Authorization: Bearer control-test\r\n",
+            "400 Bad Request",
+        ),
+    ] {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let address = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (stream, _) = listener.accept().await.unwrap();
+            handle_request(
+                stream,
+                auth_enabled.then(|| Arc::new("control-test".to_string())),
+                Arc::new(String::new()),
+                Arc::new(allowed_loopback()),
+            )
+            .await;
+        });
+        let response = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
+            let request = format!(
+                "POST /api/agents/work-graph HTTP/1.1\r\nHost: localhost\r\n{headers}Content-Length: 2\r\nConnection: close\r\n\r\n{{}}"
+            );
+            client.write_all(request.as_bytes()).await.unwrap();
+            let mut response = String::new();
+            client.read_to_string(&mut response).await.unwrap();
+            response
+        }).await;
+        if response.is_err() {
+            server.abort();
+        }
+        let response = response.expect("bounded HTTP response");
+        server.await.unwrap();
+        assert!(
+            response.starts_with(&format!("HTTP/1.1 {expected}")),
+            "{response}"
+        );
+    }
+}
 
 #[test]
 fn dashboard_project_root_honors_general_env_override() {
@@ -257,10 +313,48 @@ fn normalize_dashboard_demo_path_strips_dot_slash_prefix() {
 fn api_context_overlay_evict_removes_ledger_entry() {
     // #715: the dashboard Evict must remove the ledger entry (pressure
     // drops), resolving basenames against absolute canonical entries.
+    let _env_lock = crate::core::data_dir::test_env_lock();
+
+    // The route persists project overlays separately from the isolated ledger.
+    // Never use the developer checkout (read-only in CI) as that project.
+    struct RestoreEnvironment(Vec<(&'static str, Option<std::ffi::OsString>)>);
+    impl Drop for RestoreEnvironment {
+        fn drop(&mut self) {
+            for (key, previous) in &self.0 {
+                match previous {
+                    Some(value) => crate::test_env::set_var(key, value),
+                    None => crate::test_env::remove_var(key),
+                }
+            }
+        }
+    }
+    let _restore = RestoreEnvironment(
+        [
+            "LEAN_CTX_DASHBOARD_PROJECT",
+            "LEAN_CTX_DATA_DIR",
+            "LEAN_CTX_CONFIG_DIR",
+            "LEAN_CTX_STATE_DIR",
+            "LEAN_CTX_CACHE_DIR",
+        ]
+        .into_iter()
+        .map(|key| (key, std::env::var_os(key)))
+        .collect(),
+    );
+    // Restore caller overrides after `_iso` clears them, with the lock held.
     let _iso = crate::core::data_dir::isolated_data_dir();
+    let project = tempdir().expect("overlay project");
+    let project_root = project
+        .path()
+        .canonicalize()
+        .expect("canonical overlay project");
+    crate::test_env::set_var("LEAN_CTX_DASHBOARD_PROJECT", &project_root);
+    let source = project_root.join("src/gate715.rs");
+    let normalized_source = crate::core::pathutil::normalize_tool_path(&source.to_string_lossy());
+    std::fs::create_dir_all(source.parent().expect("source parent")).expect("source directory");
+    std::fs::write(&source, "pub fn gate715() {}\n").expect("source fixture");
 
     let mut ledger = crate::core::context_ledger::ContextLedger::with_window_size(100_000);
-    ledger.record("/tmp/proj715/src/gate715.rs", "full", 500, 500);
+    ledger.record(&source.to_string_lossy(), "full", 500, 500);
     ledger.save();
 
     let body = r#"{"action":"evict","path":"gate715.rs"}"#;
@@ -279,6 +373,20 @@ fn api_context_overlay_evict_removes_ledger_entry() {
             .iter()
             .all(|e| !e.path.contains("gate715.rs")),
         "entry must be gone after dashboard evict"
+    );
+    let overlays = crate::core::context_overlay::OverlayStore::load_project(&project_root);
+    assert_eq!(overlays.all().len(), 1, "project exclusion must persist");
+    assert!(matches!(
+        overlays.all()[0].operation,
+        crate::core::context_overlay::OverlayOp::Exclude { .. }
+    ));
+    assert_eq!(
+        overlays.all()[0].scope,
+        crate::core::context_overlay::OverlayScope::Project
+    );
+    assert_eq!(
+        overlays.all()[0].target,
+        crate::core::context_field::ContextItemId::from_file(&normalized_source)
     );
 
     // Unknown targets are a diagnosed 400, not a silent success.

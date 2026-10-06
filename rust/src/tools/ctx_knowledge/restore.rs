@@ -101,13 +101,30 @@ fn restore_facts(
     query: Option<&str>,
     remaining: &mut usize,
 ) -> StoreRestore {
-    let cands = collect::<crate::core::knowledge::KnowledgeFact, _>(
+    let archived = collect::<crate::core::knowledge::KnowledgeFact, _>(
         MemoryStore::Facts,
         None,
         cfg,
-        query,
+        None,
         |f| format!("{} {} {}", f.category, f.key, f.value),
     );
+    // Authorization precedes query matching and even the reported match count.
+    // The archive remains unchanged when a source is currently unavailable.
+    let mut candidate = ProjectKnowledge::new(&knowledge.project_root);
+    candidate.facts = archived;
+    let needle = query.map(str::to_lowercase);
+    let cands: Vec<_> = candidate
+        .admit_sources()
+        .facts
+        .into_iter()
+        .filter(|f| {
+            needle.as_ref().is_none_or(|needle| {
+                format!("{} {} {}", f.category, f.key, f.value)
+                    .to_lowercase()
+                    .contains(needle)
+            })
+        })
+        .collect();
     let matched = cands.len();
     let mut restored = 0;
     for f in cands {
@@ -117,13 +134,15 @@ fn restore_facts(
         let already = knowledge
             .facts
             .iter()
-            .any(|e| e.category == f.category && e.key == f.key && e.value == f.value);
+            .chain(&knowledge.withheld)
+            .any(|e| crate::core::knowledge::source_view::same_record(e, &f));
         if already {
             continue;
         }
         let key_owned = knowledge
             .facts
             .iter()
+            .chain(&knowledge.withheld)
             .any(|e| e.category == f.category && e.key == f.key && e.is_current());
         if key_owned {
             continue;

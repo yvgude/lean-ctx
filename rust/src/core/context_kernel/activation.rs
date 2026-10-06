@@ -1,28 +1,28 @@
-//! Kernel activation configuration and receipt-driven feedback wiring.
+//! Kernel activation configuration.
+//!
+//! Task outcomes are learned from validated execution receipts by
+//! `autopilot::learning_store`; this module only configures supplementation.
 
-use std::collections::HashMap;
 use std::fs;
 use std::io::ErrorKind;
 use std::path::Path;
 
 use super::enforce::KernelMode;
-use super::feedback::FeedbackCollector;
-use super::learning::OutcomeLearner;
-use super::types::{ContextReceiptV1, ReceiptOutcome};
 
 const MAX_SUPPLEMENT_TOKENS: usize = 150;
 
-/// Configuration for kernel activation mode and feedback.
+/// Configuration for kernel activation mode.
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct ActivationConfig {
     /// Kernel operating mode: Shadow (log only), Enforce (apply decisions),
     /// or Explain (log + annotate).
     pub mode: KernelModeConfig,
-    /// Whether to track real outcomes (accept/reject) from the LLM.
+    /// Accepted from existing configuration files; outcome learning runs
+    /// through validated execution receipts whatever this says.
     pub outcome_tracking: bool,
     /// Hard cap on tokens the kernel may add per request.
     pub max_supplement_tokens: usize,
-    /// Enable feedback loop: outcomes → weight updates → better selection.
+    /// Accepted from existing configuration files; see `outcome_tracking`.
     pub feedback_loop: bool,
 }
 
@@ -82,44 +82,6 @@ pub fn load_config(project_root: &str) -> ActivationConfig {
     }
 
     config
-}
-
-/// Returns a receipt copy carrying the observed accept/reject outcome.
-pub fn record_real_outcome(receipt: &ContextReceiptV1, accepted: bool) -> ContextReceiptV1 {
-    let mut recorded = receipt.clone();
-    recorded.outcome = if accepted {
-        ReceiptOutcome::Accepted
-    } else {
-        ReceiptOutcome::Rejected
-    };
-    recorded
-}
-
-/// Feeds a known receipt outcome into persisted feedback and provider learning.
-///
-/// Unknown and partial outcomes carry no binary accept/reject signal and are
-/// ignored. Feedback persistence handles unavailable paths without panicking.
-pub fn connect_feedback(receipt: &ContextReceiptV1, project_root: &str) {
-    if !matches!(
-        receipt.outcome,
-        ReceiptOutcome::Accepted | ReceiptOutcome::Rejected
-    ) {
-        return;
-    }
-
-    let mut collector = FeedbackCollector::default_for_project(project_root);
-    collector.load_weights();
-
-    let mut weights: HashMap<String, f64> = receipt
-        .feedback_attribution
-        .keys()
-        .map(|provider| (provider.clone(), collector.provider_weight(provider)))
-        .collect();
-    let learner = OutcomeLearner::default_learner();
-    let updates = learner.learn_from_receipt(receipt, &weights);
-    OutcomeLearner::apply_updates(&mut weights, &updates);
-
-    collector.record_outcome(receipt);
 }
 
 /// Returns whether kernel supplementation should run in the configured mode.
@@ -183,27 +145,9 @@ fn apply_overrides(config: &mut ActivationConfig, overrides: &KernelOverrides) {
 
 #[cfg(test)]
 pub mod tests {
-    use std::collections::HashMap;
-
     use super::{
-        ActivationConfig, KernelModeConfig, connect_feedback, load_config, record_real_outcome,
-        should_suppress_in_mode, supplement_budget,
+        ActivationConfig, KernelModeConfig, load_config, should_suppress_in_mode, supplement_budget,
     };
-    use crate::core::context_kernel::types::{ContextReceiptV1, ReceiptOutcome};
-
-    fn receipt(outcome: ReceiptOutcome) -> ContextReceiptV1 {
-        ContextReceiptV1 {
-            receipt_id: "receipt-1".to_owned(),
-            plan_id: "plan-1".to_owned(),
-            task_id: None,
-            delivered_tokens: 10,
-            cache_hits: 0,
-            cache_misses: 0,
-            outcome,
-            quality_signals: Vec::new(),
-            feedback_attribution: HashMap::new(),
-        }
-    }
 
     fn config(mode: KernelModeConfig, max_supplement_tokens: usize) -> ActivationConfig {
         ActivationConfig {
@@ -230,15 +174,6 @@ pub mod tests {
     }
 
     #[test]
-    fn real_outcome_sets_rejected() {
-        let original = receipt(ReceiptOutcome::Unknown);
-        let recorded = record_real_outcome(&original, false);
-
-        assert_eq!(recorded.outcome, ReceiptOutcome::Rejected);
-        assert_eq!(original.outcome, ReceiptOutcome::Unknown);
-    }
-
-    #[test]
     fn shadow_mode_never_suppresses() {
         assert!(!should_suppress_in_mode(KernelModeConfig::Shadow));
     }
@@ -246,13 +181,5 @@ pub mod tests {
     #[test]
     fn enforce_mode_suppresses() {
         assert!(should_suppress_in_mode(KernelModeConfig::Enforce));
-    }
-
-    #[test]
-    fn connect_feedback_graceful_on_error() {
-        connect_feedback(
-            &receipt(ReceiptOutcome::Rejected),
-            "/path/that/does/not/exist",
-        );
     }
 }

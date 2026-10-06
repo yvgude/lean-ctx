@@ -1,0 +1,17 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "seat-allocation.schema.json",
+  "title": "SeatAllocationV1", "type": "object", "additionalProperties": false,
+  "required": ["v", "allocation_id", "scope", "member_id", "membership_digest", "entitlement_digest", "limit_decision_digest", "state", "allocated_at", "allocated_by", "version", "signature_envelope_digest", "idempotency_key"],
+  "properties": {
+    "v": {"const": 1}, "allocation_id": {"$ref": "common.schema.json#/$defs/id"}, "scope": {"$ref": "common.schema.json#/$defs/scope"},
+    "member_id": {"$ref": "common.schema.json#/$defs/memberId"}, "membership_digest": {"$ref": "common.schema.json#/$defs/digest"}, "entitlement_digest": {"$ref": "common.schema.json#/$defs/digest"}, "limit_decision_digest": {"$ref": "common.schema.json#/$defs/digest"},
+    "state": {"enum": ["active", "released", "revoked", "expired"]}, "allocated_at": {"$ref": "common.schema.json#/$defs/timestamp"}, "allocated_by": {"$ref": "common.schema.json#/$defs/memberId"},
+    "ended_at": {"$ref": "common.schema.json#/$defs/timestamp"}, "ended_by": {"$ref": "common.schema.json#/$defs/memberId"}, "reason_code": {"$ref": "common.schema.json#/$defs/reasonCode"},
+    "version": {"$ref": "common.schema.json#/$defs/version"}, "parent_digest": {"$ref": "common.schema.json#/$defs/digest"},
+    "signature_envelope_digest": {"$ref": "common.schema.json#/$defs/digest"}, "idempotency_key": {"$ref": "common.schema.json#/$defs/idempotencyKey"}
+  },
+  "allOf": [
+    {"$ref": "common.schema.json#/$defs/cas"},
+    {"if": {"properties": {"state": {"const": "active"}}, "required": ["state"]}, "then": {"not": {"anyOf": [{"required": ["ended_at"]}, {"required": ["ended_by"]}, {"required": ["reason_code"]}]}}, "else": {"required": ["ended_at", "ended_by", "reason_code"]}}
+  ]
+}

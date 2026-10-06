@@ -20,7 +20,12 @@ use crate::core::content_chunk::ContentChunk;
 
 /// Central registry for all context providers.
 pub struct ProviderRegistry {
-    providers: RwLock<HashMap<String, Arc<dyn ContextProvider>>>,
+    providers: RwLock<HashMap<String, Entry>>,
+}
+
+struct Entry {
+    provider: Arc<dyn ContextProvider>,
+    pinned: bool,
 }
 
 impl std::fmt::Debug for ProviderRegistry {
@@ -42,15 +47,54 @@ impl ProviderRegistry {
     pub fn register(&self, provider: Arc<dyn ContextProvider>) {
         let id = provider.id().to_string();
         if let Ok(mut map) = self.providers.write() {
-            map.insert(id, provider);
+            if !map.get(&id).is_some_and(|entry| entry.pinned) {
+                map.insert(
+                    id,
+                    Entry {
+                        provider,
+                        pinned: false,
+                    },
+                );
+            }
         }
+    }
+
+    /// Startup-only authority. Later built-in/config/WASM initialization cannot
+    /// replace this entry, even when it registers the same ID.
+    #[cfg(any(unix, windows, test))]
+    pub(crate) fn pin(&self, provider: Arc<dyn ContextProvider>) -> Result<(), String> {
+        let mut map = self
+            .providers
+            .write()
+            .map_err(|_| "provider registry unavailable")?;
+        let id = provider.id().to_string();
+        if map.contains_key(&id) {
+            return Err("cannot install selected provider after registry initialization".into());
+        }
+        map.insert(
+            id,
+            Entry {
+                provider,
+                pinned: true,
+            },
+        );
+        Ok(())
     }
 
     pub fn get(&self, id: &str) -> Option<Arc<dyn ContextProvider>> {
         self.providers
             .read()
             .ok()
-            .and_then(|map| map.get(id).cloned())
+            .and_then(|map| map.get(id).map(|entry| Arc::clone(&entry.provider)))
+    }
+
+    /// Reuse startup-selected authority without trusting a later registry entry.
+    pub(crate) fn get_pinned(&self, id: &str) -> Option<Arc<dyn ContextProvider>> {
+        self.providers.read().ok().and_then(|map| {
+            map.get(id)
+                .filter(|entry| entry.pinned)
+                .map(|entry| Arc::clone(&entry.provider))
+        })
     }
 
     pub fn execute(
@@ -80,14 +124,27 @@ impl ProviderRegistry {
     }
 
     /// Execute and convert results to ContentChunks for BM25/embedding ingest.
+    pub(crate) fn execute_bound(
+        &self,
+        provider_id: &str,
+        action: &str,
+        params: &ProviderParams,
+    ) -> Result<super::provenance::BoundResult, String> {
+        let provider = self.get(provider_id).ok_or("provider unavailable")?;
+        if !provider.is_available() || !provider.supported_actions().contains(&action) {
+            return Err("provider action is unavailable".into());
+        }
+        super::provenance::BoundResult::execute(provider.as_ref(), action, params)
+    }
+
     pub fn execute_as_chunks(
         &self,
         provider_id: &str,
         action: &str,
         params: &ProviderParams,
     ) -> Result<Vec<ContentChunk>, String> {
-        let result = self.execute(provider_id, action, params)?;
-        Ok(result_to_chunks(&result))
+        let bound = self.execute_bound(provider_id, action, params)?;
+        Ok(bound.chunks(&bound.result))
     }
 
     /// List all registered providers with their availability and actions.
@@ -98,6 +155,7 @@ impl ProviderRegistry {
 
         let mut infos: Vec<ProviderInfo> = map
             .values()
+            .map(|entry| &entry.provider)
             .map(|p| ProviderInfo {
                 id: p.id().to_string(),
                 display_name: p.display_name().to_string(),
@@ -125,6 +183,7 @@ impl ProviderRegistry {
             .read()
             .map(|m| {
                 m.values()
+                    .map(|entry| &entry.provider)
                     .filter(|p| p.is_available())
                     .map(|p| p.id().to_string())
                     .collect()
@@ -288,5 +347,29 @@ mod tests {
         let result = reg.execute("nonexistent", "issues", &ProviderParams::default());
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("not registered"));
+    }
+
+    #[test]
+    fn selected_provider_survives_reinitialization_and_rejects_late_pin() {
+        use crate::core::providers::{config::GitLabConfig, gitlab::GitLabProvider};
+        let provider = || -> Arc<dyn ContextProvider> {
+            Arc::new(GitLabProvider::with_config(GitLabConfig {
+                host: "gitlab.example.test".into(),
+                token: "synthetic-registry-token".into(),
+                project_path: Some("5".into()),
+            }))
+        };
+        let registry = ProviderRegistry::new();
+        let selected = provider();
+        registry.pin(Arc::clone(&selected)).unwrap();
+        for _ in 0..3 {
+            registry.register(provider());
+        }
+        assert!(Arc::ptr_eq(&registry.get("gitlab").unwrap(), &selected));
+        assert!(registry.pin(provider()).is_err());
+        assert_eq!(registry.provider_count(), 1);
+        let ordinary = ProviderRegistry::new();
+        ordinary.register(provider());
+        assert!(ordinary.pin(provider()).is_err());
     }
 }

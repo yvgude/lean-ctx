@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::path::{Path, PathBuf};
@@ -214,13 +216,37 @@ pub(crate) fn write_bundle_v1(path: &Path, json: &str) -> Result<(), String> {
 }
 
 pub(crate) fn read_bundle_v1(path: &Path) -> Result<CcpSessionBundleV1, String> {
-    let json = std::fs::read_to_string(path).map_err(|e| e.to_string())?;
+    use std::io::Read as _;
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt as _;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt as _;
+        options.custom_flags(0x0020_0000); // FILE_FLAG_OPEN_REPARSE_POINT
+    }
+    let file = options.open(path).map_err(|_| "bundle cannot be opened")?;
+    let metadata = file.metadata().map_err(|_| "bundle metadata unavailable")?;
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::MetadataExt as _;
+        if metadata.file_attributes() & 0x0400 != 0 {
+            return Err("bundle reparse point rejected".into());
+        }
+    }
+    if !metadata.is_file() || metadata.len() > MAX_BUNDLE_BYTES as u64 {
+        return Err("bundle must be a bounded regular file".into());
+    }
+    let mut json = String::new();
+    file.take(MAX_BUNDLE_BYTES as u64 + 1)
+        .read_to_string(&mut json)
+        .map_err(|_| "bundle cannot be read")?;
     if json.len() > MAX_BUNDLE_BYTES {
-        return Err(format!(
-            "ERROR: bundle file too large ({} bytes > max {})",
-            json.len(),
-            MAX_BUNDLE_BYTES
-        ));
+        return Err("bundle exceeds byte limit".into());
     }
     parse_bundle_v1(&json)
 }
@@ -265,13 +291,15 @@ pub(crate) fn import_bundle_v1_into_session(
     }
 
     *session = SessionState {
+        canonical_checkpoint: None,
         handoff_context: Vec::new(),
-        id: imported.id.clone(),
+        id: SessionState::new().id,
         version: imported.version,
         started_at: imported.started_at,
         updated_at: imported.updated_at,
         project_root: imported.project_root.clone(),
-        shell_cwd: imported.shell_cwd.clone(),
+        // A machine-local cwd from the source never changes the target's scope.
+        shell_cwd: None,
         task: imported.task.clone(),
         findings: imported.findings.clone(),
         decisions: imported.decisions.clone(),
@@ -292,11 +320,37 @@ pub(crate) fn import_bundle_v1_into_session(
         playbook: crate::core::session::Playbook::default(),
         last_semantic_query: None,
         last_flush: None,
+        save_gate: Default::default(),
+        last_save_failed: false,
         live_zone: Default::default(),
     };
 
+    use sha2::{Digest as _, Sha256};
+    let source_digest = crate::core::agent_identity::hex_encode(&Sha256::digest(
+        crate::core::canonical::canonical_serialize(bundle),
+    ));
+    // Append directly: record_manual_evidence may auto-save, whereas this
+    // candidate must remain unpublished until the caller's guarded commit.
+    session.evidence.push(EvidenceRecord {
+        kind: crate::core::session::EvidenceKind::Manual,
+        key: "session_import_source".into(),
+        value: Some(
+            serde_json::json!({"schema_version":1,
+            "source_session_id":imported.id,
+            "source_digest":format!("sha256:{source_digest}")})
+            .to_string(),
+        ),
+        tool: None,
+        input_md5: None,
+        output_md5: None,
+        agent_id: None,
+        client_name: None,
+        task_id: None,
+        timestamp: Utc::now(),
+    });
     ImportReportV1 {
         session_id: session.id.clone(),
+        source_session_id: imported.id,
         version: session.version,
         files_touched: session.files_touched.len() as u32,
         stale_files: stale,
@@ -306,6 +360,7 @@ pub(crate) fn import_bundle_v1_into_session(
 #[derive(Debug, Clone)]
 pub(crate) struct ImportReportV1 {
     pub session_id: String,
+    pub source_session_id: String,
     pub version: u32,
     pub files_touched: u32,
     pub stale_files: u32,

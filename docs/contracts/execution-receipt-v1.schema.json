@@ -4,7 +4,7 @@
   "title": "LeanCTX ExecutionReceiptV1",
   "description": "Version-one execution accounting and evidence receipt.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": [
     "schema_version",
     "receipt_id",
@@ -42,6 +42,8 @@
     "requested_model": { "type": "string", "minLength": 1 },
     "selected_model": { "type": "string", "minLength": 1 },
     "provider": { "type": "string", "minLength": 1 },
+    "capability_id": { "type": ["string", "null"], "maxLength": 256 },
+    "capability_version": { "type": ["string", "null"], "maxLength": 256 },
     "model_calls": { "type": "integer", "minimum": 0 },
     "retries": { "type": "integer", "minimum": 0 },
     "latency_ms": { "type": "integer", "minimum": 0 },
@@ -50,12 +52,23 @@
     "avoided_cost_micros": { "type": "integer", "minimum": 0 },
     "etpao_milli": { "type": "integer", "minimum": 0 },
     "outcome_ref": { "type": ["string", "null"] },
-    "decision_refs": { "type": "array", "items": { "type": "string" } },
+    "knowledge_refs": { "type": "array", "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
+    "decision_refs": { "type": "array", "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
     "evidence_refs": {
       "type": "array",
       "items": { "$ref": "#/$defs/evidenceRef" }
     },
-    "signature": { "type": "string", "minLength": 1 }
+    "signature": { "type": "string", "minLength": 1 },
+    "executor_agent_id": { "anyOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+    "attempt_id": { "anyOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+    "context_plan_id": { "anyOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+    "context_receipt_ref": { "type": ["string", "null"], "maxLength": 256 },
+    "capability_bindings": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/capabilityBinding" }
+    },
+    "observations": { "$ref": "#/$defs/observations" }
   },
   "$defs": {
     "identifier": {
@@ -66,7 +79,7 @@
     },
     "contextBalance": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": [
         "original_tokens",
         "materialized_tokens",
@@ -82,9 +95,10 @@
     },
     "evidenceRef": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["kind", "uri", "digest", "signature_status"],
       "properties": {
+        "schema_version": { "anyOf": [{ "const": 1 }, { "type": "null" }] },
         "kind": {
           "type": "string",
           "enum": [
@@ -95,12 +109,55 @@
             "ExperimentOutcome"
           ]
         },
-        "uri": { "type": "string", "minLength": 1 },
-        "digest": { "type": "string", "minLength": 1 },
+        "uri": { "$ref": "#/$defs/identifier" },
+        "digest": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+        "media_type": { "type": ["string", "null"], "minLength": 1, "maxLength": 256 },
         "signature_status": {
           "type": "string",
           "enum": ["Verified", "Unverified", "NotSigned"]
         }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["schema_version"],
+            "properties": { "schema_version": { "const": 1 } }
+          },
+          "then": {
+            "properties": {
+              "digest": {
+                "type": "string",
+                "pattern": "^(?:(?:sha256|blake3):)?[0-9A-Fa-f]{64}$",
+                "maxLength": 256
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "digest": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" }
+            }
+          }
+        }
+      ]
+    },
+    "capabilityBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability_id", "version"],
+      "properties": {
+        "capability_id": { "$ref": "#/$defs/identifier" },
+        "version": { "$ref": "#/$defs/identifier" },
+        "manifest_digest": { "type": ["string", "null"], "maxLength": 256 }
+      }
+    },
+    "observations": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "model_calls": { "type": ["integer", "null"], "minimum": 0 },
+        "retries": { "type": ["integer", "null"], "minimum": 0 },
+        "latency_ms": { "type": ["integer", "null"], "minimum": 0 },
+        "actual_cost_micros": { "type": ["integer", "null"], "minimum": 0 }
       }
     }
   }

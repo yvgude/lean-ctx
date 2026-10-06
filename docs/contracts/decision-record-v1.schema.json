@@ -4,12 +4,12 @@
   "title": "LeanCTX DecisionRecordV1",
   "description": "Version-one signed decision record with policy and evidence references.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": [
     "schema_version",
     "decision_id",
     "task_id",
-    "plan_id",
+    "decision_stage",
     "decision_kind",
     "input_refs",
     "constraint_refs",
@@ -25,7 +25,8 @@
     "schema_version": { "const": 1 },
     "decision_id": { "$ref": "#/$defs/identifier" },
     "task_id": { "$ref": "#/$defs/identifier" },
-    "plan_id": { "$ref": "#/$defs/identifier" },
+    "plan_id": { "anyOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+    "decision_stage": { "type": "string", "enum": ["admission", "planning", "execution", "outcome"] },
     "decision_kind": {
       "type": "string",
       "enum": [
@@ -67,9 +68,10 @@
     },
     "evidenceRef": {
       "type": "object",
-      "additionalProperties": false,
+      "additionalProperties": true,
       "required": ["kind", "uri", "digest", "signature_status"],
       "properties": {
+        "schema_version": { "anyOf": [{ "const": 1 }, { "type": "null" }] },
         "kind": {
           "type": "string",
           "enum": [
@@ -80,13 +82,45 @@
             "ExperimentOutcome"
           ]
         },
-        "uri": { "type": "string", "minLength": 1 },
-        "digest": { "type": "string", "minLength": 1 },
+        "uri": { "$ref": "#/$defs/identifier" },
+        "digest": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" },
+        "media_type": { "type": ["string", "null"], "minLength": 1, "maxLength": 256 },
         "signature_status": {
           "type": "string",
           "enum": ["Verified", "Unverified", "NotSigned"]
         }
+      },
+      "allOf": [
+        {
+          "if": {
+            "required": ["schema_version"],
+            "properties": { "schema_version": { "const": 1 } }
+          },
+          "then": {
+            "properties": {
+              "digest": {
+                "type": "string",
+                "pattern": "^(?:(?:sha256|blake3):)?[0-9A-Fa-f]{64}$",
+                "maxLength": 256
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "digest": { "type": "string", "minLength": 1, "maxLength": 256, "pattern": "^[^\\u0000-\\u001F\\u007F]+$" }
+            }
+          }
+        }
+      ]
+    }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "decision_stage": { "not": { "const": "admission" } } }, "required": ["decision_stage"] },
+      "then": {
+        "properties": { "plan_id": { "$ref": "#/$defs/identifier" } },
+        "required": ["plan_id"]
       }
     }
-  }
+  ]
 }

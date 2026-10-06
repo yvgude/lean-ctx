@@ -244,6 +244,20 @@ pub struct ProjectKnowledge {
     /// preserving the on-disk knowledge format for existing projects.
     #[serde(skip)]
     pub index: KnowledgeIndex,
+    /// Records excluded from this read view. Never serialized or exposed by a
+    /// formatter; the checked persistence path retains them without modification.
+    #[serde(skip)]
+    pub(crate) withheld: Vec<KnowledgeFact>,
+}
+
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(tag = "kind", content = "source", rename_all = "snake_case")]
+pub enum FactOrigin {
+    #[default]
+    Unverified,
+    Local,
+    Provider(Box<crate::core::providers::provenance::ProviderOrigin>),
+    Derived(Vec<FactOrigin>),
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -256,6 +270,8 @@ pub struct JudgedPair {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct KnowledgeFact {
+    #[serde(default)]
+    pub origin: FactOrigin,
     pub category: String,
     pub key: String,
     pub value: String,
@@ -408,6 +424,7 @@ mod archetype_tests {
     #[test]
     fn fidelity_structural_computation() {
         let fact = KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: "test".into(),
             key: "k".into(),
             value: "v".into(),

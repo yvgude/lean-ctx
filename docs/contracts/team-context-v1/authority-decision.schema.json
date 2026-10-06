@@ -1,0 +1,61 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "authority-decision.schema.json",
+  "title": "LeanCTX Authority Decision v1",
+  "description": "Immutable, policy-bound, signed approval evidence. Every field that identifies what was decided, who decided it and under which policy is required; the signature lives in the referenced signature-envelope record.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "decision_id",
+    "scope",
+    "promotion_id",
+    "promotion_digest",
+    "object_id",
+    "object_digest",
+    "decision",
+    "decided_by",
+    "decided_at",
+    "reason_code",
+    "policy_digest",
+    "signature_envelope_digest",
+    "version",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "decision_id": { "$ref": "common.schema.json#/$defs/id" },
+    "scope": {
+      "$ref": "common.schema.json#/$defs/scope",
+      "description": "Must equal the scope of the referenced promotion, policy and context object component by component."
+    },
+    "promotion_id": { "$ref": "common.schema.json#/$defs/id" },
+    "promotion_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Record digest of the exact promotion request version this decision answers."
+    },
+    "object_id": { "$ref": "common.schema.json#/$defs/id" },
+    "object_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "decision": {
+      "enum": ["approved", "rejected", "superseded", "expired"]
+    },
+    "decided_by": {
+      "$ref": "common.schema.json#/$defs/memberId",
+      "description": "Approver. MUST NOT equal the referenced promotion's requested_by, MUST hold an active same-scope membership whose role grants 'promotion.decide', and MUST be the signature envelope's signed_by."
+    },
+    "decided_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "reason_code": { "$ref": "common.schema.json#/$defs/reasonCode" },
+    "policy_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Record digest of the active same-scope promotion_authority policy applied. Must equal the referenced promotion's policy_digest."
+    },
+    "signature_envelope_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Record digest of the signature-envelope whose signed_payload_kind is 'authority-decision' and whose signed_payload_digest is this record's digest with signature_envelope_digest omitted."
+    },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "parent_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/idempotencyKey" }
+  },
+  "allOf": [{ "$ref": "common.schema.json#/$defs/casLineage" }]
+}

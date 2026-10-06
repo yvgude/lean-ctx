@@ -134,6 +134,40 @@ pub(crate) fn execute_command_with_env_cancellable(
     // background job's `status` poll can show progress instead of nothing.
     live: Option<&std::sync::Mutex<String>>,
 ) -> (String, i32) {
+    // Store isolation for model-directed subprocesses of a protected session.
+    //
+    // macOS refuses a nested `sandbox_apply` under the whole-MCP profile, so
+    // this process cannot wrap its own children in the launcher's rules. The
+    // request goes to the launcher's supervisor instead, which starts the child
+    // from outside that sandbox under the profile the launcher pinned. Decided
+    // *before* the build lease and before any caller-supplied `extra_env`: the
+    // supervisor takes the machine-wide lease itself (taking it on both sides
+    // would deadlock), and a tool call can neither select nor drop the rules. A
+    // protected session that cannot reach its supervisor runs nothing.
+    //
+    // This is the one exec seam `ctx_shell` has — foreground, background and the
+    // interpreter heredoc reroute all arrive here — and the Engine's own
+    // persistence never passes through it.
+    #[cfg(unix)]
+    let protected_prefix: Option<Vec<String>> = {
+        use crate::core::protected_execution::{Mode, launch_mode, sandbox_prefix};
+        match launch_mode() {
+            Err(error) => return (format!("ERROR: {error}"), 1),
+            Ok(Mode::Brokered(client)) => {
+                return client.shell(
+                    command, cwd, extra_env, timeout_ms, cancel, idle_keyed, live,
+                );
+            }
+            Ok(Mode::Sandboxed(profile)) => Some(sandbox_prefix(&profile)),
+            Ok(Mode::Direct) => None,
+        }
+    };
+    #[cfg(not(unix))]
+    let protected_prefix = match crate::cli::protected_child_prefix() {
+        Ok(prefix) => prefix,
+        Err(error) => return (format!("ERROR: {error}"), 1),
+    };
+
     let _build_lease = match acquire_build_lease(command, cancel) {
         Ok(lease) => lease,
         Err(error) => return (format!("ERROR: {error}"), 130),
@@ -144,6 +178,10 @@ pub(crate) fn execute_command_with_env_cancellable(
     let normalized_cmd = crate::shell::platform::zsh_safe_command(&normalized_cmd, &shell);
     let dir = std::path::Path::new(cwd);
     let mut cmd = std::process::Command::new(&shell);
+    if let Some([program, arguments @ ..]) = protected_prefix.as_deref() {
+        cmd = std::process::Command::new(program);
+        cmd.args(arguments).arg(&shell);
+    }
     if cfg!(windows) && crate::shell::platform::is_powershell(&shell) {
         cmd.args(["-NoProfile", "-ExecutionPolicy", "Bypass"]);
     }
@@ -702,6 +740,58 @@ mod tests {
         }
     }
 
+    /// The one exec seam: foreground runs, detached background jobs and the
+    /// interpreter-heredoc reroute all build their command here, so covering it
+    /// once covers all three. Synthetic store, isolated data dir — never the
+    /// developer's installed knowledge.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn the_supervisor_runs_the_shell_under_the_pinned_child_rules() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let isolation = crate::core::data_dir::isolated_data_dir();
+        let fact = isolation.path().join("knowledge/knowledge.json");
+        std::fs::create_dir_all(fact.parent().unwrap()).unwrap();
+        std::fs::write(&fact, "synthetic-provider-fact").unwrap();
+        let work = tempfile::tempdir().unwrap();
+        let cwd = work.path().to_str().unwrap();
+        let read_fact = format!("cat {}", fact.display());
+        let write_fact = format!("printf downgraded > {}", fact.display());
+
+        // Community: the store is an ordinary file, the shell is unwrapped.
+        crate::cli::unpin_synthetic_session();
+        let (text, code) = execute_command_in(&read_fact, cwd);
+        assert_eq!(code, 0, "{text}");
+        assert!(text.contains("synthetic-provider-fact"), "{text}");
+
+        let _session = crate::cli::pin_synthetic_session(isolation.path()).expect("pinned rules");
+        crate::core::protected_execution::with_test_supervisor(|| {
+            let (text, code) = execute_command_in(&read_fact, cwd);
+            assert_ne!(code, 0, "{text}");
+            assert!(!text.contains("synthetic-provider-fact"), "{text}");
+            let (text, code) = execute_command_in(&write_fact, cwd);
+            assert_ne!(code, 0, "{text}");
+            // Ordinary project work in the session's own directory is untouched.
+            let (text, code) =
+                execute_command_in("printf 'fn main() {}' > main.rs && cat main.rs", cwd);
+            assert_eq!(code, 0, "{text}");
+            assert!(text.contains("fn main()"), "{text}");
+        });
+        // The Engine keeps persisting from outside the child rules.
+        assert_eq!(
+            std::fs::read_to_string(&fact).unwrap(),
+            "synthetic-provider-fact"
+        );
+        std::fs::write(&fact, "engine-write").unwrap();
+
+        // A protected session whose rules went missing runs nothing at all —
+        // there is no unconfined fallback shell.
+        crate::test_env::remove_var(crate::cli::CHILD_PROFILE_ENV);
+        let (text, code) = execute_command_in("printf ran-unconfined", cwd);
+        assert_ne!(code, 0, "{text}");
+        assert!(text.starts_with("ERROR:"), "{text}");
+        assert!(!text.contains("ran-unconfined"), "{text}");
+    }
+
     /// #1113/#1173: a poll loop that emits a short line every so often must
     /// outlive the wall-clock budget — the cap protects against runaway output,
     /// not against a long-lived monitor. Wall-clock mode still kills it.
@@ -902,6 +992,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore)]
     fn utf8_bytes_survive_shell_roundtrip() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let (output, code) = execute_command_in(
             "printf '\\xD0\\x9F\\xD1\\x80\\xD0\\xB8\\xD0\\xB2\\xD0\\xB5\\xD1\\x82'",
             ".",
@@ -913,6 +1004,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore)] // ReadToEnd() blocks indefinitely on Windows CI
     fn execute_command_closes_stdin() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let command = "sh -c 'if read -t 1 line; then echo 67890; else echo 12345; fi'";
         let (output, code) = execute_command_in(command, ".");
         assert_eq!(code, 0, "command failed: {output}");
@@ -943,6 +1035,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore)] // POSIX backgrounding (`&`) + sleep
     fn background_pipe_holder_keeps_foreground_output() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let (output, code) = execute_command_in("echo REPRO_CANARY_945; sleep 4 &", ".");
         assert_eq!(code, 0, "command should succeed: {output:?}");
         assert!(
@@ -999,6 +1092,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore)] // POSIX sleep
     fn per_call_timeout_kills_long_command() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let (output, code) = super::execute_command_with_env(
             "sleep 3",
             ".",
@@ -1017,6 +1111,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore)] // POSIX sleep
     fn per_call_timeout_preserves_partial_output() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let (output, code) = super::execute_command_with_env(
             "printf TIMEOUT_PARTIAL_995; sleep 3",
             ".",
@@ -1036,6 +1131,7 @@ mod tests {
 
     #[test]
     fn git_version_returns_when_git_is_available() {
+        let _lock = crate::core::data_dir::test_env_lock();
         let git_available = std::process::Command::new("git")
             .arg("--version")
             .stdout(std::process::Stdio::null())

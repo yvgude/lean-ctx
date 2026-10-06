@@ -115,6 +115,8 @@ fn windows_replace(tmp: &Path, path: &Path) -> std::io::Result<()> {
     let tmp_w = to_wide(tmp);
     let path_w = to_wide(path);
 
+    // SAFETY: both vectors own NUL-terminated UTF-16 buffers and remain alive
+    // for the duration of the call.
     let ok = unsafe { MoveFileExW(tmp_w.as_ptr(), path_w.as_ptr(), MOVEFILE_REPLACE_EXISTING) };
     if ok == 0 {
         return Err(std::io::Error::last_os_error());
@@ -128,6 +130,30 @@ fn windows_replace(tmp: &Path, path: &Path) -> std::io::Result<()> {
 fn fsync_dir(dir: &Path) {
     if let Ok(f) = std::fs::File::open(dir) {
         let _ = f.sync_all();
+    }
+}
+
+/// Make a preceding `rename`/`create`/`remove` in `dir` durable, reporting
+/// failure. On Unix this fsyncs the directory. Windows cannot flush a directory
+/// through a plain `File::open` (it fails with `ERROR_ACCESS_DENIED`); NTFS
+/// journals directory metadata itself, so only the directory's existence is
+/// verified there — the same contract as the `#[cfg(unix)]` sync sites
+/// elsewhere in the crate.
+pub(crate) fn sync_directory(dir: &Path) -> std::io::Result<()> {
+    #[cfg(unix)]
+    {
+        std::fs::File::open(dir)?.sync_all()
+    }
+    #[cfg(not(unix))]
+    {
+        if std::fs::metadata(dir)?.is_dir() {
+            Ok(())
+        } else {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::NotADirectory,
+                "sync target is not a directory",
+            ))
+        }
     }
 }
 

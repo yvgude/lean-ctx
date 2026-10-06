@@ -4,8 +4,16 @@ use std::path::PathBuf;
 
 use super::data_dir::lean_ctx_data_dir;
 
+pub mod authority;
+
+#[cfg(test)]
+#[path = "archive/source_tests.rs"]
+mod source_tests;
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ArchiveEntry {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub authority: Option<authority::ArchiveAuthority>,
     pub id: String,
     pub tool: String,
     pub command: String,
@@ -142,11 +150,51 @@ pub fn store_with_result(
     content: &str,
     session_id: Option<&str>,
 ) -> Option<ArchiveStoreResult> {
+    store_with_authority(tool, command, content, session_id, None)
+}
+
+pub(crate) fn store_with_authority(
+    tool: &str,
+    command: &str,
+    content: &str,
+    session_id: Option<&str>,
+    authority: Option<&authority::ArchiveAuthority>,
+) -> Option<ArchiveStoreResult> {
+    super::policy::runtime::with_source_view(|| {
+        if super::policy::runtime::is_active() && authority.is_none() {
+            return None;
+        }
+        if authority.is_some_and(|origin| !origin.admitted()) {
+            return None;
+        }
+        let content = super::policy::content::protect_active(content).ok()?;
+        let command = super::policy::content::protect_active(command).ok()?;
+        // Archives and their FTS rows are derived stores: only admitted text
+        // enters them, never withheld or restricted content (G5, E3). A
+        // command line carries credentials as often as its output does.
+        let content = super::context_admission::recovery::admit_for_storage(&content)?;
+        let command = super::context_admission::recovery::admit_for_storage(&command)?;
+        store_admitted(tool, &command, &content, session_id, authority)
+    })
+    .ok()
+    .flatten()
+}
+
+fn store_admitted(
+    tool: &str,
+    command: &str,
+    content: &str,
+    session_id: Option<&str>,
+    authority: Option<&authority::ArchiveAuthority>,
+) -> Option<ArchiveStoreResult> {
     if !is_enabled() || content.is_empty() {
         return None;
     }
 
-    let (content, result) = prepared_content(content);
+    let (content, mut result) = prepared_content(content);
+    if let Some(authority) = authority {
+        result.id = authority.id(content)?;
+    }
     let id = result.id.clone();
     let created = with_archive_lock(|| {
         let c_path = content_path(&id);
@@ -159,7 +207,8 @@ pub fn store_with_result(
             #[cfg(unix)]
             set_private_file_perms(&c_path);
         }
-        let entry = new_entry(&id, tool, command, content, session_id, Utc::now());
+        let mut entry = new_entry(&id, tool, command, content, session_id, Utc::now());
+        entry.authority = authority.cloned();
         if write_metadata(&entry).is_none() {
             let _ = std::fs::remove_file(c_path);
             return None;
@@ -167,7 +216,7 @@ pub fn store_with_result(
         Some(true)
     })
     .flatten()?;
-    if created {
+    if created && authority.is_none() {
         super::archive_fts::index_entry(&id, tool, command, content);
     }
     Some(result)
@@ -181,14 +230,18 @@ pub fn store_background(
     content: &str,
     session_id: Option<&str>,
 ) -> Option<ArchiveStoreResult> {
-    store_background_with_limits(
-        tool,
-        job_id,
-        content,
-        session_id,
-        Utc::now(),
-        max_disk_bytes(),
-    )
+    super::policy::runtime::with_source_view(|| {
+        store_background_with_limits(
+            tool,
+            job_id,
+            content,
+            session_id,
+            Utc::now(),
+            max_disk_bytes(),
+        )
+    })
+    .ok()
+    .flatten()
 }
 
 fn store_background_with_limits(
@@ -199,11 +252,18 @@ fn store_background_with_limits(
     now: DateTime<Utc>,
     budget_bytes: u64,
 ) -> Option<ArchiveStoreResult> {
+    // Command output has no complete source binding yet. Keep fresh checked
+    // output usable, but do not publish a protected recovery handle for it.
+    if super::policy::runtime::is_active() {
+        return None;
+    }
     if !is_enabled() || content.is_empty() {
         return None;
     }
+    // Derived store: only admitted text (G5, E3).
+    let content = super::context_admission::recovery::admit_for_storage(content)?;
 
-    let (content, result) = prepared_content(content);
+    let (content, result) = prepared_content(&content);
     let id = result.id.clone();
     let protected_until = now + chrono::Duration::hours(BACKGROUND_RETENTION_HOURS);
     let (stored, evicted) = with_archive_lock(|| {
@@ -286,6 +346,7 @@ fn new_entry(
     created_at: DateTime<Utc>,
 ) -> ArchiveEntry {
     ArchiveEntry {
+        authority: None,
         id: id.to_string(),
         tool: tool.to_string(),
         command: command.to_string(),
@@ -318,21 +379,66 @@ pub(crate) enum ArchiveResolveError {
     Refused(&'static str),
 }
 
-/// Resolve only canonical archive IDs so untrusted handles cannot supply path
-/// components to `content_path`.
+/// Resolve a canonical archive ID under the current policy: untrusted handles
+/// never supply path components, the read never leaves the store, and
+/// source-bound archives are re-admitted against their source.
 pub(crate) fn retrieve_checked(id: &str) -> Result<String, ArchiveResolveError> {
-    if id.len() != 16
+    super::policy::runtime::with_source_view(|| {
+        retrieve_admitted_budgeted(id, &mut crate::core::limits::max_read_bytes())
+    })
+    .unwrap_or(Err(ArchiveResolveError::Refused(
+        "current policy cannot be verified",
+    )))
+}
+
+pub fn retrieve(id: &str) -> Option<String> {
+    retrieve_checked(id).ok()
+}
+
+fn retrieve_admitted(id: &str) -> Option<String> {
+    retrieve_admitted_budgeted(id, &mut crate::core::limits::max_read_bytes()).ok()
+}
+
+/// Check the content-address contract used when the archive ID was minted:
+/// a public archive is addressed by its content, a source-bound one by its
+/// authority and content.
+pub(crate) fn content_matches_id(id: &str, content: &str) -> bool {
+    match read_entry(id).and_then(|entry| entry.authority) {
+        Some(origin) => origin.id(content).as_deref() == Some(id),
+        None => compute_id(content) == id,
+    }
+}
+
+/// [`retrieve_checked`] charging source re-admission against `source_bytes`.
+fn retrieve_admitted_budgeted(
+    id: &str,
+    source_bytes: &mut usize,
+) -> Result<String, ArchiveResolveError> {
+    // Only canonical IDs: 16 hex for public archives, 64 for source-bound
+    // ones. An untrusted handle can never supply path components.
+    if !matches!(id.len(), 16 | 64)
         || !id
             .bytes()
             .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
     {
         return Err(ArchiveResolveError::Malformed);
     }
-
+    let entry = read_entry(id);
+    let authority = entry.as_ref().and_then(|entry| entry.authority.as_ref());
+    if authority.is_none() && (id.len() == 64 || super::policy::runtime::is_active()) {
+        return Err(ArchiveResolveError::Refused(
+            "stored output has no source authority under the active policy",
+        ));
+    }
+    if authority.is_some_and(|origin| !origin.admitted_budgeted(source_bytes)) {
+        return Err(ArchiveResolveError::Refused(
+            "the archive's source is no longer admitted",
+        ));
+    }
     // Archive content reaches the model through ctx_expand: never follow a link
     // planted in the store to a file outside it.
-    super::atomic_fs::read_store_file(&archive_base_dir(), &content_path(id)).map_err(|error| {
-        match error {
+    let content = super::atomic_fs::read_store_file(&archive_base_dir(), &content_path(id))
+        .map_err(|error| match error {
             super::atomic_fs::StoreReadError::Escapes => {
                 ArchiveResolveError::Refused("archive entry resolves outside the archive store")
             }
@@ -343,17 +449,22 @@ pub(crate) fn retrieve_checked(id: &str) -> Result<String, ArchiveResolveError> 
                 std::io::ErrorKind::InvalidData => ArchiveResolveError::Malformed,
                 _ => ArchiveResolveError::Missing,
             },
-        }
-    })
-}
-
-pub fn retrieve(id: &str) -> Option<String> {
-    retrieve_checked(id).ok()
-}
-
-/// Check the content-address contract used when the archive ID was minted.
-pub(crate) fn content_matches_id(id: &str, content: &str) -> bool {
-    compute_id(content) == id
+        })?;
+    if content.len() > MAX_ARCHIVE_SIZE {
+        return Err(ArchiveResolveError::Refused(
+            "archive entry exceeds the archive size bound",
+        ));
+    }
+    if authority.is_some_and(|origin| origin.id(&content).as_deref() != Some(id)) {
+        return Err(ArchiveResolveError::Refused(
+            "archive content no longer matches its source-bound address",
+        ));
+    }
+    super::policy::content::protect_active(&content)
+        .map(std::borrow::Cow::into_owned)
+        .map_err(|_| {
+            ArchiveResolveError::Refused("stored output is withheld by current content rules")
+        })
 }
 
 /// Format a range of lines from content with `{:>6}|` line-number gutter.
@@ -516,6 +627,62 @@ pub(crate) fn describe_json(v: &serde_json::Value) -> String {
 }
 
 pub fn list_entries(session_id: Option<&str>) -> Vec<ArchiveEntry> {
+    super::policy::runtime::with_source_view(|| {
+        let mut entries: Vec<_> = admitted_entries(session_id)
+            .into_iter()
+            .map(|(entry, _)| entry)
+            .collect();
+        if !super::policy::runtime::is_active() {
+            entries.extend(
+                list_entries_raw(session_id)
+                    .into_iter()
+                    .filter(|entry| entry.authority.is_none() && entry.id.len() != 64),
+            );
+            entries.sort_by_key(|entry| std::cmp::Reverse(entry.created_at));
+        }
+        entries
+    })
+    .unwrap_or_default()
+}
+
+/// Source-bound discovery only. Legacy Community archives use their existing
+/// metadata/index paths and do not consume this reauthorization budget.
+pub(crate) fn admitted_entries(session_id: Option<&str>) -> Vec<(ArchiveEntry, String)> {
+    super::policy::runtime::with_source_view(|| {
+        // Bound candidates, not only matches: stale newest entries may consume
+        // the window. An older known ID or alias can still be retrieved directly.
+        let mut remaining = super::policy::content::MAX_PROTECTED_CONTENT_BYTES;
+        let mut source_bytes = super::policy::content::MAX_PROTECTED_CONTENT_BYTES;
+        list_entries_raw(session_id)
+            .into_iter()
+            .filter(|entry| match &entry.authority {
+                Some(origin) => origin.matches_project(),
+                None => false,
+            })
+            .take(128)
+            .filter_map(|mut entry| {
+                if remaining == 0 {
+                    return None;
+                }
+                let content = retrieve_admitted_budgeted(&entry.id, &mut source_bytes).ok()?;
+                if content.len() > remaining {
+                    return None;
+                }
+                remaining -= content.len();
+                entry.command = super::policy::content::protect_active(&entry.command)
+                    .ok()?
+                    .into_owned();
+                entry.tool = super::policy::content::protect_active(&entry.tool)
+                    .ok()?
+                    .into_owned();
+                Some((entry, content))
+            })
+            .collect()
+    })
+    .unwrap_or_default()
+}
+
+fn list_entries_raw(session_id: Option<&str>) -> Vec<ArchiveEntry> {
     let base = archive_base_dir();
     if !base.exists() {
         return Vec::new();
@@ -551,10 +718,15 @@ pub fn list_entries(session_id: Option<&str>) -> Vec<ArchiveEntry> {
 }
 
 pub fn resolve_alias(alias: &str) -> Option<String> {
-    list_entries(None)
-        .into_iter()
-        .find(|entry| entry.aliases.iter().any(|candidate| candidate == alias))
-        .map(|entry| entry.id)
+    super::policy::runtime::with_source_view(|| {
+        let entry = list_entries_raw(None)
+            .into_iter()
+            .find(|entry| entry.aliases.iter().any(|candidate| candidate == alias))?;
+        retrieve_admitted(&entry.id)?;
+        Some(entry.id)
+    })
+    .ok()
+    .flatten()
 }
 
 pub(crate) fn is_protected(id: &str) -> bool {
@@ -587,7 +759,7 @@ struct ScannedArchive {
 }
 
 fn scanned_entries() -> Vec<ScannedArchive> {
-    list_entries(None)
+    list_entries_raw(None)
         .into_iter()
         .map(|entry| {
             let content_bytes = std::fs::metadata(content_path(&entry.id)).map_or(0, |m| m.len());
@@ -770,6 +942,7 @@ mod tests {
         std::fs::create_dir_all(entry_dir(id)).unwrap();
         std::fs::write(content_path(id), "x".repeat(content_bytes)).unwrap();
         let entry = ArchiveEntry {
+            authority: None,
             id: id.to_string(),
             tool: "ctx_shell".to_string(),
             command: "test".to_string(),

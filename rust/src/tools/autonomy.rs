@@ -75,6 +75,12 @@ pub fn session_lifecycle_pre_hook(
     project_root: Option<&str>,
     crp_mode: CrpMode,
 ) -> Option<String> {
+    // Legacy overview/preload records do not carry the original sources needed
+    // to reauthorize derived filenames, graph edges or memory under a policy.
+    // Keep the one-shot latch available; explicit admitted tools remain useful.
+    if crate::core::policy::runtime::is_active() {
+        return None;
+    }
     if !autonomy_enabled_effective(state) {
         return None;
     }

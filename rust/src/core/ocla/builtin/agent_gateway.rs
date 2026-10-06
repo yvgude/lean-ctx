@@ -1,12 +1,10 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinAgentGateway — validates and relays agent-to-agent envelopes.
 //!
 //! Wraps `core/a2a/` behind the OCLA trait. Validates envelope fields and
 //! returns the envelope with the relay_id confirmed. Budget enforcement is checked but not consumed
 //! (consumption happens at the transport layer).
 
-use chrono::Utc;
-
-use crate::core::a2a::dlq::DeadLetter;
 use crate::core::a2a::message::PrivacyLevel;
 use crate::core::a2a::remote_transport::{RemoteTransport, RemoteTransportConfig};
 use crate::core::a2a_transport::{AgentIdentityV1, TransportContentType, TransportEnvelopeV1};
@@ -28,7 +26,7 @@ impl BuiltinAgentGateway {
         }
     }
 
-    fn load_remote_transport() -> Option<RemoteTransport> {
+    pub(crate) fn load_remote_transport() -> Option<RemoteTransport> {
         let config_path = crate::core::paths::config_dir()
             .ok()?
             .join("a2a-transport.toml");
@@ -92,29 +90,11 @@ impl BuiltinAgentGateway {
                 confirmed.relay_id = receipt.envelope_id;
                 Ok(confirmed)
             }
-            Err(error) => {
-                Self::enqueue_remote_failure(envelope, &error);
-                Err(OclaError::Rejected(
-                    OclaCapabilityKind::AgentGateway,
-                    format!("remote relay failed: {error}"),
-                ))
-            }
+            Err(error) => Err(OclaError::Rejected(
+                OclaCapabilityKind::AgentGateway,
+                format!("remote relay failed: {error}"),
+            )),
         }
-    }
-
-    fn enqueue_remote_failure(envelope: &AgentEnvelope, error: &str) {
-        let failed_at = Utc::now().to_rfc3339();
-        let original_message = serde_json::to_string(envelope)
-            .unwrap_or_else(|_| "<agent envelope serialization failed>".to_string());
-        crate::core::ocla::health::dead_letter_queue().enqueue(DeadLetter {
-            id: envelope.relay_id.clone(),
-            original_message,
-            target_agent: envelope.to_agent_id.clone(),
-            error: error.to_string(),
-            attempts: 1,
-            first_failed_at: failed_at.clone(),
-            last_failed_at: failed_at,
-        });
     }
 
     pub fn can_relay(&self, capsule_ref: &str, _to_agent_id: &str) -> bool {
@@ -123,7 +103,7 @@ impl BuiltinAgentGateway {
     pub fn route_message(&self, request: &AgentMessageRequest) -> OclaResult<String> {
         Self::validate_message_request(request)?;
         AgentRegistry::mutate_locked(|registry| self.route_message_in_registry(registry, request))
-            .map(|(_, message_id)| message_id)
+            .and_then(|(_, message_id)| message_id)
             .map_err(|error| {
                 OclaError::Rejected(
                     OclaCapabilityKind::AgentGateway,
@@ -160,7 +140,7 @@ impl BuiltinAgentGateway {
         &self, // used for trait impl method grouping
         registry: &mut AgentRegistry,
         request: &AgentMessageRequest,
-    ) -> String {
+    ) -> Result<String, String> {
         registry.post_message_scoped(
             Some(&request.project_root),
             &request.from_agent_id,
@@ -181,6 +161,16 @@ impl Default for BuiltinAgentGateway {
 }
 
 impl OclaService for BuiltinAgentGateway {
+    fn manifest(&self) -> crate::core::ocla::OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+        let mut manifest =
+            crate::core::ocla::capability_fabric::builtin_manifest(&self.capability())?;
+        if self.is_remote_available() {
+            manifest.remote = true;
+            manifest.data_movement = lean_ctx_protocol::DataMovement::Remote;
+        }
+        Ok(manifest)
+    }
+
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::AgentGateway)
     }
@@ -308,6 +298,11 @@ mod tests {
     fn unregistered_target_attempts_configured_remote_relay() {
         let remote = RemoteTransport::new(RemoteTransportConfig {
             endpoint_url: "http://127.0.0.1:9".to_string(),
+            auth_token: Some("bearer-secret".to_string()),
+            signing_key: Some("signing-secret".to_string()),
+            recipient_id: Some("remote-agent".to_string()),
+            tenant_id: Some("tenant-a".to_string()),
+            project_id: Some("project-a".to_string()),
             retry_count: 0,
             ..RemoteTransportConfig::default()
         })
@@ -378,12 +373,16 @@ mod tests {
     fn route_message_writes_to_agent_bus() {
         let gateway = BuiltinAgentGateway::new();
         let mut registry = AgentRegistry::new();
-        let message_id = gateway.route_message_in_registry(
-            &mut registry,
-            &message_request(Some("agent-b"), "request", "Please review"),
-        );
+        let message_id = gateway
+            .route_message_in_registry(
+                &mut registry,
+                &message_request(Some("agent-b"), "request", "Please review"),
+            )
+            .expect("message route");
 
-        let messages = registry.read_unread_scoped("agent-b", "/project");
+        let messages = registry
+            .read_unread_scoped("agent-b", "/project")
+            .expect("message read");
         assert_eq!(messages.len(), 1);
         assert_eq!(messages[0].id, message_id);
         assert_eq!(messages[0].project_root.as_deref(), Some("/project"));
@@ -400,9 +399,14 @@ mod tests {
         request.privacy = PrivacyLevel::Team;
         request.priority = MessagePriority::Normal;
         request.ttl_hours = None;
-        gateway.route_message_in_registry(&mut registry, &request);
+        gateway
+            .route_message_in_registry(&mut registry, &request)
+            .expect("message route");
 
-        assert_eq!(registry.read_unread("agent-b").len(), 1);
+        assert_eq!(
+            registry.read_unread("agent-b").expect("message read").len(),
+            1
+        );
     }
 
     #[test]

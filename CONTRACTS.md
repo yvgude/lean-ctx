@@ -82,10 +82,17 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 | Contract | Doc | Version | Status |
 |---|---|---|---|
 | HTTP MCP | `docs/contracts/http-mcp-contract-v1.md` | 1 | frozen |
+| HTTP MCP directed events | `docs/contracts/http-mcp-contract-v2.md` | 2 | stable |
+| Decision signature profile | `docs/contracts/decision-record-signature-v1.md` | 1 | stable |
+| Context plan projection digest | `docs/contracts/context-plan-projection-digest-v1.md` | 1 | stable |
+| OCLA cache validator | `docs/contracts/ocla-cache-validator-v1.md` | 1 | stable |
+| Team Context source pin | `docs/contracts/team-context-v1.SOURCE.md` | 1 | experimental (provenance note, not protocol acceptance) |
+| V4 integration notes | 32 individually enumerated `v4-*.md` entries in `core::contracts::contract_docs()` | 1 | experimental (checkpoint/audit evidence, not release acceptance) |
 | Team Server | `docs/contracts/team-server-contract-v1.md` | 1 | frozen |
 | Context IR | `docs/contracts/context-ir-v1.md` | 1 | frozen |
 | Local-Free Invariant | `docs/contracts/local-free-invariant-v1.md` | 1 | frozen |
 | OSS Plane Separation | `docs/contracts/oss-plane-separation-v1.md` | 1 | frozen |
+| OSS Plane Separation v2 | `docs/contracts/oss-plane-separation-v2.md` | 2 | stable |
 | Billing Plane | `docs/contracts/billing-plane-v1.md` | 1 | frozen |
 | WASM ABI | `docs/contracts/wasm-abi-v1.md` | 1 | frozen² |
 | Delivery Manifest | `docs/contracts/delivery-manifest-v1.md` | 1 | frozen |
@@ -97,7 +104,6 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 | A2A | `docs/contracts/a2a-contract-v1.md` | 1 | stable |
 | Attention Layout Driver | `docs/contracts/attention-layout-driver-v1.md` | 1 | stable |
 | Autonomy Drivers | `docs/contracts/autonomy-drivers-v1.md` | 1 | stable |
-| CCP Session Bundle | `docs/contracts/ccp-session-bundle-v1.md` | 1 | stable |
 | Conformance | `docs/contracts/conformance-v1.md` | 1 | stable |
 | OCLA Verifier Conformance | `docs/contracts/ocla-verifier-conformance-v1.md` | 1 | stable |
 | Degradation Policy | `docs/contracts/degradation-policy-v1.md` | 1 | stable |
@@ -121,6 +127,7 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 | Personal Cloud Encryption | `docs/contracts/personal-cloud-encryption-v1.md` | 1 | experimental |
 | Context Snapshot | `docs/contracts/context-snapshot-v1.md` | 1 | experimental |
 | OCLA Config Tuning | `docs/contracts/ocla-config-tuning-v2.md` | 2 | experimental |
+| Context Gateway | `docs/contracts/context-gateway-v1.md` | 1 | experimental |
 
 ¹ The capabilities document is additive **by design**: its drift test binds the doc's key list to `server_capabilities::TOP_LEVEL_KEYS`, so the doc must grow whenever a key is added. Freezing the file would contradict its own contract; removal or mutation of existing keys remains a breaking change.
 
@@ -161,7 +168,7 @@ leanctx.contract.a2a_snapshot_v1.schema_version=1
 leanctx.contract.memory_boundary_v1.schema_version=1
 leanctx.contract.gotchas_reminders_v1.schema_version=1
 leanctx.contract.provider_framework_v1.schema_version=1
-leanctx.contract.http_mcp.contract_version=1
+leanctx.contract.http_mcp.contract_version=2
 leanctx.contract.team_server.contract_version=1
 leanctx.contract.context_snapshot_v1.schema_version=1
 <!-- leanctx-contracts-kv:end -->
@@ -252,7 +259,6 @@ Define how context persists, transfers between agents, and crosses boundaries.
 
 ### CCP Session Bundle v1
 
-- **Doc**: `docs/contracts/ccp-session-bundle-v1.md`
 - **Runtime source**: `rust/src/core/ccp_session_bundle.rs` + `rust/src/core/session.rs`
 - **Surface**: `ctx_session action=export|import` (redacted-by-default, bounded, replayable)
 
@@ -329,10 +335,16 @@ Define how LeanCTX communicates with the outside world.
 
 ### HTTP MCP v1
 
-- **Doc**: `docs/contracts/http-mcp-contract-v1.md`
+- **Doc**: `docs/contracts/http-mcp-contract-v1.md` (frozen historical contract)
 - **Stable endpoints**: `/health`, `/v1/manifest`, `/v1/tools`, `/v1/tools/call`, `/v1/events`, `/v1/context/summary`
 - **Event schema**: `ContextEventV1` with `version`, `parentId`, `consistencyLevel`
 - **Typed errors**: JSON `error_code` + `error`
+
+### HTTP MCP v2 (directed events)
+
+- **Doc**: `docs/contracts/http-mcp-contract-v2.md` (incorporates frozen v1 with explicit directed-event restrictions)
+- **Runtime version**: `leanctx.contract.http_mcp.contract_version=2`; endpoint URLs remain `/v1/...`.
+- **Migration**: clients pinning contract version 1 must review v2; omitted `agentId` now receives broadcasts only, not directed context.
 
 ### Team Server v1
 
@@ -350,6 +362,6 @@ Define how LeanCTX communicates with the outside world.
 | Claude Code | MCP (stdio) + Shell Hook | MCP manifest v1 + tool schemas + shell patterns | `lean-ctx init --agent claude` |
 | CodeBuddy | MCP (stdio) + Shell Hook | MCP manifest v1 + tool schemas + shell patterns | `lean-ctx init --agent codebuddy` |
 | GitHub Copilot | MCP (stdio) + Shell Hook | MCP manifest v1 + tool schemas | `lean-ctx init --agent copilot` |
-| Remote agents | HTTP | HTTP MCP v1 + typed errors | `lean-ctx serve` |
+| Remote agents | HTTP | HTTP MCP v2 + typed errors | `lean-ctx serve` |
 | Teams | HTTP | Team Server v1 + audit log | `lean-ctx team serve` |
 | Future plugins | In-process / Subprocess | Provider v1 + CompressionPattern v1 + LcpTool v1 | `~/.config/lean-ctx/plugins/` |

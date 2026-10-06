@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Symbol-level relations from a semantic backend, lifted to file edges:
 //!
 //! - `implements`: implementation file → trait/interface file

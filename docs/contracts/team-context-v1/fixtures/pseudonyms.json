@@ -1,0 +1,69 @@
+{
+  "fixture_kind": "team-context-v1/pseudonyms",
+  "fixture_version": 1,
+  "non_secret": true,
+  "description": "Public non-secret vectors; pepper and nonce preimages are test-only.",
+  "pepper": {
+    "id": "test-only-pepper-v1",
+    "hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+    "bit_length": 256,
+    "derivation": "HMAC-SHA-256(per-tenant test pepper, NFC(lowercase(subject)))",
+    "non_secret": true,
+    "warning": "Not a production secret; never reuse fixture values."
+  },
+  "pseudonym_vectors": [
+    {
+      "id": "subject-01",
+      "description": "Public test-only tenant pseudonym",
+      "subject": "Alice@Example.COM",
+      "subject_utf8_base64": "QWxpY2VARXhhbXBsZS5DT00",
+      "lowercased_nfc": "alice@example.com",
+      "lowercased_nfc_utf8_base64": "YWxpY2VAZXhhbXBsZS5jb20",
+      "hmac_sha256": "hmac-sha256:a59fc578d4cb46faab1d6eb348e7c74b33b85122d6459fdb7bf5654b333acab4"
+    },
+    {
+      "id": "subject-02",
+      "description": "Public test-only tenant pseudonym",
+      "subject": "Élodie@example.com",
+      "subject_utf8_base64": "w4lsb2RpZUBleGFtcGxlLmNvbQ",
+      "lowercased_nfc": "élodie@example.com",
+      "lowercased_nfc_utf8_base64": "w6lsb2RpZUBleGFtcGxlLmNvbQ",
+      "hmac_sha256": "hmac-sha256:07b51813a24714d45d1e2785fe34dae46674f888345e6a6687b29416d69ce0e7"
+    },
+    {
+      "id": "subject-03",
+      "description": "Public test-only tenant pseudonym",
+      "subject": "Straße",
+      "subject_utf8_base64": "U3RyYcOfZQ",
+      "lowercased_nfc": "straße",
+      "lowercased_nfc_utf8_base64": "c3RyYcOfZQ",
+      "hmac_sha256": "hmac-sha256:0611a912ff68e85b8ae938a1235afa1ced51a83e376974614761551849583b5c"
+    }
+  ],
+  "nonce_vectors": [
+    {
+      "id": "nonce-01",
+      "description": "Public test-only 128-bit nonce preimage",
+      "nonce_hex": "00112233445566778899aabbccddeeff",
+      "nonce_bit_length": 128,
+      "sha256": "sha256:a8faed6abbf35c12a4b26e40f6feb19d736d90045c83b9f9a31f638d323e6811"
+    },
+    {
+      "id": "nonce-02",
+      "description": "Public test-only 128-bit nonce preimage",
+      "nonce_hex": "fedcba98765432100123456789abcdef",
+      "nonce_bit_length": 128,
+      "sha256": "sha256:ed965a9d4e0519d7abf48778391f3fd3446e6be2d35a2277a00ded4198e4b8a6"
+    }
+  ],
+  "excluded_case_classes": [
+    {
+      "id": "locale-sensitive-folding",
+      "reason": "Production identity policy must define locale-independent case folding."
+    },
+    {
+      "id": "provider-aliasing",
+      "reason": "Provider-specific aliases are not inferred by this contract fixture."
+    }
+  ]
+}

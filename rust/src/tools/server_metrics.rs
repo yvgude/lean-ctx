@@ -263,20 +263,6 @@ impl LeanCtxServer {
                 .as_ref();
             let _ = hook.observe(observation).await;
 
-            let outcome = crate::core::ocla::Outcome {
-                context: ctx.clone(),
-                accepted: Some(saved > 0),
-                quality_score_milli: if original > 0 {
-                    Some(((saved as u64 * 1000) / original as u64).min(1000) as u16)
-                } else {
-                    None
-                },
-                outcome_ref: None,
-            };
-            let _ = crate::core::ocla::OclaRegistry::global()
-                .outcome_tracker
-                .record_outcome(outcome);
-
             // OCLA MetricsExporter projection: one bounded, local batch per
             // tool call. This is observational only and cannot affect stats,
             // billing, or external export destinations.
@@ -291,11 +277,7 @@ impl LeanCtxServer {
         if tool == "ctx_shell" {
             session.record_command();
         }
-        let pending_save = if session.should_save() {
-            session.prepare_save().ok()
-        } else {
-            None
-        };
+        let save_due = session.should_save();
         let value_snapshot = fold_value_snapshot(&mut session);
         drop(calls);
         drop(session);
@@ -324,10 +306,10 @@ impl LeanCtxServer {
             }));
         }
 
-        if let Some(prepared) = pending_save {
-            drop(tokio::task::spawn_blocking(move || {
-                let _ = prepared.write_to_disk();
-            }));
+        if save_due {
+            tokio::spawn(crate::core::session::SessionState::save_shared_logged(
+                self.session.clone(),
+            ));
         }
 
         self.write_mcp_live_stats().await;
@@ -362,8 +344,7 @@ impl LeanCtxServer {
         let checkpoint = ctx_compress::handle(&cache, false, CrpMode::effective());
         drop(cache);
 
-        let mut session = self.session.write().await;
-        let pending_save = session.prepare_save().ok();
+        let session = self.session.read().await;
         let session_summary = session.format_compact();
         let has_insights = !session.findings.is_empty() || !session.decisions.is_empty();
         let project_root = session.project_root.clone();
@@ -371,11 +352,9 @@ impl LeanCtxServer {
         let summary_candidate = crate::core::session_summary::build_candidate(&session);
         drop(session);
 
-        if let Some(prepared) = pending_save {
-            tokio::task::spawn_blocking(move || {
-                let _ = prepared.write_to_disk();
-            });
-        }
+        tokio::spawn(crate::core::session::SessionState::save_shared_logged(
+            self.session.clone(),
+        ));
 
         if has_insights && let Some(ref root) = project_root {
             let root = root.clone();

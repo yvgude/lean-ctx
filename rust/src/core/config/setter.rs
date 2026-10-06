@@ -20,11 +20,23 @@ pub fn set_by_key(key: &str, value: &str) -> Result<Config, crate::core::error::
 ///
 /// The config file is written only after every key and value has passed schema
 /// validation and the resulting document deserializes into [`Config`].
+///
+/// The read, the merge, and the write all happen under the one config write
+/// lock (LR-TEL-01). Previously the on-disk table was read unlocked and saved
+/// later, so a concurrent writer could commit between the two and have its
+/// value silently overwritten by this document.
 pub fn set_many_by_key(
     updates: &[(&str, &str)],
 ) -> Result<Config, crate::core::error::ConfigError> {
     let schema = ConfigSchema::generate();
-    let mut table = load_config_as_table()?;
+    let path = Config::path().ok_or(crate::core::error::ConfigError::MissingPath)?;
+    let guard = crate::config_io::ConfigWriteGuard::acquire(&path).map_err(|message| {
+        crate::core::error::ConfigError::Save {
+            source: Box::new(crate::core::error::LeanCtxError::Config(message)),
+        }
+    })?;
+    // Read the same resolved file the guard excludes writes to.
+    let mut table = load_config_as_table_at(guard.path())?;
     for (key, value) in updates {
         let key_schema =
             schema
@@ -48,7 +60,9 @@ pub fn set_many_by_key(
                 message: e.to_string(),
             },
         )?;
-    cfg.save()
+    // Already holding the guard: write through it so the non-reentrant lock is
+    // not acquired a second time on this path.
+    cfg.save_to_locked(&guard)
         .map_err(|e| crate::core::error::ConfigError::Save {
             source: Box::new(e),
         })?;
@@ -91,10 +105,18 @@ fn display_toml_value(value: &toml::Value) -> String {
 
 fn load_config_as_table() -> Result<toml::Table, crate::core::error::ConfigError> {
     let path = Config::path().ok_or(crate::core::error::ConfigError::MissingPath)?;
+    load_config_as_table_at(&path)
+}
+
+/// Path-parameterized core of [`load_config_as_table`], so a caller that has
+/// already resolved and locked the config path reads exactly that file.
+fn load_config_as_table_at(
+    path: &std::path::Path,
+) -> Result<toml::Table, crate::core::error::ConfigError> {
     if !path.exists() {
         return Ok(toml::Table::new());
     }
-    let raw = std::fs::read_to_string(&path)
+    let raw = std::fs::read_to_string(path)
         .map_err(|source| crate::core::error::ConfigError::Read { source })?;
     raw.parse::<toml::Table>()
         .map_err(|source| crate::core::error::ConfigError::ParseToml { source })

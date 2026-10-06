@@ -197,15 +197,22 @@ mod tests {
             Ok("stdout-small") => {
                 std::io::stdout().write_all(b"hello\n").unwrap();
             }
+            // A producer that never ends on its own. Once the reader drops the
+            // pipe, keep the process alive until the parent kills it: exiting
+            // here would race that kill against the instrumented binary's
+            // at-exit coverage profile write and leave a truncated .profraw
+            // that breaks the Coverage job's report.
             Ok("stdout-forever") => {
                 let chunk = [b'a'; 8192];
                 let mut stream = std::io::stdout().lock();
                 while stream.write_all(&chunk).is_ok() {}
+                std::thread::sleep(std::time::Duration::from_mins(1));
             }
             Ok("stderr-forever") => {
                 let chunk = [b'a'; 8192];
                 let mut stream = std::io::stderr().lock();
                 while stream.write_all(&chunk).is_ok() {}
+                std::thread::sleep(std::time::Duration::from_mins(1));
             }
             Ok("sleep") => {
                 std::thread::sleep(std::time::Duration::from_mins(1));

@@ -37,10 +37,14 @@ pub fn consolidate(chunks: &[ContentChunk]) -> ConsolidationArtifacts {
     // for prompt-injection / poisoning before it can become a fact, edge, or
     // cache entry. Quarantined chunks are dropped here so the downstream
     // extraction never sees them. Local ("self") chunks are not screened.
+    // Every surviving chunk is then admitted by the context gateway before any
+    // fact, edge or cache entry is derived from it (G5): extraction only ever
+    // sees masked text, and withheld or restricted chunks are dropped whole.
+    let admission = crate::core::context_admission::stores::StoreAdmission::current();
     let screened: Vec<ContentChunk> = chunks
         .iter()
         .filter(|c| !is_quarantined(c))
-        .cloned()
+        .filter_map(|c| crate::core::context_admission::provider::admit_chunk(c, &admission))
         .collect();
 
     let external_chunks: Vec<&ContentChunk> = screened.iter().filter(|c| c.is_external()).collect();
@@ -146,6 +150,7 @@ pub fn apply_artifacts_with_pg(
     property_graph: Option<&crate::core::property_graph::CodeGraph>,
 ) -> ConsolidationResult {
     let mut result = ConsolidationResult::default();
+    let artifacts = &admitted(artifacts);
 
     if let Some(index) = bm25 {
         result.chunks_indexed = index.ingest_content_chunks(artifacts.bm25_chunks.clone());
@@ -169,6 +174,18 @@ pub fn apply_artifacts_with_pg(
     }
 
     result
+}
+
+/// The store boundary: artifacts reach a store only as the context gateway
+/// admits them, whoever built them (G5, plan cases 37–40).
+fn admitted(artifacts: &ConsolidationArtifacts) -> ConsolidationArtifacts {
+    let admission = crate::core::context_admission::stores::StoreAdmission::current();
+    let (admitted, dropped) =
+        crate::core::context_admission::provider::admit_artifacts(artifacts, &admission);
+    if dropped > 0 {
+        tracing::info!("[consolidation] {dropped} artifact(s) withheld by the context gateway");
+    }
+    admitted
 }
 
 fn write_edges_to_property_graph(pg: &crate::core::property_graph::CodeGraph, edges: &[IndexEdge]) {
@@ -208,6 +225,7 @@ pub fn apply_artifacts_to_stores(
     prune: &PrunePrior,
 ) {
     let root_path = std::path::Path::new(project_root);
+    let artifacts = &admitted(artifacts);
 
     // BM25: optionally evict the prior pass, then ingest the current chunks.
     let bm25_prefix = prune.bm25_prefix.as_deref();
@@ -254,13 +272,14 @@ pub fn apply_artifacts_to_stores(
                     knowledge.facts.retain(|f| &f.category != category);
                 }
                 for fact in &artifacts.facts {
-                    knowledge.remember(
+                    knowledge.remember_with_origin(
                         &fact.category,
                         &fact.key,
                         &fact.value,
                         &session_id,
                         fact.confidence,
                         &policy,
+                        fact.origin.clone(),
                     );
                 }
             });

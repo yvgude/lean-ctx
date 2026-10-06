@@ -21,6 +21,58 @@ pub fn handle(
     workspace: Option<bool>,
     artifacts: Option<bool>,
 ) -> String {
+    handle_for_tool(
+        "ctx_search",
+        query,
+        path,
+        top_k,
+        crp_mode,
+        languages,
+        path_glob,
+        mode,
+        workspace,
+        artifacts,
+    )
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(crate) fn handle_for_tool(
+    tool: &str,
+    query: &str,
+    path: &str,
+    top_k: usize,
+    crp_mode: CrpMode,
+    languages: Option<&[String]>,
+    path_glob: Option<&str>,
+    mode: Option<&str>,
+    workspace: Option<bool>,
+    artifacts: Option<bool>,
+) -> String {
+    let (root, _) = match resolve_search_root(path) {
+        Ok(value) => value,
+        Err(error) => return format!("ERR: {error}"),
+    };
+    crate::core::policy::runtime::with_project_source_view(&root.to_string_lossy(), || {
+        handle_inner(
+            tool, query, path, top_k, crp_mode, languages, path_glob, mode, workspace, artifacts,
+        )
+    })
+    .unwrap_or_else(|error| format!("ERR: {error}"))
+}
+
+#[allow(clippy::too_many_arguments)]
+fn handle_inner(
+    tool: &str,
+    query: &str,
+    path: &str,
+    top_k: usize,
+    crp_mode: CrpMode,
+    languages: Option<&[String]>,
+    path_glob: Option<&str>,
+    mode: Option<&str>,
+    workspace: Option<bool>,
+    artifacts: Option<bool>,
+) -> String {
     let (root_buf, subdir) = match resolve_search_root(path) {
         Ok(v) => v,
         Err(e) => return format!("ERR: {e}"),
@@ -29,7 +81,8 @@ pub fn handle(
 
     // Query-conditioned IB (#542): remember the latest search query as a
     // fallback relevance signal for subsequent compressed reads.
-    if !query.trim().is_empty()
+    if !crate::core::policy::runtime::is_active()
+        && !query.trim().is_empty()
         && let Some(mut session) = crate::core::session::SessionState::load_latest()
         && session.last_semantic_query.as_deref() != Some(query)
     {
@@ -50,6 +103,10 @@ pub fn handle(
     let workspace = workspace.unwrap_or(false);
     let artifacts = artifacts.unwrap_or(false);
 
+    if crate::core::policy::runtime::is_active() && (mode != "bm25" || workspace || artifacts) {
+        return admitted::UNSUPPORTED.into();
+    }
+
     if artifacts {
         return artifacts_search(query, root, top_k, compact, &filter, workspace);
     }
@@ -57,16 +114,23 @@ pub fn handle(
         return workspace_search(query, root, top_k, compact, &filter, &mode);
     }
 
-    let index = match load_or_refresh_bm25(root) {
-        Bm25LoadResult::Ready(idx) => idx,
-        Bm25LoadResult::Building => {
-            return "BM25 index is being built in the background. \
+    let index = if mode == "bm25" {
+        match admitted::fresh_index(root, &filter, tool) {
+            Ok(index) => std::sync::Arc::new(index),
+            Err(error) => return format!("ERR: {error}"),
+        }
+    } else {
+        match load_or_refresh_bm25(root) {
+            Bm25LoadResult::Ready(idx) => idx,
+            Bm25LoadResult::Building => {
+                return "BM25 index is being built in the background. \
                     Run ctx_semantic_search again in ~30s, or use action=reindex to wait for completion."
                 .to_string();
+            }
         }
     };
     if index.doc_count == 0 {
-        return format!("No code files found to index in {}.", root.display());
+        return "No admitted text chunks available for local search.".to_string();
     }
 
     match mode.as_str() {
@@ -77,10 +141,18 @@ pub fn handle(
             }
             results.truncate(top_k);
 
+            let selection = if tool == "ctx_compose" {
+                crate::tools::ctx_compose::selection::rank(&mut results, query, compact)
+            } else {
+                None
+            };
+
             // #1259: never call a lexical fallback "semantic". When no mode was
             // requested and the dense index was never built, name the
             // degradation and the one command that fixes it.
-            let degraded = mode_defaulted && dense_index_missing(root);
+            let degraded = mode_defaulted
+                && !crate::core::policy::runtime::is_active()
+                && dense_index_missing(root);
             let header = if compact {
                 format!(
                     "semantic_search({},{top_k}) → {} results, {} chunks indexed\n",
@@ -107,7 +179,11 @@ pub fn handle(
                     root.display(),
                 )
             };
-            format!("{header}{}", format_search_results(&results, compact))
+            let explanation = selection.map_or_else(String::new, |text| format!("{text}\n"));
+            format!(
+                "{header}{explanation}{}",
+                format_search_results(&results, compact)
+            )
         }
         "dense" => {
             let out = dense_search_mode(query, root, &index, top_k, compact, &filter);
@@ -167,6 +243,20 @@ pub fn search_hits(
     languages: Option<&[String]>,
     path_glob: Option<&str>,
 ) -> Result<Vec<HybridResult>, String> {
+    let (root, _) = resolve_search_root(path)?;
+    crate::core::policy::runtime::with_project_source_view(&root.to_string_lossy(), || {
+        search_hits_inner(query, path, top_k, mode, languages, path_glob)
+    })?
+}
+
+fn search_hits_inner(
+    query: &str,
+    path: &str,
+    top_k: usize,
+    mode: &str,
+    languages: Option<&[String]>,
+    path_glob: Option<&str>,
+) -> Result<Vec<HybridResult>, String> {
     let (root_buf, subdir) = resolve_search_root(path)?;
     let root = root_buf.as_path();
 
@@ -174,7 +264,14 @@ pub fn search_hits(
         .map_err(|e| format!("invalid filter: {e}"))?
         .with_subdir(subdir);
 
-    let index = BM25Index::load_or_build(root);
+    if crate::core::policy::runtime::is_active() && !mode.eq_ignore_ascii_case("bm25") {
+        return Err(admitted::UNSUPPORTED.into());
+    }
+    let index = if mode.eq_ignore_ascii_case("bm25") {
+        admitted::fresh_index(root, &filter, "ctx_search")?
+    } else {
+        BM25Index::load_or_build(root)
+    };
     if index.doc_count == 0 {
         return Ok(Vec::new());
     }
@@ -226,6 +323,10 @@ fn bm25_hits(
 /// Rebuilds the BM25 search index for the given directory from scratch.
 #[must_use]
 pub fn handle_reindex(path: &str) -> String {
+    guarded_legacy(path, || handle_reindex_inner(path))
+}
+
+fn handle_reindex_inner(path: &str) -> String {
     // Promote to the project root so the rebuilt index lands in the same
     // namespace the search path resolves to (#948) — reindexing a subdirectory
     // would otherwise build an index the search can never find.
@@ -248,6 +349,10 @@ pub fn handle_reindex(path: &str) -> String {
 
 #[must_use]
 pub fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
+    guarded_legacy(path, || handle_reindex_artifacts_inner(path, workspace))
+}
+
+fn handle_reindex_artifacts_inner(path: &str, workspace: bool) -> String {
     let (root_buf, _subdir) = match resolve_search_root(path) {
         Ok(v) => v,
         Err(e) => return format!("ERR: {e}"),
@@ -287,6 +392,33 @@ pub fn handle_reindex_artifacts(path: &str, workspace: bool) -> String {
 /// Marchionini (2006): Exploratory search navigates from known points.
 /// This enables "show me similar code" workflows.
 pub fn handle_find_related(
+    file_path: &str,
+    line: usize,
+    project_root: &str,
+    top_k: usize,
+    crp_mode: CrpMode,
+) -> String {
+    guarded_legacy(project_root, || {
+        handle_find_related_inner(file_path, line, project_root, top_k, crp_mode)
+    })
+}
+
+fn guarded_legacy(path: &str, operation: impl FnOnce() -> String) -> String {
+    let (root, _) = match resolve_search_root(path) {
+        Ok(value) => value,
+        Err(error) => return format!("ERR: {error}"),
+    };
+    crate::core::policy::runtime::with_project_source_view(&root.to_string_lossy(), || {
+        if crate::core::policy::runtime::is_active() {
+            admitted::UNSUPPORTED.into()
+        } else {
+            operation()
+        }
+    })
+    .unwrap_or_else(|error| format!("ERR: {error}"))
+}
+
+fn handle_find_related_inner(
     file_path: &str,
     line: usize,
     project_root: &str,
@@ -394,7 +526,8 @@ pub fn boost_with_splade_pub(
     boost_with_splade(results, splade, weight);
 }
 
-mod bm25_store;
+mod admitted;
+pub(crate) mod bm25_store;
 mod dense;
 pub(crate) mod multi_root;
 mod scope;

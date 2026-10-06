@@ -107,7 +107,8 @@ impl ThresholdLearner {
             let _ = std::fs::create_dir_all(parent);
         }
         if let Ok(json) = serde_json::to_string_pretty(self) {
-            let _ = std::fs::write(path, json);
+            // Readers must never see a partial file: it would load as empty.
+            let _ = crate::core::atomic_fs::try_atomic_write(&path, json.as_bytes(), None);
         }
     }
 

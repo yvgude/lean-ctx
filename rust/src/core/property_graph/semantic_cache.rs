@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Persistent cache of semantic-backend answers, keyed by call site.
 //!
 //! A row is valid only while the caller file's content hash is unchanged and

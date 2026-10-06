@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! The five plan-hash gated refactor operations: rename, safe-delete,
 //! move, inline and reformat (preview/apply pairs).
 
@@ -157,7 +159,13 @@ pub(super) fn render_rename_apply(
     // Jail-check + cache-evict each changed file (Multi-File coherence, spec §9).
     for cp in &res.changed_paths {
         match crate::core::path_resolve::resolve_tool_path(Some(project_root), None, cp) {
-            Ok(abs) => crate::core::cli_cache::invalidate(&abs),
+            Ok(abs) => {
+                if let Err(error) = crate::core::cli_cache::invalidate(&abs) {
+                    return format!(
+                        "ERROR: CACHE_INVALIDATION: files changed but cache eviction failed: {error}"
+                    );
+                }
+            }
             Err(e) => return format!("ERROR: CONFLICT: changed path blocked by jail: {e}"),
         }
     }
@@ -345,7 +353,13 @@ pub(super) fn render_safe_delete_apply(
     // Jail-check + cache-evict each changed file (Multi-File coherence, spec §9).
     for cp in &res.changed_paths {
         match crate::core::path_resolve::resolve_tool_path(Some(project_root), None, cp) {
-            Ok(abs) => crate::core::cli_cache::invalidate(&abs),
+            Ok(abs) => {
+                if let Err(error) = crate::core::cli_cache::invalidate(&abs) {
+                    return format!(
+                        "ERROR: CACHE_INVALIDATION: files changed but cache eviction failed: {error}"
+                    );
+                }
+            }
             Err(e) => return format!("ERROR: CONFLICT: changed path blocked by jail: {e}"),
         }
     }
@@ -577,7 +591,13 @@ pub(super) fn render_move_apply(
     // against project_root BEFORE eviction (spec §5.3).
     for cp in &res.changed_paths {
         match crate::core::path_resolve::resolve_tool_path(Some(project_root), None, cp) {
-            Ok(abs) => crate::core::cli_cache::invalidate(&abs),
+            Ok(abs) => {
+                if let Err(error) = crate::core::cli_cache::invalidate(&abs) {
+                    return format!(
+                        "ERROR: CACHE_INVALIDATION: files changed but cache eviction failed: {error}"
+                    );
+                }
+            }
             Err(e) => return format!("ERROR: CONFLICT: changed path blocked by jail: {e}"),
         }
     }
@@ -742,7 +762,13 @@ pub(super) fn render_inline_apply(
 
     for cp in &res.changed_paths {
         match crate::core::path_resolve::resolve_tool_path(Some(project_root), None, cp) {
-            Ok(abs) => crate::core::cli_cache::invalidate(&abs),
+            Ok(abs) => {
+                if let Err(error) = crate::core::cli_cache::invalidate(&abs) {
+                    return format!(
+                        "ERROR: CACHE_INVALIDATION: files changed but cache eviction failed: {error}"
+                    );
+                }
+            }
             Err(e) => return format!("ERROR: CONFLICT: changed path blocked by jail: {e}"),
         }
     }
@@ -905,7 +931,13 @@ pub(super) fn render_reformat(
     };
     for cp in &res.changed_paths {
         match crate::core::path_resolve::resolve_tool_path(Some(project_root), None, cp) {
-            Ok(abs) => crate::core::cli_cache::invalidate(&abs),
+            Ok(abs) => {
+                if let Err(error) = crate::core::cli_cache::invalidate(&abs) {
+                    return format!(
+                        "ERROR: CACHE_INVALIDATION: files changed but cache eviction failed: {error}"
+                    );
+                }
+            }
             Err(e) => return format!("ERROR: INVALID_TARGET: changed path blocked by jail: {e}"),
         }
     }
@@ -932,8 +964,10 @@ fn render_reformat_command(
     }
     let after = crate::lsp::format::blake3_of(abs_path).ok();
     let changed = before.is_some() && before != after;
-    if changed {
-        crate::core::cli_cache::invalidate(abs_path);
+    if changed && let Err(error) = crate::core::cli_cache::invalidate(abs_path) {
+        return format!(
+            "ERROR: CACHE_INVALIDATION: file changed but cache eviction failed: {error}"
+        );
     }
     let label = crate::lsp::format::command_label(template);
     format!(

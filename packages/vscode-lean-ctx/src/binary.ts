@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // Finding and running the `lean-ctx` binary. No `vscode` import.
 
 import { execFile } from "child_process";

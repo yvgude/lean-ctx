@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Speed proof (`lean-ctx prove speed`).
 //!
 //! Answers one question with a measurement instead of an extrapolation: does the same model

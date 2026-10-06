@@ -10,9 +10,12 @@ pub mod jira;
 pub mod jira_oauth;
 pub mod mcp_bridge;
 pub mod postgres;
+pub mod provenance;
 pub mod provider_trait;
 pub mod registry;
 pub mod scaffold;
+pub(crate) mod selected_gitlab;
+pub(crate) mod snapshot_projection;
 
 pub use provider_trait::{ContextPacket, ContextProvider, ProviderParams};
 pub use registry::{ProviderRegistry, global_registry};

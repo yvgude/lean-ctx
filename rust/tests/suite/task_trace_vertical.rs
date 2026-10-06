@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Vertical integration test: task_id appears consistently across the
 //! identity layer and OCLA request context, proving Phase 0 exit criterion.
 

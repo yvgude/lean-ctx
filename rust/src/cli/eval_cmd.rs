@@ -19,8 +19,6 @@ use crate::core::eval_ab::suite::EvalSuite;
 use crate::core::eval_ab::testbench::lockfile::TestbenchLock;
 use crate::core::eval_ab::testbench::{self, TestbenchConfig, TestbenchReport, findings};
 use crate::core::eval_ab::{AbRunConfig, run_ab};
-use crate::core::ocla::registry::OclaRegistry;
-use crate::core::ocla::types::{ExperimentRequest, OclaRequestContext};
 
 /// Entry point dispatched from `cli::dispatch`.
 pub fn cmd_eval(args: &[String]) {
@@ -33,7 +31,6 @@ pub fn cmd_eval(args: &[String]) {
         Some("ab") => cmd_ab(&args[1..]),
         Some("frontier") => cmd_frontier(&args[1..]),
         Some("footprint" | "delta") => cmd_footprint(&args[1..]),
-        Some("routing") => cmd_routing(&args[1..]),
         Some("testbench") => cmd_testbench(&args[1..]),
         Some("verify") => cmd_verify(&args[1..]),
         Some("init") => cmd_init(&args[1..]),
@@ -53,7 +50,6 @@ USAGE:\n\
   lean-ctx eval init <dir>                 Scaffold a runnable starter suite\n\
   lean-ctx eval ab --suite <file> [opts]   Run the A/B quality comparison\n\
   lean-ctx eval footprint --suite <f> [o]  Ablate lean-ctx's OWN injected context (#959)\n\
-  lean-ctx eval routing --suite <f> [o]    Router off-vs-on rate-card savings proof\n\
   lean-ctx eval testbench --lock <f> [o]   Off-vs-on across pinned real repos (#611)\n\
   lean-ctx eval verify <artifact.json>     Verify signature + determinism digest\n\n\
 ab OPTIONS:\n\
@@ -73,12 +69,6 @@ footprint OPTIONS (also: `eval --delta`):\n\
   --gate             Exit non-zero if any injected element is actively harmful\n\
   --export <file>    Write this build's footprint (rules, tool schemas, wakeup) as JSON\n\
   --compare <file>   Paired run: exported baseline footprint vs. this build's footprint\n\n\
-routing OPTIONS:\n\
-  --suite <file>     NDJSON suite of real task prompts (required)\n\
-  --requested <m>    Model the off-arm assumes (default: [proxy.baseline].reference_model)\n\
-  --json             Emit the full JSON report instead of the table\n\
-  --gate             Exit non-zero if routing downgraded premium work\n\
-  Rules come from [proxy.routing] in config.toml — the deployment's live rule set.\n\n\
 testbench OPTIONS:\n\
   --lock <file>      Pinned-repo lockfile (default eval/testbench/testbench.lock.json)\n\
   --out <dir>        Output dir for FINDINGS.md + regressions.json (default testbench-out)\n\
@@ -97,8 +87,8 @@ LIVE MODEL (when not replaying) is read from the environment:\n\
     );
     println!(
         "  lean-ctx eval frontier --suite <file> --strategies <csv> [opts]\n\
-frontier strategies: lean_ctx, json_crush, tabular_crush, yaml_crush\n\
-frontier options: --limit <n>, --budget <n>, --replay <file>, --record <file>, --json, --gate"
+frontier strategies: lean_ctx, json_crush, tabular_crush, yaml_crush, read_full, read_map, read_signatures\n\
+frontier options: --limit <n>, --budget <n>, --replay <file>, --record <file>, --json, --gate, --save-evidence"
     );
     println!(
         "Model revision provenance: LEAN_CTX_EVAL_MODEL_VERSION (defaults to a colon-tagged model revision when available)."
@@ -303,6 +293,20 @@ fn cmd_frontier(args: &[String]) {
     } else {
         print!("{}", report.render_table());
     }
+    if has_flag(args, "--save-evidence") {
+        match crate::core::eval_ab::strategy_evaluations::save(&report) {
+            Ok(0) => eprintln!(
+                "No read-strategy evaluation to save (use read_full, read_map, read_signatures)."
+            ),
+            Ok(saved) => {
+                eprintln!("Saved {saved} read-strategy evaluation(s) as context-policy evidence.");
+            }
+            Err(error) => {
+                eprintln!("eval frontier: failed to save evidence: {error}");
+                std::process::exit(1);
+            }
+        }
+    }
     if has_flag(args, "--gate") && !report.gate_passes(has_flag(args, "--mechanism")) {
         eprintln!("\nquality gate FAILED: one or more frontier strategies regressed");
         std::process::exit(1);
@@ -336,65 +340,6 @@ fn run_or_exit(
         Err(e) => {
             eprintln!("eval ab: run failed: {e:#}");
             std::process::exit(1);
-        }
-    }
-}
-
-/// `eval routing`: off-vs-on rate-card savings proof for the active router
-/// (enterprise#13/#21). Runs the deployment's `[proxy.routing]` rules and the
-/// production intent classifier over a suite's real prompts, priced from the
-/// shared pricing table; gates on "premium is never downgraded".
-fn cmd_routing(args: &[String]) {
-    let Some(suite_path) = flag_value(args, "--suite") else {
-        eprintln!("eval routing: --suite <file> is required");
-        std::process::exit(2);
-    };
-    let suite_path = PathBuf::from(suite_path);
-    if let Err(e) = EvalSuite::load(&suite_path) {
-        eprintln!("eval routing: {e:#}");
-        std::process::exit(1);
-    }
-    let suite_name = suite_path
-        .file_name()
-        .map_or_else(|| "suite".to_string(), |s| s.to_string_lossy().into_owned());
-
-    let request = ExperimentRequest {
-        context: OclaRequestContext {
-            request_id: format!("eval-routing:{suite_name}"),
-            session_id: "cli:eval-routing".into(),
-            agent_id: crate::core::agent_identity::current_agent_id().to_string(),
-            content_ref: suite_path.to_string_lossy().into_owned(),
-            tenant_id: None,
-            trace_id: "tr-unit".into(),
-            task_id: None,
-            parent_task_id: None,
-        },
-        experiment_ref: suite_path.to_string_lossy().into_owned(),
-        cohort_ref: "cohort:routing-eval".into(),
-        holdout: None,
-        stop_conditions: None,
-    };
-    let result = match OclaRegistry::global()
-        .experiment_runner
-        .run_experiment(request)
-    {
-        Ok(result) => result,
-        Err(e) => {
-            eprintln!("eval routing: {e:#}");
-            std::process::exit(1);
-        }
-    };
-
-    if has_flag(args, "--json") {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&result).expect("experiment result serializes")
-        );
-    } else {
-        println!("routing experiment: {}", result.experiment_ref);
-        println!("outcome ref:         {}", result.outcome_ref);
-        if let Some(rollback_ref) = result.rollback_ref {
-            println!("rollback ref:        {rollback_ref}");
         }
     }
 }

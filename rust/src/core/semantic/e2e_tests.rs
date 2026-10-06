@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! End-to-end evaluation against real language servers, plus the JetBrains
 //! bridge path against a local fake bridge.
 //!

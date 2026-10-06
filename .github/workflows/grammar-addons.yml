@@ -32,6 +32,29 @@ permissions:
   contents: read
 
 jobs:
+  ip-provenance-gate:
+    name: Publish gates (IP provenance, strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify provenance checker contract
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Strict IP provenance audit
+        run: >-
+          python3 scripts/ip-provenance-audit.py --root . --release-strict
+          --output "$RUNNER_TEMP/ip-provenance-grammar-addons-report.json"
+      - name: Upload strict provenance report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ip-provenance-grammar-addons-report
+          path: ${{ runner.temp }}/ip-provenance-grammar-addons-report.json
+          if-no-files-found: ignore
+
   discover:
     name: Discover grammar-addon crates
     runs-on: ubuntu-latest
@@ -145,7 +168,7 @@ jobs:
 
   publish:
     name: Publish release assets + registry PR
-    needs: build
+    needs: [build, ip-provenance-gate]
     runs-on: ubuntu-latest
     permissions:
       contents: write

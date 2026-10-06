@@ -84,6 +84,22 @@ impl ConfigSchema {
         sections_core::build(&mut sections);
         sections_features::build(&mut sections);
         sections_advanced::build(&mut sections);
+        sections.insert("intelligence_runtime".into(), SectionSchema {
+            description: "Global-only optional runtime consent and independent staging pins; project overrides never apply".into(),
+            keys: [
+                ("enabled", key("bool", serde_json::json!(false), "Opt in to the verified local runtime")),
+                ("accept_proprietary", key("bool", serde_json::json!(false), "Explicit user acceptance of the separately licensed runtime")),
+                ("staging", key("bool", serde_json::json!(false), "Staging-only delivery; not production release approval")),
+                ("root", key("string", serde_json::json!(""), "Absolute private installation root")),
+                ("manifest_sha256", key("string", serde_json::json!(""), "Independently selected manifest digest")),
+                ("trust_key_hex", key("string", serde_json::json!(""), "Independently provisioned Ed25519 public key, lowercase hex")),
+                ("channel_url", key("string", serde_json::json!(""), "Explicit staging catalog URL; fetched only after consent")),
+                ("channel_signature_url", key("string", serde_json::json!(""), "Detached staging catalog signature URL")),
+                ("channel_root_key_hex", key("string", serde_json::json!(""), "Independently provisioned catalog root; never learned from a download")),
+                ("license_configuration", key("string", serde_json::json!(""), "Explicit user-global path to private license configuration; saved after installed device provisioning")),
+                ("context_policy_apply", key("bool", serde_json::json!(false), "Apply the promoted read-strategy policy in planning instead of recording it in shadow; security and explicit choices still win")),
+            ].into_iter().map(|(name, value)| (name.into(), value)).collect(),
+        });
 
         ConfigSchema {
             version: 1,

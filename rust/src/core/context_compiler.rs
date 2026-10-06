@@ -174,8 +174,16 @@ pub(crate) fn select_explicit(
             });
             continue;
         }
-        let (view, tokens) =
-            best_affordable_view(&c.view_costs, remaining.saturating_sub(tokens_used));
+        let Some((view, tokens)) =
+            best_affordable_view(&c.view_costs, remaining.saturating_sub(tokens_used))
+        else {
+            excluded.push(ExcludedItem {
+                id: c.id.to_string(),
+                path: c.path.clone(),
+                reason: "budget cannot fit a declared pinned view".to_owned(),
+            });
+            continue;
+        };
         tokens_used = tokens_used.saturating_add(tokens);
         selected.push(SelectedItem {
             id: c.id.to_string(),
@@ -229,13 +237,12 @@ pub(crate) fn select_explicit(
             break;
         }
         // Pick the highest-MMR candidate that still fits the budget.
-        let mut best: Option<(usize, usize, f64, usize)> = None; // (pos_in_vec, cand_idx, mmr, tokens)
+        let mut best: Option<(usize, usize, f64, ViewKind, usize)> = None;
         for (pos, &idx) in remaining_idx.iter().enumerate() {
             let c = &unpinned[idx];
-            let (_, tokens) = best_affordable_view(&c.view_costs, budget_left);
-            if tokens == 0 || tokens > budget_left {
+            let Some((view, tokens)) = best_affordable_view(&c.view_costs, budget_left) else {
                 continue;
-            }
+            };
             let sketch = candidate_sketch(c);
             let max_sim = selected_sketches
                 .iter()
@@ -252,7 +259,7 @@ pub(crate) fn select_explicit(
             );
             let better = match best {
                 None => true,
-                Some((_, best_idx, best_mmr, _)) => {
+                Some((_, best_idx, best_mmr, _, _)) => {
                     mmr > best_mmr
                         || (mmr == best_mmr && effs[idx] > effs[best_idx])
                         || (mmr == best_mmr
@@ -261,17 +268,16 @@ pub(crate) fn select_explicit(
                 }
             };
             if better {
-                best = Some((pos, idx, mmr, tokens));
+                best = Some((pos, idx, mmr, view, tokens));
             }
         }
 
-        let Some((pos, idx, _mmr, _)) = best else {
+        let Some((pos, idx, _mmr, view, tokens)) = best else {
             // Nothing else fits the remaining budget.
             break;
         };
         remaining_idx.remove(pos);
         let c = &unpinned[idx];
-        let (view, tokens) = best_affordable_view(&c.view_costs, budget_left);
         tokens_used = tokens_used.saturating_add(tokens);
         selected_sketches.push(candidate_sketch(c));
         selected.push(SelectedItem {
@@ -408,7 +414,7 @@ fn sketch_of(candidates: &[CompileCandidate], id: &str, fallback_path: &str) -> 
 }
 
 /// Select the best view that fits within the budget, preferring denser views.
-fn best_affordable_view(costs: &ViewCosts, budget_left: usize) -> (ViewKind, usize) {
+fn best_affordable_view(costs: &ViewCosts, budget_left: usize) -> Option<(ViewKind, usize)> {
     let mut options: Vec<(ViewKind, usize)> = costs
         .estimates
         .iter()
@@ -418,10 +424,8 @@ fn best_affordable_view(costs: &ViewCosts, budget_left: usize) -> (ViewKind, usi
 
     options.sort_by_key(|(v, _)| v.density_rank());
 
-    options
-        .first()
-        .copied()
-        .unwrap_or((ViewKind::Handle, 25.min(budget_left)))
+    // A missing or unaffordable view cannot become a fabricated short handle.
+    options.first().copied()
 }
 
 /// Format the compilation result for display.

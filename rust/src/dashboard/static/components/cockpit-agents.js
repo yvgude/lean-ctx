@@ -41,6 +41,9 @@ class CockpitAgents extends HTMLElement {
     this._data = null;
     this._error = null;
     this._loading = true;
+    this._loadGeneration = 0;
+    this._controlGeneration = 0;
+    this._control = { project: '', ids: [], selected: '', snapshot: null, busy: false, error: '' };
   }
 
   connectedCallback() {
@@ -54,6 +57,11 @@ class CockpitAgents extends HTMLElement {
 
   disconnectedCallback() {
     document.removeEventListener('lctx:refresh', this._onRefresh);
+    this._ready = false;
+    this._loadGeneration++;
+    this._controlGeneration++;
+    this._control.busy = false;
+    this._control.snapshot = null;
   }
 
   _onRefresh() {
@@ -62,6 +70,7 @@ class CockpitAgents extends HTMLElement {
   }
 
   async loadData() {
+    var generation = ++this._loadGeneration;
     var fetchJson = api();
     if (!fetchJson) {
       this._error = 'API client not loaded';
@@ -81,6 +90,8 @@ class CockpitAgents extends HTMLElement {
         });
       })
     );
+
+    if (generation !== this._loadGeneration) return;
 
     var agents = results[0];
     var events = results[1];
@@ -102,6 +113,9 @@ class CockpitAgents extends HTMLElement {
     this._loading = false;
     this.render();
     this._bindEvents();
+    if (this._control.project) {
+      await this._runControl(this._control.selected ? 'observe' : 'list');
+    }
   }
 
   render() {
@@ -116,7 +130,7 @@ class CockpitAgents extends HTMLElement {
       return;
     }
 
-    if (this._error && !this._data.agents) {
+    if (this._error && (!this._data || !this._data.agents)) {
       this.innerHTML =
         '<div class="card">' +
         '<h3>Error</h3>' +
@@ -127,7 +141,11 @@ class CockpitAgents extends HTMLElement {
     }
 
     var body = '';
+    if (this._data.agents && !this._data.agents.execution_presence_available) {
+      body += '<div class="card"><p class="hs">Execution state is unavailable. Connected transports and heartbeats do not prove that an agent is executing a task.</p></div>';
+    }
     body += this._renderMetrics(esc, ff, fmt);
+    body += this._renderControl(esc);
     body += this._renderLogicalSessions(esc);
     body += this._renderSwimlanes(esc, ff, fmt);
     body += this._renderMcpTools(esc, ff);
@@ -394,8 +412,95 @@ class CockpitAgents extends HTMLElement {
     );
   }
 
+  _renderControl(esc) {
+    var c = this._control;
+    var transports = this._data && this._data.agents && this._data.agents.transports || [];
+    var knownProjects = this._data && this._data.agents && this._data.agents.project_roots || [];
+    var projects = Array.from(new Set(knownProjects.concat(transports.map(function (a) { return a.project_root; })).filter(Boolean))).sort();
+    var disabled = c.busy ? ' disabled' : '';
+    var html = '<section class="card"><h3>Execution control</h3>' +
+      '<p>Durable work graphs. A stop request is not proof that a process has exited.</p>' +
+      '<label>Project <select data-control-project' + disabled + '><option value="">Select project</option>' +
+      projects.map(function (p) { return '<option value="' + esc(p) + '"' + (p === c.project ? ' selected' : '') + '>' + esc(p) + '</option>'; }).join('') + '</select></label>';
+    if (c.project) {
+      html += '<label> Work graph <select data-control-graph' + disabled + '><option value="">Select graph</option>' +
+        c.ids.map(function (id) { return '<option value="' + esc(id) + '"' + (id === c.selected ? ' selected' : '') + '>' + esc(id) + '</option>'; }).join('') + '</select></label>' +
+        '<button type="button" data-control-refresh' + disabled + '>Refresh</button>';
+      if (!c.busy && !c.ids.length && !c.error) html += '<p>No work graphs found.</p>';
+    }
+    if (c.busy) html += '<p role="status">Updating execution state…</p>';
+    if (c.error) html += '<p role="alert">' + esc(c.error) + '</p>';
+    if (c.snapshot) {
+      html += '<table><caption>Graph ' + esc(c.selected) + '</caption><thead><tr><th>Node / parent</th><th>Agent</th><th>Status</th><th>Process exit</th><th>Tokens used</th><th>Action</th></tr></thead><tbody>';
+      html += (c.snapshot.graph.nodes || []).map(function (n) {
+        var stop = ['active', 'pending'].includes(n.status) && c.snapshot.write_revision;
+        return '<tr><td>' + esc(n.node_id) + ' / ' + esc(n.parent_node_id || 'root') + '</td><td>' + esc(n.agent_id) + '</td><td>' + esc(n.status) + '</td><td>' + esc(n.process_exit) + '</td><td>' + esc(n.tokens_consumed) + '</td><td>' +
+          (stop ? '<button type="button" data-control-stop="' + esc(n.node_id) + '"' + disabled + '>Request stop</button>' : '—') + '</td></tr>';
+      }).join('') + '</tbody></table>';
+    }
+    return html + '</section>';
+  }
+
+  async _runControl(action, node) {
+    var c = this._control;
+    if (c.busy || !c.project || !api()) return;
+    var generation = ++this._controlGeneration;
+    c.busy = true;
+    c.error = '';
+    var payload = { action: action, project_root: c.project, graph_id: c.selected };
+    if (action === 'cancel') {
+      if (!c.snapshot || !c.snapshot.write_revision) { c.busy = false; return; }
+      payload.node_id = node;
+      payload.expected_revision = c.snapshot.write_revision;
+    }
+    this.render(); this._bindEvents();
+    try {
+      var result = await api()('/api/agents/work-graph', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload), timeoutMs: 10000,
+      });
+      if (generation !== this._controlGeneration) return;
+      if (action === 'list') c.ids = result.graph_ids || [];
+      else c.snapshot = result;
+    } catch (error) {
+      if (generation !== this._controlGeneration) return;
+      c.error = String(error && error.error || error);
+      // Never retry a mutation against a refreshed revision automatically.
+      if (action === 'cancel' || action === 'observe') c.snapshot = null;
+    } finally {
+      if (generation === this._controlGeneration) {
+        c.busy = false;
+        this.render(); this._bindEvents();
+      }
+    }
+  }
+
   _bindEvents() {
     var self = this;
+    this.querySelectorAll('[data-control-project]').forEach(function (el) {
+      el.addEventListener('change', function () {
+        self._control.project = el.value; self._control.ids = []; self._control.selected = ''; self._control.snapshot = null;
+        self._control.error = '';
+        if (el.value) self._runControl('list');
+        else { self.render(); self._bindEvents(); }
+      });
+    });
+    this.querySelectorAll('[data-control-graph]').forEach(function (el) {
+      el.addEventListener('change', function () {
+        self._control.selected = el.value; self._control.snapshot = null;
+        if (el.value) self._runControl('observe');
+        else { self.render(); self._bindEvents(); }
+      });
+    });
+    this.querySelectorAll('[data-control-refresh]').forEach(function (el) {
+      el.addEventListener('click', function () { self._runControl(self._control.selected ? 'observe' : 'list'); });
+    });
+    this.querySelectorAll('[data-control-stop]').forEach(function (el) {
+      el.addEventListener('click', function () {
+        var node = el.getAttribute('data-control-stop');
+        if (window.confirm('Request stop for ' + node + ' and its descendants?')) self._runControl('cancel', node);
+      });
+    });
     this.querySelectorAll('.swimlane[data-agent-id]').forEach(function (el) {
       el.addEventListener('click', function () {
         el.classList.toggle('swimlane--expanded');

@@ -160,6 +160,11 @@ pub fn sanitize(output: &str) -> String {
 /// like "please ignore" in comments or documentation.
 pub fn detect_injection(content: &str) -> Vec<InjectionSignal> {
     let mut signals = Vec::new();
+    // One case-insensitive pass over the whole text; clean content (the
+    // overwhelming majority) never pays for lowercasing and line splitting.
+    if !injection_prefilter().is_match(content) {
+        return signals;
+    }
     let lower = content.to_lowercase();
     for (i, line) in lower.lines().enumerate() {
         let trimmed = line.trim();
@@ -181,6 +186,18 @@ pub fn detect_injection(content: &str) -> Vec<InjectionSignal> {
         }
     }
     signals
+}
+
+fn injection_prefilter() -> &'static regex::Regex {
+    static RE: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    RE.get_or_init(|| {
+        let alternation = INJECTION_PATTERNS
+            .iter()
+            .map(|(needle, _)| regex::escape(needle))
+            .collect::<Vec<_>>()
+            .join("|");
+        regex::Regex::new(&format!("(?i){alternation}")).expect("valid injection prefilter")
+    })
 }
 
 /// A detected injection signal with its location and classification.

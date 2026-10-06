@@ -606,7 +606,7 @@ fn canonical_without<T: Serialize>(
         .map_err(|error| ValidationError::new(format!("canonicalize receipt document: {error}")))
 }
 
-fn sort_json(value: Value) -> Value {
+pub(crate) fn sort_json(value: Value) -> Value {
     match value {
         Value::Object(object) => Value::Object(
             object
@@ -741,11 +741,12 @@ fn strict_json_value(bytes: &[u8]) -> Result<Value, ValidationError> {
     Ok(value)
 }
 
-fn digest_bytes(bytes: &[u8]) -> Result<Sha256Digest, ValidationError> {
+pub(crate) fn digest_bytes(bytes: &[u8]) -> Result<Sha256Digest, ValidationError> {
     let mut value = String::with_capacity(71);
     value.push_str("sha256:");
     for byte in Sha256::digest(bytes) {
-        write!(&mut value, "{byte:02x}").expect("writing to String cannot fail");
+        write!(&mut value, "{byte:02x}")
+            .map_err(|_| ValidationError::new("digest encoding failed"))?;
     }
     Sha256Digest::new(value)
 }

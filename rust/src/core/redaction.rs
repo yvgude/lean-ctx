@@ -201,6 +201,55 @@ fn is_non_secret_literal(value: &str) -> bool {
             | "void"
             | "nan"
             | "date"
+    ) || is_primitive_type_name(v)
+}
+
+/// Primitive type names of Rust, Go, Java and C-family languages. In
+/// `const MAX_TOKEN: usize = 4` the "value" after `TOKEN:` is a type
+/// annotation, never a credential; masking it corrupts every read of such a
+/// source. Matched exactly (case-sensitive), so a password that merely
+/// contains one of these words is still protected.
+fn is_primitive_type_name(value: &str) -> bool {
+    matches!(
+        value,
+        "bool"
+            | "char"
+            | "str"
+            | "usize"
+            | "isize"
+            | "u8"
+            | "u16"
+            | "u32"
+            | "u64"
+            | "u128"
+            | "i8"
+            | "i16"
+            | "i32"
+            | "i64"
+            | "i128"
+            | "f32"
+            | "f64"
+            | "int"
+            | "int8"
+            | "int16"
+            | "int32"
+            | "int64"
+            | "uint"
+            | "uint8"
+            | "uint16"
+            | "uint32"
+            | "uint64"
+            | "uintptr"
+            | "float"
+            | "float32"
+            | "float64"
+            | "double"
+            | "long"
+            | "short"
+            | "byte"
+            | "rune"
+            | "error"
+            | "Self"
     )
 }
 
@@ -343,8 +392,13 @@ fn redaction_rules() -> Vec<Rule> {
         Rule {
             label: "Private key block",
             // No kept prefix: the whole block, markers included, is replaced.
+            // A block without its END marker (a truncated file, a line window,
+            // a log tail) is still masked: the header plus every following
+            // key-material line — PEM headers of encrypted keys, then pure
+            // base64 lines. The first other line (code, prose) ends it, so a
+            // source that only mentions the header keeps the rest of the file.
             re: static_regex!(
-                r"(?s)-----BEGIN\s+(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----.+?-----END\s+(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----"
+                r"(?s)-----BEGIN\s+(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----(?:.+?-----END\s+(?:RSA\s+|EC\s+|DSA\s+|OPENSSH\s+)?PRIVATE\s+KEY-----|(?-s:[^\n]*)(?:\r?\n[A-Za-z-]+:(?-s:[^\n]*))*(?:\r?\n[A-Za-z0-9+/=]+[ \t]*(?m:$))*)"
             ),
             guard_value: false,
         },
@@ -363,14 +417,17 @@ fn redaction_rules() -> Vec<Rule> {
             re: static_regex!(r"(glpat-)[A-Za-z0-9_\-]{20,}"),
             guard_value: false,
         },
+        // Provider keys are masked whole — the prefix names the provider and
+        // key class, so it is not kept. Same patterns as the detector, which
+        // also matches them inside nested values without a `key=` prefix.
         Rule {
-            label: "Anthropic key",
-            re: static_regex!(r"(sk-ant-)[A-Za-z0-9_\-]{20,}"),
+            label: "Anthropic API key",
+            re: crate::core::secret_detection::anthropic_key_re(),
             guard_value: false,
         },
         Rule {
-            label: "OpenAI key",
-            re: static_regex!(r"(sk-)[A-Za-z0-9]{20,}"),
+            label: "OpenAI API key",
+            re: crate::core::secret_detection::openai_key_re(),
             guard_value: false,
         },
         Rule {
@@ -587,8 +644,8 @@ fn detector_redaction_label(label: &str, value: Option<&str>) -> &'static str {
         "GitHub token" => "github_token",
         "GitHub fine-grained token" => "github_fine_grained",
         "GitLab token" => "gitlab_pat",
-        "Anthropic key" => "anthropic_key",
-        "OpenAI key" => "openai_key",
+        "Anthropic API key" => "anthropic_key",
+        "OpenAI API key" => "openai_key",
         "JWT" => "jwt",
         "Slack token" => "slack_token",
         "Stripe key" => "stripe_key",
@@ -681,10 +738,30 @@ pub(crate) fn redact_with_patterns(
 mod tests {
     use super::*;
 
+    #[test]
+    fn standalone_provider_keys_are_fully_masked_in_nested_values() {
+        let suffix = "aB3_".repeat(9);
+        for prefix in ["sk-proj-", "sk-svcacct-", "sk-ant-"] {
+            let secret = format!("{prefix}{suffix}");
+            let raw = serde_json::json!({"nested":[secret.clone()]}).to_string();
+            let safe = redact_text(&raw);
+            assert!(!safe.contains(&suffix), "must mask the entire token");
+            assert!(!safe.contains(prefix), "must not retain the secret prefix");
+            assert!(safe.contains("REDACTED"));
+            assert!(!crate::core::secret_detection::detect_secrets(&secret).is_empty());
+        }
+        assert_eq!(
+            redact_text("sk-proj-your_key_here"),
+            "sk-proj-your_key_here"
+        );
+    }
+
     // --- #952: exclude_patterns compilation cache ---
 
     #[test]
     fn config_exclude_patterns_reuses_compiled_regexes_when_config_unchanged() {
+        // Other tests swap the config dir; "unchanged" needs the env lock.
+        let _lock = crate::core::data_dir::test_env_lock();
         let first = config_exclude_patterns();
         let second = config_exclude_patterns();
         assert!(
@@ -707,6 +784,32 @@ mod tests {
         let out = redact_text(s);
         assert!(out.contains("[REDACTED"));
         assert!(!out.contains("\nabc\n"));
+    }
+
+    /// A key cut off before its END marker — a line window, a truncated file,
+    /// a log tail — is masked through its last key-material line; text before
+    /// the header and code after the key material survive.
+    #[test]
+    fn redacts_a_truncated_private_key_but_not_the_code_around_it() {
+        let s = concat!(
+            "config:\n-----BEGIN RSA PRIVATE",
+            " KEY-----\nProc-Type: 4,ENCRYPTED\nMIIEpAIBAAKCAQEA\nqx7Wmore"
+        );
+        let out = redact_text(s);
+        assert!(out.starts_with("config:\n"), "{out}");
+        assert!(out.contains("[REDACTED"), "{out}");
+        for leaked in ["RSA PRIVATE", "Proc-Type", "MIIEpAIBAAKCAQEA", "qx7Wmore"] {
+            assert!(!out.contains(leaked), "{leaked} leaked: {out}");
+        }
+
+        // A source that only names the header keeps the rest of the file.
+        let source = concat!(
+            "const HEADER: &str = \"-----BEGIN PRIVATE",
+            " KEY-----\";\nfn parse(pem: &str) -> bool {\n    pem.starts_with(HEADER)\n}\n"
+        );
+        let out = redact_text(source);
+        assert!(out.contains("fn parse(pem: &str) -> bool {"), "{out}");
+        assert!(out.contains("pem.starts_with(HEADER)"), "{out}");
     }
 
     #[test]
@@ -751,6 +854,30 @@ mod tests {
         ] {
             assert_eq!(redact_text(s), s, "must not redact type annotation: {s}");
         }
+    }
+
+    /// A primitive type after a sensitive-looking name is a declaration, not
+    /// a credential (`const ESTIMATED_CHARS_PER_TOKEN: u64 = 4;` was read
+    /// back as `[REDACTED:API key param] = 4`). A value that merely contains
+    /// a type name stays protected.
+    #[test]
+    fn keeps_primitive_type_declarations() {
+        for s in [
+            "const ESTIMATED_CHARS_PER_TOKEN: u64 = 4;",
+            "const MAX_TOKEN: usize = 4;",
+            "    max_token: u32,",
+            "var Token int64",
+            "secret: bool = false",
+            "fn token(&self) -> Self",
+            "private long token;",
+        ] {
+            assert_eq!(redact_text(s), s, "must not redact a type declaration: {s}");
+        }
+        let out = redact_text("password: usize4Hunter2");
+        assert!(
+            out.contains("[REDACTED"),
+            "a real value stays masked: {out}"
+        );
     }
 
     /// Whole-token secrets must be removed, not annotated in place — previously
@@ -867,6 +994,42 @@ mod tests {
         }
         // A value that merely contains asterisks is not a mask.
         assert!(redact_text("password: ab*cd1234").contains("[REDACTED"));
+    }
+
+    #[test]
+    fn key_value_redaction_never_crosses_a_line_break() {
+        let samples = [
+            concat!("token:", "\n", "refreshtoken: harmless"),
+            concat!("Authorization: Bearer", "\n", "next_line_word"),
+            concat!(
+                "credential:",
+                "\n  ",
+                "ABCDEFGHIJKLMNOP",
+                "QRSTUVWXYZabcdef",
+                "012345"
+            ),
+        ];
+        for s in samples {
+            assert_eq!(redact_text(s), s, "redaction crossed a line: {s:?}");
+        }
+        let same_line_secret = ["token: ", "abc123", "def456", "ghi789"].concat();
+        let out = redact_text(&same_line_secret);
+        assert!(
+            out.contains("[REDACTED:API key param]"),
+            "same-line secrets must remain redacted: {out}"
+        );
+    }
+
+    #[test]
+    fn asterisk_masks_survive_redaction() {
+        for s in [
+            "password: *****",
+            "password: ***",
+            r#"expected := []string{"password: *****", "title: My Home"}"#,
+            "token=*",
+        ] {
+            assert_eq!(redact_text(s), s, "mask changed: {s}");
+        }
     }
 
     /// The flip side: real secret-shaped values must STILL be redacted after

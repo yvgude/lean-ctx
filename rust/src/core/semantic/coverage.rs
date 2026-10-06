@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Per-language semantic coverage: how many of a language's file-level call
 //! edges are verified, and whether a language server for it can run here.
 //! Shared by `ctx_graph status`, `lean-ctx doctor` and the dashboard legend.

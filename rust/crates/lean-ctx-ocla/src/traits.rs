@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 use async_trait::async_trait;
 use lean_ctx_protocol::CapabilityManifestV1;
 
@@ -5,44 +6,18 @@ use crate::types::{
     AgentEnvelope, AgentMessageRequest, CompressionRequest, CompressionResult, ConfigProposal,
     ConfigTuningRequest, ConnectorJob, DeliveryEntry, DeliveryRecord, DeliveryRecordResult,
     DeliveryStats, EfficiencyAnalysis, EfficiencySample, ExperimentRequest, ExperimentResult,
-    IntentDecision, IntentRequest, MetricPoint, ModelRouteRequest, Observation, OclaCapability,
-    OclaResult, Outcome, ResponseOptimizationRequest, ResponseOptimizationResult, RoutingDecision,
-    SavingsEvidence, ScheduledJob, UsageRecord,
+    IntentDecision, IntentRequest, MetricPoint, Observation, OclaCapability, OclaResult, Outcome,
+    ResponseOptimizationRequest, ResponseOptimizationResult, SavingsEvidence, ScheduledJob,
+    UsageRecord,
 };
 
 /// Common, versioned discovery surface for every OCLA capability.
 pub trait OclaService: Send + Sync {
     fn capability(&self) -> OclaCapability;
 
-    /// Returns the versioned contract, or a valid unavailable placeholder.
-    fn manifest(&self) -> CapabilityManifestV1 {
-        let capability = self.capability();
-        serde_json::from_value(serde_json::json!({
-            "schema_version": 1,
-            "capability_id": format!(
-                "capability://leanctx/placeholder/{:?}",
-                capability.kind
-            )
-            .to_ascii_lowercase(),
-            "provider": "leanctx",
-            "kind": "context_source",
-            "version": "0.0.0",
-            "surfaces": ["context"],
-            "support_matrix": {"context": {"supported": false}},
-            "local": true,
-            "remote": false,
-            "reversibility": "reversible",
-            "determinism": "deterministic",
-            "data_movement": "local_only",
-            "supported_classifications": ["Public"],
-            "measurement_support": {
-                "latency": false,
-                "tokens": false,
-                "quality": false
-            },
-            "conformance_version": 1
-        }))
-        .expect("static OCLA placeholder manifest is valid")
+    /// Returns an explicit versioned contract; missing declarations are unavailable.
+    fn manifest(&self) -> OclaResult<CapabilityManifestV1> {
+        Err(crate::types::OclaError::Unavailable(self.capability().kind))
     }
 }
 
@@ -63,6 +38,10 @@ pub trait MetricsExporter: OclaService {
 
 pub trait SavingsLedger: OclaService {
     fn record_savings(&self, evidence: SavingsEvidence) -> OclaResult<String>;
+
+    /// Update capability-local summaries and evidence for a caller-owned
+    /// accounting observation, without appending another accounting event.
+    fn project_savings(&self, evidence: SavingsEvidence) -> OclaResult<String>;
 }
 
 pub trait IntentClassifier: OclaService {
@@ -83,11 +62,6 @@ pub trait ResponseOptimizer: OclaService {
         &self,
         request: ResponseOptimizationRequest,
     ) -> OclaResult<ResponseOptimizationResult>;
-}
-
-#[async_trait]
-pub trait ModelRouter: OclaService {
-    async fn route_model(&self, request: ModelRouteRequest) -> OclaResult<RoutingDecision>;
 }
 
 pub trait EfficiencyAnalyzer: OclaService {
@@ -112,6 +86,16 @@ pub trait AgentGateway: OclaService {
 }
 
 pub trait DeliveryRegistry: OclaService {
+    /// Scope and requester identity must be established by the trusted caller.
+    fn check_scoped_delivery(
+        &self,
+        blake3: &[u8; 12],
+        path: &str,
+        scope: &crate::delivery_scope::DeliveryScopeV1,
+        requester_agent_id: &str,
+        requester_conversation_id: Option<&str>,
+    ) -> Option<DeliveryRecord>;
+
     fn check_delivery(
         &self,
         blake3: &[u8; 12],
@@ -128,6 +112,27 @@ pub trait DeliveryRegistry: OclaService {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::OclaCapabilityKind;
+
+    struct UndeclaredService {
+        kind: OclaCapabilityKind,
+    }
+
+    impl OclaService for UndeclaredService {
+        fn capability(&self) -> OclaCapability {
+            OclaCapability::available(self.kind)
+        }
+    }
+
+    #[test]
+    fn missing_manifest_is_unavailable_for_every_capability_kind() {
+        for kind in OclaCapabilityKind::ALL {
+            assert!(matches!(
+                UndeclaredService { kind }.manifest(),
+                Err(crate::types::OclaError::Unavailable(actual)) if actual == kind
+            ));
+        }
+    }
 
     #[test]
     fn every_public_trait_is_object_safe() {
@@ -140,7 +145,6 @@ mod tests {
         assert_object_safe::<dyn OutcomeTracker>();
         assert_object_safe::<dyn CompressionProvider>();
         assert_object_safe::<dyn ResponseOptimizer>();
-        assert_object_safe::<dyn ModelRouter>();
         assert_object_safe::<dyn EfficiencyAnalyzer>();
         assert_object_safe::<dyn ConfigTuner>();
         assert_object_safe::<dyn ExperimentRunner>();

@@ -19,6 +19,7 @@ static LOCAL_TRANSPORT: OnceLock<LocalSignedCapsuleTransport> = OnceLock::new();
 pub struct TransportHealth {
     pub local_queue_depth: usize,
     pub dlq_depth: usize,
+    pub dlq_available: bool,
     pub rate_limiter_available: bool,
     pub last_successful_delivery: Option<DateTime<Utc>>,
     pub last_failed_delivery: Option<DateTime<Utc>>,
@@ -40,7 +41,9 @@ pub(crate) fn local_transport() -> &'static LocalSignedCapsuleTransport {
 
 /// Collects a bounded, point-in-time snapshot of transport dependencies.
 pub fn check_transport_health() -> TransportHealth {
-    let dlq_depth = dead_letter_queue().stats().total;
+    let (dlq_depth, dlq_available) = dead_letter_queue()
+        .stats(None)
+        .map_or((0, false), |stats| (stats.total, true));
     let rate_limiter_available = matches!(
         check_rate_limit(HEALTH_PROBE_AGENT_ID, HEALTH_PROBE_TOOL_NAME),
         RateLimitResult::Allowed
@@ -49,6 +52,7 @@ pub fn check_transport_health() -> TransportHealth {
     TransportHealth {
         local_queue_depth: local_transport().inbox_depth(HEALTH_PROBE_AGENT_ID),
         dlq_depth,
+        dlq_available,
         rate_limiter_available,
         last_successful_delivery: None,
         last_failed_delivery: None,
@@ -58,6 +62,9 @@ pub fn check_transport_health() -> TransportHealth {
 
 /// Classifies whether delivery should proceed for a health snapshot.
 pub fn readiness(health: &TransportHealth) -> TransportReadiness {
+    if !health.dlq_available {
+        return TransportReadiness::Unavailable("dead-letter queue is unavailable".to_string());
+    }
     if health.consecutive_failures > 5 {
         return TransportReadiness::Unavailable(format!(
             "transport has {} consecutive delivery failures",
@@ -87,6 +94,7 @@ mod tests {
         TransportHealth {
             local_queue_depth: 0,
             dlq_depth: 0,
+            dlq_available: true,
             rate_limiter_available: true,
             last_successful_delivery: None,
             last_failed_delivery: None,
@@ -126,6 +134,18 @@ mod tests {
             TransportReadiness::Unavailable(
                 "transport has 6 consecutive delivery failures".to_string()
             )
+        );
+    }
+
+    #[test]
+    fn unavailable_dlq_makes_transport_unavailable() {
+        let health = TransportHealth {
+            dlq_available: false,
+            ..nominal_health()
+        };
+        assert_eq!(
+            readiness(&health),
+            TransportReadiness::Unavailable("dead-letter queue is unavailable".to_string())
         );
     }
 

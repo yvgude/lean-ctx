@@ -265,6 +265,12 @@ pub fn refresh_installed_hooks() {
     }
 }
 
+/// The hook mode in effect for `agent`, or `None` when no lean-ctx hook
+/// artifacts are installed for it (global only). Used for coverage reporting.
+pub(crate) fn installed_hook_mode(agent: &str, home: &std::path::Path) -> Option<HookMode> {
+    hooks_installed_for(agent, home).then(|| recommend_hook_mode(agent))
+}
+
 /// True when `agent` already has lean-ctx hook artifacts on disk (global only).
 fn hooks_installed_for(agent: &str, home: &std::path::Path) -> bool {
     match agent {

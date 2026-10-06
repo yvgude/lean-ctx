@@ -308,6 +308,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "Only notify about updates, don't install automatically",
         ),
     );
+    updates.insert(
+        "pinned_version".into(),
+        key(
+            "string|null",
+            serde_json::json!(cfg.updates.pinned_version),
+            "Release version used by update commands and scheduled updates; unset follows latest",
+        ),
+    );
     sections.insert(
         "updates".into(),
         SectionSchema {
@@ -478,6 +486,93 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         SectionSchema {
             description: "Per-item sensitivity model with a uniform policy floor (#212)".into(),
             keys: sensitivity,
+        },
+    );
+
+    let gw = &cfg.context_gateway;
+    let mut context_gateway = BTreeMap::new();
+    context_gateway.insert(
+        "enabled".into(),
+        key_with_env(
+            "bool",
+            serde_json::json!(gw.enabled),
+            "Run context admission on every governed source before caching or compression",
+            "LEAN_CTX_CONTEXT_GATEWAY",
+        ),
+    );
+    let mode = serde_json::to_value(gw.mode)
+        .ok()
+        .and_then(|v| v.as_str().map(str::to_owned))
+        .unwrap_or_default();
+    context_gateway.insert(
+        "mode".into(),
+        key_enum(
+            &["developer", "governed", "sovereign"],
+            &mode,
+            "Governed and sovereign treat unclassified content as internal, never public",
+        ),
+    );
+    for (name, action, what) in [
+        (
+            "secrets",
+            gw.secrets,
+            "credentials and keys (patterns from [secret_detection])",
+        ),
+        (
+            "pii",
+            gw.pii,
+            "checksum-validated PII: AHV, IBAN, payment cards",
+        ),
+        (
+            "injection",
+            gw.injection,
+            "prompt-injection heuristic (OWASP LLM01)",
+        ),
+        (
+            "classification",
+            gw.classification,
+            "explicit markings such as CONFIDENTIAL (redact = withhold)",
+        ),
+    ] {
+        context_gateway.insert(
+            name.into(),
+            key_enum(
+                &["off", "warn", "redact", "block"],
+                action.as_str(),
+                &format!("Action for {what}"),
+            ),
+        );
+    }
+    context_gateway.insert(
+        "max_inspected_bytes".into(),
+        key(
+            "usize",
+            serde_json::json!(gw.max_inspected_bytes),
+            "Bytes each detector inspects per object; beyond it coverage is partial (withheld in governed/sovereign mode)",
+        ),
+    );
+    context_gateway.insert(
+        "detector_timeout_ms".into(),
+        key(
+            "u64",
+            serde_json::json!(gw.detector_timeout_ms),
+            "Per-detector time budget; a detector that runs out reports timed_out, never clean",
+        ),
+    );
+    context_gateway.insert(
+        "hud".into(),
+        key_enum(
+            &["auto", "in_band", "status_line"],
+            gw.hud.as_str(),
+            "Where redaction counts appear: auto keeps them out of the model's context when the Claude Code status line shows lean-ctx",
+        ),
+    );
+    sections.insert(
+        "context_gateway".into(),
+        SectionSchema {
+            description:
+                "Context Gateway admission: built-in detectors, on by default, global-only".into(),
+            keys: context_gateway,
         },
     );
 

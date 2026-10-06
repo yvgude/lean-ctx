@@ -8,6 +8,10 @@ use anyhow::Result;
 pub(super) fn run_mcp_server() -> Result<()> {
     use rmcp::ServiceExt;
 
+    // Host-only startup configuration. The MCP stream cannot supply authority.
+    let receipt_host = crate::server::native_receipts::load_configured_host_authority()
+        .map_err(anyhow::Error::msg)?;
+
     // Time-to-initialize is the metric that decides whether a client's
     // start-on-demand first tool call races us (GH #669) — measured from
     // process entry to the completed MCP initialize handshake.
@@ -74,7 +78,8 @@ pub(super) fn run_mcp_server() -> Result<()> {
         .enable_all()
         .build()?;
 
-    let server = tools::create_server();
+    let mut server = tools::create_server();
+    server.native_receipt_authority = receipt_host;
     drop(startup_lock);
 
     let result = rt.block_on(async {
@@ -108,6 +113,10 @@ pub(super) fn run_mcp_server() -> Result<()> {
             cleanup_orphan_mcp_processes();
             spawn_proxy_if_needed();
             crate::cli::wrapped_publish::maybe_auto_publish_background();
+            // GH #2006: keep the session store bounded (daily, off the handshake).
+            if let Some(report) = crate::core::session::housekeeping::run_daily() {
+                tracing::debug!(?report, "session housekeeping");
+            }
         });
 
         let server_handle = server.clone();

@@ -54,7 +54,8 @@ fn export(args: &[String]) -> io::Result<(PathBuf, String)> {
         "tasks_proven": proof.tasks.len(), "accepted_rate": proof.accepted_rate,
         "total_cost_micros": proof.total_cost_micros, "aggregate_cpao_micros": proof.aggregate_cpao_micros,
         "tasks": proof.tasks.iter().map(|task| json!({"task_id":task.task_id,
-        "intent":task.profile_intent,"accepted":task.outcome_accepted})).collect::<Vec<_>>()});
+        "intent":task.profile_intent,"acceptance_state":task.acceptance_state,
+        "accepted":task.outcome_accepted})).collect::<Vec<_>>()});
     let gold_json = json!({"total":gold.total,"correct":gold.correct,"accuracy":gold.accuracy,
         "intent_distribution":gold.per_intent});
     let benchmark_json = serde_json::to_value(&benchmark).unwrap_or(Value::Null);

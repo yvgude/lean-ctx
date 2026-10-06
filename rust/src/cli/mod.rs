@@ -7,6 +7,7 @@ mod agent_tools_cmd;
 mod allow_cmd;
 pub(crate) mod allow_fix;
 pub mod audit_report;
+mod autopilot_cmd;
 #[allow(warnings)]
 pub mod badge_cmd;
 mod benchmark_cmd;
@@ -17,6 +18,7 @@ mod cheatsheet_cmd;
 mod checkpoint_cmd;
 pub mod claude_mod_cmd;
 pub mod cloud;
+mod codex_protected_cmd;
 #[allow(dead_code, unreachable_pub)]
 pub(crate) mod cognitive;
 mod common;
@@ -25,6 +27,8 @@ mod compliance_cmd;
 mod compress_cmd;
 mod config_cmd;
 mod context_cmd;
+mod context_execution;
+mod context_policy;
 pub(crate) mod dashboard_cmd;
 mod debug_log_cmd;
 mod demo_cmd;
@@ -42,6 +46,7 @@ pub mod harden;
 mod health_cmd;
 mod index_cmd;
 mod init_cmd;
+mod inspect_cmd;
 mod instructions_cmd;
 mod introspect_cmd;
 mod kit_cmd;
@@ -61,6 +66,7 @@ mod pack_remote;
 mod policy_cmd;
 mod policy_enforce_cmd;
 mod policy_org_cmd;
+mod policy_personal_cmd;
 mod profile_cmd;
 pub(crate) mod prompt;
 mod prompt_cmd;
@@ -106,6 +112,16 @@ pub(crate) use badge_cmd::cmd_badge;
 pub(crate) use benchmark_cmd::cmd_benchmark_real;
 pub(crate) use call_cmd::cmd_call;
 pub use cheatsheet_cmd::*;
+#[cfg(all(test, target_os = "macos"))]
+pub(crate) use codex_protected_cmd::CHILD_PROFILE_ENV;
+#[cfg(test)]
+pub(crate) use codex_protected_cmd::pin_synthetic_session;
+#[cfg(all(test, unix))]
+pub(crate) use codex_protected_cmd::unpin_synthetic_session;
+pub(crate) use codex_protected_cmd::{
+    cmd_codex_protected, cmd_setup_codex_protected, enforce_protected_store_path,
+    protected_child_prefix,
+};
 pub use common::load_shell_history_pub;
 pub(crate) use compliance_cmd::cmd_compliance;
 pub(crate) use compress_cmd::cmd_compress;
@@ -124,6 +140,7 @@ pub use init_cmd::{cmd_init, cmd_init_quiet};
 pub mod import_cmd;
 pub(crate) use addon_cmd::cmd_addon;
 pub(crate) use git_trailer::cmd_git_trailer;
+pub(crate) use inspect_cmd::cmd_inspect;
 pub(crate) use instructions_cmd::cmd_instructions;
 pub(crate) use introspect_cmd::cmd_introspect;
 pub(crate) use kit_cmd::cmd_kit;

@@ -175,7 +175,7 @@ mod tests {
             input_schema_ref: None,
             output_schema_ref: None,
             conformance_version: 1,
-            extra: BTreeMap::new(),
+            extra: Default::default(),
         }
     }
 

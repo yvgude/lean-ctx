@@ -53,7 +53,14 @@ pub(super) fn cmd_pack_send(args: &[String], project_root: &str) {
     }
 
     if let Some(ref s) = secret {
-        envelope.sign(s.as_bytes());
+        if s.is_empty() {
+            eprintln!("ERROR: --secret must not be empty");
+            return;
+        }
+        if let Err(error) = envelope.sign(s.as_bytes()) {
+            eprintln!("ERROR: could not sign envelope: {error}");
+            return;
+        }
     }
 
     let json = match serialize_envelope(&envelope) {
@@ -131,6 +138,10 @@ pub(super) fn cmd_pack_receive(args: &[String], project_root: &str) {
     };
 
     if let Some(ref s) = secret {
+        if s.is_empty() {
+            eprintln!("ERROR: --secret must not be empty");
+            return;
+        }
         if !envelope.verify_signature(s.as_bytes()) {
             eprintln!("ERROR: Signature verification failed. Envelope may be tampered.");
             return;

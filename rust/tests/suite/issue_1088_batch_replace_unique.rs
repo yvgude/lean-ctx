@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Regression for #1088: `replace_unique` must work inside a `ctx_patch`
 //! ops[] batch, applied in order against the post-state of preceding ops.
 use std::sync::Arc;

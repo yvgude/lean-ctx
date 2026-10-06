@@ -132,3 +132,9 @@ impl Default for ContextEngine {
         Self::new()
     }
 }
+
+/// Stable Rust-native boundary over the existing Local operators.
+pub mod operators;
+
+#[cfg(test)]
+mod transport_tests;

@@ -1,0 +1,5 @@
+schema = "leanctx.third-party-notices-approval/v1"
+approved_content_sha256 = "0222d08f76ee69f7a23fdfc67179a319f4e6d9449f8199956b9f7454c91c24b2"
+approving_owner = "Yves Gugger"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for the 3.11.0 release inputs, given explicitly by the owner on 2026-10-05 and recorded on his instruction under the owner-approver policy in docs/licensing/v4-licensing.md"
+approved_at = "2026-10-05"

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `_lc`/`_lc_compress` PATH shims and the refresh of installed shell hooks.
 //!
 //! Both keep aliases working where the hook's shell function is missing: the

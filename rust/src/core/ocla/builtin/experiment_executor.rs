@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinExperimentExecutor — executes experiment assignments locally.
 //!
 //! Wraps `proxy/holdout.rs` behind the OCLA trait. Experiments are identified
@@ -171,39 +172,24 @@ impl Default for BuiltinExperimentExecutor {
 }
 
 impl OclaService for BuiltinExperimentExecutor {
+    fn manifest(&self) -> crate::core::ocla::OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+        crate::core::ocla::capability_fabric::builtin_manifest(&self.capability())
+    }
+
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::ExperimentRunner)
     }
 }
 
 impl ExperimentRunner for BuiltinExperimentExecutor {
-    fn run_experiment(&self, request: ExperimentRequest) -> OclaResult<ExperimentResult> {
-        let config = crate::core::config::Config::load();
-        let requested_model = config
-            .proxy
-            .baseline
-            .reference_model
-            .as_deref()
-            .ok_or_else(|| {
-                crate::core::ocla::types::OclaError::Rejected(
-                    OclaCapabilityKind::ExperimentRunner,
-                    "no reference model configured for routing evaluation".into(),
-                )
-            })?;
-        let pricing = crate::core::gain::model_pricing::ModelPricing::load();
-
-        crate::core::eval_ab::routing_eval::run_routing_experiment(
-            &request,
-            requested_model,
-            &config.proxy.routing,
-            &pricing,
-        )
-        .map_err(|error| {
-            crate::core::ocla::types::OclaError::Rejected(
-                OclaCapabilityKind::ExperimentRunner,
-                error.to_string(),
-            )
-        })
+    /// The built-in runner executes signed assignments (see
+    /// [`execute_assignment`]); it has no suite of its own to run. Its only
+    /// suite was the model-routing evaluation, removed with automatic routing.
+    fn run_experiment(&self, _request: ExperimentRequest) -> OclaResult<ExperimentResult> {
+        Err(crate::core::ocla::types::OclaError::Rejected(
+            OclaCapabilityKind::ExperimentRunner,
+            "the built-in experiment runner has no experiment suite".into(),
+        ))
     }
 }
 
@@ -316,13 +302,6 @@ mod tests {
         assert_eq!(outcome.treatment_metric, 10.0);
         assert_eq!(outcome.control_metric, 10.0);
         assert_eq!(outcome.improvement_pct, 0.0);
-    }
-
-    #[test]
-    fn rejects_missing_suite_instead_of_fabricating_result() {
-        let runner = BuiltinExperimentExecutor::new();
-        let error = runner.run_experiment(experiment("/definitely/missing-suite.ndjson"));
-        assert!(error.is_err());
     }
 
     #[test]

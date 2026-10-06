@@ -356,7 +356,15 @@ fn verify_lineage_artifacts(
             "expected_quality_milli",
             "expected_latency_ms",
         ],
-        &["policy_decision_ref", "scheduler_decision_ref"],
+        &[
+            "policy_decision_ref",
+            "scheduler_decision_ref",
+            "executor_agent_id",
+            "context_plan_id",
+            "capability_bindings",
+            "context_budget_policy",
+            "estimates",
+        ],
     )?;
     require_schema_v1(plan, "execution plan")?;
     if string(plan, "plan_id", "execution plan")? != plan_id
@@ -365,6 +373,19 @@ fn verify_lineage_artifacts(
         return Err("execution plan IDs disagree with receipt lineage".to_string());
     }
     validate_execution_plan(plan)?;
+    if nullable_optional_string(plan, "executor_agent_id", "execution plan")?
+        .is_some_and(|executor| executor != agent_id)
+    {
+        return Err("execution plan executor disagrees with task agent".to_string());
+    }
+    let pinned = plan_capability_bindings(plan)?;
+    if capability_bindings.iter().any(|(id, version)| {
+        pinned
+            .iter()
+            .any(|(pinned_id, pinned_version)| id == pinned_id && version != pinned_version)
+    }) {
+        return Err("receipt capability version disagrees with execution plan".to_string());
+    }
     let plan_capabilities = array(
         field(plan, "capability_ids", "execution plan")?,
         "execution plan capability_ids",
@@ -1405,12 +1426,116 @@ fn validate_execution_plan(plan: &Map<String, Value>) -> Result<(), String> {
             }
         }
     }
-    for key in ["policy_decision_ref", "scheduler_decision_ref"] {
+    for key in [
+        "policy_decision_ref",
+        "scheduler_decision_ref",
+        "executor_agent_id",
+        "context_plan_id",
+    ] {
         if let Some(value) = nullable_optional_string(plan, key, "execution plan")? {
             bounded(value, &format!("execution plan.{key}"))?;
         }
     }
+    validate_plan_additives(plan)?;
+    plan_capability_bindings(plan)?;
     Ok(())
+}
+
+fn validate_plan_additives(plan: &Map<String, Value>) -> Result<(), String> {
+    if let Some(value) = plan
+        .get("context_budget_policy")
+        .filter(|value| !value.is_null())
+    {
+        let policy = object(value, "context budget policy")?;
+        let expected = match string(policy, "kind", "context budget policy")? {
+            "no_token_limit" => {
+                check_fields(policy, "context budget policy", &["kind"], &[])?;
+                0
+            }
+            "token_limit" => {
+                check_fields(policy, "context budget policy", &["kind", "tokens"], &[])?;
+                unsigned(policy, "tokens", "context budget policy", u64::MAX)?
+            }
+            _ => return Err("unknown context budget policy".into()),
+        };
+        if unsigned(plan, "context_budget_tokens", "execution plan", u64::MAX)? != expected {
+            return Err("context budget policy disagrees with legacy scalar".into());
+        }
+    }
+    if let Some(value) = plan.get("estimates").filter(|value| !value.is_null()) {
+        let estimates = object(value, "plan estimates")?;
+        check_fields(
+            estimates,
+            "plan estimates",
+            &[],
+            &["cost_micros", "quality_milli", "latency_ms"],
+        )?;
+        for (key, scalar, maximum) in [
+            ("cost_micros", "expected_cost_micros", u64::MAX),
+            ("quality_milli", "expected_quality_milli", 1000),
+            ("latency_ms", "expected_latency_ms", u64::MAX),
+        ] {
+            let projected = match estimates.get(key) {
+                None | Some(Value::Null) => 0,
+                Some(_) => unsigned(estimates, key, "plan estimates", maximum)?,
+            };
+            if unsigned(plan, scalar, "execution plan", maximum)? != projected {
+                return Err("plan estimates disagree with legacy scalars".into());
+            }
+        }
+    }
+    Ok(())
+}
+
+fn plan_capability_bindings(
+    plan: &Map<String, Value>,
+) -> Result<BTreeSet<(String, String)>, String> {
+    let mut bindings = BTreeSet::new();
+    let Some(value) = plan.get("capability_bindings") else {
+        return Ok(bindings);
+    };
+    let entries = array(value, "plan capability bindings")?;
+    if entries.len() > MAX_ITEMS {
+        return Err("too many plan capability bindings".into());
+    }
+    let capabilities = array(
+        field(plan, "capability_ids", "execution plan")?,
+        "plan capabilities",
+    )?;
+    let mut ids = BTreeSet::new();
+    for entry in entries {
+        let entry = object(entry, "plan capability binding")?;
+        check_fields(
+            entry,
+            "plan capability binding",
+            &["capability_id", "version"],
+            &["manifest_digest"],
+        )?;
+        let id = bounded(
+            string(entry, "capability_id", "plan capability binding")?,
+            "capability_id",
+        )?;
+        let version = bounded(
+            string(entry, "version", "plan capability binding")?,
+            "plan capability version",
+        )?;
+        if !ids.insert(id) || !capabilities.iter().any(|value| value.as_str() == Some(id)) {
+            return Err("invalid or duplicate plan capability binding".into());
+        }
+        if let Some(digest) =
+            nullable_optional_string(entry, "manifest_digest", "plan capability binding")?
+        {
+            let digest = digest
+                .strip_prefix("sha256:")
+                .or_else(|| digest.strip_prefix("blake3:"))
+                .unwrap_or(digest);
+            if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
+                return Err("invalid plan manifest digest".into());
+            }
+        }
+        bindings.insert((id.to_owned(), version.to_owned()));
+    }
+    Ok(bindings)
 }
 
 fn require_artifact_kind(
@@ -1560,6 +1685,89 @@ fn one_of(value: &str, allowed: &[&str], label: &str) -> Result<(), String> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn additive_plan() -> Map<String, Value> {
+        serde_json::json!({
+            "capability_ids":["capability:local"], "context_budget_tokens":0,
+            "expected_cost_micros":0, "expected_quality_milli":0, "expected_latency_ms":0
+        })
+        .as_object()
+        .unwrap()
+        .clone()
+    }
+
+    #[test]
+    fn plan_additives_preserve_legacy_and_validate_explicit_unknowns() {
+        let mut plan = additive_plan();
+        validate_plan_additives(&plan).unwrap();
+        assert!(plan_capability_bindings(&plan).unwrap().is_empty());
+        plan.insert(
+            "context_budget_policy".into(),
+            serde_json::json!({"kind":"no_token_limit"}),
+        );
+        plan.insert(
+            "estimates".into(),
+            serde_json::json!({"cost_micros":null,"quality_milli":null,"latency_ms":0}),
+        );
+        validate_plan_additives(&plan).unwrap();
+        plan.insert("context_budget_tokens".into(), Value::from(20));
+        assert!(validate_plan_additives(&plan).is_err());
+        plan.insert(
+            "context_budget_policy".into(),
+            serde_json::json!({"kind":"token_limit","tokens":20}),
+        );
+        validate_plan_additives(&plan).unwrap();
+        plan.insert("expected_cost_micros".into(), Value::from(1));
+        assert!(validate_plan_additives(&plan).is_err());
+    }
+
+    #[test]
+    fn plan_additives_reject_unknown_fields_types_and_out_of_range_estimates() {
+        for policy in [
+            serde_json::json!({"kind":"no_token_limit","tokens":0}),
+            serde_json::json!({"kind":"token_limit","tokens":-1}),
+            serde_json::json!({"kind":"invented"}),
+        ] {
+            let mut plan = additive_plan();
+            plan.insert("context_budget_policy".into(), policy);
+            assert!(validate_plan_additives(&plan).is_err());
+        }
+        for estimates in [
+            serde_json::json!({"invented":0}),
+            serde_json::json!({"quality_milli":1001}),
+            serde_json::json!({"latency_ms":"0"}),
+        ] {
+            let mut plan = additive_plan();
+            plan.insert("estimates".into(), estimates);
+            assert!(validate_plan_additives(&plan).is_err());
+        }
+    }
+
+    #[test]
+    fn plan_bindings_validate_selected_identity_unique_versions_and_digest() {
+        let mut plan = additive_plan();
+        let binding = serde_json::json!({"capability_id":"capability:local","version":"1.0.0"});
+        plan.insert(
+            "capability_bindings".into(),
+            serde_json::json!([binding.clone()]),
+        );
+        assert_eq!(plan_capability_bindings(&plan).unwrap().len(), 1);
+        for prefix in ["sha256:", "blake3:", ""] {
+            let mut value = binding.clone();
+            value["manifest_digest"] = Value::from(format!("{prefix}{}", "a".repeat(64)));
+            plan.insert("capability_bindings".into(), serde_json::json!([value]));
+            plan_capability_bindings(&plan).unwrap();
+        }
+        for values in [
+            serde_json::json!([binding.clone(), binding.clone()]),
+            serde_json::json!([{"capability_id":"capability:foreign","version":"1.0.0"}]),
+            serde_json::json!([{"capability_id":"capability:local","version":"1.0.0","manifest_digest":"bad"}]),
+            serde_json::json!([{"capability_id":"capability:local","version":"1.0.0","extra":true}]),
+        ] {
+            plan.insert("capability_bindings".into(), values);
+            assert!(plan_capability_bindings(&plan).is_err());
+        }
+    }
 
     fn artifact(kind: &str, bytes: Vec<u8>) -> (String, InventoryArtifact) {
         (

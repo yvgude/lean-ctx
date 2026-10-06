@@ -1,0 +1,21 @@
+{
+  "schema_version": 1,
+  "normalization": "sha256(casefold(trim(author_name)) + NUL + casefold(trim(author_email)))",
+  "signature_sources": {
+    "cla_v1": "cla-signatures:signatures/v1/cla.json",
+    "cla_v2": "cla-signatures:signatures/v2/cla.json"
+  },
+  "approved_bases": [
+    "cla-v2",
+    "thinkery-authored",
+    "separate-permission",
+    "clean-room"
+  ],
+  "entry_schema": {
+    "status": "approved",
+    "basis": "one approved_bases value",
+    "github_login": "required for cla-v2",
+    "evidence_ref": "required for all other bases; private system reference only"
+  },
+  "identities": {}
+}

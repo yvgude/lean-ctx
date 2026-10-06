@@ -19,6 +19,8 @@ const MIN_PUBLISH_CONFIDENCE: f32 = 0.8;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BridgeEntry {
+    #[serde(default)]
+    pub origin: crate::core::knowledge::FactOrigin,
     pub fact_key: String,
     pub fact_category: String,
     pub fact_value: String,
@@ -96,6 +98,7 @@ impl KnowledgeBridge {
                 continue;
             }
             self.shared_facts.push(BridgeEntry {
+                origin: fact.origin.clone(),
                 fact_key: fact.key.clone(),
                 fact_category: fact.category.clone(),
                 fact_value: fact.value.clone(),
@@ -124,6 +127,7 @@ impl KnowledgeBridge {
     pub fn entry_to_fact(entry: &BridgeEntry) -> KnowledgeFact {
         let now = Utc::now();
         KnowledgeFact {
+            origin: crate::core::knowledge::source_view::imported_origin(&entry.origin),
             category: entry.fact_category.clone(),
             key: entry.fact_key.clone(),
             value: entry.fact_value.clone(),
@@ -215,6 +219,7 @@ pub mod tests {
         archetype: KnowledgeArchetype,
     ) -> KnowledgeFact {
         KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: cat.into(),
             key: key.into(),
             value: val.into(),
@@ -294,6 +299,7 @@ pub mod tests {
     #[test]
     fn entry_to_fact_preserves_provenance() {
         let entry = BridgeEntry {
+            origin: crate::core::knowledge::FactOrigin::Local,
             fact_key: "db".into(),
             fact_category: "arch".into(),
             fact_value: "PostgreSQL".into(),
@@ -329,6 +335,7 @@ pub mod tests {
     fn cleanup_removes_old_entries() {
         let mut bridge = KnowledgeBridge::new("test-hash");
         bridge.shared_facts.push(BridgeEntry {
+            origin: crate::core::knowledge::FactOrigin::Local,
             fact_key: "old".into(),
             fact_category: "arch".into(),
             fact_value: "ancient".into(),
@@ -339,6 +346,7 @@ pub mod tests {
             provenance: "old-session".into(),
         });
         bridge.shared_facts.push(BridgeEntry {
+            origin: crate::core::knowledge::FactOrigin::Local,
             fact_key: "fresh".into(),
             fact_category: "arch".into(),
             fact_value: "new".into(),
@@ -401,6 +409,7 @@ pub mod tests {
     fn cleanup_removes_low_confidence() {
         let mut bridge = KnowledgeBridge::new("test-hash");
         bridge.shared_facts.push(BridgeEntry {
+            origin: crate::core::knowledge::FactOrigin::Local,
             fact_key: "weak".into(),
             fact_category: "arch".into(),
             fact_value: "uncertain".into(),
@@ -411,6 +420,7 @@ pub mod tests {
             provenance: "session".into(),
         });
         bridge.shared_facts.push(BridgeEntry {
+            origin: crate::core::knowledge::FactOrigin::Local,
             fact_key: "strong".into(),
             fact_category: "arch".into(),
             fact_value: "certain".into(),
@@ -428,6 +438,7 @@ pub mod tests {
     #[test]
     fn trust_penalty_reduces_confidence() {
         let entry = BridgeEntry {
+            origin: crate::core::knowledge::FactOrigin::Local,
             fact_key: "k".into(),
             fact_category: "c".into(),
             fact_value: "v".into(),

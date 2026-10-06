@@ -200,6 +200,32 @@ fn builtin_coder() -> Role {
     }
 }
 
+/// A role used when an inherited source view has closed or lost its authority.
+/// Returning a denying role prevents stale worker state from falling through
+/// to a more permissive process-wide active role.
+pub(crate) fn closed_source_view_role() -> Role {
+    Role {
+        role: RoleMeta {
+            name: "closed-source-view".into(),
+            inherits: None,
+            description: "closed source policy view".into(),
+            shell_policy: "deny".into(),
+        },
+        tools: ToolPolicy {
+            allowed: Vec::new(),
+            denied: vec!["*".into()],
+        },
+        io: IoPolicy::default(),
+        limits: RoleLimits {
+            max_context_tokens: 0,
+            max_shell_invocations: 0,
+            max_cost_usd: 0.0,
+            warn_at_percent: 0,
+            block_at_percent: 0,
+        },
+    }
+}
+
 fn builtin_reviewer() -> Role {
     Role {
         role: RoleMeta {
@@ -350,7 +376,15 @@ fn roles_dir_global() -> Option<PathBuf> {
 }
 
 fn roles_dir_project() -> Option<PathBuf> {
-    roles_dir_project_from(None)
+    match crate::core::policy::runtime::REQUEST_PROJECT.try_with(|slot| slot.borrow().clone()) {
+        Ok(Some(project_root)) => {
+            let candidate = project_root.join(".lean-ctx").join("roles");
+            candidate.is_dir().then_some(candidate)
+        }
+        // An explicit unbound scope must not fall back to the process CWD.
+        Ok(None) => None,
+        Err(_) => roles_dir_project_from(None),
+    }
 }
 
 fn roles_dir_project_from(project_root: Option<&str>) -> Option<PathBuf> {
@@ -502,8 +536,30 @@ pub fn active_role_name() -> String {
 }
 
 pub fn active_role() -> Role {
+    if let Some(role) = crate::core::policy::runtime::pinned_role() {
+        return role;
+    }
+    #[cfg(test)]
+    if let Ok(Some(role)) = TEST_ACTIVE_ROLE.try_with(|slot| slot.borrow().clone()) {
+        return role;
+    }
     let name = active_role_name();
     load_role(&name).unwrap_or_else(builtin_coder)
+}
+
+#[cfg(test)]
+tokio::task_local! {
+    static TEST_ACTIVE_ROLE: std::cell::RefCell<Option<Role>>;
+}
+
+#[cfg(test)]
+pub(crate) fn with_test_active_role<T>(role: Role, operation: impl FnOnce() -> T) -> T {
+    TEST_ACTIVE_ROLE.sync_scope(std::cell::RefCell::new(Some(role)), operation)
+}
+
+#[cfg(test)]
+pub(crate) fn set_test_active_role(role: Role) {
+    TEST_ACTIVE_ROLE.with(|slot| *slot.borrow_mut() = Some(role));
 }
 
 /// Roles that grant elevated privileges and cannot be activated via MCP tool calls.

@@ -97,7 +97,7 @@ In addition, roles can restrict **unsafe I/O**:
 
 **Optional network activity (review effective configuration):**
 - **Update check**: a lightweight daily GET to `leanctx.com/version.txt` to notify you of new versions. Sends only the current version as User-Agent. Disable with `update_check_disabled = true` in `~/.lean-ctx/config.toml` or `LEAN_CTX_NO_UPDATE_CHECK=1`.
-- **Telemetry**: this source branch enables product telemetry by default; the published v3.10.5 release defaults it off. Inspect your installed build with `lean-ctx telemetry status` and `lean-ctx telemetry show`. Disable sending with `lean-ctx telemetry off`, `DO_NOT_TRACK=1`, or `LEAN_CTX_TELEMETRY=off`. Enabled telemetry sends installation and aggregate usage metadata. Do not infer zero network activity from telemetry being disabled.
+- **Telemetry**: product telemetry is on by default since v3.11.0 (v3.10.5 and earlier defaulted it off); an explicit earlier opt-out is kept. Inspect your installed build with `lean-ctx telemetry status` and `lean-ctx telemetry show`. Disable sending with `lean-ctx telemetry off`, `DO_NOT_TRACK=1`, or `LEAN_CTX_TELEMETRY=off`. Enabled telemetry sends installation and aggregate usage metadata. Do not infer zero network activity from telemetry being disabled.
 - **Configured providers and integrations**: source connectors, upstream model requests, submitted feedback, and remote endpoints have their own payloads and credentials. Review each enabled path.
 
 **Limits:**

@@ -218,6 +218,19 @@ fn persist_content_checked(
     }
 }
 
+/// Open (creating if absent) the mutable `<digest>.lock` sidecar beside an
+/// artifact directory, through the same handle-relative, no-follow traversal
+/// as artifact publication. Windows byte-range locks are mandatory, so a lock
+/// taken on the immutable artifact itself would block the next opener from
+/// verifying its bytes; the sidecar carries only the lock.
+#[cfg(windows)]
+pub(super) fn open_lock(directory: &str, digest: &str) -> Result<std::fs::File, String> {
+    validate_artifact_name(digest, "json")?;
+    let configured_root =
+        data_dir::lean_ctx_data_dir().map_err(|_| ARTIFACT_BOUNDARY_REJECTED.to_owned())?;
+    windows::open_lock(&configured_root, directory, &format!("{digest}.lock"))
+}
+
 fn validate_artifact_name(digest: &str, extension: &str) -> Result<(), String> {
     if digest.len() != 64 || !digest.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         return Err(ARTIFACT_BOUNDARY_REJECTED.to_owned());

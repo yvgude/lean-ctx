@@ -10,17 +10,15 @@
 //! CCR fixes this by persisting the **verbatim original** to the shared,
 //! content-addressed tee store (`{state}/tee/`, reused from the shell path) and
 //! embedding a **retrieval handle** — the absolute path of that file — in the
-//! stub. Retrieval is MCP-independent: the agent reads the path with its native
-//! file read; no lean-ctx tool has to be attached.
+//! stub. These legacy copies have no source authority and are only available
+//! without an active policy. Protected file recovery uses source-bound archives.
 //!
 //! ## Cache-safety (#448)
 //! The handle is the file path, and the path is a pure function of the content
 //! hash ([`crate::core::hasher::hash_short`]). For a fixed pruned message the
 //! handle is therefore byte-identical on every later turn, so the provider
-//! prompt-cache prefix is never invalidated. The on-disk *write* is best-effort
-//! and never affects the returned handle — only retrievability degrades if the
-//! write (or the 24h TTL cleanup) loses the file, so a stub can never become
-//! non-deterministic based on filesystem state.
+//! prompt-cache prefix is preserved for available copies. Failed or unauthorized
+//! persistence returns no handle; a deterministic path is not proof of recovery.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -38,8 +36,7 @@ const EXPAND_CLOSE: char = '>';
 pub(crate) const MIN_TEE_BYTES: usize = 512;
 
 /// Throttle the O(dir) TTL cleanup so the prune hot path does at most one
-/// directory scan per this interval (the write itself is content-addressed and
-/// idempotent, so steady-state cost is a single `stat`).
+/// directory scan per this interval.
 const CLEANUP_INTERVAL_SECS: u64 = 600;
 
 /// Length of the content hash in a proxy/json tee name ([`hash_short`]).
@@ -82,11 +79,9 @@ fn maybe_cleanup(tee_dir: &Path) {
 
 /// Persist `content` verbatim (best-effort, secret-redacted) to the
 /// content-addressed tee store and return its retrieval handle (the absolute
-/// path). Returns `None` only when `content` is below [`MIN_TEE_BYTES`] or the
-/// state dir can't be resolved — never because the *write* failed, so the
-/// returned handle is a pure function of the content and the embedding stub
-/// stays deterministic. Re-persisting identical content is idempotent: same
-/// content → same path → the existing file is left untouched.
+/// path). Returns `None` for protected originless data, invalid/oversized input
+/// or persistence failure. Re-persisting identical content keeps the same path;
+/// callers must preserve useful fresh output when no recovery handle is available.
 pub(crate) fn persist(content: &str) -> Option<String> {
     persist_with(content, "proxy")
 }
@@ -156,24 +151,9 @@ fn persist_with_min(content: &str, prefix: &str, min_bytes: usize) -> Option<Str
     }
     let path = tee_path(content, prefix)?;
     let handle = path.to_string_lossy().to_string();
-
-    if !path.exists() {
-        if let Some(dir) = path.parent()
-            && std::fs::create_dir_all(dir).is_ok()
-        {
-            maybe_cleanup(dir);
-        }
-        // Same redaction the shell tee applies, so a recovered original can never
-        // re-introduce a secret the live turn would also have masked.
-        let masked = crate::core::redaction::redact_text(content);
-        let (redacted, _) = crate::core::secret_detection::scan_and_redact_from_config(&masked);
-        if std::fs::write(&path, redacted).is_ok() {
-            #[cfg(unix)]
-            {
-                use std::os::unix::fs::PermissionsExt;
-                let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-            }
-        }
+    storage::write(&path, content)?;
+    if let Some(dir) = path.parent() {
+        maybe_cleanup(dir);
     }
     if path.is_file() {
         let source_tool = match prefix {
@@ -380,11 +360,11 @@ pub(crate) fn inband_locator(handle: &str) -> Option<String> {
         .flatten()
 }
 
-/// Read a tee file that [`resolve_tee`] returned, without following a link
-/// planted after resolution (the read is bound to the checked file).
+/// Read a tee file that [`resolve_tee`] returned. One read path for every
+/// caller: bounded, no-follow and bound to the checked file, re-checked
+/// against the current policy and re-admitted by the context gateway.
 pub(crate) fn read_tee_file(path: &Path) -> Option<String> {
-    let tee_dir = crate::core::paths::state_dir().ok()?.join("tee");
-    crate::core::atomic_fs::read_store_file(&tee_dir, path).ok()
+    read_checked_tee(path)
 }
 
 /// Resolve and read a tee handle in one step.
@@ -400,6 +380,12 @@ fn recover(hash: &str) -> Option<String> {
     }
     read_tee(hash)
 }
+
+pub(crate) use storage::{
+    read as read_checked_tee, read_detailed as read_tee_detailed, write as write_tee,
+};
+
+mod storage;
 
 /// Length of a LiteLLM gateway retrieval hash (#702): LiteLLM's headroom
 /// guardrail scans compressed text with `hash=([a-f0-9]{24})`

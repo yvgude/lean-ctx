@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 use chrono::Utc;
 
 use super::{AgentRegistry, AgentStatus};
@@ -11,6 +12,7 @@ fn persistent_presence_roundtrips_lifecycle_for_owning_process() {
             "mcp",
             Some("context-engine"),
             "/project",
+            None,
             std::process::id(),
         )
         .expect("current process has an identity");
@@ -67,6 +69,7 @@ fn compatibility_index_survives_an_old_registry_writer() {
             "mcp",
             Some("context-engine"),
             "/project",
+            None,
             std::process::id(),
         )
         .expect("current process has an identity");
@@ -99,7 +102,7 @@ fn corrupt_registry_fails_closed_without_overwrite() {
     std::fs::write(&registry_path, corrupt).expect("corrupt fixture");
 
     let error = AgentRegistry::mutate_locked(|registry| {
-        let _ = registry.register_process("mcp", Some("context-engine"), "/project", 101);
+        let _ = registry.register_process("mcp", Some("context-engine"), "/project", None, 101);
     })
     .expect_err("corrupt registry must reject mutation");
 
@@ -120,7 +123,7 @@ fn agents_dir_creation_failure_names_the_path_and_operation() {
     std::fs::write(&blocker, b"not a directory").expect("blocking file");
 
     let error = AgentRegistry::mutate_locked(|registry| {
-        let _ = registry.register_process("mcp", Some("context-engine"), "/project", 101);
+        let _ = registry.register_process("mcp", Some("context-engine"), "/project", None, 101);
     })
     .expect_err("a file in place of the agents directory must fail");
 
@@ -139,10 +142,10 @@ fn reregistering_process_refreshes_metadata_without_duplication() {
     let mut registry = AgentRegistry::new();
     let pid = std::process::id();
     let first = registry
-        .register_process("unknown", None, "/old", pid)
+        .register_process("unknown", None, "/old", None, pid)
         .expect("current process has an identity");
     let second = registry
-        .register_process("mcp", Some("context-engine"), "/new", pid)
+        .register_process("mcp", Some("context-engine"), "/new", None, pid)
         .expect("same process can re-register");
 
     assert_eq!(first, second);
@@ -160,6 +163,7 @@ fn logical_sessions_are_keyed_independently_of_transport_processes() {
             "mcp",
             Some("context-engine"),
             "/project",
+            None,
             std::process::id(),
         )
         .expect("current process has an identity");

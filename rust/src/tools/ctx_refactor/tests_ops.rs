@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Tests for the refactor operations (rename/safe-delete/move/inline gating).
 
 #[test]
@@ -135,6 +137,7 @@ fn apply_blocks_on_plan_hash_mismatch() {
 
 #[test]
 fn apply_blocks_on_conflicts_without_force_and_passes_with_force() {
+    let _data = crate::core::data_dir::isolated_data_dir();
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.rs"), "let foo = 1;\nfoo + foo;\n").unwrap();
     let root = dir.path().to_str().unwrap();
@@ -180,6 +183,7 @@ fn apply_blocks_on_conflicts_without_force_and_passes_with_force() {
 
 #[test]
 fn apply_success_emits_diff_and_evicts() {
+    let _data = crate::core::data_dir::isolated_data_dir();
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.rs"), "let foo = 1;\nfoo + foo;\n").unwrap();
     let root = dir.path().to_str().unwrap();
@@ -410,6 +414,7 @@ fn move_query(abs: &str) -> crate::lsp::backend::MoveQuery {
 
 #[test]
 fn move_apply_gates_then_evicts() {
+    let _data = crate::core::data_dir::isolated_data_dir();
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("app/moved")).unwrap();
     std::fs::write(dir.path().join("a.rs"), "let foo = 1;\nfoo + foo;\n").unwrap();
@@ -643,6 +648,8 @@ fn safe_delete_query(abs: &str) -> crate::lsp::backend::SafeDeleteQuery {
 
 #[test]
 fn safe_delete_apply_blocks_on_remaining_refs_without_force() {
+    // Successful apply also mutates the process-global CLI-cache store.
+    let _data = crate::core::data_dir::isolated_data_dir();
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.rs"), "let foo = 1;\nfoo + foo;\n").unwrap();
     let root = dir.path().to_str().unwrap();
@@ -972,6 +979,34 @@ fn reformat_command_path_reports_changed_and_invalidates_single_file() {
         out2.contains("— unchanged"),
         "second run must report unchanged; got: {out2}"
     );
+}
+
+#[test]
+fn reformat_command_reports_changed_files_when_cache_eviction_fails() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let source = dir.path().join("drift.rs");
+    let original = "fn   x( ){let y=1;}\n";
+    std::fs::write(&source, original).unwrap();
+    let cache = crate::core::data_dir::lean_ctx_data_dir()
+        .unwrap()
+        .join("cli-cache/cache.json");
+    std::fs::create_dir_all(cache.parent().unwrap()).unwrap();
+    std::fs::write(&cache, "{broken cache").unwrap();
+
+    // Run the real formatter; an error after its side effect must not imply rollback.
+    let result = super::handle_reformat_refactor(
+        &serde_json::json!({ "action": "reformat", "path": "drift.rs" }),
+        dir.path().to_str().unwrap(),
+    );
+    assert_ne!(std::fs::read_to_string(&source).unwrap(), original);
+    assert!(result.starts_with("ERROR: CACHE_INVALIDATION:"), "{result}");
+    assert!(
+        result.contains("file changed but cache eviction failed"),
+        "{result}"
+    );
+    assert!(!result.contains("— changed"), "false success: {result}");
+    assert_eq!(std::fs::read_to_string(&cache).unwrap(), "{broken cache");
 }
 
 #[test]

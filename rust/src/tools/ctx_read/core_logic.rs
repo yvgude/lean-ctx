@@ -635,6 +635,20 @@ pub(super) fn handle_full_with_auto_delta(
 /// `process_mode_tuned` (which would report it as an unknown mode and fall back
 /// to dumping the entire file, #1584).
 pub(crate) fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) -> (String, usize) {
+    let (output, sent, baseline) = prepare_diff(cache, path, file_ref);
+    if let Some(content) = baseline {
+        let result = cache.store(path, &content);
+        crate::core::telemetry::global_metrics().record_cache(result.was_hit);
+    }
+    (output, sent)
+}
+
+/// Prepare a delta without advancing its baseline until the caller delivers it.
+pub(crate) fn prepare_diff(
+    cache: &SessionCache,
+    path: &str,
+    file_ref: &str,
+) -> (String, usize, Option<String>) {
     let _mode_guard = crate::core::savings_footer::ModeGuard::new("diff");
     let short = protocol::shorten_path(path);
     let old_content = cache
@@ -646,7 +660,7 @@ pub(crate) fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) 
         Err(e) => {
             let msg = format!("ERROR: {e}");
             let tokens = count_tokens(&msg);
-            return (msg, tokens);
+            return (msg, tokens, None);
         }
     };
 
@@ -657,17 +671,12 @@ pub(crate) fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) 
     } else {
         // No previous version cached — store content for future diffs but
         // return a short guidance message instead of dumping the full file.
-        let store_result = cache.store(path, &new_content);
-        crate::core::telemetry::global_metrics().record_cache(store_result.was_hit);
         let msg = format!(
             "{file_ref}={short} [no cached version for diff — use mode=full first, then diff on re-read]"
         );
         let sent = count_tokens(&msg);
-        return (msg, sent);
+        return (msg, sent, Some(new_content));
     };
-
-    let store_result = cache.store(path, &new_content);
-    crate::core::telemetry::global_metrics().record_cache(store_result.was_hit);
 
     let sent = count_tokens(&diff_output);
     let savings = protocol::format_savings(original_tokens, sent);
@@ -676,7 +685,11 @@ pub(crate) fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) 
     } else {
         short
     };
-    (format!("{head} [diff]\n{diff_output}\n{savings}"), sent)
+    (
+        format!("{head} [diff]\n{diff_output}\n{savings}"),
+        sent,
+        Some(new_content),
+    )
 }
 
 #[cfg(test)]

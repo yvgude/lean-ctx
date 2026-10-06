@@ -11,7 +11,7 @@ type TraitEntry = (
     for<'a> fn(&'a crate::core::ocla::OclaRegistry) -> &'a dyn OclaService,
 );
 
-const TRAITS: [TraitEntry; 14] = [
+const TRAITS: [TraitEntry; 13] = [
     ("observation_hook", |r| r.observation_hook.as_ref()),
     ("usage_sink", |r| r.usage_sink.as_ref()),
     ("metrics_exporter", |r| r.metrics_exporter.as_ref()),
@@ -20,7 +20,6 @@ const TRAITS: [TraitEntry; 14] = [
     ("outcome_tracker", |r| r.outcome_tracker.as_ref()),
     ("compression_provider", |r| r.compression_provider.as_ref()),
     ("response_optimizer", |r| r.response_optimizer.as_ref()),
-    ("model_router", |r| r.model_router.as_ref()),
     ("efficiency_analyzer", |r| r.efficiency_analyzer.as_ref()),
     ("config_tuner", |r| r.config_tuner.as_ref()),
     ("experiment_runner", |r| r.experiment_runner.as_ref()),

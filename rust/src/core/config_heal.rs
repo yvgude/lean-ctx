@@ -53,6 +53,11 @@ pub(crate) fn heal() -> Option<ConfigHealReport> {
 /// old config file was left behind. Uses the same adopt/supersede logic as
 /// [`heal`].
 pub(crate) fn heal_legacy_config() -> Option<ConfigHealReport> {
+    // GH #2007: with LEAN_CTX_CONFIG_DIR pointing at a scratch dir, the real
+    // ~/.lean-ctx/config.toml looked stale and was moved aside.
+    if crate::core::paths::dir_override_active() {
+        return None;
+    }
     let config_dir = crate::core::paths::config_dir().ok()?;
     let legacy_dir = dirs::home_dir()?.join(".lean-ctx");
     if legacy_dir == config_dir {
@@ -65,6 +70,10 @@ pub(crate) fn heal_legacy_config() -> Option<ConfigHealReport> {
 /// active config dir is elsewhere (e.g. a single-dir `~/.lean-ctx` install).
 /// GH #1421: prevents user confusion from editing the "wrong" config file.
 pub(crate) fn heal_xdg_stale_config() -> Option<ConfigHealReport> {
+    // GH #2007: an override never makes the default XDG config stale.
+    if crate::core::paths::dir_override_active() {
+        return None;
+    }
     let config_dir = crate::core::paths::config_dir().ok()?;
     let xdg_config = crate::core::paths::xdg_config_lean_ctx_dir()?;
     if xdg_config == config_dir {
@@ -264,6 +273,61 @@ mod tests {
         assert!(
             legacy_dir.join("config.toml.superseded").exists(),
             "stale legacy copy must be preserved as .superseded"
+        );
+    }
+
+    // GH #2007: a process started with LEAN_CTX_CONFIG_DIR / _DATA_DIR pointing
+    // at a scratch dir renamed the real ~/.lean-ctx/config.toml to
+    // config.toml.superseded. An override applies to that process only.
+    #[cfg(unix)]
+    #[test]
+    fn heal_all_leaves_default_locations_alone_under_a_dir_override() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let xdg_config = tmp.path().join("xc");
+        let scratch = tmp.path().join("scratch");
+        write(&home.join(".lean-ctx/config.toml"), "real_legacy = true\n");
+        write(
+            &xdg_config.join("lean-ctx/config.toml"),
+            "real_xdg = true\n",
+        );
+        write(&scratch.join("config/config.toml"), "scratch = true\n");
+        let names = [
+            "HOME",
+            "XDG_CONFIG_HOME",
+            "LEAN_CTX_CONFIG_DIR",
+            "LEAN_CTX_DATA_DIR",
+            "LEAN_CTX_STATE_DIR",
+            "LEAN_CTX_CACHE_DIR",
+        ];
+        let saved: Vec<_> = names.iter().map(|k| (*k, std::env::var_os(k))).collect();
+        crate::test_env::set_var("HOME", &home);
+        crate::test_env::set_var("XDG_CONFIG_HOME", &xdg_config);
+        crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", scratch.join("config"));
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", scratch.join("data"));
+        crate::test_env::remove_var("LEAN_CTX_STATE_DIR");
+        crate::test_env::remove_var("LEAN_CTX_CACHE_DIR");
+
+        let legacy = heal_legacy_config();
+        let xdg = heal_xdg_stale_config();
+
+        for (k, v) in saved {
+            match v {
+                Some(value) => crate::test_env::set_var(k, value),
+                None => crate::test_env::remove_var(k),
+            }
+        }
+        assert_eq!(legacy, None);
+        assert_eq!(xdg, None);
+        assert_eq!(
+            std::fs::read_to_string(home.join(".lean-ctx/config.toml")).unwrap(),
+            "real_legacy = true\n"
+        );
+        assert!(!home.join(".lean-ctx/config.toml.superseded").exists());
+        assert_eq!(
+            std::fs::read_to_string(xdg_config.join("lean-ctx/config.toml")).unwrap(),
+            "real_xdg = true\n"
         );
     }
 

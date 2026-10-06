@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 #![allow(clippy::await_holding_lock)]
 
 use serde_json::json;
@@ -160,6 +161,12 @@ async fn phase2_read_full_and_cache_stub() {
     let project = _dir.path().join("project");
     let main_path = project.join("src/main.rs").to_string_lossy().to_string();
 
+    // Keep opportunistic auto-context on the first read: a cold graph can
+    // finish between reads and otherwise enlarge the second response.
+    let graph = lean_ctx::core::graph_provider::open_or_build(&project.to_string_lossy());
+    assert!(graph.is_some(), "test setup must prewarm the graph");
+    drop(graph);
+
     let full1 = engine
         .call_tool_text("ctx_read", Some(json!({"path": main_path, "mode": "full"})))
         .await
@@ -175,7 +182,7 @@ async fn phase2_read_full_and_cache_stub() {
         .expect("full read 2");
     assert!(
         full2.len() <= full1.len(),
-        "re-read should be stub or same size (full1={}, full2={})",
+        "re-read should be stub or same size (full1={}, full2={})\nfirst:\n{full1}\nsecond:\n{full2}",
         full1.len(),
         full2.len()
     );
@@ -350,10 +357,7 @@ async fn phase3_search_regex() {
         .call_tool_text("ctx_search", Some(json!({"pattern": "fn main"})))
         .await
         .expect("search");
-    assert!(
-        out.contains("main") || out.contains("src/main.rs"),
-        "search should find fn main: {out}"
-    );
+    assert!(out.contains("fn main"), "search should find fn main: {out}");
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
@@ -382,6 +386,45 @@ async fn phase3_search_with_path_filter() {
     unsafe {
         std::env::remove_var("LEAN_CTX_DATA_DIR");
     }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn phase3_default_search_stays_in_each_engine_project() {
+    let _lock = lean_ctx::core::data_dir::test_env_lock();
+    let (first, first_engine) = setup_project();
+    let (second, second_engine) = setup_project();
+    for (directory, marker) in [
+        (&first, "FIRST_SCOPE_PROBE"),
+        (&second, "SECOND_SCOPE_PROBE"),
+    ] {
+        std::fs::write(
+            directory.path().join("project/src/main.rs"),
+            format!("fn main() {{ /* {marker} */ }}\n"),
+        )
+        .unwrap();
+    }
+
+    // Identical queries in distinct live engines must not share the process
+    // CWD or a cache entry keyed by that CWD, even without conversation scope.
+    for (engine, expected, excluded) in [
+        (&first_engine, "FIRST_SCOPE_PROBE", "SECOND_SCOPE_PROBE"),
+        (&second_engine, "SECOND_SCOPE_PROBE", "FIRST_SCOPE_PROBE"),
+    ] {
+        let out = engine
+            .call_tool_text("ctx_search", Some(json!({"pattern": "SCOPE_PROBE"})))
+            .await
+            .expect("project-scoped search");
+        assert!(
+            out.contains(expected),
+            "search must return its project's source: {out}"
+        );
+        assert!(
+            !out.contains(excluded),
+            "search must not return the other project: {out}"
+        );
+    }
+    // SAFETY: serialized by `test_env_lock()`.
+    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
 }
 
 // ── Phase 4: Shell & Execution ─────────────────────────────

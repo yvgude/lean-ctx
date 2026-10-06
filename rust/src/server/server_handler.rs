@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `rmcp::ServerHandler` trait implementation for [`LeanCtxServer`].
 //!
 //! Split out of `server/mod.rs`; `use super::*` re-imports the parent module’s
@@ -6,6 +7,17 @@
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
+
+/// rmcp moves wire `_meta` into RequestContext before calling the handler.
+/// Retain the existing guarded dispatcher and progress-token readers as owners.
+fn restore_tool_meta(request: &mut CallToolRequestParams, transport_meta: &rmcp::model::Meta) {
+    if !transport_meta.is_empty() {
+        request
+            .meta
+            .get_or_insert_with(rmcp::model::Meta::new)
+            .extend(transport_meta.clone());
+    }
+}
 
 /// Builds the advertised MCP server capabilities.
 ///
@@ -175,7 +187,6 @@ impl ServerHandler for LeanCtxServer {
         let agent_id_handle = self.agent_id.clone();
         let presence_agent_id_handle = self.presence_agent_id.clone();
         let presence_role_handle = self.presence_role.clone();
-        let presence_read_only_handle = self.presence_read_only.clone();
         tokio::task::spawn_blocking(move || {
             if std::env::var("LEAN_CTX_HEADLESS").is_ok() {
                 return;
@@ -241,41 +252,11 @@ impl ServerHandler for LeanCtxServer {
 
                 let registration = crate::core::agents::AgentRegistry::mutate_locked(|registry| {
                     registry.cleanup_stale(24);
-                    registry.register("mcp", Some(effective_role), &agent_root)
+                    registry.register("mcp", Some(effective_role), &agent_root, None)
                 })
                 .and_then(|(_, id)| id);
                 let id = match registration {
-                    Ok(id) => {
-                        presence_read_only_handle
-                            .store(false, std::sync::atomic::Ordering::Relaxed);
-                        Some(id)
-                    }
-                    // #1765: over the mutating cap the session is admitted
-                    // read-only instead of losing every tool — reads included —
-                    // until an unrelated session's lease lapses.
-                    Err(error)
-                        if crate::core::agents::AgentRegistry::is_mutating_capacity_error(
-                            &error,
-                        ) =>
-                    {
-                        tracing::warn!(
-                            "lean-ctx: {error}; admitting {effective_role} session read-only"
-                        );
-                        match crate::core::agents::AgentRegistry::admit_read_only_presence(
-                            &agent_root,
-                            effective_role,
-                        ) {
-                            Ok(id) => {
-                                presence_read_only_handle
-                                    .store(true, std::sync::atomic::Ordering::Relaxed);
-                                Some(id)
-                            }
-                            Err(error) => {
-                                tracing::warn!("lean-ctx: read-only admission failed: {error}");
-                                None
-                            }
-                        }
-                    }
+                    Ok(id) => Some(id),
                     Err(error) => {
                         tracing::warn!("lean-ctx: agent registration failed: {error}");
                         None
@@ -666,10 +647,12 @@ impl ServerHandler for LeanCtxServer {
 
     async fn call_tool(
         &self,
-        request: CallToolRequestParams,
+        mut request: CallToolRequestParams,
         context: RequestContext<RoleServer>,
     ) -> Result<CallToolResult, ErrorData> {
         use std::panic::AssertUnwindSafe;
+
+        restore_tool_meta(&mut request, &context.meta);
 
         let progress_token = request
             .meta
@@ -986,6 +969,54 @@ mod tests {
             "explicit auto_inject_rules=true must preserve startup rule maintenance"
         );
     }
+
+    #[test]
+    fn host_task_scope_retains_wire_metadata_for_receipt_replay() {
+        use rmcp::model::{CallToolRequest, Meta};
+        let mut wire: CallToolRequest = serde_json::from_value(serde_json::json!({
+            "method":"tools/call", "params":{"name":"ctx_read", "arguments":{},
+                "_meta":{"requestId":"wire-retry", "progressToken":19}}
+        }))
+        .unwrap();
+        assert!(wire.params.meta.is_none());
+        let transported = wire.extensions.get::<Meta>().unwrap().clone();
+        restore_tool_meta(&mut wire.params, &transported);
+        assert_eq!(
+            wire.params.meta.as_ref().unwrap().0["requestId"],
+            "wire-retry"
+        );
+        assert_eq!(wire.params.meta.as_ref().unwrap().0["progressToken"], 19);
+        assert!(
+            wire.params
+                .meta
+                .as_ref()
+                .unwrap()
+                .get_progress_token()
+                .is_some()
+        );
+        wire.params
+            .meta
+            .as_mut()
+            .unwrap()
+            .0
+            .insert("requestId".into(), "local-conflict".into());
+        wire.params
+            .meta
+            .as_mut()
+            .unwrap()
+            .0
+            .insert("local-only".into(), true.into());
+        restore_tool_meta(&mut wire.params, &transported);
+        assert_eq!(
+            wire.params.meta.as_ref().unwrap().0["requestId"],
+            "wire-retry"
+        );
+        assert_eq!(wire.params.meta.as_ref().unwrap().0["local-only"], true);
+        let before = wire.params.meta.clone();
+        restore_tool_meta(&mut wire.params, &Meta::new());
+        assert_eq!(wire.params.meta, before);
+    }
+
     /// lean-ctx emits `notifications/tools/list_changed` whenever a tool call
     /// mutates the dynamic tool set. The capability MUST be advertised on every
     /// client surface (resources/prompts on or off) — otherwise a strict client

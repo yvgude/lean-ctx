@@ -126,7 +126,10 @@ fn current_full_content_serves_cached_when_fresh() {
     let mut cache = SessionCache::new();
     cache.store(path, "HANDOVER V1\n");
 
-    let (content, tokens) = cache.current_full_content(path).unwrap();
+    let (content, tokens) = cache
+        .current_full_content(path)
+        .expect("cache entry")
+        .expect("admitted");
     assert_eq!(content, "HANDOVER V1\n");
     assert!(tokens > 0);
 }
@@ -147,7 +150,10 @@ fn current_full_content_rereads_when_file_changed() {
     std::thread::sleep(std::time::Duration::from_millis(10));
     std::fs::write(&file, "HANDOVER V2 CHANGED\n").unwrap();
 
-    let (content, _) = cache.current_full_content(path).unwrap();
+    let (content, _) = cache
+        .current_full_content(path)
+        .expect("cache entry")
+        .expect("admitted");
     assert_eq!(
         content, "HANDOVER V2 CHANGED\n",
         "stale cached copy must be re-read from disk, not served as-is"
@@ -176,7 +182,10 @@ fn current_full_content_falls_back_to_cache_when_file_unreadable() {
     cache.store(&path, "ORIGINAL\n");
     std::fs::remove_file(&file).unwrap();
 
-    let (content, _) = cache.current_full_content(&path).unwrap();
+    let (content, _) = cache
+        .current_full_content(&path)
+        .expect("cache entry")
+        .expect("admitted");
     assert_eq!(
         content, "ORIGINAL\n",
         "unreadable file must fall back to last-known cached content"

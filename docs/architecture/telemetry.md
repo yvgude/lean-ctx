@@ -26,8 +26,29 @@ personenbezogenes Datum gelten.
 ## Standard-an
 
 `TelemetryConfig` trägt `enabled` (Standard `true`), `preference` und
-`last_heartbeat`. Die Zustimmung erfolgt bei der Installation; einen
-zusätzlichen Laufzeithinweis als Sendegatter gibt es nicht.
+`last_heartbeat`. Offenlegung statt Sendegatter, an drei Stellen mit derselben
+Liste aus `core::telemetry_consent::DISCLOSURE`:
+
+- **Setup** fragt „Keep anonymous telemetry on? [Y/n]“ und listet die
+  gesendeten Kategorien. Beide Antworten werden persistiert; ein „n“ schreibt
+  `enabled = false` und `preference = "explicitly_disabled"` und überlebt jedes
+  spätere Upgrade.
+- **`telemetry on`** zeigt die Liste nach dem Einschalten.
+- **Einmaliger Hinweis** beim ersten interaktiven Befehl (stdin und stderr sind
+  Terminals; nie für MCP, Hooks, Server-Modus, Pipes; nie auf stdout), solange
+  die Telemetrie tatsächlich senden würde. Die gesehene Version steht in
+  `$STATE/telemetry_notice_version`; `NOTICE_VERSION` wird erhöht, wenn die
+  Liste eine Kategorie gewinnt.
+
+Vor 3.11.0 wurde ein abgelehntes Setup nicht gespeichert; solche Installationen
+sind nach dem Upgrade an und sehen den Hinweis.
+
+**CI sammelt und sendet nie.** `CI` (ausser `false`/`0`) und die üblichen
+Anbieter-Marker (`GITHUB_ACTIONS`, `GITLAB_CI`, `BUILDKITE`, `CIRCLECI`,
+`JENKINS_URL`, `TF_BUILD`, …) sperren Sammeln und Senden; jeder Lauf hätte sonst
+ein frisches Home und zählte als neue Installation. `LEAN_CTX_TELEMETRY_IN_CI=1`
+nimmt eine Maschine, die einen solchen Marker aus anderen Gründen setzt, wieder
+auf. `telemetry status` nennt den Grund.
 
 Entscheidend ist das Präferenzmodell:
 

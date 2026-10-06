@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx pack [<path>] --limit 128k` — one budgeted XML bundle for chat
 //! products (#1885). The engine lives in `core::context_bundle`; this module
 //! only parses flags and routes the output.

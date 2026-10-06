@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
@@ -127,6 +128,12 @@ mod tests {
     #[test]
     fn successful_build_output_is_folded_and_recoverable() {
         use std::fmt::Write as _;
+        // The tee path is derived from the data dir and re-checked at write time:
+        // hold an isolated data dir so a parallel test cannot move it in between.
+        let _data = crate::core::data_dir::isolated_data_dir();
+        // The recovery tee is Community-only: hold the policy test lock with no
+        // policy, so a parallel test's scoped policy cannot suppress the handle.
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let mut noisy = String::new();
         for i in 0..400 {
             let _ = writeln!(noisy, "   Compiling crate-{i} v0.1.{i} (/tmp/x)");

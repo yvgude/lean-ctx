@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Semantic escalation for call edges structure cannot settle.
 //!
 //! Only edges whose callee tree-sitter could not bind to the caller's scope

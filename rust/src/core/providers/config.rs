@@ -1,13 +1,27 @@
 use std::env;
 
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct GitLabConfig {
     pub host: String,
     pub token: String,
     pub project_path: Option<String>,
 }
 
+impl std::fmt::Debug for GitLabConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("GitLabConfig")
+            .field("host", &self.host)
+            .field("token", &"[REDACTED]")
+            .field("project_path", &self.project_path)
+            .finish()
+    }
+}
+
 impl GitLabConfig {
+    pub(crate) fn from_session() -> Result<Self, String> {
+        super::selected_gitlab::config().map_or_else(Self::from_env, Ok)
+    }
+
     pub fn from_env() -> Result<Self, String> {
         let token = env::var("LEAN_CTX_GITLAB_TOKEN")
             .or_else(|_| env::var("GITLAB_TOKEN"))

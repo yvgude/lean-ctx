@@ -171,10 +171,10 @@ impl ManualSelectionRecordV1 {
             }
             if arm.receipt_refs.is_empty()
                 || !arm.receipt_refs.windows(2).all(|pair| pair[0] < pair[1])
-                || arm
-                    .receipt_refs
-                    .iter()
-                    .any(|reference| reference.strip_prefix("receipt:").is_none_or(str::is_empty))
+                || arm.receipt_refs.iter().any(|reference| {
+                    crate::core::agent_connector::receipt::canonical_receipt_digest(reference)
+                        .is_err()
+                })
             {
                 return Err(
                     "manual selection evidence requires canonical receipt references".into(),
@@ -510,12 +510,8 @@ fn matches_selection_arm(
 
 fn has_receipt_artifacts(files: &BTreeMap<String, Vec<u8>>, arm: &SelectionEvidenceArmV1) -> bool {
     arm.receipt_refs.iter().all(|reference| {
-        let Some(receipt_id) = reference.strip_prefix("receipt:") else {
-            return false;
-        };
-        ["receipt", "provider-evidence", "public-key"]
-            .into_iter()
-            .all(|kind| files.contains_key(&format!("execution-receipts/{receipt_id}/{kind}")))
+        crate::core::agent_connector::receipt::verify_bundled_receipt(reference, files)
+            .unwrap_or(false)
     })
 }
 
@@ -602,7 +598,7 @@ mod tests {
             spec_version: "1.0.0".into(),
             spec_digest: format!("blake3:{}", "a".repeat(64)),
             result_digest: format!("blake3:{}", "b".repeat(64)),
-            receipt_refs: vec!["receipt:receipt-proof".into()],
+            receipt_refs: vec![format!("id:sha256:{}", "d".repeat(64))],
         }
     }
 
@@ -674,6 +670,7 @@ mod tests {
                 output_digest: "digest".into(),
             }),
             execution_receipt_ref: Some(receipt_ref),
+            capability_observation: None,
         }];
         BenchmarkResult {
             spec_id: spec.id.clone(),
@@ -726,6 +723,7 @@ mod tests {
             max_turns: None,
             profile_name: Some("exploration".into()),
             profile_hash: None,
+            delivery_profile: None,
         };
         let receipt = record_provider_receipt(
             "codex",
@@ -774,6 +772,35 @@ mod tests {
         )
         .expect("fixture selection record");
         (record, bundle_path)
+    }
+
+    #[test]
+    fn bundled_receipts_require_complete_untampered_canonical_evidence() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let directory = tempfile::tempdir().unwrap();
+        let (record, bundle_path) = verified_record(directory.path());
+        let files = read_bundle_files(&std::fs::read(bundle_path).unwrap()).unwrap();
+        let arm = &record.evidence_arms[0];
+        assert!(has_receipt_artifacts(&files, arm));
+        let artifact_paths: Vec<_> = files
+            .keys()
+            .filter(|path| path.starts_with("execution-receipts/"))
+            .cloned()
+            .collect();
+        assert!(artifact_paths.len() >= 3);
+        for path in artifact_paths {
+            let mut missing = files.clone();
+            missing.remove(&path);
+            assert!(!has_receipt_artifacts(&missing, arm), "missing {path}");
+            let mut tampered = files.clone();
+            tampered.get_mut(&path).unwrap().push(b' ');
+            assert!(!has_receipt_artifacts(&tampered, arm), "tampered {path}");
+        }
+        for reference in ["receipt:legacy", "id:sha256:../escape", "id:sha256:abc"] {
+            let mut invalid = arm.clone();
+            invalid.receipt_refs = vec![reference.into()];
+            assert!(!has_receipt_artifacts(&files, &invalid));
+        }
     }
 
     #[test]

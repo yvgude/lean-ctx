@@ -87,10 +87,12 @@ To refresh integration wiring without changing rules files:
 lean-ctx update --skip-rules
 ```
 
-The updater compares the installed version to the latest release, verifies the
-asset against `SHA256SUMS`, replaces the binary atomically, and runs a
-non-interactive wiring refresh. Avoid `--insecure` except for an explicitly
-approved exception; it bypasses checksum verification.
+The updater compares the installed version to the latest release, requires a
+matching `release-manifest.json` and `SHA256SUMS`, retains the previous binary
+in a digest-bound receipt, atomically replaces the binary, and runs a
+non-interactive wiring refresh. Verification is fail-closed; there is no
+`--insecure` bypass. Use `lean-ctx update --rollback` to restore the retained
+binary after a verified update.
 
 Re-running the installer is also safe: it stops the running instance before its
 atomic replacement.
@@ -244,8 +246,8 @@ Never use `kill` or `pkill` to replace a KeepAlive proxy.
 ### The upgrade cannot download or verify a release
 
 Check firewall and proxy policy for GitHub Releases. For controlled networks,
-use the approved offline artifact and checksum; do not routinely bypass
-verification with `--insecure`.
+use the approved offline artifact bundle containing the release manifest and
+checksum; do not bypass verification.
 
 ### An upgrade has breaking changes
 

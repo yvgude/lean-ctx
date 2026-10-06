@@ -18,27 +18,26 @@ pub fn handle(
         }
     };
 
-    let mut store = TaskStore::load();
-    store.cleanup_old(72);
-
-    let result = match action {
-        "create" => handle_create(&mut store, agent, to_agent, description),
-        "update" => handle_update(&mut store, agent, task_id, state, message),
-        "list" => handle_list(&store, agent),
-        "get" => handle_get(&store, task_id),
-        "cancel" => handle_cancel(&mut store, agent, task_id, message),
-        "message" => handle_message(&mut store, agent, task_id, message),
-        "info" => handle_info(&store),
-        _ => format!(
-            "Unknown action '{action}'. Available: create, update, list, get, cancel, message, info"
-        ),
+    let path = match TaskStore::default_path() {
+        Ok(path) => path,
+        Err(error) => return format!("Error: task storage unavailable: {error}"),
     };
-
-    if matches!(action, "create" | "update" | "cancel" | "message") {
-        let _ = store.save();
-    }
-
-    result
+    TaskStore::mutate_locked(&path, |store| {
+        store.cleanup_old(72);
+        Ok(match action {
+            "create" => handle_create(store, agent, to_agent, description),
+            "update" => handle_update(store, agent, task_id, state, message),
+            "list" => handle_list(store, agent),
+            "get" => handle_get(store, task_id),
+            "cancel" => handle_cancel(store, agent, task_id, message),
+            "message" => handle_message(store, agent, task_id, message),
+            "info" => handle_info(store),
+            _ => format!(
+                "Unknown action '{action}'. Available: create, update, list, get, cancel, message, info"
+            ),
+        })
+    })
+    .unwrap_or_else(|error: std::io::Error| format!("Error: task storage unavailable: {error}"))
 }
 
 fn handle_create(

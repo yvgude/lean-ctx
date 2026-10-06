@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Semantic code intelligence on top of the tree-sitter structure.
 //!
 //! Tree-sitter is the always-available baseline: it extracts symbols, imports

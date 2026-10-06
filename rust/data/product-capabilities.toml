@@ -1,0 +1,1329 @@
+# Canonical v4 capability registry: price, source and use rights are independent.
+# Historical IDs are stable lookup names, not product-tier authority.
+schema_version = 2
+projection = "public"
+
+[aliases]
+"ast_compression" = "trust.runtime.ast_compression"
+"audit_retention" = "team.audit_retention"
+"audit_trail" = "trust.runtime.audit_trail"
+"caching" = "trust.runtime.caching"
+"cloud_sync" = "pro.cloud_sync"
+"compression" = "trust.runtime.compression"
+"gateway" = "trust.runtime.gateway"
+"hosted_index" = "pro.hosted_index"
+"http_server" = "trust.runtime.http_server"
+"knowledge" = "trust.runtime.knowledge"
+"managed_connectors" = "team.managed_connectors"
+"private_registry" = "team.private_registry"
+"revenue_share" = "team.revenue_share"
+"routing" = "trust.runtime.routing"
+"savings_ledger" = "trust.runtime.savings_ledger"
+"semantic_search" = "trust.runtime.semantic_search"
+"sensitivity_floor" = "trust.runtime.sensitivity_floor"
+"session" = "trust.runtime.session"
+"shape_translation" = "trust.runtime.shape_translation"
+"sso_oidc" = "team.sso_oidc"
+"sso_scim" = "enterprise.sso_scim"
+"team_seat_value_v1" = "trust.protocol.team_seat_value"
+"wasm_runtime" = "trust.runtime.wasm"
+
+[[capability]]
+id = "trust.ocla_event_bus"
+name = "OCLA Event Bus"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "payload-free local semantic events; no network"
+telemetry_event_class = "none"
+public_maturity = "internal"
+source_path = "rust/src/core/ocla_bus.rs"
+
+[[capability]]
+id = "trust.a2a_contracts"
+name = "AgentGateway and A2A contracts"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "typed contracts only; transport chosen by caller"
+telemetry_event_class = "none"
+public_maturity = "preview"
+source_path = "rust/src/core/ocla/builtin/agent_gateway.rs; rust/src/core/a2a/mod.rs"
+
+[[capability]]
+id = "trust.protocol.team_seat_value"
+name = "Team Seat/Value v1 protocol"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "typed pseudonymous records may cross a network; transport chosen by caller"
+telemetry_event_class = "none"
+public_maturity = "preview"
+source_path = "rust/crates/lean-ctx-protocol/src/team_seat_value_capability.rs"
+
+[[capability]]
+id = "trust.manual_handoff"
+name = "Manual context handoff"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "explicit local export and import"
+telemetry_event_class = "none"
+public_maturity = "available"
+source_path = "rust/src/tools/ctx_handoff.rs; rust/src/core/context_package/mod.rs"
+
+[[capability]]
+id = "pro.agent_bus.local"
+name = "Local Agent Bus"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "team_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "single-account local IPC and persisted coordination metadata"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/tools/ctx_agent.rs; rust/src/core/agents/mod.rs"
+
+[[capability]]
+id = "pro.agent_presence.local"
+name = "Local agent presence"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "team_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local ephemeral presence with expiry"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/agents/registry.rs"
+
+[[capability]]
+id = "pro.agent_handoff.automatic"
+name = "Automatic agent handoff"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "team_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "signed local capsule references"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/tools/ctx_agent.rs; rust/src/core/ocla/builtin/agent_gateway.rs"
+
+[[capability]]
+id = "pro.agent_knowledge.local"
+name = "Cross-agent local knowledge"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "team_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "project-scoped local facts and references"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/tools/ctx_agent.rs; rust/src/core/knowledge/mod.rs"
+
+[[capability]]
+id = "pro.agent_leases.local"
+name = "Local agent leases"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "team_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local path and symbol ownership metadata"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/scent_field.rs; rust/src/tools/ctx_agent.rs"
+
+[[capability]]
+id = "pro.work_graph.local"
+name = "Local bounded Work Graph"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "team_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "bounded local task graph and receipts"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/work_graph.rs"
+
+[[capability]]
+id = "pro.result_fusion"
+name = "Agent result fusion"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "team_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local evidence and contradiction metadata"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/work_graph.rs"
+
+[[capability]]
+id = "pro.execution_attribution"
+name = "Execution attribution"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "team_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "payload-free local cost and accepted-path evidence"
+telemetry_event_class = "billing_usage"
+public_maturity = "research"
+source_path = "rust/src/core/value_gate/mod.rs; rust/src/core/work_graph.rs"
+
+[[capability]]
+id = "team.agent_bus.workspace"
+name = "Workspace Agent Bus"
+price_class = "team_paid"
+source_visibility = "private_source"
+runtime_delivery = "managed_cloud_service"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = true
+managed_cloud_available = true
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "workspace-scoped durable coordination"
+telemetry_event_class = "product_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "team.work_graph.shared"
+name = "Shared Work Graph"
+price_class = "team_paid"
+source_visibility = "private_source"
+runtime_delivery = "managed_cloud_service"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = true
+managed_cloud_available = true
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "workspace-scoped task graph and receipts"
+telemetry_event_class = "product_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "team.agent_presence.shared"
+name = "Shared agent presence"
+price_class = "team_paid"
+source_visibility = "private_source"
+runtime_delivery = "managed_cloud_service"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = true
+managed_cloud_available = true
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "workspace presence over authenticated transport"
+telemetry_event_class = "product_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "team.context.shared"
+name = "Shared authoritative context"
+price_class = "team_paid"
+source_visibility = "private_source"
+runtime_delivery = "managed_cloud_service"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = true
+managed_cloud_available = true
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "encrypted workspace context by explicit scope"
+telemetry_event_class = "product_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "team.leases.shared"
+name = "Shared agent leases"
+price_class = "team_paid"
+source_visibility = "private_source"
+runtime_delivery = "managed_cloud_service"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = true
+managed_cloud_available = true
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "workspace ownership metadata without content payloads"
+telemetry_event_class = "product_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "enterprise.agent_identity.governed"
+name = "Governed agent identity"
+price_class = "enterprise_paid"
+source_visibility = "private_source"
+runtime_delivery = "enterprise_private_image"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = true
+managed_cloud_available = true
+enterprise_entitlement = "enterprise.agent_identity.governed"
+account_required = true
+allowed_commercial_use = "enterprise_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "tenant-scoped identity and lifecycle metadata"
+telemetry_event_class = "audit"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "enterprise.agent_attestation"
+name = "Agent attestation"
+price_class = "enterprise_paid"
+source_visibility = "private_source"
+runtime_delivery = "enterprise_private_image"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = true
+managed_cloud_available = true
+enterprise_entitlement = "enterprise.agent_attestation"
+account_required = true
+allowed_commercial_use = "enterprise_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "signed binary and configuration digests"
+telemetry_event_class = "audit"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "enterprise.agent_bus.governed"
+name = "Governed Agent Bus"
+price_class = "enterprise_paid"
+source_visibility = "private_source"
+runtime_delivery = "enterprise_private_image"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = true
+managed_cloud_available = true
+enterprise_entitlement = "enterprise.agent_bus.governed"
+account_required = true
+allowed_commercial_use = "enterprise_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "tenant and policy scoped coordination"
+telemetry_event_class = "audit"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "enterprise.execution_policy"
+name = "Enterprise execution policy"
+price_class = "enterprise_paid"
+source_visibility = "private_source"
+runtime_delivery = "enterprise_private_image"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = true
+managed_cloud_available = true
+enterprise_entitlement = "enterprise.execution_policy"
+account_required = true
+allowed_commercial_use = "enterprise_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "policy decisions and payload-free audit evidence"
+telemetry_event_class = "audit"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "trust.ocla.observation_hook"
+name = "OCLA ObservationHook"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "payload-free local observation"
+telemetry_event_class = "none"
+public_maturity = "internal"
+source_path = "rust/src/core/ocla/builtin/observation_hook.rs"
+
+[[capability]]
+id = "enterprise.ocla.usage_sink"
+name = "OCLA UsageSink"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local aggregate token accounting"
+telemetry_event_class = "operational_aggregate"
+public_maturity = "research"
+source_path = "rust/src/core/ocla/builtin/usage_sink.rs"
+
+[[capability]]
+id = "team.ocla.metrics_exporter"
+name = "OCLA MetricsExporter"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local aggregate metrics; explicit exporter controls network"
+telemetry_event_class = "operational_aggregate"
+public_maturity = "research"
+source_path = "rust/src/core/ocla/builtin/metrics_exporter.rs"
+
+[[capability]]
+id = "trust.ocla.savings_ledger"
+name = "OCLA SavingsLedger adapter"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local signed aggregate evidence"
+telemetry_event_class = "operational_aggregate"
+public_maturity = "internal"
+source_path = "rust/src/core/ocla/builtin/savings_ledger.rs"
+
+[[capability]]
+id = "trust.ocla.compression_provider"
+name = "OCLA CompressionProvider"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local content transformation with recovery reference"
+telemetry_event_class = "none"
+public_maturity = "internal"
+source_path = "rust/src/core/ocla/builtin/compression_provider.rs"
+
+[[capability]]
+id = "pro.ocla.agent_gateway"
+name = "OCLA AgentGateway runtime"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "team_aha"
+moat_sensitivity = "medium"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local relay envelopes and capsule references"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/ocla/builtin/agent_gateway.rs"
+
+[[capability]]
+id = "pro.ocla.intent_classifier"
+name = "OCLA IntentClassifier"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "medium"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local intent decision metadata"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/ocla/builtin/intent_classifier.rs"
+
+[[capability]]
+id = "pro.ocla.outcome_tracker"
+name = "OCLA OutcomeTracker"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "medium"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local payload-free outcome evidence"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/ocla/builtin/outcome_tracker.rs"
+
+[[capability]]
+id = "pro.ocla.response_optimizer"
+name = "OCLA ResponseOptimizer"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "medium"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local response references and recovery metadata"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/ocla/builtin/response_optimizer.rs"
+
+[[capability]]
+id = "pro.ocla.efficiency_analyzer"
+name = "OCLA EfficiencyAnalyzer"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "medium"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local aggregate efficiency evidence"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/ocla/builtin/efficiency_analyzer.rs"
+
+[[capability]]
+id = "pro.ocla.config_tuner"
+name = "OCLA ConfigTuner"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "medium"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local proposals with rollback references"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/ocla/builtin/config_tuner.rs"
+
+[[capability]]
+id = "pro.ocla.experiment_runner"
+name = "OCLA ExperimentRunner"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "medium"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local assignments and aggregate outcomes"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/ocla/builtin/experiment_runner.rs"
+
+[[capability]]
+id = "pro.ocla.experiment_executor"
+name = "OCLA ExperimentExecutor"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "medium"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local bounded experiment execution"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/ocla/builtin/experiment_executor.rs"
+
+[[capability]]
+id = "pro.ocla.connector_scheduler"
+name = "OCLA ConnectorScheduler"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "medium"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local scheduling; connector policy controls network"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/ocla/builtin/connector_scheduler.rs"
+
+[[capability]]
+id = "pro.ocla.delivery_registry"
+name = "OCLA DeliveryRegistry"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "team_aha"
+moat_sensitivity = "medium"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "project-scoped digests and delivery references"
+telemetry_event_class = "product_usage"
+public_maturity = "research"
+source_path = "rust/src/core/ocla/builtin/delivery_registry.rs"
+
+[[capability]]
+id = "trust.runtime.compression"
+name = "Deterministic compression"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local content processing"
+telemetry_event_class = "none"
+public_maturity = "available"
+source_path = "rust/src/core/pipeline.rs"
+
+[[capability]]
+id = "trust.runtime.caching"
+name = "Local context cache"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "project-scoped local storage"
+telemetry_event_class = "none"
+public_maturity = "available"
+source_path = "rust/src/core/cache/mod.rs"
+
+[[capability]]
+id = "trust.runtime.knowledge"
+name = "Manual local knowledge"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "project-scoped local facts"
+telemetry_event_class = "none"
+public_maturity = "available"
+source_path = "rust/src/core/knowledge/mod.rs"
+
+[[capability]]
+id = "trust.runtime.session"
+name = "Local session continuity"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local session metadata"
+telemetry_event_class = "none"
+public_maturity = "available"
+source_path = "rust/src/core/session/mod.rs"
+
+[[capability]]
+id = "trust.runtime.gateway"
+name = "Local gateway"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "user-configured provider transport"
+telemetry_event_class = "none"
+public_maturity = "available"
+source_path = "rust/src/proxy/mod.rs"
+
+[[capability]]
+id = "trust.runtime.sensitivity_floor"
+name = "Sensitivity floor"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local classification metadata"
+telemetry_event_class = "none"
+public_maturity = "available"
+source_path = "rust/src/core/sensitivity/mod.rs"
+
+[[capability]]
+id = "trust.runtime.savings_ledger"
+name = "Local savings ledger"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local signed aggregate evidence"
+telemetry_event_class = "operational_aggregate"
+public_maturity = "available"
+source_path = "rust/src/core/savings_ledger/mod.rs"
+
+[[capability]]
+id = "trust.runtime.audit_trail"
+name = "Local audit trail"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local append-only metadata"
+telemetry_event_class = "none"
+public_maturity = "available"
+source_path = "rust/src/core/audit_trail.rs"
+
+[[capability]]
+id = "trust.runtime.routing"
+name = "Explicit model targets"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "operator-written alias; selected provider performs network call"
+telemetry_event_class = "none"
+public_maturity = "available"
+source_path = "rust/src/proxy/routing.rs"
+
+[[capability]]
+id = "pro.runtime.adaptive_routing"
+name = "Adaptive model routing (retired; package compatibility only)"
+price_class = "free"
+source_visibility = "private_source"
+runtime_delivery = "signed_binary"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "free_runtime"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "free_small_team_internal"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "learned local decision; selected provider performs network call"
+telemetry_event_class = "product_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "trust.runtime.ast_compression"
+name = "AST compression"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local source parsing"
+telemetry_event_class = "none"
+public_maturity = "available"
+source_path = "rust/src/core/chunks_ts.rs"
+
+[[capability]]
+id = "trust.runtime.semantic_search"
+name = "Manual semantic search"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local index; configured embedding provider may use network"
+telemetry_event_class = "none"
+public_maturity = "preview"
+source_path = "rust/src/core/search_index.rs"
+
+[[capability]]
+id = "trust.runtime.http_server"
+name = "Local HTTP server"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local listener subject to explicit bind configuration"
+telemetry_event_class = "none"
+public_maturity = "available"
+source_path = "rust/src/http_server/mod.rs"
+
+[[capability]]
+id = "trust.runtime.wasm"
+name = "WASM extension runtime"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "sandboxed local execution"
+telemetry_event_class = "none"
+public_maturity = "available"
+source_path = "rust/src/core/wasm_ext.rs"
+
+[[capability]]
+id = "trust.runtime.shape_translation"
+name = "Protocol shape translation"
+price_class = "free"
+source_visibility = "public_apache"
+runtime_delivery = "source_build"
+aha_criticality = "individual_aha"
+moat_sensitivity = "low"
+license_class = "apache_trust_core"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = false
+allowed_commercial_use = "apache_rights"
+redistribution_oem_rights = "apache_rights"
+data_boundary = "local protocol transformation"
+telemetry_event_class = "none"
+public_maturity = "preview"
+source_path = "rust/src/proxy/forward/xlat.rs"
+
+[[capability]]
+id = "pro.cloud_sync"
+name = "Personal encrypted cloud sync"
+price_class = "cloud_paid"
+source_visibility = "private_source"
+runtime_delivery = "managed_cloud_service"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = false
+managed_cloud_available = true
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "encrypted account-scoped sync"
+telemetry_event_class = "billing_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "pro.hosted_index"
+name = "Personal hosted index"
+price_class = "cloud_paid"
+source_visibility = "private_source"
+runtime_delivery = "managed_cloud_service"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = false
+managed_cloud_available = true
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "encrypted account-scoped index bundles"
+telemetry_event_class = "billing_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "team.private_registry"
+name = "Private extension registry"
+price_class = "cloud_paid"
+source_visibility = "private_source"
+runtime_delivery = "managed_cloud_service"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = false
+managed_cloud_available = true
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "workspace-scoped package metadata and artifacts"
+telemetry_event_class = "billing_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "team.sso_oidc"
+name = "Team OIDC SSO"
+price_class = "enterprise_paid"
+source_visibility = "private_source"
+runtime_delivery = "enterprise_private_image"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = true
+managed_cloud_available = true
+enterprise_entitlement = "team.sso_oidc"
+account_required = true
+allowed_commercial_use = "enterprise_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "workspace identity metadata over authenticated transport"
+telemetry_event_class = "audit"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "enterprise.sso_scim"
+name = "Enterprise SSO and SCIM"
+price_class = "enterprise_paid"
+source_visibility = "private_source"
+runtime_delivery = "enterprise_private_image"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = true
+managed_cloud_available = true
+enterprise_entitlement = "enterprise.sso_scim"
+account_required = true
+allowed_commercial_use = "enterprise_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "tenant identity and provisioning metadata"
+telemetry_event_class = "audit"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "team.revenue_share"
+name = "Marketplace revenue share"
+price_class = "cloud_paid"
+source_visibility = "private_source"
+runtime_delivery = "managed_cloud_service"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = false
+managed_cloud_available = true
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "workspace settlement metadata"
+telemetry_event_class = "billing_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "team.managed_connectors"
+name = "Managed connectors"
+price_class = "cloud_paid"
+source_visibility = "private_source"
+runtime_delivery = "managed_cloud_service"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = false
+managed_cloud_available = true
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "workspace connector metadata and policy-bound remote access"
+telemetry_event_class = "billing_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "team.audit_retention"
+name = "Team audit retention"
+price_class = "enterprise_paid"
+source_visibility = "private_source"
+runtime_delivery = "enterprise_private_image"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "private_service"
+self_host_available = true
+managed_cloud_available = true
+enterprise_entitlement = "team.audit_retention"
+account_required = true
+allowed_commercial_use = "enterprise_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "workspace payload-free audit records"
+telemetry_event_class = "audit"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "pro.runtime.adaptive_context"
+name = "Adaptive context selection"
+price_class = "pro_paid"
+source_visibility = "private_source"
+runtime_delivery = "signed_binary"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "commercial_source"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "local scoring of already-admitted candidates; host keeps text, origins and budget"
+telemetry_event_class = "product_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "pro.runtime.context_policy"
+name = "Learned read-strategy policies"
+price_class = "pro_paid"
+source_visibility = "private_source"
+runtime_delivery = "signed_binary"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "commercial_source"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "local learning from content-free per-scope evidence counts; host keeps policies and applies one only on explicit opt-in"
+telemetry_event_class = "product_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "pro.runtime.code_security"
+name = "Code security hints"
+price_class = "pro_paid"
+source_visibility = "private_source"
+runtime_delivery = "signed_binary"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "commercial_source"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "bounded local findings over an admitted source snapshot; host validates and words them"
+telemetry_event_class = "product_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "pro.runtime.memory_curation"
+name = "Memory curation"
+price_class = "pro_paid"
+source_visibility = "private_source"
+runtime_delivery = "signed_binary"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "commercial_source"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "numeric-only local selection; host owns all memory content and writes"
+telemetry_event_class = "product_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "pro.runtime.personal_protection"
+name = "Personal protection policies"
+price_class = "pro_paid"
+source_visibility = "private_source"
+runtime_delivery = "signed_binary"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "commercial_source"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "local policy compilation; enforcement stays in the public engine"
+telemetry_event_class = "product_usage"
+public_maturity = "private"
+source_path = "undisclosed"
+
+[[capability]]
+id = "pro.runtime.semantic_detectors"
+name = "Semantic detectors"
+price_class = "pro_paid"
+source_visibility = "private_source"
+runtime_delivery = "signed_binary"
+aha_criticality = "undisclosed"
+moat_sensitivity = "undisclosed"
+license_class = "commercial_source"
+self_host_available = true
+managed_cloud_available = false
+enterprise_entitlement = "none"
+account_required = true
+allowed_commercial_use = "service_agreement"
+redistribution_oem_rights = "separate_agreement_required"
+data_boundary = "local detection over admitted text; host validates spans and applies redactions"
+telemetry_event_class = "product_usage"
+public_maturity = "private"
+source_path = "undisclosed"

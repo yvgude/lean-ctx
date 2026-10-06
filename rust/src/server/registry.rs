@@ -252,6 +252,7 @@ pub fn build_registry() -> ToolRegistry {
     registry.register(Box::new(registered::ctx_task::CtxTaskTool));
     registry.register(Box::new(registered::ctx_handoff::CtxHandoffTool));
     registry.register(Box::new(registered::ctx_workflow::CtxWorkflowTool));
+    registry.register(Box::new(registered::ctx_work_graph::CtxWorkGraphTool));
     registry.register(Box::new(registered::ctx_load_tools::CtxLoadToolsTool));
 
     // #509: deprecated aliases — hidden from tools/list but stay registered so
@@ -277,6 +278,31 @@ mod tests {
         let arc = registry.get_arc("ctx_tree");
         assert!(arc.is_some(), "ctx_tree must be registered");
         assert_eq!(arc.unwrap().name(), "ctx_tree");
+    }
+
+    #[test]
+    fn work_graph_is_registered_and_publicly_advertised() {
+        let registry = build_registry();
+        assert!(registry.contains("ctx_work_graph"));
+        let tools = registry.tool_defs();
+        let tool = tools
+            .iter()
+            .find(|tool| tool.name.as_ref() == "ctx_work_graph")
+            .expect("work graph must be advertised");
+        assert_eq!(
+            tool.input_schema.get("additionalProperties"),
+            Some(&serde_json::Value::Bool(false))
+        );
+        let actions = tool.input_schema["properties"]["action"]["enum"]
+            .as_array()
+            .expect("action enum");
+        assert!(actions.iter().any(|action| action == "execute"));
+        assert!(
+            tool.input_schema["properties"]
+                .get("execution_fence")
+                .is_some()
+        );
+        assert!(tool.input_schema["properties"].get("connector").is_some());
     }
 
     #[test]

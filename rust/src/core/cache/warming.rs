@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::time::SystemTime;
@@ -102,14 +104,22 @@ pub fn collect_recent_files_in_project(
     let Some(root) = normalized_safe_root(project_root) else {
         return Vec::new();
     };
-    collect_recent_files_with(sessions, |session, file| {
-        if file.stale
-            || session
+    // GH #2006: canonicalize each session's root once, not once per touched
+    // file — on a network drive every canonicalization is a round trip.
+    let matching: std::collections::HashSet<&str> = sessions
+        .iter()
+        .filter(|session| {
+            session
                 .project_root
                 .as_deref()
                 .and_then(normalized_safe_root)
-                != Some(root.clone())
-        {
+                .as_ref()
+                == Some(&root)
+        })
+        .map(|session| session.id.as_str())
+        .collect();
+    collect_recent_files_with(sessions, |session, file| {
+        if file.stale || !matching.contains(session.id.as_str()) {
             return None;
         }
         crate::core::pathjail::jail_path(Path::new(&file.path), &root)
@@ -207,6 +217,9 @@ mod tests {
     fn session_at(timestamp: i64) -> SessionState {
         let time = Utc.timestamp_opt(timestamp, 0).unwrap();
         SessionState {
+            canonical_checkpoint: None,
+            save_gate: Default::default(),
+            last_save_failed: false,
             id: format!("session-{timestamp}"),
             version: 0,
             started_at: time,

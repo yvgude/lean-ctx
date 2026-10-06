@@ -20,6 +20,8 @@ struct ReadEvent {
     _original_tokens: usize,
     seq: u64,
     was_compressed: bool,
+    /// Scope and task the read ran under; a bounce is that task's signal.
+    origin: Option<crate::core::context_store::task_signals::Origin>,
 }
 
 #[derive(Debug, Default)]
@@ -88,6 +90,17 @@ impl BounceTracker {
             crate::core::path_mode_memory::record_read_if_tracked(&norm);
         }
 
+        let current = if self.persist {
+            crate::core::context_store::task_signals::current_origin()
+        } else {
+            None
+        };
+        if let Some(current) = &current {
+            // Bounces are seen only by the process that served the read: a
+            // task served by several processes is not fully observed.
+            crate::core::context_store::task_signals::observe(current);
+        }
+        let origin = current.filter(|_| compressed);
         let events = self.recent_reads.entry(norm).or_default();
         events.push(ReadEvent {
             _mode: mode.to_string(),
@@ -95,6 +108,7 @@ impl BounceTracker {
             _original_tokens: original_tokens,
             seq,
             was_compressed: compressed,
+            origin,
         });
 
         if events.len() > 10 {
@@ -132,6 +146,7 @@ impl BounceTracker {
             && full_seq.saturating_sub(ev.seq) <= BOUNCE_WINDOW
         {
             let wasted = ev.tokens_sent;
+            let origin = ev.origin.clone();
             self.total_bounces += 1;
             self.total_wasted_tokens += wasted;
 
@@ -143,6 +158,15 @@ impl BounceTracker {
             }
 
             if self.persist {
+                if let Some(origin) = origin {
+                    // Off this tracker's lock: recording waits on a file lock.
+                    std::thread::spawn(move || {
+                        crate::core::context_store::task_signals::record(
+                            &origin,
+                            crate::core::context_store::task_signals::Signal::Bounce,
+                        );
+                    });
+                }
                 crate::core::savings_ledger::record_bounce_event(wasted);
                 // Long-term per-path memory (#496): remember which exact
                 // files keep bouncing so auto-mode learns across restarts.
@@ -193,6 +217,22 @@ impl BounceTracker {
                 stats.wasted_tokens = stats.wasted_tokens.saturating_add(wasted_tokens);
             }
         }
+    }
+
+    /// The newest read of `path` this process still remembers: whether it
+    /// was compressed and the scope and task it ran under, so a later event
+    /// is charged to the read that caused it. `None`: no read is known here
+    /// (another process, or before a restart).
+    pub(crate) fn last_read(
+        &self,
+        path: &str,
+    ) -> Option<(
+        bool,
+        Option<crate::core::context_store::task_signals::Origin>,
+    )> {
+        let norm = crate::core::pathutil::normalize_tool_path(path);
+        let event = self.recent_reads.get(&norm)?.last()?;
+        Some((event.was_compressed, event.origin.clone()))
     }
 
     pub fn record_edit(&mut self, path: &str) {

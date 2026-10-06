@@ -1,8 +1,9 @@
 //! Accepted-outcome contract.
 
 use crate::common::{
-    OutcomeId, TaskId, ValidationError, deserialize_optional_milliunit, deserialize_schema_version,
-    validate_milliunit, validate_schema_version,
+    ExtensionsV1, OutcomeId, PlanId, ReceiptId, TaskId, ValidationError,
+    deserialize_optional_milliunit, deserialize_schema_version, validate_milliunit,
+    validate_schema_version, validate_unique_strings,
 };
 use crate::evidence::EvidenceRefV1;
 use serde::{Deserialize, Serialize};
@@ -43,7 +44,6 @@ pub struct OutcomeSignalsV1 {
 
 /// Canonical outcome observation used for acceptance and efficiency accounting.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(deny_unknown_fields)]
 pub struct AcceptedOutcomeV1 {
     #[serde(deserialize_with = "deserialize_schema_version")]
     pub schema_version: u32,
@@ -61,14 +61,53 @@ pub struct AcceptedOutcomeV1 {
     pub contract_ref: Option<String>,
     pub evidence_refs: Vec<EvidenceRefV1>,
     pub observed_at: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub plan_id: Option<PlanId>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub receipt_id: Option<ReceiptId>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub decision_refs: Vec<String>,
+    #[serde(default, flatten)]
+    pub extensions: ExtensionsV1,
 }
+
+const OUTCOME_RESERVED_FIELDS: &[&str] = &[
+    "schema_version",
+    "outcome_id",
+    "task_id",
+    "accepted",
+    "quality_score_milli",
+    "signals",
+    "contract_ref",
+    "evidence_refs",
+    "observed_at",
+    "plan_id",
+    "receipt_id",
+    "decision_refs",
+];
 
 impl AcceptedOutcomeV1 {
     /// Validate invariants that also apply to values constructed in Rust.
     pub fn validate(&self) -> Result<(), ValidationError> {
+        self.extensions.validate_reserved(OUTCOME_RESERVED_FIELDS)?;
         validate_schema_version(self.schema_version)?;
         if let Some(value) = self.quality_score_milli {
             validate_milliunit(value, "quality_score_milli")?;
+        }
+        validate_unique_strings(&self.decision_refs, "decision_refs")?;
+        if self.evidence_refs.len() > crate::MAX_PROTOCOL_ITEMS {
+            return Err(ValidationError::new("evidence_refs exceeds item limit"));
+        }
+        if let Some(contract_ref) = &self.contract_ref {
+            crate::validate_bounded_string(contract_ref, "contract_ref")?;
+        }
+        for evidence in &self.evidence_refs {
+            evidence.validate()?;
+        }
+        if self.accepted != AcceptanceState::Unknown && self.evidence_refs.is_empty() {
+            return Err(ValidationError::new(
+                "accepted or rejected outcome requires evidence",
+            ));
         }
         Ok(())
     }
@@ -106,8 +145,20 @@ mod tests {
                 retry: Some(SignalState::Failed),
             },
             contract_ref: Some("contract:outcome".to_owned()),
-            evidence_refs: vec![],
+            evidence_refs: vec![EvidenceRefV1 {
+                schema_version: Some(1),
+                kind: crate::EvidenceKind::QualityMeasurement,
+                uri: "urn:evidence:outcome-1".to_owned(),
+                digest: "a".repeat(64),
+                signature_status: crate::SignatureStatus::NotSigned,
+                media_type: Some("application/json".to_owned()),
+                extensions: Default::default(),
+            }],
             observed_at: "2026-08-09T12:00:00Z".to_owned(),
+            plan_id: Some(id("plan-1")),
+            receipt_id: Some(id("receipt-1")),
+            decision_refs: vec!["decision:acceptance".to_owned()],
+            extensions: Default::default(),
         };
         let json = serde_json::to_string(&outcome).expect("outcome should serialize");
         let decoded: AcceptedOutcomeV1 =

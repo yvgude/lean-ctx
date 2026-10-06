@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinEfficiencyAnalyzer — computes ETPAO and duplication metrics.
 //!
 //! Wraps `core/mode_predictor.rs` behind the OCLA trait. Computes Effective
@@ -26,6 +27,10 @@ impl Default for BuiltinEfficiencyAnalyzer {
 }
 
 impl OclaService for BuiltinEfficiencyAnalyzer {
+    fn manifest(&self) -> crate::core::ocla::OclaResult<lean_ctx_protocol::CapabilityManifestV1> {
+        crate::core::ocla::capability_fabric::builtin_manifest(&self.capability())
+    }
+
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::EfficiencyAnalyzer)
     }

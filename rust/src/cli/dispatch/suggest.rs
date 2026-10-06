@@ -39,6 +39,7 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "prove",
     "value",
     "statusline",
+    "inspect",
     "claude-mod",
     "prompt-segment",
     "verify",

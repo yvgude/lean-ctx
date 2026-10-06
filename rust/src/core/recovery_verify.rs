@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Verification for recovery handles used by lossy context views.
 //!
 //! Results contain only status, byte length, and digest so a quality receipt can
@@ -131,6 +132,9 @@ pub(crate) fn verify_handle(handle: &str, expected_digest: Option<&str>) -> Reco
             }
             Err(crate::server::reference_store::ReferenceResolveError::Expired) => {
                 RecoveryVerification::unavailable(RecoveryOutcome::Expired)
+            }
+            Err(crate::server::reference_store::ReferenceResolveError::Refused(reason)) => {
+                RecoveryVerification::unavailable(RecoveryOutcome::Refused(reason.to_owned()))
             }
         };
     }

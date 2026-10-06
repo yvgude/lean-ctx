@@ -1,3 +1,4 @@
+# SPDX-License-Identifier: Apache-2.0
 name: VS Code extension
 
 # Its own workflow so the extension can change without touching ci.yml,

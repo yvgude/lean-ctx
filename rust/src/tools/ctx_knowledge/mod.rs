@@ -39,7 +39,13 @@ pub fn handle(
     mode: Option<&str>,
     as_of: Option<&str>,
 ) -> String {
-    match action {
+    if let Err(error) = crate::core::knowledge::protection::current(project_root) {
+        return format!("Error: {error}");
+    }
+    crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+        std::cell::RefCell::new(Some(std::path::PathBuf::from(project_root))),
+        || {
+    let result = match action {
         "policy" => handle_policy(value),
         "remember" => handle_remember(project_root, category, key, value, session_id, confidence),
         "recall" => handle_recall(project_root, category, query, session_id, mode, as_of),
@@ -97,7 +103,17 @@ pub fn handle(
         _ => format!(
             "Unknown action: {action}. Use: policy, remember, recall, pattern, feedback, judge, relate, unrelate, relations, relations_diagram, status, health, lifecycle_report, remove, export, consolidate, consolidate_preview, restore, timeline, rooms, search, wakeup, embeddings_status, embeddings_reset, embeddings_reindex, cognition_loop, bridge_publish, bridge_pull, bridge_status"
         ),
-    }
+    };
+    let Ok(result) = crate::core::policy::content::protect_active(&result) else {
+        return "Error: knowledge output withheld by current policy".into();
+    };
+    // Stored knowledge is recovered text: every view of it passes the context
+    // gateway under the current policy, including facts written before the
+    // store admitted its input (G5).
+    crate::core::context_admission::recovery::admit_recovered(&result, "knowledge")
+        .unwrap_or_else(|error| format!("Error: {error}"))
+        },
+    )
 }
 
 fn handle_policy(value: Option<&str>) -> String {
@@ -193,7 +209,7 @@ fn handle_feedback(
     let (quality, up, down, conf) = match outcome {
         Ok((_, Ok(vals))) => vals,
         Ok((_, Err(msg))) => return msg,
-        Err(e) => return format!("Feedback recorded but save failed: {e}"),
+        Err(e) => return format!("Error: feedback was not saved: {e}"),
     };
 
     crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
@@ -580,7 +596,7 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
         }
     }) {
         Ok(pair) => pair,
-        Err(e) => return format!("Removed but save failed: {e}"),
+        Err(e) => return format!("Error: removal was not saved: {e}"),
     };
 
     if !removed {
@@ -958,7 +974,7 @@ fn handle_bridge_publish(project_root: &str, session_id: &str) -> String {
             "Published {count} fact(s) to bridge (total: {}, agent: {session_id})",
             bridge.shared_facts.len()
         ),
-        Err(e) => format!("Published {count} fact(s) but save failed: {e}"),
+        Err(e) => format!("Error: context publication was not saved: {e}"),
     }
 }
 
@@ -1009,7 +1025,7 @@ fn handle_bridge_pull(project_root: &str, session_id: &str) -> String {
             "Pulled {imported}/{} fact(s) from bridge into local knowledge.",
             entries.len()
         ),
-        Err(e) => format!("Pulled {imported} fact(s) but save failed: {e}"),
+        Err(e) => format!("Error: context import was not saved: {e}"),
     }
 }
 

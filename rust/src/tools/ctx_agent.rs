@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 use crate::core::a2a::message::{MessagePriority, PrivacyLevel};
 use crate::core::a2a::task::TaskStore;
 use crate::core::agents::{AgentDiary, AgentRegistry, AgentStatus, DiaryEntryType};
@@ -42,7 +44,9 @@ pub(crate) const ACTIONS: &[&str] = &[
     "share_knowledge",
     "receive_knowledge",
     "poll_events",
+    "control_status",
     "lease_acquire",
+    "lease_renew",
     "lease_release",
 ];
 
@@ -51,6 +55,7 @@ pub fn handle(
     action: &str,
     agent_type: Option<&str>,
     role: Option<&str>,
+    durable_identity_id: Option<&str>,
     project_root: &str,
     current_agent_id: Option<&str>,
     message: Option<&str>,
@@ -69,7 +74,7 @@ pub fn handle(
             let atype = agent_type.unwrap_or("unknown");
             match AgentRegistry::mutate_locked(|registry| {
                 registry.cleanup_stale(presence_ttl_hours());
-                registry.register(atype, role, project_root)
+                registry.register(atype, role, project_root, durable_identity_id)
             })
             .and_then(|(_, agent_id)| agent_id)
             {
@@ -150,13 +155,16 @@ pub fn handle(
                 return "Error: agent must be registered first (use action=register)".to_string();
             };
             let messages = match AgentRegistry::mutate_locked(|registry| {
+                registry.update_heartbeat(agent_id)?;
                 registry
                     .read_unread_scoped(agent_id, project_root)
-                    .into_iter()
-                    .cloned()
-                    .collect::<Vec<_>>()
+                    .map(|messages| messages.into_iter().cloned().collect::<Vec<_>>())
             }) {
-                Ok((_, messages)) => messages,
+                Ok((_, Ok(messages))) => messages,
+                Ok((_, Err(error))) => {
+                    tracing::warn!("lean-ctx: message read rejected: {error}");
+                    return format!("Error: {error}");
+                }
                 Err(e) => {
                     tracing::warn!(
                         "lean-ctx: failed to persist agent registry (messages may reappear): {e}"
@@ -236,7 +244,9 @@ pub fn handle(
             let scratchpad_ttl = scratchpad_default_ttl_hours();
 
             if let Err(error) = AgentRegistry::mutate_locked(|registry| {
-                registry.set_status(from, AgentStatus::Finished, Some("handed off"))?;
+                // The handoff message must be persisted before the sender is
+                // marked Finished. A bound presence that finishes first can no
+                // longer post, so the delivery would be silently dropped.
                 registry.post_message_scoped(
                     Some(project_root),
                     from,
@@ -246,7 +256,8 @@ pub fn handle(
                     PrivacyLevel::Team,
                     MessagePriority::Normal,
                     Some(scratchpad_ttl),
-                );
+                )?;
+                registry.set_status(from, AgentStatus::Finished, Some("handed off"))?;
                 Ok(())
             })
             .and_then(|(_, result)| result)
@@ -460,6 +471,12 @@ pub fn handle(
             out
         }
 
+        // Premium control-plane snapshot: one bounded, read-only view of
+        // presence, messages and persisted Work Graph execution state.
+        // This keeps agents from guessing whether they should retry, wait or
+        // integrate, and gives the operator a stable next action.
+        "control_status" => control_status(project_root, current_agent_id),
+
         "export" => {
             let Some(agent_id) = current_agent_id else {
                 return "Error: agent must be registered first (use action=register)".to_string();
@@ -613,7 +630,13 @@ pub fn handle(
                 .collect();
             messages.sort_by(|a, b| a.timestamp.cmp(&b.timestamp).then_with(|| a.id.cmp(&b.id)));
 
-            let mut task_store = TaskStore::load();
+            let mut task_store = match TaskStore::load() {
+                Ok(store) => store,
+                Err(error) => {
+                    tracing::warn!("lean-ctx: failed to read task store: {error}");
+                    return "Error: task storage unavailable".to_string();
+                }
+            };
             task_store.cleanup_old(72);
             let mut tasks: Vec<ExportTaskV1> = task_store
                 .tasks_for_agent(agent_id)
@@ -805,7 +828,9 @@ pub fn handle(
             }
             let from = current_agent_id.unwrap_or("anonymous");
             match AgentRegistry::mutate_locked(|registry| {
+                registry.require_active_for_presence(from, "sharing knowledge")?;
                 registry.share_knowledge(from, cat, &facts);
+                Ok::<(), String>(())
             }) {
                 Ok(_) => format!("Shared {} facts in category '{}'", facts.len(), cat),
                 Err(e) => format!("Share failed: {e}"),
@@ -817,9 +842,10 @@ pub fn handle(
                 return "Error: agent must be registered first".to_string();
             };
             let facts = AgentRegistry::mutate_locked(|registry| {
-                registry.receive_shared_knowledge(agent_id)
+                registry.require_active_for_presence(agent_id, "receiving knowledge")?;
+                Ok(registry.receive_shared_knowledge(agent_id))
             })
-            .map(|(_, facts)| facts)
+            .and_then(|(_, facts)| facts)
             .unwrap_or_default();
             if facts.is_empty() {
                 return "No new shared knowledge.".to_string();
@@ -890,6 +916,11 @@ pub fn handle(
             let Some(target) = message else {
                 return "Error: message (path or symbol:<name>) is required".to_string();
             };
+            if let Err(error) = AgentRegistry::load_or_create()
+                .require_active_for_presence(agent_id, "acquiring a lease")
+            {
+                return format!("Lease rejected: {error}");
+            }
             let (resource_kind, resource_ref) = lease_resource(target);
             let duration_ms = match _ttl_hours.unwrap_or(0) {
                 0 => 10 * 60 * 1_000,
@@ -947,6 +978,46 @@ pub fn handle(
             }
         }
 
+        // P11: Renew an owned lease without rotating its fencing token.
+        // A lease that already expired is rejected and must be re-acquired;
+        // this prevents a delayed worker from reviving abandoned work.
+        "lease_renew" => {
+            let Some(agent_id) = current_agent_id else {
+                return "Error: agent must be registered first".to_string();
+            };
+            let Some(target) = message else {
+                return "Error: message (same path or symbol:<name>) is required for renew"
+                    .to_string();
+            };
+            let Some(lease_ref) = category else {
+                return "Error: category (lease_ref from lease_acquire) is required".to_string();
+            };
+            if let Err(error) = AgentRegistry::load_or_create()
+                .require_active_for_presence(agent_id, "renewing a lease")
+            {
+                return format!("Lease renewal rejected: {error}");
+            }
+            let (resource_kind, resource_ref) = lease_resource(target);
+            let duration_ms = match _ttl_hours.unwrap_or(0) {
+                0 => 10 * 60 * 1_000,
+                1 => 60 * 60 * 1_000,
+                _ => return "Error: ttl_hours for lease must be 0 (10min) or 1 (1h)".to_string(),
+            };
+            match crate::core::agent_lease::renew_shared(
+                resource_kind,
+                &resource_ref,
+                agent_id,
+                lease_ref,
+                duration_ms,
+            ) {
+                Ok(lease) => format!(
+                    "Lease renewed: {} resource={} owner={} expires_at_epoch_ms={}",
+                    lease.lease_ref, resource_ref, agent_id, lease.expires_at_epoch_ms
+                ),
+                Err(e) => format!("Lease renewal rejected: {e}"),
+            }
+        }
+
         _ => format!("Unknown action: {action}. Use: {}", ACTIONS.join(", ")),
     }
 }
@@ -960,9 +1031,228 @@ fn lease_resource(target: &str) -> (crate::core::agent_lease::AgentLeaseResource
         )
     } else {
         let normalized = crate::core::pathutil::normalize_tool_path(target);
+        let mut path_ref = String::from("path:");
+        for byte in normalized.bytes() {
+            if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'-' | b'_') {
+                path_ref.push(byte as char);
+            } else {
+                let _ = write!(path_ref, "%{byte:02X}");
+            }
+        }
+        // Keep the bounded opaque-reference contract for unusually long paths.
+        // Typical paths retain hierarchy so parent/child claims conflict; the
+        // hash fallback remains safe but intentionally cannot infer hierarchy.
+        if path_ref.len() > 256 {
+            path_ref = format!("pathref:{}", blake3::hash(normalized.as_bytes()).to_hex());
+        }
         (
             crate::core::agent_lease::AgentLeaseResourceKindV1::Path,
-            format!("pathref:{}", blake3::hash(normalized.as_bytes()).to_hex()),
+            path_ref,
         )
     }
 }
+
+fn control_status(project_root: &str, current_agent_id: Option<&str>) -> String {
+    let registry = AgentRegistry::mutate_locked(|registry| {
+        registry.cleanup_stale(presence_ttl_hours());
+    })
+    .map(|(registry, ())| registry)
+    .unwrap_or_else(|_| AgentRegistry::load_or_create());
+
+    let scoped_agents = registry
+        .agents
+        .iter()
+        .filter(|agent| agent.project_root == project_root);
+    let mut presence = std::collections::BTreeMap::from([
+        ("active", 0usize),
+        ("idle", 0usize),
+        ("finished", 0usize),
+    ]);
+    for agent in scoped_agents {
+        let key = agent.status.to_string();
+        if let Some(count) = presence.get_mut(key.as_str()) {
+            *count += 1;
+        }
+    }
+
+    let pending_messages = current_agent_id.map_or(0, |agent_id| {
+        registry
+            .scratchpad
+            .iter()
+            .filter(|entry| {
+                !entry.read_by.iter().any(|reader| reader == agent_id)
+                    && entry.from_agent != agent_id
+                    && (entry.to_agent.is_none() || entry.to_agent.as_deref() == Some(agent_id))
+                    && entry.project_root.as_deref() == Some(project_root)
+            })
+            .count()
+    });
+
+    let mut graphs = Vec::new();
+    let mut queued_nodes = 0usize;
+    let mut active_nodes = 0usize;
+    let mut stale_nodes = 0usize;
+    match crate::core::work_graph_store::WorkGraphStore::load(project_root) {
+        Ok(store) => {
+            for graph_id in store.graph_ids().take(32) {
+                let Some(graph) = store.graph(graph_id) else {
+                    continue;
+                };
+                let observation = graph.observation();
+                let nodes = observation
+                    .get("nodes")
+                    .and_then(serde_json::Value::as_array)
+                    .cloned()
+                    .unwrap_or_default();
+                let mut counts = std::collections::BTreeMap::new();
+                for node in &nodes {
+                    let state = node
+                        .get("status")
+                        .and_then(serde_json::Value::as_str)
+                        .unwrap_or("unknown");
+                    *counts.entry(state.to_string()).or_insert(0usize) += 1;
+                }
+                queued_nodes += counts.get("pending").copied().unwrap_or(0);
+                active_nodes += counts.get("active").copied().unwrap_or(0);
+                stale_nodes += counts.get("stale").copied().unwrap_or(0);
+                graphs.push(serde_json::json!({
+                    "graph_id": graph_id,
+                    "revision": store.graph_revision(graph_id).ok(),
+                    "node_counts": counts,
+                }));
+            }
+        }
+        Err(error) => {
+            tracing::debug!("lean-ctx: control snapshot could not load Work Graph: {error}");
+        }
+    }
+
+    let next_action = if stale_nodes > 0 {
+        "reconcile stale Work Graph executions"
+    } else if queued_nodes > 0 {
+        "claim one pending Work Graph node"
+    } else if active_nodes > 0 {
+        "continue current work and renew leases"
+    } else {
+        "lead may enqueue the next independent task"
+    };
+
+    serde_json::to_string_pretty(&serde_json::json!({
+        "schema_version": 1,
+        "project_root": project_root,
+        "presence": presence,
+        "pending_messages": pending_messages,
+        "work_graphs": graphs,
+        "queued_nodes": queued_nodes,
+        "active_nodes": active_nodes,
+        "stale_nodes": stale_nodes,
+        "next_action": next_action,
+    }))
+    .unwrap_or_else(|_| "{\"error\":\"control snapshot serialization failed\"}".to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::handle;
+
+    #[test]
+    fn register_forwards_explicit_durable_identity_binding() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::core::agent_registry::register("durable-tool", "coder", "owner")
+            .expect("durable identity");
+        let result = handle(
+            "register",
+            Some("mcp"),
+            Some("context-engine"),
+            Some("durable-tool"),
+            "/project",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+        );
+        assert!(
+            result.starts_with("Agent registered:"),
+            "unexpected: {result}"
+        );
+        let registry = crate::core::agents::AgentRegistry::load().expect("presence registry");
+        assert_eq!(
+            registry.agents[0].durable_identity_id.as_deref(),
+            Some("durable-tool")
+        );
+    }
+
+    #[test]
+    fn bound_handoff_posts_before_finishing_presence() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        crate::core::agent_registry::register("durable-handoff", "coder", "owner")
+            .expect("durable identity");
+        let registered = handle(
+            "register",
+            Some("codex"),
+            Some("review"),
+            Some("durable-handoff"),
+            "/project",
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+        );
+        let agent_id = registered
+            .split_whitespace()
+            .nth(2)
+            .expect("registered agent id")
+            .to_string();
+
+        let result = handle(
+            "handoff",
+            None,
+            None,
+            None,
+            "/project",
+            Some(&agent_id),
+            Some("verified summary"),
+            None,
+            Some(&agent_id),
+            None,
+            None,
+            None,
+            None,
+            None,
+            false,
+            None,
+        );
+        assert!(
+            result.starts_with("Handoff complete:"),
+            "unexpected: {result}"
+        );
+
+        let registry = crate::core::agents::AgentRegistry::load().expect("presence registry");
+        let agent = registry
+            .agents
+            .iter()
+            .find(|agent| agent.agent_id == agent_id)
+            .expect("handed-off presence");
+        assert_eq!(agent.status, crate::core::agents::AgentStatus::Finished);
+        let message = registry.scratchpad.last().expect("handoff message");
+        assert_eq!(message.from_agent, agent_id);
+        assert_eq!(message.to_agent.as_deref(), Some(agent_id.as_str()));
+        assert_eq!(message.category, "handoff");
+        assert!(message.message.contains("verified summary"));
+    }
+}
+// SPDX-License-Identifier: Apache-2.0

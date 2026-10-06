@@ -1,16 +1,18 @@
 //! Deterministic, versioned outcome evaluation.
 
 use serde::{Deserialize, Serialize};
+use sha2::{Digest, Sha256};
 
 use lean_ctx_protocol::{
-    AcceptanceState, AcceptedOutcomeV1, OutcomeId, OutcomeSignalsV1, SignalState, TaskId,
+    AcceptanceState, AcceptedOutcomeV1, EvidenceKind, EvidenceRefV1, OutcomeId, OutcomeSignalsV1,
+    SignalState, SignatureStatus, TaskId,
 };
 
 use super::contracts::{OutcomeContractV1, TaskClass};
 use super::signals::{OutcomeSignal, SignalType, SignalValue};
 
 /// Version of the evaluator algorithm and its reasoning format.
-pub const EVALUATOR_VERSION: &str = "1.0.0";
+pub const EVALUATOR_VERSION: &str = "1.0.1";
 
 /// Versioned context used to derive a deterministic wire outcome.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -325,6 +327,8 @@ impl OutcomeEvaluator {
         let quality_score_milli = match state {
             AcceptanceState::Accepted => Some(1000),
             AcceptanceState::Rejected => Some(0),
+            // No observation is not a measured zero-quality result.
+            AcceptanceState::Unknown if signals.is_empty() => None,
             AcceptanceState::Unknown => Some(if total_required_weight == 0 {
                 0
             } else {
@@ -362,16 +366,45 @@ impl OutcomeEvaluator {
             reasoning.push(format!("final state: {}", state.as_str()));
         }
 
+        let outcome_id = context_outcome_id(&context);
+        let evidence_refs = if state == AcceptanceState::Unknown {
+            Vec::new()
+        } else {
+            let digest = Sha256::digest(
+                serde_json::to_vec(&(contract, signals))
+                    .expect("outcome contract and signals are serializable"),
+            );
+            let digest = digest
+                .iter()
+                .fold(String::with_capacity(64), |mut output, byte| {
+                    use std::fmt::Write;
+                    write!(&mut output, "{byte:02x}").expect("writing to a string cannot fail");
+                    output
+                });
+            vec![EvidenceRefV1 {
+                schema_version: Some(1),
+                kind: EvidenceKind::QualityMeasurement,
+                uri: format!("urn:lean-ctx:outcome-evaluation:{}", outcome_id.as_str()),
+                digest: format!("sha256:{digest}"),
+                signature_status: SignatureStatus::NotSigned,
+                media_type: Some("application/json".to_owned()),
+                extensions: Default::default(),
+            }]
+        };
         let outcome = AcceptedOutcomeV1 {
             schema_version: 1,
-            outcome_id: context_outcome_id(&context),
+            outcome_id,
             task_id: make_task_id(&context.task_id),
             accepted: state,
             quality_score_milli,
             signals: project_protocol_signals(signals),
             contract_ref: Some(contract.reference()),
-            evidence_refs: Vec::new(),
+            evidence_refs,
             observed_at: DETERMINISTIC_OBSERVED_AT.to_owned(),
+            plan_id: None,
+            receipt_id: None,
+            decision_refs: Vec::new(),
+            extensions: Default::default(),
         };
         let signals_used = signals.iter().map(|signal| signal.signal_type).collect();
 
@@ -852,6 +885,23 @@ mod tests {
     }
 
     #[test]
+    fn empty_signals_never_fabricate_a_quality_score() {
+        for task_class in [
+            TaskClass::BugFix,
+            TaskClass::Refactor,
+            TaskClass::TestAddition,
+            TaskClass::Documentation,
+            TaskClass::Investigation,
+        ] {
+            let result = evaluate_detailed(&OutcomeContractV1::for_task_class(task_class), &[]);
+            assert_eq!(result.outcome.accepted, AcceptanceState::Unknown);
+            assert_eq!(result.outcome.quality_score_milli, None);
+            assert!(result.outcome.evidence_refs.is_empty());
+            assert_eq!(result.result, result.outcome);
+        }
+    }
+
+    #[test]
     fn bug_fix_with_missing_signals_is_unknown() {
         let result = evaluate_detailed(
             &bug_fix_contract(),
@@ -859,6 +909,7 @@ mod tests {
         );
 
         assert_eq!(result.outcome.accepted, AcceptanceState::Unknown);
+        assert!(result.outcome.quality_score_milli.is_some());
         assert!(
             result
                 .contributions

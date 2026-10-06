@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Docs drift check (#1896): feature counts published in the README and the
 //! other shipped descriptions must match the code. Exact counts must be exact;
 //! "N+" counts must not overstate what exists.

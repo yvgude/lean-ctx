@@ -1,0 +1,84 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workspace-role.schema.json",
+  "title": "LeanCTX Workspace Role v1",
+  "description": "Bounded role-to-action grant for one workspace scope. allowed_actions draws on the single shared action vocabulary, so every receipt-bearing operation is grantable.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "role_binding_id",
+    "scope",
+    "role",
+    "allowed_actions",
+    "state",
+    "created_by",
+    "created_at",
+    "valid_from",
+    "version",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "role_binding_id": { "$ref": "common.schema.json#/$defs/id" },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "role": { "$ref": "common.schema.json#/$defs/role" },
+    "allowed_actions": {
+      "description": "Ascending lexicographic order, no duplicates. Deny-by-default: an action absent from this list is denied for this role in this scope.",
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 21,
+      "uniqueItems": true,
+      "items": { "$ref": "common.schema.json#/$defs/action" }
+    },
+    "state": { "enum": ["active", "superseded", "revoked"] },
+    "created_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "created_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "valid_from": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "valid_until": {
+      "$ref": "common.schema.json#/$defs/timestamp",
+      "description": "Exclusive end of the grant window. Absent means open-ended. Must be strictly greater than valid_from."
+    },
+    "revoked_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "revoked_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "revocation_reason_code": { "$ref": "common.schema.json#/$defs/reasonCode" },
+    "superseded_by": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Cross-object supersession: record digest of the role binding that replaced this one."
+    },
+    "policy_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Record digest of the same-scope policy under which this grant was issued."
+    },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "parent_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/idempotencyKey" }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/casLineage" },
+    {
+      "if": {
+        "properties": { "state": { "const": "revoked" } },
+        "required": ["state"]
+      },
+      "then": { "required": ["revoked_by", "revoked_at", "revocation_reason_code"] },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["revoked_by"] },
+            { "required": ["revoked_at"] },
+            { "required": ["revocation_reason_code"] }
+          ]
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": { "state": { "const": "superseded" } },
+        "required": ["state"]
+      },
+      "then": { "required": ["superseded_by"] },
+      "else": { "not": { "required": ["superseded_by"] } }
+    }
+  ]
+}

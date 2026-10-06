@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use std::collections::BTreeMap;
 
 // Machine-verified contract versions.
@@ -23,6 +25,7 @@ pub const PROVIDER_FRAMEWORK_V1_SCHEMA_VERSION: u32 = 1;
 pub const CONTEXT_PACKAGE_V1_SCHEMA_VERSION: u32 = 1;
 pub const CONTEXT_PACKAGE_V2_SCHEMA_VERSION: u32 = 2;
 pub const CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION: u32 = 1;
+pub const TEAM_SEAT_VALUE_V1_SCHEMA_VERSION: u32 = 1;
 
 pub const PACKAGE_EXTENSION: &str = "ctxpkg";
 pub const LEGACY_PACKAGE_EXTENSION: &str = "lctxpkg";
@@ -39,7 +42,7 @@ pub fn default_package_filename(name: &str, version: &str) -> String {
 }
 
 // Documentation-level contracts (do not have a schema field in payloads).
-pub const HTTP_MCP_CONTRACT_VERSION: u32 = 1;
+pub const HTTP_MCP_CONTRACT_VERSION: u32 = 2;
 pub const TEAM_SERVER_CONTRACT_VERSION: u32 = 1;
 pub const CAPABILITIES_CONTRACT_VERSION: u32 = 1;
 
@@ -96,6 +99,7 @@ pub fn contract_docs() -> Vec<ContractDoc> {
     vec![
         // ── Frozen: externally consumed platform/transport promises ────────
         doc("http-mcp", "http-mcp-contract-v1.md", 1, Frozen),
+        doc("http-mcp-v2", "http-mcp-contract-v2.md", 2, Stable),
         doc("context-ir", "context-ir-v1.md", 1, Frozen),
         doc(
             "local-free-invariant",
@@ -108,6 +112,13 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             "oss-plane-separation-v1.md",
             1,
             Frozen,
+        ),
+        // v2 = Apache host + private commercial components (v4); v1 stays frozen.
+        doc(
+            "oss-plane-separation-v2",
+            "oss-plane-separation-v2.md",
+            2,
+            Stable,
         ),
         doc("wasm-abi", "wasm-abi-v1.md", 1, Frozen),
         // Release promotion, offline rollback rehearsal and signing-key
@@ -143,6 +154,18 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         ),
         doc("autonomy-drivers", "autonomy-drivers-v1.md", 1, Stable),
         doc("conformance", "conformance-v1.md", 1, Stable),
+        doc(
+            "context-plan-projection-digest",
+            "context-plan-projection-digest-v1.md",
+            1,
+            Stable,
+        ),
+        doc(
+            "ocla-cache-validator",
+            "ocla-cache-validator-v1.md",
+            1,
+            Stable,
+        ),
         doc(
             "ocla-verifier-conformance",
             "ocla-verifier-conformance-v1.md",
@@ -230,7 +253,23 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         // Community addon manifest (#858): self-declared stable (v1); the format
         // evolves additively (new optional fields), so Stable, not Frozen.
         doc("addon-manifest", "addon-manifest-v1.md", 1, Stable),
+        // Additive signing profile; production adoption remains a separate gate.
+        doc(
+            "decision-record-signature",
+            "decision-record-signature-v1.md",
+            1,
+            Stable,
+        ),
         // ── Experimental: may change without notice ─────────────────────────
+        // Integration/source-pin notes are not release or protocol-stability
+        // promises. Classify them explicitly; never promote a note to Frozen
+        // merely to satisfy the inventory check.
+        doc(
+            "team-context-source",
+            "team-context-v1.SOURCE-v1.md",
+            1,
+            Experimental,
+        ),
         // W0/W1 token-intelligence foundations are locally verified but do not
         // yet claim complete hotpath adoption or externally consumed stability.
         doc(
@@ -337,6 +376,56 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc(
             "native-engine-context-proof",
             "native-engine-context-proof-v1.md",
+            1,
+            Experimental,
+        ),
+        // ── Experimental: Context Gateway, unreleased ──────────────────────
+        // Canonical decision vocabulary (`lean_ctx_protocol::context_gateway`).
+        doc("context-gateway", "context-gateway-v1.md", 1, Experimental),
+        // ── Experimental: v4 Engine interface, unreleased ───────────────────
+        // Additive local operator surfaces that ship with the v4 Engine. They
+        // may still change before the release that publishes them; promote to
+        // Stable/Frozen then, never before.
+        doc(
+            "engine-context-plan",
+            "engine-context-plan-v1.md",
+            1,
+            Experimental,
+        ),
+        doc(
+            "engine-context-sources",
+            "engine-context-sources-v1.md",
+            1,
+            Experimental,
+        ),
+        doc("engine-outcome", "engine-outcome-v1.md", 1, Experimental),
+        doc(
+            "engine-context-store",
+            "engine-context-store-v1.md",
+            1,
+            Experimental,
+        ),
+        doc(
+            "engine-provider-execution",
+            "engine-provider-execution-v1.md",
+            1,
+            Experimental,
+        ),
+        doc(
+            "engine-source-execution",
+            "engine-source-execution-v1.md",
+            1,
+            Experimental,
+        ),
+        doc(
+            "intelligence-runtime-install",
+            "intelligence-runtime-install-v1.md",
+            1,
+            Experimental,
+        ),
+        doc(
+            "reference-scheduler-estimates",
+            "reference-scheduler-estimates-v1.md",
             1,
             Experimental,
         ),
@@ -454,6 +543,10 @@ pub fn versions_kv() -> BTreeMap<&'static str, u32> {
             "leanctx.contract.capabilities.contract_version",
             CAPABILITIES_CONTRACT_VERSION,
         ),
+        (
+            "leanctx.contract.team_seat_value_v1.schema_version",
+            TEAM_SEAT_VALUE_V1_SCHEMA_VERSION,
+        ),
     ])
 }
 
@@ -516,7 +609,10 @@ mod tests {
         // change lands as a NEW file instead of mutating the old one.
         // Governance metadata (README, DEPRECATION) are exempt.
         for d in contract_docs() {
-            if d.doc_file == "README.md" || d.doc_file == "DEPRECATION.md" {
+            if d.doc_file == "README.md"
+                || d.doc_file == "DEPRECATION.md"
+                || d.doc_file.starts_with("v4-")
+            {
                 continue;
             }
             assert!(

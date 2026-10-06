@@ -25,8 +25,6 @@ pub(super) fn cmd_benchmark_study(args: &[String]) {
                         .filter_map(|s| match s.trim() {
                             "control" => Some(Arm::Control),
                             "compress" | "compress_only" => Some(Arm::CompressOnly),
-                            "route" | "route_only" => Some(Arm::RouteOnly),
-                            "combined" => Some(Arm::Combined),
                             _ => None,
                         })
                         .collect();

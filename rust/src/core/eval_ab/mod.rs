@@ -21,9 +21,9 @@ pub mod frontier;
 pub mod judge;
 pub mod model;
 pub mod report;
-pub mod routing_eval;
 pub mod scorers;
 pub mod speed;
+pub(crate) mod strategy_evaluations;
 pub mod suite;
 pub mod testbench;
 

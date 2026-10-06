@@ -429,7 +429,9 @@ impl McpTool for CtxShellTool {
                 ) {
                     crate::shell::save_tee(&cmd_clone, &output)
                         .map(|p| {
-                            if matches!(cfg.tee_mode, crate::core::config::TeeMode::HighCompression)
+                            if crate::cli::enforce_protected_store_path(std::path::Path::new(&p)).is_err() {
+                                format!("\n[full output: ctx_expand(id=\"{p}\", search=\"…\"|head=N|json_path=\"…\")]")
+                            } else if matches!(cfg.tee_mode, crate::core::config::TeeMode::HighCompression)
                             {
                                 let pct = crate::shell::tee_policy::savings_pct(original, sent);
                                 // Recovery grammar is path-first: agents without ctx_expand

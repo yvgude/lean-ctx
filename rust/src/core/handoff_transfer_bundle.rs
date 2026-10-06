@@ -476,6 +476,32 @@ mod tests {
         assert_eq!(parsed.privacy, "redacted");
     }
 
+    #[test]
+    fn unicode_signature_material_is_invalid() {
+        for malformed in ["\u{1f512}", "0\u{20ac}", "\u{e9}\u{e9}"] {
+            for signature_is_malformed in [true, false] {
+                let mut bundle = build_bundle_v1(sample_ledger(), None, BundlePrivacyV1::Redacted);
+                bundle.signer_agent_id = Some("unicode-regression".to_string());
+                bundle.signature = Some(if signature_is_malformed {
+                    malformed.to_string()
+                } else {
+                    "00".repeat(64)
+                });
+                bundle.signer_public_key = Some(if signature_is_malformed {
+                    "00".repeat(32)
+                } else {
+                    malformed.to_string()
+                });
+                let serialized = serialize_bundle_v1_pretty(&bundle).unwrap();
+                let parsed = parse_bundle_v1(&serialized).unwrap();
+                assert_eq!(
+                    check_bundle_signature(&parsed),
+                    BundleSignatureStatus::Invalid("non-ASCII hex string".to_string())
+                );
+            }
+        }
+    }
+
     /// GL #465: signed bundles verify; any tampering after signing flips the
     /// status to `Invalid` (fail-closed); bundles without signature fields are
     /// `Unsigned` (legacy, allowed with warning).

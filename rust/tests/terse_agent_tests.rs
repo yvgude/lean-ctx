@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 use lean_ctx::core::config::{CompressionLevel, Config, TerseAgent};
 use lean_ctx::instructions;
 use lean_ctx::tools::CrpMode;
@@ -5,10 +6,46 @@ use std::sync::Mutex;
 
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
-fn lock() -> std::sync::MutexGuard<'static, ()> {
-    ENV_LOCK
+struct TestEnvironment {
+    _lock: std::sync::MutexGuard<'static, ()>,
+    _config: tempfile::TempDir,
+    saved: Vec<(&'static str, Option<std::ffi::OsString>)>,
+}
+
+impl Drop for TestEnvironment {
+    fn drop(&mut self) {
+        for (key, value) in &self.saved {
+            // SAFETY: this guard retains ENV_LOCK until restoration completes.
+            unsafe {
+                if let Some(value) = value {
+                    std::env::set_var(key, value);
+                } else {
+                    std::env::remove_var(key);
+                }
+            }
+        }
+    }
+}
+
+fn lock() -> TestEnvironment {
+    let guard = ENV_LOCK
         .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let saved = [
+        "LEAN_CTX_COMPRESSION",
+        "LEAN_CTX_TERSE_AGENT",
+        "LEAN_CTX_OUTPUT_DENSITY",
+        "LEAN_CTX_DATA_DIR",
+        "LEAN_CTX_CONFIG_DIR",
+    ]
+    .into_iter()
+    .map(|key| (key, std::env::var_os(key)))
+    .collect();
+    TestEnvironment {
+        _lock: guard,
+        _config: isolate_config_with_compression_off(),
+        saved,
+    }
 }
 
 fn set_compression(compression: &str) {
@@ -27,15 +64,18 @@ fn set_legacy_terse(terse: &str) {
     unsafe { std::env::set_var("LEAN_CTX_TERSE_AGENT", terse) };
     // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
     unsafe { std::env::remove_var("LEAN_CTX_OUTPUT_DENSITY") };
-    isolate_config_with_compression_off();
 }
 
-fn isolate_config_with_compression_off() {
-    let tmp = std::env::temp_dir().join("lean_ctx_test_config_legacy");
-    let _ = std::fs::create_dir_all(&tmp);
-    let _ = std::fs::write(tmp.join("config.toml"), "compression_level = \"off\"\n");
+fn isolate_config_with_compression_off() -> tempfile::TempDir {
+    let tmp = tempfile::tempdir().expect("isolated compression config directory");
+    std::fs::write(
+        tmp.path().join("config.toml"),
+        "compression_level = \"off\"\n",
+    )
+    .expect("isolated compression config");
     // SAFETY: serialized by this file's local `ENV_LOCK` mutex.
-    unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", &tmp) };
+    unsafe { std::env::set_var("LEAN_CTX_CONFIG_DIR", tmp.path()) };
+    tmp
 }
 
 fn cleanup_env() {

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! #1685: which rail the Codex setup wires, and what it must not touch.
 //!
 //! Split out of `tests.rs` to keep that file under the LOC gate. `super`

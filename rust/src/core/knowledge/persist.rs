@@ -62,24 +62,13 @@ fn acquire_file_lock(dir: &Path) -> Option<std::fs::File> {
 /// concurrent writers never observe a half-written file — preventing the
 /// trailing-garbage JSON corruption reported in issue #326.
 fn write_json_atomic(dir: &Path, path: &Path, json: &str) -> Result<(), String> {
-    let unique = format!(
-        "knowledge.json.tmp.{}.{}",
-        std::process::id(),
-        std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .map_or(0, |d| d.as_nanos())
-    );
-    let tmp = dir.join(unique);
-    std::fs::write(&tmp, json).map_err(|e| e.to_string())?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&tmp, std::fs::Permissions::from_mode(0o600));
-    }
-    if let Err(e) = std::fs::rename(&tmp, path) {
-        let _ = std::fs::remove_file(&tmp);
-        return Err(e.to_string());
-    }
+    use std::io::Write;
+    let mut tmp =
+        tempfile::NamedTempFile::new_in(dir).map_err(|_| "knowledge temporary file unavailable")?;
+    tmp.write_all(json.as_bytes())
+        .map_err(|_| "knowledge write failed")?;
+    tmp.persist(path)
+        .map_err(|_| "knowledge publication failed")?;
     Ok(())
 }
 
@@ -133,12 +122,19 @@ impl ProjectKnowledge {
         if is_machine_derived(&fact.category, &fact.key) && !machine_derived_writes_allowed() {
             return false;
         }
+        // Same store boundary as `remember_with_origin` (G5, E3).
+        let Some([category, key, value]) =
+            super::core::admit_fact_fields([&fact.category, &fact.key, &fact.value])
+        else {
+            return false;
+        };
+        (fact.category, fact.key, fact.value) = (category, key, value);
 
-        if let Some(existing) = self
-            .facts
-            .iter_mut()
-            .find(|existing| existing.category == fact.category && existing.value == fact.value)
-        {
+        if let Some(existing) = self.facts.iter_mut().find(|existing| {
+            existing.category == fact.category
+                && existing.value == fact.value
+                && existing.origin == fact.origin
+        }) {
             if fact.last_confirmed > existing.last_confirmed {
                 existing.last_confirmed = fact.last_confirmed;
             }
@@ -239,7 +235,100 @@ impl ProjectKnowledge {
         Ok(roots)
     }
 
+    /// Optional capture must not trigger legacy migration writes during a read,
+    /// or replace an unreadable existing store with a newly created empty one.
+    pub(crate) fn load_for_checked_capture(project_root: &str) -> Result<Self, String> {
+        let hash = hash_project_root(project_root);
+        let path = knowledge_dir(&hash)?.join("knowledge.json");
+        match std::fs::symlink_metadata(&path) {
+            Ok(_) => {
+                let text = crate::core::policy::diagnostics::Target::read_file(&path)
+                    .ok_or("knowledge input is unavailable or uninspectable")?;
+                let mut knowledge: Self =
+                    serde_json::from_str(&text).map_err(|_| "knowledge input is invalid")?;
+                let canonical = |root: &str| {
+                    crate::core::pathutil::safe_canonicalize_bounded(Path::new(root), 2000)
+                };
+                if knowledge.project_hash != hash
+                    || canonical(&knowledge.project_root) != canonical(project_root)
+                {
+                    return Err("knowledge input belongs to a different project".into());
+                }
+                knowledge.rebuild_index();
+                return Ok(knowledge);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return Err("knowledge input metadata unavailable".into()),
+        }
+        let mut legacy = crate::core::project_hash::legacy_unnormalized_hashes(project_root);
+        legacy.push(crate::core::project_hash::hash_path_only(project_root));
+        for old_hash in legacy.into_iter().filter(|old| old != &hash) {
+            match std::fs::symlink_metadata(knowledge_dir(&old_hash)?.join("knowledge.json")) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                _ => return Err("knowledge requires an explicit legacy migration".into()),
+            }
+        }
+        Ok(Self::new(project_root))
+    }
+
+    pub(crate) fn save_policy_checked(
+        &self,
+        source_tool: &str,
+        original_content: &str,
+    ) -> Result<(), String> {
+        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        if let Some(policy) =
+            crate::core::policy::runtime::for_project(Path::new(&self.project_root))?
+        {
+            if !policy.tool_allowed("ctx_knowledge")
+                || !policy.tool_allowed(source_tool)
+                || crate::core::policy::content::evaluate_text(original_content, &policy).blocked
+                || json.len() > crate::core::policy::content::MAX_PROTECTED_CONTENT_BYTES
+            {
+                return Err("knowledge persistence withheld by policy".into());
+            }
+            let original: serde_json::Value =
+                serde_json::from_str(&json).map_err(|_| "knowledge is not inspectable")?;
+            if crate::core::policy::diagnostics::inspect(&original, Some(&policy)).as_ref()
+                != Some(&original)
+            {
+                // Preserve structural identity and old customer data. Writers
+                // must supply already-safe facts; never silently rewrite keys
+                // or republish an unsafe legacy store into a temporary file.
+                return Err("knowledge persistence requires policy-safe fields".into());
+            }
+        }
+        self.save_unlocked()
+    }
+
     pub fn save(&self) -> Result<(), String> {
+        super::protection::current(&self.project_root)?;
+        Self::with_project_lock_checked(&self.project_root, || self.save_unlocked())?
+    }
+
+    fn save_unlocked(&self) -> Result<(), String> {
+        if self.withheld.is_empty() {
+            return self.save_complete_unlocked();
+        }
+        let existing = Self::load_for_checked_capture(&self.project_root)?;
+        let complete = self.complete_for_storage(&existing)?;
+        complete.save_complete_unlocked()
+    }
+
+    fn save_complete_unlocked(&self) -> Result<(), String> {
+        let current = super::protection::current(&self.project_root)?;
+        let safe;
+        let candidate = if let Some(policy) = &current {
+            if self.project_hash != hash_project_root(&self.project_root) {
+                return Err("knowledge storage identity mismatch".into());
+            }
+            let existing = Self::load_for_checked_capture(&self.project_root)?;
+            super::protection::require_safe(&existing, policy)?;
+            safe = super::protection::view(self, policy)?;
+            &safe
+        } else {
+            self
+        };
         let dir = knowledge_dir(&self.project_hash)?;
         std::fs::create_dir_all(&dir).map_err(|e| e.to_string())?;
         #[cfg(unix)]
@@ -249,7 +338,10 @@ impl ProjectKnowledge {
         }
 
         let path = dir.join("knowledge.json");
-        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
+        let json = serde_json::to_string_pretty(candidate).map_err(|e| e.to_string())?;
+        if let Some(policy) = super::protection::current(&self.project_root)? {
+            super::protection::require_safe(candidate, &policy)?;
+        }
         write_json_atomic(&dir, &path, &json)?;
         Ok(())
     }
@@ -293,19 +385,102 @@ impl ProjectKnowledge {
     /// processes (parallel CLI invocations, CLI + daemon + MCP server) — see
     /// issue #326. Returns the persisted knowledge plus the closure's return
     /// value so the caller can build a response from the committed state.
+    pub(crate) fn with_project_lock_checked<T>(
+        project_root: &str,
+        f: impl FnOnce() -> T,
+    ) -> Result<T, String> {
+        use fs2::FileExt;
+        let hash = hash_project_root(project_root);
+        let lock = knowledge_lock(&hash);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let _guard = loop {
+            match lock.try_lock() {
+                Ok(guard) => break guard,
+                Err(std::sync::TryLockError::WouldBlock)
+                    if std::time::Instant::now() < deadline =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                Err(_) => return Err("knowledge lock unavailable".into()),
+            }
+        };
+        let dir = knowledge_dir(&hash)?;
+        std::fs::create_dir_all(&dir).map_err(|_| "knowledge directory unavailable")?;
+        let file = crate::core::policy::diagnostics::open_append(&dir.join(".knowledge.lock"))
+            .map_err(|_| "knowledge file lock unavailable")?;
+        loop {
+            match file.try_lock_exclusive() {
+                Ok(()) => break,
+                Err(e)
+                    if crate::core::file_lock::is_contended(&e)
+                        && std::time::Instant::now() < deadline =>
+                {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                }
+                Err(_) => return Err("knowledge file lock unavailable".into()),
+            }
+        }
+        let output = f();
+        let _ = FileExt::unlock(&file);
+        Ok(output)
+    }
+
     pub fn mutate_locked<T>(
         project_root: &str,
         f: impl FnOnce(&mut Self) -> T,
     ) -> Result<(Self, T), String> {
-        Self::with_project_lock(project_root, || {
-            let mut knowledge = Self::load_or_create(project_root);
-            let out = f(&mut knowledge);
-            knowledge.save()?;
-            Ok((knowledge, out))
+        crate::core::providers::provenance::with_reuse_deadline(|| {
+            Self::mutate_locked_in_scope(project_root, f)
         })
     }
 
+    fn mutate_locked_in_scope<T>(
+        project_root: &str,
+        f: impl FnOnce(&mut Self) -> T,
+    ) -> Result<(Self, T), String> {
+        super::protection::current(project_root)?;
+        Self::with_project_lock_checked(project_root, || {
+            let active = super::protection::current(project_root)?;
+            let mut knowledge = if let Some(policy) = &active {
+                let raw = Self::load_for_checked_capture(project_root)?;
+                super::protection::require_safe(&raw, policy)?;
+                raw
+            } else {
+                Self::load_or_create(project_root)
+            };
+            knowledge = knowledge.admit_sources();
+            crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+                std::cell::RefCell::new(Some(PathBuf::from(project_root))),
+                || {
+                    let out = f(&mut knowledge);
+                    if let Some(policy) = super::protection::current(project_root)? {
+                        knowledge = super::protection::view(&knowledge, &policy)?;
+                    }
+                    knowledge.save_unlocked()?;
+                    Ok((knowledge.admit_sources(), out))
+                },
+            )
+        })?
+    }
+
     pub fn load(project_root: &str) -> Option<Self> {
+        match super::protection::current(project_root) {
+            Ok(Some(_)) => {
+                let path = knowledge_dir(&hash_project_root(project_root))
+                    .ok()?
+                    .join("knowledge.json");
+                std::fs::symlink_metadata(path).ok()?;
+                let raw = Self::load_for_checked_capture(project_root).ok()?;
+                return match super::protection::current(project_root).ok()? {
+                    Some(policy) => super::protection::view(&raw, &policy)
+                        .ok()
+                        .map(Self::admit_sources),
+                    None => Some(raw.admit_sources()),
+                };
+            }
+            Err(_) => return None,
+            Ok(None) => {}
+        }
         let hash = hash_project_root(project_root);
         let dir = knowledge_dir(&hash).ok()?;
         let path = dir.join("knowledge.json");
@@ -321,7 +496,7 @@ impl ProjectKnowledge {
             }
             if let Ok(mut k) = serde_json::from_str::<Self>(&content) {
                 k.rebuild_index();
-                return Some(k);
+                return Some(k.admit_sources());
             }
         }
 
@@ -333,8 +508,8 @@ impl ProjectKnowledge {
             {
                 k.project_hash = hash;
                 k.rebuild_index();
-                let _ = k.save();
-                return Some(k);
+                let _ = k.save_unlocked();
+                return Some(k.admit_sources());
             }
         }
 
@@ -352,8 +527,8 @@ impl ProjectKnowledge {
             {
                 k.project_hash = hash;
                 k.rebuild_index();
-                let _ = k.save();
-                return Some(k);
+                let _ = k.save_unlocked();
+                return Some(k.admit_sources());
             }
         }
 
@@ -374,7 +549,30 @@ impl ProjectKnowledge {
             return Ok(false);
         }
 
-        let Some(legacy) = Self::load("") else {
+        if super::protection::current(target_root)?.is_some() {
+            return Err("unscoped legacy knowledge requires explicit protected migration".into());
+        }
+        // This explicit compatibility migration may read the old empty-root
+        // store, but general load/save must never treat an empty root as authority.
+        let mut legacy_store = None;
+        for hash in [
+            hash_project_root(""),
+            crate::core::project_hash::hash_path_only(""),
+        ] {
+            let path = knowledge_dir(&hash)?.join("knowledge.json");
+            match std::fs::symlink_metadata(&path) {
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => continue,
+                Err(_) => return Err("legacy knowledge input unavailable".into()),
+                Ok(_) => {}
+            }
+            let text = crate::core::policy::diagnostics::Target::read_file(&path)
+                .ok_or("legacy knowledge input is uninspectable")?;
+            let legacy: Self =
+                serde_json::from_str(&text).map_err(|_| "invalid legacy knowledge")?;
+            legacy_store = Some((legacy, path));
+            break;
+        }
+        let Some((legacy, legacy_path)) = legacy_store else {
             return Ok(false);
         };
 
@@ -385,87 +583,96 @@ impl ProjectKnowledge {
             return Ok(false);
         }
 
-        let mut target = Self::load_or_create(target_root);
-
-        fn fact_key(f: &KnowledgeFact) -> String {
-            format!(
-                "{}|{}|{}|{}|{}",
-                f.category, f.key, f.value, f.source_session, f.created_at
-            )
-        }
-        fn pattern_key(p: &ProjectPattern) -> String {
-            format!(
-                "{}|{}|{}|{}",
-                p.pattern_type, p.description, p.source_session, p.created_at
-            )
-        }
-        fn history_key(h: &ConsolidatedInsight) -> String {
-            format!(
-                "{}|{}|{}",
-                h.summary,
-                h.from_sessions.join(","),
-                h.timestamp
-            )
-        }
-
-        let mut seen_facts: std::collections::HashSet<String> =
-            target.facts.iter().map(fact_key).collect();
-        for f in legacy.facts {
-            if seen_facts.insert(fact_key(&f)) {
-                target.facts.push(f);
+        Self::with_project_lock_checked(target_root, || {
+            if super::protection::current(target_root)?.is_some() {
+                return Err("legacy migration withheld by changed project policy".into());
             }
-        }
+            let mut target = Self::load_or_create(target_root);
 
-        let mut seen_patterns: std::collections::HashSet<String> =
-            target.patterns.iter().map(pattern_key).collect();
-        for p in legacy.patterns {
-            if seen_patterns.insert(pattern_key(&p)) {
-                target.patterns.push(p);
+            fn fact_key(f: &KnowledgeFact) -> String {
+                format!(
+                    "{}|{}|{}|{}|{}",
+                    f.category, f.key, f.value, f.source_session, f.created_at
+                )
             }
-        }
-
-        let mut seen_history: std::collections::HashSet<String> =
-            target.history.iter().map(history_key).collect();
-        for h in legacy.history {
-            if seen_history.insert(history_key(&h)) {
-                target.history.push(h);
+            fn pattern_key(p: &ProjectPattern) -> String {
+                format!(
+                    "{}|{}|{}|{}",
+                    p.pattern_type, p.description, p.source_session, p.created_at
+                )
             }
-        }
+            fn history_key(h: &ConsolidatedInsight) -> String {
+                format!(
+                    "{}|{}|{}",
+                    h.summary,
+                    h.from_sessions.join(","),
+                    h.timestamp
+                )
+            }
 
-        target.facts.sort_by(|a, b| {
-            b.created_at
-                .cmp(&a.created_at)
-                .then_with(|| b.confidence.total_cmp(&a.confidence))
-        });
-        if target.facts.len() > policy.knowledge.max_facts {
-            target.facts.truncate(policy.knowledge.max_facts);
-        }
-        target
-            .patterns
-            .sort_by_key(|x| std::cmp::Reverse(x.created_at));
-        if target.patterns.len() > policy.knowledge.max_patterns {
-            target.patterns.truncate(policy.knowledge.max_patterns);
-        }
-        target
-            .history
-            .sort_by_key(|x| std::cmp::Reverse(x.timestamp));
-        if target.history.len() > policy.knowledge.max_history {
-            target.history.truncate(policy.knowledge.max_history);
-        }
+            let mut seen_facts: std::collections::HashSet<String> =
+                target.facts.iter().map(fact_key).collect();
+            for f in legacy.facts {
+                if seen_facts.insert(fact_key(&f)) {
+                    target.facts.push(f);
+                }
+            }
 
-        target.updated_at = Utc::now();
-        target.save()?;
+            let mut seen_patterns: std::collections::HashSet<String> =
+                target.patterns.iter().map(pattern_key).collect();
+            for p in legacy.patterns {
+                if seen_patterns.insert(pattern_key(&p)) {
+                    target.patterns.push(p);
+                }
+            }
 
-        let legacy_hash = crate::core::project_hash::hash_path_only("");
-        let legacy_dir = knowledge_dir(&legacy_hash)?;
-        let legacy_path = legacy_dir.join("knowledge.json");
-        if legacy_path.exists() {
-            let ts = Utc::now().format("%Y%m%d-%H%M%S");
-            let backup = legacy_dir.join(format!("knowledge.legacy-empty-root.{ts}.json"));
-            std::fs::rename(&legacy_path, &backup).map_err(|e| e.to_string())?;
-        }
+            let mut seen_history: std::collections::HashSet<String> =
+                target.history.iter().map(history_key).collect();
+            for h in legacy.history {
+                if seen_history.insert(history_key(&h)) {
+                    target.history.push(h);
+                }
+            }
 
-        Ok(true)
+            target.facts.sort_by(|a, b| {
+                b.created_at
+                    .cmp(&a.created_at)
+                    .then_with(|| b.confidence.total_cmp(&a.confidence))
+            });
+            if target.facts.len() > policy.knowledge.max_facts {
+                target.facts.truncate(policy.knowledge.max_facts);
+            }
+            target
+                .patterns
+                .sort_by_key(|x| std::cmp::Reverse(x.created_at));
+            if target.patterns.len() > policy.knowledge.max_patterns {
+                target.patterns.truncate(policy.knowledge.max_patterns);
+            }
+            target
+                .history
+                .sort_by_key(|x| std::cmp::Reverse(x.timestamp));
+            if target.history.len() > policy.knowledge.max_history {
+                target.history.truncate(policy.knowledge.max_history);
+            }
+
+            target.updated_at = Utc::now();
+            if super::protection::current(target_root)?.is_some() {
+                return Err("legacy migration withheld by changed project policy".into());
+            }
+            target.save_unlocked()?;
+
+            let legacy_dir = legacy_path.parent().ok_or("legacy directory unavailable")?;
+            if legacy_path.exists() {
+                let ts = Utc::now().format("%Y%m%d-%H%M%S");
+                let backup = legacy_dir.join(format!("knowledge.legacy-empty-root.{ts}.json"));
+                std::fs::hard_link(&legacy_path, &backup)
+                    .map_err(|_| "legacy backup could not be preserved")?;
+                std::fs::remove_file(&legacy_path)
+                    .map_err(|_| "legacy backup retained but source cleanup failed")?;
+            }
+
+            Ok(true)
+        })?
     }
 }
 
@@ -479,6 +686,7 @@ mod tests {
     fn machine_fact(category: &str, key: &str) -> KnowledgeFact {
         let now = chrono::Utc::now();
         KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: category.to_string(),
             key: key.to_string(),
             value: "Finding: run-guards.ts: Read run-guards.ts (92L)".to_string(),
@@ -641,7 +849,8 @@ mod tests {
     #[test]
     fn load_rebuilds_ephemeral_index_without_changing_json() {
         let _isolated = crate::core::data_dir::isolated_data_dir();
-        let root = "/tmp/knowledge-index-load";
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_str().unwrap();
         let policy = MemoryPolicy::default();
         let mut knowledge = ProjectKnowledge::new(root);
         knowledge.remember(

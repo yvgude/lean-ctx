@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 import { expect, mock, test } from "claude-code/testing";
 
 const SHELL = "mcp__lean-ctx__ctx_shell";

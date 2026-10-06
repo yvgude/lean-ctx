@@ -7,6 +7,16 @@
 //! for defense in depth.
 
 pub fn save_tee(command: &str, output: &str) -> Option<String> {
+    // Shell output has no complete source authority; do not create a protected
+    // recovery copy or advertise a handle that cannot be reauthorized.
+    if crate::core::policy::runtime::is_active() {
+        return None;
+    }
+    // Inspect both content and filename inputs before any recovery copy exists.
+    let command = crate::core::policy::content::protect_active(command).ok()?;
+    let output = crate::core::policy::content::protect_active(output).ok()?;
+    let command = command.as_ref();
+    let output = output.as_ref();
     let tee_dir = crate::core::paths::state_dir().ok()?.join("tee");
     std::fs::create_dir_all(&tee_dir).ok()?;
 
@@ -41,14 +51,7 @@ pub fn save_tee(command: &str, output: &str) -> Option<String> {
     let filename = format!("{cmd_slug}_{}.log", &cmd_hash.as_str()[..8]);
     let path = tee_dir.join(&filename);
 
-    let masked = crate::core::redaction::redact_text(output);
-    let (redacted, _) = crate::core::secret_detection::scan_and_redact_from_config(&masked);
-    std::fs::write(&path, redacted).ok()?;
-    #[cfg(unix)]
-    {
-        use std::os::unix::fs::PermissionsExt;
-        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
-    }
+    crate::proxy::ccr::write_tee(&path, output)?;
     let handle = path.to_string_lossy().to_string();
     crate::core::relevance_tracker::register_compressed(
         handle.clone(),

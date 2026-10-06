@@ -103,16 +103,14 @@ fn apply_setting(key: &str, value: &str) -> Result<(), String> {
     }
 }
 
-/// Mirror a `terse_agent` change: persist it *and* re-inject the agent rules.
-/// `terse_agent` is a legacy input to `CompressionLevel::effective`, and the
-/// injected rules are derived from that effective level — so without a re-inject
-/// the change would not reach the agent (and the UI footer's "terse changes
-/// re-inject the agent rules" claim would be false).
+/// Compatibility input: persist the canonical compression setting and re-inject
+/// rules. Persisting `terse_agent` itself loses the update when the v3 migration
+/// removes legacy fields in favor of an already present `compression_level`.
 fn apply_terse_agent(value: &str) -> Result<(), String> {
-    crate::core::config::setter::set_by_key("terse_agent", value).map_err(|e| e.to_string())?;
-    let home = dirs::home_dir().unwrap_or_default();
-    let _ = crate::rules_inject::inject_all_rules(&home);
-    Ok(())
+    let terse: TerseAgent =
+        serde_json::from_value(serde_json::json!(value)).map_err(|error| error.to_string())?;
+    let level = CompressionLevel::from_legacy(&terse, &Default::default());
+    apply_compression(compression_canon(&level))
 }
 
 /// Mirror `lean-ctx compression <level>`: persist the level *and* re-inject the
@@ -193,10 +191,10 @@ fn settings_payload() -> String {
                 "env_override": env_present("LEAN_CTX_STRUCTURE_FIRST"),
             },
             "terse_agent": {
-                "value": terse_canon(&cfg.terse_agent),
+                "value": terse_canon(&CompressionLevel::effective(&cfg).to_components().0),
                 "options": TERSE_OPTIONS,
-                "env_override": env_present("LEAN_CTX_TERSE_AGENT"),
-                "local_override": local("terse_agent"),
+                "env_override": env_present("LEAN_CTX_TERSE_AGENT") || env_present("LEAN_CTX_COMPRESSION") || env_present("LEAN_CTX_OUTPUT_DENSITY"),
+                "local_override": local("terse_agent") || local("compression_level"),
             },
         }
     });

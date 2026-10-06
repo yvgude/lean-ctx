@@ -123,7 +123,20 @@ fn ctx_knowledge_export_is_file_backed_not_json_stdout() {
         .strip_prefix("Export saved: ")
         .and_then(|s| s.split_whitespace().next())
         .expect("extract export path");
-    assert!(Path::new(path_str).exists(), "export file must exist");
+    let export_dir = data_dir.join("exports").join("knowledge");
+    let listing: Vec<String> = std::fs::read_dir(&export_dir)
+        .map(|entries| {
+            entries
+                .filter_map(Result::ok)
+                .map(|entry| entry.path().display().to_string())
+                .collect()
+        })
+        .unwrap_or_default();
+    assert!(
+        Path::new(path_str).exists(),
+        "export file must exist: reported {path_str:?} (full output {out:?}); {} contains {listing:?}",
+        export_dir.display()
+    );
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };

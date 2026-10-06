@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Fast-initialize contract (GH #669).
 //!
 //! VS Code's start-on-demand MCP lifecycle races the first tool call of a
@@ -14,9 +16,11 @@
 //!      the exact VS Code race pattern — succeeds on the first attempt.
 
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, Command, Stdio};
+use std::process::{Command, Stdio};
 use std::sync::mpsc;
 use std::time::{Duration, Instant};
+
+use super::mcp_process as process;
 
 /// Generous for CI (debug binary, cold cache, shared runners) yet far below
 /// the pathological regressions this guards against (30s crash-loop backoff,
@@ -27,6 +31,7 @@ struct TestEnv {
     _tmp: tempfile::TempDir,
     home: std::path::PathBuf,
     data: std::path::PathBuf,
+    state: std::path::PathBuf,
     project: std::path::PathBuf,
 }
 
@@ -34,15 +39,19 @@ fn test_env() -> TestEnv {
     let tmp = tempfile::tempdir().unwrap();
     let home = tmp.path().join("home");
     let data = tmp.path().join("data");
+    let state = tmp.path().join("state");
     let project = tmp.path().join("project");
     std::fs::create_dir_all(&home).unwrap();
     std::fs::create_dir_all(&data).unwrap();
+    std::fs::create_dir_all(&state).unwrap();
     std::fs::create_dir_all(project.join(".git")).unwrap();
     std::fs::write(project.join("hello.txt"), "hello fast init\n").unwrap();
+    std::fs::write(project.join("second.txt"), "second fast init\n").unwrap();
     TestEnv {
         _tmp: tmp,
         home,
         data,
+        state,
         project,
     }
 }
@@ -57,11 +66,12 @@ fn initialize_answers_fast_and_first_call_succeeds() {
     let env = test_env();
 
     let spawn_at = Instant::now();
-    let mut child: Child = Command::new(bin)
+    let mut child = Command::new(bin)
         .arg("mcp")
         .current_dir(&env.project)
         .env("HOME", &env.home)
         .env("LEAN_CTX_DATA_DIR", &env.data)
+        .env("LEAN_CTX_STATE_DIR", &env.state)
         .env("CODEX_HOME", env.home.join(".codex"))
         .env("LEAN_CTX_HEADLESS", "1")
         // Root detection must derive from the temp project's cwd. When the
@@ -77,8 +87,10 @@ fn initialize_answers_fast_and_first_call_succeeds() {
         .spawn()
         .expect("mcp server spawn");
 
-    let mut stdin = child.stdin.take().expect("child stdin");
-    let stdout = child.stdout.take().expect("child stdout");
+    // Own cleanup before any assertion or fallible pipe setup can unwind.
+    let mut process = process::ChildGuard::new(&mut child);
+    let mut stdin = process.child_mut().stdin.take().expect("child stdin");
+    let stdout = process.child_mut().stdout.take().expect("child stdout");
     let (tx, rx) = mpsc::channel::<String>();
     let reader = std::thread::spawn(move || {
         for line in BufReader::new(stdout).lines() {
@@ -160,7 +172,64 @@ fn initialize_answers_fast_and_first_call_succeeds() {
         "ctx_read must deliver the file on the first post-initialize call; got: {call_res}"
     );
 
+    let second_call = serde_json::json!({
+        "jsonrpc": "2.0", "id": 3, "method": "tools/call",
+        "params": {
+            "name": "ctx_read",
+            "arguments": { "path": env.project.join("second.txt").to_string_lossy() }
+        }
+    });
+    writeln!(stdin, "{second_call}").expect("write second tools/call");
+    let second_res = recv_response(3, Duration::from_secs(30));
+    assert!(
+        second_res["error"].is_null(),
+        "second tools/call must succeed; got: {second_res}"
+    );
+    let second_text = second_res["result"]["content"][0]["text"]
+        .as_str()
+        .unwrap_or_default();
+    assert!(
+        second_text.contains("second fast init"),
+        "ctx_read must deliver the second file; got: {second_res}"
+    );
+
     drop(stdin); // EOF → clean server shutdown
-    let _ = child.wait();
-    let _ = reader.join();
+    let status = process
+        .wait_for_exit(Duration::from_secs(5))
+        .expect("MCP server must exit after stdin EOF");
+    assert!(status.success(), "MCP server shutdown failed: {status}");
+    process::join_bounded(reader, Duration::from_secs(2))
+        .expect("stdout reader must finish after server shutdown");
+
+    let ledger_path = env.state.join("context_ledger.json");
+    let ledger_text = std::fs::read_to_string(&ledger_path)
+        .unwrap_or_else(|error| panic!("persisted ledger missing at {ledger_path:?}: {error}"));
+    let ledger: serde_json::Value =
+        serde_json::from_str(&ledger_text).expect("persisted ledger must be valid JSON");
+    let entries = ledger["entries"]
+        .as_array()
+        .expect("persisted ledger entries must be an array");
+    assert_eq!(entries.len(), 2, "both reads must persist one ledger entry");
+    for name in ["hello.txt", "second.txt"] {
+        let expected_path = std::fs::canonicalize(env.project.join(name))
+            .expect("read source must canonicalize")
+            .to_string_lossy()
+            .to_string();
+        let entry = entries
+            .iter()
+            .find(|entry| entry["path"].as_str() == Some(expected_path.as_str()))
+            .unwrap_or_else(|| panic!("missing persisted ledger entry for {expected_path}"));
+        assert!(
+            entry["original_tokens"].as_u64().unwrap_or(0) > 0,
+            "{name} must have positive original token count"
+        );
+        assert!(
+            entry["sent_tokens"].as_u64().unwrap_or(0) > 0,
+            "{name} must have positive sent token count"
+        );
+    }
+    assert!(
+        ledger["total_tokens_sent"].as_u64().unwrap_or(0) > 0,
+        "persisted ledger must have positive aggregate sent tokens"
+    );
 }

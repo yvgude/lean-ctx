@@ -27,6 +27,8 @@ mod observe;
 mod payload;
 // PowerShell-tool rewrites: PowerShell quoting, no `lean-ctx -c` wrap (#1848).
 mod powershell_rewrite;
+mod protected;
+pub(crate) use protected::handle_protected_gate;
 // Redirect decision logic (#660/#966 LOC gate) for Read/Grep/Glob.
 mod read_dedup;
 mod redirect;

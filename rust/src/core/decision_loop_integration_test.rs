@@ -81,41 +81,18 @@ async fn assert_completed_task(
         "execution receipt for {expected_tool} must retain the ingress task id"
     );
 
-    let assessment = DecisionLoopRuntime::get_or_init()
-        .assessment_for(task_id)
-        .expect("completed MCP call must record a value-gate assessment");
-    assert_eq!(assessment.task_id, task_id);
-    assert!(
-        assessment.cost_micros > 0,
-        "completed MCP call must have a positive execution cost"
+    let runtime = DecisionLoopRuntime::get_or_init();
+    let outcome = runtime
+        .outcome_for(task_id)
+        .expect("completed MCP call must record a canonical outcome");
+    assert_eq!(outcome.accepted_outcome.task_id.as_str(), task_id);
+    assert_eq!(
+        outcome.accepted_outcome.accepted,
+        lean_ctx_protocol::AcceptanceState::Unknown,
+        "tool success without acceptance evidence must remain unknown"
     );
-    let cpao = assessment
-        .cpao_micros
-        .expect("accepted MCP outcome must produce CPAO");
-    assert!(cpao > 0, "accepted MCP outcome must produce positive CPAO");
-    assert!(
-        (cpao as f64).is_finite(),
-        "CPAO must be representable as a finite report value"
-    );
-    assert!(assessment.outcome_accepted);
-    assert!(
-        assessment
-            .evidence
-            .iter()
-            .any(|evidence| evidence == "signal=BuildSucceeded"),
-        "successful MCP outcome must be recorded as BuildSucceeded"
-    );
-    let exported = serde_json::to_value(&assessment)
-        .expect("value assessment evidence must serialize for audit export");
-    assert_eq!(exported["task_id"], task_id);
-    assert_eq!(exported["cost_micros"], assessment.cost_micros);
-    assert_eq!(exported["cpao_micros"], cpao);
-    assert!(
-        exported["evidence"]
-            .as_array()
-            .is_some_and(|evidence| !evidence.is_empty()),
-        "audit export must retain outcome evidence"
-    );
+    assert!(outcome.assessment.is_none());
+    assert!(runtime.assessment_for(task_id).is_none());
 }
 
 async fn server_with_fixture() -> (

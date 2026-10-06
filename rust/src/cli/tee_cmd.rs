@@ -8,39 +8,66 @@ pub fn cmd_tee(args: &[String]) {
     };
 
     let action = args.first().map_or("list", std::string::String::as_str);
+    if !matches!(action, "clear" | "purge") {
+        match crate::core::policy::runtime::with_source_view(
+            crate::core::policy::runtime::is_active,
+        ) {
+            Ok(false) => {}
+            Ok(true) => {
+                eprintln!(
+                    "Stored shell output has no source authority; repeat the original authorized operation."
+                );
+                std::process::exit(1);
+            }
+            Err(_) => {
+                eprintln!("Current policy cannot be verified; retry the authorized operation.");
+                std::process::exit(1);
+            }
+        }
+    }
     match action {
         "list" | "ls" => {
-            if !tee_dir.exists() {
-                println!("No tee logs found (~/.lean-ctx/tee/ does not exist)");
-                return;
-            }
-            let mut entries: Vec<_> = std::fs::read_dir(&tee_dir)
-                .unwrap_or_else(|e| {
-                    eprintln!("Error: {e}");
-                    std::process::exit(1);
-                })
-                .filter_map(std::result::Result::ok)
-                .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("log"))
-                .collect();
-            entries.sort_by_key(std::fs::DirEntry::file_name);
+            // Filenames can contain command text. Build the entire listing
+            // under one view and publish only after its authority recheck.
+            let listing = crate::core::policy::runtime::with_source_view(|| {
+                if crate::core::policy::runtime::is_active() {
+                    return Err("Stored shell output has no source authority.".to_string());
+                }
+                if !tee_dir.exists() {
+                    return Ok("No tee logs found (~/.lean-ctx/tee/ does not exist)\n".to_string());
+                }
+                let mut entries: Vec<_> = std::fs::read_dir(&tee_dir)
+                    .map_err(|_| "Tee metadata is unavailable".to_string())?
+                    .filter_map(std::result::Result::ok)
+                    .filter(|e| e.path().extension().and_then(|x| x.to_str()) == Some("log"))
+                    .collect();
+                entries.sort_by_key(std::fs::DirEntry::file_name);
 
-            if entries.is_empty() {
-                println!("No tee logs found.");
-                return;
-            }
+                if entries.is_empty() {
+                    return Ok("No tee logs found.\n".to_string());
+                }
 
-            println!("Tee logs ({}):\n", entries.len());
-            for entry in &entries {
-                let size = entry.metadata().map_or(0, |m| m.len());
-                let name = entry.file_name();
-                let size_str = if size > 1024 {
-                    format!("{}K", size / 1024)
-                } else {
-                    format!("{size}B")
-                };
-                println!("  {:<60} {}", name.to_string_lossy(), size_str);
+                let mut output = format!("Tee logs ({}):\n\n", entries.len());
+                for entry in &entries {
+                    let size = entry.metadata().map_or(0, |m| m.len());
+                    let name = entry.file_name();
+                    let size_str = if size > 1024 {
+                        format!("{}K", size / 1024)
+                    } else {
+                        format!("{size}B")
+                    };
+                    output.push_str(&format!("  {:<60} {}\n", name.to_string_lossy(), size_str));
+                }
+                output.push_str("\nUse 'lean-ctx tee clear' to delete all logs.\n");
+                Ok(output)
+            })
+            .and_then(std::convert::identity);
+            if let Ok(output) = listing {
+                print!("{output}");
+            } else {
+                eprintln!("Tee metadata is unavailable or current policy cannot be verified.");
+                std::process::exit(1);
             }
-            println!("\nUse 'lean-ctx tee clear' to delete all logs.");
         }
         "clear" | "purge" => {
             if !tee_dir.exists() {
@@ -76,10 +103,10 @@ pub fn cmd_tee(args: &[String]) {
                 std::process::exit(1);
             }
             let path = tee_dir.join(basename);
-            match crate::tools::ctx_read::read_file_lossy(&path.to_string_lossy()) {
+            match crate::proxy::ccr::read_tee_detailed(&path) {
                 Ok(content) => print!("{content}"),
-                Err(e) => {
-                    eprintln!("Error reading {}: {e}", path.display());
+                Err(reason) => {
+                    eprintln!("{reason}");
                     std::process::exit(1);
                 }
             }
@@ -103,13 +130,15 @@ pub fn cmd_tee(args: &[String]) {
             match entries.last() {
                 Some(entry) => {
                     let path = entry.path();
-                    println!(
-                        "--- {} ---\n",
-                        path.file_name().unwrap_or_default().to_string_lossy()
-                    );
-                    match crate::tools::ctx_read::read_file_lossy(&path.to_string_lossy()) {
-                        Ok(content) => print!("{content}"),
-                        Err(e) => eprintln!("Error: {e}"),
+                    match crate::proxy::ccr::read_tee_detailed(&path) {
+                        Ok(content) => println!(
+                            "--- {} ---\n\n{content}",
+                            path.file_name().unwrap_or_default().to_string_lossy()
+                        ),
+                        Err(reason) => {
+                            eprintln!("{reason}");
+                            std::process::exit(1);
+                        }
                     }
                 }
                 None => println!("No tee logs found."),

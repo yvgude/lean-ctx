@@ -19,17 +19,34 @@ fn is_terminal_poll_file(path: &str) -> bool {
 }
 
 /// Modes whose compressed output is useful for cross-agent relay.
-const RELAY_ELIGIBLE_MODES: &[&str] = &["map", "map:v2", "signatures", "signatures:v2"];
+const RELAY_ELIGIBLE_MODES: &[&str] = &["map", "signatures"];
 
 /// Extract relay-eligible content from a rendered read.
 fn relay_eligible<'a>(mode: &'a str, content: &'a str) -> (Option<&'a str>, Option<&'a str>) {
-    if RELAY_ELIGIBLE_MODES.iter().any(|m| mode.starts_with(m))
-        && content.len() <= MAX_RELAY_CONTENT_BYTES
-    {
+    if RELAY_ELIGIBLE_MODES.contains(&mode) && content.len() <= MAX_RELAY_CONTENT_BYTES {
         (Some(content), Some(mode))
     } else {
         (None, None)
     }
+}
+
+fn relay_variant_matches(
+    mode: &str,
+    stored: &str,
+    crp_mode: CrpMode,
+    tuning: ReadTuning<'_>,
+) -> bool {
+    RELAY_ELIGIBLE_MODES.iter().any(|candidate| {
+        (mode == "auto" || mode == *candidate)
+            && stored
+                == super::compressed_cache_key(
+                    candidate,
+                    crp_mode,
+                    None,
+                    tuning.aggressiveness,
+                    tuning.protect,
+                )
+    })
 }
 /// Reads a file through the cache and applies the requested compression mode.
 pub fn handle(cache: &mut SessionCache, path: &str, mode: &str, crp_mode: CrpMode) -> String {
@@ -344,7 +361,7 @@ fn handle_with_options_resolved_preread(
     if !effective_fresh_for_delivery
         && !compress_protected
         && let Some(fp) = delivery_metadata
-        && let Some(stub) = try_cross_agent_stub(path, mode, fp.hash, fp.mtime)
+        && let Some(stub) = try_cross_agent_stub(path, mode, fp.hash, fp.mtime, crp_mode, tuning)
     {
         return stub;
     }
@@ -417,6 +434,8 @@ fn handle_with_options_resolved_preread(
             &result.resolved_mode,
             &result.content,
             result.output_tokens,
+            crp_mode,
+            tuning,
         );
     }
 
@@ -784,17 +803,16 @@ fn line_count_of(bytes: &[u8]) -> u32 {
     u32::try_from(newlines + unterminated).unwrap_or(u32::MAX)
 }
 
-/// Whether relayed content recorded in `relay_mode` answers a request for
-/// `requested`. `auto` delegates the choice to lean-ctx, so any relay-eligible
-/// view fits; an explicit mode only accepts that mode or a versioned variant of
-/// it (`map` accepts `map:v2`) — never another view (`signatures` must not be
-/// answered with a `map`) and never a `lines:` window.
-fn relay_satisfies(requested: &str, relay_mode: &str) -> bool {
-    requested == "auto"
-        || relay_mode == requested
-        || relay_mode
-            .strip_prefix(requested)
-            .is_some_and(|rest| rest.starts_with(':'))
+/// The agent id delivery records and lookups are keyed on: the signing
+/// profile's principal when one is configured, otherwise the stable
+/// per-process agent identity (#1916), so two agents never share one id.
+fn delivery_agent(
+    profile: Option<&crate::core::a2a::task::delivery_authority::DeliverySigningProfileV1>,
+) -> String {
+    profile.map_or_else(
+        || crate::core::agent_identity::delivery_agent_id().to_string(),
+        |profile| profile.agent_id.clone(),
+    )
 }
 
 pub(crate) fn try_cross_agent_stub(
@@ -802,83 +820,82 @@ pub(crate) fn try_cross_agent_stub(
     mode: &str,
     hash: [u8; 12],
     mtime: u64,
+    crp_mode: CrpMode,
+    tuning: ReadTuning<'_>,
 ) -> Option<ReadOutput> {
     if !crate::core::config::Config::load().ocla.delivery_enabled() {
         return None;
     }
-    if matches!(mode, "full" | "raw" | "diff") || mode.starts_with("lines:") {
+    if mode != "auto" && !RELAY_ELIGIBLE_MODES.contains(&mode) {
         return None;
     }
-    let current_agent = crate::core::agent_identity::delivery_agent_id();
+    let profile =
+        crate::core::a2a::task::delivery_authority::DeliverySigningProfileV1::from_environment()
+            .ok()?;
+    let current_agent = delivery_agent(profile.as_ref());
     let current_conversation = crate::core::conversation::current_conversation_id()
-        .unwrap_or_else(|| current_agent.to_string());
+        .unwrap_or_else(|| current_agent.clone());
     let reg = crate::core::ocla::OclaRegistry::global();
-    let record = crate::daemon_client::try_delivery_check_blocking(
-        &hash,
-        mtime,
-        path,
-        Some(current_agent),
-        Some(&current_conversation),
-    )
-    .or_else(|| {
-        reg.delivery_registry.check_delivery(
+    let record = if let Some(profile) = profile {
+        // A scoped miss/error must never reveal a legacy cache entry.
+        crate::daemon_client::scoped_delivery_check_blocking(
+            &profile,
+            path,
+            hash,
+            &current_conversation,
+        )
+        .ok()
+        .flatten()
+    } else {
+        crate::daemon_client::try_delivery_check_blocking(
             &hash,
             mtime,
             path,
-            Some(current_agent),
+            Some(&current_agent),
             Some(&current_conversation),
         )
-    })?;
+        .or_else(|| {
+            reg.delivery_registry.check_delivery(
+                &hash,
+                mtime,
+                path,
+                Some(&current_agent),
+                Some(&current_conversation),
+            )
+        })
+    }?;
 
-    let short = protocol::shorten_path(path);
+    render_cross_agent_relay(path, mode, &record, crp_mode, tuning)
+}
 
-    // Relay carries the content itself, so it is correct in any conversation —
-    // provided it is the view the caller asked for.
-    if let Some(ref content) = record.relay_content {
-        let relay_mode = record.relay_mode.as_deref().unwrap_or("map");
-        if !relay_satisfies(mode, relay_mode) {
-            return None;
-        }
-        let header = format!(
-            "{short} [relayed from {} · {relay_mode} · {}L]",
-            record.agent_id, record.line_count,
-        );
-        let body = format!("{header}\n{content}");
-        let tokens = count_tokens(&body);
-        reg.delivery_registry
-            .record_stub_served(&record, tokens as u64);
-        return Some(ReadOutput {
-            content: body,
-            resolved_mode: "cross-agent-relay".into(),
-            output_tokens: tokens,
-            is_cache_hit: true,
-        });
-    }
-
-    // A content-free stub asserts "this is already in your context", which is
-    // only true when the delivery provably reached the caller's conversation
-    // (#1909). The registry never returns same-conversation records, so under
-    // conversation scoping this withholds every content-free stub; it survives
-    // only in explicit legacy mode (`LEAN_CTX_CONVERSATION_SCOPE=0`), whose
-    // contract is one daemon == one conversation.
-    if !crate::core::conversation::conversation_allows_stub(
-        Some(&current_conversation),
-        Some(&record.conversation_id),
-    ) {
+fn render_cross_agent_relay(
+    path: &str,
+    mode: &str,
+    record: &crate::core::ocla::types::DeliveryRecord,
+    crp_mode: CrpMode,
+    tuning: ReadTuning<'_>,
+) -> Option<ReadOutput> {
+    let relay_mode = record.relay_mode.as_deref()?;
+    if !relay_variant_matches(mode, relay_mode, crp_mode, tuning) {
         return None;
     }
+    // A record of somebody else's read is not itself usable context.
+    // Until reference expansion is available, a missing payload is a miss.
+    let content = record.relay_content.as_ref()?;
+    let short = protocol::shorten_path(path);
 
-    let stub = format!(
-        "{short} [cross-agent · {lines}L · read by {agent} · use fresh=true to force]",
-        lines = record.line_count,
-        agent = record.agent_id,
+    let header = format!(
+        "{short} [relayed from {} · {relay_mode} · {}L]",
+        record.agent_id, record.line_count,
     );
-    let tokens = count_tokens(&stub);
-    reg.delivery_registry
-        .record_stub_served(&record, tokens as u64);
+    let body = format!("{header}\n{content}");
+    let tokens = count_tokens(&body);
+    crate::core::ocla::OclaRegistry::global()
+        .delivery_registry
+        .record_stub_served(record, tokens as u64);
     Some(ReadOutput {
-        content: stub,
-        resolved_mode: "cross-agent-stub".into(),
+        content: body,
+        resolved_mode: "cross-agent-relay".into(),
         output_tokens: tokens,
         is_cache_hit: true,
     })
@@ -886,15 +903,20 @@ pub(crate) fn try_cross_agent_stub(
 
 /// Records a completed (non-cache-hit) read for cross-agent delivery, relaying
 /// the rendered view when it is a compact, relay-eligible one. Shared by the
-/// CLI/daemon dispatch path and the MCP handler so both record identically.
+/// CLI/daemon dispatch path so both record the same fingerprint and relay key.
 pub(crate) fn record_read_delivery(
     path: &str,
     fingerprint: DeliveryFingerprint,
     resolved_mode: &str,
     content: &str,
     output_tokens: usize,
+    crp_mode: CrpMode,
+    tuning: ReadTuning<'_>,
 ) {
     let relay = relay_eligible(resolved_mode, content);
+    let relay_key = relay.1.map(|mode| {
+        super::compressed_cache_key(mode, crp_mode, None, tuning.aggressiveness, tuning.protect)
+    });
     record_cross_agent_delivery(
         path,
         fingerprint.hash,
@@ -902,7 +924,7 @@ pub(crate) fn record_read_delivery(
         fingerprint.line_count,
         output_tokens,
         relay.0,
-        relay.1,
+        relay_key.as_deref(),
     );
 }
 
@@ -918,10 +940,16 @@ pub(crate) fn record_cross_agent_delivery(
     if !crate::core::config::Config::load().ocla.delivery_enabled() {
         return;
     }
-    let agent_id = crate::core::agent_identity::delivery_agent_id().to_string();
+    let Ok(profile) =
+        crate::core::a2a::task::delivery_authority::DeliverySigningProfileV1::from_environment()
+    else {
+        return;
+    };
+    let agent_id = delivery_agent(profile.as_ref());
     let conversation_id =
         crate::core::conversation::current_conversation_id().unwrap_or_else(|| agent_id.clone());
-    let entry = crate::core::ocla::types::DeliveryEntry {
+    let mut entry = crate::core::ocla::types::DeliveryEntry {
+        access: None,
         blake3: hash,
         path: path.into(),
         line_count,
@@ -934,6 +962,20 @@ pub(crate) fn record_cross_agent_delivery(
             .map(str::to_string),
         relay_mode: relay_mode.map(str::to_string),
     };
+    if let Some(profile) = profile {
+        let Ok(scope) = lean_ctx_ocla::delivery_scope::DeliveryScopeV1::new(
+            profile.tenant_id.clone(),
+            profile.project_id.clone(),
+        ) else {
+            return;
+        };
+        entry.access = Some(lean_ctx_ocla::delivery_scope::DeliveryAccessV1 {
+            scope,
+            privacy: profile.privacy,
+        });
+        let _ = crate::daemon_client::scoped_delivery_record_blocking(&profile, entry);
+        return;
+    }
     crate::daemon_client::try_delivery_record_blocking(&entry);
     let reg = crate::core::ocla::OclaRegistry::global();
     reg.delivery_registry.record_delivery(entry);
@@ -942,15 +984,173 @@ pub(crate) fn record_cross_agent_delivery(
 #[cfg(test)]
 mod tests {
     use super::{
-        SessionCache, effective_fresh_flags, is_terminal_poll_file, try_cross_agent_stub,
-        try_stub_hit_readonly_scoped,
+        CrpMode, ReadOutput, ReadTuning, SessionCache, effective_fresh_flags,
+        is_terminal_poll_file, relay_variant_matches, render_cross_agent_relay,
+        try_cross_agent_stub, try_stub_hit_readonly_scoped,
     };
     use std::sync::atomic::Ordering;
 
     #[test]
     fn cross_agent_stub_miss_returns_none() {
-        let stub = try_cross_agent_stub("/nonexistent/file.rs", "auto", [0; 12], 0);
+        let stub = try_cross_agent_stub(
+            "/nonexistent/file.rs",
+            "auto",
+            [0; 12],
+            0,
+            CrpMode::Off,
+            ReadTuning::default(),
+        );
         assert!(stub.is_none());
+    }
+
+    #[test]
+    fn relay_variants_preserve_requested_read_semantics() {
+        let defaults = ReadTuning::default();
+        assert!(relay_variant_matches(
+            "map",
+            "map:v2",
+            CrpMode::Off,
+            defaults
+        ));
+        assert!(relay_variant_matches(
+            "auto",
+            "signatures:v2",
+            CrpMode::Off,
+            defaults
+        ));
+        for mode in [
+            "signatures",
+            "lines:1-5",
+            "raw",
+            "full",
+            "task",
+            "reference",
+        ] {
+            assert!(!relay_variant_matches(
+                mode,
+                "map:v2",
+                CrpMode::Off,
+                defaults
+            ));
+        }
+        for stored in ["map", "map:v3", "mapping", "map:v2:tdd", "map:v2:unknown"] {
+            assert!(!relay_variant_matches(
+                "map",
+                stored,
+                CrpMode::Off,
+                defaults
+            ));
+        }
+        assert!(relay_variant_matches(
+            "map",
+            "map:v2:tdd",
+            CrpMode::Tdd,
+            defaults
+        ));
+        let protect = vec!["important".to_owned()];
+        let tuned = ReadTuning {
+            aggressiveness: Some(0.7),
+            protect: &protect,
+        };
+        let key = super::super::compressed_cache_key(
+            "map",
+            CrpMode::Off,
+            None,
+            tuned.aggressiveness,
+            tuned.protect,
+        );
+        assert!(relay_variant_matches("map", &key, CrpMode::Off, tuned));
+        assert!(!relay_variant_matches("map", &key, CrpMode::Off, defaults));
+        assert!(!relay_variant_matches("map", "map:v2", CrpMode::Off, tuned));
+    }
+
+    #[test]
+    fn relay_rendering_requires_matching_usable_payload() {
+        let _isolated = crate::core::data_dir::isolated_data_dir();
+        let mut record = crate::core::ocla::types::DeliveryRecord {
+            access: None,
+            blake3: [81; 12],
+            path: "variant.rs".into(),
+            line_count: 12,
+            token_count: 200,
+            agent_id: "source-agent".into(),
+            conversation_id: "source-conversation".into(),
+            read_at: 1,
+            mtime: 1,
+            relay_content: Some("fn shared_context()".into()),
+            relay_mode: Some("map:v2".into()),
+            fresh: true,
+        };
+        let render = |record: &crate::core::ocla::types::DeliveryRecord, mode| {
+            render_cross_agent_relay(
+                "variant.rs",
+                mode,
+                record,
+                CrpMode::Off,
+                ReadTuning::default(),
+            )
+        };
+        let output = render(&record, "map").expect("matching relay");
+        assert!(output.is_cache_hit);
+        assert_eq!(output.resolved_mode, "cross-agent-relay");
+        assert!(output.content.contains("fn shared_context()"));
+        assert_eq!(output.output_tokens, super::count_tokens(&output.content));
+        for mode in ["signatures", "lines:1-2", "raw", "full"] {
+            assert!(render(&record, mode).is_none());
+        }
+        record.relay_mode = None;
+        assert!(render(&record, "map").is_none());
+        record.relay_mode = Some("map:v2".into());
+        record.relay_content = None;
+        assert!(render(&record, "map").is_none());
+    }
+
+    #[test]
+    fn invalid_signing_profile_never_reads_legacy_delivery() {
+        const CHILD: &str = "LEAN_CTX_TEST_INVALID_DELIVERY_PROFILE";
+        if std::env::var_os(CHILD).is_none() {
+            let status = std::process::Command::new(std::env::current_exe().expect("test executable"))
+                .args(["--exact", "tools::ctx_read::dispatch::tests::invalid_signing_profile_never_reads_legacy_delivery", "--nocapture"])
+                .env(CHILD, "1")
+                .env("LEAN_CTX_DELIVERY_PROFILE", "{invalid")
+                .status().expect("child test");
+            assert!(status.success());
+            return;
+        }
+        let _isolated = crate::core::data_dir::isolated_data_dir();
+        let registry = crate::core::ocla::OclaRegistry::global();
+        let path = "/legacy-delivery-profile-regression";
+        registry
+            .delivery_registry
+            .record_delivery(crate::core::ocla::types::DeliveryEntry {
+                access: None,
+                blake3: [93; 12],
+                path: path.into(),
+                line_count: 1,
+                token_count: 100,
+                agent_id: "legacy-owner".into(),
+                conversation_id: "legacy-conversation".into(),
+                mtime: 1,
+                relay_content: Some("must not leak".into()),
+                relay_mode: Some("map".into()),
+            });
+        assert!(
+            registry
+                .delivery_registry
+                .check_delivery(&[93; 12], 1, path, None, None)
+                .is_some()
+        );
+        assert!(
+            try_cross_agent_stub(
+                path,
+                "auto",
+                [93; 12],
+                1,
+                CrpMode::Off,
+                ReadTuning::default()
+            )
+            .is_none()
+        );
     }
 
     #[test]
@@ -998,22 +1198,7 @@ mod tests {
         assert_eq!(fp.line_count, 3);
     }
 
-    #[test]
-    fn relay_answers_only_the_requested_view() {
-        use super::relay_satisfies;
-        assert!(relay_satisfies("auto", "map:v2"));
-        assert!(relay_satisfies("auto", "signatures"));
-        assert!(relay_satisfies("map", "map"));
-        assert!(relay_satisfies("map", "map:v2"));
-        assert!(relay_satisfies("signatures", "signatures:v2"));
-        assert!(!relay_satisfies("signatures", "map:v2"));
-        assert!(!relay_satisfies("map", "mapx"));
-        assert!(!relay_satisfies("map:v2", "map"));
-        assert!(!relay_satisfies("aggressive", "map"));
-        assert!(!relay_satisfies("lines:1-5", "map"));
-    }
-
-    /// Records a foreign delivery for a fresh file and returns its path + key.
+    /// Records a foreign legacy delivery for a fresh file and returns its path + key.
     fn foreign_delivery(
         relay: Option<(&str, &str)>,
     ) -> (tempfile::TempDir, String, super::DeliveryFingerprint) {
@@ -1025,6 +1210,7 @@ mod tests {
         crate::core::ocla::OclaRegistry::global()
             .delivery_registry
             .record_delivery(crate::core::ocla::types::DeliveryEntry {
+                access: None,
                 blake3: fp.hash,
                 path: path.clone(),
                 line_count: fp.line_count,
@@ -1038,17 +1224,26 @@ mod tests {
         (dir, path, fp)
     }
 
+    fn cross_agent(path: &str, mode: &str, fp: super::DeliveryFingerprint) -> Option<ReadOutput> {
+        try_cross_agent_stub(
+            path,
+            mode,
+            fp.hash,
+            fp.mtime,
+            CrpMode::Off,
+            ReadTuning::default(),
+        )
+    }
+
     #[test]
-    fn content_free_stub_withheld_for_another_conversation() {
-        // #1909: agent B in a new conversation must get content, never a stub
-        // claiming content that only agent A's context holds.
-        if !crate::core::conversation::scope_enabled() {
-            return; // legacy mode (LEAN_CTX_CONVERSATION_SCOPE=0) keeps the stub by contract
-        }
+    fn content_free_stub_is_never_served_for_another_agents_read() {
+        // #1909: agent B must get content, never a stub claiming content that
+        // only agent A's context holds.
+        let _isolated = crate::core::data_dir::isolated_data_dir();
         let (_dir, path, fp) = foreign_delivery(None);
         for mode in ["auto", "signatures", "map", "aggressive"] {
             assert!(
-                try_cross_agent_stub(&path, mode, fp.hash, fp.mtime).is_none(),
+                cross_agent(&path, mode, fp).is_none(),
                 "content-free cross-agent stub leaked for mode={mode}"
             );
         }
@@ -1056,17 +1251,17 @@ mod tests {
 
     #[test]
     fn relay_served_only_for_matching_mode() {
+        let _isolated = crate::core::data_dir::isolated_data_dir();
         let relay = "pub fn foreign() {}";
         let (_dir, path, fp) = foreign_delivery(Some((relay, "map:v2")));
-        let hit = try_cross_agent_stub(&path, "map", fp.hash, fp.mtime)
-            .expect("map request must accept a map:v2 relay");
+        let hit = cross_agent(&path, "map", fp).expect("map request must accept a map:v2 relay");
         assert!(hit.content.contains(relay), "{}", hit.content);
         assert!(hit.content.contains("· 2L]"), "{}", hit.content);
         assert!(
-            try_cross_agent_stub(&path, "signatures", fp.hash, fp.mtime).is_none(),
+            cross_agent(&path, "signatures", fp).is_none(),
             "a signatures request must not be answered with a map relay"
         );
-        assert!(try_cross_agent_stub(&path, "lines:1-2", fp.hash, fp.mtime).is_none());
+        assert!(cross_agent(&path, "lines:1-2", fp).is_none());
     }
 
     #[test]
@@ -1142,6 +1337,12 @@ mod tests {
 
     #[test]
     fn non_terminal_file_respects_conversation_gate() {
+        if crate::test_env::run_with_conversation_scope(
+            "tools::ctx_read::dispatch::tests::non_terminal_file_respects_conversation_gate",
+            true,
+        ) {
+            return;
+        }
         let dir = tempfile::tempdir().unwrap();
         let file = dir.path().join("main.rs");
         std::fs::write(&file, "fn main() {}\n").unwrap();

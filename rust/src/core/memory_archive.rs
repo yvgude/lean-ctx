@@ -144,12 +144,30 @@ struct ArchiveEnvelopeRef<'a, T: Serialize> {
     items: &'a [T],
 }
 
+fn effective_scope(scope: Option<&str>) -> Result<Option<String>, String> {
+    let root = crate::core::policy::diagnostics::project().ok_or("archive project unavailable")?;
+    let root = root.to_string_lossy();
+    if crate::core::knowledge::protection::current(&root)?.is_some() {
+        let expected = crate::core::project_hash::hash_project_root(&root);
+        if scope.is_some_and(|given| given != expected) {
+            return Err("archive scope does not match protected project".into());
+        }
+        Ok(Some(expected))
+    } else {
+        Ok(scope.map(str::to_owned))
+    }
+}
+
 fn archive_dir(store: MemoryStore, scope: Option<&str>) -> Result<PathBuf, String> {
     let base = crate::core::data_dir::lean_ctx_data_dir()?
         .join("memory")
         .join("archive");
-    let dir = match (store.subdir(), scope) {
-        (None, _) => base,                   // facts: legacy global root
+    let scope = effective_scope(scope)?;
+    let root = crate::core::policy::diagnostics::project().ok_or("archive project unavailable")?;
+    let protected = crate::core::knowledge::protection::current(&root.to_string_lossy())?.is_some();
+    let dir = match (store.subdir(), scope.as_deref()) {
+        (None, Some(s)) if protected => base.join("facts").join(sanitize_scope(s)),
+        (None, _) => base,                   // legacy global facts
         (Some(sub), None) => base.join(sub), // store-global
         (Some(sub), Some(s)) => base.join(sub).join(sanitize_scope(s)),
     };
@@ -183,6 +201,8 @@ pub fn archive_items<T: Serialize>(
     if items.is_empty() {
         return Ok(None);
     }
+    let scope = effective_scope(scope)?;
+    let scope = scope.as_deref();
     let dir = archive_dir(store, scope)?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("{e}"))?;
 
@@ -199,8 +219,19 @@ pub fn archive_items<T: Serialize>(
         scope,
         items,
     };
-    let json = serde_json::to_string_pretty(&envelope).map_err(|e| format!("{e}"))?;
-    std::fs::write(&path, json).map_err(|e| format!("{e}"))?;
+    let original = serde_json::to_value(&envelope).map_err(|_| "archive cannot be inspected")?;
+    let safe = inspect_archive(&original)?;
+    let json = serde_json::to_string_pretty(&safe).map_err(|_| "archive serialization failed")?;
+    if inspect_archive(&safe)? != safe {
+        return Err("archive rules changed before publication".into());
+    }
+    use std::io::Write;
+    let mut file = tempfile::NamedTempFile::new_in(&dir).map_err(|_| "archive staging failed")?;
+    file.write_all(json.as_bytes())
+        .map_err(|_| "archive write failed")?;
+    // A clock collision must never overwrite an existing recovery artifact.
+    file.persist_noclobber(&path)
+        .map_err(|_| "archive publication failed")?;
 
     let archives = list_archives(store, scope);
     if archives.len() > cfg.max_files {
@@ -248,9 +279,66 @@ pub fn reachable_archives(
 
 /// Restore the items from a single archive file.
 pub fn restore_items<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, String> {
-    let data = std::fs::read_to_string(path).map_err(|e| format!("{e}"))?;
-    let envelope: ArchiveEnvelope<T> = serde_json::from_str(&data).map_err(|e| format!("{e}"))?;
+    let data = crate::core::policy::diagnostics::Target::read_file(path)
+        .ok_or("archive is unavailable or uninspectable")?;
+    let original: serde_json::Value = serde_json::from_str(&data).map_err(|_| "invalid archive")?;
+    let root = crate::core::policy::diagnostics::project().ok_or("archive project unavailable")?;
+    if crate::core::knowledge::protection::current(&root.to_string_lossy())?.is_some() {
+        let kind = match original["store"].as_str() {
+            Some("facts") => MemoryStore::Facts,
+            Some("history") => MemoryStore::History,
+            Some("procedures") => MemoryStore::Procedures,
+            Some("patterns") => MemoryStore::Patterns,
+            _ => return Err("archive store identity unavailable".into()),
+        };
+        let scope = original["scope"]
+            .as_str()
+            .ok_or("archive has no protected scope")?;
+        let expected = archive_dir(kind, Some(scope))?;
+        let canonical = |p: &Path| crate::core::pathutil::safe_canonicalize_bounded(p, 2000);
+        if path.parent().map(canonical) != Some(canonical(&expected)) {
+            return Err("archive belongs to a different storage scope".into());
+        }
+    }
+    let safe = inspect_archive(&original)?;
+    let envelope: ArchiveEnvelope<T> = serde_json::from_value(safe)
+        .map_err(|_| "archive policy result is structurally invalid")?;
     Ok(envelope.items)
+}
+
+fn inspect_archive(original: &serde_json::Value) -> Result<serde_json::Value, String> {
+    let root = crate::core::policy::diagnostics::project().ok_or("archive project unavailable")?;
+    let active = crate::core::knowledge::protection::current(&root.to_string_lossy())?;
+    let safe = crate::core::policy::diagnostics::inspect(original, active.as_deref())
+        .ok_or("archive withheld by current policy")?;
+    for field in ["store", "scope", "archived_at"] {
+        if safe[field] != original[field] {
+            return Err("archive identity cannot be rewritten".into());
+        }
+    }
+    let before_items = original.get("items").or_else(|| original.get("facts"));
+    let after_items = safe.get("items").or_else(|| safe.get("facts"));
+    if let (Some(before), Some(after)) = (
+        before_items.and_then(serde_json::Value::as_array),
+        after_items.and_then(serde_json::Value::as_array),
+    ) {
+        for (a, b) in before.iter().zip(after) {
+            for field in [
+                "id",
+                "key",
+                "category",
+                "source_session",
+                "supersedes",
+                "from_sessions",
+                "pattern_type",
+            ] {
+                if a.get(field) != b.get(field) {
+                    return Err("archived item identity cannot be rewritten".into());
+                }
+            }
+        }
+    }
+    Ok(safe)
 }
 
 #[cfg(test)]

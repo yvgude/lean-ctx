@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx addon auth <name>` — browser OAuth login for an HTTP MCP server
 //! (#1391).
 //!

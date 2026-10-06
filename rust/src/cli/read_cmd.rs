@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use std::path::Path;
 
 use crate::core::compressor;
@@ -9,11 +11,14 @@ use crate::core::protocol;
 use crate::core::roles;
 use crate::core::signatures;
 
-/// Detect daemon results that indicate a read failure — the CLI should fall
-/// through to standalone (which runs as the user's process, not sandboxed).
-/// Catches: explicit tool errors, `"file.rs 0L"` stubs, and read-handler
-/// failures. A daemon is rooted at its startup project, so an absolute path from
-/// another CLI caller can be valid locally while the shared daemon rejects it.
+use super::context_execution::{CommandOutput, LocalOperation, Recording, excerpt};
+
+#[path = "read_cmd_policy.rs"]
+mod policy_read;
+
+/// Detect legacy daemon read failures for the exit status. A completed daemon
+/// request must not fall through to standalone and dispatch the operation twice.
+/// Catches: `"file.rs 0L"` stubs and `"Cannot read file:"` handler errors.
 #[cfg(unix)]
 fn is_failed_daemon_result(output: &str) -> bool {
     let first_line = output.lines().next().unwrap_or("");
@@ -179,90 +184,116 @@ pub(crate) fn cli_read_is_refused(raw: &str) -> bool {
     jail_cli_read_path(raw, &super::common::detect_project_root(&[])).is_err()
 }
 
-pub fn cmd_read(args: &[String]) {
+pub fn cmd_read(args: &[String]) -> bool {
+    super::context_execution::execute(super::context_execution::ContextCommand::Read, args)
+        .exit_code
+        == 0
+}
+
+pub(crate) fn observe_read<'a>(
+    args: &'a [String],
+    run_local: impl FnOnce(LocalOperation<'a>) -> CommandOutput,
+) -> CommandOutput {
     if args.is_empty() {
         eprintln!(
             "Usage: lean-ctx read <file> [--mode auto|full|map|signatures|aggressive|entropy|lines:N-M|lines:-N] [--fresh]"
         );
-        std::process::exit(1);
+        return CommandOutput::rejected(1);
     }
 
+    // The PathJail is the outermost boundary: it runs before protected reads,
+    // the secret-path policy, the daemon and the local renderer (#1903).
     let raw_path = &args[0];
     let project_root = super::common::detect_project_root(args);
     let path = match jail_cli_read_path(raw_path, &project_root) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("{e}");
-            std::process::exit(1);
+            return CommandOutput::rejected(1);
         }
     };
-    let path = path.as_str();
     let mode = resolve_cli_read_mode(args);
-    // #1037: redirect/rewrite hook children pipe `-m full` output into a temp file the
-    // host reads back AS the file's content, so a `cached <file> [NL]` cache-hit stub
-    // corrupts the read (and round-trips the stub into the real file on the next edit).
-    // The hook env (set by `mark_hook_environment`, inherited by the subprocess) forces
-    // verbatim content on BOTH the daemon (`fresh:true`) and standalone (skip cli_cache)
-    // paths. Direct CLI/MCP reads keep caching.
+    // #1037: hook children must bypass cache and receive verbatim content.
     let force_fresh = should_force_fresh(args, crate::core::runtime_flags::hook_child_enabled());
-    // Whether *we* choose the mode (auto): only then do we cap framing to raw.
-    // An explicit mode is a deliberate view we return verbatim (#361).
-    let requested_auto = mode == "auto";
 
-    let short = protocol::shorten_path(path);
+    // Active project protection must precede the legacy daemon/cache routes.
+    // The prepared value is released only after its source authority is rechecked.
+    match policy_read::prepare(&path, &mode) {
+        Ok(Some(prepared)) => {
+            return super::context_execution::run_protected(
+                super::context_execution::ContextCommand::Read,
+                Box::new(move || prepared.publish()),
+            );
+        }
+        Ok(None) => {}
+        Err(()) => {
+            eprintln!("Content withheld by the active context policy.");
+            return CommandOutput::rejected(1);
+        }
+    }
 
     // Apply the same secret-path policy in CLI mode as in MCP tools.
     // Default is warn; enforce depends on active role/policy.
-    if let Ok(abs) = std::fs::canonicalize(path) {
+    if let Ok(abs) = std::fs::canonicalize(&path) {
         match io_boundary::check_secret_path_for_tool("cli_read", &abs) {
             Ok(Some(w)) => eprintln!("{w}"),
             Ok(None) => {}
             Err(e) => {
                 eprintln!("{e}");
-                std::process::exit(1);
+                return CommandOutput::rejected(1);
             }
         }
     } else {
         // Best-effort: still check the raw path string.
-        let raw = std::path::Path::new(path);
-        match io_boundary::check_secret_path_for_tool("cli_read", raw) {
+        match io_boundary::check_secret_path_for_tool("cli_read", Path::new(&path)) {
             Ok(Some(w)) => eprintln!("{w}"),
             Ok(None) => {}
             Err(e) => {
                 eprintln!("{e}");
-                std::process::exit(1);
+                return CommandOutput::rejected(1);
             }
         }
     }
 
+    // The shared daemon renders with *its* environment, so a caller-scoped
+    // output override (#1889) must be served by the standalone path.
     #[cfg(unix)]
+    if !crate::core::pathutil::is_under_tcc_protected_dir(Path::new(&path))
+        && !has_caller_output_override()
     {
-        // The shared daemon renders with *its* environment, so a caller-scoped
-        // output override (#1889) must be served by the standalone path.
-        #[cfg(unix)]
-        if !crate::core::pathutil::is_under_tcc_protected_dir(std::path::Path::new(path))
-            && !has_caller_output_override()
-            && let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                "ctx_read",
-                Some(serde_json::json!({
-                    "path": path,
-                    "mode": mode,
-                    "fresh": force_fresh,
-                })),
-            )
-        {
-            let filtered = super::common::filter_daemon_output(&out);
-            if !filtered.trim().is_empty() && !is_failed_daemon_result(&filtered) {
-                println!("{filtered}");
-                return;
+        match crate::daemon_client::try_daemon_tool_call_blocking_observed(
+            "ctx_read",
+            Some(serde_json::json!({
+                "path": path.clone(),
+                "mode": mode.clone(),
+                "fresh": force_fresh,
+            })),
+        ) {
+            crate::daemon_client::DaemonToolCallOutcome::Unavailable => {}
+            crate::daemon_client::DaemonToolCallOutcome::Completed { text, is_error } => {
+                let filtered = super::common::filter_daemon_output(&text);
+                if !filtered.trim().is_empty() {
+                    println!("{filtered}");
+                }
+                let exit_code = i32::from(is_error || is_failed_daemon_result(&filtered));
+                return CommandOutput::daemon(exit_code);
             }
-            // else: fall through to standalone path
+            crate::daemon_client::DaemonToolCallOutcome::Uncertain { message } => {
+                eprintln!("Error: daemon result uncertain: {message}");
+                return CommandOutput::daemon(1);
+            }
         }
     }
     super::common::daemon_fallback_hint();
 
-    // Read latency for the Context IR lineage (#566) — the standalone path only;
-    // the daemon branch above records its own IR and returns before this.
+    let requested_auto = mode == "auto";
+    run_local(Box::new(move || {
+        local_read(&path, &mode, force_fresh, requested_auto)
+    }))
+}
+
+fn local_read(path: &str, mode: &str, force_fresh: bool, requested_auto: bool) -> CommandOutput {
+    let short = protocol::shorten_path(path);
     let read_start = std::time::Instant::now();
 
     if !force_fresh && mode == "full" {
@@ -272,19 +303,22 @@ pub fn cmd_read(args: &[String]) {
                 let msg = cli_cache::format_hit(&entry, &file_ref, &short);
                 println!("{msg}");
                 let sent = count_tokens(&msg);
-                super::common::cli_track_read_cached(
-                    path,
-                    "full",
-                    entry.original_tokens,
-                    sent,
-                    &msg,
-                    read_start.elapsed(),
+                return CommandOutput::local(
+                    0,
+                    Some(Recording::Read {
+                        path: path.to_string(),
+                        mode: "full".to_string(),
+                        input_tokens: entry.original_tokens,
+                        output_tokens: sent,
+                        cache_hit: true,
+                        elapsed: read_start.elapsed(),
+                        excerpt: excerpt(&msg),
+                    }),
                 );
-                return;
             }
             CacheResult::Miss { content } if content.is_empty() => {
                 eprintln!("Error: could not read {path}");
-                std::process::exit(1);
+                return CommandOutput::local(1, None);
             }
             CacheResult::Miss { content } => {
                 let line_count = content.lines().count();
@@ -293,15 +327,18 @@ pub fn cmd_read(args: &[String]) {
                 let output = cap_cli_to_raw(framed, &content, raw_tokens);
                 println!("{output}");
                 let sent = count_tokens(&output);
-                super::common::cli_track_read(
-                    path,
-                    "full",
-                    raw_tokens,
-                    sent,
-                    &output,
-                    read_start.elapsed(),
+                return CommandOutput::local(
+                    0,
+                    Some(Recording::Read {
+                        path: path.to_string(),
+                        mode: "full".to_string(),
+                        input_tokens: raw_tokens,
+                        output_tokens: sent,
+                        cache_hit: false,
+                        elapsed: read_start.elapsed(),
+                        excerpt: excerpt(&output),
+                    }),
                 );
-                return;
             }
         }
     }
@@ -310,7 +347,7 @@ pub fn cmd_read(args: &[String]) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("Error: {e}");
-            std::process::exit(1);
+            return CommandOutput::local(1, None);
         }
     };
 
@@ -340,7 +377,7 @@ pub fn cmd_read(args: &[String]) {
     } else if mode != "full" && crate::tools::ctx_read::is_instruction_file(path) {
         "full".to_string()
     } else {
-        mode
+        mode.to_string()
     };
     let mode = if (mode == "map" || mode == "signatures") && original_tokens <= 400 {
         "full".to_string()
@@ -412,14 +449,18 @@ pub fn cmd_read(args: &[String]) {
             }
             let sent = count_tokens(&output_buf);
             println!("{output_buf}");
-            super::common::cli_track_read(
-                path,
-                "map",
-                original_tokens,
-                sent,
-                &output_buf,
-                read_start.elapsed(),
-            );
+            CommandOutput::local(
+                0,
+                Some(Recording::Read {
+                    path: path.to_string(),
+                    mode: "map".to_string(),
+                    input_tokens: original_tokens,
+                    output_tokens: sent,
+                    cache_hit: false,
+                    elapsed: read_start.elapsed(),
+                    excerpt: excerpt(&output_buf),
+                }),
+            )
         }
         "signatures" => {
             let sigs = signatures::extract_signatures(&content, ext);
@@ -442,14 +483,18 @@ pub fn cmd_read(args: &[String]) {
             println!("{output_buf}");
             let sent = count_tokens(&output_buf);
             print_savings(original_tokens, sent);
-            super::common::cli_track_read(
-                path,
-                "signatures",
-                original_tokens,
-                sent,
-                &output_buf,
-                read_start.elapsed(),
-            );
+            CommandOutput::local(
+                0,
+                Some(Recording::Read {
+                    path: path.to_string(),
+                    mode: "signatures".to_string(),
+                    input_tokens: original_tokens,
+                    output_tokens: sent,
+                    cache_hit: false,
+                    elapsed: read_start.elapsed(),
+                    excerpt: excerpt(&output_buf),
+                }),
+            )
         }
         "aggressive" => {
             let compressed = compressor::aggressive_compress(&content, Some(ext));
@@ -457,14 +502,18 @@ pub fn cmd_read(args: &[String]) {
             println!("{compressed}");
             let sent = count_tokens(&compressed);
             print_savings(original_tokens, sent);
-            super::common::cli_track_read(
-                path,
-                "aggressive",
-                original_tokens,
-                sent,
-                &compressed,
-                read_start.elapsed(),
-            );
+            CommandOutput::local(
+                0,
+                Some(Recording::Read {
+                    path: path.to_string(),
+                    mode: "aggressive".to_string(),
+                    input_tokens: original_tokens,
+                    output_tokens: sent,
+                    cache_hit: false,
+                    elapsed: read_start.elapsed(),
+                    excerpt: excerpt(&compressed),
+                }),
+            )
         }
         "entropy" => {
             let result = entropy::entropy_compress(&content);
@@ -476,14 +525,18 @@ pub fn cmd_read(args: &[String]) {
             println!("{}", result.output);
             let sent = count_tokens(&result.output);
             print_savings(original_tokens, sent);
-            super::common::cli_track_read(
-                path,
-                "entropy",
-                original_tokens,
-                sent,
-                &result.output,
-                read_start.elapsed(),
-            );
+            CommandOutput::local(
+                0,
+                Some(Recording::Read {
+                    path: path.to_string(),
+                    mode: "entropy".to_string(),
+                    input_tokens: original_tokens,
+                    output_tokens: sent,
+                    cache_hit: false,
+                    elapsed: read_start.elapsed(),
+                    excerpt: excerpt(&result.output),
+                }),
+            )
         }
         m if m.starts_with("lines:") => {
             // The CLI used to drop the window and print the whole file — a
@@ -501,14 +554,18 @@ pub fn cmd_read(args: &[String]) {
             println!("{output}");
             let sent = count_tokens(&output);
             print_savings(original_tokens, sent);
-            super::common::cli_track_read(
-                path,
-                "lines",
-                original_tokens,
-                sent,
-                &output,
-                read_start.elapsed(),
-            );
+            CommandOutput::local(
+                0,
+                Some(Recording::Read {
+                    path: path.to_string(),
+                    mode: "lines".to_string(),
+                    input_tokens: original_tokens,
+                    output_tokens: sent,
+                    cache_hit: false,
+                    elapsed: read_start.elapsed(),
+                    excerpt: excerpt(&output),
+                }),
+            )
         }
         "cognitive" | "mdl" => {
             let (output, _) = crate::tools::ctx_read::process_mode(
@@ -530,14 +587,18 @@ pub fn cmd_read(args: &[String]) {
             let sent = count_tokens(&output);
             println!("{output}");
             print_savings(original_tokens, sent);
-            super::common::cli_track_read(
-                path,
-                mode,
-                original_tokens,
-                sent,
-                &output,
-                read_start.elapsed(),
-            );
+            CommandOutput::local(
+                0,
+                Some(Recording::Read {
+                    path: path.to_string(),
+                    mode: mode.to_string(),
+                    input_tokens: original_tokens,
+                    output_tokens: sent,
+                    cache_hit: false,
+                    elapsed: read_start.elapsed(),
+                    excerpt: excerpt(&output),
+                }),
+            )
         }
         _ => {
             // `full` and any unrecognized mode land here. These are
@@ -563,37 +624,58 @@ pub fn cmd_read(args: &[String]) {
             let output = cap_cli_to_raw(output, &content, original_tokens);
             println!("{output}");
             let sent = count_tokens(&output);
-            super::common::cli_track_read(
-                path,
-                "full",
-                original_tokens,
-                sent,
-                &output,
-                read_start.elapsed(),
-            );
+            CommandOutput::local(
+                0,
+                Some(Recording::Read {
+                    path: path.to_string(),
+                    mode: "full".to_string(),
+                    input_tokens: original_tokens,
+                    output_tokens: sent,
+                    cache_hit: false,
+                    elapsed: read_start.elapsed(),
+                    excerpt: excerpt(&output),
+                }),
+            )
         }
     }
 }
 
 pub fn cmd_diff(args: &[String]) {
+    let output =
+        super::context_execution::execute(super::context_execution::ContextCommand::Diff, args);
+    if output.exit_code != 0 {
+        std::process::exit(output.exit_code);
+    }
+}
+
+pub(crate) fn observe_diff<'a>(
+    args: &'a [String],
+    run_local: impl FnOnce(LocalOperation<'a>) -> CommandOutput,
+) -> CommandOutput {
     if args.len() < 2 {
         eprintln!("Usage: lean-ctx diff <file1> <file2>");
-        std::process::exit(1);
+        return CommandOutput::rejected(1);
     }
 
-    let content1 = match crate::tools::ctx_read::read_file_lossy(&args[0]) {
+    let path1 = args[0].clone();
+    let path2 = args[1].clone();
+    run_local(Box::new(move || local_diff(&path1, &path2)))
+}
+
+fn local_diff(path1: &str, path2: &str) -> CommandOutput {
+    let content1 = match crate::tools::ctx_read::read_file_lossy(path1) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Error reading {}: {e}", args[0]);
-            std::process::exit(1);
+            eprintln!("Error reading {path1}: {e}");
+            return CommandOutput::local(1, None);
         }
     };
 
-    let content2 = match crate::tools::ctx_read::read_file_lossy(&args[1]) {
+    let content2 = match crate::tools::ctx_read::read_file_lossy(path2) {
         Ok(c) => c,
         Err(e) => {
-            eprintln!("Error reading {}: {e}", args[1]);
-            std::process::exit(1);
+            eprintln!("Error reading {path2}: {e}");
+            return CommandOutput::local(1, None);
         }
     };
 
@@ -603,54 +685,76 @@ pub fn cmd_diff(args: &[String]) {
 
     println!(
         "diff {} {}",
-        protocol::shorten_path(&args[0]),
-        protocol::shorten_path(&args[1])
+        protocol::shorten_path(path1),
+        protocol::shorten_path(path2)
     );
     println!("{diff}");
     print_savings(original, sent);
-    crate::core::stats::record("cli_diff", original, sent);
+    CommandOutput::local(
+        0,
+        Some(Recording::Stats {
+            tool: "cli_diff",
+            input_tokens: original,
+            output_tokens: sent,
+        }),
+    )
 }
 
 pub fn cmd_grep(args: &[String]) {
+    let output =
+        super::context_execution::execute(super::context_execution::ContextCommand::Grep, args);
+    if output.exit_code != 0 {
+        std::process::exit(output.exit_code);
+    }
+}
+
+pub(crate) fn observe_grep<'a>(
+    args: &'a [String],
+    run_local: impl FnOnce(LocalOperation<'a>) -> CommandOutput,
+) -> CommandOutput {
     if args.is_empty() {
         eprintln!("Usage: lean-ctx grep <pattern> [path]");
-        std::process::exit(1);
+        return CommandOutput::rejected(1);
     }
 
-    let pattern = &args[0];
+    let pattern = args[0].clone();
     let raw_path = args.get(1).map_or(".", std::string::String::as_str);
-    let abs_path = resolve_cli_path(raw_path);
-    let path = abs_path.as_str();
+    let path = resolve_cli_path(raw_path);
 
     #[cfg(unix)]
-    {
-        #[cfg(unix)]
-        if !crate::core::pathutil::is_under_tcc_protected_dir(std::path::Path::new(path))
-            && let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                "ctx_search",
-                Some(serde_json::json!({
-                    "pattern": pattern,
-                    "path": path,
-                })),
-            )
-        {
-            let out = super::common::filter_daemon_output(&out);
-            println!("{out}");
-            let code = grep_exit_status(&out);
-            if code != 0 {
-                std::process::exit(code);
+    if !crate::core::pathutil::is_under_tcc_protected_dir(Path::new(&path)) {
+        match crate::daemon_client::try_daemon_tool_call_blocking_observed(
+            "ctx_search",
+            Some(serde_json::json!({
+                "pattern": pattern.clone(),
+                "path": path.clone(),
+            })),
+        ) {
+            crate::daemon_client::DaemonToolCallOutcome::Unavailable => {}
+            crate::daemon_client::DaemonToolCallOutcome::Completed { text, is_error } => {
+                let out = super::common::filter_daemon_output(&text);
+                println!("{out}");
+                let exit_code = if is_error { 2 } else { grep_exit_status(&out) };
+                return CommandOutput::daemon(exit_code);
             }
-            return;
+            crate::daemon_client::DaemonToolCallOutcome::Uncertain { message } => {
+                eprintln!("Error: daemon result uncertain: {message}");
+                return CommandOutput::daemon(2);
+            }
         }
     }
     super::common::daemon_fallback_hint();
 
+    run_local(Box::new(move || local_grep(pattern, path)))
+}
+
+fn local_grep(pattern: String, path: String) -> CommandOutput {
     // Search latency for the Context IR lineage (#566), standalone path only.
     let search_start = std::time::Instant::now();
 
     let outcome = crate::tools::ctx_search::handle(
-        pattern,
-        path,
+        &pattern,
+        &path,
         None,
         20,
         crate::tools::CrpMode::effective(),
@@ -660,19 +764,20 @@ pub fn cmd_grep(args: &[String]) {
     );
     let out = outcome.text;
     println!("{out}");
-    super::common::cli_track_search(
-        outcome.modeled_baseline,
-        outcome.observed_tokens,
-        count_tokens(&out),
-        pattern,
-        path,
-        &out,
-        search_start.elapsed(),
-    );
-    let code = grep_exit_status(&out);
-    if code != 0 {
-        std::process::exit(code);
-    }
+    let output_tokens = count_tokens(&out);
+    let exit_code = grep_exit_status(&out);
+    CommandOutput::local(
+        exit_code,
+        Some(Recording::Search {
+            modeled_baseline: outcome.modeled_baseline,
+            observed_tokens: outcome.observed_tokens,
+            output_tokens,
+            pattern,
+            path,
+            elapsed: search_start.elapsed(),
+            excerpt: excerpt(&out),
+        }),
+    )
 }
 
 /// grep-compatible exit status for `lean-ctx grep` output (#1917).
@@ -701,32 +806,53 @@ fn grep_exit_status(out: &str) -> i32 {
 /// (#556) all return identical results. Prefers the daemon (warms its cache),
 /// falling back to an in-process call.
 pub fn cmd_glob(args: &[String]) {
+    let output =
+        super::context_execution::execute(super::context_execution::ContextCommand::Glob, args);
+    if output.exit_code != 0 {
+        std::process::exit(output.exit_code);
+    }
+}
+
+pub(crate) fn observe_glob<'a>(
+    args: &'a [String],
+    run_local: impl FnOnce(LocalOperation<'a>) -> CommandOutput,
+) -> CommandOutput {
     if args.is_empty() {
         eprintln!("Usage: lean-ctx glob <pattern> [path]");
-        std::process::exit(1);
+        return CommandOutput::rejected(1);
     }
 
-    let pattern = &args[0];
+    let pattern = args[0].clone();
     let raw_path = args.get(1).map_or(".", std::string::String::as_str);
-    let abs_path = resolve_cli_path(raw_path);
-    let path = abs_path.as_str();
+    let path = resolve_cli_path(raw_path);
 
     #[cfg(unix)]
-    if !crate::core::pathutil::is_under_tcc_protected_dir(std::path::Path::new(path))
-        && let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
+    if !crate::core::pathutil::is_under_tcc_protected_dir(Path::new(&path)) {
+        match crate::daemon_client::try_daemon_tool_call_blocking_observed(
             "ctx_glob",
             Some(serde_json::json!({
-                "pattern": pattern,
-                "path": path,
+                "pattern": pattern.clone(),
+                "path": path.clone(),
             })),
-        )
-    {
-        let out = super::common::filter_daemon_output(&out);
-        println!("{out}");
-        return;
+        ) {
+            crate::daemon_client::DaemonToolCallOutcome::Unavailable => {}
+            crate::daemon_client::DaemonToolCallOutcome::Completed { text, is_error } => {
+                let out = super::common::filter_daemon_output(&text);
+                println!("{out}");
+                return CommandOutput::daemon(i32::from(is_error));
+            }
+            crate::daemon_client::DaemonToolCallOutcome::Uncertain { message } => {
+                eprintln!("Error: daemon result uncertain: {message}");
+                return CommandOutput::daemon(1);
+            }
+        }
     }
     super::common::daemon_fallback_hint();
 
+    run_local(Box::new(move || local_glob(&pattern, &path)))
+}
+
+fn local_glob(pattern: &str, path: &str) -> CommandOutput {
     let (out, _original) = crate::tools::ctx_glob::handle(
         pattern,
         path,
@@ -735,21 +861,43 @@ pub fn cmd_glob(args: &[String]) {
         200,
     );
     println!("{out}");
-    crate::core::stats::record("cli_glob", 0, 0);
-    if out.starts_with("ERROR:") {
-        std::process::exit(1);
-    }
+    let exit_code = i32::from(out.starts_with("ERROR:"));
+    CommandOutput::local(
+        exit_code,
+        Some(Recording::Stats {
+            tool: "cli_glob",
+            input_tokens: 0,
+            output_tokens: 0,
+        }),
+    )
 }
 
 pub fn cmd_find(args: &[String]) {
+    let output =
+        super::context_execution::execute(super::context_execution::ContextCommand::Find, args);
+    if output.exit_code != 0 {
+        std::process::exit(output.exit_code);
+    }
+}
+
+pub(crate) fn observe_find<'a>(
+    args: &'a [String],
+    run_local: impl FnOnce(LocalOperation<'a>) -> CommandOutput,
+) -> CommandOutput {
     if args.is_empty() {
         eprintln!("Usage: lean-ctx find <pattern> [path]");
-        std::process::exit(1);
+        return CommandOutput::rejected(1);
     }
 
-    let raw_pattern = &args[0];
-    let path = args.get(1).map_or(".", std::string::String::as_str);
+    let raw_pattern = args[0].clone();
+    let path = args
+        .get(1)
+        .map_or(".", std::string::String::as_str)
+        .to_string();
+    run_local(Box::new(move || local_find(&raw_pattern, &path)))
+}
 
+fn local_find(raw_pattern: &str, path: &str) -> CommandOutput {
     let is_glob = raw_pattern.contains('*') || raw_pattern.contains('?');
     let glob_matcher = if is_glob {
         glob::Pattern::new(&raw_pattern.to_lowercase()).ok()
@@ -759,7 +907,7 @@ pub fn cmd_find(args: &[String]) {
     let substring = raw_pattern.to_lowercase();
 
     let mut found = false;
-    let walk_root = crate::core::walk_filter::explicit_walk_root(std::path::Path::new(path));
+    let walk_root = crate::core::walk_filter::explicit_walk_root(Path::new(path));
     for entry in ignore::WalkBuilder::new(&walk_root)
         // #1792: a tracked dotfile is part of the project. `.gitignore` already
         // decides membership, and it is honoured below.
@@ -785,15 +933,29 @@ pub fn cmd_find(args: &[String]) {
         }
     }
 
-    crate::core::stats::record("cli_find", 0, 0);
-
-    if !found {
-        std::process::exit(1);
-    }
+    CommandOutput::local(
+        i32::from(!found),
+        Some(Recording::Stats {
+            tool: "cli_find",
+            input_tokens: 0,
+            output_tokens: 0,
+        }),
+    )
 }
 
 pub fn cmd_ls(args: &[String]) {
-    let mut raw_path = ".";
+    let output =
+        super::context_execution::execute(super::context_execution::ContextCommand::Ls, args);
+    if output.exit_code != 0 {
+        std::process::exit(output.exit_code);
+    }
+}
+
+pub(crate) fn observe_ls<'a>(
+    args: &'a [String],
+    run_local: impl FnOnce(LocalOperation<'a>) -> CommandOutput,
+) -> CommandOutput {
+    let mut raw_path = ".".to_string();
     let mut depth = 3usize;
     let mut show_hidden = false;
     let mut respect_gitignore = true;
@@ -819,39 +981,47 @@ pub fn cmd_ls(args: &[String]) {
                 "The shell hook (lean-ctx -t ls {arg} ...) passes flags to system ls transparently.\n"
             );
             eprintln!("Usage: lean-ctx ls [path] [--depth N] [--all] [--no-gitignore]");
-            std::process::exit(1);
+            return CommandOutput::rejected(1);
         } else {
-            raw_path = arg;
+            raw_path.clone_from(arg);
         }
         i += 1;
     }
 
-    let abs_path = resolve_cli_path(raw_path);
-    let path = abs_path.as_str();
+    let abs_path = resolve_cli_path(&raw_path);
+    let path = abs_path;
 
     #[cfg(unix)]
-    {
-        #[cfg(unix)]
-        if !crate::core::pathutil::is_under_tcc_protected_dir(std::path::Path::new(path))
-            && let Some(out) = crate::daemon_client::try_daemon_tool_call_blocking_text(
-                "ctx_tree",
-                Some(serde_json::json!({
-                    "path": path,
-                    "depth": depth,
-                    "show_hidden": show_hidden,
-                    "respect_gitignore": respect_gitignore,
-                })),
-            )
-        {
-            let filtered = super::common::filter_daemon_output(&out);
-            if !filtered.trim().is_empty() && !is_failed_daemon_result(&filtered) {
-                println!("{filtered}");
-                return;
+    if !crate::core::pathutil::is_under_tcc_protected_dir(Path::new(&path)) {
+        match crate::daemon_client::try_daemon_tool_call_blocking_observed(
+            "ctx_tree",
+            Some(serde_json::json!({
+                "path": path.clone(),
+                "depth": depth,
+                "show_hidden": show_hidden,
+                "respect_gitignore": respect_gitignore,
+            })),
+        ) {
+            crate::daemon_client::DaemonToolCallOutcome::Unavailable => {}
+            crate::daemon_client::DaemonToolCallOutcome::Completed { text, is_error } => {
+                let out = super::common::filter_daemon_output(&text);
+                println!("{out}");
+                return CommandOutput::daemon(i32::from(is_error));
+            }
+            crate::daemon_client::DaemonToolCallOutcome::Uncertain { message } => {
+                eprintln!("Error: daemon result uncertain: {message}");
+                return CommandOutput::daemon(1);
             }
         }
     }
     super::common::daemon_fallback_hint();
 
+    run_local(Box::new(move || {
+        local_ls(&path, depth, show_hidden, respect_gitignore)
+    }))
+}
+
+fn local_ls(path: &str, depth: usize, show_hidden: bool, respect_gitignore: bool) -> CommandOutput {
     let (out, original) =
         crate::tools::ctx_tree::handle(path, depth, show_hidden, respect_gitignore);
     if out.starts_with("ERROR:") {
@@ -859,20 +1029,54 @@ pub fn cmd_ls(args: &[String]) {
         std::process::exit(1);
     }
     println!("{out}");
-    super::common::cli_track_tree(original, count_tokens(&out));
+    CommandOutput::local(
+        0,
+        Some(Recording::Tree {
+            input_tokens: original,
+            output_tokens: count_tokens(&out),
+        }),
+    )
 }
 
 pub fn cmd_deps(args: &[String]) {
-    let path = args.first().map_or(".", std::string::String::as_str);
-
-    if let Some(result) = deps_cmd::detect_and_compress(path) {
-        println!("{result}");
-        crate::core::stats::record("cli_deps", 0, 0);
-    } else {
-        eprintln!("No dependency file found in {path}");
-        std::process::exit(1);
+    let output =
+        super::context_execution::execute(super::context_execution::ContextCommand::Deps, args);
+    if output.exit_code != 0 {
+        std::process::exit(output.exit_code);
     }
 }
+
+pub(crate) fn observe_deps<'a>(
+    args: &'a [String],
+    run_local: impl FnOnce(LocalOperation<'a>) -> CommandOutput,
+) -> CommandOutput {
+    let path = args
+        .first()
+        .map_or(".", std::string::String::as_str)
+        .to_string();
+    run_local(Box::new(move || local_deps(&path)))
+}
+
+fn local_deps(path: &str) -> CommandOutput {
+    if let Some(result) = deps_cmd::detect_and_compress(path) {
+        println!("{result}");
+        CommandOutput::local(
+            0,
+            Some(Recording::Stats {
+                tool: "cli_deps",
+                input_tokens: 0,
+                output_tokens: 0,
+            }),
+        )
+    } else {
+        eprintln!("No dependency file found in {path}");
+        CommandOutput::local(1, None)
+    }
+}
+
+#[cfg(test)]
+#[path = "read_cmd_adapter_tests.rs"]
+mod adapter_tests;
 
 #[cfg(all(test, unix))]
 mod empty_daemon_tests {
@@ -994,7 +1198,12 @@ mod cap_tests {
 
 #[cfg(test)]
 mod fresh_tests {
-    use super::should_force_fresh;
+    use super::{cmd_read, should_force_fresh};
+
+    #[test]
+    fn invalid_request_returns_control_to_lifecycle_caller() {
+        assert!(!cmd_read(&[]));
+    }
 
     #[test]
     fn hook_child_forces_fresh_even_without_flags() {
@@ -1032,6 +1241,9 @@ mod jail_parity_tests {
     // the read, otherwise both refuse it with the same text.
     #[test]
     fn out_of_root_read_is_denied_like_mcp() {
+        // Both paths render the effective config location into the denial, so
+        // a concurrent test must not move LEAN_CTX_CONFIG_DIR between them.
+        let _env = crate::core::data_dir::test_env_lock();
         let (_tmp, root) = project();
         for raw in [
             format!("{root}/../outside.txt"),

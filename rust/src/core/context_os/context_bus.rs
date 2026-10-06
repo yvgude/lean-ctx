@@ -8,7 +8,32 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use tokio::sync::broadcast;
 
+use super::observation::{
+    LocalObservationPayload, LocalObservationSource, LocalObservationV1,
+    ObservationPersistenceError, decode_row, lock_observation, validate_identity,
+};
+use crate::core::events::LeanCtxEvent;
+use crate::core::ocla_bus::{OclaBusRecord, OclaEvent};
+
 const MAX_READ_CONNS: usize = 4;
+
+fn encode_target_agents(target_agents: Option<&[String]>) -> Option<String> {
+    target_agents.map(|targets| serde_json::to_string(targets).unwrap_or_else(|_| "[]".to_string()))
+}
+
+fn decode_target_agents(raw: Option<String>) -> Option<Vec<String>> {
+    match raw {
+        None => None,
+        Some(value) => match serde_json::from_str::<Vec<String>>(&value) {
+            Ok(targets) => Some(targets),
+            Err(error) => {
+                // A malformed directed-list must never turn into a broadcast.
+                tracing::warn!("invalid directed-agent list in context event: {error}");
+                Some(Vec::new())
+            }
+        },
+    }
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -47,6 +72,9 @@ impl ContextEventKindV1 {
             "artifact_stored" => Self::ArtifactStored,
             "graph_built" => Self::GraphBuilt,
             "proof_added" => Self::ProofAdded,
+            "provenance_checkpoint" => Self::ProvenanceCheckpoint,
+            "provenance_edit" => Self::ProvenanceEdit,
+            "health_changed" => Self::HealthChanged,
             other => {
                 tracing::warn!(
                     "unknown ContextEventKind '{other}', defaulting to ToolCallRecorded"
@@ -130,13 +158,28 @@ impl ContextEventV1 {
 }
 
 /// Filter for selective event subscriptions.
-/// All fields are optional; `None` means "accept all".
-#[derive(Debug, Clone, Default)]
+/// All fields are optional; `None` means "accept all". Directed events are
+/// included by default; callers without an agent identity can opt into the
+/// broadcast-only view with [`TopicFilter::broadcast_only`].
+#[derive(Debug, Clone)]
 pub struct TopicFilter {
     pub kinds: Option<Vec<ContextEventKindV1>>,
     pub actors: Option<Vec<String>>,
     pub min_consistency: Option<ConsistencyLevel>,
     pub agent_id: Option<String>,
+    pub include_directed: bool,
+}
+
+impl Default for TopicFilter {
+    fn default() -> Self {
+        Self {
+            kinds: None,
+            actors: None,
+            min_consistency: None,
+            agent_id: None,
+            include_directed: true,
+        }
+    }
 }
 
 impl TopicFilter {
@@ -153,7 +196,19 @@ impl TopicFilter {
         }
     }
 
+    /// Filter that accepts broadcast events while excluding agent-directed
+    /// events for callers that have no authenticated agent identity.
+    pub fn broadcast_only() -> Self {
+        Self {
+            include_directed: false,
+            ..Self::default()
+        }
+    }
+
     pub fn matches(&self, event: &ContextEventV1) -> bool {
+        if !self.include_directed && event.target_agents.is_some() {
+            return false;
+        }
         if let Some(ref kinds) = self.kinds {
             let parsed = ContextEventKindV1::parse(&event.kind);
             if !kinds.contains(&parsed) {
@@ -187,6 +242,7 @@ fn event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContextEventV1> {
     let payload_str: String = row.get(6)?;
     let payload: Value = serde_json::from_str(&payload_str).unwrap_or(Value::Null);
     let kind_str: String = row.get(3)?;
+    let target_agents_json: Option<String> = row.get(9)?;
     let cl = ContextEventKindV1::parse(&kind_str)
         .consistency_level()
         .as_str()
@@ -202,7 +258,7 @@ fn event_from_row(row: &rusqlite::Row<'_>) -> rusqlite::Result<ContextEventV1> {
         parent_id: row.get::<_, Option<i64>>(8).ok().flatten(),
         consistency_level: cl,
         payload,
-        target_agents: None,
+        target_agents: decode_target_agents(target_agents_json),
     })
 }
 
@@ -228,18 +284,22 @@ struct Inner {
 
 impl Inner {
     fn open_read_conn(path: &PathBuf) -> Connection {
-        // The process-global runtime (context_os::runtime) captures its DB path
-        // once, from LEAN_CTX_DATA_DIR. Under `cargo test`, a parallel
-        // `isolated_data_dir` can delete that directory after the runtime bound
-        // to it, so a lazily-opened read connection would hit a missing dir.
-        // Recreating the parent keeps opens infallible (matches `open_at`).
-        if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+        Self::try_open_read_conn(path).expect("open read context-os db")
+    }
+
+    fn try_open_read_conn(path: &PathBuf) -> Result<Connection, ObservationPersistenceError> {
+        let conn = Connection::open_with_flags(path, rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
+        conn.execute_batch("PRAGMA query_only=ON;")?;
+        Ok(conn)
+    }
+
+    fn try_take_read_conn(&self) -> Result<Connection, ObservationPersistenceError> {
+        let cached = lock_observation(&self.read_pool)?.pop();
+        match cached {
+            Some(conn) => Ok(conn),
+            None => Self::try_open_read_conn(&self.db_path),
         }
-        let conn = Connection::open(path).expect("open read context-os db");
-        let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
-        let _ = conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA query_only=ON;");
-        conn
     }
 
     fn take_read_conn(&self) -> Connection {
@@ -317,11 +377,16 @@ impl ContextBus {
     /// Open a ContextBus backed by the given SQLite path. Useful for tests
     /// that need an isolated database to avoid contention on Windows CI.
     pub fn open_at(path: PathBuf) -> Self {
+        Self::try_open_at(path).expect("open context-os db")
+    }
+
+    /// Open without panicking or silently substituting a different data directory.
+    pub fn try_open_at(path: PathBuf) -> Result<Self, ObservationPersistenceError> {
         if let Some(parent) = path.parent() {
-            let _ = std::fs::create_dir_all(parent);
+            std::fs::create_dir_all(parent)?;
         }
-        let conn = Connection::open(&path).expect("open context-os db");
-        let _ = conn.busy_timeout(std::time::Duration::from_secs(5));
+        let conn = Connection::open(&path)?;
+        conn.busy_timeout(std::time::Duration::from_secs(5))?;
         conn.execute_batch(
             "PRAGMA journal_mode=WAL;
              CREATE TABLE IF NOT EXISTS context_events (
@@ -333,17 +398,38 @@ impl ContextBus {
                timestamp TEXT NOT NULL,
                payload_json TEXT NOT NULL,
                version INTEGER NOT NULL DEFAULT 0,
-               parent_id INTEGER
+               parent_id INTEGER,
+               delivery_id TEXT,
+               target_agents_json TEXT
              );
              CREATE INDEX IF NOT EXISTS idx_context_events_stream
-               ON context_events(workspace_id, channel_id, id);",
-        )
-        .expect("init context-os db");
+               ON context_events(workspace_id, channel_id, id);
+             CREATE TABLE IF NOT EXISTS context_local_observations (
+               id INTEGER PRIMARY KEY AUTOINCREMENT,
+               schema_version INTEGER NOT NULL CHECK(schema_version = 1),
+               source_kind TEXT NOT NULL,
+               producer_instance TEXT NOT NULL,
+               source_id TEXT NOT NULL,
+               source_timestamp TEXT NOT NULL,
+               payload_json TEXT NOT NULL,
+               UNIQUE(source_kind, producer_instance, source_id)
+             );
+             CREATE INDEX IF NOT EXISTS idx_context_local_observations_source
+               ON context_local_observations(source_kind, id);",
+        )?;
 
         let _ = conn.execute_batch(
             "ALTER TABLE context_events ADD COLUMN version INTEGER NOT NULL DEFAULT 0;",
         );
         let _ = conn.execute_batch("ALTER TABLE context_events ADD COLUMN parent_id INTEGER;");
+        let _ = conn.execute_batch("ALTER TABLE context_events ADD COLUMN delivery_id TEXT;");
+        let _ =
+            conn.execute_batch("ALTER TABLE context_events ADD COLUMN target_agents_json TEXT;");
+        conn.execute_batch(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_context_events_delivery
+               ON context_events(workspace_id, channel_id, delivery_id)
+               WHERE delivery_id IS NOT NULL;",
+        )?;
 
         let _ = conn.execute_batch(
             "CREATE VIRTUAL TABLE IF NOT EXISTS context_events_fts USING fts5(
@@ -355,10 +441,10 @@ impl ContextBus {
 
         let mut read_conns = Vec::with_capacity(MAX_READ_CONNS);
         for _ in 0..MAX_READ_CONNS {
-            read_conns.push(Inner::open_read_conn(&path));
+            read_conns.push(Inner::try_open_read_conn(&path)?);
         }
 
-        Self {
+        Ok(Self {
             inner: Arc::new(Inner {
                 write_conn: Mutex::new(conn),
                 read_pool: Mutex::new(read_conns),
@@ -366,7 +452,7 @@ impl ContextBus {
                 version_cache: Mutex::new(HashMap::new()),
                 db_path: path,
             }),
-        }
+        })
     }
 
     #[cfg(test)]
@@ -423,6 +509,153 @@ impl ContextBus {
         payload: Value,
     ) -> Option<ContextEventV1> {
         self.append_with_parent(workspace_id, channel_id, kind, actor, payload, None)
+    }
+
+    /// Persist an OCLA record in the ContextBus-owned private observation table.
+    /// The table is deliberately outside `context_events`, so normal replay,
+    /// search, lineage, and subscriptions cannot expose local observations.
+    pub fn append_ocla_observation(
+        &self,
+        producer_instance: &str,
+        record: &OclaBusRecord,
+    ) -> Result<i64, ObservationPersistenceError> {
+        let payload_json = serde_json::to_string(&record.event)?;
+        // JSON maps non-finite numbers to null; require a readable typed payload.
+        let _: OclaEvent = serde_json::from_str(&payload_json)?;
+        self.insert_local_observation(
+            LocalObservationSource::Ocla,
+            producer_instance,
+            record.id,
+            &record.timestamp_ms.to_string(),
+            &payload_json,
+        )
+    }
+
+    /// Persist a legacy event as a compatibility observation without appending
+    /// to the immutable historical JSONL journal.
+    pub fn append_legacy_observation(
+        &self,
+        producer_instance: &str,
+        event: &LeanCtxEvent,
+    ) -> Result<i64, ObservationPersistenceError> {
+        let payload_json = serde_json::to_string(event)?;
+        let _: LeanCtxEvent = serde_json::from_str(&payload_json)?;
+        self.insert_local_observation(
+            LocalObservationSource::Legacy,
+            producer_instance,
+            event.id,
+            &event.timestamp,
+            &payload_json,
+        )
+    }
+
+    fn insert_local_observation(
+        &self,
+        source: LocalObservationSource,
+        producer_instance: &str,
+        source_id: u64,
+        source_timestamp: &str,
+        payload_json: &str,
+    ) -> Result<i64, ObservationPersistenceError> {
+        use rusqlite::OptionalExtension;
+        validate_identity(producer_instance, source_id)?;
+        let mut conn = lock_observation(&self.inner.write_conn)?;
+        let transaction =
+            conn.transaction_with_behavior(rusqlite::TransactionBehavior::Immediate)?;
+        let existing: Option<(i64, String, String)> = transaction
+            .query_row(
+                "SELECT id, source_timestamp, payload_json FROM context_local_observations
+             WHERE source_kind = ?1 AND producer_instance = ?2 AND source_id = ?3",
+                params![source.as_str(), producer_instance, source_id.to_string()],
+                |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
+            )
+            .optional()?;
+        if let Some((cursor, timestamp, payload)) = existing {
+            if timestamp != source_timestamp || payload != payload_json {
+                return Err(ObservationPersistenceError::IdentityConflict);
+            }
+            transaction.commit()?;
+            return Ok(cursor);
+        }
+        transaction.execute(
+            "INSERT INTO context_local_observations
+             (schema_version, source_kind, producer_instance, source_id, source_timestamp, payload_json)
+             VALUES (1, ?1, ?2, ?3, ?4, ?5)",
+            params![
+                source.as_str(),
+                producer_instance,
+                source_id.to_string(),
+                source_timestamp,
+                payload_json
+            ],
+        )?;
+        let cursor_id = transaction.last_insert_rowid();
+        transaction.commit()?;
+        Ok(cursor_id)
+    }
+
+    /// Read private observations for regression and compatibility readers.
+    pub fn read_local_observations(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<LocalObservationV1>, ObservationPersistenceError> {
+        let limit = limit.clamp(1, 10_000) as i64;
+        let conn = self.inner.try_take_read_conn()?;
+        let result = (|| {
+            let mut stmt = conn.prepare(
+                "SELECT id, source_kind, source_id, source_timestamp, payload_json,
+                        producer_instance, schema_version
+                 FROM context_local_observations ORDER BY id ASC LIMIT ?1",
+            )?;
+            let mut rows = stmt.query(params![limit])?;
+            let mut observations = Vec::new();
+            while let Some(row) = rows.next()? {
+                observations.push(decode_row(row)?);
+            }
+            Ok(observations)
+        })();
+        self.return_observation_read_conn(conn)?;
+        result
+    }
+
+    pub fn read_legacy_observations(
+        &self,
+        limit: usize,
+    ) -> Result<Vec<LeanCtxEvent>, ObservationPersistenceError> {
+        let limit = limit.clamp(1, 10_000) as i64;
+        let conn = self.inner.try_take_read_conn()?;
+        let result = (|| {
+            let mut stmt = conn.prepare(
+                "SELECT id, source_kind, source_id, source_timestamp, payload_json,
+                            producer_instance, schema_version FROM context_local_observations
+                 WHERE source_kind = 'legacy' ORDER BY id DESC LIMIT ?1",
+            )?;
+            let mut rows = stmt.query(params![limit])?;
+            let mut events = Vec::new();
+            while let Some(row) = rows.next()? {
+                let LocalObservationPayload::Legacy(event) = decode_row(row)?.payload else {
+                    return Err(ObservationPersistenceError::InvalidRow(
+                        "non-legacy observation in legacy projection".into(),
+                    ));
+                };
+                events.push(event);
+            }
+            events.reverse();
+            Ok(events)
+        })();
+        self.return_observation_read_conn(conn)?;
+        result
+    }
+
+    fn return_observation_read_conn(
+        &self,
+        conn: Connection,
+    ) -> Result<(), ObservationPersistenceError> {
+        let mut pool = lock_observation(&self.inner.read_pool)?;
+        if pool.len() < MAX_READ_CONNS {
+            pool.push(conn);
+        }
+        Ok(())
     }
 
     pub fn append_with_parent(
@@ -483,6 +716,7 @@ impl ContextBus {
     ) -> Option<ContextEventV1> {
         let ts = Utc::now();
         let payload_json = payload.to_string();
+        let target_agents_json = encode_target_agents(target_agents.as_deref());
 
         let (id, version) = {
             let Ok(conn) = self.inner.write_conn.lock() else {
@@ -494,8 +728,8 @@ impl ContextBus {
                 .execute_batch("BEGIN IMMEDIATE")
                 .and_then(|()| {
                     conn.execute(
-                        "INSERT INTO context_events (workspace_id, channel_id, kind, actor, timestamp, payload_json, version, parent_id)
-                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+                        "INSERT INTO context_events (workspace_id, channel_id, kind, actor, timestamp, payload_json, version, parent_id, target_agents_json)
+                         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
                         params![
                             workspace_id,
                             channel_id,
@@ -505,6 +739,7 @@ impl ContextBus {
                             payload_json,
                             version,
                             parent_id,
+                            target_agents_json,
                         ],
                     )?;
                     let rowid = conn.last_insert_rowid();
@@ -568,9 +803,9 @@ impl ContextBus {
         let conn = self.inner.take_read_conn();
         let result = (|| {
             let mut stmt = conn.prepare(
-                "SELECT id, workspace_id, channel_id, kind, actor, timestamp, payload_json, version, parent_id
+                "SELECT id, workspace_id, channel_id, kind, actor, timestamp, payload_json, version, parent_id, target_agents_json
                  FROM context_events
-                 WHERE workspace_id = ?1 AND channel_id = ?2 AND id > ?3
+                  WHERE workspace_id = ?1 AND channel_id = ?2 AND id > ?3
                  ORDER BY id ASC
                  LIMIT ?4",
             ).ok()?;
@@ -586,6 +821,73 @@ impl ContextBus {
         result.unwrap_or_default()
     }
 
+    /// Atomically append at most one event for an authenticated delivery ID.
+    pub fn append_delivery_once(
+        &self,
+        workspace_id: &str,
+        channel_id: &str,
+        kind: &ContextEventKindV1,
+        actor: Option<&str>,
+        payload: Value,
+        delivery_id: &str,
+    ) -> Result<bool, String> {
+        let ts = Utc::now();
+        let payload_json = payload.to_string();
+        let (id, version) = {
+            let conn = self
+                .inner
+                .write_conn
+                .lock()
+                .map_err(|_| "context bus write lock poisoned".to_string())?;
+            conn.execute_batch("BEGIN IMMEDIATE")
+                .map_err(|error| error.to_string())?;
+            let version = self.inner.next_version(workspace_id, channel_id);
+            let inserted = conn
+                .execute(
+                    "INSERT OR IGNORE INTO context_events (workspace_id, channel_id, kind, actor, timestamp, payload_json, version, parent_id, delivery_id)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8)",
+                    params![workspace_id, channel_id, kind.as_str(), actor, ts.to_rfc3339(), payload_json, version, delivery_id],
+                )
+                .map_err(|error| error.to_string());
+            let inserted = match inserted {
+                Ok(value) => value,
+                Err(error) => {
+                    let _ = conn.execute_batch("ROLLBACK");
+                    return Err(error);
+                }
+            };
+            if inserted == 0 {
+                conn.execute_batch("COMMIT")
+                    .map_err(|error| error.to_string())?;
+                return Ok(false);
+            }
+            let rowid = conn.last_insert_rowid();
+            if let Err(error) = conn.execute(
+                "INSERT INTO context_events_fts(rowid, payload_text) VALUES (?1, ?2)",
+                params![rowid, payload_json],
+            ) {
+                tracing::warn!("FTS insert failed for event {rowid}: {error}");
+            }
+            conn.execute_batch("COMMIT")
+                .map_err(|error| error.to_string())?;
+            (rowid, version)
+        };
+        self.broadcast_event(&ContextEventV1 {
+            id,
+            workspace_id: workspace_id.to_string(),
+            channel_id: channel_id.to_string(),
+            consistency_level: kind.consistency_level().as_str().to_string(),
+            kind: kind.as_str().to_string(),
+            actor: actor.map(str::to_string),
+            timestamp: ts,
+            version,
+            parent_id: None,
+            payload,
+            target_agents: None,
+        });
+        Ok(true)
+    }
+
     /// Query recent events of a specific kind (for conflict detection).
     pub fn recent_by_kind(
         &self,
@@ -598,8 +900,8 @@ impl ContextBus {
         let conn = self.inner.take_read_conn();
         let result = (|| {
             let mut stmt = conn.prepare(
-                "SELECT id, workspace_id, channel_id, kind, actor, timestamp, payload_json, version, parent_id
-                 FROM context_events
+                 "SELECT id, workspace_id, channel_id, kind, actor, timestamp, payload_json, version, parent_id, target_agents_json
+                  FROM context_events
                  WHERE workspace_id = ?1 AND channel_id = ?2 AND kind = ?3
                  ORDER BY id DESC
                  LIMIT ?4",
@@ -631,7 +933,7 @@ impl ContextBus {
                 (|| {
                     let mut stmt = conn.prepare(
                     "SELECT e.id, e.workspace_id, e.channel_id, e.kind, e.actor, e.timestamp,
-                            e.payload_json, e.version, e.parent_id
+                            e.payload_json, e.version, e.parent_id, e.target_agents_json
                      FROM context_events e
                      JOIN context_events_fts f ON e.id = f.rowid
                      WHERE f.payload_text MATCH ?1 AND e.workspace_id = ?2 AND e.channel_id = ?3
@@ -647,7 +949,7 @@ impl ContextBus {
                 (|| {
                     let mut stmt = conn.prepare(
                     "SELECT e.id, e.workspace_id, e.channel_id, e.kind, e.actor, e.timestamp,
-                            e.payload_json, e.version, e.parent_id
+                            e.payload_json, e.version, e.parent_id, e.target_agents_json
                      FROM context_events e
                      JOIN context_events_fts f ON e.id = f.rowid
                      WHERE f.payload_text MATCH ?1 AND e.workspace_id = ?2
@@ -682,7 +984,7 @@ impl ContextBus {
                 break;
             };
             let ev = conn.query_row(
-                "SELECT id, workspace_id, channel_id, kind, actor, timestamp, payload_json, version, parent_id
+                "SELECT id, workspace_id, channel_id, kind, actor, timestamp, payload_json, version, parent_id, target_agents_json
                  FROM context_events WHERE id = ?1 AND workspace_id = ?2",
                 params![id, workspace_id],
                 event_from_row,
@@ -763,6 +1065,40 @@ mod tests {
             .expect("append");
         let got = bus.read("ws", "ch", ev.id - 1, 10);
         assert!(got.iter().any(|e| e.id == ev.id));
+    }
+
+    #[test]
+    fn authenticated_delivery_is_unique_across_bus_instances() {
+        let td = tempdir().expect("tempdir");
+        let path = td.path().join("delivery-context-os.db");
+        let buses = [ContextBus::open_at(path.clone()), ContextBus::open_at(path)];
+        let barrier = Arc::new(std::sync::Barrier::new(2));
+        let handles: Vec<_> = buses
+            .into_iter()
+            .map(|bus| {
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    bus.append_delivery_once(
+                        "ws",
+                        "a2a",
+                        &ContextEventKindV1::SessionMutated,
+                        Some("agent"),
+                        serde_json::json!({"delivery_id":"delivery-1"}),
+                        "delivery-1",
+                    )
+                    .expect("delivery append")
+                })
+            })
+            .collect();
+        let inserted: Vec<bool> = handles
+            .into_iter()
+            .map(|handle| handle.join().expect("thread"))
+            .collect();
+        assert_eq!(inserted.iter().filter(|value| **value).count(), 1);
+
+        let bus = ContextBus::open_at(td.path().join("delivery-context-os.db"));
+        assert_eq!(bus.read("ws", "a2a", 0, 10).len(), 1);
     }
 
     #[test]
@@ -912,6 +1248,78 @@ mod tests {
     }
 
     #[test]
+    fn directed_visibility_survives_restart_and_filters_other_agents() {
+        let td = tempdir().expect("tempdir");
+        let path = td.path().join("directed-context-os.db");
+        let bus = ContextBus::open_at(path.clone());
+        let targets = vec!["agent-a".to_string()];
+        let event = bus
+            .append_directed(
+                "ws",
+                "ch",
+                &ContextEventKindV1::SessionMutated,
+                Some("lead"),
+                serde_json::json!({"decision":"keep"}),
+                targets.clone(),
+            )
+            .expect("directed event");
+        assert_eq!(event.target_agents, Some(targets.clone()));
+        drop(bus);
+
+        let reopened = ContextBus::open_at(path);
+        let replayed = reopened.read("ws", "ch", 0, 10);
+        assert_eq!(replayed.len(), 1);
+        assert_eq!(replayed[0].target_agents, Some(targets));
+        assert!(
+            TopicFilter {
+                agent_id: Some("agent-a".to_string()),
+                ..TopicFilter::default()
+            }
+            .matches(&replayed[0])
+        );
+        assert!(
+            !TopicFilter {
+                agent_id: Some("agent-b".to_string()),
+                ..TopicFilter::default()
+            }
+            .matches(&replayed[0])
+        );
+    }
+
+    #[test]
+    fn legacy_schema_migrates_without_turning_events_into_directed_events() {
+        let td = tempdir().expect("tempdir");
+        let path = td.path().join("legacy-context-os.db");
+        {
+            let conn = Connection::open(&path).expect("legacy db");
+            conn.execute_batch(
+                "CREATE TABLE context_events (
+                   id INTEGER PRIMARY KEY AUTOINCREMENT,
+                   workspace_id TEXT NOT NULL,
+                   channel_id TEXT NOT NULL,
+                   kind TEXT NOT NULL,
+                   actor TEXT,
+                   timestamp TEXT NOT NULL,
+                   payload_json TEXT NOT NULL,
+                   version INTEGER NOT NULL DEFAULT 0,
+                   parent_id INTEGER,
+                   delivery_id TEXT
+                 );
+                 INSERT INTO context_events
+                   (workspace_id, channel_id, kind, timestamp, payload_json)
+                 VALUES ('ws', 'ch', 'knowledge_remembered',
+                         '2026-01-01T00:00:00Z', '{}');",
+            )
+            .expect("legacy schema");
+        }
+
+        let bus = ContextBus::open_at(path);
+        let replayed = bus.read("ws", "ch", 0, 10);
+        assert_eq!(replayed.len(), 1);
+        assert_eq!(replayed[0].target_agents, None);
+    }
+
+    #[test]
     fn broadcast_subscriber_receives_events() {
         let (bus, _td) = test_bus();
         let mut rx = bus.subscribe("ws", "ch").expect("subscribe should succeed");
@@ -931,4 +1339,22 @@ mod tests {
         assert_eq!(received.kind, "proof_added");
         assert_eq!(received.actor.as_deref(), Some("verifier"));
     }
+
+    #[test]
+    fn event_kind_parser_roundtrips_all_v1_kinds() {
+        for kind in [
+            ContextEventKindV1::ToolCallRecorded,
+            ContextEventKindV1::SessionMutated,
+            ContextEventKindV1::KnowledgeRemembered,
+            ContextEventKindV1::ArtifactStored,
+            ContextEventKindV1::GraphBuilt,
+            ContextEventKindV1::ProofAdded,
+            ContextEventKindV1::ProvenanceCheckpoint,
+            ContextEventKindV1::ProvenanceEdit,
+            ContextEventKindV1::HealthChanged,
+        ] {
+            assert_eq!(ContextEventKindV1::parse(kind.as_str()), kind);
+        }
+    }
 }
+// SPDX-License-Identifier: Apache-2.0

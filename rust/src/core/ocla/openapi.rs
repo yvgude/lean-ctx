@@ -30,7 +30,7 @@ fn capability_schema() -> Value {
                 "enum": [
                     "observation_hook", "usage_sink", "metrics_exporter",
                     "savings_ledger", "intent_classifier", "outcome_tracker",
-                    "compression_provider", "response_optimizer", "model_router",
+                    "compression_provider", "response_optimizer",
                     "efficiency_analyzer", "config_tuner", "experiment_runner",
                     "connector_scheduler", "agent_gateway"
                 ]
@@ -214,11 +214,30 @@ fn dlq_entry_schema() -> Value {
     json!({
         "type": "object",
         "required": [
-            "id", "original_message", "target_agent", "error", "attempts",
+            "id", "tenant_id", "project_id", "delivery", "original_message",
+            "target_agent", "error", "attempts",
             "first_failed_at", "last_failed_at"
         ],
         "properties": {
             "id": {"type": "string", "minLength": 1},
+            "tenant_id": {"type": "string", "minLength": 1},
+            "project_id": {"type": "string", "minLength": 1},
+            "delivery": {
+                "oneOf": [
+                    {"const": "local_agent_bus"},
+                    {
+                        "type": "object",
+                        "required": ["remote_http"],
+                        "properties": {
+                            "remote_http": {
+                                "type": "object",
+                                "required": ["endpoint_url"],
+                                "properties": {"endpoint_url": {"type": "string", "format": "uri"}}
+                            }
+                        }
+                    }
+                ]
+            },
             "original_message": {"type": "string"},
             "target_agent": {"type": "string"},
             "error": {"type": "string"},
@@ -232,9 +251,10 @@ fn dlq_entry_schema() -> Value {
 fn dlq_stats_schema() -> Value {
     json!({
         "type": "object",
-        "required": ["total", "oldest_age_seconds", "by_target_agent"],
+        "required": ["total", "max_scope_depth", "oldest_age_seconds", "by_target_agent"],
         "properties": {
             "total": {"type": "integer", "minimum": 0},
+            "max_scope_depth": {"type": "integer", "minimum": 0, "maximum": 1000},
             "oldest_age_seconds": {"type": "integer", "minimum": 0},
             "by_target_agent": {"type": "object", "additionalProperties": {"type": "integer", "minimum": 0}}
         }
@@ -520,37 +540,49 @@ pub fn ocla_openapi_spec() -> Value {
             "/ocla/v1/dlq": {
                 "get": {
                     "operationId": "getOclaDlq",
-                    "summary": "List dead letters and queue statistics",
+                    "summary": "List dead letters for the authenticated server-bound scope",
+                    "security": [{"bearerAuth": []}],
                     "responses": {
-                        "200": {"description": "Dead-letter queue snapshot", "content": {"application/json": {"schema": schema_ref("DlqResponse")}}}
+                        "200": {"description": "Dead-letter queue snapshot", "content": {"application/json": {"schema": schema_ref("DlqResponse")}}},
+                        "401": error_response("Authentication is required"),
+                        "503": error_response("Dead-letter store is unavailable")
                     }
                 }
             },
             "/ocla/v1/dlq/{id}/retry": {
                 "post": {
                     "operationId": "retryOclaDeadLetter",
-                    "summary": "Retry delivery of a dead letter",
+                    "summary": "Retry a dead letter in the authenticated server-bound scope",
+                    "security": [{"bearerAuth": []}],
                     "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1}}],
                     "responses": {
                         "200": {"description": "Dead letter retried", "content": {"application/json": {"schema": schema_ref("DlqRetryResponse")}}},
-                        "400": error_response("Dead letter retry failed")
+                        "400": error_response("Dead letter retry failed"),
+                        "401": error_response("Authentication is required"),
+                        "503": error_response("Dead-letter store is unavailable")
                     }
                 }
             },
             "/ocla/v1/dlq/{id}": {
                 "delete": {
                     "operationId": "deleteOclaDeadLetter",
-                    "summary": "Remove a dead letter without retrying",
+                    "summary": "Remove a dead letter in the authenticated server-bound scope",
+                    "security": [{"bearerAuth": []}],
                     "parameters": [{"name": "id", "in": "path", "required": true, "schema": {"type": "string", "minLength": 1}}],
                     "responses": {
                         "204": {"description": "Dead letter removed"},
-                        "404": error_response("Dead letter was not found")
+                        "401": error_response("Authentication is required"),
+                        "404": error_response("Dead letter was not found"),
+                        "503": error_response("Dead-letter store is unavailable")
                     }
                 }
             },
 
         },
         "components": {
+            "securitySchemes": {
+                "bearerAuth": {"type": "http", "scheme": "bearer"}
+            },
             "schemas": {
                 "CanonicalTokenEnvelopeV1": canonical_envelope_schema(),
                 "AgentEnvelopeV1": agent_envelope_schema(),

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx doctor --fix` support for invalid `*`-placement allowlist
 //! entries (design doc §4: bare `*`, embedded `*`, or more than one `*`).
 //!

@@ -118,6 +118,7 @@ mod tests {
                 output_digest: "digest".into(),
             }),
             execution_receipt_ref: None,
+            capability_observation: None,
         }];
         let summary = BenchmarkSummary::from_outcomes(&outcomes, 0.95);
         BenchmarkResult {
@@ -150,5 +151,55 @@ mod tests {
         let output = format_json(&sample_result());
         let parsed: serde_json::Value = serde_json::from_str(&output).unwrap();
         assert_eq!(parsed["agent"], "codex");
+        assert!(
+            parsed["outcomes"][0]
+                .get("capability_observation")
+                .is_none()
+        );
+        let legacy: BenchmarkResult = serde_json::from_value(parsed.clone()).unwrap();
+        assert!(legacy.outcomes[0].capability_observation.is_none());
+        assert_eq!(serde_json::to_value(legacy).unwrap(), parsed);
+    }
+
+    #[test]
+    fn json_preserves_capability_observation_without_provider_facts() {
+        use crate::core::ocla::invocation::{
+            CAPABILITY_OBSERVATION_SCHEMA_VERSION, CapabilityObservationV1,
+        };
+        let mut result = sample_result();
+        let observation = CapabilityObservationV1 {
+            schema_version: CAPABILITY_OBSERVATION_SCHEMA_VERSION,
+            task_id: result.outcomes[0].task_id.clone(),
+            capability_id: "test.agent".into(),
+            capability_version: "1.0.0".into(),
+            success: true,
+            input_tokens: 3,
+            output_tokens: 2,
+            latency_ms: 47,
+            failure_mode: None,
+            output_ref: Some(crate::core::ocla::invocation::evidence_ref("task output")),
+            metrics: std::collections::BTreeMap::from([(
+                "local_payload_token_measurement".into(),
+                1,
+            )]),
+        };
+        result.outcomes[0].capability_observation = Some(observation.clone());
+        let json = format_json(&result);
+        let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            parsed["outcomes"][0]["capability_observation"],
+            serde_json::to_value(&observation).unwrap()
+        );
+        assert_eq!(
+            parsed["outcomes"][0]["capability_observation"]["metrics"],
+            serde_json::json!({"local_payload_token_measurement": 1})
+        );
+        let decoded: BenchmarkResult = serde_json::from_str(&json).unwrap();
+        assert_eq!(
+            decoded.outcomes[0].capability_observation.as_ref(),
+            Some(&observation)
+        );
+        assert!(decoded.outcomes[0].execution_receipt_ref.is_none());
+        assert!(!decoded.summary.receipt_evidence_complete);
     }
 }

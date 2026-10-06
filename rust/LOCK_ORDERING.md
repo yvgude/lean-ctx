@@ -7,6 +7,32 @@ codebase, defines the intended acquisition order, and records rules for async co
 
 ## 1. Global / Static Locks
 
+Canonical session saves reuse the existing per-session OS file lock. Each live
+`SessionState` additionally has a serde-skipped `Arc<tokio::sync::Mutex<()>>`
+save lane, shared by its clones. `save_shared` copies the lane under the state
+read lock, drops that guard, then acquires the lane with a five-second timeout.
+While holding the lane it briefly locks state to prepare, drops state before
+`spawn_blocking` acquires the OS file lock, and reacquires state only after the
+file lock is released, to acknowledge the actual committed primary. Never wait
+for the lane while holding the session state lock. Synchronous saves use the
+same OS writer and exact canonical base-digest check; they do not acquire the
+async lane. The lane is scheduling only, not another persisted state authority.
+
+The optional Intelligence installer holds one independent OS file lock,
+`<explicit-private-install-root>/install.lock`, using nonblocking exclusive
+acquisition. It never nests another lock, performs network I/O, starts a process,
+or changes user context state while held. Package publication and the shared
+updater atomic-write primitive run under this lock; public CLI updates use their
+own separate lock and directory.
+
+MCP read continuity copies only the completed ledger entry under the ledger
+state guard, releases that guard, then uses `spawn_blocking` to acquire the
+existing `context_ledger.json.lock` via bounded `agents::FileLock`. Under that
+file lock it reloads and upserts the one entry, preserving other writers and
+explicit pinned/excluded controls. No state lock or nested file lock is held.
+Persistence failure rejects the MCP call; shutdown never flushes a stale ledger
+snapshot. Legacy explicit snapshot save/reset/import paths remain unchanged.
+
 Telemetry OS-file locks follow aggregate → one-shot → ledger, skipping levels
 when not needed. A ledger operation never acquires either upstream lock.
 Send holds the aggregate lease across HTTP, ledger append and acknowledgement;
@@ -154,6 +180,92 @@ All `std::sync::Mutex` unless noted otherwise.
 | L117 | `NEXT` | `core/graph_enricher.rs:419` | `LazyLock<Mutex<HashMap<String, Instant>>>` | Earliest next backend-triggered semantic refresh per project root (`schedule_semantic_refresh`). Leaf lock: taken briefly under a router backend *slot* lock (never under L22 `BACKENDS`) and in the refresh worker; never held across I/O, thread spawn or another lock |
 | L118 | `CACHE` | `core/semantic/coverage.rs:101` | `LazyLock<Mutex<HashMap<(String, String), (Option<String>, Instant)>>>` | Per (language, project root) language-server availability for status surfaces (60 s TTL). Leaf lock: released before server resolution (config load, `PATH` probe) and re-taken only to store the answer |
 | L119 | `DISCOVERED` | `lsp/editor_bridge.rs:204` | `LazyLock<Mutex<HashMap<PathBuf, (Option<BridgeFile>, Instant)>>>` | Editor semantic-bridge discovery per canonical project root (10 s TTL). Leaf lock: released before the directory scan and `/health` ping, re-taken only to store or drop an answer |
+| L120 | `OBSERVED` | `core/context_store/task_signals.rs:162` | `OnceLock<Mutex<HashSet<Origin>>>` | Deduplicates task observation records per process; guard is released before spawning the recorder thread or performing I/O, independent leaf lock |
+
+| L114 | `CANCELLATIONS` | `core/agent_connector/timeout.rs` | `LazyLock<Mutex<BTreeSet<String>>>` | In-process execution cancellation keys, capacity 1,024; held for insertion, removal, or prefix lookup only. May be acquired during a work-graph store transaction (store file lock → cancellation registry); never acquires the store lock, performs I/O, or waits for a child while held. Durable polling finishes before the in-memory lookup. Acquisition currently uses blocking `lock()` with poison recovery, not a bounded timeout. |
+| L115 | `DENIAL_MEMORY` | `cloud_client/entitlement_cache.rs` | `Mutex<Vec<(PathBuf, String)>>` | Fail-closed account/cache denial memory, capacity 256; `try_lock()` retries for at most 20 ms, then rejects access on contention or poison. A refresh lease may precede this lock; guards cover only lookup/update and are dropped before persistence, network, or secure-store operations. No reverse acquisition of the refresh lease. |
+| L116 | `LOADED` | `core/context_kernel/providers.rs:406` | `Mutex<Option<(Key, Arc<BM25Index>)>>` | One loaded BM25 index for the kernel's search provider, keyed by root, index fingerprint and store-admission policy digest. The key (including `StoreAdmission::current()`, which takes its own observation mutex) is computed before this lock; the guard is held while a missing index is loaded from disk and no other lock is taken under it. Poison is recovered. |
+| L117 | `RUNTIME_INIT` | `core/context_os/mod.rs:89` | `Mutex<()>` | Serializes first construction of the process-wide Context OS runtime so concurrent first callers do not open and migrate the same SQLite database at once (Windows sharing/lock errors). Held only across `ContextOsRuntime::try_new` (directory create + SQLite open/migrate); `RUNTIME` (a `OnceLock`) is re-checked under it. Independent leaf lock, never nested with another static lock. Poison is recovered. |
+
+### CLI cache transaction file lock
+
+`core::cli_cache::CacheTransaction` acquires the existing bounded `agents::FileLock`
+on `<data_dir>/cli-cache/cache.lock` before loading `cache.json` and retains it
+through mutation and atomic replacement. Read, invalidate, clear, project reset,
+and statistics use this same authority. Acquisition waits at most 750 ms. Cache
+failure returns full content for reads and an error for explicit cache commands
+or post-refactor eviction; it never permits an unlocked write. No callbacks,
+network, awaits, or nested cache transactions occur while held. Refactor callers
+may already hold L22; the cache transaction never acquires L22. The data-directory
+resolver and content read finish before this file lock is acquired.
+
+### Config file lock
+
+`config_io::ConfigWriteGuard` is an RAII hold on the existing bounded
+`core::migration_lock` OS file lock, `<resolved config>.v4-migration.lock`.
+No new lock is introduced; despite the migration-era filename, ordinary
+setters take this same lock. Acquisition waits at most **5 s** and then fails
+rather than writing unlocked. The guard owns both the `MigrationLock` and the
+canonical resolved path (`resolve_write_target` +
+`canonicalize_existing_prefix`, the same derivation the migration writer
+uses), and both fields are private — a guarded write cannot be aimed at a
+file the guard is not excluding, and a symlinked config collapses to one
+identity so aliases cannot race.
+Guarded entry points read, merge, back up and write this same resolved path;
+backups live beside the canonical target, not beside an alias. Existing
+alias-side backups are left untouched.
+
+**Scope — stated narrowly.** This lock serializes *holders of this lock file*.
+It is **not** a universal config-write authority, and should not be described
+as one:
+
+- `core::tool_profiles` and `core::update_scheduler` mutate the global config
+  via `load_toml_document` → `write_toml_document`. They read **unlocked** and
+  take the lock only for the write, so they remain vulnerable to the same
+  read-modify-write race. Out of LR-TEL-01 scope; fixing them means moving
+  them onto a guard.
+- The same `write_atomic_with_backup` writer backs many **non-config** files
+  (editor configs, ledgers, skills, hook files), each getting its own
+  `.v4-migration.lock` sibling.
+
+What LR-TEL-01 changed is the **span** for the guarded paths:
+`Config::try_update_global_at` takes the guard, loads the global file fresh
+from disk inside the critical section, applies the caller's closure, and
+writes — closing the window in which a concurrent writer could commit between
+the load and the save and be overwritten. Note the load was *always* fresh
+(`try_load_global_from`, no `Config::CACHE`, no project merge); the fix is the
+single critical section, not the freshness. `setter::set_many_by_key` uses the
+same span for its read/merge/write. The merge read inside
+`write_toml_preserving_minimal` is now inside the lock too, because that merge
+decides the output from the current on-disk document.
+
+**Not reentrant.** It is an exclusive `flock` taken on a freshly opened
+descriptor, so a second acquisition on the same call path does not recurse —
+it spins to the 5 s deadline and fails. A guard holder must write through the
+guard (`ConfigWriteGuard::write_toml_preserving_minimal`,
+`Config::save_to_locked`, which takes `&ConfigWriteGuard` rather than a path);
+the lock-free writer cores are private to `config_io`. The public, self-locking
+writers (`Config::save`, `save_to`, `write_toml_preserving_minimal`,
+`write_atomic_with_backup*`) must not be called from inside a critical
+section.
+
+While held: no network, no user callback doing I/O, and no nested config
+write. Update closures must be pure in-memory mutation — `cloud_sync` does all
+of its network work outside the lock and applies only a small timestamp delta
+inside it. No static lock is acquired under this file lock: the in-section
+load uses `Config::try_load_global_from` (a direct file read), never
+`Config::load`, so **L4 `Config::CACHE`** is not nested here and no edge is
+added to the sanctioned L22 → L4 pair. A future closure calling
+`Config::load()` would introduce a *config file lock → L4* edge and needs an
+ordering rule added here first.
+
+The v3→v4 migration writer (`write_atomic_config_migration_checked`) takes the
+same lock as a leaf from the load path and holds it through journal and atomic
+file persistence; it never calls a self-locking config writer while holding it.
+
+Keep update closures limited to in-memory mutation: nested config writes time
+out on the same lock; additional locks require an explicit ordering rule, and
+network I/O would make lock hold time depend on an external service.
 
 ### Test / Environment Locks (serialise env-var mutations)
 
@@ -201,6 +313,31 @@ nesting is expected. Within a single tool handler, acquire at most one at a time
 ---
 
 ## 3. Lock Acquisition Order
+
+Native host outcome observation reuses the existing task file lock through
+receipt-chain append and optional personal learning. Order: host task lock →
+individual ledger/artifact operations (released on return) → personal-store
+opening lock → SQLite transaction. No ledger lock survives into learning;
+the personal store never takes the host task lock. No new lock is introduced.
+
+Host checkpoint export follows the same task lock → individual ledger/artifact
+operation order, retaining the task lock from receipt-head selection through
+immutable checkpoint publication. It introduces no additional lock or live store.
+
+Host-scoped checkpoint resume shares that receipt/head authority, then acquires the
+existing session save-file and bounded project-index locks while retaining the task
+lock. The session writer does not acquire a task lock in reverse order. Resume adds
+no new lock and publishes a fresh compatibility session, preserving the signed source.
+
+Legacy session import reuses the existing live-session → per-session save file
+lock → bounded project-index lock order. It publishes a fresh session with atomic
+no-replace semantics before swapping live state; no additional lock is introduced.
+
+Canonical session saves retain that same save-file lock while validating the
+committed checkpoint head and retaining its predecessor through the existing
+immutable artifact writer. Artifact publication acquires no task/session lock;
+there is no reverse task-lock edge or additional live-state store. Shared-session
+copies read the committed owner instead of advancing an independent checkpoint.
 
 ### Rule: always acquire outer → inner, lower number → higher number.
 
@@ -297,6 +434,40 @@ each other. Each should be acquired in isolation:
   subsystems, add the ordering rule here first.
 - **Hold locks for the minimum duration.** Clone/copy data out, drop the guard, then do work.
 
+### Canonical local observation writes
+
+`ContextBus::Inner::write_conn` remains the SQLite write authority for shared
+events and private observations. Observation appends acquire it with a
+five-second bounded wait, execute one SQLite transaction, and release it before
+returning. SQLite busy waits are bounded at five seconds. No runtime
+initialization, callbacks, network, awaits or additional mutex acquisitions occur
+while the observation write guard is held. No new mutex is added.
+
+`ContextBus::Inner::read_pool` is acquired separately for observation
+checkout/return only; connection opening and row reads occur after that guard
+is released. Observation checkouts/returns reject poison and time out after
+five seconds.
+
+Legacy event projection and historical-file cache mutexes use the same bounded
+observation lock helper. Neither is held during runtime initialization or a
+ContextBus transaction. Commit the canonical observation first, release its
+writer lock, then update the ring; cache reads finish before canonical reads.
+
+Global OCLA emission reserves its process-local ID before acquiring the canonical
+writer. It releases that writer before acquiring the existing bounded OCLA ring
+mutex. Failed writes change neither the success counter nor the ring projection.
+
+### Canonical execution replay
+
+`ExecutionLifecycle` owns the existing `DecisionSpine::runs` mutex over
+`HashMap<TaskReplayKey, TaskContext>`; typed keys preserve field and optional-value
+boundaries. The map lock is released before driver execution or completion.
+Each `SharedRun` owns dispatch, completion-state and stage mutexes; the replay
+path may acquire dispatch then completion-state, never the reverse while held.
+Neither is held across an await or a surface policy callback. A cached result
+type mismatch returns `ReplayTypeMismatch`, leaves the cached result intact and
+never poisons the dispatch mutex. This change adds no mutex or second authority.
+
 ### Session Locks (`tokio::sync::RwLock`)
 
 Session-scoped `RwLock`s on `ToolContext` are logically independent:
@@ -357,4 +528,3 @@ opposite order.
 3. Assign a lock number (append to Section 1) and document the acquisition order here.
 4. If nesting is required, document the outer → inner relationship in Section 3.
 5. Run `cargo check --all-features` to verify `Send`/`Sync` bounds.
-

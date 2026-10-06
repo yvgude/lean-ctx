@@ -310,26 +310,20 @@ impl BaselineConfig {
     }
 }
 
-/// `[proxy.routing]` — the active router's rule set (enterprise#13).
+/// `[proxy.routing]` — explicit, operator-written model targets.
 ///
-/// Two mechanisms, both **within-shape** in M1 (the target must speak the same
-/// wire dialect as the request; N×M shape translation is M2):
-///
-/// - **Aliases**: exact requested-model → target. Lets an org expose stable
-///   names (`acme/fast`) or transparently swap one concrete model for another.
-/// - **Tiers**: intent-based downgrade. The request's last user message is
-///   classified (`intent_router`); the resulting tier (`fast|standard|premium`)
-///   picks a target from this table. An absent tier key (or `""`) keeps the
-///   requested model — premium work is never silently downgraded unless the
-///   operator says so.
+/// **Aliases** map an exact requested model to a fixed target, e.g. an org
+/// name (`acme/fast`) onto an approved endpoint or a local model. LeanCTX never
+/// chooses a model by itself: automatic, intent- or cost-based selection was
+/// removed in v4 (the gateway decides *what* may leave, not *which* model).
 ///
 /// A target is `"model"` (swap the model, keep the upstream) or
 /// `"provider:model"` where `provider` is a `[[proxy.providers]]` registry id
 /// or a built-in (`anthropic|openai|gemini`) — then the request is also
 /// re-targeted to that provider's upstream.
 ///
-/// **Fail-open by construction:** any lookup/classification/validation miss
-/// routes nothing and forwards the request unchanged.
+/// **Fail-open by construction:** an unknown alias or unreachable target
+/// forwards the request unchanged.
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct RoutingRules {
@@ -338,8 +332,9 @@ pub struct RoutingRules {
     /// Exact model-name aliases: requested model → `"provider:model"` | `"model"`.
     /// BTreeMap for deterministic iteration/serialization (#498).
     pub aliases: std::collections::BTreeMap<String, String>,
-    /// Intent-tier targets: `fast|standard|premium` → `"provider:model"` |
-    /// `"model"` | `""` (= keep requested model).
+    /// Removed intent-tier table. Still parsed so `doctor` can tell an operator
+    /// that it no longer routes anything; never read by the proxy.
+    #[serde(skip_serializing)]
     pub tiers: std::collections::BTreeMap<String, String>,
 }
 
@@ -347,7 +342,7 @@ impl RoutingRules {
     /// True when the router should run at all.
     #[must_use]
     pub fn is_active(&self) -> bool {
-        self.enabled.unwrap_or(false) && !(self.aliases.is_empty() && self.tiers.is_empty())
+        self.enabled.unwrap_or(false) && !self.aliases.is_empty()
     }
 }
 

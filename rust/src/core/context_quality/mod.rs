@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Context Quality System — shared vocabulary for quality evidence.
 //!
 //! LeanCTX produces several kinds of quality evidence (deterministic fidelity checks,

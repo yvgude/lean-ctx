@@ -45,19 +45,29 @@
     "tests/security/test_history_policy_gate.py",
     "tests/security/test_security_check_workflow.py",
     "rust/src/proxy/anthropic.rs",
-    "rust/src/proxy/anthropic_tests.rs"
+    "rust/src/proxy/anthropic_tests.rs",
+    "rust/crates/lean-ctx-protocol/src/credential_redaction.rs",
+    "rust/crates/lean-ctx-protocol/src/context_checkpoint.rs",
+    "rust/crates/lean-ctx-protocol/src/context_checkpoint/tests_core.rs",
+    "rust/src/core/execution_ledger/host/checkpoint_transfer/content.rs",
+    "rust/src/proxy/openai_responses_ws.rs"
   ],
   "scanner_source_sha256": {
-    ".github/workflows/security-check.yml": "1d396fccd6cd6d099f8faae64573b5d82df5e4e5c6ca92c1991c2c88dabcb70c",
+    ".github/workflows/security-check.yml": "5afe73f93ce67b5832fb1839c707c5a75a18951cdf015aedca3b6177743e9d83",
     "scripts/history-policy-gate.py": "6191eb7e86b7253aef09c9ef9bb5167ba599f91f9e23d43be61452d039511ba8",
     "tests/security/test_history_policy_gate.py": "ad6c71cadb5e5896ba926f9633249c571c9449af63605cc0d91c27ccbabfd108",
     "tests/security/test_security_check_workflow.py": "2d0c9b9a6ceb61c97379290d549bbdcf7812ce17db9794b5d1b067e2202c2844",
-    "rust/src/proxy/anthropic.rs": "e7623b044b3758b599056a9e81117da165ca5271976a46bfc76462197159a0b8",
-    "rust/src/proxy/anthropic_tests.rs": "84e9e7c1d1341772357c7dd67f6fb34010cbd5c75d713d852e9c4240c047c37b"
+    "rust/src/proxy/anthropic.rs": "02be2417f1eaab0730b4328fee90c91179c46f8ed4c0c2ae2f4737d2331537b7",
+    "rust/src/proxy/anthropic_tests.rs": "d8e6572b778d48b2a158c2caf1ea9807ae03621b3215f31f3a2cde078b2a8c53",
+    "rust/crates/lean-ctx-protocol/src/credential_redaction.rs": "6e522741b965a4ab8bb858e4fb765f4f6ca7d5aa18dd14533490874341313cb1",
+    "rust/crates/lean-ctx-protocol/src/context_checkpoint.rs": "698433cd958541d830f5dde38598625dc323d28d5724c072cb4532c322d8c102",
+    "rust/crates/lean-ctx-protocol/src/context_checkpoint/tests_core.rs": "2aa83f250907035c82ea5ae56078d0077d539a5799b51b4ab2139940ea7630d0",
+    "rust/src/core/execution_ledger/host/checkpoint_transfer/content.rs": "77f233aa8f4e55925d1c98e791af08cc15972e66b6861bc6d36cb77bb395d241",
+    "rust/src/proxy/openai_responses_ws.rs": "c9f8a3fd880037dabbedcad8039439960ddacc42551f1bedc803e9ad4b377dcc"
   },
   "baseline": {
     "commit": "bff280bfc8eba6959854fafcbf104b5745d794c3",
     "report": "security/evidence/full-history-baseline-v1.json",
-    "report_sha256": "45c43278e1217d42e1fec34f345f1d21928d76de4415768487b0cc85c2a8cd93"
+    "report_sha256": "34b6ea978c9d34e5086de66202005622e6447f7ef11d6307fe176903993d976f"
   }
 }

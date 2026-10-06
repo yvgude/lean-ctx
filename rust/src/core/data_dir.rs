@@ -7,7 +7,8 @@ use std::path::PathBuf;
 /// lives alone in the config dir, so treating it as a data marker would
 /// re-collapse a clean four-dir install back onto the config dir. These are all
 /// real data/state artifacts that only exist in a pre-split (mixed) install.
-const DATA_MARKERS: &[&str] = &["stats.json", "sessions", "vectors", "graphs", "knowledge"];
+pub(crate) const DATA_MARKERS: &[&str] =
+    &["stats.json", "sessions", "vectors", "graphs", "knowledge"];
 
 /// Resolve the lean-ctx data directory.
 ///
@@ -22,11 +23,18 @@ const DATA_MARKERS: &[&str] = &["stats.json", "sessions", "vectors", "graphs", "
 /// An empty `~/.lean-ctx/` directory does NOT trigger legacy mode — this prevents
 /// data directory splits when setup creates the dir before MCP writes stats.
 pub fn lean_ctx_data_dir() -> Result<PathBuf, String> {
+    let path = resolve_data_dir()?;
+    ensure_dir_permissions(&path);
+    Ok(path)
+}
+
+/// Resolve the existing data-directory taxonomy without changing permissions.
+/// Security-sensitive stores must validate paths before any filesystem mutation.
+pub(crate) fn resolve_data_dir() -> Result<PathBuf, String> {
     if let Ok(dir) = std::env::var("LEAN_CTX_DATA_DIR") {
         let trimmed = dir.trim();
         if !trimmed.is_empty() {
             let p = PathBuf::from(trimmed);
-            ensure_dir_permissions(&p);
             return Ok(p);
         }
     }
@@ -80,7 +88,6 @@ fn resolve_home_data_dir() -> Result<PathBuf, String> {
     //       in place (back-compat). `LEAN_CTX_DATA_DIR` is handled by the caller,
     //       and `single_dir_override` honors it too.
     if let Some(dir) = crate::core::paths::single_dir_override() {
-        ensure_dir_permissions(&dir);
         return Ok(dir);
     }
 
@@ -93,7 +100,6 @@ fn resolve_home_data_dir() -> Result<PathBuf, String> {
         .filter(|s| !s.trim().is_empty())
         .map_or_else(|| home.join(".local").join("share"), PathBuf::from);
     let data_dir = xdg_data.join("lean-ctx");
-    ensure_dir_permissions(&data_dir);
     Ok(data_dir)
 }
 

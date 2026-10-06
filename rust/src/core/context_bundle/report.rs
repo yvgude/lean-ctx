@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Plain-text allocation report (`--emit plain`, and stderr for `--emit both`).
 
 use std::fmt::Write as _;

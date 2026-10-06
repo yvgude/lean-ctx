@@ -37,6 +37,8 @@ enum SendBlocker {
     Preference,
     /// `DO_NOT_TRACK=1`, or `LEAN_CTX_TELEMETRY=off|false|0|no`.
     Environment,
+    /// A CI marker (`CI`, `GITHUB_ACTIONS`, …): CI jobs never collect or send.
+    Ci,
     /// The authority refuses for a reason this display does not model yet.
     Policy,
 }
@@ -46,6 +48,7 @@ impl SendBlocker {
         match self {
             Self::Preference => "off by your saved preference",
             Self::Environment => "blocked by the environment (DO_NOT_TRACK / LEAN_CTX_TELEMETRY)",
+            Self::Ci => "not sent from CI (set LEAN_CTX_TELEMETRY_IN_CI=1 if this is no CI job)",
             Self::Policy => "blocked by telemetry policy",
         }
     }
@@ -86,7 +89,8 @@ fn show_status() {
         &cfg.telemetry,
         std::env::var("DO_NOT_TRACK").ok().as_deref(),
         std::env::var("LEAN_CTX_TELEMETRY").ok().as_deref(),
-    );
+    )
+    .or_else(|| crate::core::telemetry_consent::running_in_ci().then_some(SendBlocker::Ci));
     // The aggregate records every acknowledged send; the config field only
     // tracks the daily background pass and lags intraday sends.
     let last = crate::core::telemetry_aggregate::last_sent_bucket()
@@ -123,30 +127,18 @@ fn show_status() {
     println!("  \x1b[2mInspect: lean-ctx telemetry show\x1b[0m");
 }
 
-/// Config writes for `telemetry on|off`, applied atomically. Every key must
-/// exist in the config schema — one unknown key fails the whole update.
-/// Legacy `cloud.contribute_enabled` is migrated by the config loader.
-fn consent_updates(enabled: bool) -> [(&'static str, &'static str); 2] {
-    let (value, preference) = if enabled {
-        ("true", "explicitly_enabled")
-    } else {
-        ("false", "explicitly_disabled")
-    };
-    [
-        ("telemetry.enabled", value),
-        ("telemetry.preference", preference),
-    ]
-}
-
+/// `telemetry on|off` writes both consent keys atomically through the shared
+/// consent rules. Legacy `cloud.contribute_enabled` is migrated by the loader.
 fn set_enabled(enabled: bool) {
-    match config::setter::set_many_by_key(&consent_updates(enabled)) {
-        Ok(_) => {
+    match crate::core::telemetry_consent::persist_choice(enabled) {
+        Ok(()) => {
+            crate::core::telemetry_consent::mark_notice_seen();
             if enabled {
                 println!("Telemetry enabled — thank you for helping improve lean-ctx!");
-                println!("Sent as cumulative daily totals, several times a day: version, OS/arch,");
-                println!("anonymous install ID, AI client family, integration mode, call counts");
-                println!("per built-in tool, coarse aggregates.");
-                println!("No prompts, code, file names, commands or secrets — ever.");
+                println!("Sent as cumulative daily totals, several times a day:");
+                for line in crate::core::telemetry_consent::disclosure_lines() {
+                    println!("  {line}");
+                }
                 println!("\x1b[2mDisable anytime: lean-ctx telemetry off\x1b[0m");
             } else {
                 println!("Telemetry disabled. No data will be sent.");
@@ -208,6 +200,10 @@ fn show_payload() {
         .send_eligible(do_not_track.as_deref(), telemetry_override.as_deref())
     {
         println!("No telemetry payload is currently eligible for sending.");
+        return;
+    }
+    if crate::core::telemetry_consent::running_in_ci() {
+        println!("No telemetry payload is sent from CI.");
         return;
     }
     let payload = match crate::core::telemetry_aggregate::pending_daily_batch() {
@@ -381,20 +377,10 @@ mod tests {
         assert!(!one_shots.exists());
     }
 
-    #[test]
-    fn consent_updates_only_write_schema_keys() {
-        let schema = config::schema::ConfigSchema::generate();
-        for enabled in [true, false] {
-            for (key, _) in consent_updates(enabled) {
-                assert!(schema.lookup(key).is_some(), "unknown config key {key}");
-            }
-        }
-    }
-
     /// Eligible state, and each reason the status line must be able to name.
     #[test]
     fn status_names_every_reason_sending_is_inactive() {
-        // Default-on sends right away: no disclosure gate stands in between.
+        // Default-on sends right away; the disclosure is a notice, not a gate.
         let cfg = config::TelemetryConfig::default();
         assert_eq!(send_blocker(&cfg, None, None), None);
 

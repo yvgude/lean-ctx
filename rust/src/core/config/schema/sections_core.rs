@@ -153,7 +153,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "boolean",
             serde_json::json!(cfg.delta_explicit),
-            "Serve explicit full/lines re-reads of changed cached files as diffs (opt-in). Override via LCTX_DELTA_EXPLICIT=1",
+            "Legacy delta preference (opt-in); concrete per-call full/lines requests remain fresh and exact. Use mode=auto or mode=diff for reduced re-reads. Override via LCTX_DELTA_EXPLICIT=1",
         ),
     );
     root.insert(

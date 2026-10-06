@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Asking a semantic backend where a call goes, and mapping the answer back
 //! onto the project graph.
 

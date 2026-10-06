@@ -214,27 +214,16 @@ pub(crate) fn run_enforce(
         "--json".to_string(),
         args_json.to_string(),
     ];
-    let mut text = match super::call_cmd::run_call(&call_args) {
+    let text = match super::call_cmd::run_call(&call_args) {
         Ok(t) => t,
         Err(e) => return EnforceOutcome::DispatchError(e.to_string()),
     };
 
-    // 5. Output redaction (pack `[redaction]`) then input filters (`[filters]`),
-    //    at the same chokepoint and order as the server.
+    // 5. Use the same block-before-mask decision as model/storage boundaries.
     let mut redactions = 0;
-    if runtime::is_active() {
-        let (red, hits) = policy_guard::redact_result(&text);
-        if hits > 0 {
-            text = red;
-            redactions = hits;
-        }
-    }
-
     let mut filtered = Vec::new();
-    if let Some(active) = runtime::active()
-        && active.filters.is_active()
-    {
-        let outcome = crate::core::input_filters::apply(&text, &active.filters);
+    if let Some(active) = runtime::active() {
+        let outcome = crate::core::policy::content::evaluate_text(&text, &active);
         if outcome.blocked {
             policy_guard::audit_filter(tool, &outcome.audit, true);
             return EnforceOutcome::BlockedFilter(
@@ -243,6 +232,12 @@ pub(crate) fn run_enforce(
         }
         if !outcome.audit.is_empty() {
             policy_guard::audit_filter(tool, &outcome.audit, false);
+            redactions = outcome
+                .audit
+                .iter()
+                .filter(|(label, _)| label.starts_with("redaction:"))
+                .map(|(_, hits)| hits)
+                .sum();
             filtered = outcome.audit;
         }
     }

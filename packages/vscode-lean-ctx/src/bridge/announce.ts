@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // The bridge's announcement file: how lean-ctx finds a running bridge.
 // No `vscode` import.
 

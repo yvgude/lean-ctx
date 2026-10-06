@@ -47,7 +47,8 @@ pub struct ProviderEntry {
 }
 
 impl TechnicalCatalogue {
-    /// Build a catalogue containing the supplied manifests as available.
+    /// Build a metadata-only catalogue. Contracts alone do not prove runtime availability.
+    /// Use `OclaRegistry::technical_catalogue` for health-backed runtime discovery.
     #[must_use]
     pub fn from_manifests<I>(manifests: I) -> Self
     where
@@ -59,7 +60,7 @@ impl TechnicalCatalogue {
                 capability_id: manifest.capability_id.as_str().to_owned(),
                 version: manifest.version.clone(),
                 manifest,
-                available: true,
+                available: false,
             })
             .collect::<Vec<_>>();
         capabilities.sort_by(|left, right| {

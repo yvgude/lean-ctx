@@ -645,6 +645,7 @@ mod tests {
     fn fact_with(category: &str, key: &str, source: &str) -> KnowledgeFact {
         let now = chrono::Utc::now();
         KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: category.to_string(),
             key: key.to_string(),
             value: "v".to_string(),
@@ -748,10 +749,22 @@ mod tests {
                 let cat = "arch";
                 let key = format!("k{i}");
                 // 1) Commit the fact under the lock (as handle_remember does).
-                let (knowledge, ()) = ProjectKnowledge::mutate_locked(&root, |kn| {
-                    kn.remember(cat, &key, "v", "s", 0.9, &policy);
-                })
-                .expect("commit fact");
+                //    The lock wait is bounded (2 s) by design; sixteen writers
+                //    doing fsync-heavy saves on a slow Windows runner can exceed
+                //    it, and a caller then retries — the property under test is
+                //    that no committed embedding is lost, not the wait bound.
+                let mut attempts = 0;
+                let (knowledge, ()) = loop {
+                    match ProjectKnowledge::mutate_locked(&root, |kn| {
+                        kn.remember(cat, &key, "v", "s", 0.9, &policy);
+                    }) {
+                        Ok(committed) => break committed,
+                        Err(error) if error.contains("lock unavailable") && attempts < 20 => {
+                            attempts += 1;
+                        }
+                        Err(error) => panic!("commit fact: {error:?}"),
+                    }
+                };
                 // 2) Embedding side-car under the SAME lock + fresh-knowledge
                 //    compaction — exactly the fixed handle_remember path.
                 ProjectKnowledge::with_project_lock(&root, || {
@@ -789,6 +802,7 @@ mod tests {
         let mut knowledge = ProjectKnowledge::new("/tmp/project");
         let now = chrono::Utc::now();
         knowledge.facts.push(KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: "arch".to_string(),
             key: "db".to_string(),
             value: "Postgres".to_string(),
@@ -813,6 +827,7 @@ mod tests {
             revision_count: 0,
         });
         knowledge.facts.push(KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: "arch".to_string(),
             key: "old".to_string(),
             value: "Old".to_string(),
@@ -908,6 +923,7 @@ mod tests {
     #[test]
     fn recency_decay_recent() {
         let fact = KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: "test".to_string(),
             key: "k".to_string(),
             value: "v".to_string(),
@@ -942,6 +958,7 @@ mod tests {
     fn recency_decay_old() {
         let old_date = chrono::Utc::now() - chrono::Duration::days(100);
         let fact = KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: "test".to_string(),
             key: "k".to_string(),
             value: "v".to_string(),
@@ -991,6 +1008,7 @@ mod tests {
     #[test]
     fn format_scored_output() {
         let fact = KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: "arch".to_string(),
             key: "db".to_string(),
             value: "PostgreSQL".to_string(),

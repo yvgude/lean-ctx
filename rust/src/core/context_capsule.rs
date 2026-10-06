@@ -39,6 +39,16 @@ pub enum CapsuleSensitivityV1 {
     Restricted,
 }
 
+impl From<CapsuleSensitivityV1> for lean_ctx_protocol::context_gateway::ClassificationV1 {
+    fn from(level: CapsuleSensitivityV1) -> Self {
+        match level {
+            CapsuleSensitivityV1::Public => Self::Public,
+            CapsuleSensitivityV1::Internal => Self::Internal,
+            CapsuleSensitivityV1::Restricted => Self::Restricted,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq, Serialize, Deserialize)]
 pub struct ContextCapsuleBudgetV1 {
     pub tokens_used: u64,
@@ -231,7 +241,7 @@ impl ContextCapsuleV1 {
                 "target agent is not in allowed_agent_ids".into(),
             ));
         }
-        Ok(AgentEnvelopeV1 {
+        let mut envelope = AgentEnvelopeV1 {
             schema_version: AGENT_ENVELOPE_SCHEMA_VERSION,
             relay_id: "agent-relay:pending".to_string(),
             from_agent_id: self.chain.owner_agent_id.clone(),
@@ -240,7 +250,9 @@ impl ContextCapsuleV1 {
             budget_tokens: self.budget.tokens_remaining,
             request_id: self.request_id.clone(),
             session_id: self.session_id.clone(),
-        })
+        };
+        envelope.assign_relay_id()?;
+        Ok(envelope)
     }
 }
 

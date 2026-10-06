@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! #1867: only the command that receives a pipe is a pipe target.
 //!
 //! Split out of `tests.rs` to keep that file under the LOC gate.

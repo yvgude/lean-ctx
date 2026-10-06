@@ -1101,6 +1101,7 @@ fn telemetry_collection_eligible() -> bool {
             do_not_track.as_deref(),
             telemetry_override.as_deref(),
         )
+        && !crate::core::telemetry_consent::running_in_ci()
 }
 
 pub fn record_current_version() -> Result<(), String> {

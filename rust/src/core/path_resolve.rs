@@ -154,6 +154,7 @@ mod tests {
 
     #[test]
     fn relative_resolves_against_project_root() {
+        let _environment = crate::core::data_dir::test_env_lock();
         let tmp = std::env::temp_dir().join(format!("lc_pr_{}", std::process::id()));
         let _ = fs::create_dir_all(&tmp);
         let file = tmp.join("a.txt");
@@ -169,6 +170,7 @@ mod tests {
 
     #[test]
     fn falls_back_to_shell_cwd_when_not_in_project_root() {
+        let _environment = crate::core::data_dir::test_env_lock();
         let base = std::env::temp_dir().join(format!("lc_pr_cwd_{}", std::process::id()));
         let root = base.join("root");
         let cwd = base.join("cwd");
@@ -195,6 +197,7 @@ mod tests {
     // fix the CWD probe returned it as-is, now it must resolve into the root.
     #[test]
     fn relative_path_never_resolves_against_process_cwd() {
+        let _environment = crate::core::data_dir::test_env_lock();
         let cwd = std::env::current_dir().unwrap();
         assert!(
             cwd.join("Cargo.toml").exists(),
@@ -237,6 +240,7 @@ mod tests {
     #[cfg(not(feature = "no-jail"))]
     #[test]
     fn extra_roots_thread_through_resolve_tool_path() {
+        let _environment = crate::core::data_dir::test_env_lock();
         let base = std::env::temp_dir().join(format!("lc_pr_extra_{}", std::process::id()));
         let root = base.join("root");
         let worktree = base.join("worktree");
@@ -264,6 +268,9 @@ mod tests {
     /// (worktree) must win over the stale project_root copy.
     #[test]
     fn worktree_shell_cwd_outranks_stale_project_root_copy() {
+        // Path authorization reads the process-wide protected-runtime profile.
+        // Serialize with tests that temporarily change that profile.
+        let _environment = crate::core::data_dir::test_env_lock();
         let base = std::env::temp_dir().join(format!("lc_707_nested_{}", std::process::id()));
         let repo = base.join("repo");
         let wt = repo.join(".claude").join("worktrees").join("fix-x");
@@ -307,6 +314,7 @@ mod tests {
     /// divergent checkout — project_root resolution stays authoritative.
     #[test]
     fn monorepo_subdir_shell_cwd_is_not_a_divergent_checkout() {
+        let _environment = crate::core::data_dir::test_env_lock();
         let base = std::env::temp_dir().join(format!("lc_707_mono_{}", std::process::id()));
         let repo = base.join("repo");
         fs::create_dir_all(repo.join("rust").join("src")).unwrap();
@@ -355,6 +363,7 @@ mod tests {
 
     #[test]
     fn tool_context_shape_project_root_only() {
+        let _environment = crate::core::data_dir::test_env_lock();
         // Mirrors ToolContext::resolve_path_sync (shell_cwd = None).
         let tmp = std::env::temp_dir().join(format!("lc_pr_ctx_{}", std::process::id()));
         fs::create_dir_all(&tmp).unwrap();
@@ -374,6 +383,7 @@ mod tests {
     #[cfg(not(windows))]
     #[test]
     fn single_letter_root_is_never_drive_translated_on_unix() {
+        let _environment = crate::core::data_dir::test_env_lock();
         for raw in ["/c/Users/me/proj/src/app.ts", "src/app.ts"] {
             let rendered = match resolve_tool_path(Some("/c/Users/me/proj"), None, raw) {
                 Ok(p) => p,

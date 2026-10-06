@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Turn and session recaps: when lean-ctx says something, and what.
 //!
 //! Hosts identify a conversation by their own session id (Claude's Stop and

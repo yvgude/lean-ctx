@@ -84,6 +84,7 @@ TARGETS = (
 )
 PUBLISH_CHANNELS = (
     ("engine-release", ".github/workflows/release.yml", "v[0-9]*"),
+    ("sdk-release", ".github/workflows/publish-sdk.yml", "sdk-v[0-9]*"),
     ("client-release", ".github/workflows/publish-clients.yml", "client-v[0-9]*"),
 )
 VERSION_GATES = (

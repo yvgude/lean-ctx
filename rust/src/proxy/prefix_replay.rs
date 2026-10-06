@@ -36,6 +36,13 @@ fn store() -> &'static Mutex<HashMap<u64, ConversationPrefix>> {
     STORE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
+/// Clear process-local replay state between isolated proxy lifecycles/tests.
+pub fn clear() {
+    if let Ok(mut guard) = store().lock() {
+        guard.clear();
+    }
+}
+
 fn message_hash(msg: &Value) -> u64 {
     use std::hash::{Hash, Hasher};
     let canonical = serde_json::to_string(msg).unwrap_or_default();
@@ -111,21 +118,17 @@ pub fn overlay_prefix(prefix_bytes: &[u8], delta_messages: &[Value]) -> Option<V
         return Some(prefix_bytes.to_vec());
     }
 
-    let prefix_str = std::str::from_utf8(prefix_bytes).ok()?;
-    let trimmed = prefix_str.trim_end();
-    if !trimmed.ends_with(']') {
-        return None;
-    }
-    let without_bracket = &trimmed[..trimmed.len() - 1];
-
-    let mut result = without_bracket.as_bytes().to_vec();
-    for msg in delta_messages {
-        result.extend_from_slice(b",");
-        let serialised = serde_json::to_string(msg).ok()?;
-        result.extend_from_slice(serialised.as_bytes());
-    }
-    result.push(b']');
-    Some(result)
+    // Forwarded bytes are a complete provider request object, not a bare
+    // messages array. Parse the object, append only the fresh delta, then
+    // serialize deterministically; never splice bytes at the wrong bracket.
+    let mut request: Value = serde_json::from_slice(prefix_bytes).ok()?;
+    let messages = match &mut request {
+        Value::Object(_) => request.get_mut("messages")?.as_array_mut()?,
+        Value::Array(messages) => messages,
+        _ => return None,
+    };
+    messages.extend(delta_messages.iter().cloned());
+    serde_json::to_vec(&request).ok()
 }
 
 #[cfg(test)]
@@ -199,6 +202,16 @@ mod tests {
         let bytes = serde_json::to_vec(&msgs).unwrap();
         let result = overlay_prefix(&bytes, &[]).unwrap();
         assert_eq!(result, bytes);
+    }
+
+    #[test]
+    fn overlay_preserves_complete_request_object() {
+        let request = json!({"model":"m","messages":unique_messages("object")});
+        let prefix = serde_json::to_vec(&request).unwrap();
+        let out = overlay_prefix(&prefix, &[json!({"role":"user","content":"new"})]).unwrap();
+        let decoded: Value = serde_json::from_slice(&out).unwrap();
+        assert_eq!(decoded["model"], "m");
+        assert_eq!(decoded["messages"].as_array().unwrap().len(), 3);
     }
 
     #[test]

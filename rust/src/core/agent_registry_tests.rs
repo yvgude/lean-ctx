@@ -1,7 +1,7 @@
 use super::{
     AgentRecord, AgentStatus, binary_sha256, check, decommission, get, heartbeat, list,
-    list_active, register, registry_path, resume, spiffe_id, suspend, suspend_agents_for_owner,
-    with_registry,
+    list_active, register, registry_path, require_active, resume, spiffe_id, suspend,
+    suspend_agents_for_owner, with_registry,
 };
 use fs2::FileExt;
 use std::collections::BTreeMap;
@@ -36,6 +36,69 @@ fn identity_registry_does_not_overwrite_mcp_presence_registry() {
         presence
     );
     assert!(agents_dir.join("identity-registry.json").exists());
+}
+
+#[test]
+fn require_active_never_treats_presence_registry_as_identity_source() {
+    let iso = isolated();
+    let agents_dir = iso.path().join("agents");
+    std::fs::create_dir_all(&agents_dir).expect("agents dir");
+    std::fs::write(
+        agents_dir.join("registry.json"),
+        r#"{"agents":[],"scratchpad":[],"updated_at":"2026-01-01T00:00:00Z"}"#,
+    )
+    .expect("presence registry");
+
+    let error = require_active("identity-from-presence").expect_err("presence is not identity");
+    assert!(error.contains("corrupt"), "unexpected error: {error}");
+}
+
+#[test]
+fn require_active_is_strict_for_missing_revoked_and_malformed_identities() {
+    let iso = isolated();
+    let agents_dir = iso.path().join("agents");
+    std::fs::create_dir_all(&agents_dir).expect("agents dir");
+
+    assert!(require_active("missing").is_err());
+    register("bound", "coder", "yves@org").expect("register identity");
+    assert!(require_active("bound").is_ok());
+    suspend("bound", "review").expect("suspend identity");
+    assert!(require_active("bound").is_err());
+    resume("bound").expect("resume identity");
+    decommission("bound").expect("decommission identity");
+    assert!(require_active("bound").is_err());
+
+    std::fs::write(agents_dir.join("identity-registry.json"), "{not json")
+        .expect("malformed durable registry");
+    let error = require_active("bound").expect_err("malformed registry fails closed");
+    assert!(error.contains("corrupt"), "unexpected error: {error}");
+}
+
+#[test]
+fn require_active_supports_legacy_durable_file_fallback() {
+    let iso = isolated();
+    let agents_dir = iso.path().join("agents");
+    std::fs::create_dir_all(&agents_dir).expect("agents dir");
+    let legacy = AgentRecord {
+        agent_id: "legacy-bound".to_string(),
+        role: "coder".to_string(),
+        owner: "yves@org".to_string(),
+        status: AgentStatus::Active,
+        created_at: String::new(),
+        public_key: String::new(),
+        attestation: None,
+        last_heartbeat: None,
+        suspended_reason: None,
+        decommissioned_at: None,
+    };
+    let records = BTreeMap::from([(legacy.agent_id.clone(), legacy)]);
+    std::fs::write(
+        agents_dir.join("registry.json"),
+        serde_json::to_string(&records).expect("legacy JSON"),
+    )
+    .expect("legacy durable registry");
+
+    require_active("legacy-bound").expect("legacy active identity");
 }
 
 #[test]

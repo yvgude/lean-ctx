@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Claude Code `statusLine`: lean-ctx's segment, set without clobbering.
 //!
 //! `init --agent claude` sets `statusLine` only when there is none or it is

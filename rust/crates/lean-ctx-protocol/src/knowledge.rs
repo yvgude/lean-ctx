@@ -1,10 +1,11 @@
 //! Knowledge provenance contract.
 
-use crate::common::{ValidationError, deserialize_schema_version, validate_schema_version};
+use crate::common::{
+    ExtensionsV1, ValidationError, deserialize_schema_version, validate_schema_version,
+};
 use serde::de::Error as DeError;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
-use std::collections::BTreeMap;
 
 /// Origin category for a knowledge object.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -195,13 +196,29 @@ pub struct KnowledgeObjectV1 {
     pub policy_ref: String,
     #[serde(default)]
     pub evidence_refs: Vec<String>,
-    #[serde(flatten)]
-    pub extra: BTreeMap<String, Value>,
+    #[serde(default, flatten)]
+    pub extra: ExtensionsV1,
 }
+
+const KNOWLEDGE_RESERVED_FIELDS: &[&str] = &[
+    "schema_version",
+    "source_ref",
+    "source_type",
+    "authority",
+    "owner",
+    "classification",
+    "validity",
+    "supersedes",
+    "content_hash",
+    "evidence_digest",
+    "policy_ref",
+    "evidence_refs",
+];
 
 impl KnowledgeObjectV1 {
     /// Validate schema invariants for a knowledge object.
     pub fn validate(&self) -> Result<(), ValidationError> {
+        self.extra.validate_reserved(KNOWLEDGE_RESERVED_FIELDS)?;
         validate_schema_version(self.schema_version)
     }
 
@@ -246,7 +263,13 @@ mod tests {
             evidence_digest: "sha256:evidence".to_owned(),
             policy_ref: "policy:knowledge".to_owned(),
             evidence_refs: vec!["evidence:architecture".to_owned()],
-            extra: BTreeMap::from([("extension".to_owned(), Value::from("kept"))]),
+            extra: {
+                let mut extra = ExtensionsV1::default();
+                extra
+                    .insert("extension", Value::from("kept"))
+                    .expect("extension should be valid");
+                extra
+            },
         };
         let json = serde_json::to_string(&knowledge).expect("knowledge should serialize");
         let decoded: KnowledgeObjectV1 =

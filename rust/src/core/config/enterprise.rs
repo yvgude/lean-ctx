@@ -50,18 +50,8 @@ pub struct EnterpriseConfig {
 
 impl EnterpriseConfig {
     /// Resolve effective gateway URL (config → env).
-    pub fn effective_gateway_url(&self) -> Option<&str> {
-        if self.disabled {
-            return None;
-        }
-        if let Ok(env_url) = std::env::var("LEAN_CTX_ENTERPRISE_GATEWAY_URL") {
-            if !env_url.is_empty() {
-                // Env override — cannot return a reference to a local.
-                // Caller should use `effective_gateway_url_owned()` for env.
-                return self.gateway_url.as_deref();
-            }
-        }
-        self.gateway_url.as_deref()
+    pub fn effective_gateway_url(&self) -> Option<String> {
+        self.effective_gateway_url_owned()
     }
 
     /// Resolve effective gateway URL with env override (owned).

@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "member.schema.json",
+  "title": "LeanCTX Team Member v1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "organization_id",
+    "member_id",
+    "subject_digest",
+    "state",
+    "created_at",
+    "version",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "organization_id": { "$ref": "common.schema.json#/$defs/id" },
+    "member_id": { "$ref": "common.schema.json#/$defs/memberId" },
+    "subject_digest": { "$ref": "common.schema.json#/$defs/pseudonymDigest" },
+    "state": { "enum": ["active", "suspended", "revoked"] },
+    "created_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "revoked_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "revoked_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "revocation_reason_code": { "$ref": "common.schema.json#/$defs/reasonCode" },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "parent_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/idempotencyKey" }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/casLineage" },
+    {
+      "if": {
+        "properties": { "state": { "const": "revoked" } },
+        "required": ["state"]
+      },
+      "then": { "required": ["revoked_at", "revoked_by", "revocation_reason_code"] },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["revoked_at"] },
+            { "required": ["revoked_by"] },
+            { "required": ["revocation_reason_code"] }
+          ]
+        }
+      }
+    }
+  ]
+}

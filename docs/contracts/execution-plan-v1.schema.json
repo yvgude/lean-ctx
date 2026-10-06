@@ -4,7 +4,7 @@
   "title": "LeanCTX ExecutionPlanV1",
   "description": "Version-one bounded execution plan derived from a task envelope.",
   "type": "object",
-  "additionalProperties": false,
+  "additionalProperties": true,
   "required": [
     "schema_version",
     "plan_id",
@@ -32,20 +32,23 @@
       "type": "string",
       "enum": ["minimal", "balanced", "comprehensive", "cached_first"]
     },
-    "knowledge_refs": { "type": "array", "items": { "type": "string" } },
+    "knowledge_refs": { "type": "array", "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
     "capability_ids": {
       "type": "array",
+      "minItems": 1,
+      "maxItems": 256,
+      "uniqueItems": true,
       "items": { "$ref": "#/$defs/identifier" }
     },
-    "model": { "type": "string", "minLength": 1 },
-    "provider": { "type": "string", "minLength": 1 },
+    "model": { "$ref": "#/$defs/identifier" },
+    "provider": { "$ref": "#/$defs/identifier" },
     "reasoning_allocation_milli": {
       "type": "integer",
       "minimum": 0,
       "maximum": 1000
     },
     "max_retries": { "type": "integer", "minimum": 0 },
-    "fallback_refs": { "type": "array", "items": { "type": "string" } },
+    "fallback_refs": { "type": "array", "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
     "stop_condition": {
       "type": "string",
       "enum": [
@@ -64,7 +67,14 @@
     },
     "expected_latency_ms": { "type": "integer", "minimum": 0 },
     "policy_decision_ref": { "type": ["string", "null"] },
-    "scheduler_decision_ref": { "type": ["string", "null"] }
+    "scheduler_decision_ref": { "type": ["string", "null"] },
+    "executor_agent_id": { "anyOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+    "context_plan_id": { "anyOf": [{ "$ref": "#/$defs/identifier" }, { "type": "null" }] },
+    "capability_bindings": {
+      "type": "array",
+      "maxItems": 256,
+      "items": { "$ref": "#/$defs/capabilityBinding" }
+    }
   },
   "$defs": {
     "identifier": {
@@ -72,6 +82,16 @@
       "minLength": 1,
       "maxLength": 256,
       "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
+    "capabilityBinding": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["capability_id", "version"],
+      "properties": {
+        "capability_id": { "$ref": "#/$defs/identifier" },
+        "version": { "$ref": "#/$defs/identifier" },
+        "manifest_digest": { "type": ["string", "null"], "maxLength": 256 }
+      }
     }
   }
 }

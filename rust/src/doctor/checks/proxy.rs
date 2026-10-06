@@ -136,6 +136,26 @@ pub(crate) fn stale_proxy_env_outcome() -> Option<Outcome> {
 /// key is available. A subscription OAuth token only authenticates against
 /// `api.anthropic.com`, so routing it through the proxy causes a login loop / 401.
 /// Returns `None` when not applicable, `Some(Outcome)` when the conflict is present.
+/// v4 removed automatic model selection. A leftover `[proxy.routing.tiers]`
+/// table is still parsed but never routes, so tell the operator once instead
+/// of letting them believe requests are being downgraded.
+pub(crate) fn removed_routing_tiers_outcome() -> Option<Outcome> {
+    let cfg = crate::core::config::Config::load();
+    removed_routing_tiers_line(&cfg.proxy.routing).map(|line| Outcome { ok: false, line })
+}
+
+fn removed_routing_tiers_line(rules: &crate::core::config::RoutingRules) -> Option<String> {
+    if rules.tiers.is_empty() {
+        return None;
+    }
+    Some(format!(
+        "{BOLD}Proxy routing{RST}  {YELLOW}[proxy.routing.tiers] is ignored{RST}\n\
+         {DIM}         LeanCTX no longer picks models automatically; these {} tier entries route nothing.{RST}\n\
+         {DIM}         Remove the table, or map exact model names under [proxy.routing.aliases].{RST}",
+        rules.tiers.len()
+    ))
+}
+
 pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
     use crate::core::config::Config;
 
@@ -350,4 +370,16 @@ pub(crate) fn proxy_upstream_drift_outcome() -> Option<Outcome> {
         ));
     }
     Some(Outcome { ok: false, line })
+}
+
+#[cfg(test)]
+mod removed_routing_tests {
+    #[test]
+    fn a_leftover_tier_table_is_reported_and_an_empty_one_is_not() {
+        let mut rules = crate::core::config::RoutingRules::default();
+        assert!(super::removed_routing_tiers_line(&rules).is_none());
+        rules.tiers.insert("fast".into(), "foundry:phi-4".into());
+        let line = super::removed_routing_tiers_line(&rules).expect("reported");
+        assert!(line.contains("[proxy.routing.tiers] is ignored"));
+    }
 }

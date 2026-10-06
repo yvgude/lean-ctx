@@ -1,9 +1,10 @@
 {
-  "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://lean-ctx.dev/contracts/ocla/ocla-capability-manifest-v1.schema.json",
-  "title": "OCLA Capability Manifest v1",
-  "description": "Provider capability declaration. Unknown top-level fields are permitted for additive forward-compatible evolution.",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://leanctx.com/schemas/lean-ctx-protocol/v1/capability-manifest.json",
+  "title": "LeanCTX CapabilityManifestV1",
+  "description": "Version-one capability and conformance manifest; additive fields are retained.",
   "type": "object",
+  "additionalProperties": true,
   "required": [
     "schema_version",
     "capability_id",
@@ -22,22 +23,10 @@
     "conformance_version"
   ],
   "properties": {
-    "schema_version": {
-      "description": "Capability-manifest wire-schema version.",
-      "type": "integer",
-      "const": 1
-    },
-    "capability_id": {
-      "description": "Stable, non-empty capability identifier.",
-      "type": "string",
-      "minLength": 1
-    },
-    "provider": {
-      "description": "Provider that exposes the capability.",
-      "type": "string"
-    },
+    "schema_version": { "const": 1 },
+    "capability_id": { "$ref": "#/$defs/identifier" },
+    "provider": { "type": "string", "minLength": 1 },
     "kind": {
-      "description": "Capability category (CapabilityKind).",
       "type": "string",
       "enum": [
         "tool",
@@ -45,138 +34,118 @@
         "provider",
         "context_source",
         "validator",
+        "agent_connector",
+        "model_provider",
+        "knowledge_provider",
+        "outcome_evaluator",
+        "cost_estimator",
+        "quality_estimator",
+        "policy_gate",
         "scheduler",
+        "read_compression_strategy",
+        "search_retrieval",
+        "agent_runtime",
+        "addon",
+        "remote_capability",
         "shell_output_optimization",
         "other"
       ]
     },
-    "version": {
-      "description": "Provider-defined capability version.",
-      "type": "string",
-      "minLength": 1
-    },
-    "surfaces": {
-      "description": "Invocation or discovery surfaces exposed by the capability.",
-      "type": "array",
-      "minItems": 1,
-      "uniqueItems": true,
-      "items": {
-        "type": "string",
-        "minLength": 1
-      }
-    },
+    "version": { "type": "string", "minLength": 1 },
+    "surfaces": { "type": "array", "minItems": 1, "maxItems": 256, "uniqueItems": true, "items": { "$ref": "#/$defs/identifier" } },
     "support_matrix": {
-      "description": "Per-surface support metadata keyed by surface name.",
       "type": "object",
-      "additionalProperties": {
-        "$ref": "#/definitions/surfaceSupport"
-      }
+      "maxProperties": 256,
+      "propertyNames": { "$ref": "#/$defs/identifier" },
+      "additionalProperties": { "$ref": "#/$defs/surfaceSupport" }
     },
-    "local": {
-      "description": "Whether the capability supports local execution.",
-      "type": "boolean"
-    },
-    "remote": {
-      "description": "Whether the capability supports remote execution.",
-      "type": "boolean"
-    },
+    "local": { "type": "boolean" },
+    "remote": { "type": "boolean" },
     "reversibility": {
-      "description": "Effect rollback guarantee (Reversibility).",
       "type": "string",
       "enum": ["reversible", "irreversible", "conditional"]
     },
     "determinism": {
-      "description": "Output determinism guarantee (Determinism).",
       "type": "string",
       "enum": ["deterministic", "seeded", "non_deterministic"]
     },
     "data_movement": {
-      "description": "Furthest boundary crossed by capability data (DataMovement).",
       "type": "string",
       "enum": ["none", "local_only", "remote", "cross_region"]
     },
     "supported_classifications": {
-      "description": "Data classifications accepted by the capability.",
       "type": "array",
+      "maxItems": 4,
+      "uniqueItems": true,
       "items": {
         "type": "string",
         "enum": ["Public", "Internal", "Confidential", "Restricted"]
       }
     },
-    "measurement_support": {
-      "$ref": "#/definitions/measurementSupport"
-    },
-    "input_schema_ref": {
-      "description": "Optional reference to the capability-wide input schema.",
-      "type": ["string", "null"]
-    },
-    "output_schema_ref": {
-      "description": "Optional reference to the capability-wide output schema.",
-      "type": ["string", "null"]
-    },
-    "conformance_version": {
-      "description": "Major version of the conformance contract implemented by this capability.",
-      "type": "integer",
-      "minimum": 0
-    }
+    "measurement_support": { "$ref": "#/$defs/measurementSupport" },
+    "input_schema_ref": { "type": ["string", "null"] },
+    "output_schema_ref": { "type": ["string", "null"] },
+    "conformance_version": { "type": "integer", "minimum": 0 }
   },
   "allOf": [
     {
-      "description": "A capability must support at least one execution locality.",
       "anyOf": [
-        {"properties": {"local": {"const": true}}},
-        {"properties": {"remote": {"const": true}}}
+        { "properties": { "local": { "const": true } }, "required": ["local"] },
+        { "properties": { "remote": { "const": true } }, "required": ["remote"] }
       ]
     },
     {
-      "description": "Remote execution must declare a data-movement boundary beyond none.",
-      "if": {"properties": {"remote": {"const": true}}},
+      "if": { "properties": { "remote": { "const": true } }, "required": ["remote"] },
       "then": {
         "properties": {
-          "data_movement": {"enum": ["local_only", "remote", "cross_region"]}
+          "data_movement": { "enum": ["remote", "cross_region"] }
         }
       }
     },
     {
-      "description": "Confidential or restricted data cannot be declared for remote or cross-region movement.",
-      "if": {
-        "properties": {
-          "supported_classifications": {
-            "contains": {"enum": ["Confidential", "Restricted"]}
-          }
-        }
-      },
+      "if": { "properties": { "remote": { "const": false } }, "required": ["remote"] },
       "then": {
         "properties": {
-          "remote": {"const": false},
-          "data_movement": {"enum": ["none", "local_only"]}
+          "data_movement": { "enum": ["none", "local_only"] }
+        }
+      }
+    },
+    {
+      "if": { "properties": { "supported_classifications": { "contains": { "enum": ["Confidential", "Restricted"] } } } },
+      "then": {
+        "properties": {
+          "remote": { "const": false },
+          "data_movement": { "enum": ["none", "local_only"] }
         }
       }
     }
   ],
-  "additionalProperties": true,
-  "definitions": {
+  "$defs": {
+    "identifier": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\u0000-\\u001F\\u007F]+$"
+    },
     "measurementSupport": {
-      "description": "MeasurementSupportV1. This nested object is closed.",
       "type": "object",
+      "additionalProperties": false,
       "required": ["latency", "tokens", "quality"],
       "properties": {
-        "latency": {"type": "boolean"},
-        "tokens": {"type": "boolean"},
-        "quality": {"type": "boolean"}
-      },
-      "additionalProperties": false
+        "latency": { "type": "boolean" },
+        "tokens": { "type": "boolean" },
+        "quality": { "type": "boolean" }
+      }
     },
     "surfaceSupport": {
-      "description": "SurfaceSupportV1. This nested object is closed.",
       "type": "object",
+      "additionalProperties": false,
       "required": ["supported"],
       "properties": {
-        "supported": {"type": "boolean"},
-        "input_schema_ref": {"type": ["string", "null"]},
-        "output_schema_ref": {"type": ["string", "null"]}
-      },
-      "additionalProperties": false
+        "supported": { "type": "boolean" },
+        "input_schema_ref": { "type": ["string", "null"] },
+        "output_schema_ref": { "type": ["string", "null"] }
+      }
     }
   }
 }

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Per-session value snapshot: the small file every display channel reads.
 //!
 //! Written by the MCP server after tool calls (throttled, atomic) to

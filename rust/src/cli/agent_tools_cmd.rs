@@ -13,6 +13,8 @@ use crate::core::session::SessionState;
 use crate::server::registry::{ToolRegistry, build_registry};
 use crate::server::tool_trait::{ShellOutcome, ToolContext, ToolOutput};
 
+mod source;
+
 const SCHEMA_VERSION: u32 = 1;
 const TRANSPORT_VERSION: u32 = 1;
 const INTERFACE_VERSION: &str = "1.0.0";
@@ -41,6 +43,8 @@ struct PolicyV1 {
     allowed_executables: Vec<String>,
     allowed_env: Vec<String>,
     max_timeout_ms: u64,
+    #[serde(default)]
+    selected_gitlab: Option<source::GitLabSource>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -108,6 +112,9 @@ struct Session {
     cache: Arc<RwLock<SessionCache>>,
     state: Arc<RwLock<SessionState>>,
     bm25_cache: crate::core::bm25_cache::SharedBm25Cache,
+    autonomy: crate::core::autonomy::AutonomyState,
+    accepted_calls: std::sync::atomic::AtomicU32,
+    source_authority: Option<String>,
 }
 
 enum InputFrame {
@@ -115,9 +122,69 @@ enum InputFrame {
     TooLarge,
 }
 
+fn policy_denied() -> ErrorV1 {
+    ErrorV1 {
+        code: "permission_denied",
+        message: "Tool request withheld under the current policy".into(),
+    }
+}
+
+const OUTPUT_WITHHELD: &str =
+    "Tool may have completed; output withheld by policy. Do not retry automatically.";
+
+fn output_withheld() -> ErrorV1 {
+    ErrorV1 {
+        code: "tool_error",
+        message: OUTPUT_WITHHELD.into(),
+    }
+}
+
+fn protect_output(tool: &str, mut output: ToolOutput) -> Result<ToolOutput, ErrorV1> {
+    use crate::server::policy_guard;
+    use rmcp::model::{CallToolResult, ContentBlock};
+
+    if !crate::core::policy::runtime::is_active() {
+        return Ok(output);
+    }
+    if output.mode.as_deref() == Some("error") {
+        return Err(output_withheld());
+    }
+    output.text =
+        policy_guard::protect_result(tool, &output.text).map_err(|_| output_withheld())?;
+    if let Some(blocks) = output.content_blocks.as_mut() {
+        for block in blocks {
+            let Some(text) = block.as_text() else {
+                return Err(output_withheld());
+            };
+            // The SDK has no authorized binary/image inspection path. Text
+            // blocks are rebuilt so unchecked parallel metadata cannot escape.
+            *block = ContentBlock::text(
+                policy_guard::protect_result(tool, &text.text).map_err(|_| output_withheld())?,
+            );
+        }
+    }
+    let mut content = output.content_blocks.clone().unwrap_or_default();
+    content.push(ContentBlock::text(&output.text));
+    let mut released = CallToolResult::success(content);
+    released.structured_content = Some(serde_json::json!({
+        "mode": output.mode,
+        "shell": agent_shell_outcome(output.shell_outcome.as_ref()),
+    }));
+    if policy_guard::release_result(tool, released).is_error == Some(true) {
+        return Err(output_withheld());
+    }
+    output.saved_tokens = output
+        .original_tokens
+        .saturating_sub(crate::core::tokens::count_tokens(&output.text));
+    Ok(output)
+}
+
 impl Session {
     fn capabilities(&self) -> Vec<&'static str> {
         let mut result = READ_TOOLS.to_vec();
+        if self.policy.selected_gitlab.is_some() {
+            result.push("ctx_provider");
+        }
         if self.policy.allow_write {
             result.extend_from_slice(WRITE_TOOLS);
         }
@@ -130,11 +197,91 @@ impl Session {
 
     fn permitted(&self, tool: &str) -> bool {
         READ_TOOLS.contains(&tool)
+            || (self.policy.selected_gitlab.is_some() && tool == "ctx_provider")
             || (self.policy.allow_write && WRITE_TOOLS.contains(&tool))
             || (self.policy.allow_exec && EXEC_TOOLS.contains(&tool))
     }
 
     fn call(&self, tool: &str, arguments: &Map<String, Value>) -> Result<ToolOutput, ErrorV1> {
+        crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(PathBuf::from(&self.root))),
+            || {
+                let result = self.call_scoped(tool, arguments);
+                match result {
+                    Ok(output) => {
+                        let output = protect_output(tool, output)?;
+                        if output.mode.as_deref() != Some("error") {
+                            self.consolidate_memory();
+                        }
+                        // Maintenance can cross a policy refresh. Recheck before
+                        // returning the previously admitted application output.
+                        if let Some(authority) = &self.source_authority {
+                            source::verify_authority(Path::new(&self.root), authority)?;
+                        }
+                        let output = protect_output(tool, output)?;
+                        crate::tools::ctx_provider::ensure_snapshot_output(
+                            tool,
+                            Some(arguments),
+                            &output.text,
+                        )
+                        .map_err(|_| output_withheld())?;
+                        Ok(output)
+                    }
+                    // Handler/path diagnostics can contain source data. Keep the
+                    // stable error code, but never return unchecked diagnostics.
+                    Err(mut error) => {
+                        if crate::core::policy::runtime::is_active()
+                            && !(error.code == "tool_error" && error.message == OUTPUT_WITHHELD)
+                        {
+                            error.message = "Tool request withheld under the current policy".into();
+                        }
+                        Err(error)
+                    }
+                }
+            },
+        )
+    }
+
+    fn consolidate_memory(&self) {
+        use crate::core::{autonomy, consolidation_engine};
+        let calls = self
+            .accepted_calls
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
+            .wrapping_add(1);
+        if !autonomy::should_auto_consolidate(&self.autonomy, calls)
+            || crate::tools::LeanCtxServer::guard_role_and_policy("ctx_knowledge").is_some()
+        {
+            return;
+        }
+        // Reuse the canonical project session and locked knowledge store. The
+        // SDK's transient read cache must not replace a concurrent user's task.
+        // Stay in the calling authority scope; detached workers lose its policy
+        // and selected-source bindings. Private curation and persistence already
+        // enforce their lease, input budgets, deadlines and current policy.
+        if consolidation_engine::consolidate_latest(
+            &self.root,
+            consolidation_engine::ConsolidationBudgets::default(),
+        )
+        .is_err()
+        {
+            tracing::debug!("SDK memory maintenance skipped; existing memory retained");
+        }
+    }
+
+    fn call_scoped(
+        &self,
+        tool: &str,
+        arguments: &Map<String, Value>,
+    ) -> Result<ToolOutput, ErrorV1> {
+        if let Some(source) = &self.policy.selected_gitlab {
+            // Source selection is an enduring protected-session commitment:
+            // removing or invalidating its policy must not reopen local reads.
+            let authority = self.source_authority.as_deref().ok_or_else(policy_denied)?;
+            source::verify_authority(Path::new(&self.root), authority)?;
+            if tool == "ctx_provider" {
+                source.authorize_query(arguments)?;
+            }
+        }
         if !self.permitted(tool) {
             let code = if WRITE_TOOLS.contains(&tool) || EXEC_TOOLS.contains(&tool) {
                 "permission_denied"
@@ -146,8 +293,14 @@ impl Session {
                 message: format!("tool is not permitted: {tool}"),
             });
         }
+        if crate::tools::LeanCtxServer::guard_role_and_policy(tool).is_some() {
+            return Err(policy_denied());
+        }
         if tool == "ctx_shell" {
             return self.call_shell(arguments).map(redact_tool_output);
+        }
+        if crate::tools::LeanCtxServer::guard_egress(tool, Some(arguments)).is_some() {
+            return Err(policy_denied());
         }
         let handler = self.registry.get(tool).ok_or_else(|| ErrorV1 {
             code: "unsupported_capability",
@@ -190,6 +343,9 @@ impl Session {
 
     fn call_shell(&self, arguments: &Map<String, Value>) -> Result<ToolOutput, ErrorV1> {
         let prepared = self.prepare_shell(arguments)?;
+        if crate::tools::LeanCtxServer::guard_egress("ctx_shell", Some(&prepared)).is_some() {
+            return Err(policy_denied());
+        }
         let argv = arguments["argv"]
             .as_array()
             .expect("validated argv")
@@ -232,6 +388,10 @@ impl Session {
                 .iter()
                 .map(|(name, value)| (name, value.as_str().expect("validated env value"))),
         );
+        // Reauthorize immediately before the side effect, after path resolution.
+        if crate::tools::LeanCtxServer::guard_role_and_policy("ctx_shell").is_some() {
+            return Err(policy_denied());
+        }
         let child = command.spawn().map_err(|_| ErrorV1 {
             code: "tool_error",
             message: "shell process could not be executed".to_string(),
@@ -243,9 +403,18 @@ impl Session {
             true,
         );
         let exit_code = crate::shell::exit_status::exit_code(output.status);
+        if crate::core::policy::runtime::is_active()
+            && (std::str::from_utf8(&output.stdout).is_err()
+                || std::str::from_utf8(&output.stderr).is_err())
+        {
+            return Err(output_withheld());
+        }
         let mut raw_output = String::from_utf8_lossy(&output.stdout).into_owned();
         raw_output.push_str(&String::from_utf8_lossy(&output.stderr));
         let original_tokens = crate::core::tokens::count_tokens(&raw_output);
+        let raw_output = crate::server::policy_guard::protect_result("ctx_shell", &raw_output)
+            .map_err(|_| output_withheld())?;
+        let raw_output = crate::core::redaction::redact_text_if_enabled(&raw_output);
         let text = crate::tools::ctx_shell::handle(
             display,
             &raw_output,
@@ -424,6 +593,11 @@ fn run<R: BufRead, W: Write>(args: &[String], reader: R, writer: W) -> Result<()
     let (root, policy_path) = parse_args(args)?;
     let root = canonical_root(&root)?;
     let policy = read_policy(&policy_path)?;
+    let source_authority = policy
+        .selected_gitlab
+        .as_ref()
+        .map(|source| source.initialize(Path::new(&root)))
+        .transpose()?;
     let mut state = SessionState::new();
     state.project_root = Some(root.clone());
     state.shell_cwd = Some(root.clone());
@@ -434,6 +608,9 @@ fn run<R: BufRead, W: Write>(args: &[String], reader: R, writer: W) -> Result<()
         cache: Arc::new(RwLock::new(SessionCache::new())),
         state: Arc::new(RwLock::new(state)),
         bm25_cache: Arc::new(Mutex::new(None)),
+        autonomy: crate::core::autonomy::AutonomyState::new(),
+        accepted_calls: std::sync::atomic::AtomicU32::new(0),
+        source_authority,
     };
     serve(&session, reader, writer)
 }
@@ -575,6 +752,8 @@ fn handle_request(session: &Session, request: RequestV1, hello: &mut bool) -> Re
             match session.call(&tool, &arguments) {
                 Ok(output) => {
                     let result = ToolResultV1 {
+                        // v1 clients require original = output + saved. These
+                        // legacy accounting counters are not measured egress.
                         output_tokens: output.original_tokens.saturating_sub(output.saved_tokens),
                         original_tokens: output.original_tokens,
                         saved_tokens: output.saved_tokens,
@@ -750,6 +929,61 @@ fn is_env_name(value: &str) -> bool {
 mod tests {
     use super::*;
 
+    #[test]
+    fn protected_output_checks_text_copies_and_withholds_nontext() {
+        let source = "name = 'sdk-output'\nversion = '1.0.0'\ndescription = 'test'\n[redaction]\ncustomer = 'CUS-[0-9]{4}'\n";
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(
+            crate::core::policy::resolve(&crate::core::policy::parse(source).unwrap()).unwrap(),
+        ));
+        let output = ToolOutput {
+            text: "CUS-1234".into(),
+            content_blocks: Some(vec![rmcp::model::ContentBlock::text("CUS-5678")]),
+            ..ToolOutput::simple(String::new())
+        };
+        let protected =
+            protect_output("ctx_read", output).unwrap_or_else(|_| panic!("text allowed"));
+        assert_eq!(protected.text, "[REDACTED:customer]");
+        assert!(
+            !serde_json::to_string(&protected.content_blocks)
+                .unwrap()
+                .contains("CUS-")
+        );
+
+        let image = serde_json::from_value(serde_json::json!({
+            "type": "image", "data": "Q1VTLTEyMzQ=", "mimeType": "image/png",
+        }))
+        .unwrap();
+        assert!(
+            protect_output(
+                "ctx_read",
+                ToolOutput {
+                    content_blocks: Some(vec![image]),
+                    ..ToolOutput::simple(String::new())
+                }
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn release_rechecks_tool_permission_and_parallel_metadata() {
+        let source = "name = 'sdk-release'\nversion = '1.0.0'\ndescription = 'test'\n[context]\ndeny_tools = ['ctx_read']\n[redaction]\ncustomer = 'CUS-[0-9]{4}'\n";
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(
+            crate::core::policy::resolve(&crate::core::policy::parse(source).unwrap()).unwrap(),
+        ));
+        assert!(protect_output("ctx_read", ToolOutput::simple(String::new())).is_err());
+        assert!(
+            protect_output(
+                "ctx_tree",
+                ToolOutput {
+                    mode: Some("CUS-1234".into()),
+                    ..ToolOutput::simple(String::new())
+                }
+            )
+            .is_err()
+        );
+    }
+
     fn policy(write: bool, exec: bool) -> PolicyV1 {
         PolicyV1 {
             schema_version: 1,
@@ -762,6 +996,7 @@ mod tests {
             },
             allowed_env: Vec::new(),
             max_timeout_ms: 30_000,
+            selected_gitlab: None,
         }
     }
 
@@ -777,6 +1012,9 @@ mod tests {
             cache: Arc::new(RwLock::new(SessionCache::new())),
             state: Arc::new(RwLock::new(state)),
             bm25_cache: Arc::new(Mutex::new(None)),
+            autonomy: crate::core::autonomy::AutonomyState::new(),
+            accepted_calls: std::sync::atomic::AtomicU32::new(0),
+            source_authority: None,
         }
     }
 
@@ -816,6 +1054,57 @@ mod tests {
     }
 
     #[test]
+    fn selected_source_rejects_relaxed_and_removed_policy() {
+        // Env before policy (the crate-wide lock order): the protected read
+        // resolves config and project state that concurrent tests move.
+        let _env = crate::core::data_dir::test_env_lock();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let root = tempfile::tempdir().unwrap();
+        fs::create_dir(root.path().join(".lean-ctx")).unwrap();
+        let path = root.path().join(".lean-ctx/policy.toml");
+        let rules = "name=\"source-test\"\nversion=\"1.0.0\"\ndescription=\"test\"\n[redaction]\ncustomer=\"CUS-[0-9]{4}\"\n";
+        fs::write(&path, rules).unwrap();
+        fs::write(root.path().join("note.txt"), "CUS-1234 useful context").unwrap();
+        let mut session = session(root.path(), false, false);
+        session.policy.selected_gitlab = Some(
+            serde_json::from_value(serde_json::json!({
+                "host":"gitlab.example.test", "project":5, "namespace":"group/project",
+                "glab":"/usr/local/bin/glab"
+            }))
+            .unwrap(),
+        );
+        session.source_authority =
+            Some(crate::core::policy::runtime::protected_policy_digest(root.path()).unwrap());
+        let args = serde_json::json!({"path":"note.txt", "mode":"full"})
+            .as_object()
+            .unwrap()
+            .clone();
+        // The test pins authority without reading credentials or making a source request.
+        let initial = session.call("ctx_read", &args);
+        assert!(
+            initial.is_ok(),
+            "pinned selected-source read failed: {:?}",
+            initial.err()
+        );
+        fs::write(
+            &path,
+            "name=\"relaxed\"\nversion=\"1.0.0\"\ndescription=\"test\"\n",
+        )
+        .unwrap();
+        assert_eq!(
+            session.call("ctx_read", &args).err().unwrap().code,
+            "permission_denied"
+        );
+        fs::remove_file(&path).unwrap();
+        assert_eq!(
+            session.call("ctx_read", &args).err().unwrap().code,
+            "permission_denied"
+        );
+        fs::write(&path, rules).unwrap();
+        assert!(session.call("ctx_read", &args).is_ok());
+    }
+
+    #[test]
     fn hello_is_required_and_close_is_explicit() {
         let root = tempfile::tempdir().unwrap();
         let session = session(root.path(), false, false);
@@ -841,6 +1130,9 @@ mod tests {
 
     #[test]
     fn session_dispatches_real_tools_with_shared_cache() {
+        // This Community cache fixture must not inherit another parallel test's
+        // process-wide policy override while it exercises the real dispatcher.
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let root = tempfile::tempdir().unwrap();
         fs::write(root.path().join("sample.txt"), "alpha\nbeta\n").unwrap();
         let session = session(root.path(), false, false);

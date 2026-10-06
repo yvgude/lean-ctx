@@ -1,0 +1,27 @@
+# SPDX-License-Identifier: Apache-2.0
+
+name: Control plane regressions
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/control-plane-regressions.yml'
+      - 'rust/src/dashboard/static/components/cockpit-agents.js'
+      - 'rust/src/dashboard/static/tests/cockpit-agents.test.js'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: control-plane-regressions-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  presence:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify truthful dashboard presence
+        run: node rust/src/dashboard/static/tests/cockpit-agents.test.js

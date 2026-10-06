@@ -171,7 +171,7 @@ fn truncation_hint(
 /// `truncated at ~0 of 6800 tokens` and no way back to the content. Delivering
 /// a partial line is worse than a clean line boundary and far better than
 /// silently delivering zero.
-fn truncate_to_token_budget(text: &str, limit: usize) -> String {
+pub(crate) fn truncate_to_token_budget(text: &str, limit: usize) -> String {
     if limit == 0 {
         return String::new();
     }

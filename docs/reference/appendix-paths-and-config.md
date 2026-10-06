@@ -150,7 +150,7 @@ or the single dir for legacy/mixed installs — see §1); per-project override a
 | `[knowledge_routing]` | Add focused cross-source knowledge hints: `enabled`, `max_references` |
 | `[providers]` | GitHub/GitLab/Jira/Postgres + MCP bridges |
 | `[loop_detection]` | Per-tool call limits to prevent agent loops |
-| `[updates]` | `auto_update`, `check_interval_hours` (6), `notify_only` |
+| `[updates]` | `auto_update`, `check_interval_hours` (6), `notify_only`, `pinned_version` |
 | `[boundary_policy]` | Cross-project search/import + universal gotchas |
 | `[secret_detection]` | Secret redaction in output |
 | `[cloud]` | `contribute_enabled` + sync timestamps |
@@ -219,6 +219,12 @@ between `<!-- lean-ctx -->` markers — your own content is preserved.
 ---
 
 ## 5. Filesystem boundary — `path_jail`, `allow_paths`, `extra_roots` (GH #392)
+
+Without an explicit path, multi-root tools such as `ctx_search` use the active
+engine's project root and configured extra roots, not the daemon's process
+working directory. With neither an explicit path nor an absolute active project
+root, the default search fails instead of scanning an unrelated directory;
+configured extra roots do not bypass this check.
 
 All tool file access (`ctx_read`, `ctx_edit`, `ctx_tree`, …) is jailed under the
 current `project_root` (**PathJail**). Three knobs widen or remove that boundary —

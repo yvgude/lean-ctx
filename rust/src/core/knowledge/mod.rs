@@ -7,10 +7,12 @@ pub mod local_store;
 pub mod maintenance;
 pub mod okf;
 mod persist;
+pub(crate) mod protection;
 mod query;
 mod ranking;
 pub mod retrieval;
 pub mod snapshot;
+pub(crate) mod source_view;
 pub mod store;
 pub mod supersession;
 mod types;
@@ -331,12 +333,14 @@ mod tests {
 
     #[test]
     fn facts_evict_down_to_cap_not_double() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
         // Regression: remember() must keep the fact count at or below max_facts.
         // Previously the lifecycle only fired above 2 * max_facts, so a store
         // could silently grow to twice its configured budget before reclaiming.
         let mut policy = default_policy();
         policy.knowledge.max_facts = 5;
-        let mut k = ProjectKnowledge::new("/tmp/test-evict");
+        let mut k = ProjectKnowledge::new(root.path().to_str().unwrap());
         for i in 0..40 {
             k.remember(
                 "finding",
@@ -357,6 +361,8 @@ mod tests {
 
     #[test]
     fn import_facts_evict_down_to_cap_not_double() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
         // Regression: import_facts() must settle the store at <= max_facts, just
         // like remember(). The import path previously only ran the lifecycle above
         // 2 * max_facts, so a bulk import could inflate a store to twice its
@@ -393,7 +399,7 @@ mod tests {
             incoming.len()
         );
 
-        let mut k = ProjectKnowledge::new("/tmp/test-import-target");
+        let mut k = ProjectKnowledge::new(root.path().to_str().unwrap());
         k.import_facts(incoming, ImportMerge::Append, "s2", &policy);
         assert!(
             k.facts.len() <= policy.knowledge.max_facts,
@@ -649,6 +655,7 @@ mod tests {
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
 
         let incoming = vec![KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: "arch".into(),
             key: "db".into(),
             value: "MySQL".into(),
@@ -686,6 +693,7 @@ mod tests {
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
 
         let incoming = vec![KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: "arch".into(),
             key: "db".into(),
             value: "MySQL".into(),
@@ -724,6 +732,7 @@ mod tests {
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
 
         let incoming = vec![KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: "security".into(),
             key: "auth".into(),
             value: "JWT".into(),

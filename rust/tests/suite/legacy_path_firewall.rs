@@ -34,6 +34,10 @@ const ALLOWLIST: &[&str] = &[
     "uninstall/agents.rs",
     "uninstall/mod.rs",
     "doctor/common.rs",
+    // Denies writes: enumerates every location that may hold lean-ctx state or
+    // credentials — the legacy dir included — so the protected Codex session
+    // cannot modify them. It never creates or reads the legacy path.
+    "cli/codex_protected_cmd/write_guard.rs",
     // Group 2: pre-existing direct home-writers/readers (tracked debt).
     "report.rs",
     "core/slo.rs",

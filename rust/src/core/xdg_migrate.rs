@@ -428,7 +428,8 @@ pub(crate) fn residual_legacy_present() -> bool {
 }
 
 pub(crate) fn reclaim_legacy() -> Option<MigrationReport> {
-    if std::env::var_os("LEAN_CTX_DATA_DIR").is_some() {
+    // Any directory override, not only the data dir (GH #2007).
+    if crate::core::paths::dir_override_active() {
         return None;
     }
     let legacy = dirs::home_dir()?.join(".lean-ctx");

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 use serde_json::{Map, Value};
 
 use crate::server::tool_trait::{ToolContext, get_str, get_str_array};
@@ -15,7 +16,7 @@ pub struct ResolvedPaths {
 /// 1. `paths` array argument (explicit multi-root)
 /// 2. `path` string argument (single root, pre-resolved by dispatch)
 /// 3. Session `extra_roots` (default multi-root from config/MCP)
-/// 4. Fallback to `"."` (project root)
+/// 4. Resolve the active project root (never the process working directory)
 ///
 /// Returns `Err` when an **explicit** `path`/`paths` argument was supplied but
 /// could not be resolved (outside the project root, secret-screened, or
@@ -73,6 +74,15 @@ pub fn resolve_tool_paths(
         }
     }
 
+    // Validate before extra roots can return a default scope. An empty or
+    // relative primary must never be interpreted against the process CWD.
+    if ctx.project_root.trim().is_empty() {
+        return Err("active project root is required when no path is supplied".to_string());
+    }
+    if !std::path::Path::new(&ctx.project_root).is_absolute() {
+        return Err("active project root must be absolute when no path is supplied".to_string());
+    }
+
     if let Some(session_lock) = ctx.session.as_ref() {
         let (extra, jail_root) = {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
@@ -119,7 +129,7 @@ pub fn resolve_tool_paths(
     }
 
     Ok(ResolvedPaths {
-        roots: vec![".".to_string()],
+        roots: vec![ctx.resolve_path_sync(&ctx.project_root)?],
         is_multi: false,
     })
 }
@@ -170,12 +180,73 @@ mod tests {
     }
 
     #[test]
-    fn fallback_to_dot_when_nothing_set() {
+    fn fallback_uses_context_project_not_process_cwd() {
         let args = Map::new();
-        let ctx = test_ctx();
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().canonicalize().unwrap();
+        assert_ne!(
+            root,
+            std::env::current_dir().unwrap().canonicalize().unwrap()
+        );
+        let mut ctx = test_ctx();
+        ctx.project_root = root.to_string_lossy().into_owned();
         let result = resolve_tool_paths(&args, &ctx).expect("no explicit path → default");
-        assert_eq!(result.roots, vec!["."]);
+        assert_eq!(result.roots.len(), 1);
+        assert_eq!(
+            std::fs::canonicalize(&result.roots[0]).expect("resolved project root"),
+            std::fs::canonicalize(root).expect("canonical context project root"),
+            "fallback must resolve to the context project, independent of path spelling"
+        );
         assert!(!result.is_multi);
+    }
+
+    #[test]
+    fn missing_context_root_does_not_search_process_cwd() {
+        let mut ctx = test_ctx();
+        ctx.project_root.clear();
+        let error = resolve_tool_paths(&Map::new(), &ctx).unwrap_err();
+        assert!(error.contains("active project root is required"));
+    }
+
+    #[test]
+    fn relative_context_root_does_not_search_process_cwd() {
+        for root in [".", "relative-project"] {
+            let mut ctx = test_ctx();
+            ctx.project_root = root.to_string();
+            assert!(
+                resolve_tool_paths(&Map::new(), &ctx).is_err(),
+                "root: {root}"
+            );
+        }
+    }
+
+    #[test]
+    fn extra_roots_cannot_bypass_invalid_primary_root() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let extra = tempfile::tempdir().unwrap();
+        let extra_root = extra
+            .path()
+            .canonicalize()
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        let mut session = crate::core::session::SessionState::new();
+        session.project_root = Some(extra_root.clone());
+        session.extra_roots = vec![extra_root.clone()];
+        let mut ctx = test_ctx();
+        ctx.session = Some(std::sync::Arc::new(tokio::sync::RwLock::new(session)));
+        for root in ["", ".", "relative-project"] {
+            ctx.project_root = root.to_string();
+            assert!(
+                resolve_tool_paths(&Map::new(), &ctx).is_err(),
+                "root: {root}"
+            );
+        }
+        // A valid absolute primary still permits the existing multi-root path.
+        ctx.project_root = extra_root;
+        let resolved = resolve_tool_paths(&Map::new(), &ctx).unwrap();
+        assert!(resolved.is_multi);
+        assert!(resolved.roots.iter().all(|root| root == &ctx.project_root));
     }
 
     #[test]

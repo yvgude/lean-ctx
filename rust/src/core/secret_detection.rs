@@ -30,12 +30,12 @@ fn github_token_re() -> &'static Regex {
     static_regex!(r"gh[ps]_[A-Za-z0-9_]{36,}")
 }
 
-fn anthropic_key_re() -> &'static Regex {
+pub(crate) fn anthropic_key_re() -> &'static Regex {
     static_regex!(r"sk-ant-[A-Za-z0-9_\-]{20,}")
 }
 
-fn openai_key_re() -> &'static Regex {
-    static_regex!(r"sk-[A-Za-z0-9]{20,}")
+pub(crate) fn openai_key_re() -> &'static Regex {
+    static_regex!(r"\bsk-(?:(?:proj|svcacct)-[A-Za-z0-9_\-]{20,}|[A-Za-z0-9]{20,})")
 }
 
 // #718 word boundaries for the generic key/value patterns: the keyword must
@@ -174,11 +174,16 @@ fn collect_matches(
     let mut matches = Vec::new();
     let normalized = crate::core::redaction::normalize_secret_text(content);
 
-    let line_offsets: Vec<usize> = std::iter::once(0)
-        .chain(normalized.match_indices('\n').map(|(i, _)| i + 1))
-        .collect();
+    // Built on the first match only: most content has none. Offsets index
+    // the normalized text the patterns run on.
+    let line_offsets: std::cell::OnceCell<Vec<usize>> = std::cell::OnceCell::new();
 
     let offset_to_line = |byte_offset: usize| -> usize {
+        let line_offsets = line_offsets.get_or_init(|| {
+            std::iter::once(0)
+                .chain(normalized.match_indices('\n').map(|(i, _)| i + 1))
+                .collect()
+        });
         match line_offsets.binary_search(&byte_offset) {
             Ok(i) => i + 1,
             Err(i) => i,
@@ -490,6 +495,33 @@ pub mod tests {
         let matches = detect_secrets(input);
         assert!(!matches.is_empty());
         assert_eq!(matches[0].line_number, 3);
+    }
+
+    #[test]
+    fn key_value_secret_patterns_do_not_cross_lines() {
+        let input = [
+            "token:",
+            "\n",
+            "ABCDEFGHIJKLMNOP",
+            "QRSTUVWXYZabcdef",
+            "012345",
+        ]
+        .concat();
+        let matches = detect_secrets(&input);
+        assert!(
+            !matches
+                .iter()
+                .any(|m| matches!(m.pattern_name, "generic_api_key" | "high_entropy_secret")),
+            "a valueless key must not consume the next line: {matches:?}"
+        );
+
+        let same_line_input =
+            ["token: ", "ABCDEFGHIJKLMNOP", "QRSTUVWXYZabcdef", "012345"].concat();
+        let matches = detect_secrets(&same_line_input);
+        assert!(
+            matches.iter().any(|m| m.pattern_name == "generic_api_key"),
+            "same-line key/value secrets must still be detected: {matches:?}"
+        );
     }
 
     #[test]

@@ -1,0 +1,123 @@
+# SPDX-License-Identifier: Apache-2.0
+# GitLab merge-request gate for the private integration mirror.
+# GitHub Actions remains the public release CI authority.
+
+workflow:
+  rules:
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+    - if: '$CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    - when: never
+
+stages:
+  - verify
+
+variables:
+  GIT_DEPTH: "0"
+  PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+# The provenance job does not execute Rust. Keep this non-optional gate on
+# every eligible pipeline so a green private integration MR also has runtime
+# evidence. This is not a replacement for product E2E or release approval.
+v4-runtime:
+  stage: verify
+  image: rust:1.88.0-bookworm
+  timeout: 3 hours
+  resource_group: v4-rust-validation
+  variables:
+    # A single optimized lib-test rustc used about 9 GiB in pipeline 5314.
+    # Serialize compilation within the 16-GiB cgroup; keep both full suites.
+    CARGO_BUILD_JOBS: "1"
+    CARGO_PROFILE_DEV_DEBUG: line-tables-only
+    CARGO_PROFILE_TEST_DEBUG: line-tables-only
+    PROPTEST_CASES: "64"
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends git ca-certificates python3 cmake clang pkg-config libssl-dev mold nodejs npm passwd util-linux
+    # Match the existing GitHub stable-toolchain policy; record the resolved
+    # compiler version with the evidence rather than pretending it is pinned.
+    - rustup toolchain install stable --profile minimal --component clippy --component rustfmt
+    - |
+      case "${CI_PROJECT_DIR:-}" in /builds/*) ;; *) echo "unexpected CI_PROJECT_DIR" >&2; exit 1;; esac
+    - test "$(git -C "$CI_PROJECT_DIR" rev-parse --show-toplevel)" = "$CI_PROJECT_DIR"
+    - if id ci-runner >/dev/null 2>&1; then echo "unexpected pre-existing ci-runner identity" >&2; exit 1; fi
+    - useradd --system --user-group --no-create-home --home-dir "$CI_PROJECT_DIR/rust/target/ci-home" --shell /bin/bash ci-runner
+    - test "$(id -u ci-runner)" -gt 0
+    - test "$(id -g ci-runner)" -gt 0
+    - |
+      test "$(getent passwd ci-runner | cut -d: -f6)" = "$CI_PROJECT_DIR/rust/target/ci-home"
+    - test -n "${RUSTUP_HOME:-}"
+    - test -d "$RUSTUP_HOME/toolchains"
+    - |
+      # GitLab's helper can leave a root-owned checkout with mode 0777/0666.
+      # Restrict this checkout only; preserve the job's writable output roots.
+      for ci_source_path in "$CI_PROJECT_DIR" "$CI_PROJECT_DIR/rust" "$CI_PROJECT_DIR/rust/target" "$CI_PROJECT_DIR/runtime-evidence"; do
+        if test -L "$ci_source_path"; then echo "unexpected CI source/output symlink" >&2; exit 1; fi
+      done
+      find "$CI_PROJECT_DIR" \
+        \( -path "$CI_PROJECT_DIR/rust/target" -o -path "$CI_PROJECT_DIR/runtime-evidence" \) -prune -o \
+        \( -type d -o -type f \) -exec chmod go-w {} +
+    - install -d -m 0755 -o ci-runner -g ci-runner "$CI_PROJECT_DIR/rust/target" "$CI_PROJECT_DIR/runtime-evidence"
+    - install -d -m 0700 -o ci-runner -g ci-runner "$CI_PROJECT_DIR/rust/target/ci-home" "$CI_PROJECT_DIR/rust/target/ci-cargo-home"
+  script:
+    - set -o pipefail
+    - |
+      runuser --user ci-runner --preserve-environment -- /bin/bash -c '
+        set -euo pipefail
+        export HOME="$CI_PROJECT_DIR/rust/target/ci-home"
+        export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
+        export CARGO_TARGET_DIR="$CI_PROJECT_DIR/rust/target"
+        test "$(id -un)" = ci-runner
+        test "$(id -u)" -gt 0
+        test "$(id -g)" -gt 0
+        id -u | tee "$CI_PROJECT_DIR/runtime-evidence/uid.txt"
+        writable_source="$(find "$CI_PROJECT_DIR" \
+          \( -path "$CI_PROJECT_DIR/rust/target" -o -path "$CI_PROJECT_DIR/runtime-evidence" \) -prune -o \
+          \( -type d -o -type f \) -writable -print -quit)"
+        if test -n "$writable_source"; then echo "CI source remains writable" >&2; exit 1; fi
+        echo "CI source write guard: PASS"
+        # Trust only this validated checkout, in the disposable user config;
+        # its root-owned source remains read-only to the test user.
+        git config --global --add safe.directory "$CI_PROJECT_DIR"
+        git -C "$CI_PROJECT_DIR" rev-parse HEAD | tee "$CI_PROJECT_DIR/runtime-evidence/commit.txt"
+        rustc +stable --version --verbose | tee "$CI_PROJECT_DIR/runtime-evidence/toolchain.txt"
+        cd "$CI_PROJECT_DIR/rust"
+        cargo +stable fmt --all --check 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/fmt.log"
+        cargo +stable clippy --locked --all-features -- -D warnings 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/clippy.log"
+        # all-features includes the CLI no-jail opt-out; the normal shipping
+        # feature set needs its own security/functional run, not just that build.
+        mold -run cargo +stable test --locked --workspace --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests-default.log"
+        mold -run cargo +stable test --locked --workspace --all-features --no-fail-fast 2>&1 | tee "$CI_PROJECT_DIR/runtime-evidence/tests-all-features.log"
+        GIT_OPTIONAL_LOCKS=0 git -C "$CI_PROJECT_DIR" diff --exit-code HEAD --
+      '
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - runtime-evidence/
+
+v4-provenance:
+  stage: verify
+  image: rust:1.88.0-bookworm
+  timeout: 15 minutes
+  before_script:
+    - apt-get update -qq
+    - apt-get install -y --no-install-recommends git ca-certificates python3
+    - git fetch origin refs/heads/cla-signatures:refs/remotes/origin/cla-signatures
+    - cargo fetch --locked --manifest-path rust/Cargo.toml
+  script:
+    - test "$(git rev-parse --is-shallow-repository)" = "false"
+    - python3 -m unittest discover -s scripts/tests -v
+    - python3 scripts/verify-team-context-v1.py
+    - python3 scripts/verify-team-seat-value-v1.py
+    - python3 scripts/verify-team-seat-value-rust-parity.py
+    - python3 scripts/verify-delivery-evidence.py docs/contracts/delivery-evidence-v1.json --root .
+    - python3 scripts/generate-third-party-notices.py --root . --check
+    - python3 scripts/ip-provenance-audit.py --root . --output ip-provenance-gitlab-report.json
+    - python3 scripts/history-policy-gate.py gate --root . --policy security/history-policy-v1.json --output history-delta-gitlab-report.json
+    - if [ -n "${CI_MERGE_REQUEST_DIFF_BASE_SHA:-}" ]; then git diff --check "$CI_MERGE_REQUEST_DIFF_BASE_SHA" HEAD; else git diff --check HEAD^ HEAD; fi
+  artifacts:
+    when: always
+    expire_in: 30 days
+    paths:
+      - ip-provenance-gitlab-report.json
+      - history-delta-gitlab-report.json

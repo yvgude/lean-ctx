@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx prove speed`: a signed, live A/B latency measurement.
 
 use std::path::{Path, PathBuf};

@@ -34,7 +34,9 @@ pub(super) use claude::{
     install_claude_permissions_allow_mcp, install_claude_permissions_deny_replace,
     install_claude_project_hooks,
 };
-pub(crate) use claude_statusline::{install_claude_statusline, remove_lean_ctx_statusline};
+pub(crate) use claude_statusline::{
+    install_claude_statusline, is_lean_ctx_statusline, remove_lean_ctx_statusline,
+};
 pub(super) use cline::install_cline_rules;
 pub(crate) use codebuddy::CODEBUDDY_MD_BLOCK_START;
 pub(super) use codebuddy::{

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Frozen, deterministic OSS reference scheduler.
 //!
 //! This implementation is Class B/C reference behavior only. Production
@@ -8,8 +9,8 @@
 use std::cmp::Ordering;
 
 use lean_ctx_protocol::{
-    CapabilityId, CapabilityManifestV1, ContextStrategy, ExecutionPlanV1, PlanId, StopCondition,
-    TaskEnvelopeV1,
+    CapabilityId, CapabilityManifestV1, ContextStrategy, ExecutionPlanEstimatesV1, ExecutionPlanV1,
+    PlanId, StopCondition, TaskEnvelopeV1,
 };
 
 use super::catalogue::{ProviderEntry, TechnicalCatalogue};
@@ -36,7 +37,12 @@ impl ReferenceScheduler {
         Self
     }
 
-    /// Produce a recommendation, including a fallback, from public inputs.
+    /// Produce a recommendation from public inputs.
+    ///
+    /// The synthetic manual fallback is subject to the same hard policy as
+    /// generated candidates. If it is denied while a permitted candidate
+    /// remains, the deterministic best permitted candidate becomes the
+    /// decision fallback; otherwise scheduling fails closed.
     pub fn schedule(
         &self,
         envelope: &TaskEnvelopeV1,
@@ -47,14 +53,26 @@ impl ReferenceScheduler {
         let candidates = self.generate_candidates(envelope, eligible, catalogue)?;
         let fallback = self.fallback_candidate(envelope)?;
         let (filtered, excluded) = filter_with_report(candidates, policy);
-        let mut decision = self.select_plan(&filtered, &fallback);
+        let decision_fallback = match policy.permits(&fallback) {
+            Ok(()) => fallback,
+            Err(error) => filtered
+                .iter()
+                .min_by(|left, right| compare_candidates(left, right))
+                .cloned()
+                .ok_or_else(|| {
+                    OclaError::InvalidRequest(format!(
+                        "no policy-permitted reference scheduler candidate or fallback: {error}"
+                    ))
+                })?,
+        };
+        let mut decision = self.select_plan(&filtered, &decision_fallback);
         decision.candidates_evaluated = filtered
             .len()
             .saturating_add(excluded.len())
             .try_into()
             .unwrap_or(u32::MAX);
         decision.candidates_excluded = excluded.len().try_into().unwrap_or(u32::MAX);
-        decision.decision_ref = decision_ref(&filtered, &excluded, &fallback);
+        decision.decision_ref = decision_ref(&filtered, &excluded, &decision_fallback);
         Ok(decision)
     }
 
@@ -69,7 +87,10 @@ impl ReferenceScheduler {
         self.schedule(envelope, eligible, catalogue, policy)
     }
 
-    /// Build the deterministic fallback plan used when no candidate survives.
+    /// Build the deterministic raw fallback plan template.
+    ///
+    /// This helper does not perform policy admission; callers that execute a
+    /// plan must apply `PolicyConstraints` separately.
     pub fn fallback_plan(&self, envelope: &TaskEnvelopeV1) -> OclaResult<ExecutionPlanV1> {
         Ok(self.fallback_candidate(envelope)?.plan)
     }
@@ -95,8 +116,8 @@ impl ReferenceScheduler {
             FALLBACK_MODEL,
             FALLBACK_PROVIDER,
             Some(0),
-            envelope.quality_requirement_milli.map(u32::from),
-            envelope.latency_budget_ms,
+            None,
+            None,
         ))
     }
 }
@@ -138,10 +159,10 @@ impl SchedulerService for ReferenceScheduler {
                         manifest.capability_id.as_str(),
                         model,
                         provider.clone(),
-                        // Public catalogues do not contain pricing data.
+                        // Public catalogues do not contain pricing or quality/latency estimates.
                         None,
-                        envelope.quality_requirement_milli.map(u32::from),
-                        envelope.latency_budget_ms,
+                        None,
+                        None,
                     ));
                 }
             }
@@ -274,6 +295,7 @@ fn plan_for(
         plan_id,
         task_id: envelope.task_id.clone(),
         context_budget_tokens: 0,
+        context_budget_policy: None,
         context_strategy: ContextStrategy::Balanced,
         knowledge_refs: Vec::new(),
         capability_ids: vec![capability_id.clone()],
@@ -284,10 +306,19 @@ fn plan_for(
         fallback_refs,
         stop_condition: StopCondition::OnCompletion,
         expected_cost_micros: 0,
-        expected_quality_milli: envelope.quality_requirement_milli.unwrap_or(0),
-        expected_latency_ms: envelope.latency_budget_ms.unwrap_or(0),
+        estimates: Some(ExecutionPlanEstimatesV1 {
+            cost_micros: fallback_marker.map(|_| 0_u64),
+            quality_milli: None,
+            latency_ms: None,
+        }),
+        expected_quality_milli: 0,
+        expected_latency_ms: 0,
         policy_decision_ref: None,
         scheduler_decision_ref: Some(SCHEDULER_REF.to_owned()),
+        executor_agent_id: Some(envelope.agent_id.clone()),
+        context_plan_id: None,
+        capability_bindings: Vec::new(),
+        extensions: Default::default(),
     };
     plan.validate().map_err(|error| {
         OclaError::InvalidRequest(format!("invalid deterministic execution plan: {error}"))
@@ -317,29 +348,36 @@ fn filter_with_report(
 }
 
 fn compare_candidates(left: &ExecutionCandidate, right: &ExecutionCandidate) -> Ordering {
-    let left_cost = left
-        .expected_cost_micros
-        .unwrap_or(left.plan.expected_cost_micros);
-    let right_cost = right
-        .expected_cost_micros
-        .unwrap_or(right.plan.expected_cost_micros);
-    let left_latency = left
-        .expected_latency_ms
-        .unwrap_or(left.plan.expected_latency_ms);
-    let right_latency = right
-        .expected_latency_ms
-        .unwrap_or(right.plan.expected_latency_ms);
-    let left_quality = left
-        .expected_quality_milli
-        .unwrap_or(u32::from(left.plan.expected_quality_milli));
-    let right_quality = right
-        .expected_quality_milli
-        .unwrap_or(u32::from(right.plan.expected_quality_milli));
+    // Candidate options are the authoritative nullable estimate projection. The
+    // zero-valued plan scalars are retained only for legacy wire compatibility;
+    // treating them as ranking inputs would make unknown estimates look free.
+    compare_optional_ascending(left.expected_cost_micros, right.expected_cost_micros)
+        .then_with(|| {
+            compare_optional_ascending(left.expected_latency_ms, right.expected_latency_ms)
+        })
+        .then_with(|| {
+            compare_optional_descending(left.expected_quality_milli, right.expected_quality_milli)
+        })
+        .then_with(|| left.identity().cmp(&right.identity()))
+        .then_with(|| left.plan.plan_id.as_str().cmp(right.plan.plan_id.as_str()))
+}
 
-    left_cost
-        .cmp(&right_cost)
-        .then_with(|| left_latency.cmp(&right_latency))
-        .then_with(|| right_quality.cmp(&left_quality))
+fn compare_optional_ascending<T: Ord>(left: Option<T>, right: Option<T>) -> Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) => left.cmp(&right),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
+}
+
+fn compare_optional_descending<T: Ord>(left: Option<T>, right: Option<T>) -> Ordering {
+    match (left, right) {
+        (Some(left), Some(right)) => right.cmp(&left),
+        (Some(_), None) => Ordering::Less,
+        (None, Some(_)) => Ordering::Greater,
+        (None, None) => Ordering::Equal,
+    }
 }
 
 fn decision_ref(
@@ -409,7 +447,7 @@ mod tests {
             input_schema_ref: None,
             output_schema_ref: None,
             conformance_version: 1,
-            extra: BTreeMap::new(),
+            extra: Default::default(),
         }
     }
 
@@ -436,6 +474,7 @@ mod tests {
             model_policy_ref: None,
             context_state_ref: None,
             outcome_contract_ref: None,
+            extensions: Default::default(),
         }
     }
 
@@ -487,12 +526,11 @@ mod tests {
         let task = envelope();
         let allowed = manifest("capability://allowed", "provider-a");
         let blocked = manifest("capability://blocked", "provider-b");
+        let mut catalogue = TechnicalCatalogue::from_manifests([allowed.clone()]);
+        // This fixture explicitly represents an available runtime registration.
+        catalogue.capabilities[0].available = true;
         let candidates = scheduler
-            .generate_candidates(
-                &task,
-                &[allowed.clone(), blocked],
-                &TechnicalCatalogue::from_manifests([allowed]),
-            )
+            .generate_candidates(&task, &[allowed.clone(), blocked], &catalogue)
             .expect("candidate generation");
         let policy = PolicyConstraints {
             allowed_providers: Some(vec!["provider-a".to_owned()]),

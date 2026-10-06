@@ -1,4 +1,10 @@
-use super::*;
+use super::{
+    ARTIFACT_BOUNDARY_REJECTED, ARTIFACT_BOUNDARY_UNSUPPORTED, ARTIFACT_CLEANUP_FAILED,
+    ARTIFACT_DIGEST_MISMATCH, ARTIFACT_DIRECTORY_OPEN_FAILED, ARTIFACT_LEAF_UNTRUSTED,
+    ARTIFACT_PUBLISH_FAILED, ARTIFACT_PUBLISH_UNSUPPORTED, ARTIFACT_SIZE_LIMIT_EXCEEDED,
+    ARTIFACT_SYNC_FAILED, ARTIFACT_TEMP_CREATE_FAILED, ARTIFACT_WRITE_FAILED, Path, hex_sha256,
+};
+use crate::core::windows_file::{OpenError as ArtifactStatus, open_relative};
 use std::ffi::c_void;
 use std::io::{Read, Seek, Write};
 use std::mem::size_of;
@@ -7,28 +13,25 @@ use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::Component;
 use std::path::PathBuf;
 use std::ptr::{null, null_mut};
-use windows_sys::Wdk::Foundation::OBJECT_ATTRIBUTES;
 use windows_sys::Wdk::Storage::FileSystem::{
     FILE_CREATE, FILE_DELETE_ON_CLOSE, FILE_DIRECTORY_FILE, FILE_DISPOSITION_DELETE,
     FILE_DISPOSITION_INFORMATION_EX, FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_IF,
     FILE_OPEN_REPARSE_POINT, FILE_RENAME_INFORMATION, FILE_SYNCHRONOUS_IO_NONALERT,
-    FileDispositionInformationEx, FileRenameInformationEx, NtCreateFile, NtSetInformationFile,
+    FileDispositionInformationEx, FileRenameInformationEx, NtSetInformationFile,
 };
 use windows_sys::Win32::Foundation::{
     ERROR_INVALID_FUNCTION, ERROR_NOT_SUPPORTED, GENERIC_WRITE, HANDLE, INVALID_HANDLE_VALUE,
-    OBJ_CASE_INSENSITIVE, OBJ_DONT_REPARSE, STATUS_INVALID_PARAMETER, STATUS_NOT_SUPPORTED,
-    STATUS_OBJECT_NAME_COLLISION, STATUS_OBJECT_NAME_EXISTS, STATUS_OBJECT_NAME_NOT_FOUND,
-    STATUS_OBJECT_PATH_NOT_FOUND, STATUS_REPARSE_POINT_ENCOUNTERED, STATUS_SUCCESS,
+    STATUS_INVALID_PARAMETER, STATUS_NOT_SUPPORTED, STATUS_OBJECT_NAME_COLLISION,
+    STATUS_OBJECT_NAME_EXISTS, STATUS_REPARSE_POINT_ENCOUNTERED, STATUS_SUCCESS,
 };
 use windows_sys::Win32::Storage::FileSystem::{
     CreateFileW, DELETE, FILE_ADD_FILE, FILE_ADD_SUBDIRECTORY, FILE_ATTRIBUTE_DIRECTORY,
-    FILE_ATTRIBUTE_NORMAL, FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO,
-    FILE_DELETE_CHILD, FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT,
-    FILE_LIST_DIRECTORY, FILE_NAME_NORMALIZED, FILE_READ_ATTRIBUTES, FILE_READ_DATA,
-    FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE, FILE_STANDARD_INFO,
-    FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA, FileAttributeTagInfo, FileStandardInfo,
-    FlushFileBuffers, GetFileInformationByHandleEx, GetFinalPathNameByHandleW, OPEN_EXISTING,
-    SYNCHRONIZE, VOLUME_NAME_DOS,
+    FILE_ATTRIBUTE_REPARSE_POINT, FILE_ATTRIBUTE_TAG_INFO, FILE_DELETE_CHILD,
+    FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_LIST_DIRECTORY,
+    FILE_NAME_NORMALIZED, FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ,
+    FILE_SHARE_WRITE, FILE_STANDARD_INFO, FILE_WRITE_ATTRIBUTES, FILE_WRITE_DATA,
+    FileAttributeTagInfo, FileStandardInfo, FlushFileBuffers, GetFileInformationByHandleEx,
+    GetFinalPathNameByHandleW, OPEN_EXISTING, SYNCHRONIZE, VOLUME_NAME_DOS,
 };
 use windows_sys::Win32::System::IO::IO_STATUS_BLOCK;
 
@@ -47,6 +50,7 @@ const TEMP_ACCESS: u32 = FILE_READ_DATA
 const LEAF_ACCESS: u32 =
     FILE_READ_DATA | FILE_READ_ATTRIBUTES | FILE_WRITE_ATTRIBUTES | SYNCHRONIZE;
 const READ_LEAF_ACCESS: u32 = FILE_READ_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
+const LOCK_ACCESS: u32 = FILE_READ_DATA | FILE_WRITE_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE;
 
 struct ArtifactDirectory {
     _root: std::fs::File,
@@ -114,6 +118,32 @@ pub(super) fn persist_content(
     publish_temp_artifact(&mut temp, &directories.final_dir, &final_name, digest)
 }
 
+pub(super) fn open_lock(
+    configured_root: &Path,
+    relative: &str,
+    name: &str,
+) -> Result<std::fs::File, String> {
+    let (anchor, root_components) = split_windows_root(configured_root)?;
+    let relative_components = validate_relative_components(relative)?;
+    let lock_name = wide_component(name)?;
+    let root = bind_root(&anchor, &root_components)?;
+    let directories = prepare_directory(&root, &relative_components)?;
+    let lock = open_relative(
+        &directories.final_dir,
+        &lock_name,
+        LOCK_ACCESS,
+        FILE_OPEN_IF,
+        FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+    )
+    .map_err(|status| match status {
+        ArtifactStatus::Unsupported => ARTIFACT_BOUNDARY_UNSUPPORTED.to_owned(),
+        ArtifactStatus::Reparse => ARTIFACT_BOUNDARY_REJECTED.to_owned(),
+        _ => ARTIFACT_LEAF_UNTRUSTED.to_owned(),
+    })?;
+    ensure_regular(&lock)?;
+    Ok(lock)
+}
+
 pub(super) fn read_bounded_content(
     configured_root: &Path,
     relative: &str,
@@ -131,6 +161,7 @@ pub(super) fn read_bounded_content(
 
 fn bind_root(anchor: &Path, components: &[Vec<u16>]) -> Result<std::fs::File, String> {
     let name = wide_path(anchor);
+    // SAFETY: `wide_path` NUL-terminates `name`, which stays alive through the call; the optional security-attributes and template-file pointers are null.
     let handle = unsafe {
         CreateFileW(
             name.as_ptr(),
@@ -183,6 +214,7 @@ fn bind_root(anchor: &Path, components: &[Vec<u16>]) -> Result<std::fs::File, St
 
 fn bind_root_existing(anchor: &Path, components: &[Vec<u16>]) -> Result<std::fs::File, String> {
     let name = wide_path(anchor);
+    // SAFETY: `wide_path` NUL-terminates `name`, which stays alive through the call; the optional security-attributes and template-file pointers are null.
     let handle = unsafe {
         CreateFileW(
             name.as_ptr(),
@@ -265,6 +297,7 @@ fn final_path_by_handle(file: &std::fs::File) -> Result<Vec<u16>, String> {
     loop {
         let capacity =
             u32::try_from(buffer.len()).map_err(|_| ARTIFACT_BOUNDARY_UNSUPPORTED.to_owned())?;
+        // SAFETY: `file` owns an open handle; `buffer` is a live, exclusively borrowed UTF-16 output buffer with `capacity` checked against its allocated length.
         let length = unsafe {
             GetFinalPathNameByHandleW(
                 file.as_raw_handle(),
@@ -319,10 +352,9 @@ fn normalize_dos_path(mut path: Vec<u16>) -> Vec<u16> {
 fn wide_path_eq(left: &[u16], right: &[u16]) -> bool {
     left.len() == right.len()
         && left.iter().zip(right).all(|(left, right)| {
-            if *left <= u8::MAX as u16 && *right <= u8::MAX as u16 {
-                (*left as u8).eq_ignore_ascii_case(&(*right as u8))
-            } else {
-                left == right
+            match (u8::try_from(*left), u8::try_from(*right)) {
+                (Ok(left_byte), Ok(right_byte)) => left_byte.eq_ignore_ascii_case(&right_byte),
+                _ => left == right,
             }
         })
 }
@@ -403,7 +435,7 @@ fn preflight_native_operations(directory: &std::fs::File) -> Result<(), String> 
                 probe = Some((file, name));
                 break;
             }
-            Err(ArtifactStatus::Collision) => continue,
+            Err(ArtifactStatus::Collision) => {}
             Err(_) => return Err(ARTIFACT_BOUNDARY_UNSUPPORTED.to_owned()),
         }
     }
@@ -475,7 +507,7 @@ fn create_temp_artifact(
                 }
                 return Ok(temp);
             }
-            Err(ArtifactStatus::Collision) => continue,
+            Err(ArtifactStatus::Collision) => {}
             Err(ArtifactStatus::Unsupported) => {
                 return Err(ARTIFACT_BOUNDARY_UNSUPPORTED.to_owned());
             }
@@ -537,6 +569,7 @@ fn publish_temp_artifact(
 }
 
 fn sync_directory(directory_handle: HANDLE) -> Result<(), String> {
+    // SAFETY: this handle is borrowed from the live `final_dir` opened with `DIRECTORY_ACCESS`, which includes `GENERIC_WRITE`.
     if unsafe { FlushFileBuffers(directory_handle) } != 0 {
         return Ok(());
     }
@@ -610,78 +643,9 @@ fn read_existing_artifact_bounded(
     Ok(bytes)
 }
 
-#[derive(Clone, Copy)]
-enum ArtifactStatus {
-    Failure,
-    Collision,
-    Missing,
-    Reparse,
-    Unsupported,
-}
-
 enum PublishResult {
     Published,
     Collision,
-}
-
-fn open_relative(
-    parent: &std::fs::File,
-    name: &[u16],
-    desired_access: u32,
-    disposition: u32,
-    options: u32,
-) -> Result<std::fs::File, ArtifactStatus> {
-    let mut unicode = unicode_string(name)?;
-    let mut attributes = OBJECT_ATTRIBUTES {
-        Length: size_of::<OBJECT_ATTRIBUTES>() as u32,
-        RootDirectory: parent.as_raw_handle(),
-        ObjectName: &mut unicode,
-        Attributes: OBJ_CASE_INSENSITIVE | OBJ_DONT_REPARSE,
-        SecurityDescriptor: null(),
-        SecurityQualityOfService: null(),
-    };
-    let mut handle: HANDLE = null_mut();
-    let mut io_status = IO_STATUS_BLOCK::default();
-    let status = unsafe {
-        NtCreateFile(
-            &mut handle,
-            desired_access,
-            &mut attributes,
-            &mut io_status,
-            null(),
-            FILE_ATTRIBUTE_NORMAL,
-            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
-            disposition,
-            options,
-            null(),
-            0,
-        )
-    };
-    let opened_existing = disposition == FILE_OPEN_IF && status == STATUS_OBJECT_NAME_EXISTS;
-    if (status == STATUS_SUCCESS || opened_existing)
-        && !handle.is_null()
-        && handle != INVALID_HANDLE_VALUE
-    {
-        // SAFETY: NtCreateFile returned a successful handle owned immediately.
-        return Ok(unsafe { std::fs::File::from_raw_handle(handle) });
-    }
-    if !handle.is_null() && handle != INVALID_HANDLE_VALUE {
-        // SAFETY: an unexpected returned handle is still owned by this call.
-        drop(unsafe { std::fs::File::from_raw_handle(handle) });
-    }
-    Err(
-        if status == STATUS_OBJECT_NAME_COLLISION || status == STATUS_OBJECT_NAME_EXISTS {
-            ArtifactStatus::Collision
-        } else if status == STATUS_REPARSE_POINT_ENCOUNTERED {
-            ArtifactStatus::Reparse
-        } else if status == STATUS_OBJECT_NAME_NOT_FOUND || status == STATUS_OBJECT_PATH_NOT_FOUND {
-            ArtifactStatus::Missing
-        } else if status == STATUS_INVALID_PARAMETER || status == STATUS_NOT_SUPPORTED {
-            ArtifactStatus::Unsupported
-        } else {
-            ArtifactStatus::Failure
-        },
-    )
 }
 
 fn rename_relative(
@@ -708,6 +672,7 @@ fn rename_relative(
     let words = bytes.div_ceil(size_of::<u64>());
     let mut storage = vec![0u64; words];
     let info = storage.as_mut_ptr().cast::<FILE_RENAME_INFORMATION>();
+    // SAFETY: `storage` is u64-aligned and sized from checked `bytes`, which covers the fixed header and every UTF-16 name unit; these field writes and the copied name fit within it.
     unsafe {
         (*info).Anonymous.Flags = 0;
         (*info).RootDirectory = directory_handle;
@@ -715,10 +680,11 @@ fn rename_relative(
         std::ptr::copy_nonoverlapping(name.as_ptr(), (*info).FileName.as_mut_ptr(), name.len());
     }
     let mut io_status = IO_STATUS_BLOCK::default();
+    // SAFETY: caller keeps both the borrowed file handle and directory handle open; `info` addresses the checked rename buffer of `buffer_bytes`, and `io_status` is writable storage for the synchronous NT call.
     let status = unsafe {
         NtSetInformationFile(
             file.as_raw_handle(),
-            &mut io_status,
+            &raw mut io_status,
             info.cast::<c_void>(),
             buffer_bytes,
             FileRenameInformationEx,
@@ -742,11 +708,12 @@ fn mark_delete(file: &std::fs::File) -> Result<(), String> {
         Flags: FILE_DISPOSITION_DELETE,
     };
     let mut io_status = IO_STATUS_BLOCK::default();
+    // SAFETY: the borrowed `file` keeps its handle open, and `info` and `io_status` are live writable values of the requested structures and sizes.
     let status = unsafe {
         NtSetInformationFile(
             file.as_raw_handle(),
-            &mut io_status,
-            (&mut info as *mut FILE_DISPOSITION_INFORMATION_EX).cast::<c_void>(),
+            &raw mut io_status,
+            (&raw mut info).cast::<c_void>(),
             size_of::<FILE_DISPOSITION_INFORMATION_EX>() as u32,
             FileDispositionInformationEx,
         )
@@ -776,11 +743,12 @@ fn ensure_regular(file: &std::fs::File) -> Result<(), String> {
         return Err(ARTIFACT_LEAF_UNTRUSTED.to_owned());
     }
     let mut standard = FILE_STANDARD_INFO::default();
+    // SAFETY: `file` keeps an open handle; `standard` is writable storage of the exact structure size requested by this query.
     let ok = unsafe {
         GetFileInformationByHandleEx(
             file.as_raw_handle(),
             FileStandardInfo,
-            (&mut standard as *mut FILE_STANDARD_INFO).cast::<c_void>(),
+            (&raw mut standard).cast::<c_void>(),
             size_of::<FILE_STANDARD_INFO>() as u32,
         )
     };
@@ -792,11 +760,12 @@ fn ensure_regular(file: &std::fs::File) -> Result<(), String> {
 
 fn query_tag(file: &std::fs::File) -> Result<FILE_ATTRIBUTE_TAG_INFO, String> {
     let mut info = FILE_ATTRIBUTE_TAG_INFO::default();
+    // SAFETY: `file` keeps an open handle; `info` is writable storage of the exact structure size requested by this query.
     let ok = unsafe {
         GetFileInformationByHandleEx(
             file.as_raw_handle(),
             FileAttributeTagInfo,
-            (&mut info as *mut FILE_ATTRIBUTE_TAG_INFO).cast::<c_void>(),
+            (&raw mut info).cast::<c_void>(),
             size_of::<FILE_ATTRIBUTE_TAG_INFO>() as u32,
         )
     };
@@ -815,21 +784,6 @@ fn map_directory_status(status: ArtifactStatus) -> String {
             ARTIFACT_DIRECTORY_OPEN_FAILED.to_owned()
         }
     }
-}
-
-fn unicode_string(
-    name: &[u16],
-) -> Result<windows_sys::Win32::Foundation::UNICODE_STRING, ArtifactStatus> {
-    let byte_length = name
-        .len()
-        .checked_mul(size_of::<u16>())
-        .and_then(|length| u16::try_from(length).ok())
-        .ok_or(ArtifactStatus::Unsupported)?;
-    Ok(windows_sys::Win32::Foundation::UNICODE_STRING {
-        Length: byte_length,
-        MaximumLength: byte_length,
-        Buffer: name.as_ptr() as *mut u16,
-    })
 }
 
 fn wide_path(path: &Path) -> Vec<u16> {

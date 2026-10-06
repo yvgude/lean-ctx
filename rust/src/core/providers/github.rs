@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! GitHub context provider — issues, pull requests, actions.
 //!
 //! Follows the same pattern as `gitlab.rs` but targets the GitHub REST API v3.
@@ -148,7 +150,11 @@ pub fn list_issues(
         "/repos/{slug}/issues?per_page={per_page}&state={state_param}&sort=updated&direction=desc"
     );
 
-    let cache_key = format!("github:issues:{slug}:{state_param}:{per_page}");
+    let cache_key = cache::request_cache_key(
+        "github",
+        &config.api_url(&endpoint),
+        Some(config.token.as_str()),
+    );
     if let Some(cached) = cache::get_cached(&cache_key)
         && let Ok(result) = serde_json::from_str::<ProviderResult>(&cached)
     {
@@ -191,7 +197,11 @@ pub fn list_pull_requests(
         "/repos/{slug}/pulls?per_page={per_page}&state={state_param}&sort=updated&direction=desc"
     );
 
-    let cache_key = format!("github:prs:{slug}:{state_param}:{per_page}");
+    let cache_key = cache::request_cache_key(
+        "github",
+        &config.api_url(&endpoint),
+        Some(config.token.as_str()),
+    );
     if let Some(cached) = cache::get_cached(&cache_key)
         && let Ok(result) = serde_json::from_str::<ProviderResult>(&cached)
     {

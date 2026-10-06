@@ -1,0 +1,27 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "team-value-aggregate.schema.json",
+  "title": "TeamValueAggregateV1", "type": "object", "additionalProperties": false,
+  "required": ["v", "aggregate_id", "scope", "period_start", "period_end", "currency", "methodology_digest", "price_table_digest", "source_watermark", "input_digests", "value_facts", "generated_at", "version", "signature_envelope_digest", "idempotency_key"],
+  "properties": {
+    "v": {"const": 1}, "aggregate_id": {"$ref": "common.schema.json#/$defs/id"}, "scope": {"$ref": "common.schema.json#/$defs/scope"},
+    "period_start": {"$ref": "common.schema.json#/$defs/timestamp"}, "period_end": {"$ref": "common.schema.json#/$defs/timestamp"}, "currency": {"type": "string", "pattern": "^[A-Z]{3}$"},
+    "methodology_digest": {"$ref": "common.schema.json#/$defs/methodologyDigest"}, "price_table_digest": {"$ref": "common.schema.json#/$defs/priceDigest"},
+    "source_watermark": {"type": "integer", "minimum": 0, "maximum": 9007199254740991},
+    "input_digests": {"type": "array", "minItems": 1, "maxItems": 4096, "uniqueItems": true, "items": {"$ref": "common.schema.json#/$defs/acceptedOutcomeDigest"}},
+    "value_facts": {"type": "array", "minItems": 1, "maxItems": 256, "items": {"$ref": "#/$defs/valueFact"}},
+    "generated_at": {"$ref": "common.schema.json#/$defs/timestamp"}, "version": {"$ref": "common.schema.json#/$defs/version"}, "parent_digest": {"$ref": "common.schema.json#/$defs/digest"},
+    "signature_envelope_digest": {"$ref": "common.schema.json#/$defs/digest"}, "idempotency_key": {"$ref": "common.schema.json#/$defs/idempotencyKey"}
+  },
+  "$defs": {
+    "base": {"type": "object", "required": ["metric", "kind"], "properties": {"metric": {"enum": ["total_cost", "accepted_path_cost", "waste_cost", "total_tokens", "accepted_path_tokens", "waste_tokens", "gross_value", "net_value", "tax", "discount", "credit", "refund"]}, "kind": {"enum": ["measured", "estimated", "inferred", "calculated", "reconciled", "unavailable"]}}},
+    "valueFact": {"oneOf": [
+      {"allOf": [{"$ref": "#/$defs/base"}, {"type": "object", "additionalProperties": false, "required": ["metric", "kind", "value", "measurement_evidence_digest"], "properties": {"metric": {}, "kind": {"const": "measured"}, "value": {"$ref": "common.schema.json#/$defs/money"}, "measurement_evidence_digest": {"$ref": "common.schema.json#/$defs/evidenceDigest"}}}]},
+      {"allOf": [{"$ref": "#/$defs/base"}, {"type": "object", "additionalProperties": false, "required": ["metric", "kind", "value", "assumptions_digest", "price_evidence_digest"], "properties": {"metric": {}, "kind": {"const": "estimated"}, "value": {"$ref": "common.schema.json#/$defs/money"}, "assumptions_digest": {"$ref": "common.schema.json#/$defs/evidenceDigest"}, "price_evidence_digest": {"$ref": "common.schema.json#/$defs/priceDigest"}}}]},
+      {"allOf": [{"$ref": "#/$defs/base"}, {"type": "object", "additionalProperties": false, "required": ["metric", "kind", "value", "inference_method_digest", "source_evidence_digests"], "properties": {"metric": {}, "kind": {"const": "inferred"}, "value": {"$ref": "common.schema.json#/$defs/money"}, "inference_method_digest": {"$ref": "common.schema.json#/$defs/methodologyDigest"}, "source_evidence_digests": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "common.schema.json#/$defs/evidenceDigest"}}}}]},
+      {"allOf": [{"$ref": "#/$defs/base"}, {"type": "object", "additionalProperties": false, "required": ["metric", "kind", "value", "formula_digest", "input_evidence_digests"], "properties": {"metric": {}, "kind": {"const": "calculated"}, "value": {"$ref": "common.schema.json#/$defs/money"}, "formula_digest": {"$ref": "common.schema.json#/$defs/methodologyDigest"}, "input_evidence_digests": {"type": "array", "minItems": 1, "maxItems": 64, "uniqueItems": true, "items": {"$ref": "common.schema.json#/$defs/evidenceDigest"}}}}]},
+      {"allOf": [{"$ref": "#/$defs/base"}, {"type": "object", "additionalProperties": false, "required": ["metric", "kind", "value", "reconciliation_evidence_digest"], "properties": {"metric": {}, "kind": {"const": "reconciled"}, "value": {"$ref": "common.schema.json#/$defs/money"}, "reconciliation_evidence_digest": {"$ref": "common.schema.json#/$defs/evidenceDigest"}}}]},
+      {"allOf": [{"$ref": "#/$defs/base"}, {"type": "object", "additionalProperties": false, "required": ["metric", "kind", "reason_code"], "properties": {"metric": {}, "kind": {"const": "unavailable"}, "reason_code": {"$ref": "common.schema.json#/$defs/reasonCode"}}}]}
+    ]}
+  },
+  "allOf": [{"$ref": "common.schema.json#/$defs/cas"}]
+}

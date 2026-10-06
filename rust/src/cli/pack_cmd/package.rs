@@ -2,6 +2,53 @@ use std::path::PathBuf;
 
 use super::{format_bytes, parse_flag, parse_pkg_ref};
 
+pub(crate) fn cmd_pack_migrate(args: &[String]) {
+    let Some(file) = args.iter().find(|arg| arg.ends_with(".lctxpkg")) else {
+        eprintln!("Usage: lean-ctx pack migrate <file.lctxpkg>");
+        std::process::exit(2);
+    };
+    match crate::core::context_package::migration::migrate_legacy_package(std::path::Path::new(
+        file,
+    )) {
+        Ok(result) => {
+            let status = if result.already_migrated {
+                "already migrated"
+            } else {
+                "migrated"
+            };
+            println!("Package {status}: {}", result.output_path.display());
+            println!("Receipt: {}", result.receipt_path.display());
+            println!("Rollback source retained: {file}");
+        }
+        Err(error) => {
+            eprintln!("Package migration failed: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
+pub(crate) fn cmd_pack_rollback(args: &[String]) {
+    let Some(file) = args
+        .iter()
+        .find(|arg| arg.ends_with(".ctxpkg.migration.json"))
+    else {
+        eprintln!("Usage: lean-ctx pack rollback <file.ctxpkg.migration.json>");
+        std::process::exit(2);
+    };
+    match crate::core::context_package::migration::rollback_legacy_package(std::path::Path::new(
+        file,
+    )) {
+        Ok(source) => println!(
+            "Package rollback complete; legacy source retained: {}",
+            source.display()
+        ),
+        Err(error) => {
+            eprintln!("Package rollback failed: {error}");
+            std::process::exit(1);
+        }
+    }
+}
+
 #[derive(Default)]
 struct PackCreateArgs {
     name: Option<String>,

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 use md5::{Digest, Md5};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
@@ -87,33 +89,64 @@ fn normalize_key(path: &str) -> String {
     crate::core::pathutil::normalize_tool_path(path)
 }
 
-/// Serializes every load → modify → save of the store within this process.
-/// Without it, two concurrent callers (parallel tool calls in the daemon, or
-/// tests) each load the file, change their own key and write it back — and the
-/// later write silently drops the earlier caller's entry.
-fn store_guard() -> std::sync::MutexGuard<'static, ()> {
+/// One load → modify → save of the store. Concurrent callers — parallel tool
+/// calls in the daemon, a CLI read in another process, tests — serialize
+/// here, so a later write can never drop an earlier caller's entry (lost
+/// update). In-process callers queue on a mutex (they never time out against
+/// each other); other processes are excluded by a file lock on a stable
+/// sidecar, which is bounded so a wedged foreign holder cannot stall a read.
+struct CacheTransaction {
+    path: PathBuf,
+    store: CliCacheStore,
+    // Field order is drop order: the file lock is released first.
+    _lock: crate::core::agents::FileLock,
+    _in_process: std::sync::MutexGuard<'static, ()>,
+}
+
+fn in_process_guard() -> std::sync::MutexGuard<'static, ()> {
     static STORE_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
     STORE_LOCK
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner)
 }
 
-fn load_store() -> CliCacheStore {
-    let Some(path) = cache_file() else {
-        return CliCacheStore::default();
-    };
-    match std::fs::read_to_string(&path) {
-        Ok(data) => serde_json::from_str(&data).unwrap_or_default(),
-        Err(_) => CliCacheStore::default(),
+impl CacheTransaction {
+    fn load() -> std::io::Result<Self> {
+        let in_process = in_process_guard();
+        let path =
+            cache_file().ok_or_else(|| std::io::Error::other("CLI cache directory unavailable"))?;
+        let parent = path.parent().ok_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::InvalidInput, "CLI cache has no parent")
+        })?;
+        std::fs::create_dir_all(parent)?;
+        // Lock the stable sidecar, not the JSON inode replaced by atomic writes.
+        let lock = crate::core::agents::FileLock::acquire(&path.with_extension("lock"))
+            .map_err(|error| std::io::Error::other(format!("CLI cache lock: {error}")))?;
+        let store = match std::fs::read(&path) {
+            Ok(bytes) => serde_json::from_slice(&bytes)
+                .map_err(|error| std::io::Error::new(std::io::ErrorKind::InvalidData, error))?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => CliCacheStore::default(),
+            Err(error) => return Err(error),
+        };
+        Ok(Self {
+            path,
+            store,
+            _lock: lock,
+            _in_process: in_process,
+        })
     }
-}
 
-fn save_store(store: &CliCacheStore) {
-    let Some(dir) = cache_dir() else { return };
-    let _ = std::fs::create_dir_all(&dir);
-    let path = dir.join("cache.json");
-    if let Ok(data) = serde_json::to_string(store) {
-        let _ = std::fs::write(path, data);
+    fn save(&self) -> std::io::Result<()> {
+        let bytes = serde_json::to_vec(&self.store).map_err(std::io::Error::other)?;
+        #[cfg(unix)]
+        let permissions = {
+            use std::os::unix::fs::PermissionsExt;
+            Some(std::fs::Permissions::from_mode(0o600))
+        };
+        #[cfg(not(unix))]
+        let permissions = None;
+        // No in-place fallback: failure must preserve the prior cache bytes.
+        crate::core::atomic_fs::try_atomic_write(&self.path, &bytes, permissions.as_ref())
     }
 }
 
@@ -135,30 +168,35 @@ pub(crate) fn check_and_read(path: &str) -> CacheResult {
 
     let key = normalize_key(path);
     let hash = compute_md5(&content);
+    let line_count = content.lines().count();
+    let original_tokens = crate::core::tokens::count_tokens(&content);
+    let nonce = process_nonce();
     let now = now_secs();
-    let _guard = store_guard();
-    let mut store = load_store();
+    let Ok(mut transaction) = CacheTransaction::load() else {
+        return CacheResult::Miss { content };
+    };
+    let store = &mut transaction.store;
 
-    store.total_reads += 1;
+    store.total_reads = store.total_reads.saturating_add(1);
 
     if let Some(entry) = store.entries.get_mut(&key)
         && entry.hash == hash
-        && entry.nonce == process_nonce()
+        && entry.nonce == nonce
         && now.saturating_sub(entry.timestamp) < CACHE_TTL_SECS
     {
-        entry.read_count += 1;
+        entry.read_count = entry.read_count.saturating_add(1);
         entry.timestamp = now;
-        store.total_hits += 1;
+        store.total_hits = store.total_hits.saturating_add(1);
         let result = CacheResult::Hit {
             entry: entry.clone(),
-            file_ref: file_ref(&key, &store),
+            file_ref: file_ref(&key, store),
         };
-        save_store(&store);
-        return result;
+        return if transaction.save().is_ok() {
+            result
+        } else {
+            CacheResult::Miss { content }
+        };
     }
-
-    let line_count = content.lines().count();
-    let original_tokens = crate::core::tokens::count_tokens(&content);
 
     let entry = CliCacheEntry {
         path: key.clone(),
@@ -167,49 +205,49 @@ pub(crate) fn check_and_read(path: &str) -> CacheResult {
         original_tokens,
         timestamp: now,
         read_count: 1,
-        nonce: process_nonce().to_string(),
+        nonce: nonce.to_string(),
     };
     store.entries.insert(key, entry);
 
-    evict_stale(&mut store, now);
+    evict_stale(store, now);
 
-    save_store(&store);
+    // Cache persistence is optional for a full-content read, never for eviction.
+    let _ = transaction.save();
     CacheResult::Miss { content }
 }
 
-pub(crate) fn invalidate(path: &str) {
+pub(crate) fn invalidate(path: &str) -> std::io::Result<()> {
     let key = normalize_key(path);
-    let _guard = store_guard();
-    let mut store = load_store();
-    store.entries.remove(&key);
-    save_store(&store);
+    let mut transaction = CacheTransaction::load()?;
+    transaction.store.entries.remove(&key);
+    transaction.save()
 }
 
-pub(crate) fn clear() -> usize {
-    let _guard = store_guard();
-    let mut store = load_store();
-    let count = store.entries.len();
-    store.entries.clear();
-    save_store(&store);
-    count
+pub(crate) fn clear() -> std::io::Result<usize> {
+    let mut transaction = CacheTransaction::load()?;
+    let count = transaction.store.entries.len();
+    transaction.store.entries.clear();
+    transaction.save()?;
+    Ok(count)
 }
 
-pub(crate) fn clear_project(project_root: &str) -> usize {
-    let _guard = store_guard();
-    let mut store = load_store();
+pub(crate) fn clear_project(project_root: &str) -> std::io::Result<usize> {
+    let mut transaction = CacheTransaction::load()?;
+    let store = &mut transaction.store;
     let prefix = normalize_key(project_root);
     let before = store.entries.len();
     store
         .entries
         .retain(|key, entry| !key.starts_with(&prefix) && !entry.path.starts_with(&prefix));
     let removed = before - store.entries.len();
-    save_store(&store);
-    removed
+    transaction.save()?;
+    Ok(removed)
 }
 
-pub(crate) fn stats() -> (u64, u64, usize) {
-    let store = load_store();
-    (store.total_hits, store.total_reads, store.entries.len())
+pub(crate) fn stats() -> std::io::Result<(u64, u64, usize)> {
+    let transaction = CacheTransaction::load()?;
+    let store = &transaction.store;
+    Ok((store.total_hits, store.total_reads, store.entries.len()))
 }
 
 fn evict_stale(store: &mut CliCacheStore, now: u64) {
@@ -359,7 +397,7 @@ mod tests {
         std::fs::write(&tmp, "fn main() {}\n").unwrap();
         let path_str = tmp.to_str().unwrap();
 
-        invalidate(path_str);
+        invalidate(path_str).unwrap();
 
         let result = check_and_read(path_str);
         assert!(matches!(result, CacheResult::Miss { .. }));
@@ -371,7 +409,7 @@ mod tests {
             assert!(entry.read_count >= 2);
         }
 
-        invalidate(path_str);
+        invalidate(path_str).unwrap();
         let result3 = check_and_read(path_str);
         assert!(matches!(result3, CacheResult::Miss { .. }));
 
@@ -401,8 +439,8 @@ mod tests {
         let key = normalize_key(path_str);
 
         // Simulate a prior process that cached this path under its own nonce.
-        let mut store = load_store();
-        store.entries.insert(
+        let mut transaction = CacheTransaction::load().unwrap();
+        transaction.store.entries.insert(
             key.clone(),
             CliCacheEntry {
                 path: key,
@@ -414,7 +452,8 @@ mod tests {
                 nonce: "a-different-process".into(),
             },
         );
-        save_store(&store);
+        transaction.save().unwrap();
+        drop(transaction);
 
         // A fresh process (different nonce) must miss and receive full content.
         let result = check_and_read(path_str);
@@ -425,6 +464,87 @@ mod tests {
 
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
         let _ = std::fs::remove_dir_all(&test_data_dir);
+    }
+
+    #[test]
+    fn invalidate_waits_for_cache_file_lock() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), "cache contention fixture\n").unwrap();
+        let path = file.path().to_string_lossy().into_owned();
+        let _ = check_and_read(&path);
+        assert!(
+            matches!(check_and_read(&path), CacheResult::Hit { .. }),
+            "premise: the entry must be cached before invalidation"
+        );
+
+        let cache_path = cache_file().expect("isolated cache path");
+        let lock =
+            crate::core::agents::FileLock::acquire(&cache_path.with_extension("lock")).unwrap();
+        let (started_tx, started_rx) = std::sync::mpsc::sync_channel(1);
+        let (done_tx, done_rx) = std::sync::mpsc::sync_channel(1);
+        let worker_path = path.clone();
+        let worker = std::thread::spawn(move || {
+            let _ = started_tx.send(());
+            invalidate(&worker_path).unwrap();
+            let _ = done_tx.send(());
+        });
+
+        let started = started_rx
+            .recv_timeout(std::time::Duration::from_millis(750))
+            .is_ok();
+        let completed_while_locked = started
+            && done_rx
+                .recv_timeout(std::time::Duration::from_millis(100))
+                .is_ok();
+
+        drop(lock);
+        worker.join().expect("invalidate worker");
+
+        assert!(started, "invalidate worker did not start");
+        assert!(
+            !completed_while_locked,
+            "invalidate completed while cache lock was held"
+        );
+        assert!(matches!(check_and_read(&path), CacheResult::Miss { .. }));
+    }
+
+    #[test]
+    fn cache_lock_timeout_preserves_bytes_and_returns_full_content() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let content = "cache timeout content\n";
+        std::fs::write(file.path(), content).unwrap();
+        let path = file.path().to_str().unwrap();
+        let _ = check_and_read(path);
+        let cache_path = cache_file().unwrap();
+        let before = std::fs::read(&cache_path).unwrap();
+        let _lock =
+            crate::core::agents::FileLock::acquire(&cache_path.with_extension("lock")).unwrap();
+        assert!(invalidate(path).is_err());
+        assert!(
+            matches!(check_and_read(path), CacheResult::Miss { content: full } if full == content)
+        );
+        assert_eq!(std::fs::read(&cache_path).unwrap(), before);
+    }
+
+    #[test]
+    fn malformed_cache_is_not_overwritten_or_reported_as_cleared() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let file = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(file.path(), "uncached content\n").unwrap();
+        let path = file.path().to_str().unwrap();
+        let _ = check_and_read(path);
+        let cache_path = cache_file().unwrap();
+        std::fs::write(&cache_path, "{broken cache").unwrap();
+        assert_eq!(clear().unwrap_err().kind(), std::io::ErrorKind::InvalidData);
+        assert!(clear_project(path).is_err());
+        assert!(invalidate(path).is_err());
+        assert!(stats().is_err());
+        assert!(
+            matches!(check_and_read(path), CacheResult::Miss { content } if content == "uncached content\n")
+        );
+        assert_eq!(std::fs::read(&cache_path).unwrap(), b"{broken cache");
     }
 
     #[test]
@@ -452,7 +572,7 @@ mod tests {
             }
         });
 
-        let store = load_store();
+        let store = CacheTransaction::load().expect("cache readable").store;
         for path in &files {
             assert!(
                 store.entries.contains_key(&normalize_key(path)),

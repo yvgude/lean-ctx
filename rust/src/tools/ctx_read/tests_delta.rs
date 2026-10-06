@@ -266,6 +266,12 @@ fn conversation_scoped_stub_served_for_same_conversation() {
 
 #[test]
 fn conversation_scoped_stub_withheld_for_other_conversation() {
+    if crate::test_env::run_with_conversation_scope(
+        "tools::ctx_read::tests_delta::conversation_scoped_stub_withheld_for_other_conversation",
+        true,
+    ) {
+        return;
+    }
     let dir = tempfile::tempdir().unwrap();
     let path = dir.path().join("warm.rs");
     let p = path.to_string_lossy().to_string();

@@ -1,0 +1,726 @@
+{
+  "contract": "leanctx-gateway-proof",
+  "version": "1.0.0",
+  "source": "Information Gateway execution package: section 30 (60 acceptance scenarios) and section 31 (26 bypass paths)",
+  "statuses": {
+    "proven": "Engine tests named here prove it; the gate checks they exist and pass.",
+    "external": "Proven outside this repository (Enterprise or SDK), named in evidence.",
+    "open": "No executable proof yet. A release gate run fails while any entry is open."
+  },
+  "acceptance": [
+    {
+      "id": 1,
+      "title": "authorized principal + permitted source may proceed",
+      "status": "external",
+      "evidence": [
+        "enterprise: tests/ciso_gateway_demo.py (member principal, permitted destination, delivered)",
+        "sdk: examples/gateway_login_journey.py (permitted sources planned)"
+      ],
+      "note": "The Engine has no principal model of its own (Community); principal binding is Enterprise (G8.4)."
+    },
+    {
+      "id": 2,
+      "title": "unauthorized principal is denied",
+      "status": "external",
+      "evidence": [
+        "enterprise: tests/ciso_gateway_demo.py (member key cannot approve; self-approval refused)",
+        "enterprise: bins/leanctx-suite authorize() scope checks"
+      ]
+    },
+    {
+      "id": 3,
+      "title": "unknown identity under governed policy is denied or constrained",
+      "status": "external",
+      "evidence": [
+        "enterprise: api/inference/decision_evidence.rs principal_is_the_person_or_the_service_workload (unknown never invented)",
+        "enterprise: destination rules fail closed without an Engine"
+      ]
+    },
+    {
+      "id": 4,
+      "title": "cross-project/tenant access is denied",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_kernel::autopilot::learning_store::tests::rejects_cross_project_and_tenant_without_writes",
+        "lib:core::archive::source_tests::identical_output_does_not_rebind_another_projects_archive"
+      ]
+    },
+    {
+      "id": 5,
+      "title": "explicit allow never overrides a stronger explicit deny",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_kernel::policy_engine::tests::deny_wins_over_allow_at_same_level",
+        "lib:core::context_kernel::policy_engine::tests::higher_level_deny_overrides_lower_level_allow",
+        "lib:core::policy::floor::tests::denies_are_unioned_local_cannot_drop_org_deny",
+        "lib:core::config::tests::extra_roots_tests::merge_local_never_weakens_the_context_gateway"
+      ]
+    },
+    {
+      "id": 6,
+      "title": "API key in the first line is detected",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_06_key_on_the_first_line_is_detected_and_redacted"
+      ]
+    },
+    {
+      "id": 7,
+      "title": "API key near the end of a long input is detected",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_07_key_near_the_end_of_a_long_input_is_detected"
+      ]
+    },
+    {
+      "id": 8,
+      "title": "private key is detected",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_08_private_key_is_detected"
+      ]
+    },
+    {
+      "id": 9,
+      "title": "secret-like path is classified restricted",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_09_secret_like_path_is_restricted_and_never_stored"
+      ]
+    },
+    {
+      "id": 10,
+      "title": "secret is removed from the final delivered context",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_10_secret_is_absent_from_the_delivered_context",
+        "lib:proxy::host_journey_tests::claude_code_turn_reaches_the_model_without_the_credential"
+      ]
+    },
+    {
+      "id": 11,
+      "title": "secret value is not written into receipt or log",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_11_secret_never_reaches_the_decision_or_the_hud",
+        "lib:core::context_admission::receipt_tests::case_48_security_counts_never_carry_values"
+      ]
+    },
+    {
+      "id": 12,
+      "title": "supported PII is detected and redacted",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_12_checksum_valid_pii_is_detected_and_redacted"
+      ]
+    },
+    {
+      "id": 13,
+      "title": "checksum-failing lookalike is not a false positive",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_13_checksum_failing_lookalike_is_not_flagged"
+      ]
+    },
+    {
+      "id": 14,
+      "title": "redaction preserves usable surrounding context",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_14_redaction_keeps_the_surrounding_context_usable"
+      ]
+    },
+    {
+      "id": 15,
+      "title": "obvious injection raises a signal",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_15_obvious_injection_raises_a_signal_by_default"
+      ]
+    },
+    {
+      "id": 16,
+      "title": "configured block withholds the content",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_16_configured_block_withholds_the_content",
+        "lib:tools::registered::ctx_read::gateway_tests::a_configured_block_withholds_the_file_and_says_why"
+      ]
+    },
+    {
+      "id": 17,
+      "title": "configured redact transforms only the offending region",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_17_configured_redact_replaces_only_the_offending_line"
+      ]
+    },
+    {
+      "id": 18,
+      "title": "clean code and docs remain usable",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_18_clean_code_passes_untouched",
+        "lib:tools::registered::ctx_read::gateway_tests::clean_source_reads_exactly_as_before"
+      ]
+    },
+    {
+      "id": 19,
+      "title": "detector failure under required governed policy never passes silently",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_19_a_failed_detector_never_passes_as_clean"
+      ]
+    },
+    {
+      "id": 20,
+      "title": "long document: all required chunks inspected or marked partial",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_20_a_long_document_is_inspected_in_every_chunk",
+        "lib:core::context_admission::tests::chunks_are_line_aligned_and_cover_the_text_exactly"
+      ]
+    },
+    {
+      "id": 21,
+      "title": "partial required inspection is blocked in governed mode",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_21_partial_inspection_withholds_in_governed_mode"
+      ]
+    },
+    {
+      "id": 22,
+      "title": "unsupported media has an explicit status, never fake clean",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_22_unsupported_media_has_an_explicit_status",
+        "lib:tools::registered::ctx_read::gateway_tests::case_22_images_are_marked_uninspected_or_withheld"
+      ]
+    },
+    {
+      "id": 23,
+      "title": "relevant permitted source is retained",
+      "status": "external",
+      "evidence": [
+        "sdk: tests/test_gateway_preview.py test_login_journey_hud_is_measured_and_nothing_forbidden_leaves (all five relevant sources selected)"
+      ]
+    },
+    {
+      "id": 24,
+      "title": "irrelevant permitted source is omitted",
+      "status": "proven",
+      "note": "Explicit-source plans apply a relevance floor: a candidate stays when it shares a topic term with the task or with a directly relevant candidate (stop words dropped, identifiers split); others are excluded as lower_utility. The SDK login journey shows it end to end.",
+      "tests": [
+        "lib:core::context_kernel::relevance_floor::tests::related_sources_stay_and_unrelated_ones_are_left_out",
+        "lib:core::context_kernel::relevance_floor::tests::a_query_that_matches_nothing_keeps_everything"
+      ]
+    },
+    {
+      "id": 25,
+      "title": "blocked source never reaches the optimizer as ordinary content",
+      "status": "proven",
+      "tests": [
+        "lib:tools::registered::ctx_read::gateway_tests::case_25_the_cache_and_optimizer_only_ever_see_admitted_content"
+      ]
+    },
+    {
+      "id": 26,
+      "title": "token measurements match the actual compiled context",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::receipt_tests::case_47_49_the_receipt_names_the_actual_policy_and_measured_tokens"
+      ]
+    },
+    {
+      "id": 27,
+      "title": "dedup does not alter security metadata incorrectly",
+      "status": "proven",
+      "tests": [
+        "lib:tools::registered::ctx_read::gateway_tests::a_deduplicated_reread_keeps_its_security_record",
+        "lib:core::context_admission::receipt_tests::memo_hits_still_appear_in_the_receipt"
+      ]
+    },
+    {
+      "id": 28,
+      "title": "fallback after optimization failure sends only permitted content",
+      "status": "proven",
+      "tests": [
+        "lib:tools::registered::ctx_read::gateway_tests::optimizer_fallbacks_deliver_admitted_content_only"
+      ]
+    },
+    {
+      "id": 29,
+      "title": "permitted omitted content can be recovered while still authorized",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_29_recovered_text_is_readmitted_under_the_current_policy"
+      ]
+    },
+    {
+      "id": 30,
+      "title": "denied content cannot be recovered",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_29_recovered_text_is_readmitted_under_the_current_policy",
+        "lib:core::context_admission::store_tests::case_30_archives_store_and_return_admitted_text_only"
+      ]
+    },
+    {
+      "id": 31,
+      "title": "changed source is revalidated",
+      "status": "proven",
+      "tests": [
+        "lib:core::cache::tests::current_full_content_rereads_when_file_changed",
+        "lib:core::context_admission::store_tests::case_32_session_cache_recovery_readmits_cached_and_fresh_copies"
+      ]
+    },
+    {
+      "id": 32,
+      "title": "stale policy binding is re-evaluated",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::the_clean_memo_never_outlives_the_policy_that_admitted_it",
+        "lib:core::context_admission::store_tests::policy_change_drops_resident_stores_and_refuses_stale_inserts",
+        "lib:core::context_admission::store_tests::e3_persisted_index_from_another_policy_is_never_served"
+      ]
+    },
+    {
+      "id": 33,
+      "title": "cache cannot bypass a new deny policy",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_32_session_cache_recovery_readmits_cached_and_fresh_copies",
+        "lib:core::context_admission::store_tests::policy_change_drops_resident_stores_and_refuses_stale_inserts"
+      ]
+    },
+    {
+      "id": 34,
+      "title": "ctx_expand cannot bypass",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_30_archives_store_and_return_admitted_text_only"
+      ]
+    },
+    {
+      "id": 35,
+      "title": "ctx_retrieve cannot bypass",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_32_session_cache_recovery_readmits_cached_and_fresh_copies"
+      ],
+      "note": "ctx_retrieve reads through SessionCache::current_full_content, which case_32 attacks."
+    },
+    {
+      "id": 36,
+      "title": "tee/archive cannot bypass",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_31_tee_store_holds_and_returns_admitted_text_only",
+        "lib:core::context_admission::store_tests::case_30_archives_store_and_return_admitted_text_only",
+        "lib:proxy::ccr_robustness_tests::tee_store_that_links_to_another_store_is_refused"
+      ]
+    },
+    {
+      "id": 37,
+      "title": "provider content receives provenance",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_37_provider_chunks_are_admitted_before_any_artifact_is_derived"
+      ]
+    },
+    {
+      "id": 38,
+      "title": "provider secret is protected",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_37_provider_chunks_are_admitted_before_any_artifact_is_derived",
+        "lib:core::context_admission::store_tests::case_38_artifacts_built_elsewhere_are_admitted_at_the_store_boundary"
+      ]
+    },
+    {
+      "id": 39,
+      "title": "provider prompt injection follows policy",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_39_a_withheld_provider_object_is_dropped_whole"
+      ]
+    },
+    {
+      "id": 40,
+      "title": "denied provider content does not leak later through index or knowledge",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::e3_bm25_builds_never_index_raw_values_or_restricted_files",
+        "lib:core::context_admission::store_tests::case_34_knowledge_stores_admitted_facts_and_recalls_through_the_gateway"
+      ]
+    },
+    {
+      "id": 41,
+      "title": "allowed destination receives the compiled context",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::egress_tests::case_41_clean_requests_keep_their_bytes_and_masks_are_deterministic",
+        "lib:core::context_admission::egress_tests::case_41_every_request_shape_leaves_masked"
+      ]
+    },
+    {
+      "id": 42,
+      "title": "disallowed model/provider is blocked",
+      "status": "proven",
+      "tests": [
+        "lib:proxy::outbound_model_policy::tests::the_outgoing_model_must_satisfy_the_policy_file"
+      ]
+    },
+    {
+      "id": 43,
+      "title": "destination change triggers a new decision",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::egress_tests::case_43_restricted_content_never_goes_to_a_remote_model",
+        "lib:core::context_admission::egress_tests::case_46_locality_is_proven_never_assumed"
+      ]
+    },
+    {
+      "id": 44,
+      "title": "final egress digest matches the delivered context",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::egress_tests::case_45_receipt_binds_destination_policy_and_forwarded_bytes",
+        "lib:core::context_admission::receipt_tests::case_50_the_final_digest_follows_the_delivered_bytes"
+      ]
+    },
+    {
+      "id": 45,
+      "title": "opaque/uninspectable request is represented honestly",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::egress_tests::case_44_media_and_opaque_bodies_are_marked_never_claimed_clean"
+      ]
+    },
+    {
+      "id": 46,
+      "title": "provider routing does not bypass destination policy",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::egress_tests::case_46_locality_is_proven_never_assumed",
+        "lib:core::context_admission::egress_tests::case_43_restricted_content_never_goes_to_a_remote_model"
+      ]
+    },
+    {
+      "id": 47,
+      "title": "receipt records the actual policy ref",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::receipt_tests::case_47_49_the_receipt_names_the_actual_policy_and_measured_tokens"
+      ]
+    },
+    {
+      "id": 48,
+      "title": "receipt records security counts without secret values",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::receipt_tests::case_48_security_counts_never_carry_values"
+      ]
+    },
+    {
+      "id": 49,
+      "title": "receipt records original/delivered tokens",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::receipt_tests::case_47_49_the_receipt_names_the_actual_policy_and_measured_tokens"
+      ]
+    },
+    {
+      "id": 50,
+      "title": "final digest changes when the delivered context changes",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::receipt_tests::case_50_the_final_digest_follows_the_delivered_bytes"
+      ]
+    },
+    {
+      "id": 51,
+      "title": "tampered receipt fails verification",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::receipt_tests::a_tampered_receipt_is_detected_not_shown",
+        "lib:cli::inspect_cmd::tests::unverifiable_receipts_are_named_not_shown"
+      ],
+      "note": "Engine receipts are digest-verified; long-term signed proof is Enterprise (hash-chained audit, G8.5)."
+    },
+    {
+      "id": 52,
+      "title": "clean optimized turn shows the correct compact metric",
+      "status": "proven",
+      "note": "The compact metric is derived from the receipt only and shown by `lean-ctx inspect`.",
+      "tests": [
+        "lib:core::context_admission::receipt_tests::case_52_a_clean_optimized_round_shows_its_compact_metric_from_the_receipt"
+      ]
+    },
+    {
+      "id": 53,
+      "title": "security redaction shows a count",
+      "status": "proven",
+      "tests": [
+        "lib:tools::registered::ctx_read::gateway_tests::hud_line_reports_what_the_gateway_did_without_values"
+      ]
+    },
+    {
+      "id": 54,
+      "title": "a block always surfaces",
+      "status": "proven",
+      "tests": [
+        "lib:tools::registered::ctx_read::gateway_tests::a_configured_block_withholds_the_file_and_says_why"
+      ]
+    },
+    {
+      "id": 55,
+      "title": "HUD data comes from the receipt, not a recomputation",
+      "status": "proven",
+      "tests": [
+        "lib:tools::registered::ctx_read::gateway_tests::admissions_from_the_read_worker_land_in_the_calls_receipt",
+        "lib:tools::registered::ctx_read::gateway_tests::hud_line_reports_what_the_gateway_did_without_values"
+      ]
+    },
+    {
+      "id": 56,
+      "title": "HUD text stays out of the model context on out-of-band hosts",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::receipt_tests::case_56_redaction_counts_leave_the_model_context_on_out_of_band_hosts",
+        "lib:tools::registered::ctx_read::gateway_tests::status_line_placement_keeps_redaction_counts_out_of_the_model_context"
+      ]
+    },
+    {
+      "id": 57,
+      "title": "policy parse/load failure under governed mode fails closed",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_kernel::policy::tests::malformed_unknown_and_unreadable_policy_never_become_defaults",
+        "lib:core::archive::source_tests::invalid_policy_does_not_fall_back_to_legacy_discovery_or_storage"
+      ]
+    },
+    {
+      "id": 58,
+      "title": "required detector timeout fails according to policy",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::tests::case_58_a_timed_out_detector_withholds_in_governed_mode"
+      ]
+    },
+    {
+      "id": 59,
+      "title": "receipt persistence failure never claims attested delivery",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::receipt_tests::case_59_a_failed_persist_is_an_error_not_a_claim"
+      ]
+    },
+    {
+      "id": 60,
+      "title": "non-mandatory telemetry failure does not break safe delivery",
+      "status": "proven",
+      "tests": [
+        "lib:tools::registered::ctx_read::gateway_tests::broken_telemetry_never_blocks_or_unmasks_a_read"
+      ]
+    }
+  ],
+  "bypass": [
+    {
+      "id": "ctx_call",
+      "status": "proven",
+      "note": "ctx_call-wrapped tool output passes the same post-processing and policy as the direct call.",
+      "tests": [
+        "lib:server::call_tool::pipeline::policy_tests::unavailable_archive_preserves_default_bound_and_wrapped_raw_output",
+        "lib:server::call_tool::pipeline::policy_tests::archive_binding_is_used_only_for_its_file_output_class"
+      ]
+    },
+    {
+      "id": "ctx_read full",
+      "status": "proven",
+      "tests": [
+        "lib:tools::registered::ctx_read::gateway_tests::every_read_mode_delivers_admitted_content_only"
+      ]
+    },
+    {
+      "id": "ctx_read raw",
+      "status": "proven",
+      "tests": [
+        "lib:tools::registered::ctx_read::gateway_tests::raw_and_fresh_escape_hatches_do_not_bypass_admission"
+      ]
+    },
+    {
+      "id": "fresh reads",
+      "status": "proven",
+      "tests": [
+        "lib:tools::registered::ctx_read::gateway_tests::raw_and_fresh_escape_hatches_do_not_bypass_admission"
+      ]
+    },
+    {
+      "id": "line reads",
+      "status": "proven",
+      "tests": [
+        "lib:tools::registered::ctx_read::gateway_tests::every_read_mode_delivers_admitted_content_only"
+      ]
+    },
+    {
+      "id": "alternate read modes",
+      "status": "proven",
+      "tests": [
+        "lib:tools::registered::ctx_read::gateway_tests::every_read_mode_delivers_admitted_content_only"
+      ]
+    },
+    {
+      "id": "ctx_expand",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_30_archives_store_and_return_admitted_text_only"
+      ]
+    },
+    {
+      "id": "ctx_retrieve",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_32_session_cache_recovery_readmits_cached_and_fresh_copies"
+      ]
+    },
+    {
+      "id": "archive",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_30_archives_store_and_return_admitted_text_only"
+      ]
+    },
+    {
+      "id": "CCR",
+      "status": "proven",
+      "tests": [
+        "lib:proxy::ccr_robustness_tests::tee_store_that_links_to_another_store_is_refused",
+        "lib:core::context_admission::store_tests::case_31_tee_store_holds_and_returns_admitted_text_only"
+      ]
+    },
+    {
+      "id": "tee",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_31_tee_store_holds_and_returns_admitted_text_only"
+      ]
+    },
+    {
+      "id": "session cache",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_32_session_cache_recovery_readmits_cached_and_fresh_copies",
+        "lib:tools::registered::ctx_read::gateway_tests::case_25_the_cache_and_optimizer_only_ever_see_admitted_content"
+      ]
+    },
+    {
+      "id": "memory",
+      "status": "proven",
+      "tests": [
+        "lib:core::session::tests::session_memory_never_stores_a_credential"
+      ]
+    },
+    {
+      "id": "knowledge",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_34_knowledge_stores_admitted_facts_and_recalls_through_the_gateway"
+      ]
+    },
+    {
+      "id": "search",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::e3_bm25_builds_never_index_raw_values_or_restricted_files",
+        "lib:core::context_admission::store_tests::e3_store_admission_masks_values_and_refuses_restricted_sources"
+      ]
+    },
+    {
+      "id": "graph",
+      "status": "proven",
+      "note": "Found a real bypass: file summaries stored the first source line raw; fixed by admitting them (graph index v7).",
+      "tests": [
+        "lib:core::graph_index::tests::graph_index_never_holds_a_credential_value"
+      ]
+    },
+    {
+      "id": "provider cache",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_37_provider_chunks_are_admitted_before_any_artifact_is_derived",
+        "lib:core::context_admission::store_tests::case_38_artifacts_built_elsewhere_are_admitted_at_the_store_boundary"
+      ]
+    },
+    {
+      "id": "MCP bridge",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_37_provider_chunks_are_admitted_before_any_artifact_is_derived"
+      ],
+      "note": "The MCP bridge is a provider and flows through the same consolidation pipeline that case_37 attacks."
+    },
+    {
+      "id": "nested dispatch",
+      "status": "proven",
+      "note": "See ctx_call.",
+      "tests": [
+        "lib:server::call_tool::pipeline::policy_tests::unavailable_archive_preserves_default_bound_and_wrapped_raw_output",
+        "lib:server::call_tool::pipeline::policy_tests::archive_binding_is_used_only_for_its_file_output_class"
+      ]
+    },
+    {
+      "id": "cross-agent handoff",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_33_handoffs_persist_admitted_text_and_skip_restricted_files"
+      ]
+    },
+    {
+      "id": "snapshot restore",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::store_tests::case_35_context_packages_are_admitted_on_save_and_on_resume"
+      ]
+    },
+    {
+      "id": "proxy in-band expansion",
+      "status": "proven",
+      "tests": [
+        "lib:proxy::ccr_robustness_tests::tee_store_that_links_to_another_store_is_refused"
+      ]
+    },
+    {
+      "id": "OpenAI rail",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::egress_tests::case_41_every_request_shape_leaves_masked",
+        "lib:proxy::host_journey_tests::codex_subscription_turn_reaches_the_model_without_the_credential"
+      ]
+    },
+    {
+      "id": "Anthropic rail",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::egress_tests::case_41_every_request_shape_leaves_masked",
+        "lib:proxy::host_journey_tests::claude_code_turn_reaches_the_model_without_the_credential"
+      ]
+    },
+    {
+      "id": "Gemini rail",
+      "status": "proven",
+      "tests": [
+        "lib:core::context_admission::egress_tests::case_41_every_request_shape_leaves_masked"
+      ]
+    },
+    {
+      "id": "WebSocket path",
+      "status": "proven",
+      "tests": [
+        "lib:proxy::openai_responses_ws::tests::websocket_turn_reaches_the_upstream_without_the_credential",
+        "lib:proxy::chatgpt::tests::codex_responses_ws_requests_trigger_http_fallback"
+      ]
+    }
+  ]
+}

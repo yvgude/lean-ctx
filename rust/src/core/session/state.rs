@@ -121,6 +121,7 @@ fn auto_session_fact(
 ) -> crate::core::knowledge::KnowledgeFact {
     let key = value.clone();
     crate::core::knowledge::KnowledgeFact {
+        origin: crate::core::knowledge::FactOrigin::Unverified,
         category: category.to_owned(),
         key,
         value,
@@ -157,6 +158,9 @@ impl SessionState {
     pub fn new() -> Self {
         let now = Utc::now();
         Self {
+            canonical_checkpoint: None,
+            save_gate: Default::default(),
+            last_save_failed: false,
             id: generate_session_id(),
             version: 0,
             started_at: now,
@@ -245,10 +249,16 @@ impl SessionState {
     pub fn set_task(&mut self, description: &str, intent: Option<&str>) {
         let (description_clean, _) =
             crate::core::secret_detection::scan_and_redact_from_config(description);
+        // A canonical title edit continues the admitted task, not a new task ID.
+        let progress_pct = if self.canonical_checkpoint.is_some() {
+            self.task.as_ref().and_then(|task| task.progress_pct)
+        } else {
+            None
+        };
         self.task = Some(TaskInfo {
             description: description_clean.clone(),
             intent: intent.map(std::string::ToString::to_string),
-            progress_pct: None,
+            progress_pct,
         });
 
         let touched: Vec<String> = self.files_touched.iter().map(|f| f.path.clone()).collect();

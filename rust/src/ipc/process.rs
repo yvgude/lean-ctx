@@ -124,7 +124,7 @@ pub fn is_alive(pid: u32) -> bool {
                 return true;
             }
             let mut exit_code: u32 = 0;
-            GetExitCodeProcess(handle, &mut exit_code);
+            GetExitCodeProcess(handle, &raw mut exit_code);
             CloseHandle(handle);
             exit_code == STILL_ACTIVE as u32
         }
@@ -365,13 +365,20 @@ fn windows_process_identity(pid: u32) -> Option<ProcessIdentity> {
     let mut kernel = FILETIME::default();
     let mut user = FILETIME::default();
     // SAFETY: all output pointers refer to initialized local storage.
-    let times_ok =
-        unsafe { GetProcessTimes(handle, &mut created, &mut exited, &mut kernel, &mut user) } != 0;
+    let times_ok = unsafe {
+        GetProcessTimes(
+            handle,
+            &raw mut created,
+            &raw mut exited,
+            &raw mut kernel,
+            &raw mut user,
+        )
+    } != 0;
     let mut path = vec![0_u16; 32_768];
     let mut path_len = u32::try_from(path.len()).ok()?;
     // SAFETY: `path` is a writable UTF-16 buffer and `path_len` describes it.
     let path_ok =
-        unsafe { QueryFullProcessImageNameW(handle, 0, path.as_mut_ptr(), &mut path_len) != 0 };
+        unsafe { QueryFullProcessImageNameW(handle, 0, path.as_mut_ptr(), &raw mut path_len) != 0 };
     // SAFETY: `handle` was returned by OpenProcess and has not been closed yet.
     unsafe { CloseHandle(handle) };
     if !times_ok || !path_ok {

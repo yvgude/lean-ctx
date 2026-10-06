@@ -27,12 +27,15 @@ pub(super) enum FileResourceError {
     Io(String, std::io::Error),
     /// Path rejected by PathJail (outside project root / extra roots).
     OutsideJail(String),
+    /// Runtime context requires source-aware admission, even inside an allowed root.
+    ProtectedContext(String),
 }
 
 impl std::fmt::Display for FileResourceError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             Self::NotAFilePath => write!(f, "Not a file path"),
+            Self::ProtectedContext(reason) => write!(f, "Protected context: {reason}"),
             Self::NotFound(p) => write!(f, "File not found: {p}"),
             Self::TooLarge(p, sz) => write!(
                 f,
@@ -63,6 +66,7 @@ pub(super) fn read_file_resource(
 ) -> Result<Vec<ResourceContents>, FileResourceError> {
     let path_str = resolve_path(uri)?;
     let path = Path::new(&path_str);
+    crate::cli::enforce_protected_store_path(path).map_err(FileResourceError::ProtectedContext)?;
 
     if let Some(root) = project_root {
         validate_jail(path, root, extra_roots)?;
@@ -142,6 +146,27 @@ fn validate_jail(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn resource_read_cannot_reopen_runtime_context_with_explicit_roots() {
+        let isolated = crate::core::data_dir::isolated_data_dir();
+        let path = isolated.path().join("knowledge/fixture.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(&path, "provider-value").unwrap();
+        let uri = path_to_file_uri(&path);
+        let root = isolated.path().to_str().unwrap();
+        assert!(read_file_resource(&uri, Some(root), &[]).is_ok());
+        let _pin = crate::cli::pin_synthetic_session(isolated.path()).unwrap();
+        assert!(matches!(
+            read_file_resource(&uri, Some(root), &[root.to_owned()]),
+            Err(FileResourceError::ProtectedContext(_))
+        ));
+        assert!(matches!(
+            read_file_resource(&uri, None, &[]),
+            Err(FileResourceError::ProtectedContext(_))
+        ));
+    }
 
     fn path_to_file_uri(p: &std::path::Path) -> String {
         let s = p.to_string_lossy().replace('\\', "/");

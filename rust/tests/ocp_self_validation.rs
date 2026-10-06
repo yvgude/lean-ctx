@@ -161,6 +161,25 @@ fn part4_evidence_chain() {
         role: "reviewer".into(),
         event_type: AuditEventType::ToolDenied,
     });
+    let drift_evidence = "attestation drift dimensions=binary binary=aaaaaaaaaaaa->bbbbbbbbbbbb";
+    audit_trail::record(AuditEntryData {
+        agent_id: "agent-1".into(),
+        tool: "agent_registry".into(),
+        action: Some(drift_evidence.into()),
+        input_hash: audit_trail::hash_input(&serde_json::Map::new()),
+        output_tokens: 0,
+        role: "reviewer".into(),
+        event_type: AuditEventType::AgentDriftDetected,
+    });
+    audit_trail::record(AuditEntryData {
+        agent_id: "agent-1".into(),
+        tool: "agent_registry".into(),
+        action: Some(drift_evidence.into()),
+        input_hash: audit_trail::hash_input(&serde_json::Map::new()),
+        output_tokens: 0,
+        role: "reviewer".into(),
+        event_type: AuditEventType::AgentDriftAcknowledged,
+    });
 
     let entries = audit_trail::load_recent(10);
     assert!(entries.len() >= 2, "audit trail must persist entries");

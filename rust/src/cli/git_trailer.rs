@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Opt-in `lean-ctx:` commit trailer.
 //!
 //! `lean-ctx init --git-trailer` installs a `prepare-commit-msg` hook in the

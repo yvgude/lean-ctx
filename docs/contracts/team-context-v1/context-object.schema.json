@@ -1,0 +1,140 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "context-object.schema.json",
+  "title": "LeanCTX Team Context Object v1",
+  "description": "Shared context object. Carries object id, type, source, author, creation time, validity, authority state, provenance, supersedes/superseded-by, scope, classification and approval state as required by the V4 team shared context model.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "object_id",
+    "object_type",
+    "scope",
+    "source",
+    "author",
+    "created_at",
+    "valid_from",
+    "classification",
+    "lifecycle_state",
+    "authority_state",
+    "approval_state",
+    "content_digest",
+    "version",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "object_id": { "$ref": "common.schema.json#/$defs/id" },
+    "object_type": { "$ref": "common.schema.json#/$defs/contextObjectType" },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "source": { "$ref": "common.schema.json#/$defs/sourceKind" },
+    "author": { "$ref": "common.schema.json#/$defs/memberId" },
+    "created_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "valid_from": {
+      "$ref": "common.schema.json#/$defs/timestamp",
+      "description": "Inclusive start of the validity window. Required: validity is structural, not optional metadata."
+    },
+    "valid_until": {
+      "$ref": "common.schema.json#/$defs/timestamp",
+      "description": "Exclusive end of the validity window. Absent means open-ended. Must be strictly greater than valid_from."
+    },
+    "classification": { "$ref": "common.schema.json#/$defs/classification" },
+    "lifecycle_state": {
+      "description": "Storage lifecycle, orthogonal to authority_state. 'redacted' retains the record and its lineage while the referenced content is unrecoverable; 'deleted' is a tombstone whose content_digest is retained only as an audit anchor.",
+      "enum": ["active", "redacted", "deleted"]
+    },
+    "authority_state": { "$ref": "common.schema.json#/$defs/authorityState" },
+    "approval_state": { "$ref": "common.schema.json#/$defs/approvalState" },
+    "content_digest": { "$ref": "common.schema.json#/$defs/contentDigest" },
+    "provenance_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Full record digest of the same-scope provenance record whose object_digest equals this context-object digest computed with provenance_digest omitted."
+    },
+    "authority_decision_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Record digest of the approved, signed, same-scope authority-decision that established this object's authority."
+    },
+    "supersedes": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Cross-object authority supersession: the record digest of a different context object this one replaces. Not a CAS predecessor; see parent_digest."
+    },
+    "superseded_by": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "Cross-object authority supersession: the record digest of the context object that replaced this one."
+    },
+    "redacted_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "redaction_receipt_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "parent_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "CAS predecessor of this same logical object. Absent exactly on the genesis version."
+    },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/idempotencyKey" }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/casLineage" },
+    {
+      "if": {
+        "properties": {
+          "authority_state": { "enum": ["team_candidate", "authoritative", "historical"] }
+        },
+        "required": ["authority_state"]
+      },
+      "then": { "required": ["provenance_digest"] }
+    },
+    {
+      "if": {
+        "properties": { "authority_state": { "const": "authoritative" } },
+        "required": ["authority_state"]
+      },
+      "then": {
+        "properties": { "approval_state": { "const": "approved" } },
+        "required": ["approval_state", "provenance_digest", "authority_decision_digest"]
+      }
+    },
+    {
+      "if": {
+        "properties": { "approval_state": { "const": "approved" } },
+        "required": ["approval_state"]
+      },
+      "then": { "required": ["authority_decision_digest"] },
+      "else": { "not": { "required": ["authority_decision_digest"] } }
+    },
+    {
+      "if": {
+        "properties": { "authority_state": { "const": "personal" } },
+        "required": ["authority_state"]
+      },
+      "then": {
+        "properties": { "approval_state": { "not": { "const": "approved" } } }
+      }
+    },
+    {
+      "if": {
+        "properties": { "authority_state": { "const": "historical" } },
+        "required": ["authority_state"]
+      },
+      "then": {
+        "anyOf": [
+          { "required": ["superseded_by"] },
+          { "required": ["valid_until"] }
+        ]
+      }
+    },
+    {
+      "if": {
+        "properties": { "lifecycle_state": { "enum": ["redacted", "deleted"] } },
+        "required": ["lifecycle_state"]
+      },
+      "then": { "required": ["redacted_at", "redaction_receipt_digest"] },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["redacted_at"] },
+            { "required": ["redaction_receipt_digest"] }
+          ]
+        }
+      }
+    }
+  ]
+}

@@ -96,6 +96,7 @@ pub(super) fn finalize_request(
 struct EventStreamScanner {
     buffered: Vec<u8>,
     scanner: crate::proxy::usage::Scanner,
+    terminal_metrics_seen: bool,
 }
 
 impl EventStreamScanner {
@@ -103,6 +104,7 @@ impl EventStreamScanner {
         Self {
             buffered: Vec::new(),
             scanner,
+            terminal_metrics_seen: false,
         }
     }
 
@@ -159,6 +161,14 @@ impl EventStreamScanner {
                 });
                 self.scanner
                     .feed_body(&serde_json::to_vec(&mapped).unwrap_or_default());
+                self.terminal_metrics_seen |= metrics
+                    .get("inputTokenCount")
+                    .and_then(Value::as_u64)
+                    .is_some()
+                    && metrics
+                        .get("outputTokenCount")
+                        .and_then(Value::as_u64)
+                        .is_some();
             } else {
                 self.scanner.feed_body(payload);
             }
@@ -166,7 +176,12 @@ impl EventStreamScanner {
     }
 
     fn finalize(self) -> Option<crate::proxy::usage::RealUsage> {
-        self.scanner.finalize()
+        let boundary = if self.terminal_metrics_seen {
+            crate::proxy::usage::UsageBoundary::ProviderTerminalUsage
+        } else {
+            crate::proxy::usage::UsageBoundary::StreamEnd
+        };
+        self.scanner.finalize_at(boundary)
     }
 }
 
@@ -202,9 +217,22 @@ where
                     if let Some(s) = scanner.as_mut() {
                         s.feed(chunk.as_ref());
                     }
+                    if scanner.as_ref().is_some_and(|s| s.terminal_metrics_seen)
+                        && let Some(usage) = scanner.take().and_then(EventStreamScanner::finalize)
+                    {
+                        crate::proxy::usage_meter::record(&usage);
+                    }
                     Some((Ok(chunk), (inner, scanner)))
                 }
-                Some(err) => Some((err, (inner, scanner))),
+                Some(err) => {
+                    if let Some(mut s) = scanner.take() {
+                        s.scanner.mark_stream_error();
+                        if let Some(usage) = s.finalize() {
+                            crate::proxy::usage_meter::record(&usage);
+                        }
+                    }
+                    Some((err, (inner, scanner)))
+                }
                 None => {
                     if let Some(s) = scanner.take()
                         && let Some(usage) = s.finalize()
@@ -814,6 +842,42 @@ mod tests {
         let usage = stream.finalize().expect("Bedrock metrics extracted");
         assert_eq!(usage.input_tokens, 17);
         assert_eq!(usage.output_tokens, 9);
+    }
+
+    #[tokio::test]
+    async fn terminal_metrics_survive_drop_and_do_not_repeat_at_eof() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        for finish in [false, true] {
+            let model = if finish {
+                "bedrock-terminal-eof"
+            } else {
+                "bedrock-terminal-drop"
+            };
+            let before = crate::proxy::usage_meter::snapshot()
+                .into_iter()
+                .find(|usage| usage.model == model)
+                .map_or(0, |usage| usage.requests);
+            let start = event_frame(serde_json::json!({"type":"message_start","message":{"model":model,"usage":{"input_tokens":17,"output_tokens":1}}}).to_string().as_bytes());
+            let metrics = event_frame(br#"{"amazon-bedrock-invocationMetrics":{"inputTokenCount":17,"outputTokenCount":9}}"#);
+            let source =
+                futures::stream::iter(vec![Ok::<_, ()>(start.clone()), Ok(metrics.clone())]);
+            let mut stream = Box::pin(tee_eventstream(
+                source,
+                crate::proxy::usage::Scanner::new(crate::proxy::usage::Provider::Anthropic, None),
+            ));
+            assert_eq!(stream.next().await, Some(Ok(start)));
+            assert_eq!(stream.next().await, Some(Ok(metrics)));
+            if finish {
+                assert_eq!(stream.next().await, None);
+            }
+            drop(stream);
+            let measured = crate::proxy::usage_meter::snapshot()
+                .into_iter()
+                .find(|usage| usage.model == model)
+                .unwrap();
+            assert_eq!(measured.requests, before + 1);
+            assert_eq!((measured.input_tokens, measured.output_tokens), (17, 9));
+        }
     }
 
     #[tokio::test]

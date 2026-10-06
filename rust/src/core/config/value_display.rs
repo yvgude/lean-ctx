@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `[value_display]` — how lean-ctx shows its measured value outside the
 //! dashboard (status line, turn/session recaps, prompt segment, milestones).
 //!

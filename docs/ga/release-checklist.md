@@ -162,14 +162,14 @@ W1 verifier with external signer trust. A release may ship without such a claim.
    - Linux x86_64 and arm64
    - Linux CUDA
 
-3. Confirm CI attaches platform archives and binaries, `SBOM.txt`,
+3. Confirm CI attaches platform archives and binaries, `SBOM.cdx.json`,
    `SHA256SUMS`, and `release-manifest.json` to the release.
 
 4. Confirm `SHA256SUMS` is generated and signed where the release process has
    a signing key. Do not publish if a checksum or manifest artifact is missing.
 
 The required chain is source commit → build artifacts → `SHA256SUMS` →
-`SBOM.txt` → `release-manifest.json`. The integrity contract defines its
+`SBOM.cdx.json` → `release-manifest.json`. The integrity contract defines its
 schema and failure behavior.
 
 ### 3. Post-release gate

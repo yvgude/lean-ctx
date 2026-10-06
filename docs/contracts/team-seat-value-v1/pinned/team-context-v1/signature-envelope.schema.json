@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "signature-envelope.schema.json",
+  "title": "LeanCTX Team Signature Envelope v1",
+  "description": "Detached Ed25519 signature over the RFC 8785 JCS canonical bytes of one team-context-v1 record. Referenced by authority-decision, policy and team-receipt through signature_envelope_digest, so an approval carries a verifiable signature and its verification key, not a hash of a signature.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "envelope_id",
+    "scope",
+    "alg",
+    "key_id",
+    "key_epoch",
+    "public_key",
+    "signed_payload_kind",
+    "signed_payload_digest",
+    "signature",
+    "signed_at",
+    "version",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "envelope_id": { "$ref": "common.schema.json#/$defs/id" },
+    "scope": { "$ref": "common.schema.json#/$defs/scope" },
+    "alg": {
+      "description": "Only Ed25519 (RFC 8032) is admitted in v1. Algorithm agility is a versioned contract change, never a runtime negotiation.",
+      "const": "ed25519"
+    },
+    "key_id": { "$ref": "common.schema.json#/$defs/keyId" },
+    "key_epoch": {
+      "description": "Monotonic rotation epoch of key_id. A verifier rejects an envelope whose epoch is below the tenant's current minimum accepted epoch.",
+      "type": "integer",
+      "minimum": 1,
+      "maximum": 9007199254740991
+    },
+    "public_key": {
+      "description": "Ed25519 verification key, 32 raw bytes encoded as unpadded base64url (43 characters). Present so an offline verifier needs only the envelope plus the signed record.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{43}$"
+    },
+    "signed_payload_kind": {
+      "enum": ["authority-decision", "policy", "team-receipt", "checkpoint"]
+    },
+    "signed_payload_digest": {
+      "$ref": "common.schema.json#/$defs/recordDigest",
+      "description": "SHA-256 over the RFC 8785 JCS canonical bytes of the signed record with the record's own signature_envelope_digest field omitted. Omission is required because the record references this envelope, and this envelope references the record."
+    },
+    "signature": {
+      "description": "Ed25519 signature, 64 raw bytes encoded as unpadded base64url (86 characters), computed over the ASCII bytes of the string 'leanctx-team-context-v1:' concatenated with signed_payload_kind, ':' and signed_payload_digest.",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{86}$"
+    },
+    "signed_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "signed_by_digest": {
+      "$ref": "common.schema.json#/$defs/pseudonymDigest",
+      "description": "Privacy-safe signer identity for team-receipt only; it MUST equal the receipt actor_digest."
+    },
+    "signed_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "parent_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/idempotencyKey" }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/casLineage" },
+    {
+      "if": {
+        "properties": { "signed_payload_kind": { "const": "team-receipt" } },
+        "required": ["signed_payload_kind"]
+      },
+      "then": {
+        "required": ["signed_by_digest"],
+        "not": { "required": ["signed_by"] }
+      },
+      "else": {
+        "required": ["signed_by"],
+        "not": { "required": ["signed_by_digest"] }
+      }
+    }
+  ]
+}

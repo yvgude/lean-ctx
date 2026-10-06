@@ -1,0 +1,330 @@
+schema = "leanctx.license-matrix/v1"
+version = 1
+distribution = "apache-host"
+authority = "LICENSE.md"
+pre_v4_apache_cut = "b4429b80f3bc75bab4c2d7a959c9ae81ba5a2666"
+new_source_requires_spdx = true
+
+[limits]
+max_tracked_files = 10000
+max_file_bytes = 8388608
+max_total_bytes = 100663296
+max_git_output_bytes = 8388608
+
+[licenses.apache]
+spdx = "Apache-2.0"
+text = "LICENSES/Apache-2.0.txt"
+redistributable = true
+notice_required = true
+
+[licenses.third_party]
+spdx = "NOASSERTION"
+text = "THIRD_PARTY_NOTICES"
+redistributable = true
+notice_required = true
+
+[provenance]
+cla_v1_legacy_path = "legal/cla/CLA-v1-legacy.md"
+cla_v1_source_path = "CLA.md"
+cla_v1_source_ref = "b4429b80f3bc75bab4c2d7a959c9ae81ba5a2666"
+cla_v1_sha256 = "c098dfcbb4cbb854979c11100f8a054c5625ff5fad348635bd0473e23617fb21"
+cla_v1_signature_ref = "f09ea6d8a28066007678342056ac8be95df756d7"
+cla_v1_signature_path = "signatures/v1/cla.json"
+cla_v1_signature_sha256 = "831846e0db4c8d1d097eb8988e23685bb5990030641c8b6c9f5cae83ced6a56e"
+cla_v1_signature_count = 19
+
+[required_artifacts]
+# Preserved historical bytes are mandatory, not replaced by the v4 documents.
+paths = [
+  "LICENSE",
+  "NOTICE",
+  "CLA.md",
+  "LICENSE.md",
+  "LICENSES/Apache-2.0.txt",
+  "LICENSE_MATRIX.toml",
+  "THIRD_PARTY_NOTICES",
+  "legal/cla/CLA-v1-legacy.md",
+  "legal/third-party-assets.toml",
+]
+release_paths = ["SBOM.cdx.json"]
+
+[[rules]]
+order = 1
+name = "private-service"
+class = "private_service"
+include = [
+  "private/**",
+  "services/private/**",
+  "cloud/private/**",
+  "cloud-infra/**",
+  "rust/src/core/license/**",
+  "rust/src/core/licensing/keygen.rs",
+  "rust/src/cli/license_cmd.rs",
+  "rust/src/core/billing/success_fee.rs",
+  "rust/src/core/billing/stripe_invoice.rs",
+]
+exclude = []
+forbidden_public = true
+
+[[rules]]
+order = 2
+name = "commercial-source"
+class = "commercial"
+forbidden_public = true
+include = [
+  "rust/src/commercial/**",
+  "rust/src/team/**",
+  "rust/src/enterprise/**",
+  "commercial/**",
+  "enterprise/**",
+]
+exclude = []
+provenance_required = true
+
+[[rules]]
+order = 3
+name = "commercial-license-text"
+class = "commercial"
+forbidden_public = true
+include = [
+  "LICENSES/LeanCTX-Commercial-Source-License-2.0.txt",
+  "LICENSES/LicenseRef-LeanCTX-Commercial-Source-2.0.txt",
+  "LICENSES-LeanCTX-Commercial-Source-License-2.0.txt",
+]
+exclude = []
+artifact_kind = "license_text"
+
+[[rules]]
+order = 4
+name = "vendored-third-party"
+class = "third_party"
+license = "third_party"
+include = [
+  "vendor/**",
+  "**/vendor/**",
+  "third_party/**",
+  "**/third_party/**",
+  "aur/lean-ctx-bin",
+]
+exclude = []
+vendor = true
+owner = "upstream-project"
+provenance = "upstream package metadata and license files"
+notice = "THIRD_PARTY_NOTICES"
+
+[[rules]]
+order = 5
+name = "generated-artifacts"
+class = "generated"
+license = "apache"
+include = [
+  "generated/**",
+  "**/generated/**",
+  "*.generated.*",
+  "THIRD_PARTY_NOTICES",
+  "SBOM.cdx.json",
+  "SBOM.spdx.json",
+]
+exclude = []
+generated = true
+owner = "release-engineering"
+provenance = "locked dependency inventory and deterministic generator"
+
+[[rules]]
+order = 6
+name = "historical-archives"
+class = "historical"
+license = "apache"
+include = ["_archive/**"]
+exclude = []
+
+[[rules]]
+order = 7
+name = "test-fixtures"
+class = "tests_examples"
+license = "apache"
+include = ["scripts/tests/fixtures/ip-provenance/**"]
+exclude = []
+fixture = true
+
+[[rules]]
+order = 8
+name = "tests-and-examples"
+class = "tests_examples"
+license = "apache"
+include = [
+  "tests/**",
+  "examples/**",
+  "cookbook/examples/**",
+  "rust/tests/**",
+  "rust/examples/**",
+]
+exclude = ["**/generated/**", "**/vendor/**", "**/third_party/**"]
+
+[[rules]]
+order = 9
+name = "sdk-and-protocol"
+class = "sdk_protocol"
+license = "apache"
+include = [
+  "clients/**",
+  "packages/**",
+  "cookbook/sdk/**",
+  "contracts/**",
+  "docs/contracts/**",
+  "rust/crates/lean-ctx-sdk/**",
+]
+exclude = ["**/generated/**", "**/vendor/**", "**/third_party/**"]
+
+[[rules]]
+order = 10
+name = "docs-assets-and-legal"
+class = "docs_assets"
+license = "apache"
+include = [
+  "docs/**",
+  "assets/**",
+  "skills/**",
+  "kits/**",
+  "integrations/**",
+  "cookbook/**",
+  "legal/**",
+]
+exclude = [
+  "cookbook/examples/**",
+  "cookbook/sdk/**",
+  "docs/contracts/**",
+  "**/generated/**",
+  "**/vendor/**",
+  "**/third_party/**",
+]
+
+[[rules]]
+order = 11
+name = "public-trust-core-runtime"
+class = "public_trust_core"
+license = "apache"
+include = [
+  ".claude-plugin/**",
+  ".codex/**",
+  ".cursor/**",
+  ".github/**",
+  ".githooks/**",
+  ".kiro/**",
+  ".vscode/**",
+  "aur/**",
+  "bin/**",
+  "ci/**",
+  "product/**",
+  "rust/**",
+  "scripts/**",
+  "security/**",
+]
+exclude = [
+  "rust/src/commercial/**",
+  "rust/src/team/**",
+  "rust/src/enterprise/**",
+  "rust/src/core/license/**",
+  "rust/src/core/licensing/keygen.rs",
+  "rust/src/cli/license_cmd.rs",
+  "rust/src/core/billing/success_fee.rs",
+  "rust/src/core/billing/stripe_invoice.rs",
+  "commercial/**",
+  "enterprise/**",
+  "private/**",
+  "services/private/**",
+  "cloud/private/**",
+  "cloud-infra/**",
+  "rust/tests/**",
+  "rust/examples/**",
+  "rust/crates/lean-ctx-sdk/**",
+  "scripts/tests/fixtures/ip-provenance/**",
+  "**/generated/**",
+  "generated/**",
+  "*.generated.*",
+  "**/vendor/**",
+  "vendor/**",
+  "**/third_party/**",
+  "third_party/**",
+  "aur/lean-ctx-bin",
+]
+
+[[rules]]
+order = 12
+name = "mit-license-artifact"
+class = "public_trust_core"
+license = "third_party"
+include = ["LICENSES/MIT.txt"]
+exclude = []
+artifact_kind = "license_text"
+
+[[rules]]
+order = 13
+name = "apache-license-artifact"
+class = "public_trust_core"
+license = "apache"
+include = ["LICENSES/Apache-2.0.txt", "LICENSES-Apache-2.0.txt"]
+exclude = []
+
+[[rules]]
+order = 14
+name = "free-runtime-license-draft"
+class = "free_runtime"
+forbidden_public = true
+include = ["LICENSES/Thinkery-Free-Runtime-License-1.0-DRAFT.txt"]
+exclude = []
+artifact_kind = "license_text"
+provenance_required = true
+
+[[rules]]
+order = 15
+name = "root-files"
+class = "public_trust_core"
+license = "apache"
+root_only = true
+include = ["*"]
+exclude = [
+  "LICENSES-Apache-2.0.txt",
+  "LICENSES-LeanCTX-Commercial-Source-License-2.0.txt",
+  "LICENSES/Apache-2.0.txt",
+  "LICENSES/LeanCTX-Commercial-Source-License-2.0.txt",
+  "LICENSES/LicenseRef-LeanCTX-Commercial-Source-2.0.txt",
+  "LICENSES/MIT.txt",
+  "LICENSES/Thinkery-Free-Runtime-License-1.0-DRAFT.txt",
+  "THIRD_PARTY_NOTICES",
+  "SBOM.cdx.json",
+  "SBOM.spdx.json",
+]
+
+[[rules]]
+order = 16
+name = "enterprise-license"
+class = "commercial"
+forbidden_public = true
+include = ["ee/LICENSE"]
+exclude = []
+artifact_kind = "license_text"
+
+[[rules]]
+order = 17
+name = "private-runtime-build"
+class = "private_service"
+include = ["private-runtime-build/**"]
+exclude = []
+forbidden_public = true
+
+[[rules]]
+order = 18
+name = "telemetry-infrastructure-docs"
+class = "docs_assets"
+license = "apache"
+include = ["infra/posthog/**", "infra/telemetry-gateway/**"]
+exclude = []
+
+[[rules]]
+order = 19
+name = "specification-documents"
+class = "docs_assets"
+license = "apache"
+include = ["specs/**"]
+exclude = []

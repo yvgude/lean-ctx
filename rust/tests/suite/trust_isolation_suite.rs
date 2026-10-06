@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Public trust-surface isolation and policy tests.
 
 use ed25519_dalek::SigningKey;

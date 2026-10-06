@@ -228,6 +228,18 @@ mod savings_receipt_tests {
             decision_refs: vec!["decision-1".to_owned()],
             evidence_refs: Vec::new(),
             signature: "signature-1".to_owned(),
+            executor_agent_id: None,
+            attempt_id: None,
+            context_plan_id: None,
+            context_receipt_ref: None,
+            capability_bindings: Vec::new(),
+            observations: crate::ExecutionObservationsV1 {
+                model_calls: Some(1),
+                retries: Some(0),
+                latency_ms: Some(10),
+                actual_cost_micros: Some(actual_cost_micros),
+            },
+            extensions: Default::default(),
         }
     }
 

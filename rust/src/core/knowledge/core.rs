@@ -10,15 +10,33 @@ use super::types::{
 use crate::core::memory_boundary::FactPrivacy;
 use crate::core::memory_policy::MemoryPolicy;
 
+/// The textual fields of a fact as the context gateway admits them for the
+/// durable store. `None`: a field is withheld or restricted (G5, E3).
+pub(super) fn admit_fact_fields<const N: usize>(fields: [&str; N]) -> Option<[String; N]> {
+    let admission = crate::core::context_admission::stores::StoreAdmission::current();
+    let mut admitted: [String; N] = std::array::from_fn(|_| String::new());
+    for (slot, field) in admitted.iter_mut().zip(fields) {
+        *slot = admission.admit_text(field)?;
+    }
+    Some(admitted)
+}
+
 impl ProjectKnowledge {
     pub fn run_memory_lifecycle(
         &mut self,
         policy: &MemoryPolicy,
     ) -> Result<crate::core::memory_lifecycle::LifecycleReport, String> {
+        super::protection::current(&self.project_root)?;
         let cfg = crate::core::memory_lifecycle::LifecycleConfig::from_policy(policy);
-        let report = crate::core::memory_lifecycle::run_lifecycle(&mut self.facts, &cfg);
+        let before = self.facts.clone();
+        let report = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(std::path::PathBuf::from(&self.project_root))),
+            || crate::core::memory_lifecycle::run_lifecycle(&mut self.facts, &cfg),
+        );
         if report.is_ok() {
             self.rebuild_index();
+        } else {
+            self.facts = before;
         }
         report
     }
@@ -29,7 +47,7 @@ impl ProjectKnowledge {
     /// from the background cognition loop (hourly), never on every write. The
     /// originals are archived and rehydrate on recall — nothing is lost.
     pub fn compact_low_value_clusters(&mut self, policy: &MemoryPolicy) -> u32 {
-        if !policy.compaction.enabled {
+        if !policy.compaction.enabled || super::protection::current(&self.project_root).is_err() {
             return 0;
         }
         let cfg = crate::core::memory_lifecycle::ClusterCompactionConfig {
@@ -38,10 +56,19 @@ impl ProjectKnowledge {
             max_confidence: policy.compaction.max_confidence,
             max_confirmations: policy.compaction.max_confirmations,
         };
+        let before = self.facts.clone();
         let (collapsed, archived) =
             crate::core::memory_lifecycle::compact_clusters(&mut self.facts, &cfg);
-        if !archived.is_empty() {
-            let _ = crate::core::memory_lifecycle::archive_facts(&archived);
+        if !archived.is_empty()
+            && crate::core::policy::runtime::REQUEST_PROJECT
+                .sync_scope(
+                    std::cell::RefCell::new(Some(std::path::PathBuf::from(&self.project_root))),
+                    || crate::core::memory_lifecycle::archive_facts(&archived),
+                )
+                .is_err()
+        {
+            self.facts = before;
+            return 0;
         }
         self.rebuild_index();
         collapsed as u32
@@ -57,6 +84,7 @@ impl ProjectKnowledge {
             updated_at: Utc::now(),
             judged_pairs: Vec::new(),
             index: Default::default(),
+            withheld: Vec::new(),
         }
     }
 
@@ -129,6 +157,27 @@ impl ProjectKnowledge {
         confidence: f32,
         policy: &MemoryPolicy,
     ) -> Option<Contradiction> {
+        self.remember_with_origin(
+            category,
+            key,
+            value,
+            session_id,
+            confidence,
+            policy,
+            super::FactOrigin::Local,
+        )
+    }
+
+    pub(crate) fn remember_with_origin(
+        &mut self,
+        category: &str,
+        key: &str,
+        value: &str,
+        session_id: &str,
+        confidence: f32,
+        policy: &MemoryPolicy,
+        origin: super::FactOrigin,
+    ) -> Option<Contradiction> {
         // #1802: the store refuses machine-derived facts while auto-capture is
         // off, whichever ingestion shape a producer uses. `add_fact` carries the
         // same guard; between them no producer — present or future — can put an
@@ -138,13 +187,19 @@ impl ProjectKnowledge {
         {
             return None;
         }
+        // The durable store holds admitted text only, whichever producer
+        // writes it: masked values stay masked, and a fact with a withheld or
+        // restricted field is not stored at all (G5, E3).
+        let Some([category, key, value]) = admit_fact_fields([category, key, value]) else {
+            tracing::info!("[knowledge] fact withheld by the context gateway");
+            return None;
+        };
+        let (category, key, value) = (category.as_str(), key.as_str(), value.as_str());
         let contradiction = self.check_contradiction(category, key, value, policy);
 
-        if let Some(existing) = self
-            .facts
-            .iter_mut()
-            .find(|f| f.category == category && f.key == key && f.is_current())
-        {
+        if let Some(existing) = self.facts.iter_mut().find(|f| {
+            f.category == category && f.key == key && f.is_current() && f.origin == origin
+        }) {
             let now = Utc::now();
             let same_value_ci = existing.value.to_lowercase() == value.to_lowercase();
             let similarity = string_similarity(&existing.value, value);
@@ -167,6 +222,7 @@ impl ProjectKnowledge {
                 existing.valid_from = existing.valid_from.or(Some(existing.created_at));
 
                 self.facts.push(KnowledgeFact {
+                    origin: origin.clone(),
                     category: category.to_string(),
                     key: key.to_string(),
                     value: value.to_string(),
@@ -194,6 +250,7 @@ impl ProjectKnowledge {
         } else {
             let now = Utc::now();
             self.facts.push(KnowledgeFact {
+                origin,
                 category: category.to_string(),
                 key: key.to_string(),
                 value: value.to_string(),
@@ -318,7 +375,7 @@ impl ProjectKnowledge {
     ) -> Option<AdmissionResult> {
         let mut best: Option<(usize, f32)> = None;
         for (i, f) in self.facts.iter().enumerate() {
-            if !f.is_current() || f.category != category {
+            if !f.is_current() || f.category != category || f.origin != super::FactOrigin::Local {
                 continue;
             }
             let sim = string_similarity(value, &f.value);

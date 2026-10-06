@@ -236,21 +236,43 @@ fn execute_arm(
     let estimated_output = estimate_tokens(&output_content);
     let input_tokens = usage.input_tokens.unwrap_or(estimated_input);
     let output_tokens = usage.output_tokens.unwrap_or(estimated_output);
-    let had_provider_token_usage = usage.input_tokens.is_some() && usage.output_tokens.is_some();
-    let measurement_method = if had_provider_token_usage {
+    let input_method = if usage.input_tokens.is_some() {
         "provider_reported"
-    } else if input_tokens > 0 || output_tokens > 0 {
+    } else if input_tokens > 0 {
         "estimated"
     } else {
         "unavailable"
     };
-    let cost_micros = cost_from_headers(&headers).or_else(|| {
+    let output_method = if usage.output_tokens.is_some() {
+        "provider_reported"
+    } else if output_tokens > 0 {
+        "estimated"
+    } else {
+        "unavailable"
+    };
+    let cached_method = if usage.cached_tokens.is_some() {
+        "provider_reported"
+    } else {
+        "unavailable"
+    };
+    let reported_cost = cost_from_headers(&headers);
+    let cost_micros = reported_cost.or_else(|| {
         if input_tokens == 0 && output_tokens == 0 {
             None
         } else {
             estimated_cost_micros(&config.model, input_tokens, output_tokens)
         }
     });
+    let cost_method = if reported_cost.is_some() {
+        "provider_reported"
+    } else if cost_micros.is_some() {
+        "estimated"
+    } else {
+        "unavailable"
+    };
+    let measurement_method = format!(
+        "input:{input_method},cached:{cached_method},output:{output_method},cost:{cost_method}"
+    );
 
     Ok(ArmResult {
         arm_type,
@@ -264,7 +286,7 @@ fn execute_arm(
         latency_ms,
         output_content,
         proxy_observed: arm_type == ArmType::Treatment,
-        measurement_method: measurement_method.to_owned(),
+        measurement_method,
     })
 }
 

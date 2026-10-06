@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! End-to-end validation for the synthetic dual-arm comparison corpus.
 
 use std::collections::BTreeMap;

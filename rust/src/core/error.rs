@@ -128,6 +128,9 @@ impl ShellError {
 
 #[derive(Error, Debug)]
 pub enum PathJailError {
+    #[error("protected runtime context access denied: {reason}")]
+    ProtectedContext { reason: String },
+
     #[error("path contains null byte")]
     NullByte,
 

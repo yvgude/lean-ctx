@@ -26,14 +26,16 @@ pub fn trust_path() -> Result<PathBuf, String> {
     Ok(dir.join("org-trust.toml"))
 }
 
+pub(crate) fn trust_path_read_only() -> Result<PathBuf, String> {
+    Ok(crate::core::data_dir::resolve_data_dir()?.join("org-trust.toml"))
+}
+
 pub fn load() -> Result<TrustStore, String> {
     let path = trust_path()?;
-    if !path.exists() {
+    let Some(text) = crate::core::policy::files::read(&path, false)? else {
         return Ok(TrustStore::default());
-    }
-    let text =
-        std::fs::read_to_string(&path).map_err(|e| format!("read {}: {e}", path.display()))?;
-    toml::from_str(&text).map_err(|e| format!("parse {}: {e}", path.display()))
+    };
+    toml::from_str(&text).map_err(|_| "org trust input is invalid".into())
 }
 
 pub fn save(store: &TrustStore) -> Result<(), String> {

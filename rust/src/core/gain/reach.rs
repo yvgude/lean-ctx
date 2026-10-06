@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Reach: how much of the agent's *observed* tool traffic went through lean-ctx.
 //!
 //! The denominator is only what lean-ctx can see — calls routed through it plus

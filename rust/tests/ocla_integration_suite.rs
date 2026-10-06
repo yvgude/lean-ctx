@@ -5,7 +5,7 @@ use axum::body::Body;
 use axum::http::{Request, StatusCode, header};
 use chrono::Utc;
 use ed25519_dalek::SigningKey;
-use lean_ctx::core::a2a::dlq::{DeadLetter, DeadLetterQueue};
+use lean_ctx::core::a2a::dlq::{DeadLetter, DeadLetterDelivery, DeadLetterQueue, DlqScope};
 use lean_ctx::core::capsule_transport::LocalSignedCapsuleTransport;
 use lean_ctx::core::context_capsule::{
     CONTEXT_CAPSULE_SCHEMA_VERSION, CapsuleReferenceKindV1, CapsuleSensitivityV1,
@@ -16,9 +16,6 @@ use lean_ctx::core::ocla::budget::{BudgetLedger, BudgetLimit, BudgetScope};
 use lean_ctx::core::ocla::capsule::CapsuleStore;
 use lean_ctx::core::ocla::health::{HealthStatus, check_system_health, seed_agent_registry};
 use lean_ctx::core::ocla::response_cache::{CachedResponse, ResponseCache, ResponseCacheKey};
-use lean_ctx::core::ocla::routing_quality::{
-    RoutingDecision, RoutingOutcome, RoutingQualityTracker,
-};
 use lean_ctx::core::ocla::tracing::{SpanStatus, spans_for_trace, start_span};
 use lean_ctx::core::ocla::wire_api::ocla_router;
 use lean_ctx::core::savings_ledger;
@@ -161,21 +158,6 @@ fn test_full_pipeline() {
     budget.check_budget(&scope, 100).expect("budget admission");
     budget.record_consumption(&scope, 40, 0.40);
 
-    let mut routing = RoutingQualityTracker::new();
-    routing.record(RoutingOutcome {
-        decision: RoutingDecision {
-            decision_id: "integration-route".into(),
-            original_model: "expensive-model".into(),
-            routed_model: "integration-model".into(),
-            reason: "integration route".into(),
-            timestamp: Utc::now().to_rfc3339(),
-        },
-        quality_score: Some(0.95),
-        tokens_saved: 60,
-        latency_delta_ms: -10,
-    });
-    assert!(!routing.should_fallback());
-
     let cache = ResponseCache::new(4, Duration::from_secs(30));
     let key = ResponseCacheKey::new("integration-model", 42, 0.0, 128);
     cache.put(
@@ -248,6 +230,7 @@ async fn endpoint_status(method: &str, uri: &str, body: Option<&str>) -> StatusC
 
 #[tokio::test]
 async fn all_endpoints_return_valid_status() {
+    let _isolated = IsolatedDataDir::new();
     let envelope = canonical_envelope_body();
     let scope = "user:integration-all-endpoints";
     let budget = serde_json::json!({
@@ -328,18 +311,32 @@ fn test_capsule_fork_and_resolve() {
 #[test]
 fn test_dlq_lifecycle() {
     let queue = DeadLetterQueue::new();
-    queue.enqueue(DeadLetter {
-        id: "integration-dead-letter".into(),
-        original_message: "integration message".into(),
-        target_agent: "integration-child".into(),
-        error: "delivery failed".into(),
-        attempts: 1,
-        first_failed_at: Utc::now().to_rfc3339(),
-        last_failed_at: Utc::now().to_rfc3339(),
-    });
-    assert_eq!(queue.peek_all().len(), 1);
-    assert!(queue.dequeue("integration-dead-letter").is_some());
-    assert!(queue.peek_all().is_empty());
+    let scope = DlqScope::new("integration-tenant", "integration-project")
+        .expect("valid integration scope");
+    queue
+        .enqueue(DeadLetter {
+            peer_id: "legacy".into(),
+            delivery_id: "integration-delivery".into(),
+            id: "integration-dead-letter".into(),
+            tenant_id: scope.tenant_id.clone(),
+            project_id: scope.project_id.clone(),
+            delivery: DeadLetterDelivery::LocalAgentBus,
+            original_message: "integration message".into(),
+            target_agent: "integration-child".into(),
+            error: "delivery failed".into(),
+            attempts: 1,
+            first_failed_at: Utc::now().to_rfc3339(),
+            last_failed_at: Utc::now().to_rfc3339(),
+        })
+        .expect("enqueue integration dead letter");
+    assert_eq!(queue.peek(&scope).expect("peek integration scope").len(), 1);
+    assert!(
+        queue
+            .dequeue(&scope, "integration-dead-letter")
+            .expect("dequeue integration dead letter")
+            .is_some()
+    );
+    assert!(queue.peek(&scope).expect("peek empty scope").is_empty());
 }
 
 #[test]

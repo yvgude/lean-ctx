@@ -235,8 +235,17 @@ fn project_dependencies(project_root: &Path) -> Vec<String> {
     dependencies
 }
 
+fn read_manifest(manifest: &Path) -> std::io::Result<String> {
+    let root = manifest.parent().unwrap_or(manifest);
+    crate::tools::ctx_read::read_file_for_tool_rooted(
+        &manifest.to_string_lossy(),
+        &root.to_string_lossy(),
+        "ctx_compose",
+    )
+}
+
 fn cargo_dependencies(manifest: &Path, dependencies: &mut Vec<String>) {
-    let Ok(content) = std::fs::read_to_string(manifest) else {
+    let Ok(content) = read_manifest(manifest) else {
         return;
     };
 
@@ -259,7 +268,7 @@ fn cargo_dependencies(manifest: &Path, dependencies: &mut Vec<String>) {
 }
 
 fn package_dependencies(manifest: &Path, dependencies: &mut Vec<String>) {
-    let Ok(content) = std::fs::read_to_string(manifest) else {
+    let Ok(content) = read_manifest(manifest) else {
         return;
     };
 
@@ -318,7 +327,7 @@ fn json_object_section<'a>(content: &'a str, section: &str) -> Option<&'a str> {
 }
 
 fn requirements_dependencies(manifest: &Path, dependencies: &mut Vec<String>) {
-    let Ok(content) = std::fs::read_to_string(manifest) else {
+    let Ok(content) = read_manifest(manifest) else {
         return;
     };
 
@@ -337,7 +346,7 @@ fn requirements_dependencies(manifest: &Path, dependencies: &mut Vec<String>) {
 }
 
 fn go_dependencies(manifest: &Path, dependencies: &mut Vec<String>) {
-    let Ok(content) = std::fs::read_to_string(manifest) else {
+    let Ok(content) = read_manifest(manifest) else {
         return;
     };
 
@@ -377,7 +386,10 @@ fn add_dependency(dependencies: &mut Vec<String>, dependency: &str) {
 /// List files in conventional utility directories rooted at the project.
 fn project_utility_files(project_root: &Path) -> Vec<String> {
     let mut files = Vec::new();
-    for directory in UTILITY_DIRECTORIES {
+    let protected = crate::core::policy::runtime::is_active();
+    let mut inspected = 0usize;
+    let mut remaining_bytes = 8 * 1024 * 1024;
+    'directories: for directory in UTILITY_DIRECTORIES {
         let utility_root = project_root.join(directory);
         if !utility_root.is_dir() {
             continue;
@@ -387,6 +399,7 @@ fn project_utility_files(project_root: &Path) -> Vec<String> {
             .follow_links(false)
             .build()
             .flatten()
+            .take(256)
         {
             if !entry
                 .file_type()
@@ -395,6 +408,29 @@ fn project_utility_files(project_root: &Path) -> Vec<String> {
                 continue;
             }
             if let Ok(relative_path) = entry.path().strip_prefix(project_root) {
+                if crate::core::io_boundary::jail_and_check_path(
+                    "ctx_compose",
+                    entry.path(),
+                    project_root,
+                )
+                .is_err()
+                {
+                    continue;
+                }
+                if protected {
+                    if inspected >= 32 || remaining_bytes == 0 {
+                        break 'directories;
+                    }
+                    inspected += 1;
+                    let Ok(_) = crate::tools::ctx_read::read_file_for_tool_rooted_budgeted(
+                        &entry.path().to_string_lossy(),
+                        &project_root.to_string_lossy(),
+                        "ctx_compose",
+                        &mut remaining_bytes,
+                    ) else {
+                        continue;
+                    };
+                }
                 files.push(relative_path.to_string_lossy().replace('\\', "/"));
             }
         }
@@ -424,15 +460,15 @@ fn utility_hint(utility_files: &[String]) -> Option<String> {
 /// Extract unique file paths from compose output and sum their raw byte sizes
 /// to compute what the agent would have read without compose.
 fn project_stdlib_hint(project_root: &Path) -> &'static str {
-    if project_root.join("Cargo.toml").is_file() {
+    if read_manifest(&project_root.join("Cargo.toml")).is_ok() {
         "std::{fs, path, collections, io, process}"
-    } else if project_root.join("package.json").is_file() {
+    } else if read_manifest(&project_root.join("package.json")).is_ok() {
         "node:fs, node:path, node:util, node:child_process"
-    } else if project_root.join("requirements.txt").is_file()
-        || project_root.join("pyproject.toml").is_file()
+    } else if read_manifest(&project_root.join("requirements.txt")).is_ok()
+        || read_manifest(&project_root.join("pyproject.toml")).is_ok()
     {
         "pathlib, collections, json, subprocess"
-    } else if project_root.join("go.mod").is_file() {
+    } else if read_manifest(&project_root.join("go.mod")).is_ok() {
         "io, os, path/filepath, strings, net/http"
     } else {
         "filesystem, collections, and process APIs"
@@ -440,6 +476,11 @@ fn project_stdlib_hint(project_root: &Path) -> &'static str {
 }
 
 fn estimate_raw_input_tokens(compose_output: &str, project_root: &str) -> usize {
+    // Text-derived paths are not receipts for original protected bytes. Avoid
+    // disclosing metadata or claiming savings from an unverified source set.
+    if crate::core::policy::runtime::is_active() {
+        return 0;
+    }
     let mut seen = HashSet::new();
     let mut raw_bytes: u64 = 0;
     let root = Path::new(project_root);
@@ -471,6 +512,9 @@ fn estimate_raw_input_tokens(compose_output: &str, project_root: &str) -> usize 
                 continue;
             }
             let full = root.join(rel);
+            if crate::core::io_boundary::jail_and_check_path("ctx_compose", &full, root).is_err() {
+                continue;
+            }
             if seen.insert(full.clone()) {
                 if let Ok(meta) = std::fs::metadata(&full) {
                     if meta.is_file() {
@@ -510,120 +554,161 @@ impl McpTool for CtxComposeTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
-        let task = get_str(args, "task")
-            .ok_or_else(|| ErrorData::invalid_params("task is required", None))?;
-        let task_aware = get_bool(args, "task_aware").unwrap_or(true);
-        let path = if let Some(p) = ctx.resolved_path("path") {
-            p.to_string()
-        } else if let Some(err) = ctx.path_error("path") {
-            return Err(ErrorData::invalid_params(format!("path: {err}"), None));
-        } else {
-            ctx.project_root.clone()
-        };
-
-        // Share the resident BM25 cache with the composed semantic search.
-        if let Some(ref cache) = ctx.bm25_cache {
-            crate::tools::ctx_semantic_search::set_thread_cache(cache.clone());
-        }
-
-        let cache_enabled = crate::core::config::Config::load()
-            .cache
-            .compose_cache_enabled;
-        let cached = cache_enabled
-            .then(|| crate::core::ocla::compose_cache::global().check(&task, &path))
-            .flatten();
-        let (text, _) = if let Some(text) = cached {
-            let sent = crate::core::tokens::count_tokens(&text);
-            (text, sent)
-        } else {
-            // Cross-process delivery check before expensive computation
-            let compose_builder = ComposedContextKey {
-                task: task.clone(),
-                path: path.clone(),
-                source_digests: Vec::new(),
-            };
-            let ck = compose_builder.cache_key();
-            let cv = compose_builder.validator();
-            if let Some(entry) = crate::core::ocla::cache_delivery::check(&ck, &cv, "ctx_compose") {
-                let stub = crate::core::ocla::cache_delivery::stub(&entry, "compose");
-                let sent = crate::core::tokens::count_tokens(&stub);
-                (stub, sent)
-            } else {
-                let (text, sent) = tokio::task::block_in_place(|| {
-                    crate::tools::ctx_compose::handle(&task, &path, ctx.crp_mode)
-                });
-                if cache_enabled && !text.starts_with("ERROR") {
-                    crate::core::ocla::compose_cache::global().record(&task, &path, text.clone());
-                    crate::core::ocla::cache_delivery::record(
-                        ck,
-                        crate::core::ocla::cache_types::DeliveryKind::ComposedContext,
-                        cv,
-                        Some(path.clone()),
-                        &text,
-                        "ctx_compose",
-                    );
-                }
-                (text, sent)
-            }
-        };
-
-        if text.starts_with("ERROR") {
-            return Err(ErrorData::invalid_params(text, None));
-        }
-
-        let text = current_task_profile(ctx).map_or_else(
-            || text.clone(),
-            |profile| apply_task_aware_filter(&text, &task, &profile, task_aware),
-        );
-        let text = {
-            let cfg = crate::core::config::Config::load();
-            if cfg.solution.enabled && cfg.solution.inject_in_compose {
-                let project_root = Path::new(&path);
-                let project_deps = project_dependencies(project_root);
-                let helper_files = project_utility_files(project_root);
-                let dependencies = if project_deps.is_empty() {
-                    "no manifest dependencies detected".to_string()
+        let mut pending_cache = None;
+        let result =
+            crate::core::policy::runtime::with_project_source_view(&ctx.project_root, || {
+                let task = get_str(args, "task")
+                    .ok_or_else(|| ErrorData::invalid_params("task is required", None))?;
+                let task_aware = get_bool(args, "task_aware").unwrap_or(true);
+                let path = if let Some(p) = ctx.resolved_path("path") {
+                    p.to_string()
+                } else if let Some(err) = ctx.path_error("path") {
+                    return Err(ErrorData::invalid_params(format!("path: {err}"), None));
                 } else {
-                    project_deps.join(", ")
+                    ctx.project_root.clone()
                 };
-                let mut hints = format!(
-                    "--- SOLUTION HINTS ---\n\
+
+                // Share the resident BM25 cache with the composed semantic search.
+                if let Some(ref cache) = ctx.bm25_cache {
+                    crate::tools::ctx_semantic_search::set_thread_cache(cache.clone());
+                }
+
+                let cache_enabled = crate::core::config::Config::load()
+                    .cache
+                    .compose_cache_enabled;
+                let cache_task =
+                    crate::core::context_kernel::bridge::runtime::compose_cache_task(&task);
+                let cached = cache_enabled
+                    .then(|| crate::core::ocla::compose_cache::global().check(&cache_task, &path))
+                    .flatten();
+                let (text, _) = if let Some(text) = cached {
+                    let sent = crate::core::tokens::count_tokens(&text);
+                    (text, sent)
+                } else {
+                    // Cross-process delivery check before expensive computation
+                    let source_revision = crate::core::ocla::compose_cache::source_revision(&path);
+                    let compose_builder = ComposedContextKey {
+                        task: cache_task.clone(),
+                        path: path.clone(),
+                        source_digests: source_revision.iter().cloned().collect(),
+                    };
+                    let ck = compose_builder.cache_key();
+                    let cv = compose_builder.validator();
+                    if let Some(entry) = source_revision.as_ref().and_then(|_| {
+                        crate::core::ocla::cache_delivery::check(&ck, &cv, "ctx_compose")
+                    }) {
+                        let stub = crate::core::ocla::cache_delivery::stub(&entry, "compose");
+                        let sent = crate::core::tokens::count_tokens(&stub);
+                        (stub, sent)
+                    } else {
+                        let (text, sent) = tokio::task::block_in_place(|| {
+                            crate::tools::ctx_compose::handle(&task, &path, ctx.crp_mode)
+                        });
+                        if cache_enabled && source_revision.is_some() && !text.starts_with("ERROR")
+                        {
+                            pending_cache = Some((
+                                cache_task,
+                                path.clone(),
+                                text.clone(),
+                                source_revision,
+                                ck,
+                                cv,
+                            ));
+                        }
+                        (text, sent)
+                    }
+                };
+
+                if text.starts_with("ERROR") {
+                    return Err(ErrorData::invalid_params(text, None));
+                }
+
+                let text = current_task_profile(ctx).map_or_else(
+                    || text.clone(),
+                    |profile| apply_task_aware_filter(&text, &task, &profile, task_aware),
+                );
+                let text = {
+                    let cfg = crate::core::config::Config::load();
+                    if cfg.solution.enabled && cfg.solution.inject_in_compose {
+                        let project_root = Path::new(&path);
+                        let project_deps = project_dependencies(project_root);
+                        let helper_files = project_utility_files(project_root);
+                        let dependencies = if project_deps.is_empty() {
+                            "no manifest dependencies detected".to_string()
+                        } else {
+                            project_deps.join(", ")
+                        };
+                        let mut hints = format!(
+                            "--- SOLUTION HINTS ---\n\
 • Found {} existing helpers that may apply\n\
 • Project uses: {} (check before adding new)\n\
 • stdlib covers: {}",
-                    helper_files.len(),
-                    dependencies,
-                    project_stdlib_hint(project_root),
+                            helper_files.len(),
+                            dependencies,
+                            project_stdlib_hint(project_root),
+                        );
+                        if let Some(utility_hint) = utility_hint(&helper_files) {
+                            hints.push('\n');
+                            hints.push_str(&utility_hint);
+                        }
+                        if hints.is_empty() {
+                            text
+                        } else {
+                            format!("{text}\n\n{hints}")
+                        }
+                    } else {
+                        text
+                    }
+                };
+                let sent = crate::core::tokens::count_tokens(&text);
+
+                let raw_tokens = estimate_raw_input_tokens(&text, &path);
+                let original = if raw_tokens > sent { raw_tokens } else { sent };
+                let saved = original.saturating_sub(sent);
+
+                Ok(ToolOutput {
+                    text,
+                    original_tokens: original,
+                    saved_tokens: saved,
+                    mode: Some("compose".to_string()),
+                    path: Some(path),
+                    changed: false,
+                    shell_outcome: None,
+                    content_blocks: None,
+                })
+            })
+            .unwrap_or_else(|_| {
+                Err(ErrorData::internal_error(
+                    "Context output withheld: source authority changed or could not be verified",
+                    None,
+                ))
+            });
+        // No candidate content is persisted before the source-view guard accepts it.
+        if result.is_ok() {
+            if let Some((task, path, text, Some(revision), key, validator)) = pending_cache {
+                let _ = crate::core::policy::runtime::with_project_source_view(
+                    &ctx.project_root,
+                    || {
+                        if crate::core::ocla::compose_cache::global().record(
+                            &task,
+                            &path,
+                            text.clone(),
+                            &revision,
+                        ) {
+                            crate::core::ocla::cache_delivery::record(
+                                key,
+                                crate::core::ocla::cache_types::DeliveryKind::ComposedContext,
+                                validator,
+                                Some(path),
+                                &text,
+                                "ctx_compose",
+                            );
+                        }
+                    },
                 );
-                if let Some(utility_hint) = utility_hint(&helper_files) {
-                    hints.push('\n');
-                    hints.push_str(&utility_hint);
-                }
-                if hints.is_empty() {
-                    text
-                } else {
-                    format!("{text}\n\n{hints}")
-                }
-            } else {
-                text
             }
-        };
-        let sent = crate::core::tokens::count_tokens(&text);
-
-        let raw_tokens = estimate_raw_input_tokens(&text, &path);
-        let original = if raw_tokens > sent { raw_tokens } else { sent };
-        let saved = original.saturating_sub(sent);
-
-        Ok(ToolOutput {
-            text,
-            original_tokens: original,
-            saved_tokens: saved,
-            mode: Some("compose".to_string()),
-            path: Some(path),
-            changed: false,
-            shell_outcome: None,
-            content_blocks: None,
-        })
+        }
+        result
     }
 }
 
@@ -767,6 +852,7 @@ mod tests {
 
     #[test]
     fn finds_files_in_root_utility_directories() {
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let root = tempfile::tempdir().expect("tempdir");
         std::fs::create_dir_all(root.path().join("utils/nested")).expect("utils directory");
         std::fs::create_dir_all(root.path().join("helpers")).expect("helpers directory");
@@ -787,5 +873,22 @@ mod tests {
                 "utils/nested/time.rs".to_string(),
             ]
         );
+    }
+
+    #[test]
+    fn community_utility_names_obey_secret_path_role_admission() {
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let root = tempfile::tempdir().unwrap();
+        std::fs::create_dir(root.path().join("helpers")).unwrap();
+        std::fs::write(root.path().join("helpers/id_rsa"), "private key fixture").unwrap();
+        std::fs::write(root.path().join("helpers/allowed.rs"), "fn allowed() {}\n").unwrap();
+        let mut role = crate::core::roles::load_role("coder").unwrap();
+        role.io.allow_secret_paths = false;
+        crate::core::roles::with_test_active_role(role, || {
+            assert_eq!(
+                project_utility_files(root.path()),
+                vec!["helpers/allowed.rs"]
+            );
+        });
     }
 }

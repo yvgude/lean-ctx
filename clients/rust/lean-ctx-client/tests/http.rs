@@ -210,6 +210,7 @@ fn subscribe_events_streams_and_skips_heartbeats() {
         .subscribe_events(&EventQuery {
             workspace_id: Some("w".into()),
             channel_id: Some("c".into()),
+            agent_id: Some("agent-a".into()),
             ..Default::default()
         })
         .unwrap()
@@ -220,5 +221,6 @@ fn subscribe_events_streams_and_skips_heartbeats() {
     assert_eq!(events[0].id, 1);
     assert_eq!(events[1].kind, "session_update");
 
-    server.join().unwrap();
+    let log = server.join().unwrap();
+    assert!(log[0].path.contains("agentId=agent-a"));
 }

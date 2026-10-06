@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Whole-tree ownership of a spawned command (#1920).
 //!
 //! A timeout or cancel has to end every process the command started, not just

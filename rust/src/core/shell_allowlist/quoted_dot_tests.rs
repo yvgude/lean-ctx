@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! #1829: single-quoted text is data, so a lone `.` pipe segment inside it
 //! (idiomatic jq) must not trip the eval/source guard. Real `.`/`source` at
 //! command position stays blocked, including next to quote look-alikes.

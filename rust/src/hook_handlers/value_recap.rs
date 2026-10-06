@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! User-only value recaps for Claude-compatible hosts (`systemMessage`).
 //!
 //! A `systemMessage` is shown to the user and never enters the model's

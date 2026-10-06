@@ -14,6 +14,9 @@ pub(crate) fn resume_package(
     path: &Path,
 ) -> Result<ResumeReport, String> {
     let json = std::fs::read_to_string(path).map_err(|e| format!("read: {e}"))?;
+    // Resuming is recovery: the package (possibly written elsewhere, or
+    // before admission existed) passes the current policy first (G5).
+    let json = crate::core::context_admission::recovery::admit_recovered(&json, "package")?;
     let pkg: ContextPackage = serde_json::from_str(&json).map_err(|e| format!("parse: {e}"))?;
 
     if !pkg.is_compatible() {
@@ -144,13 +147,14 @@ fn replay_knowledge(pkg: &ContextPackage) -> Result<usize, String> {
     let policy = crate::core::memory_policy::MemoryPolicy::default();
     let before = pk.facts.len();
     for fact in &pkg.knowledge {
-        pk.remember(
+        pk.remember_with_origin(
             &fact.category,
             &fact.key,
             &fact.value,
             &pkg.session_id,
             fact.confidence,
             &policy,
+            crate::core::knowledge::source_view::imported_origin(&fact.origin),
         );
     }
     pk.save().map_err(|e| format!("save knowledge: {e}"))?;

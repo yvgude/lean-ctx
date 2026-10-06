@@ -65,14 +65,17 @@ impl McpTool for CtxRetrieveTool {
         // `current_full_content` revalidates against disk and re-reads when the
         // cached copy is stale, so CCR can never hand back a version that no
         // longer matches the file (e.g. a handover file edited between agents).
+        // Either copy is re-admitted under the current policy before the query
+        // runs, so a masked value can never be matched (G5).
         let result = match guard.current_full_content(&resolved) {
-            Some((full, _tokens)) => {
+            Some(Ok((full, _tokens))) => {
                 if let Some(ref q) = query {
                     ccr_search_within(&full, q)
                 } else {
                     full
                 }
             }
+            Some(Err(reason)) => format!("ERROR: {reason}"),
             None => {
                 format!("No cached content for \"{path_raw}\". Use ctx_read(\"{path_raw}\") first.")
             }

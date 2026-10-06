@@ -152,6 +152,13 @@ impl McpTool for CtxRefactorTool {
         let result = crate::tools::ctx_refactor::handle(&args_value, &ctx.project_root, &abs_path);
 
         let action = get_str(args, "action").unwrap_or_default();
+        // Match ctx_patch's delegated symbol edit: a rejected operation is an
+        // execution error whose excerpts still need the full output pipeline.
+        if action == "replace_symbol_body"
+            && (result.starts_with("ERROR") || result.starts_with("CONFLICT"))
+        {
+            return Err(crate::server::tool_trait::tool_execution_error(result));
+        }
         Ok(ToolOutput {
             text: result,
             original_tokens: 0,

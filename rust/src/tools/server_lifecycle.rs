@@ -23,17 +23,24 @@ fn collect_warming_history(
     crate::core::cache::warming::collect_recent_files_in_project(&sessions, project_root)
 }
 
-fn warm_cache_in_background(
-    cache: Arc<RwLock<SessionCache>>,
-    history: Vec<crate::core::cache::warming::RecentFile>,
-) {
-    if history.is_empty() {
+/// GH #2006: collecting the history resolves every touched file of the recent
+/// sessions inside the project root. On a network drive that is a round trip
+/// per path, and it ran synchronously before the server logged or answered
+/// `initialize` (95-150 s on SMB). It now runs on the warming thread, before
+/// that thread takes the cache lock, so neither the handshake nor the first
+/// tool call waits for it.
+fn warm_cache_in_background(cache: Arc<RwLock<SessionCache>>, project_root: Option<String>) {
+    if project_root.is_none() {
         return;
     }
 
     if let Err(error) = std::thread::Builder::new()
         .name("lean-ctx-cache-warm".to_string())
         .spawn(move || {
+            let history = collect_warming_history(project_root.as_deref());
+            if history.is_empty() {
+                return;
+            }
             let mut cache = cache.blocking_write();
             crate::core::cache::warming::warm_cache(&mut cache, &history);
         })
@@ -89,81 +96,20 @@ impl LeanCtxServer {
         }
 
         let project_root = self.presence_root();
+        // #1766: once `initialize` has resolved the session's role, the retry
+        // must register with it — falling back to the `context-engine`
+        // placeholder rewrote a `reviewer` presence.
         let requested_role = self.presence_role.read().await.clone();
-        let registration = match requested_role.as_deref() {
-            // #1766: once `initialize` has resolved the session's role, the
-            // retry must register with it — falling back to the
-            // `context-engine` placeholder rewrote a `reviewer` presence and
-            // exempted the session from worker accounting.
-            Some(role) => {
-                crate::core::agents::AgentRegistry::register_mcp_process_as(project_root, role)
-            }
-            None => crate::core::agents::AgentRegistry::register_mcp_process(project_root),
-        };
-        let agent_id = match registration {
-            Ok(agent_id) => {
-                self.presence_read_only
-                    .store(false, std::sync::atomic::Ordering::Relaxed);
-                agent_id
-            }
-            // #1765: over the mutating cap the session is still admitted —
-            // read-only — instead of losing every tool, reads included, until
-            // an unrelated session's lease lapses.
-            Err(error)
-                if crate::core::agents::AgentRegistry::is_mutating_capacity_error(&error) =>
-            {
-                let role = requested_role.as_deref().unwrap_or("context-engine");
-                tracing::warn!("lean-ctx: {error}; admitting {role} session read-only");
-                let agent_id = crate::core::agents::AgentRegistry::admit_read_only_presence(
-                    project_root,
-                    role,
-                )?;
-                self.presence_read_only
-                    .store(true, std::sync::atomic::Ordering::Relaxed);
-                agent_id
-            }
-            Err(error) => return Err(error),
+        let agent_id = match requested_role.as_deref() {
+            Some(role) => crate::core::agents::AgentRegistry::register_mcp_process_as(
+                project_root,
+                role,
+                None,
+            )?,
+            None => crate::core::agents::AgentRegistry::register_mcp_process(project_root, None)?,
         };
         *self.presence_agent_id.write().await = Some(agent_id);
         Ok(())
-    }
-
-    /// #1765: a read-only-admitted session retries its real role before a
-    /// mutating tool runs. `Ok(())` when the slot was granted — or the session
-    /// was never degraded; `Err` carries the caller-facing refusal, which names
-    /// the tools that keep working and when to retry.
-    pub(crate) async fn try_upgrade_presence(&self, tool: &str) -> Result<(), String> {
-        if !self
-            .presence_read_only
-            .load(std::sync::atomic::Ordering::Relaxed)
-        {
-            return Ok(());
-        }
-        let Some(role) = self.presence_role.read().await.clone() else {
-            return Ok(());
-        };
-        match crate::core::agents::AgentRegistry::register_mcp_process_as(
-            self.presence_root(),
-            &role,
-        ) {
-            Ok(agent_id) => {
-                *self.presence_agent_id.write().await = Some(agent_id);
-                self.presence_read_only
-                    .store(false, std::sync::atomic::Ordering::Relaxed);
-                Ok(())
-            }
-            Err(error)
-                if crate::core::agents::AgentRegistry::is_mutating_capacity_error(&error) =>
-            {
-                Err(format!(
-                    "[CAPACITY] '{tool}' needs a mutating worker slot and none is free: {error}. \
-                     This session stays admitted read-only — {} keep working; retry '{tool}' \
-                     once a slot frees.",
-                    crate::core::editor_registry::plan_mode::plan_mode_tools().join(", ")
-                ))
-            }
-            Err(error) => Err(error),
-        }
     }
 
     fn presence_root(&self) -> &str {
@@ -255,7 +201,6 @@ impl LeanCtxServer {
         // mtime/md5 so it can never serve a stale or cross-chat stub.
         crate::core::read_stub_index::load();
 
-        let warming_history = collect_warming_history(startup.project_root.as_deref());
         let cache = Arc::new(RwLock::new(SessionCache::new()));
         let bm25_cache: Arc<std::sync::Mutex<Option<crate::core::bm25_cache::Bm25CacheEntry>>> =
             Arc::new(std::sync::Mutex::new(None));
@@ -272,7 +217,7 @@ impl LeanCtxServer {
         crate::core::memory_guard::start_guard(std::sync::Arc::new(
             crate::core::eviction_orchestrator::on_memory_pressure,
         ));
-        warm_cache_in_background(cache.clone(), warming_history);
+        warm_cache_in_background(cache.clone(), startup.project_root.clone());
 
         let presence_root = startup
             .project_root
@@ -280,7 +225,7 @@ impl LeanCtxServer {
             .or(startup.shell_cwd.as_deref())
             .unwrap_or(".");
         let presence_agent_id =
-            match crate::core::agents::AgentRegistry::register_mcp_process(presence_root) {
+            match crate::core::agents::AgentRegistry::register_mcp_process(presence_root, None) {
                 Ok(agent_id) => Some(agent_id),
                 Err(error) => {
                     tracing::warn!("lean-ctx: failed to register MCP agent presence: {error}");
@@ -299,9 +244,9 @@ impl LeanCtxServer {
             last_call: Arc::new(RwLock::new(Instant::now())),
             agent_id: Arc::new(RwLock::new(None)),
             task_envelope: Arc::new(RwLock::new(None)),
+            native_receipt_authority: None,
             presence_agent_id: Arc::new(RwLock::new(presence_agent_id)),
             presence_role: Arc::new(RwLock::new(None)),
-            presence_read_only: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             client_name: Arc::new(RwLock::new(String::new())),
             autonomy: Arc::new(crate::core::autonomy::AutonomyState::new()),
             loop_detector: Arc::new(RwLock::new(
@@ -362,15 +307,9 @@ impl LeanCtxServer {
         }
         let last = *self.last_call.read().await;
         if last.elapsed().as_secs() >= self.cache_ttl_secs {
-            let pending_save = {
-                let mut session = self.session.write().await;
-                session.prepare_save().ok()
-            };
-            if let Some(prepared) = pending_save {
-                drop(tokio::task::spawn_blocking(move || {
-                    let _ = prepared.write_to_disk();
-                }));
-            }
+            tokio::spawn(crate::core::session::SessionState::save_shared_logged(
+                self.session.clone(),
+            ));
             let mut cache = self.cache.write().await;
             let redelivered = cache.count_full_delivered();
             let count = cache.clear();
@@ -452,13 +391,7 @@ impl LeanCtxServer {
                 crate::tools::startup::auto_consolidate_knowledge(root);
             }
         }
-        let pending_save = {
-            let mut session = self.session.write().await;
-            session.prepare_save().ok()
-        };
-        if let Some(prepared) = pending_save {
-            let _ = tokio::task::spawn_blocking(move || prepared.write_to_disk()).await;
-        }
+        crate::core::session::SessionState::save_shared_logged(self.session.clone()).await;
         // Persist buffered stats (incl. CEP cache-hit/session counters) before
         // the process exits. Short bridge sessions — e.g. a phase-isolated
         // benchmark harness that spawns a fresh server per phase — may never

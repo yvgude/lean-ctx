@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Fail when a path that must stay off the public mirror is tracked.
 
 `.github-ignore` is the single list of paths that never belong in this

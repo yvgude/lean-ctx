@@ -227,6 +227,7 @@ fn push_fact(
 
     let now = Utc::now();
     result.facts.push(KnowledgeFact {
+        origin: crate::core::knowledge::FactOrigin::Unverified,
         category: category.to_owned(),
         key: String::new(),
         value,

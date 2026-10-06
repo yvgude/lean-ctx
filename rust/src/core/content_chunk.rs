@@ -61,6 +61,8 @@ pub struct ContentChunk {
     /// Provider-specific structured metadata.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub metadata: Option<serde_json::Value>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<super::providers::provenance::ProviderOrigin>,
 }
 
 impl ContentChunk {
@@ -91,6 +93,7 @@ impl ContentChunk {
             },
             references,
             metadata,
+            origin: None,
         }
     }
 
@@ -135,6 +138,7 @@ impl From<CodeChunk> for ContentChunk {
             source: ContentSource::File,
             references: Vec::new(),
             metadata: None,
+            origin: None,
         }
     }
 }

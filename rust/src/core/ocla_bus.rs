@@ -1,0 +1,878 @@
+// SPDX-License-Identifier: Apache-2.0
+//! OCLA Event Bus (P2 / Track B — Event-Backbone).
+//!
+//! Zero-cost when disabled: a single `AtomicBool` check gates all emission.
+//! When enabled, events flow into the bounded OCLA ring and ContextBus-owned
+//! private observation persistence.
+//!
+//! ## Design principles
+//!
+//! - **One durable authority**: `OclaBus` is only the bounded read projection;
+//!   ContextBus owns durable OCLA observations.
+//! - **Lossless observations**: all 11 event variants retain their original fields.
+//! - **Test isolation**: `OclaBus::scoped(capacity)` creates a bus instance
+//!   that does NOT touch the global singleton, enabling parallel tests.
+//! - **Identity**: IDs are process-local; durable rows also carry a producer
+//!   instance identifier. The SQLite cursor defines durable commit order.
+
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::{Mutex, OnceLock};
+
+use serde::{Deserialize, Serialize};
+
+use crate::core::context_kernel::bounded::BoundedQueue;
+
+// ─── OCLA Event Types ────────────────────────────────────────────────────────
+
+/// OCLA capability-execution observations, not Agent Bus coordination commands.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
+#[serde(tag = "type")]
+pub enum OclaEvent {
+    /// A proxy request completed (usage_meter.rs).
+    RequestCompleted {
+        model: String,
+        input_tokens: u64,
+        output_tokens: u64,
+        duration_ms: u64,
+        session_id: Option<String>,
+    },
+    /// User feedback recorded (feedback.rs).
+    FeedbackRecorded {
+        session_id: String,
+        outcome: FeedbackOutcome,
+        tool: Option<String>,
+    },
+    /// Compression threshold shifted (threshold_learning.rs).
+    ThresholdShift {
+        language: String,
+        old_value: f64,
+        new_value: f64,
+        metric: ThresholdMetric,
+    },
+    /// Compression applied to a request (compress.rs).
+    CompressionApplied {
+        path: Option<String>,
+        before_tokens: u64,
+        after_tokens: u64,
+        strategy: String,
+    },
+    /// Savings recorded to the ledger (savings_ledger/store.rs).
+    SavingsRecorded {
+        input_saved: u64,
+        output_saved: u64,
+        source: SavingsSource,
+        attribution_id: Option<String>,
+        evidence_class: Option<String>,
+        measurement_method: Option<String>,
+    },
+    /// Intent classified for a request. Part of bus-event schema v1; no
+    /// producer since v4 removed automatic model routing.
+    IntentClassified {
+        tier: String,
+        confidence: f64,
+        reasoning: String,
+    },
+    /// Outcome tracked for a response (P3 — future outcome_tracker.rs).
+    OutcomeRecorded {
+        session_id: String,
+        accepted: bool,
+        implicit: bool,
+    },
+    /// Response optimization applied (P9 — response_optimizer.rs).
+    ResponseOptimized {
+        cache_hit: bool,
+        is_duplicate: bool,
+        tokens_saved: u64,
+    },
+    /// Model routing decision. Part of bus-event schema v1; never emitted since
+    /// v4 removed automatic model routing (kept for schema compatibility).
+    ModelRouted {
+        requested_model: String,
+        routed_model: String,
+        tier: String,
+        model_changed: bool,
+    },
+    /// Agent chain event (P11 — future agent_gateway.rs).
+    AgentChainEvent {
+        agent_id: String,
+        action: String,
+        parent_agent: Option<String>,
+    },
+    /// Cross-agent stub served instead of full read (delivery_registry.rs).
+    CrossAgentStubServed {
+        path: String,
+        tokens_saved: u64,
+        serving_agent: String,
+        original_agent: String,
+    },
+}
+
+/// Feedback outcome enum.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum FeedbackOutcome {
+    Accept,
+    Reject,
+    Partial,
+}
+
+/// Threshold metric that shifted.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ThresholdMetric {
+    Entropy,
+    Jaccard,
+}
+
+/// Source of savings.
+#[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum SavingsSource {
+    Compression,
+    Cache,
+    Routing,
+    Verbosity,
+    ResponseCache,
+}
+
+// ─── Bus Record ──────────────────────────────────────────────────────────────
+
+/// A timestamped OCLA event in the bus ring buffer.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct OclaBusRecord {
+    pub id: u64,
+    pub timestamp_ms: u64,
+    pub event: OclaEvent,
+}
+
+/// Policy applied when the OCLA bus reaches its configured capacity.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum OverflowPolicy {
+    /// Retain the new event and evict the oldest queued event.
+    DropOldest,
+    /// Retain queued events and reject the new event.
+    DropNewest,
+    /// Warn and reject the new event because this synchronous bus cannot block.
+    Backpressure,
+}
+
+impl OverflowPolicy {
+    fn from_env() -> Self {
+        match std::env::var("LEANCTX_BUS_OVERFLOW").as_deref() {
+            Ok("drop_newest") => Self::DropNewest,
+            Ok("backpressure") => Self::Backpressure,
+            Ok("drop_oldest") | Err(_) => Self::DropOldest,
+            Ok(value) => {
+                tracing::warn!(
+                    value,
+                    "invalid LEANCTX_BUS_OVERFLOW value; using drop_oldest"
+                );
+                Self::DropOldest
+            }
+        }
+    }
+}
+
+/// Details recorded whenever an event cannot be retained without overflow.
+#[derive(Debug, Clone)]
+pub struct OverflowEvent {
+    /// Policy active when the overflow occurred.
+    pub policy: OverflowPolicy,
+    /// Number of overflows observed by this bus since creation.
+    pub dropped_count: usize,
+    /// Maximum number of events retained by the queue.
+    pub queue_capacity: usize,
+}
+
+// ─── OclaBus ─────────────────────────────────────────────────────────────────
+
+/// The OCLA event bus. Zero-cost when disabled.
+///
+/// Global usage: `ocla_bus::emit(event)` — checks the global enable flag first.
+/// Test usage: `OclaBus::scoped(cap)` — isolated instance, no global state.
+pub struct OclaBus {
+    enabled: AtomicBool,
+    ring: Mutex<BoundedQueue<OclaBusRecord>>,
+    capacity: usize,
+    next_id: AtomicU64,
+    emitted_count: AtomicU64,
+    overflow_policy: OverflowPolicy,
+    overflow_count: AtomicUsize,
+}
+
+impl OclaBus {
+    /// Create a new bus with the given ring buffer capacity.
+    fn new(capacity: usize) -> Self {
+        Self::new_with_policy(capacity, OverflowPolicy::from_env())
+    }
+
+    fn new_with_policy(capacity: usize, overflow_policy: OverflowPolicy) -> Self {
+        Self {
+            enabled: AtomicBool::new(false),
+            ring: Mutex::new(BoundedQueue::new(capacity)),
+            capacity,
+            next_id: AtomicU64::new(1),
+            emitted_count: AtomicU64::new(0),
+            overflow_policy,
+            overflow_count: AtomicUsize::new(0),
+        }
+    }
+
+    /// Create a scoped (isolated) bus for testing. Does NOT affect the global bus.
+    pub fn scoped(capacity: usize) -> Self {
+        let bus = Self::new_with_policy(capacity, OverflowPolicy::DropOldest);
+        bus.enabled.store(true, Ordering::Relaxed);
+        bus
+    }
+
+    #[cfg(test)]
+    fn scoped_with_policy(capacity: usize, overflow_policy: OverflowPolicy) -> Self {
+        let bus = Self::new_with_policy(capacity, overflow_policy);
+        bus.enabled.store(true, Ordering::Relaxed);
+        bus
+    }
+
+    /// Enable the bus. Events will be recorded after this call.
+    pub fn enable(&self) {
+        self.enabled.store(true, Ordering::Release);
+    }
+
+    /// Disable the bus. Events will be discarded (< 5ns per call).
+    pub fn disable(&self) {
+        self.enabled.store(false, Ordering::Release);
+    }
+
+    /// Check if the bus is enabled.
+    #[inline]
+    pub fn is_enabled(&self) -> bool {
+        self.enabled.load(Ordering::Acquire)
+    }
+
+    /// Emit an event if the bus is enabled. Returns the event ID, or 0 if disabled.
+    #[inline]
+    pub fn emit_if_enabled(&self, event: OclaEvent) -> u64 {
+        if !self.is_enabled() {
+            return 0;
+        }
+        self.emit_unconditional(event)
+    }
+
+    /// Emit unconditionally (skips the enable check). Used internally and by
+    /// callers who have already verified the bus is enabled.
+    fn emit_unconditional(&self, event: OclaEvent) -> u64 {
+        let id = self.next_id.fetch_add(1, Ordering::Relaxed);
+        let record = OclaBusRecord {
+            id,
+            timestamp_ms: current_timestamp_ms(),
+            event,
+        };
+
+        let mut ring = self
+            .ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        self.push_record(&mut ring, record);
+        self.emitted_count.fetch_add(1, Ordering::Relaxed);
+        id
+    }
+
+    fn emit_durable_if_enabled(&self, event: OclaEvent) -> u64 {
+        if !self.is_enabled() {
+            return 0;
+        }
+
+        // Reserve an identity without holding a projection lock across SQLite.
+        // Gaps on failure are intentional: an attempted ID is never reused.
+        // Explicit CAS loop: `fetch_update` is deprecated on newer stable and
+        // its replacement `try_update` is not available on older toolchains.
+        let mut id = self.next_id.load(Ordering::Relaxed);
+        loop {
+            let Some(next) = id.checked_add(1) else {
+                tracing::error!("OCLA event ID space exhausted");
+                return 0;
+            };
+            match self
+                .next_id
+                .compare_exchange_weak(id, next, Ordering::Relaxed, Ordering::Relaxed)
+            {
+                Ok(_) => break,
+                Err(current) => id = current,
+            }
+        }
+        let record = OclaBusRecord {
+            id,
+            timestamp_ms: current_timestamp_ms(),
+            event,
+        };
+        if let Err(error) = crate::core::context_os::try_runtime().and_then(|runtime| {
+            runtime.bus.append_ocla_observation(
+                crate::core::context_os::observation::producer_instance(),
+                &record,
+            )
+        }) {
+            tracing::warn!("canonical OCLA observation persistence failed: {error}");
+            return 0;
+        }
+
+        self.emitted_count.fetch_add(1, Ordering::Relaxed);
+        // The durable row is authoritative even if the bounded read projection
+        // is unavailable or its configured overflow policy evicts this record.
+        if let Ok(mut ring) = crate::core::context_os::observation::lock_observation(&self.ring) {
+            self.push_record(&mut ring, record);
+        } else {
+            tracing::warn!(
+                "OCLA projection unavailable; committed observation retained in ContextBus"
+            );
+        }
+        id
+    }
+
+    fn push_record(&self, ring: &mut BoundedQueue<OclaBusRecord>, record: OclaBusRecord) {
+        let _dropped = if ring.is_full() {
+            let dropped_count = self.overflow_count.fetch_add(1, Ordering::Relaxed) + 1;
+            let overflow = OverflowEvent {
+                policy: self.overflow_policy,
+                dropped_count,
+                queue_capacity: self.capacity,
+            };
+
+            match self.overflow_policy {
+                OverflowPolicy::DropOldest => ring.push(record),
+                OverflowPolicy::DropNewest => Some(record),
+                OverflowPolicy::Backpressure => {
+                    tracing::warn!(
+                        dropped_count = overflow.dropped_count,
+                        queue_capacity = overflow.queue_capacity,
+                        "OCLA bus backpressure requested; dropping newest event"
+                    );
+                    Some(record)
+                }
+            }
+        } else {
+            ring.push(record)
+        };
+    }
+
+    /// Drain all events from the ring (consumes them). Useful for test assertions.
+    pub fn drain(&self) -> Vec<OclaBusRecord> {
+        let mut ring = self
+            .ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let count = ring.len();
+        ring.drain_oldest(count)
+    }
+
+    /// Read events since a given ID (non-consuming).
+    pub fn events_since(&self, after_id: u64) -> Vec<OclaBusRecord> {
+        let ring = self
+            .ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        ring.iter().filter(|r| r.id > after_id).cloned().collect()
+    }
+
+    /// Read the last N events.
+    pub fn latest(&self, n: usize) -> Vec<OclaBusRecord> {
+        let ring = self
+            .ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let start = ring.len().saturating_sub(n);
+        ring.iter().skip(start).cloned().collect()
+    }
+
+    /// Current ring buffer occupancy.
+    pub fn len(&self) -> usize {
+        self.ring
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .len()
+    }
+
+    /// Whether the ring is empty.
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    /// Successful emissions, including evicted projections but not failed writes.
+    pub fn total_emitted(&self) -> u64 {
+        self.emitted_count.load(Ordering::Relaxed)
+    }
+
+    /// Total queue overflows observed by this bus since creation.
+    pub fn overflow_count(&self) -> usize {
+        self.overflow_count.load(Ordering::Relaxed)
+    }
+
+    /// Overflow policy active for this bus.
+    pub fn overflow_policy(&self) -> OverflowPolicy {
+        self.overflow_policy
+    }
+}
+
+impl std::fmt::Debug for OclaBus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let ring_len = self.ring.lock().map_or(0, |r| r.len());
+        f.debug_struct("OclaBus")
+            .field("enabled", &self.is_enabled())
+            .field("ring", &format_args!("[{ring_len} events]"))
+            .field("capacity", &self.capacity)
+            .field("next_id", &self.next_id.load(Ordering::Relaxed))
+            .field("emitted_count", &self.total_emitted())
+            .field("overflow_policy", &self.overflow_policy)
+            .field("overflow_count", &self.overflow_count())
+            .finish()
+    }
+}
+
+// ─── Global singleton ────────────────────────────────────────────────────────
+
+const DEFAULT_CAPACITY: usize = 1000;
+
+fn global_bus() -> &'static OclaBus {
+    static INSTANCE: OnceLock<OclaBus> = OnceLock::new();
+    INSTANCE.get_or_init(|| OclaBus::new(DEFAULT_CAPACITY))
+}
+
+/// Emit an OCLA event on the global bus and persist it through ContextBus.
+/// No-op when disabled; persistence failure returns 0 and retains no record.
+#[inline]
+pub fn emit(event: OclaEvent) -> u64 {
+    global_bus().emit_durable_if_enabled(event)
+}
+
+/// Enable the global OCLA bus.
+pub fn enable() {
+    global_bus().enable();
+}
+
+/// Disable the global OCLA bus.
+pub fn disable() {
+    global_bus().disable();
+}
+
+/// Check if the global OCLA bus is enabled.
+#[inline]
+pub fn is_enabled() -> bool {
+    global_bus().is_enabled()
+}
+
+/// Read events since a given ID from the global bus.
+pub fn events_since(after_id: u64) -> Vec<OclaBusRecord> {
+    global_bus().events_since(after_id)
+}
+
+/// Read the last N events from the global bus.
+pub fn latest(n: usize) -> Vec<OclaBusRecord> {
+    global_bus().latest(n)
+}
+
+/// Total events emitted on the global bus.
+pub fn total_emitted() -> u64 {
+    global_bus().total_emitted()
+}
+
+/// Total queue overflows observed by the global bus since startup.
+pub fn overflow_count() -> usize {
+    global_bus().overflow_count()
+}
+
+/// Overflow policy active for the global bus.
+pub fn overflow_policy() -> OverflowPolicy {
+    global_bus().overflow_policy()
+}
+
+// ─── Legacy compatibility alias ─────────────────────────────────────────────
+
+/// Compatibility alias retained for callers compiled against the old name.
+/// Canonical persistence is performed exactly once by [`emit`]; no legacy
+/// EventKind mapping or JSONL write occurs.
+pub fn emit_and_bridge(event: OclaEvent) -> u64 {
+    emit(event)
+}
+
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+fn current_timestamp_ms() -> u64 {
+    use std::time::{SystemTime, UNIX_EPOCH};
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis() as u64
+}
+
+// ─── Tests ───────────────────────────────────────────────────────────────────
+
+#[cfg(test)]
+pub mod tests {
+    use super::*;
+
+    fn savings_event(input_saved: u64) -> OclaEvent {
+        OclaEvent::SavingsRecorded {
+            input_saved,
+            output_saved: 0,
+            source: SavingsSource::Compression,
+            attribution_id: None,
+            evidence_class: None,
+            measurement_method: None,
+        }
+    }
+
+    #[test]
+    fn disabled_bus_returns_zero() {
+        let bus = OclaBus::new(16);
+        assert!(!bus.is_enabled());
+        let id = bus.emit_if_enabled(OclaEvent::RequestCompleted {
+            model: "gpt-4o".into(),
+            input_tokens: 100,
+            output_tokens: 50,
+            duration_ms: 200,
+            session_id: None,
+        });
+        assert_eq!(id, 0);
+        assert!(bus.is_empty());
+    }
+
+    #[test]
+    fn enabled_bus_records_events() {
+        let bus = OclaBus::scoped(16);
+        let id = bus.emit_if_enabled(OclaEvent::ModelRouted {
+            requested_model: "gpt-4o".into(),
+            routed_model: "gpt-4o-mini".into(),
+            tier: "fast".into(),
+            model_changed: true,
+        });
+        assert!(id > 0);
+        assert_eq!(bus.len(), 1);
+    }
+
+    #[test]
+    fn scoped_bus_is_isolated() {
+        let bus1 = OclaBus::scoped(8);
+        let bus2 = OclaBus::scoped(8);
+
+        bus1.emit_if_enabled(OclaEvent::ResponseOptimized {
+            cache_hit: true,
+            is_duplicate: false,
+            tokens_saved: 42,
+        });
+
+        assert_eq!(bus1.len(), 1);
+        assert_eq!(bus2.len(), 0, "scoped buses are isolated");
+    }
+
+    #[test]
+    fn test_bounded_queue_replaces_vecdeque() {
+        let bus = OclaBus::scoped(2);
+        bus.emit_if_enabled(savings_event(1));
+        bus.emit_if_enabled(savings_event(2));
+
+        assert_eq!(bus.len(), 2);
+        assert_eq!(bus.drain().len(), 2);
+        assert!(bus.is_empty());
+    }
+
+    #[test]
+    fn test_overflow_drop_oldest() {
+        let bus = OclaBus::scoped_with_policy(3, OverflowPolicy::DropOldest);
+        let id1 = bus.emit_if_enabled(OclaEvent::SavingsRecorded {
+            input_saved: 10,
+            output_saved: 5,
+            source: SavingsSource::Compression,
+            attribution_id: None,
+            evidence_class: None,
+            measurement_method: None,
+        });
+        bus.emit_if_enabled(OclaEvent::SavingsRecorded {
+            input_saved: 20,
+            output_saved: 10,
+            source: SavingsSource::Cache,
+            attribution_id: None,
+            evidence_class: None,
+            measurement_method: None,
+        });
+        bus.emit_if_enabled(OclaEvent::SavingsRecorded {
+            input_saved: 30,
+            output_saved: 15,
+            source: SavingsSource::Routing,
+            attribution_id: None,
+            evidence_class: None,
+            measurement_method: None,
+        });
+        // At capacity. Next emit evicts oldest.
+        bus.emit_if_enabled(OclaEvent::SavingsRecorded {
+            input_saved: 40,
+            output_saved: 20,
+            source: SavingsSource::Verbosity,
+            attribution_id: None,
+            evidence_class: None,
+            measurement_method: None,
+        });
+
+        assert_eq!(bus.len(), 3);
+        let events = bus.events_since(0);
+        assert!(events.iter().all(|r| r.id > id1), "oldest evicted");
+    }
+
+    #[test]
+    fn test_overflow_drop_newest() {
+        let bus = OclaBus::scoped_with_policy(2, OverflowPolicy::DropNewest);
+        bus.emit_if_enabled(savings_event(1));
+        bus.emit_if_enabled(savings_event(2));
+        let rejected_id = bus.emit_if_enabled(savings_event(3));
+
+        let retained_ids = bus
+            .events_since(0)
+            .into_iter()
+            .map(|record| record.id)
+            .collect::<Vec<_>>();
+        assert_eq!(retained_ids, vec![1, 2]);
+        assert_eq!(rejected_id, 3);
+    }
+
+    #[test]
+    fn test_overflow_metrics() {
+        let bus = OclaBus::scoped_with_policy(1, OverflowPolicy::DropNewest);
+        bus.emit_if_enabled(savings_event(1));
+        bus.emit_if_enabled(savings_event(2));
+        bus.emit_if_enabled(savings_event(3));
+
+        assert_eq!(bus.overflow_count(), 2);
+        assert_eq!(bus.overflow_policy(), OverflowPolicy::DropNewest);
+    }
+
+    #[test]
+    fn test_overflow_policy_from_env() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
+        let previous = std::env::var_os("LEANCTX_BUS_OVERFLOW");
+        crate::test_env::set_var("LEANCTX_BUS_OVERFLOW", "backpressure");
+
+        let bus = OclaBus::new(1);
+        assert_eq!(bus.overflow_policy(), OverflowPolicy::Backpressure);
+
+        if let Some(value) = previous {
+            crate::test_env::set_var("LEANCTX_BUS_OVERFLOW", value);
+        } else {
+            crate::test_env::remove_var("LEANCTX_BUS_OVERFLOW");
+        }
+    }
+
+    #[test]
+    fn drain_consumes_all_events() {
+        let bus = OclaBus::scoped(16);
+        bus.emit_if_enabled(OclaEvent::IntentClassified {
+            tier: "fast".into(),
+            confidence: 0.9,
+            reasoning: "simple query".into(),
+        });
+        bus.emit_if_enabled(OclaEvent::IntentClassified {
+            tier: "premium".into(),
+            confidence: 0.8,
+            reasoning: "complex architecture".into(),
+        });
+
+        let drained = bus.drain();
+        assert_eq!(drained.len(), 2);
+        assert!(bus.is_empty(), "drain consumes events");
+    }
+
+    #[test]
+    fn events_since_filters_by_id() {
+        let bus = OclaBus::scoped(16);
+        let id1 = bus.emit_if_enabled(OclaEvent::FeedbackRecorded {
+            session_id: "s1".into(),
+            outcome: FeedbackOutcome::Accept,
+            tool: Some("ctx_read".into()),
+        });
+        let id2 = bus.emit_if_enabled(OclaEvent::FeedbackRecorded {
+            session_id: "s2".into(),
+            outcome: FeedbackOutcome::Reject,
+            tool: None,
+        });
+
+        let after = bus.events_since(id1);
+        assert_eq!(after.len(), 1);
+        assert_eq!(after[0].id, id2);
+    }
+
+    #[test]
+    fn latest_returns_tail() {
+        let bus = OclaBus::scoped(16);
+        for i in 0..5 {
+            bus.emit_if_enabled(OclaEvent::CompressionApplied {
+                path: Some(format!("file_{i}.rs")),
+                before_tokens: 100,
+                after_tokens: 50,
+                strategy: "treesitter".into(),
+            });
+        }
+
+        let tail = bus.latest(2);
+        assert_eq!(tail.len(), 2);
+        assert_eq!(tail[0].id, 4);
+        assert_eq!(tail[1].id, 5);
+    }
+
+    #[test]
+    fn enable_disable_toggle() {
+        let bus = OclaBus::new(16);
+        assert!(!bus.is_enabled());
+
+        bus.enable();
+        assert!(bus.is_enabled());
+        let id = bus.emit_if_enabled(OclaEvent::AgentChainEvent {
+            agent_id: "a1".into(),
+            action: "start".into(),
+            parent_agent: None,
+        });
+        assert!(id > 0);
+
+        bus.disable();
+        let id2 = bus.emit_if_enabled(OclaEvent::AgentChainEvent {
+            agent_id: "a2".into(),
+            action: "stop".into(),
+            parent_agent: Some("a1".into()),
+        });
+        assert_eq!(id2, 0);
+        assert_eq!(bus.len(), 1, "disabled emit is a no-op");
+    }
+
+    #[test]
+    fn total_emitted_counts_all() {
+        let bus = OclaBus::scoped(3);
+        bus.emit_if_enabled(OclaEvent::OutcomeRecorded {
+            session_id: "s1".into(),
+            accepted: true,
+            implicit: false,
+        });
+        bus.emit_if_enabled(OclaEvent::OutcomeRecorded {
+            session_id: "s2".into(),
+            accepted: false,
+            implicit: true,
+        });
+        bus.emit_if_enabled(OclaEvent::OutcomeRecorded {
+            session_id: "s3".into(),
+            accepted: true,
+            implicit: true,
+        });
+        // Emit one more (evicts first).
+        bus.emit_if_enabled(OclaEvent::OutcomeRecorded {
+            session_id: "s4".into(),
+            accepted: true,
+            implicit: false,
+        });
+
+        assert_eq!(bus.total_emitted(), 4, "counts all, even evicted");
+        assert_eq!(bus.len(), 3, "ring only holds capacity");
+    }
+
+    #[test]
+    fn event_serialization_roundtrip() {
+        let event = OclaEvent::ModelRouted {
+            requested_model: "claude-sonnet-4-20250514".into(),
+            routed_model: "claude-haiku-3".into(),
+            tier: "fast".into(),
+            model_changed: true,
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        let deserialized: OclaEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, deserialized);
+    }
+
+    #[test]
+    fn all_11_event_types_serialize() {
+        let events = vec![
+            OclaEvent::RequestCompleted {
+                model: "m".into(),
+                input_tokens: 1,
+                output_tokens: 1,
+                duration_ms: 1,
+                session_id: None,
+            },
+            OclaEvent::FeedbackRecorded {
+                session_id: "s".into(),
+                outcome: FeedbackOutcome::Partial,
+                tool: None,
+            },
+            OclaEvent::ThresholdShift {
+                language: "rust".into(),
+                old_value: 0.5,
+                new_value: 0.6,
+                metric: ThresholdMetric::Entropy,
+            },
+            OclaEvent::CompressionApplied {
+                path: None,
+                before_tokens: 100,
+                after_tokens: 50,
+                strategy: "s".into(),
+            },
+            OclaEvent::SavingsRecorded {
+                input_saved: 10,
+                output_saved: 5,
+                source: SavingsSource::ResponseCache,
+                attribution_id: None,
+                evidence_class: None,
+                measurement_method: None,
+            },
+            OclaEvent::IntentClassified {
+                tier: "standard".into(),
+                confidence: 0.7,
+                reasoning: "r".into(),
+            },
+            OclaEvent::OutcomeRecorded {
+                session_id: "s".into(),
+                accepted: true,
+                implicit: false,
+            },
+            OclaEvent::ResponseOptimized {
+                cache_hit: false,
+                is_duplicate: true,
+                tokens_saved: 0,
+            },
+            OclaEvent::ModelRouted {
+                requested_model: "a".into(),
+                routed_model: "b".into(),
+                tier: "premium".into(),
+                model_changed: true,
+            },
+            OclaEvent::AgentChainEvent {
+                agent_id: "x".into(),
+                action: "spawn".into(),
+                parent_agent: Some("y".into()),
+            },
+            OclaEvent::CrossAgentStubServed {
+                path: "src/main.rs".into(),
+                tokens_saved: 200,
+                serving_agent: "agent-a".into(),
+                original_agent: "agent-b".into(),
+            },
+        ];
+
+        for event in &events {
+            let json = serde_json::to_string(event).unwrap();
+            assert!(!json.is_empty());
+            let _: OclaEvent = serde_json::from_str(&json).unwrap();
+        }
+        assert_eq!(events.len(), 11, "exactly 11 event types");
+    }
+
+    #[test]
+    fn savings_recorded_p5_fields_roundtrip() {
+        let event = OclaEvent::SavingsRecorded {
+            input_saved: 100,
+            output_saved: 25,
+            source: SavingsSource::Routing,
+            attribution_id: Some("attr-42".into()),
+            evidence_class: Some("measured".into()),
+            measurement_method: Some("provider_reconciled".into()),
+        };
+        let json = serde_json::to_string(&event).unwrap();
+        assert!(json.contains("attribution_id"));
+        assert!(json.contains("evidence_class"));
+        assert!(json.contains("measurement_method"));
+        let deserialized: OclaEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(event, deserialized);
+    }
+}

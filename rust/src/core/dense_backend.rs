@@ -490,7 +490,8 @@ fn snippet_from_disk(
     let Ok(path) = crate::core::pathjail::jail_path(&root.join(rel_path), root) else {
         return String::new();
     };
-    let Ok(content) = crate::core::text_decode::read_text(path) else {
+    // Snippets are served to the model: admitted text only (G5).
+    let Some(content) = crate::core::context_admission::stores::admitted_store_text(&path) else {
         return String::new();
     };
     let lines: Vec<&str> = content.lines().collect();

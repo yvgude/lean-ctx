@@ -1,8 +1,88 @@
+// SPDX-License-Identifier: Apache-2.0
+
 #[allow(clippy::wildcard_imports)]
 use super::super::*;
 use super::{append_rules_self_heal_status, finalize_call_result};
 
+pub(in crate::server) enum McpPrimitive {
+    Raw(McpRawOutput),
+    Terminal(CallToolResult, &'static str),
+}
+
+impl McpPrimitive {
+    /// Whether the tool itself succeeded — what usage telemetry counts.
+    pub(in crate::server) fn succeeded(&self) -> bool {
+        match self {
+            Self::Raw(raw) => !raw.tool_error,
+            Self::Terminal(result, _) => result.is_error != Some(true),
+        }
+    }
+}
+
+pub(in crate::server) struct McpRawOutput {
+    archive_authority: Option<Box<crate::core::archive::authority::ArchiveAuthority>>,
+    result_text: String,
+    tool_error: bool,
+    tool_saved_tokens: usize,
+    shell_outcome: Option<crate::server::tool_trait::ShellOutcome>,
+    content_blocks: Option<Vec<ContentBlock>>,
+    tool_start: std::time::Instant,
+}
+
+pub(in crate::server) struct McpProcessed {
+    pub result: CallToolResult,
+    ir: Option<McpIrIntent>,
+    ledger: Option<McpLedgerIntent>,
+    receipt: Option<McpReceiptIntent>,
+    pub checkpoint: Option<McpCheckpointIntent>,
+}
+
+pub(in crate::server) struct McpCheckpointIntent {
+    enabled: bool,
+    output_visible: bool,
+}
+
+impl McpProcessed {
+    pub(in crate::server) fn freeze_receipt_delivery(&mut self) {
+        if let Some(checkpoint) = self.checkpoint.as_mut() {
+            // Checkpoint state still executes; only later prose is suppressed.
+            checkpoint.output_visible = false;
+        }
+    }
+}
+
+struct McpIrIntent {
+    kind: crate::core::context_ir::ContextIrSourceKindV1,
+    tool: String,
+    path: Option<String>,
+    command: Option<String>,
+    pattern: Option<String>,
+    input_tokens: usize,
+    output_tokens: usize,
+    duration: std::time::Duration,
+    content_excerpt: String,
+}
+
+struct McpLedgerIntent {
+    read_path: String,
+    mode_used: String,
+    output_tokens: usize,
+    sent_tokens: usize,
+    project_root: Option<String>,
+    wants_elicitation: bool,
+}
+
+struct McpReceiptIntent {
+    name: String,
+    args: Option<serde_json::Map<String, serde_json::Value>>,
+    action: Option<String>,
+    result_text: String,
+    output_token_count: usize,
+}
+
 #[allow(clippy::too_many_arguments)]
+#[cfg(test)]
+#[cfg_attr(windows, allow(dead_code))] // its only consumer is a cfg(not(windows)) test
 pub(in crate::server) async fn dispatch_and_post_process(
     server: &LeanCtxServer,
     name: &str,
@@ -13,55 +93,209 @@ pub(in crate::server) async fn dispatch_and_post_process(
     auto_context: Option<String>,
     throttle_warning: Option<String>,
     args_fp: String,
-    mut decision_context: Option<crate::core::decision_loop_runtime::TaskContext>,
+    decision_context: Option<crate::core::decision_loop_runtime::TaskContext>,
 ) -> Result<CallToolResult, ErrorData> {
+    let raw = dispatch_primitive(server, name, args, minimal, &args_fp).await?;
+    let mut processed = reversible_post_process(
+        server,
+        name,
+        args,
+        minimal,
+        config,
+        machine_readable,
+        auto_context,
+        throttle_warning,
+        decision_context,
+        raw,
+    )
+    .await?;
+    let _ = record_context_ir(server, &processed).await;
+    record_ledger(server, &processed).await?;
+    let checkpoint = processed.checkpoint.take();
+    let _ = record_checkpoint(server, checkpoint, &mut processed.result).await;
+    Ok(processed.result)
+}
+
+pub(in crate::server) async fn dispatch_primitive(
+    server: &LeanCtxServer,
+    name: &str,
+    args: Option<&serde_json::Map<String, serde_json::Value>>,
+    minimal: bool,
+    args_fp: &str,
+) -> Result<McpPrimitive, ErrorData> {
     let tool_start = std::time::Instant::now();
-    let shadow_auto_record = config.shadow.enabled && config.shadow.auto_record;
     // Ledger and security events recorded during this call commit the
     // session id into their hashes, so `lean-ctx value` can scope to it.
     crate::core::value::set_current_session(&server.session.read().await.id);
-    let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks) =
-        match server.dispatch_tool(name, args, minimal).await {
-            Ok(tuple) => tuple,
-            Err(e) => {
-                if let Ok(mut detector) = tokio::time::timeout(
-                    std::time::Duration::from_secs(1),
-                    server.loop_detector.write(),
-                )
-                .await
-                {
+    let (dispatched, archive_authority) =
+        crate::core::archive::authority::capture(server.dispatch_tool(name, args, minimal)).await;
+    let (result_text, tool_saved_tokens, shell_outcome, content_blocks) = match dispatched {
+        Ok(tuple) => tuple,
+        Err(e) if e.code == crate::server::tool_trait::TOOL_EXECUTION_ERROR => {
+            // Retain duplicate-call accounting and the complete sensitivity,
+            // policy, archive and token pipeline for failed edit excerpts.
+            return Ok(McpPrimitive::Raw(McpRawOutput {
+                archive_authority: None,
+                result_text: e.message.into_owned(),
+                tool_error: true,
+                tool_saved_tokens: 0,
+                shell_outcome: None,
+                content_blocks: None,
+                tool_start,
+            }));
+        }
+        Err(e) => {
+            if let Ok(mut detector) = tokio::time::timeout(
+                std::time::Duration::from_secs(1),
+                server.loop_detector.write(),
+            )
+            .await
+            {
+                let semantic = (name == "ctx_call")
+                    .then(|| crate::tools::registered::ctx_call::resolve_inner(args).ok())
+                    .flatten();
+                if let Some((inner_name, inner_args)) = semantic {
+                    let fingerprint = inner_args.map_or_else(String::new, |args| {
+                        crate::core::loop_detection::LoopDetector::fingerprint(
+                            &serde_json::Value::Object(args),
+                        )
+                    });
+                    detector.record_error_outcome(&inner_name, &fingerprint);
+                } else {
                     detector.record_error_outcome(name, &args_fp);
                 }
-                crate::core::debug_log::log_mcp_error(name, args, &format!("{e:?}"));
+            }
+            crate::core::debug_log::log_mcp_error(name, args, &format!("{e:?}"));
 
-                // Devin/Windsurf treat hard -32602 as transport failure and
-                // respawn the server. Return a soft tool error so the agent
-                // sees the validation message and can fix parameter names.
-                if e.code == rmcp::model::ErrorCode::INVALID_PARAMS {
-                    super::error_telemetry::record_mcp_error(e.code);
+            // Devin/Windsurf treat hard -32602 as transport failure and
+            // respawn the server. Return a soft tool error so the agent
+            // sees the validation message and can fix parameter names.
+            if e.code == rmcp::model::ErrorCode::INVALID_PARAMS {
+                record_error_category(mcp_error_category(e.code));
+                if crate::core::policy::runtime::is_active() {
+                    tracing::debug!("converting protected INVALID_PARAMS to soft tool error");
+                } else {
                     tracing::debug!(
                         "converting INVALID_PARAMS to soft tool error for '{name}': {}",
                         e.message
                     );
-                    let result =
-                        CallToolResult::error(vec![ContentBlock::text(e.message.to_string())]);
-                    record_decision_loop_end(
-                        decision_context.as_ref(),
-                        args,
-                        &result,
-                        false,
-                        shadow_auto_record,
-                        None,
-                    );
-                    return Ok(result);
                 }
-
-                super::error_telemetry::record_mcp_error(e.code);
-                record_decision_loop_end_error(decision_context.as_ref(), args, shadow_auto_record);
-                return Err(e);
+                let result = CallToolResult::error(vec![ContentBlock::text(e.message.to_string())]);
+                return Ok(McpPrimitive::Terminal(result, "invalid params"));
             }
-        };
+
+            record_error_category(mcp_error_category(e.code));
+            return Err(e);
+        }
+    };
+    Ok(McpPrimitive::Raw(McpRawOutput {
+        archive_authority: archive_authority.map(Box::new),
+        result_text,
+        tool_error: false,
+        tool_saved_tokens,
+        shell_outcome,
+        content_blocks,
+        tool_start,
+    }))
+}
+
+#[allow(clippy::too_many_arguments)]
+pub(in crate::server) async fn reversible_post_process(
+    server: &LeanCtxServer,
+    name: &str,
+    args: Option<&serde_json::Map<String, serde_json::Value>>,
+    minimal: bool,
+    config: std::sync::Arc<crate::core::config::Config>,
+    machine_readable: bool,
+    auto_context: Option<String>,
+    throttle_warning: Option<String>,
+    mut decision_context: Option<crate::core::decision_loop_runtime::TaskContext>,
+    primitive: McpPrimitive,
+) -> Result<McpProcessed, ErrorData> {
+    let raw = match primitive {
+        McpPrimitive::Raw(raw) => raw,
+        McpPrimitive::Terminal(result, _) => {
+            return Ok(McpProcessed {
+                result: protect_terminal_result(name, result),
+                ir: None,
+                ledger: None,
+                receipt: None,
+                checkpoint: None,
+            });
+        }
+    };
+    let McpRawOutput {
+        archive_authority,
+        mut result_text,
+        tool_error,
+        tool_saved_tokens,
+        shell_outcome,
+        content_blocks,
+        tool_start,
+    } = raw;
     let mut shell_outcome = shell_outcome;
+    // Admission and dispatch retain the outer wrapper's gates. Delivery belongs
+    // to the resolved leaf tool, including raw flags and source-bound recovery.
+    let delivery_call = crate::tools::registered::ctx_call::resolve(name, args).ok();
+    let (delivery_name, delivery_args) = delivery_call
+        .as_ref()
+        .map_or((name, args), |(name, args)| (name.as_str(), args.as_ref()));
+
+    // Inspect before triage, IR excerpts, archives or any output decoration.
+    // Raw/full/compression bypasses never bypass a content policy.
+    if let Some(blocks) = content_blocks {
+        if crate::core::policy::runtime::is_active() {
+            let Some(texts) = blocks
+                .iter()
+                .map(|block| block.as_text().map(|text| text.text.as_str()))
+                .collect::<Option<Vec<_>>>()
+            else {
+                return Ok(policy_blocked_output(
+                    "[POLICY BLOCKED] Non-text content cannot be inspected by the active policy.",
+                ));
+            };
+            result_text = texts.join("\n");
+        } else {
+            let mut result = CallToolResult::success(blocks);
+            if shell_outcome
+                .as_ref()
+                .is_some_and(crate::server::tool_trait::ShellOutcome::is_error)
+            {
+                result.is_error = Some(true);
+            }
+            return Ok(McpProcessed {
+                result,
+                ir: None,
+                ledger: None,
+                receipt: None,
+                checkpoint: None,
+            });
+        }
+    }
+    let knowledge_error = name == "ctx_knowledge" && result_text.starts_with("Error:");
+    let diagnostic_fields =
+        crate::core::policy::diagnostics::fields(&[("result", &result_text)], args)
+            .map(std::sync::Arc::new);
+    result_text = match policy_guard::protect_result(name, &result_text) {
+        Ok(text) => text,
+        Err(reason) => return Ok(policy_blocked_output(reason)),
+    };
+    if knowledge_error {
+        return Ok(McpProcessed {
+            result: CallToolResult::error(vec![ContentBlock::text(result_text)]),
+            ir: None,
+            ledger: None,
+            receipt: None,
+            checkpoint: None,
+        });
+    }
+    let path_hint = helpers::get_str(args, "path");
+    result_text = crate::core::sensitivity::enforce_text(
+        result_text,
+        path_hint.as_deref().map(std::path::Path::new),
+        &config.sensitivity_effective(),
+    )
+    .into_text();
 
     let task_profile = {
         let session = server.session.read().await;
@@ -80,7 +314,8 @@ pub(in crate::server) async fn dispatch_and_post_process(
     // agent-chosen minimal selection — triage has nothing useful to strip.
     // #1492: mode="full" is documented as "verbatim, edit-ready" — triaging it
     // defeats its contract and causes agents to edit against incomplete content.
-    let triage_bypass = triage_bypass_requested(name, args);
+    let triage_bypass = triage_bypass_requested(delivery_name, delivery_args)
+        || crate::tools::ctx_provider::is_snapshot_call(name, args);
     // Background-status verdicts are archived verbatim first; their display
     // variant is triaged after the archive/firewall step below (#1510), so
     // the structured lifecycle text the archive keeps stays complete.
@@ -103,45 +338,26 @@ pub(in crate::server) async fn dispatch_and_post_process(
         }
     }
 
-    // Image/binary content blocks: skip all post-processing, return directly.
-    if let Some(blocks) = content_blocks {
-        let mut result = CallToolResult::success(blocks);
-        if let Some(outcome) = shell_outcome.as_ref()
-            && outcome.is_error()
-        {
-            result.is_error = Some(true);
-        }
-        record_decision_loop_end(
-            decision_context.as_ref(),
-            args,
-            &result,
-            result.is_error != Some(true),
-            shadow_auto_record,
-            Some(shadow_tokens_for_result(&result)),
-        );
-        return Ok(result);
-    }
-
-    let inline_shell = name == "ctx_shell"
+    let inline_shell = delivery_name == "ctx_shell"
         && crate::core::firewall::should_inline_shell(
-            helpers::get_bool(args, "inline").unwrap_or(false),
+            helpers::get_bool(delivery_args, "inline").unwrap_or(false),
             result_text.len(),
             &config,
         );
     // Explicit verbatim (raw/bypass): the caller took responsibility for the
     // exact bytes — never digested, never capped (#1453, #1541).
-    let explicit_verbatim_shell = name == "ctx_shell" && {
-        let arg_raw = helpers::get_bool(args, "raw").unwrap_or(false);
-        let arg_bypass = helpers::get_bool(args, "bypass").unwrap_or(false);
+    let explicit_verbatim_shell = delivery_name == "ctx_shell" && {
+        let arg_raw = helpers::get_bool(delivery_args, "raw").unwrap_or(false);
+        let arg_bypass = helpers::get_bool(delivery_args, "bypass").unwrap_or(false);
         arg_raw || arg_bypass || crate::core::runtime_flags::raw_enabled()
     };
     let is_raw_shell = explicit_verbatim_shell
-        || (name == "ctx_shell"
+        || (delivery_name == "ctx_shell"
             && (inline_shell
                 // #1260: dataset output (sqlite3/psql/jq/`gh --json`) is destroyed,
                 // not compressed, by middle elision — pass it through at any size
                 // up to the context-window cap (#1541).
-                || helpers::get_str(args, "command")
+                || helpers::get_str(delivery_args, "command")
                     .is_some_and(|c| crate::core::firewall::is_raw_command(&c, &config))));
 
     let pre_terse_len = result_text.len();
@@ -153,13 +369,16 @@ pub(in crate::server) async fn dispatch_and_post_process(
 
     crate::core::anomaly::record_metric("tokens_per_call", output_tokens as f64);
 
-    // Context IR: record lineage for every tool call.
-    if let Some(ref ir) = server.context_ir {
-        let tool_duration = tool_start.elapsed();
+    // Capture Context IR now; the lifecycle writes it after post-processing.
+    let ir_intent = server.context_ir.as_ref().map(|_| {
         let source_kind = post_process::context_ir_source_kind(name);
-        let ir_path = helpers::get_str(args, "path");
-        let ir_command = helpers::get_str(args, "command");
-        let ir_mode = helpers::get_str(args, "mode");
+        let protected_arg = |key| {
+            helpers::get_str(args, key)
+                .and_then(|value| policy_guard::protect_result(name, &value).ok())
+        };
+        let ir_path = protected_arg("path");
+        let ir_command = protected_arg("command");
+        let ir_mode = protected_arg("mode");
         let excerpt = if result_text.len() > 200 {
             let mut end = 200;
             while !result_text.is_char_boundary(end) && end > 0 {
@@ -169,21 +388,18 @@ pub(in crate::server) async fn dispatch_and_post_process(
         } else {
             &result_text
         };
-        let input = crate::core::context_ir::RecordIrInput {
+        McpIrIntent {
             kind: source_kind,
-            tool: name,
-            client_name: None,
-            agent_id: None,
-            path: ir_path.as_deref(),
-            command: ir_command.as_deref(),
-            pattern: ir_mode.as_deref(),
+            tool: name.to_owned(),
+            path: ir_path,
+            command: ir_command,
+            pattern: ir_mode,
             input_tokens: pre_terse_len / 4,
             output_tokens: output_tokens as usize,
-            duration: tool_duration,
-            content_excerpt: excerpt,
-        };
-        ir.write().await.record(input);
-    }
+            duration: tool_start.elapsed(),
+            content_excerpt: excerpt.to_owned(),
+        }
+    });
 
     // Correction-loop detection: track re-reads and re-runs as quality signals.
     {
@@ -230,62 +446,6 @@ pub(in crate::server) async fn dispatch_and_post_process(
 
     let budget_warning = post_process::budget_warning_message();
 
-    // #212 — per-item sensitivity floor. Enforced uniformly here (before
-    // archiving + compression) so it covers both the inline result and the
-    // out-of-band copy. No-op unless `sensitivity.enabled` (default off)
-    // or the active persona declares a floor above `public`
-    // (persona-spec-v1: e.g. `lead-gen` enforces `confidential`).
-    {
-        let path_hint = helpers::get_str(args, "path");
-        let enforced = crate::core::sensitivity::enforce_text(
-            std::mem::take(&mut result_text),
-            path_hint.as_deref().map(std::path::Path::new),
-            &config.sensitivity_effective(),
-        );
-        result_text = enforced.into_text();
-    }
-
-    // #673 — context-policy-pack redaction. Applies the active pack's
-    // `[redaction]` patterns to outbound content before it reaches the model
-    // (and before the out-of-band copy below). No-op when no pack is active,
-    // so existing behavior is unchanged.
-    if crate::core::policy::runtime::is_active() {
-        let (redacted, hits) = policy_guard::redact_result(&result_text);
-        if hits > 0 {
-            tracing::debug!(redactions = hits, "context policy redaction applied");
-            result_text = redacted;
-        }
-    }
-
-    // #675 — inbound content filters (PII / classification / prompt-injection).
-    // Runs at the same outbound chokepoint as redaction, before the archive /
-    // compression below. A `block` decision replaces the content with a
-    // refusal so it never reaches the model; `redact`/`warn` rewrite/annotate.
-    // No-op unless the active pack enables a `[filters]` action.
-    if let Some(active) = crate::core::policy::runtime::active()
-        && active.filters.is_active()
-    {
-        let outcome = crate::core::input_filters::apply(&result_text, &active.filters);
-        if outcome.blocked {
-            let reason = outcome.block_reason.as_deref().unwrap_or("policy");
-            tracing::warn!(tool = name, reason, "content blocked by input filter");
-            policy_guard::audit_filter(name, &outcome.audit, true);
-            result_text = format!(
-                "[POLICY BLOCKED] Content withheld by the active context policy pack \
-                     (input filter: {reason}). Adjust .lean-ctx/policy.toml to proceed."
-            );
-        } else {
-            if !outcome.audit.is_empty() {
-                tracing::debug!(tool = name, "input filters applied");
-                policy_guard::audit_filter(name, &outcome.audit, false);
-            }
-            result_text = outcome.text;
-            for warning in &outcome.warnings {
-                result_text = format!("{result_text}\n\n[FILTER] {warning}");
-            }
-        }
-    }
-
     // Out-of-band archive + optional context firewall for large tool outputs.
     // For firewallable tools (ctx_shell/ctx_execute/ctx_search/ctx_tree) whose output
     // exceeds the ephemeral threshold, the full (redacted) body is stored out-of-band
@@ -300,143 +460,200 @@ pub(in crate::server) async fn dispatch_and_post_process(
     // and must never disable the archive/firewall safety net.
     let archive_hint = if crate::core::config::Config::minimal_escape_hatch() {
         None
-    } else if terminal_background_status {
-        use crate::core::archive;
-        let chars = result_text.chars().count();
-        let lines = result_text.lines().count();
-        let trimmed = result_text.trim();
-        let mut summary = if trimmed.is_empty() {
-            "no output".to_string()
-        } else if chars <= 512 {
-            trimmed.to_string()
-        } else {
-            format!("{chars} chars, {lines} lines")
-        };
-        let mut stored_result = None;
-        if !trimmed.is_empty() {
-            let job_id = match shell_outcome.as_ref() {
-                Some(crate::server::tool_trait::ShellOutcome::Background(outcome)) => {
-                    outcome.job_id.clone()
-                }
-                _ => String::new(),
+    } else {
+        let name = delivery_name;
+        let args = delivery_args;
+        if terminal_background_status {
+            use crate::core::archive;
+            let chars = result_text.chars().count();
+            let lines = result_text.lines().count();
+            let trimmed = result_text.trim();
+            let mut summary = if trimmed.is_empty() {
+                "no output".to_string()
+            } else if chars <= 512 {
+                trimmed.to_string()
+            } else {
+                format!("{chars} chars, {lines} lines")
             };
-            let session_id = server.session.read().await.id.clone();
-            let to_store = crate::core::redaction::redact_text_if_enabled(&result_text);
-            if let Some(stored) =
-                archive::store_background(name, &job_id, &to_store, Some(&session_id))
-            {
-                summary = if stored.truncated {
-                    format!(
-                        "{} captured chars, {} archived chars (archive truncated)",
-                        stored.captured_chars, stored.archived_chars
-                    )
-                } else {
-                    format!("{chars} chars, {lines} lines archived")
+            let mut stored_result = None;
+            if !trimmed.is_empty() {
+                let job_id = match shell_outcome.as_ref() {
+                    Some(crate::server::tool_trait::ShellOutcome::Background(outcome)) => {
+                        outcome.job_id.clone()
+                    }
+                    _ => String::new(),
                 };
-                if !explicit_verbatim_shell {
-                    let archived = if stored.truncated {
-                        archive::retrieve(&stored.id).unwrap_or_default()
+                let session_id = server.session.read().await.id.clone();
+                let to_store = crate::core::redaction::redact_text_if_enabled(&result_text);
+                if let Some(stored) =
+                    archive::store_background(name, &job_id, &to_store, Some(&session_id))
+                {
+                    summary = if stored.truncated {
+                        format!(
+                            "{} captured chars, {} archived chars (archive truncated)",
+                            stored.captured_chars, stored.archived_chars
+                        )
                     } else {
-                        to_store.clone()
+                        format!("{chars} chars, {lines} lines archived")
                     };
-                    let tokens = crate::core::tokens::count_tokens(&archived);
-                    // #1541: implicit verbatim (inline/dataset) is judged
-                    // against the context-window cap instead of the ephemeral
-                    // threshold.
-                    let fires = if is_raw_shell {
-                        crate::core::firewall::verbatim_cap_exceeded(name, tokens, &config)
-                    } else {
-                        crate::core::firewall::should_firewall(name, tokens, &config)
-                    };
-                    if fires {
-                        let digest = crate::core::firewall::summarize(
-                            &archived, &stored.id, name, tokens, &job_id,
-                        );
-                        result_text = if stored.truncated {
-                            format!(
-                                "[archive truncated: {} captured chars, {} archived chars; remainder unavailable]\n{digest}",
-                                stored.captured_chars, stored.archived_chars
-                            )
+                    if !explicit_verbatim_shell {
+                        let archived = if stored.truncated {
+                            archive::retrieve(&stored.id).unwrap_or_default()
                         } else {
-                            digest
+                            to_store.clone()
                         };
+                        let tokens = crate::core::tokens::count_tokens(&archived);
+                        // #1541: implicit verbatim (inline/dataset) is judged
+                        // against the context-window cap instead of the ephemeral
+                        // threshold.
+                        let fires = if is_raw_shell {
+                            crate::core::firewall::verbatim_cap_exceeded(name, tokens, &config)
+                        } else {
+                            crate::core::firewall::should_firewall(name, tokens, &config)
+                        };
+                        if fires {
+                            let digest = crate::core::firewall::summarize(
+                                &archived, &stored.id, name, tokens, &job_id,
+                            );
+                            result_text = if stored.truncated {
+                                format!(
+                                    "[archive truncated: {} captured chars, {} archived chars; remainder unavailable]\n{digest}",
+                                    stored.captured_chars, stored.archived_chars
+                                )
+                            } else {
+                                digest
+                            };
+                            firewalled = true;
+                            firewall_saved_tokens = tokens
+                                .saturating_sub(crate::core::tokens::count_tokens(&result_text));
+                        }
+                    }
+                    stored_result = Some(stored);
+                } else {
+                    summary = format!(
+                        "{chars} captured chars, {lines} lines; output archive unavailable"
+                    );
+                    let tokens = crate::core::tokens::count_tokens(&to_store);
+                    let fires = !explicit_verbatim_shell
+                        && if is_raw_shell {
+                            crate::core::firewall::verbatim_cap_exceeded(name, tokens, &config)
+                        } else {
+                            crate::core::firewall::should_firewall(name, tokens, &config)
+                        };
+                    if fires {
+                        result_text =
+                            crate::core::firewall::summarize_unavailable(&to_store, name, tokens);
                         firewalled = true;
                         firewall_saved_tokens =
                             tokens.saturating_sub(crate::core::tokens::count_tokens(&result_text));
                     }
                 }
-                stored_result = Some(stored);
-            } else {
-                summary = "output archive unavailable".to_string();
             }
-        }
-        if let Some(crate::server::tool_trait::ShellOutcome::Background(outcome)) =
-            shell_outcome.as_mut()
-        {
-            outcome.summary = summary;
-            if let Some(stored) = stored_result {
-                outcome.archive_id = Some(stored.id);
-                outcome.archive_truncated = Some(stored.truncated);
-                outcome.captured_chars = Some(stored.captured_chars);
-                outcome.archived_chars = Some(stored.archived_chars);
-            }
-        }
-        None
-    } else if background_status {
-        None
-    } else {
-        use crate::core::archive;
-        let archivable = matches!(
-            name,
-            "ctx_shell"
-                | "ctx_read"
-                | "ctx_multi_read"
-                | "ctx_smart_read"
-                | "ctx_execute"
-                | "ctx_search"
-                | "ctx_tree"
-        );
-        if archivable && archive::should_archive(&result_text) {
-            let cmd = helpers::get_str(args, "command")
-                .or_else(|| helpers::get_str(args, "path"))
-                .unwrap_or_default();
-            let session_id = server.session.read().await.id.clone();
-            let to_store = crate::core::redaction::redact_text_if_enabled(&result_text);
-            let tokens = crate::core::tokens::count_tokens(&to_store);
-            match archive::store(name, &cmd, &to_store, Some(&session_id)) {
-                Some(id)
-                    if !is_raw_shell
-                        && crate::core::firewall::should_firewall(name, tokens, &config) =>
-                {
-                    result_text =
-                        crate::core::firewall::summarize(&to_store, &id, name, tokens, &cmd);
-                    firewalled = true;
-                    firewall_saved_tokens =
-                        tokens.saturating_sub(crate::core::tokens::count_tokens(&result_text));
-                    None
+            if let Some(crate::server::tool_trait::ShellOutcome::Background(outcome)) =
+                shell_outcome.as_mut()
+            {
+                outcome.summary = summary;
+                if let Some(stored) = stored_result {
+                    outcome.archive_id = Some(stored.id);
+                    outcome.archive_truncated = Some(stored.truncated);
+                    outcome.captured_chars = Some(stored.captured_chars);
+                    outcome.archived_chars = Some(stored.archived_chars);
+                } else {
+                    outcome.archive_id = None;
+                    outcome.archive_truncated = None;
+                    outcome.captured_chars = Some(chars);
+                    outcome.archived_chars = None;
                 }
-                // #1541: implicitly verbatim output (dataset passthrough,
-                // inline=true) keeps its row integrity up to the context-window
-                // cap; above it a single delivery floods the caller's context,
-                // so it becomes the same lossless digest + ctx_expand ref.
-                // Explicit raw/bypass is never capped.
-                Some(id)
-                    if is_raw_shell
-                        && !explicit_verbatim_shell
-                        && crate::core::firewall::verbatim_cap_exceeded(name, tokens, &config) =>
-                {
-                    result_text =
-                        crate::core::firewall::summarize(&to_store, &id, name, tokens, &cmd);
-                    firewalled = true;
-                    firewall_saved_tokens =
-                        tokens.saturating_sub(crate::core::tokens::count_tokens(&result_text));
-                    None
-                }
-                Some(id) => Some(archive::format_hint(&id, to_store.len(), tokens)),
-                None => None,
             }
-        } else {
             None
+        } else if background_status {
+            None
+        } else {
+            use crate::core::archive;
+            let archivable = matches!(
+                name,
+                "ctx_shell"
+                    | "ctx_read"
+                    | "ctx_multi_read"
+                    | "ctx_smart_read"
+                    | "ctx_execute"
+                    | "ctx_search"
+                    | "ctx_tree"
+            );
+            if archivable && archive::should_archive(&result_text) {
+                let cmd = helpers::get_str(args, "command")
+                    .or_else(|| helpers::get_str(args, "path"))
+                    .unwrap_or_default();
+                let session_id = server.session.read().await.id.clone();
+                let to_store = crate::core::redaction::redact_text_if_enabled(&result_text);
+                let tokens = crate::core::tokens::count_tokens(&to_store);
+                // Only the admitted file handler currently supplies complete archive
+                // source provenance. Other output classes must not borrow its binding.
+                let authority = (name == "ctx_execute"
+                    && helpers::get_str(args, "action").as_deref() == Some("file"))
+                .then_some(archive_authority.as_deref())
+                .flatten();
+                match archive::store_with_authority(
+                    name,
+                    &cmd,
+                    &to_store,
+                    Some(&session_id),
+                    authority,
+                )
+                .map(|stored| stored.id)
+                {
+                    Some(id)
+                        if !is_raw_shell
+                            && crate::core::firewall::should_firewall(name, tokens, &config) =>
+                    {
+                        result_text =
+                            crate::core::firewall::summarize(&to_store, &id, name, tokens, &cmd);
+                        firewalled = true;
+                        firewall_saved_tokens =
+                            tokens.saturating_sub(crate::core::tokens::count_tokens(&result_text));
+                        None
+                    }
+                    // #1541: implicitly verbatim output (dataset passthrough,
+                    // inline=true) keeps its row integrity up to the context-window
+                    // cap; above it a single delivery floods the caller's context,
+                    // so it becomes the same lossless digest + ctx_expand ref.
+                    // Explicit raw/bypass is never capped.
+                    Some(id)
+                        if is_raw_shell
+                            && !explicit_verbatim_shell
+                            && crate::core::firewall::verbatim_cap_exceeded(
+                                name, tokens, &config,
+                            ) =>
+                    {
+                        result_text =
+                            crate::core::firewall::summarize(&to_store, &id, name, tokens, &cmd);
+                        firewalled = true;
+                        firewall_saved_tokens =
+                            tokens.saturating_sub(crate::core::tokens::count_tokens(&result_text));
+                        None
+                    }
+                    Some(id) => Some(archive::format_hint(&id, to_store.len(), tokens)),
+                    None => {
+                        let fires = !explicit_verbatim_shell
+                            && if is_raw_shell {
+                                crate::core::firewall::verbatim_cap_exceeded(name, tokens, &config)
+                            } else {
+                                crate::core::firewall::should_firewall(name, tokens, &config)
+                            };
+                        if fires {
+                            result_text = crate::core::firewall::summarize_unavailable(
+                                &to_store, name, tokens,
+                            );
+                            firewalled = true;
+                            firewall_saved_tokens = tokens
+                                .saturating_sub(crate::core::tokens::count_tokens(&result_text));
+                        }
+                        None
+                    }
+                }
+            } else {
+                None
+            }
         }
     };
 
@@ -560,7 +777,12 @@ pub(in crate::server) async fn dispatch_and_post_process(
         recovery_line = Some(hint);
     }
 
+    // These legacy decorations have no original-source authority. Output-only
+    // redaction cannot recover classification labels absent from a graph hint.
+    let legacy_context_allowed = !crate::core::policy::runtime::is_active();
+    let auto_context = auto_context.filter(|_| legacy_context_allowed);
     let had_auto_context = auto_context.is_some();
+    let mut had_legacy_context = had_auto_context;
     let had_budget_warning = budget_warning.is_some();
     let had_throttle_warning = throttle_warning.is_some();
 
@@ -592,9 +814,11 @@ pub(in crate::server) async fn dispatch_and_post_process(
     }
 
     if !is_raw_shell
+        && legacy_context_allowed
         && name != "ctx_memory"
         && let Some(hint) = crate::core::shared_context::session_start_hint()
     {
+        had_legacy_context = true;
         result_text = format!("{hint}\n\n{result_text}");
     }
     if let Some(warning) = throttle_warning {
@@ -607,13 +831,14 @@ pub(in crate::server) async fn dispatch_and_post_process(
 
     // Additive, best-effort reference advice. Resolver failures become empty
     // advice, so normal Context Gate output is never affected.
-    if matches!(name, "ctx_read" | "ctx_search" | "ctx_compose") {
+    if legacy_context_allowed && matches!(name, "ctx_read" | "ctx_search" | "ctx_compose") {
         let query = helpers::get_str(args, "query")
             .or_else(|| helpers::get_str(args, "task"))
             .unwrap_or_default();
         if !query.is_empty() {
             let advice = context_gate::knowledge_advice(&query);
             if let Some(hint) = advice.additional_context_hint {
+                had_legacy_context = true;
                 result_text = format!("{result_text}\n\n{hint}");
             }
         }
@@ -661,6 +886,7 @@ pub(in crate::server) async fn dispatch_and_post_process(
         let _ = crate::core::slo::evaluate();
     }
 
+    let mut ledger_intent = None;
     if name == "ctx_read" {
         if let Some(read_path) = args
             .as_ref()
@@ -687,6 +913,10 @@ pub(in crate::server) async fn dispatch_and_post_process(
                 );
             });
         }
+        let read_path = server
+            .resolve_path_or_passthrough(&helpers::get_str(args, "path").unwrap_or_default())
+            .await;
+        let project_root = server.session.read().await.project_root.clone();
         if minimal {
             let cache_clone = server.cache.clone();
             let autonomy_clone = server.autonomy.clone();
@@ -723,14 +953,6 @@ pub(in crate::server) async fn dispatch_and_post_process(
                 }
             });
         } else {
-            let read_path = server
-                .resolve_path_or_passthrough(&helpers::get_str(args, "path").unwrap_or_default())
-                .await;
-            let project_root = {
-                let session = server.session.read().await;
-                session.project_root.clone()
-            };
-
             // Bounded cache lock for enrichment — degrade gracefully under contention
             let enrich_timeout =
                 tokio::time::timeout(std::time::Duration::from_secs(3), server.cache.write()).await;
@@ -755,75 +977,18 @@ pub(in crate::server) async fn dispatch_and_post_process(
                     "post-dispatch cache lock timeout (3s) for {read_path}, skipping enrichment"
                 );
             }
-
-            // Ledger update — fire-and-forget to avoid blocking concurrent reads.
-            // Only real files belong in the context ledger (GL #512): a
-            // ctx_read on "." or a directory returns an overview, not file
-            // content, and must not appear in the pressure table as a file.
-            if std::path::Path::new(&read_path).is_file() {
-                let ledger_clone = server.ledger.clone();
-                let session_clone = server.session.clone();
-                let peer_clone = server.peer.clone();
-                let read_path_owned = read_path.clone();
-                let project_root_owned = project_root.clone();
-                let mode_used =
-                    helpers::get_str(args, "mode").unwrap_or_else(|| "auto".to_string());
-                let out_tok = output_tokens as usize;
-                let sent_tok = crate::core::tokens::count_tokens(&result_text);
-                let wants_eviction = true;
-                let wants_elicitation = profile_hints.elicitation_hint();
-                tokio::spawn(async move {
-                    let result = std::panic::AssertUnwindSafe(async {
-                        let active_task = {
-                            let session = session_clone.read().await;
-                            session.task.as_ref().map(|t| t.description.clone())
-                        };
-                        let mut ledger = ledger_clone.write().await;
-                        let overlay = crate::core::context_overlay::OverlayStore::load_project(
-                            &std::path::PathBuf::from(project_root_owned.as_deref().unwrap_or(".")),
-                        );
-                        let gate_result = context_gate::post_dispatch_record_with_task(
-                            &read_path_owned,
-                            &mode_used,
-                            out_tok,
-                            sent_tok,
-                            &mut ledger,
-                            &overlay,
-                            active_task.as_deref(),
-                            project_root_owned.as_deref(),
-                        );
-                        drop(ledger);
-                        if wants_eviction && let Some(hint) = &gate_result.eviction_hint {
-                            tracing::debug!("deferred eviction hint: {hint}");
-                        }
-                        if wants_elicitation && let Some(hint) = &gate_result.elicitation_hint {
-                            tracing::debug!("deferred elicitation hint: {hint}");
-                        }
-                        if let Some(hint) = &gate_result.prefetch_hint {
-                            tracing::debug!("deferred FEP prefetch hint: {hint}");
-                        }
-                        if gate_result.resource_changed
-                            && let Some(peer) = peer_clone.read().await.as_ref()
-                        {
-                            notifications::send_resource_updated(
-                                peer,
-                                notifications::RESOURCE_URI_SUMMARY,
-                            )
-                            .await;
-                        }
-                    })
-                    .catch_unwind()
-                    .await;
-                    if let Err(e) = result {
-                        let msg = e
-                            .downcast_ref::<String>()
-                            .map(String::as_str)
-                            .or_else(|| e.downcast_ref::<&str>().copied())
-                            .unwrap_or("unknown");
-                        tracing::error!("background post_dispatch panicked: {msg}");
-                    }
-                });
-            }
+        }
+        // Continuity is independent of optional enrichment/minimal output.
+        // Directory overviews are not file reads (GL #512).
+        if std::path::Path::new(&read_path).is_file() {
+            ledger_intent = Some(McpLedgerIntent {
+                read_path,
+                mode_used: helpers::get_str(args, "mode").unwrap_or_else(|| "auto".to_string()),
+                output_tokens: output_tokens as usize,
+                sent_tokens: crate::core::tokens::count_tokens(&result_text),
+                project_root,
+                wants_elicitation: profile_hints.elicitation_hint(),
+            });
         }
     }
 
@@ -873,50 +1038,121 @@ pub(in crate::server) async fn dispatch_and_post_process(
         crate::core::auto_findings::extract(name, &findings_source, finding_path_hint.as_deref())
     {
         let mut session = server.session.write().await;
-        session.add_finding(finding.file.as_deref(), None, &finding.summary);
-        let project_root = session.project_root.clone();
+        let current = crate::core::policy::runtime::active();
+        let safe = crate::core::policy::diagnostics::inspect(
+            &serde_json::json!({"file":finding.file,"summary":finding.summary}),
+            current.as_deref(),
+        );
+        if let Some(safe) = safe
+            && current.as_ref().is_none_or(|policy| {
+                policy.tool_allowed(name)
+                    && diagnostic_fields
+                        .as_ref()
+                        .and_then(|record| record["result"].as_str())
+                        .is_some_and(|original| {
+                            !crate::core::policy::content::evaluate_text(original, policy).blocked
+                        })
+            })
+        {
+            session.add_finding(
+                safe["file"].as_str(),
+                None,
+                safe["summary"].as_str().unwrap_or_default(),
+            );
+        }
+        let project_root = crate::core::policy::diagnostics::request_project()
+            .map(|root| root.to_string_lossy().into_owned())
+            .or_else(|| session.project_root.clone());
         drop(session);
         if let Some(ref root) = project_root {
             let f = finding.clone();
             let r = root.clone();
+            let source_tool = name.to_owned();
+            let source_record = diagnostic_fields.clone();
             std::thread::spawn(move || {
-                crate::core::auto_capture::capture_finding(&r, &f);
+                let Some(record) = source_record else { return };
+                let Some(original) = record["result"].as_str() else {
+                    return;
+                };
+                crate::core::auto_capture::capture_finding_from_tool(
+                    &r,
+                    &f,
+                    &source_tool,
+                    original,
+                );
             });
         }
     }
     if let Some(extra) = crate::core::auto_capture::extract_extra(name, &findings_source) {
         let session = server.session.read().await;
-        let project_root = session.project_root.clone();
+        let project_root = crate::core::policy::diagnostics::request_project()
+            .map(|root| root.to_string_lossy().into_owned())
+            .or_else(|| session.project_root.clone());
         drop(session);
         if let Some(ref root) = project_root {
             let e = extra.clone();
             let r = root.clone();
+            let source_tool = name.to_owned();
+            let source_record = diagnostic_fields.clone();
             std::thread::spawn(move || {
-                crate::core::auto_capture::capture_finding(&r, &e);
+                let Some(record) = source_record else { return };
+                let Some(original) = record["result"].as_str() else {
+                    return;
+                };
+                crate::core::auto_capture::capture_finding_from_tool(
+                    &r,
+                    &e,
+                    &source_tool,
+                    original,
+                );
             });
         }
     }
 
     {
         let tool_name = name.to_string();
-        let summary = result_text.lines().next().unwrap_or("").to_string();
+        // Retain complete text until the writer checks current policy. A block
+        // marker on a later line must not disappear in a preview first.
+        let diagnostic_root = crate::core::policy::diagnostics::request_project();
+        let diagnostic_root = match diagnostic_root {
+            Some(root) => Some(root),
+            None => server
+                .session
+                .read()
+                .await
+                .project_root
+                .as_ref()
+                .map(std::path::PathBuf::from),
+        };
         // #520 opt-in debug log: a full per-call record (tool, args, result
         // preview, savings, wall time). Captured here and written off the hot
         // path in the existing journal thread; no-op unless `debug_log` is on.
-        let dbg_args = args.cloned();
         let dbg_bytes = result_text.len();
         let dbg_saved = tool_saved_tokens;
         let dbg_elapsed = tool_start.elapsed();
         std::thread::spawn(move || {
-            crate::core::journal::maybe_day_separator();
-            crate::core::journal::log_tool_call(&tool_name, &summary);
-            crate::core::debug_log::log_mcp_call(
-                &tool_name,
-                dbg_args.as_ref(),
-                &summary,
-                dbg_bytes,
-                dbg_saved,
-                dbg_elapsed,
+            let Some(root) = diagnostic_root else { return };
+            let Some(record) = diagnostic_fields else {
+                return;
+            };
+            let Some(diagnostic_text) = record["result"].as_str() else {
+                return;
+            };
+            let dbg_args = record.get("args").and_then(serde_json::Value::as_object);
+            crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+                std::cell::RefCell::new(Some(root)),
+                || {
+                    crate::core::journal::maybe_day_separator();
+                    crate::core::journal::log_tool_call(&tool_name, diagnostic_text);
+                    crate::core::debug_log::log_mcp_call(
+                        &tool_name,
+                        dbg_args,
+                        diagnostic_text,
+                        dbg_bytes,
+                        dbg_saved,
+                        dbg_elapsed,
+                    );
+                },
             );
         });
     }
@@ -955,15 +1191,13 @@ pub(in crate::server) async fn dispatch_and_post_process(
             .store(latest, std::sync::atomic::Ordering::Relaxed);
     }
 
-    server
-        .record_receipt_and_cost(
-            name,
-            args,
-            action.as_deref(),
-            &result_text,
-            output_token_count,
-        )
-        .await;
+    let receipt_intent = Some(McpReceiptIntent {
+        name: name.to_owned(),
+        args: args.cloned(),
+        action: action.clone(),
+        result_text: result_text.clone(),
+        output_token_count,
+    });
 
     // Context Bus: conflict detection for knowledge writes in shared mode.
     if server.session_mode == crate::tools::SessionMode::Shared
@@ -1075,27 +1309,6 @@ pub(in crate::server) async fn dispatch_and_post_process(
         result_text.push_str(&hint);
     }
 
-    if !skip_checkpoint
-        && server.increment_and_check()
-        && let Some(checkpoint) = server.auto_checkpoint().await
-        && profile_hints.checkpoint_in_output()
-        && crate::core::protocol::meta_visible()
-    {
-        // Stable header (#498): no interval interpolation — dynamic
-        // text in repeated markers degrades provider prompt caching.
-        let combined = format!("{result_text}\n\n--- AUTO CHECKPOINT ---\n{checkpoint}");
-        let result = finalize_call_result(&combined, shell_outcome);
-        record_decision_loop_end(
-            decision_context.as_ref(),
-            args,
-            &result,
-            result.is_error != Some(true),
-            shadow_auto_record,
-            Some(shadow_tokens_for_result(&result)),
-        );
-        return Ok(result);
-    }
-
     // #1020: tool-calls.log is now written on the dispatch path
     // (record_call_with_path / record_call_with_timing) with the real
     // original/saved/mode and the measured handler duration. The previous
@@ -1148,15 +1361,29 @@ pub(in crate::server) async fn dispatch_and_post_process(
     // because it is budget policy, not pipeline sequencing.
     result_text = crate::core::budget::enforce_turn_budget(
         &result_text,
-        verbatim_requested(name, args),
+        verbatim_requested(delivery_name, delivery_args),
         recovery_line.as_deref(),
     );
 
+    // Decorations can contain recovered session/source text. Inspect the final
+    // body again rather than treating trusted formatting as trusted content.
+    if had_legacy_context && crate::core::policy::runtime::is_active() {
+        return Ok(policy_blocked_output(
+            "[POLICY BLOCKED] Source policy changed while legacy context was being assembled.",
+        ));
+    }
+    result_text = match policy_guard::protect_result(name, &result_text) {
+        Ok(text) => text,
+        Err(reason) => return Ok(policy_blocked_output(reason)),
+    };
     let compressed_input_tokens = crate::core::tokens::count_tokens(&result_text) as u64;
-    let raw_input_tokens = compressed_input_tokens
-        .saturating_add(u64::try_from(tool_saved_tokens).unwrap_or(u64::MAX));
-    super::error_telemetry::record_shell_error_category(shell_outcome.as_ref(), &result_text);
+    crate::tools::ctx_provider::ensure_snapshot_output(name, args, &result_text)?;
+    record_shell_error_category(shell_outcome.as_ref(), &result_text);
     let mut result = finalize_call_result(&result_text, shell_outcome);
+    if tool_error {
+        result.is_error = Some(true);
+        record_error_category(crate::core::telemetry_v2::ErrorCategory::Internal);
+    }
     let has_dynamic = had_auto_context || had_budget_warning || had_throttle_warning;
     let mut meta = rmcp::model::Meta::new();
     meta.0.insert(
@@ -1182,145 +1409,37 @@ pub(in crate::server) async fn dispatch_and_post_process(
         usize::try_from(compressed_input_tokens).unwrap_or(usize::MAX),
     );
     crate::core::agent_budget::record_turn_delivery(&agent_id, compressed_input_tokens);
-    record_decision_loop_end(
-        decision_context.as_ref(),
-        args,
-        &result,
-        result.is_error != Some(true),
-        shadow_auto_record,
-        Some((raw_input_tokens, compressed_input_tokens)),
-    );
-    Ok(result)
-}
-
-/// `ctx_read` already owns mode selection and edit-safety guarantees. Running a
-/// second lossy pass after it resolved `auto` to `full` would hide content the
-/// caller must see (#1511), so every read result bypasses post-dispatch triage.
-pub(super) fn triage_bypass_requested(
-    name: &str,
-    args: Option<&serde_json::Map<String, serde_json::Value>>,
-) -> bool {
-    name == "ctx_read"
-        || super::super::context_gate::protected_path_requested(args)
-        || args.is_some_and(|args| {
-            args.get("raw")
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(false)
-                || args
-                    .get("mode")
-                    .and_then(serde_json::Value::as_str)
-                    .is_some_and(|mode| {
-                        mode == "raw"
-                            || mode == "full"
-                            || mode == "full-compact"
-                            || mode.starts_with("lines:")
-                            || mode.starts_with("anchored:")
-                            || mode == "diff"
-                    })
-                || args
-                    .get("aggressiveness")
-                    .and_then(serde_json::Value::as_f64)
-                    .is_some_and(|value| value == 0.0)
-                || args
-                    .get("fresh")
-                    .and_then(serde_json::Value::as_bool)
-                    .unwrap_or(false)
-        })
-}
-
-/// Whether the caller explicitly asked for the original bytes (#1582).
-///
-/// Deliberately narrower than [`triage_bypass_requested`]: only `raw = true`,
-/// `mode = "raw"` and `inline = true` count. Those are the escape hatches every
-/// compression annotation points at, so they earn the larger verbatim turn
-/// budget. `full`, `lines:`, `anchored` and friends stay on the ordinary budget
-/// — they are routine reads, not a request to defeat compression, and exempting
-/// them would turn the backstop off for most traffic.
-///
-/// #1812: `inline` belongs here. It is the same request as `raw` — "return the
-/// command's own output, uncompressed" — and holding it to the smaller backstop
-/// truncated it at ~4k tokens while the identical command with `raw=true`
-/// returned in full. Worse, the compressed path is what produces the archive
-/// line, so a truncated `inline` response had no recovery route at all and its
-/// notice pointed at `ctx_read(lines=)`, which needs a path that command output
-/// does not have.
-pub(super) fn verbatim_requested(
-    name: &str,
-    args: Option<&serde_json::Map<String, serde_json::Value>>,
-) -> bool {
-    if !matches!(name, "ctx_read" | "ctx_shell") {
-        return false;
-    }
-    args.is_some_and(|args| {
-        args.get("raw")
-            .and_then(serde_json::Value::as_bool)
-            .unwrap_or(false)
-            || args
-                .get("inline")
-                .and_then(serde_json::Value::as_bool)
-                .unwrap_or(false)
-            || args
-                .get("mode")
-                .and_then(serde_json::Value::as_str)
-                .is_some_and(|mode| mode == "raw")
+    Ok(McpProcessed {
+        result,
+        ir: ir_intent,
+        ledger: ledger_intent,
+        receipt: receipt_intent,
+        checkpoint: Some(McpCheckpointIntent {
+            enabled: !skip_checkpoint,
+            output_visible: profile_hints.checkpoint_in_output(),
+        }),
     })
 }
 
-/// Applies task triage at the native dispatch chokepoint. If no profile is
-/// available or filtering panics, preserve the raw tool response unchanged.
-fn apply_task_triage_filter(
-    result_text: String,
-    profile: Option<&crate::core::triage::profile::TaskProfileLocal>,
-    decision_context: &mut Option<crate::core::decision_loop_runtime::TaskContext>,
-    max_filter_level: u8,
-) -> String {
-    if max_filter_level == 0 {
-        return result_text;
-    }
-    let Some(profile) = profile else {
-        return result_text;
-    };
+#[path = "pipeline_records.rs"]
+mod records;
+pub(in crate::server) use records::{record_checkpoint, record_context_ir, record_ledger};
 
-    let filtered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let level = context_gate::triage_filter_level(profile).min(max_filter_level);
-        (level > 0).then(|| context_gate::apply_triage_filter(&result_text, profile, level))
-    }));
-    let Ok(Some((filtered_text, filtered_lines))) = filtered else {
-        return result_text;
-    };
+#[path = "pipeline_telemetry.rs"]
+mod telemetry;
 
-    if let Some(context) = decision_context {
-        context.filtered_lines = filtered_lines;
-    }
-    filtered_text
-}
+#[path = "pipeline_terminal.rs"]
+mod terminal;
+use terminal::{policy_blocked_output, protect_terminal_result};
 
-fn record_decision_loop_end(
-    context: Option<&crate::core::decision_loop_runtime::TaskContext>,
-    args: Option<&serde_json::Map<String, serde_json::Value>>,
-    result: &CallToolResult,
-    success: bool,
-    shadow_auto_record: bool,
-    shadow_tokens: Option<(u64, u64)>,
-) {
-    let input_tokens = args
-        .and_then(|args| serde_json::to_string(args).ok())
-        .map_or(0, |input| (input.len() / 4) as u64);
-    let output_tokens = format!("{result:?}").len() as u64 / 4;
-    record_decision_loop(
-        context,
-        input_tokens,
-        output_tokens,
-        success,
-        shadow_auto_record,
-        shadow_tokens,
-    );
-}
+#[cfg(test)]
+use telemetry::shell_error_category;
+use telemetry::{mcp_error_category, record_error_category, record_shell_error_category};
 
-fn shadow_tokens_for_result(result: &CallToolResult) -> (u64, u64) {
-    let tokens = format!("{result:?}").len() as u64 / 4;
-    (tokens, tokens)
-}
+#[path = "pipeline_triage.rs"]
+mod triage;
+use triage::apply_task_triage_filter;
+pub(super) use triage::{triage_bypass_requested, verbatim_requested};
 
 /// Record real compression savings after every response rewrite is complete.
 ///
@@ -1351,49 +1470,10 @@ fn compression_tracker_tokens(
     })
 }
 
-fn record_decision_loop_end_error(
-    context: Option<&crate::core::decision_loop_runtime::TaskContext>,
-    args: Option<&serde_json::Map<String, serde_json::Value>>,
-    shadow_auto_record: bool,
-) {
-    let input_tokens = args
-        .and_then(|args| serde_json::to_string(args).ok())
-        .map_or(0, |input| (input.len() / 4) as u64);
-    record_decision_loop(context, input_tokens, 0, false, shadow_auto_record, None);
-}
-
-fn record_decision_loop(
-    context: Option<&crate::core::decision_loop_runtime::TaskContext>,
-    input_tokens: u64,
-    output_tokens: u64,
-    success: bool,
-    shadow_auto_record: bool,
-    shadow_tokens: Option<(u64, u64)>,
-) {
-    let Some(context) = context else {
-        return;
-    };
-    if std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        crate::core::decision_loop_runtime::DecisionLoopRuntime::get_or_init()
-            .on_tool_end_with_shadow(
-                context,
-                input_tokens,
-                output_tokens,
-                "mcp-tool",
-                success,
-                shadow_auto_record,
-                shadow_tokens,
-            )
-    }))
-    .is_err()
-    {
-        tracing::warn!("decision loop end panicked");
-    }
-}
-
-// LOC gate: these tests live in their own file so `pipeline.rs` stays under
-// the 1500-line cap. `#[path]` keeps them a child module of `pipeline`, so they
-// still reach its private items through `super::`.
 #[cfg(test)]
 #[path = "pipeline_savings_tests.rs"]
 mod savings_tests;
+
+#[cfg(test)]
+#[path = "pipeline_policy_tests.rs"]
+mod policy_tests;

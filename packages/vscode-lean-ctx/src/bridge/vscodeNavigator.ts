@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 // `Navigator` backed by the editor's own language features — whatever
 // language extensions are installed (TypeScript is built in; rust-analyzer,
 // Python, Go, Java, C# … come with their extensions).

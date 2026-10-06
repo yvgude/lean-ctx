@@ -3,6 +3,7 @@
 use axum::body::{Body, to_bytes};
 use axum::extract::DefaultBodyLimit;
 use axum::http::{Request, StatusCode, header};
+use lean_ctx::core::a2a::dlq::DlqScope;
 use lean_ctx::core::ocla::types::{
     AGENT_ENVELOPE_SCHEMA_VERSION, AgentEnvelope, CANONICAL_TOKEN_ENVELOPE_SCHEMA_VERSION,
     CanonicalTokenEnvelopeV1, OclaRequestContext, TokenBalanceV1, TokenEnvelopeSurface,
@@ -12,7 +13,7 @@ use lean_ctx::core::ocla::wire::{
     agent_envelope_schema, canonical_envelope_schema, decode_agent_envelope, decode_envelope,
     encode_agent_envelope, encode_envelope,
 };
-use lean_ctx::core::ocla::wire_api::ocla_router;
+use lean_ctx::core::ocla::wire_api::{ocla_router, ocla_router_with_dlq};
 use lean_ctx::core::ocla::wire_stream::{StreamFrame, decode_frame, encode_frame};
 use serde_json::Value;
 use tower::ServiceExt;
@@ -306,11 +307,31 @@ async fn budget_get_returns_existing_and_missing_scope_statuses() {
 
 #[tokio::test]
 async fn dlq_get_returns_entries_and_stats_schema() {
-    let (status, body) = json_request("GET", "/ocla/v1/dlq", None).await;
+    let response = ocla_router_with_dlq(
+        DlqScope::new("contract-tenant", "contract-project").expect("valid scope"),
+    )
+    .oneshot(
+        Request::builder()
+            .uri("/ocla/v1/dlq")
+            .body(Body::empty())
+            .expect("request"),
+    )
+    .await
+    .expect("response");
+    let status = response.status();
+    let body = to_bytes(response.into_body(), 1_000_000)
+        .await
+        .expect("response body");
+    let body: Value = serde_json::from_slice(&body).expect("JSON response");
 
     assert_eq!(status, StatusCode::OK);
     assert!(body["dead_letters"].is_array());
-    for field in ["total", "oldest_age_seconds", "by_target_agent"] {
+    for field in [
+        "total",
+        "max_scope_depth",
+        "oldest_age_seconds",
+        "by_target_agent",
+    ] {
         assert!(
             body["stats"].get(field).is_some(),
             "missing DLQ field: {field}"

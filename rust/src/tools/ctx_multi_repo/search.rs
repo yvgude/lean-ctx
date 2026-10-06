@@ -26,6 +26,24 @@ pub(super) fn handle_search(
     roots_filter: Option<&[String]>,
     mode: Option<&str>,
 ) -> (String, usize) {
+    crate::core::policy::runtime::with_source_view(|| {
+        if crate::core::policy::runtime::is_active() {
+            return (
+                "ERROR: cross-project search withheld under content policy until each source has verified provenance; use local ctx_search mode=bm25".into(),
+                0,
+            );
+        }
+        handle_search_in_view(query, max_results, roots_filter, mode)
+    })
+    .unwrap_or_else(|_| ("ERROR: search source authority changed or is unavailable".into(), 0))
+}
+
+fn handle_search_in_view(
+    query: Option<&str>,
+    max_results: usize,
+    roots_filter: Option<&[String]>,
+    mode: Option<&str>,
+) -> (String, usize) {
     let Some(query) = query else {
         return ("ERROR: query is required for search".to_string(), 0);
     };

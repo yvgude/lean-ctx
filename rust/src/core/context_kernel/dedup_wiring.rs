@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Global content-deduplication wiring for context delivery hot paths.
 
 use std::collections::HashSet;
@@ -178,14 +180,13 @@ fn lock<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 
 #[cfg(test)]
 pub mod tests {
+    use super::super::kernel_config::{KERNEL_TEST_LOCK, reset_features};
     use std::sync::MutexGuard;
 
     use super::{
         DedupAction, apply_dedup_enabled, check_content_enabled, dedup_stats, invalidate,
         reset_dedup,
     };
-
-    use crate::core::context_kernel::kernel_config::{KERNEL_TEST_LOCK, reset_features};
 
     fn isolated() -> MutexGuard<'static, ()> {
         // Other kernel suites reset this same process-global ledger.

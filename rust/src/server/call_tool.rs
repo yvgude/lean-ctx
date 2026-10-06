@@ -5,14 +5,18 @@
 #[allow(unused_imports, clippy::wildcard_imports)]
 use super::*;
 
-mod error_telemetry;
+mod gateway_receipt;
 mod guarded;
 mod outcome;
 mod pipeline;
 mod policy;
 
 pub(super) use outcome::*;
-pub(super) use pipeline::*;
+#[cfg(test)]
+#[cfg_attr(windows, allow(unused_imports))] // its only consumer is a cfg(not(windows)) test
+pub(super) use pipeline::dispatch_and_post_process;
 
+#[cfg(test)]
+mod edit_outcome_tests;
 #[cfg(test)]
 mod tests;

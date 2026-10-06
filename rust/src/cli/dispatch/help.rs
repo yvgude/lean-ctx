@@ -160,9 +160,12 @@ COMMANDS:
     savings [--period day|week|month|all] [--format table|json|markdown] Local representation-change report; not comparable proof
     value [--session <id>|--all] [--json]  What lean-ctx did, recomputed from the verified chains
     statusline [--wrap \"<cmd>\"]    Claude Code status line (set up by `init --agent claude`)
+    inspect [--last <N>|--task <ID>] [--json]  Why the Context Gateway delivered, changed or withheld sources; --task: one task's plan→delivery→outcome
     claude-mod [status|install|uninstall]  Claude Code mod: wake-not-poll, Bash shaping, /leanctx (opt-in)
     prompt-segment [--shell zsh|bash|fish|plain]  Shell prompt segment (set up by `init --prompt`)
     learning [status|export|import]  Local adaptive-learning state: inspect, export, import
+    autopilot [status|explain|history|export|evidence|reset]  Personal receipt-validated learning; evidence: per-workload strategy evidence (help for options)
+    codex-protected --project <DIR> [--codex <PATH>|--check]  One Codex session that reaches <DIR> only through lean-ctx
     token-report [--json]          Token + memory report (project + session + CEP)
     pack --pr                      PR Context Pack (changed files, impact, tests, artifacts)
     snapshot create|list|show|verify|restore|publish|import  Context Time Machine: git-anchored, signed snapshots; replay, resume + share
@@ -236,7 +239,8 @@ COMMANDS:
     compression [off|lite|standard|max]  Set local output-density preference (alias: terse)
     slow-log [list|clear]          Show/clear slow command log (~/.lean-ctx/slow-commands.log)
     debug-log [list|tail N|clear|path]  Opt-in tool-call + hook-routing log (set debug_log / LEAN_CTX_DEBUG_LOG)
-    update [<version>] [--check]   Update lean-ctx, or pin a version, from GitHub Releases
+    update [<version>] [--check]   Update from a verified GitHub release
+                                   [--pin <version>|--unpin|--status|--rollback]
     enable-gpu [--check]           Install CUDA-enabled binary (x86_64 Linux/Windows)
     stop                           Stop ALL lean-ctx processes (daemon, proxy, orphans)
     restart                        Restart daemon (applies config.toml changes)
@@ -246,6 +250,8 @@ COMMANDS:
     doctor integrations [--json]   Integration health checks (Cursor/Claude Code/CodeBuddy)
     doctor [--fix] [--json]        Run diagnostics (and optionally repair)
     doctor --migrate-check         v1.0 migration readiness audit (config, deprecations, data)
+    migrate config [path] --rollback          Restore digest-bound pre-v4 global config
+    migrate task-receipt <dir> [--rollback] Preserve or roll back V3 task migration metadata
     smells [scan|summary|rules|file] [--rule=<r>] [--path=<p>] [--json]
                                    Code smell detection (Property Graph, 8 rules)
     control <action> [--target=<t>] Context field manipulation (exclude/pin/priority)

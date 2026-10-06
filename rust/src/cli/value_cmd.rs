@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx value`: every number the value surface shows (status line,
 //! recaps, prompt segment), recomputed from the hash-chained savings ledger
 //! and audit trail, with both chains verified. Exit 1 when a chain is broken.

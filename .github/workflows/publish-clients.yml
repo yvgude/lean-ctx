@@ -21,8 +21,32 @@ permissions:
   contents: read
 
 jobs:
+  ip-provenance-gate:
+    name: Publish gates (IP provenance, strict)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Verify provenance checker contract
+        run: python3 -m unittest discover -s scripts/tests -v
+      - name: Strict IP provenance audit
+        run: >-
+          python3 scripts/ip-provenance-audit.py --root . --release-strict
+          --output "$RUNNER_TEMP/ip-provenance-publish-clients-report.json"
+      - name: Upload strict provenance report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ip-provenance-publish-clients-report
+          path: ${{ runner.temp }}/ip-provenance-publish-clients-report.json
+          if-no-files-found: ignore
+
   publish-npm:
     name: Historical TypeScript client (disabled)
+    needs: ip-provenance-gate
     if: false
     runs-on: ubuntu-latest
     steps:
@@ -49,9 +73,9 @@ jobs:
 
   publish-pypi:
     name: Historical Python client (disabled)
-    # clients/python is archived. PyPI still carries `lean-ctx-client` 0.1.0
-    # published from that source; it needs a registry-side deprecation, not a
-    # re-publish from here.
+    # clients/python is archived; canonical lean-ctx-python publication is
+    # intentionally not delegated to this legacy thin-client workflow.
+    needs: ip-provenance-gate
     if: false
     runs-on: ubuntu-latest
     steps:
@@ -78,6 +102,7 @@ jobs:
 
   publish-crates:
     name: Publish lean-ctx-client to crates.io
+    needs: ip-provenance-gate
     if: ${{ github.event_name == 'push' || inputs.targets == 'all' || inputs.targets == 'crates' }}
     runs-on: ubuntu-latest
     steps:

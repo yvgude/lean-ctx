@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! BuiltinCompressionProvider — fail-closed compression via ContentPort + core::compressor.
 //!
 //! Uses Config::find_project_root() for bounded root resolution. Reports
@@ -25,7 +26,7 @@ const COMPRESSION_MANIFEST_JSON: &str = include_str!(concat!(
     "/assets/ocla/capability-manifests/leanctx/context-optimization-v1.json"
 ));
 
-static COMPRESSION_MANIFEST: OnceLock<CapabilityManifestV1> = OnceLock::new();
+static COMPRESSION_MANIFEST: OnceLock<Result<CapabilityManifestV1, String>> = OnceLock::new();
 
 static DEFAULT_PORT: OnceLock<Option<CompressionContentPort>> = OnceLock::new();
 
@@ -68,13 +69,21 @@ impl BuiltinCompressionProvider {
     }
 
     /// The pinned v1 contract exposed by the context-compression capability.
-    pub fn manifest(&self) -> CapabilityManifestV1 {
+    pub fn manifest(&self) -> OclaResult<CapabilityManifestV1> {
         COMPRESSION_MANIFEST
             .get_or_init(|| {
-                serde_json::from_str(COMPRESSION_MANIFEST_JSON)
-                    .expect("pinned compression capability manifest must parse")
+                let manifest =
+                    serde_json::from_str::<CapabilityManifestV1>(COMPRESSION_MANIFEST_JSON)
+                        .map_err(|error| {
+                            format!("invalid pinned compression capability manifest: {error}")
+                        })?;
+                manifest.validate().map_err(|error| {
+                    format!("invalid pinned compression capability manifest: {error}")
+                })?;
+                Ok(manifest)
             })
             .clone()
+            .map_err(OclaError::InvalidRequest)
     }
 
     pub fn compress_with_port(
@@ -157,7 +166,7 @@ impl OclaService for BuiltinCompressionProvider {
         }
     }
 
-    fn manifest(&self) -> CapabilityManifestV1 {
+    fn manifest(&self) -> OclaResult<CapabilityManifestV1> {
         BuiltinCompressionProvider::manifest(self)
     }
 }

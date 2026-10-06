@@ -18,10 +18,13 @@ pub(crate) fn strip_quoted_heredoc_bodies(command: &str) -> String {
     // Delimiters awaiting their terminator line, in body order (stacked heredocs
     // `cmd <<'A' <<'B'` drain A's body first, then B's).
     let mut pending: Vec<String> = Vec::new();
+    // GH #2003: a double-quoted string can span lines, so the quote state
+    // carries over; heredoc body lines are literal data and never touch it.
+    let mut state = QuoteState::default();
     for line in command.lines() {
         if pending.is_empty() {
             out.push(line);
-            pending = heredoc_delims(line, true);
+            pending = heredoc_delims_from(line, true, &mut state);
         } else if line.trim_start_matches('\t').trim() == pending[0] {
             // Terminator line: drop it and resume. `<<-` allows leading tabs; be
             // lenient (over-stripping body data is harmless — a heredoc body is
@@ -42,10 +45,13 @@ pub fn strip_all_heredoc_bodies(command: &str) -> String {
     }
     let mut out: Vec<&str> = Vec::new();
     let mut pending: Vec<String> = Vec::new();
+    // GH #2003: a double-quoted string can span lines, so the quote state
+    // carries over; heredoc body lines are literal data and never touch it.
+    let mut state = QuoteState::default();
     for line in command.lines() {
         if pending.is_empty() {
             out.push(line);
-            pending = heredoc_delims(line, false);
+            pending = heredoc_delims_from(line, false, &mut state);
         } else if line.trim_start_matches('\t').trim() == pending[0] {
             pending.remove(0);
         }
@@ -57,13 +63,36 @@ pub fn strip_all_heredoc_bodies(command: &str) -> String {
 /// their bare delimiter names in source order. Quote-aware, so a `<<` inside a
 /// quoted string is ignored; a `<<<` here-string (no body) is skipped.
 pub(crate) fn heredoc_delims(line: &str, quoted_only: bool) -> Vec<String> {
+    heredoc_delims_from(line, quoted_only, &mut QuoteState::default())
+}
+
+/// Quote context at the end of a scanned line, carried into the next one.
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct QuoteState {
+    in_single: bool,
+    in_double: bool,
+    /// Nesting depth of `$()` opened while inside double quotes (#1482).
+    subst_depth: usize,
+}
+
+/// [`heredoc_delims`] for one line of a multi-line command whose earlier lines
+/// may have left a quoted string open (GH #2003: `echo "a⏎b"; cat <<'EOF'`).
+/// An unquoted `#` that starts a word ends the line as a comment, so an
+/// apostrophe in a comment (`# don't`) cannot open a string that hides a later
+/// heredoc.
+pub(crate) fn heredoc_delims_from(
+    line: &str,
+    quoted_only: bool,
+    state: &mut QuoteState,
+) -> Vec<String> {
     let bytes = line.as_bytes();
     let len = bytes.len();
     let mut i = 0;
-    let mut in_single = false;
-    let mut in_double = false;
-    // Nesting depth of `$()` opened while inside double quotes (#1482).
-    let mut subst_depth = 0usize;
+    let QuoteState {
+        mut in_single,
+        mut in_double,
+        mut subst_depth,
+    } = *state;
     let mut delims = Vec::new();
     while i < len {
         let ch = bytes[i];
@@ -91,6 +120,11 @@ pub(crate) fn heredoc_delims(line: &str, quoted_only: bool) -> Vec<String> {
             continue;
         }
         match ch {
+            b'#' if subst_depth == 0
+                && (i == 0 || matches!(bytes[i - 1], b' ' | b'\t' | b';' | b'|' | b'&' | b'(')) =>
+            {
+                break;
+            }
             b'\\' => i = (i + 2).min(len),
             b'\'' => {
                 in_single = true;
@@ -140,6 +174,11 @@ pub(crate) fn heredoc_delims(line: &str, quoted_only: bool) -> Vec<String> {
             _ => i += 1,
         }
     }
+    *state = QuoteState {
+        in_single,
+        in_double,
+        subst_depth,
+    };
     delims
 }
 

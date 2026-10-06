@@ -37,6 +37,13 @@ impl PiiKind {
             Self::Ssn => "ssn",
         }
     }
+
+    /// True for classes a checksum validates (AHV, IBAN, card). Only these
+    /// run by default without a policy pack: their false-positive rate is
+    /// low enough to rewrite content no one asked to filter.
+    const fn is_checksummed(self) -> bool {
+        matches!(self, Self::ChAhv | Self::Iban | Self::Card)
+    }
 }
 
 /// One PII detector: a labelled regex plus a checksum/shape validator. A match
@@ -54,27 +61,30 @@ fn rules() -> &'static [PiiRule] {
             // Swiss AHV/AVS social-security number (EAN-13, prefixed 756).
             PiiRule {
                 kind: PiiKind::ChAhv,
-                re: Regex::new(r"\b756[.\s]?\d{4}[.\s]?\d{4}[.\s]?\d{2}\b")
+                // ASCII word boundaries throughout: a Unicode `\b` keeps the
+                // regex engine off its DFA and cost ~15x the scan time, while
+                // the identifiers here are ASCII anyway.
+                re: Regex::new(r"(?-u:\b)756[.\s]?\d{4}[.\s]?\d{4}[.\s]?\d{2}(?-u:\b)")
                     .expect("valid AHV regex"),
                 validate: ahv_valid,
             },
             // IBAN — run before the card rule so its digits aren't re-matched.
             PiiRule {
                 kind: PiiKind::Iban,
-                re: Regex::new(r"\b[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}\b")
+                re: Regex::new(r"(?-u:\b)[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}(?-u:\b)")
                     .expect("valid IBAN regex"),
                 validate: iban_valid,
             },
-            // Payment card (13–19 digits, optional space/hyphen groups), Luhn.
+            // Payment card (13–19 digits, contiguous or in card groupings), Luhn.
             PiiRule {
                 kind: PiiKind::Card,
-                re: Regex::new(r"\b\d(?:[ -]?\d){12,18}\b").expect("valid card regex"),
-                validate: luhn_valid,
+                re: Regex::new(r"(?-u:\b)\d(?:[ -]?\d){12,18}(?-u:\b)").expect("valid card regex"),
+                validate: card_valid,
             },
             // Email — specific enough that no extra validation is needed.
             PiiRule {
                 kind: PiiKind::Email,
-                re: Regex::new(r"\b[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}\b")
+                re: Regex::new(r"(?-u:\b)[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?-u:\b)")
                     .expect("valid email regex"),
                 validate: |_| true,
             },
@@ -104,9 +114,41 @@ fn rules() -> &'static [PiiRule] {
 /// transformed text plus per-class hit counts (for privacy-preserving audit).
 #[must_use]
 pub fn redact(text: &str) -> (String, Vec<(&'static str, usize)>) {
+    redact_where(text, |_| true)
+}
+
+/// [`redact`] restricted to checksum-validated classes (AHV, IBAN, card).
+#[must_use]
+pub fn redact_checksummed(text: &str) -> (String, Vec<(&'static str, usize)>) {
+    // One pass over the exact union of the checksummed rules: when it finds
+    // nothing, no single rule can, so clean content skips three scans.
+    if !checksummed_prefilter().is_match(text) {
+        return (text.to_owned(), Vec::new());
+    }
+    redact_where(text, PiiKind::is_checksummed)
+}
+
+fn checksummed_prefilter() -> &'static Regex {
+    static RE: OnceLock<Regex> = OnceLock::new();
+    RE.get_or_init(|| {
+        let union = rules()
+            .iter()
+            .filter(|rule| rule.kind.is_checksummed())
+            .map(|rule| format!("(?:{})", rule.re.as_str()))
+            .collect::<Vec<_>>()
+            .join("|");
+        Regex::new(&union).expect("valid checksummed PII prefilter")
+    })
+}
+
+fn redact_where(text: &str, include: fn(PiiKind) -> bool) -> (String, Vec<(&'static str, usize)>) {
     let mut out = text.to_string();
     let mut counts = Vec::new();
-    for rule in rules() {
+    for rule in rules().iter().filter(|rule| include(rule.kind)) {
+        // Most content has no candidate at all; skip the copy and rewrite.
+        if !rule.re.is_match(&out) {
+            continue;
+        }
         let mut n = 0usize;
         let source = out.clone();
         out = rule
@@ -225,6 +267,35 @@ fn digits(s: &str) -> Vec<u32> {
     s.chars().filter_map(|c| c.to_digit(10)).collect()
 }
 
+/// Card numbers are printed either contiguously or in the issuers' groupings:
+/// groups of four (the last one shorter for 13/15/17/19-digit PANs), Amex
+/// 4-6-5 or Diners 4-6-4, with one separator throughout. Other separated
+/// 13–19 digit runs are not cards however their Luhn sum falls — notably the
+/// `YYYYmmdd-HHMMSS` timestamps in session ids, archive and export file names,
+/// about one in ten of which is Luhn-valid and used to be masked out of tool
+/// output, handing the agent a path that does not exist.
+pub(crate) fn card_layout_plausible(s: &str) -> bool {
+    let mut separators = s.chars().filter(|c| !c.is_ascii_digit());
+    let Some(sep) = separators.next() else {
+        return true;
+    };
+    if separators.any(|c| c != sep) {
+        return false;
+    }
+    let groups: Vec<usize> = s.split(sep).map(str::len).collect();
+    match groups.as_slice() {
+        [4, 6, 4 | 5] => true,
+        [init @ .., last] if init.len() >= 3 => {
+            init.iter().all(|&g| g == 4) && (1..=4).contains(last)
+        }
+        _ => false,
+    }
+}
+
+fn card_valid(s: &str) -> bool {
+    card_layout_plausible(s) && luhn_valid(s)
+}
+
 /// Luhn checksum for payment cards (13–19 digits).
 fn luhn_valid(s: &str) -> bool {
     let d = digits(s);
@@ -316,6 +387,34 @@ mod tests {
         // 4111 1111 1111 1111 is the canonical Luhn-valid Visa test number.
         let (out, _) = redact("card 4111 1111 1111 1111 expires");
         assert!(out.contains("[REDACTED:card]"), "{out}");
+    }
+
+    #[test]
+    fn card_groupings_redact_but_timestamps_never_do() {
+        for card in [
+            "4111-1111-1111-1111",
+            "4111 1111 1111 1111",
+            "4111111111111111",
+            "3782 822463 10005", // Amex 4-6-5
+            "3056 930902 5904",  // Diners 4-6-4
+        ] {
+            let (out, _) = redact(&format!("pay with {card} today"));
+            assert!(out.contains("[REDACTED:card]"), "{card}: {out}");
+        }
+        // A Luhn-valid `YYYYmmdd-HHMMSS` stamp, as in session ids and export
+        // file names (GH: knowledge export path masked on the 3.11 landing).
+        let stamp = (0..10)
+            .map(|d| format!("20261006-16153{d}"))
+            .find(|s| luhn_valid(s))
+            .expect("one check digit makes the stamp Luhn-valid");
+        let line = format!("Export saved: /data/exports/knowledge-3f2697eb-{stamp}.json");
+        let (out, counts) = redact_checksummed(&line);
+        assert_eq!(out, line, "a timestamp is not a card");
+        assert!(counts.is_empty());
+        assert!(
+            !card_layout_plausible("4111 1111-1111 1111"),
+            "mixed separators"
+        );
     }
 
     #[test]
@@ -411,5 +510,14 @@ mod tests {
     #[test]
     fn clean_text_has_no_pii() {
         assert!(detect("just some ordinary source code, no secrets").is_empty());
+    }
+
+    #[test]
+    fn checksummed_scope_skips_unvalidated_classes() {
+        let text = "jane@example.com, +14155552671, 123-45-6789, 4111 1111 1111 1111";
+        let (out, counts) = redact_checksummed(text);
+        assert_eq!(counts, vec![("card", 1)]);
+        assert!(out.contains("jane@example.com") && out.contains("123-45-6789"));
+        assert!(out.contains("[REDACTED:card]"));
     }
 }

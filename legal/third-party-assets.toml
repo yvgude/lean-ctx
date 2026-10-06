@@ -1,0 +1,276 @@
+schema = "leanctx.third-party-assets/v1"
+version = 1
+authority = "THIRD_PARTY_NOTICES"
+
+[inputs]
+cargo_lock = "rust/Cargo.lock"
+cargo_lock_sha256 = "a9d8b3bb6d65830fb64bad579692ec7819b0c4b0948923e22f6c2b701aa6fa6f"
+sbom = "SBOM.cdx.json"
+sbom_sha256 = "0340707e27976af0cb67d49928f13129e4b21dcbea6ebdb11c23f795d90cb1df"
+npm_lock = "packages/pi-lean-ctx/package-lock.json"
+npm_lock_sha256 = "5c17b70299afe706d3c5c4d3e74ada73987eaceddcd164fa1b004a9a74419a32"
+
+[license_texts]
+isc = """
+ISC License
+
+Permission to use, copy, modify, and/or distribute this software for any
+purpose with or without fee is hereby granted, provided that the above
+copyright notice and this permission notice appear in all copies.
+
+THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
+WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
+MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
+SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
+WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
+OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
+CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
+"""
+
+mit = """
+MIT License
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+"""
+
+ofl_1_1 = """
+SIL OPEN FONT LICENSE
+
+Version 1.1 - 26 February 2007
+
+PREAMBLE
+
+The goals of the Open Font License (OFL) are to stimulate worldwide development
+of collaborative font projects, to support the font creation efforts of
+academic and linguistic communities, and to provide a free and open framework
+in which fonts may be shared and improved in partnership with others.
+The OFL allows the licensed fonts to be used, studied, modified and
+redistributed freely as long as they are not sold by themselves. The fonts,
+including any derivative works, can be bundled, embedded, redistributed and/or
+sold with any software provided that any reserved names are not used by
+derivative works. The fonts and derivatives, however, cannot be released under
+any other type of license.
+The requirement for fonts to remain under this license does not apply to any
+document created using the fonts or their derivatives.
+
+DEFINITIONS
+
+"Font Software" refers to the set of files released by the Copyright Holder(s)
+under this license and clearly marked as such. This may include source files,
+build scripts and documentation.
+
+"Reserved Font Name" refers to any names specified as such after the copyright
+statement(s).
+
+"Original Version" refers to the collection of Font Software components as
+distributed by the Copyright Holder(s).
+
+"Modified Version" refers to any derivative made by adding to, deleting, or
+substituting — in part or in whole — any of the components of the Original
+Version, by changing formats or by porting the Font Software to a new
+environment.
+
+"Author" refers to any designer, engineer, programmer, technical writer or
+other person who contributed to the Font Software.
+
+PERMISSION & CONDITIONS
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of the Font Software, to use, study, copy, merge, embed, modify, redistribute,
+and sell modified and unmodified copies of the Font Software, subject to the
+following conditions:
+
+1) Neither the Font Software nor any of its individual components, in Original
+or Modified Versions, may be sold by itself.
+2) Original or Modified Versions of the Font Software may be bundled,
+redistributed and/or sold with any software, provided that each copy contains
+the above copyright notice and this license. These can be included either as
+stand-alone text files, human-readable headers or in the appropriate
+machine-readable metadata fields within text or binary files as long as those
+fields can be easily viewed by the user.
+3) No Modified Version of the Font Software may use the Reserved Font Name(s)
+unless explicit written permission is granted by the corresponding Copyright
+Holder. This restriction only applies to the primary font name as presented to
+the users.
+4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font Software
+shall not be used to promote, endorse or advertise any Modified Version, except
+to acknowledge the contribution(s) of the Copyright Holder(s) and the Author(s)
+or with their explicit written permission.
+5) The Font Software, modified or unmodified, in part or in whole, must be
+distributed entirely under this license, and must not be distributed under any
+other license. The requirement for fonts to remain under this license does not
+apply to any document created using the Font Software.
+
+TERMINATION
+
+This license becomes null and void if any of the above conditions are not met.
+
+DISCLAIMER
+
+THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
+OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF COPYRIGHT, PATENT,
+TRADEMARK, OR OTHER RIGHT.
+IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR
+OTHER LIABILITY, INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR
+CONSEQUENTIAL DAMAGES WHATSOEVER, ARISING FROM, OUT OF THE USE OR INABILITY TO
+USE THE FONT SOFTWARE OR FROM OTHER DEALINGS IN THE FONT SOFTWARE.
+"""
+
+[[assets]]
+id = "dashboard-d3"
+path = "rust/src/dashboard/static/vendor/d3.min.js"
+sha256 = "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539"
+version = "7.9.0"
+source = "https://github.com/d3/d3/releases/tag/v7.9.0"
+spdx = "ISC"
+license_text_path = "legal/third-party-assets.toml"
+license_text_key = "license_texts.isc"
+copyright = "Copyright 2010-2023 Mike Bostock"
+modified = false
+evidence_paths = [
+  "rust/src/dashboard/static/vendor/d3.min.js",
+  "rust/src/dashboard/mod.rs",
+]
+
+[[assets]]
+id = "dashboard-chartjs"
+path = "rust/src/dashboard/static/vendor/chart.umd.min.js"
+sha256 = "48444a82d4edcb5bec0f1965faacdde18d9c17db3063d042abada2f705c9f54a"
+version = "4.5.1"
+source = "https://github.com/chartjs/Chart.js/releases/tag/v4.5.1"
+spdx = "MIT"
+license_text_path = "legal/third-party-assets.toml"
+license_text_key = "license_texts.mit"
+copyright = "Copyright 2025 Chart.js Contributors"
+modified = false
+evidence_paths = [
+  "rust/src/dashboard/static/vendor/chart.umd.min.js",
+  "rust/src/dashboard/mod.rs",
+]
+
+[[assets]]
+id = "font-inter"
+path = "rust/src/dashboard/static/fonts/inter-variable.woff2"
+sha256 = "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62"
+version = "4.1"
+source = "https://github.com/rsms/inter/releases/tag/v4.1"
+spdx = "OFL-1.1"
+license_text_path = "legal/third-party-assets.toml"
+license_text_key = "license_texts.ofl_1_1"
+copyright = "Copyright 2016 The Inter Project Authors"
+modified = false
+evidence_paths = [
+  "rust/src/dashboard/static/fonts/fonts.css",
+  "rust/src/dashboard/mod.rs",
+]
+
+[[assets]]
+id = "font-jetbrains-mono"
+path = "rust/src/dashboard/static/fonts/jetbrains-mono-variable.woff2"
+sha256 = "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e"
+version = "2.304"
+source = "https://github.com/JetBrains/JetBrainsMono/releases/tag/v2.304"
+spdx = "OFL-1.1"
+license_text_path = "legal/third-party-assets.toml"
+license_text_key = "license_texts.ofl_1_1"
+copyright = "Copyright 2020 The JetBrains Mono Project Authors"
+modified = false
+evidence_paths = [
+  "rust/src/dashboard/static/fonts/fonts.css",
+  "rust/src/dashboard/mod.rs",
+]
+
+[[assets]]
+id = "font-space-grotesk"
+path = "rust/src/dashboard/static/fonts/space-grotesk-variable.woff2"
+sha256 = "0640890476fc1198ab4de571fb658de443c4d85b66466ec09534a8737ab1ce9d"
+version = "2.0.0"
+source = "https://github.com/floriankarsten/space-grotesk/releases/tag/2.0.0"
+spdx = "OFL-1.1"
+license_text_path = "legal/third-party-assets.toml"
+license_text_key = "license_texts.ofl_1_1"
+copyright = "Copyright 2019 The Space Grotesk Project Authors"
+modified = false
+evidence_paths = [
+  "rust/src/dashboard/static/fonts/fonts.css",
+  "rust/src/dashboard/mod.rs",
+]
+
+[[assets]]
+id = "vendored-rmcp"
+path = "rust/crates/vendor/rmcp"
+sha256 = "c516ce111faf9d175add0877b5535208e4e7f4df4f48f9012727da7e865f85fa"
+version = "2.0.0"
+source = "https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v2.0.0"
+spdx = "Apache-2.0"
+license_text_path = "LICENSES/Apache-2.0.txt"
+modified = true
+modification_summary = "LeanCTX carries the local JoinSet response-send drain patch described in rust/Cargo.toml, and an OAuth discovery patch in src/transport/auth.rs (#1391: a 200 status page on the MCP endpoint is not taken as RFC 9728 resource metadata); upstream rmcp 2.0.0 is retained as the provenance base."
+evidence_paths = [
+  "rust/crates/vendor/rmcp/Cargo.toml",
+  "rust/crates/vendor/rmcp/src/transport/auth.rs",
+  "rust/Cargo.toml",
+]
+
+[[assets]]
+id = "vendored-rmcp-macros"
+path = "rust/crates/vendor/rmcp-macros"
+sha256 = "35b53c95f9645c7b1e9add853a88213ec1aab59cb42abbd67a83634ff8504ca9"
+version = "2.0.0"
+source = "https://github.com/modelcontextprotocol/rust-sdk/tree/rmcp-v2.0.0"
+spdx = "Apache-2.0"
+license_text_path = "LICENSES/Apache-2.0.txt"
+modified = false
+evidence_paths = [
+  "rust/crates/vendor/rmcp-macros/Cargo.toml",
+  "rust/Cargo.toml",
+]
+
+[[assets]]
+id = "mcp-sdk-bundle"
+path = "packages/pi-lean-ctx/extensions/vendor/mcp-sdk.cjs"
+sha256 = "88b196da41b4e0878d91e8e6103d6fa74f639d49b8081349446326d134f182e1"
+version = "1.30.0"
+source = "https://registry.npmjs.org/@modelcontextprotocol/sdk/-/sdk-1.30.0.tgz"
+spdx = "MIT"
+license_text_path = "legal/third-party-assets.toml"
+license_text_key = "license_texts.mit"
+generated = true
+allow_missing_in_checkout = true
+modified = false
+evidence_paths = [
+  "packages/pi-lean-ctx/package-lock.json",
+  "packages/pi-lean-ctx/scripts/build-vendor.mjs",
+]
+
+[[assets]]
+id = "mcp-sdk-declaration"
+path = "packages/pi-lean-ctx/extensions/vendor/mcp-sdk.d.cts"
+sha256 = "f2a8c3bc241c206d93610ac3597206f88f0ac19ade8b1a43e439ad043f48167b"
+version = "1.30.0"
+source = "https://registry.npmjs.org/@modelcontextprotocol/sdk/-/sdk-1.30.0.tgz"
+spdx = "MIT"
+license_text_path = "legal/third-party-assets.toml"
+license_text_key = "license_texts.mit"
+modified = false
+evidence_paths = [
+  "packages/pi-lean-ctx/package-lock.json",
+  "packages/pi-lean-ctx/extensions/vendor/mcp-sdk.d.cts",
+]

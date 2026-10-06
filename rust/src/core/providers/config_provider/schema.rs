@@ -5,10 +5,10 @@
 
 use std::collections::HashMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// Top-level provider configuration.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ProviderConfig {
     pub id: String,
     pub name: String,
@@ -25,7 +25,7 @@ fn default_cache_ttl() -> u64 {
 }
 
 /// Authentication strategy for the external API.
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Deserialize, Serialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum AuthConfig {
     /// `Authorization: Bearer <token>` from an env var.
@@ -56,7 +56,7 @@ pub enum AuthConfig {
 }
 
 /// Configuration for a single API resource/endpoint.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ResourceConfig {
     /// HTTP method. Defaults to `"GET"`.
     #[serde(default = "default_method")]
@@ -78,7 +78,7 @@ fn default_method() -> String {
 }
 
 /// Describes how to map a JSON response to `ProviderItem`s.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ResponseConfig {
     /// Dot-notation path to the array of items (e.g. `"data.issues"`).
     /// If `None`, the response root is treated as the array.
@@ -91,7 +91,7 @@ pub struct ResponseConfig {
 /// Maps `ProviderItem` fields to dot-notation paths in the JSON response.
 ///
 /// `id` and `title` are required; everything else is optional.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct FieldMapping {
     pub id: String,
     pub title: String,

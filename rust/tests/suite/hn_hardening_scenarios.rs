@@ -747,7 +747,7 @@ mod integration {
         // 1. dispatch threads saved_tokens (+ shell outcome, GH #389,
         // content_blocks) out of the tool call
         assert!(
-            src.contains("let (mut result_text, tool_saved_tokens, shell_outcome, content_blocks)")
+            src.contains("let (result_text, tool_saved_tokens, shell_outcome, content_blocks)")
         );
 
         // 2. Terse compression is gated by skip_terse()

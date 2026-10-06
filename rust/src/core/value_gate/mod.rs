@@ -33,6 +33,15 @@ pub struct ValueAssessment {
 }
 
 impl ValueGate {
+    pub fn assess(
+        &self,
+        task_id: &str,
+        execution_cost: &ExecutionCost,
+        outcome: &TaskOutcome,
+    ) -> ValueAssessment {
+        assess_task(task_id, execution_cost, outcome)
+    }
+
     pub fn evaluate_task(
         task_id: &str,
         execution_cost: &ExecutionCost,
@@ -47,6 +56,35 @@ pub fn evaluate_task(
     task_id: &str,
     execution_cost: &ExecutionCost,
     outcome: &TaskOutcome,
+) -> ValueAssessment {
+    let assessment = assess_task(task_id, execution_cost, outcome);
+    record_assessment(&assessment);
+    assessment
+}
+
+/// Calculate value without mutating process-global stores.
+pub fn assess_task(
+    task_id: &str,
+    execution_cost: &ExecutionCost,
+    outcome: &TaskOutcome,
+) -> ValueAssessment {
+    assess_task_with_context(task_id, execution_cost, outcome, true)
+}
+
+/// Pure fixture assessment, without reading or writing production evidence.
+pub fn assess_simulated_task(
+    task_id: &str,
+    execution_cost: &ExecutionCost,
+    outcome: &TaskOutcome,
+) -> ValueAssessment {
+    assess_task_with_context(task_id, execution_cost, outcome, false)
+}
+
+fn assess_task_with_context(
+    task_id: &str,
+    execution_cost: &ExecutionCost,
+    outcome: &TaskOutcome,
+    include_causal_context: bool,
 ) -> ValueAssessment {
     let task_id_matches = outcome.task_id == task_id;
     let outcome_accepted = task_id_matches && outcome_evaluator::evaluate(outcome);
@@ -64,31 +102,18 @@ pub fn evaluate_task(
             .iter()
             .map(|signal| format!("signal={signal:?}")),
     );
-    let causal_chunks = crate::core::causal_attribution::chunks_for_session(task_id);
-    let causal_outcome = if outcome_accepted {
-        crate::core::causal_attribution::Outcome::Success
-    } else {
-        crate::core::causal_attribution::Outcome::Failure
-    };
-    if let Err(error) = crate::core::causal_attribution::record_outcome(
-        task_id,
-        crate::core::causal_attribution::OutcomeSignal {
-            session_id: task_id.to_owned(),
-            outcome: causal_outcome,
-            evidence: format!("value_gate outcome_accepted={outcome_accepted}"),
-        },
-    ) {
-        tracing::debug!(%error, task_id, "causal attribution ValueGate recording failed");
+    if include_causal_context {
+        let causal_chunks = crate::core::causal_attribution::chunks_for_session(task_id);
+        evidence.push(format!("causal_chunks_present={}", causal_chunks.len()));
+        evidence.extend(causal_chunks.iter().map(|chunk| {
+            format!(
+                "causal_chunk id={} source={}",
+                chunk.content_hash, chunk.source
+            )
+        }));
     }
-    evidence.push(format!("causal_chunks_present={}", causal_chunks.len()));
-    evidence.extend(causal_chunks.iter().map(|chunk| {
-        format!(
-            "causal_chunk id={} source={}",
-            chunk.content_hash, chunk.source
-        )
-    }));
 
-    let assessment = ValueAssessment {
+    ValueAssessment {
         task_id: task_id.to_owned(),
         model: execution_cost.model.clone(),
         total_tokens: execution_cost
@@ -100,11 +125,32 @@ pub fn evaluate_task(
         cpao_micros,
         evidence,
         timestamp: chrono::Utc::now().to_rfc3339(),
+    }
+}
+
+/// Persist one already-calculated assessment and its causal learning signal.
+pub(crate) fn record_assessment(assessment: &ValueAssessment) {
+    let causal_outcome = if assessment.outcome_accepted {
+        crate::core::causal_attribution::Outcome::Success
+    } else {
+        crate::core::causal_attribution::Outcome::Failure
     };
-    store().record(&assessment);
+    if let Err(error) = crate::core::causal_attribution::record_outcome(
+        &assessment.task_id,
+        crate::core::causal_attribution::OutcomeSignal {
+            session_id: assessment.task_id.clone(),
+            outcome: causal_outcome,
+            evidence: format!(
+                "value_gate outcome_accepted={}",
+                assessment.outcome_accepted
+            ),
+        },
+    ) {
+        tracing::debug!(%error, task_id = assessment.task_id, "causal attribution ValueGate recording failed");
+    }
+    store().record(assessment);
     #[cfg(feature = "enterprise")]
-    record_adaptive_policy_outcome(task_id, &assessment);
-    assessment
+    record_adaptive_policy_outcome(&assessment.task_id, assessment);
 }
 
 /// Feeds every completed Value Gate assessment back into adaptive policy selection.
@@ -132,6 +178,7 @@ mod tests {
 
     #[test]
     fn value_gate_e2e() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
         let cost = ExecutionCost {
             input_tokens: 1_000_000,
             output_tokens: 100_000,
@@ -155,6 +202,7 @@ mod tests {
 
     #[test]
     fn rejects_outcome_for_another_task() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
         let cost = ExecutionCost {
             input_tokens: 1,
             output_tokens: 1,
@@ -181,6 +229,7 @@ mod tests {
     #[test]
     #[ignore = "requires enterprise implementation (GitLab)"]
     fn value_gate_attributes_chunks_present_for_accepted_task() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
         let envelope = crate::core::task_spine::TaskSpine::create_envelope(
             "attribute context",
             "value-gate-causal",

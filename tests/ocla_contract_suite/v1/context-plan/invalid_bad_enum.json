@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "context_plan_id": "context-plan-1",
+  "task_id": "task-1",
+  "budget_tokens": 1,
+  "selections": [
+    {
+      "source_ref": "source-a",
+      "provider": "local",
+      "disposition": "invented",
+      "token_count": 1,
+      "reason_codes": ["relevant"]
+    }
+  ]
+}

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Unified Context Kernel integration for tool hot-paths.
 
 use super::accounting_fix::{PostDeliveryAccounting, compute_honest_accounting};
@@ -115,14 +117,14 @@ pub mod tests {
     };
     use crate::core::context_kernel::accounting_fix::detect_negative_savings;
     use crate::core::context_kernel::activation::KernelModeConfig;
-    use crate::core::context_kernel::bridge::{KernelEnrichment, KernelVerdict};
+    use crate::core::context_kernel::bridge::{KernelEnrichment, enrichment_from_plan};
     use crate::core::context_kernel::enforce::KernelMode;
     use crate::core::context_kernel::types::{ContextPlanV1, PlanBudget};
 
     fn enrichment(blocks: String) -> KernelEnrichment {
         let budget_used = crate::core::tokens::count_tokens(&blocks);
-        KernelEnrichment {
-            plan: ContextPlanV1 {
+        enrichment_from_plan(
+            ContextPlanV1 {
                 plan_id: "test-plan".to_owned(),
                 intent: "test".to_owned(),
                 budget: PlanBudget {
@@ -134,15 +136,13 @@ pub mod tests {
                 excluded: Vec::new(),
                 deferred: Vec::new(),
                 provider_stats: HashMap::new(),
+                origins: Default::default(),
             },
-            blocks: blocks.clone(),
-            verdict: KernelVerdict {
-                supplement: Some(blocks),
-                suppress: Vec::new(),
-                budget_used,
-            },
-            enforced_mode: KernelMode::Shadow,
-        }
+            blocks,
+            budget_used,
+            KernelMode::Shadow,
+        )
+        .expect("nonempty accounting fixture")
     }
 
     fn integration(

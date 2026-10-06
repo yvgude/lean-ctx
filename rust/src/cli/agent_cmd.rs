@@ -1,6 +1,6 @@
 //! `lean-ctx agent` — first-class agent identities (GL #433).
 //!
-//! Subcommands: register, list, show, heartbeat, suspend, resume,
+//! Subcommands: register, list, show, heartbeat, ack-drift, suspend, resume,
 //! decommission, offboard-owner, check.
 
 use crate::core::agent_registry::{self, AgentStatus};
@@ -54,10 +54,11 @@ pub(crate) fn cmd_agent(args: &[String]) {
         }
         Some("list") => {
             let records = if args.iter().any(|arg| arg == "--all") {
-                agent_registry::list()
+                agent_registry::try_list()
             } else {
-                agent_registry::list_active()
-            };
+                agent_registry::try_list_active()
+            }
+            .unwrap_or_else(|error| exit_err(&error));
             if as_json {
                 print_json_or_exit(&records);
                 return;
@@ -93,8 +94,8 @@ pub(crate) fn cmd_agent(args: &[String]) {
             let Some(agent_id) = positional(0) else {
                 exit_usage("agent show <agent-id> [--trust-domain org.example]");
             };
-            match agent_registry::get(&agent_id) {
-                Some(record) => {
+            match agent_registry::try_get(&agent_id) {
+                Ok(Some(record)) => {
                     if as_json {
                         print_json_or_exit(&record);
                     } else {
@@ -104,7 +105,8 @@ pub(crate) fn cmd_agent(args: &[String]) {
                         }
                     }
                 }
-                None => exit_err(&format!("agent '{agent_id}' is not registered")),
+                Ok(None) => exit_err(&format!("agent '{agent_id}' is not registered")),
+                Err(error) => exit_err(&error),
             }
         }
         Some("heartbeat") => {
@@ -112,11 +114,27 @@ pub(crate) fn cmd_agent(args: &[String]) {
                 exit_usage("agent heartbeat <agent-id>");
             };
             match agent_registry::heartbeat(&agent_id) {
-                Ok(None) => println!("heartbeat recorded, attestation unchanged"),
-                Ok(Some(drift)) => {
-                    println!("heartbeat recorded — ATTESTATION DRIFT: {drift}");
-                    std::process::exit(3);
+                Ok(outcome) => {
+                    let (message, code) = heartbeat_report(&agent_id, &outcome);
+                    println!("{message}");
+                    if code != 0 {
+                        std::process::exit(code);
+                    }
                 }
+                Err(e) => exit_err(&e),
+            }
+        }
+        Some("ack-drift") => {
+            let (Some(agent_id), Some(evidence)) = (positional(0), flag("--evidence")) else {
+                exit_usage(
+                    "agent ack-drift <agent-id> --evidence \"<evidence exactly as reported>\"",
+                );
+            };
+            match agent_registry::acknowledge_drift(&agent_id, &evidence) {
+                Ok(ack) => println!(
+                    "drift acknowledged on {}: {} (detected {}, acknowledged {})",
+                    ack.agent_id, ack.evidence, ack.detected_at, ack.acknowledged_at
+                ),
                 Err(e) => exit_err(&e),
             }
         }
@@ -186,9 +204,10 @@ USAGE:\n\
   lean-ctx agent list [--json] [--all]      list active identities (--all: lifecycle history)\n\
   lean-ctx agent presence [--json] [--all]  inspect local MCP agent liveness\n\
   lean-ctx agent show <agent-id> [--trust-domain org.example]\n\
-  lean-ctx agent heartbeat <agent-id>        liveness + attestation drift check\n\
+  lean-ctx agent heartbeat <agent-id>        liveness + attestation drift check (exit 3 = unacknowledged drift)\n\
+  lean-ctx agent ack-drift <agent-id> --evidence \"<evidence>\"  acknowledge exactly the reported drift\n\
   lean-ctx agent suspend <agent-id> [--reason <text>]\n\
-  lean-ctx agent resume <agent-id>\n\
+  lean-ctx agent resume <agent-id>           lifecycle only — does NOT acknowledge drift\n\
   lean-ctx agent decommission <agent-id>     final — writes the audit-closing entry\n\
   lean-ctx agent offboard-owner <user@org>   suspend all agents of an owner (SCIM hook)\n\
   lean-ctx agent check <agent-id>            enforce-path identity check (exit 1 = deny)\n\n\
@@ -314,6 +333,34 @@ fn print_local_presence(as_json: bool, include_finished: bool) {
     }
 }
 
+/// Operator-facing rendering of one heartbeat, split from the I/O so the
+/// exit-code contract is testable.
+///
+/// Exit 3 is the documented drift signal and fires on EVERY beat while the
+/// drift is unacknowledged — not only on the beat that observed it. A monitor
+/// that flipped back to green one minute after the incident, on an identity
+/// `agent check` still denies, is the failure this shape rules out. "new" vs
+/// "still unacknowledged" keeps the two states distinguishable for an
+/// operator reading a log.
+fn heartbeat_report(agent_id: &str, outcome: &agent_registry::HeartbeatOutcome) -> (String, i32) {
+    let Some(mark) = outcome.drift.as_ref() else {
+        return ("heartbeat recorded, attestation unchanged".to_string(), 0);
+    };
+    let state = if outcome.newly_observed {
+        "new".to_string()
+    } else {
+        format!("still unacknowledged since {}", mark.detected_at)
+    };
+    (
+        format!(
+            "heartbeat recorded — ATTESTATION DRIFT ({state}): {}\n\
+             acknowledge with: lean-ctx agent ack-drift {agent_id} --evidence \"{}\"",
+            mark.evidence, mark.evidence
+        ),
+        3,
+    )
+}
+
 fn exit_usage(usage: &str) -> ! {
     eprintln!("usage: lean-ctx {usage}");
     std::process::exit(2);
@@ -335,8 +382,61 @@ fn exit_err(message: &str) -> ! {
 mod tests {
     use chrono::{Duration, Utc};
 
-    use super::local_presence_snapshot;
+    use super::{heartbeat_report, local_presence_snapshot};
+    use crate::core::agent_registry::{DriftMark, HeartbeatOutcome};
     use crate::core::agents::{AgentEntry, AgentRegistry, AgentStatus};
+
+    fn mark() -> DriftMark {
+        DriftMark {
+            detected_at: "2026-09-06T20:00:00Z".to_string(),
+            binary: true,
+            config: false,
+            evidence: "attestation drift dimensions=binary binary=aaaaaaaaaaaa->bbbbbbbbbbbb"
+                .to_string(),
+        }
+    }
+
+    /// B2: the drift signal is the identity's *state*, not the transition.
+    /// Beat 2 must still exit 3 while `agent check` still reports drift.
+    #[test]
+    fn heartbeat_exit_code_stays_3_while_drift_is_unacknowledged() {
+        let clean = HeartbeatOutcome {
+            drift: None,
+            newly_observed: false,
+        };
+        assert_eq!(heartbeat_report("a1", &clean).1, 0);
+
+        let observing = HeartbeatOutcome {
+            drift: Some(mark()),
+            newly_observed: true,
+        };
+        let (new_message, new_code) = heartbeat_report("a1", &observing);
+        assert_eq!(new_code, 3);
+        assert!(new_message.contains("DRIFT (new)"), "{new_message}");
+
+        let sticky = HeartbeatOutcome {
+            drift: Some(mark()),
+            newly_observed: false,
+        };
+        let (sticky_message, sticky_code) = heartbeat_report("a1", &sticky);
+        assert_eq!(
+            sticky_code, 3,
+            "beat 2 must keep signalling: {sticky_message}"
+        );
+        assert!(
+            sticky_message.contains("still unacknowledged since 2026-09-06T20:00:00Z"),
+            "{sticky_message}"
+        );
+        assert_ne!(
+            new_message, sticky_message,
+            "new and still-unacknowledged must be distinguishable"
+        );
+        // Both point at the bound acknowledgement, never at plain `resume`.
+        for message in [&new_message, &sticky_message] {
+            assert!(message.contains("ack-drift a1 --evidence"), "{message}");
+            assert!(!message.contains("agent resume"), "{message}");
+        }
+    }
 
     #[test]
     fn presence_snapshot_classifies_and_hides_finished_agents() {
@@ -355,6 +455,7 @@ mod tests {
                     last_active: now,
                     pid,
                     process_identity: Some(process_identity.clone()),
+                    durable_identity_id: None,
                     status: AgentStatus::Active,
                     status_message: None,
                 },
@@ -367,6 +468,7 @@ mod tests {
                     last_active: now - Duration::seconds(61),
                     pid,
                     process_identity: Some(process_identity.clone()),
+                    durable_identity_id: None,
                     status: AgentStatus::Active,
                     status_message: None,
                 },
@@ -379,6 +481,7 @@ mod tests {
                     last_active: now,
                     pid,
                     process_identity: Some(process_identity),
+                    durable_identity_id: None,
                     status: AgentStatus::Finished,
                     status_message: None,
                 },

@@ -315,6 +315,7 @@ fn end_to_end_consolidation_populates_all_stores() {
         files: std::collections::HashMap::new(),
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
+        admission_policy: None,
     };
     let mut edges: Vec<IndexEdge> = Vec::new();
     let mut cache = SessionCache::new();
@@ -408,6 +409,7 @@ fn bm25_search_finds_consolidated_provider_data() {
         files: std::collections::HashMap::new(),
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
+        admission_policy: None,
     };
 
     apply_artifacts(&artifacts, Some(&mut index), None, None);

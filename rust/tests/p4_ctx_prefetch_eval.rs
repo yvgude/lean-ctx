@@ -2,7 +2,7 @@ use serde_json::json;
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[allow(clippy::await_holding_lock)]
-async fn ctx_prefetch_warms_cache_for_full_read() {
+async fn ctx_prefetch_does_not_hide_first_full_delivery() {
     let _g = lean_ctx::core::data_dir::test_env_lock();
     let dir = tempfile::tempdir().expect("tempdir");
     let data_dir = dir.path().join("data");
@@ -39,9 +39,23 @@ async fn ctx_prefetch_warms_cache_for_full_read() {
         )
         .await
         .expect("read full");
+    // Warming is not delivery: the prefetch response listed files but did not
+    // send their bodies. The first explicit read must still supply the source.
     assert!(
-        full.contains("unchanged") || full.contains("cached") || full.is_empty(),
-        "expected cache hit, got: {full}"
+        full.contains("pub fn a() { b::b(); }"),
+        "first delivery: {full}"
+    );
+    std::fs::write(&file_a, "pub fn changed_after_prefetch() {}\n").expect("change a");
+    let changed = engine
+        .call_tool_text(
+            "ctx_read",
+            Some(json!({"path": file_a.to_string_lossy().to_string(), "mode":"full"})),
+        )
+        .await
+        .expect("read changed file");
+    assert!(
+        changed.contains("changed_after_prefetch"),
+        "must not serve stale prefetch: {changed}"
     );
 
     // SAFETY: serialized by `test_env_lock()`.

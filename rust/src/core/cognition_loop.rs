@@ -581,6 +581,7 @@ mod tests {
         confidence: f32,
     ) -> crate::core::knowledge::KnowledgeFact {
         crate::core::knowledge::KnowledgeFact {
+            origin: crate::core::knowledge::FactOrigin::Local,
             category: category.to_string(),
             key: key.to_string(),
             value: value.to_string(),
@@ -623,6 +624,7 @@ mod tests {
         facts: Vec<crate::core::knowledge::KnowledgeFact>,
     ) -> ProjectKnowledge {
         ProjectKnowledge {
+            withheld: Vec::new(),
             project_root: project_root.to_string(),
             project_hash: "test-hash".to_string(),
             facts,

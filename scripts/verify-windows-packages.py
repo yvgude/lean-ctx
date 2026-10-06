@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Verify ZIP and wheel embed exactly the already verified signed engine."""
 import argparse
 import hashlib

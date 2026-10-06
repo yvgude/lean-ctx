@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `lean-ctx value`: every number the value surface shows, re-derived from the
 //! two tamper-evident chains instead of the display counters.
 //!
@@ -208,17 +209,31 @@ pub fn verified_security_since(cutoff: Option<DateTime<Utc>>) -> Option<Security
 }
 
 /// ✓ measured lifetime security events together with the audit-trail entry
-/// hashes they rest on. `None` when there is no trail or it fails verification.
+/// hashes they rest on, for a signed savings-batch tally: only the kinds that
+/// tally carries (see `SecurityCounts::signed_tally_projection`), so the
+/// evidence names exactly the entries the counts rest on. `None` when there is
+/// no trail or it fails verification.
 pub fn verified_security_evidence() -> Option<(SecurityCounts, Evidence)> {
     security_evidence_at(&audit_trail::default_trail_path()?)
 }
 
 fn security_evidence_at(path: &Path) -> Option<(SecurityCounts, Evidence)> {
-    let proof = build_from(None, Some(path), None, None);
-    proof
-        .audit
-        .intact
-        .then_some((proof.security, proof.audit_evidence))
+    if !audit_trail::verify_chain_at(path).valid {
+        return None;
+    }
+    let mut counts = SecurityCounts::default();
+    let mut evidence = Evidence::default();
+    for entry in audit_trail::load_all_at(path) {
+        let Some((kind, n, _)) = entry.action.as_deref().and_then(parse_action) else {
+            continue;
+        };
+        if !kind.in_signed_tally() {
+            continue;
+        }
+        counts.add(kind, n);
+        evidence.push(&entry.entry_hash);
+    }
+    Some((counts, evidence))
 }
 
 fn security_since_at(path: &Path, cutoff: Option<DateTime<Utc>>) -> Option<SecurityCounts> {

@@ -73,6 +73,7 @@ pub mod ctx_tools;
 pub mod ctx_transcript_compact;
 pub mod ctx_tree;
 pub mod ctx_verify;
+pub mod ctx_work_graph;
 pub mod ctx_workflow;
 pub(crate) mod edit_io;
 pub(crate) mod edit_recovery;

@@ -23,6 +23,8 @@ pub struct EventQuery {
     pub since: Option<i64>,
     /// Cap on the number of replayed events.
     pub limit: Option<u64>,
+    /// Agent identity for directed-event visibility. Omit to receive broadcasts only.
+    pub agent_id: Option<String>,
 }
 
 /// A thin, blocking client for a lean-ctx server's `/v1` surface.
@@ -207,6 +209,14 @@ impl LeanCtxClient {
         }
         if let Some(l) = params.limit {
             q.push(("limit".to_string(), l.to_string()));
+        }
+        if let Some(agent_id) = params
+            .agent_id
+            .as_deref()
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+        {
+            q.push(("agentId".to_string(), agent_id.to_string()));
         }
 
         let url = self.url(&format!("/v1/events{}", encode_query(&q)));

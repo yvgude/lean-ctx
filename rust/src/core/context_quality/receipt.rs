@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! `ContextQualityReceiptV1` — the quality evidence of one context transformation.
 //!
 //! Quality is never collapsed into one score. The receipt keeps independent dimensions

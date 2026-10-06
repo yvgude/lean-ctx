@@ -38,18 +38,71 @@ fn test_on_tool_start() {
 
 #[test]
 fn test_on_tool_end_success() {
+    let _isolation = crate::core::data_dir::isolated_data_dir();
     let runtime = DecisionLoopRuntime::with_triage(TriageEngine::default());
     let context = runtime.on_tool_start("ctx_read", Some("read"), "runtime-test", "agent");
-    runtime.on_tool_end(&context, 1, 1, "gpt-4o", true);
-    assert_eq!(runtime.latest_assessment_accepted(), Some(true));
+    assert!(
+        runtime
+            .on_tool_end(&context, 1, 1, "gpt-4o", true)
+            .is_none()
+    );
+    assert_eq!(
+        context.outcome().unwrap().accepted_outcome.accepted,
+        lean_ctx_protocol::AcceptanceState::Unknown
+    );
 }
 
 #[test]
 fn test_on_tool_end_failure() {
+    let _isolation = crate::core::data_dir::isolated_data_dir();
     let runtime = DecisionLoopRuntime::with_triage(TriageEngine::default());
     let context = runtime.on_tool_start("ctx_read", Some("read"), "runtime-test", "agent");
-    runtime.on_tool_end(&context, 1, 1, "gpt-4o", false);
-    assert_eq!(runtime.latest_assessment_accepted(), Some(false));
+    assert!(
+        runtime
+            .on_tool_end(&context, 1, 1, "gpt-4o", false)
+            .is_none()
+    );
+    let outcome = context
+        .outcome()
+        .expect("failure records a canonical outcome");
+    assert_eq!(outcome.accepted_outcome.task_id.as_str(), context.task_id);
+    assert_eq!(
+        outcome.accepted_outcome.accepted,
+        lean_ctx_protocol::AcceptanceState::Unknown
+    );
+    assert!(outcome.accepted_outcome.evidence_refs.is_empty());
+    assert!(outcome.assessment.is_none());
+    assert!(runtime.assessment_for(&context.task_id).is_none());
+}
+
+#[test]
+fn duplicate_end_is_ignored() {
+    let runtime = DecisionLoopRuntime::with_triage(TriageEngine::default());
+    let context = runtime.on_tool_start("ctx_read", Some("read"), "runtime-once", "agent");
+
+    assert!(
+        runtime
+            .on_tool_end(&context, 1, 1, "gpt-4o", false)
+            .is_none()
+    );
+    let first = context
+        .outcome()
+        .expect("first completion records an outcome");
+    let stages = context.stage_executions();
+    assert!(!stages.is_empty());
+    for success in [false, true] {
+        assert!(
+            runtime
+                .on_tool_end(&context, 999, 999, "gpt-4o", success)
+                .is_none()
+        );
+        assert_eq!(
+            context.outcome().unwrap().accepted_outcome,
+            first.accepted_outcome
+        );
+        assert_eq!(context.stage_executions(), stages);
+        assert!(runtime.assessment_for(&context.task_id).is_none());
+    }
 }
 
 #[test]

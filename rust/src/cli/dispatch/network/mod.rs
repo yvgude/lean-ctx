@@ -1,5 +1,21 @@
 use crate::{core, dashboard};
 
+const MAX_A2A_PEERS_BYTES: u64 = 1024 * 1024;
+
+fn read_a2a_task_authority(path: &std::path::Path) -> Result<String, String> {
+    crate::core::a2a::task::policy_file::read_bounded(path)
+}
+
+fn read_a2a_peers(path: &std::path::Path) -> Result<String, String> {
+    let raw = read_a2a_task_authority(path)?;
+    if raw.len() as u64 > MAX_A2A_PEERS_BYTES {
+        return Err(format!(
+            "A2A peer table exceeds {MAX_A2A_PEERS_BYTES} bytes"
+        ));
+    }
+    Ok(raw)
+}
+
 mod provider;
 pub(crate) use provider::*;
 mod proxy;
@@ -358,6 +374,8 @@ pub(super) fn cmd_serve(rest: &[String]) {
         let mut foreground_daemon = false;
         let mut multi_roots: Vec<(String, Option<String>)> = Vec::new();
         let mut rrf_k: Option<f64> = None;
+        let mut a2a_task_authority_path: Option<String> = None;
+        let mut a2a_peers_path: Option<String> = None;
         let mut i = 0;
         while i < rest.len() {
             match rest[i].as_str() {
@@ -404,6 +422,61 @@ pub(super) fn cmd_serve(rest: &[String]) {
                 }
                 arg if arg.starts_with("--auth-token=") => {
                     cfg.auth_token = Some(arg["--auth-token=".len()..].to_string());
+                }
+                "--a2a-signing-key" => {
+                    i += 1;
+                    if i < rest.len() {
+                        cfg.a2a_signing_key = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-signing-key=") => {
+                    cfg.a2a_signing_key = Some(arg["--a2a-signing-key=".len()..].to_string());
+                }
+                "--a2a-recipient-id" => {
+                    i += 1;
+                    if i < rest.len() {
+                        cfg.a2a_recipient_id = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-recipient-id=") => {
+                    cfg.a2a_recipient_id = Some(arg["--a2a-recipient-id=".len()..].to_string());
+                }
+                "--a2a-tenant-id" => {
+                    i += 1;
+                    if i < rest.len() {
+                        cfg.a2a_tenant_id = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-tenant-id=") => {
+                    cfg.a2a_tenant_id = Some(arg["--a2a-tenant-id=".len()..].to_string());
+                }
+                "--a2a-project-id" => {
+                    i += 1;
+                    if i < rest.len() {
+                        cfg.a2a_project_id = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-project-id=") => {
+                    cfg.a2a_project_id = Some(arg["--a2a-project-id=".len()..].to_string());
+                }
+                "--a2a-task-authority" => {
+                    i += 1;
+                    if i < rest.len() {
+                        a2a_task_authority_path = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-task-authority=") => {
+                    a2a_task_authority_path =
+                        Some(arg["--a2a-task-authority=".len()..].to_string());
+                }
+                "--a2a-peers" => {
+                    i += 1;
+                    if i < rest.len() {
+                        a2a_peers_path = Some(rest[i].clone());
+                    }
+                }
+                arg if arg.starts_with("--a2a-peers=") => {
+                    a2a_peers_path = Some(arg["--a2a-peers=".len()..].to_string());
                 }
                 "--stateful" => cfg.stateful_mode = true,
                 "--stateless" => cfg.stateful_mode = false,
@@ -521,6 +594,12 @@ pub(super) fn cmd_serve(rest: &[String]) {
                            --project-root        Resolve relative paths against this root (default: cwd)\n  \
                            --root PATH[:ALIAS]   Add a repo root for multi-repo mode (repeatable)\n  \
                            --rrf-k N             RRF fusion parameter (default: 60.0)\n  \
+                           --a2a-signing-key     Verify remote A2A envelope HMACs (must differ from auth token; env LEAN_CTX_A2A_SIGNING_KEY)\n  \
+                           --a2a-recipient-id    Bind incoming A2A envelopes to this server identity\n  \
+                           --a2a-tenant-id       Require signed tenant scope on incoming A2A envelopes\n  \
+                           --a2a-project-id      Require signed project scope on incoming A2A envelopes\n  \
+                           --a2a-task-authority  JSON peer/grant trust policy for signed A2A tasks (env LEAN_CTX_A2A_TASK_AUTHORITY)\n  \
+                           --a2a-peers           JSON bounded multi-peer relay table (env LEAN_CTX_A2A_PEERS)\n  \
                            --auth-token          Require Authorization: Bearer <token> (required for non-loopback binds)\n  \
                            --stateful/--stateless  Streamable HTTP session mode (default: stateless)\n  \
                            --json/--sse          Response framing in stateless mode (default: json)\n  \
@@ -537,6 +616,77 @@ pub(super) fn cmd_serve(rest: &[String]) {
                 _ => {}
             }
             i += 1;
+        }
+
+        // Signed-task trust policy. Loaded before any listener starts so an
+        // unreadable or invalid policy stops the server instead of silently
+        // serving one that accepts nothing — or worse, a partial one.
+        let a2a_task_authority_path = a2a_task_authority_path.or_else(|| {
+            std::env::var("LEAN_CTX_A2A_TASK_AUTHORITY")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        });
+        if let Some(path) = a2a_task_authority_path {
+            match crate::core::a2a::task::TaskAuthorityConfigV1::from_file(std::path::Path::new(
+                &path,
+            )) {
+                Ok(policy) => cfg.a2a_task_authority = policy,
+                Err(error) => {
+                    eprintln!("Invalid A2A task authority policy at {path}: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        let a2a_peers_path = a2a_peers_path.or_else(|| {
+            std::env::var("LEAN_CTX_A2A_PEERS")
+                .ok()
+                .filter(|value| !value.trim().is_empty())
+        });
+        if let Some(path) = a2a_peers_path {
+            match read_a2a_peers(std::path::Path::new(&path)).and_then(|raw| {
+                crate::core::a2a::relay::RelayPeerTableV1::from_json(&raw, false)
+                    .map_err(|error| error.to_string())
+            }) {
+                Ok(table) => cfg.a2a_peers = table,
+                Err(error) => {
+                    eprintln!("Invalid A2A peer table at {path}: {error}");
+                    std::process::exit(1);
+                }
+            }
+        }
+
+        // Apply environment fallbacks before daemon dispatch as both foreground
+        // and IPC servers validate the same remote-authority configuration.
+        if cfg.auth_token.is_none()
+            && let Ok(v) = std::env::var("LEAN_CTX_HTTP_TOKEN")
+            && !v.trim().is_empty()
+        {
+            cfg.auth_token = Some(v);
+        }
+        if cfg.a2a_signing_key.is_none()
+            && let Ok(v) = std::env::var("LEAN_CTX_A2A_SIGNING_KEY")
+            && !v.trim().is_empty()
+        {
+            cfg.a2a_signing_key = Some(v);
+        }
+        if cfg.a2a_recipient_id.is_none()
+            && let Ok(v) = std::env::var("LEAN_CTX_A2A_RECIPIENT_ID")
+            && !v.trim().is_empty()
+        {
+            cfg.a2a_recipient_id = Some(v);
+        }
+        if cfg.a2a_tenant_id.is_none()
+            && let Ok(v) = std::env::var("LEAN_CTX_A2A_TENANT_ID")
+            && !v.trim().is_empty()
+        {
+            cfg.a2a_tenant_id = Some(v);
+        }
+        if cfg.a2a_project_id.is_none()
+            && let Ok(v) = std::env::var("LEAN_CTX_A2A_PROJECT_ID")
+            && !v.trim().is_empty()
+        {
+            cfg.a2a_project_id = Some(v);
         }
 
         if !multi_roots.is_empty() {
@@ -582,13 +732,6 @@ pub(super) fn cmd_serve(rest: &[String]) {
             }
             crate::daemon::cleanup_daemon_files();
             return;
-        }
-
-        if cfg.auth_token.is_none()
-            && let Ok(v) = std::env::var("LEAN_CTX_HTTP_TOKEN")
-            && !v.trim().is_empty()
-        {
-            cfg.auth_token = Some(v);
         }
 
         if let Err(e) = super::run_async(crate::http_server::serve(cfg)) {

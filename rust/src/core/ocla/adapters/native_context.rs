@@ -24,7 +24,7 @@ const MANIFEST_JSON: &str = include_str!(concat!(
     "/assets/ocla/capability-manifests/leanctx/context-optimization-v1.json"
 ));
 
-fn manifest() -> &'static CapabilityManifestV1 {
+pub(crate) fn manifest() -> &'static CapabilityManifestV1 {
     static MANIFEST: OnceLock<CapabilityManifestV1> = OnceLock::new();
     MANIFEST.get_or_init(|| {
         let manifest: CapabilityManifestV1 =
@@ -251,7 +251,9 @@ impl NativeContextAdapter {
                 mode,
                 budget_tokens,
             } => self.invoke_context(invocation, paths, mode, *budget_tokens, start),
-            CapabilityInput::ShellCommand { .. } | CapabilityInput::ModelRequest { .. } => {
+            CapabilityInput::ShellCommand { .. }
+            | CapabilityInput::ModelRequest { .. }
+            | CapabilityInput::AgentTask(_) => {
                 Err(NativeContextInvocationFailure::UnsupportedInput)
             }
         }
@@ -280,7 +282,9 @@ impl NativeContextAdapter {
                 start,
                 input,
             ),
-            CapabilityInput::ShellCommand { .. } | CapabilityInput::ModelRequest { .. } => {
+            CapabilityInput::ShellCommand { .. }
+            | CapabilityInput::ModelRequest { .. }
+            | CapabilityInput::AgentTask(_) => {
                 Err(NativeContextInvocationFailure::UnsupportedInput)
             }
         }
@@ -388,11 +392,10 @@ fn truncate_to_tokens(content: &str, budget: u64) -> String {
     if tokens::count_tokens(content) as u64 <= budget {
         return content.to_owned();
     }
-    content
-        .split_whitespace()
-        .take(budget as usize)
-        .collect::<Vec<_>>()
-        .join(" ")
+    crate::core::budget::truncate_to_token_budget(
+        content,
+        usize::try_from(budget).unwrap_or(usize::MAX),
+    )
 }
 
 fn compression_rate_milli(input_tokens: u64, output_tokens: u64) -> u64 {

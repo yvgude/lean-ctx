@@ -1,0 +1,56 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "workspace.schema.json",
+  "title": "LeanCTX Team Workspace v1",
+  "description": "Workspace record. Shared types live in common.schema.json; this file is a record schema only.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "v",
+    "organization_id",
+    "workspace_id",
+    "name",
+    "created_by",
+    "created_at",
+    "classification",
+    "lifecycle_state",
+    "version",
+    "idempotency_key"
+  ],
+  "properties": {
+    "v": { "const": 1 },
+    "organization_id": { "$ref": "common.schema.json#/$defs/id" },
+    "workspace_id": { "$ref": "common.schema.json#/$defs/id" },
+    "name": { "type": "string", "minLength": 1, "maxLength": 128 },
+    "created_by": { "$ref": "common.schema.json#/$defs/memberId" },
+    "created_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "classification": { "$ref": "common.schema.json#/$defs/classification" },
+    "lifecycle_state": {
+      "description": "Workspace lifecycle. 'deleted' is a tombstone: scope identity and immutable audit lineage are retained while workspace payload is unrecoverable.",
+      "enum": ["active", "archived", "deleted"]
+    },
+    "deleted_at": { "$ref": "common.schema.json#/$defs/timestamp" },
+    "deletion_receipt_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "version": { "$ref": "common.schema.json#/$defs/version" },
+    "parent_digest": { "$ref": "common.schema.json#/$defs/recordDigest" },
+    "idempotency_key": { "$ref": "common.schema.json#/$defs/idempotencyKey" }
+  },
+  "allOf": [
+    { "$ref": "common.schema.json#/$defs/casLineage" },
+    {
+      "if": {
+        "properties": { "lifecycle_state": { "const": "deleted" } },
+        "required": ["lifecycle_state"]
+      },
+      "then": { "required": ["deleted_at", "deletion_receipt_digest"] },
+      "else": {
+        "not": {
+          "anyOf": [
+            { "required": ["deleted_at"] },
+            { "required": ["deletion_receipt_digest"] }
+          ]
+        }
+      }
+    }
+  ]
+}

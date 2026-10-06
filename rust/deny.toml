@@ -16,16 +16,6 @@ ignore = [
     "RUSTSEC-2024-0436", # paste (transitive, awaiting upstream migration)
     "RUSTSEC-2026-0192", # ttf-parser (transitive via pdf-extract→lopdf, no safe upgrade)
 
-    # arrayref 0.3.9 (YANKED, not an advisory — hence the bare package spec
-    # rather than a RUSTSEC id): the yank is resolved DOWN, deliberately.
-    # 0.3.10 was a supply-chain attack: it declared `proc-macro1` as a normal
-    # dependency, whose build.rs downloads and executes a remote payload at
-    # compile time. crates.io removed 0.3.10 entirely. Chain:
-    # lean-ctx → blake3 1.8 → arrayref ^0.3.5. Staying on the yanked 0.3.9
-    # is the SMALLER risk. Revisit when blake3 drops arrayref or upstream
-    # publishes an un-yanked clean release.
-    # See: https://github.com/yvgude/lean-ctx/issues/1486
-    "arrayref@0.3.9",
 ]
 
 [licenses]

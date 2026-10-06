@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Store for the agent-driven conversation-compaction directive (#1570 P1).
 //!
 //! The MCP server cannot rewrite the client's conversation — only the proxy

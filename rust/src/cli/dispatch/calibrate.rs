@@ -448,7 +448,7 @@ fn run_live_benchmark_results(
     source_spec: &BenchmarkSpecV1,
 ) -> anyhow::Result<Vec<LiveBenchmarkRun>> {
     let agent_name = connector.name().to_owned();
-    let runner = LocalRunner::new(
+    let runner = LocalRunner::for_live_benchmark(
         RunConfig {
             agent_name,
             profile_name: candidates
@@ -461,7 +461,8 @@ fn run_live_benchmark_results(
             repeats: 1,
         },
         connector,
-    );
+        source_spec.configuration.model.clone(),
+    )?;
 
     let mut runs = Vec::with_capacity(candidates.len());
     for (index, candidate) in candidates.iter().enumerate() {

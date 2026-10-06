@@ -56,9 +56,12 @@ extern "C" fn handle_sigint(_sig: libc::c_int) {
 /// daemon/MCP server never calls it, so [`is_cancelled`] stays `false` there
 /// and background embedding is unaffected.
 pub fn install_ctrlc_handler() {
+    #[cfg(unix)]
     if HANDLER_INSTALLED.swap(true, Ordering::SeqCst) {
         return;
     }
+    #[cfg(not(unix))]
+    let _ = HANDLER_INSTALLED.swap(true, Ordering::SeqCst);
     // SAFETY: `handle_sigint` only performs async-signal-safe work (atomic
     // stores, and `libc::_exit` on the second signal). Registering it replaces
     // the default terminate-immediately disposition with a cooperative one.

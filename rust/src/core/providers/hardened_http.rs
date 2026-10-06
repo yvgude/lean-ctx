@@ -6,6 +6,9 @@ const DEFAULT_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 const DEGRADED_MULTIPLIER: u32 = 2;
 const MAX_RESPONSE_BODY_BYTES: u64 = 10 * 1024 * 1024;
 
+#[cfg(test)]
+pub(crate) mod redirect_tests;
+
 #[derive(Debug, Clone)]
 pub enum HttpOutcome {
     Success {
@@ -34,6 +37,14 @@ pub struct HardenedClient {
 }
 
 pub fn hardened_agent() -> ureq::Agent {
+    if let Some(remaining) = super::provenance::reuse_time_remaining() {
+        return ureq::config::Config::builder()
+            .tls_config(crate::core::http_client::platform_tls_config())
+            .max_redirects(0)
+            .timeout_global(Some(remaining.max(Duration::from_nanos(1))))
+            .build()
+            .into();
+    }
     let multiplier = if crate::core::io_health::environment()
         == crate::core::io_health::IoEnvironment::Degraded
     {
@@ -42,7 +53,10 @@ pub fn hardened_agent() -> ureq::Agent {
         1
     };
 
-    crate::core::http_client::ureq_agent_with_timeouts(
+    // Provider credentials include custom headers (for example PRIVATE-TOKEN)
+    // that HTTP clients do not remove on cross-origin redirects. A configured
+    // endpoint is the authority: require the operator to select its final URL.
+    crate::core::http_client::ureq_agent_without_redirects(
         Some(DEFAULT_RESOLVE_TIMEOUT * multiplier),
         Some(DEFAULT_CONNECT_TIMEOUT * multiplier),
         Some(DEFAULT_RESPONSE_TIMEOUT * multiplier),
@@ -98,6 +112,15 @@ impl HardenedClient {
             Err(error) => return self.error_outcome(error, elapsed_ms(started)),
         };
         let status = response.status().as_u16();
+        if !(200..300).contains(&status) {
+            // Neither a Location value nor a server error body is safe context:
+            // either may echo credentials, URLs or private response contents.
+            return HttpOutcome::HttpError {
+                status,
+                body: String::new(),
+                elapsed_ms: elapsed_ms(started),
+            };
+        }
         let body = match response
             .into_body()
             .into_with_config()
@@ -109,18 +132,10 @@ impl HardenedClient {
         };
         let elapsed_ms = elapsed_ms(started);
 
-        if status >= 400 {
-            HttpOutcome::HttpError {
-                status,
-                body,
-                elapsed_ms,
-            }
-        } else {
-            HttpOutcome::Success {
-                status,
-                body,
-                elapsed_ms,
-            }
+        HttpOutcome::Success {
+            status,
+            body,
+            elapsed_ms,
         }
     }
 

@@ -70,6 +70,78 @@ pub fn active_resolved() -> Option<ResolvedPolicy> {
     }
 }
 
+/// Error-preserving resolution for enforcement callers. Only an absent policy
+/// or a verified, trusted policy explicitly marked unenforced yields `None`.
+pub fn active_resolved_checked() -> Result<Option<ResolvedPolicy>, String> {
+    let Some(artifact) = store::load_active_checked()? else {
+        return Ok(None);
+    };
+    resolve_checked(&artifact, &trust::load()?)
+}
+
+pub(crate) fn resolve_checked(
+    artifact: &OrgPolicyV1,
+    trusted: &TrustStore,
+) -> Result<Option<ResolvedPolicy>, String> {
+    if !artifact.verify().signature_valid {
+        return Err("org policy signature invalid".into());
+    }
+    let signer = artifact
+        .signer_public_key
+        .as_deref()
+        .ok_or_else(|| "org policy signer missing".to_string())?;
+    if !trusted
+        .keys
+        .iter()
+        .any(|key| key.public_key == signer && key.org == artifact.org)
+    {
+        return Err("org policy signer is not pinned for this organization".into());
+    }
+    let resolved = artifact.resolved().map_err(|error| error.to_string())?;
+    Ok(artifact.enforced.then_some(resolved))
+}
+
+#[cfg(test)]
+mod checked_tests {
+    use super::*;
+
+    fn fixture(enforced: bool) -> (OrgPolicyV1, TrustStore) {
+        let key = ed25519_dalek::SigningKey::from_bytes(&[19; 32]);
+        let mut artifact = OrgPolicyV1::build(
+            "acme", "1", enforced,
+            "name = \"floor\"\nversion = \"1.0.0\"\ndescription = \"test\"\n[context]\ndeny_tools = [\"ctx_shell\"]\n",
+        ).unwrap();
+        artifact.sign_with_key(&key);
+        let trusted = TrustStore {
+            keys: vec![TrustedKey {
+                org: "acme".into(),
+                public_key: artifact.signer_public_key.clone().unwrap(),
+                added_at: "2026-09-09T00:00:00Z".into(),
+            }],
+        };
+        (artifact, trusted)
+    }
+
+    #[test]
+    fn checked_resolution_requires_valid_signature_and_org_pin() {
+        let (mut artifact, mut trusted) = fixture(true);
+        assert!(resolve_checked(&artifact, &trusted).unwrap().is_some());
+        assert!(resolve_checked(&artifact, &TrustStore::default()).is_err());
+        trusted.keys[0].org = "other".into();
+        assert!(resolve_checked(&artifact, &trusted).is_err());
+        trusted.keys[0].org = "acme".into();
+        artifact.enforced = false;
+        assert!(resolve_checked(&artifact, &trusted).is_err());
+    }
+
+    #[test]
+    fn checked_resolution_allows_only_trusted_signed_disable() {
+        let (artifact, trusted) = fixture(false);
+        assert!(resolve_checked(&artifact, &trusted).unwrap().is_none());
+        assert!(resolve_checked(&artifact, &TrustStore::default()).is_err());
+    }
+}
+
 #[derive(Debug, Clone, Default)]
 pub struct OrgStatus {
     pub present: bool,

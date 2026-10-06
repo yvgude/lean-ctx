@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! End-to-end coverage for the `ctx_compose` task composer.
 //!
 //! The library unit tests only cover keyword extraction; these exercise the
@@ -50,8 +51,8 @@ fn compose_returns_all_sections_with_symbol_body() {
 
     assert!(out.contains("TASK:"), "must echo the task header");
     assert!(
-        out.contains("## Ranked files (semantic)"),
-        "must contain the semantic ranking section"
+        out.contains("## Ranked files (local BM25)"),
+        "must contain the ranking section"
     );
     assert!(
         out.contains("## Exact matches"),
@@ -96,7 +97,7 @@ fn compose_degrades_under_tight_budget_without_stalling() {
         "tight budget must not stall the call (took {elapsed:?})"
     );
     assert!(
-        out.contains("## Ranked files (semantic)"),
+        out.contains("## Ranked files (local BM25)"),
         "section header is always present"
     );
     assert!(
@@ -130,6 +131,11 @@ fn compose_surfaces_associative_neighbours() {
     // env-mutating test here holds for its whole body.
     unsafe { std::env::set_var("LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS", "8000") };
     let dir = write_corpus();
+    // This scenario tests graph retrieval, not cold-build scheduling. A worker
+    // from the separate tight-budget scenario may still own the build gate.
+    // Prepare the real graph explicitly, as in the disambiguation scenario.
+    lean_ctx::core::graph_provider::build_property_graph(&dir.path().to_string_lossy())
+        .expect("associative corpus graph must build");
 
     // `authenticate_user` lives in auth.rs; config.rs is a same-dir sibling, so
     // the graph connects them and spreading activation from the auth.rs seed
@@ -202,7 +208,7 @@ fn compose_disambiguates_same_named_symbol_by_task_keywords() {
 
     // The claim is about which same-named symbol gets *inlined* under
     // "Top symbols", not about suppressing the other file everywhere — the
-    // semantic "Ranked files" section may still list both. So scope the check
+    // "Ranked files" section may still list both. So scope the check
     // to the inlined-bodies section.
     let symbols = out
         .split("## Top symbols")

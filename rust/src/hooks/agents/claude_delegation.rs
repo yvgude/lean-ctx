@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! #1879: detect a user-owned Bash hook that already delegates to `lean-ctx hook rewrite`
 //! (inline or via a script), so the installer never adds a parallel rewrite hook next to it.
 

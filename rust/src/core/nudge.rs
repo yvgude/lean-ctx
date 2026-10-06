@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: Apache-2.0
+
 //! Nudge economy for budget advisories (#1570 P2, DCP-inspired).
 //!
 //! The pre-#1570 `[BUDGET WARNING]` footer fired on every call once a

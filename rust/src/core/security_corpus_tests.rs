@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 use super::{detect_secrets, scan_and_redact};
 use crate::core::{config::SecretDetectionConfig, redaction};
 use base64::Engine as _;

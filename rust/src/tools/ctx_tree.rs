@@ -45,7 +45,10 @@ pub fn handle(
         return (err, 0);
     }
 
-    let (entries, raw_tokens) = collect_entries(root, depth, show_hidden, respect_gitignore);
+    let (entries, raw_tokens) = match collect_entries(root, depth, show_hidden, respect_gitignore) {
+        Ok(entries) => entries,
+        Err(error) => return (format!("ERROR: {error}"), 0),
+    };
     let body = render_compact_tree(root, &entries);
     if body.trim().is_empty() {
         return (format!("{path}/ (empty directory, depth={depth})"), 0);
@@ -59,10 +62,12 @@ fn collect_entries(
     max_depth: usize,
     show_hidden: bool,
     respect_gitignore: bool,
-) -> (Vec<Entry>, usize) {
+) -> Result<(Vec<Entry>, usize), &'static str> {
     let mut entries = Vec::new();
     let mut raw_tokens = 0;
     let newline_tokens = count_tokens("\n");
+    let protected = crate::core::policy::runtime::active().is_some();
+    let allow_secret_paths = crate::core::roles::active_role().io.allow_secret_paths;
 
     let walker = WalkBuilder::new(root)
         .hidden(!show_hidden)
@@ -81,20 +86,43 @@ fn collect_entries(
         })
         .build();
 
-    for entry in walker.filter_map(std::result::Result::ok) {
+    for (visited, entry) in walker.filter_map(std::result::Result::ok).enumerate() {
+        if protected && visited >= 20_000 {
+            return Err("protected directory walk limit exceeded");
+        }
         if entry.depth() == 0 {
             continue;
         }
 
         let depth = entry.depth();
-        let name = entry.file_name().to_string_lossy().to_string();
+        let admitted = if protected {
+            if !allow_secret_paths
+                && crate::core::io_boundary::is_secret_like(entry.path()).is_some()
+            {
+                continue;
+            }
+            match crate::server::policy_guard::protect_result(
+                "ctx_tree",
+                &entry.path().to_string_lossy(),
+            ) {
+                Ok(path) => path,
+                Err(_) => continue,
+            }
+        } else {
+            entry.path().to_string_lossy().into_owned()
+        };
+        let name = Path::new(&admitted)
+            .file_name()
+            .unwrap_or_default()
+            .to_string_lossy()
+            .into_owned();
         let is_dir = entry
             .file_type()
             .is_some_and(|file_type| file_type.is_dir());
         let path = entry.into_path();
-        let relative_path = path
+        let relative_path = Path::new(&admitted)
             .strip_prefix(root)
-            .unwrap_or(path.as_path())
+            .unwrap_or(Path::new(&admitted))
             .to_string_lossy();
 
         if !entries.is_empty() {
@@ -110,7 +138,7 @@ fn collect_entries(
         });
     }
 
-    (entries, raw_tokens)
+    Ok((entries, raw_tokens))
 }
 
 fn render_compact_tree(root: &Path, entries: &[Entry]) -> String {
@@ -267,7 +295,7 @@ mod tests {
     fn tree_derives_body_and_raw_tokens_from_one_entry_set() {
         let dir = make_fixture();
         let root = dir.path();
-        let (entries, expected_raw_tokens) = collect_entries(root, 3, false, true);
+        let (entries, expected_raw_tokens) = collect_entries(root, 3, false, true).unwrap();
 
         let (body, raw_tokens) = handle(&root.to_string_lossy(), 3, false, true);
 

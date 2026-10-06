@@ -1,0 +1,23 @@
+[package]
+name = "leanctx-native-storage"
+version = "0.1.0"
+edition = "2024"
+license = "Apache-2.0"
+description = "Handle-bound native storage primitives shared by LeanCTX components"
+repository = "https://github.com/yvgude/lean-ctx"
+
+[target.'cfg(windows)'.dependencies]
+getrandom = "0.3"
+hex = "0.4"
+windows-sys = { version = "0.61", features = [
+    "Wdk_Foundation", "Wdk_Storage_FileSystem", "Wdk_System_SystemServices",
+    "Win32_Foundation", "Win32_Globalization", "Win32_Security",
+    "Win32_Security_Authorization", "Win32_Storage_FileSystem",
+    "Win32_System_IO", "Win32_System_Threading",
+] }
+
+[lints.rust]
+unsafe_op_in_unsafe_fn = "deny"
+
+[lints.clippy]
+undocumented_unsafe_blocks = "deny"

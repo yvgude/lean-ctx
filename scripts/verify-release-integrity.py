@@ -1,13 +1,22 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: Apache-2.0
 """Verify the checksums, SBOM, and manifest of a downloaded release."""
 
 import argparse
 import hashlib
 import json
+import os
 import re
+import stat
+import tarfile
+import tempfile
 import urllib.parse
 import urllib.request
+import zipfile
 from pathlib import Path
+
+from release_inventory import SUPPLEMENTAL_SOURCES, VERIFIABLE_SUPPLEMENTAL_SOURCES, artifact_kind, upload_paths
+from release_inventory import safe_filename as inventory_filename
 
 
 class GateError(RuntimeError):
@@ -16,7 +25,7 @@ class GateError(RuntimeError):
 
 SHA256_RE = re.compile(r"[0-9a-f]{64}")
 COMMIT_RE = re.compile(r"[0-9a-f]{40}")
-RELEASE_FILES = ("SHA256SUMS", "SBOM.txt", "release-manifest.json")
+RELEASE_FILES = ("SHA256SUMS", "SBOM.cdx.json", "release-manifest.json")
 
 
 def sha256_file(path):
@@ -30,12 +39,10 @@ def sha256_file(path):
 
 def safe_filename(value):
     """Reject paths that could make an archive write outside its download directory."""
-    if not isinstance(value, str) or not value:
-        raise GateError("release file name is unsafe")
-    path = Path(value)
-    if path.is_absolute() or len(path.parts) != 1:
-        raise GateError("release file name is unsafe")
-    return value
+    try:
+        return inventory_filename(value)
+    except ValueError as exc:
+        raise GateError(str(exc)) from exc
 
 
 def parse_checksums(data):
@@ -56,22 +63,22 @@ def parse_checksums(data):
 
 
 def parse_sbom(data):
-    """Parse Cargo's one-package-and-license-per-line SBOM representation."""
-    entries = []
-    for line in data.decode("utf-8", errors="strict").splitlines():
-        package_and_version, separator, license_name = line.rpartition(" ")
-        if not separator or not package_and_version or not license_name:
-            raise GateError("invalid SBOM entry")
-        entries.append({"package": package_and_version, "license": license_name})
-    if not entries:
-        raise GateError("SBOM contains no entries")
-    return entries
+    """Parse the CycloneDX JSON SBOM emitted by the release workflow."""
+    try:
+        value = json.loads(data.decode("utf-8", errors="strict"))
+    except (json.JSONDecodeError, UnicodeError) as exc:
+        raise GateError("invalid CycloneDX SBOM") from exc
+    if (not isinstance(value, dict) or value.get("bomFormat") != "CycloneDX"
+            or not isinstance(value.get("components"), list)
+            or not value["components"]):
+        raise GateError("invalid CycloneDX SBOM")
+    return value
 
 
 def validate_manifest(value):
     """Validate and return the v1 release manifest."""
     expected = {
-        "schema_version", "tag", "commit", "timestamp", "artifacts",
+        "schema_version", "tag", "commit", "artifacts",
         "sbom_sha256", "checksums_sha256",
     }
     if not isinstance(value, dict) or set(value) != expected:
@@ -80,8 +87,6 @@ def validate_manifest(value):
         raise GateError("unsupported release manifest schema")
     if not isinstance(value["tag"], str) or not value["tag"]:
         raise GateError("invalid manifest tag")
-    if not isinstance(value["timestamp"], str) or not value["timestamp"].endswith("Z"):
-        raise GateError("invalid manifest timestamp")
     if not isinstance(value["commit"], str) or not COMMIT_RE.fullmatch(value["commit"]):
         raise GateError("invalid manifest commit")
     if not all(isinstance(value[key], str) and SHA256_RE.fullmatch(value[key])
@@ -90,19 +95,81 @@ def validate_manifest(value):
     artifacts = value["artifacts"]
     if not isinstance(artifacts, dict) or not artifacts:
         raise GateError("invalid manifest artifacts")
+    typed = any(isinstance(details, dict) and "kind" in details for details in artifacts.values())
     for name, details in artifacts.items():
         safe_filename(name)
-        if (not isinstance(details, dict) or set(details) != {"sha256", "size"}
+        try:
+            kind = artifact_kind(name, value["tag"]) if typed else None
+        except ValueError as exc:
+            raise GateError(str(exc)) from exc
+        fields = {"sha256", "size"}
+        if typed:
+            fields.add("kind")
+            if kind == "binary":
+                fields.add("payload_sha256")
+            elif kind == "supplemental":
+                fields.add("source_path")
+        if (not isinstance(details, dict)
+                or (set(details) != fields if typed else
+                    set(details) not in (fields, fields | {"payload_sha256"}))
                 or not isinstance(details["sha256"], str)
                 or not SHA256_RE.fullmatch(details["sha256"])
-                or not isinstance(details["size"], int) or details["size"] < 0):
+                or type(details["size"]) is not int or details["size"] < 0):
             raise GateError("invalid manifest artifact")
+        if typed and (details["kind"] != kind or
+                      (kind == "supplemental" and details["source_path"] != VERIFIABLE_SUPPLEMENTAL_SOURCES[name])):
+            raise GateError("manifest kind/source does not match release inventory")
+        payload = details.get("payload_sha256")
+        if payload is not None and (not isinstance(payload, str) or not SHA256_RE.fullmatch(payload)):
+            raise GateError("invalid manifest payload digest")
+        source_archive = f"lean-ctx-{value['tag'].removeprefix('v')}-source.tar.gz"
+        if name != source_archive and kind != "supplemental" and payload is None:
+            raise GateError("binary manifest artifact omits payload digest")
+    if typed:
+        if not SUPPLEMENTAL_SOURCES.keys() <= artifacts.keys():
+            raise GateError("manifest omits required supplemental assets")
+        if artifacts["SBOM.cdx.json"]["sha256"] != value["sbom_sha256"]:
+            raise GateError("SBOM artifact digest disagrees with manifest scalar")
     return value
+
+
+def payload_sha256(path):
+    """Hash the single regular root-level binary without extracting it."""
+    try:
+        if path.suffix in (".zip", ".whl"):
+            names = {"lean-ctx.exe"}
+            if path.suffix == ".whl":
+                distribution = path.name.split("-", 1)[0]
+                if distribution not in {"thinkery_leanctx_engine", "thinkery_leanctx_engine_cuda", "thinkery_leanctx_engine_windows_gnu"}:
+                    raise GateError("unsupported companion wheel distribution")
+                names = {f"{distribution}/bin/lean-ctx", f"{distribution}/bin/lean-ctx.exe"}
+            with zipfile.ZipFile(path) as bundle:
+                members = [
+                    member for member in bundle.infolist()
+                    if not member.is_dir() and member.filename in names
+                    and stat.S_IFMT(member.external_attr >> 16) != stat.S_IFLNK
+                ]
+                if len(members) != 1:
+                    raise GateError("archive must contain one regular root-level payload")
+                return hashlib.sha256(bundle.read(members[0])).hexdigest()
+        if path.name.endswith(".tar.gz"):
+            with tarfile.open(path, "r:gz") as bundle:
+                members = [member for member in bundle.getmembers()
+                           if member.isfile() and member.name == "lean-ctx"]
+                if len(members) != 1:
+                    raise GateError("archive must contain one regular root-level payload")
+                handle = bundle.extractfile(members[0])
+                if handle is None:
+                    raise GateError("archive payload is unreadable")
+                return hashlib.sha256(handle.read()).hexdigest()
+    except (tarfile.TarError, zipfile.BadZipFile, OSError) as exc:
+        raise GateError("invalid release archive") from exc
+    raise GateError("unsupported binary release archive")
 
 
 def read_release_file(directory, name):
     path = directory / safe_filename(name)
-    if not path.is_file():
+    if path.is_symlink() or not path.is_file():
         raise GateError(f"missing release file: {name}")
     return path
 
@@ -119,7 +186,7 @@ def verify_release(tag, directory):
             raise GateError("manifest tag does not match expected tag")
         report["checks"].append("manifest-tag")
 
-        sbom_path = read_release_file(directory, "SBOM.txt")
+        sbom_path = read_release_file(directory, "SBOM.cdx.json")
         if sha256_file(sbom_path) != manifest["sbom_sha256"]:
             raise GateError("SBOM digest does not match manifest")
         report["checks"].append("sbom-sha256")
@@ -142,6 +209,9 @@ def verify_release(tag, directory):
                 raise GateError(f"artifact digest mismatch: {name}")
             if path.stat().st_size != details["size"]:
                 raise GateError(f"artifact size mismatch: {name}")
+            expected_payload = details.get("payload_sha256")
+            if expected_payload is not None and payload_sha256(path) != expected_payload:
+                raise GateError(f"artifact payload digest mismatch: {name}")
             report["checks"].append(f"artifact:{name}")
         report["verified"] = True
     except (GateError, OSError, UnicodeError, json.JSONDecodeError) as exc:
@@ -153,7 +223,20 @@ def download_file(url, destination):
     """Download one release asset without interpreting its contents."""
     request = urllib.request.Request(url, headers={"User-Agent": "lean-ctx-release-integrity"})
     with urllib.request.urlopen(request, timeout=30) as response:
-        destination.write_bytes(response.read())
+        data = response.read()
+    destination.parent.mkdir(parents=True, exist_ok=True)
+    temporary_name = None
+    try:
+        with tempfile.NamedTemporaryFile(dir=destination.parent, delete=False) as handle:
+            temporary_name = handle.name
+            handle.write(data)
+            handle.flush()
+            os.fsync(handle.fileno())
+        os.replace(temporary_name, destination)
+        temporary_name = None
+    finally:
+        if temporary_name is not None:
+            Path(temporary_name).unlink(missing_ok=True)
 
 
 def download_release(tag, directory, repository):
@@ -176,16 +259,25 @@ def download_release(tag, directory, repository):
 def main(argv=None):
     parser = argparse.ArgumentParser(description="Verify a lean-ctx release integrity chain")
     commands = parser.add_subparsers(dest="action", required=True)
-    for action in ("verify", "download"):
+    for action in ("verify", "download", "upload-list"):
         command = commands.add_parser(action)
         command.add_argument("--tag", required=True)
         command.add_argument("--dir", "--download-dir", dest="dir", type=Path, required=True)
     commands.choices["download"].add_argument("--repository", default="yvgude/lean-ctx")
     args = parser.parse_args(argv)
     try:
+        if args.action == "upload-list":
+            report = verify_release(args.tag, args.dir)
+            if not report["verified"]:
+                raise GateError("; ".join(report["errors"]))
+            manifest = json.loads((args.dir / "release-manifest.json").read_text())
+            if not all("kind" in entry for entry in manifest["artifacts"].values()):
+                raise GateError("publication requires the complete typed inventory")
+            print("\n".join(str(args.dir / name) for name in upload_paths(args.dir, manifest["artifacts"])))
+            return 0
         report = (verify_release(args.tag, args.dir) if args.action == "verify"
                   else download_release(args.tag, args.dir, args.repository))
-    except (GateError, OSError, UnicodeError) as exc:
+    except (GateError, ValueError, OSError, UnicodeError) as exc:
         report = {"schema_version": "leanctx.release-integrity-report/v1", "tag": args.tag,
                   "verified": False, "checks": [], "errors": [str(exc)]}
     print(json.dumps(report, sort_keys=True))

@@ -1,4 +1,8 @@
 use super::*;
+use crate::core::execution_lifecycle::{
+    ExecutionDriver, ExecutionLifecycle, ProductEntitlements, RuntimeContext, StageDisposition,
+    TaskContext, ToolRequest, ToolSurface,
+};
 use crate::core::ocla::registry::with_test_registry;
 use crate::core::ocla::traits::{IntentClassifier, OclaService};
 use crate::core::ocla::types::{
@@ -92,6 +96,411 @@ async fn non_json_scope_401_still_gets_the_hint_appended() {
 
 struct SpyIntentClassifier(Arc<AtomicUsize>);
 
+fn proxy_test_state(upstream: &str) -> ProxyState {
+    let (_, upstreams) = tokio::sync::watch::channel(Arc::new(crate::core::config::Upstreams {
+        anthropic: upstream.to_owned(),
+        openai: upstream.to_owned(),
+        chatgpt: upstream.to_owned(),
+        gemini: upstream.to_owned(),
+        providers: Vec::new(),
+    }));
+    ProxyState {
+        client: reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(2))
+            .build()
+            .unwrap(),
+        port: 0,
+        stats: Arc::new(crate::proxy::ProxyStats::default()),
+        break_even: Arc::new(crate::proxy::break_even::BreakEvenCalculator::new(1500)),
+        introspect: Arc::new(crate::proxy::introspect::IntrospectState::default()),
+        ocla_cache: None,
+        upstreams,
+        chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
+        mcp_servers: Arc::new(Vec::new()),
+        web_app_tracker: Arc::new(std::sync::Mutex::new(
+            crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
+        )),
+    }
+}
+
+fn proxy_test_context() -> TaskContext {
+    ExecutionLifecycle::default().begin(
+        ToolRequest {
+            tool_name: "proxy_forward".into(),
+            query: None,
+            session_id: "admission-test".into(),
+            agent_id: "OpenAI".into(),
+            surface: ToolSurface::Proxy,
+            idempotency_key: None,
+        },
+        RuntimeContext::default(),
+        ProductEntitlements::default(),
+    )
+}
+
+type TestCompressor = fn(serde_json::Value, usize) -> (Vec<u8>, usize, usize);
+
+fn proxy_test_driver<'a>(
+    state: ProxyState,
+    body: &serde_json::Value,
+    upstream: &'a str,
+) -> ProxyDriver<'a, TestCompressor> {
+    ProxyDriver {
+        state: Some(state),
+        request: Some(
+            Request::builder()
+                .method("POST")
+                .uri("/v1/chat/completions")
+                .header(CONTENT_TYPE, "application/json")
+                .body(Body::from(serde_json::to_vec(body).unwrap()))
+                .unwrap(),
+        ),
+        admitted: None,
+        prepared_request: None,
+        upstream_base: upstream,
+        default_path: "/v1/chat/completions",
+        compress_body: Some(|value, original_size| {
+            let body = serde_json::to_vec(&value).unwrap();
+            let size = body.len();
+            (body, original_size, size)
+        }),
+        provider_label: "OpenAI",
+        extra_stream_types: Vec::new(),
+        trace_id: "admission-test".into(),
+    }
+}
+
+fn cache_mode_request(
+    label: &str,
+    isolation: &crate::core::data_dir::IsolatedDataDir,
+) -> serde_json::Value {
+    let mut config = crate::core::config::Config::default();
+    config.proxy.proxy_mode = Some("cache".into());
+    assert!(
+        crate::core::config::Config::path()
+            .unwrap()
+            .starts_with(isolation.path())
+    );
+    config.save().unwrap();
+    assert_eq!(
+        crate::core::config::Config::load()
+            .proxy
+            .resolved_proxy_mode(),
+        crate::core::config::ProxyMode::Cache
+    );
+    serde_json::json!({"model": "gpt-5", "messages": [{"role": "user", "content": label}]})
+}
+
+async fn run_proxy_test_driver(
+    driver: ProxyDriver<'_, TestCompressor>,
+) -> (TaskContext, ProxyDispatchResult) {
+    let lifecycle = ExecutionLifecycle::default();
+    let request = ToolRequest {
+        tool_name: "proxy_forward".into(),
+        query: None,
+        session_id: "admission-full-run".into(),
+        agent_id: "OpenAI".into(),
+        surface: ToolSurface::Proxy,
+        idempotency_key: Some("capture-admission-context".into()),
+    };
+    // Reuse the public idempotency contract to inspect the actual run's shared
+    // context; no synthetic stage entries or extra production test hooks.
+    let context = lifecycle.begin(
+        request.clone(),
+        RuntimeContext::default(),
+        ProductEntitlements::default(),
+    );
+    let result = lifecycle
+        .run(
+            request,
+            RuntimeContext::default(),
+            ProductEntitlements::default(),
+            driver,
+        )
+        .await
+        .unwrap();
+    assert_eq!(
+        context.completed_stages(),
+        crate::core::execution_lifecycle::LIFECYCLE_STAGE_ORDER
+    );
+    assert_eq!(
+        context.outcome().unwrap().accepted_outcome.accepted,
+        lean_ctx_protocol::AcceptanceState::Unknown
+    );
+    assert!(context.outcome().unwrap().assessment.is_none());
+    (context, result)
+}
+
+fn recorded_stage(
+    context: &TaskContext,
+    stage: crate::core::execution_lifecycle::LifecycleStage,
+) -> StageDisposition {
+    context
+        .stage_executions()
+        .into_iter()
+        .find(|entry| entry.stage == stage)
+        .unwrap()
+        .disposition
+}
+
+#[tokio::test]
+async fn failed_send_keeps_attempt_ledger_without_advancing_prefix() {
+    let isolation = crate::core::data_dir::isolated_data_dir();
+    let body = cache_mode_request("failed-send-prefix-regression", &isolation);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let state = proxy_test_state(&upstream);
+    let stats = state.stats.clone();
+    let mut driver = proxy_test_driver(state, &body, &upstream);
+    let context = proxy_test_context();
+    driver.apply_security_boundaries(&context).await.unwrap();
+    driver.gather_context_strategy(&context).await.unwrap();
+    let PreparedProxyRequest::Upstream(outbound) = driver.prepared_request.as_ref().unwrap() else {
+        panic!("upstream prepared")
+    };
+    let (id, _, originals, _) = outbound.prepared.prefix_replay.as_ref().unwrap();
+    let id = *id;
+    let mut extended = originals.clone();
+    extended.push(serde_json::json!({"role": "user", "content": "next"}));
+    assert!(crate::proxy::prefix_replay::detect_append_only(id, &extended).is_none());
+    let (primitive, disposition) = driver.dispatch_primitive(&context).await.unwrap();
+    assert_eq!(disposition, StageDisposition::Applied);
+    let (processed, _) = driver
+        .reversible_post_process(&context, primitive)
+        .await
+        .unwrap();
+    assert_eq!(processed.result.error, Some(StatusCode::BAD_GATEWAY));
+    assert!(!processed.prepared.as_ref().unwrap().upstream_send_succeeded);
+    driver.record_ledger(&context, &processed).await.unwrap();
+    assert_eq!(stats.requests_total.load(Ordering::Relaxed), 1);
+    assert!(crate::proxy::prefix_replay::detect_append_only(id, &extended).is_none());
+}
+
+#[tokio::test]
+async fn successful_send_advances_exact_prefix_even_if_response_body_fails() {
+    let isolation = crate::core::data_dir::isolated_data_dir();
+    let body = cache_mode_request("successful-send-decode-error-prefix-regression", &isolation);
+    let (upstream, server) = upstream_response_with_wire(
+        b"HTTP/1.1 200 OK\r\ncontent-length: 100\r\nconnection: close\r\n\r\n{}",
+    )
+    .await;
+    let state = proxy_test_state(&upstream);
+    let stats = state.stats.clone();
+    let mut driver = proxy_test_driver(state, &body, &upstream);
+    let context = proxy_test_context();
+    driver.apply_security_boundaries(&context).await.unwrap();
+    driver.gather_context_strategy(&context).await.unwrap();
+    let PreparedProxyRequest::Upstream(outbound) = driver.prepared_request.as_ref().unwrap() else {
+        panic!("upstream prepared")
+    };
+    let (id, bytes, originals, _) = outbound.prepared.prefix_replay.as_ref().unwrap();
+    let id = *id;
+    let expected_bytes = bytes.clone();
+    assert_eq!(expected_bytes, outbound.forwarded_body);
+    let mut extended = originals.clone();
+    extended.push(serde_json::json!({"role": "user", "content": "next"}));
+    assert_eq!(stats.requests_total.load(Ordering::Relaxed), 0);
+    assert!(
+        !server.is_finished(),
+        "preparation must not send the request"
+    );
+    let (primitive, disposition) = driver.dispatch_primitive(&context).await.unwrap();
+    assert_eq!(disposition, StageDisposition::Applied);
+    let ProxyPrimitive::Upstream { prepared, .. } = &primitive else {
+        panic!("upstream dispatched")
+    };
+    assert!(prepared.upstream_send_succeeded);
+    let (processed, _) = driver
+        .reversible_post_process(&context, primitive)
+        .await
+        .unwrap();
+    assert_eq!(processed.result.error, Some(StatusCode::BAD_GATEWAY));
+    assert!(crate::proxy::prefix_replay::detect_append_only(id, &extended).is_none());
+    driver.record_ledger(&context, &processed).await.unwrap();
+    let delta = crate::proxy::prefix_replay::detect_append_only(id, &extended).unwrap();
+    assert_eq!(delta.prefix_bytes, expected_bytes);
+    assert_eq!(stats.requests_total.load(Ordering::Relaxed), 1);
+    assert_eq!(server.await.unwrap()["model"], "gpt-5");
+}
+
+#[tokio::test]
+async fn response_cache_hit_skips_dispatch() {
+    let _isolation = crate::core::data_dir::isolated_data_dir();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = format!("http://{}", listener.local_addr().unwrap());
+    let body = serde_json::json!({"model": "gpt-5", "messages": [{"role": "user", "content": "cache-hit-no-dispatch"}]});
+    let cache = Arc::new(crate::proxy::ocla_cache_bridge::OclaCacheBridge::new(
+        Arc::new(crate::core::ocla::response_cache::ResponseCache::new(
+            4,
+            std::time::Duration::from_mins(1),
+        )),
+    ));
+    cache.record_response(
+        "gpt-5",
+        &crate::proxy::ocla_cache_bridge::prompt_hash(&serde_json::to_vec(&body).unwrap()),
+        0.0,
+        0,
+        StatusCode::OK,
+        b"cached",
+        1,
+    );
+    let mut state = proxy_test_state(&upstream);
+    state.ocla_cache = Some(cache);
+    let driver = proxy_test_driver(state, &body, &upstream);
+    let (context, result) = run_proxy_test_driver(driver).await;
+    assert_eq!(
+        recorded_stage(
+            &context,
+            crate::core::execution_lifecycle::LifecycleStage::DispatchPrimitive
+        ),
+        StageDisposition::Skipped("response cache hit")
+    );
+    assert!(result.error.is_none());
+    let response = result.response.lock().unwrap().take().unwrap();
+    assert_eq!(
+        to_bytes(response.into_body(), usize::MAX).await.unwrap(),
+        "cached"
+    );
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(20), listener.accept())
+            .await
+            .is_err()
+    );
+}
+
+#[cfg(feature = "enterprise")]
+#[tokio::test]
+#[serial_test::serial(policy_gate_ledger)]
+async fn policy_refusal_skips_context_preparation_and_dispatch() {
+    let _isolation = crate::core::data_dir::isolated_data_dir();
+    struct ClearRules;
+    impl Drop for ClearRules {
+        fn drop(&mut self) {
+            crate::proxy::policy_gate::test_clear_rules();
+        }
+    }
+    let _rules = ClearRules;
+    crate::proxy::policy_gate::test_set_rules(Some(crate::proxy::policy_gate::GateRules {
+        allowed_models: vec!["permitted-model".into()],
+        model_ceiling_groups: Vec::new(),
+        forbid_downgrade_for: Vec::new(),
+        max_cost_usd_per_person_per_day: None,
+        max_cost_usd_per_project_per_month: None,
+        max_requests_per_minute_per_person: None,
+    }));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = format!("http://{}", listener.local_addr().unwrap());
+    let body = serde_json::json!({"model": "forbidden-model", "messages": []});
+    let mut driver = proxy_test_driver(proxy_test_state(&upstream), &body, &upstream);
+    driver.compress_body = Some(|_, _| panic!("policy must run before compressor"));
+    let (context, result) = run_proxy_test_driver(driver).await;
+    assert_eq!(
+        recorded_stage(
+            &context,
+            crate::core::execution_lifecycle::LifecycleStage::ApplySecurityBoundaries
+        ),
+        StageDisposition::Applied
+    );
+    for stage in [
+        crate::core::execution_lifecycle::LifecycleStage::GatherContextStrategy,
+        crate::core::execution_lifecycle::LifecycleStage::DispatchPrimitive,
+    ] {
+        assert_eq!(
+            recorded_stage(&context, stage),
+            StageDisposition::Skipped("org policy refused request")
+        );
+    }
+    assert!(result.error.is_none());
+    assert!(
+        result
+            .response
+            .lock()
+            .unwrap()
+            .as_ref()
+            .unwrap()
+            .status()
+            .is_client_error()
+    );
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(20), listener.accept())
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test]
+async fn transport_failure_reaches_ledger_and_preserves_original_error() {
+    let _isolation = crate::core::data_dir::isolated_data_dir();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = format!("http://{}", listener.local_addr().unwrap());
+    drop(listener);
+    let (_sender, upstreams) =
+        tokio::sync::watch::channel(Arc::new(crate::core::config::Upstreams {
+            anthropic: upstream.clone(),
+            openai: upstream.clone(),
+            chatgpt: upstream.clone(),
+            gemini: upstream.clone(),
+            providers: Vec::new(),
+        }));
+    let stats = Arc::new(crate::proxy::ProxyStats::default());
+    let state = ProxyState {
+        client: reqwest::Client::builder()
+            .timeout(std::time::Duration::from_secs(2))
+            .build()
+            .unwrap(),
+        port: 0,
+        stats: stats.clone(),
+        break_even: Arc::new(crate::proxy::break_even::BreakEvenCalculator::new(1500)),
+        introspect: Arc::new(crate::proxy::introspect::IntrospectState::default()),
+        ocla_cache: None,
+        upstreams,
+        chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
+        mcp_servers: Arc::new(Vec::new()),
+        web_app_tracker: Arc::new(std::sync::Mutex::new(
+            crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
+        )),
+    };
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            serde_json::to_vec(&serde_json::json!({
+                "model": "gpt-5",
+                "messages": [{"role": "user", "content": "inspect ".repeat(100)}]
+            }))
+            .unwrap(),
+        ))
+        .unwrap();
+    let captured = Arc::new(std::sync::Mutex::new(None));
+    let capture = captured.clone();
+    let result = forward_request(
+        State(state),
+        request,
+        &upstream,
+        "/v1/chat/completions",
+        move |value, original_size| {
+            *capture.lock().unwrap() = crate::core::task_spine::TaskSpine::current();
+            (serde_json::to_vec(&value).unwrap(), original_size, 0)
+        },
+        "OpenAI",
+        &[],
+    )
+    .await;
+    assert_eq!(result.unwrap_err(), StatusCode::BAD_GATEWAY);
+    assert_eq!(stats.requests_total.load(Ordering::Relaxed), 1);
+    let task = captured.lock().unwrap().clone().unwrap();
+    let outcome = crate::core::execution_lifecycle::ExecutionLifecycle::global()
+        .outcome_for(task.task_id.as_str())
+        .unwrap();
+    assert_eq!(
+        outcome.accepted_outcome.accepted,
+        lean_ctx_protocol::AcceptanceState::Unknown
+    );
+    assert!(outcome.assessment.is_none());
+}
+
 impl OclaService for SpyIntentClassifier {
     fn capability(&self) -> OclaCapability {
         OclaCapability::available(OclaCapabilityKind::IntentClassifier)
@@ -125,6 +534,12 @@ fn add_test_marker(mut value: serde_json::Value, original_size: usize) -> (Vec<u
 }
 
 async fn upstream_response() -> (String, tokio::task::JoinHandle<serde_json::Value>) {
+    upstream_response_with_wire(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}").await
+}
+
+async fn upstream_response_with_wire(
+    wire: &'static [u8],
+) -> (String, tokio::task::JoinHandle<serde_json::Value>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let server = tokio::spawn(async move {
@@ -149,13 +564,119 @@ async fn upstream_response() -> (String, tokio::task::JoinHandle<serde_json::Val
             let read = stream.read(&mut buffer).await.unwrap();
             request.extend_from_slice(&buffer[..read]);
         }
-        stream
-            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}")
-            .await
-            .unwrap();
+        stream.write_all(wire).await.unwrap();
         serde_json::from_slice(&request[header_end..header_end + content_length]).unwrap()
     });
     (format!("http://{address}"), server)
+}
+
+/// G6 end to end: what the upstream model provider receives is the admitted
+/// request — the credential is masked on the wire, the rest of the request
+/// arrives intact, and the request's receipt is stored under the proxy key.
+#[tokio::test]
+async fn upstream_receives_only_admitted_content() {
+    let _isolation = crate::core::data_dir::isolated_data_dir();
+    let key = concat!("AK", "IAIOSFODNN7EXAMPLE");
+    let body = serde_json::json!({
+        "model": "gpt-5",
+        "messages": [{"role": "user", "content": format!("deploy with {key} today")}]
+    });
+    let (upstream, server) = upstream_response_with_wire(
+        b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}",
+    )
+    .await;
+    let state = proxy_test_state(&upstream);
+    let mut driver = proxy_test_driver(state, &body, &upstream);
+    let context = proxy_test_context();
+    driver.apply_security_boundaries(&context).await.unwrap();
+    driver.gather_context_strategy(&context).await.unwrap();
+    let _ = driver.dispatch_primitive(&context).await.unwrap();
+
+    let received = server.await.unwrap().to_string();
+    assert!(
+        !received.contains(key),
+        "the raw credential left the machine: {received}"
+    );
+    assert!(
+        received.contains("deploy with"),
+        "the rest of the turn arrives: {received}"
+    );
+    assert!(received.contains("today"), "{received}");
+
+    let stored = crate::core::context_admission::receipt_store::latest(
+        crate::core::context_admission::egress::PROXY_RECEIPT_KEY,
+        1,
+    );
+    let receipt = &stored
+        .first()
+        .expect("a proxy receipt")
+        .1
+        .as_ref()
+        .expect("verified")
+        .receipt;
+    assert!(receipt.security.redactions >= 1);
+    assert!(
+        receipt.final_context.is_some(),
+        "the forwarded bytes are bound"
+    );
+}
+
+#[cfg(feature = "enterprise")]
+#[tokio::test(flavor = "current_thread")]
+async fn invalid_org_policy_refuses_forwarding_without_upstream_connection() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _policy = crate::proxy::policy_gate::test_policy_error();
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = format!("http://{}", listener.local_addr().unwrap());
+    let (_sender, upstreams) =
+        tokio::sync::watch::channel(Arc::new(crate::core::config::Upstreams {
+            anthropic: upstream.clone(),
+            openai: upstream.clone(),
+            chatgpt: upstream.clone(),
+            gemini: upstream.clone(),
+            providers: Vec::new(),
+        }));
+    let state = ProxyState {
+        client: reqwest::Client::new(),
+        port: 0,
+        stats: Arc::new(crate::proxy::ProxyStats::default()),
+        break_even: Arc::new(crate::proxy::break_even::BreakEvenCalculator::new(1500)),
+        introspect: Arc::new(crate::proxy::introspect::IntrospectState::default()),
+        ocla_cache: None,
+        upstreams,
+        chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
+        mcp_servers: Arc::new(Vec::new()),
+        web_app_tracker: Arc::new(std::sync::Mutex::new(
+            crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
+        )),
+    };
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(r#"{"model":"test","messages":[]}"#))
+        .unwrap();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(2),
+        forward_request(
+            State(state),
+            request,
+            &upstream,
+            "/v1/chat/completions",
+            add_test_marker,
+            "OpenAI",
+            &[],
+        ),
+    )
+    .await
+    .expect("policy rejection must not wait on upstream");
+    assert_eq!(result.unwrap_err(), StatusCode::SERVICE_UNAVAILABLE);
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), listener.accept(),)
+            .await
+            .is_err(),
+        "invalid policy must not open an upstream connection"
+    );
 }
 
 #[tokio::test]
@@ -680,6 +1201,8 @@ fn invalid_json_request_bodies_are_not_compression_candidates() {
     assert!(!prepared.preserve_content_encoding);
 }
 
+#[path = "tests_header_relay.rs"]
+mod header_relay;
 /// #1905: the compression holdout's control arm is the uncompressed baseline.
 /// The same request is compressed in the treatment arm and forwarded with its
 /// content unchanged in the control arm, and both carry their arm to the meter.

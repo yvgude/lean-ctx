@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Evidence tiers: what a quality result is allowed to claim.
 //!
 //! A tier describes *how* evidence was produced, not whether it was positive. The

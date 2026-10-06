@@ -8,6 +8,7 @@
 
 use std::collections::BTreeMap;
 use std::fmt;
+use std::path::Path;
 
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use ed25519_dalek::{Signature, Verifier, VerifyingKey};
@@ -311,6 +312,78 @@ pub(crate) struct VerifiedInvocationAdmissionV1 {
     binding_digest: Sha256Digest,
 }
 
+/// Exact ordered source bytes for one freshly verified admission.
+/// Deliberately has no Debug/Serialize implementation: payloads are not logs.
+pub(crate) struct MaterializedInvocationSourcesV1 {
+    admission: VerifiedInvocationAdmissionV1,
+    sources: Vec<(InvocationSourceBindingV1, Vec<u8>)>,
+}
+
+impl MaterializedInvocationSourcesV1 {
+    pub(crate) fn admission(&self) -> &VerifiedInvocationAdmissionV1 {
+        &self.admission
+    }
+
+    pub(crate) fn sources(&self) -> &[(InvocationSourceBindingV1, Vec<u8>)] {
+        &self.sources
+    }
+}
+
+/// Resolve only the signed source digests, never paths supplied by source_ref.
+///
+/// The root and expected scope must come from trusted runtime state. The caller
+/// must authorize workspace/classification and consume the admission separately;
+/// integrity verification does not supply either of those policy decisions.
+/// No partially materialized result escapes if any source fails.
+pub(crate) fn materialize_invocation_sources(
+    canonical_bytes: &[u8],
+    trust_store: &InvocationAdmissionTrustStoreV1,
+    expected_scope: &InvocationAdmissionExpectedScopeV1,
+    now: &UtcTimestamp,
+    artifact_root: &Path,
+    max_source_bytes: usize,
+    max_total_bytes: usize,
+) -> Result<MaterializedInvocationSourcesV1, String> {
+    if max_source_bytes == 0
+        || max_source_bytes > 1024 * 1024
+        || max_total_bytes == 0
+        || max_total_bytes > 4 * 1024 * 1024
+    {
+        return Err("invocation source byte budget invalid".into());
+    }
+    // Recheck signature, revocation, exact runtime scope and time before I/O.
+    let admission = verify_invocation_admission(canonical_bytes, trust_store, expected_scope, now)
+        .map_err(|_| "invocation source admission rejected".to_string())?;
+    let mut remaining = max_total_bytes;
+    let mut sources = Vec::with_capacity(admission.binding.source_bindings.len());
+    for source in &admission.binding.source_bindings {
+        if remaining == 0 {
+            return Err("invocation source total byte budget exhausted".into());
+        }
+        let digest = source
+            .digest
+            .as_str()
+            .strip_prefix("sha256:")
+            .ok_or_else(|| "invocation source digest invalid".to_string())?;
+        let bytes = super::engine_artifact::read_bounded_content(
+            artifact_root,
+            "invocation-sources",
+            digest,
+            "txt",
+            remaining.min(max_source_bytes),
+        )
+        .map_err(|_| "invocation source artifact rejected".to_string())?;
+        if digest_bytes(&bytes).map_err(|_| "invocation source digest failed")? != source.digest {
+            return Err("invocation source digest mismatch".into());
+        }
+        remaining = remaining
+            .checked_sub(bytes.len())
+            .ok_or_else(|| "invocation source total byte budget exceeded".to_string())?;
+        sources.push((source.clone(), bytes));
+    }
+    Ok(MaterializedInvocationSourcesV1 { admission, sources })
+}
+
 impl VerifiedInvocationAdmissionV1 {
     /// Return the validated protocol binding.
     pub(crate) fn binding(&self) -> &InvocationContextBindingV1 {
@@ -592,6 +665,190 @@ mod tests {
 
     fn now(value: &str) -> UtcTimestamp {
         UtcTimestamp::new(value).expect("timestamp")
+    }
+
+    fn source_fixture() -> (
+        tempfile::TempDir,
+        Vec<u8>,
+        InvocationAdmissionExpectedScopeV1,
+    ) {
+        let root = tempfile::tempdir().unwrap();
+        let directory = root.path().join("invocation-sources");
+        std::fs::create_dir(&directory).unwrap();
+        let signing_key = key();
+        let mut value = unsigned_value(&signing_key);
+        let payloads: [&[u8]; 2] = [b"task input", b"selected context"];
+        value["source_bindings"] = json!(
+            payloads
+                .iter()
+                .enumerate()
+                .map(|(index, bytes)| {
+                    let digest = digest_bytes(bytes).unwrap();
+                    std::fs::write(
+                        directory.join(format!(
+                            "{}.txt",
+                            digest.as_str().strip_prefix("sha256:").unwrap()
+                        )),
+                        bytes,
+                    )
+                    .unwrap();
+                    json!({
+                        "source_ref": format!("source:item-{index}"),
+                        "digest": digest,
+                        "role": if index == 0 { "input" } else { "context" },
+                    })
+                })
+                .collect::<Vec<_>>()
+        );
+        let mut binding: InvocationContextBindingV1 = serde_json::from_value(value).unwrap();
+        binding.signature = STANDARD.encode(
+            signing_key
+                .sign(&binding.signing_bytes().unwrap())
+                .to_bytes(),
+        );
+        let scope = expected_scope_for_binding(&binding);
+        (root, binding.canonical_bytes().unwrap(), scope)
+    }
+
+    #[test]
+    fn materialization_preserves_exact_signed_order_and_bytes() {
+        let (root, bytes, scope) = source_fixture();
+        let result = materialize_invocation_sources(
+            &bytes,
+            &store(&key()),
+            &scope,
+            &now(NOW),
+            root.path(),
+            16,
+            26,
+        )
+        .unwrap();
+        assert_eq!(result.admission.canonical_bytes(), bytes);
+        assert_eq!(result.sources.len(), 2);
+        assert_eq!(result.sources[0].0.source_ref.as_str(), "source:item-0");
+        assert_eq!(result.sources[0].1, b"task input");
+        assert_eq!(result.sources[1].1, b"selected context");
+    }
+
+    #[test]
+    fn materialization_rejects_source_and_aggregate_budget_overflow() {
+        let (root, bytes, scope) = source_fixture();
+        for (per_source, total) in [
+            (15, 26),
+            (16, 25),
+            (16, 10),
+            (0, 26),
+            (16, 0),
+            (1024 * 1024 + 1, 26),
+            (16, 4 * 1024 * 1024 + 1),
+        ] {
+            assert!(
+                materialize_invocation_sources(
+                    &bytes,
+                    &store(&key()),
+                    &scope,
+                    &now(NOW),
+                    root.path(),
+                    per_source,
+                    total,
+                )
+                .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn materialization_rejects_changed_or_missing_artifact() {
+        let (root, bytes, scope) = source_fixture();
+        let digest = digest_bytes(b"selected context").unwrap();
+        let path = root.path().join("invocation-sources").join(format!(
+            "{}.txt",
+            digest.as_str().strip_prefix("sha256:").unwrap()
+        ));
+        std::fs::write(&path, b"different bytes").unwrap();
+        assert!(
+            materialize_invocation_sources(
+                &bytes,
+                &store(&key()),
+                &scope,
+                &now(NOW),
+                root.path(),
+                32,
+                64,
+            )
+            .is_err()
+        );
+        std::fs::remove_file(path).unwrap();
+        assert!(
+            materialize_invocation_sources(
+                &bytes,
+                &store(&key()),
+                &scope,
+                &now(NOW),
+                root.path(),
+                32,
+                64,
+            )
+            .is_err()
+        );
+    }
+
+    #[test]
+    fn materialization_rechecks_admission_before_reading_sources() {
+        let (root, bytes, mut scope) = source_fixture();
+        // A missing store must not mask an expired or mismatched admission.
+        let missing = root.path().join("missing");
+        let error = materialize_invocation_sources(
+            &bytes,
+            &store(&key()),
+            &scope,
+            &now(EXPIRES_AT),
+            &missing,
+            32,
+            64,
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error, "invocation source admission rejected");
+        scope.task_id = TaskId::new("different-task").unwrap();
+        let error = materialize_invocation_sources(
+            &bytes,
+            &store(&key()),
+            &scope,
+            &now(NOW),
+            &missing,
+            32,
+            64,
+        )
+        .err()
+        .unwrap();
+        assert_eq!(error, "invocation source admission rejected");
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn materialization_rejects_symlink_even_with_matching_content() {
+        let (root, bytes, scope) = source_fixture();
+        let digest = digest_bytes(b"task input").unwrap();
+        let path = root.path().join("invocation-sources").join(format!(
+            "{}.txt",
+            digest.as_str().strip_prefix("sha256:").unwrap()
+        ));
+        let outside = root.path().join("outside.bin");
+        std::fs::rename(&path, &outside).unwrap();
+        std::os::unix::fs::symlink(&outside, &path).unwrap();
+        assert!(
+            materialize_invocation_sources(
+                &bytes,
+                &store(&key()),
+                &scope,
+                &now(NOW),
+                root.path(),
+                32,
+                64,
+            )
+            .is_err()
+        );
     }
 
     #[test]

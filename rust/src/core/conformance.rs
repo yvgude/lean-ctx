@@ -551,51 +551,43 @@ pub struct ConformanceFailure {
 
 /// Validate a CapabilityManifestV1 against OCLA contract rules.
 pub fn check_manifest_conformance(manifest: &CapabilityManifestV1) -> ConformanceResult {
-    use lean_ctx_protocol::{DataClassification, DataMovement};
-
-    let mut passed = 0u32;
-    let mut failures = Vec::new();
-
-    // Check 1: schema_version
-    passed += 1;
-
-    // Check 2: capability_id format
-    passed += 1;
-
-    // Check 3: provider non-empty
-    passed += 1;
-
-    // Check 4: version format
-    passed += 1;
-
-    // Check 5: location constraints (local OR remote must be true)
-    passed += 1;
-
-    // Check 6: classification constraints
-    let has_restricted = manifest
-        .supported_classifications
-        .contains(&DataClassification::Restricted);
-    let is_remote = manifest.data_movement == DataMovement::Remote
-        || manifest.data_movement == DataMovement::CrossRegion;
-    let not_local = !manifest.local;
-
-    if has_restricted && is_remote && not_local {
-        failures.push(ConformanceFailure {
-            check: "classification_constraints".into(),
-            expected: "data movement, execution location, and classifications are compatible"
-                .into(),
-            actual: "remote execution cannot accept restricted data".into(),
-        });
-    } else {
-        passed += 1;
-    }
-
-    ConformanceResult {
+    let mut report = ConformanceResult {
         capability_id: manifest.capability_id.as_str().to_owned(),
         version: manifest.version.clone(),
-        checks_passed: passed,
-        checks_failed: failures.len() as u32,
-        failures,
+        checks_passed: 0,
+        checks_failed: 0,
+        failures: Vec::new(),
+    };
+    let validation = crate::core::ocla::capability_fabric::normalize_manifest(manifest.clone());
+    record_capability_check(
+        &mut report,
+        "manifest_contract",
+        validation.is_ok(),
+        "valid canonical capability contract",
+        validation
+            .err()
+            .map(|error| error.to_string())
+            .unwrap_or_default(),
+    );
+    report
+}
+
+fn record_capability_check(
+    report: &mut ConformanceResult,
+    check: &str,
+    passed: bool,
+    expected: &str,
+    actual: String,
+) {
+    if passed {
+        report.checks_passed += 1;
+    } else {
+        report.checks_failed += 1;
+        report.failures.push(ConformanceFailure {
+            check: check.to_owned(),
+            expected: expected.to_owned(),
+            actual,
+        });
     }
 }
 
@@ -604,26 +596,139 @@ pub fn check_invocation_conformance(
     manifest: &CapabilityManifestV1,
     result: &CapabilityResult,
 ) -> ConformanceResult {
-    let mut failures = Vec::new();
+    let mut report = check_manifest_conformance(manifest);
+    let observation = &result.observation;
+    record_capability_check(
+        &mut report,
+        "observation_identity",
+        observation.schema_version
+            == crate::core::ocla::invocation::CAPABILITY_OBSERVATION_SCHEMA_VERSION
+            && !observation.task_id.trim().is_empty()
+            && observation.capability_id == manifest.capability_id.as_str()
+            && observation.capability_version == manifest.version,
+        "versioned observation bound to task and capability",
+        "observation identity mismatch".into(),
+    );
+    record_capability_check(
+        &mut report,
+        "observation_consistency",
+        observation.success == result.success
+            && observation.output_tokens == result.output_tokens
+            && observation.latency_ms == result.latency_ms,
+        "result and observation agree",
+        "contradictory result measurements".into(),
+    );
+    record_capability_check(
+        &mut report,
+        "failure_classification",
+        // Partial is not completed success. FallbackToNative names the route;
+        // the final native invocation can either succeed or fail.
+        matches!(
+            (result.success, observation.failure_mode),
+            (
+                true,
+                None | Some(crate::core::ocla::invocation::CapabilityFailureMode::FallbackToNative)
+            ) | (false, Some(_))
+        ),
+        "success and typed terminal state agree",
+        "contradictory success/failure classification".into(),
+    );
 
-    // Latency bounds check (warning, not a check failure)
+    // A declared hard bound is a conformance check, not a hidden warning.
     if let Some(bounds) = manifest.extra.get("latency_bounds_ms") {
-        if let Some(max_ms) = bounds.get("max_ms").and_then(serde_json::Value::as_u64) {
-            if result.latency_ms > max_ms {
-                failures.push(ConformanceFailure {
-                    check: "warning:latency_within_bounds".into(),
-                    expected: format!("0..={max_ms} ms"),
-                    actual: format!("{} ms", result.latency_ms),
-                });
-            }
+        let max_ms = bounds.get("max_ms").and_then(serde_json::Value::as_u64);
+        record_capability_check(
+            &mut report,
+            "latency_within_bounds",
+            max_ms.is_some_and(|max_ms| result.latency_ms <= max_ms),
+            "latency within declared unsigned max_ms",
+            format!("{} ms; bounds={bounds}", result.latency_ms),
+        );
+    }
+    report
+}
+
+#[cfg(test)]
+mod capability_conformance_tests {
+    use super::*;
+    use crate::core::ocla::adapters::PassthroughAdapter;
+    use crate::core::ocla::invocation::{
+        CapabilityAdapter, CapabilityInput, CapabilityInvocation, PolicyConstraints,
+    };
+
+    #[test]
+    fn terminal_failure_truth_table_is_enforced() {
+        use crate::core::ocla::invocation::CapabilityFailureMode::*;
+        let fixture: Value = serde_json::from_str(include_str!(concat!(
+            env!("CARGO_MANIFEST_DIR"),
+            "/../tests/ocla_contract_suite/v1/conformance/invocation_success.json"
+        )))
+        .unwrap();
+        let manifest: CapabilityManifestV1 =
+            serde_json::from_value(fixture["manifest"].clone()).unwrap();
+        let baseline: CapabilityResult = serde_json::from_value(fixture["result"].clone()).unwrap();
+        for (success, mode, valid) in [
+            (true, None, true),
+            (false, None, false),
+            (true, Some(Timeout), false),
+            (false, Some(Timeout), true),
+            (true, Some(Unavailable), false),
+            (false, Some(Unavailable), true),
+            (true, Some(RejectedByPolicy), false),
+            (false, Some(RejectedByPolicy), true),
+            (true, Some(InvalidOutput), false),
+            (false, Some(InvalidOutput), true),
+            (true, Some(Internal), false),
+            (false, Some(Internal), true),
+            (true, Some(Partial), false),
+            (false, Some(Partial), true),
+            (true, Some(FallbackToNative), true),
+            (false, Some(FallbackToNative), true),
+        ] {
+            let mut result = baseline.clone();
+            result.success = success;
+            result.observation.success = success;
+            result.observation.failure_mode = mode;
+            let report = check_invocation_conformance(&manifest, &result);
+            assert_eq!(
+                report.checks_failed == 0,
+                valid,
+                "success={success}, mode={mode:?}"
+            );
         }
     }
 
-    ConformanceResult {
-        capability_id: manifest.capability_id.as_str().to_owned(),
-        version: manifest.version.clone(),
-        checks_passed: 10,
-        checks_failed: 0,
-        failures,
+    #[test]
+    fn invalid_contracts_never_receive_placeholder_passes() {
+        let mut manifest = PassthroughAdapter::new().manifest().clone();
+        manifest.schema_version = 0;
+        let report = check_manifest_conformance(&manifest);
+        assert_eq!(report.checks_passed, 0);
+        assert_eq!(report.checks_failed, 1);
+        assert_eq!(report.failures.len(), 1);
+    }
+
+    #[test]
+    fn real_adapter_result_passes_but_contradictory_measurements_fail() {
+        let adapter = PassthroughAdapter::new();
+        let invocation = CapabilityInvocation {
+            task_id: "conformance-task".into(),
+            capability_id: adapter.manifest().capability_id.as_str().into(),
+            capability_version: adapter.manifest().version.clone(),
+            input: CapabilityInput::ModelRequest {
+                prompt: "test input".into(),
+                model: None,
+            },
+            policy_constraints: PolicyConstraints::default(),
+            timeout_ms: 0,
+        };
+        let mut result = adapter.invoke(invocation).unwrap();
+        let report = check_invocation_conformance(adapter.manifest(), &result);
+        assert_eq!(report.checks_failed, 0);
+        assert!(report.checks_passed >= 4);
+        result.output_tokens += 1;
+        let report = check_invocation_conformance(adapter.manifest(), &result);
+        assert_eq!(report.checks_failed, 1);
+        assert_eq!(report.failures[0].check, "observation_consistency");
     }
 }
