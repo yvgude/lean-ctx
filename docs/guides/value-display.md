@@ -23,6 +23,7 @@ Every one of them follows three rules:
 ```toml
 [value_display]
 mode = "minimal"          # off | minimal | milestones | verbose
+statusline = "brand"      # Claude Code status line: brand | subtle
 recap_every_turns = 5     # consider a turn recap every N turns
 recap_min_tokens = 10000  # …and show it only above this (or on a security event)
 notifications = true      # milestone notifications, in mode milestones/verbose
@@ -47,11 +48,27 @@ refresh the Claude hooks and add the status line when there is none (a
 `"statusLine": null` entry counts as none):
 
 ```text
-◆ lean-ctx −1.2M tok · 41 cached · ⛨ 3
+◆ LeanCTX │ SELECT −1.2M tok · 60% leaner · 41 cached │ CONTROL ⛨ 3 enforced
 ```
 
-`⛨` counts security events: secrets kept out of context, risky commands
-blocked, paths outside the project blocked, injections flagged.
+The line follows the product's Select · Control model, in LeanCTX colours:
+
+- **SELECT**: tokens kept out of the model's context, their share of the tool
+  output, and re-reads served from cache.
+- **CONTROL** (`⛨`): security events: secrets kept out of context, risky
+  commands blocked, paths outside the project blocked, injections flagged.
+
+A group with nothing measured is left out. `NO_COLOR` drops the colours and
+`LEAN_CTX_ASCII` the glyphs. `statusline = "subtle"` restores the single dim
+line the other channels use (`◆ lean-ctx −1.2M tok · 41 cached · ⛨ 3`).
+
+The numbers are those of the lean-ctx session serving this conversation.
+When several agents work in the same project (two Claude windows, a Codex
+task), each starts its own lean-ctx server; the server records which agent
+process started it, and the status line picks the session whose agent is one
+of its own ancestors. Only when none matches, for example a server from an
+older lean-ctx, does it fall back to the project's most recent session. The
+Stop hook's recaps pick their session the same way.
 
 If you already have a status line, `init` leaves it alone and prints the
 command that chains both:

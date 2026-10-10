@@ -71,7 +71,7 @@ pub use response_shaping::{
 };
 pub use semantic::SemanticMode;
 pub use shell_activation::ShellActivation;
-pub use value_display::{ValueDisplayConfig, ValueDisplayMode};
+pub use value_display::{StatuslineStyle, ValueDisplayConfig, ValueDisplayMode};
 
 #[cfg(test)]
 mod solution_tests;

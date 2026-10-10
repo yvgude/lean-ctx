@@ -5,7 +5,9 @@
 //! * [`snapshot`] — a tiny per-session file the MCP server keeps current, so
 //!   status lines and prompt segments render in microseconds without touching
 //!   the ledger.
-//! * [`mod@format`] — the shared one-line renderer.
+//! * [`mod@format`] — the shared renderers (one dim line; the branded status line).
+//! * [`host`] — which agent process a session serves, so concurrent agents in
+//!   one project each see their own numbers.
 //! * [`proof`] — recomputes each number from the hash-chained savings ledger
 //!   and audit trail and verifies both chains (`lean-ctx value`).
 //! * [`recap`] — when a host hook speaks up (turn and session recaps, weekly
@@ -14,6 +16,7 @@
 //!   verified lifetime threshold is first crossed; at most one a day.
 
 pub mod format;
+pub mod host;
 pub mod milestones;
 pub mod notify;
 pub mod proof;

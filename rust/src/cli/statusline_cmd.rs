@@ -12,7 +12,7 @@ use std::path::PathBuf;
 use std::process::{Command, Stdio};
 use std::time::Duration;
 
-use crate::core::config::{Config, ValueDisplayMode};
+use crate::core::config::{Config, StatuslineStyle, ValueDisplayMode};
 use crate::core::value::{format, recap, snapshot};
 
 /// Older than this, the status line shows nothing rather than an old number.
@@ -60,7 +60,9 @@ fn segment(input: &[u8]) -> Option<String> {
         .filter(|cwd| !cwd.is_empty())
         .map(PathBuf::from)
         .or_else(|| std::env::current_dir().ok())?;
-    let snap = snapshot::load_for_dir_in(&dir, &cwd).filter(|s| s.is_fresh(MAX_AGE))?;
+    // This conversation's own session: other agents in the same project run
+    // their own lean-ctx servers, and the project file names the last writer.
+    let snap = snapshot::load_for_caller_in(&dir, &cwd, MAX_AGE)?;
     // A snapshot not touched since this conversation began belongs to an
     // earlier one; it would read as this conversation's savings.
     let host_session = payload
@@ -73,7 +75,11 @@ fn segment(input: &[u8]) -> Option<String> {
         return None;
     }
     // Status lines render ANSI but are not a TTY: colour follows NO_COLOR only.
-    format::one_line(&snap, format::Style::from_env())
+    let style = format::Style::from_env();
+    match Config::load_arc().value_display.statusline {
+        StatuslineStyle::Brand => format::brand_line(&snap, style),
+        StatuslineStyle::Subtle => format::one_line(&snap, style),
+    }
 }
 
 /// The wrapped line's first row, then ours; its further rows stay below.

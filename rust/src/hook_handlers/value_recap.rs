@@ -10,7 +10,10 @@
 use std::path::Path;
 
 use crate::core::config::{Config, ValueDisplayMode};
-use crate::core::value::{format::Style, recap, snapshot};
+use crate::core::value::{format::Style, host, recap, snapshot};
+
+/// A session this recently written can be the one serving the hook's agent.
+const RECENT: std::time::Duration = std::time::Duration::from_hours(12);
 
 /// The `systemMessage` for this hook payload, if it has one to show.
 pub(super) fn system_message(input: &str) -> Option<String> {
@@ -29,7 +32,13 @@ pub(super) fn system_message(input: &str) -> Option<String> {
         .get("cwd")
         .and_then(serde_json::Value::as_str)
         .filter(|cwd| !cwd.is_empty())
-        .and_then(|cwd| snapshot::load_for_dir_in(&dir, Path::new(cwd)));
+        .and_then(|cwd| {
+            // The hook's own agent's session first; concurrent agents in this
+            // project would otherwise lend it their numbers.
+            let cwd = Path::new(cwd);
+            snapshot::load_for_hosts_in(&dir, cwd, &host::ancestors(), RECENT)
+                .or_else(|| snapshot::load_for_dir_in(&dir, cwd))
+        });
     // A host message is plain text: no ANSI, glyphs unless LEAN_CTX_ASCII.
     let style = Style {
         color: false,

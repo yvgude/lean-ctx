@@ -39,6 +39,8 @@ pub struct ValueSnapshot {
     pub files_read: u64,
     pub commands_run: u64,
     pub security: SecurityCounts,
+    /// The agent process that started the writing MCP server (see [`super::host`]).
+    pub host_pid: Option<u32>,
 }
 
 impl ValueSnapshot {
@@ -57,6 +59,7 @@ impl ValueSnapshot {
             files_read: u64::from(s.files_read),
             commands_run: u64::from(s.commands_run),
             security: s.security,
+            host_pid: super::host::host_pid(),
         }
     }
 
@@ -186,6 +189,49 @@ pub fn load_for_dir_in(dir: &Path, cwd: &Path) -> Option<ValueSnapshot> {
         })
 }
 
+/// The snapshot of the session serving the calling agent: a status line or hook
+/// is started by the same agent process that started its lean-ctx server, so
+/// that server's snapshot names one of the caller's ancestors as `host_pid`.
+/// Falls back to the project snapshot (whichever session wrote last) when no
+/// session in the project names an ancestor, e.g. a server from an older build.
+pub fn load_for_caller_in(dir: &Path, cwd: &Path, max_age: Duration) -> Option<ValueSnapshot> {
+    load_for_hosts_in(dir, cwd, &super::host::ancestors(), max_age)
+        .or_else(|| load_for_dir_in(dir, cwd).filter(|s| s.is_fresh(max_age)))
+}
+
+/// Among fresh sessions of the project containing `cwd`, the one whose host is
+/// the nearest of `hosts` (nearest first); the newest when one host has several.
+pub fn load_for_hosts_in(
+    dir: &Path,
+    cwd: &Path,
+    hosts: &[u32],
+    max_age: Duration,
+) -> Option<ValueSnapshot> {
+    if hosts.is_empty() {
+        return None;
+    }
+    let canonical = crate::core::pathutil::safe_canonicalize_or_self(cwd);
+    let in_project = |root: &str| canonical.starts_with(root) || cwd.starts_with(root);
+    let cutoff = std::time::SystemTime::now().checked_sub(max_age)?;
+    std::fs::read_dir(dir.join("sessions"))
+        .ok()?
+        .filter_map(Result::ok)
+        // Cheap mtime filter first: the directory keeps every past session.
+        .filter(|e| {
+            e.metadata()
+                .and_then(|m| m.modified())
+                .is_ok_and(|t| t >= cutoff)
+        })
+        .filter_map(|e| read_path(&e.path()))
+        .filter(|s| s.is_fresh(max_age) && s.project_root.as_deref().is_some_and(in_project))
+        .filter_map(|s| {
+            let rank = hosts.iter().position(|&h| Some(h) == s.host_pid)?;
+            Some((rank, s))
+        })
+        .min_by(|(ra, a), (rb, b)| ra.cmp(rb).then(b.updated_at.cmp(&a.updated_at)))
+        .map(|(_, s)| s)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -216,6 +262,39 @@ mod tests {
         assert_eq!(load_for_dir_in(data.path(), &root), Some(s));
         let elsewhere = tempfile::tempdir().unwrap();
         assert_eq!(load_for_dir_in(data.path(), elsewhere.path()), None);
+    }
+
+    #[test]
+    fn each_agent_reads_its_own_session_not_the_last_writer() {
+        let data = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let root = crate::core::pathutil::safe_canonicalize_or_self(project.path());
+        let root_str = root.to_string_lossy().into_owned();
+        let mut ours = snap("ours");
+        ours.project_root = Some(root_str.clone());
+        ours.host_pid = Some(4_100);
+        ours.tokens_saved = 4_200;
+        let mut theirs = snap("theirs");
+        theirs.project_root = Some(root_str);
+        theirs.host_pid = Some(9_900);
+        theirs.tokens_saved = 357_500;
+        write_to(data.path(), &ours).unwrap();
+        write_to(data.path(), &theirs).unwrap(); // last writer owns the project file
+
+        let max = Duration::from_hours(12);
+        let found = load_for_hosts_in(data.path(), &root, &[77, 4_100, 1_000], max).unwrap();
+        assert_eq!(found.session_id, "ours");
+        // No ancestor matches: no claim, the caller falls back to the project file.
+        assert_eq!(load_for_hosts_in(data.path(), &root, &[5, 6], max), None);
+        assert_eq!(
+            load_for_dir_in(data.path(), &root).unwrap().session_id,
+            "theirs"
+        );
+        let elsewhere = tempfile::tempdir().unwrap();
+        assert_eq!(
+            load_for_hosts_in(data.path(), elsewhere.path(), &[4_100], max),
+            None
+        );
     }
 
     #[test]
