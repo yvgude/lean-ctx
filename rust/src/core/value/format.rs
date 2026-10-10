@@ -77,6 +77,72 @@ pub fn one_line(snap: &ValueSnapshot, style: Style) -> Option<String> {
     })
 }
 
+/// LeanCTX colours (leanctx.com, dark theme) as 24-bit SGR parameters.
+const BRAND_PILL: &str = "1;38;2;17;22;38;48;2;102;140;255"; // canvas on signature
+const BRAND_LABEL: &str = "1;38;2;102;140;255"; // signature
+const BRAND_VALUE: &str = "1;38;2;241;243;255"; // foreground
+const BRAND_DETAIL: &str = "38;2;175;184;208"; // secondary
+const BRAND_RULE: &str = "38;2;53;62;90"; // hairline
+
+fn paint(style: Style, sgr: &str, text: &str) -> String {
+    if style.color {
+        format!("\x1b[{sgr}m{text}\x1b[0m")
+    } else {
+        text.to_string()
+    }
+}
+
+/// The Claude Code status line in LeanCTX's own terms:
+/// `◆ LeanCTX │ SELECT −1.2M tok · 60% leaner · 41 cached │ CONTROL ⛨ 3 enforced`.
+/// SELECT is what was kept out of context, CONTROL what the rules enforced; a
+/// group with nothing measured is left out, and so is the line when both are.
+pub fn brand_line(snap: &ValueSnapshot, style: Style) -> Option<String> {
+    if snap.is_empty() {
+        return None;
+    }
+    let sep = style.sep();
+    let rule = if style.unicode { " │ " } else { " | " };
+    let group = |label: &str, value: String, details: &[String]| {
+        let mut out = format!(
+            "{} {}",
+            paint(style, BRAND_LABEL, label),
+            paint(style, BRAND_VALUE, &value)
+        );
+        for detail in details {
+            out.push_str(&paint(style, BRAND_DETAIL, &format!("{sep}{detail}")));
+        }
+        out
+    };
+    let mut groups = Vec::new();
+    if snap.tokens_saved > 0 {
+        let mut details = Vec::new();
+        if let Some(pct) = snap.saved_pct() {
+            details.push(format!("{pct:.0}% leaner"));
+        }
+        if snap.cache_hits > 0 {
+            details.push(format!("{} cached", snap.cache_hits));
+        }
+        let value = format!("{}{} tok", style.minus(), format_tokens(snap.tokens_saved));
+        groups.push(group("SELECT", value, &details));
+    }
+    let security = snap.security.total();
+    if security > 0 {
+        groups.push(group(
+            "CONTROL",
+            format!("{} {security} enforced", style.shield()),
+            &[],
+        ));
+    }
+    let brand = format!("{} LeanCTX", style.mark());
+    let lead = if style.color {
+        paint(style, BRAND_PILL, &format!(" {brand} "))
+    } else {
+        brand
+    };
+    let rule = paint(style, BRAND_RULE, rule);
+    Some(format!("{lead}{rule}{}", groups.join(&rule)))
+}
+
 /// `◆ −1.2M tok ⛨ 3` for a shell prompt: the shortest honest form, never
 /// coloured (prompt escaping differs per shell, so the caller wraps it).
 pub fn compact(snap: &ValueSnapshot, style: Style) -> Option<String> {
@@ -226,6 +292,40 @@ mod tests {
         assert_eq!(compact(&snap(0, 0, 2), ascii).unwrap(), "* sec 2");
         assert_eq!(compact(&snap(0, 9, 0), Style::PLAIN), None);
         assert_eq!(compact(&ValueSnapshot::default(), Style::PLAIN), None);
+    }
+
+    #[test]
+    fn brand_line_groups_select_and_control() {
+        assert_eq!(
+            brand_line(&snap(1_200_000, 41, 3), Style::PLAIN).unwrap(),
+            "◆ LeanCTX │ SELECT −1.2M tok · 50% leaner · 41 cached │ CONTROL ⛨ 3 enforced"
+        );
+        assert_eq!(
+            brand_line(&snap(0, 0, 2), Style::PLAIN).unwrap(),
+            "◆ LeanCTX │ CONTROL ⛨ 2 enforced"
+        );
+        assert_eq!(brand_line(&ValueSnapshot::default(), Style::PLAIN), None);
+    }
+
+    #[test]
+    fn brand_line_colour_and_ascii_fallbacks() {
+        let colour = Style {
+            color: true,
+            unicode: true,
+        };
+        let line = brand_line(&snap(5_000, 0, 0), colour).unwrap();
+        assert!(line.starts_with("\x1b[1;38;2;17;22;38;48;2;102;140;255m ◆ LeanCTX \x1b[0m"));
+        assert!(line.ends_with("\x1b[0m"));
+        let ascii = Style {
+            color: false,
+            unicode: false,
+        };
+        let line = brand_line(&snap(312_000, 2, 1), ascii).unwrap();
+        assert!(line.is_ascii(), "{line}");
+        assert_eq!(
+            line,
+            "* LeanCTX | SELECT -312.0K tok | 50% leaner | 2 cached | CONTROL sec 1 enforced"
+        );
     }
 
     #[test]
