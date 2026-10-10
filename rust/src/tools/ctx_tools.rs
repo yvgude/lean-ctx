@@ -7,6 +7,8 @@
 //! runtime, so `run` falls back to building its own current_thread runtime
 //! (see `Rt`) instead of panicking on `Handle::current()`.
 
+use std::sync::OnceLock;
+
 use serde_json::{Map, Value};
 
 use crate::core::config::Config;
@@ -21,28 +23,37 @@ const DISABLED_HINT: &str = "gateway is disabled. Enable it in ~/.lean-ctx/confi
      command = \"mcp-server-filesystem\"\n\
      args = [\"/path/to/dir\"]";
 
-/// Runtime adapter so the `rt.block_on(...)` call sites stay identical whether
-/// Dedicated single-threaded runtime for gateway async calls.
+/// Process-lifetime runtime for gateway async calls.
 ///
-/// Tool handlers run inside `spawn_blocking` (#1018) where `Handle::block_on`
-/// panics. Always create a fresh current_thread runtime — it is independent of
-/// the server's multi-thread runtime and safe from any calling context.
-struct Rt(tokio::runtime::Runtime);
+/// Tool handlers run inside `spawn_blocking` (#1018), so the ambient server
+/// runtime cannot be entered with `Handle::block_on`. A fresh runtime per call
+/// is also incorrect: pooled downstream MCP sessions spawn background tasks on
+/// that runtime, and dropping it immediately after the call leaves stale
+/// `RunningService` objects in the global pool. Keep one dedicated multi-thread
+/// runtime alive for the process instead, so pooled stdio/HTTP sessions really
+/// survive across `ctx_tools` calls.
+struct Rt(&'static tokio::runtime::Runtime);
 
 impl Rt {
     fn new() -> Result<Self, String> {
-        tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map(Self)
-            .map_err(|e| format!("failed to start runtime for gateway: {e}"))
+        static GATEWAY_RUNTIME: OnceLock<Result<tokio::runtime::Runtime, String>> = OnceLock::new();
+        match GATEWAY_RUNTIME.get_or_init(|| {
+            tokio::runtime::Builder::new_multi_thread()
+                .worker_threads(2)
+                .thread_name("lean-ctx-gateway")
+                .enable_all()
+                .build()
+                .map_err(|e| format!("failed to start runtime for gateway: {e}"))
+        }) {
+            Ok(runtime) => Ok(Self(runtime)),
+            Err(error) => Err(error.clone()),
+        }
     }
 
     fn block_on<F: std::future::Future>(&self, fut: F) -> F::Output {
         self.0.block_on(fut)
     }
 }
-
 /// Execute a `ctx_tools` action, returning response text or an error message.
 ///
 /// `project_root` is the caller's project root (from `ToolContext`); it is
@@ -148,4 +159,21 @@ mod tests {
         let args = json!({ "action": "list" });
         let _ = run(args.as_object().unwrap(), ""); // Ok|Err, niemals Panic
     }
+    #[test]
+    fn gateway_runtime_survives_between_tool_calls() {
+        let first = Rt::new().expect("gateway runtime");
+        let (tx, rx) = tokio::sync::oneshot::channel::<u8>();
+        let task = first.block_on(async {
+            tokio::spawn(async move { rx.await.expect("runtime stayed alive") })
+        });
+        drop(first);
+
+        let second = Rt::new().expect("same gateway runtime");
+        let value = second.block_on(async move {
+            tx.send(7).expect("receiver still alive");
+            task.await.expect("gateway task was not cancelled")
+        });
+        assert_eq!(value, 7);
+    }
+
 }
