@@ -82,6 +82,9 @@ impl McpTool for CtxShellTool {
             return Ok(ToolOutput {
                 shell_outcome: Some(outcome),
                 content_blocks: None,
+                // Looking after a running job is no new command: the session
+                // stats leave it out (`server_metrics::counts_in_session`).
+                mode: Some(crate::tools::server_metrics::BACKGROUND_POLL_MODE.to_string()),
                 ..ToolOutput::simple(text)
             });
         }

@@ -464,10 +464,11 @@ fn build_agent_hooks_step(
     (!hooks_step.items.is_empty()).then_some(hooks_step)
 }
 
-/// The lean-ctx Claude Code mod is code that runs inside Claude Code, so it is
-/// only ever *installed* on an interactive yes (or `lean-ctx claude-mod
-/// install`). Unattended runs — `--non-interactive`, `--yes`, `--json` and the
-/// post-update rewire — only roll an existing install forward to this engine.
+/// The lean-ctx Claude Code mod (cockpit, wake, a focused tool surface) is set
+/// up wherever Claude Code can host it — by setup and by the post-update rewire
+/// alike — and an installed one is rolled forward to this engine. It runs
+/// inside Claude Code, so the report says what was installed and how to remove
+/// it, and a removal (`lean-ctx claude-mod uninstall`) is never undone here.
 fn build_claude_mod_step(opts: SetupOptions, targets: &[EditorTarget]) -> Option<SetupStepReport> {
     use crate::hooks::agents::claude_mod::{self, ModStatus};
     let claude_present = targets
@@ -485,13 +486,7 @@ fn build_claude_mod_step(opts: SetupOptions, targets: &[EditorTarget]) -> Option
             .map(|p| p.to_string_lossy().to_string()),
         note: Some(note),
     };
-    // `--yes` approves the setup's own changes, not running new code inside
-    // Claude Code; without a TTY there is nobody to ask (and the generic
-    // refusal would wrongly suggest `--yes`).
-    let unattended = opts.non_interactive
-        || opts.json
-        || opts.yes
-        || !std::io::IsTerminal::is_terminal(&std::io::stdin());
+    let quiet = opts.json;
     match claude_mod::status() {
         status @ (ModStatus::ClaudeMissing | ModStatus::ClaudeTooOld(_)) => {
             step.items.push(item("skipped", status.describe()));
@@ -505,33 +500,23 @@ fn build_claude_mod_step(opts: SetupOptions, targets: &[EditorTarget]) -> Option
                 step.items.push(item("error", e));
             }
         },
-        ModStatus::NotInstalled if unattended => step.items.push(item(
+        ModStatus::NotInstalled if claude_mod::auto_install_declined() => step.items.push(item(
             "skipped",
-            "optional — install with: lean-ctx claude-mod install".to_string(),
+            "removed by you — bring it back with: lean-ctx claude-mod install".to_string(),
         )),
-        ModStatus::NotInstalled => {
-            println!(
-                "\n  lean-ctx Claude Code mod: wakes the model when background jobs finish \
-                 (no sleep/status polling), keeps lean-ctx's core tools in front, and adds \
-                 /leanctx with this session's real token usage. Runs inside Claude Code; \
-                 remove anytime with `lean-ctx claude-mod uninstall`."
-            );
-            if crate::cli::prompt::confirm("  Install it?", false) {
-                match claude_mod::install() {
-                    Ok(msg) => step.items.push(item("created", msg)),
-                    Err(e) => {
-                        step.warnings
-                            .push(format!("claude mod install failed: {e}"));
-                        step.items.push(item("error", e));
-                    }
+        ModStatus::NotInstalled => match claude_mod::install() {
+            Ok(msg) => {
+                if !quiet {
+                    println!("\n  {}", claude_mod::INSTALLED_NOTICE);
                 }
-            } else {
-                step.items.push(item(
-                    "skipped",
-                    "declined — install later with: lean-ctx claude-mod install".to_string(),
-                ));
+                step.items.push(item("created", msg));
             }
-        }
+            Err(e) => {
+                step.warnings
+                    .push(format!("claude mod install failed: {e}"));
+                step.items.push(item("error", e));
+            }
+        },
     }
     Some(step)
 }

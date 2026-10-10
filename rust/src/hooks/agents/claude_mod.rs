@@ -13,9 +13,13 @@
 //! `install` are idempotent, `marketplace update` + `update` move between
 //! versions, including ones that differ only in build metadata.
 //!
-//! The mod is code that runs inside Claude Code with the user's permissions, so
-//! it is never installed silently: `lean-ctx claude-mod install`, or a `yes` in
-//! the setup wizard. An installed mod is refreshed on later setups.
+//! Setup and update install the mod where Claude Code can host it, say so in
+//! their report (what it does, that it applies in new sessions, how to remove
+//! it), and roll an installed mod forward. The mod is code that runs inside
+//! Claude Code with the user's permissions, so removing it is a standing
+//! decision: `lean-ctx claude-mod uninstall` leaves a marker that keeps every
+//! later setup or update from installing it again, until an explicit
+//! `lean-ctx claude-mod install` clears it.
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -86,6 +90,25 @@ pub fn mod_version() -> String {
 /// `<data dir>/claude-mod` — the local marketplace root.
 pub fn marketplace_dir() -> Result<PathBuf, String> {
     crate::core::data_dir::lean_ctx_data_dir().map(|d| d.join("claude-mod"))
+}
+
+/// Printed when setup or update installs the mod: what it is, when it applies,
+/// how to remove it.
+pub const INSTALLED_NOTICE: &str = "Installed the LeanCTX plugin for Claude Code: the cockpit (what Claude saw, \
+tokens kept out, the two checks, receipts), wake on background jobs and a focused lean-ctx tool \
+surface. Active in new Claude Code sessions (or /reload-plugins). Remove anytime with \
+`lean-ctx claude-mod uninstall` — it then stays removed.";
+
+/// `<data dir>/claude-mod.declined`: written by `uninstall`, outside the
+/// marketplace root that uninstall deletes, so the decision outlives it.
+fn declined_marker() -> Result<PathBuf, String> {
+    crate::core::data_dir::lean_ctx_data_dir().map(|d| d.join("claude-mod.declined"))
+}
+
+/// Whether the user removed the mod: setup and update then never install it.
+#[must_use]
+pub fn auto_install_declined() -> bool {
+    declined_marker().is_ok_and(|p| p.exists())
 }
 
 /// The plugin manifest with `version` set to [`mod_version`].
@@ -198,6 +221,11 @@ pub fn install() -> Result<String, String> {
     let root_str = root.to_string_lossy().to_string();
     // Idempotent: re-adding an existing local marketplace is a no-op success.
     run_claude(&["plugin", "marketplace", "add", &root_str])?;
+    // An install (explicit, or by setup while nothing was declined) lifts an
+    // earlier removal: from here on, updates keep the mod current again.
+    if let Ok(marker) = declined_marker() {
+        let _ = std::fs::remove_file(marker);
+    }
     match before {
         ModStatus::NotInstalled => {
             run_claude(&["plugin", "install", PLUGIN_ID, "--scope", "user"])?;
@@ -277,7 +305,17 @@ pub fn uninstall() -> Result<String, String> {
     {
         std::fs::remove_dir_all(&root).map_err(|e| format!("remove {}: {e}", root.display()))?;
     }
-    Ok(format!("removed {PLUGIN_ID}"))
+    // A removal is a standing decision: no later setup or update reinstalls it.
+    if let Ok(marker) = declined_marker() {
+        if let Some(parent) = marker.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(&marker, "removed with `lean-ctx claude-mod uninstall`; `lean-ctx claude-mod install` lifts this\n")
+            .map_err(|e| format!("write {}: {e}", marker.display()))?;
+    }
+    Ok(format!(
+        "removed {PLUGIN_ID} — setup and update will not reinstall it (lean-ctx claude-mod install brings it back)"
+    ))
 }
 
 /// Whether `claude plugin marketplace list --json` names our marketplace.
@@ -394,6 +432,21 @@ mod tests {
         assert!(marketplace_listed(markets));
         assert!(!marketplace_listed(r#"[{"name":"other"}]"#));
         assert!(!marketplace_listed("garbage"));
+    }
+
+    /// A removal is a standing decision; an explicit install lifts it. Checked
+    /// through the marker path itself (the CLI round-trips need `claude`).
+    #[test]
+    fn removal_marker_lives_outside_the_marketplace_root() {
+        let marker = declined_marker().unwrap();
+        let root = marketplace_dir().unwrap();
+        assert!(
+            !marker.starts_with(&root),
+            "{} inside {}",
+            marker.display(),
+            root.display()
+        );
+        assert_eq!(marker.parent(), root.parent());
     }
 
     /// The installed manifest must carry the engine version plus a content

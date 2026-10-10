@@ -42,12 +42,20 @@ export type TurnStat = {
   calls: number
   files: number
   commands: number
+  /** Sources Claude saw this turn, how many through the gateway, how many as structure. */
+  sources: number
+  governed: number
+  structure: number
   at: number
 }
 
 export type Overlay =
   | { kind: 'turn'; turn: TurnStat; at: number }
-  | { kind: 'milestone'; amount: number; at: number }
+  /** A crossing worth a moment: a token amount, or a gateway first (title, detail). */
+  | { kind: 'milestone'; title: string; detail: string; at: number }
+
+/** How deep a source reached Claude: the read depth the website's flow names. */
+export type Depth = 'structure' | 'passage' | 'full' | 'search' | 'command'
 
 export type FeedItem = {
   id: string
@@ -57,7 +65,14 @@ export type FeedItem = {
   startedAt: number
   ms?: number
   isError?: boolean
+  /** Set when the call brought a source to Claude. */
+  depth?: Depth
+  /** Through lean-ctx (the gateway) rather than one of Claude's own tools. */
+  governed: boolean
 }
+
+/** One source Claude saw this conversation, by path, pattern or command. */
+export type SourceStat = { label: string; depth: Depth; governed: boolean; n: number; last: number }
 
 export type Board = {
   snap?: ValueSnap
@@ -73,6 +88,12 @@ export type Board = {
   /** The session's running total over time; reset when the session changes. */
   history?: { sessionId: string; points: { at: number; saved: number }[] }
   feed: FeedItem[]
+  /** Sources Claude saw this conversation, keyed by path / pattern / command. */
+  sources: Record<string, SourceStat>
+  /** Sources seen since the running turn started. */
+  turnSeen: { sources: number; governed: number; structure: number }
+  /** Gateway milestones already celebrated (first secret kept out, …). */
+  celebrated: string[]
   contextPct?: number
   contextTokens?: number
   window?: number
@@ -85,6 +106,6 @@ export type Frame = { tick: number }
 
 declare module 'claude-code' {
   interface PluginState {
-    'lean-ctx': { state: Board; clock: Frame }
+    'lean-ctx': { gateway: Board; clock: Frame }
   }
 }
