@@ -44,7 +44,7 @@ const HOST_KEYS: &[&str] = &[
 ];
 
 /// How many ancestors are read: client, its shell, the job runner, its init.
-#[cfg(target_os = "linux")]
+#[cfg(all(target_os = "linux", not(test)))]
 const MAX_ANCESTORS: usize = 4;
 
 /// `key` from this process, else from the nearest ancestor for [`HOST_KEYS`].
