@@ -34,10 +34,15 @@ pub(super) fn system_message(input: &str) -> Option<String> {
         .filter(|cwd| !cwd.is_empty())
         .and_then(|cwd| {
             // The hook's own agent's session first; concurrent agents in this
-            // project would otherwise lend it their numbers.
+            // project would otherwise lend it their numbers. The project file
+            // (unfiltered: recaps judge age themselves) only while no server
+            // records its host yet.
             let cwd = Path::new(cwd);
-            snapshot::load_for_hosts_in(&dir, cwd, &host::ancestors(), RECENT)
-                .or_else(|| snapshot::load_for_dir_in(&dir, cwd))
+            snapshot::load_for_hosts_in(&dir, cwd, &host::ancestors(), RECENT).or_else(|| {
+                (!snapshot::host_recorded_in(&dir, cwd, RECENT))
+                    .then(|| snapshot::load_for_dir_in(&dir, cwd))
+                    .flatten()
+            })
         });
     // A host message is plain text: no ANSI, glyphs unless LEAN_CTX_ASCII.
     let style = Style {

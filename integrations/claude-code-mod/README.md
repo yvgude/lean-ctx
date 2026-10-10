@@ -27,6 +27,20 @@ were waiting** — 7,551 status polls for 1,030 background jobs plus 1,770
 
 ## What it does
 
+- **The LeanCTX cockpit** (`hooks/cockpit.tsx`, interactive sessions only).
+  A docked sidebar in the product's own terms: **SELECT** (tokens kept out of
+  Claude's context, share of the raw tool output, files, commands, cached
+  re-reads), **CONTROL** (secrets redacted, commands and paths blocked,
+  injections flagged; context window and prompt cache), **PROVE** (both hash
+  chains re-verified by `lean-ctx value` every 5 minutes), **TIMELINE** (the
+  session's running total) and **RECENT** (the last tool calls). A pulse line
+  above the prompt while Claude works, brighter while a lean-ctx tool runs; a
+  short card when a turn ends and when a milestone is crossed. The numbers are
+  those of the lean-ctx session serving this conversation (matched by process
+  tree), the same ones `lean-ctx statusline` shows below the prompt; the band
+  above the prompt repeats none of them. `/cockpit` reopens the sidebar.
+  LeanCTX colours from leanctx.com.
+
 - **Wake, don't poll.** Watches `ctx_shell(run_in_background=true)` jobs in
   Claude Code's process (state from ctx_shell's `structuredContent`, then its
   JSON text, then the `[background:…]` header) and starts one new turn when they
