@@ -434,6 +434,8 @@ async function refresh($: EngineInterface) {
   }
   refreshing = true
   try {
+    // Claude's side (window, cost) rides along: refresh only runs from timers.
+    await refreshUsage($)
     const where = await locate($)
     const sessions = `${where.dir}/sessions`
     const now = Date.now()
@@ -548,12 +550,13 @@ async function refreshUsage($: EngineInterface) {
   }
 }
 
-// The turn just ended: wait for lean-ctx's last write, then sum up what it did.
+// The turn just ended: sum up what lean-ctx did. Runs from a `$.clock.after`
+// timer (scheduled by the `turn.complete` hook) once lean-ctx's last write is
+// in: work that outlives a hook's dispatch must not hang off the hook itself.
+// Without a snapshot the card still shows, with the turn alone.
 async function finishTurn($: EngineInterface, durationMs: number) {
-  await $.clock.sleep(REFRESH_AFTER_TOOL_MS)
-  await refresh($)
+  await refresh($).catch(() => {})
   const b = await readBoard($)
-  if (!b.snap) return
   const now = countersOf(b.snap)
   // A turn that spans a session change (a reconnect) counts from the new
   // session's start, never as the difference of two sessions' counters.
@@ -696,7 +699,6 @@ async function observeRow($: EngineInterface, row: Rec) {
     return { ...x, feed: done, leanRunning: Math.max(0, running) }
   })
   if (ended.size > 0) {
-    void refreshUsage($).catch(() => {})
     scheduleRefresh($)
   }
 }
@@ -708,8 +710,8 @@ async function cockpitStart($: EngineInterface): Promise<void> {
   // Fire-and-forget, and never an unhandled rejection: a surface that draws
   // no panes (or none yet) simply leaves the sidebar closed.
   $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS }).catch(() => {})
-  refresh($).catch(() => {})
-  refreshUsage($).catch(() => {})
+  // Work that outlives this hook runs from timers, never off the hook itself.
+  $.clock.after(300, () => void refresh($).catch(() => {}))
   $.clock.every(REFRESH_MS, () => void refresh($).catch(() => {}))
   $.clock.after(PROVE_FIRST_MS, () => void prove($).catch(() => {}))
   $.clock.every(PROVE_MS, () => void prove($).catch(() => {}))
@@ -730,8 +732,8 @@ export function registerCockpit(on: On): void {
 
   on('command.run', { command: 'cockpit' }, async $ => {
     const { isPlaced } = await $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS })
-    void refresh($).catch(() => {})
-    void prove($).catch(() => {})
+    $.clock.after(0, () => void refresh($).catch(() => {}))
+    $.clock.after(0, () => void prove($).catch(() => {}))
     return { text: isPlaced ? 'LeanCTX cockpit opened.' : 'LeanCTX cockpit is waiting for room (fullscreen, ~110+ columns).' }
   })
 
@@ -759,8 +761,10 @@ export function registerCockpit(on: On): void {
       }
       return { ...x, isWorking: false, leanRunning: 0, cacheHitPct }
     })
-    void refreshUsage($).catch(() => {})
-    if (!e.isAborted) void finishTurn($, e.durationMs).catch(() => {})
+    if (!e.isAborted) {
+      const durationMs = e.durationMs
+      $.clock.after(REFRESH_AFTER_TOOL_MS, () => void finishTurn($, durationMs).catch(() => {}))
+    }
     return next(e)
   })
 
