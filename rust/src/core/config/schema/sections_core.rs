@@ -760,7 +760,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_with_env(
             "string?",
             serde_json::json!(null),
-            "What the enforced path jail admits. null/\"home\" (default) = every project below your home directory is readable (a path counts when a folder between it and ~ holds .git, Cargo.toml, package.json, …; loose personal files do not), so all your projects work at once; writes stay in the session's project + allow entries; protected zones stay closed: top-level dot entries (~/.ssh, ~/.aws, ~/.config, other agents' dirs), ~/Library, ~/AppData, ~/snap. \"project\" = only the active project + allow_paths/extra_roots/read_only_roots. Open one more dir with `lean-ctx allow-path <dir>`. Falls back to \"project\" for an implausible $HOME. Global-only",
+            "What the enforced path jail admits. null/\"home\" (default since 3.11.3) = everything below your home directory, read and write, except protected zones: top-level dot entries (~/.ssh, ~/.aws, ~/.config, other agents' dirs), ~/Library, ~/AppData, ~/snap. \"projects\" (the default of 3.11.1–3.11.2) = every project below ~ is readable (a path counts when a folder between it and ~ holds .git, Cargo.toml, package.json, …; loose personal files do not); writes stay in the session's project + allow entries. \"project\" = only the active project + allow_paths/extra_roots/read_only_roots. Open one more dir with `lean-ctx allow-path <dir>`. Falls back to \"project\" for an implausible $HOME. Global-only",
             "LEAN_CTX_PATH_JAIL_SCOPE",
         ),
     );

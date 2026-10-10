@@ -65,6 +65,7 @@ pub fn run() {
     {
         crate::core::telemetry_consent::maybe_show_notice();
         crate::core::telemetry_notices::maybe_show();
+        crate::core::pathjail_scope::maybe_show_default_notice();
     }
     // Counts the command (from a closed list, never its arguments).
     if !enters_mcp && !is_server_mode(&args) {

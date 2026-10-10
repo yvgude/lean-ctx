@@ -187,7 +187,7 @@ fn print_status() {
     );
     println!("    {DIM}secrets →{RST}  lean-ctx security secrets <on|off>");
     println!(
-        "    {DIM}granular →{RST} lean-ctx config set shell_security warn|off · path_jail false · path_jail_scope home|project"
+        "    {DIM}granular →{RST} lean-ctx config set shell_security warn|off · path_jail false · path_jail_scope home|projects|project"
     );
     println!(
         "    {DIM}paths    →{RST}  lean-ctx allow-path <dir>     {DIM}open one extra/protected dir · lean-ctx allow <cmd> for commands{RST}"
@@ -197,10 +197,13 @@ fn print_status() {
 fn scope_line(scope: PathJailScope) -> String {
     match scope {
         PathJailScope::Home => format!(
-            "{GREEN}home{RST}  {DIM}(read every project below ~, write the active one; ~/.ssh, ~/.config & other dot dirs, ~/Library stay closed){RST}"
+            "{GREEN}home{RST}  {DIM}(read and write everything below ~; ~/.ssh, ~/.config & other dot dirs, ~/Library stay closed){RST}"
+        ),
+        PathJailScope::Projects => format!(
+            "{YELLOW}projects{RST}  {DIM}(read every project below ~, write the active one — `path_jail_scope home` for all of ~){RST}"
         ),
         PathJailScope::Project => format!(
-            "{YELLOW}project{RST}  {DIM}(only the active project + allow_paths — `path_jail_scope home` for multi-project work){RST}"
+            "{YELLOW}project{RST}  {DIM}(only the active project + allow_paths — `path_jail_scope home` for all of ~){RST}"
         ),
     }
 }

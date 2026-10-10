@@ -6,6 +6,10 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+### Changed
+
+- **PathJail opens your whole home directory by default.** The default `path_jail_scope = home` now admits everything below `~` for reading and writing; before, it admitted only paths inside a project, read-only outside the session's project. Protected locations stay closed: every top-level dot entry (`~/.ssh`, `~/.aws`, `~/.config`, shell rc files, other agents' `~/.claude`, `~/.codex`, …), `~/Library`, `~/AppData` and `~/snap`, and everything outside `~`. The previous behaviour is the new scope `projects` (`lean-ctx config set path_jail_scope projects`), the strictest one stays `project`. A scope you set yourself is kept; `home` set explicitly now means the wider scope too. Every installation without its own setting shows a one-time notice on its next interactive command.
+
 ### Fixed
 
 Tool calls that failed although the agent's request was sound, found in the usage telemetry of 3.11.1 and 3.11.2:

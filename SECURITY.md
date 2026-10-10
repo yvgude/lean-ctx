@@ -44,15 +44,16 @@ lean-ctx enforces a **filesystem boundary** for tool I/O:
 
 - **PathJail**: all tool path inputs are resolved (symlinks and `..` included) and checked
   against the jail scope (`path_jail_scope`, global-only):
-  - `home` (default since v3.11.1): every path inside a project below the user's home
-    directory is readable — a folder between it and `~` holds `.git`, `Cargo.toml`,
-    `package.json` or another project marker; loose personal files stay jailed (since
-    v3.11.2; v3.11.1 admitted every path below `~`) — except the protected zones — every top-level dot entry (`~/.ssh`, `~/.aws`, `~/.gnupg`,
+  - `home` (default since v3.11.1; read **and write** below `~` since v3.11.3): every path
+    below the user's home directory, except the protected zones — every top-level dot entry (`~/.ssh`, `~/.aws`, `~/.gnupg`,
     `~/.config`, shell rc files, other agents' `~/.claude` / `~/.codex` / `~/.cursor`),
-    `~/Library`, `~/AppData` / `NTUSER.DAT*` and `~/snap`. Writes stay limited to the session's
-    project, host-declared roots and explicit allow entries. Everything outside `~` stays jailed.
+    `~/Library`, `~/AppData` / `NTUSER.DAT*` and `~/snap`. Everything outside `~` stays jailed.
     Zones are a hard deny: a root or allow entry that merely contains a zone does not open it.
     An implausible `$HOME` (`/`, `/root`, `/tmp`, not owned by the user) disables the scope.
+  - `projects` (the default of v3.11.1–v3.11.2): only paths inside a project below `~` (a folder
+    between it and `~` holds `.git`, `Cargo.toml`, `package.json` or another project marker) are
+    readable; loose personal files stay jailed, and writes stay limited to the session's project,
+    host-declared roots and explicit allow entries.
   - `project`: only the current `project_root` plus the explicit allow roots below.
   - If a path would escape, the call fails naming the single command that admits it
     (`lean-ctx allow-path <dir>`) and asks the agent to defer to the user.
@@ -321,7 +322,7 @@ policy — per-session I/O limits live on the active role, which is selected via
 ```toml
 update_check_disabled = true   # no daily update check
 path_jail = true               # keep the filesystem jail on (default)
-path_jail_scope = "project"    # only the active project (default "home": all projects below ~)
+path_jail_scope = "project"    # only the active project (default "home": all of ~ except protected zones)
 
 [telemetry]
 enabled = false                # explicitly disable telemetry
