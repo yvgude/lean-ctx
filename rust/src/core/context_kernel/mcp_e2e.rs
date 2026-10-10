@@ -2,7 +2,7 @@
 
 #[cfg(test)]
 mod tests {
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::MutexGuard;
 
     use super::super::client_wiring::OptimizationLevel;
     use super::super::coverage_class::CoverageClass;
@@ -11,13 +11,12 @@ mod tests {
     use super::super::mcp_receipt::{self, McpReceipt};
     use super::super::mcp_schema_opt::{self, SchemaBudget, SchemaEntry};
 
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
+    /// The kernel-wide test lock, held by every module that resets the
+    /// process-wide MCP bridge and receipt state, so resets never race.
     fn isolated_test() -> MutexGuard<'static, ()> {
-        let guard = match TEST_LOCK.lock() {
-            Ok(guard) => guard,
-            Err(poisoned) => poisoned.into_inner(),
-        };
+        let guard = crate::core::context_kernel::kernel_config::KERNEL_TEST_LOCK
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
         mcp_bridge::reset_mcp_state();
         mcp_receipt::reset_receipts();
         guard
