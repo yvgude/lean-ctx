@@ -1,7 +1,8 @@
 {
   "name": "lean-ctx",
   "version": "0.2.0",
-  "description": "Wake on background job completion, remove redundant lean-ctx hook context, shape native Bash output, keep core tools in front, and show per-session usage.",
+  "description": "The LeanCTX cockpit (Select · Control · Prove sidebar, pulse line, turn and milestone overlays), wake on background job completion, remove redundant lean-ctx hook context, shape native Bash output, keep core tools in front, and show per-session usage.",
+  "types": "./types/index.d.ts",
   "author": {
     "name": "Thinkery / Yves Gugger"
   },

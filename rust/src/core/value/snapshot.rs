@@ -192,11 +192,29 @@ pub fn load_for_dir_in(dir: &Path, cwd: &Path) -> Option<ValueSnapshot> {
 /// The snapshot of the session serving the calling agent: a status line or hook
 /// is started by the same agent process that started its lean-ctx server, so
 /// that server's snapshot names one of the caller's ancestors as `host_pid`.
-/// Falls back to the project snapshot (whichever session wrote last) when no
-/// session in the project names an ancestor, e.g. a server from an older build.
+/// Falls back to the project snapshot (whichever session wrote last) only while
+/// no server in the project records its host yet (all from older builds): once
+/// one does, a caller whose own session is not found yet (a server just
+/// restarted) shows nothing rather than a neighbour's numbers.
 pub fn load_for_caller_in(dir: &Path, cwd: &Path, max_age: Duration) -> Option<ValueSnapshot> {
-    load_for_hosts_in(dir, cwd, &super::host::ancestors(), max_age)
-        .or_else(|| load_for_dir_in(dir, cwd).filter(|s| s.is_fresh(max_age)))
+    load_own_or_legacy_in(dir, cwd, &super::host::ancestors(), max_age)
+}
+
+/// [`load_for_caller_in`] for an explicit ancestor chain.
+pub fn load_own_or_legacy_in(
+    dir: &Path,
+    cwd: &Path,
+    hosts: &[u32],
+    max_age: Duration,
+) -> Option<ValueSnapshot> {
+    let sessions = fresh_project_sessions(dir, cwd, max_age);
+    if let Some(own) = pick_by_host(&sessions, hosts) {
+        return Some(own);
+    }
+    if sessions.iter().any(|s| s.host_pid.is_some()) {
+        return None;
+    }
+    load_for_dir_in(dir, cwd).filter(|s| s.is_fresh(max_age))
 }
 
 /// Among fresh sessions of the project containing `cwd`, the one whose host is
@@ -207,14 +225,36 @@ pub fn load_for_hosts_in(
     hosts: &[u32],
     max_age: Duration,
 ) -> Option<ValueSnapshot> {
-    if hosts.is_empty() {
-        return None;
-    }
+    pick_by_host(&fresh_project_sessions(dir, cwd, max_age), hosts)
+}
+
+/// Whether any fresh session of the project records its host: from then on a
+/// caller that finds no session of its own must not borrow another's.
+pub fn host_recorded_in(dir: &Path, cwd: &Path, max_age: Duration) -> bool {
+    fresh_project_sessions(dir, cwd, max_age)
+        .iter()
+        .any(|s| s.host_pid.is_some())
+}
+
+fn pick_by_host(sessions: &[ValueSnapshot], hosts: &[u32]) -> Option<ValueSnapshot> {
+    sessions
+        .iter()
+        .filter_map(|s| Some((hosts.iter().position(|&h| Some(h) == s.host_pid)?, s)))
+        .min_by(|(ra, a), (rb, b)| ra.cmp(rb).then(b.updated_at.cmp(&a.updated_at)))
+        .map(|(_, s)| s.clone())
+}
+
+/// Every session of the project containing `cwd` written within `max_age`.
+fn fresh_project_sessions(dir: &Path, cwd: &Path, max_age: Duration) -> Vec<ValueSnapshot> {
     let canonical = crate::core::pathutil::safe_canonicalize_or_self(cwd);
     let in_project = |root: &str| canonical.starts_with(root) || cwd.starts_with(root);
-    let cutoff = std::time::SystemTime::now().checked_sub(max_age)?;
-    std::fs::read_dir(dir.join("sessions"))
-        .ok()?
+    let (Some(cutoff), Ok(entries)) = (
+        std::time::SystemTime::now().checked_sub(max_age),
+        std::fs::read_dir(dir.join("sessions")),
+    ) else {
+        return Vec::new();
+    };
+    entries
         .filter_map(Result::ok)
         // Cheap mtime filter first: the directory keeps every past session.
         .filter(|e| {
@@ -224,12 +264,7 @@ pub fn load_for_hosts_in(
         })
         .filter_map(|e| read_path(&e.path()))
         .filter(|s| s.is_fresh(max_age) && s.project_root.as_deref().is_some_and(in_project))
-        .filter_map(|s| {
-            let rank = hosts.iter().position(|&h| Some(h) == s.host_pid)?;
-            Some((rank, s))
-        })
-        .min_by(|(ra, a), (rb, b)| ra.cmp(rb).then(b.updated_at.cmp(&a.updated_at)))
-        .map(|(_, s)| s)
+        .collect()
 }
 
 #[cfg(test)]
@@ -284,17 +319,39 @@ mod tests {
         let max = Duration::from_hours(12);
         let found = load_for_hosts_in(data.path(), &root, &[77, 4_100, 1_000], max).unwrap();
         assert_eq!(found.session_id, "ours");
-        // No ancestor matches: no claim, the caller falls back to the project file.
+        // No ancestor matches (our server just restarted): nothing, never the
+        // neighbour the project file names, because servers record their host.
         assert_eq!(load_for_hosts_in(data.path(), &root, &[5, 6], max), None);
         assert_eq!(
             load_for_dir_in(data.path(), &root).unwrap().session_id,
             "theirs"
         );
+        assert_eq!(
+            load_own_or_legacy_in(data.path(), &root, &[5, 6], max),
+            None
+        );
+        assert!(host_recorded_in(data.path(), &root, max));
+        let own = load_own_or_legacy_in(data.path(), &root, &[4_100], max).unwrap();
+        assert_eq!(own.session_id, "ours");
         let elsewhere = tempfile::tempdir().unwrap();
         assert_eq!(
             load_for_hosts_in(data.path(), elsewhere.path(), &[4_100], max),
             None
         );
+    }
+
+    #[test]
+    fn servers_without_a_host_record_keep_the_project_fallback() {
+        let data = tempfile::tempdir().unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let root = crate::core::pathutil::safe_canonicalize_or_self(project.path());
+        let mut legacy = snap("legacy");
+        legacy.project_root = Some(root.to_string_lossy().into_owned());
+        write_to(data.path(), &legacy).unwrap();
+        let max = Duration::from_hours(12);
+        assert!(!host_recorded_in(data.path(), &root, max));
+        let found = load_own_or_legacy_in(data.path(), &root, &[1_234], max).unwrap();
+        assert_eq!(found.session_id, "legacy");
     }
 
     #[test]

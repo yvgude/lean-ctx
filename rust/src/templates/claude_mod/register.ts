@@ -8,6 +8,8 @@ import type {
   TurnStepResult,
 } from "claude-code";
 
+import { registerCockpit } from "./cockpit";
+
 const DEFAULT_FRONT_LOADED_TOOLS = [
   "ctx_read",
   "ctx_search",
@@ -167,6 +169,8 @@ let commandRegistered = false;
 let resumePending = false;
 
 export const register: Register = (on, options) => {
+  // The cockpit: sidebar, pulse line, turn and milestone overlays (cockpit.tsx).
+  registerCockpit(on);
   const frontLoaded = getFrontLoadedTools(options);
   const shapeNative = asRecord(options).shape_native_output !== false;
   const keepHookContext = asRecord(options).keep_hook_context === true;

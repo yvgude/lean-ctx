@@ -29,6 +29,10 @@ pub const PLUGIN_ID: &str = "lean-ctx@lean-ctx";
 
 pub const REGISTER_TS: &str = include_str!("../../templates/claude_mod/register.ts");
 pub const HOOKS_JSON: &str = include_str!("../../templates/claude_mod/hooks.json");
+/// The cockpit (sidebar, pulse line, overlays), imported by `register.ts`.
+pub const COCKPIT_TSX: &str = include_str!("../../templates/claude_mod/cockpit.tsx");
+/// The `$.state` contract the manifest names as `types`.
+pub const TYPES_DTS: &str = include_str!("../../templates/claude_mod/cockpit.d.ts");
 /// Source manifest; [`plugin_manifest`] stamps the engine version into it.
 pub const PLUGIN_JSON: &str = include_str!("../../templates/claude_mod/plugin.json");
 
@@ -71,7 +75,7 @@ impl ModStatus {
 #[must_use]
 pub fn mod_version() -> String {
     let mut hasher = blake3::Hasher::new();
-    for part in [REGISTER_TS, HOOKS_JSON, PLUGIN_JSON] {
+    for part in [REGISTER_TS, COCKPIT_TSX, TYPES_DTS, HOOKS_JSON, PLUGIN_JSON] {
         hasher.update(part.as_bytes());
         hasher.update(&[0]);
     }
@@ -100,7 +104,7 @@ fn marketplace_manifest() -> String {
         "plugins": [{
             "name": "lean-ctx",
             "source": "./plugins/lean-ctx",
-            "description": "Wake on background job completion, a focused lean-ctx tool surface, and per-session request usage.",
+            "description": "The LeanCTX cockpit, wake on background job completion, a focused lean-ctx tool surface, and per-session request usage.",
         }]
     });
     serde_json::to_string_pretty(&manifest).expect("manifest serializes") + "\n"
@@ -110,7 +114,7 @@ fn marketplace_manifest() -> String {
 /// whose bytes differ are rewritten. Returns whether anything changed.
 pub fn materialize(root: &Path) -> Result<bool, String> {
     let plugin = root.join("plugins").join("lean-ctx");
-    let files: [(PathBuf, String); 4] = [
+    let files: [(PathBuf, String); 6] = [
         (
             root.join(".claude-plugin/marketplace.json"),
             marketplace_manifest(),
@@ -118,6 +122,8 @@ pub fn materialize(root: &Path) -> Result<bool, String> {
         (plugin.join(".claude-plugin/plugin.json"), plugin_manifest()),
         (plugin.join("hooks/hooks.json"), HOOKS_JSON.to_string()),
         (plugin.join("hooks/register.ts"), REGISTER_TS.to_string()),
+        (plugin.join("hooks/cockpit.tsx"), COCKPIT_TSX.to_string()),
+        (plugin.join("types/index.d.ts"), TYPES_DTS.to_string()),
     ];
     let mut changed = false;
     for (path, content) in files {
@@ -418,6 +424,17 @@ mod tests {
             std::fs::read_to_string(dir.path().join("plugins/lean-ctx/hooks/register.ts"))
                 .unwrap()
                 .contains("export const register")
+        );
+        // The cockpit and the `$.state` contract the manifest points at ship too.
+        let plugin = dir.path().join("plugins/lean-ctx");
+        assert_eq!(
+            std::fs::read_to_string(plugin.join("hooks/cockpit.tsx")).unwrap(),
+            COCKPIT_TSX
+        );
+        assert_eq!(manifest["types"], "./types/index.d.ts");
+        assert_eq!(
+            std::fs::read_to_string(plugin.join("types/index.d.ts")).unwrap(),
+            TYPES_DTS
         );
         assert!(
             !materialize(dir.path()).unwrap(),
