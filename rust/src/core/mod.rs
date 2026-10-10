@@ -220,6 +220,8 @@ pub mod litm;
 // `embeddings` feature. On platforms ORT does not support (e.g.
 // FreeBSD, see #586) these features are disabled, so the modules must be gated
 // to keep the build clean without them.
+#[cfg(all(feature = "embeddings", any(feature = "ort-cuda", test)))]
+pub(crate) mod ort_cuda_imports;
 #[cfg(feature = "embeddings")]
 pub(crate) mod ort_environment;
 #[cfg(feature = "embeddings")]

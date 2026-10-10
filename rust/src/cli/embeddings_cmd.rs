@@ -43,13 +43,18 @@ fn status() {
 #[cfg(feature = "embeddings")]
 fn model_status_line() -> String {
     use crate::core::embeddings::{EmbeddingEngine, model_registry};
-    let selected = model_registry::resolve_model();
+    let (selected, source) = model_registry::resolve_model_with_source();
     let dir = EmbeddingEngine::model_directory().join(selected.storage_dir_name());
-    format_model_status(
+    let config = crate::core::config::Config::path()
+        .map_or_else(|| "config.toml".to_string(), |p| p.display().to_string());
+    let mut out = format_model_status(
         &selected.config().name,
         &dir,
         EmbeddingEngine::is_available(),
-    )
+    );
+    out.push('\n');
+    out.push_str(&format_model_source(&source, &config));
+    out
 }
 
 #[cfg(any(feature = "embeddings", test))]
@@ -63,6 +68,29 @@ fn format_model_status(name: &str, dir: &std::path::Path, present: bool) -> Stri
             dir.display()
         )
     }
+}
+
+/// #2049: which setting chose the model and how to change it.
+#[cfg(any(feature = "embeddings", test))]
+fn format_model_source(
+    source: &crate::core::embeddings::model_registry::ModelSource,
+    config_path: &str,
+) -> String {
+    use crate::core::embeddings::model_registry::ModelSource;
+    let chosen = match source {
+        ModelSource::Env(value) => format!(
+            "  selected by LEAN_CTX_EMBEDDING_MODEL={value} (environment; overrides config.toml)"
+        ),
+        ModelSource::Config(value) => {
+            format!("  selected by [embedding] model = \"{value}\" in {config_path}")
+        }
+        ModelSource::Default => "  selected by default (nothing set)".to_string(),
+    };
+    format!(
+        "{chosen}\n  change: set [embedding] model = \"minilm\" | \"nomic\" in {config_path} \
+         (or LEAN_CTX_EMBEDDING_MODEL, which wins), then `lean-ctx index build-semantic`; \
+         an MCP config \"env\" block applies only to the MCP server"
+    )
 }
 
 /// Where the runtime path came from. The MCP config `env` block is invisible
@@ -83,6 +111,19 @@ fn ort_dylib_path_source(value: Option<&std::ffi::OsStr>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn model_source_names_the_winning_setting_and_how_to_change_it() {
+        use crate::core::embeddings::model_registry::ModelSource;
+        let env = format_model_source(&ModelSource::Env("nomic".into()), "C:\\cfg\\config.toml");
+        assert!(env.contains("LEAN_CTX_EMBEDDING_MODEL=nomic"));
+        assert!(env.contains("overrides config.toml"));
+        let cfg = format_model_source(&ModelSource::Config("minilm".into()), "/c/config.toml");
+        assert!(cfg.contains("[embedding] model = \"minilm\" in /c/config.toml"));
+        let default = format_model_source(&ModelSource::Default, "/c/config.toml");
+        assert!(default.contains("by default"));
+        assert!(default.contains("index build-semantic"));
+    }
 
     #[test]
     fn ort_dylib_path_source_reports_scope() {
