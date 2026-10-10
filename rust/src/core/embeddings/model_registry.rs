@@ -267,9 +267,26 @@ impl ModelConfig {
 /// the default model. An unrecognized name is skipped (with a warning) so a typo in one
 /// source never silently swaps the model — which would otherwise force a full re-index.
 pub fn resolve_model() -> EmbeddingModel {
+    resolve_model_with_source().0
+}
+
+/// Which setting selected the embedding model (#2049: `embeddings status`
+/// says so, because the env var and `config.toml` are easy to confuse).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum ModelSource {
+    /// `LEAN_CTX_EMBEDDING_MODEL`, with its raw value.
+    Env(String),
+    /// `[embedding].model` in `config.toml`, with its raw value.
+    Config(String),
+    /// Nothing (valid) set.
+    Default,
+}
+
+/// [`resolve_model`] plus the setting it came from.
+pub fn resolve_model_with_source() -> (EmbeddingModel, ModelSource) {
     let env_val = std::env::var("LEAN_CTX_EMBEDDING_MODEL").ok();
     let embedding_cfg = crate::core::config::Config::load().embedding;
-    resolve_model_from(
+    resolve_model_with_source_from(
         env_val.as_deref(),
         embedding_cfg.model.as_deref(),
         embedding_cfg.dimensions,
@@ -279,17 +296,31 @@ pub fn resolve_model() -> EmbeddingModel {
 /// Pure model resolution used by [`resolve_model`]; kept separate so the env-var/config
 /// precedence is unit-testable without touching the process environment or the on-disk
 /// `config.toml`.
+#[cfg(test)]
 fn resolve_model_from(
     env_val: Option<&str>,
     config_val: Option<&str>,
     config_dims: Option<usize>,
 ) -> EmbeddingModel {
+    resolve_model_with_source_from(env_val, config_val, config_dims).0
+}
+
+fn resolve_model_with_source_from(
+    env_val: Option<&str>,
+    config_val: Option<&str>,
+    config_dims: Option<usize>,
+) -> (EmbeddingModel, ModelSource) {
     for (source, raw) in [
         ("LEAN_CTX_EMBEDDING_MODEL", env_val),
         ("[embedding].model", config_val),
     ] {
         let Some(name) = raw.map(str::trim).filter(|s| !s.is_empty()) else {
             continue;
+        };
+        let origin = if source == "LEAN_CTX_EMBEDDING_MODEL" {
+            ModelSource::Env(name.to_string())
+        } else {
+            ModelSource::Config(name.to_string())
         };
         match EmbeddingModel::from_str_name(name) {
             Some(EmbeddingModel::Custom(mut spec)) => {
@@ -303,9 +334,9 @@ fn resolve_model_from(
                         spec.repo
                     );
                 }
-                return EmbeddingModel::Custom(spec);
+                return (EmbeddingModel::Custom(spec), origin);
             }
-            Some(model) => return model,
+            Some(model) => return (model, origin),
             None => {
                 tracing::warn!(
                     "Unknown embedding model {name:?} from {source}; using {} instead \
@@ -315,7 +346,7 @@ fn resolve_model_from(
             }
         }
     }
-    EmbeddingModel::DEFAULT
+    (EmbeddingModel::DEFAULT, ModelSource::Default)
 }
 
 #[cfg(test)]
@@ -492,6 +523,22 @@ mod tests {
         assert_eq!(
             resolve_model_from(None, Some("minilm"), None),
             EmbeddingModel::AllMiniLmL6V2
+        );
+    }
+
+    #[test]
+    fn resolution_reports_the_setting_that_won() {
+        assert_eq!(
+            resolve_model_with_source_from(Some(" nomic "), Some("minilm"), None).1,
+            ModelSource::Env("nomic".into())
+        );
+        assert_eq!(
+            resolve_model_with_source_from(Some("bogus"), Some("nomic"), None).1,
+            ModelSource::Config("nomic".into())
+        );
+        assert_eq!(
+            resolve_model_with_source_from(None, Some("nope"), None).1,
+            ModelSource::Default
         );
     }
 

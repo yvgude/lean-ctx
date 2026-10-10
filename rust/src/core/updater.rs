@@ -27,7 +27,12 @@ pub(crate) use github_api::github_api_json;
 use github_api::{github_token, rate_limit_message};
 
 mod platform;
-use platform::{gpu_next_steps, gpu_platform_asset_name, platform_asset_name};
+#[cfg(any(windows, test))]
+#[path = "updater/windows_sidecar.rs"]
+pub(crate) mod windows_sidecar;
+use platform::{
+    gpu_build_already_installed, gpu_next_steps, gpu_platform_asset_name, platform_asset_name,
+};
 #[cfg(feature = "secure-update")]
 mod sigstore;
 
@@ -107,6 +112,9 @@ fn print_help(mode: UpdateMode) {
     println!("  --check                only report whether an update is available");
     println!("  --quiet                suppress output unless something changes");
     println!("  --skip-rules           do not refresh agent rules after updating");
+    if mode == UpdateMode::EnableGpu {
+        println!("  --force                reinstall the CUDA build of the current release");
+    }
     println!("  --pin VERSION          pin and install this release");
     println!("  --unpin                clear the release pin");
     println!("  --status               show the pin and retained binary receipt");
@@ -1194,13 +1202,9 @@ fn replace_staged_binary(
     // first, then schedule a deferred update as last resort.
     #[cfg(windows)]
     {
-        let old_path = current_exe.with_extension("old.exe");
-        if old_path.exists() {
-            return Err(format!(
-                "stale Windows rollback binary exists: {}",
-                old_path.display()
-            ));
-        }
+        // The sidecar of the previous swap is still there: its process could
+        // not delete the image it was running from (#2048).
+        let old_path = windows_sidecar::clear_sidecar(current_exe)?;
 
         if let Ok(()) = std::fs::rename(current_exe, &old_path) {
             if let Err(e) = std::fs::rename(staged_path, current_exe) {
@@ -1322,11 +1326,10 @@ fn deferred_windows_update(
 ) -> Result<(), String> {
     let target_str = target_exe.display().to_string();
     let staged_str = staged_path.display().to_string();
-    let old_str = target_exe.with_extension("old.exe").display().to_string();
+    let old_path = windows_sidecar::clear_sidecar(target_exe)?;
+    let old_str = old_path.display().to_string();
     let transaction_str = update_transaction_path()?.display().to_string();
     let lock_str = update_lock_path()?.display().to_string();
-    let old_path = target_exe.with_extension("old.exe");
-    reject_symlink_if_present(&old_path)?;
     let max_retries = 60;
 
     let script = generate_deferred_bat_script(

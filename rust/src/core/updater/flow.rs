@@ -2,16 +2,17 @@
 use super::{
     AutoUpdateGate, CURRENT_VERSION, UpdateMode, acquire_update_lock, automatic_update_gate,
     constant_time_eq, download_bytes, execute_prepared_transaction, extract_binary, fetch_release,
-    find_asset_url, gpu_next_steps, gpu_platform_asset_name, load_update_receipt,
-    looks_like_version, parse_target_version, platform_asset_name, post_update_rewire,
-    prepare_update_transaction, recover_pending_transaction, rollback_to_previous, sha256_hex,
-    verify_download_integrity,
+    find_asset_url, gpu_build_already_installed, gpu_next_steps, gpu_platform_asset_name,
+    load_update_receipt, looks_like_version, parse_target_version, platform_asset_name,
+    post_update_rewire, prepare_update_transaction, recover_pending_transaction,
+    rollback_to_previous, sha256_hex, verify_download_integrity,
 };
 
 pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
     let mut check_only = args.iter().any(|a| a == "--check");
     let quiet = args.iter().any(|a| a == "--quiet");
     let skip_rules = args.iter().any(|a| a == "--skip-rules");
+    let force = args.iter().any(|a| a == "--force");
     // The scheduler invokes `update --quiet --scheduled`. `--quiet` alone also
     // marks an automatic run for backward compatibility with schedulers that
     // were installed before `--scheduled` existed.
@@ -290,6 +291,16 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
             post_update_rewire(skip_rules);
             println!();
         }
+        return;
+    }
+
+    if mode == UpdateMode::EnableGpu && gpu_build_already_installed(up_to_date, force) {
+        println!("  \x1b[32m✓\x1b[0m The CUDA build of v{CURRENT_VERSION} is already installed.");
+        println!("  \x1b[2mReinstall it with: lean-ctx enable-gpu --force\x1b[0m");
+        for line in gpu_next_steps(std::env::consts::OS) {
+            println!("  \x1b[2m{line}\x1b[0m");
+        }
+        println!();
         return;
     }
 

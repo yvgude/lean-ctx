@@ -212,7 +212,7 @@ fn lock_identity() -> MutexGuard<'static, IdentityLedger> {
 
 #[cfg(test)]
 pub mod tests {
-    use std::sync::{Mutex, MutexGuard};
+    use std::sync::MutexGuard;
 
     use super::{
         McpCallData, McpClientInfo, generate_mcp_receipt, mcp_etpao, mcp_summary,
@@ -221,10 +221,10 @@ pub mod tests {
     use crate::core::context_kernel::coverage_class::CoverageClass;
     use crate::core::context_kernel::types::ReceiptOutcome;
 
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
-
+    /// The kernel-wide test lock: every test module that resets the
+    /// process-wide MCP state takes it, so resets never race.
     fn test_guard() -> MutexGuard<'static, ()> {
-        TEST_LOCK
+        crate::core::context_kernel::kernel_config::KERNEL_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }

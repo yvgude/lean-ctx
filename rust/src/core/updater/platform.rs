@@ -108,6 +108,16 @@ fn current_build_prefers_gpu_asset() -> bool {
     cfg!(feature = "ort-cuda")
 }
 
+/// Whether `enable-gpu` has nothing to install: this binary already is the
+/// CUDA build of the release it would download (#2048). `--force` reinstalls.
+pub(super) fn gpu_build_already_installed(up_to_date: bool, force: bool) -> bool {
+    gpu_install_is_noop(up_to_date, current_build_prefers_gpu_asset(), force)
+}
+
+fn gpu_install_is_noop(up_to_date: bool, gpu_build: bool, force: bool) -> bool {
+    up_to_date && gpu_build && !force
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +208,17 @@ mod tests {
         ] {
             assert!(gpu_asset_name_for(os, arch, "gnu").is_err(), "{os}/{arch}");
         }
+    }
+
+    #[test]
+    fn enable_gpu_is_a_no_op_only_on_the_current_cuda_build() {
+        assert!(gpu_install_is_noop(true, true, false));
+        // --force reinstalls the same CUDA build.
+        assert!(!gpu_install_is_noop(true, true, true));
+        // CPU build of the same release: install the CUDA binary.
+        assert!(!gpu_install_is_noop(true, false, false));
+        // A newer (or pinned) release is available: install it.
+        assert!(!gpu_install_is_noop(false, true, false));
     }
 
     #[test]

@@ -385,9 +385,11 @@ pub(super) fn commit_prepared_transaction(
     validate_receipt_paths(&receipt, &state, current_exe)?;
     write_update_receipt(&receipt_path, &receipt)?;
     let cleanup = cleanup_prepared_transaction(transaction);
+    // Succeeds when a helper finished the swap; a process still running from
+    // the sidecar cannot delete it, and the next swap reclaims it (#2048).
     #[cfg(windows)]
     if cleanup.is_ok() {
-        let _ = std::fs::remove_file(current_exe.with_extension("old.exe"));
+        let _ = std::fs::remove_file(super::windows_sidecar::sidecar_path(current_exe));
     }
     cleanup
 }

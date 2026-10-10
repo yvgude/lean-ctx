@@ -382,18 +382,18 @@ fn atomic_install_binary(src: &std::path::Path, dst: &std::path::Path) -> Result
     Ok(())
 }
 
-/// Windows half of the rustup-style swap (GH #691): clear a leftover `.old`
-/// sidecar from a previous install (succeeds once its holder exited), then
-/// rename the current — possibly still-executing — binary onto the sidecar
-/// name so the destination path is free for the fresh binary. Best-effort by
-/// design: when nothing holds `dst`, the plain rename in the caller works
-/// even if this did nothing.
+/// Windows half of the rustup-style swap (GH #691): reclaim or park the `.old`
+/// sidecar from a previous install (#2048), then rename the current —
+/// possibly still-executing — binary onto the sidecar name so the destination
+/// path is free for the fresh binary. Best-effort by design: when nothing
+/// holds `dst`, the plain rename in the caller works even if this did nothing.
 #[cfg(windows)]
 fn move_locked_destination_aside(dst: &std::path::Path) {
-    // Same sidecar convention as the self-updater (`updater.rs::replace_binary`).
-    let old = dst.with_extension("old.exe");
-    let _ = std::fs::remove_file(&old);
-    if dst.exists() && !old.exists() {
+    // Same sidecar convention as the self-updater.
+    let Ok(old) = crate::core::updater::windows_sidecar::clear_sidecar(dst) else {
+        return;
+    };
+    if dst.exists() {
         let _ = std::fs::rename(dst, &old);
     }
 }

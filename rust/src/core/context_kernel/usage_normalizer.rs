@@ -186,11 +186,12 @@ pub mod tests {
     use super::{compression_overview as overview, model_breakdown, provider_breakdown};
     use super::{record_envelope, reset_usage, session_usage};
     use crate::core::context_kernel::token_envelope::{ProviderKind, TokenEnvelope};
-    use std::sync::{Mutex, MutexGuard};
-    static TEST_LOCK: Mutex<()> = Mutex::new(());
+    use std::sync::MutexGuard;
 
+    /// The kernel-wide test lock: the e2e modules record into and reset the
+    /// same process-wide usage, so a private lock let them race these tests.
     fn setup() -> MutexGuard<'static, ()> {
-        let guard = TEST_LOCK
+        let guard = crate::core::context_kernel::kernel_config::KERNEL_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         reset_usage();

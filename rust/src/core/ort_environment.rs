@@ -368,11 +368,69 @@ pub(crate) fn python_site_packages_dirs() -> Vec<PathBuf> {
                 out.push(version.join("Lib").join("site-packages"));
             }
         }
+        let var_path = |name| std::env::var_os(name).map(PathBuf::from);
+        out.extend(windows_interpreter_site_packages(
+            std::env::var_os("PATH").as_deref(),
+            var_path("ProgramFiles").as_deref(),
+            var_path("LOCALAPPDATA").as_deref(),
+            var_path("SystemDrive")
+                .map(|drive| drive.join("\\"))
+                .as_deref(),
+        ));
     }
     #[cfg(not(target_os = "windows"))]
     for prefix in ["/usr/local", "/usr", "/opt/homebrew"] {
         push_prefix_site_packages(&mut out, Path::new(prefix));
     }
+    out
+}
+
+/// Windows site-packages beyond the per-user installs (#2048): every
+/// `python.exe` on `PATH` (or its `Scripts` dir), system-wide installs under
+/// `%ProgramFiles%\Python3*` and `C:\Python3*`, the Python install manager's
+/// `%LOCALAPPDATA%\Python\pythoncore-*` (Python 3.14+), and Microsoft Store
+/// Python's user site. Only directory listings — no interpreter is run.
+#[cfg(any(target_os = "windows", test))]
+fn windows_interpreter_site_packages(
+    path_var: Option<&std::ffi::OsStr>,
+    program_files: Option<&Path>,
+    local_appdata: Option<&Path>,
+    system_root: Option<&Path>,
+) -> Vec<PathBuf> {
+    let mut out = Vec::new();
+    for dir in path_var.map(std::env::split_paths).into_iter().flatten() {
+        let home = if dir
+            .file_name()
+            .is_some_and(|n| n.eq_ignore_ascii_case("Scripts"))
+        {
+            dir.parent().map(Path::to_path_buf)
+        } else {
+            Some(dir)
+        };
+        if let Some(home) = home.filter(|h| h.join("python.exe").is_file()) {
+            out.push(home.join("Lib").join("site-packages"));
+        }
+    }
+    for root in program_files.into_iter().chain(system_root) {
+        for version in subdirs_with_prefix(root, "Python3") {
+            out.push(version.join("Lib").join("site-packages"));
+        }
+    }
+    if let Some(local) = local_appdata {
+        for core in subdirs_with_prefix(&local.join("Python"), "pythoncore-") {
+            out.push(core.join("Lib").join("site-packages"));
+        }
+        for package in
+            subdirs_with_prefix(&local.join("Packages"), "PythonSoftwareFoundation.Python.3")
+        {
+            let user_site = package.join("LocalCache").join("local-packages");
+            for version in subdirs_with_prefix(&user_site, "Python3") {
+                out.push(version.join("site-packages"));
+            }
+        }
+    }
+    let mut seen = std::collections::HashSet::new();
+    out.retain(|dir| seen.insert(dir.clone()));
     out
 }
 
@@ -518,6 +576,56 @@ fn lib_path_search(name: &str) -> Option<PathBuf> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// #2048: pip installs into a system-wide or Store Python must be found,
+    /// not only the per-user site.
+    #[test]
+    fn windows_interpreter_site_packages_cover_path_system_and_store_pythons() {
+        let root = tempfile::tempdir().unwrap();
+        let mk = |rel: &str| {
+            let p = root.path().join(rel);
+            std::fs::create_dir_all(&p).unwrap();
+            p
+        };
+        let on_path = mk("tools/py312");
+        std::fs::write(on_path.join("python.exe"), b"").unwrap();
+        let scripts_home = mk("conda");
+        std::fs::write(scripts_home.join("python.exe"), b"").unwrap();
+        let scripts = mk("conda/Scripts");
+        let not_python = mk("bin");
+        let program_files = mk("Program Files");
+        mk("Program Files/Python313");
+        mk("Program Files/NVIDIA Corporation");
+        let drive = mk("drive");
+        mk("drive/Python311");
+        let local = mk("Local");
+        mk("Local/Python/pythoncore-3.14-64");
+        mk(
+            "Local/Packages/PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0/LocalCache/local-packages/Python312",
+        );
+        let path_var = std::env::join_paths([&on_path, &scripts, &not_python, &on_path]).unwrap();
+
+        let found = windows_interpreter_site_packages(
+            Some(&path_var),
+            Some(&program_files),
+            Some(&local),
+            Some(&drive),
+        );
+        let site = |p: PathBuf| p.join("Lib").join("site-packages");
+        assert_eq!(
+            found,
+            vec![
+                site(on_path),
+                site(scripts_home),
+                site(program_files.join("Python313")),
+                site(drive.join("Python311")),
+                site(local.join("Python/pythoncore-3.14-64")),
+                local
+                    .join("Packages/PythonSoftwareFoundation.Python.3.12_qbz5n2kfra8p0/LocalCache/local-packages/Python312")
+                    .join("site-packages"),
+            ]
+        );
+    }
 
     #[test]
     fn dylib_filename_known_platform() {
