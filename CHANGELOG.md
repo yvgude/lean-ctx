@@ -8,6 +8,13 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Fixed
 
+Tool calls that failed although the agent's request was sound, found in the usage telemetry of 3.11.1 and 3.11.2:
+
+- **`ctx_read` answers an empty file, an SVG and a directory.** An empty file returned `File is empty` as an error; it now reads as `<path>: empty file (0 bytes)`. SVG files were rejected as binary; they are XML text and read like source (a real binary behind any extension is still caught by its content). A directory failed with the OS error `Is a directory`; it now lists its entries.
+- **`ctx_search` searches an invalid regex literally.** Code text such as `foo(`, `items[0` or `fn run(&self` is not valid regex and failed the call; it is now searched verbatim, with a one-line note. `action=symbol` also takes the symbol name from `symbol`, `query` or `pattern` when `name` is missing.
+- **`ctx_patch` infers `replace_unique`.** An edit with old and new text but no `op` failed with `missing 'op'`; such an edit can only be `replace_unique`, at the top level and inside `ops[]`.
+- **An edit whose result already holds is not an error.** `ctx_edit` (and `ctx_patch` `replace_unique`) with identical old and new text, where that text is in the file, reports `No change:` instead of failing. Text that is absent still fails.
+- **Dependency source reads on the first call.** Reading a file in a language cache registered the cache as a read-only root but still failed the call with "Retry the read"; it now resolves in the same call. The Rust toolchain source (`~/.rustup/toolchains`), Cargo git dependencies (`~/.cargo/git/checkouts`) and the Bun, Dart pub and Ruby gem caches are recognized alongside the existing ones. Credential and configuration directories (`~/.claude`, `~/.codex`, `~/.config`, `~/.cargo/credentials.toml`) stay jailed, and writes into any cache stay denied.
 - **Usage telemetry counts each tool call once.** The daily total of tool calls and failures, and the latency histogram, counted every call twice: once where the call is dispatched and again when its lifecycle finished. The per-tool counts were already right; the totals now match them.
 - **A failed inline shell command is one error, filed as a failed command.** The shell worker also recorded every non-zero exit of a command that finished in the foreground as a LeanCTX-internal error, next to the pipeline's own `command` entry, and did so even for `exit 1` with output (grep, diff, test), which is not an error. The worker now records only background jobs, as `command` or `timeout`; inline runs are classified once by the call pipeline.
 

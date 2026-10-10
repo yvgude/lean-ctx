@@ -96,20 +96,31 @@ impl LeanCtxServer {
                 // #899: the rejected path is dependency source in a language
                 // cache (Go module cache, cargo registry, site-packages,
                 // node_modules, …). Register its root as a session-scoped
-                // read-only root and ask the agent to retry — the next resolve
-                // sees it in the read allow-list. Stays fail-closed: this first
-                // call still errors, and writes into the cache remain denied.
+                // read-only root and resolve the path again, so this call is
+                // served instead of failing with "retry". The registration is
+                // what grants access, not the retry; writes into the cache
+                // stay denied either way.
                 if let Some((label, cache_root)) =
                     crate::core::pathjail::detect_language_cache_root(&resolved)
                     && crate::core::pathjail::register_session_read_only_root(&cache_root)
                 {
-                    return Err(format!(
-                        "Auto-detected {label} at {} — added as a read-only root for this \
-                         session. Retry the read.",
+                    let Ok(jailed) = crate::core::pathjail::jail_path_with_roots(
+                        &resolved,
+                        jail_root_path,
+                        &extra_roots,
+                    ) else {
+                        return Err(format!(
+                            "Auto-detected {label} at {} — added as a read-only root for \
+                             this session. Retry the read.",
+                            cache_root.display()
+                        ));
+                    };
+                    tracing::info!(
+                        "auto-registered {label} at {} as a read-only root",
                         cache_root.display()
-                    ));
-                }
-                if let Some(jailed) = self
+                    );
+                    jailed
+                } else if let Some(jailed) = self
                     .maybe_reroot_for_absolute_path(&resolved, jail_root_path, &extra_roots)
                     .await?
                 {

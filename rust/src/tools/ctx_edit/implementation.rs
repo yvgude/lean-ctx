@@ -185,6 +185,10 @@ pub fn apply_cache_effect(cache: &mut SessionCache, path: &str, effect: CacheEff
     }
 }
 
+/// Prefix of the result for an edit whose end state already holds: nothing is
+/// written, and the call is a success, not an error.
+pub const NO_CHANGE_PREFIX: &str = "No change:";
+
 /// Performs the full edit on disk **without** touching the session cache, and
 /// reports back the [`CacheEffect`] the caller should apply afterwards.
 ///
@@ -224,6 +228,17 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
     }
 
     if params.old_string == params.new_string {
+        // The requested end state already holds: report a no-op, not a
+        // failure the agent would retry. Text that is absent stays an error.
+        if content.contains(&params.old_string) {
+            return (
+                format!(
+                    "{NO_CHANGE_PREFIX} {file_path} already contains this text \
+                     (old_string equals new_string)."
+                ),
+                CacheEffect::None,
+            );
+        }
         return (
             "ERROR: old_string and new_string are identical — nothing to change.".into(),
             CacheEffect::None,

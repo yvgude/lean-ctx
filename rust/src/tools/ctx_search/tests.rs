@@ -31,6 +31,33 @@ fn search_output_is_byte_stable_across_calls() {
     assert_eq!(run(), run(), "search output must be deterministic");
 }
 
+/// Agents search for code text: `foo(`, `items[0`, `fn run(&self`. Those are
+/// not valid regex; the search runs literally and says so instead of failing.
+#[test]
+fn invalid_regex_is_searched_literally_with_a_note() {
+    let dir = tempfile::tempdir().unwrap();
+    std::fs::write(
+        dir.path().join("a.rs"),
+        "fn run(&self) {}\nlet x = items[0];\nrun_other();\n",
+    )
+    .unwrap();
+    let root = dir.path().to_string_lossy().into_owned();
+    for (pattern, expected) in [("fn run(&self", "a.rs"), ("items[0", "items[0]")] {
+        let out = handle(pattern, &root, None, 20, CrpMode::Off, true, true, false).text;
+        assert!(!out.starts_with("ERROR:"), "{pattern}: {out}");
+        assert!(
+            out.contains("searched for it literally"),
+            "{pattern}: {out}"
+        );
+        assert!(out.contains(expected), "{pattern}: {out}");
+    }
+    let regex = handle("run_\\w+", &root, None, 20, CrpMode::Off, true, true, false).text;
+    assert!(
+        !regex.contains("literally") && regex.contains("run_other"),
+        "valid regex is unchanged: {regex}"
+    );
+}
+
 /// #1008: opt-in anchored search tags each hit with `:hh` (matching
 /// `ctx_read`/`ctx_patch`'s line hash) and ships a legend; the default
 /// (anchored=false) output stays byte-identical so #498 is preserved.

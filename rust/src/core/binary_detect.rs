@@ -39,7 +39,8 @@ const BINARY_EXTENSIONS: &[&str] = &[
     "ico",
     "tiff",
     "tif",
-    "svg",
+    // No "svg": it is XML text that agents read and edit like source. A real
+    // binary behind any extension is still caught by the content check.
     "psd",
     "raw",
     "cr2",
@@ -272,6 +273,8 @@ mod tests {
         assert!(!has_binary_extension("config.toml"));
         assert!(!has_binary_extension("README.md"));
         assert!(!has_binary_extension("script.py"));
+        assert!(!has_binary_extension("icons/logo.svg"));
+        assert!(!has_binary_extension("ICON.SVG"));
     }
 
     #[test]
