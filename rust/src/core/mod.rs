@@ -513,6 +513,7 @@ pub mod telemetry_consent;
 pub mod telemetry_failure;
 pub mod telemetry_features;
 pub(crate) mod telemetry_ledger;
+pub mod telemetry_notices;
 pub mod telemetry_v2;
 pub mod terse;
 pub(crate) mod text_decode;

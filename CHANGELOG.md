@@ -22,6 +22,7 @@ Tool calls that failed although the agent's request was sound, found in the usag
 
 ### Added
 
+- **Notices from the LeanCTX team reach the installations they concern.** The acknowledgement of a telemetry send can carry up to three short notices, for example "the fix for this `ctx_read` failure is in 3.11.3". The server picks them by what the batch already reports (version, AI client, OS, runtime environment, a tool that failed), so nothing extra is sent and nobody needs to know who you are. A notice is shown once, on the terminal of the next interactive `lean-ctx` command, and never in an MCP response: text from a server does not reach the AI model. Only plain text up to 280 characters with an optional link to leanctx.com or the LeanCTX GitHub repository is accepted. With telemetry off, no notices arrive.
 - **Usage telemetry counts MCP server starts that answered no tool call.** Some clients start every configured MCP server, often in a throwaway container, and their agent never calls a tool. Such a start is now counted as an empty session (`mcp.session.empty`, next to `mcp.session`), so these starts can be told apart from real sessions.
 
 ## [3.11.2] — 2026-10-09

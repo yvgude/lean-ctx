@@ -64,6 +64,7 @@ pub fn run() {
         && !matches!(args.get(1).map(String::as_str), Some("setup" | "telemetry"))
     {
         crate::core::telemetry_consent::maybe_show_notice();
+        crate::core::telemetry_notices::maybe_show();
     }
     // Counts the command (from a closed list, never its arguments).
     if !enters_mcp && !is_server_mode(&args) {

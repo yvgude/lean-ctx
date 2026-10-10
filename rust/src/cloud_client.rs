@@ -551,6 +551,7 @@ pub(crate) fn telemetry_v2_batch_with_timeout(
         .map_err(|error| format!("Failed to read response: {error}"))?;
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|error| format!("Invalid JSON: {error}"))?;
+    crate::core::telemetry_notices::remember(crate::core::telemetry_notices::from_response(&json));
     Ok(json["message"].as_str().unwrap_or("OK").to_string())
 }
 

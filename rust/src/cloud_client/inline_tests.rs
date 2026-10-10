@@ -241,6 +241,33 @@ fn telemetry_send_posts_the_validated_batch_to_loopback() {
 }
 
 #[test]
+fn a_notice_in_the_acknowledgement_waits_for_the_terminal() {
+    use std::io::Write;
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let _env = TelemetryTestEnvironment::new(&listener);
+    telemetry_test_config(TELEMETRY_ALLOWED);
+    let batch = telemetry_test_batch();
+    let server = std::thread::spawn(move || {
+        let (mut stream, _) = receive_telemetry(&listener);
+        let response = r#"{"message":"accepted","notices":[
+            {"id":"6f1c2b9e-3d4a-4b5c-8d6e-7f8091a2b3c4","message":"Fix is in 3.11.3","link":"https://leanctx.com/changelog"},
+            {"id":"7f1c2b9e-3d4a-4b5c-8d6e-7f8091a2b3c4","message":"phish","link":"https://evil.example/"}]}"#;
+        write!(
+            stream,
+            "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response}",
+            response.len()
+        )
+        .unwrap();
+    });
+    assert_eq!(telemetry_v2_batch(&batch).unwrap(), "accepted");
+    server.join().unwrap();
+    let pending = crate::core::telemetry_notices::pending();
+    assert_eq!(pending.len(), 1, "{pending:?}");
+    assert_eq!(pending[0].message, "Fix is in 3.11.3");
+}
+
+#[test]
 fn telemetry_send_times_out_when_the_gateway_stalls() {
     assert_telemetry_gateway_timeout(false);
 }
