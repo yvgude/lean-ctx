@@ -1132,8 +1132,8 @@ fn telemetry_collection_eligible() -> bool {
     let Ok(config) = crate::core::config::Config::try_load_global() else {
         return false;
     };
-    let do_not_track = std::env::var("DO_NOT_TRACK").ok();
-    let telemetry_override = std::env::var("LEAN_CTX_TELEMETRY").ok();
+    let do_not_track = crate::core::host_env::var("DO_NOT_TRACK");
+    let telemetry_override = crate::core::host_env::var("LEAN_CTX_TELEMETRY");
     !config.telemetry.explicitly_disabled()
         && !crate::core::config::TelemetryConfig::environment_disables(
             do_not_track.as_deref(),

@@ -100,8 +100,10 @@ pub(super) fn active_days(installation_id: &str, today: &str) -> ActiveDays {
 }
 
 pub(super) fn runtime_environment() -> RuntimeEnvironment {
+    // `host_env`: a client that hides the job's environment from its MCP
+    // servers must not turn a CI job or a container into a local machine.
     runtime_environment_from(
-        |key| std::env::var(key).ok().filter(|value| !value.is_empty()),
+        |key| crate::core::host_env::var(key).filter(|value| !value.is_empty()),
         in_container(),
     )
 }
@@ -132,22 +134,44 @@ pub(super) fn runtime_environment_from(
 fn in_container() -> bool {
     if Path::new("/.dockerenv").exists()
         || Path::new("/run/.containerenv").exists()
-        || std::env::var_os("KUBERNETES_SERVICE_HOST").is_some()
+        || Path::new("/var/run/secrets/kubernetes.io").is_dir()
+        || crate::core::host_env::var("KUBERNETES_SERVICE_HOST").is_some()
+        || crate::core::host_env::var("container").is_some_and(|value| !value.is_empty())
     {
         return true;
     }
     #[cfg(target_os = "linux")]
     {
+        // cgroup v1 names the runtime; under cgroup v2 a container sees only
+        // `0::/`, so its overlay root filesystem is the remaining marker.
         std::fs::read_to_string("/proc/1/cgroup").is_ok_and(|cgroup| {
             ["docker", "kubepods", "containerd", "libpod"]
                 .iter()
                 .any(|marker| cgroup.contains(marker))
-        })
+        }) || std::fs::read_to_string("/proc/self/mountinfo")
+            .is_ok_and(|mountinfo| root_is_overlay(&mountinfo))
     }
     #[cfg(not(target_os = "linux"))]
     {
         false
     }
+}
+
+/// Whether `/` is a container image's union filesystem, from
+/// `/proc/self/mountinfo` (`id parent dev root mountpoint … - fstype …`).
+/// The last mount on `/` is the one in effect.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+pub(super) fn root_is_overlay(mountinfo: &str) -> bool {
+    mountinfo
+        .lines()
+        .filter_map(|line| {
+            let (mount, filesystem) = line.split_once(" - ")?;
+            (mount.split_whitespace().nth(4)? == "/")
+                .then(|| filesystem.split_whitespace().next())
+                .flatten()
+        })
+        .next_back()
+        .is_some_and(|fstype| matches!(fstype, "overlay" | "fuse-overlayfs" | "aufs"))
 }
 
 pub(super) fn setup_profile() -> SetupProfileMetrics {
@@ -305,6 +329,26 @@ mod tests {
             runtime_environment_from(env(&[("CI", "false")]), false),
             RuntimeEnvironment::Local
         );
+    }
+
+    #[test]
+    fn an_overlay_root_marks_a_cgroup_v2_container() {
+        let container = "\
+1270 1101 0:310 / / rw,relatime master:487 - overlay overlay rw,lowerdir=/var/lib/x
+1271 1270 0:313 / /proc rw,nosuid - proc proc rw
+1272 1270 0:314 / /dev rw,nosuid - tmpfs tmpfs rw";
+        let host = "\
+22 1 259:2 / / rw,relatime shared:1 - ext4 /dev/nvme0n1p2 rw
+24 22 0:5 / /proc rw - proc proc rw
+90 22 0:44 / /var/lib/docker/overlay2/abc/merged rw - overlay overlay rw";
+        // A later mount on `/` replaces the earlier one.
+        let remounted = "\
+1 0 0:1 / / rw - overlay overlay rw
+2 1 259:2 / / rw - btrfs /dev/sda2 rw";
+        assert!(root_is_overlay(container));
+        assert!(!root_is_overlay(host), "an overlay below / is not the root");
+        assert!(!root_is_overlay(remounted));
+        assert!(!root_is_overlay(""));
     }
 
     #[test]

@@ -399,6 +399,7 @@ pub mod evidence_bundle;
 pub mod failure_template;
 pub mod grammar_usage;
 pub(crate) mod graph_cache;
+pub(crate) mod host_env;
 pub(crate) mod http_client;
 pub mod ide_permissions;
 pub mod import_resolver;
