@@ -4,6 +4,19 @@ use super::server::{CepComputedStats, CrpMode, LeanCtxServer, ToolCallRecord};
 use super::startup::auto_consolidate_knowledge;
 use super::{ctx_compress, ctx_share};
 
+/// The `mode` a `ctx_shell` status or cancel request reports: looking after a
+/// running background job, not a new command.
+pub(crate) const BACKGROUND_POLL_MODE: &str = "background";
+
+/// Whether a call counts in the session's tool-call and command stats (the
+/// value snapshot behind status lines and the cockpit). A background-job poll
+/// does not: a host that watches a job polls it every few seconds, and counted
+/// polls drowned the real commands and diluted the share of output kept out.
+#[must_use]
+pub(crate) fn counts_in_session(tool: &str, mode: Option<&str>) -> bool {
+    !(tool == "ctx_shell" && mode == Some(BACKGROUND_POLL_MODE))
+}
+
 /// Single-flight flag for the Pro usage scan in `record_call`.
 static PRO_SIGNAL_SCAN_RUNNING: AtomicBool = AtomicBool::new(false);
 
@@ -273,9 +286,11 @@ impl LeanCtxServer {
                 .await;
         }
         let mut session = self.session.write().await;
-        session.record_tool_call(saved as u64, original as u64);
-        if tool == "ctx_shell" {
-            session.record_command();
+        if counts_in_session(tool, mode.as_deref()) {
+            session.record_tool_call(saved as u64, original as u64);
+            if tool == "ctx_shell" {
+                session.record_command();
+            }
         }
         let save_due = session.should_save();
         let value_snapshot = fold_value_snapshot(&mut session);
@@ -1025,5 +1040,15 @@ mod activity_score_tests {
             u64::MAX,
         );
         assert!(saturated.iter().all(|point| point.value_milli == i64::MAX));
+    }
+
+    /// A host watching a background job polls it every few seconds; those
+    /// polls once made a session read "896 commands" for a handful of real ones.
+    #[test]
+    fn background_job_polls_stay_out_of_the_session_stats() {
+        assert!(!counts_in_session("ctx_shell", Some(BACKGROUND_POLL_MODE)));
+        assert!(counts_in_session("ctx_shell", None));
+        assert!(counts_in_session("ctx_shell", Some("full")));
+        assert!(counts_in_session("ctx_read", Some(BACKGROUND_POLL_MODE)));
     }
 }

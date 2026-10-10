@@ -28,12 +28,12 @@ const BAND = {
   },
 } as const;
 
-test("the sidebar draws its five panels, the pulse line and the hero figure", async ($) => {
+test("the sidebar shows what Claude saw, tokens kept out, the two checks and receipts", async ($) => {
   const ui = await $.ui.mount({ ...PANE, surface: "terminal" });
-  for (const text of ["SELECT", "CONTROL", "PROVE", "TIMELINE", "RECENT", "tokens kept out", "Savings ledger"]) {
+  for (const text of ["CLAUDE SAW", "TOKENS", "TWO CHECKS", "RECEIPTS", "tokens kept out", "May it be read?", "May it be delivered?", "Savings ledger"]) {
     expect(await ui.find({ type: "Text", text })).toBeDefined();
   }
-  for (const key of ["pulse", "figure", "share", "g-context", "g-cache"]) {
+  for (const key of ["pane-handoff", "figure", "depth-mix", "g-context"]) {
     expect(await ui.find({ type: "Raster", key })).toBeDefined();
   }
   await ui.unmount();
@@ -42,7 +42,7 @@ test("the sidebar draws its five panels, the pulse line and the hero figure", as
 test("a narrow sidebar stacks the hero instead of breaking", async ($) => {
   const ui = await $.ui.mount({ ...PANE, props: { ...PANE.props, bodyColumns: 40 }, surface: "terminal" });
   expect(await ui.find({ type: "Raster", key: "figure" })).toBeDefined();
-  expect(await ui.find({ type: "Text", text: "TIMELINE" })).toBeDefined();
+  expect(await ui.find({ type: "Text", text: "CLAUDE SAW" })).toBeDefined();
   await ui.unmount();
 });
 
@@ -59,7 +59,7 @@ test("an idle band leaves the engine its own band: no number twice", async ($, o
   });
   const ui = await $.ui.mount({ ...BAND, surface: "terminal" });
   expect(await ui.find({ type: "Text", text: "engine band" })).toBeDefined();
-  expect(await ui.find({ type: "Raster", key: "pulse" })).toBeUndefined();
+  expect(await ui.find({ type: "Raster", key: "band-handoff" })).toBeUndefined();
   await ui.unmount();
 });
 

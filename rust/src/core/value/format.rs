@@ -92,12 +92,14 @@ fn paint(style: Style, sgr: &str, text: &str) -> String {
     }
 }
 
-/// The Claude Code status line in LeanCTX's own terms:
-/// `◆ LeanCTX │ SELECT −1.2M tok · 60% leaner · 41 cached │ CONTROL ⛨ 3 enforced`.
-/// SELECT is what was kept out of context, CONTROL what the rules enforced; a
-/// group with nothing measured is left out, and so is the line when both are.
+/// The Claude Code status line in the Context Gateway's terms:
+/// `◆ LeanCTX │ SELECT 12 files · 30 commands │ CONTROL ⛨ 3 enforced │ TOKENS −1.2M kept out · 60% leaner · 41 cached`.
+/// SELECT is what reached Claude through the gateway, CONTROL what the rules
+/// enforced before the handoff, TOKENS what stayed out of context. A group with
+/// nothing measured is left out, and so is the line when all are.
 pub fn brand_line(snap: &ValueSnapshot, style: Style) -> Option<String> {
-    if snap.is_empty() {
+    let sources = snap.files_read + snap.commands_run;
+    if snap.is_empty() && sources == 0 {
         return None;
     }
     let sep = style.sep();
@@ -114,16 +116,16 @@ pub fn brand_line(snap: &ValueSnapshot, style: Style) -> Option<String> {
         out
     };
     let mut groups = Vec::new();
-    if snap.tokens_saved > 0 {
-        let mut details = Vec::new();
-        if let Some(pct) = snap.saved_pct() {
-            details.push(format!("{pct:.0}% leaner"));
+    if sources > 0 {
+        let mut parts = Vec::new();
+        if snap.files_read > 0 {
+            parts.push(plural(snap.files_read, "file", "files"));
         }
-        if snap.cache_hits > 0 {
-            details.push(format!("{} cached", snap.cache_hits));
+        if snap.commands_run > 0 {
+            parts.push(plural(snap.commands_run, "command", "commands"));
         }
-        let value = format!("{}{} tok", style.minus(), format_tokens(snap.tokens_saved));
-        groups.push(group("SELECT", value, &details));
+        let (value, details) = parts.split_first().expect("sources > 0 names one part");
+        groups.push(group("SELECT", value.clone(), details));
     }
     let security = snap.security.total();
     if security > 0 {
@@ -132,6 +134,21 @@ pub fn brand_line(snap: &ValueSnapshot, style: Style) -> Option<String> {
             format!("{} {security} enforced", style.shield()),
             &[],
         ));
+    }
+    if snap.tokens_saved > 0 {
+        let mut details = Vec::new();
+        if let Some(pct) = snap.saved_pct() {
+            details.push(format!("{pct:.0}% leaner"));
+        }
+        if snap.cache_hits > 0 {
+            details.push(format!("{} cached", snap.cache_hits));
+        }
+        let value = format!(
+            "{}{} kept out",
+            style.minus(),
+            format_tokens(snap.tokens_saved)
+        );
+        groups.push(group("TOKENS", value, &details));
     }
     let brand = format!("{} LeanCTX", style.mark());
     let lead = if style.color {
@@ -295,14 +312,26 @@ mod tests {
     }
 
     #[test]
-    fn brand_line_groups_select_and_control() {
+    fn brand_line_groups_select_control_and_tokens() {
+        let mut full = snap(1_200_000, 41, 3);
+        full.files_read = 12;
+        full.commands_run = 30;
         assert_eq!(
-            brand_line(&snap(1_200_000, 41, 3), Style::PLAIN).unwrap(),
-            "◆ LeanCTX │ SELECT −1.2M tok · 50% leaner · 41 cached │ CONTROL ⛨ 3 enforced"
+            brand_line(&full, Style::PLAIN).unwrap(),
+            "◆ LeanCTX │ SELECT 12 files · 30 commands │ CONTROL ⛨ 3 enforced │ TOKENS −1.2M kept out · 50% leaner · 41 cached"
         );
         assert_eq!(
             brand_line(&snap(0, 0, 2), Style::PLAIN).unwrap(),
             "◆ LeanCTX │ CONTROL ⛨ 2 enforced"
+        );
+        // Sources read with nothing kept out still say what reached Claude.
+        let read_only = ValueSnapshot {
+            files_read: 1,
+            ..ValueSnapshot::default()
+        };
+        assert_eq!(
+            brand_line(&read_only, Style::PLAIN).unwrap(),
+            "◆ LeanCTX │ SELECT 1 file"
         );
         assert_eq!(brand_line(&ValueSnapshot::default(), Style::PLAIN), None);
     }
@@ -324,7 +353,7 @@ mod tests {
         assert!(line.is_ascii(), "{line}");
         assert_eq!(
             line,
-            "* LeanCTX | SELECT -312.0K tok | 50% leaner | 2 cached | CONTROL sec 1 enforced"
+            "* LeanCTX | CONTROL sec 1 enforced | TOKENS -312.0K kept out | 50% leaner | 2 cached"
         );
     }
 

@@ -48,15 +48,18 @@ refresh the Claude hooks and add the status line when there is none (a
 `"statusLine": null` entry counts as none):
 
 ```text
-◆ LeanCTX │ SELECT −1.2M tok · 60% leaner · 41 cached │ CONTROL ⛨ 3 enforced
+◆ LeanCTX │ SELECT 12 files · 30 commands │ CONTROL ⛨ 3 enforced │ TOKENS −1.2M kept out · 60% leaner · 41 cached
 ```
 
-The line follows the product's Select · Control model, in LeanCTX colours:
+The line reads like the Context Gateway it reports on, in LeanCTX colours:
 
-- **SELECT**: tokens kept out of the model's context, their share of the tool
+- **SELECT**: what reached the model through lean-ctx: files read and
+  commands run.
+- **CONTROL** (`⛨`): rules enforced before the handoff: secrets kept out of
+  context, risky commands blocked, paths outside the project blocked,
+  injections flagged.
+- **TOKENS**: tokens kept out of the model's context, their share of the tool
   output, and re-reads served from cache.
-- **CONTROL** (`⛨`): security events: secrets kept out of context, risky
-  commands blocked, paths outside the project blocked, injections flagged.
 
 A group with nothing measured is left out. `NO_COLOR` drops the colours and
 `LEAN_CTX_ASCII` the glyphs. `statusline = "subtle"` restores the single dim

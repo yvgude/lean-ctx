@@ -6,17 +6,22 @@ instead of something the model has to be talked into using. Requires Claude Code
 
 ## Install
 
+`lean-ctx setup` and `lean-ctx update` set the mod up wherever Claude Code
+2.1.287+ is installed, and say so in their report. By hand:
+
 ```sh
-lean-ctx claude-mod install     # or answer "y" in `lean-ctx setup`
+lean-ctx claude-mod install
 lean-ctx claude-mod status
-lean-ctx claude-mod uninstall
+lean-ctx claude-mod uninstall   # stays removed: setup/update will not reinstall it
 ```
 
 The lean-ctx binary carries the mod and installs it from a local marketplace in
 its data dir — nothing is downloaded, and the mod's version is the engine's
-version, so every lean-ctx update rolls it forward (`lean-ctx setup`/`update`
-refresh an existing install; they never install it on their own). It becomes
-active in new Claude Code sessions, or after `/reload-plugins`.
+version, so every lean-ctx update rolls it forward. It becomes active in new
+Claude Code sessions, or after `/reload-plugins`. The mod runs inside Claude
+Code with your permissions, so removing it is respected as a standing decision:
+`uninstall` leaves a marker (`<data dir>/claude-mod.declined`) that keeps setup
+and update from installing it again, until `lean-ctx claude-mod install` lifts it.
 
 ## Why
 

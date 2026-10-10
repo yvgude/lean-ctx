@@ -2,15 +2,17 @@
 import { atom, read, update } from 'claude-code'
 import type { Elements, EngineInterface, On, RenderChildren } from 'claude-code'
 
-import type { Board, FeedItem, Frame, Overlay, Proof, TurnStat, ValueSnap } from '../types'
+import type { Board, Depth, FeedItem, Frame, Overlay, Proof, SourceStat, TurnStat, ValueSnap } from '../types'
 
-// The cockpit: a docked sidebar in LeanCTX's Select · Control · Prove terms, a
-// pulse line above the prompt while Claude works, and short overlays when a
-// turn ends or a milestone falls. The one-line totals stay in lean-ctx's own
-// status line below the prompt; the band above it repeats none of them.
+// The LeanCTX cockpit, in the product's own terms: a Context Gateway between
+// Claude and the sources it reads. It shows what Claude saw and how deep, the
+// two checks before the handoff (may it be read? may it be delivered?), the
+// tokens kept out, and the receipts behind them. A handoff line runs above the
+// prompt while Claude works; short cards mark turns and milestones. lean-ctx's
+// status line below the prompt keeps the one-line totals.
 
 const PANE = 'leanctx-cockpit'
-const DOCK_COLUMNS = 60
+const DOCK_COLUMNS = 62
 // lean-ctx writes a session's snapshot at most once a second.
 const REFRESH_AFTER_TOOL_MS = 1_300
 const REFRESH_MS = 15_000
@@ -22,22 +24,30 @@ const FRAME_MS = 70
 const COUNT_EASE = 0.16
 const TURN_OVERLAY_MS = 6_500
 const MILESTONE_OVERLAY_MS = 8_000
+// A call travels the handoff line: into the gate, then on to Claude.
+const PACKET_IN_MS = 700
+const PACKET_OUT_MS = 1_600
 // Same freshness window as lean-ctx's own status line.
 const ACTIVE_MS = 12 * 3_600_000
 const TURNS_KEPT = 60
 const HISTORY_KEPT = 480
 const FEED_KEPT = 30
 const FEED_SHOWN = 5
-const MILESTONES = [10e3, 25e3, 50e3, 100e3, 250e3, 500e3, 1e6, 2.5e6, 5e6, 10e6, 25e6]
+const SOURCES_KEPT = 200
+const TOKEN_MILESTONES = [10e3, 25e3, 50e3, 100e3, 250e3, 500e3, 1e6, 2.5e6, 5e6, 10e6, 25e6]
+const SOURCE_MILESTONES = [25, 100, 250, 1000]
 const LEAN_CTX_TOOL = /^mcp__lean[-_]ctx__/
 
 // Keys are versioned by name: $.state outlives reloads, older shapes stay behind.
-const board = atom({ plugin: 'lean-ctx', key: 'state' } as const, {
+const board = atom({ plugin: 'lean-ctx', key: 'gateway' } as const, {
   milestone: 0,
   turns: [],
   isWorking: false,
   leanRunning: 0,
   feed: [],
+  sources: {},
+  turnSeen: { sources: 0, governed: 0, structure: 0 },
+  celebrated: [],
 } as Board)
 const frame = atom({ plugin: 'lean-ctx', key: 'clock' } as const, { tick: 0 } as Frame)
 
@@ -59,6 +69,16 @@ const DEFAULT_BG = 0x01000000
 const BRAND_SWEEP = [BLUE_FIELD, SIGNATURE, ICE, VIOLET, SIGNATURE, BLUE_FIELD]
 const DATA = [BLUE_FIELD, SIGNATURE, ICE]
 const hex = (c: number) => `#${c.toString(16).padStart(6, '0')}`
+
+// Each read depth keeps its colour everywhere: mix bar, legend, receipts.
+const DEPTHS: readonly Depth[] = ['structure', 'passage', 'full', 'search', 'command']
+const DEPTH_COLOR: Record<Depth, number> = {
+  structure: SIGNATURE,
+  passage: ICE,
+  full: VIOLET,
+  search: 0x7fc8ff,
+  command: 0x8fa9ff,
+}
 
 function mix(a: number, b: number, t: number): number {
   const k = Math.min(1, Math.max(0, t))
@@ -123,25 +143,46 @@ class Grid {
   }
 }
 
-// The pulse: a hairline that breathes in brand colours while Claude works, with
-// a light travelling along it — brighter and quicker while a lean-ctx tool runs.
-function pulseCells(cols: number, tick: number, isWorking: boolean, isLeanRunning: boolean): string {
+// The handoff line: sources on the left, Claude on the right, the gateway ◆ in
+// between. While Claude works the line breathes in brand colours; every call
+// travels it as a light — governed calls pass through the gate, direct calls
+// (Claude's own tools) run past it dimmed, failures turn red.
+function handoffCells(cols: number, tick: number, feed: readonly FeedItem[], now: number, isWorking: boolean): string {
   const g = new Grid(cols, 1)
-  if (!isWorking) {
-    for (let x = 0; x < cols; x++) g.set(x, 0, '─', HAIRLINE)
-    return g.encode()
-  }
-  const speed = isLeanRunning ? 0.022 : 0.012
-  const head = ((tick * speed) % 1.25) * cols - cols * 0.1
+  const gate = Math.floor(cols * 0.5)
   const breath = (Math.sin(tick * 0.09) + 1) / 2
-  const tail = isLeanRunning ? 22 : 14
   for (let x = 0; x < cols; x++) {
-    const base = mix(HAIRLINE, cycle(BRAND_SWEEP, x / cols / 1.6 - tick * 0.004), 0.35 + breath * 0.35)
-    const d = head - x
-    const trail = d >= 0 && d < tail ? 1 - d / tail : 0
-    const glow = Math.max(trail, Math.max(0, 1 - Math.abs(d) / 2))
-    g.set(x, 0, glow > 0.6 ? '━' : '─', mix(base, isLeanRunning ? FOREGROUND : ICE, glow * (isLeanRunning ? 1 : 0.8)))
+    const base = isWorking
+      ? mix(HAIRLINE, cycle(BRAND_SWEEP, x / cols / 1.6 - tick * 0.004), 0.3 + breath * 0.3)
+      : HAIRLINE
+    g.set(x, 0, '─', base)
   }
+  const gatePulse = isWorking ? (Math.sin(tick * 0.25) + 1) / 2 : 0
+  const draw = (x: number, color: number, isHead: boolean) => {
+    const at = Math.round(x)
+    g.set(at, 0, isHead ? '●' : '━', color)
+    if (isHead) {
+      g.set(at - 1, 0, '━', mix(color, HAIRLINE, 0.35))
+      g.set(at - 2, 0, '─', mix(color, HAIRLINE, 0.65))
+    }
+  }
+  for (const item of feed) {
+    const color = item.isError ? DANGER : item.governed ? ICE : SECONDARY
+    if (item.ms === undefined) {
+      const age = now - item.startedAt
+      // Direct calls never enter the gate: they cross the whole line.
+      if (!item.governed) {
+        if (age < PACKET_IN_MS + PACKET_OUT_MS) draw(((age / (PACKET_IN_MS + PACKET_OUT_MS)) % 1) * (cols - 1), color, true)
+      } else if (age < PACKET_IN_MS) draw((age / PACKET_IN_MS) * gate, color, true)
+      continue
+    }
+    const age = now - (item.startedAt + item.ms)
+    if (age < 0 || age > PACKET_OUT_MS) continue
+    const from = item.governed ? gate : (age / PACKET_OUT_MS) * gate
+    draw(from + ((cols - 1 - from) * age) / PACKET_OUT_MS, color, true)
+  }
+  const waiting = feed.some(f => f.governed && f.ms === undefined && now - f.startedAt >= PACKET_IN_MS)
+  g.set(gate, 0, '◆', waiting ? mix(SIGNATURE, FOREGROUND, gatePulse) : isWorking ? mix(SIGNATURE, ICE, gatePulse * 0.6) : BLUE_FIELD)
   return g.encode()
 }
 
@@ -191,7 +232,7 @@ const FONT: Record<string, readonly string[]> = {
 const FIGURE_ROWS = 4
 const figureWidth = (text: string) => [...text].reduce((w, ch) => w + (FONT[ch]?.[0]?.length ?? 0) + 1, -1)
 
-// The hero figure: a slow brand sweep runs across it; brighter while it counts.
+// A display figure: a slow brand sweep runs across it; brighter while it counts.
 function figureCells(text: string, cols: number, phase: number, lift: number): string {
   const g = new Grid(cols, FIGURE_ROWS)
   const width = Math.max(8, figureWidth(text))
@@ -228,6 +269,23 @@ function meterCells(cols: number, frac: number, color: (t: number) => number): s
     else if (x === full && part > 0) g.set(x, 0, EIGHTHS[part] ?? '▏', c, PANEL)
     else g.set(x, 0, '█', PANEL)
   }
+  return g.encode()
+}
+
+// The depth mix: one bar, a segment per read depth in its colour.
+function mixCells(cols: number, counts: Record<Depth, number>): string {
+  const g = new Grid(cols, 1)
+  const total = DEPTHS.reduce((n, d) => n + counts[d], 0)
+  if (total === 0) {
+    for (let x = 0; x < cols; x++) g.set(x, 0, '█', PANEL)
+    return g.encode()
+  }
+  let x = 0
+  DEPTHS.forEach((d, i) => {
+    const isLast = i === DEPTHS.length - 1
+    const width = isLast ? cols - x : Math.round((counts[d] / total) * cols)
+    for (let k = 0; k < width && x < cols; k++, x++) g.set(x, 0, '█', DEPTH_COLOR[d])
+  })
   return g.encode()
 }
 
@@ -290,7 +348,12 @@ function tail(path: string): string {
   return path.split('/').filter(Boolean).at(-1) ?? path
 }
 
-function describe(args: Record<string, unknown>): string {
+type Rec = Record<string, unknown>
+const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v)
+const num = (r: Rec, k: string) => (typeof r[k] === 'number' ? (r[k] as number) : 0)
+const str = (r: Rec, k: string) => (typeof r[k] === 'string' ? (r[k] as string) : undefined)
+
+function describe(args: Rec): string {
   for (const key of ['path', 'file_path', 'command', 'pattern', 'query', 'task', 'symbol', 'url', 'description', 'prompt']) {
     const v = args[key]
     if (typeof v !== 'string' || v.length === 0) continue
@@ -302,14 +365,26 @@ function describe(args: Record<string, unknown>): string {
   return ''
 }
 
+// The read depth a call brought a source to Claude at, or none for calls that
+// bring no source (edits, sessions, agents). `ctx_read` modes map onto the
+// website's depths: structure (map, signatures), a passage (lines, reference,
+// task, compressed modes), or the whole file.
+function depthOf(tool: string, args: Rec): Depth | undefined {
+  const t = shortTool(tool)
+  if (/^(ctx_read|ctx_multi_read|Read)$/.test(t)) {
+    const mode = str(args, 'mode') ?? ''
+    if (/^(map|signatures)$/.test(mode)) return 'structure'
+    if (/^(lines|reference|task|aggressive|entropy|diff)/.test(mode)) return 'passage'
+    return 'full'
+  }
+  if (/search|grep|glob|tree|compose|callgraph|graph|semantic/i.test(t)) return 'search'
+  if (/shell|bash|execute/i.test(t)) return 'command'
+  return undefined
+}
+
 const SPINNER = ['⠋', '⠙', '⠹', '⠸', '⠼', '⠴', '⠦', '⠧', '⠇', '⠏']
 
 // ── lean-ctx value snapshots ───────────────────────────────────────────────
-type Rec = Record<string, unknown>
-const isRec = (v: unknown): v is Rec => typeof v === 'object' && v !== null && !Array.isArray(v)
-const num = (r: Rec, k: string) => (typeof r[k] === 'number' ? (r[k] as number) : 0)
-const str = (r: Rec, k: string) => (typeof r[k] === 'string' ? (r[k] as string) : undefined)
-
 function parseSnap(text: string): ValueSnap | undefined {
   const r: unknown = JSON.parse(text)
   if (!isRec(r)) return undefined
@@ -359,8 +434,9 @@ let pendingRefresh: { cancel: () => void } | undefined
 let frames: { cancel: () => void } | undefined
 let isWorking = false
 let overlayUntil = 0
+let packetsUntil = 0
 let proving = false
-// The hero figure counts toward the session total.
+// The token figure counts toward the session total.
 let shown = -1
 let target = 0
 
@@ -374,6 +450,9 @@ async function readBoard($: EngineInterface): Promise<Board> {
     isWorking: b.isWorking === true,
     leanRunning: typeof b.leanRunning === 'number' ? Math.max(0, b.leanRunning) : 0,
     feed: Array.isArray(b.feed) ? b.feed : [],
+    sources: isRec(b.sources) ? (b.sources as Record<string, SourceStat>) : {},
+    turnSeen: isRec(b.turnSeen) ? b.turnSeen : { sources: 0, governed: 0, structure: 0 },
+    celebrated: Array.isArray(b.celebrated) ? b.celebrated : [],
   }
 }
 
@@ -425,6 +504,31 @@ function scheduleRefresh($: EngineInterface) {
   })
 }
 
+// A gateway first worth a moment, celebrated once per conversation.
+function gatewayFirst(prev: ValueSnap | undefined, snap: ValueSnap, sources: number, done: string[]): { key: string; title: string; detail: string } | undefined {
+  const firsts = [
+    {
+      key: 'first-secret',
+      hit: snap.secretsRedacted > 0 && (prev?.secretsRedacted ?? 0) === 0,
+      title: 'FIRST SECRET KEPT OUT OF CLAUDE’S CONTEXT',
+      detail: 'Redacted before the handoff · see lean-ctx value',
+    },
+    {
+      key: 'first-block',
+      hit: snap.shellBlocked + snap.pathBlocked > 0 && (prev ? prev.shellBlocked + prev.pathBlocked : 0) === 0,
+      title: 'FIRST READ STOPPED AT THE GATE',
+      detail: 'A command or path outside your rules was blocked',
+    },
+    ...SOURCE_MILESTONES.map(n => ({
+      key: `sources-${n}`,
+      hit: sources >= n,
+      title: `${grouped(n)} SOURCES THROUGH THE GATEWAY`,
+      detail: 'Each one selected, checked and recorded',
+    })),
+  ]
+  return firsts.find(f => f.hit && !done.includes(f.key))
+}
+
 // Reads the snapshot of the lean-ctx session serving this conversation (the
 // same one lean-ctx's status line shows), keeps its history, raises milestones.
 async function refresh($: EngineInterface) {
@@ -465,11 +569,23 @@ async function refresh($: EngineInterface) {
     }
 
     const b = await readBoard($)
-    const reached = MILESTONES.filter(m => m <= snap.tokensSaved).pop() ?? 0
-    // The first look only records where the session stands; later crossings celebrate.
-    const isCrossing = reached > b.milestone && (b.milestone > 0 || b.turns.length > 0)
     const at = Date.now()
-    const celebration: Overlay = { kind: 'milestone', amount: reached, at }
+    const governedSources = Object.values(b.sources).filter(s => s.governed).length
+    // The first look only records where the session stands; later crossings celebrate.
+    const isLive = b.milestone > 0 || b.turns.length > 0 || b.snap !== undefined
+    const reached = TOKEN_MILESTONES.filter(m => m <= snap.tokensSaved).pop() ?? 0
+    const first = isLive && b.snap?.sessionId === snap.sessionId ? gatewayFirst(b.snap, snap, governedSources, b.celebrated) : undefined
+    let celebration: Overlay | undefined
+    if (first) {
+      celebration = { kind: 'milestone', title: first.title, detail: first.detail, at }
+    } else if (reached > b.milestone && isLive) {
+      celebration = {
+        kind: 'milestone',
+        title: `${compact(reached)} TOKENS KEPT OUT OF CONTEXT`,
+        detail: 'Selected, not sent · numbers from lean-ctx value',
+        at,
+      }
+    }
     await update($, board, x => {
       const same = x.history?.sessionId === snap.sessionId ? x.history.points : []
       const last = same.at(-1)
@@ -481,16 +597,18 @@ async function refresh($: EngineInterface) {
         snap,
         history: { sessionId: snap.sessionId, points },
         milestone: Math.max(x.milestone ?? 0, reached),
-        overlay: isCrossing ? celebration : x.overlay,
+        celebrated: first ? [...(Array.isArray(x.celebrated) ? x.celebrated : []), first.key] : x.celebrated,
+        overlay: celebration ?? x.overlay,
       }
     })
     if (shown < 0) shown = 0
     target = snap.tokensSaved
-    if (isCrossing) {
+    if (celebration) {
       overlayUntil = at + MILESTONE_OVERLAY_MS
-      $.ui.toast(`★ LeanCTX · ${compact(reached)} tokens kept out of context`, { timeoutMs: 6000 })
+      const title = celebration.kind === 'milestone' ? celebration.title : ''
+      $.ui.toast(`★ LeanCTX · ${title.toLowerCase()}`, { timeoutMs: 6000 })
     }
-    if (isCrossing || shown !== target) startFrames($)
+    if (celebration || shown !== target) startFrames($)
   } catch {
     // the cockpit is cosmetic; lean-ctx's status line still carries the numbers
   } finally {
@@ -550,10 +668,10 @@ async function refreshUsage($: EngineInterface) {
   }
 }
 
-// The turn just ended: sum up what lean-ctx did. Runs from a `$.clock.after`
-// timer (scheduled by the `turn.complete` hook) once lean-ctx's last write is
-// in: work that outlives a hook's dispatch must not hang off the hook itself.
-// Without a snapshot the card still shows, with the turn alone.
+// The turn just ended: sum up what lean-ctx did and what Claude saw. Runs from a
+// `$.clock.after` timer (scheduled by the `turn.complete` hook) once lean-ctx's
+// last write is in: work that outlives a hook's dispatch must not hang off the
+// hook itself. Without a snapshot the card still shows, with the turn alone.
 async function finishTurn($: EngineInterface, durationMs: number) {
   await refresh($).catch(() => {})
   const b = await readBoard($)
@@ -571,6 +689,9 @@ async function finishTurn($: EngineInterface, durationMs: number) {
     calls: Math.max(0, now.calls - start.calls),
     files: Math.max(0, now.files - start.files),
     commands: Math.max(0, now.commands - start.commands),
+    sources: b.turnSeen.sources,
+    governed: b.turnSeen.governed,
+    structure: b.turnSeen.structure,
     at: Date.now(),
   }
   await update($, board, x => {
@@ -584,6 +705,65 @@ async function finishTurn($: EngineInterface, durationMs: number) {
   startFrames($)
 }
 
+// Tool calls as the conversation records them: an assistant row's `tool_use`
+// blocks start calls (with the source and depth they bring), a `tool_result`
+// ends one. Reading rows keeps the cockpit off the tool chain the rest of the
+// mod shapes.
+async function observeRow($: EngineInterface, row: Rec) {
+  const message = isRec(row['message']) ? row['message'] : {}
+  const blocks = (Array.isArray(message['content']) ? message['content'] : []).filter(isRec)
+  const now = Date.now()
+  const started: FeedItem[] = []
+  const ended = new Map<string, boolean>()
+  for (const block of blocks) {
+    if (block['type'] === 'tool_use' && typeof block['id'] === 'string' && typeof block['name'] === 'string') {
+      const input = isRec(block['input']) ? block['input'] : {}
+      started.push({
+        id: block['id'],
+        tool: block['name'],
+        label: describe(input),
+        isSubagent: typeof row['agentId'] === 'string',
+        startedAt: now,
+        depth: depthOf(block['name'], input),
+        governed: LEAN_CTX_TOOL.test(block['name']),
+      })
+    } else if (block['type'] === 'tool_result' && typeof block['tool_use_id'] === 'string') {
+      ended.set(block['tool_use_id'], block['is_error'] === true)
+    }
+  }
+  if (started.length === 0 && ended.size === 0) return
+  await update($, board, x => {
+    const feed = [...(Array.isArray(x.feed) ? x.feed : []), ...started].slice(-FEED_KEPT)
+    let running = (x.leanRunning ?? 0) + started.filter(f => f.governed).length
+    const done = feed.map(f => {
+      const isError = ended.get(f.id)
+      if (isError === undefined || f.ms !== undefined) return f
+      if (f.governed) running -= 1
+      return { ...f, ms: now - f.startedAt, isError }
+    })
+    // Sources Claude saw: one entry per path / pattern / command, deepest read kept.
+    const sources = { ...(isRec(x.sources) ? (x.sources as Record<string, SourceStat>) : {}) }
+    const seen = isRec(x.turnSeen) ? { ...x.turnSeen } : { sources: 0, governed: 0, structure: 0 }
+    for (const f of started) {
+      if (!f.depth || !f.label) continue
+      const key = `${f.depth === 'command' ? 'cmd' : 'src'}:${f.label}`
+      const prev = sources[key]
+      sources[key] = { label: f.label, depth: f.depth, governed: f.governed || (prev?.governed ?? false), n: (prev?.n ?? 0) + 1, last: now }
+      seen.sources += 1
+      if (f.governed) seen.governed += 1
+      if (f.depth === 'structure') seen.structure += 1
+    }
+    const kept = Object.entries(sources)
+      .sort(([, a], [, b]) => b.last - a.last)
+      .slice(0, SOURCES_KEPT)
+    return { ...x, feed: done, leanRunning: Math.max(0, running), sources: Object.fromEntries(kept), turnSeen: seen }
+  })
+  // Keep the handoff line moving while calls travel it.
+  packetsUntil = now + PACKET_IN_MS + PACKET_OUT_MS
+  startFrames($)
+  if (ended.size > 0) scheduleRefresh($)
+}
+
 // One frame clock for every effect; it runs only while something moves.
 function startFrames($: EngineInterface) {
   if (frames) return
@@ -593,12 +773,27 @@ function startFrames($: EngineInterface) {
       const step = Math.sign(gap) * Math.max(1, Math.abs(gap) * COUNT_EASE)
       shown = Math.abs(step) >= Math.abs(gap) ? target : Math.round(shown + step)
     }
-    if (!isWorking && !proving && shown === target && Date.now() > overlayUntil) {
+    const now = Date.now()
+    if (!isWorking && !proving && shown === target && now > overlayUntil && now > packetsUntil) {
       frames?.cancel()
       frames = undefined
     }
     void update($, frame, f => ({ tick: (f?.tick ?? 0) + 1 })).catch(() => {})
   })
+}
+
+// Opens the sidebar and starts the refresh and proof clocks.
+async function cockpitStart($: EngineInterface): Promise<void> {
+  await $.command.register({ name: 'cockpit', description: 'Open the LeanCTX cockpit' })
+  $.ui.status(undefined)
+  // Fire-and-forget, and never an unhandled rejection: a surface that draws
+  // no panes (or none yet) simply leaves the sidebar closed.
+  $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS }).catch(() => {})
+  // Work that outlives this hook runs from timers, never off the hook itself.
+  $.clock.after(300, () => void refresh($).catch(() => {}))
+  $.clock.every(REFRESH_MS, () => void refresh($).catch(() => {}))
+  $.clock.after(PROVE_FIRST_MS, () => void prove($).catch(() => {}))
+  $.clock.every(PROVE_MS, () => void prove($).catch(() => {}))
 }
 
 // ── drawing helpers ────────────────────────────────────────────────────────
@@ -630,7 +825,7 @@ function pill(ui: Ui, text: string, fg: number, bg: number, bold = false) {
 type Part = { node: RenderChildren; rows: number }
 const GAP: Part = { node: '', rows: 1 }
 
-// A panel, btop-style: the title sits in the top border (╭─┐SELECT┌──── meta ─╮),
+// A panel, btop-style: the title sits in the top border (╭─┐TITLE┌──── meta ─╮),
 // a blank row of air inside top and bottom, and a blank row before the next.
 function panel(ui: Ui, width: number, title: string, meta: string, parts: Part[]) {
   const { Box, Text } = ui
@@ -664,60 +859,21 @@ function panel(ui: Ui, width: number, title: string, meta: string, parts: Part[]
   )
 }
 
-// Tool calls as the conversation records them: an assistant row's `tool_use`
-// blocks start calls, a `tool_result` ends one (with its error flag). Reading
-// rows keeps the cockpit off the tool chain the rest of the mod shapes.
-async function observeRow($: EngineInterface, row: Rec) {
-  const message = isRec(row['message']) ? row['message'] : {}
-  const blocks = (Array.isArray(message['content']) ? message['content'] : []).filter(isRec)
-  const now = Date.now()
-  const started: FeedItem[] = []
-  const ended = new Map<string, boolean>()
-  for (const block of blocks) {
-    if (block['type'] === 'tool_use' && typeof block['id'] === 'string' && typeof block['name'] === 'string') {
-      started.push({
-        id: block['id'],
-        tool: block['name'],
-        label: describe(isRec(block['input']) ? block['input'] : {}),
-        isSubagent: typeof row['agentId'] === 'string',
-        startedAt: now,
-      })
-    } else if (block['type'] === 'tool_result' && typeof block['tool_use_id'] === 'string') {
-      ended.set(block['tool_use_id'], block['is_error'] === true)
-    }
-  }
-  if (started.length === 0 && ended.size === 0) return
-  await update($, board, x => {
-    const feed = [...(Array.isArray(x.feed) ? x.feed : []), ...started].slice(-FEED_KEPT)
-    let running = (x.leanRunning ?? 0) + started.filter(f => LEAN_CTX_TOOL.test(f.tool)).length
-    const done = feed.map(f => {
-      const isError = ended.get(f.id)
-      if (isError === undefined || f.ms !== undefined) return f
-      if (LEAN_CTX_TOOL.test(f.tool)) running -= 1
-      return { ...f, ms: now - f.startedAt, isError }
-    })
-    return { ...x, feed: done, leanRunning: Math.max(0, running) }
-  })
-  if (ended.size > 0) {
-    scheduleRefresh($)
-  }
+// The handoff line with its two ends named: SOURCES ──◆── CLAUDE.
+function handoff(ui: Ui, key: string, cols: number, b: Board, tick: number, now: number) {
+  const { Box, Text, Raster } = ui
+  const lane = Math.max(8, cols - 16)
+  const ends = hex(b.isWorking ? SECONDARY : HAIRLINE)
+  return (
+    <Box>
+      <Text color={ends}>sources </Text>
+      <Raster key={key} columns={lane} rows={1} cells={handoffCells(lane, tick, b.feed, now, b.isWorking)} />
+      <Text color={ends}> claude</Text>
+    </Box>
+  )
 }
 
-// Opens the sidebar and starts the refresh and proof clocks.
-async function cockpitStart($: EngineInterface): Promise<void> {
-  await $.command.register({ name: 'cockpit', description: 'Open the LeanCTX cockpit' })
-  $.ui.status(undefined)
-  // Fire-and-forget, and never an unhandled rejection: a surface that draws
-  // no panes (or none yet) simply leaves the sidebar closed.
-  $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS }).catch(() => {})
-  // Work that outlives this hook runs from timers, never off the hook itself.
-  $.clock.after(300, () => void refresh($).catch(() => {}))
-  $.clock.every(REFRESH_MS, () => void refresh($).catch(() => {}))
-  $.clock.after(PROVE_FIRST_MS, () => void prove($).catch(() => {}))
-  $.clock.every(PROVE_MS, () => void prove($).catch(() => {}))
-}
-
-// ── the mod ────────────────────────────────────────────────────────────────
+// ── the cockpit ────────────────────────────────────────────────────────────
 export function registerCockpit(on: On): void {
   // A matcher, because the mod's own `session.start` hook has none (one per
   // event and plugin); headless runs (`claude -p`) get no cockpit at all.
@@ -741,7 +897,13 @@ export function registerCockpit(on: On): void {
     try {
       isWorking = true
       const b = await readBoard($)
-      await update($, board, x => ({ ...x, isWorking: true, leanRunning: 0, turnStart: countersOf(b.snap) }))
+      await update($, board, x => ({
+        ...x,
+        isWorking: true,
+        leanRunning: 0,
+        turnStart: countersOf(b.snap),
+        turnSeen: { sources: 0, governed: 0, structure: 0 },
+      }))
       startFrames($)
     } catch {
       // the cockpit is cosmetic
@@ -779,7 +941,7 @@ export function registerCockpit(on: On): void {
     return stored
   })
 
-  // ── above the prompt: the pulse while working; a card when a turn ends or a milestone falls
+  // ── above the prompt: the handoff line while working; a card when a turn ends or a milestone falls
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || e.surface !== 'terminal') return next(e)
     const b = await readBoard($)
@@ -789,19 +951,16 @@ export function registerCockpit(on: On): void {
     const o = b.overlay
     const ui = $.ui.resolve(e)
     const { Box, Text, Raster } = ui
-    const cols = Math.max(20, e.props.bodyColumns)
+    const cols = Math.max(24, e.props.bodyColumns)
 
-    if (o?.kind === 'milestone' && now - o.at < MILESTONE_OVERLAY_MS) {
-      const title = `★  ${compact(o.amount)} TOKENS KEPT OUT OF CONTEXT  ★`
-      const started = b.snap?.startedAt ? Date.parse(b.snap.startedAt) : NaN
+    if (o?.kind === 'milestone' && now - o.at < MILESTONE_OVERLAY_MS && typeof o.title === 'string') {
+      const title = `★  ${o.title}  ★`
       return (
         <Box flexDirection="column">
           <Raster key="spark-a" columns={cols} rows={1} cells={sparkleCells(cols, tick, 1)} />
           <Box justifyContent="center">{shimmer(ui, title, tick, SIGNATURE, FOREGROUND, true)}</Box>
           <Box justifyContent="center">
-            <Text color={hex(SECONDARY)}>
-              LeanCTX milestone{Number.isNaN(started) ? '' : ` · ${span(now - started)} into this session`}
-            </Text>
+            <Text color={hex(SECONDARY)}>LeanCTX · {o.detail}</Text>
           </Box>
           <Raster key="spark-b" columns={cols} rows={1} cells={sparkleCells(cols, tick + 7, 2)} />
         </Box>
@@ -810,6 +969,7 @@ export function registerCockpit(on: On): void {
 
     if (o?.kind === 'turn' && now - o.at < TURN_OVERLAY_MS && !b.isWorking) {
       const t = o.turn
+      const gap = <Text> </Text>
       return (
         <Box flexDirection="column">
           <Raster key="sweep" columns={cols} rows={1} cells={sweepCells(cols, Math.min(1, (now - o.at) / 900), tick)} />
@@ -821,25 +981,22 @@ export function registerCockpit(on: On): void {
               Turn {t.n}
             </Text>
             <Text color={hex(SECONDARY)}> · {clock(t.durationMs)}   </Text>
-            {t.saved > 0 ? pill(ui, `▲ ${compact(t.saved)} kept out`, CANVAS, SIGNATURE, true) : null}
-            {t.saved > 0 ? <Text> </Text> : null}
-            {pill(ui, plural(t.calls, 'lean-ctx call', 'lean-ctx calls'), FOREGROUND, PANEL)}
-            {t.files > 0 ? <Text> </Text> : null}
-            {t.files > 0 ? pill(ui, plural(t.files, 'file', 'files'), FOREGROUND, PANEL) : null}
-            {t.commands > 0 ? <Text> </Text> : null}
-            {t.commands > 0 ? pill(ui, plural(t.commands, 'command', 'commands'), FOREGROUND, PANEL) : null}
+            {t.sources > 0 ? pill(ui, `Claude saw ${plural(t.sources, 'source', 'sources')}`, CANVAS, SIGNATURE, true) : null}
+            {t.sources > 0 && t.structure > 0 ? gap : null}
+            {t.sources > 0 && t.structure > 0 ? pill(ui, `${t.structure} as structure`, FOREGROUND, PANEL) : null}
+            {t.saved > 0 ? gap : null}
+            {t.saved > 0 ? pill(ui, `▲ ${compact(t.saved)} tokens kept out`, FOREGROUND, BLUE_FIELD, true) : null}
+            {t.sources === 0 && t.saved === 0 ? pill(ui, plural(t.calls, 'lean-ctx call', 'lean-ctx calls'), FOREGROUND, PANEL) : null}
           </Box>
         </Box>
       )
     }
 
-    if (b.isWorking) {
-      return <Raster key="pulse" columns={cols} rows={1} cells={pulseCells(cols, tick, true, b.leanRunning > 0)} />
-    }
+    if (b.isWorking) return handoff(ui, 'band-handoff', cols, b, tick, now)
     return next(e)
   })
 
-  // ── the spinner row: brand spinner, shimmering words, the turn's live gain
+  // ── the spinner row: brand spinner, shimmering words, the turn's live gateway work
   on('ui.render', { component: 'Spinner' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
     const f = await read($, frame)
@@ -850,28 +1007,27 @@ export function registerCockpit(on: On): void {
     const words = `${e.props.message ?? e.props.word}${e.props.suffix}`
     const start = b.turnStart
     const gained = start && b.snap && start.sessionId === b.snap.sessionId ? Math.max(0, b.snap.tokensSaved - start.saved) : 0
+    const seen = b.turnSeen.sources
     return (
       <Box>
         <Text bold color={hex(cycle(BRAND_SWEEP, tick / 30))}>
           {SPINNER[tick % SPINNER.length]}{' '}
         </Text>
         {shimmer(ui, words, tick, SECONDARY, ICE)}
-        {gained > 0 ? (
-          <Text>
-            <Text>   </Text>
-            {pill(ui, `▲ ${compact(gained)} kept out this turn`, FOREGROUND, BLUE_FIELD)}
-          </Text>
-        ) : null}
+        {seen > 0 || gained > 0 ? <Text>   </Text> : null}
+        {seen > 0 ? pill(ui, `◆ ${plural(seen, 'source', 'sources')}`, FOREGROUND, PANEL) : null}
+        {seen > 0 && gained > 0 ? <Text> </Text> : null}
+        {gained > 0 ? pill(ui, `▲ ${compact(gained)} kept out`, FOREGROUND, BLUE_FIELD) : null}
       </Box>
     )
   })
 
-  // ── the "done in" row: keep the engine's words, add what lean-ctx did that turn
+  // ── the "done in" row: keep the engine's words, add what passed the gateway that turn
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
     const b = await readBoard($)
     const turn = b.turns.find(t => Math.abs(t.durationMs - e.props.durationMs) < 1_000)
-    if (!turn || (turn.saved === 0 && turn.calls === 0)) return next(e)
+    if (!turn || (turn.saved === 0 && turn.calls === 0 && (turn.sources ?? 0) === 0)) return next(e)
     const { Box, Text } = $.ui.resolve(e)
     return (
       <Box>
@@ -883,19 +1039,18 @@ export function registerCockpit(on: On): void {
           ◆ LeanCTX
         </Text>
         <Text color={hex(SECONDARY)}>
+          {(turn.sources ?? 0) > 0 ? ` Claude saw ${plural(turn.sources, 'source', 'sources')}` : ''}
           {turn.saved > 0 ? (
             <Text>
-              {' '}kept <Text bold color={hex(FOREGROUND)}>{compact(turn.saved)}</Text> tokens out ·
+              {(turn.sources ?? 0) > 0 ? ' ·' : ''} <Text bold color={hex(FOREGROUND)}>{compact(turn.saved)}</Text> tokens kept out
             </Text>
-          ) : null}{' '}
-          {plural(turn.calls, 'call', 'calls')}
-          {turn.files > 0 ? ` · ${plural(turn.files, 'file', 'files')}` : ''}
+          ) : null}
         </Text>
       </Box>
     )
   })
 
-  // ── the docked sidebar: Select · Control · Prove, the session over time, recent calls
+  // ── the docked sidebar: what Claude saw, tokens, the two checks, receipts
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const b = await readBoard($)
     const f = await read($, frame)
@@ -903,6 +1058,8 @@ export function registerCockpit(on: On): void {
     const s = b.snap
     const now = Date.now()
     const savedPct = s && s.tokensInput > 0 ? (s.tokensSaved / s.tokensInput) * 100 : undefined
+    const sources = Object.values(b.sources)
+    const governed = sources.filter(x => x.governed).length
     if (shown < 0 && s) {
       shown = 0
       target = s.tokensSaved
@@ -912,9 +1069,9 @@ export function registerCockpit(on: On): void {
       const { Box, Text } = $.ui.resolve(e)
       return (
         <Box flexDirection="column">
-          <Text bold color={hex(SIGNATURE)}>LeanCTX</Text>
-          <Text>Select · {compact(s?.tokensSaved ?? 0)} tokens kept out ({pct(savedPct)} leaner)</Text>
-          <Text>Context {pct(b.contextPct)} · Cache {pct(b.cacheHitPct)}</Text>
+          <Text bold color={hex(SIGNATURE)}>LeanCTX · Context Gateway</Text>
+          <Text>Claude saw {sources.length} sources · {governed} through the gateway</Text>
+          <Text>{compact(s?.tokensSaved ?? 0)} tokens kept out ({pct(savedPct)} leaner)</Text>
         </Box>
       )
     }
@@ -928,7 +1085,70 @@ export function registerCockpit(on: On): void {
     const sec = hex(SECONDARY)
     if (shown !== target) startFrames($)
 
-    // ── SELECT: what reached Claude
+    // ── CLAUDE SAW: sources, how deep, through the gateway or direct
+    const counts = Object.fromEntries(DEPTHS.map(d => [d, sources.filter(x => x.depth === d).length])) as Record<Depth, number>
+    const direct = sources.length - governed
+    const legend = (
+      <Text wrap="truncate">
+        {DEPTHS.filter(d => counts[d] > 0).map(d => (
+          <Text>
+            <Text color={hex(DEPTH_COLOR[d])}>■ </Text>
+            <Text color={sec}>
+              {counts[d]} {d}
+              {'   '}
+            </Text>
+          </Text>
+        ))}
+      </Text>
+    )
+    const latest = [...sources].sort((a, x) => x.last - a.last).slice(0, 3)
+    const saw: Part[] = [
+      {
+        node: (
+          <Text>
+            <Text bold color={fg}>
+              {sources.length}
+            </Text>
+            <Text color={sec}> sources   </Text>
+            <Text bold color={hex(SIGNATURE)}>
+              {governed}
+            </Text>
+            <Text color={sec}> through the gateway   </Text>
+            <Text bold color={direct > 0 ? fg : sec}>
+              {direct}
+            </Text>
+            <Text color={sec}> direct</Text>
+          </Text>
+        ),
+        rows: 1,
+      },
+      GAP,
+      { node: <Raster key="depth-mix" columns={inner} rows={1} cells={mixCells(inner, counts)} />, rows: 1 },
+      { node: sources.length > 0 ? legend : <Text color={sec}>Sources appear as Claude reads them.</Text>, rows: 1 },
+      GAP,
+      ...latest.map(x => ({
+        node: (
+          <Box>
+            <Box width={2}>
+              <Text color={hex(DEPTH_COLOR[x.depth])}>■</Text>
+            </Box>
+            <Box flexGrow={1}>
+              <Text color={fg} wrap="truncate">
+                {x.label}
+              </Text>
+            </Box>
+            <Text color={sec}>
+              {' '}
+              {x.depth}
+              {x.governed ? '' : ' · direct'}
+            </Text>
+          </Box>
+        ),
+        rows: 1,
+      })),
+    ]
+
+    // ── TOKENS: kept out of Claude's context, and the budget it used
     const figure = compact(Math.max(0, shown < 0 ? target : shown))
     const isCounting = shown !== target
     const figCols = Math.min(inner, Math.max(12, figureWidth(figure) + 1))
@@ -947,86 +1167,53 @@ export function registerCockpit(on: On): void {
           <Text color={sec}> leaner</Text>
         </Text>
         <Text color={sec}>
-          {compact(s?.tokensInput ?? 0)} raw → {compact(sent)} sent
+          {compact(s?.tokensInput ?? 0)} raw → {compact(sent)} delivered
         </Text>
       </Box>
     )
     const figureNode = (
       <Raster key="figure" columns={figCols} rows={FIGURE_ROWS} cells={figureCells(figure, figCols, tick / 90, isCounting ? 0.45 : 0)} />
     )
-    const statsRow = (
-      <Text color={sec} wrap="truncate">
-        <Text bold color={fg}>{compact(s?.filesRead ?? 0)}</Text> files · <Text bold color={fg}>{compact(s?.commandsRun ?? 0)}</Text>{' '}
-        commands · <Text bold color={fg}>{compact(s?.cacheHits ?? 0)}</Text> cached re-reads
-      </Text>
-    )
-    const select: Part[] = [
+    const points = b.history?.sessionId === s?.sessionId ? (b.history?.points ?? []) : []
+    const values = points.map(pt => pt.saved)
+    const ctxFrac = (b.contextPct ?? 0) / 100
+    const budgetW = Math.max(8, inner - 16 - 6)
+    const tokens: Part[] = [
       ...(sideBySide
         ? [{ node: <Box>{figureNode}{caption}</Box>, rows: FIGURE_ROWS }]
-        : [
-            { node: figureNode, rows: FIGURE_ROWS },
-            GAP,
-            { node: caption, rows: 4 },
-          ]),
+        : [{ node: figureNode, rows: FIGURE_ROWS }, GAP, { node: caption, rows: 4 }]),
       GAP,
-      { node: <Raster key="share" columns={inner} rows={1} cells={meterCells(inner, (savedPct ?? 0) / 100, t => ramp(DATA, t))} />, rows: 1 },
+      {
+        node:
+          values.length >= 2 ? (
+            <Raster key="history" columns={inner} rows={2} cells={areaCells(inner, 2, values, b.isWorking ? pulse : 0)} />
+          ) : (
+            <Text color={sec}>{'The curve starts with the next lean-ctx call.\n'}</Text>
+          ),
+        rows: 2,
+      },
       GAP,
-      { node: statsRow, rows: 1 },
-    ]
-
-    // ── CONTROL: rules before the handoff, and the window's budget
-    const half = Math.floor(inner / 2)
-    const guard = (glyph: string, value: number, label: string) => (
-      <Box width={half}>
-        <Text color={hex(value > 0 ? VIOLET : HAIRLINE)}>{glyph}  </Text>
-        <Text bold color={value > 0 ? fg : sec}>
-          {compact(value)}
-        </Text>
-        <Text color={sec}> {label}</Text>
-      </Box>
-    )
-    const gaugeW = Math.max(8, inner - 14 - 6)
-    const ctxFrac = (b.contextPct ?? 0) / 100
-    const gauge = (key: string, label: string, value: number | undefined, color: (t: number) => number, valueColor: number) => (
-      <Box>
-        <Box width={14}>
-          <Text color={sec}>{label}</Text>
-        </Box>
-        <Raster key={key} columns={gaugeW} rows={1} cells={meterCells(gaugeW, (value ?? 0) / 100, color)} />
-        <Box width={6} justifyContent="flex-end">
-          <Text bold color={hex(valueColor)}>
-            {pct(value)}
-          </Text>
-        </Box>
-      </Box>
-    )
-    const control: Part[] = [
       {
         node: (
           <Box>
-            {guard('⛨', s?.secretsRedacted ?? 0, 'secrets redacted')}
-            {guard('⊘', s?.shellBlocked ?? 0, 'commands blocked')}
+            <Box width={16}>
+              <Text color={sec}>Context budget</Text>
+            </Box>
+            <Raster key="g-context" columns={budgetW} rows={1} cells={meterCells(budgetW, ctxFrac, () => pressure(ctxFrac))} />
+            <Box width={6} justifyContent="flex-end">
+              <Text bold color={hex(ctxFrac >= 0.7 ? pressure(ctxFrac) : FOREGROUND)}>
+                {pct(b.contextPct)}
+              </Text>
+            </Box>
           </Box>
         ),
         rows: 1,
       },
-      {
-        node: (
-          <Box>
-            {guard('⌂', s?.pathBlocked ?? 0, 'paths blocked')}
-            {guard('⚑', s?.injectionFlagged ?? 0, 'injections flagged')}
-          </Box>
-        ),
-        rows: 1,
-      },
-      GAP,
-      { node: gauge('g-context', 'Context window', b.contextPct, () => pressure(ctxFrac), ctxFrac >= 0.7 ? pressure(ctxFrac) : FOREGROUND), rows: 1 },
-      { node: gauge('g-cache', 'Prompt cache', b.cacheHitPct, t => ramp(DATA, t), FOREGROUND), rows: 1 },
       {
         node: (
           <Text color={sec} wrap="truncate">
             {b.contextTokens !== undefined && b.window
-              ? `${compact(b.contextTokens)} / ${compact(b.window)} tokens${b.costUsd !== undefined ? ` · $${b.costUsd.toFixed(2)} spend` : ''}`
+              ? `${compact(b.contextTokens)} / ${compact(b.window)} in the window · cache ${pct(b.cacheHitPct)}${b.costUsd !== undefined ? ` · $${b.costUsd.toFixed(2)}` : ''}`
               : 'The window fills in after the first reply'}
           </Text>
         ),
@@ -1034,7 +1221,50 @@ export function registerCockpit(on: On): void {
       },
     ]
 
-    // ── PROVE: evidence anyone can re-check
+    // ── TWO CHECKS: may it be read? may it be delivered?
+    const half = Math.floor(inner / 2)
+    const calls = s?.toolCalls ?? 0
+    // A redacted result is still delivered, with the secret removed; only a
+    // blocked read never reaches Claude.
+    const blocked = (s?.shellBlocked ?? 0) + (s?.pathBlocked ?? 0)
+    const check = (glyph: string, color: number, value: number, label: string) => (
+      <Text>
+        <Text color={hex(value > 0 ? color : HAIRLINE)}>{glyph} </Text>
+        <Text bold color={value > 0 ? fg : sec}>
+          {compact(value)}
+        </Text>
+        <Text color={sec}> {label}</Text>
+      </Text>
+    )
+    const column = (title: string, rows: RenderChildren[]) => (
+      <Box width={half} flexDirection="column">
+        <Text bold color={fg}>
+          {title}
+        </Text>
+        {rows}
+      </Box>
+    )
+    const checks: Part[] = [
+      {
+        node: (
+          <Box>
+            {column('May it be read?', [
+              check('✓', OK, Math.max(0, calls - blocked), 'allowed'),
+              check('⊘', VIOLET, s?.pathBlocked ?? 0, 'path outside rules'),
+              check('⊘', VIOLET, s?.shellBlocked ?? 0, 'command blocked'),
+            ])}
+            {column('May it be delivered?', [
+              check('✓', OK, Math.max(0, calls - blocked), 'delivered'),
+              check('⛨', VIOLET, s?.secretsRedacted ?? 0, 'secrets redacted'),
+              check('⚑', VIOLET, s?.injectionFlagged ?? 0, 'injections flagged'),
+            ])}
+          </Box>
+        ),
+        rows: 4,
+      },
+    ]
+
+    // ── RECEIPTS: both chains, and the last calls as source · depth · decision
     const p = b.proof
     const chainRow = (name: string, entries: number | undefined, intact: boolean | undefined) => (
       <Box>
@@ -1050,117 +1280,79 @@ export function registerCockpit(on: On): void {
         </Text>
       </Box>
     )
-    const proveStatus = p?.isRunning ? (
-      <Text color={hex(mix(SIGNATURE, ICE, pulse))}>{SPINNER[tick % SPINNER.length]} verifying both chains…</Text>
-    ) : p?.error ? (
-      <Text color={hex(DANGER)} wrap="truncate">
-        verification failed: {p.error}
-      </Text>
-    ) : (
-      <Text color={sec} wrap="truncate">
-        {p?.checkedAt ? `verified ${ago(now - p.checkedAt)}` : 'first check runs shortly'}
-        {p?.sessionEntries ? ` · ${grouped(p.sessionEntries)} this session` : ''}
-      </Text>
-    )
-    const prove: Part[] = [
+    const calls5 = b.feed.slice(-FEED_SHOWN).reverse()
+    const receipts: Part[] = [
       { node: chainRow('Savings ledger', p?.ledgerEntries, p?.ledgerIntact), rows: 1 },
       { node: chainRow('Audit trail', p?.auditEntries, p?.auditIntact), rows: 1 },
-      GAP,
-      { node: proveStatus, rows: 1 },
-    ]
-
-    // ── TIMELINE: the session's running total, sampled on every change
-    const points = b.history?.sessionId === s?.sessionId ? (b.history?.points ?? []) : []
-    const values = points.map(pt => pt.saved)
-    const first = points[0]
-    const lastPt = points.at(-1)
-    const recent = points.filter(pt => now - pt.at <= 15 * 60_000)
-    const gain15 = recent.length > 0 && lastPt ? lastPt.saved - (recent[0]?.saved ?? lastPt.saved) : 0
-    const timeline: Part[] = [
       {
-        node:
-          values.length >= 2 ? (
-            <Raster key="history" columns={inner} rows={4} cells={areaCells(inner, 4, values, b.isWorking ? pulse : 0)} />
-          ) : (
-            <Text color={sec}>{'Collecting — the curve starts with the\nnext lean-ctx call.\n\n'}</Text>
-          ),
-        rows: 4,
-      },
-      GAP,
-      {
-        node: (
-          <Box justifyContent="space-between">
-            <Text color={sec}>{first ? `since ${span(now - first.at)} ago` : 'this session'}</Text>
-            <Text>
-              <Text bold color={hex(gain15 > 0 ? SIGNATURE : SECONDARY)}>
-                {gain15 > 0 ? `▲ ${compact(gain15)}` : '—'}
-              </Text>
-              <Text color={sec}> last 15 min</Text>
-            </Text>
-          </Box>
+        node: p?.isRunning ? (
+          <Text color={hex(mix(SIGNATURE, ICE, pulse))}>{SPINNER[tick % SPINNER.length]} verifying both chains…</Text>
+        ) : (
+          <Text color={sec} wrap="truncate">
+            {p?.error ? `verification failed: ${p.error}` : p?.checkedAt ? `verified ${ago(now - p.checkedAt)} · lean-ctx value` : 'first check runs shortly'}
+          </Text>
         ),
         rows: 1,
       },
+      GAP,
+      ...(calls5.length
+        ? calls5.map((item, i) => {
+            const isRunning = item.ms === undefined
+            const isFresh = i === 0 && now - item.startedAt < 2_500
+            const decision = isRunning ? 'at the gate' : item.isError ? 'failed' : item.governed ? 'delivered' : 'direct'
+            const mark = isRunning ? SPINNER[tick % SPINNER.length] : item.isError ? '✕' : item.governed ? '✓' : '·'
+            const markColor = isRunning ? mix(SIGNATURE, ICE, pulse) : item.isError ? DANGER : item.governed ? OK : SECONDARY
+            return {
+              node: (
+                <Box>
+                  <Box width={2}>
+                    <Text bold color={hex(markColor)}>
+                      {mark}
+                    </Text>
+                  </Box>
+                  <Box flexGrow={1}>
+                    <Text color={hex(isFresh ? ICE : FOREGROUND)} wrap="truncate">
+                      {item.label || shortTool(item.tool)}
+                    </Text>
+                  </Box>
+                  <Box width={11}>
+                    <Text color={hex(item.depth ? DEPTH_COLOR[item.depth] : SECONDARY)} wrap="truncate">
+                      {' '}
+                      {item.depth ?? shortTool(item.tool)}
+                    </Text>
+                  </Box>
+                  <Box width={12} justifyContent="flex-end">
+                    <Text color={sec}>
+                      {decision}
+                      {isRunning ? '' : ` ${dur(item.ms ?? 0)}`}
+                    </Text>
+                  </Box>
+                </Box>
+              ),
+              rows: 1,
+            }
+          })
+        : [{ node: <Text color={sec}>No tool calls yet</Text>, rows: 1 }]),
     ]
-
-    // ── RECENT
-    const calls = b.feed.slice(-FEED_SHOWN).reverse()
-    const recentParts: Part[] = calls.length
-      ? calls.map((item, i) => {
-          const isLean = LEAN_CTX_TOOL.test(item.tool)
-          const isRunning = item.ms === undefined
-          const isFresh = i === 0 && now - item.startedAt < 2_500
-          const mark = isRunning ? SPINNER[tick % SPINNER.length] : item.isError ? '✕' : '✓'
-          const markColor = isRunning ? mix(SIGNATURE, ICE, pulse) : item.isError ? DANGER : isLean ? SIGNATURE : SECONDARY
-          return {
-            node: (
-              <Box>
-                <Box width={3}>
-                  <Text bold color={hex(markColor)}>
-                    {mark}
-                  </Text>
-                </Box>
-                <Box width={13}>
-                  <Text color={hex(isLean ? SIGNATURE : FOREGROUND)} bold={isFresh} wrap="truncate">
-                    {item.isSubagent ? '↳' : ''}
-                    {shortTool(item.tool)}
-                  </Text>
-                </Box>
-                <Box flexGrow={1}>
-                  <Text color={hex(isFresh ? ICE : SECONDARY)} wrap="truncate">
-                    {item.label}
-                  </Text>
-                </Box>
-                <Box width={7} justifyContent="flex-end">
-                  <Text color={sec}>{isRunning ? '' : dur(item.ms ?? 0)}</Text>
-                </Box>
-              </Box>
-            ),
-            rows: 1,
-          }
-        })
-      : [{ node: <Text color={sec}>No tool calls yet</Text>, rows: 1 }]
 
     return (
       <Box flexDirection="column">
         <Box justifyContent="space-between">
           <Text wrap="truncate">
             {pill(ui, '◆ LeanCTX', CANVAS, SIGNATURE, true)}
-            <Text color={sec}>  Control what your AI can see.</Text>
+            <Text color={sec}>  Context Gateway</Text>
           </Text>
           {b.isWorking
             ? pill(ui, `${SPINNER[tick % SPINNER.length]} LIVE`, FOREGROUND, mix(BLUE_FIELD, SIGNATURE, pulse * 0.5), true)
             : pill(ui, '○ IDLE', SECONDARY, PANEL)}
         </Box>
-        <Box marginTop={1}>
-          <Raster key="pulse" columns={W} rows={1} cells={pulseCells(W, tick, b.isWorking, b.leanRunning > 0)} />
-        </Box>
+        <Text color={hex(HAIRLINE)}>Control what your AI can see.</Text>
+        <Box marginTop={1}>{handoff(ui, 'pane-handoff', W, b, tick, now)}</Box>
 
-        {panel(ui, W, 'SELECT', 'what reached Claude', select)}
-        {panel(ui, W, 'CONTROL', 'rules before handoff', control)}
-        {panel(ui, W, 'PROVE', 'evidence you can check', prove)}
-        {panel(ui, W, 'TIMELINE', 'kept out over time', timeline)}
-        {panel(ui, W, 'RECENT', `${b.feed.length} calls`, recentParts)}
+        {panel(ui, W, 'CLAUDE SAW', 'this conversation', saw)}
+        {panel(ui, W, 'TOKENS', s?.startedAt ? `session ${span(now - Date.parse(s.startedAt))}` : 'this session', tokens)}
+        {panel(ui, W, 'TWO CHECKS', 'before the handoff', checks)}
+        {panel(ui, W, 'RECEIPTS', p?.ledgerIntact === false || p?.auditIntact === false ? 'chain broken' : 'evidence you can check', receipts)}
 
         <Box marginTop={1}>
           <Text color={hex(HAIRLINE)} wrap="truncate">
