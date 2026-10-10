@@ -194,11 +194,16 @@ fn start_inner(
             JobState::Completed { output, exit_code }
         };
         job.finished_at = Some(Instant::now());
-        if !cancelled && exit_code != 0 {
+        // Only a background-owned job is counted here, so a failure nobody
+        // polls still reaches telemetry. A foreground run is classified once by
+        // the call pipeline, which knows that exit 1 with output (grep, diff,
+        // test) is not an error; counting it here as well filed every failing
+        // inline command twice, the second time as a LeanCTX-internal error.
+        if !cancelled && exit_code != 0 && job.background_owned {
             let category = if exit_code == 124 {
                 crate::core::telemetry_v2::ErrorCategory::Timeout
             } else {
-                crate::core::telemetry_v2::ErrorCategory::Internal
+                crate::core::telemetry_v2::ErrorCategory::Command
             };
             if crate::core::telemetry_aggregate::record_error_category(category).is_ok() {
                 job.telemetry_recorded = true;
@@ -451,6 +456,80 @@ mod tests {
             });
         assert_eq!(count, Some(2));
         super::remove_for_test(id);
+    }
+
+    fn queued_error_count(category: crate::core::telemetry_v2::ErrorCategory) -> Option<u64> {
+        // A preview fails fast while another test's send holds the state lock;
+        // that is transient, so wait it out instead of failing this test.
+        let mut attempt = 0;
+        let batch = loop {
+            match crate::core::telemetry_aggregate::preview_daily_batch() {
+                Ok(batch) => break batch,
+                Err(_) if attempt < 100 => {
+                    attempt += 1;
+                    std::thread::sleep(Duration::from_millis(20));
+                }
+                Err(error) => panic!("preview: {error}"),
+            }
+        };
+        batch
+            .events
+            .iter()
+            .find_map(|envelope| match &envelope.event {
+                crate::core::telemetry_v2::TelemetryEventV2::ErrorCategoryAggregate(metrics)
+                    if metrics.category == category =>
+                {
+                    Some(metrics.count)
+                }
+                _ => None,
+            })
+    }
+
+    /// A failing inline command is classified once, by the call pipeline; the
+    /// worker counts only background-owned jobs, and as a failed command, never
+    /// as a LeanCTX-internal error.
+    #[test]
+    #[serial_test::serial]
+    #[cfg_attr(windows, ignore)]
+    fn worker_counts_only_background_failures_and_as_commands() {
+        use crate::core::telemetry_v2::ErrorCategory;
+        let _iso = crate::core::data_dir::isolated_data_dir();
+
+        let result = run_foreground_or_detach(
+            "exit 3".to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(10_000),
+            Duration::from_secs(10),
+            None,
+            None,
+        );
+        assert!(matches!(
+            result,
+            ForegroundResult::Finished { exit_code: 3, .. }
+        ));
+        assert_eq!(queued_error_count(ErrorCategory::Command), None);
+        assert_eq!(queued_error_count(ErrorCategory::Internal), None);
+
+        let id = start(
+            "exit 4".to_string(),
+            ".".to_string(),
+            std::collections::HashMap::default(),
+            Some(10_000),
+        );
+        for _ in 0..200 {
+            if matches!(status(&id), Some(JobState::Completed { .. })) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(25));
+        }
+        assert!(matches!(
+            status(&id),
+            Some(JobState::Completed { exit_code: 4, .. })
+        ));
+        assert_eq!(queued_error_count(ErrorCategory::Command), Some(1));
+        assert_eq!(queued_error_count(ErrorCategory::Internal), None);
+        super::remove_for_test(&id);
     }
 
     #[test]

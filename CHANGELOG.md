@@ -4,6 +4,13 @@ All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/POSITIONING_CANONICAL.md).
 
+## [Unreleased]
+
+### Fixed
+
+- **Usage telemetry counts each tool call once.** The daily total of tool calls and failures, and the latency histogram, counted every call twice: once where the call is dispatched and again when its lifecycle finished. The per-tool counts were already right; the totals now match them.
+- **A failed inline shell command is one error, filed as a failed command.** The shell worker also recorded every non-zero exit of a command that finished in the foreground as a LeanCTX-internal error, next to the pipeline's own `command` entry, and did so even for `exit 1` with output (grep, diff, test), which is not an error. The worker now records only background jobs, as `command` or `timeout`; inline runs are classified once by the call pipeline.
+
 ## [3.11.2] — 2026-10-09
 
 Updater and security hotfix for 3.11.1. Agent Tools protocol, configuration and data formats are unchanged.

@@ -1075,11 +1075,10 @@ impl ExecutionLifecycle {
         test_finalization_point(context, LifecycleStage::ScheduleTelemetry, None);
         #[cfg(not(test))]
         {
+            // Call counts and latency are recorded once, per tool, where the
+            // call is dispatched (`record_named_tool_failure`); counting them
+            // here too doubled the daily totals and the latency histogram.
             let metrics = crate::core::telemetry::global_metrics();
-            metrics.record_tool_call(
-                u64::try_from(context.start_time.elapsed().as_micros()).unwrap_or(u64::MAX),
-                observation.success,
-            );
             metrics.record_tokens(
                 observation.input_tokens,
                 observation.output_tokens,
