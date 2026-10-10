@@ -624,14 +624,21 @@ mod tests {
     }
 
     #[test]
-    fn identical_old_new_rejected() {
+    fn identical_old_new_is_a_no_op_when_present_and_an_error_when_absent() {
         let f = make_temp("fn main() {}\n");
         let mut cache = SessionCache::new();
-        let result = handle(
+        let present = handle(
             &mut cache,
             &mk_params(f.path(), "fn main() {}", "fn main() {}", false, false),
         );
-        assert!(result.contains("identical"));
+        assert!(present.starts_with("No change:"), "{present}");
+        assert_eq!(std::fs::read_to_string(f.path()).unwrap(), "fn main() {}\n");
+
+        let absent = handle(
+            &mut cache,
+            &mk_params(f.path(), "fn other() {}", "fn other() {}", false, false),
+        );
+        assert!(absent.starts_with("ERROR:") && absent.contains("identical"), "{absent}");
     }
 
     #[test]

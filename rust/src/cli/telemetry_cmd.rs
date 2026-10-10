@@ -87,8 +87,8 @@ fn show_status() {
     let enabled = !cfg.telemetry.explicitly_disabled();
     let blocker = send_blocker(
         &cfg.telemetry,
-        std::env::var("DO_NOT_TRACK").ok().as_deref(),
-        std::env::var("LEAN_CTX_TELEMETRY").ok().as_deref(),
+        crate::core::host_env::var("DO_NOT_TRACK").as_deref(),
+        crate::core::host_env::var("LEAN_CTX_TELEMETRY").as_deref(),
     )
     .or_else(|| crate::core::telemetry_consent::running_in_ci().then_some(SendBlocker::Ci));
     // The aggregate records every acknowledged send; the config field only
@@ -193,8 +193,8 @@ fn show_payload() {
         println!("No telemetry payload is eligible: the config is unreadable.");
         return;
     };
-    let do_not_track = std::env::var("DO_NOT_TRACK").ok();
-    let telemetry_override = std::env::var("LEAN_CTX_TELEMETRY").ok();
+    let do_not_track = crate::core::host_env::var("DO_NOT_TRACK");
+    let telemetry_override = crate::core::host_env::var("LEAN_CTX_TELEMETRY");
     if !cfg
         .telemetry
         .send_eligible(do_not_track.as_deref(), telemetry_override.as_deref())

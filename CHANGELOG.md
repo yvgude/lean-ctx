@@ -4,6 +4,31 @@ All notable changes to lean-ctx are documented here.
 Format follows [Keep a Changelog](https://keepachangelog.com/).
 Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/POSITIONING_CANONICAL.md).
 
+## [Unreleased]
+
+### Changed
+
+- **PathJail opens your whole home directory by default.** The default `path_jail_scope = home` now admits everything below `~` for reading and writing; before, it admitted only paths inside a project, read-only outside the session's project. Protected locations stay closed: every top-level dot entry (`~/.ssh`, `~/.aws`, `~/.config`, shell rc files, other agents' `~/.claude`, `~/.codex`, …), `~/Library`, `~/AppData` and `~/snap`, and everything outside `~`. The previous behaviour is the new scope `projects` (`lean-ctx config set path_jail_scope projects`), the strictest one stays `project`. A scope you set yourself is kept; `home` set explicitly now means the wider scope too. Every installation without its own setting shows a one-time notice on its next interactive command.
+
+### Fixed
+
+Tool calls that failed although the agent's request was sound, found in the usage telemetry of 3.11.1 and 3.11.2:
+
+- **`ctx_read` answers an empty file, an SVG and a directory.** An empty file returned `File is empty` as an error; it now reads as `<path>: empty file (0 bytes)`. SVG files were rejected as binary; they are XML text and read like source (a real binary behind any extension is still caught by its content). A directory failed with the OS error `Is a directory`; it now lists its entries.
+- **`ctx_search` searches an invalid regex literally.** Code text such as `foo(`, `items[0` or `fn run(&self` is not valid regex and failed the call; it is now searched verbatim, with a one-line note. `action=symbol` also takes the symbol name from `symbol`, `query` or `pattern` when `name` is missing.
+- **`ctx_patch` infers `replace_unique`.** An edit with old and new text but no `op` failed with `missing 'op'`; such an edit can only be `replace_unique`, at the top level and inside `ops[]`.
+- **An edit whose result already holds is not an error.** `ctx_edit` (and `ctx_patch` `replace_unique`) with identical old and new text, where that text is in the file, reports `No change:` instead of failing. Text that is absent still fails.
+- **Dependency source reads on the first call.** Reading a file in a language cache registered the cache as a read-only root but still failed the call with "Retry the read"; it now resolves in the same call. The Rust toolchain source (`~/.rustup/toolchains`), Cargo git dependencies (`~/.cargo/git/checkouts`) and the Bun, Dart pub and Ruby gem caches are recognized alongside the existing ones. Credential and configuration directories (`~/.claude`, `~/.codex`, `~/.config`, `~/.cargo/credentials.toml`) stay jailed, and writes into any cache stay denied.
+- **Usage telemetry counts each tool call once.** The daily total of tool calls and failures, and the latency histogram, counted every call twice: once where the call is dispatched and again when its lifecycle finished. The per-tool counts were already right; the totals now match them.
+- **A failed inline shell command is one error, filed as a failed command.** The shell worker also recorded every non-zero exit of a command that finished in the foreground as a LeanCTX-internal error, next to the pipeline's own `command` entry, and did so even for `exit 1` with output (grep, diff, test), which is not an error. The worker now records only background jobs, as `command` or `timeout`; inline runs are classified once by the call pipeline.
+- **Telemetry opt-outs and CI detection reach MCP servers started by Codex.** Codex starts MCP servers with only `HOME`, `PATH`, `USER`, `LANG` and a few more variables, so a server it started could not see `DO_NOT_TRACK=1`, `LEAN_CTX_TELEMETRY=off` or the CI markers set in the shell or job around it: an opt-out did not reach the server, and a CI job counted as a local machine. On Linux the server now also reads these few keys, and the runtime-environment markers, from its nearest ancestor processes. Nothing else from their environment is read or kept.
+- **Containers under cgroup v2 report as `container`.** A container that has no `/.dockerenv` (containerd, Kubernetes, Podman) and runs under cgroup v2 reported as a local machine. Its overlay root filesystem, the `container` variable and the Kubernetes service-account directory now mark it too.
+
+### Added
+
+- **Notices from the LeanCTX team reach the installations they concern.** The acknowledgement of a telemetry send can carry up to three short notices, for example "the fix for this `ctx_read` failure is in 3.11.3". The server picks them by what the batch already reports (version, AI client, OS, runtime environment, a tool that failed), so nothing extra is sent and nobody needs to know who you are. A notice is shown once, on the terminal of the next interactive `lean-ctx` command, and never in an MCP response: text from a server does not reach the AI model. Only plain text up to 280 characters with an optional link to leanctx.com or the LeanCTX GitHub repository is accepted. With telemetry off, no notices arrive.
+- **Usage telemetry counts MCP server starts that answered no tool call.** Some clients start every configured MCP server, often in a throwaway container, and their agent never calls a tool. Such a start is now counted as an empty session (`mcp.session.empty`, next to `mcp.session`), so these starts can be told apart from real sessions.
+
 ## [3.11.2] — 2026-10-09
 
 Updater and security hotfix for 3.11.1. Agent Tools protocol, configuration and data formats are unchanged.

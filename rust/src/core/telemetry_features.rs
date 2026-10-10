@@ -311,6 +311,40 @@ pub fn record(feature: Feature, ok: bool) {
     let _ = crate::core::telemetry_aggregate::record_feature(feature.code(), ok);
 }
 
+/// An MCP server that completed the client handshake.
+const MCP_SESSION: &str = "mcp.session";
+/// One that then ended without answering a single tool call: a client that
+/// starts every configured server (often in a throwaway container) and whose
+/// agent never uses LeanCTX. Counted, not hidden, so Ops can tell such starts
+/// from real sessions.
+const MCP_SESSION_EMPTY: &str = "mcp.session.empty";
+
+/// Counts an MCP server start after the handshake.
+pub fn record_mcp_session_start() {
+    let _ = crate::core::telemetry_aggregate::record_feature(MCP_SESSION, true);
+}
+
+/// The code an ending MCP server adds, given its tool calls.
+fn mcp_session_end_code(tool_calls: u64) -> Option<&'static str> {
+    (tool_calls == 0).then_some(MCP_SESSION_EMPTY)
+}
+
+/// Counts the end of an MCP server that answered no tool call. Every exit path
+/// (transport closed, parent gone, idle exit) calls this before its final
+/// send; only the first call of a process counts.
+pub fn record_mcp_session_end() {
+    static ENDED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+    if ENDED.swap(true, std::sync::atomic::Ordering::SeqCst) {
+        return;
+    }
+    let tool_calls = crate::core::telemetry::global_metrics()
+        .tool_calls_total
+        .load(std::sync::atomic::Ordering::Relaxed);
+    if let Some(code) = mcp_session_end_code(tool_calls) {
+        let _ = crate::core::telemetry_aggregate::record_feature(code, true);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -415,5 +449,18 @@ mod tests {
                 feature.code()
             ));
         }
+        for code in [MCP_SESSION, MCP_SESSION_EMPTY] {
+            assert!(
+                crate::core::telemetry_v2::valid_feature_code(code),
+                "{code}"
+            );
+        }
+    }
+
+    #[test]
+    fn only_a_session_without_tool_calls_is_marked_empty() {
+        assert_eq!(mcp_session_end_code(0), Some("mcp.session.empty"));
+        assert_eq!(mcp_session_end_code(1), None);
+        assert_eq!(mcp_session_end_code(u64::MAX), None);
     }
 }

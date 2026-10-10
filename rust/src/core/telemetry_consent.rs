@@ -19,7 +19,7 @@ pub const DISCLOSURE: &[&str] = &[
     "the most frequent error messages per tool, with every path, name, value and number replaced by a placeholder on your machine",
     "daily counts of the LeanCTX commands and background features you use (for example `pack export` or an index build) and how many failed, never their arguments",
     "your daily usage record (as `lean-ctx gain` shows it, last 90 days): operations and tokens before/after compression, lifetime totals, month of first use",
-    "session counts and uptime, error categories, version upgrades",
+    "session counts and uptime (including MCP server starts that answered no tool call), error categories, version upgrades",
     "aggregate autopilot, sync and plan events (counts only)",
 ];
 
@@ -33,8 +33,8 @@ const NOTICE_VERSION: u32 = 2;
 
 /// Environment variables that mark a CI or build job. Each job usually starts
 /// from a fresh home and would report as a brand-new installation, so CI never
-/// collects or sends telemetry.
-const CI_MARKERS: &[&str] = &[
+/// collects or sends telemetry. Each one is also a `host_env` key.
+pub(crate) const CI_MARKERS: &[&str] = &[
     "GITHUB_ACTIONS",
     "GITLAB_CI",
     "BUILDKITE",
@@ -63,15 +63,17 @@ pub fn ci_detected(lookup: impl Fn(&str) -> Option<String>) -> bool {
     ci_flag || CI_MARKERS.iter().any(|key| set(key))
 }
 
-/// Whether this process runs inside a CI job. `LEAN_CTX_TELEMETRY_IN_CI=1`
-/// opts a machine that sets a CI marker for other reasons back in.
+/// Whether this process runs inside a CI job, also when its client hid the
+/// job's environment (`host_env`). `LEAN_CTX_TELEMETRY_IN_CI=1` opts a
+/// machine that sets a CI marker for other reasons back in.
 pub fn running_in_ci() -> bool {
     // Unit tests run inside CI themselves; detection is covered by `ci_detected`.
     if cfg!(test) {
         return false;
     }
-    let opted_in = std::env::var("LEAN_CTX_TELEMETRY_IN_CI").is_ok_and(|value| value.trim() == "1");
-    !opted_in && ci_detected(|key| std::env::var(key).ok())
+    let opted_in = crate::core::host_env::var("LEAN_CTX_TELEMETRY_IN_CI")
+        .is_some_and(|value| value.trim() == "1");
+    !opted_in && ci_detected(crate::core::host_env::var)
 }
 
 /// Lines describing what is collected, for setup and `telemetry on`.
@@ -190,8 +192,8 @@ pub(crate) fn telemetry_would_send() -> bool {
         return false;
     };
     config.telemetry.send_eligible(
-        std::env::var("DO_NOT_TRACK").ok().as_deref(),
-        std::env::var("LEAN_CTX_TELEMETRY").ok().as_deref(),
+        crate::core::host_env::var("DO_NOT_TRACK").as_deref(),
+        crate::core::host_env::var("LEAN_CTX_TELEMETRY").as_deref(),
     ) && !running_in_ci()
 }
 

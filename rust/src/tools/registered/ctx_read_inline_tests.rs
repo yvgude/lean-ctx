@@ -1433,3 +1433,68 @@ fn auto_inferred_tasks_are_tagged_with_the_marker_we_filter_on() {
     assert_eq!(intent.as_deref(), Some("inferred"));
     assert!(!task_intent_steers_read(intent.as_deref()));
 }
+
+fn read_args(
+    path: &std::path::Path,
+    extra: &serde_json::Value,
+) -> serde_json::Map<String, serde_json::Value> {
+    let mut args = json!({ "path": path.to_string_lossy() })
+        .as_object()
+        .unwrap()
+        .clone();
+    if let Some(extra) = extra.as_object() {
+        args.extend(extra.clone());
+    }
+    args
+}
+
+/// Reads that agents make every day and that used to fail: an empty file, an
+/// SVG, a directory. Each one now answers instead of returning an error.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn empty_file_svg_and_directory_are_answered_not_rejected() {
+    let _data_dir = crate::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+
+    let empty = dir.path().join("empty.txt");
+    std::fs::write(&empty, b"").unwrap();
+    for extra in [
+        json!({}),
+        json!({ "fresh": true }),
+        json!({ "mode": "full" }),
+    ] {
+        let ctx = engine_test_context(dir.path(), &empty);
+        let output =
+            tokio::task::block_in_place(|| CtxReadTool.handle(&read_args(&empty, &extra), &ctx))
+                .unwrap_or_else(|error| {
+                    panic!("empty file ({extra}) must not fail: {}", error.message)
+                });
+        assert!(
+            output.text.contains("empty file (0 bytes)"),
+            "{}",
+            output.text
+        );
+    }
+
+    let svg = dir.path().join("logo.svg");
+    std::fs::write(
+        &svg,
+        "<svg xmlns=\"http://www.w3.org/2000/svg\"><rect id=\"brand-mark\"/></svg>\n",
+    )
+    .unwrap();
+    let ctx = engine_test_context(dir.path(), &svg);
+    let output = tokio::task::block_in_place(|| {
+        CtxReadTool.handle(&read_args(&svg, &json!({ "mode": "full" })), &ctx)
+    })
+    .unwrap_or_else(|error| panic!("svg must be read as text: {}", error.message));
+    assert!(output.text.contains("brand-mark"), "{}", output.text);
+
+    let sub = dir.path().join("src");
+    std::fs::create_dir(&sub).unwrap();
+    std::fs::write(sub.join("main.rs"), "fn main() {}\n").unwrap();
+    let ctx = engine_test_context(dir.path(), &sub);
+    let output =
+        tokio::task::block_in_place(|| CtxReadTool.handle(&read_args(&sub, &json!({})), &ctx))
+            .unwrap_or_else(|error| panic!("a directory must list its entries: {}", error.message));
+    assert!(output.text.contains("is a directory"), "{}", output.text);
+    assert!(output.text.contains("main.rs"), "{}", output.text);
+}

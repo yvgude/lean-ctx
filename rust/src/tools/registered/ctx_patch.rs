@@ -78,6 +78,9 @@ impl McpTool for CtxPatchTool {
         args: &Map<String, Value>,
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
+        let inferred = infer_replace_unique(args);
+        let args = inferred.as_ref().unwrap_or(args);
+
         // replace_symbol is a whole-symbol rewrite — delegate to the LSP/IDE-aware
         // ctx_refactor so there is one symbol-edit implementation (epic #1008).
         if crate::tools::ctx_patch::is_replace_symbol(args) {
@@ -178,6 +181,34 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
         shell_outcome: None,
         content_blocks: None,
     })
+}
+
+/// An edit that carries old and new text but no `op` can only be
+/// `replace_unique` (every other op needs line numbers or a symbol). Infer it,
+/// at the top level and per `ops[]` entry, instead of rejecting the call with
+/// "missing 'op'". `None` when nothing needed inferring.
+fn infer_replace_unique(args: &Map<String, Value>) -> Option<Map<String, Value>> {
+    fn is_text_replacement(obj: &Map<String, Value>) -> bool {
+        let text = |keys: [&str; 2]| keys.iter().find_map(|key| obj.get(*key)?.as_str());
+        !obj.contains_key("op")
+            && text(["old_text", "old_string"]).is_some_and(|old| !old.is_empty())
+            && text(["new_text", "new_string"]).is_some()
+    }
+    let mut out = args.clone();
+    let mut inferred = false;
+    if !out.contains_key("ops") && is_text_replacement(&out) {
+        out.insert("op".into(), json!("replace_unique"));
+        inferred = true;
+    }
+    if let Some(Value::Array(ops)) = out.get_mut("ops") {
+        for op in ops.iter_mut().filter_map(Value::as_object_mut) {
+            if is_text_replacement(op) {
+                op.insert("op".into(), json!("replace_unique"));
+                inferred = true;
+            }
+        }
+    }
+    inferred.then_some(out)
 }
 
 /// `Some(op)` when a batch op must be dispatched through its own single-op
@@ -844,5 +875,36 @@ mod batch_grouping_tests {
             args.get("dry_run").and_then(Value::as_bool) == Some(true),
             "dry_run flag preserved in original args"
         );
+    }
+
+    #[test]
+    fn text_replacement_without_op_is_inferred_as_replace_unique() {
+        let top = Map::from_iter([
+            ("path".into(), json!("a.rs")),
+            ("old_string".into(), json!("old")),
+            ("new_string".into(), json!("new")),
+        ]);
+        let inferred = infer_replace_unique(&top).expect("op inferred");
+        assert_eq!(inferred.get("op"), Some(&json!("replace_unique")));
+
+        let batch = Map::from_iter([(
+            "ops".into(),
+            json!([
+                {"path": "a.rs", "old_text": "a", "new_text": "b"},
+                {"op": "set_line", "line": 1, "hash": "aa", "new_text": "x"}
+            ]),
+        )]);
+        let inferred = infer_replace_unique(&batch).expect("op inferred in ops[]");
+        assert_eq!(inferred["ops"][0]["op"], json!("replace_unique"));
+        assert_eq!(inferred["ops"][1]["op"], json!("set_line"));
+
+        // An explicit op, an empty old text or a missing new text stay as sent.
+        for unchanged in [
+            json!({"op": "set_line", "old_text": "a", "new_text": "b"}),
+            json!({"old_text": "", "new_text": "b"}),
+            json!({"old_text": "a"}),
+        ] {
+            assert!(infer_replace_unique(unchanged.as_object().unwrap()).is_none());
+        }
     }
 }

@@ -25,7 +25,7 @@ fn is_failed_daemon_result(output: &str) -> bool {
     if first_line.starts_with("ERROR:") {
         return true;
     }
-    if first_line.starts_with("Cannot read file:") || first_line.starts_with("File is empty:") {
+    if first_line.starts_with("Cannot read file:") {
         return true;
     }
     if !first_line.ends_with(" 0L") {

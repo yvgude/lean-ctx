@@ -114,8 +114,49 @@ pub fn handle(
 ///
 /// `exclude` (path glob, complement of `include`) and `exclude_pattern` (regex
 /// on result lines, like `grep -v`) are the negative filters added in #870.
+///
+/// A pattern that is not valid regex syntax (`foo(`, `a[0`, `fn x(&self`) is
+/// almost always code the agent wants to find verbatim, so it is searched
+/// literally with a one-line note instead of failing the call. Size-limit
+/// errors still fail: escaping cannot make an oversized pattern smaller.
 #[allow(clippy::too_many_arguments)]
 pub fn handle_filtered(
+    pattern: &str,
+    dir: &str,
+    include: Option<&str>,
+    max_results: usize,
+    crp_mode: CrpMode,
+    respect_gitignore: bool,
+    allow_secret_paths: bool,
+    anchored: bool,
+    exclude: Option<&str>,
+    exclude_pattern: Option<&str>,
+) -> SearchOutcome {
+    let literal = matches!(regex::Regex::new(pattern), Err(regex::Error::Syntax(_)))
+        .then(|| regex::escape(pattern));
+    let mut outcome = search_compiled_pattern(
+        literal.as_deref().unwrap_or(pattern),
+        dir,
+        include,
+        max_results,
+        crp_mode,
+        respect_gitignore,
+        allow_secret_paths,
+        anchored,
+        exclude,
+        exclude_pattern,
+    );
+    if literal.is_some() && !outcome.text.starts_with("ERROR:") {
+        outcome.text = format!(
+            "note: '{pattern}' is not valid regex — searched for it literally.\n{}",
+            outcome.text
+        );
+    }
+    outcome
+}
+
+#[allow(clippy::too_many_arguments)]
+fn search_compiled_pattern(
     pattern: &str,
     dir: &str,
     include: Option<&str>,

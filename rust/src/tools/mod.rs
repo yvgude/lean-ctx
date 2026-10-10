@@ -194,10 +194,11 @@ mod resolve_path_tests {
     #[cfg(not(feature = "no-jail"))]
     #[tokio::test]
     #[allow(clippy::await_holding_lock)]
-    async fn resolve_path_auto_registers_language_cache_then_retry_succeeds() {
+    async fn resolve_path_auto_registers_language_cache_and_serves_the_same_call() {
         // #899: reading dependency source in a language cache (here a Go module
-        // cache outside the project) fails closed once with an auto-detect hint,
-        // then resolves on retry — no config edit, no subprocess.
+        // cache outside the project) registers the cache as a read-only root
+        // and resolves in the same call — no "retry", no config edit. Writes
+        // into the cache stay denied.
         let _iso = crate::core::data_dir::isolated_data_dir();
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().join("project");
@@ -220,26 +221,22 @@ mod resolve_path_tests {
             session.shell_cwd = Some(root.to_string_lossy().to_string());
         }
 
-        // First read: fail-closed, with the targeted retry hint.
-        let err = server
-            .resolve_path(&file.to_string_lossy())
-            .await
-            .unwrap_err();
-        assert!(
-            err.contains("Auto-detected Go module cache"),
-            "expected auto-detect hint, got: {err}"
-        );
-        assert!(err.contains("Retry"), "hint must ask for a retry: {err}");
-
-        // Retry: the cache is now a session read-only root, so the read resolves.
         let ok = server
             .resolve_path(&file.to_string_lossy())
             .await
-            .unwrap_or_else(|e| panic!("retry must resolve, got: {e}"));
+            .unwrap_or_else(|e| panic!("first read of a cache file must resolve, got: {e}"));
+        assert!(ok.ends_with("/lib.go"), "resolves the cache file: {ok}");
         assert!(
-            ok.ends_with("/lib.go"),
-            "retry resolves the cache file: {ok}"
+            crate::core::pathjail::is_read_only_path(&file),
+            "the auto-registered cache stays read-only"
         );
+
+        // A second read takes the ordinary path through the read allow-list.
+        let again = server
+            .resolve_path(&file.to_string_lossy())
+            .await
+            .unwrap_or_else(|e| panic!("second read must resolve, got: {e}"));
+        assert_eq!(again, ok);
     }
 
     #[cfg(not(feature = "no-jail"))]

@@ -523,8 +523,8 @@ pub(crate) fn telemetry_v2_batch_with_timeout(
     // A sender may have waited for another lease since its initial precheck.
     let config = crate::core::config::Config::try_load_global()
         .map_err(|_| "Telemetry configuration unavailable".to_string())?;
-    let do_not_track = std::env::var("DO_NOT_TRACK").ok();
-    let telemetry_override = std::env::var("LEAN_CTX_TELEMETRY").ok();
+    let do_not_track = crate::core::host_env::var("DO_NOT_TRACK");
+    let telemetry_override = crate::core::host_env::var("LEAN_CTX_TELEMETRY");
     if !config
         .telemetry
         .send_eligible(do_not_track.as_deref(), telemetry_override.as_deref())
@@ -551,6 +551,7 @@ pub(crate) fn telemetry_v2_batch_with_timeout(
         .map_err(|error| format!("Failed to read response: {error}"))?;
     let json: serde_json::Value =
         serde_json::from_str(&body).map_err(|error| format!("Invalid JSON: {error}"))?;
+    crate::core::telemetry_notices::remember(crate::core::telemetry_notices::from_response(&json));
     Ok(json["message"].as_str().unwrap_or("OK").to_string())
 }
 

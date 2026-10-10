@@ -136,7 +136,7 @@ If you're using `pi-lean-ctx` (Pi editor), make sure you're on the latest versio
 3. Check that your project root is correct: `lean-ctx doctor`
 
 **Q: "path escapes project root" error!**
-Since v3.11.1 every project below your home directory is readable out of the box (`path_jail_scope = "home"`); writes stay in the session's project. From v3.11.2 a path must sit inside a project (a folder with `.git`, `Cargo.toml`, `package.json`, …) — loose files like `~/Documents/taxes.pdf` stay private. If you still see it:
+Since v3.11.3 everything below your home directory is readable and writable out of the box (`path_jail_scope = "home"`), except protected locations like `~/.ssh`, `~/.aws`, `~/.config` and `~/Library`. If you still see it:
 - The error names the fix — usually `lean-ctx allow-path <dir>` for a directory outside `~`, a non-project folder, a sibling project you want to edit, or a protected one like `~/.config/...` (takes effect immediately)
 - Session bound to the wrong project? Run `lean-ctx doctor` — "Project binding" shows a `LEAN_CTX_PROJECT_ROOT` pinned in a global agent config (older setups wrote it); `lean-ctx doctor --fix` removes it, then restart the agent once
 - On an older version: `lean-ctx update`

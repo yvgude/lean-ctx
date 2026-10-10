@@ -55,7 +55,7 @@ fn refusal(path: &Path) -> Option<String> {
     if home.as_deref().is_some_and(|h| h.starts_with(path)) {
         return Some(
             "refusing your home directory or a directory containing it: that would also open \
-             ~/.ssh, ~/.aws and every other protected zone. Projects below ~ are already allowed (path_jail_scope = home); \
+             ~/.ssh, ~/.aws and every other protected zone. Everything else below ~ is already allowed (path_jail_scope = home); \
              allow the one protected directory you need instead."
                 .to_string(),
         );
@@ -159,9 +159,11 @@ fn print_effective() {
         scope.as_str(),
         match scope {
             crate::core::pathjail_scope::PathJailScope::Home =>
-                "(read every project below ~, write the session's own; dot dirs and ~/Library closed)",
+                "(read and write everything below ~; dot dirs and ~/Library closed)",
+            crate::core::pathjail_scope::PathJailScope::Projects =>
+                "(read every project below ~, write the session's own — `lean-ctx config set path_jail_scope home` for all of ~)",
             crate::core::pathjail_scope::PathJailScope::Project =>
-                "(only the active project — `lean-ctx config set path_jail_scope home` for all)",
+                "(only the active project — `lean-ctx config set path_jail_scope home` for all of ~)",
         }
     );
     let entries = current_from_global();
@@ -222,10 +224,10 @@ fn print_usage() {
          \x20      lean-ctx allow-path --list             Show the jail scope + extra directories\n\
          \x20      lean-ctx allow-path --remove <dir>     Remove a directory you added\n\
          \n\
-         With the default `path_jail_scope = home`, every project (a folder with .git,\n\
-         Cargo.toml, package.json, …) below your home directory\n\
-         is readable and the session's own project is writable. Use this to edit another\n\
-         project, for directories outside ~ (/opt/src, /srv/repo) or for one protected\n\
+         With the default `path_jail_scope = home`, everything below your home directory\n\
+         is readable and writable except protected locations (~/.ssh, ~/.config and\n\
+         other dot dirs, ~/Library). Use this for directories outside ~ (/opt/src,\n\
+         /srv/repo) or for one protected\n\
          location (~/.config/myapp). Read + write; takes effect immediately, no restart.\n\
          Example: lean-ctx allow-path /opt/src/vendor-sdk"
     );

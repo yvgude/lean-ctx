@@ -335,6 +335,21 @@ impl CtxReadTool {
             path,
             &mut engine_policy_admission,
         )?;
+        // A directory has no text to read; failing with the OS error ("Is a
+        // directory") left the agent guessing. Answer with its entries, as
+        // ctx_tree would, so the next call can name a file.
+        if !engine_interface_v1 && std::path::Path::new(path).is_dir() {
+            let (tree, _) = crate::tools::ctx_tree::handle(path, 1, false, true);
+            if tree.starts_with("ERROR:") {
+                return Err(ErrorData::invalid_params(tree, None));
+            }
+            return Ok(PreparedRead {
+                output: ToolOutput::simple(format!(
+                    "{path} is a directory — pass one of its files to ctx_read:\n{tree}"
+                )),
+                delivery: None,
+            });
+        }
         if crate::core::binary_detect::is_llm_viewable_image(path) {
             // Text detectors cannot inspect pixels: the gateway says so, and
             // withholds the image where every detector is mandatory.
@@ -856,8 +871,8 @@ impl CtxReadTool {
                                             "ctx_read: skipping cache for empty content: {path_owned}"
                                         );
                                         let _ = tx.send((
-                                            format!("File is empty: {path_owned}"),
-                                            "error".into(),
+                                            empty_file_notice(&path_owned),
+                                            "full".into(),
                                             0,
                                             false,
                                             None,
@@ -1338,7 +1353,7 @@ use helpers::{auto_degrade_read_mode, extract_file_summary, record_attribution_r
 // #660 LOC gate: cache-lock deadline and the uncached fallback (#1925).
 #[path = "ctx_read_uncached.rs"]
 mod uncached;
-use uncached::{PrepareOutcome, cache_lock_deadline, prepare_uncached};
+use uncached::{PrepareOutcome, cache_lock_deadline, empty_file_notice, prepare_uncached};
 
 #[path = "ctx_read_window.rs"]
 mod window;

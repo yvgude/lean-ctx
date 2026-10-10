@@ -183,6 +183,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
         // the client timeouts it was meant to prevent. True crash loops die
         // before this line, so their detection is unaffected.
         core::startup_guard::reset_crash_loop(core::startup_guard::MCP_PROCESS_NAME);
+        core::telemetry_features::record_mcp_session_start();
         // Hosts that keep stdin open and outlive the thread (Codex app-server)
         // trigger neither EOF nor the parent watchdog: release memory when
         // idle, and exit when the operator opted in.
@@ -206,6 +207,7 @@ pub(super) fn run_mcp_server() -> Result<()> {
         // Persist calls since the last periodic fold, then flush them so the
         // session's usage reaches the server today (bounded network wait).
         let _ = tokio::task::spawn_blocking(|| {
+            core::telemetry_features::record_mcp_session_end();
             crate::cloud_sync::send_telemetry(core::telemetry_aggregate::SendTrigger::Exit)
         })
         .await;
@@ -378,6 +380,7 @@ fn spawn_parent_watchdog() {
                         // Same flush set as the clean shutdown path (#550) — the
                         // hand-rolled copy here used to miss the predictor + feedback.
                         core::tool_lifecycle::flush_all();
+                        core::telemetry_features::record_mcp_session_end();
                         crate::cloud_sync::send_telemetry(
                             core::telemetry_aggregate::SendTrigger::Exit,
                         );

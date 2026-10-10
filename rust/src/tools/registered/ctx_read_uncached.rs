@@ -43,8 +43,28 @@ pub(super) enum PrepareOutcome {
     },
 }
 
+/// The answer for a file without content. An empty file is a valid read, not
+/// an error: agents read freshly created or truncated files and must not be
+/// told to retry them.
+pub(super) fn empty_file_notice(path: &str) -> String {
+    format!("{path}: empty file (0 bytes)")
+}
+
+/// The ready result for an empty file, delivered like a cache hit.
+fn empty_file_outcome(path: &str) -> PrepareOutcome {
+    PrepareOutcome::Hit(
+        empty_file_notice(path),
+        "full".to_string(),
+        0,
+        false,
+        None,
+        (0, 0),
+        ReuseOutcome::Cold,
+    )
+}
+
 /// Builds the compute input without touching the cache. `Err` carries the
-/// user-facing message for an empty or unreadable file.
+/// user-facing message for an unreadable file.
 pub(super) fn prepare_uncached(
     preread: Option<String>,
     preread_tokens: Option<usize>,
@@ -57,7 +77,7 @@ pub(super) fn prepare_uncached(
         Some(c) if !c.is_empty() => (c, preread_tokens),
         _ => match crate::tools::ctx_read::read_file_lossy(path) {
             Ok(c) if !c.is_empty() => (c, None),
-            Ok(_) => return Err(format!("File is empty: {path}")),
+            Ok(_) => return Ok(empty_file_outcome(path)),
             Err(e) => return Err(format!("Cannot read file: {path}: {e}")),
         },
     };

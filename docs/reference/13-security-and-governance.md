@@ -93,16 +93,10 @@ lean-ctx security secrets on    # re-enable masking
 
 ## 1. PathJail — your projects, not your secrets
 
-**What it does:** confines lean-ctx's file tools to your code. Since v3.11.1 the
-default scope is **`home`**: every project below your home directory is
-**readable** at once, so working across several repositories needs no
-configuration. A path counts as part of a project when a folder between it and
-`~` holds `.git`, `Cargo.toml`, `package.json` or another project marker. Loose
-personal files — `~/Documents/taxes.pdf`, `~/Downloads`, `~/Desktop` — are not
-code and stay jailed, so a prompt-injected agent cannot pull them into the model
-context (since v3.11.2; v3.11.1 opened every path below `~`). **Writes** stay where they were: the session's own project,
-host-declared roots, and explicit allow entries — an agent in repo A cannot plant
-`~/code/B/.git/hooks/pre-commit` or `~/bin/git`. What stays jailed entirely:
+**What it does:** confines lean-ctx's file tools to your own files. The default
+scope is **`home`**: everything below your home directory is **readable and
+writable** (writes since v3.11.3), so working across several repositories and
+folders needs no configuration. What stays jailed entirely:
 
 | Zone | Examples | Why |
 |------|----------|-----|
@@ -119,6 +113,10 @@ are resolved before every check. If `$HOME` is implausible (`/`, a single
 component like `/root` or `/tmp`, or not owned by you), the `home` scope stays
 off and the project boundary applies.
 
+- **Previous default (read other projects, write only the active one, loose
+  personal files jailed):** `lean-ctx config set path_jail_scope projects` —
+  stops a prompt-injected agent in repo A from planting
+  `~/code/B/.git/hooks/pre-commit` or reading `~/Documents/taxes.pdf`.
 - **Classic single-project boundary:** `lean-ctx config set path_jail_scope project`
   confines tools to the active project plus your allow-lists.
 - **Open one more directory:** `lean-ctx allow-path <dir>` — read *and* write

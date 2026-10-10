@@ -490,9 +490,14 @@ fn handle_symbol(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOut
         });
     }
 
-    let name = get_str(args, "name").ok_or_else(|| {
-        ErrorData::invalid_params("name or handle is required for action=symbol", None)
-    })?;
+    // Agents that pick action=symbol often name the symbol in the field they
+    // used for the other actions; take it instead of failing the call.
+    let name = ["name", "symbol", "query", "pattern"]
+        .iter()
+        .find_map(|key| get_str(args, key).filter(|value| !value.trim().is_empty()))
+        .ok_or_else(|| {
+            ErrorData::invalid_params("name or handle is required for action=symbol", None)
+        })?;
     let file = get_str(args, "file");
     let kind = get_str(args, "kind");
 
@@ -1038,7 +1043,10 @@ fn ext_to_include(ext: &str) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{SearchAction, ext_to_include, resolve_query_cap, validate_query_keys};
+    use super::{
+        SearchAction, ToolContext, ext_to_include, handle_symbol, resolve_query_cap,
+        validate_query_keys,
+    };
     use serde_json::{Map, Value, json};
 
     fn args(pairs: &[(&str, Value)]) -> Map<String, Value> {
@@ -1193,6 +1201,30 @@ mod tests {
         );
         // Nothing recognizable → default regex (the empty-call default).
         assert_eq!(SearchAction::resolve(&args(&[])), SearchAction::Regex);
+    }
+
+    #[test]
+    fn symbol_action_takes_the_name_from_symbol_query_or_pattern() {
+        let dir = tempfile::tempdir().unwrap();
+        std::fs::write(dir.path().join("lib.rs"), "pub fn load_config() {}\n").unwrap();
+        let ctx = ToolContext {
+            project_root: dir.path().to_string_lossy().into_owned(),
+            ..ToolContext::default()
+        };
+        for key in ["symbol", "query", "pattern"] {
+            let call = args(&[("action", json!("symbol")), (key, json!("load_config"))]);
+            if let Err(error) = handle_symbol(&call, &ctx) {
+                assert!(
+                    !error.message.contains("name or handle is required"),
+                    "`{key}` must name the symbol: {}",
+                    error.message
+                );
+            }
+        }
+        let Err(error) = handle_symbol(&args(&[("action", json!("symbol"))]), &ctx) else {
+            panic!("no name at all must still be rejected");
+        };
+        assert!(error.message.contains("name or handle is required"));
     }
 
     #[test]
