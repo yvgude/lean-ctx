@@ -310,32 +310,64 @@ fn windows_cuda_probe_error(
 /// (`onnxruntime_providers_shared.dll`) from its own directory.
 #[cfg(feature = "ort-cuda")]
 fn load_cuda_provider(path: &Path) -> Result<(), String> {
-    // SAFETY: loading the ORT CUDA provider shared library, exactly as ONNX
-    // Runtime itself does when registering the CUDA EP. We drop it immediately;
-    // this only checks that its runtime dependencies resolve.
     #[cfg(target_os = "windows")]
-    let loaded = unsafe {
-        libloading::os::windows::Library::load_with_flags(
-            path,
-            libloading::os::windows::LOAD_WITH_ALTERED_SEARCH_PATH,
-        )
-    }
-    .map(|_lib| ());
-    #[cfg(not(target_os = "windows"))]
-    // SAFETY: as above — the same provider load ORT performs.
-    let loaded = unsafe { libloading::Library::new(path) }.map(|_lib| ());
-
-    loaded.or_else(|e| {
-        let err = e.to_string();
-        // ORT provider plugins are normally loaded by libonnxruntime itself.
-        // A direct dlopen may fail on ORT host symbols after CUDA/cuDNN deps
-        // have resolved; that is still enough for this dependency probe.
-        if err.contains("Provider_GetHost") {
-            Ok(())
-        } else {
-            Err(err)
+    {
+        // SAFETY: loading the ORT CUDA provider shared library, exactly as ONNX
+        // Runtime itself does when registering the CUDA EP. We drop it
+        // immediately; this only checks that its runtime dependencies resolve.
+        unsafe {
+            libloading::os::windows::Library::load_with_flags(
+                path,
+                libloading::os::windows::LOAD_WITH_ALTERED_SEARCH_PATH,
+            )
         }
-    })
+        .map(drop)
+        .or_else(|e| {
+            let code = std::error::Error::source(&e)
+                .and_then(|source| source.downcast_ref::<std::io::Error>())
+                .and_then(std::io::Error::raw_os_error);
+            windows_provider_load_result(&e.to_string(), code)
+        })
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        // SAFETY: as above — the same provider load ORT performs.
+        unsafe { libloading::Library::new(path) }
+            .map(drop)
+            .or_else(|e| {
+                let err = e.to_string();
+                // ORT provider plugins are normally loaded by libonnxruntime
+                // itself. A direct dlopen may fail on ORT host symbols after
+                // CUDA/cuDNN deps have resolved; that is still enough for this
+                // dependency probe.
+                if err.contains("Provider_GetHost") {
+                    Ok(())
+                } else {
+                    Err(err)
+                }
+            })
+    }
+}
+
+/// Windows counterpart of the `Provider_GetHost` case (#2049): the loader
+/// resolves every static import before it runs `DllMain`, so error 1114
+/// (`ERROR_DLL_INIT_FAILED`) means all dependencies loaded and only the
+/// provider's own initialisation refused to run outside ONNX Runtime. Any
+/// other code is a real failure; libloading's text ("LoadLibraryExW failed")
+/// hides it, so it is spelled out.
+fn windows_provider_load_result(message: &str, code: Option<i32>) -> Result<(), String> {
+    let meaning = match code {
+        Some(1114) => return Ok(()),
+        Some(126) => "a DLL it depends on was not found",
+        Some(127) => "a function it imports is missing (mismatched DLL version)",
+        Some(193) => "a DLL is not a valid 64-bit Windows library",
+        Some(_) => "see the Windows error code",
+        None => return Err(message.to_string()),
+    };
+    Err(format!(
+        "{message} (Windows error {}: {meaning})",
+        code.unwrap_or_default()
+    ))
 }
 
 /// Load every CUDA/cuDNN library found in `dirs`, dependencies first, and keep
@@ -1054,6 +1086,23 @@ mod tests {
         touch(&linux_site.join("nvidia/cu13/lib/libcudart.so.13"));
         let linux = cuda_candidate_dirs(&so, &[], &[], None, false, 13);
         assert!(find_cuda_lib(&linux, "libcudart.so.13", false).is_some());
+    }
+
+    /// #2049: the provider's `DllMain` fails with 1114 when loaded outside
+    /// ONNX Runtime although every dependency resolved — that is a pass.
+    #[test]
+    fn windows_provider_init_failure_counts_as_resolved_dependencies() {
+        assert_eq!(
+            windows_provider_load_result("LoadLibraryExW failed", Some(1114)),
+            Ok(())
+        );
+        let missing = windows_provider_load_result("LoadLibraryExW failed", Some(126)).unwrap_err();
+        assert!(missing.contains("Windows error 126"), "{missing}");
+        assert!(missing.contains("not found"), "{missing}");
+        assert_eq!(
+            windows_provider_load_result("LoadLibraryExW failed", None),
+            Err("LoadLibraryExW failed".to_string())
+        );
     }
 
     #[test]
