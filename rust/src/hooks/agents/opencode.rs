@@ -361,8 +361,7 @@ pub(crate) fn release_opencode_native_tool_gates(home: &std::path::Path) -> bool
         return false;
     }
     serde_json::to_string_pretty(&json)
-        .ok()
-        .is_some_and(|out| crate::config_io::write_atomic_with_backup(&path, &out).is_ok())
+        .is_ok_and(|out| crate::config_io::write_atomic_with_backup(&path, &out).is_ok())
 }
 
 /// Remove shadow-mode permission denies from opencode.json. Only removes
