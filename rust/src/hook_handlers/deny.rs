@@ -954,6 +954,53 @@ mod tests {
         );
     }
 
+    /// Every host's spelling of a native file, search or shell tool passes a
+    /// `hook deny` left from an earlier Replace default — Cursor's `Shell` and
+    /// `read_file`, Gemini's `run_shell_command`, Windsurf's `run_command`,
+    /// Copilot's `powershell`, Claude's `Grep` — until Replace is chosen.
+    #[test]
+    fn no_host_spelling_is_refused_by_default() {
+        let _env = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_HOOK_MODE");
+        let names = [
+            "Read",
+            "read",
+            "ReadFile",
+            "read_file",
+            "View",
+            "view",
+            "Grep",
+            "grep",
+            "Search",
+            "search",
+            "Glob",
+            "glob",
+            "ListFiles",
+            "list_files",
+            "ListDirectory",
+            "list_directory",
+            "list_dir",
+            "Bash",
+            "bash",
+            "Shell",
+            "shell_command",
+            "run_terminal_command",
+            "run_shell_command",
+            "run_command",
+            "execute_command",
+            "powershell",
+            "PowerShell",
+        ];
+        for name in names {
+            let payload = format!(r#"{{"tool_name":"{name}","tool_input":{{"command":"pwd"}}}}"#);
+            assert!(
+                should_allow(name, Some("/home/u/project/src/main.rs"), &payload),
+                "{name} must not be refused in the default mode"
+            );
+        }
+    }
+
     #[test]
     fn should_allow_lean_ctx_tools() {
         assert!(should_allow("ctx_tree", None, "{}"));

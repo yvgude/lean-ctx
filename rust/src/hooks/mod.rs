@@ -292,6 +292,10 @@ pub fn refresh_installed_hooks() {
     let Some(home) = crate::core::home::resolve_home_dir() else {
         return;
     };
+    // OpenCode is refreshed by `setup`, not here — except its native-tool
+    // gates: "ask" refuses calls like a deny hook, and an update through a
+    // package manager never reaches setup.
+    agents::release_opencode_native_tool_gates(&home);
     for agent in REFRESHABLE_HOOK_AGENTS {
         if hooks_installed_for(agent, &home) {
             refresh_agent_hooks(agent, &home);
@@ -364,8 +368,8 @@ fn refresh_agent_hooks(agent: &str, home: &std::path::Path) {
         "codebuddy" => {
             install_codebuddy_hook_scripts(home);
             install_codebuddy_hook_config(home);
-            if mode == HookMode::Replace {
-                install_codebuddy_permissions_deny_replace(home);
+            if claude_hides_native_search(mode) {
+                install_codebuddy_permissions_deny_replace(home, mode);
             }
         }
         "cursor" => {
@@ -1199,7 +1203,7 @@ pub(crate) fn install_agent_runtime_hook_with_mode(agent: &str, global: bool, mo
             install_claude_hook_config(&home);
             install_claude_statusline(&home);
 
-            if mode == HookMode::Replace {
+            if claude_hides_native_search(mode) {
                 install_claude_permissions_deny_replace(&home);
             }
 
@@ -1209,8 +1213,8 @@ pub(crate) fn install_agent_runtime_hook_with_mode(agent: &str, global: bool, mo
             install_codebuddy_hook_scripts(&home);
             install_codebuddy_hook_config(&home);
 
-            if mode == HookMode::Replace {
-                install_codebuddy_permissions_deny_replace(&home);
+            if claude_hides_native_search(mode) {
+                install_codebuddy_permissions_deny_replace(&home, mode);
             }
         }
         "cursor" => {
