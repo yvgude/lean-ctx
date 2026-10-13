@@ -40,6 +40,24 @@
       "description": "Draw ctx_patch diffs with line numbers and colored markers, and ctx_read / ctx_search code syntax-highlighted. Display only: Claude receives the output unchanged.",
       "default": true
     },
+    "cockpit_pulse_line": {
+      "type": "boolean",
+      "title": "Show the LeanCTX pulse line",
+      "description": "Show the line above the prompt that follows lean-ctx calls while Claude works. /cockpit pulse off and /cockpit pulse on change it.",
+      "default": true
+    },
+    "cockpit_turn_cards": {
+      "type": "boolean",
+      "title": "Show LeanCTX turn and milestone cards",
+      "description": "Show a short card above the prompt when a turn ends or a milestone is reached. /cockpit cards off and /cockpit cards on change it; the sidebar keeps both.",
+      "default": true
+    },
+    "wake_on_job_finish": {
+      "type": "boolean",
+      "title": "Wake Claude when a lean-ctx background job finishes",
+      "description": "Watch ctx_shell background jobs and start a turn when they finish (shown as a prompt from the lean-ctx plugin). Jobs finishing close together share one wake. Off: Claude checks a job's status itself.",
+      "default": true
+    },
     "keep_hook_context": {
       "type": "boolean",
       "title": "Keep lean-ctx hook context",

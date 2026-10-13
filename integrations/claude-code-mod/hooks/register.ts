@@ -27,6 +27,9 @@ const SHELL_TOOLS = new Set(["ctx_shell", "shell"]);
 const WATCH_CONTEXT =
   "This background job is being watched; you will be woken automatically on completion, so do not poll or sleep.";
 const WATCH_INTERVAL_MS = 2_000;
+// A submitted wake normally starts its turn within seconds; after this many
+// watcher ticks' worth it is treated as gone, so held jobs never stay stuck.
+const WAKE_IN_FLIGHT_MAX_MS = 60_000;
 // Consecutive unreadable status checks before a job is handed back to the
 // model's own polling; one transient MCP hiccup must not drop the watch.
 const MAX_STATUS_MISSES = 5;
@@ -166,6 +169,15 @@ let watcherTickInProgress = false;
 // may have read the job itself — so finished jobs wait in `pendingWakes`.
 let mainTurnActive = false;
 const pendingWakes = new Map<string, FinishedJob>();
+// Watcher ticks since the last wake was submitted, until its turn starts. Jobs
+// that finish meanwhile are held too: every wake is a visible prompt row and a
+// turn, and in that turn the model often reads the other jobs itself, which
+// drops them.
+let wakeInFlightTicks: number | undefined;
+
+function isWakeInFlight(): boolean {
+  return wakeInFlightTicks !== undefined && wakeInFlightTicks * WATCH_INTERVAL_MS < WAKE_IN_FLIGHT_MAX_MS;
+}
 let leanCtxSeen = false;
 // The lean-ctx MCP server name as this session spells it (`lean-ctx`/`lean_ctx`).
 let leanServer: string | undefined;
@@ -183,12 +195,17 @@ export const register: Register = (on, options) => {
     {
       onTurnStart: () => {
         mainTurnActive = true;
+        wakeInFlightTicks = undefined;
       },
       onMainTurnComplete: () => {
         mainTurnActive = false;
       },
     },
-    { panel: asRecord(options).cockpit_panel !== false },
+    {
+      panel: asRecord(options).cockpit_panel !== false,
+      pulse: asRecord(options).cockpit_pulse_line !== false,
+      cards: asRecord(options).cockpit_turn_cards !== false,
+    },
   );
   // ctx_patch / ctx_read / ctx_search results drawn as diffs and code
   // (render.tsx). Display only: the model receives every result unchanged.
@@ -196,6 +213,8 @@ export const register: Register = (on, options) => {
   const frontLoaded = getFrontLoadedTools(options);
   const shapeNative = asRecord(options).shape_native_output !== false;
   const keepHookContext = asRecord(options).keep_hook_context === true;
+  // Off: background jobs are not watched and the model checks them itself.
+  const wakeOnFinish = asRecord(options).wake_on_job_finish !== false;
 
   on("tool.describe", { tool: LEAN_CTX_TOOL_PATTERN }, async ($, event) => {
     const match = getLeanCtxTool(event.tool);
@@ -216,7 +235,7 @@ export const register: Register = (on, options) => {
   // for a given configuration, so it never churns the prompt cache.
   on("skill.prompt", { skill: "lean-ctx" }, async ($, event, next) => {
     const base = await next(event);
-    return { text: `${liveSkillHeader(frontLoaded, shapeNative)}\n\n${base.text}` };
+    return { text: `${liveSkillHeader(frontLoaded, shapeNative, wakeOnFinish)}\n\n${base.text}` };
   });
 
   // The MCP instructions and live skill carry the durable guidance. Drop only
@@ -290,7 +309,7 @@ export const register: Register = (on, options) => {
       return { result: sleepAnswer() };
     }
 
-    if (SHELL_TOOLS.has(leanCtxTool.tool) && fields.run_in_background) {
+    if (SHELL_TOOLS.has(leanCtxTool.tool) && fields.run_in_background && wakeOnFinish) {
       const result = await next(event);
       const jobId = extractJobId(result);
       if (!jobId) return result;
@@ -442,11 +461,13 @@ async function sessionState($: EngineInterface, server: string): Promise<string 
   }
 }
 
-function liveSkillHeader(frontLoaded: Set<string>, shapeNative: boolean): string {
+function liveSkillHeader(frontLoaded: Set<string>, shapeNative: boolean, wakeOnFinish: boolean): string {
   const front = [...frontLoaded].sort().join(", ");
   return [
     "## Live in this session (lean-ctx Claude Code mod)",
-    "- Background jobs (`ctx_shell(run_in_background=true)` or Bash `run_in_background`) wake you when they finish: start them, then continue other work or end the turn. Never `sleep` or poll their status.",
+    wakeOnFinish
+      ? "- Background jobs (`ctx_shell(run_in_background=true)` or Bash `run_in_background`) wake you when they finish: start them, then continue other work or end the turn. Never `sleep` or poll their status."
+      : "- Bash `run_in_background` jobs wake you when they finish. `ctx_shell(run_in_background=true)` jobs do not: check one with `ctx_shell(background_action=\"status\", job_id=…)` once you need its result.",
     `- In your tool list: ${front}. Other lean-ctx tools load with one ToolSearch \`select:\` or run via \`ctx_call\`.`,
     shapeNative
       ? "- Native Bash output is compressed automatically (a recovery handle ends any lossy result); there is no need to route commands through ctx_shell just for compression."
@@ -579,7 +600,7 @@ function stopWatcherWhenIdle(): void {
 
 // Deliver the held wakes of jobs the model has not read itself, as one wake.
 function flushPendingWakes($: EngineInterface): void {
-  if (mainTurnActive || pendingWakes.size === 0) return;
+  if (mainTurnActive || isWakeInFlight() || pendingWakes.size === 0) return;
   const finished = [...pendingWakes.values()];
   pendingWakes.clear();
   stopWatcherWhenIdle();
@@ -587,6 +608,7 @@ function flushPendingWakes($: EngineInterface): void {
 }
 
 async function pollWatchedJobs($: EngineInterface): Promise<void> {
+  if (wakeInFlightTicks !== undefined) wakeInFlightTicks += 1;
   // The tick doubles as the fallback flush once no turn runs.
   flushPendingWakes($);
   if (watcherTickInProgress || watchedJobs.size === 0) return;
@@ -629,8 +651,9 @@ async function pollWatchedJobs($: EngineInterface): Promise<void> {
       watchedJobs.delete(check.key);
       if (!check.response) continue;
       const done = { job: check.job, status: check.status, response: check.response };
-      // Mid-turn, hold the wake: the model may still read this job itself.
-      if (mainTurnActive) pendingWakes.set(check.key, done);
+      // Mid-turn, or while an earlier wake waits for its turn, hold the wake:
+      // the model may still read this job itself.
+      if (mainTurnActive || isWakeInFlight()) pendingWakes.set(check.key, done);
       else finished.push(done);
     }
     stopWatcherWhenIdle();
@@ -776,6 +799,11 @@ function removeJoinedTextBlock(text: string, block: LeanCtxHookTextBlock): strin
 }
 
 function submitWake($: EngineInterface, text: string): void {
+  wakeInFlightTicks = 0;
+  // A wake that never got through holds nothing back.
+  const failed = () => {
+    wakeInFlightTicks = undefined;
+  };
   try {
     void $.prompt
       .submit({ text })
@@ -784,9 +812,11 @@ function submitWake($: EngineInterface, text: string): void {
       })
       .catch(() => {
         // A failed wake leaves native status polling available.
+        failed();
       });
   } catch {
     // A failed wake leaves native status polling available.
+    failed();
   }
 }
 
@@ -901,6 +931,7 @@ function resetSessionState(): void {
   metrics.droppedHookChars = 0;
   metrics.compactions = 0;
   resumePending = false;
+  wakeInFlightTicks = undefined;
   watchedJobs.clear();
   stopWatcherWhenIdle();
 }
