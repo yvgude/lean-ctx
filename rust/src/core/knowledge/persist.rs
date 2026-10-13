@@ -13,6 +13,13 @@ fn knowledge_dir(project_hash: &str) -> Result<PathBuf, String> {
         .join(project_hash))
 }
 
+/// How long a knowledge write waits for the project's in-process and file
+/// locks. Bounded, so a stuck holder cannot hang a tool call; long enough that
+/// parallel `remember` calls on a loaded machine queue instead of failing,
+/// which would lose the fact #326 is about (2 s did not hold on a busy CI
+/// runner with seven writers).
+const KNOWLEDGE_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
 /// Per-project-hash mutex registry. Serializes the read-modify-write cycle of
 /// `mutate_locked` so concurrent `remember` calls within a single process (e.g.
 /// parallel MCP tool calls) cannot clobber each other (issue #326). The outer
@@ -392,7 +399,7 @@ impl ProjectKnowledge {
         use fs2::FileExt;
         let hash = hash_project_root(project_root);
         let lock = knowledge_lock(&hash);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        let deadline = std::time::Instant::now() + KNOWLEDGE_LOCK_WAIT;
         let _guard = loop {
             match lock.try_lock() {
                 Ok(guard) => break guard,

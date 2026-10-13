@@ -60,9 +60,13 @@ impl HookMode {
     }
 }
 
-/// Agents with reliable shell + hook infrastructure that support Replace mode
+/// Agents with reliable shell + hook infrastructure that *can* run Replace mode
 /// (native tools denied, lean-ctx MCP is the only path). These agents have
 /// either `permissions.deny` support or PreToolUse deny-hook capability.
+///
+/// Replace is opt-in (`hook_mode = "replace"`): denying native tools made
+/// agents fail and retry instead of working, so these agents default to Hybrid
+/// like every other hook-capable agent.
 pub const REPLACE_AGENTS: &[&str] = &[
     "cursor",
     "claude",
@@ -128,34 +132,62 @@ pub fn is_supported_agent(agent: &str) -> bool {
 
 /// Auto-detect the best hook mode for a given agent key.
 ///
-/// Priority: disabled/shadow_mode cap > config override > Replace > Hybrid > Mcp
-/// - Replace: native tools denied, MCP-only path (zero tool drift)
-/// - Hybrid: MCP + shell hooks (fallback for agents without deny support)
+/// Priority: disabled/shadow_mode cap > config override > Hybrid > Mcp
+/// - Replace: native tools denied, MCP-only path — only when the user chose it
+///   (`hook_mode = "replace"`, `LEAN_CTX_HOOK_MODE=replace`, `harden --hard`)
+/// - Hybrid: MCP + shell hooks; native tools keep working, known commands
+///   are rewritten through lean-ctx (default for every hook-capable agent)
 /// - Mcp: MCP server only (no shell hooks available)
 ///
 /// `LEAN_CTX_DISABLED=1` or `shadow_mode = false` cap the mode at Hybrid so
 /// the deny-list is never injected when the user opted out (#1037).
 pub fn recommend_hook_mode(agent_key: &str) -> HookMode {
-    let deny_suppressed = is_deny_suppressed();
     if let Some(override_mode) = crate::core::config::Config::load().hook_mode_override() {
-        return if deny_suppressed {
+        return if is_deny_suppressed() {
             override_mode.cap_at_hybrid()
         } else {
             override_mode
         };
     }
-    if deny_suppressed {
-        if REPLACE_AGENTS.contains(&agent_key) || HYBRID_AGENTS.contains(&agent_key) {
-            return HookMode::Hybrid;
-        }
-        return HookMode::Mcp;
-    }
-    if REPLACE_AGENTS.contains(&agent_key) {
-        HookMode::Replace
-    } else if HYBRID_AGENTS.contains(&agent_key) {
+    if REPLACE_AGENTS.contains(&agent_key) || HYBRID_AGENTS.contains(&agent_key) {
         HookMode::Hybrid
     } else {
         HookMode::Mcp
+    }
+}
+
+/// True when native-tool denial is in effect: the user chose Replace and has
+/// not suppressed denials (#1037). Deny hooks consult this at call time, so a
+/// hook entry written while Replace was the default stops blocking the moment
+/// the binary updates — no settings rewrite has to happen first.
+#[must_use]
+pub fn replace_mode_chosen() -> bool {
+    crate::core::config::Config::load().hook_mode_override() == Some(HookMode::Replace)
+        && !is_deny_suppressed()
+}
+
+/// Whether Claude Code (and CodeBuddy, which shares its contract) keeps native
+/// Grep/Glob out of the model's tool list via `permissions.deny`.
+///
+/// Unlike a hook denial this costs no error and no retry: Claude Code drops a
+/// denied tool from the list, so the model never calls it. And it keeps
+/// searches on the compressed path — native Glob cannot be redirected (#1033).
+/// Measured 2026-10-13 over 30 days: 0 Grep/Glob calls and 0 denials in 380
+/// Claude sessions with the list, while native Glob returned ~12× the tokens
+/// of `ctx_glob` for the same patterns. So the default (auto) mode keeps it;
+/// an explicit `hook_mode = "hybrid"`/`"mcp"`, `shadow_mode = false` or
+/// `LEAN_CTX_DISABLED` give the tools back.
+#[must_use]
+pub fn claude_hides_native_search(mode: HookMode) -> bool {
+    match mode {
+        HookMode::Replace => true,
+        HookMode::Hybrid => {
+            crate::core::config::Config::load()
+                .hook_mode_override()
+                .is_none()
+                && !is_deny_suppressed()
+        }
+        HookMode::Mcp => false,
     }
 }
 
@@ -260,6 +292,10 @@ pub fn refresh_installed_hooks() {
     let Some(home) = crate::core::home::resolve_home_dir() else {
         return;
     };
+    // OpenCode is refreshed by `setup`, not here — except its native-tool
+    // gates: "ask" refuses calls like a deny hook, and an update through a
+    // package manager never reaches setup.
+    agents::release_opencode_native_tool_gates(&home);
     for agent in REFRESHABLE_HOOK_AGENTS {
         if hooks_installed_for(agent, &home) {
             refresh_agent_hooks(agent, &home);
@@ -325,15 +361,15 @@ fn refresh_agent_hooks(agent: &str, home: &std::path::Path) {
             // The value status line shipped in 3.10.3 but was only written by
             // `init --agent claude`, so every existing install missed it.
             install_claude_statusline(home);
-            if mode == HookMode::Replace {
+            if claude_hides_native_search(mode) {
                 install_claude_permissions_deny_replace(home);
             }
         }
         "codebuddy" => {
             install_codebuddy_hook_scripts(home);
             install_codebuddy_hook_config(home);
-            if mode == HookMode::Replace {
-                install_codebuddy_permissions_deny_replace(home);
+            if claude_hides_native_search(mode) {
+                install_codebuddy_permissions_deny_replace(home, mode);
             }
         }
         "cursor" => {
@@ -1167,7 +1203,7 @@ pub(crate) fn install_agent_runtime_hook_with_mode(agent: &str, global: bool, mo
             install_claude_hook_config(&home);
             install_claude_statusline(&home);
 
-            if mode == HookMode::Replace {
+            if claude_hides_native_search(mode) {
                 install_claude_permissions_deny_replace(&home);
             }
 
@@ -1177,8 +1213,8 @@ pub(crate) fn install_agent_runtime_hook_with_mode(agent: &str, global: bool, mo
             install_codebuddy_hook_scripts(&home);
             install_codebuddy_hook_config(&home);
 
-            if mode == HookMode::Replace {
-                install_codebuddy_permissions_deny_replace(&home);
+            if claude_hides_native_search(mode) {
+                install_codebuddy_permissions_deny_replace(&home, mode);
             }
         }
         "cursor" => {

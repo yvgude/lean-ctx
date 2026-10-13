@@ -35,6 +35,9 @@ pub const REGISTER_TS: &str = include_str!("../../templates/claude_mod/register.
 pub const HOOKS_JSON: &str = include_str!("../../templates/claude_mod/hooks.json");
 /// The cockpit (sidebar, pulse line, overlays), imported by `register.ts`.
 pub const COCKPIT_TSX: &str = include_str!("../../templates/claude_mod/cockpit.tsx");
+/// ctx_patch / ctx_read / ctx_search results drawn as diffs and code,
+/// imported by `register.ts`.
+pub const RENDER_TSX: &str = include_str!("../../templates/claude_mod/render.tsx");
 /// The `$.state` contract the manifest names as `types`.
 pub const TYPES_DTS: &str = include_str!("../../templates/claude_mod/cockpit.d.ts");
 /// Source manifest; [`plugin_manifest`] stamps the engine version into it.
@@ -80,7 +83,14 @@ impl ModStatus {
 #[must_use]
 pub fn mod_version() -> String {
     let mut hasher = blake3::Hasher::new();
-    for part in [REGISTER_TS, COCKPIT_TSX, TYPES_DTS, HOOKS_JSON, PLUGIN_JSON] {
+    for part in [
+        REGISTER_TS,
+        COCKPIT_TSX,
+        RENDER_TSX,
+        TYPES_DTS,
+        HOOKS_JSON,
+        PLUGIN_JSON,
+    ] {
         hasher.update(part.as_bytes());
         hasher.update(&[0]);
     }
@@ -138,7 +148,7 @@ fn marketplace_manifest() -> String {
 /// whose bytes differ are rewritten. Returns whether anything changed.
 pub fn materialize(root: &Path) -> Result<bool, String> {
     let plugin = root.join("plugins").join("lean-ctx");
-    let files: [(PathBuf, String); 6] = [
+    let files: [(PathBuf, String); 7] = [
         (
             root.join(".claude-plugin/marketplace.json"),
             marketplace_manifest(),
@@ -147,6 +157,7 @@ pub fn materialize(root: &Path) -> Result<bool, String> {
         (plugin.join("hooks/hooks.json"), HOOKS_JSON.to_string()),
         (plugin.join("hooks/register.ts"), REGISTER_TS.to_string()),
         (plugin.join("hooks/cockpit.tsx"), COCKPIT_TSX.to_string()),
+        (plugin.join("hooks/render.tsx"), RENDER_TSX.to_string()),
         (plugin.join("types/index.d.ts"), TYPES_DTS.to_string()),
     ];
     let mut changed = false;

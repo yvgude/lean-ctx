@@ -219,16 +219,19 @@ function cockpitEngine(on: Parameters<Parameters<typeof test>[1]>[1]) {
     closed.push(event.id);
     return { value: undefined };
   });
+  const toggle = (option: string, label: string) => ({
+    key: `lean-ctx.${option}`,
+    label,
+    kind: "toggle" as const,
+    value: true,
+    provider: { kind: "plugin" as const, name: "lean-ctx" },
+    isLocked: false,
+  });
   on("config.list", () => ({
     value: [
-      {
-        key: "lean-ctx.cockpit_panel",
-        label: "Open the LeanCTX cockpit sidebar",
-        kind: "toggle",
-        value: true,
-        provider: { kind: "plugin", name: "lean-ctx" },
-        isLocked: false,
-      },
+      toggle("cockpit_panel", "Open the LeanCTX cockpit sidebar"),
+      toggle("cockpit_pulse_line", "Show the LeanCTX pulse line"),
+      toggle("cockpit_turn_cards", "Show LeanCTX turn and milestone cards"),
     ],
   }));
   on("config.set", ($, event) => {
@@ -265,6 +268,31 @@ test("/cockpit off closes the sidebar and keeps it closed; /cockpit on brings it
   const usage = await runCockpit($, "toggle");
   expect(usage.text).toContain("Usage: /cockpit");
   expect(engine.written.length).toBe(2);
+});
+
+test("/cockpit pulse|cards on|off keep the lines above the prompt off or on without touching the sidebar", async ($, on) => {
+  const engine = cockpitEngine(on);
+  await $.session.start({ surface: "terminal", isInteractive: true, cwd: "/work" });
+
+  const pulseOff = await runCockpit($, "pulse off");
+  expect(pulseOff.text).toContain("pulse line off");
+  expect(pulseOff.text).toContain("/cockpit pulse on");
+  const cardsOff = await runCockpit($, " Cards  OFF ");
+  expect(cardsOff.text).toContain("turn and milestone cards off");
+  const cardsOn = await runCockpit($, "cards on");
+  expect(cardsOn.text).toContain("cards on, now and in new sessions");
+  expect(engine.written).toEqual([
+    { key: "lean-ctx.cockpit_pulse_line", value: false },
+    { key: "lean-ctx.cockpit_turn_cards", value: false },
+    { key: "lean-ctx.cockpit_turn_cards", value: true },
+  ]);
+  expect(engine.closed).toEqual([]);
+  expect(engine.opened).toEqual(["leanctx-cockpit"]);
+
+  for (const bad of ["pulse", "cards maybe", "pulse off now"]) {
+    expect((await runCockpit($, bad)).text).toContain("Usage: /cockpit");
+  }
+  expect(engine.written.length).toBe(3);
 });
 
 test("with cockpit_panel off a session starts without the sidebar; /cockpit still opens it once", { options: { cockpit_panel: false } }, async ($, on) => {
@@ -560,6 +588,120 @@ test("a job finished mid-turn wakes only if the model has not read it by turn en
   expect(wakes.length).toBe(1);
   expect(wakes[0]).toContain("Job shell_unread finished");
   expect(wakes[0]).not.toContain("shell_read finished");
+});
+
+// User report (2026-10-13): jobs finishing one after another while Claude was
+// idle each submitted their own wake, a row of "Prompt from the lean-ctx
+// plugin" entries and a turn each. A wake still waiting for its turn now holds
+// later finishes; the model usually reads them in that turn.
+function stagedJobs(on: Parameters<Parameters<typeof test>[1]>[1]) {
+  const clock = mock.clock(on);
+  const wakes: string[] = [];
+  const finished = new Set<string>();
+  const status = (jobId: string) =>
+    finished.has(jobId) ? { jobId, state: "completed", exitCode: 0 } : { jobId, state: "running" };
+  on("command.register", ($, event) => ({ value: { command: event.name } }));
+  on("tool.call", ($, event) => {
+    const fields = event as unknown as Record<string, unknown>;
+    if (fields.background_action) {
+      const s = status(String(fields.job_id));
+      return {
+        result: { content: [{ type: "text", text: JSON.stringify(s) }], structuredContent: s, isError: false },
+        text: JSON.stringify(s),
+      };
+    }
+    return toolResult(`{"jobId":"${String(fields.command)}","state":"running","summary":"background job started"}`);
+  });
+  on("mcp.call", ($, event) => {
+    const s = status(String((event.args as Record<string, unknown>).job_id));
+    return { value: { content: [{ type: "text", text: "" }], structuredContent: s, isError: false } };
+  });
+  on("prompt.submit", ($, event) => {
+    wakes.push(event.text);
+    return { text: event.text };
+  });
+  on("turn.start", ($, event) => ({ turnId: event.turnId }));
+  on("turn.complete", ($, event) => ({ text: event.answer }));
+  const tick = async () => {
+    await clock.advance(2_000);
+    await flushMicrotasks();
+  };
+  return { wakes, finished, tick };
+}
+
+const endTurn = ($: Parameters<Parameters<typeof test>[1]>[0], turnId: string) =>
+  $.turn.complete({ answer: "ok", durationMs: 1, isAborted: false, turnId, reason: "answer" });
+
+test("a job finishing before the last wake's turn starts joins no extra wake when the model reads it", async ($, on) => {
+  const jobs = stagedJobs(on);
+  await $.tool.call({ tool: SHELL, command: "shell_a", run_in_background: true });
+  await $.tool.call({ tool: SHELL, command: "shell_b", run_in_background: true });
+
+  jobs.finished.add("shell_a");
+  await jobs.tick();
+  expect(jobs.wakes.length).toBe(1);
+  expect(jobs.wakes[0]).toContain("Job shell_a finished");
+
+  // shell_b finishes while that wake still waits for its turn: held.
+  jobs.finished.add("shell_b");
+  await jobs.tick();
+  expect(jobs.wakes.length).toBe(1);
+
+  // The wake's turn reads shell_b itself; nothing is left to announce.
+  await $.turn.start({ text: jobs.wakes[0], turnId: "wake-1" });
+  await $.tool.call({ tool: SHELL, background_action: "status", job_id: "shell_b" });
+  await endTurn($, "wake-1");
+  await jobs.tick();
+  await jobs.tick();
+  expect(jobs.wakes.length).toBe(1);
+});
+
+test("a held job the model did not read wakes once after the turn", async ($, on) => {
+  const jobs = stagedJobs(on);
+  await $.tool.call({ tool: SHELL, command: "shell_a", run_in_background: true });
+  await $.tool.call({ tool: SHELL, command: "shell_b", run_in_background: true });
+  jobs.finished.add("shell_a");
+  await jobs.tick();
+  jobs.finished.add("shell_b");
+  await jobs.tick();
+  expect(jobs.wakes.length).toBe(1);
+
+  await $.turn.start({ text: jobs.wakes[0], turnId: "wake-1" });
+  await endTurn($, "wake-1");
+  await jobs.tick();
+  expect(jobs.wakes.length).toBe(2);
+  expect(jobs.wakes[1]).toContain("Job shell_b finished");
+  expect(jobs.wakes[1]).not.toContain("shell_a");
+});
+
+test("a wake that never starts its turn holds later jobs for at most a minute", async ($, on) => {
+  const jobs = stagedJobs(on);
+  await $.tool.call({ tool: SHELL, command: "shell_a", run_in_background: true });
+  await $.tool.call({ tool: SHELL, command: "shell_b", run_in_background: true });
+  jobs.finished.add("shell_a");
+  await jobs.tick();
+  jobs.finished.add("shell_b");
+  for (let i = 0; i < 29; i += 1) await jobs.tick();
+  expect(jobs.wakes.length).toBe(1);
+  await jobs.tick();
+  await jobs.tick();
+  expect(jobs.wakes.length).toBe(2);
+  expect(jobs.wakes[1]).toContain("Job shell_b finished");
+});
+
+test("with wake_on_job_finish off, background jobs are not watched and the skill says to check them", { options: { wake_on_job_finish: false } }, async ($, on) => {
+  const jobs = stagedJobs(on);
+  on("skill.prompt", () => ({ text: "STATIC SKILL BODY" }));
+  const ack = await $.tool.call({ tool: SHELL, command: "shell_a", run_in_background: true });
+  expect(ack.context ?? []).not.toContain(WATCH_CONTEXT);
+  jobs.finished.add("shell_a");
+  await jobs.tick();
+  await jobs.tick();
+  expect(jobs.wakes).toEqual([]);
+
+  const skill = await $.skill.prompt({ skill: "lean-ctx", text: "STATIC SKILL BODY" });
+  expect(skill.text).toContain('background_action="status"');
+  expect(skill.text).not.toContain("Never `sleep` or poll");
 });
 
 test("a running status answer keeps the watch: the finish still wakes once", async ($, on) => {

@@ -907,28 +907,28 @@ fn rewrite_script_skips_multiline_commands() {
     );
 }
 
+/// Denying native tools made agents fail and retry instead of working, so
+/// even agents that *can* run Replace default to Hybrid.
 #[test]
-fn codex_is_replace() {
+fn replace_capable_agents_default_to_hybrid() {
     let _env = crate::core::data_dir::test_env_lock();
-    assert_eq!(recommend_hook_mode("codex"), HookMode::Replace);
+    for agent in REPLACE_AGENTS {
+        assert_eq!(recommend_hook_mode(agent), HookMode::Hybrid, "{agent}");
+    }
+    assert!(!replace_mode_chosen());
 }
 
 #[test]
-fn cursor_is_replace() {
+fn explicit_replace_is_honoured_and_arms_the_deny_hook() {
     let _env = crate::core::data_dir::test_env_lock();
-    assert_eq!(recommend_hook_mode("cursor"), HookMode::Replace);
-}
-
-#[test]
-fn gemini_is_replace() {
-    let _env = crate::core::data_dir::test_env_lock();
-    assert_eq!(recommend_hook_mode("gemini"), HookMode::Replace);
-}
-
-#[test]
-fn claude_is_replace() {
-    let _env = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_HOOK_MODE", "replace");
     assert_eq!(recommend_hook_mode("claude"), HookMode::Replace);
+    assert_eq!(recommend_hook_mode("codex"), HookMode::Replace);
+    assert!(replace_mode_chosen());
+    crate::test_env::set_var("LEAN_CTX_HOOK_MODE", "auto");
+    assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
+    assert!(!replace_mode_chosen());
+    crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
 }
 
 #[test]
@@ -1001,29 +1001,37 @@ fn roundtrip_unix_path() {
 #[test]
 fn disabled_env_caps_replace_at_hybrid() {
     let _env = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_HOOK_MODE", "replace");
     crate::test_env::set_var("LEAN_CTX_DISABLED", "1");
     assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
     assert_eq!(recommend_hook_mode("cursor"), HookMode::Hybrid);
     assert_eq!(recommend_hook_mode("crush"), HookMode::Hybrid);
-    assert_eq!(recommend_hook_mode("unknown-agent"), HookMode::Mcp);
+    assert!(!replace_mode_chosen());
     crate::test_env::remove_var("LEAN_CTX_DISABLED");
+    crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
+    assert_eq!(recommend_hook_mode("unknown-agent"), HookMode::Mcp);
 }
 
 #[test]
 fn shadow_mode_false_env_caps_replace_at_hybrid() {
     let _env = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_HOOK_MODE", "replace");
     crate::test_env::set_var("LEAN_CTX_SHADOW_MODE", "false");
     assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
     assert_eq!(recommend_hook_mode("gemini"), HookMode::Hybrid);
+    assert!(!replace_mode_chosen());
     crate::test_env::remove_var("LEAN_CTX_SHADOW_MODE");
+    crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
 }
 
 #[test]
 fn heal_off_env_caps_replace_at_hybrid() {
     let _env = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_HOOK_MODE", "replace");
     crate::test_env::set_var("LEAN_CTX_HEAL", "off");
     assert_eq!(recommend_hook_mode("claude"), HookMode::Hybrid);
     crate::test_env::remove_var("LEAN_CTX_HEAL");
+    crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
 }
 
 #[test]

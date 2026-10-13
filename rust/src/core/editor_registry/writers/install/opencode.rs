@@ -92,11 +92,13 @@ pub(crate) fn write_opencode_fresh(
     })
 }
 
-/// Strip shadow-mode permission denies when the user has `shadow_mode = false`.
-/// Keeps permission entries the user set themselves (external_directory, rm *, etc.).
+/// Strip the `ask`/`deny` permissions lean-ctx set on native read/grep/glob/bash
+/// unless the user chose Replace mode. In OpenCode `ask` prompts on every native
+/// call and refuses it headless, so it is a refusal by another name — the
+/// default mode keeps native tools usable. Keeps permission entries the user
+/// set themselves (external_directory, rm *, allow, etc.).
 fn strip_shadow_denies_if_disabled(obj: &mut serde_json::Map<String, serde_json::Value>) -> bool {
-    let cfg = crate::core::config::Config::load();
-    if cfg.shadow_mode {
+    if crate::hooks::replace_mode_chosen() {
         return false;
     }
     let Some(perms) = obj.get_mut("permission").and_then(|p| p.as_object_mut()) else {
@@ -105,7 +107,10 @@ fn strip_shadow_denies_if_disabled(obj: &mut serde_json::Map<String, serde_json:
     const SHADOW_TOOLS: &[&str] = &["read", "grep", "glob", "bash"];
     let mut changed = false;
     for &tool in SHADOW_TOOLS {
-        if perms.get(tool).and_then(|v| v.as_str()) == Some("deny") {
+        if matches!(
+            perms.get(tool).and_then(|v| v.as_str()),
+            Some("ask" | "deny")
+        ) {
             perms.remove(tool);
             changed = true;
         }

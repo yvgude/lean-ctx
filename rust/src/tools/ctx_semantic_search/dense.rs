@@ -175,7 +175,7 @@ pub(crate) fn hybrid_search_mode(
                 truncate_query(query, 60),
                 results.len(),
                 index.doc_count,
-                root.display(),
+                crate::core::pathutil::strip_verbatim(root.to_path_buf()).display(),
                 coverage * 100.0
             )
         };
@@ -218,7 +218,7 @@ pub(crate) fn hybrid_search_mode(
                 truncate_query(query, 60),
                 results.len(),
                 index.doc_count,
-                root.display(),
+                crate::core::pathutil::strip_verbatim(root.to_path_buf()).display(),
             )
         };
         format!("{header}{}", format_search_results(&results, compact))
@@ -294,7 +294,7 @@ pub(crate) fn dense_search_mode(
                 truncate_query(query, 60),
                 results.len(),
                 index.doc_count,
-                root.display(),
+                crate::core::pathutil::strip_verbatim(root.to_path_buf()).display(),
                 coverage * 100.0
             )
         };
@@ -327,8 +327,11 @@ pub(crate) fn load_engine_and_index(
         return Err("embeddings disabled by memory_profile=low".into());
     }
 
-    let engine = crate::core::embeddings::shared_engine()
-        .ok_or_else(|| "embedding engine load failed".to_string())?;
+    let engine = {
+        let _phase = crate::core::phase_timing::enter("dense: embedding engine load");
+        crate::core::embeddings::shared_engine()
+            .ok_or_else(|| "embedding engine load failed".to_string())?
+    };
 
     let model_name = engine.model_name();
     let mut idx = EmbeddingIndex::load(root)
@@ -388,6 +391,7 @@ pub(crate) fn ensure_embeddings(
         return Ok((aligned, coverage, Vec::new()));
     }
 
+    let _phase = crate::core::phase_timing::enter("dense: embedding changed chunks");
     let mut changed_files = embed_idx.files_needing_update(&index.chunks);
     changed_files.sort();
     changed_files.dedup();

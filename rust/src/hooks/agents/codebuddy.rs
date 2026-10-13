@@ -5,7 +5,12 @@ use super::super::{
 };
 use super::shared::{contains_managed_md_block, managed_md_is_current, remove_managed_md_blocks};
 
-pub(crate) fn install_codebuddy_permissions_deny_replace(home: &std::path::Path) {
+/// CodeBuddy shares Claude Code's `permissions.deny` contract: a listed tool
+/// leaves the model's tool list, so hiding costs no refusal. Grep/Glob are
+/// hidden whenever [`crate::hooks::claude_hides_native_search`] says so; Bash
+/// only in Replace — hiding it elsewhere would take the native shell away, so
+/// a bare `Bash` entry an earlier Replace default wrote is removed.
+pub(crate) fn install_codebuddy_permissions_deny_replace(home: &std::path::Path, mode: HookMode) {
     let settings_path =
         crate::core::editor_registry::codebuddy_state_dir(home).join("settings.json");
 
@@ -39,21 +44,32 @@ pub(crate) fn install_codebuddy_permissions_deny_replace(home: &std::path::Path)
     };
 
     // Read kept available for edit gate + auto memory (shared Claude hook
-    // contract, GH #1228). Grep/Glob/Bash stay denied in Replace mode.
-    let deny_tools = ["Grep", "Glob", "Bash"];
+    // contract, GH #1228).
+    let deny_tools: &[&str] = if mode == HookMode::Replace {
+        &["Grep", "Glob", "Bash"]
+    } else {
+        &["Grep", "Glob"]
+    };
     let mut changed = false;
     for tool in deny_tools {
-        let val = serde_json::Value::String(tool.to_string());
+        let val = serde_json::Value::String((*tool).to_string());
         if !arr.contains(&val) {
             arr.push(val);
             changed = true;
         }
     }
 
-    let read_val = serde_json::Value::String("Read".to_string());
-    if let Some(pos) = arr.iter().position(|v| v == &read_val) {
-        arr.remove(pos);
-        changed = true;
+    let released: &[&str] = if mode == HookMode::Replace {
+        &["Read"]
+    } else {
+        &["Read", "Bash"]
+    };
+    for tool in released {
+        let val = serde_json::Value::String((*tool).to_string());
+        if let Some(pos) = arr.iter().position(|v| v == &val) {
+            arr.remove(pos);
+            changed = true;
+        }
     }
 
     if changed {
@@ -62,7 +78,7 @@ pub(crate) fn install_codebuddy_permissions_deny_replace(home: &std::path::Path)
         }
         if !mcp_server_quiet_mode() {
             eprintln!(
-                "  \x1b[32m✓\x1b[0m CodeBuddy permissions.deny installed (Replace mode; Read kept for auto memory)"
+                "  \x1b[32m✓\x1b[0m CodeBuddy permissions.deny updated (native Grep/Glob hidden; Read kept for auto memory)"
             );
         }
     }
@@ -81,8 +97,8 @@ pub(crate) fn install_codebuddy_hook_with_mode(global: bool, mode: HookMode) {
         install_codebuddy_mcp_server(&home);
     }
 
-    if mode == HookMode::Replace {
-        install_codebuddy_permissions_deny_replace(&home);
+    if super::super::claude_hides_native_search(mode) {
+        install_codebuddy_permissions_deny_replace(&home, mode);
     }
 
     let scope = crate::core::config::Config::load().rules_scope_effective();
@@ -733,6 +749,39 @@ mod tests {
             "rules_injection=off must strip the CODEBUDDY.md block, got:\n{after}"
         );
         assert!(after.contains("# my notes"), "user content must survive");
+    }
+
+    /// Grep/Glob stay hidden by default (no refusal, compressed searches);
+    /// Bash only under Replace — a bare entry the old Replace default wrote is
+    /// released so the native shell comes back.
+    #[test]
+    fn default_mode_hides_search_but_gives_bash_back() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path();
+        let dir = crate::core::editor_registry::codebuddy_state_dir(home);
+        std::fs::create_dir_all(&dir).unwrap();
+        let settings = dir.join("settings.json");
+        let deny = |path: &std::path::Path| -> Vec<String> {
+            let json: serde_json::Value =
+                serde_json::from_str(&std::fs::read_to_string(path).unwrap()).unwrap();
+            json["permissions"]["deny"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .filter_map(|v| v.as_str().map(str::to_string))
+                .collect()
+        };
+
+        install_codebuddy_permissions_deny_replace(home, HookMode::Replace);
+        assert_eq!(deny(&settings), ["Grep", "Glob", "Bash"]);
+
+        std::fs::write(
+            &settings,
+            r#"{"permissions":{"deny":["Grep","Glob","Bash","Bash(rm:*)"]}}"#,
+        )
+        .unwrap();
+        install_codebuddy_permissions_deny_replace(home, HookMode::Hybrid);
+        assert_eq!(deny(&settings), ["Grep", "Glob", "Bash(rm:*)"]);
     }
 
     #[test]

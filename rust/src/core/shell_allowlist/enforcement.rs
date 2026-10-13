@@ -237,16 +237,16 @@ fn check_interpreter_inner(
             if EVAL_FLAGS.contains(&tok.as_str()) {
                 return Err(format!(
                     "[BLOCKED — DO NOT RETRY] Interpreter '{base}' with inline code execution \
-                     flag '{tok}' is blocked. Use a script file instead.\n\
-                     This is a permanent security restriction."
+                     flag '{tok}' is blocked. Use a script file instead.\n{}",
+                    script_file_recipe(&base)
                 )
                 .into());
             }
             if has_eval_flag_prefix(tok) {
                 return Err(format!(
                     "[BLOCKED — DO NOT RETRY] Interpreter '{base}' with combined flag '{tok}' \
-                     containing eval flag is blocked.\n\
-                     This is a permanent security restriction."
+                     containing eval flag is blocked.\n{}",
+                    script_file_recipe(&base)
                 )
                 .into());
             }
@@ -306,11 +306,31 @@ fn check_interpreter_inner(
 fn heredoc_blocked_message(base: &str) -> String {
     format!(
         "[BLOCKED — DO NOT RETRY] Interpreter '{base}' with heredoc stdin is blocked. \
-         Inline code in the command string leaves no auditable artifact.\n\
-         Do this instead: write the code to a file, then run it —\n\
-           1. create /tmp/snippet with your code (Write/ctx_edit tool)\n\
-           2. {base} /tmp/snippet\n\
-         This is a permanent security restriction."
+         Inline code in the command string leaves no auditable artifact.\n{}",
+        script_file_recipe(base)
+    )
+}
+
+/// The one-attempt way around an inline-code block, so the agent's next call
+/// is the allowed one rather than another variant of the blocked one. Inline
+/// in-place edits (`perl -0pi -e`) are pointed at the edit tools, which is
+/// what they were used for.
+fn script_file_recipe(base: &str) -> String {
+    let ext = match base {
+        b if b.starts_with("python") => "py",
+        "node" | "deno" | "bun" => "js",
+        "perl" => "pl",
+        "ruby" => "rb",
+        "php" => "php",
+        _ => "txt",
+    };
+    format!(
+        "Do this instead — write the code to a file, then run it (one call each):\n\
+           1. create /tmp/lean-ctx-snippet.{ext} with your code (Write/Edit tool)\n\
+           2. {base} /tmp/lean-ctx-snippet.{ext}\n\
+         To change text in files, use the Edit tool or ctx_patch instead of an inline script.\n\
+         This is a permanent security restriction; only the user can lift it \
+         (shell_allow_inline_scripts = true)."
     )
 }
 

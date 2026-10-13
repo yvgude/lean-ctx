@@ -29,6 +29,10 @@ pub(crate) mod selection;
 /// admitted sections. Late ranking output is discarded; no legacy index is used
 /// as a fallback. Override via `LEAN_CTX_COMPOSE_BUDGET_MS`.
 const DEFAULT_SEMANTIC_BUDGET_MS: u64 = 4000;
+/// A one-shot `lean-ctx call` has no agent loop to keep responsive, and its
+/// caller asked for this result: discarding a ranking after 4s only wasted it
+/// (#2049). Its own watchdog bounds the whole call.
+const ONE_SHOT_SEMANTIC_BUDGET_MS: u64 = 120_000;
 // A timed-out worker retains its permit until it actually finishes. Repeated
 // requests cannot accumulate an unbounded set of fresh corpus scans.
 static RANKING_WORKERS: tokio::sync::Semaphore = tokio::sync::Semaphore::const_new(4);
@@ -38,7 +42,11 @@ fn semantic_budget() -> Duration {
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .filter(|&v| v > 0)
-        .unwrap_or(DEFAULT_SEMANTIC_BUDGET_MS);
+        .unwrap_or(if crate::core::conversation::is_one_shot_process() {
+            ONE_SHOT_SEMANTIC_BUDGET_MS
+        } else {
+            DEFAULT_SEMANTIC_BUDGET_MS
+        });
     Duration::from_millis(ms)
 }
 
@@ -387,7 +395,8 @@ fn ranked_files_with_slots(
 /// local ranking view is freshly admitted, including after a timeout.
 fn deferred_ranking_note() -> &'static str {
     "(local BM25 ranking deferred: source admission did not finish within this call's budget; \
-     late ranking output is discarded. Other sections are independently admitted.)"
+     late ranking output is discarded. Other sections are independently admitted. \
+     LEAN_CTX_COMPOSE_BUDGET_MS raises the budget.)"
 }
 
 /// Append IB intent-specific query terms to `keywords` when basic science is on.
@@ -524,7 +533,10 @@ fn handle_in_view(task: &str, project_root: &str, crp_mode: CrpMode) -> (String,
     // 1. Fresh source admission precedes ranking under the same pinned view as
     //    the rest of this response, including in the bounded worker.
     out.push_str("\n## Ranked files (local BM25)\n");
-    out.push_str(&ranked_files_budgeted(task, project_root, crp_mode));
+    {
+        let _phase = crate::core::phase_timing::enter("ctx_compose: ranking");
+        out.push_str(&ranked_files_budgeted(task, project_root, crp_mode));
+    }
     if protected {
         // These legacy stores do not retain enough original-source provenance
         // to reauthorize derived records after a policy or rights change.
@@ -535,6 +547,7 @@ fn handle_in_view(task: &str, project_root: &str, crp_mode: CrpMode) -> (String,
     // 2. Exact match locations for the most specific identifier-shaped keyword.
     // Broad prose words and acronyms create repository-wide README/Dockerfile
     // noise. Within identifiers, the resident index ranks the rarest one first.
+    let exact_phase = crate::core::phase_timing::enter("ctx_compose: exact matches");
     let ranked_keywords = if protected {
         keywords.clone()
     } else {
@@ -558,6 +571,8 @@ fn handle_in_view(task: &str, project_root: &str, crp_mode: CrpMode) -> (String,
     //    with maximal keyword coverage under a token budget via submodular
     //    greedy (1−1/e optimal). Two keywords resolving to the same symbol, or
     //    a symbol whose body adds no new keyword, are naturally pruned.
+    drop(exact_phase);
+    let symbols_phase = crate::core::phase_timing::enter("ctx_compose: symbol bodies");
     use crate::core::context_packing::CoverageItem;
     let mut snippets: Vec<String> = Vec::new();
     let mut items: Vec<CoverageItem> = Vec::new();
@@ -610,7 +625,9 @@ fn handle_in_view(task: &str, project_root: &str, crp_mode: CrpMode) -> (String,
     // 4. Associative neighbours via spreading activation over the import/call
     //    graph unified with the learned Hebbian co-access graph (budgeted,
     //    additive — surfaces structurally-close files lexical search misses).
+    drop(symbols_phase);
     if !protected {
+        let _phase = crate::core::phase_timing::enter("ctx_compose: associative graph");
         out.push_str(&associative_block_budgeted(project_root, &keywords));
     }
 
@@ -619,6 +636,7 @@ fn handle_in_view(task: &str, project_root: &str, crp_mode: CrpMode) -> (String,
     //    Budget: 20% of symbol budget. Graceful no-op if kernel returns None.
     if !protected {
         use crate::core::context_kernel::context_dedup::dedup_kernel_blocks;
+        let _phase = crate::core::phase_timing::enter("ctx_compose: kernel enrichment");
 
         let budget = kernel_supplement_budget(project_root);
         if let Some(enrichment) =

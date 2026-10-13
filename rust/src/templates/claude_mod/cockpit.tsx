@@ -646,7 +646,7 @@ async function refresh($: EngineInterface) {
     })
     if (shown < 0) shown = 0
     target = snap.tokensSaved
-    if (celebration) {
+    if (celebration && cardsEnabled) {
       overlayUntil = at + MILESTONE_OVERLAY_MS
       const title = celebration.kind === 'milestone' ? celebration.title : ''
       $.ui.toast(`★ LeanCTX · ${title.toLowerCase()}`, { timeoutMs: 6000 })
@@ -744,7 +744,7 @@ async function finishTurn($: EngineInterface, durationMs: number) {
     const turns = [...(Array.isArray(x.turns) ? x.turns : []), turn].slice(-TURNS_KEPT)
     return { ...x, turns, overlay }
   })
-  overlayUntil = Math.max(overlayUntil, Date.now() + TURN_OVERLAY_MS)
+  if (cardsEnabled) overlayUntil = Math.max(overlayUntil, Date.now() + TURN_OVERLAY_MS)
   startFrames($)
 }
 
@@ -828,6 +828,11 @@ function startFrames($: EngineInterface) {
 // Whether the sidebar opens with a session: the `cockpit_panel` option, then
 // `/cockpit on|off` (#2057). The pulse line, spinner and turn rows stay either way.
 let panelEnabled = true
+// The band above the prompt while Claude works (`cockpit_pulse_line`) and the
+// turn and milestone cards there (`cockpit_turn_cards`), each `/cockpit pulse|cards
+// on|off`. The sidebar keeps the same turns and milestones; the spinner stays.
+let pulseEnabled = true
+let cardsEnabled = true
 // The proof clock re-verifies receipts only the sidebar shows (~8 s of work).
 let proofClock: { cancel: () => void } | undefined
 
@@ -847,8 +852,8 @@ function stopProofClock() {
 async function cockpitStart($: EngineInterface): Promise<void> {
   await $.command.register({
     name: 'cockpit',
-    description: 'Open the LeanCTX cockpit; on/off keeps the sidebar open or closed in new sessions',
-    argumentHint: '[on|off]',
+    description: 'Open the LeanCTX cockpit; on/off keeps the sidebar open or closed, pulse/cards on|off the lines above the prompt',
+    argumentHint: '[on|off|pulse on|pulse off|cards on|cards off]',
     immediate: true,
   })
   $.ui.status(undefined)
@@ -862,11 +867,11 @@ async function cockpitStart($: EngineInterface): Promise<void> {
   startProofClock($)
 }
 
-// Stores the sidebar choice in the mod's `cockpit_panel` option so new
+// Stores a choice in the mod's option `option` (`cockpit_panel`, …) so new
 // sessions keep it; `false` when the setting could not be written.
-async function persistPanelChoice($: EngineInterface, on: boolean): Promise<boolean> {
+async function persistChoice($: EngineInterface, option: string, on: boolean): Promise<boolean> {
   try {
-    const row = (await $.config.list()).find(r => r.key.endsWith('.cockpit_panel'))
+    const row = (await $.config.list()).find(r => r.key.endsWith(`.${option}`))
     if (!row) return false
     const { deny } = await $.config.set({ key: row.key, value: on })
     return deny === undefined
@@ -875,23 +880,48 @@ async function persistPanelChoice($: EngineInterface, on: boolean): Promise<bool
   }
 }
 
+const COCKPIT_USAGE =
+  'Usage: /cockpit opens the sidebar · /cockpit on|off keeps it open or closed in new sessions · ' +
+  '/cockpit pulse on|off the line above the prompt while Claude works · /cockpit cards on|off the turn and milestone cards.'
+
+// `/cockpit pulse|cards on|off`: shows or hides one of the lines above the
+// prompt, now and in new sessions.
+async function runSurfaceCommand($: EngineInterface, surface: 'pulse' | 'cards', on: boolean): Promise<string> {
+  const [option, name] =
+    surface === 'pulse' ? ['cockpit_pulse_line', 'pulse line'] : ['cockpit_turn_cards', 'turn and milestone cards']
+  if (surface === 'pulse') pulseEnabled = on
+  else cardsEnabled = on
+  // Redraw now, so a card or band on show goes away (or a hidden one returns).
+  startFrames($)
+  const kept = await persistChoice($, option, on)
+  const state = on ? 'on' : 'off'
+  const back = on ? '' : ` /cockpit ${surface} on brings it back.`
+  return kept
+    ? `LeanCTX ${name} ${state}, now and in new sessions.${back}`
+    : `LeanCTX ${name} ${state} for this session (the setting could not be saved; /config → lean-ctx).`
+}
+
 // `/cockpit [on|off]`: no argument opens the sidebar now; on/off also decides
-// whether it opens in new sessions.
+// whether it opens in new sessions. `pulse|cards on|off` go to runSurfaceCommand.
 async function runCockpitCommand($: EngineInterface, args: string): Promise<string> {
-  const choice = args.trim().toLowerCase()
+  const words = args.trim().toLowerCase().split(/\s+/).filter(Boolean)
+  const [head, value] = words
+  if (head === 'pulse' || head === 'cards') {
+    if (words.length !== 2 || (value !== 'on' && value !== 'off')) return COCKPIT_USAGE
+    return runSurfaceCommand($, head, value === 'on')
+  }
+  const choice = words.join(' ')
   if (choice === 'off') {
     panelEnabled = false
     stopProofClock()
     await $.ui.close({ id: PANE }).catch(() => {})
-    const kept = await persistPanelChoice($, false)
+    const kept = await persistChoice($, 'cockpit_panel', false)
     return kept
       ? 'LeanCTX cockpit sidebar off: closed now and in new sessions. /cockpit on brings it back.'
       : 'LeanCTX cockpit sidebar closed for this session (the setting could not be saved; /config → lean-ctx).'
   }
-  if (choice !== '' && choice !== 'on') {
-    return 'Usage: /cockpit opens the sidebar · /cockpit on keeps it open in new sessions · /cockpit off closes it and keeps it closed.'
-  }
-  const kept = choice === 'on' ? await persistPanelChoice($, true) : true
+  if (choice !== '' && choice !== 'on') return COCKPIT_USAGE
+  const kept = choice === 'on' ? await persistChoice($, 'cockpit_panel', true) : true
   if (choice === 'on') panelEnabled = true
   const { isPlaced } = await $.ui.open({ id: PANE, title: 'LeanCTX', columns: DOCK_COLUMNS })
   $.clock.after(0, () => void refresh($).catch(() => {}))
@@ -987,8 +1017,14 @@ export type TurnObserver = {
   onMainTurnComplete?: () => void
 }
 
-export function registerCockpit(on: On, turns: TurnObserver = {}, options: { panel?: boolean } = {}): void {
+export function registerCockpit(
+  on: On,
+  turns: TurnObserver = {},
+  options: { panel?: boolean; pulse?: boolean; cards?: boolean } = {},
+): void {
   panelEnabled = options.panel !== false
+  pulseEnabled = options.pulse !== false
+  cardsEnabled = options.cards !== false
   // A matcher, because the mod's own `session.start` hook has none (one per
   // event and plugin); headless runs (`claude -p`) get no cockpit at all.
   on('session.start', { isInteractive: true }, async ($, e, next) => {
@@ -1055,8 +1091,10 @@ export function registerCockpit(on: On, turns: TurnObserver = {}, options: { pan
   // ── above the prompt: the handoff line while working; a card when a turn ends or a milestone falls
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || e.surface !== 'terminal') return next(e)
-    const b = await readBoard($)
+    // Read the frame before any early return: a hidden band stays subscribed,
+    // so `/cockpit pulse|cards on` shows it again at once.
     const f = await read($, frame)
+    const b = await readBoard($)
     const tick = f?.tick ?? 0
     const now = Date.now()
     const o = b.overlay
@@ -1064,7 +1102,7 @@ export function registerCockpit(on: On, turns: TurnObserver = {}, options: { pan
     const { Box, Text, Raster } = ui
     const cols = Math.max(24, e.props.bodyColumns)
 
-    if (o?.kind === 'milestone' && now - o.at < MILESTONE_OVERLAY_MS && typeof o.title === 'string') {
+    if (cardsEnabled && o?.kind === 'milestone' && now - o.at < MILESTONE_OVERLAY_MS && typeof o.title === 'string') {
       const title = `★  ${o.title}  ★`
       return (
         <Box flexDirection="column">
@@ -1078,7 +1116,7 @@ export function registerCockpit(on: On, turns: TurnObserver = {}, options: { pan
       )
     }
 
-    if (o?.kind === 'turn' && now - o.at < TURN_OVERLAY_MS && !b.isWorking) {
+    if (cardsEnabled && o?.kind === 'turn' && now - o.at < TURN_OVERLAY_MS && !b.isWorking) {
       const t = o.turn
       const gap = <Text> </Text>
       return (
@@ -1103,7 +1141,7 @@ export function registerCockpit(on: On, turns: TurnObserver = {}, options: { pan
       )
     }
 
-    if (b.isWorking) return handoff(ui, 'band-handoff', cols, b, tick, now)
+    if (pulseEnabled && b.isWorking) return handoff(ui, 'band-handoff', cols, b, tick, now)
     return next(e)
   })
 
@@ -1136,6 +1174,9 @@ export function registerCockpit(on: On, turns: TurnObserver = {}, options: { pan
   // ── the "done in" row: keep the engine's words, add what passed the gateway that turn
   on('ui.render', { component: 'TurnDuration' }, async ($, e, next) => {
     if (e.surface !== 'terminal') return next(e)
+    // Subscribed to the frame either way, so `/cockpit cards on` redraws it.
+    await read($, frame)
+    if (!cardsEnabled) return next(e)
     const b = await readBoard($)
     const turn = b.turns.find(t => Math.abs(t.durationMs - e.props.durationMs) < 1_000)
     if (!turn || (turn.saved === 0 && turn.calls === 0 && (turn.sources ?? 0) === 0)) return next(e)

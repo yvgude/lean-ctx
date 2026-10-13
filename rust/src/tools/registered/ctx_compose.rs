@@ -557,8 +557,18 @@ impl McpTool for CtxComposeTool {
         let mut pending_cache = None;
         let result =
             crate::core::policy::runtime::with_project_source_view(&ctx.project_root, || {
-                let task = get_str(args, "task")
-                    .ok_or_else(|| ErrorData::invalid_params("task is required", None))?;
+                // Search-style tools taught agents `query`; ctx_compose declares
+                // no other text field, so those spellings can only mean the task.
+                let task = ["task", "query", "question", "prompt", "goal"]
+                    .iter()
+                    .find_map(|key| get_str(args, key).filter(|v| !v.trim().is_empty()))
+                    .ok_or_else(|| {
+                        ErrorData::invalid_params(
+                            "task is required — the question or goal to gather context for, \
+                             e.g. ctx_compose(task=\"how is auth wired\")",
+                            None,
+                        )
+                    })?;
                 let task_aware = get_bool(args, "task_aware").unwrap_or(true);
                 let path = if let Some(p) = ctx.resolved_path("path") {
                     p.to_string()

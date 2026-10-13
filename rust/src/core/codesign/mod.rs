@@ -18,6 +18,7 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::Duration;
 
 mod setup;
 pub(crate) use setup::{SetupOutcome, setup_identity};
@@ -26,6 +27,10 @@ pub(crate) use setup::{SetupOutcome, setup_identity};
 pub(crate) const IDENTITY_CN: &str = "lean-ctx-codesign";
 /// Designated-requirement identifier baked into every signature.
 pub(crate) const CODESIGN_IDENTIFIER: &str = "com.leanctx.cli";
+
+const SECURITY_COMMAND_TIMEOUT: Duration = Duration::from_secs(5);
+const CODESIGN_COMMAND_TIMEOUT: Duration = Duration::from_mins(1);
+const COMMAND_OUTPUT_LIMIT: usize = 64 * 1024;
 
 /// Which signing path [`sign_binary`] took.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -63,16 +68,31 @@ pub(crate) fn is_ready() -> bool {
     let Some(kc) = keychain_path() else {
         return false;
     };
-    if !kc.exists() {
+    identity_ready_if(&kc, load_password().is_some(), query_trusted_identity)
+}
+
+fn identity_ready_if(
+    keychain: &Path,
+    password_available: bool,
+    query: impl FnOnce(&Path) -> bool,
+) -> bool {
+    if !keychain.exists() || !password_available {
         return false;
     }
-    let Ok(out) = Command::new("security")
+    query(keychain)
+}
+
+fn query_trusted_identity(keychain: &Path) -> bool {
+    let mut command = Command::new("security");
+    command
         .args(["find-identity", "-v", "-p", "codesigning"])
-        .arg(&kc)
-        .output()
-    else {
+        .arg(keychain);
+    let Ok(out) = run_bounded_output(&mut command, SECURITY_COMMAND_TIMEOUT) else {
         return false;
     };
+    if !out.status.success() {
+        return false;
+    }
     // `find-identity` annotates broken/untrusted identities in parentheses
     // (e.g. `"lean-ctx-codesign" (Invalid Key Usage for policy)` or
     // `(CSSMERR_TP_NOT_TRUSTED)`). Treat the identity as ready only when its
@@ -94,40 +114,61 @@ pub(crate) fn sign_binary(binary: &Path) -> SignKind {
 
 fn sign_with_identity(binary: &Path) -> Result<(), String> {
     let kc = keychain_path().ok_or("no home dir")?;
-    if let Some(pw) = load_password() {
-        // Best-effort unlock; signing fails loudly below if still locked.
-        let _ = Command::new("security")
-            .args(["unlock-keychain", "-p", &pw])
-            .arg(&kc)
-            .output();
-    }
-    let out = Command::new("codesign")
-        .args([
-            "--force",
-            "--timestamp=none",
-            "--identifier",
-            CODESIGN_IDENTIFIER,
-            "--keychain",
-        ])
-        .arg(&kc)
-        .args(["--sign", IDENTITY_CN])
-        .arg(binary)
-        .output()
-        .map_err(|e| format!("spawn codesign: {e}"))?;
-    if out.status.success() {
-        Ok(())
-    } else {
-        Err(String::from_utf8_lossy(&out.stderr).trim().to_string())
-    }
+    let pw = load_password().ok_or("missing scoped signing password")?;
+
+    let mut unlock = Command::new("security");
+    unlock.args(["unlock-keychain", "-p", &pw]).arg(&kc);
+    run_bounded_success(&mut unlock, SECURITY_COMMAND_TIMEOUT)?;
+
+    let mut sign = Command::new("codesign");
+    sign.args([
+        "--force",
+        "--timestamp=none",
+        "--identifier",
+        CODESIGN_IDENTIFIER,
+        "--keychain",
+    ])
+    .arg(&kc)
+    .args(["--sign", IDENTITY_CN])
+    .arg(binary);
+    run_bounded_success(&mut sign, CODESIGN_COMMAND_TIMEOUT)
 }
 
 /// Ad-hoc signature — keeps the binary launchable, but offers TCC no stable
 /// anchor (the historical behaviour that caused #356).
 pub(crate) fn adhoc_sign(binary: &Path) {
-    let _ = Command::new("codesign")
-        .args(["--force", "-s", "-"])
-        .arg(binary)
-        .output();
+    let mut sign = Command::new("codesign");
+    sign.args(["--force", "-s", "-"]).arg(binary);
+    let _ = run_bounded_success(&mut sign, CODESIGN_COMMAND_TIMEOUT);
+}
+
+fn run_bounded_output(
+    command: &mut Command,
+    timeout: Duration,
+) -> Result<std::process::Output, String> {
+    let captured = crate::core::process_capture::run_with_output_limits(
+        command,
+        Some(timeout),
+        COMMAND_OUTPUT_LIMIT,
+        COMMAND_OUTPUT_LIMIT,
+    )
+    .map_err(|_| "code-signing command could not be run".to_string())?;
+    if captured.timed_out {
+        return Err("code-signing command timed out".to_string());
+    }
+    if captured.cancelled {
+        return Err("code-signing command was cancelled".to_string());
+    }
+    Ok(captured.output)
+}
+
+fn run_bounded_success(command: &mut Command, timeout: Duration) -> Result<(), String> {
+    let output = run_bounded_output(command, timeout)?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        Err("code-signing command failed".to_string())
+    }
 }
 
 #[cfg(test)]
@@ -158,5 +199,60 @@ mod tests {
     #[test]
     fn sign_kind_is_comparable() {
         assert_ne!(SignKind::Stable, SignKind::AdHoc);
+    }
+
+    #[test]
+    fn missing_scoped_password_skips_identity_query() {
+        let keychain = tempfile::NamedTempFile::new().expect("temporary keychain");
+        let queried = std::cell::Cell::new(false);
+
+        let ready = identity_ready_if(keychain.path(), false, |_| {
+            queried.set(true);
+            true
+        });
+
+        assert!(!ready);
+        assert!(
+            !queried.get(),
+            "identity query must not run without a password"
+        );
+    }
+
+    #[test]
+    fn isolated_data_dir_without_password_never_queries_global_keychain() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        assert!(
+            load_password().is_none(),
+            "isolated data dir starts without a password"
+        );
+        assert!(
+            !is_ready(),
+            "a global keychain without a scoped password is not ready"
+        );
+    }
+
+    #[test]
+    fn bounded_signing_command_times_out_and_reaps_its_child() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "sleep 30"]);
+        let started = std::time::Instant::now();
+
+        let error = run_bounded_success(&mut command, Duration::from_millis(100))
+            .expect_err("long-running command must time out");
+
+        assert_eq!(error, "code-signing command timed out");
+        assert!(started.elapsed() < Duration::from_secs(5));
+    }
+
+    #[test]
+    fn bounded_signing_command_hides_child_stderr_on_failure() {
+        let mut command = Command::new("/bin/sh");
+        command.args(["-c", "printf 'private-stderr-sentinel\\n' >&2; exit 23"]);
+
+        let error = run_bounded_success(&mut command, Duration::from_secs(2))
+            .expect_err("nonzero child status must fail");
+
+        assert_eq!(error, "code-signing command failed");
+        assert!(!error.contains("private-stderr-sentinel"));
     }
 }

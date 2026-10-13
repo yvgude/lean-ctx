@@ -25,7 +25,7 @@ pub(crate) fn install_claude_hook_with_mode(global: bool, mode: HookMode) {
         install_claude_mcp_server(&home);
     }
 
-    if mode == HookMode::Replace {
+    if super::super::claude_hides_native_search(mode) {
         install_claude_permissions_deny_replace(&home);
     }
 
@@ -379,9 +379,13 @@ fn install_claude_global_claude_md_for_mode(home: &std::path::Path, mode: HookMo
     }
 
     let existing = std::fs::read_to_string(&claude_md_path).unwrap_or_default();
-    let base_block = match mode {
-        HookMode::Replace => CLAUDE_MD_BLOCK_CONTENT_REPLACE,
-        HookMode::Mcp | HookMode::Hybrid => CLAUDE_MD_BLOCK_CONTENT_MCP,
+    // The block describes the tool list Claude actually has: the Grep/Glob
+    // block whenever they are hidden, which the default mode keeps.
+    let hides_search = super::super::claude_hides_native_search(mode);
+    let base_block = if hides_search {
+        CLAUDE_MD_BLOCK_CONTENT_REPLACE
+    } else {
+        CLAUDE_MD_BLOCK_CONTENT_MCP
     };
 
     // A single up-to-date block needs no rewrite. Check both version tag AND
@@ -394,7 +398,7 @@ fn install_claude_global_claude_md_for_mode(home: &std::path::Path, mode: HookMo
         format!("{base_block}\n\n{solution_block}")
     };
     let is_replace_block = existing.contains("denied by policy");
-    let mode_matches = matches!(mode, HookMode::Replace) == is_replace_block;
+    let mode_matches = hides_search == is_replace_block;
     if managed_md_is_current(&existing, CLAUDE_MD_BLOCK_START, &block)
         && existing.contains(CLAUDE_MD_BLOCK_VERSION)
         && mode_matches

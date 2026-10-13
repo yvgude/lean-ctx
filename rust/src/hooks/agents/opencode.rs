@@ -37,13 +37,13 @@ pub(crate) fn install_opencode_hook_with_mode(mode: HookMode) {
         "environment": super::super::mcp_server_env_json()
     });
 
-    // #313: `shadow_mode` (default off) controls whether native tools (read,
-    // grep, glob, bash) are set to "ask" at the permission level in opencode.json,
-    // steering the agent to ctx_* equivalents via the MCP server without
-    // removing the tools from the request (#1864).
-    // In Replace mode, shadow permissions are always applied regardless of config.
+    // #313/#1864: Replace mode sets native read/grep/glob/bash to "ask" in
+    // opencode.json (not "deny": a denied tool leaves the request, which
+    // OpenCode Zen's free tier rejects). "ask" prompts on every native call and
+    // refuses it headless, so only Replace applies it; every other mode removes
+    // the entries lean-ctx wrote earlier.
+    let shadow = mode == HookMode::Replace;
     let cfg = Config::load();
-    let shadow = cfg.shadow_mode || mode == HookMode::Replace;
 
     let should_reg_mcp = super::super::should_register_mcp();
     let mcp_needed =
@@ -337,6 +337,31 @@ fn remove_shadow_permissions_inplace(obj: &mut serde_json::Map<String, serde_jso
     }
 
     changed
+}
+
+/// Release the `ask`/`deny` gates lean-ctx put on OpenCode's native tools when
+/// Replace was the default. Runs on MCP server start, because an update through
+/// a package manager never reaches `setup`; file-only, and a config that does
+/// not parse is left alone. Returns whether the file changed.
+pub(crate) fn release_opencode_native_tool_gates(home: &std::path::Path) -> bool {
+    if crate::hooks::replace_mode_chosen() {
+        return false;
+    }
+    let path = crate::core::opencode_config::resolve(home).path;
+    let Ok(content) = std::fs::read_to_string(&path) else {
+        return false;
+    };
+    let Ok(mut json) = crate::core::jsonc::parse_jsonc(&content) else {
+        return false;
+    };
+    let Some(obj) = json.as_object_mut() else {
+        return false;
+    };
+    if !remove_shadow_permissions_inplace(obj) {
+        return false;
+    }
+    serde_json::to_string_pretty(&json)
+        .is_ok_and(|out| crate::config_io::write_atomic_with_backup(&path, &out).is_ok())
 }
 
 /// Remove shadow-mode permission denies from opencode.json. Only removes
@@ -812,5 +837,42 @@ mod config_preservation_tests {
         let resolved = crate::core::opencode_config::resolve_in_dir(&cfg_dir);
         assert_eq!(resolved.path, cfg_dir.join("opencode.jsonc"));
         assert!(!cfg_dir.join("opencode.json").exists());
+    }
+
+    /// "ask" prompts on every native call and refuses it headless: an install
+    /// from when Replace was the default must get its tools back on the next
+    /// MCP start, while the user's own permission entries stay.
+    #[test]
+    fn native_tool_gates_are_released_unless_replace_was_chosen() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let cfg_dir = dir.path().join(".config/opencode");
+        std::fs::create_dir_all(&cfg_dir).unwrap();
+        let path = crate::core::opencode_config::resolve(dir.path()).path;
+        let gated = r#"{"permission":{"read":"ask","grep":"ask","glob":"ask","bash":"ask","edit":"allow"}}"#;
+
+        crate::test_env::set_var("LEAN_CTX_HOOK_MODE", "replace");
+        std::fs::write(&path, gated).unwrap();
+        let released_under_replace = release_opencode_native_tool_gates(dir.path());
+        crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
+        assert!(
+            !released_under_replace,
+            "an explicit Replace keeps the gates"
+        );
+
+        assert!(release_opencode_native_tool_gates(dir.path()));
+        let json: serde_json::Value =
+            serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+        for tool in SHADOW_DENIED_TOOLS {
+            assert!(
+                json["permission"].get(*tool).is_none(),
+                "{tool} still gated"
+            );
+        }
+        assert_eq!(json["permission"]["edit"], "allow", "user entries survive");
+        assert!(
+            !release_opencode_native_tool_gates(dir.path()),
+            "idempotent"
+        );
     }
 }

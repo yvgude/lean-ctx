@@ -95,6 +95,13 @@ pub(crate) fn default_shell_allowlist() -> Vec<String> {
         "unexpand",
         "rev",
         "tac",
+        // Read-only byte inspection: print what a file holds, change nothing
+        // (blocked 70× in 30 days of measured sessions). `xxd` stays out — its
+        // `-r` mode writes files.
+        "od",
+        "hexdump",
+        "strings",
+        "cmp",
         // #986: hash/checksum utilities — read-only, print digest to stdout.
         "md5",
         "md5sum",

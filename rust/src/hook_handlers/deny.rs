@@ -122,7 +122,11 @@ fn should_allow(tool_name: &str, file_path: Option<&str>, payload: &str) -> bool
         return true;
     }
 
-    false
+    // Denial is opt-in. A `hook deny` entry installed while Replace was the
+    // default must not block anything unless the user chose Replace — or,
+    // for native shell calls, `shell_hook_mode = "deny"` (#1278).
+    let shell_deny = super::is_shell_tool(tool_name) && super::shell_deny_mode_active();
+    !crate::hooks::replace_mode_chosen() && !shell_deny
 }
 
 /// Claude Code's `Bash` with `run_in_background: true` re-invokes the model when
@@ -929,6 +933,74 @@ mod tests {
         assert!(!is_lean_ctx_tool("mcp__atlassian__jira_get_issue"));
     }
 
+    /// Users found denied native tools disruptive: agents failed and retried.
+    /// A deny hook left from an install made while Replace was the default
+    /// must let native calls through until the user chooses Replace.
+    #[test]
+    fn native_tools_pass_unless_replace_was_chosen() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let grep = r#"{"tool_name":"Grep","tool_input":{"pattern":"x"}}"#;
+        crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
+        assert!(
+            should_allow("Grep", None, grep),
+            "default mode must not deny native Grep"
+        );
+        crate::test_env::set_var("LEAN_CTX_HOOK_MODE", "replace");
+        let denied_when_chosen = !should_allow("Grep", None, grep);
+        crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
+        assert!(
+            denied_when_chosen,
+            "an explicit Replace choice still denies"
+        );
+    }
+
+    /// Every host's spelling of a native file, search or shell tool passes a
+    /// `hook deny` left from an earlier Replace default — Cursor's `Shell` and
+    /// `read_file`, Gemini's `run_shell_command`, Windsurf's `run_command`,
+    /// Copilot's `powershell`, Claude's `Grep` — until Replace is chosen.
+    #[test]
+    fn no_host_spelling_is_refused_by_default() {
+        let _env = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
+        crate::test_env::remove_var("LEAN_CTX_SHELL_HOOK_MODE");
+        let names = [
+            "Read",
+            "read",
+            "ReadFile",
+            "read_file",
+            "View",
+            "view",
+            "Grep",
+            "grep",
+            "Search",
+            "search",
+            "Glob",
+            "glob",
+            "ListFiles",
+            "list_files",
+            "ListDirectory",
+            "list_directory",
+            "list_dir",
+            "Bash",
+            "bash",
+            "Shell",
+            "shell_command",
+            "run_terminal_command",
+            "run_shell_command",
+            "run_command",
+            "execute_command",
+            "powershell",
+            "PowerShell",
+        ];
+        for name in names {
+            let payload = format!(r#"{{"tool_name":"{name}","tool_input":{{"command":"pwd"}}}}"#);
+            assert!(
+                should_allow(name, Some("/home/u/project/src/main.rs"), &payload),
+                "{name} must not be refused in the default mode"
+            );
+        }
+    }
+
     #[test]
     fn should_allow_lean_ctx_tools() {
         assert!(should_allow("ctx_tree", None, "{}"));
@@ -951,13 +1023,18 @@ mod tests {
 
     #[test]
     fn should_allow_claude_auto_memory_paths() {
-        assert!(should_allow(
+        let _env = crate::core::data_dir::test_env_lock();
+        crate::test_env::set_var("LEAN_CTX_HOOK_MODE", "replace");
+        let memory = should_allow(
             "Read",
             Some("/home/jules/.claude/projects/-slug/memory/MEMORY.md"),
-            "{}"
-        ));
+            "{}",
+        );
+        let project = should_allow("Read", Some("/home/jules/project/src/main.rs"), "{}");
+        crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
+        assert!(memory, "auto memory stays readable even under Replace");
         assert!(
-            !should_allow("Read", Some("/home/jules/project/src/main.rs"), "{}"),
+            !project,
             "ordinary project files stay denied under replace deny hooks"
         );
     }

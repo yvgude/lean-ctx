@@ -439,10 +439,11 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             key_with_env(
                 "bool",
                 serde_json::json!(true),
-                "Default on: denies native tools at the permission level, forcing agents to use ctx_* MCP tools for maximum compression. Disable with shadow_mode = false if you prefer native tools.",
+                "Default on: lean-ctx steers agents to ctx_* MCP tools, and an explicit hook_mode = \"replace\" may deny native tools. shadow_mode = false caps every agent at Hybrid — native tools are never denied.",
                 "LEAN_CTX_SHADOW_MODE",
             ),
         );
+    root.insert("hook_mode".into(), hook_mode_key());
     root.insert(
         "shell_hook_mode".into(),
         key_enum_with_env(

@@ -805,7 +805,7 @@ fn heredoc_block_message_names_the_workaround() {
     let err = check_all_segments("python3 - <<'PY'", &list).unwrap_err();
     assert!(err.contains("[BLOCKED — DO NOT RETRY]"), "got: {err}");
     assert!(
-        err.contains("python3 /tmp/snippet"),
+        err.contains("python3 /tmp/lean-ctx-snippet.py"),
         "must name the runnable workaround: {err}"
     );
     assert!(
@@ -1095,6 +1095,27 @@ fn python3_inline_blocked_by_default() {
     let result = super::enforce_shell_allowlist("python3 -c \"print(42)\"");
     crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
     assert!(result.is_err(), "python3 -c must be blocked by default");
+}
+
+/// The most frequent block (python3 -c, then node -e, perl -0pi -e) must hand
+/// the agent the allowed path with a matching extension, so the next call is
+/// the right one instead of a retry of the blocked form.
+#[test]
+fn inline_code_blocks_name_the_script_file_path() {
+    let list = allow(&["python3", "node", "perl"]);
+    for (cmd, run) in [
+        ("python3 -c 'print(1)'", "python3 /tmp/lean-ctx-snippet.py"),
+        ("node -e 'console.log(1)'", "node /tmp/lean-ctx-snippet.js"),
+        (
+            "perl -0pi -e 's/a/b/' f.txt",
+            "perl /tmp/lean-ctx-snippet.pl",
+        ),
+    ] {
+        let err = check_all_segments(cmd, &list).unwrap_err();
+        assert!(err.contains(run), "{cmd}: {err}");
+        assert!(err.contains("ctx_patch"), "{cmd}: {err}");
+        assert!(err.contains("shell_allow_inline_scripts"), "{cmd}: {err}");
+    }
 }
 
 /// #814: python3 -c is allowed when opt-in is enabled.

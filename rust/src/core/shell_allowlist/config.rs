@@ -211,6 +211,23 @@ pub(super) fn allowlist_block_message(base: &str, tokens: &[String], entries: &[
         );
     }
 
+    // A nested shell (`bash -c '…'`, `sh script.sh`) is the most common block
+    // agents retry: the command already runs in a shell, so the wrapper is
+    // redundant — and allowlisting the shell would let any script through.
+    if matches!(base, "sh" | "bash" | "zsh" | "dash" | "ksh") {
+        return format!(
+            "[BLOCKED — DO NOT RETRY] A nested '{base}' is not run: the command already \
+             executes in a shell, and a nested shell would hide what it runs from the \
+             allowlist.\n\
+             Do this instead: drop the `{base} -c` wrapper and pass the inner command \
+             directly (pipes, `&&`, loops and functions all work); for a script file, run \
+             the commands it contains, or allow that one script deliberately.\n\
+             Do NOT run `lean-ctx allow {base}`: it would admit every script, not this \
+             command.\n\
+             Config in effect: {cfg_path}"
+        );
+    }
+
     let mut msg = format!(
         "[BLOCKED — DO NOT RETRY] '{base}' is not in the shell allowlist. \
          This is a permanent restriction, not a transient error.\n\
@@ -473,5 +490,23 @@ mod tests {
         let msg = allowlist_block_message("ncat", &[], &[]);
         assert!(msg.contains("lean-ctx allow ncat"), "got: {msg}");
         assert!(!msg.contains("expands to the command name"));
+    }
+
+    /// A nested shell is redundant, and allowing it would admit every script:
+    /// the message says to drop the wrapper and never to allow the shell.
+    #[test]
+    fn nested_shell_says_drop_the_wrapper_not_allow_it() {
+        for shell in ["bash", "sh", "zsh"] {
+            let msg = allowlist_block_message(shell, &[], &[]);
+            assert!(
+                msg.contains(&format!("drop the `{shell} -c` wrapper")),
+                "got: {msg}"
+            );
+            assert!(
+                msg.contains(&format!("Do NOT run `lean-ctx allow {shell}`")),
+                "got: {msg}"
+            );
+            assert!(!msg.contains("Fix (additive"), "got: {msg}");
+        }
     }
 }
