@@ -9,10 +9,18 @@
 //!
 //! Architecture:
 //!   Tokenizer → ONNX Model (ort) → Mean Pooling → L2 Normalize → `Vec<f32>`
+//!   Tokenizer → static token table (model2vec, pure Rust) → weighted mean → L2
+//!
+//! A static model (`potion-code-16m`) never initialises ONNX Runtime, so it
+//! works where `libonnxruntime` is missing.
 
 pub mod download;
+#[cfg(all(test, feature = "embeddings"))]
+mod eval;
 pub mod model_registry;
 pub mod pooling;
+#[cfg(feature = "embeddings")]
+mod static_model;
 pub mod tokenizer;
 
 use std::path::{Path, PathBuf};
@@ -33,11 +41,21 @@ pub struct EmbeddingEngine {
     max_seq_len: usize,
     model_id: EmbeddingModel,
     model_config: ModelConfig,
+    /// Exactly one of the two backends is present.
     #[cfg(feature = "embeddings")]
+    backend: Backend,
+}
+
+#[cfg(feature = "embeddings")]
+enum Backend {
+    Onnx(OnnxSession),
+    Static(static_model::StaticModel),
+}
+
+#[cfg(feature = "embeddings")]
+struct OnnxSession {
     session: Mutex<ort::session::Session>,
-    #[cfg(feature = "embeddings")]
     graph_inputs: GraphInputs,
-    #[cfg(feature = "embeddings")]
     output_name: String,
 }
 
@@ -90,6 +108,10 @@ impl EmbeddingEngine {
         let model_dir = base_dir.join(model_id.storage_dir_name());
 
         download::ensure_model(&model_dir, &config)?;
+
+        if config.format == model_registry::ModelFormat::StaticSafetensors {
+            return Self::load_static(&model_dir, model_id, config);
+        }
 
         let tokenizer = load_tokenizer(&model_dir, &config)?;
         let model_path = model_dir.join("model.onnx");
@@ -208,15 +230,69 @@ impl EmbeddingEngine {
         );
 
         Ok(Self {
-            session: Mutex::new(session),
             tokenizer,
             dimensions,
             max_seq_len: config.max_seq_len,
             model_id,
             model_config: config,
-            graph_inputs,
-            output_name,
+            backend: Backend::Onnx(OnnxSession {
+                session: Mutex::new(session),
+                graph_inputs,
+                output_name,
+            }),
         })
+    }
+
+    /// A model2vec table: the tokenizer and the weights, nothing else — ONNX
+    /// Runtime is never initialised on this path.
+    #[cfg(feature = "embeddings")]
+    fn load_static(
+        model_dir: &Path,
+        model_id: EmbeddingModel,
+        config: ModelConfig,
+    ) -> anyhow::Result<Self> {
+        let tokenizer = tokenizer::HfTokenizerWrapper::from_file_static(
+            &model_dir.join(config.vocab_file.filename()),
+        )?;
+        let model = static_model::StaticModel::load(&model_dir.join(config.local_model_file()))?;
+        if model.vocab_size() != tokenizer.vocab_size() {
+            anyhow::bail!(
+                "{}: tokenizer has {} tokens but the weights cover {}",
+                config.name,
+                tokenizer.vocab_size(),
+                model.vocab_size()
+            );
+        }
+        tracing::info!(
+            "Embedding engine loaded: model={}, {}d, static (model2vec, no ONNX Runtime)",
+            config.name,
+            model.dimensions()
+        );
+        Ok(Self {
+            tokenizer: TokenizerKind::HfTokenizer(tokenizer),
+            dimensions: model.dimensions(),
+            max_seq_len: config.max_seq_len,
+            model_id,
+            model_config: config,
+            backend: Backend::Static(model),
+        })
+    }
+
+    /// The static backend, when this engine runs a model2vec table.
+    #[cfg(feature = "embeddings")]
+    fn static_model(&self) -> Option<&static_model::StaticModel> {
+        match &self.backend {
+            Backend::Static(model) => Some(model),
+            Backend::Onnx(_) => None,
+        }
+    }
+
+    #[cfg(feature = "embeddings")]
+    fn onnx(&self) -> anyhow::Result<&OnnxSession> {
+        match &self.backend {
+            Backend::Onnx(onnx) => Ok(onnx),
+            Backend::Static(_) => anyhow::bail!("static embedding model has no ONNX session"),
+        }
     }
 
     #[cfg(not(feature = "embeddings"))]
@@ -238,8 +314,21 @@ impl EmbeddingEngine {
         } else {
             text
         };
+        #[cfg(feature = "embeddings")]
+        if let Some(model) = self.static_model() {
+            return Ok(model.embed_ids(&self.plain_ids(input_text)));
+        }
         let input = tokenize(&self.tokenizer, input_text, self.max_seq_len);
         self.run_inference(&input)
+    }
+
+    /// Token ids for a static model: no sentence markers, no `[UNK]`.
+    #[cfg(feature = "embeddings")]
+    fn plain_ids(&self, text: &str) -> Vec<i32> {
+        match &self.tokenizer {
+            TokenizerKind::WordPiece(wp) => wp.encode_plain(text, self.max_seq_len),
+            TokenizerKind::HfTokenizer(hf) => hf.encode_plain(text, self.max_seq_len),
+        }
     }
 
     /// Generate an embedding vector for a query string.
@@ -252,6 +341,10 @@ impl EmbeddingEngine {
         } else {
             query
         };
+        #[cfg(feature = "embeddings")]
+        if let Some(model) = self.static_model() {
+            return Ok(model.embed_ids(&self.plain_ids(input_text)));
+        }
         let input = tokenize(&self.tokenizer, input_text, self.max_seq_len);
         self.run_inference(&input)
     }
@@ -264,6 +357,31 @@ impl EmbeddingEngine {
     pub fn embed_batch(&self, texts: &[&str]) -> anyhow::Result<Vec<Vec<f32>>> {
         if texts.is_empty() {
             return Ok(Vec::new());
+        }
+
+        // A static model is a table lookup per token: embed in parallel, in
+        // slices small enough that cancellation is honoured promptly.
+        #[cfg(feature = "embeddings")]
+        if let Some(model) = self.static_model() {
+            let mut results = Vec::with_capacity(texts.len());
+            for slice in texts.chunks(4096) {
+                if crate::core::interrupt::is_cancelled()
+                    || crate::core::memory_guard::abort_requested()
+                {
+                    anyhow::bail!(
+                        "embedding cancelled after {}/{} chunks",
+                        results.len(),
+                        texts.len()
+                    );
+                }
+                results.extend(
+                    slice
+                        .par_iter()
+                        .map(|text| model.embed_ids(&self.plain_ids(text)))
+                        .collect::<Vec<_>>(),
+                );
+            }
+            return Ok(results);
         }
 
         // Process in mini-batches to cap peak memory. Prefixing and tokenization
@@ -373,7 +491,7 @@ impl EmbeddingEngine {
         let selected = model_registry::resolve_model();
         let config = selected.config();
         let model_dir = base_dir.join(selected.storage_dir_name());
-        model_dir.join("model.onnx").exists()
+        model_dir.join(config.local_model_file()).exists()
             && model_dir.join(config.vocab_file.filename()).exists()
     }
 
@@ -398,9 +516,10 @@ impl EmbeddingEngine {
 
     #[cfg(feature = "embeddings")]
     fn run_inference(&self, input: &TokenizedInput) -> anyhow::Result<Vec<f32>> {
+        let onnx = self.onnx()?;
         let seq_len = input.input_ids.len();
 
-        let mut embedding = match &self.graph_inputs {
+        let mut embedding = match &onnx.graph_inputs {
             GraphInputs::Transformer {
                 input_ids,
                 attention_mask,
@@ -418,7 +537,7 @@ impl EmbeddingEngine {
                         input.token_type_ids.iter().map(|&x| x as i64).collect();
                     let type_array = ndarray::Array2::from_shape_vec((1, seq_len), type_vec)?;
                     let type_tensor = ort::value::Tensor::from_array(type_array)?;
-                    let mut _guard = self
+                    let mut _guard = onnx
                         .session
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -428,10 +547,10 @@ impl EmbeddingEngine {
                         type_id.as_str() => type_tensor,
                     ])?;
                     let (_, data) =
-                        outputs[self.output_name.as_str()].try_extract_tensor::<f32>()?;
+                        outputs[onnx.output_name.as_str()].try_extract_tensor::<f32>()?;
                     data.to_vec()
                 } else {
-                    let mut _guard = self
+                    let mut _guard = onnx
                         .session
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -440,7 +559,7 @@ impl EmbeddingEngine {
                         attention_mask.as_str() => mask_tensor,
                     ])?;
                     let (_, data) =
-                        outputs[self.output_name.as_str()].try_extract_tensor::<f32>()?;
+                        outputs[onnx.output_name.as_str()].try_extract_tensor::<f32>()?;
                     data.to_vec()
                 };
                 pooling::mean_pool(&hidden, &input.attention_mask, seq_len, self.dimensions)
@@ -454,7 +573,7 @@ impl EmbeddingEngine {
                 let offsets_array = ndarray::Array1::from_shape_vec(1, vec![0i64])?;
                 let ids_tensor = ort::value::Tensor::from_array(ids_array)?;
                 let offsets_tensor = ort::value::Tensor::from_array(offsets_array)?;
-                let mut _guard = self
+                let mut _guard = onnx
                     .session
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -462,7 +581,7 @@ impl EmbeddingEngine {
                     input_ids.as_str() => ids_tensor,
                     offsets.as_str() => offsets_tensor,
                 ])?;
-                let (_, data) = outputs[self.output_name.as_str()].try_extract_tensor::<f32>()?;
+                let (_, data) = outputs[onnx.output_name.as_str()].try_extract_tensor::<f32>()?;
                 data.to_vec()
             }
         };
@@ -484,8 +603,9 @@ impl EmbeddingEngine {
         if inputs.is_empty() {
             return Ok(Vec::new());
         }
+        let onnx = self.onnx()?;
 
-        match &self.graph_inputs {
+        match &onnx.graph_inputs {
             GraphInputs::Transformer {
                 input_ids: input_id,
                 attention_mask: mask_id,
@@ -521,7 +641,7 @@ impl EmbeddingEngine {
                 let hidden = if let Some(type_id) = token_type_ids {
                     let type_array = ndarray::Array2::from_shape_vec((batch, max_len), type_data)?;
                     let type_tensor = ort::value::Tensor::from_array(type_array)?;
-                    let mut _guard = self
+                    let mut _guard = onnx
                         .session
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -531,10 +651,10 @@ impl EmbeddingEngine {
                         type_id.as_str() => type_tensor,
                     ])?;
                     let (_, data) =
-                        outputs[self.output_name.as_str()].try_extract_tensor::<f32>()?;
+                        outputs[onnx.output_name.as_str()].try_extract_tensor::<f32>()?;
                     data.to_vec()
                 } else {
-                    let mut _guard = self
+                    let mut _guard = onnx
                         .session
                         .lock()
                         .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -543,7 +663,7 @@ impl EmbeddingEngine {
                         mask_id.as_str() => mask_tensor,
                     ])?;
                     let (_, data) =
-                        outputs[self.output_name.as_str()].try_extract_tensor::<f32>()?;
+                        outputs[onnx.output_name.as_str()].try_extract_tensor::<f32>()?;
                     data.to_vec()
                 };
 
@@ -577,7 +697,7 @@ impl EmbeddingEngine {
                 let ids_tensor = ort::value::Tensor::from_array(ids_array)?;
                 let offsets_tensor = ort::value::Tensor::from_array(offsets_array)?;
 
-                let mut _guard = self
+                let mut _guard = onnx
                     .session
                     .lock()
                     .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -586,7 +706,7 @@ impl EmbeddingEngine {
                     offsets.as_str() => offsets_tensor,
                 ])?;
                 let (_, out_data) =
-                    outputs[self.output_name.as_str()].try_extract_tensor::<f32>()?;
+                    outputs[onnx.output_name.as_str()].try_extract_tensor::<f32>()?;
                 let out = out_data.to_vec();
 
                 let mut results: Vec<Vec<f32>> = out
@@ -916,7 +1036,9 @@ mod tests {
         let config = selected.config();
         let model_dir = tmp.join(selected.storage_dir_name());
         std::fs::create_dir_all(&model_dir).unwrap();
-        std::fs::write(model_dir.join("model.onnx"), b"onnx").unwrap();
+        // The default depends on whether ONNX Runtime is installed here, so
+        // write whichever weights file the resolved model uses.
+        std::fs::write(model_dir.join(config.local_model_file()), b"weights").unwrap();
         std::fs::write(model_dir.join(config.vocab_file.filename()), b"vocab").unwrap();
 
         assert!(EmbeddingEngine::is_available());

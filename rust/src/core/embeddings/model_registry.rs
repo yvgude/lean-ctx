@@ -24,10 +24,49 @@ pub enum EmbeddingModel {
     /// nomic-embed-text-v1.5 — top MTEB general-purpose (768d, ~547MB).
     /// Matryoshka representation learning, supports dimension truncation.
     NomicEmbedV1_5,
+    /// potion-code-16M — static (model2vec) code embeddings (256d, ~64MB),
+    /// run in pure Rust: no ONNX Runtime, microseconds per chunk.
+    #[serde(rename = "potion-code-16m")]
+    PotionCode16M,
     /// Any HuggingFace repo with an ONNX export + tokenizer.json
     /// (`hf:org/repo[@revision]`, GL #397).
     Custom(CustomModelSpec),
 }
+
+/// How a model's weights are stored and run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ModelFormat {
+    /// An ONNX graph run by ONNX Runtime (needs the `embeddings` feature).
+    Onnx,
+    /// A model2vec token-embedding table in safetensors, run in pure Rust.
+    StaticSafetensors,
+}
+
+impl ModelFormat {
+    /// File name of the weights inside the model directory.
+    #[must_use]
+    pub fn local_file(self) -> &'static str {
+        match self {
+            Self::Onnx => "model.onnx",
+            Self::StaticSafetensors => "model.safetensors",
+        }
+    }
+}
+
+/// potion-code-16M at a fixed revision with its file hashes (MIT,
+/// <https://huggingface.co/minishlab/potion-code-16M>). A built-in model is
+/// pinned outright rather than trusted on first use.
+const POTION_CODE_REVISION: &str = "1b0ff71095656b23306542bbad34a09109673720";
+const POTION_CODE_SHA256: &[(&str, &str)] = &[
+    (
+        "model.safetensors",
+        "ca6159081a6e96cebe4ad878e5e8437bfccc761e8db16223370149cd2faa6c0b",
+    ),
+    (
+        "tokenizer.json",
+        "8e84217af15e70e8127c855435fc3d8a4cd91d7bbe686f72e75f188118ec78ae",
+    ),
+];
 
 /// A user-supplied HuggingFace embedding model (`hf:org/repo[@revision]`).
 #[derive(Debug, Clone, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
@@ -115,6 +154,27 @@ impl EmbeddingModel {
                 query_prefix: None,
                 document_prefix: None,
                 needs_token_type_ids: true,
+                format: ModelFormat::Onnx,
+                pinned_sha256: &[],
+            },
+            Self::PotionCode16M => ModelConfig {
+                model: self.clone(),
+                name: "potion-code-16M".into(),
+                hf_repo: "minishlab/potion-code-16M".into(),
+                revision: Some(POTION_CODE_REVISION.into()),
+                onnx_path: "model.safetensors".into(),
+                vocab_file: VocabSource::TokenizerJson("tokenizer.json".into()),
+                dimensions: 256,
+                // Static models average token vectors and see no positions, so a
+                // long chunk costs only its token count; cap it like model2vec.
+                max_seq_len: 512,
+                model_min_bytes: 10_000_000,
+                vocab_min_bytes: 100_000,
+                query_prefix: None,
+                document_prefix: None,
+                needs_token_type_ids: false,
+                format: ModelFormat::StaticSafetensors,
+                pinned_sha256: POTION_CODE_SHA256,
             },
             Self::NomicEmbedV1_5 => ModelConfig {
                 model: self.clone(),
@@ -130,6 +190,8 @@ impl EmbeddingModel {
                 query_prefix: Some("search_query: ".into()),
                 document_prefix: Some("search_document: ".into()),
                 needs_token_type_ids: false,
+                format: ModelFormat::Onnx,
+                pinned_sha256: &[],
             },
             Self::Custom(spec) => ModelConfig {
                 model: self.clone(),
@@ -156,6 +218,8 @@ impl EmbeddingModel {
                 // Probed from the ONNX graph at load time; BERT-style models
                 // with a third input still get token_type_ids wired up.
                 needs_token_type_ids: false,
+                format: ModelFormat::Onnx,
+                pinned_sha256: &[],
             },
         }
     }
@@ -174,18 +238,24 @@ impl EmbeddingModel {
             "nomic-embed-v1.5" | "nomic-embed-text-v1.5" | "nomic" | "nomic-embed" => {
                 Some(Self::NomicEmbedV1_5)
             }
+            "potion-code-16m" | "potion-code" | "potion" | "static" => Some(Self::PotionCode16M),
             _ => None,
         }
     }
 
     /// All built-in model variants (custom models are user-defined).
-    pub const ALL: &'static [Self] = &[Self::AllMiniLmL6V2, Self::NomicEmbedV1_5];
+    pub const ALL: &'static [Self] = &[
+        Self::AllMiniLmL6V2,
+        Self::NomicEmbedV1_5,
+        Self::PotionCode16M,
+    ];
 
     /// Unique subdirectory name for model storage isolation.
     pub fn storage_dir_name(&self) -> String {
         match self {
             Self::AllMiniLmL6V2 => "all-minilm-l6-v2".to_string(),
             Self::NomicEmbedV1_5 => "nomic-embed-v1.5".to_string(),
+            Self::PotionCode16M => "potion-code-16m".to_string(),
             Self::Custom(spec) => spec.storage_slug(),
         }
     }
@@ -239,6 +309,11 @@ pub struct ModelConfig {
     /// Whether the model expects token_type_ids input (BERT-style).
     /// Some models (e.g. nomic-embed) only use input_ids + attention_mask.
     pub needs_token_type_ids: bool,
+    /// How the weights are stored and run.
+    pub format: ModelFormat,
+    /// `(local file, sha256-hex)` every download must match; empty means
+    /// trust-on-first-use via `model.lock.json`.
+    pub pinned_sha256: &'static [(&'static str, &'static str)],
 }
 
 impl ModelConfig {
@@ -250,7 +325,13 @@ impl ModelConfig {
         )
     }
 
-    /// Full HuggingFace download URL for the ONNX model file.
+    /// File name of the weights inside the model directory.
+    #[must_use]
+    pub fn local_model_file(&self) -> &'static str {
+        self.format.local_file()
+    }
+
+    /// Full HuggingFace download URL for the model weights.
     pub fn model_url(&self) -> String {
         format!("{}/{}", self.resolve_base(), self.onnx_path)
     }
@@ -290,7 +371,33 @@ pub fn resolve_model_with_source() -> (EmbeddingModel, ModelSource) {
         env_val.as_deref(),
         embedding_cfg.model.as_deref(),
         embedding_cfg.dimensions,
+        default_model(),
     )
+}
+
+/// The model used when none is configured: MiniLM where ONNX Runtime is
+/// installed, the static `potion-code-16m` everywhere else.
+///
+/// Measured 2026-10-13 on 8,086 documented functions of this repository
+/// (docstring → code): MiniLM MRR 0.348 / recall@10 0.570, potion-code MRR
+/// 0.247 / recall@10 0.431 — but potion-code indexed them in 0.07 s instead
+/// of 557 s (CPU, `eval.rs`), answers a query in 9 µs instead of 26 ms, and
+/// needs no `libonnxruntime` — without which an installation has no semantic
+/// search at all. So the better model wins where it can run, and the one that
+/// runs everywhere covers the rest. Resolved once per process; it only
+/// searches the file system, it never loads the library.
+#[must_use]
+pub fn default_model() -> EmbeddingModel {
+    #[cfg(feature = "embeddings")]
+    {
+        static ORT_PRESENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+        let ort_present = *ORT_PRESENT
+            .get_or_init(|| crate::core::ort_environment::resolved_ort_dylib_path().is_ok());
+        if !ort_present {
+            return EmbeddingModel::PotionCode16M;
+        }
+    }
+    EmbeddingModel::DEFAULT
 }
 
 /// Pure model resolution used by [`resolve_model`]; kept separate so the env-var/config
@@ -302,13 +409,14 @@ fn resolve_model_from(
     config_val: Option<&str>,
     config_dims: Option<usize>,
 ) -> EmbeddingModel {
-    resolve_model_with_source_from(env_val, config_val, config_dims).0
+    resolve_model_with_source_from(env_val, config_val, config_dims, EmbeddingModel::DEFAULT).0
 }
 
 fn resolve_model_with_source_from(
     env_val: Option<&str>,
     config_val: Option<&str>,
     config_dims: Option<usize>,
+    default: EmbeddingModel,
 ) -> (EmbeddingModel, ModelSource) {
     for (source, raw) in [
         ("LEAN_CTX_EMBEDDING_MODEL", env_val),
@@ -339,14 +447,13 @@ fn resolve_model_with_source_from(
             Some(model) => return (model, origin),
             None => {
                 tracing::warn!(
-                    "Unknown embedding model {name:?} from {source}; using {} instead \
-                     (built-ins: minilm, nomic — or hf:org/repo[@rev])",
-                    EmbeddingModel::DEFAULT
+                    "Unknown embedding model {name:?} from {source}; using {default} instead \
+                     (built-ins: minilm, nomic, potion-code — or hf:org/repo[@rev])"
                 );
             }
         }
     }
-    (EmbeddingModel::DEFAULT, ModelSource::Default)
+    (default, ModelSource::Default)
 }
 
 #[cfg(test)]
@@ -476,7 +583,12 @@ mod tests {
             let vocab_url = cfg.vocab_url();
             assert!(model_url.starts_with("https://huggingface.co/"));
             assert!(vocab_url.starts_with("https://huggingface.co/"));
-            assert!(model_url.contains("resolve/main"));
+            // Pinned built-ins resolve their exact revision, the rest `main`.
+            let rev = cfg.revision.as_deref().unwrap_or("main");
+            assert!(
+                model_url.contains(&format!("resolve/{rev}/")),
+                "{model_url}"
+            );
         }
     }
 
@@ -529,15 +641,27 @@ mod tests {
     #[test]
     fn resolution_reports_the_setting_that_won() {
         assert_eq!(
-            resolve_model_with_source_from(Some(" nomic "), Some("minilm"), None).1,
+            resolve_model_with_source_from(
+                Some(" nomic "),
+                Some("minilm"),
+                None,
+                EmbeddingModel::DEFAULT
+            )
+            .1,
             ModelSource::Env("nomic".into())
         );
         assert_eq!(
-            resolve_model_with_source_from(Some("bogus"), Some("nomic"), None).1,
+            resolve_model_with_source_from(
+                Some("bogus"),
+                Some("nomic"),
+                None,
+                EmbeddingModel::DEFAULT
+            )
+            .1,
             ModelSource::Config("nomic".into())
         );
         assert_eq!(
-            resolve_model_with_source_from(None, Some("nope"), None).1,
+            resolve_model_with_source_from(None, Some("nope"), None, EmbeddingModel::DEFAULT).1,
             ModelSource::Default
         );
     }
@@ -595,13 +719,21 @@ mod tests {
 
     #[test]
     fn builtin_models_have_valid_vocab_sources() {
-        // All current built-ins are WordPiece (vocab.txt) models. Custom HF
-        // repos use tokenizer.json, but those are user-defined, not built-ins.
+        // ONNX built-ins are BERT WordPiece (vocab.txt) models; the static
+        // model2vec built-in ships its WordPiece vocabulary as tokenizer.json.
         for model in EmbeddingModel::ALL {
-            assert!(
-                model.config().vocab_file.is_wordpiece(),
-                "{model} should use WordPiece vocab.txt"
-            );
+            let cfg = model.config();
+            match cfg.format {
+                ModelFormat::Onnx => assert!(
+                    cfg.vocab_file.is_wordpiece(),
+                    "{model} should use WordPiece vocab.txt"
+                ),
+                ModelFormat::StaticSafetensors => assert_eq!(
+                    cfg.vocab_file.filename(),
+                    "tokenizer.json",
+                    "{model} ships tokenizer.json"
+                ),
+            }
         }
     }
 

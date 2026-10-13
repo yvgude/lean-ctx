@@ -49,18 +49,29 @@ impl WordPieceTokenizer {
 
     /// Build tokenizer from vocabulary string (one token per line).
     pub fn from_vocab_str(vocab_str: &str) -> anyhow::Result<Self> {
+        Self::build(vocab_str, true)
+    }
+
+    /// `require_markers`: transformer inputs are framed by `[CLS]`/`[SEP]`, so
+    /// those must exist. Static embedding models (model2vec) average plain
+    /// token vectors and may ship no sentence markers at all; they are encoded
+    /// with [`Self::encode_plain`] only, which never reads the markers.
+    fn build(vocab_str: &str, require_markers: bool) -> anyhow::Result<Self> {
         let vocab: HashMap<String, i32> = vocab_str
             .lines()
             .enumerate()
             .map(|(i, line)| (line.to_string(), i as i32))
             .collect();
 
-        let cls_id = *vocab
-            .get("[CLS]")
-            .ok_or_else(|| anyhow::anyhow!("Vocabulary missing [CLS] token"))?;
-        let sep_id = *vocab
-            .get("[SEP]")
-            .ok_or_else(|| anyhow::anyhow!("Vocabulary missing [SEP] token"))?;
+        let marker = |name: &str| -> anyhow::Result<i32> {
+            match vocab.get(name) {
+                Some(id) => Ok(*id),
+                None if require_markers => anyhow::bail!("Vocabulary missing {name} token"),
+                None => Ok(-1),
+            }
+        };
+        let cls_id = marker("[CLS]")?;
+        let sep_id = marker("[SEP]")?;
         let pad_id = *vocab
             .get("[PAD]")
             .ok_or_else(|| anyhow::anyhow!("Vocabulary missing [PAD] token"))?;
@@ -104,6 +115,24 @@ impl WordPieceTokenizer {
             attention_mask: vec![1; len],
             token_type_ids: vec![0; len],
         }
+    }
+
+    /// Token ids of `text` without sentence markers and without `[UNK]` —
+    /// the input of a static (model2vec) embedding, which averages token
+    /// vectors: an unknown piece carries no meaning to average in.
+    pub fn encode_plain(&self, text: &str, max_tokens: usize) -> Vec<i32> {
+        let mut ids = Vec::new();
+        for word in self.pre_tokenize(text) {
+            for id in self.wordpiece_encode(&word) {
+                if ids.len() >= max_tokens {
+                    return ids;
+                }
+                if id != self.unk_id {
+                    ids.push(id);
+                }
+            }
+        }
+        ids
     }
 
     pub fn pad_id(&self) -> i32 {
@@ -281,10 +310,19 @@ impl HfTokenizerWrapper {
         let content = std::fs::read_to_string(path).map_err(|e| {
             anyhow::anyhow!("Failed to read tokenizer.json {}: {}", path.display(), e)
         })?;
-        Self::from_json(&content)
+        Self::from_json(&content, true)
     }
 
-    fn from_json(json_str: &str) -> anyhow::Result<Self> {
+    /// Load the tokenizer of a static embedding model, which may have no
+    /// `[CLS]`/`[SEP]`; use [`Self::encode_plain`] with it.
+    pub fn from_file_static(path: &Path) -> anyhow::Result<Self> {
+        let content = std::fs::read_to_string(path).map_err(|e| {
+            anyhow::anyhow!("Failed to read tokenizer.json {}: {}", path.display(), e)
+        })?;
+        Self::from_json(&content, false)
+    }
+
+    fn from_json(json_str: &str, require_markers: bool) -> anyhow::Result<Self> {
         let parsed: serde_json::Value = serde_json::from_str(json_str)
             .map_err(|e| anyhow::anyhow!("Invalid tokenizer.json: {e}"))?;
 
@@ -324,8 +362,16 @@ impl HfTokenizerWrapper {
             .collect::<Vec<_>>()
             .join("\n");
 
-        let inner = WordPieceTokenizer::from_vocab_str(&vocab_str)?;
+        let inner = WordPieceTokenizer::build(&vocab_str, require_markers)?;
         Ok(Self { inner })
+    }
+
+    pub fn encode_plain(&self, text: &str, max_tokens: usize) -> Vec<i32> {
+        self.inner.encode_plain(text, max_tokens)
+    }
+
+    pub fn vocab_size(&self) -> usize {
+        self.inner.vocab_size()
     }
 
     pub fn encode(&self, text: &str, max_len: usize) -> TokenizedInput {
@@ -462,7 +508,7 @@ mod tests {
                 }
             }
         }"#;
-        let tok = HfTokenizerWrapper::from_json(json).unwrap();
+        let tok = HfTokenizerWrapper::from_json(json, true).unwrap();
 
         // After remapping: <s>→[CLS], <pad>→[PAD], </s>→[SEP], <unk>→[UNK]
         // IDs come from sort order (0,1,2,3,4,5,6) which matches original IDs.
@@ -491,7 +537,7 @@ mod tests {
                 }
             }
         }"#;
-        let tok = HfTokenizerWrapper::from_json(json).unwrap();
+        let tok = HfTokenizerWrapper::from_json(json, true).unwrap();
         let input = tok.encode("hello world", 512);
         assert_eq!(input.input_ids[0], 2); // [CLS]
         assert_eq!(*input.input_ids.last().unwrap(), 3); // [SEP]
@@ -500,12 +546,27 @@ mod tests {
 
     #[test]
     fn hf_tokenizer_invalid_json() {
-        assert!(HfTokenizerWrapper::from_json("not json").is_err());
+        assert!(HfTokenizerWrapper::from_json("not json", true).is_err());
     }
 
     #[test]
     fn hf_tokenizer_missing_vocab() {
         let json = r#"{"model": {"type": "WordPiece"}}"#;
-        assert!(HfTokenizerWrapper::from_json(json).is_err());
+        assert!(HfTokenizerWrapper::from_json(json, true).is_err());
+    }
+
+    /// model2vec vocabularies (potion-*) carry `[PAD]`/`[UNK]` but no sentence
+    /// markers: they load for plain encoding, which drops unknown pieces, and
+    /// stay rejected for transformer framing.
+    #[test]
+    fn static_vocab_without_markers_encodes_plain_tokens() {
+        let json = r###"{"model": {"type": "WordPiece", "vocab": {
+            "[PAD]": 0, "[UNK]": 1, "read": 2, "file": 3, "##s": 4}}}"###;
+        assert!(HfTokenizerWrapper::from_json(json, true).is_err());
+        let tok = HfTokenizerWrapper::from_json(json, false).unwrap();
+        assert_eq!(tok.encode_plain("read files", 64), vec![2, 3, 4]);
+        assert_eq!(tok.encode_plain("read zzz", 64), vec![2], "[UNK] dropped");
+        assert_eq!(tok.encode_plain("read files", 2), vec![2, 3], "token cap");
+        assert!(tok.encode_plain("", 64).is_empty());
     }
 }

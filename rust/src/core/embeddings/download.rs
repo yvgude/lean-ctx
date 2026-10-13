@@ -65,6 +65,21 @@ pub fn ensure_model(model_dir: &Path, config: &ModelConfig) -> anyhow::Result<Pa
         download_file(&file.url, &file.local_name, file.min_bytes, model_dir)?;
 
         let actual = sha256_file(&model_dir.join(&file.local_name))?;
+        // A built-in model pins its bytes outright: any other content is refused.
+        if let Some((_, expected)) = config
+            .pinned_sha256
+            .iter()
+            .find(|(name, _)| *name == file.local_name)
+            && *expected != actual
+        {
+            let _ = std::fs::remove_file(model_dir.join(&file.local_name));
+            anyhow::bail!(
+                "SHA-256 mismatch for {} of model '{}': expected {expected}, got {actual} — \
+                 refusing the file.",
+                file.local_name,
+                config.name
+            );
+        }
         match lock.get(&file.local_name) {
             Some(pinned) if pinned != &actual => {
                 let _ = std::fs::remove_file(model_dir.join(&file.local_name));
@@ -99,7 +114,7 @@ fn download_files(config: &ModelConfig) -> Vec<DownloadFile> {
     vec![
         DownloadFile {
             url: config.model_url(),
-            local_name: "model.onnx".to_string(),
+            local_name: config.local_model_file().to_string(),
             min_bytes: config.model_min_bytes,
         },
         DownloadFile {
@@ -191,14 +206,15 @@ fn download_file(
 }
 
 fn verify_model_files(model_dir: &Path, config: &ModelConfig) -> anyhow::Result<()> {
-    let model_path = model_dir.join("model.onnx");
+    let model_file = config.local_model_file();
+    let model_path = model_dir.join(model_file);
     if !model_path.exists() {
-        anyhow::bail!("Model file model.onnx missing after download");
+        anyhow::bail!("Model file {model_file} missing after download");
     }
     let meta = std::fs::metadata(&model_path)?;
     if meta.len() < config.model_min_bytes {
         anyhow::bail!(
-            "Model file model.onnx is corrupt ({} bytes, expected >= {})",
+            "Model file {model_file} is corrupt ({} bytes, expected >= {})",
             meta.len(),
             config.model_min_bytes
         );
@@ -268,7 +284,13 @@ fn write_lockfile(
 
 /// Remove all downloaded model files (for cleanup/re-download).
 pub fn clean_model(model_dir: &Path) -> anyhow::Result<()> {
-    for name in ["model.onnx", "vocab.txt", "tokenizer.json", LOCKFILE] {
+    for name in [
+        "model.onnx",
+        "model.safetensors",
+        "vocab.txt",
+        "tokenizer.json",
+        LOCKFILE,
+    ] {
         let path = model_dir.join(name);
         if path.exists() {
             std::fs::remove_file(&path)?;
@@ -298,8 +320,27 @@ mod tests {
                 "model={} should have 2 download files",
                 cfg.name
             );
-            assert!(files[0].url.contains("model.onnx"));
+            assert!(files[0].url.contains(cfg.onnx_path.as_str()));
+            assert_eq!(files[0].local_name, cfg.local_model_file());
             assert!(files[0].min_bytes > 0);
+        }
+    }
+
+    /// A built-in static model is pinned to an exact revision and to the hash
+    /// of every file it downloads — nothing is trusted on first use.
+    #[test]
+    fn potion_code_is_pinned_by_revision_and_hash() {
+        let cfg = EmbeddingModel::PotionCode16M.config();
+        assert!(cfg.revision.as_deref().is_some_and(|r| r.len() == 40));
+        for file in download_files(&cfg) {
+            assert!(
+                cfg.pinned_sha256
+                    .iter()
+                    .any(|(name, sha)| *name == file.local_name && sha.len() == 64),
+                "{} must carry a pinned sha256",
+                file.local_name
+            );
+            assert!(file.url.contains(cfg.revision.as_deref().unwrap()));
         }
     }
 

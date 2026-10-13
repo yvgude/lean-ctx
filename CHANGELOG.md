@@ -8,6 +8,8 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Added
 
+- **Semantic search without ONNX Runtime.** A new built-in embedding model, `potion-code` (potion-code-16M, a static model2vec table, MIT), runs in pure Rust: no `libonnxruntime`, no attention pass. When no model is configured, lean-ctx now uses MiniLM where ONNX Runtime is installed and `potion-code` everywhere else — installations without ONNX Runtime previously had no semantic search at all. Measured on 8,086 documented functions of the lean-ctx source (docstring → code, `core/embeddings/eval.rs`): MiniLM reaches MRR 0.348 / recall@10 0.570 and indexed them in 557 s on CPU; `potion-code` reaches MRR 0.247 / recall@10 0.431 and indexed them in 0.07 s, answering a query in 9 µs instead of 26 ms. The model is pinned to an exact revision and the SHA-256 of both files, and its safetensors weights are bounds-checked before any read. Choose explicitly with `[embedding] model = "potion-code"` or `"minilm"`.
+
 - **The Claude Code cockpit sidebar can be turned off** (#2057). `/cockpit off` closes the sidebar and keeps it closed in new sessions; `/cockpit on` brings it back, and `/cockpit` still opens it once. The choice is stored as the plugin's **Open the LeanCTX cockpit sidebar** option, also in `/config`. With the sidebar off, the five-minute receipt re-verification that only the sidebar shows stops too; the pulse line, spinner and turn cards stay.
 
 ### Fixed

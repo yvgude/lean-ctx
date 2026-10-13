@@ -1453,7 +1453,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             key_with_env(
                 "string",
                 serde_json::json!("minilm"),
-                "Local ONNX embedding model for ctx_semantic_search. One of: minilm (all-MiniLM-L6-v2, 384d, default), nomic (768d) — or any HuggingFace repo with an ONNX export via hf:org/repo[@revision] (e.g. hf:jinaai/jina-embeddings-v2-base-code for code). Switching models re-indexes once on the next search.",
+                "Local embedding model for ctx_semantic_search. Unset: minilm where ONNX Runtime is installed, potion-code otherwise. One of: minilm (all-MiniLM-L6-v2, 384d), potion-code (potion-code-16M, 256d static model2vec, pure Rust — no ONNX Runtime, indexes thousands of chunks per second), nomic (768d) — or any HuggingFace repo with an ONNX export via hf:org/repo[@revision] (e.g. hf:jinaai/jina-embeddings-v2-base-code for code). Switching models re-indexes once on the next search.",
                 "LEAN_CTX_EMBEDDING_MODEL",
             ),
         );
