@@ -498,7 +498,20 @@ fn print_human_status(project_root: &str) {
     // #1437: surface the daemon session root when it differs from the CLI root
     // so users can diagnose the "status says ready but queries fail" mismatch.
     if let Some(daemon_root) = daemon_session_project_root() {
-        if daemon_root != project_root {
+        // Compare forms, not spellings: `G:/x` and `\\?\G:\x` are one root (#2049).
+        let same_root = |a: &str, b: &str| {
+            let form = |p: &str| {
+                let p = crate::core::pathutil::strip_verbatim_str(p).unwrap_or_else(|| p.into());
+                crate::core::pathutil::normalize_tool_path(&p)
+            };
+            let (a, b) = (form(a), form(b));
+            if cfg!(windows) {
+                a.eq_ignore_ascii_case(&b)
+            } else {
+                a == b
+            }
+        };
+        if !same_root(&daemon_root, project_root) {
             println!(
                 "  ⚠ Daemon root:  {daemon_root} (differs from CLI — dense queries use this root)"
             );

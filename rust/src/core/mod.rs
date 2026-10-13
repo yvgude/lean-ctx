@@ -453,6 +453,7 @@ pub(crate) mod path_suggest;
 pub mod paths;
 pub mod pathutil;
 pub mod persona;
+pub(crate) mod phase_timing;
 pub mod pipeline;
 pub(crate) mod portable_binary;
 pub mod product_capabilities;

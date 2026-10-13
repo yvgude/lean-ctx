@@ -262,6 +262,8 @@ pub(crate) fn cmd_call(args: &[String]) {
     // The printed result is all the caller sees: a delivery stub or a
     // cross-agent cache reference would point at content it never received.
     crate::core::conversation::mark_one_shot_process();
+    let tool = args.first().cloned().unwrap_or_default();
+    spawn_watchdog(tool, call_time_limit());
     match run_call(args) {
         Ok(text) => println!("{text}"),
         Err(e) => {
@@ -271,9 +273,77 @@ pub(crate) fn cmd_call(args: &[String]) {
     }
 }
 
+/// How often a long one-shot call reports its phase on stderr (#2063).
+const PROGRESS_EVERY: std::time::Duration = std::time::Duration::from_secs(30);
+/// Default wall-clock limit of one `lean-ctx call`.
+const DEFAULT_TIME_LIMIT_SECS: u64 = 300;
+
+/// `LEAN_CTX_CALL_TIMEOUT_SECS` (0 = no limit), else the default.
+fn call_time_limit() -> Option<std::time::Duration> {
+    let secs = std::env::var("LEAN_CTX_CALL_TIMEOUT_SECS")
+        .ok()
+        .and_then(|v| v.trim().parse::<u64>().ok())
+        .unwrap_or(DEFAULT_TIME_LIMIT_SECS);
+    (secs > 0).then(|| std::time::Duration::from_secs(secs))
+}
+
+/// #2063: a stalled call printed nothing until the caller killed it. Every
+/// [`PROGRESS_EVERY`] it now names the phase it is in on stderr (stdout stays
+/// the result), and past the limit it stops with exit code 124, like
+/// `timeout(1)`, instead of hanging.
+fn spawn_watchdog(tool: String, limit: Option<std::time::Duration>) {
+    let started = std::time::Instant::now();
+    let _ = std::thread::Builder::new()
+        .name("call-watchdog".into())
+        .spawn(move || {
+            let mut next_report = PROGRESS_EVERY;
+            loop {
+                std::thread::sleep(std::time::Duration::from_secs(1));
+                let elapsed = started.elapsed();
+                let over = limit.is_some_and(|limit| elapsed >= limit);
+                if !over && elapsed < next_report {
+                    continue;
+                }
+                let phase = crate::core::phase_timing::current().map_or_else(
+                    || "outside a named phase".to_string(),
+                    |(name, spent)| format!("{name}, {}s so far", spent.as_secs()),
+                );
+                if over {
+                    eprintln!(
+                        "lean-ctx call {tool}: no result after {}s (in {phase}) — stopped. \
+                         Set LEAN_CTX_CALL_TIMEOUT_SECS to wait longer (0 = no limit) and \
+                         LEAN_CTX_PHASE_TIMING=1 to see every phase's duration.",
+                        elapsed.as_secs()
+                    );
+                    std::process::exit(124);
+                }
+                eprintln!(
+                    "lean-ctx call {tool}: still running after {}s (in {phase})",
+                    elapsed.as_secs()
+                );
+                next_report += PROGRESS_EVERY;
+            }
+        });
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn call_time_limit_defaults_and_zero_disables() {
+        let _env = crate::core::data_dir::test_env_lock();
+        crate::test_env::remove_var("LEAN_CTX_CALL_TIMEOUT_SECS");
+        assert_eq!(
+            call_time_limit(),
+            Some(std::time::Duration::from_secs(DEFAULT_TIME_LIMIT_SECS))
+        );
+        crate::test_env::set_var("LEAN_CTX_CALL_TIMEOUT_SECS", "0");
+        assert_eq!(call_time_limit(), None);
+        crate::test_env::set_var("LEAN_CTX_CALL_TIMEOUT_SECS", "45");
+        assert_eq!(call_time_limit(), Some(std::time::Duration::from_secs(45)));
+        crate::test_env::remove_var("LEAN_CTX_CALL_TIMEOUT_SECS");
+    }
 
     #[test]
     fn unknown_tool_is_cli_error() {

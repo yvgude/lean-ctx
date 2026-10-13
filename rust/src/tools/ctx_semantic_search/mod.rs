@@ -114,6 +114,7 @@ fn handle_inner(
         return workspace_search(query, root, top_k, compact, &filter, &mode);
     }
 
+    let index_phase = crate::core::phase_timing::enter("semantic: BM25 index");
     let index = if mode == "bm25" {
         match admitted::fresh_index(root, &filter, tool) {
             Ok(index) => std::sync::Arc::new(index),
@@ -129,6 +130,7 @@ fn handle_inner(
             }
         }
     };
+    drop(index_phase);
     if index.doc_count == 0 {
         return "No admitted text chunks available for local search.".to_string();
     }
@@ -176,7 +178,7 @@ fn handle_inner(
                     truncate_query(query, 60),
                     results.len(),
                     index.doc_count,
-                    root.display(),
+                    crate::core::pathutil::strip_verbatim(root.to_path_buf()).display(),
                 )
             };
             let explanation = selection.map_or_else(String::new, |text| format!("{text}\n"));

@@ -416,6 +416,7 @@ fn handle_semantic_in_view(
     let artifacts = get_bool(args, "artifacts").unwrap_or(false);
     prime_bm25_cache(ctx);
 
+    let search_phase = crate::core::phase_timing::enter("ctx_search semantic: search");
     let mut result = tokio::task::block_in_place(|| {
         crate::tools::ctx_semantic_search::handle(
             &query,
@@ -430,9 +431,12 @@ fn handle_semantic_in_view(
         )
     });
 
+    drop(search_phase);
+
     // Legacy cross-store blocks have no current original-source provenance.
     // Keep them out of protected results, including explicit mode refusals.
     if !crate::core::policy::runtime::is_active() && !result.starts_with("ERR:") {
+        let _phase = crate::core::phase_timing::enter("ctx_search semantic: kernel enrichment");
         let kernel_budget = 100;
         if let Some(enrichment) =
             crate::core::context_kernel::bridge::kernel_enrich(&query, &path, kernel_budget)

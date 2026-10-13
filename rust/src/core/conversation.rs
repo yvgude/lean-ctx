@@ -348,6 +348,11 @@ pub(crate) fn mark_one_shot_process() {
     ONE_SHOT_PROCESS.store(true, Ordering::Relaxed);
 }
 
+/// Whether [`mark_one_shot_process`] ran in this process.
+pub(crate) fn is_one_shot_process() -> bool {
+    ONE_SHOT_PROCESS.load(Ordering::Relaxed)
+}
+
 /// Whether a `[unchanged]` stub may be served for an entry that was delivered to
 /// `delivered`, given the `current` conversation.
 ///
