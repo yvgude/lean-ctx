@@ -36,22 +36,30 @@ lean-ctx tools show
 lean-ctx tools standard
 ```
 
-Shadow mode is enabled by default. For agents that support tool-deny hooks,
-native Read, Grep, Glob, and Shell calls are denied so calls use `ctx_*` tools.
-This prevents a native fallback from bypassing compression. Set
-`shadow_mode = false` only when native tools must remain available.
+Native tool calls are not refused by default. Every hook-capable agent runs in
+**Hybrid** mode: lean-ctx steers the agent to `ctx_*` tools, rewrites known
+native shell reads and searches through lean-ctx, and lets other native calls
+through. A refusal cost the agent a whole extra request, usually for a command
+whose native output is tiny. Claude Code is the one exception by design: in the
+default mode its native Grep and Glob are left out of the tool list through
+`permissions.deny`. Claude Code drops such a tool instead of refusing calls to
+it, so this costs no error or retry, and it keeps searches compressed (native
+Glob cannot be redirected). `hook_mode = "hybrid"` gives Claude both tools back.
 
 `hook_mode` in `~/.config/lean-ctx/config.toml` controls integration behavior:
 
 | Mode | Behavior |
 |---|---|
-| `replace` | Denies native file/search/shell tools; MCP is the access path. |
-| `hybrid` | Provides MCP plus shell hooks; suitable where deny hooks are unavailable. |
-| `mcp` | Provides the MCP server only; no shell hooks. |
+| `auto` (default) | Hybrid for hook-capable agents, MCP for the rest. |
+| `hybrid` | MCP plus shell hooks; native tools stay available. |
+| `replace` | Opt-in: denies native Grep/Glob (and non-rewritable shell where the host supports it); MCP is the access path. |
+| `mcp` | MCP server only; no shell hooks. |
 
-`replace` is selected automatically for supported agents, including Codex,
-Cursor, Claude Code, Windsurf, and OpenCode. See the [advanced reference](../reference/05-advanced.md)
-for operational configuration.
+Choose Replace explicitly with `lean-ctx config set hook_mode replace` or
+`lean-ctx harden --hard`; `lean-ctx harden --undo` returns to the default.
+Deny hooks consult the setting at call time, so hooks written while Replace was
+the default stand down as soon as the binary updates. See the
+[advanced reference](../reference/05-advanced.md) for operational configuration.
 
 ## MCP tool catalog
 

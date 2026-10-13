@@ -62,6 +62,23 @@ impl McpTool for CtxReadTool {
             require_resolved_path(ctx, args, "path")?
         };
 
+        // "File not found" is the most frequent read failure, and often the
+        // path is one mechanical slip from a real file (other case, wrong
+        // prefix). When exactly one file fits and the jail admits it, read it
+        // and say so instead of failing. Byte-exact reads (the engine view,
+        // `raw`) never substitute: their output must be the file and nothing else.
+        let byte_exact = engine_interface_v1
+            || get_str(args, "mode").as_deref() == Some("raw")
+            || args.get("raw").and_then(Value::as_bool) == Some(true);
+        let (path, substituted) = match (!byte_exact)
+            .then(|| crate::core::path_suggest::unambiguous_match(std::path::Path::new(&path)))
+            .flatten()
+            .and_then(|found| ctx.resolve_path_sync(&found.to_string_lossy()).ok())
+        {
+            Some(found) => (found, Some(path)),
+            None => (path, None),
+        };
+
         let result = match std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             self.handle_inner(args, ctx, &path, engine_interface_v1)
         })) {
@@ -73,6 +90,17 @@ impl McpTool for CtxReadTool {
                 None,
             )),
         };
+        // A trailing service line: the header stays the first line, as every
+        // reader of ctx_read output (and the Claude Code plugin) expects.
+        let result = result.map(|mut output| {
+            if let Some(requested) = &substituted {
+                output.text = format!(
+                    "{}\n[lean-ctx: {requested} does not exist — read {path} instead]",
+                    output.text.trim_end_matches('\n')
+                );
+            }
+            output
+        });
         if let Ok(output) = &result {
             record_attribution_result(ctx, format!("ctx_read {path}"), output);
         }

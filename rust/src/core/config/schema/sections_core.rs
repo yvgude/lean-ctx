@@ -439,10 +439,26 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             key_with_env(
                 "bool",
                 serde_json::json!(true),
-                "Default on: denies native tools at the permission level, forcing agents to use ctx_* MCP tools for maximum compression. Disable with shadow_mode = false if you prefer native tools.",
+                "Default on: lean-ctx steers agents to ctx_* MCP tools, and an explicit hook_mode = \"replace\" may deny native tools. shadow_mode = false caps every agent at Hybrid — native tools are never denied.",
                 "LEAN_CTX_SHADOW_MODE",
             ),
         );
+    root.insert(
+        "hook_mode".into(),
+        key_enum_with_env(
+            &["auto", "hybrid", "replace", "mcp"],
+            "auto",
+            "How lean-ctx integrates with agents. auto (default): Hybrid for every \
+             hook-capable agent — native calls are not refused, known commands are \
+             rewritten through lean-ctx; Claude Code's tool list leaves out native \
+             Grep/Glob (no refusals, searches stay compressed). hybrid: the same, \
+             with Grep/Glob back in Claude Code. replace: deny native \
+             Grep/Glob (and non-rewritable shell where the host supports it) so \
+             ctx_* MCP tools are the only path; also set by `lean-ctx harden \
+             --hard`. mcp: MCP server only, no hooks",
+            "LEAN_CTX_HOOK_MODE",
+        ),
+    );
     root.insert(
         "shell_hook_mode".into(),
         key_enum_with_env(

@@ -75,7 +75,7 @@ Configuration concepts commonly managed by administrators are:
 
 | Policy area | Purpose | Verify with |
 | --- | --- | --- |
-| `hook_mode` | Select `replace`, `hybrid`, or `passthrough` behavior for native tools. | `lean-ctx config show` |
+| `hook_mode` | Select `auto` (default, Hybrid), `hybrid`, `replace`, or `mcp` behavior for native tools. | `lean-ctx config show` |
 | `compression_level` | Select the installed release's supported level; current releases expose `off`, `lite`, `standard`, and `max`. | `lean-ctx compression` |
 | `proxy.port` / `proxy.bind_address` | Select listener port and bind address; current schema may expose these as `proxy_port` and `proxy_bind_host`. | `lean-ctx proxy status` |
 | `cache.max_size_mb` / `cache.ttl_seconds` | Set cache retention limits where supported by the installed schema. | `lean-ctx config schema` |
@@ -91,9 +91,10 @@ Set `hook_mode` according to the team policy:
 
 | Mode | Use |
 | --- | --- |
-| `replace` | Enforce `ctx_*` tools for supported read, search, and shell work. |
-| `hybrid` | Permit native tools where compatibility requires them. |
-| `passthrough` | Troubleshoot integration without normal interception. |
+| `auto` (default) | Hybrid for hook-capable agents: native tools stay available, known shell reads and searches are rewritten through lean-ctx. |
+| `hybrid` | The same, for every agent regardless of detection. |
+| `replace` | Opt-in enforcement: deny native Grep/Glob (and non-rewritable shell where the host supports it) so `ctx_*` tools are the only path. Agents may fail and retry on denied calls. |
+| `mcp` | MCP server only, no hooks — for troubleshooting an integration. |
 
 Set and inspect compression with the CLI rather than guessing level names:
 

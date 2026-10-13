@@ -849,11 +849,16 @@ fn search_single(
 /// Keys a `queries[]` entry may carry. `items` used to be an untyped object,
 /// so a misspelled or unsupported key was dropped without a word — #1625 lost
 /// half an audit's results to exactly that.
+/// `regex`/`query` and `glob` are the spellings other search tools use for
+/// `pattern` and `include`; they mean exactly that here.
 const QUERY_KEYS: &[&str] = &[
     "pattern",
+    "regex",
+    "query",
     "path",
     "file_path",
     "include",
+    "glob",
     "ext",
     "exclude",
     "exclude_pattern",
@@ -940,7 +945,10 @@ fn handle_batch_queries(
             ));
             continue;
         };
-        let Some(pattern) = get_str(obj, "pattern") else {
+        let Some(pattern) = get_str(obj, "pattern")
+            .or_else(|| get_str(obj, "regex"))
+            .or_else(|| get_str(obj, "query"))
+        else {
             combined.push_str(&format!(
                 "── query {} ──\nERROR: pattern required\n\n",
                 idx + 1
@@ -951,8 +959,9 @@ fn handle_batch_queries(
         // key vanished without a word — the reporter lost half their results to
         // exactly that. Name the offending key and the accepted set instead.
         validate_query_keys(obj, idx).map_err(|e| ErrorData::invalid_params(e, None))?;
-        let include =
-            get_str(obj, "include").or_else(|| get_str(obj, "ext").map(|e| ext_to_include(&e)));
+        let include = get_str(obj, "include")
+            .or_else(|| get_str(obj, "glob"))
+            .or_else(|| get_str(obj, "ext").map(|e| ext_to_include(&e)));
         let exclude = get_str(obj, "exclude");
         let exclude_pattern = get_str(obj, "exclude_pattern");
         let per_query_max = resolve_query_cap(obj, default_share, idx)
@@ -1365,6 +1374,23 @@ mod tests {
             error.contains("max_results"),
             "the accepted set must be listed so the fix is obvious: {error}"
         );
+    }
+
+    /// Other search tools spell the pattern `regex`/`query` and the file
+    /// filter `glob`; a query entry written that way means the same thing.
+    #[test]
+    fn query_entries_accept_other_tools_spellings() {
+        for (key, value) in [
+            ("regex", json!("x")),
+            ("query", json!("x")),
+            ("glob", json!("*.rs")),
+        ] {
+            assert_eq!(
+                validate_query_keys(&args(&[("pattern", json!("x")), (key, value)]), 0),
+                Ok(()),
+                "{key} must be accepted"
+            );
+        }
     }
 
     /// The published schema must describe the shared-budget semantics the

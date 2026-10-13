@@ -9,6 +9,7 @@ import type {
 } from "claude-code";
 
 import { registerCockpit } from "./cockpit";
+import { registerResultRendering } from "./render";
 
 const DEFAULT_FRONT_LOADED_TOOLS = [
   "ctx_read",
@@ -189,6 +190,9 @@ export const register: Register = (on, options) => {
     },
     { panel: asRecord(options).cockpit_panel !== false },
   );
+  // ctx_patch / ctx_read / ctx_search results drawn as diffs and code
+  // (render.tsx). Display only: the model receives every result unchanged.
+  if (asRecord(options).color_output !== false) registerResultRendering(on);
   const frontLoaded = getFrontLoadedTools(options);
   const shapeNative = asRecord(options).shape_native_output !== false;
   const keepHookContext = asRecord(options).keep_hook_context === true;

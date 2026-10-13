@@ -37,6 +37,39 @@ pub(crate) fn suggestions(path: &Path) -> Vec<PathBuf> {
         .unwrap_or_default()
 }
 
+/// The one file `path` unambiguously names, for a read that may follow it
+/// without asking: the same name differing only in case in the same
+/// directory, or the whole relative path found under exactly one other
+/// directory (`src/core/x.rs` for `rust/src/core/x.rs`). Edit-distance and
+/// other-extension guesses (`main.ts` → `main.rs`) are a different file and
+/// stay suggestions only.
+pub(crate) fn unambiguous_match(path: &Path) -> Option<PathBuf> {
+    if path.exists() {
+        return None;
+    }
+    let name = path.file_name()?.to_str()?;
+    if let Some(parent) = path.parent().filter(|p| p.is_dir()) {
+        let lowered = name.to_lowercase();
+        let mut same_name = std::fs::read_dir(parent)
+            .ok()?
+            .filter_map(Result::ok)
+            .take(MAX_SIBLINGS)
+            .filter_map(|e| e.file_name().into_string().ok())
+            .filter(|n| n.to_lowercase() == lowered);
+        let only = same_name.next()?;
+        return same_name.next().is_none().then(|| parent.join(only));
+    }
+    let base = nearest_existing_ancestor(path)?;
+    let (ranked, tail_len) = ranked_tail_matches(&base, path);
+    match ranked.as_slice() {
+        [(shared, only)] if *shared == tail_len => Some(only.clone()),
+        [(shared, best), (next, _), ..] if *shared == tail_len && next < shared => {
+            Some(best.clone())
+        }
+        _ => None,
+    }
+}
+
 /// The suggestions as a one-line suffix for an error message, or "".
 pub(crate) fn hint(path: &Path) -> String {
     let found = suggestions(path);
@@ -88,15 +121,27 @@ fn nearest_existing_ancestor(path: &Path) -> Option<PathBuf> {
 /// same file reached from a different directory. Falls back to the file name
 /// alone when no longer tail matches.
 fn same_tail_below(base: &Path, path: &Path) -> Vec<PathBuf> {
+    ranked_tail_matches(base, path)
+        .0
+        .into_iter()
+        .take(MAX_SUGGESTIONS)
+        .map(|(_, p)| p)
+        .collect()
+}
+
+/// Every file below `base` named like `path`, best first, with how many
+/// trailing components it shares with the missing part of `path`; plus that
+/// missing part's length (a full match shares all of it).
+fn ranked_tail_matches(base: &Path, path: &Path) -> (Vec<(usize, PathBuf)>, usize) {
     if !crate::core::graph_index::is_safe_scan_root_public(&base.to_string_lossy()) {
-        return Vec::new();
+        return (Vec::new(), 0);
     }
     let Ok(missing) = path.strip_prefix(base) else {
-        return Vec::new();
+        return (Vec::new(), 0);
     };
     let tail: Vec<_> = missing.components().collect();
     let Some(name) = tail.last().map(|c| c.as_os_str().to_owned()) else {
-        return Vec::new();
+        return (Vec::new(), 0);
     };
 
     // Matches ranked by how many trailing components they share with `path`.
@@ -119,11 +164,7 @@ fn same_tail_below(base: &Path, path: &Path) -> Vec<PathBuf> {
         ranked.push((shared, candidate.to_path_buf()));
     }
     ranked.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.cmp(&b.1)));
-    ranked
-        .into_iter()
-        .take(MAX_SUGGESTIONS)
-        .map(|(_, p)| p)
-        .collect()
+    (ranked, tail.len())
 }
 
 #[cfg(test)]
@@ -170,6 +211,44 @@ mod tests {
             Some(&dir.path().join("rust/src/core/config.rs"))
         );
         assert!(hint(&wanted).contains("did you mean"), "{}", hint(&wanted));
+    }
+
+    #[test]
+    fn unambiguous_match_follows_case_and_wrong_prefix_only() {
+        let dir = project();
+        let root = dir.path();
+        // Same name, other case, same directory — only observable on a
+        // case-sensitive file system (APFS/NTFS defaults open it directly).
+        let other_case = root.join("rust/src/core/Config.rs");
+        if !other_case.exists() {
+            assert_eq!(
+                unambiguous_match(&other_case),
+                Some(root.join("rust/src/core/config.rs"))
+            );
+        }
+        // Whole relative path found under exactly one other directory.
+        assert_eq!(
+            unambiguous_match(&root.join("src/core/config.rs")),
+            Some(root.join("rust/src/core/config.rs"))
+        );
+        // A typo or another extension names a different file: no substitute.
+        assert_eq!(
+            unambiguous_match(&root.join("rust/src/core/confg.rs")),
+            None
+        );
+        assert_eq!(unambiguous_match(&root.join("rust/src/main.ts")), None);
+        // Existing paths are never substituted.
+        assert_eq!(unambiguous_match(&root.join("rust/src/main.rs")), None);
+    }
+
+    #[test]
+    fn unambiguous_match_refuses_two_equally_good_candidates() {
+        let dir = project();
+        let root = dir.path();
+        std::fs::create_dir_all(root.join("other/src/core")).unwrap();
+        std::fs::write(root.join("other/src/core/config.rs"), "").unwrap();
+        assert_eq!(unambiguous_match(&root.join("src/core/config.rs")), None);
+        assert_eq!(suggestions(&root.join("src/core/config.rs")).len(), 2);
     }
 
     #[test]

@@ -1,7 +1,7 @@
 {
   "name": "lean-ctx",
   "version": "0.2.0",
-  "description": "The LeanCTX cockpit (Select · Control · Prove sidebar, pulse line, turn and milestone overlays), wake on background job completion, remove redundant lean-ctx hook context, shape native Bash output, keep core tools in front, and show per-session usage.",
+  "description": "The LeanCTX cockpit (Select · Control · Prove sidebar, pulse line, turn and milestone overlays), colored ctx_patch diffs and highlighted ctx_read / ctx_search output, wake on background job completion, remove redundant lean-ctx hook context, shape native Bash output, keep core tools in front, and show per-session usage.",
   "types": "./types/index.d.ts",
   "author": {
     "name": "Thinkery / Yves Gugger"
@@ -32,6 +32,12 @@
       "type": "boolean",
       "title": "Open the LeanCTX cockpit sidebar",
       "description": "Open the cockpit sidebar when a session starts. /cockpit off and /cockpit on change it; /cockpit opens it once either way.",
+      "default": true
+    },
+    "color_output": {
+      "type": "boolean",
+      "title": "Color lean-ctx output",
+      "description": "Draw ctx_patch diffs with line numbers and colored markers, and ctx_read / ctx_search code syntax-highlighted. Display only: Claude receives the output unchanged.",
       "default": true
     },
     "keep_hook_context": {

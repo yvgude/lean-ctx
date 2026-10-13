@@ -50,6 +50,18 @@ were waiting** — 7,551 status polls for 1,030 background jobs plus 1,770
   pulse line, spinner and turn cards stay either way. LeanCTX colours from
   leanctx.com.
 
+- **Results drawn like Claude Code's own** (`hooks/render.tsx`). `ctx_patch`
+  evidence goes through Claude Code's diff renderer (gutters, `+`/`-` colouring,
+  syntax highlighting); `ctx_read` (`lines`, `anchored`, `full`/`raw`, several
+  files) is drawn as highlighted code numbered from the real line, anchor
+  hashes hidden on screen; `ctx_search` hits show a dim `path:line`, the
+  highlighted line and the enclosing symbol. Display only — Claude receives
+  every result byte-for-byte, and anything not recognised (signatures, map,
+  errors, running calls) is drawn as usual. Turn it off with the
+  `color_output` setting. The idea came from community member Kirill
+  Naumenko's [leanctx-colored](https://github.com/ReDev1L/leanctx-colored);
+  with both installed, whichever runs first draws the row, never both.
+
 - **Wake, don't poll.** Watches `ctx_shell(run_in_background=true)` jobs in
   Claude Code's process (state from ctx_shell's `structuredContent`, then its
   JSON text, then the `[background:…]` header) and starts one new turn when they

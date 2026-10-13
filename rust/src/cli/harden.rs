@@ -39,6 +39,12 @@ fn apply_harden(level: &str) {
     if level == "hard" {
         println!("  Hard mode = Replace mode: denying native Read/Grep/Glob across all IDEs.");
         println!();
+        // Replace is opt-in since it stopped being a default: record the
+        // choice so setup, every hook refresh and the runtime deny hook see it.
+        if let Err(e) = crate::core::config::setter::set_by_key("hook_mode", "replace") {
+            eprintln!("  Could not set hook_mode = \"replace\": {e}");
+            return;
+        }
         let opts = crate::setup::SetupOptions {
             non_interactive: true,
             yes: true,
@@ -86,6 +92,14 @@ fn undo_harden() {
     let mut errors = remove_env_from_mcp_configs();
     if let Err(error) = remove_claude_permissions_deny() {
         errors.push(error);
+    }
+    // Undo `harden --hard`: back to the default mode (Hybrid), so the deny
+    // hooks stand down and the next refresh renders non-denying artifacts.
+    if crate::core::config::Config::load().hook_mode_override()
+        == Some(crate::hooks::HookMode::Replace)
+        && let Err(error) = crate::core::config::setter::set_by_key("hook_mode", "auto")
+    {
+        errors.push(format!("could not reset hook_mode: {error}"));
     }
 
     if errors.is_empty() {
