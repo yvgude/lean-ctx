@@ -222,6 +222,13 @@ fn wants_help(rest: &[String]) -> bool {
         || matches!(rest, [only] if only == "-h")
 }
 
+/// `lean-ctx <cmd> --help` (or a lone `-h`) on any arm the guard covers: a
+/// read-only request that must not create telemetry state or show first-run
+/// notices either.
+pub(super) fn is_help_request(cmd: &str, rest: &[String]) -> bool {
+    wants_help(rest) && group_of(EXEMPT, cmd).is_none()
+}
+
 /// The usage text to print instead of running `cmd`, or `None` when the arm
 /// should run as usual (no help requested, exempt, or self-helping handler).
 pub(super) fn guarded_help(cmd: &str, rest: &[String]) -> Option<String> {

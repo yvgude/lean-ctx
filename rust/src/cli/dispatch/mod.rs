@@ -57,9 +57,13 @@ pub fn run() {
     if !enters_mcp {
         crate::core::logging::init_logging();
     }
+    // `<command> --help` only prints usage (#1906): no notice and no counter,
+    // so asking for help never creates telemetry state on disk.
+    let help_only = args.len() > 1 && cmd_help::is_help_request(&args[1], &args[2..]);
     // Default-on telemetry is disclosed once on the first interactive command;
     // setup and `telemetry` print the same disclosure themselves.
     if !enters_mcp
+        && !help_only
         && !is_server_mode(&args)
         && !matches!(args.get(1).map(String::as_str), Some("setup" | "telemetry"))
     {
@@ -68,7 +72,7 @@ pub fn run() {
         crate::core::pathjail_scope::maybe_show_default_notice();
     }
     // Counts the command (from a closed list, never its arguments).
-    if !enters_mcp && !is_server_mode(&args) {
+    if !enters_mcp && !help_only && !is_server_mode(&args) {
         crate::core::telemetry_features::record_cli(&args);
     }
 

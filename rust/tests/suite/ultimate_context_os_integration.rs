@@ -1073,8 +1073,21 @@ mod shell_compression {
 
     #[test]
     fn shell_compresses_git_status() {
-        let out = lean_ctx_bin().args(["-c", "git status"]).output().unwrap();
-        assert!(out.status.success());
+        // Its own repository: the crate checkout need not be a git work tree
+        // (a source export, or a build copied without `.git`).
+        let repo = tempfile::tempdir().unwrap();
+        let init = Command::new("git")
+            .args(["init", "-q"])
+            .current_dir(repo.path())
+            .output()
+            .unwrap();
+        assert!(init.status.success(), "git init: {init:?}");
+        let out = lean_ctx_bin()
+            .args(["-c", "git status"])
+            .current_dir(repo.path())
+            .output()
+            .unwrap();
+        assert!(out.status.success(), "{out:?}");
     }
 
     #[test]
