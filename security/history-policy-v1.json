@@ -63,11 +63,11 @@
     "rust/crates/lean-ctx-protocol/src/context_checkpoint.rs": "698433cd958541d830f5dde38598625dc323d28d5724c072cb4532c322d8c102",
     "rust/crates/lean-ctx-protocol/src/context_checkpoint/tests_core.rs": "2aa83f250907035c82ea5ae56078d0077d539a5799b51b4ab2139940ea7630d0",
     "rust/src/core/execution_ledger/host/checkpoint_transfer/content.rs": "77f233aa8f4e55925d1c98e791af08cc15972e66b6861bc6d36cb77bb395d241",
-    "rust/src/proxy/openai_responses_ws.rs": "c9f8a3fd880037dabbedcad8039439960ddacc42551f1bedc803e9ad4b377dcc"
+    "rust/src/proxy/openai_responses_ws.rs": "968b11785cc3fb3229b2dbd0c7e8339654f9b15e9af0c8a2cbe8215c35bea284"
   },
   "baseline": {
     "commit": "bff280bfc8eba6959854fafcbf104b5745d794c3",
     "report": "security/evidence/full-history-baseline-v1.json",
-    "report_sha256": "34b6ea978c9d34e5086de66202005622e6447f7ef11d6307fe176903993d976f"
+    "report_sha256": "f2698fc347bd51b756b3ecbde00231e12953beb5a16db64ffd40fd9df5e2f3e6"
   }
 }
