@@ -68,7 +68,7 @@ fn planner_produces_a_budget_bounded_plan() {
     let budget = 800;
     let candidates = QueryPlanner::plan(&references, &builtin_manifests(), budget);
 
-    assert!(!candidates.is_empty());
+    assert!(!candidates.is_empty(), "`candidates` is empty");
     assert!(
         candidates
             .iter()

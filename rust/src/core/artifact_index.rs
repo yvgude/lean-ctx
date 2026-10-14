@@ -516,7 +516,7 @@ mod tests {
         std::fs::write(&bad, b"%PDF-1.4\ngarbage without structure").unwrap();
 
         let err = read_artifact_text(&bad).unwrap_err();
-        assert!(!err.is_empty());
+        assert!(!err.is_empty(), "`err` is empty");
     }
 
     #[test]

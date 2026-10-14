@@ -140,7 +140,7 @@ fn invalid_budgets_never_fall_back_to_a_default() {
                 .output()
                 .unwrap();
             assert_eq!(output.status.code(), Some(2));
-            assert!(output.stdout.is_empty());
+            assert!(output.stdout.is_empty(), "{:?}", output.stdout);
             assert!(String::from_utf8_lossy(&output.stderr).contains("invalid_budget:"));
             assert!(!directory.path().join("state/context_ledger.json").exists());
         }

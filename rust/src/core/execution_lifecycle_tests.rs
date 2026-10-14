@@ -523,7 +523,11 @@ fn transport_status_without_evidence_is_unknown() {
                 outcome.accepted_outcome.task_id.as_str(),
                 context.task_id.as_str()
             );
-            assert!(outcome.accepted_outcome.evidence_refs.is_empty());
+            assert!(
+                outcome.accepted_outcome.evidence_refs.is_empty(),
+                "{:?}",
+                outcome.accepted_outcome.evidence_refs
+            );
             assert!(outcome.assessment.is_none());
             assert_eq!(context.completed_stages(), LIFECYCLE_STAGE_ORDER);
             assert!(lifecycle.complete_once(&context, observation).is_none());
@@ -776,11 +780,19 @@ fn failed_transport_without_quality_signals_remains_unknown() {
         ProductEntitlements::default(),
     );
     let observation = CompletionObservation::tool_result(0, 0, "unknown", false);
-    assert!(observation.outcome_signals.is_empty());
+    assert!(
+        observation.outcome_signals.is_empty(),
+        "{:?}",
+        observation.outcome_signals
+    );
     let outcome = lifecycle.complete(&context, observation);
     assert_eq!(outcome.accepted_outcome.accepted, AcceptanceState::Unknown);
     assert!(outcome.assessment.is_none());
-    assert!(outcome.accepted_outcome.evidence_refs.is_empty());
+    assert!(
+        outcome.accepted_outcome.evidence_refs.is_empty(),
+        "{:?}",
+        outcome.accepted_outcome.evidence_refs
+    );
     assert_outcome_lineage(&context, &outcome);
 }
 
@@ -857,7 +869,11 @@ async fn failed_run_retains_task_and_outcome_lineage_across_all_early_returns() 
         assert!(identities.insert(outcome.accepted_outcome.outcome_id.as_str().to_owned()));
         assert_eq!(outcome.accepted_outcome.accepted, AcceptanceState::Unknown);
         assert!(outcome.assessment.is_none());
-        assert!(outcome.accepted_outcome.evidence_refs.is_empty());
+        assert!(
+            outcome.accepted_outcome.evidence_refs.is_empty(),
+            "{:?}",
+            outcome.accepted_outcome.evidence_refs
+        );
         assert_eq!(context.completed_stages(), LIFECYCLE_STAGE_ORDER);
         let original_calls = calls.lock().unwrap().clone();
         let replay = lifecycle
@@ -906,7 +922,10 @@ fn failed_outcome_with_signals_retains_contract_lineage() {
         let outcome = lifecycle.complete(&context, observation);
         assert_outcome_lineage(&context, &outcome);
         assert_eq!(outcome.accepted_outcome.accepted, expected);
-        assert!(!outcome.accepted_outcome.evidence_refs.is_empty());
+        assert!(
+            !outcome.accepted_outcome.evidence_refs.is_empty(),
+            "`outcome.accepted_outcome.evidence_refs` is empty"
+        );
     }
 }
 

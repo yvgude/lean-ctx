@@ -138,9 +138,12 @@ mod tests {
     #[test]
     fn collect_returns_valid_info() {
         let info = collect();
-        assert!(!info.os.is_empty());
-        assert!(!info.arch.is_empty());
-        assert!(!info.lean_ctx_version.is_empty());
+        assert!(!info.os.is_empty(), "`info.os` is empty");
+        assert!(!info.arch.is_empty(), "`info.arch` is empty");
+        assert!(
+            !info.lean_ctx_version.is_empty(),
+            "`info.lean_ctx_version` is empty"
+        );
         assert!(info.cpu_cores >= 1);
     }
 

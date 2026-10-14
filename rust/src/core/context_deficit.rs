@@ -206,7 +206,10 @@ pub mod tests {
         let intent = StructuredIntent::from_query("fix bug in auth.rs");
         let known = vec!["src/auth.rs".to_string(), "src/db.rs".to_string()];
         let deficit = detect_deficit(&ledger, &intent, &known);
-        assert!(!deficit.missing_targets.is_empty());
+        assert!(
+            !deficit.missing_targets.is_empty(),
+            "`deficit.missing_targets` is empty"
+        );
         assert!(
             deficit
                 .suggested_files
@@ -222,7 +225,11 @@ pub mod tests {
         let intent = StructuredIntent::from_query("fix bug in auth.rs");
         let known = vec!["src/auth.rs".to_string()];
         let deficit = detect_deficit(&ledger, &intent, &known);
-        assert!(deficit.missing_targets.is_empty());
+        assert!(
+            deficit.missing_targets.is_empty(),
+            "{:?}",
+            deficit.missing_targets
+        );
     }
 
     #[test]

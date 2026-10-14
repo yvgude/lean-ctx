@@ -486,7 +486,10 @@ fn explicit_denial_persists_tombstone_and_outage_cannot_restore_old_grace() {
     .unwrap();
     assert_eq!(denial.account_id, "account-A");
     assert!(denial.accepted_sha256.is_none());
-    assert!(std::fs::read(&fixture.paths.cache).unwrap().is_empty());
+    {
+        let found = &std::fs::read(&fixture.paths.cache).unwrap();
+        assert!(found.is_empty(), "{found:?}");
+    }
     assert!(!retained.current_allows_at("cloud_sync", 150));
     assert!(permit.ensure_valid_at(150).is_err());
     // Removing both mutable denial layers still cannot revive signed grace:
@@ -909,7 +912,10 @@ fn denial_revokes_the_named_acceptance_even_when_its_old_inode_is_retained() {
         persist_denial(&fixture.paths, "account-A").verification_status,
         "denied"
     );
-    assert!(std::fs::read(&fixture.paths.cache).unwrap().is_empty());
+    {
+        let found = &std::fs::read(&fixture.paths.cache).unwrap();
+        assert!(found.is_empty(), "{found:?}");
+    }
     std::fs::remove_file(&hardlink).unwrap();
     assert_eq!(
         resolve_at(&fixture.paths, 150).verification_status,
@@ -929,7 +935,10 @@ fn independent_denial_marker_survives_restart_when_primary_revocation_operations
         persist_denial(&fixture.paths, "account-A").verification_status,
         "denied"
     );
-    assert!(std::fs::read(&fixture.paths.cache).unwrap().is_empty());
+    {
+        let found = &std::fs::read(&fixture.paths.cache).unwrap();
+        assert!(found.is_empty(), "{found:?}");
+    }
 
     // Simulate a fresh process plus restoration of the old signed cache. Both
     // primary secure-status mutations failed, but the independent denial key
@@ -956,7 +965,10 @@ fn all_durable_denial_writes_failing_is_reported_and_store_read_failure_stays_cl
         persist_denial(&fixture.paths, "account-A").verification_status,
         "cache_persist_failed"
     );
-    assert!(std::fs::read(&fixture.paths.cache).unwrap().is_empty());
+    {
+        let found = &std::fs::read(&fixture.paths.cache).unwrap();
+        assert!(found.is_empty(), "{found:?}");
+    }
 
     clear_denial(&fixture.paths.cache, "account-A");
     atomic_replace(&fixture.paths.cache, &original).unwrap();

@@ -218,7 +218,10 @@ mod tests {
 
     #[test]
     fn format_hints_empty_returns_empty() {
-        assert!(format_hints(&[]).is_empty());
+        {
+            let found = &format_hints(&[]);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

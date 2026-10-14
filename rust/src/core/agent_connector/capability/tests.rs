@@ -138,7 +138,10 @@ fn real_connectors_share_task_input_and_forward_argv_cwd_profile() {
                 .metrics
                 .contains_key("provider_reported_input_tokens")
         );
-        assert!(adapter.manifest().supported_classifications.is_empty());
+        {
+            let found = &adapter.manifest().supported_classifications;
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert_eq!(adapter.manifest().provider, "unknown");
     }
 }
@@ -301,7 +304,10 @@ fn health_failure_removes_runtime_without_spawning_task() {
     registry.register_arc(adapter.clone()).unwrap();
     assert_eq!(registry.list_available().len(), 1);
     fs::write(&fixture.executable, "#!/bin/sh\nexit 1\n").unwrap();
-    assert!(registry.list_available().is_empty());
+    {
+        let found = &registry.list_available();
+        assert!(found.is_empty(), "{found:?}");
+    }
     assert!(
         adapter
             .execute_registered(&registry, &adapter.invocation(fixture.request()))

@@ -297,7 +297,7 @@ mod tests {
     #[test]
     fn mig_select_empty_input() {
         let selected = mig_select(&[], &[], 5, 0.6);
-        assert!(selected.is_empty());
+        assert!(selected.is_empty(), "{selected:?}");
     }
 
     #[test]

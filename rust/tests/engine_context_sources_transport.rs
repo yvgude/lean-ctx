@@ -185,7 +185,7 @@ fn retained_source_materialization_replays_identity_but_never_authorization() {
             invalid.to_string().as_bytes(),
         );
         assert_eq!(denied.status.code(), Some(2));
-        assert!(denied.stdout.is_empty());
+        assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
         assert!(String::from_utf8_lossy(&denied.stderr).contains(error));
     }
     assert!(!root.join("data/execution").exists());
@@ -222,7 +222,7 @@ fn retained_source_expiry_wins_over_the_original_epoch_and_binding() {
         replay.to_string().as_bytes(),
     );
     assert_eq!(denied.status.code(), Some(2));
-    assert!(denied.stdout.is_empty());
+    assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
     assert!(String::from_utf8_lossy(&denied.stderr).contains("source_plan_changed"));
     assert!(!root.join("data/execution").exists());
     assert!(!root.join("request.json").exists());
@@ -277,19 +277,19 @@ fn materialization_rejects_changed_source_authority_and_kernel_policy() {
         });
         let denied = materialize(&root, &changed, planned.binding_digest.as_str());
         assert_eq!(denied.status.code(), Some(2));
-        assert!(denied.stdout.is_empty());
+        assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
         assert!(String::from_utf8_lossy(&denied.stderr).contains("source_plan_changed"));
     }
     let mut changed = input.clone();
     changed["sources"][0]["content"] = json!("unbound payload");
     let denied = materialize(&root, &changed, planned.binding_digest.as_str());
     assert_eq!(denied.status.code(), Some(2));
-    assert!(denied.stdout.is_empty());
+    assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
     std::fs::write(root.join("config/kernel-policy.toml"),
         "max_sensitivity = 'internal'\nblocked_sources = ['source-issue']\nbudget_cap_tokens = 512\n").unwrap();
     let denied = materialize(&root, &input, planned.binding_digest.as_str());
     assert_eq!(denied.status.code(), Some(2));
-    assert!(denied.stdout.is_empty());
+    assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
     assert!(String::from_utf8_lossy(&denied.stderr).contains("source_plan_changed"));
     assert!(!root.join("data/execution").exists());
 }
@@ -305,7 +305,7 @@ fn materialization_counts_framing_and_reuses_project_redaction() {
     assert_eq!(planned.source_bindings.len(), 1);
     let denied = materialize(&root, &input, planned.binding_digest.as_str());
     assert_eq!(denied.status.code(), Some(2));
-    assert!(denied.stdout.is_empty());
+    assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
     assert!(
         String::from_utf8_lossy(&denied.stderr).contains("source_materialization_budget_exceeded")
     );
@@ -331,12 +331,12 @@ fn materialization_counts_framing_and_reuses_project_redaction() {
         )).unwrap();
         let denied = materialize(&root, &input, planned.binding_digest.as_str());
         assert_eq!(denied.status.code(), Some(2));
-        assert!(denied.stdout.is_empty());
+        assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
     }
     std::fs::write(root.join(".lean-ctx/policy.toml"), "malformed policy!").unwrap();
     let denied = materialize(&root, &input, planned.binding_digest.as_str());
     assert_eq!(denied.status.code(), Some(2));
-    assert!(denied.stdout.is_empty());
+    assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
 }
 
 #[test]
@@ -354,7 +354,7 @@ fn bounded_stdin_plans_without_a_request_file_and_rejects_invalid_input() {
     for malformed in [vec![0xff], vec![b' '; 1024 * 1024 + 1], b"{}{}".to_vec()] {
         let rejected = invoke_stdin(&root, &malformed);
         assert_eq!(rejected.status.code(), Some(2));
-        assert!(rejected.stdout.is_empty());
+        assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
     }
 }
 
@@ -394,8 +394,16 @@ fn explicit_sources_use_kernel_policy_and_digest_bound_metadata_without_persiste
     let mut empty = input.clone();
     empty["sources"] = json!([]);
     let cleared = response(&invoke(&root, &empty.to_string()));
-    assert!(cleared.source_bindings.is_empty());
-    assert!(cleared.result.plan.selections.is_empty());
+    assert!(
+        cleared.source_bindings.is_empty(),
+        "{:?}",
+        cleared.source_bindings
+    );
+    assert!(
+        cleared.result.plan.selections.is_empty(),
+        "{:?}",
+        cleared.result.plan.selections
+    );
     assert!(!root.join(".lean-ctx").exists());
     assert!(!root.join("data/engine-interface").exists());
 
@@ -438,11 +446,10 @@ fn missing_permissions_classification_expiry_and_retention_fail_closed() {
         for source in input["sources"].as_array_mut().unwrap() {
             source["descriptor"][field] = value.clone();
         }
-        assert!(
-            response(&invoke(&root, &input.to_string()))
-                .source_bindings
-                .is_empty()
-        );
+        {
+            let found = &response(&invoke(&root, &input.to_string())).source_bindings;
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
     let mut input = request();
     for source in input["sources"].as_array_mut().unwrap() {
@@ -451,21 +458,19 @@ fn missing_permissions_classification_expiry_and_retention_fail_closed() {
             .unwrap()
             .remove("permission");
     }
-    assert!(
-        response(&invoke(&root, &input.to_string()))
-            .source_bindings
-            .is_empty()
-    );
+    {
+        let found = &response(&invoke(&root, &input.to_string())).source_bindings;
+        assert!(found.is_empty(), "{found:?}");
+    }
     std::fs::write(
         root.join("config/kernel-policy.toml"),
         "max_sensitivity = 'internal'\nblocked_sources = []\nretention_days = 7\n",
     )
     .unwrap();
-    assert!(
-        response(&invoke(&root, &request().to_string()))
-            .source_bindings
-            .is_empty()
-    );
+    {
+        let found = &response(&invoke(&root, &request().to_string())).source_bindings;
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]
@@ -598,7 +603,7 @@ fn invalid_source_manifests_and_versions_are_rejected_without_output() {
     for input in invalid {
         let output = invoke(&root, &input);
         assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty());
+        assert!(output.stdout.is_empty(), "{:?}", output.stdout);
         assert!(!String::from_utf8_lossy(&output.stderr).contains("payload-"));
     }
 }
@@ -623,6 +628,6 @@ fn oversized_source_lineage_fails_without_partial_response() {
     );
     let output = invoke(&root, &input.to_string());
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert!(output.stdout.is_empty(), "{:?}", output.stdout);
     assert!(String::from_utf8_lossy(&output.stderr).contains("source_lineage_too_large"));
 }

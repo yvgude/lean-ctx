@@ -841,7 +841,7 @@ mod kernel_tests {
     #[test]
     fn handle_with_context_does_not_panic_on_short_output() {
         let result = handle_with_context("ls", "file.txt", 0, CrpMode::Tdd, Some("/tmp"));
-        assert!(!result.is_empty());
+        assert!(!result.is_empty(), "`result` is empty");
     }
 }
 

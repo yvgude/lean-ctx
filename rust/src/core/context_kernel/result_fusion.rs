@@ -291,6 +291,10 @@ pub mod tests {
     #[test]
     fn empty_results_returns_empty_report() {
         let report = fuse_results(&[], FusionStrategy::MajorityVote);
-        assert!(report.winning_agent.is_empty());
+        assert!(
+            report.winning_agent.is_empty(),
+            "{:?}",
+            report.winning_agent
+        );
     }
 }

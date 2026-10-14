@@ -118,7 +118,10 @@ mod tests {
         assert!(report.schema_optimizations > 0);
         assert!(report.schema_tokens_saved > 0);
         assert!(report.evidence_chain_entries > 0);
-        assert!(!report.config_source.is_empty());
+        assert!(
+            !report.config_source.is_empty(),
+            "`report.config_source` is empty"
+        );
         assert!(report.subsystem_count >= 6);
         assert!(health::is_healthy());
     }

@@ -735,7 +735,10 @@ mod tests {
         store.connection.execute_batch("CREATE TRIGGER reject_history BEFORE INSERT ON autopilot_learning_history_v1 BEGIN SELECT RAISE(ABORT, 'history failure'); END;").unwrap();
         assert!(store.observe_protocol_outcome(&handoff, &admitted).is_err());
         assert_eq!(store.load().unwrap(), AdaptiveLearningState::default());
-        assert!(store.history(1).unwrap().is_empty());
+        {
+            let found = &store.history(1).unwrap();
+            assert!(found.is_empty(), "{found:?}");
+        }
         store
             .connection
             .execute_batch("DROP TRIGGER reject_history;")
@@ -792,7 +795,10 @@ mod tests {
         assert!(!store.observe_protocol_outcome(&handoff, &admitted).unwrap());
         assert_eq!(store.history(MAX_HISTORY + 1).unwrap().len(), MAX_HISTORY);
         store.reset().unwrap();
-        assert!(store.history(MAX_HISTORY).unwrap().is_empty());
+        {
+            let found = &store.history(MAX_HISTORY).unwrap();
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

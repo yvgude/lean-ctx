@@ -609,6 +609,9 @@ mod workspace_tests {
         let mut no_root = summary("/home/dev/proj", 5, 1, None);
         no_root.project_root = None;
         let sessions = vec![no_root, summary("/", 5, 1, None)];
-        assert!(collect_workspaces(Utc::now(), sessions, None).is_empty());
+        {
+            let found = &collect_workspaces(Utc::now(), sessions, None);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

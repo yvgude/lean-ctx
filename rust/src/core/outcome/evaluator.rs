@@ -896,7 +896,11 @@ mod tests {
             let result = evaluate_detailed(&OutcomeContractV1::for_task_class(task_class), &[]);
             assert_eq!(result.outcome.accepted, AcceptanceState::Unknown);
             assert_eq!(result.outcome.quality_score_milli, None);
-            assert!(result.outcome.evidence_refs.is_empty());
+            assert!(
+                result.outcome.evidence_refs.is_empty(),
+                "{:?}",
+                result.outcome.evidence_refs
+            );
             assert_eq!(result.result, result.outcome);
         }
     }

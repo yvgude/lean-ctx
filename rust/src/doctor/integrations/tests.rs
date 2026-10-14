@@ -183,7 +183,10 @@ fn hook_binary_refs_extracts_token_before_hook_keyword() {
 
 #[test]
 fn hook_binary_refs_empty_without_hook_invocation() {
-    assert!(hook_binary_refs(r#"{"command": "echo nothing here"}"#).is_empty());
+    {
+        let found = &hook_binary_refs(r#"{"command": "echo nothing here"}"#);
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]
@@ -275,7 +278,10 @@ fn custom_binary_with_a_codex_operation_is_not_lean_ctx_owned() {
             "command": format!("/custom/guard hook {operation}")
         }))
         .unwrap();
-        assert!(hook_binary_refs(&json).is_empty());
+        {
+            let found = &hook_binary_refs(&json);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }
 

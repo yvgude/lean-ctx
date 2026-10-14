@@ -278,7 +278,11 @@ mod tests {
         let result = compress("hello world", &CompressionLevel::Off, None);
         assert_eq!(result.output, "hello world");
         assert_eq!(result.savings_pct, 0.0);
-        assert!(result.layers_applied.is_empty());
+        assert!(
+            result.layers_applied.is_empty(),
+            "{:?}",
+            result.layers_applied
+        );
     }
 
     #[test]

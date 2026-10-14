@@ -72,7 +72,11 @@ fn allow_writes_effective_env_overrides_config() {
 #[test]
 fn write_allow_paths_default_to_os_temp() {
     let cfg = Config::default();
-    assert!(cfg.write_allow_paths.is_empty());
+    assert!(
+        cfg.write_allow_paths.is_empty(),
+        "{:?}",
+        cfg.write_allow_paths
+    );
     let effective = cfg.shell_write_allow_paths_effective();
     assert!(
         effective

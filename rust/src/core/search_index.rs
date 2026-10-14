@@ -950,7 +950,7 @@ mod tests {
         let dir = corpus();
         let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
         match idx.candidate_paths("zzzqqq", &[], dir.path()) {
-            CandidateSet::Narrowed(p) => assert!(p.is_empty()),
+            CandidateSet::Narrowed(p) => assert!(p.is_empty(), "{p:?}"),
             CandidateSet::FullList(_) => panic!("pure literal should narrow"),
         }
     }
@@ -1011,7 +1011,7 @@ mod tests {
         let dir = corpus();
         let idx = SearchIndex::build(dir.path().to_str().unwrap(), true, false).unwrap();
         match idx.candidate_paths("fn .*\\(\\)", &[], dir.path()) {
-            CandidateSet::FullList(p) => assert!(!p.is_empty()),
+            CandidateSet::FullList(p) => assert!(!p.is_empty(), "`p` is empty"),
             CandidateSet::Narrowed(_) => panic!("metachar query must not narrow"),
         }
     }

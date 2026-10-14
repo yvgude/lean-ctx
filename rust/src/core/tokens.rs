@@ -238,7 +238,10 @@ mod tests {
 
     #[test]
     fn encode_tokens_empty_is_empty() {
-        assert!(encode_tokens("").is_empty());
+        {
+            let found = &encode_tokens("");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

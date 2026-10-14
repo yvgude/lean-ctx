@@ -346,7 +346,7 @@ pub mod tests {
     fn manifest_empty_registry() {
         let reg = HandleRegistry::new();
         let manifest = reg.format_manifest(10000, 0);
-        assert!(manifest.is_empty());
+        assert!(manifest.is_empty(), "{manifest:?}");
     }
 
     #[test]

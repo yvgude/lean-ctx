@@ -343,7 +343,7 @@ pub mod tests {
         let line = "- [success] files:[/Users/me/htdocs/evcc/docs/agents/a.md] (phi=0.25)\n";
         let text = format!("\n## Relevant Episodes\n{}", line.repeat(40));
         let cut = truncate_to_token_budget(text, 150);
-        assert!(!cut.is_empty());
+        assert!(!cut.is_empty(), "`cut` is empty");
         assert!(cut.ends_with('\n'), "a partial entry survived: {cut:?}");
         assert!(cut.lines().skip(2).all(|l| l == line.trim_end()));
     }
@@ -359,7 +359,10 @@ pub mod tests {
     fn compiler_selection_placeholders_are_omitted() {
         let placeholder = entry("selected by compiler");
 
-        assert!(format_enrichment_blocks(&[&placeholder]).is_empty());
+        {
+            let found = &format_enrichment_blocks(&[&placeholder]);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
     #[test]
     fn verdict_has_correct_budget_used() {
@@ -418,7 +421,7 @@ pub mod tests {
             .autopilot_decision()
             .expect("canonical decision retained");
         assert_eq!(decision.tier, PlannerTier::Community);
-        assert!(decision.preloads.is_empty());
+        assert!(decision.preloads.is_empty(), "{:?}", decision.preloads);
         assert!(
             decision
                 .reasons
@@ -465,7 +468,11 @@ pub mod tests {
         .expect("isolated default policy");
         assert!(!input.entitled_to_adaptive);
         assert_eq!(input.learning, AdaptiveLearningState::default());
-        assert!(input.available_providers.is_empty());
+        assert!(
+            input.available_providers.is_empty(),
+            "{:?}",
+            input.available_providers
+        );
         assert_eq!(input.preload_budget.max_items, 0);
         assert!(input.overrides.no_routing);
         assert!(input.overrides.no_telemetry);

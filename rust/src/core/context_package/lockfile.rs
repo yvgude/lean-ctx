@@ -119,7 +119,10 @@ mod tests {
     #[test]
     fn missing_lockfile_loads_empty() {
         let root = tmp_root();
-        assert!(load(&root).expect("load").packages.is_empty());
+        {
+            let found = &load(&root).expect("load").packages;
+            assert!(found.is_empty(), "{found:?}");
+        }
         std::fs::remove_dir_all(&root).ok();
     }
 }

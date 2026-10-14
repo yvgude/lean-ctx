@@ -218,7 +218,7 @@ mod tests {
     fn empty_graph() {
         let g = CodeGraph::open_in_memory().unwrap();
         let top = top_files(g.connection(), 10);
-        assert!(top.is_empty());
+        assert!(top.is_empty(), "{top:?}");
     }
 
     #[test]

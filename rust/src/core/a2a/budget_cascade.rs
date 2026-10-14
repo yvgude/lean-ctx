@@ -125,7 +125,7 @@ mod tests {
         assert_eq!(budget.allocated_tokens, 40_000);
         assert_eq!(budget.parent_remaining, 80_000);
         assert_eq!(budget.depth, 0);
-        assert!(budget.lineage.is_empty());
+        assert!(budget.lineage.is_empty(), "{:?}", budget.lineage);
         assert_eq!(validate_cascade(&budget), Ok(()));
     }
 

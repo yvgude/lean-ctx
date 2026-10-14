@@ -275,7 +275,7 @@ fn session_bundle_materializes_canonically_without_mutating_source() {
         panic!("session bundle unexpectedly refused");
     };
     assert_eq!(first, second);
-    assert!(!first.losses.is_empty());
+    assert!(!first.losses.is_empty(), "`first.losses` is empty");
     assert!(first.canonical_json.contains("\"schema_version\":1"));
     assert_eq!(source, before);
     first.validate().unwrap();

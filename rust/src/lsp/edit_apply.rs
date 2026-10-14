@@ -321,7 +321,7 @@ mod tests {
     fn overview_from_index_is_empty_without_graph() {
         // A path outside any project root must degrade to empty, not panic.
         let items = overview_from_index("/nonexistent/Nope.rs");
-        assert!(items.is_empty());
+        assert!(items.is_empty(), "{items:?}");
     }
 
     #[test]

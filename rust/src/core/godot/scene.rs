@@ -115,6 +115,6 @@ script = ExtResource("1_script")
     #[test]
     fn ignores_files_without_ext_resources() {
         let imports = extract_scene_imports("[gd_scene format=3]\n[node name=\"Root\"]\n");
-        assert!(imports.is_empty());
+        assert!(imports.is_empty(), "{imports:?}");
     }
 }

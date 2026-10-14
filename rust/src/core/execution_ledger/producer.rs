@@ -417,7 +417,10 @@ mod tests {
             )
             .is_err()
         );
-        assert!(ledger.load().unwrap().is_empty());
+        {
+            let found = &ledger.load().unwrap();
+            assert!(found.is_empty(), "{found:?}");
+        }
         let mut revoked = record.clone();
         revoked.signer_admission.revoked_at =
             Some(UtcTimestamp::new("2026-08-23T11:00:00Z").unwrap());
@@ -433,7 +436,10 @@ mod tests {
             )
             .is_err()
         );
-        assert!(ledger.load().unwrap().is_empty());
+        {
+            let found = &ledger.load().unwrap();
+            assert!(found.is_empty(), "{found:?}");
+        }
 
         let mut wrong_ref = observation.clone();
         wrong_ref.receipt_link.as_mut().unwrap().receipt_ref =
@@ -574,7 +580,10 @@ mod tests {
             )
             .is_err()
         );
-        assert!(ledger.load().unwrap().is_empty());
+        {
+            let found = &ledger.load().unwrap();
+            assert!(found.is_empty(), "{found:?}");
+        }
 
         let published = record_canonical_engine_receipt(
             &task,

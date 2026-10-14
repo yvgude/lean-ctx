@@ -74,7 +74,7 @@ mod tests {
         });
         let out = to_budget(&big, 200);
         assert!(count_tokens(&out) < count_tokens(&big));
-        assert!(!out.is_empty());
+        assert!(!out.is_empty(), "`out` is empty");
     }
 
     #[test]

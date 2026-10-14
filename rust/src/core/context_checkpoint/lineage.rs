@@ -634,7 +634,8 @@ mod tests {
                 .signing_payload()
                 .expect("signing payload")
                 .bytes()
-                .is_empty()
+                .is_empty(),
+            "`built .signing_payload() .expect(\"signing payload\") .bytes()` is empty"
         );
         let mut foreign = built.checkpoint().clone();
         foreign.lineage.artifact_lineage.task_ref =
@@ -748,7 +749,8 @@ mod tests {
                 .signing_payload()
                 .expect("signing payload")
                 .bytes()
-                .is_empty()
+                .is_empty(),
+            "`child .signing_payload() .expect(\"signing payload\") .bytes()` is empty"
         );
 
         let merge_spec = super::super::ContextCheckpointChildSpecV1 {

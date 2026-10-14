@@ -112,7 +112,10 @@ pub mod tests {
     #[test]
     fn ignores_unchanged_functions() {
         let src = "fn stable(a: bool) { if a {} }";
-        assert!(cognitive_delta(src, src, "rs").is_empty());
+        {
+            let found = &cognitive_delta(src, src, "rs");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

@@ -234,7 +234,7 @@ fn aia_15_5_unauthorized_tool_use_is_blocked() {
     // Engine layer: default-deny capability gate blocks the call…
     let check = check_capabilities("reviewer", "ctx_edit");
     assert!(!check.allowed);
-    assert!(!check.missing.is_empty());
+    assert!(!check.missing.is_empty(), "`check.missing` is empty");
 
     // …and the violation surfaces as an exportable governance event.
     let event = LeanCtxEvent {

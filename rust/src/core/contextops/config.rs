@@ -258,6 +258,6 @@ extra = "claude specific"
     #[test]
     fn extract_user_content_no_markers() {
         let result = extract_user_content("just some text");
-        assert!(result.is_empty());
+        assert!(result.is_empty(), "{result:?}");
     }
 }

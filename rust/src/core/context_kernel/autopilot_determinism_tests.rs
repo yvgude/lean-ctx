@@ -499,8 +499,8 @@ fn fresh_subprocesses_emit_same_community_and_adaptive_canonical_bytes() {
     let first = run_child();
     let second = run_child();
 
-    assert!(!first.community.is_empty());
-    assert!(!first.adaptive.is_empty());
+    assert!(!first.community.is_empty(), "`first.community` is empty");
+    assert!(!first.adaptive.is_empty(), "`first.adaptive` is empty");
     assert_ne!(first.community, first.adaptive);
     assert_eq!(first.community, second.community);
     assert_eq!(first.adaptive, second.adaptive);

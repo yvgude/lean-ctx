@@ -161,7 +161,10 @@ fn guarded_command_prints_reference_usage_instead_of_running() {
         stdout.starts_with("Usage (lean-ctx secure):"),
         "stdout:\n{stdout}"
     );
-    assert!(files_under(&sandbox.dir("home")).is_empty());
+    {
+        let found = &files_under(&sandbox.dir("home"));
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]

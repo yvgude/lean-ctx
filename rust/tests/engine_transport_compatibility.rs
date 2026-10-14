@@ -171,6 +171,6 @@ fn cli_supported_contract_binds_receipt_and_recovers_unchanged_source() {
     std::fs::write(root.join("sample.rs"), "// changed after capture\n").unwrap();
     let changed = invoke(&root, "recover", &request);
     assert_eq!(changed.status.code(), Some(2));
-    assert!(changed.stdout.is_empty());
+    assert!(changed.stdout.is_empty(), "{:?}", changed.stdout);
     assert!(String::from_utf8_lossy(&changed.stderr).contains("engine: source_changed"));
 }

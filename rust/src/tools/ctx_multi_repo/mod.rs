@@ -188,6 +188,6 @@ mod tests {
         // This test depends on global state but should work on clean init
         let (output, _) = handle_list_roots();
         // Either shows roots or says none configured
-        assert!(!output.is_empty());
+        assert!(!output.is_empty(), "`output` is empty");
     }
 }

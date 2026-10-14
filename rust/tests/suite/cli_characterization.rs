@@ -72,7 +72,7 @@ fn help_flag_exits_zero_and_lists_commands() {
 fn help_short_flag() {
     let out = run(&["-h"]);
     assert_eq!(exit_code(&out), 0);
-    assert!(!stdout(&out).is_empty());
+    assert!(!stdout(&out).is_empty(), "`stdout(&out)` is empty");
 }
 
 #[test]

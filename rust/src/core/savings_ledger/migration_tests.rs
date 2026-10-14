@@ -31,7 +31,7 @@ fn event(value: Value) -> SavingsEvent {
 
 fn assert_legacy_defaults(ev: &SavingsEvent) {
     assert_eq!(ev.mechanism, MECHANISM_COMPRESSION);
-    assert!(ev.version.is_empty());
+    assert!(ev.version.is_empty(), "{:?}", ev.version);
     assert_p5_defaults(ev);
 }
 
@@ -128,7 +128,7 @@ fn v3_ledger_still_loads() {
     value["mechanism"] = json!("routing");
     let ev = event(value);
     assert_eq!(ev.mechanism, "routing");
-    assert!(ev.version.is_empty());
+    assert!(ev.version.is_empty(), "{:?}", ev.version);
     assert_p5_defaults(&ev);
 }
 

@@ -562,7 +562,10 @@ mod npm_shim_tests {
             ["--stdio"]
         );
         assert_eq!(args("go", "/opt/gopls"), ["serve"]);
-        assert!(args("rust", "/opt/rust-analyzer").is_empty());
+        {
+            let found = &args("rust", "/opt/rust-analyzer");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }
 

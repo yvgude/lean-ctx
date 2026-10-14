@@ -397,7 +397,10 @@ mod tests {
                 .iter()
                 .any(|command| command.command == "cargo clippy")
         );
-        assert!(!kit.quality.criteria.is_empty());
+        assert!(
+            !kit.quality.criteria.is_empty(),
+            "`kit.quality.criteria` is empty"
+        );
         assert!(kit.system_prompt.template.contains("actionable findings"));
     }
 

@@ -194,7 +194,7 @@ pub mod tests {
     #[test]
     fn plain_text_without_headers_is_body() {
         let email = parse("just a single line");
-        assert!(email.headers.is_empty());
+        assert!(email.headers.is_empty(), "{:?}", email.headers);
         assert_eq!(email.body, "just a single line");
         assert_eq!(chunks("just a single line"), vec!["just a single line"]);
     }

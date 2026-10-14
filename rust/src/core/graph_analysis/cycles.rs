@@ -167,7 +167,10 @@ mod tests {
     #[test]
     fn acyclic_graph_has_no_cycles() {
         let edges = vec![e("a.rs", "b.rs", "import"), e("b.rs", "c.rs", "import")];
-        assert!(find_import_cycles(&edges, 10).is_empty());
+        {
+            let found = &find_import_cycles(&edges, 10);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
@@ -177,7 +180,10 @@ mod tests {
             e("b.rs", "c.rs", "sibling"),  // heuristic, ignored
             e("c.rs", "b.rs", "cochange"), // heuristic, ignored
         ];
-        assert!(find_import_cycles(&edges, 10).is_empty());
+        {
+            let found = &find_import_cycles(&edges, 10);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

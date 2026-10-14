@@ -518,7 +518,7 @@ mod tests {
 
         let report = CompressionPipeline::run(&mut messages, &PipelineConfig::default());
 
-        assert!(messages.is_empty());
+        assert!(messages.is_empty(), "{messages:?}");
         assert_eq!(report.total_tokens_before, 0);
         assert_eq!(report.total_tokens_after, 0);
     }

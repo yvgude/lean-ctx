@@ -262,7 +262,7 @@ fn inject_cursor_switches_profile_when_hooks_appear() {
     std::fs::create_dir_all(home.join(".cursor")).unwrap();
 
     let result = inject_rules_for_agent(&home, "cursor");
-    assert!(result.errors.is_empty());
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
     let mdc_path = home.join(".cursor/rules/lean-ctx.mdc");
     let before = std::fs::read_to_string(&mdc_path).unwrap();
     assert!(
@@ -279,7 +279,7 @@ fn inject_cursor_switches_profile_when_hooks_appear() {
     )
     .unwrap();
     let result = inject_rules_for_agent(&home, "cursor");
-    assert!(result.errors.is_empty());
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
     let after = std::fs::read_to_string(&mdc_path).unwrap();
     assert!(
         after.contains("auto-route")
@@ -400,9 +400,9 @@ fn inject_rules_for_agent_cursor() {
 fn inject_rules_for_unknown_agent_is_empty() {
     let home = std::path::PathBuf::from("/tmp/fake_home_unknown");
     let result = inject_rules_for_agent(&home, "unknown_agent_xyz");
-    assert!(result.updated.is_empty());
-    assert!(result.already.is_empty());
-    assert!(result.errors.is_empty());
+    assert!(result.updated.is_empty(), "{:?}", result.updated);
+    assert!(result.already.is_empty(), "{:?}", result.already);
+    assert!(result.errors.is_empty(), "{:?}", result.errors);
 }
 
 #[test]
@@ -471,7 +471,7 @@ fn any_rules_marker_present_detects_opencode() {
 
 #[test]
 fn skill_template_not_empty() {
-    assert!(!SKILL_TEMPLATE.is_empty());
+    assert!(!SKILL_TEMPLATE.is_empty(), "`SKILL_TEMPLATE` is empty");
     assert!(SKILL_TEMPLATE.contains("lean-ctx"));
 }
 

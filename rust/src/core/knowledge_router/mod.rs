@@ -187,14 +187,13 @@ mod tests {
 
     #[test]
     fn test_provider_bridge_no_provider() {
-        assert!(
-            ProviderBridge::new(global_registry())
-                .resolve_from_providers(
-                    &[reference(ReferenceType::Url, "https://example.com")],
-                    &[]
-                )
-                .is_empty()
-        );
+        {
+            let found = &ProviderBridge::new(global_registry()).resolve_from_providers(
+                &[reference(ReferenceType::Url, "https://example.com")],
+                &[],
+            );
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
@@ -232,7 +231,10 @@ mod tests {
             &[],
             Some(&bridge),
         );
-        assert!(!result.candidates.is_empty());
+        assert!(
+            !result.candidates.is_empty(),
+            "`result.candidates` is empty"
+        );
     }
 
     #[test]

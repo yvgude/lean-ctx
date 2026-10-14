@@ -76,7 +76,10 @@ fn no_degrade_independent_of_disabled_tools() {
         ..Default::default()
     };
     assert!(cfg.no_degrade_effective());
-    assert!(!cfg.disabled_tools.is_empty());
+    assert!(
+        !cfg.disabled_tools.is_empty(),
+        "`cfg.disabled_tools` is empty"
+    );
 }
 
 #[test]

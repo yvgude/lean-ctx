@@ -359,7 +359,7 @@ mod tests {
         let (fused, searched, warnings) = search_roots_hybrid("query", &roots, 10, 60.0);
         assert!(fused.is_empty());
         assert_eq!(searched, 0);
-        assert!(warnings.is_empty());
+        assert!(warnings.is_empty(), "{warnings:?}");
     }
 
     #[test]

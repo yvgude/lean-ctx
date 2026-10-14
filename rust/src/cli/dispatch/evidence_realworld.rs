@@ -907,7 +907,10 @@ mod tests {
             Some(env!("CARGO_PKG_VERSION"))
         );
         assert!(result.methodology.multi_turn);
-        assert!(!result.methodology.fair_baseline.is_empty());
+        assert!(
+            !result.methodology.fair_baseline.is_empty(),
+            "`result.methodology.fair_baseline` is empty"
+        );
     }
 
     #[test]

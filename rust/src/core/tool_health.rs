@@ -765,7 +765,10 @@ mod tests {
             "lean (default)".to_string(),
             KnowledgeHealth::default(),
         );
-        assert!(report.rules[0].action.is_empty());
+        {
+            let found = &report.rules[0].action;
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert!(
             report.foreign_servers.is_empty(),
             "pure builder adds no foreign servers"
@@ -815,7 +818,7 @@ mod tests {
             empty.heavy_read_share_pct, None,
             "no telemetry → no verdict"
         );
-        assert!(empty.action.is_empty());
+        assert!(empty.action.is_empty(), "{:?}", empty.action);
     }
 
     #[test]

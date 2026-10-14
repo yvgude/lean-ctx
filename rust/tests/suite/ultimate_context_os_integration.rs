@@ -1252,6 +1252,6 @@ mod e2e_multi_agent_scenario {
         );
 
         let snapshot = session.build_compaction_snapshot();
-        assert!(!snapshot.is_empty());
+        assert!(!snapshot.is_empty(), "`snapshot` is empty");
     }
 }

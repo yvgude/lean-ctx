@@ -551,7 +551,10 @@ mod tests {
         assert_eq!(ledger.tool_calls.by_tool.get("ctx_read"), Some(&1));
         assert_eq!(ledger.tool_calls.by_ctx_read_mode.get("map"), Some(&1));
         assert_eq!(ledger.curated_refs.len(), 1);
-        assert!(!ledger.content_md5.is_empty());
+        assert!(
+            !ledger.content_md5.is_empty(),
+            "`ledger.content_md5` is empty"
+        );
 
         let listed = list_ledgers();
         assert!(listed.iter().any(|p| p == &path));
@@ -563,7 +566,10 @@ mod tests {
 
         let removed = clear_ledgers().expect("clear ledgers");
         assert!(removed >= 1);
-        assert!(list_ledgers().is_empty());
+        {
+            let found = &list_ledgers();
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

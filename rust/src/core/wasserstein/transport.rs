@@ -194,6 +194,9 @@ mod tests {
 
     #[test]
     fn empty_demand_returns_empty_plan() {
-        assert!(sinkhorn_plan(&[100.0], &[], &[vec![]], 0.1, 100).is_empty());
+        {
+            let found = &sinkhorn_plan(&[100.0], &[], &[vec![]], 0.1, 100);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

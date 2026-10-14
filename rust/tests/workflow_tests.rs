@@ -152,7 +152,7 @@ fn find_transition_works() {
 fn missing_evidence_returns_empty_when_no_requirements() {
     let spec = minimal_spec();
     let missing = missing_evidence_for_state(&spec, "a", |_| false);
-    assert!(missing.is_empty());
+    assert!(missing.is_empty(), "{missing:?}");
 }
 
 #[test]
@@ -166,7 +166,7 @@ fn missing_evidence_returns_keys_when_unsatisfied() {
 fn missing_evidence_returns_empty_when_satisfied() {
     let spec = minimal_spec();
     let missing = missing_evidence_for_state(&spec, "b", |k| k == "tool:ctx_read");
-    assert!(missing.is_empty());
+    assert!(missing.is_empty(), "{missing:?}");
 }
 
 #[test]

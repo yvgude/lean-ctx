@@ -384,7 +384,7 @@ fn end_to_end_saliency_pipeline() {
     );
 
     assert_eq!(index.doc_count, 5);
-    assert!(!edges.is_empty());
+    assert!(!edges.is_empty(), "`edges` is empty");
 
     // 3. Compute saliency scores
     let edge_counts: Vec<usize> = chunks

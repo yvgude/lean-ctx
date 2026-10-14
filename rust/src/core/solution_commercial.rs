@@ -214,7 +214,10 @@ mod tests {
 
     #[test]
     fn feature_availability_is_empty_in_oss() {
-        assert!(commercial_features_available().is_empty());
+        {
+            let found = &commercial_features_available();
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

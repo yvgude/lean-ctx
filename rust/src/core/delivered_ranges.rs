@@ -181,7 +181,10 @@ mod tests {
     fn interval_set_nothing_novel_when_fully_covered() {
         let mut set = IntervalSet::default();
         set.insert(1, 200);
-        assert!(set.novel_lines(50, 150).is_empty());
+        {
+            let found = &set.novel_lines(50, 150);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
@@ -214,7 +217,10 @@ mod tests {
     fn delivered_ranges_full_file() {
         let mut dr = DeliveredRanges::new();
         dr.record_full("src/main.rs", 500);
-        assert!(dr.novel_ranges("src/main.rs", 1, 500).is_empty());
+        {
+            let found = &dr.novel_ranges("src/main.rs", 1, 500);
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert_eq!(dr.overlap_fraction("src/main.rs", 1, 500), 1.0);
     }
 

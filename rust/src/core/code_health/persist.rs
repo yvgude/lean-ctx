@@ -147,7 +147,10 @@ pub mod tests {
 
     #[test]
     fn session_block_empty_when_clean() {
-        assert!(render_session_block(&persisted(Vec::new())).is_empty());
+        {
+            let found = &render_session_block(&persisted(Vec::new()));
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
@@ -175,6 +178,9 @@ pub mod tests {
     fn missing_health_yields_empty_block() {
         let tmp = tempfile::tempdir().unwrap();
         let root = tmp.path().to_string_lossy().to_string();
-        assert!(format_session_block(&root).is_empty());
+        {
+            let found = &format_session_block(&root);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

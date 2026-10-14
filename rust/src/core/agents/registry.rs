@@ -963,12 +963,12 @@ mod logical_session_tests {
             "editor-session-a",
         )
         .expect("close presence");
-        assert!(
-            AgentRegistry::load()
+        {
+            let found = &AgentRegistry::load()
                 .expect("persisted registry")
-                .logical_sessions
-                .is_empty()
-        );
+                .logical_sessions;
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
@@ -979,7 +979,11 @@ mod logical_session_tests {
 
         registry.cleanup_stale_logical_sessions(180);
 
-        assert!(registry.logical_sessions.is_empty());
+        assert!(
+            registry.logical_sessions.is_empty(),
+            "{:?}",
+            registry.logical_sessions
+        );
         assert!(registry.logical_session_telemetry_seen);
     }
 
@@ -990,7 +994,11 @@ mod logical_session_tests {
         )
         .expect("legacy registry");
 
-        assert!(registry.logical_sessions.is_empty());
+        assert!(
+            registry.logical_sessions.is_empty(),
+            "{:?}",
+            registry.logical_sessions
+        );
         assert!(!registry.logical_session_telemetry_seen);
     }
 }

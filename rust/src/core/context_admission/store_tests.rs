@@ -508,7 +508,7 @@ fn bm25_build_admission_cost() {
                 let started = Instant::now();
                 let index = BM25Index::build_parallel(&root, &hint, &files, admission);
                 let elapsed = started.elapsed();
-                assert!(!index.chunks.is_empty());
+                assert!(!index.chunks.is_empty(), "`index.chunks` is empty");
                 elapsed
             })
             .collect();

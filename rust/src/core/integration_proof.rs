@@ -434,9 +434,15 @@ mod tests {
             "認証の不具合を修正してください LEAN-42",
         ] {
             let result = loop_.execute_task(query, "edge-cases", "agent");
-            assert!(!result.task_id.is_empty());
-            assert!(!result.profile.task_class.is_empty());
-            assert!(!result.profile.intent.is_empty());
+            assert!(!result.task_id.is_empty(), "`result.task_id` is empty");
+            assert!(
+                !result.profile.task_class.is_empty(),
+                "`result.profile.task_class` is empty"
+            );
+            assert!(
+                !result.profile.intent.is_empty(),
+                "`result.profile.intent` is empty"
+            );
             let routing = router.route(
                 &result.task_id,
                 query,
@@ -461,7 +467,11 @@ mod tests {
                 .profile,
         );
         let routing = router.route("task-malformed", "LEAN- # src/../.rs", &profile, &[], None);
-        assert!(routing.candidates.is_empty());
-        assert!(routing.receipt.sources_used.is_empty());
+        assert!(routing.candidates.is_empty(), "{:?}", routing.candidates);
+        assert!(
+            routing.receipt.sources_used.is_empty(),
+            "{:?}",
+            routing.receipt.sources_used
+        );
     }
 }

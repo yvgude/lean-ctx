@@ -126,7 +126,7 @@ mod tests {
     fn evaluator_accepts_static_policy_match() {
         let result = evaluate(&policy(), &context());
         assert!(result.eligible);
-        assert!(result.reasons.is_empty());
+        assert!(result.reasons.is_empty(), "{:?}", result.reasons);
         assert_eq!(result.required_sample_size, 200);
         assert!(EligibilityPolicyEvaluator::evaluate(&policy(), &context()).eligible);
     }

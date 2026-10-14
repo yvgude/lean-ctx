@@ -351,6 +351,9 @@ mod tests {
     #[test]
     fn an_empty_store_yields_no_modules() {
         let tmp = tempfile::tempdir().unwrap();
-        assert!(installed_modules(tmp.path()).is_empty());
+        {
+            let found = &installed_modules(tmp.path());
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

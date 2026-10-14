@@ -483,7 +483,10 @@ mod tests {
             dim: 2,
         };
         let index = AnnIndex::build(flat);
-        assert!(index.search(&[1.0, 0.0], 5).is_empty());
+        {
+            let found = &index.search(&[1.0, 0.0], 5);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

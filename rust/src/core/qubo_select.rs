@@ -337,6 +337,9 @@ mod tests {
 
     #[test]
     fn empty_problem_selects_nothing() {
-        assert!(select(&[], 1000).is_empty());
+        {
+            let found = &select(&[], 1000);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

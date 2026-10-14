@@ -75,7 +75,7 @@ mod read_cache_hits {
             CrpMode::Off,
             None,
         );
-        assert!(!out1.content.is_empty());
+        assert!(!out1.content.is_empty(), "`out1.content` is empty");
         assert_ne!(out1.resolved_mode, "error");
 
         // Second read: should be a cache hit (mtime unchanged → fast path)
@@ -171,7 +171,7 @@ mod zstd_bypass {
             CrpMode::Off,
             None,
         );
-        assert!(!out1.content.is_empty());
+        assert!(!out1.content.is_empty(), "`out1.content` is empty");
 
         // Second map read — served from the compressed cache. Since #1909 an
         // unchanged variant collapses to the same `[unchanged]` stub as a
@@ -183,7 +183,7 @@ mod zstd_bypass {
             CrpMode::Off,
             None,
         );
-        assert!(!out2.content.is_empty());
+        assert!(!out2.content.is_empty(), "`out2.content` is empty");
         assert!(out2.is_cache_hit);
         assert!(out2.output_tokens <= out1.output_tokens);
         // Known conversation or none at all (one conversation by contract):
@@ -230,7 +230,7 @@ mod exit_code {
         } else {
             String::new()
         };
-        assert!(exit_suffix.is_empty());
+        assert!(exit_suffix.is_empty(), "{exit_suffix:?}");
 
         let code: i32 = 127;
         let exit_suffix = if code != 0 {
@@ -739,7 +739,7 @@ Program.cs(23,5): error CS0103: The name 'undeclared' does not exist in the curr
         let success_output = "   Compiling serde v1.0.193\n   Compiling tokio v1.35.0\n   Compiling myapp v0.1.0\n    Finished `dev` profile [unoptimized + debuginfo] target(s) in 45.23s\n";
         let result = compress_if_beneficial_pub("cargo build", success_output);
         // Should not crash, and successful builds are NOT error-guarded
-        assert!(!result.is_empty());
+        assert!(!result.is_empty(), "`result` is empty");
     }
 
     #[test]
@@ -917,7 +917,7 @@ mod integration_workflow {
             CrpMode::Off,
             None,
         );
-        assert!(!sig1.content.is_empty());
+        assert!(!sig1.content.is_empty(), "`sig1.content` is empty");
 
         let sig2 = lean_ctx::tools::ctx_read::handle_with_task_resolved(
             &mut cache,
@@ -952,6 +952,6 @@ mod integration_workflow {
             CrpMode::Off,
             None,
         );
-        assert!(!map1.content.is_empty());
+        assert!(!map1.content.is_empty(), "`map1.content` is empty");
     }
 }

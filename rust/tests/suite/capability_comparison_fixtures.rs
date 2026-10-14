@@ -20,10 +20,19 @@ fn all_capability_comparison_fixtures_are_valid_and_comparable() {
 
     let mut category_counts = BTreeMap::new();
     for fixture in &fixtures {
-        assert!(!fixture.metadata.command.trim().is_empty());
-        assert!(!fixture.metadata.working_dir.trim().is_empty());
+        assert!(
+            !fixture.metadata.command.trim().is_empty(),
+            "`fixture.metadata.command.trim()` is empty"
+        );
+        assert!(
+            !fixture.metadata.working_dir.trim().is_empty(),
+            "`fixture.metadata.working_dir.trim()` is empty"
+        );
         assert!(fixture.metadata.expected_tokens > 0);
-        assert!(!fixture.input.trim().is_empty());
+        assert!(
+            !fixture.input.trim().is_empty(),
+            "`fixture.input.trim()` is empty"
+        );
         assert!(fixture.input.lines().count() >= 2);
         assert!(fixture.input.chars().any(char::is_alphanumeric));
         assert!(!fixture.input.contains("[placeholder]"));
@@ -39,8 +48,14 @@ fn all_capability_comparison_fixtures_are_valid_and_comparable() {
     let report = generate_from_fixtures(&fixtures);
     assert_eq!(report.fixture_count, EXPECTED_FIXTURE_COUNT);
     assert_eq!(report.workloads.len(), EXPECTED_FIXTURE_COUNT);
-    assert!(!report.external_preferred_workloads.is_empty());
-    assert!(!report.native_preferred_workloads.is_empty());
+    assert!(
+        !report.external_preferred_workloads.is_empty(),
+        "`report.external_preferred_workloads` is empty"
+    );
+    assert!(
+        !report.native_preferred_workloads.is_empty(),
+        "`report.native_preferred_workloads` is empty"
+    );
     assert!(report.workloads.iter().any(|workload| {
         matches!(
             workload.receipt.quality_check,

@@ -993,7 +993,11 @@ mod tests {
         record_session_lifecycle_presence(end);
 
         let registry = crate::core::agents::AgentRegistry::load().expect("registry persisted");
-        assert!(registry.logical_sessions.is_empty());
+        assert!(
+            registry.logical_sessions.is_empty(),
+            "{:?}",
+            registry.logical_sessions
+        );
     }
 
     #[test]

@@ -15,7 +15,7 @@ fn register_and_list() {
     let id = reg
         .register("cursor", Some("dev"), "/tmp/project", None)
         .expect("current process can be registered");
-    assert!(!id.is_empty());
+    assert!(!id.is_empty(), "`id` is empty");
     assert_eq!(reg.list_active(None).len(), 1);
     assert_eq!(reg.list_active(None)[0].agent_type, "cursor");
 }
@@ -502,7 +502,7 @@ fn diary_entry_types() {
         DiaryEntryType::Insight,
     ];
     for t in types {
-        assert!(!format!("{t}").is_empty());
+        assert!(!format!("{t}").is_empty(), "`format!(\"{{t}}\")` is empty");
     }
 }
 

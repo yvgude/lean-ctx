@@ -321,7 +321,7 @@ mod tests {
             "committed subset must not encode a regression, got {}",
             report.verdict.label()
         );
-        assert!(!report.repos.is_empty());
+        assert!(!report.repos.is_empty(), "`report.repos` is empty");
     }
 
     /// Two replays of the same subset yield the same evidence digest (no wall-clock leak).

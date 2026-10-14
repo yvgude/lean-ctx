@@ -233,7 +233,7 @@ mod tests {
         );
         for c in &r.checks {
             assert!(!c.detail.contains('\u{1b}'), "no ANSI in check detail");
-            assert!(!c.detail.is_empty());
+            assert!(!c.detail.is_empty(), "`c.detail` is empty");
         }
         for w in &r.warnings {
             assert!(!w.contains('\u{1b}'), "no ANSI in warnings");

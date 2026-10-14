@@ -82,8 +82,8 @@ mod tests {
         // Policy invariant: each entry announces a removal at least 2 minor
         // releases ahead and carries a stable id.
         for d in &reg.deprecation {
-            assert!(!d.id.is_empty());
-            assert!(!d.subject.is_empty());
+            assert!(!d.id.is_empty(), "`d.id` is empty");
+            assert!(!d.subject.is_empty(), "`d.subject` is empty");
             let minor = |v: &str| -> Option<(u64, u64)> {
                 let mut parts = v.split('.');
                 Some((parts.next()?.parse().ok()?, parts.next()?.parse().ok()?))

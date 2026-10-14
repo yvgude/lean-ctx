@@ -293,7 +293,10 @@ mod tests {
             .unwrap_or_else(std::sync::PoisonError::into_inner) = None;
 
         // Cycle 1: baseline only, nothing submitted.
-        assert!(build_series(1000).is_empty());
+        {
+            let found = &build_series(1000);
+            assert!(found.is_empty(), "{found:?}");
+        }
 
         // Cycle 2: full batch with counts as deltas, not lifetime totals.
         let m = super::super::telemetry::global_metrics();

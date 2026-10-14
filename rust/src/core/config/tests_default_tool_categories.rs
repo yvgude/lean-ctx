@@ -14,7 +14,11 @@ fn default_returns_core_only() {
 #[test]
 fn default_struct_field_is_empty_vec() {
     let cfg = Config::default();
-    assert!(cfg.default_tool_categories.is_empty());
+    assert!(
+        cfg.default_tool_categories.is_empty(),
+        "{:?}",
+        cfg.default_tool_categories
+    );
 }
 
 // --- Config field overrides ---
@@ -73,7 +77,11 @@ fn all_six_categories_in_config() {
 #[test]
 fn deserialization_defaults_to_empty() {
     let cfg: Config = toml::from_str("").unwrap();
-    assert!(cfg.default_tool_categories.is_empty());
+    assert!(
+        cfg.default_tool_categories.is_empty(),
+        "{:?}",
+        cfg.default_tool_categories
+    );
 }
 
 #[test]
@@ -86,7 +94,11 @@ fn deserialization_from_toml() {
 #[test]
 fn deserialization_empty_array() {
     let cfg: Config = toml::from_str(r"default_tool_categories = []").unwrap();
-    assert!(cfg.default_tool_categories.is_empty());
+    assert!(
+        cfg.default_tool_categories.is_empty(),
+        "{:?}",
+        cfg.default_tool_categories
+    );
 }
 
 #[test]

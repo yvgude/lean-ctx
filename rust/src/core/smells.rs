@@ -748,7 +748,7 @@ mod tests {
         let summary = summarize(&all);
         assert_eq!(summary.len(), RULES.len());
         for s in &summary {
-            assert!(!s.description.is_empty());
+            assert!(!s.description.is_empty(), "`s.description` is empty");
         }
     }
 }

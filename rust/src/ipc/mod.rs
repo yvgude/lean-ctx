@@ -129,7 +129,7 @@ mod tests {
     fn daemon_addr_display_non_empty() {
         let addr = DaemonAddr::default_for_current_os();
         let display = addr.display();
-        assert!(!display.is_empty());
+        assert!(!display.is_empty(), "`display` is empty");
     }
 
     #[test]

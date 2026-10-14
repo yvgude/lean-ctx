@@ -82,7 +82,10 @@ mod tests {
         let root = project.path().to_string_lossy().to_string();
 
         let ledger = ContextLedger::new();
-        assert!(prefetch_candidates(&root, "src/a.rs", &ledger).is_empty());
+        {
+            let found = &prefetch_candidates(&root, "src/a.rs", &ledger);
+            assert!(found.is_empty(), "{found:?}");
+        }
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 

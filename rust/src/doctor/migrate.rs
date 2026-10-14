@@ -354,7 +354,7 @@ mod tests {
         // Read-only invariant: whatever the machine state, the check never
         // panics and returns a coherent outcome.
         let (o, detail) = data_layout_outcome();
-        assert!(!detail.is_empty());
+        assert!(!detail.is_empty(), "`detail` is empty");
         let _ = o.ok;
     }
 }

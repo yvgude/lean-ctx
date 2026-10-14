@@ -107,7 +107,10 @@ mod tests {
 
     #[test]
     fn posix_guard_always_has_content() {
-        assert!(!ShellActivation::Always.posix_guard().is_empty());
+        assert!(
+            !ShellActivation::Always.posix_guard().is_empty(),
+            "`ShellActivation::Always.posix_guard()` is empty"
+        );
     }
 
     #[test]
@@ -140,6 +143,9 @@ mod tests {
 
     #[test]
     fn posix_guard_off_is_empty() {
-        assert!(ShellActivation::Off.posix_guard().is_empty());
+        {
+            let found = &ShellActivation::Off.posix_guard();
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

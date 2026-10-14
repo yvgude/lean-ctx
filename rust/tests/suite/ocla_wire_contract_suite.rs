@@ -353,7 +353,8 @@ async fn health_get_returns_aggregated_report_schema() {
         !body["components"]
             .as_array()
             .expect("components")
-            .is_empty()
+            .is_empty(),
+        "`body[\"components\"] .as_array() .expect(\"components\")` is empty"
     );
 }
 

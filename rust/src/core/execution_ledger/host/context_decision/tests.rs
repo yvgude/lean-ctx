@@ -165,7 +165,10 @@ fn operator_outcome_appends_authenticated_receipt_and_records_no_learning() {
         request.signals = vec![LocalSignalAdapters::human_acceptance(!accepted)];
         assert!(host.observe_outcome(&request).is_err()); // no silent replacement
         let store = AdaptiveLearningStore::open_default(task.project_id.clone(), None).unwrap();
-        assert!(store.routing_history(10).unwrap().is_empty());
+        {
+            let found = &store.routing_history(10).unwrap();
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert!(host.ledger.verify_chain().unwrap());
     }
 }
@@ -418,12 +421,10 @@ fn host_capture_rejects_missing_or_unbound_context_before_recording_attempt() {
                 .is_err()
         );
     }
-    assert!(
-        host.ledger
-            .by_task_verified(task.task_id.as_str())
-            .unwrap()
-            .is_empty()
-    );
+    {
+        let found = &host.ledger.by_task_verified(task.task_id.as_str()).unwrap();
+        assert!(found.is_empty(), "{found:?}");
+    }
     let legacy = authority(root.path(), false);
     assert!(capture(&legacy, &task, &plan, context.decision()).is_err());
     let attempt = legacy

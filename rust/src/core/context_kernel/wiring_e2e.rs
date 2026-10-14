@@ -157,7 +157,10 @@ mod tests {
         assert_eq!(coverage, CoverageClass::FullInline);
         assert_eq!(context.profile.coverage, coverage);
         assert!(context.broker_budget.context_tokens > 0);
-        assert!(!reduction.selected_tools.is_empty());
+        assert!(
+            !reduction.selected_tools.is_empty(),
+            "`reduction.selected_tools` is empty"
+        );
         assert!(ledger.total_tokens() > 0);
         assert!(etpao.current_etpao() > 0.0);
     }

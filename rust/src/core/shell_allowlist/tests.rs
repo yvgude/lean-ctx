@@ -369,11 +369,20 @@ fn heredoc_delims_variants() {
         vec!["X".to_string(), "Y".to_string()]
     );
     // `<<` inside a quoted string is not an operator.
-    assert!(heredoc_delims("echo '<<NOPE'", true).is_empty());
+    {
+        let found = &heredoc_delims("echo '<<NOPE'", true);
+        assert!(found.is_empty(), "{found:?}");
+    }
     // here-string `<<<` has no body.
-    assert!(heredoc_delims("cat <<<herestring", true).is_empty());
+    {
+        let found = &heredoc_delims("cat <<<herestring", true);
+        assert!(found.is_empty(), "{found:?}");
+    }
     // unquoted delimiter → not a candidate for stripping.
-    assert!(heredoc_delims("cat <<EOF", true).is_empty());
+    {
+        let found = &heredoc_delims("cat <<EOF", true);
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]

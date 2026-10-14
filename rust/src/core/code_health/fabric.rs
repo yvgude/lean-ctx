@@ -239,7 +239,7 @@ pub mod tests {
     fn build_clean_project_is_empty() {
         let a = build_artifacts(&health_with(Vec::new()));
         assert!(a.bm25_chunks.is_empty());
-        assert!(a.edges.is_empty());
+        assert!(a.edges.is_empty(), "{:?}", a.edges);
         assert!(a.facts.is_empty());
     }
 

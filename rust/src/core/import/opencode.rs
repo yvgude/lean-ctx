@@ -526,6 +526,6 @@ mod tests {
         let temp = tempdir().unwrap();
         let result = import_from_db(&temp.path().join("missing.db"), temp.path());
         assert_eq!(result.sessions_found, 0);
-        assert!(result.errors.is_empty());
+        assert!(result.errors.is_empty(), "{:?}", result.errors);
     }
 }

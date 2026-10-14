@@ -408,7 +408,7 @@ mod tests {
         assert!(!cfg.enabled);
         assert!(!cfg.enabled_effective());
         assert_eq!(cfg.effective_top_n(), 5);
-        assert!(cfg.servers.is_empty());
+        assert!(cfg.servers.is_empty(), "{:?}", cfg.servers);
         // Output post-processing is opt-in: every flag off by default.
         assert!(!cfg.compress_output);
         assert!(!cfg.handle_spill);

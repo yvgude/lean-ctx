@@ -91,10 +91,9 @@ mod tests {
     }
     #[test]
     fn ignores_nonexistent_paths() {
-        assert!(
-            PatternReferenceResolver
-                .resolve("missing/file.rs")
-                .is_empty()
-        );
+        {
+            let found = &PatternReferenceResolver.resolve("missing/file.rs");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

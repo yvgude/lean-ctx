@@ -139,7 +139,7 @@ mod compression_level_tests {
             CompressionLevel::Max,
         ] {
             let (ta, od, crp, tm) = level.to_components();
-            assert!(!crp.is_empty());
+            assert!(!crp.is_empty(), "`crp` is empty");
             if level == CompressionLevel::Off {
                 assert!(!tm);
                 assert_eq!(ta, TerseAgent::Off);

@@ -217,7 +217,7 @@ mod tests {
         let cc: ContentChunk = code.into();
         assert!(!cc.is_external());
         assert_eq!(cc.source, ContentSource::File);
-        assert!(cc.references.is_empty());
+        assert!(cc.references.is_empty(), "{:?}", cc.references);
     }
 
     #[test]

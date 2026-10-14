@@ -110,11 +110,20 @@ pub(crate) fn local_usage_signals(current: &crate::core::session::SessionState) 
 mod tests {
     use super::*;
     fn base() -> UsageSignals { UsageSignals { unique_devices: 2, ..UsageSignals::default() } }
-    #[test] fn below_thresholds_is_quiet() { assert!(evaluate_triggers(&base()).is_empty()); }
+    #[test] fn below_thresholds_is_quiet() { {
+    let found = &evaluate_triggers(&base());
+    assert!(found.is_empty(), "{found:?}");
+} }
     #[test] fn context_at_five_uses_span() { let mut s = base(); s.session_count = 5; s.context_span_sessions = 3; assert_eq!(evaluate_triggers(&s)[0].message, "Your context now spans 3 sessions. Pro syncs this across all your machines."); }
-    #[test] fn context_needs_multiple_sessions() { let mut s = base(); s.session_count = 5; s.context_span_sessions = 1; assert!(evaluate_triggers(&s).is_empty()); }
+    #[test] fn context_needs_multiple_sessions() { let mut s = base(); s.session_count = 5; s.context_span_sessions = 1; {
+    let found = &evaluate_triggers(&s);
+    assert!(found.is_empty(), "{found:?}");
+} }
     #[test] fn decisions_over_thirty_trigger_at_ten() { let mut s = base(); s.session_count = 10; s.total_decisions = 31; assert_eq!(evaluate_triggers(&s)[0].kind, TriggerKind::AdaptiveModelRouting); }
     #[test] fn savings_over_twenty_trigger_at_fifteen() { let mut s = base(); s.session_count = 15; s.total_savings_usd = 20.01; assert!(evaluate_triggers(&s)[0].message.contains("$20.01 this month")); }
     #[test] fn one_device_triggers_at_twenty() { let s = UsageSignals { session_count: 20, unique_devices: 1, ..UsageSignals::default() }; assert_eq!(evaluate_triggers(&s)[0].priority, 6); }
-    #[test] fn engine_suppression_hides_nudges() { let mut engine = ProTriggerEngine::new(UsageSignals { session_count: 20, context_span_sessions: 2, unique_devices: 1, ..UsageSignals::default() }); engine.suppress(1); assert!(engine.evaluate().is_empty()); }
+    #[test] fn engine_suppression_hides_nudges() { let mut engine = ProTriggerEngine::new(UsageSignals { session_count: 20, context_span_sessions: 2, unique_devices: 1, ..UsageSignals::default() }); engine.suppress(1); {
+    let found = &engine.evaluate();
+    assert!(found.is_empty(), "{found:?}");
+} }
 }

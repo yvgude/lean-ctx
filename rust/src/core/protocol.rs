@@ -601,7 +601,10 @@ mod tests {
 
     #[test]
     fn decoder_block_empty_outside_tdd() {
-        assert!(instruction_decoder_block(false).is_empty());
+        {
+            let found = &instruction_decoder_block(false);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

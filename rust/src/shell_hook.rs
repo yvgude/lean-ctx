@@ -865,7 +865,10 @@ mod tests {
         install_zshenv(tmp.path(), true, Style::Auto, &test_stamp());
         install_zshenv(tmp.path(), true, Style::Auto, &test_stamp());
 
-        assert!(find_migration_backups(&tmp.path().join(".zshenv")).is_empty());
+        {
+            let found = &find_migration_backups(&tmp.path().join(".zshenv"));
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

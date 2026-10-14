@@ -819,7 +819,11 @@ mod tests {
         assert!(receipt_outcome.outcome_id.is_none());
         assert!(receipt_outcome.outcome_ref.is_none());
         assert!(receipt_outcome.acceptance_evidence_digest.is_none());
-        assert!(fixture.protocol.accepted_outcome.evidence_refs.is_empty());
+        assert!(
+            fixture.protocol.accepted_outcome.evidence_refs.is_empty(),
+            "{:?}",
+            fixture.protocol.accepted_outcome.evidence_refs
+        );
         assert!(
             fixture
                 .protocol
@@ -827,7 +831,11 @@ mod tests {
                 .quality_score_milli
                 .is_none()
         );
-        assert!(fixture.protocol.decision.evidence_refs.is_empty());
+        assert!(
+            fixture.protocol.decision.evidence_refs.is_empty(),
+            "{:?}",
+            fixture.protocol.decision.evidence_refs
+        );
         let admitted = fixture
             .validated_for(&task)
             .expect("authenticated operational Unknown");

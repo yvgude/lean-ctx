@@ -178,7 +178,10 @@ pub mod tests {
         let briefing = build_briefing("fix the NaN bug in token_entropy", &files);
         assert_eq!(briefing.classification.task_type, TaskType::FixBug);
         assert!(briefing.output_instruction.contains("changed lines"));
-        assert!(!briefing.lab_thinking_instruction.is_empty());
+        assert!(
+            !briefing.lab_thinking_instruction.is_empty(),
+            "`briefing.lab_thinking_instruction` is empty"
+        );
     }
 
     #[test]

@@ -192,8 +192,14 @@ fn recommendation_does_not_execute_a_capability() {
 
     assert_eq!(decision.selected.task_id, envelope().task_id);
     assert_ne!(decision.selected, decision.fallback);
-    assert!(!decision.decision_ref.is_empty());
-    assert!(!decision.rationale_code.is_empty());
+    assert!(
+        !decision.decision_ref.is_empty(),
+        "`decision.decision_ref` is empty"
+    );
+    assert!(
+        !decision.rationale_code.is_empty(),
+        "`decision.rationale_code` is empty"
+    );
     // A recommendation is a value only; no adapter invocation is reachable.
 }
 

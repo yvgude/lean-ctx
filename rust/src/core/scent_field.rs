@@ -410,7 +410,10 @@ pub mod tests {
     #[test]
     fn empty_field_renders_empty() {
         let f = ScentField::default();
-        assert!(f.render_sync(NOW).is_empty());
+        {
+            let found = &f.render_sync(NOW);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

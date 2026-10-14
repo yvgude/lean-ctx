@@ -62,7 +62,7 @@ fn task_id_survives_serialization_roundtrip() {
 #[test]
 fn task_context_new_root_generates_ids() {
     let root = TaskContext::new_root();
-    assert!(!root.task_id.is_empty());
-    assert!(!root.trace_id.is_empty());
+    assert!(!root.task_id.is_empty(), "`root.task_id` is empty");
+    assert!(!root.trace_id.is_empty(), "`root.trace_id` is empty");
     assert!(root.parent_task_id.is_none());
 }

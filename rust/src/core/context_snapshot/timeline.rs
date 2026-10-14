@@ -209,7 +209,10 @@ mod tests {
     #[test]
     fn load_is_empty_for_fresh_dir() {
         let dir = tempfile::tempdir().unwrap();
-        assert!(load_entries_in(dir.path()).is_empty());
+        {
+            let found = &load_entries_in(dir.path());
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

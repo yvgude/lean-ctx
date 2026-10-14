@@ -97,7 +97,10 @@ mod tests {
     #[test]
     fn empty_when_no_cross_source_edges() {
         let g = CodeGraph::open_in_memory().unwrap();
-        assert!(g.all_cross_source_edges().is_empty());
+        {
+            let found = &g.all_cross_source_edges();
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert_eq!(g.cross_source_edge_count().unwrap(), 0);
     }
 

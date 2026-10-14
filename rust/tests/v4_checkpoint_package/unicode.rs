@@ -138,7 +138,7 @@ pub(super) fn exercise(
             !denied.status.success(),
             "Unicode host accepted denial {case}"
         );
-        assert!(denied.stdout.is_empty());
+        assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
         assert_eq!(std::fs::read_dir(&artifact_dir).unwrap().count(), before);
     }
 
@@ -234,7 +234,7 @@ pub(super) fn exercise(
             !denied.status.success(),
             "foreign {field} resumed Unicode state"
         );
-        assert!(denied.stdout.is_empty());
+        assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
         assert_eq!(std::fs::read_dir(&sessions).unwrap().count(), before);
         assert_eq!(std::fs::read(&session_path).unwrap(), session_bytes);
     }

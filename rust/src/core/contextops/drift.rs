@@ -192,13 +192,13 @@ mod tests {
     #[test]
     fn extract_section_no_marker() {
         let section = extract_section("no markers here", "MARKER", "END");
-        assert!(section.is_empty());
+        assert!(section.is_empty(), "{section:?}");
     }
 
     #[test]
     fn compute_diff_identical() {
         let diff = compute_diff("line1\nline2", "line1\nline2");
-        assert!(diff.is_empty());
+        assert!(diff.is_empty(), "{diff:?}");
     }
 
     #[test]

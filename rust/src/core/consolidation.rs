@@ -328,7 +328,7 @@ mod tests {
 
         assert!(!artifacts.is_empty());
         assert_eq!(artifacts.bm25_chunks.len(), 2);
-        assert!(!artifacts.edges.is_empty());
+        assert!(!artifacts.edges.is_empty(), "`artifacts.edges` is empty");
         assert!(!artifacts.facts.is_empty());
         assert_eq!(artifacts.cache_entries.len(), 2);
     }
@@ -383,7 +383,7 @@ mod tests {
             token_count: 0,
         });
         let artifacts = consolidate(&[code]);
-        assert!(artifacts.edges.is_empty());
+        assert!(artifacts.edges.is_empty(), "{:?}", artifacts.edges);
         assert!(artifacts.facts.is_empty());
         assert!(artifacts.cache_entries.is_empty());
     }
@@ -422,7 +422,7 @@ mod tests {
         let result = apply_artifacts(&artifacts, None, Some(&mut edges), None);
 
         assert!(result.edges_created > 0);
-        assert!(!edges.is_empty());
+        assert!(!edges.is_empty(), "`edges` is empty");
         assert!(edges.iter().any(|e| e.to == "src/auth.rs"));
     }
 

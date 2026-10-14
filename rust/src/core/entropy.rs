@@ -1151,7 +1151,7 @@ mod tests {
                 actual <= target + 0.15,
                 "target {target}: actual density {actual:.2} exceeds budget"
             );
-            assert!(!r.output.is_empty());
+            assert!(!r.output.is_empty(), "`r.output` is empty");
         }
     }
 
@@ -1304,7 +1304,7 @@ mod tests {
     fn density_empty_input() {
         let r = entropy_compress_to_density("", 0.5);
         assert_eq!(r.compressed_tokens, 0);
-        assert!(r.output.is_empty());
+        assert!(r.output.is_empty(), "{:?}", r.output);
     }
 
     #[test]

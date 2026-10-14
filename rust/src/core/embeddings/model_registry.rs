@@ -566,8 +566,8 @@ mod tests {
     fn all_models_have_valid_configs() {
         for model in EmbeddingModel::ALL {
             let cfg = model.config();
-            assert!(!cfg.name.is_empty());
-            assert!(!cfg.hf_repo.is_empty());
+            assert!(!cfg.name.is_empty(), "`cfg.name` is empty");
+            assert!(!cfg.hf_repo.is_empty(), "`cfg.hf_repo` is empty");
             assert!(cfg.dimensions > 0);
             assert!(cfg.max_seq_len > 0);
             assert!(cfg.model_min_bytes > 0);

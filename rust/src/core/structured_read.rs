@@ -378,7 +378,10 @@ mod tests {
     #[test]
     fn markdown_outline_empty_for_no_headings() {
         let md = "Just plain text\nwithout any headings.";
-        assert!(extract_markdown_outline(md).is_empty());
+        {
+            let found = &extract_markdown_outline(md);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
@@ -401,7 +404,10 @@ mod tests {
 
     #[test]
     fn json_structure_empty_for_invalid() {
-        assert!(extract_json_structure("not json").is_empty());
+        {
+            let found = &extract_json_structure("not json");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

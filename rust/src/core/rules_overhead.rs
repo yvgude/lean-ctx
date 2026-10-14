@@ -277,7 +277,10 @@ more user stuff that is not ours
                 clients: vec!["cursor"],
             },
         ];
-        assert!(duplicate_clients(&files).is_empty());
+        {
+            let found = &duplicate_clients(&files);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

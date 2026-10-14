@@ -144,7 +144,7 @@ mod tests {
         );
         let blocked = evaluate_text("Contact K-482193", &active);
         assert!(blocked.blocked);
-        assert!(blocked.text.is_empty());
+        assert!(blocked.text.is_empty(), "{:?}", blocked.text);
         assert_eq!(blocked.audit, vec![("block:customer".into(), 1)]);
         assert!(!format!("{blocked:?}").contains("K-482193"));
         let allowed = evaluate_text("Contact K-482194", &active);
@@ -173,7 +173,7 @@ mod tests {
             policy("[redaction]\nlabel = 'CONFIDENTIAL'\n[filters]\nclassification = 'block'");
         let outcome = evaluate_text("CONFIDENTIAL\nK-482193", &active);
         assert!(outcome.blocked);
-        assert!(outcome.text.is_empty());
+        assert!(outcome.text.is_empty(), "{:?}", outcome.text);
         assert!(!format!("{:?}", outcome.audit).contains("K-482193"));
     }
 
@@ -195,7 +195,7 @@ mod tests {
         ] {
             let outcome = evaluate_text(&text, &active);
             assert!(outcome.blocked);
-            assert!(outcome.text.is_empty());
+            assert!(outcome.text.is_empty(), "{:?}", outcome.text);
         }
     }
 
@@ -204,7 +204,7 @@ mod tests {
         let outcome = evaluate_text("K-482193", &policy("[redaction]\nempty = 'x*'"));
         assert!(outcome.blocked);
         assert_eq!(outcome.block_reason.as_deref(), Some("content-rule-limit"));
-        assert!(outcome.text.is_empty());
+        assert!(outcome.text.is_empty(), "{:?}", outcome.text);
     }
 
     #[test]

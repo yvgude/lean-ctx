@@ -626,15 +626,15 @@ mod tests {
 
     #[test]
     fn sections_not_empty() {
-        assert!(!BULLETS.is_empty());
-        assert!(!NEVER.is_empty());
-        assert!(!INTENT.is_empty());
-        assert!(!ANTI.is_empty());
-        assert!(!PARALLEL.is_empty());
-        assert!(!AUTO.is_empty());
-        assert!(!CEP.is_empty());
-        assert!(!LITM_END.is_empty());
-        assert!(!CRITICAL.is_empty());
+        assert!(!BULLETS.is_empty(), "`BULLETS` is empty");
+        assert!(!NEVER.is_empty(), "`NEVER` is empty");
+        assert!(!INTENT.is_empty(), "`INTENT` is empty");
+        assert!(!ANTI.is_empty(), "`ANTI` is empty");
+        assert!(!PARALLEL.is_empty(), "`PARALLEL` is empty");
+        assert!(!AUTO.is_empty(), "`AUTO` is empty");
+        assert!(!CEP.is_empty(), "`CEP` is empty");
+        assert!(!LITM_END.is_empty(), "`LITM_END` is empty");
+        assert!(!CRITICAL.is_empty(), "`CRITICAL` is empty");
     }
 
     #[test]
@@ -995,7 +995,10 @@ mod tests {
 
     #[test]
     fn compression_text_matches_level() {
-        assert!(compression_text(CompressionLevel::Off).is_empty());
+        {
+            let found = &compression_text(CompressionLevel::Off);
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert!(compression_text(CompressionLevel::Lite).contains("Bullet"));
         assert!(compression_text(CompressionLevel::Standard).contains("fn, cfg"));
         assert!(compression_text(CompressionLevel::Max).contains("Telegraph"));

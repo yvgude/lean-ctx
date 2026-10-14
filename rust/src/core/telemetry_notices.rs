@@ -170,7 +170,10 @@ mod tests {
             Some("https://leanctx.com/changelog")
         );
         assert_eq!(notices[1].link, None);
-        assert!(from_response(&json!({"message": "accepted"})).is_empty());
+        {
+            let found = &from_response(&json!({"message": "accepted"}));
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
@@ -190,7 +193,10 @@ mod tests {
         store.shown.push(store.pending.remove(0).id);
         save(&store);
         remember(vec![notice]);
-        assert!(load().pending.is_empty());
+        {
+            let found = &load().pending;
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

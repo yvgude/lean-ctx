@@ -219,7 +219,7 @@ mod tests {
     #[test]
     fn parse_return_rejects_empty_parts() {
         let (facts, rejected) = parse_return_lines("/key: value\ncat/: value\ncat/key:    ");
-        assert!(facts.is_empty());
+        assert!(facts.is_empty(), "{facts:?}");
         assert_eq!(rejected.len(), 3);
     }
 }

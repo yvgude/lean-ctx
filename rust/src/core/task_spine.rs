@@ -390,7 +390,10 @@ mod tests {
     fn test_envelope_has_valid_task_id() {
         let first = TaskSpine::create_envelope("one", "session-task-spine", "agent-task-spine");
         let second = TaskSpine::create_envelope("two", "session-task-spine", "agent-task-spine");
-        assert!(!first.task_id.as_str().is_empty());
+        assert!(
+            !first.task_id.as_str().is_empty(),
+            "`first.task_id.as_str()` is empty"
+        );
         assert_ne!(first.task_id, second.task_id);
     }
 

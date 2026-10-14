@@ -852,7 +852,7 @@ pub mod tests {
 
         for event in &events {
             let json = serde_json::to_string(event).unwrap();
-            assert!(!json.is_empty());
+            assert!(!json.is_empty(), "`json` is empty");
             let _: OclaEvent = serde_json::from_str(&json).unwrap();
         }
         assert_eq!(events.len(), 11, "exactly 11 event types");

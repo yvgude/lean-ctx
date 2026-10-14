@@ -766,7 +766,11 @@ pub mod tests {
             1,
             "a.rs chunk waits for its sibling"
         );
-        assert!(checkpoint.ready_files.is_empty());
+        assert!(
+            checkpoint.ready_files.is_empty(),
+            "{:?}",
+            checkpoint.ready_files
+        );
         // The half-embedded file gets no hash, so a resumed build re-embeds it.
         assert_eq!(idx.files_needing_update(&chunks), vec!["a.rs".to_string()]);
         assert!(!checkpoint.commit(&mut idx, &chunks, &hashes));
@@ -775,7 +779,10 @@ pub mod tests {
         checkpoint.ready_files.push("a.rs".to_string());
         assert!(checkpoint.commit(&mut idx, &chunks, &hashes));
         assert_eq!(idx.entries.len(), 3);
-        assert!(idx.files_needing_update(&chunks).is_empty());
+        {
+            let found = &idx.files_needing_update(&chunks);
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert!(idx.get_aligned_flat(&chunks).is_some());
     }
 

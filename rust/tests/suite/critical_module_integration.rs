@@ -41,7 +41,10 @@ fn degradation_policy_evaluates_for_known_tool() {
     let policy = evaluate_v1_for_tool("ctx_read", Some("2025-01-01T00:00:00Z"));
     assert_eq!(policy.schema_version, 1);
     assert_eq!(policy.tool, "ctx_read");
-    assert!(!policy.decision.reason.is_empty());
+    assert!(
+        !policy.decision.reason.is_empty(),
+        "`policy.decision.reason` is empty"
+    );
 }
 
 #[test]
@@ -151,7 +154,7 @@ fn learn_format_empty_returns_empty() {
     use lean_ctx::core::gotcha_tracker::learn::format_agents_section;
 
     let section = format_agents_section(&[]);
-    assert!(section.is_empty());
+    assert!(section.is_empty(), "{section:?}");
 }
 
 // ---------------------------------------------------------------------------

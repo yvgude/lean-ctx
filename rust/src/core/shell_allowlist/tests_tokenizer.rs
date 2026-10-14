@@ -64,8 +64,14 @@ fn tokenize_double_quoted_honours_posix_escapes() {
 
 #[test]
 fn tokenize_empty() {
-    assert!(shell_tokenize("").is_empty());
-    assert!(shell_tokenize("   ").is_empty());
+    {
+        let found = &shell_tokenize("");
+        assert!(found.is_empty(), "{found:?}");
+    }
+    {
+        let found = &shell_tokenize("   ");
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]

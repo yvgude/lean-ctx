@@ -210,8 +210,8 @@ fn eval_harness_run_eval_produces_valid_scorecard() {
     );
 
     for r in &scorecard.results {
-        assert!(!r.query.is_empty());
-        assert!(!r.expected_files.is_empty());
+        assert!(!r.query.is_empty(), "`r.query` is empty");
+        assert!(!r.expected_files.is_empty(), "`r.expected_files` is empty");
         assert!(r.recall_at_5 >= 0.0 && r.recall_at_5 <= 1.0);
         assert!(r.recall_at_10 >= 0.0 && r.recall_at_10 <= 1.0);
         assert!(r.mrr >= 0.0 && r.mrr <= 1.0);
@@ -223,7 +223,7 @@ fn eval_harness_run_eval_produces_valid_scorecard() {
     );
     for cat in &scorecard.per_category {
         assert!(cat.count > 0);
-        assert!(!cat.category.is_empty());
+        assert!(!cat.category.is_empty(), "`cat.category` is empty");
     }
 
     let display = format!("{scorecard}");

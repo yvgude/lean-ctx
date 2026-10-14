@@ -151,7 +151,7 @@ mod tests {
     #[test]
     fn no_invalid_entries_is_a_no_op() {
         let (results, out) = run(r#"shell_allowlist_extra = ["git", "cargo"]"#);
-        assert!(results.is_empty());
+        assert!(results.is_empty(), "{results:?}");
         assert_eq!(
             live_values(&out, "shell_allowlist_extra"),
             vec!["git", "cargo"]
@@ -163,7 +163,10 @@ mod tests {
         let (results, out) = run(r#"shell_allowlist_extra = ["git * push"]"#);
         assert_eq!(results.len(), 1);
         assert!(results[0].contains("git * push"));
-        assert!(live_values(&out, "shell_allowlist_extra").is_empty());
+        {
+            let found = &live_values(&out, "shell_allowlist_extra");
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert!(out.contains("lean-ctx doctor --fix: disabled"));
         assert!(out.contains(r#"# "git * push""#));
     }

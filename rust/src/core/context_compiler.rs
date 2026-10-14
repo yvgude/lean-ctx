@@ -694,8 +694,12 @@ mod tests {
         assert_eq!(result.items_selected, 3);
         assert_eq!(result.items_excluded, 0);
         assert_eq!(result.items_pinned, 1);
-        assert!(result.excluded_reasons.is_empty());
-        assert!(result.warnings.is_empty());
+        assert!(
+            result.excluded_reasons.is_empty(),
+            "{:?}",
+            result.excluded_reasons
+        );
+        assert!(result.warnings.is_empty(), "{:?}", result.warnings);
         assert!(!result.redundancy_applied);
     }
 

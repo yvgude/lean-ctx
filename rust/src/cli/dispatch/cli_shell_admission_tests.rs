@@ -110,7 +110,11 @@ fn actual_child_statuses_finish_once_without_acceptance_evidence() {
             let completion = cli_shell_completion(expected);
             assert_eq!(completion.provider, "local");
             assert_eq!(completion.success, expected == 0);
-            assert!(completion.outcome_signals.is_empty());
+            assert!(
+                completion.outcome_signals.is_empty(),
+                "{:?}",
+                completion.outcome_signals
+            );
         }
     });
 }

@@ -389,7 +389,10 @@ mod tests {
             "hookSpecificOutput": { "permissionDecision": "allow" }
         })
         .to_string();
-        assert!(codex_redirect_output(&bare_allow).is_empty());
+        {
+            let found = &codex_redirect_output(&bare_allow);
+            assert!(found.is_empty(), "{found:?}");
+        }
 
         let redirected = serde_json::json!({
             "permission": "allow",

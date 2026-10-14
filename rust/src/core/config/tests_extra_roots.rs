@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn default_is_empty() {
     let cfg = Config::default();
-    assert!(cfg.extra_roots.is_empty());
+    assert!(cfg.extra_roots.is_empty(), "{:?}", cfg.extra_roots);
 }
 
 #[test]
@@ -53,7 +53,11 @@ fn merge_local_empty_shell_allowlist_disables_restriction() {
         ..Config::default()
     };
     base.merge_local(r"shell_allowlist = []", true);
-    assert!(base.shell_allowlist.is_empty());
+    assert!(
+        base.shell_allowlist.is_empty(),
+        "{:?}",
+        base.shell_allowlist
+    );
 }
 
 #[test]

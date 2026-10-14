@@ -526,7 +526,7 @@ fn resolve_token_falls_back_to_random_when_unset() {
     crate::test_env::remove_var(HTTP_TOKEN_ENV);
     let (token, src) = resolve_requested_token(None);
     assert!(token.is_none(), "unset env requests no fixed token");
-    assert!(src.is_empty());
+    assert!(src.is_empty(), "{src:?}");
     // The production fallback in `start()` generates a random token.
     let generated = token.unwrap_or_else(generate_token);
     assert!(
@@ -549,7 +549,7 @@ fn resolve_token_ignores_empty_env() {
         token.is_none(),
         "whitespace-only env requests no fixed token"
     );
-    assert!(src.is_empty());
+    assert!(src.is_empty(), "{src:?}");
 }
 
 #[test]

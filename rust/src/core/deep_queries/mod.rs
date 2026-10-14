@@ -617,7 +617,10 @@ private typealias UserId = String
         let src = r"interface Result<T, E> { ok: T; err: E; }";
         let analysis = analyze(src, "ts");
         assert_eq!(analysis.types.len(), 1);
-        assert!(!analysis.types[0].generics.is_empty());
+        assert!(
+            !analysis.types[0].generics.is_empty(),
+            "`analysis.types[0].generics` is empty"
+        );
     }
 
     #[test]
@@ -648,7 +651,7 @@ app.listen(3000);
     #[test]
     fn empty_file() {
         let analysis = analyze("", "ts");
-        assert!(analysis.imports.is_empty());
+        assert!(analysis.imports.is_empty(), "{:?}", analysis.imports);
         assert!(analysis.calls.is_empty());
         assert!(analysis.types.is_empty());
     }
@@ -656,7 +659,7 @@ app.listen(3000);
     #[test]
     fn unsupported_extension() {
         let analysis = analyze("some content", "txt");
-        assert!(analysis.imports.is_empty());
+        assert!(analysis.imports.is_empty(), "{:?}", analysis.imports);
     }
 
     #[test]

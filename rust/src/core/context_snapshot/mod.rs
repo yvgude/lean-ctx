@@ -114,10 +114,10 @@ mod tests {
     fn new_uses_current_schema_version_and_empty_slices() {
         let snap = ContextSnapshotV1::new("2026-06-28T12:00:00Z".into(), "3.9.0".into());
         assert_eq!(snap.schema_version, CONTEXT_SNAPSHOT_V1_SCHEMA_VERSION);
-        assert!(snap.snapshot_id.is_empty());
+        assert!(snap.snapshot_id.is_empty(), "{:?}", snap.snapshot_id);
         assert!(snap.signature.is_none());
-        assert!(snap.lineage.items.is_empty());
-        assert!(snap.ledger.items.is_empty());
+        assert!(snap.lineage.items.is_empty(), "{:?}", snap.lineage.items);
+        assert!(snap.ledger.items.is_empty(), "{:?}", snap.ledger.items);
     }
 
     #[test]

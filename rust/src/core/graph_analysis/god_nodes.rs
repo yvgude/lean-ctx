@@ -85,7 +85,10 @@ mod tests {
     fn ignores_heuristic_edges() {
         // sibling / cochange are co-location heuristics, not dependencies.
         let edges = vec![e("a.rs", "b.rs", "sibling"), e("a.rs", "c.rs", "cochange")];
-        assert!(compute_god_nodes(&edges, 10).is_empty());
+        {
+            let found = &compute_god_nodes(&edges, 10);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

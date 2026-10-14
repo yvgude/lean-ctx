@@ -399,7 +399,10 @@ mod tests {
             total_tokens: 100,
             budget_remaining: 7900,
         };
-        assert!(format_graph_context(&ctx).is_empty());
+        {
+            let found = &format_graph_context(&ctx);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

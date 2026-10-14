@@ -98,12 +98,19 @@ mod tests {
 
     #[test]
     fn test_instruction_suffix_not_empty() {
-        assert!(!TaskComplexity::Mechanical.instruction_suffix().is_empty());
-        assert!(!TaskComplexity::Standard.instruction_suffix().is_empty());
+        assert!(
+            !TaskComplexity::Mechanical.instruction_suffix().is_empty(),
+            "`TaskComplexity::Mechanical.instruction_suffix()` is empty"
+        );
+        assert!(
+            !TaskComplexity::Standard.instruction_suffix().is_empty(),
+            "`TaskComplexity::Standard.instruction_suffix()` is empty"
+        );
         assert!(
             !TaskComplexity::Architectural
                 .instruction_suffix()
-                .is_empty()
+                .is_empty(),
+            "`TaskComplexity::Architectural .instruction_suffix()` is empty"
         );
     }
 

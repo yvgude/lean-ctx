@@ -184,7 +184,7 @@ mod tests {
     fn session_always_allowed() {
         let result = check_capabilities("minimal", "ctx_session");
         assert!(result.allowed);
-        assert!(result.missing.is_empty());
+        assert!(result.missing.is_empty(), "{:?}", result.missing);
     }
 
     #[test]

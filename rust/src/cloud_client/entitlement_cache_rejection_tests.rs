@@ -15,7 +15,10 @@ fn invalid_vector_response_cannot_resurrect_the_cached_paid_entitlement() {
     assert_eq!(result.verification_status, "denied");
     assert_eq!(result.plan, Plan::Community);
     // Invalid live success is an authenticated rejection of the replayable cache.
-    assert!(std::fs::read(&fixture.paths.cache).unwrap().is_empty());
+    {
+    let found = &std::fs::read(&fixture.paths.cache).unwrap();
+    assert!(found.is_empty(), "{found:?}");
+}
     assert!(permit.ensure_valid_at(VECTOR_ACTIVE_NOW).is_err());
     assert_eq!(
         resolve_at(&fixture.paths, VECTOR_ACTIVE_NOW).verification_status,

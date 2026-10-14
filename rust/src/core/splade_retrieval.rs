@@ -293,7 +293,7 @@ mod tests {
         let index = sample_index();
 
         let hits = hybrid_retrieve("auth login", &index, 5);
-        assert!(!hits.is_empty());
+        assert!(!hits.is_empty(), "`hits` is empty");
         let top_path = hits[0].file_path.clone();
         assert!(
             top_path.ends_with("login.rs") || top_path.ends_with("auth.rs"),
@@ -307,7 +307,7 @@ mod tests {
         // "jwt" matches BM25 stage 1; "auth" drives SPLADE expansion toward login/oauth chunks.
         let hybrid = hybrid_retrieve("jwt auth", &index, 10);
 
-        assert!(!hybrid.is_empty());
+        assert!(!hybrid.is_empty(), "`hybrid` is empty");
         assert!(
             hybrid[0].expansion_score >= 0.0,
             "expansion_score should be non-negative"
@@ -317,7 +317,10 @@ mod tests {
     #[test]
     fn empty_query_returns_empty() {
         let index = sample_index();
-        assert!(hybrid_retrieve("", &index, 5).is_empty());
+        {
+            let found = &hybrid_retrieve("", &index, 5);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
@@ -327,7 +330,7 @@ mod tests {
         let hybrid = hybrid_retrieve("auth session", &index, 3);
         let r = &hybrid[0];
         assert!(r.chunk_idx < index.chunks.len());
-        assert!(!r.file_path.is_empty());
+        assert!(!r.file_path.is_empty(), "`r.file_path` is empty");
         assert!(r.combined_score.is_finite());
         assert!(r.bm25_score.is_finite());
         assert!(r.expansion_score.is_finite());

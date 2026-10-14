@@ -1315,6 +1315,9 @@ pub mod edge_tests {
     fn handles_empty_article() {
         let html = "<html><body><article>   \n\t  </article></body></html>";
         let result = extract_article(html);
-        assert!(result.trim().is_empty());
+        {
+            let found = &result.trim();
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

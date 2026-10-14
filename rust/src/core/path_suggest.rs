@@ -254,7 +254,10 @@ mod tests {
     #[test]
     fn nothing_close_suggests_nothing() {
         let dir = project();
-        assert!(suggestions(&dir.path().join("rust/src/zzzzzzzz.py")).is_empty());
+        {
+            let found = &suggestions(&dir.path().join("rust/src/zzzzzzzz.py"));
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert_eq!(hint(&dir.path().join("nope/void.md")), "");
     }
 }

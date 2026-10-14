@@ -830,7 +830,10 @@ mod tests {
     fn current_process_identity_is_stable_and_matches() {
         let pid = std::process::id();
         let identity = identity(pid).expect("supported platform exposes process identity");
-        assert!(!identity.executable.is_empty());
+        assert!(
+            !identity.executable.is_empty(),
+            "`identity.executable` is empty"
+        );
         assert!(matches_identity(pid, &identity));
     }
 

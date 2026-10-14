@@ -93,6 +93,6 @@ mod tests {
     #[test]
     fn handle_diff_without_config() {
         let result = handle("diff", None);
-        assert!(!result.is_empty());
+        assert!(!result.is_empty(), "`result` is empty");
     }
 }

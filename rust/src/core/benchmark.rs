@@ -1077,13 +1077,16 @@ mod tests {
         assert!(!bench.mode_summaries.is_empty());
 
         for lang in &bench.languages {
-            assert!(!lang.best_mode.is_empty());
+            assert!(!lang.best_mode.is_empty(), "`lang.best_mode` is empty");
             assert!(lang.best_savings_pct >= 0.0);
         }
 
         let json = format_json(&bench);
         let parsed: serde_json::Value = serde_json::from_str(&json).unwrap();
-        assert!(!parsed["files"].as_array().unwrap().is_empty());
+        assert!(
+            !parsed["files"].as_array().unwrap().is_empty(),
+            "`parsed[\"files\"].as_array().unwrap()` is empty"
+        );
 
         let md = format_markdown(&bench);
         assert!(md.contains("lean-ctx Benchmark Report"));

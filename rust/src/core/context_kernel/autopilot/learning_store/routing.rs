@@ -129,7 +129,10 @@ mod tests {
 
         // Another project never sees or resets this scope.
         let mut other = open("other-project");
-        assert!(other.routing_history(10).unwrap().is_empty());
+        {
+            let found = &other.routing_history(10).unwrap();
+            assert!(found.is_empty(), "{found:?}");
+        }
         other.reset().unwrap();
         let mut store = open(&project);
         assert_eq!(
@@ -147,11 +150,9 @@ mod tests {
             .unwrap();
         assert!(store.routing_history(1).is_err());
         store.reset().unwrap();
-        assert!(
-            store
-                .routing_history(MAX_ROUTING_HISTORY)
-                .unwrap()
-                .is_empty()
-        );
+        {
+            let found = &store.routing_history(MAX_ROUTING_HISTORY).unwrap();
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

@@ -380,29 +380,32 @@ mod tests {
             vec![("Models/Engine.cs".to_string(), "Engine".to_string(), 1, 5)]
         );
         // Using one's own type -> no self edge.
-        assert!(
-            type_ref_targets(
+        {
+            let found = &type_ref_targets(
                 &def_index,
                 &uses(&["Motor"]),
                 "Services/Motor.cs",
                 &none,
-                true
-            )
-            .is_empty()
-        );
+                true,
+            );
+            assert!(found.is_empty(), "{found:?}");
+        }
         // Defined in 6 files, no namespace match -> too generic, skipped.
-        assert!(
-            type_ref_targets(
+        {
+            let found = &type_ref_targets(
                 &def_index,
                 &uses(&["Config"]),
                 "Services/Motor.cs",
                 &none,
-                true
-            )
-            .is_empty()
-        );
+                true,
+            );
+            assert!(found.is_empty(), "{found:?}");
+        }
         // Unknown / external types -> nothing.
-        assert!(type_ref_targets(&def_index, &uses(&["String"]), "x.cs", &none, true).is_empty());
+        {
+            let found = &type_ref_targets(&def_index, &uses(&["String"]), "x.cs", &none, true);
+            assert!(found.is_empty(), "{found:?}");
+        }
         // Duplicate uses collapse into one sorted target list.
         assert_eq!(
             type_ref_targets(
@@ -472,7 +475,10 @@ mod tests {
         // A consumer whose directory has no `Config` definer links nothing —
         // strict Go scope forbids the cross-directory global fallback.
         let other: HashSet<String> = std::iter::once("cmd".to_string()).collect();
-        assert!(type_ref_targets(&def_index, &uses, "cmd/main.go", &other, false).is_empty());
+        {
+            let found = &type_ref_targets(&def_index, &uses, "cmd/main.go", &other, false);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     /// The durable mirror entry point: a same-namespace consumer links to the

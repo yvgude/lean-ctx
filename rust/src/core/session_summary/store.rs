@@ -167,6 +167,9 @@ mod tests {
         s.push(rec("a-2", "billing webhook", "stripe meter events"), 100);
         let hits = s.search_lexical("graph edges", 5);
         assert_eq!(hits.first().unwrap().0, 0, "graph summary ranks first");
-        assert!(s.search_lexical("nonexistentterm", 5).is_empty());
+        {
+            let found = &s.search_lexical("nonexistentterm", 5);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

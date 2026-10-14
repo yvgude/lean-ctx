@@ -116,7 +116,7 @@ mod tests {
             .collect();
         let card = mcp_server_card_value();
         let categories = card["tool_categories"].as_array().expect("categories");
-        assert!(!categories.is_empty());
+        assert!(!categories.is_empty(), "`categories` is empty");
         for category in categories {
             assert_ne!(category["name"], "agent_ops");
             for tool in category["tools"].as_array().expect("tools") {

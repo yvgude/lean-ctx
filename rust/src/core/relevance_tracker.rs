@@ -572,7 +572,7 @@ pub mod edge_tests {
     #[test]
     fn stopwords_are_excluded() {
         let keywords = extract_keywords("the and for are but not this that with from");
-        assert!(keywords.is_empty());
+        assert!(keywords.is_empty(), "{keywords:?}");
     }
 
     #[test]

@@ -1372,7 +1372,7 @@ mod tests {
         };
 
         let cycles = find_cycles(&data);
-        assert!(!cycles.is_empty());
+        assert!(!cycles.is_empty(), "`cycles` is empty");
     }
 
     #[test]

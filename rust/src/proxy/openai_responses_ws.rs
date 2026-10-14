@@ -982,7 +982,11 @@ mod tests {
         };
         let observation = driver.observe(&Ok(result));
         assert!(!observation.success);
-        assert!(observation.outcome_signals.is_empty());
+        assert!(
+            observation.outcome_signals.is_empty(),
+            "{:?}",
+            observation.outcome_signals
+        );
         assert_eq!(observation.provider, "OpenAI");
         assert_eq!(observation.model, "gpt-5.4");
         server.abort();

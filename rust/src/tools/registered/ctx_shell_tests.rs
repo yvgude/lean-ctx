@@ -87,7 +87,7 @@ fn cancel_is_acknowledged_and_never_reports_a_failure() {
     assert!(!outcome.is_error);
     assert_eq!(outcome.state, BackgroundJobState::Cancelled);
     assert_eq!(outcome.exit_code, None);
-    assert!(text.is_empty());
+    assert!(text.is_empty(), "{text:?}");
     assert!(
         outcome
             .display
@@ -100,7 +100,7 @@ fn cancel_is_acknowledged_and_never_reports_a_failure() {
     let outcome = background(outcome);
     assert!(!outcome.is_error);
     assert_eq!(outcome.state, BackgroundJobState::Running);
-    assert!(text.is_empty());
+    assert!(text.is_empty(), "{text:?}");
     assert!(
         outcome
             .display

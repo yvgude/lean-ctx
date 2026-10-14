@@ -349,7 +349,10 @@ mod trust_tests {
                 vec![home.join(".local").join("bin").join("claude")]
             );
         }
-        assert!(super::default_install_candidates(None, None).is_empty());
+        {
+            let found = &super::default_install_candidates(None, None);
+            assert!(found.is_empty(), "{found:?}");
+        }
         // Each one sits under a trusted root, so the trust check still applies
         // rather than being bypassed.
         for candidate in &candidates {

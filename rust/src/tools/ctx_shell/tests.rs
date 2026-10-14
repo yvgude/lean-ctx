@@ -964,7 +964,10 @@ fn capture_into_the_project_and_allow_entries_is_allowed() {
         allow_paths: vec!["/".into(), "~".into(), home.clone()],
         ..Default::default()
     };
-    assert!(super::capture_roots(&home, &["/".to_string()], &broad).is_empty());
+    {
+        let found = &super::capture_roots(&home, &["/".to_string()], &broad);
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]

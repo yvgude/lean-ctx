@@ -307,7 +307,7 @@ mod tests {
         assert_eq!(item.id, "99");
         assert_eq!(item.title, "Quick fix");
         assert!(item.body.is_none());
-        assert!(item.labels.is_empty());
+        assert!(item.labels.is_empty(), "{:?}", item.labels);
     }
 
     #[test]

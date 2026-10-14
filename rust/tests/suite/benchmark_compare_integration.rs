@@ -64,9 +64,9 @@ fn competitor_profiles_are_consistent() {
     let comps = competitors::all_competitors();
 
     for c in &comps {
-        assert!(!c.name.is_empty());
-        assert!(!c.version.is_empty());
-        assert!(!c.source.is_empty());
+        assert!(!c.name.is_empty(), "`c.name` is empty");
+        assert!(!c.version.is_empty(), "`c.version` is empty");
+        assert!(!c.source.is_empty(), "`c.source` is empty");
         if c.name != "Raw file read" {
             assert!(!c.url.is_empty(), "{} should have a URL", c.name);
         }
@@ -80,9 +80,12 @@ fn competitor_profiles_are_consistent() {
 #[test]
 fn system_info_is_populated() {
     let sys = system_info::collect();
-    assert!(!sys.os.is_empty());
-    assert!(!sys.arch.is_empty());
-    assert!(!sys.lean_ctx_version.is_empty());
+    assert!(!sys.os.is_empty(), "`sys.os` is empty");
+    assert!(!sys.arch.is_empty(), "`sys.arch` is empty");
+    assert!(
+        !sys.lean_ctx_version.is_empty(),
+        "`sys.lean_ctx_version` is empty"
+    );
     assert!(sys.cpu_cores >= 1);
     assert!(sys.memory_gb > 0.0, "should detect system RAM");
 }
@@ -96,7 +99,7 @@ fn search_latency_measurement_works() {
     let m = metrics::measure_all(fixture);
 
     for sl in &m.search_latencies {
-        assert!(!sl.query.is_empty());
+        assert!(!sl.query.is_empty(), "`sl.query` is empty");
     }
 }
 

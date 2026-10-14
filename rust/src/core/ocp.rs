@@ -172,10 +172,16 @@ mod tests {
     fn check_result_lists_missing_on_denial() {
         let denied = capability_check_result("minimal", "ctx_shell");
         assert_eq!(denied["allowed"], false);
-        assert!(!denied["missing"].as_array().unwrap().is_empty());
+        assert!(
+            !denied["missing"].as_array().unwrap().is_empty(),
+            "`denied[\"missing\"].as_array().unwrap()` is empty"
+        );
 
         let allowed = capability_check_result("admin", "ctx_shell");
         assert_eq!(allowed["allowed"], true);
-        assert!(allowed["missing"].as_array().unwrap().is_empty());
+        {
+            let found = &allowed["missing"].as_array().unwrap();
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

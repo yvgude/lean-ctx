@@ -132,7 +132,10 @@ mod tests {
         let m = Matcher::new(&["TS//SCI".to_string()]);
         assert_eq!(m.detect("TS//SCI\nbody"), vec!["TS//SCI".to_string()]);
         // Default labels are not used when a custom list is provided.
-        assert!(m.detect("CONFIDENTIAL\nbody").is_empty());
+        {
+            let found = &m.detect("CONFIDENTIAL\nbody");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
@@ -141,15 +144,17 @@ mod tests {
             default_matcher().detect("__CONFIDENTIAL__\nbody"),
             vec!["CONFIDENTIAL"]
         );
-        assert!(default_matcher().detect("fn main() {}\n").is_empty());
+        {
+            let found = &default_matcher().detect("fn main() {}\n");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
     fn public_field_value_does_not_gate() {
-        assert!(
-            default_matcher()
-                .detect("Classification: public")
-                .is_empty()
-        );
+        {
+            let found = &default_matcher().detect("Classification: public");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

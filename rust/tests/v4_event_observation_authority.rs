@@ -167,13 +167,10 @@ fn ocla_producers_commit_all_variants_once_and_reject_failed_writes() {
     assert_eq!(before.len(), expected.len() + 1);
     assert_eq!(projection.len(), before.len());
     assert_eq!(ocla_bus::total_emitted(), before.len() as u64);
-    assert!(
-        runtime
-            .bus
-            .read_legacy_observations(100)
-            .unwrap()
-            .is_empty()
-    );
+    {
+        let found = &runtime.bus.read_legacy_observations(100).unwrap();
+        assert!(found.is_empty(), "{found:?}");
+    }
     for (row, record) in before.iter().zip(&projection) {
         assert_eq!(row.source_id, record.id);
         assert_eq!(row.source_timestamp, record.timestamp_ms.to_string());

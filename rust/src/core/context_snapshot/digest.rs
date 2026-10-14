@@ -79,6 +79,6 @@ mod tests {
         let mut snap = sample();
         let id = finalize_id(&mut snap).expect("finalize");
         assert_eq!(snap.snapshot_id, id);
-        assert!(!id.is_empty());
+        assert!(!id.is_empty(), "`id` is empty");
     }
 }

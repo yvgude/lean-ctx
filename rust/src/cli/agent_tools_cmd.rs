@@ -1142,8 +1142,8 @@ mod tests {
         ]);
         let first = session.call("ctx_read", &arguments).unwrap();
         let second = session.call("ctx_read", &arguments).unwrap();
-        assert!(!first.text.is_empty());
-        assert!(!second.text.is_empty());
+        assert!(!first.text.is_empty(), "`first.text` is empty");
+        assert!(!second.text.is_empty(), "`second.text` is empty");
         assert!(second.saved_tokens >= first.saved_tokens);
     }
 

@@ -360,7 +360,10 @@ mod tests {
         assert_eq!(metrics.modes_tested, 1);
         assert!((0.0..=100.0).contains(&metrics.best_savings_pct));
         assert!((0.0..=1.0).contains(&metrics.avg_preservation_score));
-        assert!(!metrics.fidelity_class.is_empty());
+        assert!(
+            !metrics.fidelity_class.is_empty(),
+            "`metrics.fidelity_class` is empty"
+        );
     }
 
     #[test]
@@ -377,7 +380,10 @@ mod tests {
         let metrics = assess_tokenizer_calibration(ORIGINAL);
         assert!(metrics.families_tested > 1);
         assert!(metrics.max_cross_family_variance_pct >= 0.0);
-        assert!(!metrics.dominant_family.is_empty());
+        assert!(
+            !metrics.dominant_family.is_empty(),
+            "`metrics.dominant_family` is empty"
+        );
     }
 
     #[test]

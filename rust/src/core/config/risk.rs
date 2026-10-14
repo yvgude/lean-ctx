@@ -90,7 +90,10 @@ mod tests {
             "proxy.gemini_upstream",
         ] {
             assert!(is_consequential(key), "{key} should be consequential");
-            assert!(!classify(key).unwrap().note.is_empty());
+            assert!(
+                !classify(key).unwrap().note.is_empty(),
+                "`classify(key).unwrap().note` is empty"
+            );
         }
     }
 

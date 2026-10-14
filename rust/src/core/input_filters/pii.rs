@@ -379,7 +379,7 @@ mod tests {
             out.contains("756.9217.0769.86"),
             "must not redact invalid AHV"
         );
-        assert!(counts.is_empty());
+        assert!(counts.is_empty(), "{counts:?}");
     }
 
     #[test]
@@ -410,7 +410,7 @@ mod tests {
         let line = format!("Export saved: /data/exports/knowledge-3f2697eb-{stamp}.json");
         let (out, counts) = redact_checksummed(&line);
         assert_eq!(out, line, "a timestamp is not a card");
-        assert!(counts.is_empty());
+        assert!(counts.is_empty(), "{counts:?}");
         assert!(
             !card_layout_plausible("4111 1111-1111 1111"),
             "mixed separators"
@@ -422,7 +422,7 @@ mod tests {
         // A random 16-digit order id that fails Luhn must survive.
         let (out, counts) = redact("order 1234567890123456 shipped");
         assert!(out.contains("1234567890123456"), "false positive: {out}");
-        assert!(counts.is_empty());
+        assert!(counts.is_empty(), "{counts:?}");
     }
 
     #[test]
@@ -436,7 +436,7 @@ mod tests {
     fn ignores_invalid_iban() {
         let (out, counts) = redact("ref GB00WEST12345698765432 here");
         assert!(out.contains("GB00WEST12345698765432"));
-        assert!(counts.is_empty());
+        assert!(counts.is_empty(), "{counts:?}");
     }
 
     #[test]
@@ -509,7 +509,10 @@ mod tests {
 
     #[test]
     fn clean_text_has_no_pii() {
-        assert!(detect("just some ordinary source code, no secrets").is_empty());
+        {
+            let found = &detect("just some ordinary source code, no secrets");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

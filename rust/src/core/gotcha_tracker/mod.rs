@@ -832,7 +832,10 @@ mod tests {
     #[test]
     fn format_injection_block_empty() {
         let store = GotchaStore::new("testhash");
-        assert!(store.format_injection_block(&[]).is_empty());
+        {
+            let found = &store.format_injection_block(&[]);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

@@ -147,7 +147,7 @@ fn real_cli_signs_native_receipt_from_host_stdin_and_refuses_repeat() {
     assert_eq!(events.len(), 5);
     let repeated = invoke(&root, &args, &settings);
     assert_eq!(repeated.status.code(), Some(2));
-    assert!(repeated.stdout.is_empty());
+    assert!(repeated.stdout.is_empty(), "{:?}", repeated.stdout);
     assert!(String::from_utf8_lossy(&repeated.stderr).contains("host_task_already_recorded"));
     assert_eq!(
         ledger.load_verified().expect("unchanged chain").len(),

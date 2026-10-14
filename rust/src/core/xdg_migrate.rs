@@ -537,7 +537,7 @@ mod tests {
         touch(&src.join("vectors"), "v.bin");
 
         let report = migrate_from(&src, &t);
-        assert!(report.errors.is_empty());
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
         assert!(t.config.join("config.toml").exists());
         assert!(t.state.join("events.jsonl").exists());
         assert!(t.data.join("vectors/v.bin").exists());
@@ -557,10 +557,10 @@ mod tests {
         std::fs::write(t.state.join("events.jsonl"), b"x").unwrap();
 
         let report = migrate_from(&src, &t);
-        assert!(report.errors.is_empty());
-        assert!(report.moved.is_empty());
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
+        assert!(report.moved.is_empty(), "{:?}", report.moved);
         assert_eq!(report.skipped, vec!["events.jsonl".to_string()]);
-        assert!(report.conflicts.is_empty());
+        assert!(report.conflicts.is_empty(), "{:?}", report.conflicts);
         // Duplicate source dropped; destination untouched.
         assert!(
             !src.join("events.jsonl").exists(),
@@ -586,7 +586,7 @@ mod tests {
         std::fs::write(t.state.join("events.jsonl"), b"keep").unwrap(); // differs
 
         let report = migrate_from(&src, &t);
-        assert!(report.errors.is_empty());
+        assert!(report.errors.is_empty(), "{:?}", report.errors);
         assert_eq!(report.conflicts, vec!["events.jsonl".to_string()]);
         // Winner preserved, source moved aside as *.legacy, legacy dir emptied.
         assert_eq!(

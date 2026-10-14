@@ -197,7 +197,7 @@ mod tests {
                 |a, b| a.rank.cmp(&b.rank),
             )
             .expect("reclaim succeeds");
-            assert!(archived.is_empty());
+            assert!(archived.is_empty(), "{archived:?}");
             assert_eq!(items.len(), 3);
         });
     }
@@ -216,7 +216,7 @@ mod tests {
                 |a, b| a.rank.cmp(&b.rank),
             )
             .expect("reclaim succeeds");
-            assert!(archived.is_empty());
+            assert!(archived.is_empty(), "{archived:?}");
             assert_eq!(
                 items.len(),
                 20,

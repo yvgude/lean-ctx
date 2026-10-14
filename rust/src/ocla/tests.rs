@@ -60,11 +60,10 @@ fn registry_registers_and_looks_up_capabilities() {
         registry.list_by_type(CapabilityType::Retrieval),
         vec![&manifest]
     );
-    assert!(
-        registry
-            .list_by_type(CapabilityType::Compression)
-            .is_empty()
-    );
+    {
+        let found = &registry.list_by_type(CapabilityType::Compression);
+        assert!(found.is_empty(), "{found:?}");
+    }
     assert_eq!(
         registry.register(manifest).unwrap_err(),
         RegistryError::DuplicateCapability("leanctx.retrieval.test".to_owned())

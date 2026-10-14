@@ -253,7 +253,7 @@ mod tests {
             let _rules = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", injection);
             let report = sync_agent(&home.path, "claude");
             assert!(report.errors.is_empty(), "{:?}", report.errors);
-            assert!(report.synced.is_empty());
+            assert!(report.synced.is_empty(), "{:?}", report.synced);
             assert!(
                 !home.path.join(".claude/CLAUDE.md").exists(),
                 "{scope}/{injection} must not create a shared Claude pointer"

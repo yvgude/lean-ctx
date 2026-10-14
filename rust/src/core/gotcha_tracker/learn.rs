@@ -239,7 +239,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let root = dir.path().to_string_lossy().to_string();
         let written = apply_learnings(&root, &[]).unwrap();
-        assert!(written.is_empty());
+        assert!(written.is_empty(), "{written:?}");
         assert!(!dir.path().join("AGENTS.md").exists());
     }
 }

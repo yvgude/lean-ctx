@@ -43,7 +43,10 @@ fn ignition_skips_small_ledger() {
     let mut ledger = ContextLedger::with_window_size(100_000);
     ledger.record("a.rs", "full", 100, 100);
     ledger.entries[0].phi = Some(0.99);
-    assert!(ledger.ignite_high_salience().is_empty());
+    {
+        let found = &ledger.ignite_high_salience();
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]
@@ -524,7 +527,10 @@ fn evict_paths_resolved_reports_outcomes() {
     assert!(outcomes[1].resolved.is_none());
     assert_eq!(outcomes[1].ambiguous.len(), 2, "ambiguity is diagnosed");
     assert!(outcomes[2].resolved.is_none());
-    assert!(outcomes[2].ambiguous.is_empty());
+    {
+        let found = &outcomes[2].ambiguous;
+        assert!(found.is_empty(), "{found:?}");
+    }
     assert_eq!(ledger.entries.len(), 2, "only the unique match is removed");
     assert_eq!(ledger.total_tokens_sent, 200);
 }

@@ -919,7 +919,10 @@ fn compress_protect_unset_is_a_noop() {
     // #1150: the default protects nothing, so compression stays on for all.
     let cfg = ProxyConfig::default();
     assert!(!cfg.is_path_compress_protected("tests/golden/output.snap"));
-    assert!(cfg.compress_protect_globs().is_empty());
+    {
+        let found = &cfg.compress_protect_globs();
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]

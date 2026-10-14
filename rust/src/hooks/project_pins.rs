@@ -344,8 +344,11 @@ mod tests {
         assert_eq!(pinned_agent_configs(&home).len(), 1);
         let (healed, manual) = heal_global_project_pins(&home);
         assert_eq!(healed, vec![grok.clone()]);
-        assert!(manual.is_empty());
-        assert!(pinned_agent_configs(&home).is_empty());
+        assert!(manual.is_empty(), "{manual:?}");
+        {
+            let found = &pinned_agent_configs(&home);
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert_eq!(
             crate::cli::global_string_list("extra_roots"),
             vec!["/work/b".to_string()],

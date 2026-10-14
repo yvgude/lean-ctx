@@ -336,7 +336,10 @@ fn test_dlq_lifecycle() {
             .expect("dequeue integration dead letter")
             .is_some()
     );
-    assert!(queue.peek(&scope).expect("peek empty scope").is_empty());
+    {
+        let found = &queue.peek(&scope).expect("peek empty scope");
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]

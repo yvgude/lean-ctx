@@ -524,7 +524,7 @@ mod tests {
     fn extract_critical_lines_finds_keywords() {
         let content = "fn main() {\n    let token = validate();\n    return Err(e);\n}\n";
         let result = extract_critical_lines(content, &["validate".to_string()], 5);
-        assert!(!result.is_empty());
+        assert!(!result.is_empty(), "`result` is empty");
         assert!(result.iter().any(|(_, l)| l.contains("validate")));
     }
 

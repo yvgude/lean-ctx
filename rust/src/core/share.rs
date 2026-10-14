@@ -91,7 +91,10 @@ mod tests {
     #[test]
     fn clipboard_candidates_are_present_for_this_platform() {
         // Every supported platform must offer at least one clipboard tool to try.
-        assert!(!clipboard_commands().is_empty());
+        assert!(
+            !clipboard_commands().is_empty(),
+            "`clipboard_commands()` is empty"
+        );
     }
 
     #[test]

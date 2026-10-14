@@ -90,7 +90,11 @@ mod tests {
         assert_eq!(observation.local_cost_estimate.currency, "USD");
         assert_eq!(observation.local_cost_estimate.coefficient, 1_234);
         assert_eq!(observation.local_cost_estimate.scale, 6);
-        assert!(observation.evidence_refs.is_empty());
+        assert!(
+            observation.evidence_refs.is_empty(),
+            "{:?}",
+            observation.evidence_refs
+        );
         assert_eq!(observation.runtime_version, env!("CARGO_PKG_VERSION"));
         assert_eq!(observation.sequence_number, 7);
         assert!(chrono::DateTime::parse_from_rfc3339(&observation.observed_at).is_ok());

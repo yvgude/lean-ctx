@@ -35,7 +35,7 @@ fn hash_fast_cyrillic_no_panic() {
         "string must exceed hash_fast threshold"
     );
     let hash = lean_ctx::server::helpers::hash_fast(&s);
-    assert!(!hash.is_empty());
+    assert!(!hash.is_empty(), "`hash` is empty");
 }
 
 #[test]
@@ -43,7 +43,7 @@ fn hash_fast_emoji_no_panic() {
     let s = make_emoji_heavy(20_000);
     assert!(s.len() > 16 * 1024);
     let hash = lean_ctx::server::helpers::hash_fast(&s);
-    assert!(!hash.is_empty());
+    assert!(!hash.is_empty(), "`hash` is empty");
 }
 
 #[test]
@@ -51,7 +51,7 @@ fn hash_fast_mixed_multibyte_no_panic() {
     let s = make_mixed_multibyte(20_000);
     assert!(s.len() > 16 * 1024);
     let hash = lean_ctx::server::helpers::hash_fast(&s);
-    assert!(!hash.is_empty());
+    assert!(!hash.is_empty(), "`hash` is empty");
 }
 
 #[test]
@@ -67,7 +67,7 @@ fn hash_fast_boundary_at_4096() {
         s.push('x');
     }
     let hash = lean_ctx::server::helpers::hash_fast(&s);
-    assert!(!hash.is_empty());
+    assert!(!hash.is_empty(), "`hash` is empty");
 }
 
 #[test]
@@ -81,7 +81,7 @@ fn hash_fast_boundary_at_4095() {
         s.push('x');
     }
     let hash = lean_ctx::server::helpers::hash_fast(&s);
-    assert!(!hash.is_empty());
+    assert!(!hash.is_empty(), "`hash` is empty");
 }
 
 #[test]
@@ -97,7 +97,7 @@ fn hash_fast_small_string_no_truncation() {
     let s = "маленькая строка";
     assert!(s.len() <= 16 * 1024);
     let hash = lean_ctx::server::helpers::hash_fast(s);
-    assert!(!hash.is_empty());
+    assert!(!hash.is_empty(), "`hash` is empty");
 }
 
 #[test]
@@ -142,7 +142,7 @@ fn ceil_char_boundary_suffix_slicing() {
     for offset in [4000, 4095, 4096, 4097, 5000] {
         let start = s.ceil_char_boundary(s.len().saturating_sub(offset));
         let suffix = &s[start..];
-        assert!(!suffix.is_empty());
+        assert!(!suffix.is_empty(), "`suffix` is empty");
         assert!(s.is_char_boundary(start));
     }
 }

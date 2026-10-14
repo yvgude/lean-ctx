@@ -267,8 +267,8 @@ mod tests {
         let a = make_session("aaa");
         let b = make_session("bbb");
         let d = diff_sessions(&a, &b);
-        assert!(d.files.added.is_empty());
-        assert!(d.files.removed.is_empty());
+        assert!(d.files.added.is_empty(), "{:?}", d.files.added);
+        assert!(d.files.removed.is_empty(), "{:?}", d.files.removed);
         assert_eq!(d.files.common_count, 0);
     }
 

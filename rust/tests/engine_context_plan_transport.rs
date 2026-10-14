@@ -153,7 +153,7 @@ fn external_client_gets_kernel_plan_and_host_policy_cannot_be_overridden() {
     std::fs::write(root.join("config/kernel-policy.toml"), "invalid = [").unwrap();
     let invalid = invoke(&root, &request().to_string());
     assert_eq!(invalid.status.code(), Some(2));
-    assert!(invalid.stdout.is_empty());
+    assert!(invalid.stdout.is_empty(), "{:?}", invalid.stdout);
     assert!(String::from_utf8_lossy(&invalid.stderr).contains("context_policy_unavailable"));
 }
 
@@ -186,7 +186,7 @@ fn external_plan_rejects_unknown_duplicate_versions_and_unbounded_input() {
     for json in malformed {
         let output = invoke(&root, &json);
         assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty());
+        assert!(output.stdout.is_empty(), "{:?}", output.stdout);
     }
     assert!(!root.join("data/engine-interface").exists());
 }

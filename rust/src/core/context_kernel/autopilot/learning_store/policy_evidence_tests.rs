@@ -356,7 +356,10 @@ fn fold_is_order_independent_and_empty_is_valid() {
         serde_json::to_string(&fold(&[a.clone(), b.clone()]).expect("fold")).expect("json"),
         serde_json::to_string(&fold(&[b, a]).expect("fold")).expect("json")
     );
-    assert!(fold(&[]).expect("fold").records.is_empty());
+    {
+        let found = &fold(&[]).expect("fold").records;
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]
@@ -399,13 +402,10 @@ fn a_validated_outcome_records_one_observation_and_reset_clears_it() {
         task_envelope.tenant_id.clone(),
     )
     .expect("store");
-    assert!(
-        store
-            .policy_evidence()
-            .expect("evidence")
-            .records
-            .is_empty()
-    );
+    {
+        let found = &store.policy_evidence().expect("evidence").records;
+        assert!(found.is_empty(), "{found:?}");
+    }
     let handoff = store
         .plan_for_task(&controller(), &task_envelope, &input(), None)
         .expect("plan");
@@ -446,11 +446,8 @@ fn a_validated_outcome_records_one_observation_and_reset_clears_it() {
     );
 
     store.reset().expect("reset");
-    assert!(
-        store
-            .policy_evidence()
-            .expect("evidence")
-            .records
-            .is_empty()
-    );
+    {
+        let found = &store.policy_evidence().expect("evidence").records;
+        assert!(found.is_empty(), "{found:?}");
+    }
 }

@@ -461,7 +461,7 @@ mod tests {
     fn format_suffix_empty_when_no_rules() {
         reset_injection_cache();
         let suffix = rules_suffix_for_read("/nonexistent/file.rs", "/nonexistent", "cursor");
-        assert!(suffix.is_empty());
+        assert!(suffix.is_empty(), "{suffix:?}");
     }
 
     #[test]

@@ -1097,7 +1097,7 @@ mod tests {
         );
         assert_eq!(queue.peek(&scope_b).unwrap().len(), 1);
         let tenant_a = queue.peek(&scope_a).unwrap();
-        assert!(!tenant_a.is_empty());
+        assert!(!tenant_a.is_empty(), "`tenant_a` is empty");
         assert!(tenant_a.len() < 5);
         assert!(
             std::fs::metadata(scope_store_path(&root, &scope_a))
@@ -1307,7 +1307,7 @@ mod tests {
             .unwrap()
             .peek(&scope)
             .unwrap();
-        assert!(stored.is_empty());
+        assert!(stored.is_empty(), "{stored:?}");
     }
 
     #[test]

@@ -354,13 +354,19 @@ mod tests {
             Arc::new(PassthroughAdapter::new()),
         ]);
         assert!(registry.is_empty());
-        assert!(registry.keys().is_empty());
+        {
+            let found = &registry.keys();
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert!(
             registry
                 .lookup(manifest.capability_id.as_str(), &manifest.version)
                 .is_none()
         );
-        assert!(registry.list_available().is_empty());
+        {
+            let found = &registry.list_available();
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert!(registry.health_check_all().is_err());
         assert!(registry.technical_catalogue().is_err());
         assert!(registry.register(PassthroughAdapter::new()).is_err());
@@ -388,7 +394,10 @@ mod tests {
                 .lookup(manifest.capability_id.as_str(), &manifest.version)
                 .is_none()
         );
-        assert!(registry.list_available().is_empty());
+        {
+            let found = &registry.list_available();
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert!(!registry.technical_catalogue().unwrap().capabilities[0].available);
         assert!(!registry.health_check_all().unwrap()[0].healthy);
         registry.register(adapter).unwrap();
@@ -410,13 +419,14 @@ mod tests {
     fn empty_registry_is_safe_to_inspect() {
         let registry = AdapterRegistry::new();
         assert!(registry.is_empty());
-        assert!(registry.keys().is_empty());
-        assert!(
-            registry
-                .health_check_all()
-                .expect("health checks")
-                .is_empty()
-        );
+        {
+            let found = &registry.keys();
+            assert!(found.is_empty(), "{found:?}");
+        }
+        {
+            let found = &registry.health_check_all().expect("health checks");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

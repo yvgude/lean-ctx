@@ -83,7 +83,7 @@ mod tests {
         let result = check_auto_eligibility(&gate(), &evidence());
 
         assert!(result.eligible);
-        assert!(result.reasons.is_empty());
+        assert!(result.reasons.is_empty(), "{:?}", result.reasons);
         assert_eq!(result.required_sample_size, 100);
     }
 

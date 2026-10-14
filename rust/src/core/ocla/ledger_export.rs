@@ -156,7 +156,7 @@ mod tests {
         let exported = export_unified_ledger().expect("empty ledger should export");
 
         assert_eq!(exported.event_count, 0);
-        assert!(exported.events.is_empty());
+        assert!(exported.events.is_empty(), "{:?}", exported.events);
         assert!(exported.hash_chain_valid);
         assert_eq!(exported.total_saved_tokens, 0);
     }
@@ -168,7 +168,7 @@ mod tests {
         let result = verify_export_bundle(&exported);
 
         assert!(result.valid);
-        assert!(result.chain_breaks.is_empty());
+        assert!(result.chain_breaks.is_empty(), "{:?}", result.chain_breaks);
         assert_eq!(result.total_saved_tokens, 12);
     }
 

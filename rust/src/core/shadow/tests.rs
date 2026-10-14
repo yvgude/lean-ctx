@@ -86,7 +86,8 @@ fn test_recommendations_generated() {
     assert!(
         !ShadowEngine::run_comparison(&[task(1_000, 600)])
             .recommendations
-            .is_empty()
+            .is_empty(),
+        "`ShadowEngine::run_comparison(&[task(1_000, 600)]) .recommendations` is empty"
     );
 }
 

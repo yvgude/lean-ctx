@@ -288,8 +288,8 @@ pub mod tests {
         let base = capsule(&[], 100);
         let delta = compute_delta(&base, &base);
 
-        assert!(delta.added_refs.is_empty());
-        assert!(delta.removed_refs.is_empty());
+        assert!(delta.added_refs.is_empty(), "{:?}", delta.added_refs);
+        assert!(delta.removed_refs.is_empty(), "{:?}", delta.removed_refs);
         assert_eq!(apply_delta(&base, &delta), base);
     }
 }

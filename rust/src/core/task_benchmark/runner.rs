@@ -385,7 +385,7 @@ mod tests {
 
         let (detected, details) = check_regressions(&profiles, 0.95);
         assert!(detected);
-        assert!(!details.is_empty());
+        assert!(!details.is_empty(), "`details` is empty");
     }
 
     #[test]

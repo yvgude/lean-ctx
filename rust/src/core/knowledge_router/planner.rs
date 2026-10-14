@@ -94,9 +94,10 @@ mod tests {
     }
     #[test]
     fn respects_budget() {
-        assert!(
-            QueryPlanner::plan(&[reference("jira", 900)], &builtin_manifests(), 383).is_empty()
-        );
+        {
+            let found = &QueryPlanner::plan(&[reference("jira", 900)], &builtin_manifests(), 383);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
     #[test]
     fn sorts_by_relevance() {
@@ -109,8 +110,9 @@ mod tests {
     }
     #[test]
     fn skips_unknown_sources() {
-        assert!(
-            QueryPlanner::plan(&[reference("other", 900)], &builtin_manifests(), 400).is_empty()
-        );
+        {
+            let found = &QueryPlanner::plan(&[reference("other", 900)], &builtin_manifests(), 400);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

@@ -112,7 +112,11 @@ pub mod tests {
         assert_eq!(analysis.window_size, 0);
         assert_eq!(analysis.re_read_count, 0);
         assert_eq!(analysis.avg_response_tokens, 0.0);
-        assert!(analysis.dominant_level.is_empty());
+        assert!(
+            analysis.dominant_level.is_empty(),
+            "{:?}",
+            analysis.dominant_level
+        );
     }
 
     #[test]

@@ -302,7 +302,7 @@ fn end_to_end_consolidation_populates_all_stores() {
 
     assert!(!artifacts.is_empty());
     assert_eq!(artifacts.bm25_chunks.len(), 4);
-    assert!(!artifacts.edges.is_empty());
+    assert!(!artifacts.edges.is_empty(), "`artifacts.edges` is empty");
     assert!(!artifacts.facts.is_empty());
     assert_eq!(artifacts.cache_entries.len(), 4);
 
@@ -385,7 +385,7 @@ fn consolidation_with_only_code_chunks_is_noop() {
     });
 
     let artifacts = consolidate(&[code]);
-    assert!(artifacts.edges.is_empty());
+    assert!(artifacts.edges.is_empty(), "{:?}", artifacts.edges);
     assert!(artifacts.facts.is_empty());
     assert!(artifacts.cache_entries.is_empty());
 }

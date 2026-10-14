@@ -372,7 +372,10 @@ mod tests {
 
         assert_eq!(result.delivered_tokens, 0);
         assert_eq!(result.recovery_ref, Some("file:empty.rs".into()));
-        assert!(port.retrieve(&result.delivered_ref).unwrap().is_empty());
+        {
+            let found = &port.retrieve(&result.delivered_ref).unwrap();
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

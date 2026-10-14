@@ -767,7 +767,7 @@ mod tests {
             },
         ];
         for e in all {
-            assert!(!e.describe().is_empty());
+            assert!(!e.describe().is_empty(), "`e.describe()` is empty");
         }
         assert_eq!(
             Exclusion::TooLarge {

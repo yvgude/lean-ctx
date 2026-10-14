@@ -839,7 +839,7 @@ mod tests {
                 evaluation: None,
             };
             let prompt = task_to_prompt(&task);
-            assert!(!prompt.is_empty());
+            assert!(!prompt.is_empty(), "`prompt` is empty");
             assert!(prompt.contains(&task.description));
         }
     }

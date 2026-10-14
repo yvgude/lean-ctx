@@ -1012,7 +1012,7 @@ mod tests {
         .unwrap();
 
         assert!(entry.protected_until.is_none());
-        assert!(entry.aliases.is_empty());
+        assert!(entry.aliases.is_empty(), "{:?}", entry.aliases);
     }
 
     #[test]

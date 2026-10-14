@@ -212,13 +212,12 @@ fn failed_archival_restores_the_active_fact_collection() {
     memory.lifecycle.low_confidence_threshold = 0.9;
     assert!(k.run_memory_lifecycle(&memory).is_err());
     assert_eq!(serde_json::to_value(&k.facts).unwrap(), before);
-    assert!(
-        scope(root.path(), || memory_archive::list_archives(
-            MemoryStore::Facts,
-            None
-        ))
-        .is_empty()
-    );
+    {
+        let found = &scope(root.path(), || {
+            memory_archive::list_archives(MemoryStore::Facts, None)
+        });
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]

@@ -120,7 +120,7 @@ pub mod tests {
     #[test]
     fn empty_content() {
         let c = chunk("");
-        assert!(c.is_empty());
+        assert!(c.is_empty(), "{c:?}");
     }
 
     #[test]
@@ -218,7 +218,7 @@ pub mod tests {
     fn unicode_content() {
         let content = "日本語テスト。これはUnicodeのテストです。".repeat(30);
         let chunks = chunk(&content);
-        assert!(!chunks.is_empty());
+        assert!(!chunks.is_empty(), "`chunks` is empty");
         let total: usize = chunks.iter().map(|c| c.length).sum();
         assert_eq!(total, content.len());
     }

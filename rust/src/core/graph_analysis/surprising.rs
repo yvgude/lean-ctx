@@ -134,7 +134,7 @@ mod tests {
         }
 
         let surprising = find_surprising_connections(&edges, &community, 10);
-        assert!(!surprising.is_empty());
+        assert!(!surprising.is_empty(), "`surprising` is empty");
         let top = &surprising[0];
         assert_eq!((top.from.as_str(), top.to.as_str()), ("c", "x"));
         assert!(top.cross_community);
@@ -148,6 +148,9 @@ mod tests {
             kind: "sibling".into(),
             weight: 1.0,
         }];
-        assert!(find_surprising_connections(&edges, &HashMap::new(), 10).is_empty());
+        {
+            let found = &find_surprising_connections(&edges, &HashMap::new(), 10);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

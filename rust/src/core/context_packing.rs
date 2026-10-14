@@ -170,7 +170,7 @@ mod tests {
     #[test]
     fn empty_input_yields_empty_selection() {
         let sel = greedy_max_coverage(&[], 5, |_| 1.0);
-        assert!(sel.is_empty());
+        assert!(sel.is_empty(), "{sel:?}");
     }
 
     #[test]

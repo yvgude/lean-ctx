@@ -208,7 +208,7 @@ mod tests {
     fn store_and_retrieve() {
         let mut store = EditSnapshotStore::default();
         let digest = store.store_inner("/tmp/test.log", b"hello world");
-        assert!(!digest.is_empty());
+        assert!(!digest.is_empty(), "`digest` is empty");
         let snap = store.get_inner(&digest).unwrap();
         assert_eq!(snap.canonical_bytes, b"hello world");
         assert_eq!(snap.path, "/tmp/test.log");

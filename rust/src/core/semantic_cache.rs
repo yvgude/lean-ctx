@@ -349,7 +349,7 @@ pub mod tests {
         );
 
         let results = index.find_similar("validate auth token jwt", 0.1);
-        assert!(!results.is_empty());
+        assert!(!results.is_empty(), "`results` is empty");
         assert_eq!(results[0].0, "auth.rs");
     }
 

@@ -108,7 +108,7 @@ mod tests {
         let resolved =
             crate::core::policy::resolve(&get("open-source").expect("exists")).expect("resolves");
         assert!(resolved.allow_tools.is_none());
-        assert!(resolved.deny_tools.is_empty());
+        assert!(resolved.deny_tools.is_empty(), "{:?}", resolved.deny_tools);
         assert!(resolved.redaction.contains_key("aws_access_key"));
         assert_eq!(resolved.audit_retention_days, Some(30));
     }

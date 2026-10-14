@@ -3,7 +3,7 @@ use super::*;
 #[test]
 fn config_field_default_is_empty() {
     let cfg = Config::default();
-    assert!(cfg.disabled_tools.is_empty());
+    assert!(cfg.disabled_tools.is_empty(), "{:?}", cfg.disabled_tools);
 }
 
 #[test]
@@ -43,13 +43,13 @@ fn parse_env_single_entry() {
 #[test]
 fn parse_env_empty_string_returns_empty() {
     let result = Config::parse_disabled_tools_env("");
-    assert!(result.is_empty());
+    assert!(result.is_empty(), "{result:?}");
 }
 
 #[test]
 fn disabled_tools_deserialization_defaults_to_empty() {
     let cfg: Config = toml::from_str("").unwrap();
-    assert!(cfg.disabled_tools.is_empty());
+    assert!(cfg.disabled_tools.is_empty(), "{:?}", cfg.disabled_tools);
 }
 
 #[test]

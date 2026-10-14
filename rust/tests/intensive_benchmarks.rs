@@ -763,7 +763,7 @@ fn bench_rrf_eviction_empty() {
     use std::time::Instant;
     let now = Instant::now();
     let scores = lean_ctx::core::cache::eviction_scores_rrf(&[], now);
-    assert!(scores.is_empty());
+    assert!(scores.is_empty(), "{scores:?}");
 }
 
 // ═══════════════════════════════════════════════════════════════════════════

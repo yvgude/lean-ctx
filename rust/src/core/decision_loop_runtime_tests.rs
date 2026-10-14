@@ -32,8 +32,11 @@ fn test_on_tool_start() {
         "runtime-test",
         "agent",
     );
-    assert!(!context.task_id.is_empty());
-    assert!(!context.profile_complexity.is_empty());
+    assert!(!context.task_id.is_empty(), "`context.task_id` is empty");
+    assert!(
+        !context.profile_complexity.is_empty(),
+        "`context.profile_complexity` is empty"
+    );
 }
 
 #[test]
@@ -70,7 +73,11 @@ fn test_on_tool_end_failure() {
         outcome.accepted_outcome.accepted,
         lean_ctx_protocol::AcceptanceState::Unknown
     );
-    assert!(outcome.accepted_outcome.evidence_refs.is_empty());
+    assert!(
+        outcome.accepted_outcome.evidence_refs.is_empty(),
+        "{:?}",
+        outcome.accepted_outcome.evidence_refs
+    );
     assert!(outcome.assessment.is_none());
     assert!(runtime.assessment_for(&context.task_id).is_none());
 }
@@ -89,7 +96,7 @@ fn duplicate_end_is_ignored() {
         .outcome()
         .expect("first completion records an outcome");
     let stages = context.stage_executions();
-    assert!(!stages.is_empty());
+    assert!(!stages.is_empty(), "`stages` is empty");
     for success in [false, true] {
         assert!(
             runtime

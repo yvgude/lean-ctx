@@ -168,6 +168,9 @@ mod tests {
         assert!(optimized.len() <= 10, "should not exceed original count");
         assert!(dashboard.usage.total_requests > 0);
         assert!(dashboard.chain.total_entries > 0);
-        assert!(!live_dashboard::format_summary().is_empty());
+        assert!(
+            !live_dashboard::format_summary().is_empty(),
+            "`live_dashboard::format_summary()` is empty"
+        );
     }
 }

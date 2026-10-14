@@ -665,7 +665,7 @@ mod tests {
         )
         .unwrap();
         assert_eq!(receipt.outcome, ChildOutcome::Partial);
-        assert!(receipt.claims.is_empty());
+        assert!(receipt.claims.is_empty(), "{:?}", receipt.claims);
         assert_eq!(receipt.tokens_consumed, 12);
         assert_eq!(receipt.cost_micros_consumed, 3);
         assert_eq!(receipt.execution_fence, plan.node.execution_fence);

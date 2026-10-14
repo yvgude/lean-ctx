@@ -567,6 +567,9 @@ mod tests {
         assert_eq!(tok.encode_plain("read files", 64), vec![2, 3, 4]);
         assert_eq!(tok.encode_plain("read zzz", 64), vec![2], "[UNK] dropped");
         assert_eq!(tok.encode_plain("read files", 2), vec![2, 3], "token cap");
-        assert!(tok.encode_plain("", 64).is_empty());
+        {
+            let found = &tok.encode_plain("", 64);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 }

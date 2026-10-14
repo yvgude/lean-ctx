@@ -196,8 +196,14 @@ mod tests {
         assert_eq!(assessment.task_id, "task-e2e");
         assert!(assessment.outcome_accepted);
         assert_eq!(assessment.cpao_micros, Some(3_500_000));
-        assert!(!assessment.timestamp.is_empty());
-        assert!(!assessment.evidence.is_empty());
+        assert!(
+            !assessment.timestamp.is_empty(),
+            "`assessment.timestamp` is empty"
+        );
+        assert!(
+            !assessment.evidence.is_empty(),
+            "`assessment.evidence` is empty"
+        );
     }
 
     #[test]

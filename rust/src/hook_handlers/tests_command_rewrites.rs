@@ -221,7 +221,7 @@ fn codex_rewrite_output_uses_native_updated_input_contract() {
 #[test]
 fn codex_allow_output_is_empty() {
     let output = codex_allow_output();
-    assert!(output.is_empty());
+    assert!(output.is_empty(), "{output:?}");
 }
 
 /// #809: codex_deny_output with heavily escaped content is valid JSON.

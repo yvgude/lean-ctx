@@ -224,12 +224,12 @@ fn persistent_logical_session_presence_validates_and_roundtrips() {
         "editor-session-a",
     )
     .expect("close presence");
-    assert!(
-        AgentRegistry::load()
+    {
+        let found = &AgentRegistry::load()
             .expect("persisted registry")
-            .logical_sessions
-            .is_empty()
-    );
+            .logical_sessions;
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]
@@ -240,7 +240,11 @@ fn logical_session_expiry_is_bounded_by_heartbeat_not_tool_activity() {
 
     registry.cleanup_stale_logical_sessions(180);
 
-    assert!(registry.logical_sessions.is_empty());
+    assert!(
+        registry.logical_sessions.is_empty(),
+        "{:?}",
+        registry.logical_sessions
+    );
     assert!(registry.logical_session_telemetry_seen);
 }
 
@@ -251,6 +255,10 @@ fn legacy_registry_deserializes_without_claiming_session_telemetry() {
     )
     .expect("legacy registry");
 
-    assert!(registry.logical_sessions.is_empty());
+    assert!(
+        registry.logical_sessions.is_empty(),
+        "{:?}",
+        registry.logical_sessions
+    );
     assert!(!registry.logical_session_telemetry_seen);
 }

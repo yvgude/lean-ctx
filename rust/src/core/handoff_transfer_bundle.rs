@@ -462,7 +462,11 @@ mod tests {
         let b = build_bundle_v1(ledger, None, BundlePrivacyV1::Redacted);
         assert_eq!(b.privacy, "redacted");
         assert!(b.ledger.project_root.is_none());
-        assert!(b.ledger.session_snapshot.is_empty());
+        assert!(
+            b.ledger.session_snapshot.is_empty(),
+            "{:?}",
+            b.ledger.session_snapshot
+        );
     }
 
     #[test]

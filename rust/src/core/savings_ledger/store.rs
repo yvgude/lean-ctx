@@ -1027,7 +1027,10 @@ mod tests {
         let result = query_by_mechanism(&p, "routing");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].saved_tokens, 25);
-        assert!(query_by_mechanism(&p, "missing").is_empty());
+        {
+            let found = &query_by_mechanism(&p, "missing");
+            assert!(found.is_empty(), "{found:?}");
+        }
         let _ = fs::remove_file(&p);
     }
 
@@ -1044,7 +1047,10 @@ mod tests {
         let result = query_by_evidence_class(&p, &EvidenceClass::Measured);
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].saved_tokens, 100);
-        assert!(query_by_evidence_class(&p, &EvidenceClass::Statistical).is_empty());
+        {
+            let found = &query_by_evidence_class(&p, &EvidenceClass::Statistical);
+            assert!(found.is_empty(), "{found:?}");
+        }
         let _ = fs::remove_file(&p);
     }
 
@@ -1061,7 +1067,10 @@ mod tests {
         let result = query_by_attribution_group(&p, "team-a");
         assert_eq!(result.len(), 1);
         assert_eq!(result[0].saved_tokens, 100);
-        assert!(query_by_attribution_group(&p, "team-c").is_empty());
+        {
+            let found = &query_by_attribution_group(&p, "team-c");
+            assert!(found.is_empty(), "{found:?}");
+        }
         let _ = fs::remove_file(&p);
     }
 

@@ -745,5 +745,8 @@ async fn verify_invoker_boundary_parity() {
     )
     .await
     .unwrap();
-    assert!(server.loop_detector.read().await.stats().is_empty());
+    {
+        let found = &server.loop_detector.read().await.stats();
+        assert!(found.is_empty(), "{found:?}");
+    }
 }

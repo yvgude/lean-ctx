@@ -970,7 +970,11 @@ mod tests {
             false,
         )
         .unwrap();
-        assert!(transport.config.endpoint_url.is_empty());
+        assert!(
+            transport.config.endpoint_url.is_empty(),
+            "{:?}",
+            transport.config.endpoint_url
+        );
         assert!(transport.config.auth_token.is_none());
         assert!(transport.config.signing_key.is_none());
         assert!(transport.config.recipient_id.is_none());

@@ -459,7 +459,7 @@ pub mod tests {
         assert_eq!(entry.agent_accesses["agent-b"], 1);
 
         let credit = hm.context_credit();
-        assert!(!credit.is_empty());
+        assert!(!credit.is_empty(), "`credit` is empty");
         // Both agents get credit for the shared file; only-a.rs contributes
         // no credit (single-agent access).
         let a_credit = credit.iter().find(|(id, _)| id == "agent-a").unwrap().1;

@@ -332,7 +332,11 @@ mod tests {
         );
 
         assert!(comparison.quality_preserved);
-        assert!(comparison.regression_dimensions.is_empty());
+        assert!(
+            comparison.regression_dimensions.is_empty(),
+            "{:?}",
+            comparison.regression_dimensions
+        );
     }
 
     #[test]

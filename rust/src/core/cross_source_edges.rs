@@ -195,7 +195,7 @@ mod tests {
             token_count: 0,
         });
         let edges = extract_cross_source_edges(&[code_chunk]);
-        assert!(edges.is_empty());
+        assert!(edges.is_empty(), "{edges:?}");
     }
 
     #[test]
@@ -211,7 +211,7 @@ mod tests {
             None,
         );
         let edges = extract_cross_source_edges(&[chunk]);
-        assert!(edges.is_empty());
+        assert!(edges.is_empty(), "{edges:?}");
     }
 
     #[test]

@@ -478,7 +478,10 @@ mod tests {
             .record_unified(trace_event("trace-match"))
             .expect("event records");
 
-        assert!(ledger.query_by_trace("trace-missing").is_empty());
+        {
+            let found = &ledger.query_by_trace("trace-missing");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

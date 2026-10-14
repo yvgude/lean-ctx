@@ -71,7 +71,10 @@ fn solution_intensity_parses_canonical_and_legacy_strings() {
 
 #[test]
 fn solution_ladder_text_covers_all_intensities() {
-    assert!(solution_ladder_text(&SolutionIntensity::Off).is_empty());
+    {
+        let found = &solution_ladder_text(&SolutionIntensity::Off);
+        assert!(found.is_empty(), "{found:?}");
+    }
 
     for intensity in [
         SolutionIntensity::Minimal,
@@ -178,7 +181,7 @@ fn edit_metrics_exposes_real_refactor_delta_fields() {
 #[test]
 fn commercial_features_return_license_error() {
     let features = commercial_features_available();
-    assert!(features.is_empty());
+    assert!(features.is_empty(), "{features:?}");
     assert!(features.iter().all(|(_, available)| !available));
 
     for result in [

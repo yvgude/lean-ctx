@@ -336,7 +336,7 @@ mod tests {
             &cfg,
         );
         assert!(out.blocked);
-        assert!(out.text.is_empty());
+        assert!(out.text.is_empty(), "{:?}", out.text);
         assert!(out.block_reason.as_deref().unwrap().starts_with("pii:"));
     }
 
@@ -371,7 +371,7 @@ mod tests {
         let out = apply("card 4111 1111 1111 1111", &cfg);
         assert!(!out.blocked);
         assert!(out.text.contains("4111"), "warn must not redact");
-        assert!(!out.warnings.is_empty());
+        assert!(!out.warnings.is_empty(), "`out.warnings` is empty");
         assert!(out.audit.iter().any(|(c, _)| c == "pii:card"));
     }
 
@@ -387,6 +387,6 @@ mod tests {
         let out = apply(input, &cfg);
         assert!(!out.blocked);
         assert_eq!(out.text, input);
-        assert!(out.audit.is_empty());
+        assert!(out.audit.is_empty(), "{:?}", out.audit);
     }
 }

@@ -86,7 +86,10 @@ mod tests {
         assert!(dashboard.kernel_health.initialized);
         assert!(dashboard.search.total_searches > 0);
         assert!(dashboard.evidence_dispatch.tool_dispatches > 0);
-        assert!(!health_api::one_line_status().is_empty());
+        assert!(
+            !health_api::one_line_status().is_empty(),
+            "`health_api::one_line_status()` is empty"
+        );
     }
 
     #[test]

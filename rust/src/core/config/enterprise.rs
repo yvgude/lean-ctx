@@ -134,6 +134,6 @@ mod tests {
     fn instance_id_fallback() {
         let cfg = EnterpriseConfig::default();
         let id = cfg.effective_instance_id();
-        assert!(!id.is_empty());
+        assert!(!id.is_empty(), "`id` is empty");
     }
 }

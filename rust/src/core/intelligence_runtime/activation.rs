@@ -281,7 +281,11 @@ mod tests {
             String::from_utf8_lossy(&result.output.stdout).trim(),
             "4096"
         );
-        assert!(result.output.stderr.is_empty());
+        assert!(
+            result.output.stderr.is_empty(),
+            "{:?}",
+            result.output.stderr
+        );
     }
 
     #[test]

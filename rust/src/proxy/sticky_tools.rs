@@ -103,7 +103,10 @@ mod tests {
     fn tool_not_injected_without_ccr() {
         let mut doc = json!({"tools": [], "messages": []});
         assert!(!ensure_tool_present(NO_CCR, &mut doc));
-        assert!(doc["tools"].as_array().unwrap().is_empty());
+        {
+            let found = &doc["tools"].as_array().unwrap();
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

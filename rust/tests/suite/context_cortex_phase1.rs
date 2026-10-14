@@ -33,7 +33,7 @@ fn content_chunk_from_provider_has_correct_uri_scheme() {
     assert_eq!(cc.kind, ChunkKind::Issue);
     assert!(cc.is_external());
     assert_eq!(cc.provider_id(), Some("github"));
-    assert!(!cc.tokens.is_empty());
+    assert!(!cc.tokens.is_empty(), "`cc.tokens` is empty");
     assert!(cc.token_count > 0);
     assert_eq!(cc.references, vec!["src/auth.rs"]);
     assert!(cc.metadata.is_some());
@@ -74,7 +74,7 @@ fn code_chunk_to_content_chunk_defaults_to_file_source() {
     let cc: ContentChunk = code.into();
     assert_eq!(cc.source, ContentSource::File);
     assert!(!cc.is_external());
-    assert!(cc.references.is_empty());
+    assert!(cc.references.is_empty(), "{:?}", cc.references);
     assert!(cc.metadata.is_none());
 }
 
@@ -450,7 +450,10 @@ fn registry_available_provider_ids_filters_unavailable() {
     let reg = ProviderRegistry::new();
     reg.register(Arc::new(MockProvider { available: false }));
 
-    assert!(reg.available_provider_ids().is_empty());
+    {
+        let found = &reg.available_provider_ids();
+        assert!(found.is_empty(), "{found:?}");
+    }
     assert_eq!(reg.provider_count(), 1);
 }
 
@@ -595,7 +598,7 @@ fn extract_refs_handles_bracket_paths() {
 fn extract_refs_ignores_email_addresses() {
     let text = "Contact user@example.com/foo.rs";
     let refs = extract_file_references(text);
-    assert!(refs.is_empty());
+    assert!(refs.is_empty(), "{refs:?}");
 }
 
 #[test]

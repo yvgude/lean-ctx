@@ -269,7 +269,11 @@ pub mod tests {
     fn optimize_excludes_deprecated() {
         let schemas = vec![schema("old", 10, 1, ToolCategory::Deprecated)];
         let reduction = ToolSurfaceOptimizer::new(1, 10).optimize(&schemas);
-        assert!(reduction.selected_tools.is_empty());
+        assert!(
+            reduction.selected_tools.is_empty(),
+            "{:?}",
+            reduction.selected_tools
+        );
         assert_eq!(reduction.removed_tools, ["old"]);
     }
 

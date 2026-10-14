@@ -361,14 +361,20 @@ pub mod tests {
             g.related("a.rs", 5).is_empty(),
             "decayed association should be pruned"
         );
-        assert!(!g.related("c.rs", 5).is_empty());
+        assert!(
+            !g.related("c.rs", 5).is_empty(),
+            "`g.related(\"c.rs\", 5)` is empty"
+        );
     }
 
     #[test]
     fn single_file_record_is_noop() {
         let mut g = CoAccessGraph::default();
         g.record(&["lonely.rs".into()]);
-        assert!(g.related("lonely.rs", 5).is_empty());
+        {
+            let found = &g.related("lonely.rs", 5);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
@@ -420,7 +426,10 @@ pub mod tests {
     fn record_focus_ignores_self_and_empty() {
         let mut g = CoAccessGraph::default();
         g.record_focus("x.rs", &["x.rs".into(), String::new()]);
-        assert!(g.related("x.rs", 5).is_empty());
+        {
+            let found = &g.related("x.rs", 5);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

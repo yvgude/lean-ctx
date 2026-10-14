@@ -209,19 +209,28 @@ mod tests {
     fn local_override_keys_ignores_structure_first_and_unrelated() {
         // structure_first is not merged from local config, so it must not appear.
         let toml = "structure_first = true\nultra_compact = true\n";
-        assert!(local_override_keys(toml).is_empty());
+        {
+            let found = &local_override_keys(toml);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
     fn local_override_keys_ignores_comment_mentions() {
         // A bare comment mentioning the key must not be reported as an override.
         let toml = "# compression_level = \"max\" was considered\nultra_compact = false\n";
-        assert!(local_override_keys(toml).is_empty());
+        {
+            let found = &local_override_keys(toml);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]
     fn local_override_keys_empty_on_parse_error() {
-        assert!(local_override_keys("this is = = not toml").is_empty());
+        {
+            let found = &local_override_keys("this is = = not toml");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

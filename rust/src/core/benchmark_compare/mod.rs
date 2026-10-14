@@ -79,7 +79,10 @@ pub(crate) mod tests {
         let report = fixture_report();
         assert!(report.metrics.project_benchmark.files_measured > 0);
         assert!(!report.competitors.is_empty());
-        assert!(!report.system.lean_ctx_version.is_empty());
+        assert!(
+            !report.system.lean_ctx_version.is_empty(),
+            "`report.system.lean_ctx_version` is empty"
+        );
     }
 
     #[test]

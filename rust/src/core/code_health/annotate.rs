@@ -78,7 +78,10 @@ pub mod tests {
     #[test]
     fn nothing_when_under_threshold() {
         let src = "fn small(a: bool) { if a {} }\n";
-        assert!(annotations_for_file(src, "rs", 15).is_empty());
+        {
+            let found = &annotations_for_file(src, "rs", 15);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

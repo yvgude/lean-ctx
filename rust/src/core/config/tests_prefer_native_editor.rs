@@ -14,7 +14,10 @@ fn default_is_off_and_blocks_nothing() {
     assert!(!cfg.prefer_native_editor);
     assert!(!cfg.prefer_native_editor_effective());
     assert!(!cfg.edit_tool_blocked("ctx_edit"));
-    assert!(cfg.disabled_tools_effective().is_empty());
+    {
+        let found = &cfg.disabled_tools_effective();
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]

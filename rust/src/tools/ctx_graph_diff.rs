@@ -325,7 +325,10 @@ mod tests {
 
     #[test]
     fn ignores_blank_lines() {
-        assert!(parse_name_status("\n\n").is_empty());
+        {
+            let found = &parse_name_status("\n\n");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

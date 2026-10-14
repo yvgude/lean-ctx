@@ -250,8 +250,16 @@ pub mod tests {
         let decision = PolicyDecisionPoint::new(Vec::new()).evaluate(&request());
 
         assert_eq!(decision.effect, PolicyEffect::Allow);
-        assert!(decision.matched_rules.is_empty());
-        assert!(decision.denied_reasons.is_empty());
+        assert!(
+            decision.matched_rules.is_empty(),
+            "{:?}",
+            decision.matched_rules
+        );
+        assert!(
+            decision.denied_reasons.is_empty(),
+            "{:?}",
+            decision.denied_reasons
+        );
         assert_eq!(decision.evaluation_level, PolicyLevel::Request);
     }
 

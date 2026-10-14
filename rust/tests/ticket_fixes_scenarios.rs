@@ -579,7 +579,7 @@ fn hash_fast_with_real_world_cyrillic_plan_file() {
     let h1 = lean_ctx::server::helpers::hash_fast(&content);
     let h2 = lean_ctx::server::helpers::hash_fast(&content);
     assert_eq!(h1, h2, "hash must be deterministic");
-    assert!(!h1.is_empty());
+    assert!(!h1.is_empty(), "`h1` is empty");
 }
 
 // ──────────────────────────────────────────────────────────

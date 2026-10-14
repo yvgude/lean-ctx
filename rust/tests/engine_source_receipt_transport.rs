@@ -467,7 +467,7 @@ fn source_execution_signs_unknown_receipt_with_actual_output_and_source_lineage(
     assert_eq!(result["canonical_receipt"]["outcome"], "unknown");
     assert!(result.get("recovery").is_none());
     let text = result["view"]["text"].as_str().unwrap();
-    assert!(!text.is_empty());
+    assert!(!text.is_empty(), "`text` is empty");
     assert_eq!(result["view"]["output_digest"], digest(text.as_bytes()));
     assert_eq!(
         result["observation"]["output_digest"],
@@ -632,7 +632,7 @@ fn source_replay_rechecks_identity_plan_sources_and_current_signer() {
     .unwrap();
     let denied = execute(&root, &request, &settings);
     assert!(!denied.status.success());
-    assert!(denied.stdout.is_empty());
+    assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
     assert_eq!(artifact_snapshot(&root), before);
 }
 
@@ -705,7 +705,7 @@ fn source_replay_rejects_damaged_evidence_and_incomplete_ledger_without_executio
     let incomplete = artifact_snapshot(&root);
     let denied = execute(&root, &request, &settings);
     assert!(!denied.status.success());
-    assert!(denied.stdout.is_empty());
+    assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
     assert_eq!(artifact_snapshot(&root), incomplete);
 }
 
@@ -750,7 +750,7 @@ fn source_execution_accepts_explicit_existing_ledger_root() {
         "{}",
         String::from_utf8_lossy(&output.stderr)
     );
-    assert!(!output.stdout.is_empty());
+    assert!(!output.stdout.is_empty(), "`output.stdout` is empty");
     assert!(root.join("host-ledger.jsonl").exists());
 }
 
@@ -789,7 +789,7 @@ fn source_execution_rejects_tampered_source_body_before_intent() {
         json!("tampered source body");
     let output = execute(&root, &request, &settings);
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert!(output.stdout.is_empty(), "{:?}", output.stdout);
     assert!(
         String::from_utf8_lossy(&output.stderr).contains("invalid_source_materialization_request")
     );
@@ -846,7 +846,7 @@ fn framed_outcome_binds_identity_and_returns_exact_signed_successor() {
         let before = std::fs::read(&ledger_path).unwrap();
         let denied = observe_framed(&root, &settings, &outcome);
         assert_eq!(denied.status.code(), Some(2));
-        assert!(denied.stdout.is_empty());
+        assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
         assert_eq!(std::fs::read(&ledger_path).unwrap(), before);
         settings["allow_outcome_signing"] = json!(true);
         for field in ["task_id", "tenant_id", "agent_id"] {
@@ -854,14 +854,14 @@ fn framed_outcome_binds_identity_and_returns_exact_signed_successor() {
             changed["binding"][field] = json!("another-identity");
             let denied = observe_framed(&root, &settings, &changed);
             assert_eq!(denied.status.code(), Some(2), "{field}");
-            assert!(denied.stdout.is_empty());
+            assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
             assert_eq!(std::fs::read(&ledger_path).unwrap(), before, "{field}");
         }
         let mut changed = outcome.clone();
         changed["learn"] = json!(true);
         let denied = observe_framed(&root, &settings, &changed);
         assert_eq!(denied.status.code(), Some(2));
-        assert!(denied.stdout.is_empty());
+        assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
         assert_eq!(std::fs::read(&ledger_path).unwrap(), before);
         let accepted = observe_framed(&root, &settings, &outcome);
         assert!(
@@ -980,7 +980,7 @@ fn source_host_framing_rejects_unbounded_or_missing_settings_without_intent() {
             command.arg("--host-stdin");
             let output = run(command, input.as_bytes());
             assert_eq!(output.status.code(), Some(2));
-            assert!(output.stdout.is_empty());
+            assert!(output.stdout.is_empty(), "{:?}", output.stdout);
             assert!(!root.join("host-ledger.jsonl").exists());
         }
     }
@@ -1009,7 +1009,7 @@ fn source_execution_rejects_outside_or_traversal_ledger_root_before_intent() {
         settings["ledger_path"] = json!(ledger_path);
         let output = execute_with_ledger_root(&root, &request, &settings, Some(&root));
         assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty());
+        assert!(output.stdout.is_empty(), "{:?}", output.stdout);
         assert!(!root.join("host-ledger.jsonl").exists());
         assert_eq!(std::fs::read(&outside_file).unwrap(), b"outside-sentinel");
     }
@@ -1036,7 +1036,7 @@ fn source_execution_rejects_symlinked_ledger_root_or_parent_before_intent() {
         settings["ledger_path"] = json!(ledger_root.join("ledger.jsonl"));
         let output = execute_with_ledger_root(&root, &request, &settings, Some(&ledger_root));
         assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty());
+        assert!(output.stdout.is_empty(), "{:?}", output.stdout);
         assert!(!root.join("host-ledger.jsonl").exists());
         assert_eq!(std::fs::read(&outside_file).unwrap(), b"outside-sentinel");
         assert!(!target.join("ledger.jsonl").exists());

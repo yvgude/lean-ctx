@@ -401,7 +401,10 @@ pub mod tests {
             let res =
                 archive_items(MemoryStore::History, Some("p"), &Vec::<Item>::new(), &cfg).unwrap();
             assert!(res.is_none());
-            assert!(list_archives(MemoryStore::History, Some("p")).is_empty());
+            {
+                let found = &list_archives(MemoryStore::History, Some("p"));
+                assert!(found.is_empty(), "{found:?}");
+            }
         });
     }
 

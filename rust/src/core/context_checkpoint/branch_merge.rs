@@ -827,7 +827,10 @@ mod tests {
             result.checkpoint().live_state.handoff_summary.as_str(),
             "right handoff"
         );
-        assert!(result.receipt().conflicts().is_empty());
+        {
+            let found = &result.receipt().conflicts();
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert_eq!(result.receipt().left_digest(), &left.digest().unwrap());
         assert_eq!(result.receipt().right_digest(), &right.digest().unwrap());
         assert!(

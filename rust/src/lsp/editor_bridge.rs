@@ -274,7 +274,10 @@ mod tests {
         let found = candidates(dir.path(), &root);
         assert_eq!(found.len(), 1);
         assert_eq!(found[0].editor, "vscode");
-        assert!(candidates(dir.path(), "/nonexistent/project").is_empty());
+        {
+            let found = &candidates(dir.path(), "/nonexistent/project");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     /// An announcement names an endpoint lean-ctx trusts: one that another

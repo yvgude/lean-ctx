@@ -380,7 +380,10 @@ mod tests {
     fn legacy_unnormalized_hashes_empty_for_clean_posix() {
         // POSIX paths already normalize to themselves: no split ever occurred,
         // so there is nothing to migrate.
-        assert!(legacy_unnormalized_hashes("/home/user/project").is_empty());
+        {
+            let found = &legacy_unnormalized_hashes("/home/user/project");
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

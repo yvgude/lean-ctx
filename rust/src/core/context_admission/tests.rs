@@ -228,7 +228,11 @@ fn case_18_clean_code_passes_untouched() {
     let admission = admit(text, Some(Path::new("src/lib.rs")), &policy());
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::Allow);
-    assert!(admission.decision.reason_codes.is_empty());
+    assert!(
+        admission.decision.reason_codes.is_empty(),
+        "{:?}",
+        admission.decision.reason_codes
+    );
     assert_eq!(delivered(&admission), text);
     assert_eq!(admission.classification, ClassificationV1::Public);
     assert_eq!(admission.trust, TrustLevelV1::Internal);
@@ -324,7 +328,11 @@ fn disabled_gateway_is_explicit_not_silent() {
         admission.decision.reason_codes[0].as_str(),
         "gateway.disabled"
     );
-    assert!(admission.decision.signals.is_empty());
+    assert!(
+        admission.decision.signals.is_empty(),
+        "{:?}",
+        admission.decision.signals
+    );
 }
 
 #[test]
@@ -724,5 +732,9 @@ fn complete_coverage_is_unchanged_for_ordinary_content() {
     assert_valid(&admission);
     assert_eq!(admission.disposition(), ContextDispositionV1::Allow);
     assert_eq!(admission.counts.incomplete, 0);
-    assert!(admission.decision.reason_codes.is_empty());
+    assert!(
+        admission.decision.reason_codes.is_empty(),
+        "{:?}",
+        admission.decision.reason_codes
+    );
 }

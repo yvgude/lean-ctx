@@ -41,7 +41,10 @@ mod context_ir_hotpath {
         assert_eq!(item.output_tokens, 200);
         assert!(item.duration_us > 0);
         assert!(item.compression_ratio < 1.0);
-        assert!(!item.content_excerpt.is_empty());
+        assert!(
+            !item.content_excerpt.is_empty(),
+            "`item.content_excerpt` is empty"
+        );
     }
 
     #[test]

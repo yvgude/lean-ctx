@@ -706,8 +706,8 @@ mod tests {
     #[test]
     fn no_filter_flags_yields_empty_overlay_inputs() {
         let (include, exclude, gitignore) = parse_filter_flags(&args(&["build", "--root", "/x"]));
-        assert!(include.is_empty());
-        assert!(exclude.is_empty());
+        assert!(include.is_empty(), "{include:?}");
+        assert!(exclude.is_empty(), "{exclude:?}");
         assert_eq!(gitignore, None);
     }
 }

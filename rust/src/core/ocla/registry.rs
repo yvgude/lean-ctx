@@ -267,8 +267,8 @@ mod tests {
         let catalogue = registry.technical_catalogue().unwrap();
         assert_eq!(catalogue.capabilities.len(), 15);
         assert!(catalogue.capabilities.iter().all(|entry| entry.available));
-        assert!(catalogue.models.is_empty());
-        assert!(catalogue.providers.is_empty());
+        assert!(catalogue.models.is_empty(), "{:?}", catalogue.models);
+        assert!(catalogue.providers.is_empty(), "{:?}", catalogue.providers);
         assert_eq!(
             registry
                 .discover(&PolicyConstraints::default())
@@ -397,7 +397,10 @@ mod tests {
         ]);
         assert!(registry.technical_catalogue().is_err());
         assert!(registry.discover(&PolicyConstraints::default()).is_err());
-        assert!(registry.adapters.list_available().is_empty());
+        {
+            let found = &registry.adapters.list_available();
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     struct SpyEfficiency(Arc<AtomicUsize>);

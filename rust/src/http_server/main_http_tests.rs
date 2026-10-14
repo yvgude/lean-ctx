@@ -100,7 +100,7 @@ fn index_ensure_body_parses_root_and_optional_extra_roots() {
 
     let minimal: IndexEnsureBody = serde_json::from_str(r#"{"root":"/a"}"#).unwrap();
     assert_eq!(minimal.root, "/a");
-    assert!(minimal.extra_roots.is_empty());
+    assert!(minimal.extra_roots.is_empty(), "{:?}", minimal.extra_roots);
 }
 
 #[tokio::test]

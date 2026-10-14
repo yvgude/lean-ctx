@@ -118,7 +118,7 @@ mod tests {
         assert_eq!(sig.algorithm, "ed25519");
         assert_eq!(sig.public_key.len(), 64);
         assert_eq!(sig.value.len(), 128);
-        assert!(!snap.snapshot_id.is_empty());
+        assert!(!snap.snapshot_id.is_empty(), "`snap.snapshot_id` is empty");
         assert!(verify_snapshot(&snap).expect("verify"));
     }
 

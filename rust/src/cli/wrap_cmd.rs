@@ -885,7 +885,10 @@ mod tests {
         ] {
             assert_eq!(WrapAgent::from_str(name), Ok(agent));
         }
-        assert!(WrapAgent::Cursor.environment(9340, true, true).is_empty());
+        {
+            let found = &WrapAgent::Cursor.environment(9340, true, true);
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert_eq!(
             WrapAgent::Windsurf.environment(9340, true, true),
             vec![
@@ -952,7 +955,10 @@ mod tests {
 
     #[test]
     fn claude_subscription_mode_never_exports_proxy_url() {
-        assert!(WrapAgent::Claude.environment(9340, false, false).is_empty());
+        {
+            let found = &WrapAgent::Claude.environment(9340, false, false);
+            assert!(found.is_empty(), "{found:?}");
+        }
         assert_eq!(
             WrapAgent::Claude.environment(9340, true, true),
             vec![("ANTHROPIC_BASE_URL", "http://127.0.0.1:9340".to_string(),)]

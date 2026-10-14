@@ -864,7 +864,7 @@ pub mod tests {
     #[test]
     fn default_role_is_coder() {
         let name = active_role_name();
-        assert!(!name.is_empty());
+        assert!(!name.is_empty(), "`name` is empty");
     }
 
     #[test]

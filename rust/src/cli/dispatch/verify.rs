@@ -686,7 +686,7 @@ mod tests {
                     )
                 };
                 assert_eq!(result.errors, vec![expected]);
-                assert!(result.warnings.is_empty());
+                assert!(result.warnings.is_empty(), "{:?}", result.warnings);
             }
         }
     }

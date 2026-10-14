@@ -265,7 +265,7 @@ mod tests {
         let gateway = BuiltinAgentGateway::new();
         let result = gateway.relay_agent(envelope(1000)).unwrap();
         assert_eq!(result.from_agent_id, "agent-a");
-        assert!(result.capsule_ref.is_empty());
+        assert!(result.capsule_ref.is_empty(), "{:?}", result.capsule_ref);
     }
 
     #[test]
@@ -434,6 +434,6 @@ mod tests {
             ))
             .unwrap();
 
-        assert!(!message_id.is_empty());
+        assert!(!message_id.is_empty(), "`message_id` is empty");
     }
 }

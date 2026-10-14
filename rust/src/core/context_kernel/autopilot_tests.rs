@@ -250,7 +250,10 @@ fn task_handoff_does_not_project_the_counterfactual_baseline() {
         handoff.context_projection().context_plan_id.as_str(),
         shadow.authoritative_plan_id
     );
-    assert!(!handoff.context_projection().selections.is_empty());
+    assert!(
+        !handoff.context_projection().selections.is_empty(),
+        "`handoff.context_projection().selections` is empty"
+    );
 }
 
 #[test]
@@ -487,13 +490,13 @@ fn predictive_preload_is_bounded_positive_and_cache_aware() {
 
     let mut cached = request;
     cached.cached_preloads.insert("github:issues".to_owned());
-    assert!(
-        controller()
+    {
+        let found = &controller()
             .plan(&cached, Some(&mut bandit))
             .expect("valid cached preload plan")
-            .preloads
-            .is_empty()
-    );
+            .preloads;
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]
@@ -502,13 +505,13 @@ fn predictive_remote_preload_requires_consent() {
     request.preload_budget.remote_query_consent = false;
     let mut bandit = ProviderBandit::new();
 
-    assert!(
-        controller()
+    {
+        let found = &controller()
             .plan(&request, Some(&mut bandit))
             .expect("valid remote preload plan")
-            .preloads
-            .is_empty()
-    );
+            .preloads;
+        assert!(found.is_empty(), "{found:?}");
+    }
 
     request.local_providers.insert("github".to_owned());
     request.preload_budget.allow_remote_queries = false;
@@ -528,13 +531,13 @@ fn repeated_preload_waste_disables_prediction() {
     request.learning.preload_misses = 4;
     let mut bandit = ProviderBandit::new();
 
-    assert!(
-        controller()
+    {
+        let found = &controller()
             .plan(&request, Some(&mut bandit))
             .expect("valid repeated preload plan")
-            .preloads
-            .is_empty()
-    );
+            .preloads;
+        assert!(found.is_empty(), "{found:?}");
+    }
 }
 
 #[test]
@@ -884,7 +887,10 @@ fn preload_execution_honors_cancellation() {
     cancellation.cancel();
     let mut executor = CountingExecutor::default();
 
-    assert!(execute_preloads(&actions, &cancellation, &mut executor).is_empty());
+    {
+        let found = &execute_preloads(&actions, &cancellation, &mut executor);
+        assert!(found.is_empty(), "{found:?}");
+    }
     assert_eq!(executor.0, 0);
 }
 
@@ -895,13 +901,13 @@ fn preload_planning_applies_hard_item_and_token_ceilings() {
     request.preload_budget.max_tokens = usize::MAX;
     request.preload_budget.tokens_per_item = MAX_PRELOAD_TOKENS_PER_ITEM + 1;
     let mut bandit = ProviderBandit::new();
-    assert!(
-        controller()
+    {
+        let found = &controller()
             .plan(&request, Some(&mut bandit))
             .expect("valid bounded preload plan")
-            .preloads
-            .is_empty()
-    );
+            .preloads;
+        assert!(found.is_empty(), "{found:?}");
+    }
 
     request.preload_budget.tokens_per_item = 1;
     let preloads = controller()

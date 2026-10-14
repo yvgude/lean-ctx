@@ -343,7 +343,7 @@ mod tests {
         let (result, outcome) = handle_file("/nonexistent/definitely-missing.py", None, None);
         assert!(outcome.is_error(), "precondition failures are tool errors");
         assert_eq!(outcome, ShellOutcome::Blocked, "nothing was executed");
-        assert!(!result.is_empty());
+        assert!(!result.is_empty(), "`result` is empty");
     }
 }
 

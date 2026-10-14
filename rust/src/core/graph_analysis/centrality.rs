@@ -201,7 +201,10 @@ mod tests {
     fn fully_connected_has_no_bridges() {
         // Triangle: no node is on a unique shortest path.
         let edges = vec![e("a", "b"), e("b", "c"), e("a", "c")];
-        assert!(compute_bridge_nodes(&edges, 10).is_empty());
+        {
+            let found = &compute_bridge_nodes(&edges, 10);
+            assert!(found.is_empty(), "{found:?}");
+        }
     }
 
     #[test]

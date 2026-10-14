@@ -753,14 +753,14 @@ pub mod tests {
     fn gradient_bar_produces_output() {
         let theme = preset_default();
         let bar = theme.gradient_bar(0.5, 20);
-        assert!(!bar.is_empty());
+        assert!(!bar.is_empty(), "`bar` is empty");
     }
 
     #[test]
     fn gradient_sparkline_produces_output() {
         let theme = preset_default();
         let spark = theme.gradient_sparkline(&[10, 50, 30, 80, 20]);
-        assert!(!spark.is_empty());
+        assert!(!spark.is_empty(), "`spark` is empty");
         assert!(spark.chars().count() >= 5);
     }
 

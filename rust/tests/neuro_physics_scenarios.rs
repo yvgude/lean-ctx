@@ -207,7 +207,7 @@ mod hnsw_performance {
     fn scenario_topk_handles_edge_cases() {
         // Empty vectors
         let result = brute_force_topk(&FlatEmbeddings::from_vecs(vec![]), &[1.0, 0.0], 5);
-        assert!(result.is_empty());
+        assert!(result.is_empty(), "{result:?}");
 
         // top_k > num vectors
         let vectors = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
