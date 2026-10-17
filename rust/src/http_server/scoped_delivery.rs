@@ -417,10 +417,38 @@ mod tests {
         concurrent.nonce = "concurrent-request".into();
         concurrent.sign(&key);
         let concurrent_body = json!({"authority":concurrent,"request":operation});
-        let (first, second) = tokio::join!(send(concurrent_body.clone()), send(concurrent_body));
+        let (first, second) =
+            tokio::join!(send(concurrent_body.clone()), send(concurrent_body.clone()));
         let mut statuses = [first.status().as_u16(), second.status().as_u16()];
         statuses.sort_unstable();
-        assert_eq!(statuses, [200, 409]);
+        // Bounded storage contention may fail closed before a duplicate can be
+        // classified. It must never permit a second successful delivery.
+        assert!(
+            statuses == [200, 409] || statuses == [200, 503],
+            "exactly one request must succeed: {statuses:?}"
+        );
+        for response in [first, second] {
+            let expected_error = match response.status() {
+                StatusCode::OK => continue,
+                StatusCode::CONFLICT => "delivery_replayed",
+                StatusCode::SERVICE_UNAVAILABLE => "delivery_replay_unavailable",
+                other => panic!("unexpected replay refusal: {other}"),
+            };
+            let bytes = axum::body::to_bytes(response.into_body(), 16_384)
+                .await
+                .expect("refusal body");
+            let refusal: serde_json::Value = serde_json::from_slice(&bytes).expect("refusal JSON");
+            assert_eq!(refusal["error_code"], expected_error);
+        }
+        // Once both requests have settled, a newly built router must recognize
+        // the same proof as consumed; an unavailable store cannot satisfy this.
+        let replay = send(concurrent_body).await;
+        assert_eq!(replay.status(), StatusCode::CONFLICT);
+        let bytes = axum::body::to_bytes(replay.into_body(), 16_384)
+            .await
+            .expect("replay body");
+        let replay: serde_json::Value = serde_json::from_slice(&bytes).expect("replay JSON");
+        assert_eq!(replay["error_code"], "delivery_replayed");
 
         let make_signed = |operation: DeliveryOperation, nonce: &str, write: bool| {
             let mut proof = authority.clone();
