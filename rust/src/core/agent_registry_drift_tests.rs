@@ -65,6 +65,69 @@ fn register_attested(agent_id: &str) -> Attestation {
     truth
 }
 
+/// Coverage can slow a competing registry transaction past the production
+/// lock budget. Retry only its pre-mutation lock timeout; all other errors
+/// and every concurrent state/audit assertion must still fail normally.
+fn retry_registry_contention<T>(
+    mut operation: impl FnMut() -> Result<T, String>,
+) -> Result<T, String> {
+    use std::time::{Duration, Instant};
+
+    let deadline = Instant::now() + Duration::from_secs(30);
+    loop {
+        match operation() {
+            Err(error)
+                if error
+                    == "registry lock timed out after 750ms; another agent operation is still active"
+                    && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(25));
+            }
+            result => return result,
+        }
+    }
+}
+
+#[test]
+fn registry_retry_preserves_state_until_the_real_lock_is_available() {
+    use fs2::FileExt;
+
+    let _iso = isolated();
+    let truth = register_attested("d-retry");
+    seed_stored("d-retry", FOREIGN, &truth.config_sha256);
+    let path = registry_path().expect("registry path");
+    let before = std::fs::read(&path).expect("registry bytes");
+    let held_lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(path.with_extension("lock"))
+        .expect("lock file");
+    held_lock.lock_exclusive().expect("hold registry lock");
+
+    let mut attempts = 0;
+    let outcome = retry_registry_contention(|| {
+        attempts += 1;
+        let result = heartbeat("d-retry");
+        if attempts == 1 {
+            assert_eq!(
+                result.as_ref().expect_err("held lock must time out"),
+                "registry lock timed out after 750ms; another agent operation is still active"
+            );
+            assert_eq!(std::fs::read(&path).expect("unchanged registry"), before);
+            FileExt::unlock(&held_lock).expect("release registry lock");
+        }
+        result
+    })
+    .expect("heartbeat after contention");
+
+    assert_eq!(attempts, 2);
+    assert!(outcome.newly_observed && outcome.drift.is_some());
+    assert_eq!(stored("d-retry").binary_sha256, truth.binary_sha256);
+    assert_eq!(drift_entries().len(), 1);
+    assert!(audit_trail::verify_chain().valid);
+}
+
 #[test]
 fn binary_only_drift_persists_fresh_attestation_and_audits_once() {
     let _iso = isolated();
@@ -287,7 +350,8 @@ fn concurrent_heartbeats_emit_one_transition_and_keep_sticky_state() {
             let barrier = Arc::clone(&barrier);
             std::thread::spawn(move || {
                 barrier.wait();
-                heartbeat("d-concurrent-hb").expect("concurrent heartbeat")
+                retry_registry_contention(|| heartbeat("d-concurrent-hb"))
+                    .expect("concurrent heartbeat")
             })
         })
         .collect::<Vec<_>>();
@@ -321,12 +385,12 @@ fn concurrent_heartbeat_and_resume_never_clear_drift() {
     let heartbeat_barrier = Arc::clone(&barrier);
     let heartbeat_thread = std::thread::spawn(move || {
         heartbeat_barrier.wait();
-        heartbeat("d-concurrent-resume").expect("heartbeat")
+        retry_registry_contention(|| heartbeat("d-concurrent-resume")).expect("heartbeat")
     });
     let resume_barrier = Arc::clone(&barrier);
     let resume_thread = std::thread::spawn(move || {
         resume_barrier.wait();
-        resume("d-concurrent-resume").expect("resume");
+        retry_registry_contention(|| resume("d-concurrent-resume")).expect("resume");
     });
     barrier.wait();
     let heartbeat_outcome = heartbeat_thread.join().expect("heartbeat thread");
