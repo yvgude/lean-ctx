@@ -33,6 +33,8 @@ v4-runtime:
       - rust/target/ci-cargo-home/registry/
       - rust/target/ci-cargo-home/git/
     policy: pull-push
+    # A failed test must not discard an expensive successful compilation.
+    when: always
   variables:
     # A single optimized lib-test rustc used about 9 GiB in pipeline 5314.
     # Serialize compilation within the 16-GiB cgroup; keep both full suites.
