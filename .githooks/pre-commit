@@ -115,9 +115,11 @@ run_step() {
 run_step "cargo fmt --check" "Run 'cargo fmt' first." \
     cargo fmt --check
 
-# Production code: strict — unwrap_used is DENIED
+# Production code: strict — unwrap_used is DENIED. --all-features matches the
+# CI Clippy job and preflight.sh, so the pre-push clippy step reuses these
+# check artifacts instead of compiling a second feature set.
 run_step "clippy (production)" "Fix warnings before committing." \
-    cargo clippy --lib --bins --examples -- -D warnings -A clippy::too_many_lines
+    cargo clippy --all-features --lib --bins --examples -- -D warnings -A clippy::too_many_lines
 
 # Test code: unwrap() and is_empty() assertions are intentional test idioms.
 test_clippy_args=(-A clippy::too_many_lines -A clippy::unwrap_used)
