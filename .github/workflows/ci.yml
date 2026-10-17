@@ -370,6 +370,10 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
+          # Shared with Documentation: both type-check the all-features graph,
+          # and the repo's 10 GB Actions cache was evicting the Windows test
+          # cache under one key per job.
+          shared-key: all-features-check
       - name: Run clippy
         working-directory: rust
         run: cargo clippy --all-features -- -D warnings -A clippy::too_many_lines
@@ -907,10 +911,10 @@ jobs:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        if: runner.environment == 'github-hosted'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
+          shared-key: all-features-check
       - name: Check docs compile
         working-directory: rust
         env:
