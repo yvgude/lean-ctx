@@ -109,9 +109,11 @@ fn text_args(value: impl Into<String>) -> Map<String, Value> {
 }
 
 /// Poll `cond` (a side-channel store write landing on a background thread) for up
-/// to ~6 s. Returns the final state so the caller asserts a real outcome.
+/// to ~30 s. Returns as soon as it holds, so the ceiling only matters on a loaded
+/// CI host, where the former ~6 s starved the ingest thread (main, 2026-10-17).
+/// Returns the final state so the caller asserts a real outcome.
 fn wait_until(mut cond: impl FnMut() -> bool) -> bool {
-    for _ in 0..60 {
+    for _ in 0..300 {
         if cond() {
             return true;
         }

@@ -440,13 +440,29 @@ mod tests {
                 .map(|_| {
                     scope.spawn(|| {
                         start.wait();
-                        let connection = open_private(&path).unwrap();
-                        let store = super::super::AdaptiveLearningStore::new(
-                            connection,
-                            lean_ctx_protocol::ProjectId::new("concurrent").unwrap(),
-                            None,
-                        )
-                        .unwrap();
+                        // The store's 2 s busy timeout is a deliberate bound
+                        // (see lock_contention_is_bounded_…); on a loaded CI
+                        // host four simultaneous schema inits can exceed it.
+                        // This test is about the private file, so a busy
+                        // init retries on a fresh connection while every
+                        // open_private call must still succeed.
+                        let store = (0..10)
+                            .find_map(|_| {
+                                match super::super::AdaptiveLearningStore::new(
+                                    open_private(&path).unwrap(),
+                                    lean_ctx_protocol::ProjectId::new("concurrent").unwrap(),
+                                    None,
+                                ) {
+                                    Ok(store) => Some(store),
+                                    Err(error)
+                                        if format!("{error:#}").contains("database is locked") =>
+                                    {
+                                        None
+                                    }
+                                    Err(error) => panic!("learning store init failed: {error:#}"),
+                                }
+                            })
+                            .expect("schema init succeeds once contention clears");
                         assert_eq!(
                             store.load().unwrap(),
                             super::super::AdaptiveLearningState::default()
