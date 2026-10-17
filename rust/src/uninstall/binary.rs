@@ -52,7 +52,7 @@ enum Disposition {
 }
 
 fn classify(path: &Path) -> Disposition {
-    let p = path.to_string_lossy();
+    let p = path.to_string_lossy().replace('\\', "/");
     if p.contains("/target/release/") || p.contains("/target/debug/") {
         Disposition::DevBuild
     } else if p.contains("/.cargo/") {
@@ -272,12 +272,28 @@ mod tests {
 
     #[test]
     fn shim_dirs_skip_dev_build() {
-        // current_exe() lives in target/ under the test runner → must be excluded.
+        let target = std::env::temp_dir()
+            .join("lean-ctx-shim-path")
+            .join("target");
+        let debug = target.join("debug");
+        let release = target.join("release");
+        let cargo_bin = target.join("ci-cargo-home/bin");
+        let path = std::env::join_paths([&debug, &release, &cargo_bin]).unwrap();
+        if crate::test_env::run_in_own_process(
+            "uninstall::binary::tests::shim_dirs_skip_dev_build",
+            &[("PATH", path.to_str().unwrap())],
+        ) {
+            return;
+        }
         let dirs = shim_dirs(&PathBuf::from("/home/tester"));
+        assert!(!dirs.contains(&debug), "debug build dir leaked: {dirs:?}");
         assert!(
-            dirs.iter()
-                .all(|d| !d.to_string_lossy().contains("/target/")),
-            "dev-build dir leaked into shim dirs: {dirs:?}"
+            !dirs.contains(&release),
+            "release build dir leaked: {dirs:?}"
+        );
+        assert!(
+            dirs.contains(&cargo_bin),
+            "Cargo install bin omitted: {dirs:?}"
         );
     }
 
@@ -289,6 +305,10 @@ mod tests {
         ));
         assert!(matches!(
             classify(Path::new("/home/u/proj/target/debug/lean-ctx")),
+            Disposition::DevBuild
+        ));
+        assert!(matches!(
+            classify(Path::new(r"C:\work\lean-ctx\target\debug\lean-ctx.exe")),
             Disposition::DevBuild
         ));
     }

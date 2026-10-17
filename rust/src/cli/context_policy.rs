@@ -362,6 +362,14 @@ mod tests {
 
     #[test]
     fn nested_cli_uses_request_project_not_process_directory() {
+        let unrelated = tempfile::tempdir().unwrap();
+        if crate::test_env::run_in_own_process_at(
+            "cli::context_policy::tests::nested_cli_uses_request_project_not_process_directory",
+            &[],
+            Some(unrelated.path()),
+        ) {
+            return;
+        }
         let data = crate::core::data_dir::isolated_data_dir();
         let authority = data.path().join("authority");
         std::fs::create_dir_all(authority.join(".lean-ctx")).unwrap();
@@ -369,8 +377,7 @@ mod tests {
             authority.join(".lean-ctx/policy.toml"),
             "name='authority'\nversion='1.0.0'\ndescription='test'\n[redaction]\ncustomer='K-[0-9]{6}'\n",
         ).unwrap();
-        let unrelated = tempfile::tempdir_in(std::env::current_dir().unwrap()).unwrap();
-        let source = unrelated.path().join("source.txt");
+        let source = std::env::current_dir().unwrap().join("source.txt");
         std::fs::write(&source, "outside-authority-canary").unwrap();
         let path = source.to_string_lossy().into_owned();
         policy::runtime::with_project_source_view(authority.to_str().unwrap(), || {

@@ -970,8 +970,8 @@ mod tests {
     }
 
     #[test]
-    fn contract_has_exactly_fifteen_discoverable_capabilities() {
-        assert_eq!(OclaCapabilityKind::ALL.len(), 15);
+    fn contract_has_exactly_fourteen_capability_kinds() {
+        assert_eq!(OclaCapabilityKind::ALL.len(), 14);
         let capability = OclaCapability::available(OclaCapabilityKind::AgentGateway);
         assert_eq!(capability.api_version, OCLA_API_VERSION);
         assert_eq!(capability.status, OclaCapabilityStatus::Available);

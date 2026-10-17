@@ -191,12 +191,23 @@ fn sanitize_scope(scope: &str) -> String {
 
 /// Archive `items` for `store`/`scope`, then prune the directory to
 /// `cfg.max_files` newest. Returns the written path, or `None` when there was
-/// nothing to archive. Best-effort prune: a prune failure never fails the write.
+/// nothing to archive. Ordering must be inspectable before writing; removal of
+/// old files remains best-effort.
 pub fn archive_items<T: Serialize>(
     store: MemoryStore,
     scope: Option<&str>,
     items: &[T],
     cfg: &ArchiveConfig,
+) -> Result<Option<PathBuf>, String> {
+    archive_items_at(store, scope, items, cfg, Utc::now())
+}
+
+fn archive_items_at<T: Serialize>(
+    store: MemoryStore,
+    scope: Option<&str>,
+    items: &[T],
+    cfg: &ArchiveConfig,
+    now: DateTime<Utc>,
 ) -> Result<Option<PathBuf>, String> {
     if items.is_empty() {
         return Ok(None);
@@ -205,12 +216,14 @@ pub fn archive_items<T: Serialize>(
     let scope = scope.as_deref();
     let dir = archive_dir(store, scope)?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("{e}"))?;
+    if !ordered_archive_files(&dir).1 {
+        return Err("archive chronology unavailable".into());
+    }
 
     // Sub-second suffix avoids same-second filename collisions that would
     // otherwise silently overwrite a prior archive in the same wall-clock second.
-    let now = Utc::now();
-    let suffix = now.timestamp_subsec_nanos() % 1_000_000;
-    let filename = format!("archive-{}-{suffix:06}.json", now.format("%Y%m%d-%H%M%S"));
+    let suffix = now.timestamp_subsec_nanos();
+    let filename = format!("archive-{}-{suffix:09}.json", now.format("%Y%m%d-%H%M%S"));
     let path = dir.join(filename);
 
     let envelope = ArchiveEnvelopeRef {
@@ -233,7 +246,10 @@ pub fn archive_items<T: Serialize>(
     file.persist_noclobber(&path)
         .map_err(|_| "archive publication failed")?;
 
-    let archives = list_archives(store, scope);
+    let (archives, ordered) = ordered_archive_files(&dir);
+    if !ordered {
+        return Err("archive chronology changed before retention".into());
+    }
     if archives.len() > cfg.max_files {
         for old in &archives[..archives.len() - cfg.max_files] {
             let _ = std::fs::remove_file(old);
@@ -242,24 +258,58 @@ pub fn archive_items<T: Serialize>(
     Ok(Some(path))
 }
 
-/// All archive files for `store`/`scope`, sorted ascending (lexical ==
-/// chronological for the zero-padded timestamp filename prefix).
+/// All archive files for `store`/`scope`, sorted by their recorded archive time.
+/// Uninspectable files remain listed, but prevent retention from deleting files.
 pub fn list_archives(store: MemoryStore, scope: Option<&str>) -> Vec<PathBuf> {
     let Ok(dir) = archive_dir(store, scope) else {
         return Vec::new();
     };
-    if !dir.exists() {
-        return Vec::new();
+    ordered_archive_files(&dir).0
+}
+
+fn ordered_archive_files(dir: &Path) -> (Vec<PathBuf>, bool) {
+    #[derive(Deserialize)]
+    struct ArchiveTimestamp {
+        archived_at: DateTime<Utc>,
     }
-    let mut archives: Vec<PathBuf> = std::fs::read_dir(&dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| p.is_file() && p.extension().is_some_and(|ext| ext == "json"))
-        .collect();
-    archives.sort();
-    archives
+
+    let Ok(entries) = std::fs::read_dir(dir) else {
+        return (Vec::new(), false);
+    };
+    let mut complete = true;
+    let mut archives = Vec::new();
+    for entry in entries {
+        let Ok(entry) = entry else {
+            complete = false;
+            continue;
+        };
+        let path = entry.path();
+        if path.extension().is_none_or(|ext| ext != "json") {
+            continue;
+        }
+        let Ok(kind) = entry.file_type() else {
+            complete = false;
+            continue;
+        };
+        if !kind.is_file() {
+            continue;
+        }
+        // Legacy six-digit names wrapped every millisecond, so their lexical
+        // order cannot establish chronology. Use the bounded, no-follow reader
+        // already used by restore_items, and retain only the envelope timestamp.
+        let timestamp = crate::core::policy::diagnostics::Target::read_file(&path)
+            .and_then(|text| serde_json::from_str::<ArchiveTimestamp>(&text).ok())
+            .map(|metadata| metadata.archived_at);
+        complete &= timestamp.is_some();
+        archives.push((timestamp, path));
+    }
+    // Path order is a deterministic tie-breaker and fallback for unreadable
+    // metadata; the caller must not prune unless every timestamp is known.
+    archives.sort_unstable();
+    (
+        archives.into_iter().map(|(_, path)| path).collect(),
+        complete,
+    )
 }
 
 /// The newest `cfg.rehydrate_reach` archives for `store`/`scope` — the set a
@@ -451,18 +501,99 @@ pub mod tests {
                 max_files: 3,
                 rehydrate_reach: 3,
             };
-            for _ in 0..6 {
-                // Distinct filenames require distinct sub-second suffixes; a tiny
-                // sleep guarantees monotonic timestamps on fast machines.
-                archive_items(MemoryStore::Patterns, Some("p"), &items(1), &cfg).unwrap();
-                std::thread::sleep(std::time::Duration::from_millis(2));
+            // These distinct instants collide under the old nanos % 1_000_000
+            // suffix and also cross its lexical-order wraparound.
+            for (id, nanos) in [
+                1_100_000, 1_900_000, 2_100_000, 2_900_000, 3_100_000, 3_900_000,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let batch = [Item {
+                    id: u32::try_from(id).unwrap(),
+                    label: format!("batch-{id}"),
+                }];
+                archive_items_at(
+                    MemoryStore::Patterns,
+                    Some("p"),
+                    &batch,
+                    &cfg,
+                    DateTime::from_timestamp(1_700_000_000, nanos).unwrap(),
+                )
+                .unwrap();
             }
             let archives = list_archives(MemoryStore::Patterns, Some("p"));
-            assert!(
-                archives.len() <= 3,
-                "prune should bound to max_files, got {}",
-                archives.len()
+            let retained: Vec<u32> = archives
+                .iter()
+                .map(|path| restore_items::<Item>(path).unwrap()[0].id)
+                .collect();
+            assert_eq!(retained, [3, 4, 5]);
+        });
+    }
+
+    #[test]
+    fn retention_orders_legacy_names_by_the_recorded_timestamp() {
+        with_temp_data_dir(|| {
+            let store = MemoryStore::Patterns;
+            let dir = archive_dir(store, Some("p")).unwrap();
+            std::fs::create_dir_all(&dir).unwrap();
+            let old_time = DateTime::from_timestamp(1_700_000_000, 1_900_000).unwrap();
+            let legacy = dir.join(format!(
+                "archive-{}-900000.json",
+                old_time.format("%Y%m%d-%H%M%S")
+            ));
+            std::fs::write(
+                &legacy,
+                serde_json::to_vec(&ArchiveEnvelopeRef {
+                    archived_at: old_time,
+                    store: store.as_str(),
+                    scope: Some("p"),
+                    items: &items(1),
+                })
+                .unwrap(),
+            )
+            .unwrap();
+            let cfg = ArchiveConfig {
+                max_files: 1,
+                rehydrate_reach: 1,
+            };
+            let newest = archive_items_at(
+                store,
+                Some("p"),
+                &items(2),
+                &cfg,
+                DateTime::from_timestamp(1_700_000_000, 2_100_000).unwrap(),
+            )
+            .unwrap()
+            .unwrap();
+            assert!(!legacy.exists());
+            assert_eq!(
+                list_archives(store, Some("p")).as_slice(),
+                std::slice::from_ref(&newest)
             );
+            assert_eq!(restore_items::<Item>(&newest).unwrap(), items(2));
+        });
+    }
+
+    #[test]
+    fn unreadable_archive_chronology_blocks_writes_without_pruning() {
+        with_temp_data_dir(|| {
+            let store = MemoryStore::Patterns;
+            let dir = archive_dir(store, Some("p")).unwrap();
+            std::fs::create_dir_all(&dir).unwrap();
+            let legacy = dir.join("archive-20231114-221320-900000.json");
+            std::fs::write(&legacy, "not json").unwrap();
+            let cfg = ArchiveConfig {
+                max_files: 1,
+                rehydrate_reach: 1,
+            };
+            let error = archive_items(store, Some("p"), &items(1), &cfg).unwrap_err();
+            assert_eq!(error, "archive chronology unavailable");
+            assert_eq!(
+                list_archives(store, Some("p")).as_slice(),
+                std::slice::from_ref(&legacy)
+            );
+            assert_eq!(std::fs::read_to_string(legacy).unwrap(), "not json");
         });
     }
 
