@@ -588,6 +588,11 @@ async fn relay_two_servers_deliver_and_replay_signed_evidence() {
     use crate::core::context_kernel::evidence_bundle::EvidenceBundle;
     use lean_ctx_protocol::DataClassification;
 
+    // Both servers and the client share this test's single-threaded runtime,
+    // so every blocking file write on the forwarding path stalls the whole
+    // chain. 5 s timed out on slow Windows and loaded CI hosts (2026-10-17);
+    // the ceiling only matters when something hangs.
+    const RELAY_TEST_TIMEOUT: Duration = Duration::from_secs(30);
     struct Server(tokio::task::JoinHandle<()>);
     impl Drop for Server {
         fn drop(&mut self) {
@@ -628,7 +633,7 @@ async fn relay_two_servers_deliver_and_replay_signed_evidence() {
         a2a_tenant_id: Some("tenant-a".into()),
         a2a_project_id: Some("project-a".into()),
         a2a_peers: table(peers),
-        request_timeout_ms: 5000,
+        request_timeout_ms: 30_000,
         ..HttpServerConfig::default()
     };
     let relay_cfg = config(
@@ -660,7 +665,7 @@ async fn relay_two_servers_deliver_and_replay_signed_evidence() {
     let transport = RemoteTransport::for_peer_table(
         table(vec![peer("relay", "relay", &relay_url, "origin")]),
         "origin",
-        Duration::from_secs(5),
+        RELAY_TEST_TIMEOUT,
         true,
     )
     .unwrap();
@@ -730,7 +735,7 @@ async fn relay_two_servers_deliver_and_replay_signed_evidence() {
             .post(format!("{relay_url}/a2a/deliver"))
             .header(crate::core::a2a::relay::RELAY_PEER_HEADER, "origin")
             .bearer_auth("origin-bearer")
-            .timeout(Duration::from_secs(10))
+            .timeout(RELAY_TEST_TIMEOUT)
             .json(&signed)
             .send()
             .await
@@ -756,7 +761,7 @@ async fn relay_two_servers_deliver_and_replay_signed_evidence() {
     let retry_transport = RemoteTransport::for_peer_table(
         relay_cfg.a2a_peers.clone(),
         "relay",
-        Duration::from_secs(5),
+        RELAY_TEST_TIMEOUT,
         true,
     )
     .unwrap();
