@@ -621,6 +621,11 @@ mod tests {
 
     #[test]
     fn emit_returns_positive_id() {
+        // Keep real persistence, without queueing behind the whole suite's emitters.
+        if crate::test_env::run_in_own_process("core::events::tests::emit_returns_positive_id", &[])
+        {
+            return;
+        }
         let id = emit_persisted(&EventKind::ToolCall {
             tool: "ctx_read".to_string(),
             tokens_original: 1000,

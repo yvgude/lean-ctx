@@ -232,7 +232,25 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("tasks.json");
         persist(&path, task);
-        let operation = || cancel(&path, &request, &policy, &expected(&request)).unwrap();
+        let lock_timeout = format!(
+            "lock {} timed out after 750ms",
+            path.with_extension("lock").display()
+        );
+        let operation = || {
+            // Like concurrent_mutations_do_not_lose_tasks, test durable
+            // idempotence under contention, not a loaded runner's scheduling.
+            // This exact lock timeout occurs before loading or mutating storage.
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(30);
+            loop {
+                match cancel(&path, &request, &policy, &expected(&request)) {
+                    Ok(status) => break status,
+                    Err(TaskControlError::Storage(error))
+                        if error.to_string() == lock_timeout
+                            && std::time::Instant::now() < deadline => {}
+                    Err(error) => panic!("signed cancellation failed: {error:?}"),
+                }
+            }
+        };
         let (left, right) = std::thread::scope(|scope| {
             let first = scope.spawn(operation);
             let second = scope.spawn(operation);
