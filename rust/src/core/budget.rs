@@ -176,19 +176,35 @@ pub(crate) fn truncate_to_token_budget(text: &str, limit: usize) -> String {
         return String::new();
     }
 
-    let mut result = String::new();
-
-    for line in text.lines() {
-        let previous_len = result.len();
-        if !result.is_empty() {
-            result.push('\n');
+    // Largest whole-line prefix that fits. Binary search over the line count,
+    // as for the character fallback below: re-tokenizing the growing prefix
+    // after every line was quadratic and dominated large truncated outputs.
+    // Leading blank lines never reached the output (nothing to separate them
+    // from yet); keep that byte-for-byte so delivered prefixes stay stable.
+    let joined = text
+        .lines()
+        .skip_while(|line| line.is_empty())
+        .collect::<Vec<_>>()
+        .join("\n");
+    let mut ends: Vec<usize> = joined.match_indices('\n').map(|(i, _)| i).collect();
+    ends.push(joined.len());
+    let prefix = |lines: usize| {
+        if lines == 0 {
+            ""
+        } else {
+            &joined[..ends[lines - 1]]
         }
-        result.push_str(line);
-        if count_tokens(&result) > limit {
-            result.truncate(previous_len);
-            break;
+    };
+    let (mut low, mut high) = (0usize, if text.is_empty() { 0 } else { ends.len() });
+    while low < high {
+        let mid = usize::midpoint(low + 1, high);
+        if count_tokens(prefix(mid)) <= limit {
+            low = mid;
+        } else {
+            high = mid - 1;
         }
     }
+    let result = prefix(low).to_string();
 
     if result.is_empty() && !text.is_empty() {
         return truncate_chars_to_token_budget(text, limit);
@@ -219,6 +235,60 @@ fn truncate_chars_to_token_budget(text: &str, limit: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The line-at-a-time loop the binary search replaced; the delivered
+    /// prefix must stay byte-identical to it.
+    fn linear_reference(text: &str, limit: usize) -> String {
+        if limit == 0 {
+            return String::new();
+        }
+        let mut result = String::new();
+        for line in text.lines() {
+            let previous_len = result.len();
+            if !result.is_empty() {
+                result.push('\n');
+            }
+            result.push_str(line);
+            if count_tokens(&result) > limit {
+                result.truncate(previous_len);
+                break;
+            }
+        }
+        if result.is_empty() && !text.is_empty() {
+            return truncate_chars_to_token_budget(text, limit);
+        }
+        result
+    }
+
+    #[test]
+    fn line_truncation_matches_the_linear_reference() {
+        let mut log = String::new();
+        for i in 0..300 {
+            std::fmt::Write::write_fmt(
+                &mut log,
+                format_args!("line {i}: value={} status=ok 🙂\n", i * 7),
+            )
+            .unwrap();
+        }
+        let inputs = [
+            String::new(),
+            "\n".to_string(),
+            "\n\n\nleading blanks\nthen text\n".to_string(),
+            "a\n\n\nb\r\nc\r\n".to_string(),
+            "one single long line without any break ".repeat(40),
+            log,
+        ];
+        for text in &inputs {
+            for limit in [0, 1, 2, 5, 17, 64, 255, 1_000, 100_000] {
+                assert_eq!(
+                    truncate_to_token_budget(text, limit),
+                    linear_reference(text, limit),
+                    "limit {limit} on {:?}",
+                    text.get(..40).unwrap_or(text)
+                );
+            }
+        }
+    }
 
     #[test]
     fn passthrough_when_within_budget() {

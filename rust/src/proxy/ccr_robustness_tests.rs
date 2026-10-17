@@ -70,6 +70,37 @@ fn persist_is_idempotent_content_addressed_and_prefix_segregated() {
     }
 }
 
+/// Re-persisting identical content keeps the published file (no atomic replace,
+/// no fsync) but refreshes its mtime, so the age-based tee cleanup still treats
+/// a handle the proxy re-emits every turn as live.
+#[cfg(unix)]
+#[test]
+fn repersisting_identical_content_keeps_the_file_and_refreshes_its_age() {
+    use std::os::unix::fs::MetadataExt;
+    let _lock = test_env_lock();
+    let body = big("re-persisted every proxied turn");
+    let handle = persist(&body).unwrap();
+    let path = std::path::PathBuf::from(&handle);
+    let stale = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+    std::fs::File::options()
+        .write(true)
+        .open(&path)
+        .unwrap()
+        .set_modified(stale)
+        .unwrap();
+    let before = std::fs::metadata(&path).unwrap();
+
+    assert_eq!(persist(&body).unwrap(), handle);
+    let after = std::fs::metadata(&path).unwrap();
+    assert_eq!(
+        before.ino(),
+        after.ino(),
+        "identical bytes must not be rewritten"
+    );
+    assert!(after.modified().unwrap() > before.modified().unwrap());
+    assert!(read_tee(&handle).is_some(), "the kept file still resolves");
+}
+
 /// Gap 3 — once the tee file is gone (24h TTL cleanup), retrieval degrades to a
 /// graceful not-found message; it never panics and never serves stale content.
 #[test]

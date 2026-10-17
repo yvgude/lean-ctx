@@ -119,6 +119,21 @@ pub(crate) fn write(path: &Path, text: &str) -> Option<()> {
         }
         std::fs::create_dir_all(&directory).ok()?;
         store_path(path)?;
+        // Content-addressed: the proxy re-persists every pruned message on
+        // every turn, and an atomic replace costs two fsyncs each time. When
+        // the published bytes already match, only refresh the mtime so the
+        // age-based tee cleanup still sees the entry as live.
+        // A symlink never takes this path: the atomic replace below swaps it
+        // for a regular file instead of following it.
+        if std::fs::symlink_metadata(path).is_ok_and(|meta| meta.file_type().is_file())
+            && std::fs::read(path).is_ok_and(|existing| existing == redacted.as_bytes())
+        {
+            return std::fs::File::options()
+                .write(true)
+                .open(path)
+                .and_then(|file| file.set_modified(std::time::SystemTime::now()))
+                .ok();
+        }
         #[cfg(unix)]
         let permissions = {
             use std::os::unix::fs::PermissionsExt;
