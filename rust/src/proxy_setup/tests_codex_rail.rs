@@ -8,7 +8,7 @@
 
 use super::*;
 use crate::proxy_setup::tests::{CODEX_AUTH_API_KEY, CODEX_AUTH_CHATGPT, pin_codex_home};
-use crate::proxy_setup::util::OPENAI_OMITTED_NOTE;
+use crate::proxy_setup::util::{OPENAI_OMITTED_NOTE, is_lean_ctx_url_on};
 
 /// #1685: the shell export used to pin `OPENAI_BASE_URL` to the `/v1` rail for
 /// everyone, including Codex ChatGPT-subscription logins — for whom
@@ -23,21 +23,91 @@ fn shell_export_omits_openai_for_a_chatgpt_login() {
     }
     let _codex = pin_codex_home(CODEX_AUTH_CHATGPT);
     let home = tempfile::tempdir().unwrap();
-    std::fs::write(home.path().join(".zshrc"), "# user rc\n").unwrap();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
+    let other_port = (20000..u16::MAX)
+        .find(|p| !is_lean_ctx_url_on(&format!("http://127.0.0.1:{p}/v1"), Some(port)))
+        .unwrap();
+    let stale = [
+        format!("export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v1\""),
+        format!("export OPENAI_BASE_URL='http://localhost:{port}/v1/'"),
+    ];
+    let preserved = [
+        format!("# export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v1\""),
+        format!("export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v1\"; echo user"),
+        format!("export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v1\" # user"),
+        "export OPENAI_BASE_URL=\"https://gateway.example/v1\"".to_string(),
+        format!("export OPENAI_BASE_URL=\"http://127.0.0.1:{other_port}/v1\""),
+        format!("export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v1/custom\""),
+        format!("export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v1/../v1\""),
+        format!("export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v%31\""),
+        format!("export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v1?user=1\""),
+        format!("export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v1#user\""),
+        format!("export OTHER_BASE_URL=\"http://127.0.0.1:{port}/v1\""),
+        "# user spacing  ".to_string(),
+    ];
+    let shell_data = format!(
+        "helper() {{\n{}\n}}\ncat <<'LEANCTX_SAMPLE'\n{}\nLEANCTX_SAMPLE\nmessage='sample\n{}\nend'\nif true; then\n{}\nfi\n",
+        stale[0], stale[0], stale[0], stale[0]
+    );
+    let seed = format!(
+        "# user rc\n{}\n{}\n{shell_data}",
+        stale.join("\n"),
+        preserved.join("\n")
+    );
+    for name in [".zshrc", ".bashrc"] {
+        std::fs::write(home.path().join(name), &seed).unwrap();
+    }
 
     install_shell_exports(home.path(), port, true, false);
 
     let rc = std::fs::read_to_string(home.path().join(".zshrc")).unwrap();
-    assert!(
-        !rc.contains("export OPENAI_BASE_URL="),
-        "a ChatGPT subscription login must not be pinned to the /v1 rail, got:\n{rc}"
-    );
+    assert!(rc.contains(&shell_data));
+    for old in &stale {
+        let count = rc.lines().filter(|line| *line == old).count();
+        let expected = if old == &stale[0] { 4 } else { 0 };
+        assert_eq!(
+            count,
+            expected + usize::from(!cfg!(feature = "tree-sitter"))
+        );
+    }
+    for line in preserved {
+        assert!(
+            rc.lines().any(|actual| actual == line),
+            "user line lost: {line}"
+        );
+    }
+    let managed = rc.split(PROXY_ENV_START).nth(1).unwrap();
+    assert!(!managed.contains("export OPENAI_BASE_URL="));
     assert!(
         rc.contains(OPENAI_OMITTED_NOTE),
         "the omission must be explained in the RC block, got:\n{rc}"
     );
+    assert_eq!(
+        std::fs::read_to_string(home.path().join(".bashrc")).unwrap(),
+        rc
+    );
+    install_shell_exports(home.path(), port, true, false);
+    for name in [".zshrc", ".bashrc"] {
+        assert_eq!(std::fs::read_to_string(home.path().join(name)).unwrap(), rc);
+    }
+    #[cfg(feature = "tree-sitter")]
+    for uncertain in [
+        format!("{PROXY_ENV_START}\n{}\n", stale[0]),
+        format!("{PROXY_ENV_START}\n{PROXY_ENV_END}\n{PROXY_ENV_START}\n{PROXY_ENV_END}\n"),
+        format!(
+            "cat <<'EXAMPLE'\n{PROXY_ENV_START}\n{}\n{PROXY_ENV_END}\nEXAMPLE\n",
+            stale[0]
+        ),
+        format!("message='unterminated\n{}\n", stale[0]),
+    ] {
+        std::fs::write(home.path().join(".zshrc"), &uncertain).unwrap();
+        install_shell_exports(home.path(), port, true, false);
+        assert_eq!(
+            std::fs::read_to_string(home.path().join(".zshrc")).unwrap(),
+            uncertain
+        );
+    }
 }
 
 /// The other half of the rule: API-key Codex is billed per token, so it belongs
@@ -47,13 +117,15 @@ fn shell_export_keeps_openai_for_an_api_key_login() {
     let _lock = crate::core::data_dir::test_env_lock();
     let _codex = pin_codex_home(CODEX_AUTH_API_KEY);
     let home = tempfile::tempdir().unwrap();
-    std::fs::write(home.path().join(".zshrc"), "# user rc\n").unwrap();
+    let legacy = "export OPENAI_BASE_URL=\"http://127.0.0.1:4444/v1\"";
+    std::fs::write(home.path().join(".zshrc"), format!("# user rc\n{legacy}\n")).unwrap();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
 
     install_shell_exports(home.path(), port, true, false);
 
     let rc = std::fs::read_to_string(home.path().join(".zshrc")).unwrap();
+    assert!(rc.lines().any(|line| line == legacy));
     assert!(
         rc.contains(&format!(
             "export OPENAI_BASE_URL=\"http://127.0.0.1:{port}/v1\""

@@ -115,6 +115,10 @@ fn release_proxy_port(port: u16, quiet: bool) -> bool {
 
 pub fn install(port: u16, quiet: bool) -> bool {
     let binary = find_binary();
+    install_with_binary(&binary, port, quiet)
+}
+
+pub(crate) fn install_with_binary(binary: &str, port: u16, quiet: bool) -> bool {
     if binary.is_empty() {
         if !quiet {
             tracing::error!("Cannot find lean-ctx binary for autostart");
@@ -124,17 +128,17 @@ pub fn install(port: u16, quiet: bool) -> bool {
 
     #[cfg(target_os = "macos")]
     {
-        install_launchagent(&binary, port, quiet)
+        install_launchagent(binary, port, quiet)
     }
 
     #[cfg(target_os = "linux")]
     {
-        install_systemd(&binary, port, quiet)
+        install_systemd(binary, port, quiet)
     }
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        let _ = (&binary, quiet);
+        let _ = (binary, quiet);
         println!("  Autostart not supported on this platform");
         println!("  Run manually: lean-ctx proxy start --port={port}");
         false

@@ -43,6 +43,10 @@ pub fn service_file_path() -> Option<std::path::PathBuf> {
 
 pub fn install(quiet: bool) {
     let binary = crate::proxy_autostart::find_binary();
+    install_with_binary(&binary, quiet);
+}
+
+pub(crate) fn install_with_binary(binary: &str, quiet: bool) {
     if binary.is_empty() {
         if !quiet {
             tracing::error!("Cannot find lean-ctx binary for daemon autostart");
@@ -51,14 +55,14 @@ pub fn install(quiet: bool) {
     }
 
     #[cfg(target_os = "macos")]
-    install_launchagent(&binary, quiet);
+    install_launchagent(binary, quiet);
 
     #[cfg(target_os = "linux")]
-    install_systemd(&binary, quiet);
+    install_systemd(binary, quiet);
 
     #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
-        let _ = (&binary, quiet);
+        let _ = (binary, quiet);
         println!("  Autostart not supported on this platform");
         println!("  Run manually: lean-ctx serve -d");
     }

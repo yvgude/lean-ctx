@@ -278,9 +278,18 @@ fn shell_export_omits_anthropic_without_key() {
     // otherwise this test's OpenAI assertion would track the developer's login.
     let _codex = pin_codex_home(CODEX_AUTH_API_KEY);
     let home = tempfile::tempdir().unwrap();
-    std::fs::write(home.path().join(".zshrc"), "# user rc\n").unwrap();
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
+    let stale = [
+        format!("export ANTHROPIC_BASE_URL=\"http://127.0.0.1:{port}\""),
+        format!("export ANTHROPIC_BASE_URL='http://localhost:{port}/'"),
+    ];
+    let custom = format!("export ANTHROPIC_BASE_URL=\"http://127.0.0.1:{port}/custom\"");
+    std::fs::write(
+        home.path().join(".zshrc"),
+        format!("# user rc\n{}\n{custom}\n", stale.join("\n")),
+    )
+    .unwrap();
 
     install_shell_exports(home.path(), port, true, false);
 
@@ -297,13 +306,23 @@ fn shell_export_omits_anthropic_without_key() {
         )),
         "Gemini export must remain WITHOUT /v1 (SDK appends /v1beta itself)"
     );
-    assert!(
-        !rc.contains("export ANTHROPIC_BASE_URL="),
-        "ANTHROPIC export must be omitted in subscription mode"
-    );
+    for old in &stale {
+        assert_eq!(
+            rc.lines().any(|line| line == old),
+            !cfg!(feature = "tree-sitter")
+        );
+    }
+    assert!(rc.lines().any(|line| line == custom));
+    let managed = rc.split(PROXY_ENV_START).nth(1).unwrap();
+    assert!(!managed.contains("export ANTHROPIC_BASE_URL="));
     assert!(
         rc.contains(ANTHROPIC_OMITTED_NOTE),
         "omission must be explained in the RC block"
+    );
+    install_shell_exports(home.path(), port, true, false);
+    assert_eq!(
+        std::fs::read_to_string(home.path().join(".zshrc")).unwrap(),
+        rc
     );
 }
 
@@ -807,7 +826,8 @@ fn shell_export_includes_anthropic_with_key() {
         return;
     }
     let home = tempfile::tempdir().unwrap();
-    std::fs::write(home.path().join(".zshrc"), "# user rc\n").unwrap();
+    let legacy = "export ANTHROPIC_BASE_URL=\"http://127.0.0.1:4444\"";
+    std::fs::write(home.path().join(".zshrc"), format!("# user rc\n{legacy}\n")).unwrap();
     write_claude_settings(home.path(), r#"{"env": {"ANTHROPIC_API_KEY": "sk-test"}}"#);
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let port = listener.local_addr().unwrap().port();
@@ -815,6 +835,7 @@ fn shell_export_includes_anthropic_with_key() {
     install_shell_exports(home.path(), port, true, false);
 
     let rc = std::fs::read_to_string(home.path().join(".zshrc")).unwrap();
+    assert!(rc.lines().any(|line| line == legacy));
     assert!(
         rc.contains(&format!(
             "export ANTHROPIC_BASE_URL=\"http://127.0.0.1:{port}\""

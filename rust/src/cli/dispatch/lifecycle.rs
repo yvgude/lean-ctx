@@ -266,19 +266,26 @@ pub(super) fn cmd_dev_install(args: &[String]) {
     eprintln!("  ✓ dev-install complete: {version}");
 
     eprintln!("  Re-enabling autostart…");
+    // The installer may still be running from Cargo's mutable target directory.
+    // Services must execute the atomic copy we just installed instead.
+    let installed_binary = install_path.to_string_lossy();
     // #356: re-install (not just bootstrap) so the LaunchAgent plists are
     // regenerated with the current deny-~/Documents seatbelt wrapper — a plain
     // restart would keep the previous, unwrapped plist.
     if crate::proxy_autostart::is_installed() {
-        crate::proxy_autostart::install(crate::proxy_setup::default_port(), true);
+        crate::proxy_autostart::install_with_binary(
+            &installed_binary,
+            crate::proxy_setup::default_port(),
+            true,
+        );
     }
 
     if crate::daemon_autostart::is_installed() {
-        crate::daemon_autostart::install(true);
+        crate::daemon_autostart::install_with_binary(&installed_binary, true);
         eprintln!("  ✓ Daemon restarted via autostart.");
     } else {
         eprintln!("  Starting daemon…");
-        match crate::daemon::start_daemon(&[]) {
+        match crate::daemon::start_daemon_with_binary(&[], Some(&install_path)) {
             Ok(()) => {}
             Err(e) => eprintln!("  Warning: daemon start: {e} (will be started by editor)"),
         }

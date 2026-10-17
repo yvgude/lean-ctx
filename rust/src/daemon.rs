@@ -92,6 +92,14 @@ fn acquire_start_lock() -> Option<fs::File> {
 }
 
 pub fn start_daemon(args: &[String]) -> Result<()> {
+    start_daemon_with_binary(args, None)
+}
+
+/// Source installs launch the verified installed copy, preserving the caller's CWD.
+pub(crate) fn start_daemon_with_binary(
+    args: &[String],
+    binary: Option<&std::path::Path>,
+) -> Result<()> {
     // Held for the whole critical section; released when `_start_lock` drops.
     let _start_lock = acquire_start_lock();
 
@@ -106,8 +114,10 @@ pub fn start_daemon(args: &[String]) -> Result<()> {
         crate::config_io::cleanup_legacy_backups(&data_dir);
     }
 
-    let exe_str = crate::core::portable_binary::resolve_portable_binary();
-    let exe = std::path::PathBuf::from(&exe_str);
+    let exe = binary.map_or_else(
+        || std::path::PathBuf::from(crate::core::portable_binary::resolve_portable_binary()),
+        std::path::Path::to_path_buf,
+    );
 
     let mut cmd_args = vec!["serve".to_string()];
     for arg in args {
