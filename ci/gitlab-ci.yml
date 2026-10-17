@@ -23,6 +23,16 @@ v4-runtime:
   image: rust:1.99.1-bookworm
   timeout: 3 hours
   resource_group: v4-rust-validation
+  cache:
+    key:
+      prefix: "v4-cargo-${CI_PROJECT_ID}-${CI_COMMIT_REF_SLUG}-${CI_JOB_NAME}-runner${CI_RUNNER_ID}"
+      files:
+        - rust/Cargo.lock
+    paths:
+      - rust/target/debug/
+      - rust/target/ci-cargo-home/registry/
+      - rust/target/ci-cargo-home/git/
+    policy: pull-push
   variables:
     # A single optimized lib-test rustc used about 9 GiB in pipeline 5314.
     # Serialize compilation within the 16-GiB cgroup; keep both full suites.
@@ -50,7 +60,7 @@ v4-runtime:
     - |
       # GitLab's helper can leave a root-owned checkout with mode 0777/0666.
       # Restrict this checkout only; preserve the job's writable output roots.
-      for ci_source_path in "$CI_PROJECT_DIR" "$CI_PROJECT_DIR/rust" "$CI_PROJECT_DIR/rust/target" "$CI_PROJECT_DIR/runtime-evidence"; do
+      for ci_source_path in "$CI_PROJECT_DIR" "$CI_PROJECT_DIR/rust" "$CI_PROJECT_DIR/rust/target" "$CI_PROJECT_DIR/rust/target/debug" "$CI_PROJECT_DIR/rust/target/ci-cargo-home" "$CI_PROJECT_DIR/rust/target/ci-cargo-home/registry" "$CI_PROJECT_DIR/rust/target/ci-cargo-home/git" "$CI_PROJECT_DIR/runtime-evidence"; do
         if test -L "$ci_source_path"; then echo "unexpected CI source/output symlink" >&2; exit 1; fi
       done
       find "$CI_PROJECT_DIR" \
@@ -58,11 +68,22 @@ v4-runtime:
         \( -type d -o -type f \) -exec chmod go-w {} +
     - install -d -m 0755 -o ci-runner -g ci-runner "$CI_PROJECT_DIR/rust/target" "$CI_PROJECT_DIR/runtime-evidence"
     - install -d -m 0700 -o ci-runner -g ci-runner "$CI_PROJECT_DIR/rust/target/ci-home" "$CI_PROJECT_DIR/rust/target/ci-cargo-home"
+    - |
+      # Restored cache files belong to the helper user. Restrict ownership
+      # changes to the validated output roots; never follow cached symlinks.
+      for ci_cache_path in "$CI_PROJECT_DIR/rust/target/debug" "$CI_PROJECT_DIR/rust/target/ci-cargo-home/registry" "$CI_PROJECT_DIR/rust/target/ci-cargo-home/git"; do
+        if test -d "$ci_cache_path"; then
+          chown -hR -P -- ci-runner:ci-runner "$ci_cache_path"
+        fi
+      done
   script:
     - set -o pipefail
     - |
       runuser --user ci-runner --preserve-environment -- /bin/bash -c '
         set -euo pipefail
+        # tempfile uses platform-default directory modes. Keep fixtures private
+        # even when the runner inherits a group-writable checkout umask.
+        umask 077
         export HOME="$CI_PROJECT_DIR/rust/target/ci-home"
         export CARGO_HOME="$CI_PROJECT_DIR/rust/target/ci-cargo-home"
         export CARGO_TARGET_DIR="$CI_PROJECT_DIR/rust/target"

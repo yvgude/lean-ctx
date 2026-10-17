@@ -6,6 +6,7 @@
 #   ./install.sh --download     # download pre-built binary (no Rust needed)
 #   ./install.sh --cuda         # download Linux x86_64 CUDA-enabled binary
 #   ./install.sh --build-only   # build only, don't install
+#   ./install.sh --release      # source install with the production release profile
 #   ./install.sh --uninstall    # fully remove lean-ctx (processes, configs, autostart, data, binary)
 #
 # One-liner (no Rust required):
@@ -250,13 +251,18 @@ install_from_source() {
   fi
 
   build_only="${1:-}"
+  source_profile="${2:-dev-fast}"
 
   echo "Mode: build from source"
   echo ""
-  echo "Building lean-ctx (release)..."
+  echo "Building lean-ctx ($source_profile)..."
 
   if [ -d "$RUST_DIR" ]; then
-    (cd "$RUST_DIR" && cargo build --release)
+    if [ "$source_profile" = "dev-fast" ]; then
+      (cd "$RUST_DIR" && cargo fast)
+    else
+      (cd "$RUST_DIR" && cargo build --locked --release --timings)
+    fi
     # Honour CARGO_TARGET_DIR / a config.toml [build] target-dir override
     # (GH #671): with a hardcoded ./target, a stale binary from an earlier
     # default-layout build gets linked instead of the one just built.
@@ -266,12 +272,10 @@ install_from_source() {
         | head -1 \
         | sed -E 's/^"target_directory":"(.*)"$/\1/' \
         | sed 's/\\\\/\//g' || true)
-    binary="${target_dir:-$RUST_DIR/target}/release/lean-ctx"
+    binary="${target_dir:-$RUST_DIR/target}/$source_profile/lean-ctx"
   else
-    cargo install lean-ctx
-    echo ""
-    echo "Installed via cargo install."
-    return
+    echo "Error: source builds require the lean-ctx checkout. Use --download for a pre-built binary." >&2
+    exit 1
   fi
 
   if [ ! -x "$binary" ]; then
@@ -287,11 +291,17 @@ install_from_source() {
   fi
 
   mkdir -p "$INSTALL_DIR"
-  tmp_link="$INSTALL_DIR/.lean-ctx.link.$$"
-  ln -sf "$binary" "$tmp_link"
+  tmp_bin="$INSTALL_DIR/.lean-ctx.new.$$"
+  trap '[ -n "${tmp_bin:-}" ] && rm -f "$tmp_bin" 2>/dev/null || true' EXIT
+  install -m755 "$binary" "$tmp_bin"
+  if [ "$(uname -s)" = "Darwin" ]; then
+    xattr -cr "$tmp_bin" 2>/dev/null || true
+    codesign --force --sign - "$tmp_bin" 2>/dev/null || true
+  fi
   stop_running_instance
-  mv -f "$tmp_link" "$INSTALL_DIR/lean-ctx"
-  echo "  Linked: $INSTALL_DIR/lean-ctx -> $binary"
+  mv -f "$tmp_bin" "$INSTALL_DIR/lean-ctx"
+  tmp_bin=""
+  echo "  Installed: $INSTALL_DIR/lean-ctx"
 
   finish
 }
@@ -341,15 +351,26 @@ uninstall() {
 case "${1:-}" in
   --download)    install_download ;;
   --cuda|--gpu)  INSTALL_FLAVOR="cuda"; install_download ;;
-  --build-only)  install_from_source --build-only ;;
+  --build-only)
+    case "$#:${2:-}" in
+      1:) install_from_source --build-only ;;
+      2:--release) install_from_source --build-only release ;;
+      *) echo "Usage: $0 --build-only [--release]" >&2; exit 2 ;;
+    esac
+    ;;
+  --release)
+    [ "$#" = 1 ] || { echo "Usage: $0 --release" >&2; exit 2; }
+    install_from_source "" release
+    ;;
   --uninstall)   shift; uninstall "$@" ;;
   --help|-h)
-    echo "Usage: $0 [--download|--cuda|--build-only|--uninstall|--help]"
+    echo "Usage: $0 [--download|--cuda|--build-only [--release]|--release|--uninstall|--help]"
     echo ""
     echo "  (no args)     Download pre-built binary (builds from source if run inside the lean-ctx repo)"
     echo "  --download    Download pre-built binary (no Rust needed)"
     echo "  --cuda        Download Linux x86_64 CUDA-enabled binary"
-    echo "  --build-only  Build only, don't install"
+    echo "  --build-only  Fast incremental source build only, don't install"
+    echo "  --release     Source install with the production release profile"
     echo "  --uninstall   Fully remove lean-ctx (processes, configs, autostart, data, binary)"
     echo ""
     echo "Uninstall one-liner:"
@@ -359,11 +380,12 @@ case "${1:-}" in
     echo "  LEAN_CTX_INSTALL_DIR  Custom install directory (default: ~/.local/bin)"
     echo "  LEAN_CTX_INSTALL_FLAVOR  Binary flavor: cpu or cuda (default: cpu)"
     ;;
-  *)
+  "")
     if [ -d "$RUST_DIR" ]; then
       install_from_source
     else
       install_download
     fi
     ;;
+  *) echo "Error: unknown option '$1'; use --help" >&2; exit 2 ;;
 esac

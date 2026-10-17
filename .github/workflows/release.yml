@@ -11,6 +11,9 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_BUILD_JOBS: "3"
+
 jobs:
   sdk-gate:
     # GL #395: an engine release must never ship while a first-party SDK
@@ -194,6 +197,11 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
+        with:
+          workspaces: rust -> target
+          key: release-${{ matrix.artifact || matrix.target }}
+
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
           python-version: "3.11"
@@ -273,11 +281,18 @@ jobs:
         id: jemalloc
         uses: ./.github/actions/windows-jemalloc
 
+      # These tests run on the host, not matrix.target. The musl and CUDA
+      # rows repeat the GNU host suite; their target-specific builds still run.
       - name: Run tests
-        if: matrix.cross != true
+        if: >-
+          matrix.cross != true &&
+          matrix.target != 'x86_64-unknown-linux-musl' &&
+          matrix.target != 'aarch64-unknown-linux-musl' &&
+          matrix.artifact != 'x86_64-unknown-linux-gnu-cuda'
         working-directory: rust
         shell: bash
         run: |
+          umask 077
           if [[ "${{ matrix.jemalloc }}" == "true" ]]; then
             JEMALLOC_OVERRIDE="${{ steps.jemalloc.outputs.jemalloc-override }}" \
               CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }}" \

@@ -27,9 +27,13 @@ see the [MCP tool inventory](reference/generated/mcp-tools.md) and
 Build and test without stopping the installed Runtime:
 
 ```bash
-cd rust && cargo build --release
+cd rust && cargo check --locked
+cargo fast
 cargo test --lib
 cargo clippy --all-features -- -D warnings
 cargo fmt --check
 lean-ctx dev-install
 ```
+
+Run affected tests while editing and the full quality gate on the final diff.
+Release artifacts use the production `--release` profile.

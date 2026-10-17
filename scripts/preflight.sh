@@ -39,6 +39,8 @@
 #   - Test job (Windows) compiles for x86_64-pc-windows-gnu
 
 set -o pipefail
+# Permission-sensitive tempfile fixtures must not inherit a shared-shell umask.
+umask 077
 
 LEVEL="${1:-fast}"
 case "$LEVEL" in

@@ -141,7 +141,7 @@ the installed runtime:
 ```bash
 git pull
 cd rust
-cargo build --release
+cargo build --profile dev-fast --config build.incremental=true --timings
 ```
 
 After a successful build, perform the atomic development install:
@@ -150,8 +150,9 @@ After a successful build, perform the atomic development install:
 lean-ctx dev-install
 ```
 
-`dev-install` builds the release binary, installs it atomically, and applies
-macOS ad-hoc signing. It is not the standard release-channel updater; use
+`dev-install` builds the incremental development binary, installs it atomically,
+and applies macOS ad-hoc signing. Use `dev-install --release` to select the
+production release profile. It is not the standard release-channel updater; use
 `lean-ctx update` for production clients.
 
 ### 5. Upgrade an enterprise gateway

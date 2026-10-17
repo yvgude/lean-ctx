@@ -119,9 +119,15 @@ run_step "cargo fmt --check" "Run 'cargo fmt' first." \
 run_step "clippy (production)" "Fix warnings before committing." \
     cargo clippy --lib --bins --examples -- -D warnings -A clippy::too_many_lines
 
-# Test code: unwrap() is idiomatic in tests — allow it
+# Test code: unwrap() and is_empty() assertions are intentional test idioms.
+test_clippy_args=(-A clippy::too_many_lines -A clippy::unwrap_used)
+# This pedantic style lint was added in Clippy 1.98. Detect it so older toolchains
+# do not fail on an unknown lint; keep the production check above strict.
+if clippy-driver -W help 2>/dev/null | grep -F 'clippy::assert-is-empty' >/dev/null; then
+    test_clippy_args+=(-A clippy::assert_is_empty)
+fi
 run_step "clippy (tests)" "Fix warnings before committing." \
-    cargo clippy --tests -- -D warnings -A clippy::too_many_lines -A clippy::unwrap_used
+    cargo clippy --tests -- -D warnings "${test_clippy_args[@]}"
 
 # Generated reference docs must match the tool/config definitions —
 # the CI Documentation job runs the same check and fails otherwise.

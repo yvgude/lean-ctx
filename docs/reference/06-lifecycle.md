@@ -140,15 +140,19 @@ For troubleshooting specifically:
 ```bash
 lean-ctx stop          # stop ALL lean-ctx processes (daemon, proxy, orphans)
 lean-ctx restart       # restart the daemon (applies config.toml changes)
-lean-ctx dev-install   # build release + atomic install + restart (dev only)
+lean-ctx dev-install           # incremental dev-fast build + atomic install + restart
+lean-ctx dev-install --release # production release profile + atomic install + restart
 ```
 
-> **`dev-install` builds from source** (`cargo build --release`) and is meant for
+> **`dev-install` builds from source** (`cargo build --profile dev-fast`) and is meant for
 > **contributors** hacking on lean-ctx itself. The first build compiles the whole
 > dependency tree and can take **several minutes** — the live cargo output is
 > normal progress, not a hang. If you just want the latest release, use
 > **`lean-ctx update`** (§1) instead: it downloads a prebuilt binary in seconds
 > and needs no toolchain.
+> The default profile skips LTO and enables incremental compilation; use
+> `--release` for the production build settings. Both modes write Cargo timings
+> and finish building before the short atomic stop/install/restart sequence.
 
 > Important (macOS): the proxy runs as a LaunchAgent with `KeepAlive=true`. A
 > plain `kill`/`pkill` will be respawned. `lean-ctx stop` unloads the LaunchAgent

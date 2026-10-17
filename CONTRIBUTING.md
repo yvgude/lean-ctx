@@ -39,9 +39,38 @@ touching the tool/CLI surface. See `specs/README.md`.
 git clone https://github.com/yvgude/lean-ctx.git
 cd lean-ctx/rust
 
-cargo build
-cargo test
+cargo check --locked
+cargo fast
+cargo test --lib
 ```
+
+### Fast development feedback
+
+Use `cargo check` and the affected tests while editing. Before committing, run
+the required quality gates below. For a source install, `lean-ctx dev-install`
+uses the optimized `dev-fast` profile: no LTO, 16 codegen units, incremental
+compilation and a Cargo timing report. `lean-ctx dev-install --release` keeps
+the production release settings; published artifacts always use that profile.
+
+To build without installing or restarting the runtime:
+
+```bash
+cargo fast
+```
+
+From the repository root, `make check` and `make build` run the same check and
+fast build. `make dev`, `make install`, and `./install.sh` use fast source builds;
+`make install-release` or `./install.sh --release` selects production settings.
+`./install.sh --build-only [--release]` builds without touching the installation.
+
+The command-line configuration enables incremental builds even if your global
+Cargo configuration disables them for CI. Prefer this to `CARGO_INCREMENTAL=1`
+with sccache: that environment variable is rejected by sccache. Incremental
+workspace compilations bypass its cache, while dependency compiles can still
+be cached. Keep toolchain, features, RUSTFLAGS and target directory stable
+between comparable runs; run a warm build and a small-edit rebuild separately.
+Cargo timings measure compilation, not test execution or time waiting for a
+machine-wide build slot. Measure those separately before claiming a speedup.
 
 ### Quality bar (required)
 
@@ -49,8 +78,15 @@ cargo test
 cargo fmt --check
 cargo clippy --all-targets --all-features -- -D warnings
 cargo test --all-features
-cargo test --release
 ```
+
+Run these gates on the final diff. During editing, use `cargo check` and the
+affected tests. Release validation also runs `cargo test --release`; it belongs
+to the release flow rather than every development build.
+
+On Unix, run direct tests as `(umask 077; cargo test --lib --locked)` to keep
+temporary fixtures private under shared-shell defaults. Make, preflight and CI
+configure this in their own subprocesses.
 
 ### Pre-push gate (CI parity)
 
@@ -73,9 +109,9 @@ crypto build, tree-sitter grammars, …), so a debug build is larger than the Ru
 source alone suggests. A couple of things worth knowing so it doesn't surprise
 your disk:
 
-- **Each `git worktree` gets its own `target/`.** Keep several PR checkouts open
-  and Cargo compiles the full native tree *per worktree*, sharing nothing
-  between them.
+- **Use one shared `CARGO_TARGET_DIR` per machine.** Cargo's build lock queues
+  overlapping worktree builds and retains compiled native dependencies. Keep
+  toolchain, feature flags and RUSTFLAGS stable to reuse the cache.
 - **`target/debug` never garbage-collects.** Stale incremental units and old
   dependency versions accumulate, so one heavily-rebuilt `target/` can reach
   **tens of GB** (vs. ~2 GB for a clean build).
@@ -83,8 +119,8 @@ your disk:
 ### A shared compilation cache (recommended)
 
 [`sccache`](https://github.com/mozilla/sccache) deduplicates dependency compiles
-across worktrees and branches, without the build-lock contention a shared
-`CARGO_TARGET_DIR` introduces:
+across worktrees and branches. It complements the shared target directory for
+non-incremental dependency compilations:
 
 ```bash
 cargo install sccache
@@ -104,15 +140,12 @@ cargo install cargo-sweep
 cargo sweep --time 7      # remove artifacts unused for > 7 days
 ```
 
-### Reclaim space fast
+### Cache maintenance
 
-`target/` is always safe to delete — it's pure build output and regenerates on
-the next build:
-
-```bash
-cargo clean               # this checkout's target/
-du -sh target             # check current size
-```
+Prune only while no builds or tests use the shared target directory. Avoid
+`cargo clean` during development: it discards the cache for every worktree and
+forces dependency recompilation. Use the age-based pruning above when space
+needs reclaiming.
 
 Debug info is the bulk of that size: this repo sets
 `[profile.dev] debug = "line-tables-only"`, which keeps `file:line` in panics and

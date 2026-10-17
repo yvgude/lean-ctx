@@ -753,7 +753,7 @@ pub fn run() {
                 return;
             }
             "dev-install" => {
-                cmd_dev_install();
+                cmd_dev_install(&rest);
                 return;
             }
             "codesign-setup" => {

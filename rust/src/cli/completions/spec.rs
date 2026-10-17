@@ -501,9 +501,24 @@ pub static COMMAND_TREE: &[CommandNode] = &[
     CommandNode {
         name: "dev-install",
         aliases: &[],
-        description: "Development install (stop+build+install+restart)",
+        description: "Fast development build + atomic install + restart",
         subcommands: &[],
-        flags: &[],
+        flags: &[
+            FlagSpec {
+                long: "--fast",
+                short: None,
+                description: "Incremental development build (default)",
+                takes_value: false,
+                value_kind: None,
+            },
+            FlagSpec {
+                long: "--release",
+                short: None,
+                description: "Use the production release profile",
+                takes_value: false,
+                value_kind: None,
+            },
+        ],
         positional: None,
         hidden: false,
     },

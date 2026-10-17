@@ -20,6 +20,7 @@ permissions:
 
 env:
   CARGO_TERM_COLOR: always
+  CARGO_BUILD_JOBS: "3"
   RUSTFLAGS: -Dwarnings -Aunreachable-pub
   # CI must be hermetic: never let tests download the embedding model
   # (~90 MB) in the background. Without this, the #551 auto-activation can
@@ -193,6 +194,10 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
 
+      - name: Verify build-script freshness and source guard
+        if: runner.os == 'Linux'
+        run: python3 -m unittest discover -s tests/build -v
+
       # ---- Windows: MSYS2 + GNU target + jemalloc -------------------------
       # The default MSVC toolchain can't build jemalloc (autotools mismatch).
       # We switch to the GNU target with MSYS2/MinGW and pre-build jemalloc.
@@ -282,6 +287,7 @@ jobs:
         working-directory: rust
         shell: bash
         run: |
+          umask 077
           if [[ "${{ runner.os }}" == "macOS" ]]; then
             CARGO="${CARGO_HOME}/bin/cargo"
           else
@@ -681,6 +687,7 @@ jobs:
         # test run, not to each test (0.35 did). 180 s cut the serial lib suite
         # off after ~1,450 of ~13,000 tests; an hour leaves room for all of it.
         run: |
+          umask 077
           cargo tarpaulin --engine llvm --out xml --skip-clean --all-features --lib --timeout 3600 \
             --exclude-files 'src/cli/*' --exclude-files 'src/main.rs' \
             -- --test-threads=1

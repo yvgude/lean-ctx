@@ -76,9 +76,18 @@ lean-ctx ls src/              # directory map
 
 When working on lean-ctx itself:
 
-1. **Build without stopping the installed runtime**: `cd rust && cargo build --release`
-2. **Test without stopping the installed runtime**: `cargo test --lib` + `cargo clippy --all-features -- -D warnings` + `cargo fmt --check`
-3. **Install**: `lean-ctx dev-install` (build→atomic stop/install→restart)
+1. **Iterate**: `cd rust && cargo check --locked`, then the affected tests.
+2. **Build a runnable development binary**: `cargo fast` (incremental, no LTO).
+3. **Verify the final diff once**: `cargo test --lib` + `cargo clippy --all-features -- -D warnings` + `cargo fmt --check`; repeat when changes or failures justify it.
+4. **Install**: `lean-ctx dev-install` or `make dev` (build→atomic stop/install→restart).
+
+Published artifacts and release rehearsals keep the production `--release`
+profile. Do not use `cargo clean` in the normal edit/build loop. Use one shared
+target directory and the configured job budget across worktrees.
+
+Run direct Unix test commands in a subprocess with `umask 077` so temporary
+fixtures stay private; Make, preflight and CI configure this without changing
+the login shell's umask.
 
 Do not run `lean-ctx stop` before builds or tests. It unloads the user's global
 proxy and daemon even though Cargo writes only to the worktree's target directory.

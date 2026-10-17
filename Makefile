@@ -1,4 +1,4 @@
-.PHONY: setup-hooks install dev test preflight preflight-fast enterprise-ci-check help
+.PHONY: setup-hooks install install-release build check dev test preflight preflight-fast enterprise-ci-check help
 
 ENTERPRISE_DIR ?= ../lean-ctx-enterprise
 
@@ -10,24 +10,24 @@ setup-hooks: ## Configure git to use .githooks/ for hooks
 
 # ── Build & Install ──────────────────────────────────────
 
-install: ## Build release + install to ~/.local/bin
-	cd rust && cargo install --path . --force --locked --root "$$HOME/.local"
-	@echo "Installed: $$(lean-ctx --version)"
+install: dev ## Fast source build + atomic install + restart
 
-dev: ## Quick debug build + copy to ~/.local/bin
-	cd rust && cargo build
+install-release: ## Production release build + atomic install + restart
 	@mkdir -p "$$HOME/.local/bin"
-	@# rm before cp: overwriting an existing Mach-O in place invalidates the
-	@# ad-hoc code signature on Apple Silicon — the copied binary dies with
-	@# SIGKILL (exit 137) on every exec. Removing first gives the new file a
-	@# fresh identity; re-sign ad hoc for good measure where codesign exists.
-	rm -f "$$HOME/.local/bin/lean-ctx"
-	cp rust/target/debug/lean-ctx "$$HOME/.local/bin/lean-ctx"
-	@command -v codesign >/dev/null 2>&1 && codesign -f -s - "$$HOME/.local/bin/lean-ctx" 2>/dev/null || true
-	@echo "Dev installed: $$(lean-ctx --version)"
+	bash rust/dev-install.sh --release
+
+check: ## Type-check changes without linking a binary
+	cd rust && cargo check --locked
+
+build: ## Optimized incremental development build
+	cd rust && cargo fast
+
+dev: ## Fast source build + atomic install + restart
+	@mkdir -p "$$HOME/.local/bin"
+	bash rust/dev-install.sh
 
 test: ## Run all Rust tests + clippy
-	cd rust && cargo test && cargo clippy
+	umask 077; cd rust && cargo test --locked && cargo clippy --locked
 
 # ── CI-parity gate ───────────────────────────────────────
 # Mirrors .github/workflows/ci.yml so green-here => green-in-CI for the

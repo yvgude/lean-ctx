@@ -206,6 +206,7 @@ class = "public_trust_core"
 license = "apache"
 include = [
   ".claude-plugin/**",
+  ".cargo/config.toml",
   ".codex/**",
   ".cursor/**",
   ".github/**",

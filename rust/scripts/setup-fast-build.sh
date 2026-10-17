@@ -75,4 +75,4 @@ rustc-wrapper = "sccache"
 EOF
 
 echo "Wrote $CONFIG_FILE"
-echo "Try it: cargo clean && cargo build"
+echo "Try it: cargo fast (keep the existing cache)"

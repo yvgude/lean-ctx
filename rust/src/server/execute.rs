@@ -22,10 +22,23 @@ fn is_build_or_test_command(command: &str) -> bool {
         (tool == "cargo"
             && matches!(
                 pair[1],
-                "build" | "check" | "clippy" | "test" | "run" | "bench" | "install"
+                "build" | "check" | "clippy" | "test" | "run" | "bench" | "install" | "fast"
             ))
             || (matches!(tool, "npm" | "pnpm" | "yarn" | "bun")
                 && matches!(pair[1], "test" | "build" | "check"))
+            || (tool == "lean-ctx" && pair[1] == "dev-install")
+            || (matches!(tool, "make" | "gmake")
+                && matches!(
+                    pair[1],
+                    "build"
+                        | "check"
+                        | "dev"
+                        | "install"
+                        | "install-release"
+                        | "test"
+                        | "preflight"
+                        | "preflight-fast"
+                ))
     }) || tokens.windows(3).any(|triple| {
         matches!(triple[0], "npm" | "pnpm" | "yarn" | "bun")
             && triple[1] == "run"
@@ -34,7 +47,7 @@ fn is_build_or_test_command(command: &str) -> bool {
         std::path::Path::new(token)
             .file_name()
             .and_then(|name| name.to_str())
-            == Some("rustc")
+            .is_some_and(|name| matches!(name, "rustc" | "dev-install.sh" | "install.sh"))
     })
 }
 
@@ -671,6 +684,17 @@ mod tests {
     fn resource_broker_build_slot_classifier_is_precise() {
         for command in [
             "cargo test --lib",
+            "cargo fast",
+            "cd rust && cargo fast --features dev-tools",
+            "make dev",
+            "make build",
+            "make preflight-fast",
+            "make install-release",
+            "./install.sh --build-only",
+            "bash rust/dev-install.sh --fast",
+            "./rust/dev-install.sh --release",
+            "lean-ctx dev-install",
+            "/opt/bin/lean-ctx dev-install --fast",
             "cd rust && cargo clippy --all-features",
             "/opt/bin/cargo build --release",
             "npm test",
@@ -683,6 +707,8 @@ mod tests {
         for command in [
             "git status",
             "cargo metadata",
+            "make help",
+            "lean-ctx --version",
             "npm view lean-ctx",
             "rg cargo",
         ] {

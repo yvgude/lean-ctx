@@ -465,6 +465,16 @@ codegen-units = 1
 strip = true
 panic = "unwind"
 
+# Frequent source installs keep optimized runtime behavior without whole-program
+# LTO. dev-install enables incremental compilation even with a global CI default.
+[profile.dev-fast]
+inherits = "release"
+opt-level = 2
+lto = "off"
+codegen-units = 16
+incremental = true
+strip = false
+
 [target.'cfg(windows)'.dependencies]
 leanctx-native-storage = { path = "crates/leanctx-native-storage", version = "=0.1.0" }
 windows-sys = { version = "0.61", features = [
