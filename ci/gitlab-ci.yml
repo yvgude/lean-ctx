@@ -42,6 +42,11 @@ v4-runtime:
     CARGO_PROFILE_DEV_DEBUG: line-tables-only
     CARGO_PROFILE_TEST_DEBUG: line-tables-only
     PROPTEST_CASES: "64"
+    # Preserve ZIP compatibility; bound cache work within the four-CPU cgroup.
+    FF_USE_FASTZIP: "true"
+    CACHE_COMPRESSION_LEVEL: "fast"
+    FASTZIP_ARCHIVER_CONCURRENCY: "2"
+    FASTZIP_EXTRACTOR_CONCURRENCY: "2"
   before_script:
     - apt-get update -qq
     - apt-get install -y --no-install-recommends git ca-certificates python3 cmake clang pkg-config libssl-dev mold nodejs npm passwd util-linux

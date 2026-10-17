@@ -212,7 +212,7 @@ fn ensure_codex_observe_hooks(root: &mut serde_json::Value, observe_cmd: &str) -
     // Shell output can be arbitrarily large and is already observed by
     // ctx_shell/the MCP pipeline. Restrict Codex's PostToolUse observer to
     // native edits, where code-health and provenance capture add unique value.
-    const POST_TOOL_EDIT_MATCHER: &str = "Write|Edit|MultiEdit|StrReplace|str_replace_editor|edit_file|str_replace|replace_in_file|create_file|write_file";
+    const POST_TOOL_EDIT_MATCHER: &str = "Write|Edit|MultiEdit|StrReplace|str_replace_editor|edit_file|str_replace|replace_in_file|create_file|write_file|apply_patch";
     let observe_events = ["PostToolUse", "SessionStart", "SessionEnd"];
     for event in observe_events {
         let timeout_secs = if event == "SessionEnd" {
@@ -1148,7 +1148,7 @@ command = \"other\"
         assert_eq!(entries.len(), 1);
         assert_eq!(
             entries[0]["matcher"].as_str().unwrap(),
-            "Write|Edit|MultiEdit|StrReplace|str_replace_editor|edit_file|str_replace|replace_in_file|create_file|write_file"
+            "Write|Edit|MultiEdit|StrReplace|str_replace_editor|edit_file|str_replace|replace_in_file|create_file|write_file|apply_patch"
         );
         assert_eq!(entries[0]["hooks"][0]["timeout"].as_u64(), Some(4));
     }
@@ -1176,7 +1176,7 @@ command = \"other\"
         assert_eq!(
             entry["matcher"].as_str(),
             Some(
-                "Write|Edit|MultiEdit|StrReplace|str_replace_editor|edit_file|str_replace|replace_in_file|create_file|write_file"
+                "Write|Edit|MultiEdit|StrReplace|str_replace_editor|edit_file|str_replace|replace_in_file|create_file|write_file|apply_patch"
             )
         );
         assert_eq!(entry["hooks"][0]["timeout"].as_u64(), Some(4));

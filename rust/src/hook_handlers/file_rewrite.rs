@@ -53,6 +53,16 @@ pub(super) fn compute_rewrite() -> String {
         return build_dual_allow_output();
     };
 
+    // Native shell edits (`sed -i`, `>`, `tee`, `cp`/`mv`) never reach the MCP
+    // server's bounce tracker: report them through the edit beacon so a
+    // provisional correction of the file is cancelled as read-before-edit.
+    crate::core::bounce_tracker::note_host_shell_edits(
+        &cmd,
+        v.get("cwd")
+            .and_then(serde_json::Value::as_str)
+            .unwrap_or(""),
+    );
+
     // #1032: Cursor fires preToolUse twice. Dedup on a PID-independent key (tool +
     // command) so the second fire replays the decision instead of re-logging.
     // The output dialect is part of the key: a replayed Cursor-shaped deny is

@@ -13,12 +13,46 @@ quoted an `old_string` from a `map`/`signatures` rendering whose body was
 never in context, the edit missed, and the next read of a similar file was
 compressed exactly the same way.
 
+### What counts as a re-read bounce (correction)
+
+Every read is classified by what it showed of the file (`ReadView`):
+
+| View | `ctx_read` modes | Shell (`ctx_shell`) |
+|---|---|---|
+| Compressed (lossy) | `map`, `signatures`, `aggressive`, `entropy`, `task`, `reference`, `cognitive`, `mdl`, `density:`, `auto` resolved to one of these | — |
+| Full content | `full`, `raw`, `full-compact`, `anchored` (whole file) | `cat`, `bat`/`batcat` without `-r`, `less`, `more` — unpiped, unredirected |
+| Partial | `lines:` (ranges, multi-select, `lines:-N`), `anchored:N-M`, `diff`, any unrecognised mode | `head`, `tail`, `sed` without `-i`, `bat -r`, a full reader piped onward |
+
+A bounce is detected only when a **full-content** read immediately follows a
+**compressed** read of the same path within 5 read ticks. Partial reads never
+start or complete one, and a partial read between the two ends the chain: the
+compressed view did its job by pointing at the window. Reading a file window
+by window and then in full is therefore no correction. `anchored` is verbatim
+plus line anchors, so it never starts a correction; as full content it
+completes one, which the `ctx_patch` that normally follows cancels.
+
 A re-read bounce is provisional: a compressed read, a full read and then an
 edit of the same file is the read-before-edit flow, not a compression
 failure. `BounceTracker` books a detected bounce only when no edit of the path
-follows within 10 read ticks (`ctx_patch`, `ctx_edit`, or a native host edit
-reported by the hook through the `edit_beacon.log` file in the data
-directory), and at process shutdown at the latest. Only booked bounces reach
+follows within 10 read ticks, and at process shutdown at the latest. Edits
+that cancel it:
+
+- `ctx_patch`, `ctx_edit`;
+- `ctx_shell` commands that rewrite the file: `sed -i`, `perl -i`, output
+  redirection (`>`, `>>`, `>|`, `N>`, `&>`), `tee [-a]`, `cp`/`mv`/`install`
+  onto the path (including `-t DIR`), `apply_patch` bodies, also inside
+  `&&`/`;`/`||` chains, after `cd DIR`, and inside `sh -c`/`lean-ctx -c`.
+  Duplications (`2>&1`, `>&2`), `/dev/*` and targets built from `$VAR` or
+  command substitution are never edits;
+- native host edits reported by the hook through the `edit_beacon.log` file
+  in the data directory: Claude Code `Edit`/`Write`, Cursor `StrReplace`, …,
+  native shell commands of the forms above seen by the Bash `PreToolUse`
+  hooks (Claude Code, Cursor, Codex; not for commands the hook denies), and
+  Codex `apply_patch` calls seen by the Codex `PostToolUse` observer
+  (matcher includes `apply_patch`; existing `hooks.json` files are updated by
+  the installed-hook refresh at MCP server start or by `lean-ctx init`).
+
+Only booked bounces reach
 the savings ledger, `path_mode_memory`, the quality signal and the scent
 field. A path that memory marks as always re-read in full is delivered in full
 for explicit compressing modes as well (`reason=learned-full`); `lines:`,

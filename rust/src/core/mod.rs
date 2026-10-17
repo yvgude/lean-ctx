@@ -495,6 +495,7 @@ pub mod server_capabilities;
 pub mod session_token;
 pub(crate) mod share;
 pub mod shell_allowlist;
+pub(crate) mod shell_file_effects;
 pub mod startup_guard;
 pub mod stats;
 pub mod symbol_map;

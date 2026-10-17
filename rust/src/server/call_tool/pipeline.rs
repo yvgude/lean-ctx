@@ -130,8 +130,25 @@ pub(in crate::server) async fn dispatch_primitive(
     // Ledger and security events recorded during this call commit the
     // session id into their hashes, so `lean-ctx value` can scope to it.
     crate::core::value::set_current_session(&server.session.read().await.id);
+    // Before dispatch: a `cd` in the command moves the session's shell cwd,
+    // but the command's relative paths are relative to where it started.
+    let shell_base = if name == "ctx_shell" {
+        shell_command_base_dir(server, args).await
+    } else {
+        None
+    };
     let (dispatched, archive_authority) =
         crate::core::archive::authority::capture(server.dispatch_tool(name, args, minimal)).await;
+    if name == "ctx_shell"
+        && let Ok((_, _, outcome, _)) = &dispatched
+        && !matches!(
+            outcome,
+            Some(crate::server::tool_trait::ShellOutcome::Blocked)
+        )
+    {
+        let cmd = helpers::get_str(args, "command").unwrap_or_default();
+        record_shell_file_effects(&cmd, shell_base.as_deref());
+    }
     let (result_text, tool_saved_tokens, shell_outcome, content_blocks) = match dispatched {
         Ok(tuple) => tuple,
         Err(e) if e.code == crate::server::tool_trait::TOOL_EXECUTION_ERROR => {
@@ -968,13 +985,6 @@ pub(in crate::server) async fn reversible_post_process(
     if !minimal && !is_raw_shell && name == "ctx_shell" {
         let cmd = helpers::get_str(args, "command").unwrap_or_default();
 
-        if let Some(file_path) = extract_file_read_from_shell(&cmd)
-            && let Ok(mut bt) = crate::core::bounce_tracker::global().lock()
-        {
-            bt.next_seq();
-            bt.record_shell_file_access(&file_path);
-        }
-
         if profile_hints.efficiency_hint() {
             let calls = server.tool_calls.read().await;
             let last_original = calls.last().map_or(0, |c| c.original_tokens);
@@ -1409,6 +1419,10 @@ use terminal::{policy_blocked_output, protect_terminal_result};
 use telemetry::shell_error_category;
 pub(in crate::server) use telemetry::{error_failure, result_failure};
 use telemetry::{mcp_error_category, record_error_category, record_shell_error_category};
+
+#[path = "pipeline_shell_effects.rs"]
+mod shell_effects;
+use shell_effects::{record_shell_file_effects, shell_command_base_dir};
 
 #[path = "pipeline_triage.rs"]
 mod triage;

@@ -88,6 +88,18 @@ pub fn maybe_capture(input: &str) {
         return;
     }
 
+    // Codex edits through `apply_patch`; its hook payload carries the raw
+    // patch text (`tool_input.command`, a string or `["apply_patch", patch]`).
+    // Report every file the patch touches to the edit beacon.
+    if is_apply_patch_tool(&tool) {
+        let mut texts = Vec::new();
+        collect_strings(&args, &mut texts);
+        for text in texts {
+            crate::core::bounce_tracker::note_host_patch_edits(text, &root);
+        }
+        return;
+    }
+
     let is_edit = is_edit_tool(&tool);
     if (is_edit || is_write_tool(&tool))
         && let Some((_, path)) = payload::resolve_path_field(Some(&args), payload::READ_PATH_FIELDS)
@@ -152,6 +164,20 @@ fn is_edit_tool(tool: &str) -> bool {
 
 fn is_write_tool(tool: &str) -> bool {
     WRITE_TOOLS.iter().any(|&t| tool.contains(t))
+}
+
+fn is_apply_patch_tool(tool: &str) -> bool {
+    matches!(tool, "apply_patch" | "ApplyPatch")
+}
+
+/// Every string inside `value` (patch text may be nested in an array).
+fn collect_strings<'a>(value: &'a Value, out: &mut Vec<&'a str>) {
+    match value {
+        Value::String(s) => out.push(s),
+        Value::Array(items) => items.iter().for_each(|v| collect_strings(v, out)),
+        Value::Object(map) => map.values().for_each(|v| collect_strings(v, out)),
+        _ => {}
+    }
 }
 
 /// Handle StrReplace-style edits that carry old_string + new_string.
@@ -508,6 +534,22 @@ mod tests {
         assert_eq!(edits.len(), 2);
         assert_eq!(edits[0].old, "a");
         assert_eq!(edits[1].old, "c");
+    }
+
+    #[test]
+    fn apply_patch_payload_strings_are_collected() {
+        let args = json!({
+            "command": ["apply_patch", "*** Begin Patch\n*** Update File: src/a.rs\n*** End Patch"]
+        });
+        let mut texts = Vec::new();
+        collect_strings(&args, &mut texts);
+        let targets: Vec<String> = texts
+            .iter()
+            .flat_map(|t| crate::core::shell_file_effects::apply_patch_targets(t))
+            .collect();
+        assert_eq!(targets, ["src/a.rs"]);
+        assert!(is_apply_patch_tool("apply_patch"));
+        assert!(!is_apply_patch_tool("Bash"));
     }
 
     #[test]

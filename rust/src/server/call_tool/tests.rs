@@ -200,6 +200,17 @@ mod shell_outcome_tests {
         }
     }
 
+    /// A child that is still running whenever a test looks at it, however
+    /// slow the runner. Tests asserting a `running` or `cancelled` state used
+    /// `sleep 2`; under coverage instrumentation the status probe took longer
+    /// and saw the job completed (PR #2100). The child never has to finish:
+    /// [`BackgroundJobGuard`] cancels it — a process-group kill — when the
+    /// test ends, and the timeout is only a backstop above the sleep.
+    #[cfg(not(windows))]
+    const HELD_OPEN_COMMAND: &str = "sleep 600";
+    #[cfg(not(windows))]
+    const HELD_OPEN_TIMEOUT_MS: u64 = 900_000;
+
     #[cfg(not(windows))]
     struct BackgroundJobGuard {
         job_id: String,
@@ -424,10 +435,10 @@ mod shell_outcome_tests {
     #[cfg(not(windows))]
     fn auto_detached_running_result() -> CallToolResult {
         let detached = crate::server::background_shell::run_foreground_or_detach(
-            "sleep 2 # MES1609_RUNNING_STATUS".to_string(),
+            format!("{HELD_OPEN_COMMAND} # MES1609_RUNNING_STATUS"),
             ".".to_string(),
             std::collections::HashMap::default(),
-            Some(10_000),
+            Some(HELD_OPEN_TIMEOUT_MS),
             std::time::Duration::from_millis(10),
             None,
             None,
@@ -643,10 +654,10 @@ mod shell_outcome_tests {
     #[cfg(not(windows))]
     fn auto_detached_cancel_returns_cancelled_exit_130_without_error() {
         let detached = crate::server::background_shell::run_foreground_or_detach(
-            "sleep 2 # MES1609_CANCEL_STATUS".to_string(),
+            format!("{HELD_OPEN_COMMAND} # MES1609_CANCEL_STATUS"),
             ".".to_string(),
             std::collections::HashMap::default(),
-            Some(10_000),
+            Some(HELD_OPEN_TIMEOUT_MS),
             std::time::Duration::from_millis(10),
             None,
             None,
@@ -828,7 +839,7 @@ mod shell_outcome_tests {
         let mut args = serde_json::Map::new();
         args.insert(
             "command".to_string(),
-            serde_json::json!("sleep 2 # MES1609_SOFT_CAP_LAUNCH"),
+            serde_json::json!(format!("{HELD_OPEN_COMMAND} # MES1609_SOFT_CAP_LAUNCH")),
         );
 
         let result = call_shell(&args, &shell_context());
@@ -847,10 +858,10 @@ mod shell_outcome_tests {
         let _data_dir = crate::core::data_dir::isolated_data_dir();
         let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
         let job_id = crate::server::background_shell::start(
-            "sleep 2".to_string(),
+            HELD_OPEN_COMMAND.to_string(),
             ".".to_string(),
             std::collections::HashMap::default(),
-            Some(10_000),
+            Some(HELD_OPEN_TIMEOUT_MS),
         );
         let _job = BackgroundJobGuard::new(job_id.clone());
 

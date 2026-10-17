@@ -19,9 +19,62 @@ struct ReadEvent {
     tokens_sent: usize,
     _original_tokens: usize,
     seq: u64,
-    was_compressed: bool,
+    view: ReadView,
     /// Scope and task the read ran under; a bounce is that task's signal.
     origin: Option<crate::core::context_store::task_signals::Origin>,
+}
+
+/// What a read showed of the file, for correction (bounce) accounting.
+///
+/// A correction is a lossy [`Compressed`](ReadView::Compressed) view
+/// followed by the [`Full`](ReadView::Full) content. A
+/// [`Partial`](ReadView::Partial) read — a line window, `head`/`tail`, a
+/// `sed -n` range, a `diff` delta — is precise reading: it neither starts nor
+/// completes a correction, and it ends the one a preceding compressed view
+/// could have started (that view did its job: it pointed at the window).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ReadView {
+    Compressed,
+    Full,
+    Partial,
+}
+
+impl ReadView {
+    /// Classify a resolved `ctx_read` mode string.
+    ///
+    /// `anchored` (whole file) is verbatim plus per-line anchors, so it is
+    /// full content like `full`/`raw`/`full-compact`; `anchored:N-M` is a
+    /// window. Unknown strings are `Partial`: an unrecognised mode must never
+    /// fabricate a correction.
+    #[must_use]
+    pub fn of_mode(mode: &str) -> Self {
+        use crate::tools::ctx_read::ReadMode;
+        match mode.parse::<ReadMode>() {
+            Ok(
+                ReadMode::Full | ReadMode::FullCompact | ReadMode::Raw | ReadMode::Anchored(None),
+            ) => ReadView::Full,
+            Ok(
+                ReadMode::Anchored(Some(_))
+                | ReadMode::Lines(_)
+                | ReadMode::LinesMulti(_)
+                | ReadMode::LinesTail(_)
+                | ReadMode::Diff,
+            )
+            | Err(_) => ReadView::Partial,
+            Ok(
+                ReadMode::Signatures
+                | ReadMode::Map
+                | ReadMode::Aggressive
+                | ReadMode::Entropy
+                | ReadMode::Cognitive
+                | ReadMode::Mdl
+                | ReadMode::Task
+                | ReadMode::Reference
+                | ReadMode::Auto
+                | ReadMode::Density(_),
+            ) => ReadView::Compressed,
+        }
+    }
 }
 
 #[derive(Debug, Default)]
@@ -69,10 +122,6 @@ pub struct BounceTracker {
 /// early when a burst exceeds it, so the queue can never grow without limit.
 const MAX_PENDING_BOUNCES: usize = 256;
 
-fn is_compressed_mode(mode: &str) -> bool {
-    !matches!(mode, "full" | "diff")
-}
-
 fn extension_of(path: &str) -> String {
     path.rsplit('.')
         .next()
@@ -106,9 +155,10 @@ impl BounceTracker {
         let norm = crate::core::pathutil::normalize_tool_path(path);
         self.commit_due();
         let seq = self.seq_counter;
-        let compressed = is_compressed_mode(mode);
+        let view = ReadView::of_mode(mode);
+        let compressed = view == ReadView::Compressed;
 
-        if !compressed {
+        if view == ReadView::Full {
             self.detect_bounce(&norm, seq);
         }
         if self.persist {
@@ -128,19 +178,17 @@ impl BounceTracker {
             crate::core::context_store::task_signals::observe(current);
         }
         let origin = current.filter(|_| compressed);
-        let events = self.recent_reads.entry(norm).or_default();
-        events.push(ReadEvent {
-            _mode: mode.to_string(),
-            tokens_sent,
-            _original_tokens: original_tokens,
-            seq,
-            was_compressed: compressed,
-            origin,
-        });
-
-        if events.len() > 10 {
-            events.drain(..events.len() - 10);
-        }
+        self.push_event(
+            norm,
+            ReadEvent {
+                _mode: mode.to_string(),
+                tokens_sent,
+                _original_tokens: original_tokens,
+                seq,
+                view,
+                origin,
+            },
+        );
 
         let ext = extension_of(path);
         if !ext.is_empty() {
@@ -151,6 +199,17 @@ impl BounceTracker {
         self.prune_stale_paths();
     }
 
+    fn push_event(&mut self, norm: String, event: ReadEvent) {
+        let events = self.recent_reads.entry(norm).or_default();
+        events.push(event);
+        if events.len() > 10 {
+            events.drain(..events.len() - 10);
+        }
+    }
+
+    /// Detect the correction a full read completes: only a full read whose
+    /// immediately preceding read of the path was a compressed view within
+    /// `BOUNCE_WINDOW`. A partial or full read in between ends the chain.
     fn detect_bounce(&mut self, norm_path: &str, full_seq: u64) {
         // A full re-read the system itself forced after an edit is not a
         // compression failure (GL #622): `should_force_full` returns `full` for
@@ -169,7 +228,7 @@ impl BounceTracker {
         };
 
         if let Some(ev) = events.iter().next_back()
-            && ev.was_compressed
+            && ev.view == ReadView::Compressed
             && full_seq.saturating_sub(ev.seq) <= BOUNCE_WINDOW
         {
             // Provisional until EDIT_FORCE_WINDOW passes without an edit of
@@ -277,11 +336,34 @@ impl BounceTracker {
         }
     }
 
-    pub fn record_shell_file_access(&mut self, path: &str) {
+    /// A shell read of `path` (`cat`, `head`, `sed -n`, …). A full read can
+    /// complete a correction of a preceding compressed view; a partial one
+    /// never does. Either way it becomes the path's newest read, so a second
+    /// `cat` cannot book the same correction twice.
+    pub fn record_shell_read(&mut self, path: &str, view: ReadView) {
         let norm = crate::core::pathutil::normalize_tool_path(path);
         self.commit_due();
         let seq = self.seq_counter;
-        self.detect_bounce(&norm, seq);
+        if view == ReadView::Full {
+            self.detect_bounce(&norm, seq);
+        }
+        self.push_event(
+            norm,
+            ReadEvent {
+                _mode: "shell".to_string(),
+                tokens_sent: 0,
+                _original_tokens: 0,
+                seq,
+                // A shell read is never the compressed view of a correction.
+                view: if view == ReadView::Compressed {
+                    ReadView::Partial
+                } else {
+                    view
+                },
+                origin: None,
+            },
+        );
+        self.prune_stale_paths();
     }
 
     /// Records an explicit archive/context expansion as a quality bounce.
@@ -307,7 +389,8 @@ impl BounceTracker {
     /// The newest read of `path` this process still remembers: whether it
     /// was compressed and the scope and task it ran under, so a later event
     /// is charged to the read that caused it. `None`: no read is known here
-    /// (another process, or before a restart).
+    /// (another process, or before a restart). A partial read (line window)
+    /// is precise, not lossy, so it reports `false` like a full read.
     pub(crate) fn last_read(
         &self,
         path: &str,
@@ -317,7 +400,7 @@ impl BounceTracker {
     )> {
         let norm = crate::core::pathutil::normalize_tool_path(path);
         let event = self.recent_reads.get(&norm)?.last()?;
-        Some((event.was_compressed, event.origin.clone()))
+        Some((event.view == ReadView::Compressed, event.origin.clone()))
     }
 
     /// An edit of `path`. Besides exempting the full re-reads it forces, it
@@ -510,6 +593,39 @@ pub(crate) fn note_host_edit(path: &str) {
     append_edit_beacon(&beacon, path, now_unix_ms());
 }
 
+/// Hook processes: report the files a native shell command rewrites
+/// (`sed -i`, `>`, `tee`, `cp`/`mv`, `apply_patch` bodies), relative paths
+/// resolved against `cwd`. Best-effort, like [`note_host_edit`].
+pub(crate) fn note_host_shell_edits(command: &str, cwd: &str) {
+    for path in crate::core::shell_file_effects::analyze(command).edits {
+        note_host_edit(&resolve_against(cwd, &path));
+    }
+}
+
+/// Hook processes: report the files of a Codex `apply_patch` patch body.
+pub(crate) fn note_host_patch_edits(patch: &str, cwd: &str) {
+    for path in crate::core::shell_file_effects::apply_patch_targets(patch) {
+        note_host_edit(&resolve_against(cwd, &path));
+    }
+}
+
+/// `path` made absolute against `cwd` (the hook payload's), falling back to
+/// the hook process's own working directory.
+fn resolve_against(cwd: &str, path: &str) -> String {
+    if std::path::Path::new(path).is_absolute() {
+        return path.to_string();
+    }
+    let base = if cwd.trim().is_empty() {
+        std::env::current_dir().ok()
+    } else {
+        Some(std::path::PathBuf::from(cwd))
+    };
+    base.map_or_else(
+        || path.to_string(),
+        |dir| dir.join(path).to_string_lossy().into_owned(),
+    )
+}
+
 fn append_edit_beacon(beacon: &std::path::Path, path: &str, unix_ms: u64) {
     use std::io::Write;
     let norm = crate::core::pathutil::normalize_tool_path(path);
@@ -606,10 +722,155 @@ pub mod tests {
         bt.seq_counter = 1;
         bt.record_read("config.yml", "signatures", 30, 400);
         bt.seq_counter = 3;
-        bt.record_shell_file_access("config.yml");
+        bt.record_shell_read("config.yml", ReadView::Full);
+        // A second `cat` does not book the same correction again.
+        bt.seq_counter = 4;
+        bt.record_shell_read("config.yml", ReadView::Full);
         bt.flush_pending();
         assert_eq!(bt.total_bounces(), 1);
         assert_eq!(bt.total_wasted_tokens(), 30);
+    }
+
+    #[test]
+    fn read_view_classification() {
+        for mode in ["full", "full-compact", "raw", "anchored"] {
+            assert_eq!(ReadView::of_mode(mode), ReadView::Full, "{mode}");
+        }
+        for mode in [
+            "lines:10-40",
+            "lines:5,10-20",
+            "lines:-30",
+            "anchored:10-20",
+            "diff",
+            "bogus",
+        ] {
+            assert_eq!(ReadView::of_mode(mode), ReadView::Partial, "{mode}");
+        }
+        for mode in [
+            "map",
+            "signatures",
+            "aggressive",
+            "entropy",
+            "task",
+            "reference",
+            "cognitive",
+            "mdl",
+            "auto",
+            "density:0.40",
+        ] {
+            assert_eq!(ReadView::of_mode(mode), ReadView::Compressed, "{mode}");
+        }
+    }
+
+    /// Reading a file window by window, then in full, is no correction:
+    /// windows are precise reads, not lossy views.
+    #[test]
+    fn lines_then_full_is_not_a_bounce() {
+        let mut bt = BounceTracker::new();
+        bt.next_seq();
+        bt.record_read("docs/guide.md", "lines:1-80", 300, 2000);
+        bt.next_seq();
+        bt.record_read("docs/guide.md", "lines:81-160", 300, 2000);
+        bt.next_seq();
+        bt.record_read("docs/guide.md", "full", 2000, 2000);
+        bt.next_seq();
+        bt.record_shell_read("docs/guide.md", ReadView::Full);
+        bt.flush_pending();
+        assert_eq!(bt.total_bounces(), 0);
+    }
+
+    #[test]
+    fn map_then_head_is_not_a_bounce() {
+        let mut bt = BounceTracker::new();
+        bt.next_seq();
+        bt.record_read("src/a.rs", "map", 40, 500);
+        bt.next_seq();
+        bt.record_shell_read("src/a.rs", ReadView::Partial);
+        assert_eq!(bt.pending_bounces(), 0);
+        // The window ended the chain: a later full read is not the map's fault.
+        bt.next_seq();
+        bt.record_shell_read("src/a.rs", ReadView::Full);
+        bt.flush_pending();
+        assert_eq!(bt.total_bounces(), 0);
+    }
+
+    #[test]
+    fn map_then_lines_window_is_not_a_bounce() {
+        let mut bt = BounceTracker::new();
+        bt.next_seq();
+        bt.record_read("src/a.rs", "map", 40, 500);
+        bt.next_seq();
+        bt.record_read("src/a.rs", "lines:20-60", 120, 500);
+        bt.flush_pending();
+        assert_eq!(bt.total_bounces(), 0);
+    }
+
+    #[test]
+    fn map_then_cat_is_a_bounce_unless_edited() {
+        let mut bt = BounceTracker::new();
+        bt.next_seq();
+        bt.record_read("src/a.rs", "map", 40, 500);
+        bt.next_seq();
+        bt.record_shell_read("src/a.rs", ReadView::Full);
+        assert_eq!(bt.pending_bounces(), 1);
+        bt.flush_pending();
+        assert_eq!(bt.total_bounces(), 1);
+        assert_eq!(bt.total_wasted_tokens(), 40);
+
+        let mut edited = BounceTracker::new();
+        edited.next_seq();
+        edited.record_read("src/b.rs", "map", 40, 500);
+        edited.next_seq();
+        edited.record_shell_read("src/b.rs", ReadView::Full);
+        edited.next_seq();
+        // e.g. `sed -i` through ctx_shell
+        edited.record_edit("src/b.rs");
+        edited.flush_pending();
+        assert_eq!(edited.total_bounces(), 0);
+    }
+
+    /// `anchored` is verbatim: it never starts a correction, and as full
+    /// content it completes one (cancelled by the `ctx_patch` that follows).
+    #[test]
+    fn anchored_is_full_content() {
+        let mut bt = BounceTracker::new();
+        bt.next_seq();
+        bt.record_read("src/a.rs", "anchored", 500, 500);
+        bt.next_seq();
+        bt.record_read("src/a.rs", "full", 500, 500);
+        assert_eq!(bt.pending_bounces(), 0, "anchored→full is no correction");
+
+        bt.next_seq();
+        bt.record_read("src/a.rs", "map", 40, 500);
+        bt.next_seq();
+        bt.record_read("src/a.rs", "anchored", 500, 500);
+        assert_eq!(bt.pending_bounces(), 1);
+        bt.next_seq();
+        bt.record_edit("src/a.rs");
+        bt.flush_pending();
+        assert_eq!(bt.total_bounces(), 0);
+    }
+
+    #[test]
+    fn diff_never_completes_a_correction() {
+        let mut bt = BounceTracker::new();
+        bt.next_seq();
+        bt.record_read("src/a.rs", "map", 40, 500);
+        bt.next_seq();
+        bt.record_read("src/a.rs", "diff", 20, 500);
+        bt.flush_pending();
+        assert_eq!(bt.total_bounces(), 0);
+    }
+
+    #[test]
+    fn partial_read_is_not_charged_as_compressed() {
+        let mut bt = BounceTracker::new();
+        bt.next_seq();
+        bt.record_read("src/a.rs", "lines:1-20", 100, 500);
+        assert_eq!(bt.last_read("src/a.rs").map(|(c, _)| c), Some(false));
+        bt.next_seq();
+        bt.record_read("src/a.rs", "map", 40, 500);
+        assert_eq!(bt.last_read("src/a.rs").map(|(c, _)| c), Some(true));
     }
 
     #[test]

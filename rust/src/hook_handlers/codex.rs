@@ -133,7 +133,14 @@ pub fn handle_codex_pretooluse() {
         return;
     }
 
+    // A command that will run natively may rewrite files (`sed -i`, `>`,
+    // `tee`, `cp`/`mv`); the MCP server's bounce tracker never sees it, so
+    // report the edits through the edit beacon. Denied commands never run.
+    let cwd = parsed.get("cwd").and_then(|v| v.as_str()).unwrap_or("");
+    let note_edits = || crate::core::bounce_tracker::note_host_shell_edits(cmd, cwd);
+
     if let Some(rewritten) = rewrite_candidate(cmd, &binary) {
+        note_edits();
         print!("{}", codex_rewrite_output(&rewritten));
         return;
     }
@@ -142,6 +149,7 @@ pub fn handle_codex_pretooluse() {
     // `/opt/homebrew/bin/lean-ctx -c '...'`) must pass through — denying them
     // blocks lean-ctx's own CLI surface (#801).
     if super::file_rewrite::is_leanctx_call(cmd, &binary) {
+        note_edits();
         print!("{}", codex_allow_output());
         return;
     }
@@ -152,6 +160,7 @@ pub fn handle_codex_pretooluse() {
     if mode == crate::hooks::HookMode::Replace && super::deny::is_mcp_healthy() {
         print!("{}", codex_deny_output(cmd));
     } else {
+        note_edits();
         print!("{}", codex_allow_output());
     }
 }

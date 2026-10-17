@@ -6,6 +6,11 @@ on:
   pull_request:
     branches: [main]
   workflow_dispatch:
+  # Nightly full matrix: macOS and coverage are too slow and too rare a source
+  # of regressions to gate every PR or merge, but must still run daily.
+  # 03:17 UTC keeps clear of pounce's maintenance window.
+  schedule:
+    - cron: "17 3 * * *"
 
 # Cancel a still-running CI for the same ref when a new push supersedes it —
 # avoids burning runner-hours on stale commits during active PR iteration.
@@ -128,12 +133,12 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS runners are ~2x slower (Test step ~32 min vs ~24 win / ~16 ubuntu)
-        # and bill ~10x the minutes, so keep them off the PR critical path: PRs
-        # run ubuntu + windows only. macOS still runs on every push to main (i.e.
-        # at merge), on workflow_dispatch, and in release.yml — so platform
-        # regressions are still caught before release, just not on every PR push.
-        os: ${{ github.event_name == 'pull_request' && fromJSON('["ubuntu-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') }}
+        # macOS runners are ~2x slower (the all-features suite takes ~95 min
+        # there vs ~25 on ubuntu/windows) and bill ~10x the minutes, so they
+        # stay off both the PR and the merge path: macOS runs in the nightly
+        # schedule, on workflow_dispatch, and in release.yml — platform
+        # regressions are still caught daily and always before a release.
+        os: ${{ (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') && fromJSON('["ubuntu-latest", "macos-latest", "windows-latest"]') || fromJSON('["ubuntu-latest", "windows-latest"]') }}
         # Windows is the critical path of the whole run (15m47s vs 11m on
         # ubuntu), and one job compiled the crate twice in series: the lib in
         # test cfg for the unit tests, then the plain lib plus ~50 linked
@@ -365,6 +370,10 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
+          # Shared with Documentation: both type-check the all-features graph,
+          # and the repo's 10 GB Actions cache was evicting the Windows test
+          # cache under one key per job.
+          shared-key: all-features-check
       - name: Run clippy
         working-directory: rust
         run: cargo clippy --all-features -- -D warnings -A clippy::too_many_lines
@@ -635,6 +644,11 @@ jobs:
 
   coverage:
     name: Coverage
+    # Coverage re-runs the whole lib suite serially under instrumentation
+    # (~37 min) and gates nothing: Codecov never fails CI. On every PR and merge
+    # it held a pounce runner and pushed the next run's Test (ubuntu) into a
+    # multi-hour queue, so it now runs nightly and on demand only.
+    if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && vars.SELF_HOSTED_CI != 'off' && fromJSON('["self-hosted","pounce"]') || 'ubuntu-latest' }}
     steps:
       - uses: actions/checkout@v4 # v4
@@ -727,21 +741,10 @@ jobs:
           cargo deny --version
           cargo deny --manifest-path rust/Cargo.toml --log-level warn --all-features check
 
-  adversarial:
-    name: Adversarial Safety
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4 # v4
-        with:
-          persist-credentials: false
-      - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
-      - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        with:
-          save-if: ${{ github.ref == 'refs/heads/main' }}
-          workspaces: rust -> target
-      - name: Run adversarial compression tests
-        working-directory: rust
-        run: cargo test --test main suite::adversarial_compression -- --nocapture
+  # The 48 adversarial-compression tests (suite::adversarial_compression in
+  # tests/main.rs) run inside Test's `cargo test --all-features`; the former
+  # dedicated "Adversarial Safety" job compiled the crate a second time to run
+  # exactly the same tests.
 
   gateway-proof:
     name: Gateway Proof (60 scenarios, 26 bypass paths)
@@ -898,17 +901,20 @@ jobs:
 
   doc:
     name: Documentation
-    runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && vars.SELF_HOSTED_CI != 'off' && fromJSON('["self-hosted","pounce"]') || 'ubuntu-latest' }}
+    # GitHub-hosted, not pounce: hosted jobs start at once and run in parallel,
+    # while every job routed to the four pounce runners queues behind the
+    # Test (ubuntu) legs of all other open PRs and merges.
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4 # v4
         with:
           persist-credentials: false
       - uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        if: runner.environment == 'github-hosted'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
+          shared-key: all-features-check
       - name: Check docs compile
         working-directory: rust
         env:
@@ -1038,7 +1044,6 @@ jobs:
       - hermes-plugin
       - coverage
       - deny
-      - adversarial
       - gateway-proof
       - bench
       - quality-gate

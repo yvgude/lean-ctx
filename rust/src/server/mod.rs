@@ -219,22 +219,6 @@ fn is_shell_tool_name(name: &str) -> bool {
     matches!(name, "ctx_shell" | "ctx_execute")
 }
 
-fn extract_file_read_from_shell(cmd: &str) -> Option<String> {
-    let trimmed = cmd.trim();
-    let parts: Vec<&str> = trimmed.split_whitespace().collect();
-    if parts.len() < 2 {
-        return None;
-    }
-    let bin = parts[0].rsplit('/').next().unwrap_or(parts[0]);
-    match bin {
-        "cat" | "head" | "tail" | "less" | "more" | "bat" | "batcat" => {
-            let file_arg = parts.iter().skip(1).find(|a| !a.starts_with('-'))?;
-            Some(file_arg.to_string())
-        }
-        _ => None,
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
