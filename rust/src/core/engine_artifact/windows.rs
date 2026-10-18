@@ -418,9 +418,17 @@ fn preflight_native_operations(directory: &std::fs::File) -> Result<(), String> 
         return Err(ARTIFACT_PUBLISH_UNSUPPORTED.to_owned());
     }
 
+    // Each call probes under its own name. A shared name let concurrent
+    // callers collide on a probe still pending deletion, and the final
+    // "probe is gone" check would see and delete another caller's probe (#1294).
+    static PROBE_SEQUENCE: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(0);
+    let caller = PROBE_SEQUENCE.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let process = std::process::id();
     let mut probe = None;
     for suffix in 0..128u16 {
-        let name = wide_component(&format!(".leanctx-engine-capability-probe-{suffix}"))?;
+        let name = wide_component(&format!(
+            ".leanctx-engine-capability-probe-{process}-{caller}-{suffix}"
+        ))?;
         match open_relative(
             directory,
             &name,

@@ -527,15 +527,25 @@ fn task_lock_identity(task: &TaskEnvelopeV1) -> Result<(String, Vec<u8>), &'stat
     Ok((identity.hex().to_owned(), bytes))
 }
 
+/// The stable code hides the artifact-store cause; test runs print it (#1294).
+fn task_lock_unavailable(step: &str, cause: &str) -> &'static str {
+    #[cfg(test)]
+    eprintln!("host task lock {step} failed: {cause}");
+    #[cfg(not(test))]
+    let _ = (step, cause);
+    "host_task_lock_unavailable"
+}
+
 fn task_lock(task: &TaskEnvelopeV1) -> Result<File, &'static str> {
     let (identity, bytes) = task_lock_identity(task)?;
-    let file = open_task_lock_file(&identity, &bytes).map_err(|_| "host_task_lock_unavailable")?;
+    let file = open_task_lock_file(&identity, &bytes)
+        .map_err(|error| task_lock_unavailable("open", &error))?;
     let started = Instant::now();
     loop {
         match fs2::FileExt::try_lock_exclusive(&file) {
             Ok(()) => {
                 publish_task_identity(&identity, &bytes)
-                    .map_err(|_| "host_task_lock_unavailable")?;
+                    .map_err(|error| task_lock_unavailable("publish", &error))?;
                 return Ok(file);
             }
             Err(error)
