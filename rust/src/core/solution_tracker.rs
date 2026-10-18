@@ -70,13 +70,16 @@ fn store() -> &'static Mutex<SolutionStore> {
 /// Reload the store from disk. Called by `snapshot()` so the dashboard
 /// daemon sees changes written by short-lived `hook observe` processes.
 fn reload_from_disk() {
-    if let Ok(bytes) = std::fs::read(store_path()) {
-        if let Ok(fresh) = serde_json::from_slice::<SolutionStore>(&bytes) {
-            if let Ok(mut guard) = store().lock() {
-                *guard = fresh;
-            }
+    if let Some(fresh) = read_from_disk() {
+        if let Ok(mut guard) = store().lock() {
+            *guard = fresh;
         }
     }
+}
+
+fn read_from_disk() -> Option<SolutionStore> {
+    let bytes = std::fs::read(store_path()).ok()?;
+    serde_json::from_slice(&bytes).ok()
 }
 
 fn flush(store: &SolutionStore) {
@@ -101,6 +104,11 @@ fn with_store<F: FnOnce(&mut SolutionStore)>(f: F) {
     let mut store = store()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // Long-lived MCP servers share this file; mutating a stale in-memory copy
+    // would overwrite counts written by other processes since startup.
+    if let Some(fresh) = read_from_disk() {
+        *store = fresh;
+    }
     f(&mut store);
     flush(&store);
 }

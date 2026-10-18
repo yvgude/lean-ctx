@@ -93,6 +93,26 @@ fn solution_ladder_text_covers_all_intensities() {
 }
 
 #[test]
+fn solution_tracker_keeps_writes_from_other_processes() {
+    let _tracker_guard = lock_solution_tracker();
+    solution_tracker::reset();
+    solution_tracker::record_decision("reuse");
+
+    // Another process (a second MCP server) records a decision on disk.
+    let path = lean_ctx::core::paths::data_dir()
+        .expect("data dir")
+        .join("solution_tracker.json");
+    let mut on_disk: Value = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    on_disk["decisions_total"] = json!(5);
+    std::fs::write(&path, serde_json::to_vec(&on_disk).unwrap()).unwrap();
+
+    // This process's stale in-memory copy must not overwrite it.
+    solution_tracker::record_loc_change(1, 0);
+    assert_eq!(solution_tracker::snapshot().decisions_total, 5);
+    solution_tracker::reset();
+}
+
+#[test]
 fn solution_tracker_lifecycle() {
     let _tracker_guard = lock_solution_tracker();
     solution_tracker::reset();
