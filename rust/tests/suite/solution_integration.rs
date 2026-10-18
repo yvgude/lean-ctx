@@ -93,6 +93,31 @@ fn solution_ladder_text_covers_all_intensities() {
 }
 
 #[test]
+fn solution_tracker_merges_counts_recorded_by_other_processes() {
+    let _tracker_guard = lock_solution_tracker();
+    solution_tracker::reset();
+    solution_tracker::record_decision("stdlib");
+
+    // A second MCP server persists its own counts after this process loaded the store.
+    let store_path = lean_ctx::core::paths::data_dir()
+        .expect("data dir")
+        .join("solution_tracker.json");
+    let mut persisted: Value =
+        serde_json::from_slice(&std::fs::read(&store_path).expect("store")).expect("json");
+    persisted["decisions_total"] = json!(4);
+    persisted["decisions_reuse"] = json!(3);
+    std::fs::write(&store_path, serde_json::to_vec(&persisted).expect("json")).expect("write");
+
+    solution_tracker::record_decision("reuse");
+
+    let snapshot = solution_tracker::snapshot();
+    assert_eq!(snapshot.decisions_total, 5);
+    assert_eq!(snapshot.decisions_by_kind.get("stdlib"), Some(&1));
+    assert_eq!(snapshot.decisions_by_kind.get("reuse"), Some(&4));
+    solution_tracker::reset();
+}
+
+#[test]
 fn solution_tracker_lifecycle() {
     let _tracker_guard = lock_solution_tracker();
     solution_tracker::reset();

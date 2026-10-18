@@ -70,13 +70,34 @@ fn store() -> &'static Mutex<SolutionStore> {
 /// Reload the store from disk. Called by `snapshot()` so the dashboard
 /// daemon sees changes written by short-lived `hook observe` processes.
 fn reload_from_disk() {
-    if let Ok(bytes) = std::fs::read(store_path()) {
-        if let Ok(fresh) = serde_json::from_slice::<SolutionStore>(&bytes) {
-            if let Ok(mut guard) = store().lock() {
-                *guard = fresh;
-            }
+    if let Some(fresh) = read_store_file() {
+        if let Ok(mut guard) = store().lock() {
+            *guard = fresh;
         }
     }
+}
+
+fn read_store_file() -> Option<SolutionStore> {
+    let bytes = std::fs::read(store_path()).ok()?;
+    serde_json::from_slice(&bytes).ok()
+}
+
+/// Exclusive lock on a stable companion file; released when the handle drops.
+/// Writes still happen without it if the lock cannot be taken, as before.
+fn lock_store_file() -> Option<std::fs::File> {
+    use fs2::FileExt;
+
+    let lock_path = store_path().with_extension("json.lock");
+    std::fs::create_dir_all(lock_path.parent()?).ok()?;
+    let lock = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .read(true)
+        .write(true)
+        .open(lock_path)
+        .ok()?;
+    lock.lock_exclusive().ok()?;
+    Some(lock)
 }
 
 fn flush(store: &SolutionStore) {
@@ -97,10 +118,17 @@ fn flush(store: &SolutionStore) {
     }
 }
 
+/// Several long-lived MCP servers record into the same file. Each mutation is
+/// a locked read-modify-write so no process writes back a stale copy and
+/// drops counts the others recorded since it started.
 fn with_store<F: FnOnce(&mut SolutionStore)>(f: F) {
     let mut store = store()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let _file_lock = lock_store_file();
+    if let Some(fresh) = read_store_file() {
+        *store = fresh;
+    }
     f(&mut store);
     flush(&store);
 }
