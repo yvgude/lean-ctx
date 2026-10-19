@@ -403,7 +403,7 @@ fn print_pro_upgrade_hint() {
     println!();
     println!("Synchronization is not included in this account's plan.");
     println!("Your local context is unchanged and keeps working.");
-    println!("Plan details: https://leanctx.com/account/billing/ · help: hello@leanctx.com");
+    println!("Plan details: https://leanctx.com/account/billing/ · help: hello@thinkery.ch");
 }
 
 fn record_sync_telemetry<T>(result: &Result<T, String>) {

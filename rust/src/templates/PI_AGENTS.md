@@ -1,7 +1,8 @@
-# lean-ctx — Token Optimization for Pi
+# LeanCTX (lean-ctx) — Context Gateway tools for Pi
 
 This project uses the **pi-lean-ctx** extension. It exposes `ctx_*` tools backed by **lean-ctx**,
 and runs an embedded MCP bridge (on by default) that holds a **persistent session cache**.
+LeanCTX selects task-relevant context, applies supported controls and records observable context operations.
 
 ## What to do (as Pi agent)
 
@@ -11,7 +12,7 @@ the native `read`/`bash`/`grep`/`find`/`ls` are **not** routed through lean-ctx 
 | Prefer | Over (native) | Why |
 |--------|---------------|-----|
 | `ctx_read` | `read`, `cat`/`head`/`tail` | Cached + compressed; eligible unchanged re-reads return compact references |
-| `ctx_shell` | `bash` | Shell output compressed via 95+ patterns |
+| `ctx_shell` | `bash` | Command-specific output shaping |
 | `ctx_search` | `grep` | Compact, ranked matches |
 | `ctx_glob` | `find` | Compressed, .gitignore-aware file matching |
 | `ctx_tree` | `ls` | Compact directory maps |

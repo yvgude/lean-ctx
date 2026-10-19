@@ -15,7 +15,10 @@ Current product identity:
 - **Category:** Context Gateway for AI Systems
 - **Promise:** Control what your AI can see.
 - **Components:** LeanCTX Engine and LeanCTX SDK
-- **Primary story:** Select → Control → Prove
+- **Primary story:** Select → Control → Learn → Prove
+
+Learn means local task and knowledge continuity under configured access and
+retention rules. It does not imply model training or guaranteed answer quality.
 
 The checker discovers public README files, Markdown pages linked from the
 listed entry-point indexes, and descriptions in public package manifests. It
@@ -48,7 +51,7 @@ outcome quality.
     "category": "Context Gateway for AI Systems",
     "promise": "Control what your AI can see.",
     "components": ["LeanCTX Engine", "LeanCTX SDK"],
-    "primary_story": ["Select", "Control", "Prove"]
+    "primary_story": ["Select", "Control", "Learn", "Prove"]
   },
   "primary_entrypoints": [
     "README.md",

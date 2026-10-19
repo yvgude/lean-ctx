@@ -113,7 +113,11 @@ Never skip: validation, security, error handling.\n\
 /// servers, which the previous unqualified wording was read as.
 /// v11 (#1849): the shadow edit line names no host tool — "native
 /// Edit/StrReplace" was wrong for Codex, which edits through `apply_patch`.
-pub const RULES_VERSION: usize = 11;
+/// v12: identify the Context Gateway and remove ungrounded savings/count claims.
+pub const RULES_VERSION: usize = 12;
+
+/// Product identity for the on-demand guide; injected profiles keep their budget.
+pub const GATEWAY_IDENTITY: &str = "LeanCTX (lean-ctx) — Context Gateway for AI Systems.";
 
 /// Banner placed at the top of dedicated rule files (non-shadow only).
 ///
@@ -271,22 +275,21 @@ Exclusive tools (no native trigger): ctx_compose (understand code, call first), 
 /// native tools anyway and the hooks compress them transparently. Saying so
 /// removes the instruction dissonance instead of losing the battle silently.
 pub const HOOK_COVERED_HEADER: &str = "\
-CRITICAL: ALWAYS prefer lean-ctx ctx_* tools over native equivalents — ctx_* tools \
-provide superior caching, compression, and session memory. Hooks compress native \
+CRITICAL: ALWAYS prefer lean-ctx ctx_* tools over native equivalents for task-relevant \
+context, caching and session memory. Hooks compress native \
 Shell/Read/Grep as fallback, but direct ctx_* calls are the primary path.\n\
 ACTUALLY EMIT the ctx_* tool call (ctx_compose first) — describing a tool is not calling it.\n\
-WHY ctx_read > native Read: ctx_read picks the optimal mode (map/signatures/terse) \
-per file, caches unchanged full/auto re-reads (~13 tokens), and compresses 26-92%. Native \
-Read through hook redirect is limited to verbatim pass-through (~5% savings).";
+WHY ctx_read: choose read depth per file (map/signatures/lines); eligible unchanged \
+full/auto re-reads return a compact reference. Recover detail from an authorized source or archive.";
 
 /// The tools worth an explicit MCP call on a hook-covered host: capabilities
 /// with *no* native equivalent the hooks could intercept. Kept in sync with
 /// [`SHADOW_MINIMAL`]'s exclusive-tools line (same rationale, different cause).
 pub const HOOK_COVERED_TOOLS: &str = "\
 MANDATORY MAPPING (always use ctx_* instead of native):\n\
-• Read/cat -> ctx_read(path, mode) — cached, 10 modes, unchanged full/auto re-reads ~13 tokens\n\
+• Read/cat -> ctx_read(path, mode) — structural views, caching, source references\n\
 • Grep/search -> ctx_search(pattern, path) — also action=symbol|semantic for definitions/meaning\n\
-• Shell/bash -> ctx_shell(command) — 95+ compression patterns\n\
+• Shell/bash -> ctx_shell(command) — command-specific output shaping\n\
 • ctx_compose — orient in code FIRST (bundles search + read + symbols) — call before editing/debugging\n\
 • ctx_callgraph — callers, callees, blast radius — use instead of manual file reading\n\
 • ctx_session / ctx_knowledge — persistent memory — record decisions & progress after milestones\n\
@@ -363,6 +366,7 @@ fn longform_non_shadow_sections(p: &super::tool_profiles::ToolProfile) -> Vec<St
     use super::rules_sections as rs;
     let mut v = vec![
         s(CRITICAL),
+        s(GATEWAY_IDENTITY),
         rs::must_invoke_section(p),
         s(BULLETS),
         s(NEVER),

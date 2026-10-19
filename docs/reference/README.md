@@ -4,7 +4,7 @@
 
 **Control what your AI can see.**
 
-**Select → Control → Prove** describes the product. This reference documents the
+**Select → Control → Learn → Prove** describes the product. This reference documents the
 local LeanCTX Engine; the LeanCTX SDK exposes supported application interfaces.
 The agent, model, task logic and retry policy remain the integrator's responsibility.
 

@@ -170,7 +170,7 @@ fn install_codebuddy_mcp_server(home: &std::path::Path) {
 /// markers broke detection and caused duplicate blocks (GH #549).
 pub(crate) const CODEBUDDY_MD_BLOCK_START: &str = crate::core::rules_canonical::AGENTS_BLOCK_START;
 const CODEBUDDY_MD_BLOCK_END: &str = crate::core::rules_canonical::AGENTS_BLOCK_END;
-const CODEBUDDY_MD_BLOCK_VERSION: &str = "lean-ctx-codebuddy-v4";
+const CODEBUDDY_MD_BLOCK_VERSION: &str = "lean-ctx-codebuddy-v5";
 
 // v2 (GH #637 / GL #1138): MCP-aware guidance, mirroring the Claude v4 block.
 // CodeBuddy is a Claude Code fork with the same path-keyed read-before-write
@@ -184,12 +184,12 @@ const CODEBUDDY_MD_BLOCK_VERSION: &str = "lean-ctx-codebuddy-v4";
 // v4 (#1228): stop denying native Read — auto memory + edit gate need it.
 const CODEBUDDY_MD_BLOCK_CONTENT_REPLACE: &str = "\
 <!-- lean-ctx -->
-<!-- lean-ctx-codebuddy-v4 -->
-## lean-ctx — Replace Mode (native Grep/Glob/Bash denied by policy)
+<!-- lean-ctx-codebuddy-v5 -->
+## LeanCTX (lean-ctx) — Context Gateway for AI Systems (Replace mode)
 
 Native Grep/Glob/Bash are denied by policy. Prefer `ctx_*` MCP tools for project work:
-- `ctx_read` for exploration reads (cached, 10 modes, unchanged full/auto re-reads ~13 tokens)
-- `ctx_shell` for shell commands (95+ compression patterns)
+- `ctx_read` for task-relevant exploration (cached structural views)
+- `ctx_shell` for shell commands (command-specific output shaping)
 - `ctx_search` instead of Grep/rg (compact results)
 - `ctx_tree` instead of ls/find (compact directory maps)
 - `ctx_glob` instead of Glob (file pattern matching)
@@ -205,12 +205,12 @@ Details live in the `lean-ctx` skill (loads on demand — keep this file lean).
 
 const CODEBUDDY_MD_BLOCK_CONTENT_MCP: &str = "\
 <!-- lean-ctx -->
-<!-- lean-ctx-codebuddy-v4 -->
-## lean-ctx — Context Runtime
+<!-- lean-ctx-codebuddy-v5 -->
+## LeanCTX (lean-ctx) — Context Gateway for AI Systems
 
 When the `ctx_*` MCP tools are listed in this session, prefer them over native equivalents:
-- `ctx_read` instead of `Read` / `cat` for exploration (cached, 10 modes, unchanged full/auto re-reads ~13 tokens)
-- `ctx_shell` instead of `bash` / `Shell` (95+ compression patterns)
+- `ctx_read` instead of `Read` / `cat` for task-relevant exploration (cached structural views)
+- `ctx_shell` instead of `bash` / `Shell` (command-specific output shaping)
 - `ctx_search` instead of `Grep` / `rg` (compact results)
 - `ctx_tree` instead of `ls` / `find` (compact directory maps)
 - Edits: `ctx_read(mode=\"anchored\")` → `ctx_patch` (line+hash anchors, never echo old text; `op=create` for new files). `ctx_edit` (str_replace) is the legacy power-profile fallback.

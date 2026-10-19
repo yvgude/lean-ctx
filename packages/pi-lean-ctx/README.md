@@ -1,6 +1,6 @@
 # pi-lean-ctx
 
-> **Status: Research / experimental integration.** LeanCTX makes its Rust core available to Pi through a local CLI and a small TypeScript client.
+> **Status: Research / experimental integration.** This extension connects Pi to the local LeanCTX Engine through CLI and MCP paths.
 > It exposes selected local Runtime tools in Pi; it does not provide a generic agent
 > platform, hosted service, shared team context, or a performance guarantee.
 > Measure a comparable workload with a declared quality threshold before making a
@@ -9,7 +9,10 @@
 > **Context Gateway for AI Systems**. **Control what your AI can see.**
 
 [Pi Coding Agent](https://github.com/badlogic/pi-mono) extension that provides
-`ctx_`-prefixed tools backed by a local [lean-ctx](https://leanctx.com) Runtime.
+`ctx_`-prefixed tools backed by a local [LeanCTX Engine](https://leanctx.com).
+Select task-relevant views, apply supported controls, retain local context and
+inspect recorded operations. The selected integration determines coverage;
+Pi keeps control of its agent loop and model.
 
 - **Default**: embedded MCP bridge enabled; additive mode preserves Pi builtins
 - **Opt out**: `LEAN_CTX_PI_ENABLE_MCP=0` (or `"enableMcp": false`) forces the one-shot CLI path, which cannot cache across calls
@@ -80,7 +83,7 @@ Adds `ctx_`-prefixed tools alongside Pi's builtins (or replaces them in `replace
 | Tool | Replaces | Compression |
 |------|----------|-------------|
 | `ctx_read` | `read` | Smart mode selection (full/map/signatures) based on file type and size |
-| `ctx_shell` | `bash` | All shell commands compressed via lean-ctx's 85+ patterns |
+| `ctx_shell` | `bash` | Command-specific output shaping |
 | `ctx_grep` | `grep` | Results grouped and compressed via ripgrep + lean-ctx |
 | `ctx_find` | `find` | File listings compressed and .gitignore-aware |
 | `ctx_ls` | `ls` | Directory output compressed |
@@ -277,7 +280,7 @@ The extension locates the `lean-ctx` binary in this order:
 
 ## Smart Read Modes
 
-The `ctx_read` tool automatically selects the optimal lean-ctx mode:
+The `ctx_read` tool selects a read mode based on file type and size:
 
 | File Type | Size | Mode |
 |-----------|------|------|

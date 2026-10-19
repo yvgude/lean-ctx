@@ -4,9 +4,10 @@
 
 **Control what your AI can see.**
 
-LeanCTX sits between AI and the information it reads: **Select → Control → Prove**.
+LeanCTX sits between AI and the information it reads: **Select → Control → Learn → Prove**.
 It prepares task-relevant context, applies supported access/content rules and
-records observable evidence. Your application, agent loop and model stay yours.
+retains local task and knowledge records, and records observable evidence.
+Your application, agent loop and model stay yours.
 
 ## Start with the product
 

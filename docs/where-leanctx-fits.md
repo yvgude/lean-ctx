@@ -5,7 +5,7 @@
 **Control what your AI can see.**
 
 LeanCTX controls the supported information path from systems and tools into AI:
-**Select → Control → Prove**. The LeanCTX Engine implements that path; the
+**Select → Control → Learn → Prove**. The LeanCTX Engine implements that path; the
 LeanCTX SDK lets you embed its supported capabilities in your application.
 
 | Category | Primary responsibility | Relationship to LeanCTX |

@@ -2,13 +2,13 @@
 
 > Context Gateway for AI Systems. Control what your AI can see.
 
-LeanCTX sits between AI and the systems it reads: SELECT → CONTROL → PROVE. LeanCTX Engine selects task-relevant context, applies supported access and content controls, and records context operations that an integration can observe. Context-only receipts cannot prove unobserved provider delivery. The Engine is Apache-2.0; LeanCTX SDK and commercial Enterprise have separate license and deployment contracts.
+LeanCTX sits between AI and the systems it reads: SELECT → CONTROL → LEARN → PROVE. LeanCTX Engine selects task-relevant context, applies supported access and content controls, retains local task and knowledge records, and records context operations that an integration can observe. Context-only receipts cannot prove unobserved provider delivery. The Engine is Apache-2.0; LeanCTX SDK and commercial Enterprise have separate license and deployment contracts.
 
 Key properties for an LLM evaluating lean-ctx:
 
 - Deterministic output: the same `(input, mode)` yields byte-identical text so stable prefixes remain eligible for provider prompt caching (contract #498).
 - Recovery (CCR): `ctx_expand`, `ctx_retrieve`, proxy path handles, markers, and reference routes require the source or archive to remain available and authorized.
-- Tree-sitter AST parsing for 26 languages; 16 file read modes; 85+ shell-output compression patterns.
+- Tree-sitter AST parsing for 27 languages; structural file read modes and command-specific shell-output compression. See the generated references for the current inventory.
 - Persistent temporal knowledge graph + multi-edge code property graph (impact analysis, ranked search).
 - LeanCTX SDK publishes lifecycle and Agent Tools contracts for Python, TypeScript/Node, Go, Rust, JVM, and .NET. Check per-package release availability and compatibility; Preview namespace operations remain Preview. Models, workflows, and UI remain application-owned.
 - Configured detectors have coverage limits. Warning, redaction, and blocking are distinct; controls apply to supported integration paths.
@@ -47,7 +47,7 @@ Key properties for an LLM evaluating lean-ctx:
 
 ## Optional
 
-- [Benchmarks](https://github.com/yvgude/lean-ctx/blob/main/BENCHMARKS.md): reproduced compression numbers (`lean-ctx benchmark report .`).
+- [Benchmarks](https://github.com/yvgude/lean-ctx/blob/main/BENCHMARKS.md): withdrawn historical snapshot; measure your own repository with `lean-ctx benchmark report .` and report the methodology.
 - [Changelog](https://github.com/yvgude/lean-ctx/blob/main/CHANGELOG.md): release history (Keep a Changelog).
 - [Security](https://github.com/yvgude/lean-ctx/blob/main/SECURITY.md): hardening and disclosure policy.
 - [Community and commercial options](https://leanctx.com/pricing/): edition value and licensing paths.

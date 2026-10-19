@@ -54,7 +54,7 @@ Files · repositories · tool results · configured providers
                           │
                           ▼
                 LeanCTX Context Gateway
-                Select → Control → Prove
+             Select · Control · Learn · Prove
                           │
                           ▼
                 Your AI application / agent
@@ -67,6 +67,8 @@ Files · repositories · tool results · configured providers
   compression and reuse.
 - **Control:** apply configured path permissions, content filters and context
   budgets to supported calls.
+- **Learn:** retain local task records and connect code and knowledge across
+  sessions, within the configured access and retention rules.
 - **Prove:** inspect source references, policy decisions and usage evidence.
   A context-only integration records its prepared result; the host owns the
   subsequent model call.
@@ -106,7 +108,7 @@ first-class paths from other compatibility references.
     <td align="center" width="33%">
       <img src="assets/leanctx-benchmark.gif" width="320" alt="lean-ctx benchmark report demo">
       <br/>
-      <strong>Benchmark proof</strong>
+      <strong>Benchmark measurement</strong>
       <br/>
       Measure compression by language + mode
     </td>
@@ -127,23 +129,21 @@ first-class paths from other compatibility references.
 ---
 
 <p align="center">
-  <strong>Saves you tokens?</strong> <a href="https://github.com/yvgude/lean-ctx">Give it a star</a> — it helps others discover LeanCTX.
+  <strong>Find LeanCTX useful?</strong> <a href="https://github.com/yvgude/lean-ctx">Give it a star</a> — it helps others find the Context Gateway for AI systems.
 </p>
 
 ---
 
 ## Inside the LeanCTX Engine
 
-Context Intelligence is how LeanCTX selects and prepares information for a task.
-These mechanisms support the Gateway's Select → Control → Prove flow.
+The Engine puts Select, Control, Learn and Prove into the context paths of your
+existing AI tools. Your host keeps control of the task, agent loop and model.
 
-### 1. Context Compression — input efficiency
+### 1. Select — the context each task needs
 
-For supported read and shell paths, LeanCTX can select compact representations
-of the files and command output your AI agent uses.
-
-- **Workload-specific token reduction** on eligible context, with recovery paths
-  and a local Shadow Mode baseline for measurement
+Search and structural views help an agent find relevant information before
+reading entire files. Supported read and shell paths can return focused views
+of files and command output, with references for recovering detail.
 
 - **File reads**: 16 read modes (`full`, `map`, `signatures`, `diff`, `lines:N-M`, `density:X`, …) — eligible cached re-reads return a compact reference instead of repeating content
 - **Target density** (`density:0.4`): SDE-style budget compression — keeps the highest-entropy lines until ~40% of the original tokens remain, deterministic
@@ -152,36 +152,46 @@ of the files and command output your AI agent uses.
 - **Tree-sitter AST**: structural understanding for 27 languages — not just text compression
 - **Source recovery (CCR)**: supported compact views retain source or archive references for expansion through `ctx_expand`, `ctx_retrieve` or the reference API. Recovery depends on permissions, retention and the source remaining available. [Read modes and detail →](docs/reference/02-daily-use.md#1-reading-files)
 
-### 2. Intelligent Triage — task understanding
+### 2. Control — configured rules on supported paths
 
-Not every task or file needs the same depth. LeanCTX classifies the task, then
-sends the signal rather than the noise.
+- **PathJail and roles:** constrain tool filesystem access to the configured scope.
+- **Content filters:** configured detectors can warn, redact or block on supported
+  paths. Detection coverage and enforcement depend on the integration and settings.
+- **Context budgets:** bound selected input and supported tool output.
+- **Host-owned model choice:** the host chooses the model and performs any model
+  calls outside the Engine's observed path.
 
-- **16 read modes**: from full content down to AST signatures and entropy-filtered views
-- **Adaptive `ModePredictor`**: learns the optimal read mode per file type from past sessions
-- **`IntentEngine`**: classifies query complexity so simple lookups stay cheap
+Review [the security policy](SECURITY.md) for defaults, supported controls and
+coverage limits. A filesystem boundary is not an operating-system sandbox.
 
-### 3. Knowledge Routing — cross-source context
+### 3. Learn — connect work across sessions
 
-Relevant code, sessions, and connected sources become focused context instead of
-a larger prompt.
+Keep useful task records and discover relationships between code and local
+knowledge. Learning here means context continuity; it does not train your model.
 
 - **Session memory (CCP)**: persist task/facts/decisions across chats — structured recovery queries survive compaction
 - **Knowledge graph**: temporal facts with validity windows, episodic + procedural memory
 - **Property Graph**: multi-edge code graph (imports, calls, exports, type_ref) powers impact analysis and search ranking
-- **Yours, not the vendor's**: memory stays local and portable — export it as a `.ctxpkg` package and move it across machines or models, instead of locking it in a vendor's black box
+- **Permission-bound reuse:** access and retention rules still apply when stored
+  context is retrieved. Experimental `.ctxpkg` export is described under Research below.
 
-### 4. Usage and outcome evidence
+### 4. Prove — inspect what the Engine recorded
 
-Performance is the cost of a useful result, not just speed. LeanCTX records
-costs and outcomes locally; **CPAO (Cost per Accepted Outcome)** is the north-star
-metric for comparing useful AI work.
+Inspect source references, recorded policy decisions and delivery evidence from
+supported paths. `lean-ctx inspect` explains observed context operations. A
+context-only integration records its prepared result; it cannot prove a later
+model call made by the host.
 
 - **Context Manager**: browser dashboard with real-time token tracking, compression stats, utilization gauge
-- **Budgets & SLOs**: profiles, roles, per-agent budgets, and throttling policies
+- **Audit export:** retain the recorded evidence for review within its stated scope.
 - **Context Proof** (`ctx_proof`, `ctx_verify`): exportable audit trail (verifier, SLO, pipeline and provenance records) plus runtime-checked policy claims (PathJail per touched file, budget)
 
-### 5. Shadow Recommendations — savings proof
+## Usage and cost — measure the result
+
+Context controls and evidence come first. Usage estimates and calculated costs
+help you assess their operational effect; they do not prove answer quality.
+
+### Shadow Mode — a simulated baseline
 
 Shadow Mode estimates what the same work would have cost without LeanCTX,
 without changing the active workflow. The baseline is **simulated** from the
@@ -189,11 +199,10 @@ uncompressed token counts and the same outcome signals, not a second measured
 run, so its reports estimate cost, tokens and CPAO deltas; they do not measure
 answer quality.
 
-## Cost Intelligence
-
-LeanCTX automatically tracks local cost and outcome signals; it does not add
-those reports to agent context. CPAO — cost per accepted outcome — is the
-north-star metric, while Shadow Mode provides a simulated baseline for savings estimates.
+LeanCTX records local cost and outcome signals without adding those reports to
+agent context. CPAO (cost per accepted outcome) is one comparison metric; Shadow
+Mode provides simulated savings estimates. Keep estimates, provider-measured
+usage and outcome quality separate.
 
 ```bash
 lean-ctx savings --period week                 # costs, token savings, and CPAO
@@ -201,7 +210,7 @@ lean-ctx value-report --format markdown --last 20  # recent outcome quality
 lean-ctx shadow --latest                       # latest baseline comparison
 ```
 
-### Quick start: value tracking
+### Quick start: usage tracking
 
 ```bash
 # Enable shadow mode for savings comparison
@@ -224,7 +233,7 @@ lean-ctx shadow --latest
 - **Context Packages — Research**: `lean-ctx pack create` bundles local Knowledge, Graph and Session state into `.ctxpkg` files with SHA-256 integrity; this is experimental local packaging, not a generally available Context Kits or hosted sharing product
 - **Context Time Machine — Research**: `lean-ctx snapshot create|list|show|verify|restore|publish|import` handles git-anchored, signed local snapshots and file-based sharing; dashboard replay and restore are experimental, and hosted history or a hosted registry is not a generally available product ([concept →](docs/concepts/context-time-machine.md))
 - **Observability**: `lean-ctx gain --live`, `lean-ctx wrapped`, `lean-ctx watch` and the browser dashboard show local activity and recorded context metrics; `gain --svg`/`--share` creates a shareable card or self-hostable page
-- **Verified savings**: `lean-ctx savings` is a local per-event ledger with tokenizer transparency, bounce-netting and a tamper-evident SHA-256 chain; provider-measured savings require the proxy's counterfactual holdout
+- **Usage ledger**: `lean-ctx savings` is a local per-event ledger with tokenizer transparency, bounce-netting and a tamper-evident SHA-256 chain; provider-measured savings require the proxy's counterfactual holdout
 - **HTTP mode**: `lean-ctx serve` for Streamable HTTP MCP + `/v1/tools/call` (used by the Cookbook and external clients)
 
 </details>
@@ -517,7 +526,7 @@ Compression levels, tool profiles, themes, and rules governance.
 <tr>
 <td width="50%" valign="top">
 
-### 📊 Prove the payoff
+### 📊 Measure usage and cost
 *"Show me the numbers."*
 
 ```bash

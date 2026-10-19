@@ -277,7 +277,7 @@ pub(crate) fn install_claude_permissions_allow_mcp(home: &std::path::Path) {
 /// appended a duplicate (GH #549).
 pub(crate) const CLAUDE_MD_BLOCK_START: &str = crate::core::rules_canonical::AGENTS_BLOCK_START;
 const CLAUDE_MD_BLOCK_END: &str = crate::core::rules_canonical::AGENTS_BLOCK_END;
-const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v10";
+const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v11";
 
 // v3 (GL #555): self-contained, no `@rules/lean-ctx.md` import. Claude Code
 // expands `@` imports inline at launch ("imports do not reduce context usage"
@@ -316,12 +316,12 @@ const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v10";
 // stubs are withheld (#1801) and the claim did not hold.
 const CLAUDE_MD_BLOCK_CONTENT_MCP: &str = "\
 <!-- lean-ctx -->
-<!-- lean-ctx-claude-v10 -->
-## lean-ctx — Context Runtime
+<!-- lean-ctx-claude-v11 -->
+## LeanCTX (lean-ctx) — Context Gateway for AI Systems
 
 When the `ctx_*` MCP tools are listed in this session, prefer them over native equivalents:
-- `ctx_read` instead of `Read` / `cat` for exploration (cached, 10 modes incl. map/signatures)
-- `ctx_shell` instead of `bash` / `Shell` (95+ compression patterns)
+- `ctx_read` instead of `Read` / `cat` for task-relevant exploration (cached structural views)
+- `ctx_shell` instead of `bash` / `Shell` (command-specific output shaping)
 - `ctx_search` instead of `Grep` / `rg` (compact results)
 - `ctx_tree` instead of `ls` / `find` (compact directory maps)
 - Edits: `ctx_read(mode=\"anchored\")` → `ctx_patch` (line+hash anchors, never echo old text; `op=create` for new files). `ctx_edit` (str_replace) is the legacy power-profile fallback.
@@ -338,12 +338,12 @@ Details live in the `lean-ctx` skill (loads on demand — keep this file lean).
 
 const CLAUDE_MD_BLOCK_CONTENT_REPLACE: &str = "\
 <!-- lean-ctx -->
-<!-- lean-ctx-claude-v10 -->
-## lean-ctx — Replace Mode (native Grep/Glob denied by policy)
+<!-- lean-ctx-claude-v11 -->
+## LeanCTX (lean-ctx) — Context Gateway for AI Systems (Replace mode)
 
 Native Grep/Glob are denied by policy. Prefer `ctx_*` MCP tools for project work:
-- `ctx_read` for exploration reads (cached, 10 modes incl. map/signatures)
-- `ctx_shell` for shell commands (95+ compression patterns)
+- `ctx_read` for task-relevant exploration (cached structural views)
+- `ctx_shell` for shell commands (command-specific output shaping)
 - `ctx_search` instead of Grep/rg (compact results)
 - `ctx_tree` instead of ls/find (compact directory maps)
 - `ctx_glob` instead of Glob (file pattern matching)

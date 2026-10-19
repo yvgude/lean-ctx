@@ -30,7 +30,7 @@ license = "Apache-2.0"
 repository = "https://github.com/yvgude/lean-ctx"
 homepage = "https://leanctx.com"
 readme = "README.md"
-keywords = ["mcp", "llm", "tokens", "compression", "ai"]
+keywords = ["context-gateway", "mcp", "llm", "ai-agents", "context"]
 categories = ["command-line-utilities", "development-tools"]
 exclude = ["examples/", "tests/", "crates/"]
 

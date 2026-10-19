@@ -1,7 +1,7 @@
 {
   "name": "lean-ctx",
-  "displayName": "lean-ctx",
-  "description": "Inspect LeanCTX Engine activity in VS Code: observed context reduction, recorded redactions, and command-policy decisions — and let LeanCTX verify code relationships with this editor's language features. Part of the Context Gateway for AI Systems.",
+  "displayName": "LeanCTX — Context Gateway",
+  "description": "Inspect LeanCTX, the Context Gateway for AI Systems: recorded context activity, redactions and command-policy decisions, with editor-assisted checks of code relationships.",
   "version": "0.4.0",
   "publisher": "LeanCTX",
   "license": "Apache-2.0",
@@ -26,9 +26,9 @@
     "ai",
     "context",
     "llm",
-    "tokens",
+    "context-gateway",
     "mcp",
-    "security"
+    "ai-governance"
   ],
   "activationEvents": [
     "onStartupFinished"

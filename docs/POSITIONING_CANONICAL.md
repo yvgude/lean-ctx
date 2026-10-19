@@ -16,12 +16,15 @@ records the context operations and delivery evidence the integration can observe
 In context-only integrations, LeanCTX records the prepared result; the host owns
 the subsequent model call.
 
-## Select → Control → Prove
+## Select → Control → Learn → Prove
 
 - **Select:** give AI the context the task needs, using retrieval, structure,
   ranking, compression, reuse and source recovery.
 - **Control:** decide what may cross the boundary, using the permissions,
   content rules and budgets supported by the selected integration and edition.
+- **Learn:** connect code and local knowledge, retaining task, finding and
+  decision records across sessions under configured access and retention rules.
+  This is context continuity, not model training.
 - **Prove:** inspect source references, policy decisions, receipts and usage
   evidence within that integration's visibility.
 

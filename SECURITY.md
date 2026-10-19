@@ -4,7 +4,7 @@
 
 If you discover a security vulnerability in lean-ctx, please report it privately:
 
-- **Email**: yves@pounce.ch
+- **Email**: hello@thinkery.ch
 - **GitHub**: [Create a private security advisory](https://github.com/yvgude/lean-ctx/security/advisories/new)
 - **Response time**: We aim to acknowledge reports within 48 hours
 - **Disclosure**: We follow responsible disclosure practices (90-day embargo)
@@ -385,10 +385,10 @@ The team server is part of `lean-ctx-enterprise` (ADR-023). When deployed:
 
 ## Contact
 
-- **Security issues**: yves@pounce.ch
+- **Security issues**: hello@thinkery.ch
 - **General questions**: [GitHub Discussions](https://github.com/yvgude/lean-ctx/discussions)
 - **Discord**: [Join our server](https://discord.gg/pTHkG9Hew9)
 
 ---
 
-**Last updated**: 2026-10-02
+**Last updated**: 2026-10-19

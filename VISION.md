@@ -8,10 +8,11 @@ LeanCTX sits between AI and the systems it reads. It selects task-relevant
 context, applies supported access and content controls before delivery, and
 records observable context operations and delivery evidence.
 
-## Select → Control → Prove
+## Select → Control → Learn → Prove
 
-Give AI useful context. Decide what may cross the boundary. Inspect what
-happened. This is one product, with three complementary responsibilities.
+Give AI useful context. Decide what may cross the boundary. Connect local
+knowledge across sessions. Inspect what happened. These are four complementary
+responsibilities; Learn means context continuity, not model training.
 
 The **LeanCTX Engine** implements the runtime capabilities. The **LeanCTX SDK**
 connects applications to supported Engine interfaces. **Context Intelligence**

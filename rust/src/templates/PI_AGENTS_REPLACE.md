@@ -1,4 +1,4 @@
-# lean-ctx — Replace Mode for Pi
+# LeanCTX (lean-ctx) — Context Gateway tools for Pi (Replace mode)
 
 This project uses the **pi-lean-ctx** extension in **Replace mode**. Native Pi builtins
 (read/bash/grep/find/ls) are **suppressed**. You MUST use `ctx_*` tools exclusively.
@@ -8,7 +8,7 @@ This project uses the **pi-lean-ctx** extension in **Replace mode**. Native Pi b
 | Use (ctx_*) | Instead of (suppressed) | Why |
 |-------------|------------------------|-----|
 | `ctx_read` | `read`, `cat`/`head`/`tail` | Cached + compressed; eligible unchanged re-reads return compact references |
-| `ctx_shell` | `bash` | Shell output compressed via 95+ patterns |
+| `ctx_shell` | `bash` | Command-specific output shaping |
 | `ctx_search` | `grep` | Compact, ranked matches |
 | `ctx_glob` | `find` | Compressed, .gitignore-aware file matching |
 | `ctx_tree` | `ls` | Compact directory maps |

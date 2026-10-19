@@ -1,6 +1,6 @@
 {RULES_MARKER} (Global)
 
-You have the lean-ctx MCP server available. You MUST use it for ALL file reads, shell commands, and code searches. Using native tools wastes tokens — lean-ctx compresses everything.
+LeanCTX (lean-ctx) is the Context Gateway for AI Systems. Use its MCP tools for file reads, shell commands and code searches: select task-relevant views, reuse cached context and recover detail from authorized sources or archives. Your host owns the task, agent loop and model.
 
 ## Tool Replacement Rules
 

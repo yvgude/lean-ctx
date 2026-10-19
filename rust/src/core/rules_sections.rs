@@ -71,13 +71,15 @@ pub(crate) fn intent_section(p: &ToolProfile) -> String {
 pub(crate) fn hook_covered_tools_section(p: &ToolProfile) -> String {
     let mut lines = vec!["MANDATORY MAPPING (always use ctx_* instead of native):".to_string()];
 
-    lines.push("• Read/cat -> ctx_read(path, mode) — cached, 10 modes, unchanged full/auto re-reads ~13 tokens".into());
+    lines.push(
+        "• Read/cat -> ctx_read(path, mode) — structural views, caching, source references".into(),
+    );
     lines.push(
         "• Grep/search -> ctx_search(pattern, path) — also action=symbol|semantic \
          for definitions/meaning"
             .into(),
     );
-    lines.push("• Shell/bash -> ctx_shell(command) — 95+ compression patterns".into());
+    lines.push("• Shell/bash -> ctx_shell(command) — command-specific output shaping".into());
 
     if has(p, "ctx_compose") {
         lines.push(

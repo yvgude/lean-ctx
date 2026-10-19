@@ -1,4 +1,6 @@
-# lean-ctx — Token Optimization
+# LeanCTX (lean-ctx) — Context Gateway tools
+
+Select task-relevant context, apply supported controls, retain local knowledge and inspect recorded evidence. Your host owns the task, agent loop and model.
 
 MANDATORY: For every file read, code search, shell command, or directory listing you MUST call the matching lean-ctx `ctx_*` MCP tool — never a built-in/native tool, and never answer a code question from memory without first calling one. This is not optional. If you catch yourself about to use a built-in Read/Grep/Shell/ls, STOP and call the `ctx_*` equivalent instead.
 

@@ -18,7 +18,7 @@
 
 ### Process
 
-1. Private disclosure through `security@leanctx.com` or a GitHub Security Advisory.
+1. Private disclosure through `hello@thinkery.ch` or a GitHub Security Advisory.
 2. Develop the fix on a private branch.
 3. Assign a CVE when applicable.
 4. Coordinate the patched engine, SDK releases, and advisory.

@@ -1,6 +1,8 @@
 {RULES_MARKER}
 
-PREFER lean-ctx MCP tools over native equivalents for token savings:
+LeanCTX (lean-ctx) is the Context Gateway for AI Systems.
+
+PREFER lean-ctx MCP tools over native equivalents for task-relevant context and caching:
 
 | PREFER | OVER | Why |
 |--------|------|-----|

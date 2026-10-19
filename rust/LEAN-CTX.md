@@ -1,8 +1,10 @@
 <!-- lean-ctx-owned: PROJECT-LEAN-CTX.md v1 -->
 <!-- lean-ctx-rules -->
-<!-- version: 11 -->
+<!-- version: 12 -->
 
 CRITICAL: ALWAYS use lean-ctx ctx_* tools as mapped below.
+
+LeanCTX (lean-ctx) — Context Gateway for AI Systems.
 
 ACTUALLY EMIT the ctx_* tool call (ctx_compose first) — describing a tool is not calling it.
 

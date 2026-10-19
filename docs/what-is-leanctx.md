@@ -8,12 +8,13 @@ LeanCTX sits between AI and the systems it reads. It selects task-relevant
 context, applies supported access and content controls before delivery, and
 records the context operations and delivery evidence the integration can observe.
 
-## Select → Control → Prove
+## Select → Control → Learn → Prove
 
 | Step | What it does | What you receive |
 |---|---|---|
 | **Select** | Retrieve and rank candidates; prepare the useful level of detail | Task-relevant context within the configured budget |
 | **Control** | Apply supported source permissions, path boundaries and content rules | An allowed result, a warning, redacted content or a refusal |
+| **Learn** | Retain local task records and connect code and knowledge under configured access and retention rules | Context continuity across sessions, without training your model |
 | **Prove** | Record observable source, operation, policy and usage facts | References, receipts and measurements for inspection |
 
 Inputs can include local files, repositories, tool results, memory and configured

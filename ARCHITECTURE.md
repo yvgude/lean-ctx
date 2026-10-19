@@ -8,14 +8,15 @@ The LeanCTX Engine operates between sources/tools and the AI application that
 consumes their results. The LeanCTX SDK exposes supported Engine interfaces to
 applications that own their model calls and workflow.
 
-## Select → Control → Prove
+## Select → Control → Learn → Prove
 
 ```mermaid
 flowchart TD
   S[Files, repositories, tool results and configured providers] --> G
   subgraph G[LeanCTX Engine]
     A[Select task-relevant context] --> B[Control supported access and content]
-    B --> C[Prove with source references and observable evidence]
+    B --> L[Learn through local task and knowledge continuity]
+    L --> C[Prove with source references and observable evidence]
   end
   G --> H[Your application or agent]
   H --> M[Your chosen model]

@@ -35,7 +35,7 @@ SCRIPT_DIR="$(
 )"
 RUST_DIR="$SCRIPT_DIR/rust"
 
-echo "lean-ctx installer"
+echo "LeanCTX installer — the Context Gateway for AI Systems"
 echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 finish() {
@@ -95,7 +95,8 @@ finish() {
   echo "  lean-ctx wrap codex    # one-command setup for Codex CLI"
   echo ""
   echo "  lean-ctx doctor        # verify installation"
-  echo "  lean-ctx gain          # see savings after first use"
+  echo "  lean-ctx inspect       # inspect recorded context operations and evidence"
+  echo "  lean-ctx gain          # usage estimates and calculated cost"
   echo ""
   echo "Full control: lean-ctx setup  (interactive wizard)"
   echo "Skip auto-onboard: curl ... | LEAN_CTX_NO_ONBOARD=1 sh"

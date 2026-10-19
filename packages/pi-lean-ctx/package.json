@@ -6,8 +6,8 @@
     "pi-package",
     "lean-ctx",
     "cli",
-    "token-optimization",
-    "compression",
+    "context-gateway",
+    "context-engineering",
     "mcp"
   ],
   "license": "Apache-2.0",

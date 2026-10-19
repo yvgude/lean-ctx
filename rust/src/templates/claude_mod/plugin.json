@@ -1,7 +1,7 @@
 {
   "name": "lean-ctx",
   "version": "0.2.0",
-  "description": "The LeanCTX cockpit (Select · Control · Prove sidebar, pulse line, turn and milestone overlays), colored ctx_patch diffs and highlighted ctx_read / ctx_search output, wake on background job completion, remove redundant lean-ctx hook context, shape native Bash output, keep core tools in front, and show per-session usage.",
+  "description": "LeanCTX Context Gateway cockpit: inspect recorded context activity and evidence, explore local knowledge, view colored ctx_patch diffs and highlighted reads/searches, and follow background jobs and per-session usage.",
   "types": "./types/index.d.ts",
   "author": {
     "name": "Thinkery / Yves Gugger"

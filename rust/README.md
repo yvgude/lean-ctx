@@ -1,55 +1,69 @@
-# LeanCTX Runtime
+# LeanCTX Engine
 
-> **Status: implementation guide.** LeanCTX is the **Context Gateway for AI Systems**.
-> **Control what your AI can see.** LeanCTX Engine is the runtime in this
-> directory; LeanCTX SDK is the separate application integration surface.
-> Local CLI, MCP, hooks, supported proxy paths, and bounded context evidence
-> are available. Standalone SDK stable and Preview namespaces have their own
-> released contracts. Commercial Enterprise capabilities have separate scope
-> and licensing. See [current positioning](../docs/POSITIONING_CANONICAL.md).
+**LeanCTX is the Context Gateway for AI Systems.**
+**Control what your AI can see.**
 
-## Build locally
+The open-source Engine brings context selection, supported access and content
+controls, local knowledge and observable evidence to existing AI tools through
+CLI, MCP, hooks and supported proxy paths. Your host owns the task, agent loop
+and model.
+
+## Install and connect an agent
 
 ```bash
-cd rust
-cargo build --release
+cargo install lean-ctx --locked
+lean-ctx wrap codex     # or: wrap claude / wrap cursor
+lean-ctx doctor
 ```
 
-This build writes only to the worktree. Do not stop an installed Runtime before
-building or testing. For a local development install, use `lean-ctx dev-install`
-after the checks below succeed.
+## Select · Control · Learn · Prove
+
+- **Select:** search and read the detail a task needs, with compact views and
+  source references for recovering more.
+- **Control:** apply configured path permissions, content filters and budgets
+  on supported integration paths.
+- **Learn:** retain local task, finding and decision records and connect code
+  and knowledge across sessions. This does not train the model.
+- **Prove:** inspect the source, operation, policy and usage evidence the
+  integration can observe with `lean-ctx inspect`.
+
+A context-only integration records its prepared result; the host owns the
+subsequent model call. Filters have configured coverage limits. Recovery
+depends on current permissions, retention and source or archive availability.
+Usage estimates and calculated costs are separate from answer quality.
+
+## Build from source
+
+From the repository's `rust/` directory:
+
+```bash
+cargo check --locked
+cargo fast
+```
+
+Development builds use the configured jobs and shared target directory. Use
+`cargo build --release --locked` for explicit release validation. Keep the
+installed runtime running while building or testing; `lean-ctx dev-install`
+performs the supported atomic replacement after a successful build.
 
 ## Validate a change
 
 ```bash
-cd rust
 cargo test --lib
 cargo clippy --all-features -- -D warnings
 cargo fmt --check
 ```
 
-## Use the local Runtime
-
-```bash
-lean-ctx setup
-lean-ctx doctor
-lean-ctx wrap codex
-```
-
-The Runtime supports context selection, compression, reuse, recovery, and
-local evidence. Measure a result against a comparable baseline and treatment,
-declare a quality threshold, and keep the methodology visible. A cheaper failed
-task is not a gain.
-
 ## Integration boundaries
 
-- **Attach:** use the installed CLI, MCP server, or local proxy.
-- **Wrap:** use the declared adapter path where available; discover capabilities
-  and report typed limitations when a capability is unavailable.
+- **Attach:** use the installed CLI, MCP server, hooks or supported local proxy.
 - **Embed:** use the standalone LeanCTX SDK's released lifecycle and Agent Tools
-  contracts. Its Python Preview namespace and older in-tree experiments retain
-  their separate limits.
+  contracts. Preview operations and older in-tree experiments keep their own limits.
+- **Commercial deployments:** Enterprise and SDK/OEM have separate scope and
+  licensing; consult the applicable release and agreement.
 
-See the repository [README](../README.md) for installation and current public
-orientation. See [canonical positioning](../docs/POSITIONING_CANONICAL.md)
-and [SDK boundaries](../docs/reference/sdk-surface.md) for current scope.
+See the [repository overview](https://github.com/yvgude/lean-ctx),
+[installation guide](https://leanctx.com/docs/getting-started),
+[security policy](https://github.com/yvgude/lean-ctx/blob/main/SECURITY.md),
+[canonical positioning](https://github.com/yvgude/lean-ctx/blob/main/docs/POSITIONING_CANONICAL.md)
+and [SDK boundaries](https://github.com/yvgude/lean-ctx/blob/main/docs/reference/sdk-surface.md).

@@ -436,7 +436,7 @@ fn init_claude_installs_dedicated_rules_file_without_claude_md() {
     // v7 (#1091): Replace-mode write guidance corrected; shared tag bumped.
     // v8 (#1228): auto memory + edit gate keep native Read; file:// MCP resources guided away.
     assert!(
-        claude_md.contains("lean-ctx-claude-v10"),
+        claude_md.contains("lean-ctx-claude-v11"),
         "CLAUDE.md must carry the v9 block version"
     );
     assert!(
@@ -522,7 +522,7 @@ fn rules_sync_claude_repairs_compact_pointer_block() {
     let content = std::fs::read_to_string(&claude_md).unwrap();
     assert!(content.contains("# user notes"));
     assert_eq!(content.matches("<!-- lean-ctx -->").count(), 1);
-    assert!(content.contains("lean-ctx-claude-v10"));
+    assert!(content.contains("lean-ctx-claude-v11"));
     assert!(!content.contains("<!-- lean-ctx-rules -->"));
 
     let second = command.output().expect("second rules sync claude");

@@ -61,6 +61,14 @@ fn suppress_initialize_instructions(client_id: &str) -> bool {
 
     cfg.declines_rule_steering() || matches!(client_id, "antigravity" | "gemini-cli")
 }
+
+fn engine_server_info() -> Implementation {
+    Implementation::new("lean-ctx", env!("CARGO_PKG_VERSION"))
+        .with_title("LeanCTX Engine")
+        .with_description("Context Gateway for AI Systems: task-relevant context, supported controls, local knowledge and observable evidence.")
+        .with_website_url("https://leanctx.com")
+}
+
 impl ServerHandler for LeanCtxServer {
     fn get_info(&self) -> ServerInfo {
         let capabilities = server_capabilities(true, true);
@@ -68,7 +76,7 @@ impl ServerHandler for LeanCtxServer {
         let instructions = crate::instructions::build_instructions(CrpMode::effective());
 
         InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", env!("CARGO_PKG_VERSION")))
+            .with_server_info(engine_server_info())
             .with_instructions(instructions)
     }
 
@@ -306,8 +314,7 @@ impl ServerHandler for LeanCtxServer {
 
         let capabilities = server_capabilities(client_caps.resources, client_caps.prompts);
 
-        let result = InitializeResult::new(capabilities)
-            .with_server_info(Implementation::new("lean-ctx", env!("CARGO_PKG_VERSION")));
+        let result = InitializeResult::new(capabilities).with_server_info(engine_server_info());
 
         // GH #1447: Antigravity/Gemini CLI disconnect when the initialize
         // response contains `instructions`. The MCP spec marks it optional,
