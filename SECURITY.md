@@ -387,7 +387,7 @@ The team server is part of `lean-ctx-enterprise` (ADR-023). When deployed:
 
 - **Security issues**: hello@thinkery.ch
 - **General questions**: [GitHub Discussions](https://github.com/yvgude/lean-ctx/discussions)
-- **Discord**: [Join our server](https://discord.gg/pTHkG9Hew9)
+- **Discord**: [Join our server](https://discord.gg/6qUJ3QmDyP)
 
 ---
 

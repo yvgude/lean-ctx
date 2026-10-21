@@ -387,4 +387,4 @@ the active prefix plus any handed-off (`Disabled`) and skipped tools.
 
 - [LeanCTX](https://leanctx.com) — Context Gateway for AI Systems
 - [GitHub](https://github.com/yvgude/lean-ctx)
-- [Discord](https://discord.gg/pTHkG9Hew9)
+- [Discord](https://discord.gg/6qUJ3QmDyP)

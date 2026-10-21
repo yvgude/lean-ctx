@@ -38,7 +38,7 @@ Examples: "**LeanCTX** is the Context OS for AI development." · `lean-ctx setup
 - Repository: https://github.com/yvgude/lean-ctx
 - npm: https://www.npmjs.com/package/lean-ctx-bin
 - crates.io: https://crates.io/crates/lean-ctx
-- Discord: https://discord.gg/pTHkG9Hew9
+- Discord: https://discord.gg/6qUJ3QmDyP
 
 ---
 

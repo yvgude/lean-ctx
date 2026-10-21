@@ -47,4 +47,4 @@ cargo install lean-ctx
 - [Documentation](https://leanctx.com/docs/getting-started)
 - [GitHub](https://github.com/yvgude/lean-ctx)
 - [crates.io](https://crates.io/crates/lean-ctx)
-- [Discord](https://discord.gg/pTHkG9Hew9)
+- [Discord](https://discord.gg/6qUJ3QmDyP)

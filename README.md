@@ -34,7 +34,7 @@ The **LeanCTX SDK** embeds supported Engine capabilities in your application.
   <a href="https://www.npmjs.com/package/lean-ctx-bin"><img src="https://img.shields.io/npm/v/lean-ctx-bin?label=npm&color=%23cb3837" alt="npm"></a>
   <a href="https://aur.archlinux.org/packages/lean-ctx"><img src="https://img.shields.io/aur/version/lean-ctx?color=%231793d1" alt="AUR"></a>
   <a href="LICENSE.md"><img src="https://img.shields.io/badge/License-Mixed-blue.svg" alt="Mixed license"></a>
-  <a href="https://discord.gg/pTHkG9Hew9"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
+  <a href="https://discord.gg/6qUJ3QmDyP"><img src="https://img.shields.io/badge/Discord-Join-5865F2?logo=discord&logoColor=white" alt="Discord"></a>
   <a href="https://x.com/leanctx"><img src="https://img.shields.io/badge/𝕏-Follow-000000?logo=x&logoColor=white" alt="X/Twitter"></a>
   <a href="#privacy--security"><img src="https://img.shields.io/badge/Telemetry-Configurable-blue?logo=shield&logoColor=white" alt="Configurable telemetry"></a>
 </p>

@@ -1,7 +1,7 @@
 blank_issues_enabled: false
 contact_links:
   - name: Discord Support
-    url: https://discord.gg/pTHkG9Hew9
+    url: https://discord.gg/6qUJ3QmDyP
     about: Get help with setup, editors, and troubleshooting.
   - name: Security Vulnerability
     url: https://github.com/yvgude/lean-ctx/security/advisories/new
