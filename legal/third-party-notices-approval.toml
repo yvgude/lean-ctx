@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "abeaa9c00d267d71359f0ca694a6d733a4887cb28ef7e5fcce7cb9da75f132e7"
+approved_content_sha256 = "fd2dc79c6690561f7bf63fb36def4e345364b50ef6277a56a086939a525f6cf6"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval (\"mach absolut alles\", 2026-10-16) of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for the zip 8.6.0 -> 9.0.4 bump after crates.io yanked every zip 8.x release: zip, lzma-rust2 and ppmd-rust change version, constant_time_eq 0.6.1 (CC0-1.0 OR MIT-0 OR Apache-2.0) is added, and the Cargo.lock, SBOM and asset-manifest digests change; no existing license or notice text changes."
-approved_at = "2026-10-16"
+approval_evidence = "Copyright owner approval (explicit \"Ja, freigeben\" for THIRD_PARTY_NOTICES sha256 fd2dc79c...f6cf6, 2026-10-23) of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for the RUSTSEC-2026-0381/0382/0383/0385 bumps: rustls-webpki 0.103.15 -> 0.103.16, webpki-roots 1.0.9 -> 1.0.11, webpki-root-certs 1.0.9 -> 1.0.11 and ctutils 0.4.2 -> 0.4.4 change version, and the Cargo.lock, SBOM and asset-manifest digests change; no license or notice text changes."
+approved_at = "2026-10-23"

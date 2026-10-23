@@ -9,11 +9,11 @@ use super::util::{is_local_lean_ctx_url, is_proxy_reachable};
 ///
 /// The proxy never injects credentials (see `proxy/forward.rs` — only
 /// `ALLOWED_REQUEST_HEADERS` are forwarded), so it can only help Claude Code when the
-/// user runs in API-key (pay-as-you-go) mode. A Claude **Pro/Max subscription**
-/// authenticates via OAuth directly against `api.anthropic.com`; that token is rejected
-/// by any custom `ANTHROPIC_BASE_URL`, so redirecting subscription traffic through the
-/// proxy only breaks auth (login loop / 401). When this returns `false`, callers must
-/// NOT point Claude Code at the proxy.
+/// user runs in API-key (pay-as-you-go) mode. A Claude **Pro/Max subscription** login
+/// is reserved for direct use of Claude Code: Anthropic does not permit third-party
+/// tools to route requests through Free/Pro/Max credentials, so subscription traffic
+/// stays on `api.anthropic.com`. When this returns `false`, callers must NOT point
+/// Claude Code at the proxy.
 pub fn anthropic_api_key_available(home: &Path) -> bool {
     // 1) Process environment — covers shells and Claude Code launched from them.
     for var in ["ANTHROPIC_API_KEY", "ANTHROPIC_AUTH_TOKEN"] {
@@ -51,11 +51,11 @@ pub fn anthropic_api_key_available(home: &Path) -> bool {
 }
 
 /// Explains why Claude Code was left pointing at `api.anthropic.com` instead of the
-/// proxy: a Pro/Max subscription (OAuth) cannot authenticate through a custom base URL.
+/// proxy: Pro/Max subscription credentials must not be routed through third-party tools.
 fn warn_claude_subscription_skip() {
     eprintln!("  \u{26a0} Claude Code: no ANTHROPIC_API_KEY detected (Pro/Max subscription?).");
-    eprintln!("    The proxy forwards your credential upstream but never injects one, and a");
-    eprintln!("    subscription token only authenticates against api.anthropic.com directly.");
+    eprintln!("    Anthropic does not permit third-party tools to route requests through a");
+    eprintln!("    Claude subscription login, so lean-ctx keeps it on api.anthropic.com.");
     eprintln!("    Leaving ANTHROPIC_BASE_URL untouched so Claude Code keeps working.");
     eprintln!("    Savings on a subscription: use the lean-ctx MCP tools (ctx_read /");
     eprintln!("    ctx_search / ctx_shell). Pay-as-you-go? Set ANTHROPIC_API_KEY, then run:");
@@ -184,10 +184,10 @@ pub(crate) fn install_claude_env_inner(home: &Path, port: u16, quiet: bool, forc
         .unwrap_or("")
         .to_string();
 
-    // SUBSCRIPTION GUARD: the proxy never injects credentials, so redirecting Claude
-    // Code only works in API-key mode. A Claude Pro/Max subscription (OAuth) is rejected
-    // by a custom ANTHROPIC_BASE_URL → login loop / 401. When no API key is detectable we
-    // must not point Claude Code at the proxy. `--force` overrides for power users whose
+    // SUBSCRIPTION GUARD: the proxy never injects credentials, and a Claude Pro/Max
+    // subscription login must not be routed through a third-party tool (Anthropic's
+    // OAuth terms). When no API key is detectable we must not point Claude Code at the
+    // proxy. `--force` overrides for power users whose
     // key lives somewhere we cannot probe (e.g. a keychain or apiKeyHelper we missed).
     if !force && !anthropic_api_key_available(home) {
         if !quiet {

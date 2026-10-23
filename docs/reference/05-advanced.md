@@ -101,10 +101,9 @@ on the smaller history. Tune via `[proxy].history_mode` (or
 > as a `*.lean-ctx.bak` backup.
 
 > **Claude Pro/Max subscriptions need an API key for the proxy.** The proxy
-> forwards your credential upstream but never *injects* one. A Claude Pro/Max
-> subscription authenticates via OAuth directly against `api.anthropic.com`, and
-> that token is rejected by any custom `ANTHROPIC_BASE_URL` — routing it through
-> the proxy produces a login loop / 401. Therefore `proxy enable` **skips the
+> forwards your credential upstream but never *injects* one. Anthropic reserves
+> Claude Pro/Max subscription logins for direct use of Claude Code and does not
+> permit third-party tools to route requests through them. Therefore `proxy enable` **skips the
 > Claude redirect when no `ANTHROPIC_API_KEY` is detected** (env or
 > `~/.claude/settings.json`) and leaves Claude Code talking to Anthropic directly.
 > `lean-ctx doctor` flags the conflict if a stale redirect remains.

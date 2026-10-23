@@ -133,8 +133,8 @@ pub(crate) fn stale_proxy_env_outcome() -> Option<Outcome> {
 }
 /// Detects the Claude Pro/Max subscription + proxy conflict: the proxy is enabled and
 /// Claude Code's `ANTHROPIC_BASE_URL` points at the local proxy, but no Anthropic API
-/// key is available. A subscription OAuth token only authenticates against
-/// `api.anthropic.com`, so routing it through the proxy causes a login loop / 401.
+/// key is available. Anthropic does not permit third-party tools to route requests
+/// through a subscription login, so that traffic must stay on `api.anthropic.com`.
 /// Returns `None` when not applicable, `Some(Outcome)` when the conflict is present.
 /// v4 removed automatic model selection. A leftover `[proxy.routing.tiers]`
 /// table is still parsed but never routes, so tell the operator once instead
@@ -191,8 +191,8 @@ pub(crate) fn proxy_subscription_conflict_outcome() -> Option<Outcome> {
         ok: false,
         line: format!(
             "{BOLD}Claude auth{RST}  {RED}ANTHROPIC_BASE_URL → proxy but no ANTHROPIC_API_KEY (Pro/Max subscription){RST}\n\
-             {DIM}         A subscription token only authenticates against api.anthropic.com; routing it{RST}\n\
-             {DIM}         through the proxy causes a login loop / 401. Fix one of:{RST}\n\
+             {DIM}         Anthropic does not permit third-party tools to route a subscription login;{RST}\n\
+             {DIM}         keep it on api.anthropic.com. Fix one of:{RST}\n\
              {YELLOW}           lean-ctx proxy disable     {DIM}(keep your subscription; use ctx_* MCP tools for savings){RST}\n\
              {YELLOW}           export ANTHROPIC_API_KEY=…  {DIM}then: lean-ctx proxy enable  (pay-as-you-go via proxy){RST}"
         ),

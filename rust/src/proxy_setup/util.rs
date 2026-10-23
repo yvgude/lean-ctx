@@ -5,10 +5,10 @@ pub(crate) const PROXY_ENV_END: &str = "# <<< lean-ctx proxy env <<<";
 pub(crate) const DEFAULT_PROXY_PORT: u16 = 4444;
 
 /// Comment written in place of the `ANTHROPIC_BASE_URL` export when no Anthropic API
-/// key is detectable. A Claude Pro/Max subscription authenticates via OAuth against
-/// `api.anthropic.com` directly and is rejected by any custom base URL, so we must not
-/// route it through the proxy.
-pub(crate) const ANTHROPIC_OMITTED_NOTE: &str = "ANTHROPIC_BASE_URL omitted: Claude Pro/Max subscription authenticates against api.anthropic.com directly (set ANTHROPIC_API_KEY to route Claude through the proxy)";
+/// key is detectable. Anthropic does not permit third-party tools to route requests
+/// through a Claude Pro/Max subscription login, so we must not route it through the
+/// proxy.
+pub(crate) const ANTHROPIC_OMITTED_NOTE: &str = "ANTHROPIC_BASE_URL omitted: a Claude Pro/Max subscription login stays on api.anthropic.com (set ANTHROPIC_API_KEY to route Claude through the proxy)";
 
 /// Comment written when Grok is not routable through the proxy (no session and no API key).
 pub(crate) const GROK_OMITTED_NOTE: &str = "Grok proxy env omitted: run `grok login` (subscription) or set XAI_API_KEY to route Grok through lean-ctx";
