@@ -1122,3 +1122,68 @@ fn warm_system_gate_needs_cache_economics() {
         "without cache economics a cached prefix is never rewritten (#448)"
     );
 }
+
+/// A Claude Code request with MCP tool search on (the default behind a gateway
+/// since Claude Code v2.1.304): deferred tool definitions carry `defer_loading`,
+/// and a `ToolSearch` result returns `tool_reference` blocks. Long enough that
+/// history pruning and live compression both rewrite the body.
+fn tool_search_body() -> Value {
+    let mut messages = vec![
+        serde_json::json!({"role": "user", "content": "find the issue tracker tools"}),
+        serde_json::json!({"role": "assistant", "content": [
+            {"type": "tool_use", "id": "ts1", "name": "ToolSearch", "input": {"query": "issues"}}
+        ]}),
+        serde_json::json!({"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": "ts1", "content": [
+                {"type": "tool_reference", "tool_name": "mcp__tracker__list_issues"},
+                {"type": "tool_reference", "tool_name": "mcp__tracker__get_issue"}
+            ]}
+        ]}),
+    ];
+    for i in 0..30 {
+        let id = format!("b{i}");
+        messages.push(serde_json::json!({"role": "assistant", "content": [
+            {"type": "tool_use", "id": id, "name": "Bash", "input": {"command": "cargo test"}}
+        ]}));
+        messages.push(serde_json::json!({"role": "user", "content": [
+            {"type": "tool_result", "tool_use_id": id, "content": big_log()}
+        ]}));
+    }
+    serde_json::json!({
+        "model": "claude-opus-5-5",
+        "tools": [
+            {"name": "Bash", "description": "Run a shell command.", "input_schema": {"type": "object"}},
+            {"name": "ToolSearch", "description": "Search deferred tools.", "input_schema": {"type": "object"}},
+            {"name": "mcp__tracker__list_issues", "description": "List issues.",
+             "input_schema": {"type": "object"}, "defer_loading": true},
+            {"name": "mcp__tracker__get_issue", "description": "Get one issue.",
+             "input_schema": {"type": "object"}, "defer_loading": true,
+             "cache_control": {"type": "ephemeral"}}
+        ],
+        "messages": messages
+    })
+}
+
+#[test]
+fn tool_search_fields_survive_rewrites() {
+    // Claude Code expects a gateway to forward `defer_loading` and
+    // `tool_reference` unchanged; dropping either fails the request with a 400.
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let body = tool_search_body();
+    let bytes = serde_json::to_vec(&body).unwrap();
+    let (out, orig, comp) = compress_request_body(body.clone(), bytes.len());
+    assert!(comp < orig, "the fixture must exercise a real rewrite");
+    let parsed: Value = serde_json::from_slice(&out).unwrap();
+
+    let sent = parsed["tools"].as_array().unwrap();
+    for tool in body["tools"].as_array().unwrap() {
+        assert!(
+            sent.contains(tool),
+            "tool definition must be forwarded verbatim: {tool}"
+        );
+    }
+    assert_eq!(
+        parsed["messages"][2], body["messages"][2],
+        "tool_reference blocks must reach the provider unchanged"
+    );
+}
