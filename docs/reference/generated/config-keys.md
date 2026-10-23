@@ -507,6 +507,7 @@ Per-item sensitivity model with a uniform policy floor (#212)
 
 Controls what lean-ctx injects during setup and updates. Fresh installs default to non-invasive (rules/skills off, MCP on).
 
+- `agents` (string[], default `null`) — AI tools setup/onboard/update may configure (agent keys like claude, cursor, codex). Unset = every detected tool. Set with: lean-ctx setup --agents claude,cursor (--agents all resets)
 - `auto_inject_rules` (bool?, default `null`) — Inject agent rule files during setup/update. null=auto (inject if already present), true=always, false=never
 - `auto_inject_skills` (bool?, default `null`) — Install SKILL.md files during setup/update. null=auto (install if rules present), true=always, false=never
 - `auto_update_mcp` (bool, default `true`) — Register lean-ctx MCP server in editor configs during setup/update
