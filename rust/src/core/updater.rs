@@ -98,25 +98,6 @@ fn check_flags(args: &[String]) -> FlagCheck<'_> {
         .map_or(FlagCheck::Run, FlagCheck::Unknown)
 }
 
-/// Flags that change state on their own; `--dry-run` must not run them.
-const STATEFUL_FLAGS: &[&str] = &[
-    "--schedule",
-    "--rollback",
-    "--unpin",
-    "--pin",
-    "--recover-update",
-];
-
-/// The stateful flag combined with `--dry-run`, if any.
-fn dry_run_conflict(args: &[String]) -> Option<&str> {
-    if !args.iter().any(|a| a == "--dry-run") {
-        return None;
-    }
-    args.iter()
-        .map(String::as_str)
-        .find(|a| STATEFUL_FLAGS.contains(a))
-}
-
 fn command_name(mode: UpdateMode) -> &'static str {
     match mode {
         UpdateMode::Normal => "update",
@@ -164,11 +145,6 @@ fn run_with_mode(args: &[String], mode: UpdateMode) {
             std::process::exit(2);
         }
     }
-    if let Some(flag) = dry_run_conflict(args) {
-        eprintln!("  \x1b[31m✗\x1b[0m --dry-run cannot be combined with {flag}");
-        std::process::exit(2);
-    }
-
     flow::run_with_mode(args, mode);
 }
 
@@ -226,25 +202,6 @@ mod argument_guard_tests {
             &["3.10.3", "--dry-run", "--skip-rules"][..],
         ] {
             assert_eq!(check_flags(&args(ok)), FlagCheck::Run, "{ok:?}");
-        }
-    }
-
-    #[test]
-    fn dry_run_refuses_stateful_flags() {
-        assert_eq!(super::dry_run_conflict(&args(&["--dry-run"])), None);
-        assert_eq!(super::dry_run_conflict(&args(&["--rollback"])), None);
-        for flag in [
-            "--schedule",
-            "--rollback",
-            "--unpin",
-            "--pin",
-            "--recover-update",
-        ] {
-            assert_eq!(
-                super::dry_run_conflict(&args(&["--dry-run", flag])),
-                Some(flag),
-                "{flag}"
-            );
         }
     }
 }

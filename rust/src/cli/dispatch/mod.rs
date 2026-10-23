@@ -1298,14 +1298,14 @@ fn handle_setup(rest: &[String]) {
     let skip_rules = rest.iter().any(|a| a == "--skip-rules");
     let no_agent_aliases = rest.iter().any(|a| a == "--no-agent-aliases");
     let dry_run = rest.iter().any(|a| a == "--dry-run");
-    let agents = resolve_agents_flag_or_exit("setup", rest);
+    let agents = setup::resolve_agents_flag_or_exit("setup", rest);
 
     if dry_run {
-        run_dry_run_or_exit(agents, skip_rules, json);
+        setup::run_dry_run_or_exit(agents, skip_rules, json);
         return;
     }
     if let Some(setup::RequestedAgents(selection)) = agents.clone() {
-        persist_agents_or_exit(selection, json);
+        setup::persist_agents_or_exit(selection, json);
     }
 
     if no_agent_aliases {
@@ -1328,36 +1328,6 @@ fn handle_setup(rest: &[String]) {
     }
 }
 
-fn resolve_agents_flag_or_exit(cmd: &str, rest: &[String]) -> Option<setup::RequestedAgents> {
-    setup::resolve_agents_flag(rest).unwrap_or_else(|e| {
-        eprintln!("{cmd}: {e}");
-        std::process::exit(2);
-    })
-}
-
-/// `--dry-run`: the `--agents` override, else the saved selection.
-fn run_dry_run_or_exit(agents: Option<setup::RequestedAgents>, skip_rules: bool, json: bool) {
-    let selection = agents.map_or_else(
-        || crate::core::config::Config::load().setup.agents,
-        |requested| requested.0,
-    );
-    if let Err(e) = setup::run_dry_run(selection.as_deref(), skip_rules, json) {
-        eprintln!("{e}");
-        std::process::exit(1);
-    }
-}
-
-fn persist_agents_or_exit(selection: Option<Vec<String>>, quiet: bool) {
-    let label = setup::describe_selection(selection.as_deref());
-    if let Err(e) = setup::persist_agent_selection(selection) {
-        eprintln!("{e}");
-        std::process::exit(1);
-    }
-    if !quiet {
-        println!("  Agent selection saved (setup.agents): {label}");
-    }
-}
-
 fn handle_onboard(rest: &[String]) {
     if rest.iter().any(|a| a == "--help" || a == "-h") {
         println!("Usage: lean-ctx onboard [--agents LIST] [--dry-run] [--no-agent-aliases]");
@@ -1374,13 +1344,13 @@ fn handle_onboard(rest: &[String]) {
         println!("Fine-grained control: lean-ctx setup --help");
         return;
     }
-    let agents = resolve_agents_flag_or_exit("onboard", rest);
+    let agents = setup::resolve_agents_flag_or_exit("onboard", rest);
     if rest.iter().any(|a| a == "--dry-run") {
-        run_dry_run_or_exit(agents, false, false);
+        setup::run_dry_run_or_exit(agents, false, false);
         return;
     }
     if let Some(setup::RequestedAgents(selection)) = agents.clone() {
-        persist_agents_or_exit(selection, false);
+        setup::persist_agents_or_exit(selection, false);
     }
     if rest.iter().any(|a| a == "--no-agent-aliases") {
         let _ = crate::core::config::setter::set_by_key("skip_agent_aliases", "true");

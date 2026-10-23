@@ -149,6 +149,35 @@ pub fn describe_selection(selection: Option<&[String]>) -> String {
     }
 }
 
+/// CLI wrapper for [`resolve_agents_flag`]: a bad `--agents` value exits 2.
+pub fn resolve_agents_flag_or_exit(cmd: &str, args: &[String]) -> Option<RequestedAgents> {
+    resolve_agents_flag(args).unwrap_or_else(|e| {
+        eprintln!("{cmd}: {e}");
+        std::process::exit(2);
+    })
+}
+
+/// CLI `--dry-run`: the `--agents` override, else the saved selection.
+pub fn run_dry_run_or_exit(agents: Option<RequestedAgents>, skip_rules: bool, json: bool) {
+    let selection = agents.map_or_else(|| Config::load().setup.agents, |requested| requested.0);
+    if let Err(e) = run_dry_run(selection.as_deref(), skip_rules, json) {
+        eprintln!("{e}");
+        std::process::exit(1);
+    }
+}
+
+/// CLI `--agents`: save the selection as `setup.agents`, exit 1 on failure.
+pub fn persist_agents_or_exit(selection: Option<Vec<String>>, quiet: bool) {
+    let label = describe_selection(selection.as_deref());
+    if let Err(e) = persist_agent_selection(selection) {
+        eprintln!("{e}");
+        std::process::exit(1);
+    }
+    if !quiet {
+        println!("  Agent selection saved (setup.agents): {label}");
+    }
+}
+
 /// Ask which detected tools to connect. Returns the new selection, or the
 /// current one unchanged when nothing is detected or input ends.
 pub fn prompt_agent_selection(
