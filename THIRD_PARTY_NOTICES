@@ -2,15 +2,15 @@
 Schema: leanctx.third-party-notices/v1
 Status: GENERATED AND APPROVED
 Content-Digest-Scope: SHA-256 of this file with the Content-Digest value zeroed
-Content-Digest: sha256:1161cebece7171113f60f429d14ee512009982616afdca929f1f8026d06740ad
+Content-Digest: sha256:a91f94ce5e6a423b435217fb229babff8794995a1b19818e96e721cbf05b8cde
 Source inventory: rust/Cargo.lock + cargo metadata --locked --offline --all-features + SBOM.cdx.json + legal/third-party-assets.toml + packages/pi-lean-ctx/package-lock.json
 Generation command: cargo metadata --locked --offline --all-features --manifest-path rust/Cargo.toml --format-version 1
 Approval contract: legal/third-party-notices-approval.toml binds approved_content_sha256 to this file's exact SHA-256
-Cargo.lock SHA-256: 530be9fd1fa2ffe2ee4611edf68f621acc3e98fb3b9a1bdc1f4a54b6a5a0fcc2
-Cargo metadata inventory SHA-256: 46292627ffa676d1314bdd41538750c13b18ef3e7dc2afef9ddcc1b00edfb94d
-SBOM.cdx.json SHA-256: 1a0160d7ed2659e0f293a94fffee30652cdb1efd602370fb0aeb7db925e8065b
+Cargo.lock SHA-256: afc0db7039db1f5fde4aa345b1b43a2aa72df73deabe51576beacc240fbc43d1
+Cargo metadata inventory SHA-256: e868a8e15e1713971581431c2c0fa0bb236eee6cf087aea0c2d71f50426786f2
+SBOM.cdx.json SHA-256: ec5ff509430f117b59afff4fc95134111a1f366e24e1da075ef9811943bf2384
 SBOM components: 543
-Asset manifest SHA-256: 9bab577ec1c87c48739a4596d299be255f067fc8784cdb940f1604009e691f34
+Asset manifest SHA-256: 9e533465d040a05fbc7f9ef2605eec9c830306c5adf82c0d22072bc41db15f9e
 npm package-lock.json SHA-256: df993605fd30412428c0ac5ab7b8caaee9b4ad5e49ff069cc07939fd705fd5a4
 Bundled MCP SDK: @modelcontextprotocol/sdk 1.32.1 (sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==)
 Cargo graph packages: 597
@@ -777,7 +777,7 @@ Targets: crypto_common[lib]
 Features: getrandom, rand_core, zeroize
 Dependencies: hybrid-array
 
-### ctutils 0.4.2
+### ctutils 0.4.4
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/RustCrypto/utils
 SPDX-License-Identifier: Apache-2.0 OR MIT
@@ -2793,7 +2793,7 @@ Targets: rustls_platform_verifier_android[lib]
 Features: (none)
 Dependencies: (none)
 
-### rustls-webpki 0.103.15
+### rustls-webpki 0.103.16
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/rustls/webpki
 SPDX-License-Identifier: ISC
@@ -4185,7 +4185,7 @@ Targets: benchmark[example], serde[test], web_time[lib]
 Features: serde
 Dependencies: js-sys, wasm-bindgen
 
-### webpki-root-certs 1.0.9
+### webpki-root-certs 1.0.11
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/rustls/webpki-roots
 SPDX-License-Identifier: CDLA-Permissive-2.0
@@ -4201,7 +4201,7 @@ Targets: verify[test], webpki_roots[lib]
 Features: (none)
 Dependencies: webpki-roots
 
-### webpki-roots 1.0.9
+### webpki-roots 1.0.11
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/rustls/webpki-roots
 SPDX-License-Identifier: CDLA-Permissive-2.0
