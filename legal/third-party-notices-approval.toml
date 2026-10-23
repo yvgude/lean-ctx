@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "586cd1ad1dbef53c182f9a1850181ef775be8e17e2e2fa7ba32987a585f10507"
+approved_content_sha256 = "a6a139b9dd6ad9a2f27b19be4517422e0b1b8e1ba9f52f14c0f4d233da1fee12"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval (explicit \"Ja, freigeben\" for THIRD_PARTY_NOTICES sha256 586cd1ad...0507, 2026-10-23) of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for the hono 4.13.7 -> 4.13.13 bump in packages/pi-lean-ctx (Dependabot #2122): only the npm package-lock, asset-manifest and content digests change; no license or notice text changes."
+approval_evidence = "Copyright owner approval (explicit \"Ja, freigeben\" for THIRD_PARTY_NOTICES sha256 a6a139b9...ee12, 2026-10-23) of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for the hono 4.13.7 -> 4.13.13 bump in packages/pi-lean-ctx (Dependabot #2122) and the RUSTSEC-2026-0386 tokio 1.53.1 -> 1.53.3 bump: tokio changes version and test-target list, and the npm package-lock, Cargo.lock, SBOM, metadata, asset-manifest and content digests change; no license or notice text changes."
 approved_at = "2026-10-23"
