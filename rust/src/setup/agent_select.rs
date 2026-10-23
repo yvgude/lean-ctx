@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Which AI tools `setup` / `onboard` / `update` may wire up, and a
 //! read-only preview (`--dry-run`) of what a run would touch.
 //!
