@@ -306,8 +306,12 @@ fn suggested_allow_dir(path: &Path, home: Option<&Path>) -> PathBuf {
 /// `shell_allowlist::self_config`). `candidate` is the requested path, `base`
 /// its canonical existing ancestor, `root` the active project.
 pub(crate) fn escape_hint(candidate: &Path, base: &Path, root: &Path) -> String {
+    // Agents looped on the same refusal (99 identical calls in one Cursor
+    // session): say outright that a retry cannot succeed.
     const TAIL: &str = " — the user runs this in their own terminal; it takes effect \
-                        immediately, no restart.";
+                        immediately, no restart. Until then every call on this path is \
+                        refused the same way: do not retry it, ask the user or continue \
+                        without it.";
     let home = zone_home();
 
     if home.as_deref() == Some(base) {

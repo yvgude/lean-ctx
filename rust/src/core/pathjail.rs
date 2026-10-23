@@ -559,9 +559,82 @@ const AGENT_INSTRUCTION_ROOTS: &[(&str, &str)] = &[
     (".codeium/windsurf/mcp_config.json", "Windsurf config"),
 ];
 
-/// If `candidate` lies in one of [`AGENT_INSTRUCTION_ROOTS`] below the home
-/// directory, return `(label, root)`. Anchored at `~` so a same-named folder
-/// elsewhere on disk is not opened.
+/// Folders below `~/.cursor/projects/<workspace>/` where Cursor's agent writes
+/// long tool output and terminal logs, then greps and reads them back. With
+/// lean-ctx in place those reads go through the jail, which refused every one
+/// as a protected location — Cursor sessions hit that refusal on `ctx_search`
+/// about three times as often per installation as other clients in 3.11.4.
+/// Opened read-only, and only for the session's own workspace
+/// ([`cursor_workspace_matches`]); other projects' logs, the workspace's
+/// `mcp-auth.json`, transcripts and the rest of `~/.cursor` stay jailed.
+const CURSOR_AGENT_OUTPUT_DIRS: &[&str] = &["agent-tools", "terminals"];
+const CURSOR_AGENT_OUTPUT_LABEL: &str = "Cursor agent output";
+
+/// Cursor names a workspace's folder after the path it opened: every
+/// character other than an ASCII letter or digit becomes `-`, leading ones
+/// dropped (`/Users/me/my_app` → `Users-me-my-app`).
+fn cursor_workspace_slug(root: &Path) -> String {
+    let slug: String = root
+        .to_string_lossy()
+        .chars()
+        .map(|c| if c.is_ascii_alphanumeric() { c } else { '-' })
+        .collect();
+    slug.trim_start_matches('-').to_string()
+}
+
+/// `…/.cursor/projects/<workspace>/<dir>` with `<dir>` in
+/// [`CURSOR_AGENT_OUTPUT_DIRS`]; path components only, no filesystem access
+/// (runs for every registered root on every jail call).
+fn is_cursor_agent_output_root(path: &Path) -> bool {
+    let mut back = path.components().rev().map(std::path::Component::as_os_str);
+    let (Some(dir), Some(_workspace), Some(projects), Some(cursor)) =
+        (back.next(), back.next(), back.next(), back.next())
+    else {
+        return false;
+    };
+    cursor == ".cursor"
+        && projects == "projects"
+        && CURSOR_AGENT_OUTPUT_DIRS.iter().any(|d| dir == *d)
+}
+
+/// True when the Cursor output folder `admitted_root`
+/// (`~/.cursor/projects/<workspace>/<dir>`) belongs to the session's project
+/// or one of its declared roots, raw or canonical (`/var` vs `/private/var`).
+/// Exact match only: a prefix would let `lean-ctx` read `lean-ctx-enterprise`.
+/// Numbered and `empty-window` workspaces belong to no project and stay jailed.
+fn cursor_workspace_matches(
+    admitted_root: &Path,
+    jail_root: &Path,
+    extra_roots: &[String],
+) -> bool {
+    let Some(workspace) = admitted_root.parent().and_then(Path::file_name) else {
+        return false;
+    };
+    std::iter::once(jail_root.to_path_buf())
+        .chain(extra_roots.iter().map(PathBuf::from))
+        .flat_map(|root| [canonicalize_secure(&root), root])
+        .any(|root| workspace == cursor_workspace_slug(&root).as_str())
+}
+
+/// `rel` (relative to `~`, only normal components) inside one of
+/// [`CURSOR_AGENT_OUTPUT_DIRS`] → that folder, relative to `~`.
+fn cursor_agent_output_root(rel: &Path) -> Option<PathBuf> {
+    let mut parts = rel.components().map(std::path::Component::as_os_str);
+    if parts.next()? != ".cursor" || parts.next()? != "projects" {
+        return None;
+    }
+    let workspace = parts.next()?;
+    let dir = parts.next()?;
+    CURSOR_AGENT_OUTPUT_DIRS
+        .iter()
+        .any(|d| dir == *d)
+        .then(|| Path::new(".cursor/projects").join(workspace).join(dir))
+}
+
+/// If `candidate` lies in one of [`AGENT_INSTRUCTION_ROOTS`] or
+/// [`CURSOR_AGENT_OUTPUT_DIRS`] below the home directory, return
+/// `(label, root)`. Anchored at `~` so a same-named folder elsewhere on disk
+/// is not opened.
 fn detect_agent_instruction_root(candidate: &Path) -> Option<(&'static str, PathBuf)> {
     let home = dirs::home_dir()?;
     let canon_home = canonicalize_secure(&home);
@@ -580,6 +653,15 @@ fn detect_agent_instruction_root(candidate: &Path) -> Option<(&'static str, Path
         .iter()
         .find(|(root, _)| rel.starts_with(root))
         .map(|&(root, label)| (label, canon_home.join(root)))
+        .or_else(|| {
+            cursor_agent_output_root(rel)
+                .map(|root| canon_home.join(root))
+                // The agent can write here, so a symlinked folder (or workspace)
+                // would open its target — `agent-tools -> ~/.ssh`. Admit only a
+                // root that resolves to itself.
+                .filter(|root| canonicalize_secure(root) == *root)
+                .map(|root| (CURSOR_AGENT_OUTPUT_LABEL, root))
+        })
 }
 
 /// When `candidate` reaches its target through a symlink inside an agent
@@ -591,10 +673,12 @@ fn detect_agent_instruction_root(candidate: &Path) -> Option<(&'static str, Path
 /// user. A language cache such as `node_modules` sits in a writable project,
 /// where an agent could plant a link to anything — those are never followed.
 /// Targets must stay below `~` and outside protected zones, so a link cannot
-/// smuggle `~/.ssh` or a system directory in. Returns `true` when a target
+/// smuggle `~/.ssh` or a system directory in. Cursor's agent output folders
+/// are excluded: the agent writes them itself. Returns `true` when a target
 /// directory was newly registered.
 pub fn register_symlink_target_read_only(candidate: &Path, root: &Path) -> bool {
-    if detect_agent_instruction_root(root).is_none()
+    if detect_agent_instruction_root(root)
+        .is_none_or(|(label, _)| label == CURSOR_AGENT_OUTPUT_LABEL)
         || (!candidate.starts_with(root) && !candidate.starts_with(canonicalize_secure(root)))
     {
         return false;
@@ -649,6 +733,13 @@ pub fn jail_path_auto_admitting(
     let Some((label, root)) = detect_language_cache_root(candidate) else {
         return Err(refused);
     };
+    // One output folder per Cursor workspace: another project's terminal logs
+    // stay jailed.
+    if label == CURSOR_AGENT_OUTPUT_LABEL
+        && !cursor_workspace_matches(&root, jail_root, extra_roots)
+    {
+        return Err(refused);
+    }
     if register_session_read_only_root(&root) {
         tracing::info!(
             "auto-registered {label} at {} as a read-only root",
@@ -774,11 +865,17 @@ pub fn jail_path_with_roots(
             allow.push(canonicalize_secure(&state));
         }
         // Read-only roots are also allowed for reads (they only block writes
-        // via enforce_writable, not reads via the jail).
+        // via enforce_writable, not reads via the jail). The registry is
+        // process-global; a Cursor output folder is per workspace, so one
+        // registered by another project's session stays jailed here.
         allow.extend(
             read_only_roots_from_env_and_config()
                 .into_iter()
-                .map(|p| canonicalize_secure(&p)),
+                .map(|p| canonicalize_secure(&p))
+                .filter(|p| {
+                    !is_cursor_agent_output_root(p)
+                        || cursor_workspace_matches(p, jail_root, extra_roots)
+                }),
         );
 
         let (base, remainder) = canonicalize_existing_ancestor(candidate).ok_or_else(|| {

@@ -337,6 +337,7 @@ fn escape_error_names_config_keys_without_meta() {
         msg.contains("lean-ctx allow-path") && msg.contains("no restart"),
         "agent-visible escape error should hint at resolution: {msg}"
     );
+    assert!(msg.contains("do not retry"), "{msg}");
     assert!(!msg.contains("LEAN_CTX_EXTRA_ROOTS="), "{msg}");
 }
 
@@ -813,6 +814,117 @@ fn agent_instruction_roots_are_admitted_but_credentials_stay_jailed() {
     );
 }
 
+/// Cursor writes long tool output and terminal logs per workspace and its
+/// agent reads them back; only those two folders open, not the workspace's
+/// MCP credentials or transcripts.
+#[test]
+fn cursor_agent_output_is_admitted_but_workspace_secrets_stay_jailed() {
+    // Reads $HOME, which the symlink test below swaps.
+    let _guard = crate::core::data_dir::test_env_lock();
+    let home = dirs::home_dir().expect("home dir in test env");
+    for (inside, root) in [
+        (
+            ".cursor/projects/1776093250124/agent-tools/9f2c.txt",
+            ".cursor/projects/1776093250124/agent-tools",
+        ),
+        (
+            ".cursor/projects/Users-me-app/terminals/3.txt",
+            ".cursor/projects/Users-me-app/terminals",
+        ),
+        (
+            ".cursor/projects/w/terminals",
+            ".cursor/projects/w/terminals",
+        ),
+    ] {
+        let (label, detected) = detect_language_cache_root(&home.join(inside))
+            .unwrap_or_else(|| panic!("{inside} must be admitted"));
+        assert_eq!(label, "Cursor agent output");
+        assert!(
+            detected.ends_with(root),
+            "{inside} → {}",
+            detected.display()
+        );
+    }
+    for private in [
+        ".cursor/projects/w/mcp-auth.json",
+        ".cursor/projects/w/agent-transcripts/a.jsonl",
+        ".cursor/projects/w",
+        ".cursor/projects/agent-tools",
+        ".cursor/projects/w/terminals/../mcp-auth.json",
+        ".cursor/agent-tools/x.txt",
+    ] {
+        assert!(
+            detect_language_cache_root(&home.join(private)).is_none(),
+            "{private} must stay jailed"
+        );
+    }
+    assert!(
+        detect_language_cache_root(Path::new("/opt/x/.cursor/projects/w/terminals/1.txt"))
+            .is_none(),
+        "only the home directory's Cursor folder is admitted"
+    );
+}
+
+/// Puts `$HOME` back when a test that swapped it ends (also on panic).
+#[cfg(not(feature = "no-jail"))]
+#[cfg(unix)]
+struct RestoreHome(Option<std::ffi::OsString>);
+
+#[cfg(not(feature = "no-jail"))]
+#[cfg(unix)]
+impl Drop for RestoreHome {
+    fn drop(&mut self) {
+        match self.0.take() {
+            Some(value) => crate::test_env::set_var("HOME", value),
+            None => crate::test_env::remove_var("HOME"),
+        }
+    }
+}
+
+/// The agent writes Cursor's output folders itself: a folder (or workspace)
+/// that is a symlink must not open its target, and a link inside one is
+/// never followed.
+#[cfg(not(feature = "no-jail"))]
+#[cfg(unix)]
+#[test]
+fn symlinked_cursor_agent_output_is_never_admitted() {
+    let _guard = crate::core::data_dir::test_env_lock();
+    let _restore_home = RestoreHome(std::env::var_os("HOME"));
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().canonicalize().unwrap();
+    crate::test_env::set_var("HOME", &home);
+
+    let ssh = home.join(".ssh");
+    let notes = home.join("notes");
+    let projects = home.join(".cursor/projects");
+    let real = projects.join("real/agent-tools");
+    std::fs::create_dir_all(&ssh).unwrap();
+    std::fs::create_dir_all(&notes).unwrap();
+    std::fs::write(notes.join("a.txt"), "x").unwrap();
+    std::fs::create_dir_all(&real).unwrap();
+    std::fs::create_dir_all(projects.join("linked")).unwrap();
+    std::os::unix::fs::symlink(&ssh, projects.join("linked/agent-tools")).unwrap();
+    std::os::unix::fs::symlink(&ssh, projects.join("linked-ws")).unwrap();
+    std::fs::create_dir_all(ssh.join("terminals")).unwrap();
+    std::os::unix::fs::symlink(&notes, real.join("planted")).unwrap();
+
+    assert!(detect_language_cache_root(&real.join("1.txt")).is_some());
+    for linked in [
+        projects.join("linked/agent-tools/id_ed25519"),
+        projects.join("linked-ws/terminals/1.txt"),
+    ] {
+        assert!(
+            detect_language_cache_root(&linked).is_none(),
+            "{} must stay jailed",
+            linked.display()
+        );
+    }
+    assert!(
+        !register_symlink_target_read_only(&real.join("planted/a.txt"), &real),
+        "a link inside the agent's own output folder is never followed"
+    );
+}
+
 /// A link inside a language cache lives in a writable project, where an agent
 /// could plant it: it must never open its target, even below a temp dir.
 #[cfg(not(feature = "no-jail"))]
@@ -838,4 +950,65 @@ fn symlink_in_language_cache_is_never_followed() {
         jail_path_with_roots(&linked, &project, &[]).is_err(),
         "the planted link's target stays jailed"
     );
+}
+
+/// Cursor's workspace folder names, as found in `~/.cursor/projects`.
+#[test]
+fn cursor_workspace_slug_matches_cursor_naming() {
+    for (root, slug) in [
+        (
+            "/Users/me/Documents/Projects/lean-ctx",
+            "Users-me-Documents-Projects-lean-ctx",
+        ),
+        (
+            "/private/var/folders/bb/cyj_m1m1/T/tmpO2JVyY",
+            "private-var-folders-bb-cyj-m1m1-T-tmpO2JVyY",
+        ),
+        ("/home/u/my app.v2", "home-u-my-app-v2"),
+    ] {
+        assert_eq!(cursor_workspace_slug(Path::new(root)), slug);
+    }
+}
+
+/// A Cursor session reads its own workspace's output, never another
+/// project's — not even after that project's session registered its folder
+/// in the process-global read-only roots. Writes stay denied.
+#[cfg(not(feature = "no-jail"))]
+#[cfg(unix)]
+#[test]
+fn cursor_agent_output_opens_only_for_the_own_workspace() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let _restore_home = RestoreHome(std::env::var_os("HOME"));
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().canonicalize().unwrap();
+    crate::test_env::set_var("HOME", &home);
+
+    let app = home.join("code/app");
+    let other = home.join("code/app-other");
+    let log_of = |project: &Path| {
+        let dir = home
+            .join(".cursor/projects")
+            .join(cursor_workspace_slug(project))
+            .join("terminals");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("1.txt"), "$ cargo test").unwrap();
+        dir.join("1.txt")
+    };
+    for project in [&app, &other] {
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+    }
+    let app_log = log_of(&app);
+    let other_log = log_of(&other);
+
+    assert!(jail_path_auto_admitting(&app_log, &app, &[]).is_ok());
+    assert!(
+        jail_path_auto_admitting(&other_log, &app, &[]).is_err(),
+        "another project's terminal log stays jailed"
+    );
+    assert!(
+        jail_path_with_roots(&app_log, &other, &[]).is_err(),
+        "a folder registered for app does not open for app-other"
+    );
+    assert!(jail_path_with_roots(&app_log, &app, &[]).is_ok());
+    assert!(is_read_only_path(&app_log), "writes stay denied");
 }
