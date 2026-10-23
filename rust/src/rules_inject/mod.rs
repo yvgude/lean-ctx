@@ -166,10 +166,12 @@ pub fn inject_all_rules(home: &std::path::Path) -> InjectResult {
     }
 
     let targets = build_rules_targets(home, cfg.rules_injection_effective());
+    let selected = selected_rules_names(&cfg, home);
 
     let mut result = InjectResult::default();
 
     if cfg.rules_injection_effective() == crate::core::config::RulesInjection::Shared
+        && cfg.setup.allows_agent("claude", "Claude Code")
         && detect::is_named_agent_ready("Claude Code", home)
     {
         sync_claude_pointer_block(home, &mut result);
@@ -177,6 +179,9 @@ pub fn inject_all_rules(home: &std::path::Path) -> InjectResult {
 
     for target in &targets {
         if !is_tool_detected(target, home) {
+            continue;
+        }
+        if !rules_target_selected(&cfg, selected.as_deref(), target.name) {
             continue;
         }
         // GH #1435: skip rules injection when the tool's MCP server is not
@@ -353,6 +358,40 @@ fn match_agent_name(cli_key: &str, target_name: &str) -> bool {
         || (needle == "openclaw" && tn.contains("openclaw"))
         || (needle == "grok" && tn.contains("grok"))
         || (needle == "vscode" && (tn.contains("vs code") || tn.contains("vscode")))
+}
+
+/// Display names of the editor targets the `setup.agents` selection keeps,
+/// or `None` when every agent is selected.
+fn selected_rules_names(
+    cfg: &crate::core::config::Config,
+    home: &std::path::Path,
+) -> Option<Vec<&'static str>> {
+    cfg.setup.agents.as_ref()?;
+    Some(
+        crate::core::editor_registry::build_targets(home)
+            .into_iter()
+            .filter(|t| cfg.setup.allows_agent(&t.agent_key, t.name))
+            .map(|t| t.name)
+            .collect(),
+    )
+}
+
+/// A rules target follows the agent selection: it is kept when its name is a
+/// selected editor, or a selected entry names it (rules names are coarser
+/// than editor names, e.g. "Antigravity" covers IDE and CLI).
+fn rules_target_selected(
+    cfg: &crate::core::config::Config,
+    selected_names: Option<&[&'static str]>,
+    target_name: &str,
+) -> bool {
+    let (Some(entries), Some(names)) = (cfg.setup.agents.as_deref(), selected_names) else {
+        return true;
+    };
+    names.contains(&target_name)
+        || entries
+            .iter()
+            .map(|e| e.trim())
+            .any(|e| !e.is_empty() && match_agent_name(e, target_name))
 }
 
 /// Check if the rules file for a given MCP client is up-to-date.

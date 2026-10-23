@@ -12,6 +12,12 @@ use super::options::SetupOptions;
 use super::with_options::run_setup_with_options;
 
 pub fn run_setup() {
+    run_setup_wizard(true);
+}
+
+/// The guided wizard. `ask_agents = false` when `--agents` already chose the
+/// tools to connect.
+pub fn run_setup_wizard(ask_agents: bool) {
     use crate::terminal_ui;
 
     if crate::shell::is_non_interactive() {
@@ -53,6 +59,21 @@ pub fn run_setup() {
     let allow_rule_steering =
         inject_rules && !crate::core::config::Config::load().declines_rule_steering();
 
+    // Ask before the first write: shell aliases (step 1) already follow it.
+    let targets = crate::core::editor_registry::build_targets(&home);
+    if ask_agents {
+        println!();
+        println!("  \x1b[1mWhich AI tools should lean-ctx connect to?\x1b[0m");
+        let current = crate::core::config::Config::load().setup.agents;
+        let chosen = super::agent_select::prompt_agent_selection(&targets, current.as_deref());
+        if chosen != current
+            && let Err(e) = super::agent_select::persist_agent_selection(chosen)
+        {
+            terminal_ui::print_status_warn(&e);
+        }
+    }
+    let selection = crate::core::config::Config::load().setup;
+
     terminal_ui::print_step_header(1, 14, "Shell Hook");
     crate::cli::cmd_init(&["--global".to_string()]);
     crate::shell_hook::install_all(false);
@@ -71,7 +92,6 @@ pub fn run_setup() {
 
     terminal_ui::print_step_header(3, 14, "AI Tool Detection");
 
-    let targets = crate::core::editor_registry::build_targets(&home);
     // #281: in MCP-disabled environments (`auto_update_mcp = false`) editors are
     // still detected and hooks/rules still install, but the MCP server is never
     // written into their configs.
@@ -81,6 +101,7 @@ pub fn run_setup() {
     let mut newly_configured: Vec<&str> = Vec::new();
     let mut already_configured: Vec<&str> = Vec::new();
     let mut not_installed: Vec<&str> = Vec::new();
+    let mut not_selected: Vec<&str> = Vec::new();
     let mut mcp_skipped: Vec<&str> = Vec::new();
     let mut errors: Vec<&str> = Vec::new();
     let mut configured_integration_ids = Vec::new();
@@ -90,6 +111,10 @@ pub fn run_setup() {
 
         if !target.detect_path.exists() {
             not_installed.push(target.name);
+            continue;
+        }
+        if !selection.allows_agent(&target.agent_key, target.name) {
+            not_selected.push(target.name);
             continue;
         }
 
@@ -140,9 +165,17 @@ pub fn run_setup() {
     }
 
     let total_ok = newly_configured.len() + already_configured.len();
-    if total_ok == 0 && errors.is_empty() && mcp_skipped.is_empty() {
+    if total_ok == 0 && errors.is_empty() && mcp_skipped.is_empty() && not_selected.is_empty() {
         terminal_ui::print_status_warn(
             "No AI tools detected. Install one and re-run: lean-ctx setup",
+        );
+    }
+
+    if !not_selected.is_empty() {
+        println!(
+            "  \x1b[2m- {} not selected (left untouched): {}\x1b[0m",
+            not_selected.len(),
+            not_selected.join(", ")
         );
     }
 
@@ -192,7 +225,10 @@ pub fn run_setup() {
     };
 
     for target in &targets {
-        if !target.detect_path.exists() || target.agent_key.is_empty() {
+        if !target.detect_path.exists()
+            || target.agent_key.is_empty()
+            || !selection.allows_agent(&target.agent_key, target.name)
+        {
             continue;
         }
 

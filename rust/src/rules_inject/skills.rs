@@ -132,16 +132,19 @@ pub fn install_all_skills(home: &std::path::Path) -> Vec<(String, bool)> {
     // `rules_injection = off`: the user opted out of lean-ctx-authored steering
     // entirely (GH #361). The on-demand SKILL.md is part of that surface, so
     // write none — mirrors `inject_all_rules`'s early return.
-    if crate::core::config::Config::load().rules_injection_effective()
-        == crate::core::config::RulesInjection::Off
-    {
+    let cfg = crate::core::config::Config::load();
+    if cfg.rules_injection_effective() == crate::core::config::RulesInjection::Off {
         return Vec::new();
     }
     let targets = build_skill_targets(home);
     let mut results = Vec::new();
 
     for target in &targets {
-        if !is_skill_agent_detected(target.agent_key, home) {
+        if !is_skill_agent_detected(target.agent_key, home)
+            || !cfg
+                .setup
+                .allows_agent(target.agent_key, target.display_name)
+        {
             continue;
         }
 

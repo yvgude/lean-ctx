@@ -632,6 +632,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "Refresh already-installed agent hooks, permissions.deny and status line on MCP server start. false = only explicit setup/init/doctor --fix writes them",
         ),
     );
+    setup_keys.insert(
+        "agents".into(),
+        key(
+            "string[]",
+            serde_json::json!(null),
+            "AI tools setup/onboard/update may configure (agent keys like claude, cursor, codex). Unset = every detected tool. Set with: lean-ctx setup --agents claude,cursor (--agents all resets)",
+        ),
+    );
     sections.insert(
             "setup".into(),
             SectionSchema {

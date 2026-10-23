@@ -7,8 +7,11 @@ use super::with_options::run_setup_with_options;
 /// every decision for the user with sensible defaults — connect detected AI
 /// tools, install the shell hook, set the `standard` tool profile — then prints
 /// one clear "you're all set" message with a single obvious next step. This is
-/// the recommended first-run path: time-to-value in seconds, zero prompts.
-pub fn run_onboard() {
+/// the recommended first-run path: time-to-value in seconds. The one question
+/// it asks — which detected tools to connect — only appears on a terminal and
+/// when `--agents` did not already answer it (`ask_agents`); unattended runs
+/// connect every detected tool.
+pub fn run_onboard(ask_agents: bool) {
     use crate::terminal_ui;
 
     let dim = "\x1b[2m";
@@ -20,9 +23,27 @@ pub fn run_onboard() {
 
     println!();
     println!("  {bold}Connecting lean-ctx to your AI tools…{rst}");
-    println!(
-        "  {dim}No questions — using recommended defaults. Run `lean-ctx setup` for full control.{rst}"
-    );
+    if ask_agents
+        && !crate::shell::is_non_interactive()
+        && let Some(home) = crate::core::home::resolve_home_dir()
+    {
+        let targets = crate::core::editor_registry::build_targets(&home);
+        let current = crate::core::config::Config::load().setup.agents;
+        println!();
+        let chosen = super::agent_select::prompt_agent_selection(&targets, current.as_deref());
+        if chosen != current
+            && let Err(e) = super::agent_select::persist_agent_selection(chosen)
+        {
+            terminal_ui::print_status_warn(&e);
+        }
+    } else {
+        let selection = crate::core::config::Config::load().setup.agents;
+        println!(
+            "  {dim}Tools: {} · choose with `lean-ctx onboard --agents claude,cursor`{rst}",
+            super::agent_select::describe_selection(selection.as_deref())
+        );
+    }
+    println!("  {dim}Recommended defaults otherwise. Run `lean-ctx setup` for full control.{rst}");
     println!();
 
     let opts = SetupOptions {

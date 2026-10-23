@@ -371,6 +371,7 @@ mod setup_config_tests {
             auto_inject_skills: Some(true),
             auto_update_mcp: true,
             manage_hooks: true,
+            agents: None,
         };
         assert!(cfg.should_inject_rules());
         assert!(cfg.should_inject_skills());
@@ -383,6 +384,7 @@ mod setup_config_tests {
             auto_inject_skills: Some(false),
             auto_update_mcp: true,
             manage_hooks: true,
+            agents: None,
         };
         assert!(!cfg.should_inject_rules());
         assert!(!cfg.should_inject_skills());
@@ -454,6 +456,7 @@ mod setup_config_tests {
                 auto_inject_skills: Some(false),
                 auto_update_mcp: true,
                 manage_hooks: true,
+                agents: Some(vec!["claude".to_string(), "cursor".to_string()]),
             },
             ..Config::default()
         };
@@ -462,6 +465,27 @@ mod setup_config_tests {
         assert_eq!(parsed.setup.auto_inject_rules, Some(true));
         assert_eq!(parsed.setup.auto_inject_skills, Some(false));
         assert!(parsed.setup.auto_update_mcp);
+        assert_eq!(
+            parsed.setup.agents.as_deref(),
+            Some(&["claude".to_string(), "cursor".to_string()][..])
+        );
+    }
+
+    #[test]
+    fn agent_selection_defaults_to_all_and_is_not_serialized() {
+        let cfg: Config = toml::from_str("").unwrap();
+        assert!(cfg.setup.agents.is_none());
+        assert!(cfg.setup.allows_agent("cursor", "Cursor"));
+        let table: toml::Table =
+            toml::from_str(&toml::to_string_pretty(&Config::default()).unwrap()).unwrap();
+        assert!(
+            table["setup"].get("agents").is_none(),
+            "unset selection must not be written: {:?}",
+            table["setup"]
+        );
+
+        let cfg: Config = toml::from_str("[setup]\nagents = []\n").unwrap();
+        assert!(!cfg.setup.allows_agent("cursor", "Cursor"));
     }
 
     #[test]

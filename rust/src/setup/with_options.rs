@@ -37,6 +37,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
             &home_str,
             &binary,
             &targets,
+            &cfg.setup,
             update_mcp,
             allow_rule_steering,
         ),
@@ -49,7 +50,9 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     if let Some(step) = build_skill_step(&home, should_install_skills) {
         steps.push(step);
     }
-    if let Some(step) = build_agent_hooks_step(&targets, update_mcp, allow_rule_steering) {
+    if let Some(step) =
+        build_agent_hooks_step(&targets, &cfg.setup, update_mcp, allow_rule_steering)
+    {
         steps.push(step);
     }
 
@@ -200,6 +203,7 @@ fn build_editor_step(
     home_str: &str,
     binary: &str,
     targets: &[EditorTarget],
+    selection: &crate::core::config::SetupConfig,
     update_mcp: bool,
     allow_rule_steering: bool,
 ) -> SetupStepReport {
@@ -212,6 +216,15 @@ fn build_editor_step(
                 status: "not_detected".to_string(),
                 path: Some(short_path),
                 note: None,
+            });
+            continue;
+        }
+        if !selection.allows_agent(&target.agent_key, target.name) {
+            editor_step.items.push(SetupItem {
+                name: target.name.to_string(),
+                status: "not_selected".to_string(),
+                path: Some(short_path),
+                note: Some("excluded by setup.agents (lean-ctx setup --agents …)".to_string()),
             });
             continue;
         }
@@ -424,13 +437,17 @@ fn build_skill_step(
 
 fn build_agent_hooks_step(
     targets: &[EditorTarget],
+    selection: &crate::core::config::SetupConfig,
     update_mcp: bool,
     allow_rule_steering: bool,
 ) -> Option<SetupStepReport> {
     let mut hooks_step = setup_step("agent_hooks");
 
     for target in targets {
-        if !target.detect_path.exists() || target.agent_key.is_empty() {
+        if !target.detect_path.exists()
+            || target.agent_key.is_empty()
+            || !selection.allows_agent(&target.agent_key, target.name)
+        {
             continue;
         }
 
@@ -746,6 +763,7 @@ mod rule_steering_policy_tests {
             tmp.path().to_string_lossy().as_ref(),
             "lean-ctx",
             &[target],
+            &crate::core::config::SetupConfig::default(),
             true,
             false,
         );
@@ -766,6 +784,44 @@ mod rule_steering_policy_tests {
             entry.get("instructions").is_none(),
             "the first setup editor writer must not bypass the steering opt-out"
         );
+    }
+
+    #[test]
+    fn editor_step_leaves_unselected_agents_untouched() {
+        let tmp = tempfile::tempdir().unwrap();
+        let detect = tmp.path().join("commandcode");
+        let config = detect.join("mcp.json");
+        std::fs::create_dir_all(&detect).unwrap();
+
+        let target = EditorTarget {
+            name: "Command Code",
+            agent_key: "commandcode".to_string(),
+            detect_path: detect,
+            config_path: config.clone(),
+            config_type: crate::core::editor_registry::ConfigType::CommandCode,
+        };
+        let selection = crate::core::config::SetupConfig {
+            agents: Some(vec!["claude".to_string()]),
+            ..Default::default()
+        };
+
+        let report = build_editor_step(
+            SetupOptions::default(),
+            tmp.path().to_string_lossy().as_ref(),
+            "lean-ctx",
+            std::slice::from_ref(&target),
+            &selection,
+            true,
+            false,
+        );
+        assert_eq!(report.items[0].status, "not_selected");
+        assert!(
+            !config.exists(),
+            "an unselected agent's config must not be written"
+        );
+
+        let hooks = build_agent_hooks_step(&[target], &selection, true, false);
+        assert!(hooks.is_none(), "no hooks for unselected agents");
     }
 
     #[test]

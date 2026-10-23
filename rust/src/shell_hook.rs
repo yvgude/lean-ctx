@@ -357,11 +357,23 @@ pub fn install_all_with_style(quiet: bool, style: Style) {
         install_bashenv(&home, quiet, style, &stamp);
     }
     let cfg = crate::core::config::Config::load();
-    if cfg.skip_agent_aliases {
+    let aliases = selected_agent_aliases(cfg.setup.agents.as_deref());
+    if cfg.skip_agent_aliases || aliases.is_empty() {
         remove_agent_aliases(&home, quiet);
     } else {
-        install_aliases(&home, quiet, style, &stamp);
+        install_aliases(&home, &aliases, quiet, style, &stamp);
     }
+}
+
+/// Agent aliases limited to the `setup.agents` selection (`None` = all).
+pub(crate) fn selected_agent_aliases(
+    selection: Option<&[String]>,
+) -> Vec<(&'static str, &'static str)> {
+    AGENT_ALIASES
+        .iter()
+        .copied()
+        .filter(|(alias, _)| crate::core::config::agent_selection_allows(selection, alias, alias))
+        .collect()
 }
 
 /// Returns `true` if the given shell binary is installed on the system.
@@ -518,10 +530,16 @@ lean_ctx_compress() {{ command "$@"; }}
     target.upsert(&hook, quiet, label);
 }
 
-fn install_aliases(home: &Path, quiet: bool, style: Style, stamp: &BackupStamp) {
+fn install_aliases(
+    home: &Path,
+    aliases: &[(&str, &str)],
+    quiet: bool,
+    style: Style,
+    stamp: &BackupStamp,
+) {
     let mut lines = Vec::new();
     lines.push(ALIAS_START.to_string());
-    for (alias_name, bin_name) in AGENT_ALIASES {
+    for (alias_name, bin_name) in aliases {
         lines.push(format!(
             "alias {alias_name}='LEAN_CTX_AGENT=1 BASH_ENV=\"$HOME/.bashenv\" {bin_name}'"
         ));
@@ -1037,7 +1055,7 @@ mod tests {
     fn install_aliases_skips_when_rc_missing() {
         let tmp = tempfile::tempdir().unwrap();
         // No .zshrc, no .bashrc — nothing should be created.
-        install_aliases(tmp.path(), true, Style::Auto, &test_stamp());
+        install_aliases(tmp.path(), AGENT_ALIASES, true, Style::Auto, &test_stamp());
         assert!(!tmp.path().join(".zshrc").exists());
         assert!(!tmp.path().join(".bashrc").exists());
     }
@@ -1052,7 +1070,7 @@ mod tests {
         )
         .unwrap();
 
-        install_aliases(tmp.path(), true, Style::Auto, &test_stamp());
+        install_aliases(tmp.path(), AGENT_ALIASES, true, Style::Auto, &test_stamp());
 
         let dropin_file = tmp.path().join(".zshrc.d").join(DROPIN_ZSH);
         assert!(dropin_file.exists());

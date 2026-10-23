@@ -83,7 +83,15 @@ finish() {
 
   echo ""
   echo "Running onboard (connecting your AI tools)..."
-  "$INSTALL_DIR/lean-ctx" onboard 2>&1 || true
+  if [ -n "${LEAN_CTX_AGENTS:-}" ]; then
+    "$INSTALL_DIR/lean-ctx" onboard --agents "$LEAN_CTX_AGENTS" 2>&1 || true
+  elif ( : </dev/tty ) 2>/dev/null; then
+    # `curl | sh` feeds the script on stdin; read the agent choice from the
+    # terminal instead. Without one (CI, agents) onboard connects every tool.
+    "$INSTALL_DIR/lean-ctx" onboard </dev/tty 2>&1 || true
+  else
+    "$INSTALL_DIR/lean-ctx" onboard 2>&1 || true
+  fi
 
   # --- Detect installed agents and suggest wrap ---
   echo ""
@@ -99,6 +107,8 @@ finish() {
   echo "  lean-ctx gain          # usage estimates and calculated cost"
   echo ""
   echo "Full control: lean-ctx setup  (interactive wizard)"
+  echo "Preview:      lean-ctx setup --dry-run  (writes nothing)"
+  echo "Pick tools:   curl ... | LEAN_CTX_AGENTS=claude,cursor sh"
   echo "Skip auto-onboard: curl ... | LEAN_CTX_NO_ONBOARD=1 sh"
 }
 
@@ -380,6 +390,9 @@ case "${1:-}" in
     echo "Environment:"
     echo "  LEAN_CTX_INSTALL_DIR  Custom install directory (default: ~/.local/bin)"
     echo "  LEAN_CTX_INSTALL_FLAVOR  Binary flavor: cpu or cuda (default: cpu)"
+    echo "  LEAN_CTX_AGENTS       AI tools to connect, e.g. claude,cursor (default: ask on a"
+    echo "                        terminal, otherwise every detected tool)"
+    echo "  LEAN_CTX_NO_ONBOARD=1 Install the binary only; connect tools later"
     ;;
   "")
     if [ -d "$RUST_DIR" ]; then

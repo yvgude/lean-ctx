@@ -63,6 +63,7 @@ enum UpdateMode {
 /// change the scheduler, config, or installed binary.
 const KNOWN_FLAGS: &[&str] = &[
     "--check",
+    "--dry-run",
     "--quiet",
     "--skip-rules",
     "--scheduled",
@@ -97,6 +98,25 @@ fn check_flags(args: &[String]) -> FlagCheck<'_> {
         .map_or(FlagCheck::Run, FlagCheck::Unknown)
 }
 
+/// Flags that change state on their own; `--dry-run` must not run them.
+const STATEFUL_FLAGS: &[&str] = &[
+    "--schedule",
+    "--rollback",
+    "--unpin",
+    "--pin",
+    "--recover-update",
+];
+
+/// The stateful flag combined with `--dry-run`, if any.
+fn dry_run_conflict(args: &[String]) -> Option<&str> {
+    if !args.iter().any(|a| a == "--dry-run") {
+        return None;
+    }
+    args.iter()
+        .map(String::as_str)
+        .find(|a| STATEFUL_FLAGS.contains(a))
+}
+
 fn command_name(mode: UpdateMode) -> &'static str {
     match mode {
         UpdateMode::Normal => "update",
@@ -110,6 +130,8 @@ fn print_help(mode: UpdateMode) {
     println!();
     println!("  VERSION                install this release instead of the latest");
     println!("  --check                only report whether an update is available");
+    println!("  --dry-run              show the update and the AI tools it would reconfigure;");
+    println!("                         write nothing (choose tools: lean-ctx setup --agents)");
     println!("  --quiet                suppress output unless something changes");
     println!("  --skip-rules           do not refresh agent rules after updating");
     if mode == UpdateMode::EnableGpu {
@@ -141,6 +163,10 @@ fn run_with_mode(args: &[String], mode: UpdateMode) {
             );
             std::process::exit(2);
         }
+    }
+    if let Some(flag) = dry_run_conflict(args) {
+        eprintln!("  \x1b[31m✗\x1b[0m --dry-run cannot be combined with {flag}");
+        std::process::exit(2);
     }
 
     flow::run_with_mode(args, mode);
@@ -196,8 +222,29 @@ mod argument_guard_tests {
             &["--insecure"][..],
             &["--force"][..],
             &["--rewire"][..],
+            &["--dry-run"][..],
+            &["3.10.3", "--dry-run", "--skip-rules"][..],
         ] {
             assert_eq!(check_flags(&args(ok)), FlagCheck::Run, "{ok:?}");
+        }
+    }
+
+    #[test]
+    fn dry_run_refuses_stateful_flags() {
+        assert_eq!(super::dry_run_conflict(&args(&["--dry-run"])), None);
+        assert_eq!(super::dry_run_conflict(&args(&["--rollback"])), None);
+        for flag in [
+            "--schedule",
+            "--rollback",
+            "--unpin",
+            "--pin",
+            "--recover-update",
+        ] {
+            assert_eq!(
+                super::dry_run_conflict(&args(&["--dry-run", flag])),
+                Some(flag),
+                "{flag}"
+            );
         }
     }
 }
@@ -939,6 +986,11 @@ fn post_update_rewire(skip_rules: bool) {
         eprintln!("  \u{2139} Refreshing shell hooks in ~/.zshenv / ~/.bashenv.");
         eprintln!("    Set shell_hook_disabled=true to prevent this in future updates.");
     }
+    eprintln!(
+        "  \u{2139} AI tools: {}.",
+        crate::setup::describe_selection(cfg.setup.agents.as_deref())
+    );
+    eprintln!("    Choose which: lean-ctx setup --agents claude,cursor (preview: --dry-run)");
     let opts = crate::setup::SetupOptions {
         non_interactive: true,
         yes: true,

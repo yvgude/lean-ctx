@@ -562,6 +562,28 @@ fn match_agent_name_no_false_positives() {
     assert!(!match_agent_name("unknown_agent", "Cursor"));
 }
 
+#[test]
+fn rules_targets_follow_agent_selection() {
+    let mut cfg = crate::core::config::Config::default();
+    assert!(
+        rules_target_selected(&cfg, None, "Cursor"),
+        "no selection = all"
+    );
+
+    cfg.setup.agents = Some(vec!["vscode".to_string(), "antigravity".to_string()]);
+    let names = ["VS Code", "Antigravity IDE"];
+    assert!(rules_target_selected(&cfg, Some(&names), "VS Code"));
+    assert!(rules_target_selected(&cfg, Some(&names), "Antigravity"));
+    assert!(!rules_target_selected(&cfg, Some(&names), "Cursor"));
+    assert!(!rules_target_selected(&cfg, Some(&names), "Gemini CLI"));
+
+    cfg.setup.agents = Some(vec![" ".to_string()]);
+    assert!(
+        !rules_target_selected(&cfg, Some(&[]), "Cursor"),
+        "a blank entry must not match every target"
+    );
+}
+
 // ── InjectResult ─────────────────────────────────────────────
 
 #[test]

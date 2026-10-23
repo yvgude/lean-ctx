@@ -278,6 +278,13 @@ pub struct SetupConfig {
     /// `lean-ctx setup` / `init --agent` / `doctor --fix` writes them.
     #[serde(default = "serde_defaults::default_true")]
     pub manage_hooks: bool,
+    /// AI tools that `setup`/`onboard`/`update` may wire up (MCP entry,
+    /// hooks, rules, skills, shell aliases). Entries are agent keys
+    /// (`claude`, `cursor`, …) or display names, matched case-insensitively.
+    /// `None` = every detected tool, including ones installed later — the
+    /// unattended default. `Some([])` = none.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub agents: Option<Vec<String>>,
 }
 
 impl Default for SetupConfig {
@@ -287,11 +294,16 @@ impl Default for SetupConfig {
             auto_inject_skills: None,
             auto_update_mcp: true,
             manage_hooks: true,
+            agents: None,
         }
     }
 }
 
 impl SetupConfig {
+    /// Whether the agent selection permits configuring this tool.
+    pub fn allows_agent(&self, agent_key: &str, name: &str) -> bool {
+        agent_selection_allows(self.agents.as_deref(), agent_key, name)
+    }
     /// Returns whether rules should be injected, considering legacy installs.
     /// If undecided (None), checks if lean-ctx rules markers already exist
     /// in any agent config — if so, keeps injecting for backward compat.
@@ -341,6 +353,18 @@ impl SetupConfig {
                 .is_ok_and(|c| c.contains(crate::core::rules_canonical::START_MARK))
         })
     }
+}
+
+/// `None` allows every agent; otherwise an entry must equal the agent key or
+/// display name (case-insensitive).
+pub fn agent_selection_allows(selection: Option<&[String]>, agent_key: &str, name: &str) -> bool {
+    selection.is_none_or(|list| {
+        list.iter().any(|entry| {
+            let entry = entry.trim();
+            (!agent_key.is_empty() && entry.eq_ignore_ascii_case(agent_key))
+                || entry.eq_ignore_ascii_case(name)
+        })
+    })
 }
 
 impl Default for SecretDetectionConfig {

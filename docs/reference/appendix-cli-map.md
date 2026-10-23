@@ -10,8 +10,8 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 
 | Command | Purpose |
 |---------|---------|
-| `onboard` | Zero-prompt golden path: connect all detected AI tools |
-| `setup` | Guided wizard (full control); flags: `--non-interactive`, `--yes`, `--fix`, `--json`, `--skip-rules`, `--no-auto-approve` |
+| `onboard` | Golden path: connect detected AI tools (asks which on a terminal); `--agents <list>`, `--dry-run` |
+| `setup` | Guided wizard (full control); flags: `--non-interactive`, `--yes`, `--fix`, `--json`, `--skip-rules`, `--no-auto-approve`, `--agents <list\|all\|none>`, `--dry-run` |
 | `install` | Alias for `setup`; `install --repair` = non-interactive refresh |
 | `bootstrap` | Non-interactive setup + fix (CI/scripts); `--json` |
 | `init --global` | Install shell aliases/hook only |
@@ -98,7 +98,7 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 
 | Command | Purpose |
 |---------|---------|
-| `update` (`--self-update`, `upgrade`) | Verified self-update; `--check`, `--pin <version>`, `--unpin`, `--status`, `--rollback`, `--skip-rules`, `--schedule [off\|status\|notify\|<h>h]` |
+| `update` (`--self-update`, `upgrade`) | Verified self-update; `--check`, `--dry-run`, `--pin <version>`, `--unpin`, `--status`, `--rollback`, `--skip-rules`, `--schedule [off\|status\|notify\|<h>h]` |
 | `stop` | Stop ALL lean-ctx processes (LaunchAgent-safe) |
 | `restart` | Restart daemon (apply config.toml) |
 | `dev-install` | Build release + atomic install + restart (dev) |

@@ -1,3 +1,5 @@
+mod agent_select;
+pub use agent_select::*;
 mod env_guard;
 mod first_run;
 mod index_build;
