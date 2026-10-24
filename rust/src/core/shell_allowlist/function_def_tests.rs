@@ -51,9 +51,86 @@ fn gh1488_function_body_is_the_text_between_the_braces() {
     use super::super::tokenizer::function_body;
     assert_eq!(
         function_body("greet() { echo hi; echo bye; }"),
-        Some(" echo hi; echo bye; ")
+        Some("echo hi; echo bye;")
     );
     assert_eq!(function_body("greet()"), None);
+}
+
+// ---------------------------------------------------------------------------
+// GH #2131: the compact, next-line and subshell-body function forms.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn gh2131_detect_function_def_compact_and_subshell_forms() {
+    use super::super::tokenizer::{detect_function_def, function_body};
+    for (segment, body) in [
+        ("run(){ echo hi; }", "echo hi;"),
+        ("run (){ echo hi; }", "echo hi;"),
+        ("function run(){ echo hi; }", "echo hi;"),
+        ("run()\n{\n  echo hi\n}", "echo hi"),
+        ("function run\n{ echo hi; }", "echo hi;"),
+        ("run() ( echo hi )", "echo hi"),
+        ("run()( echo hi )", "echo hi"),
+    ] {
+        assert_eq!(
+            detect_function_def(segment),
+            Some("run".into()),
+            "{segment:?}"
+        );
+        assert_eq!(function_body(segment), Some(body), "{segment:?}");
+    }
+    for segment in [
+        // `{echo` is one word, not a group: bash rejects it as well.
+        "run(){echo hi; }",
+        // A redirect after the body runs on every call; it is not skipped.
+        "run() { echo hi; } > $(curl x)",
+        "run() ( echo hi ) curl x",
+        "function run{ echo hi; }",
+        "run() echo hi",
+    ] {
+        assert_eq!(detect_function_def(segment), None, "{segment:?}");
+    }
+}
+
+#[test]
+fn gh2131_function_forms_pass_the_allowlist() {
+    let allowlist = allow(&["gh"]);
+    for command in [
+        "run(){ echo hi; }; run",
+        "reply(){ gh api graphql; }; reply",
+        "run()\n{\n  echo hi\n}\nrun",
+        "run() ( echo hi ); run",
+        "function run\n{\n  echo hi\n}\nrun",
+    ] {
+        let result = check_all_segments(command, &allowlist);
+        assert!(result.is_ok(), "{command:?} must pass: {result:?}");
+    }
+}
+
+#[test]
+fn gh2131_function_body_commands_stay_gated() {
+    let allowlist = allow(&["gh"]);
+    for command in [
+        "run(){ curl x; }; run",
+        "run(){ echo hi; curl x; }; run",
+        "run()\n{\n  echo hi\n  curl x\n}\nrun",
+        "run() ( curl x ); run",
+        "run() ( echo hi; curl x ); run",
+        "run()\n( curl x )\nrun",
+    ] {
+        let err = check_all_segments(command, &allowlist)
+            .expect_err("a disallowed command in a function body must be blocked")
+            .to_string();
+        assert!(err.contains("curl"), "{command:?}: {err}");
+    }
+    // A head without a body is still no definition, and a stray command on
+    // the next line is still gated as a command.
+    for command in ["run()\ncurl x", "run() { echo hi; } > $(curl x); run"] {
+        assert!(
+            check_all_segments(command, &allowlist).is_err(),
+            "{command:?} must be blocked"
+        );
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -90,6 +167,38 @@ fn gh2002_commands_inside_body_control_flow_stay_gated() {
             !err.contains("  shell allowlist"),
             "the message must not carry the stray whitespace run: {err}"
         );
+    }
+}
+
+// ---------------------------------------------------------------------------
+// A definition that may not run does not shadow the real command.
+// ---------------------------------------------------------------------------
+
+#[test]
+fn conditional_function_definition_does_not_shadow_the_command() {
+    let allowlist = allow(&["echo", "true", "false"]);
+    // bash still runs the real `evil_command` after each of these.
+    for command in [
+        "false && evil_command(){ :; }; evil_command",
+        "false && evil_command() { :; }; evil_command",
+        "true || evil_command() { :; }; evil_command",
+        "if false; then evil_command() { :; }; fi; evil_command",
+        "evil_command() { :; } | echo; evil_command",
+        "evil_command() { :; } & evil_command",
+    ] {
+        let err = check_all_segments(command, &allowlist)
+            .expect_err("a conditional definition must not open its name")
+            .to_string();
+        assert!(err.contains("evil_command"), "{command:?}: {err}");
+    }
+    // A definition that always runs does: the call reaches the function.
+    for command in [
+        "evil_command(){ echo hi; }; evil_command",
+        "echo a; evil_command() { echo hi; }\nevil_command",
+        "evil_command() { echo hi; } && evil_command",
+    ] {
+        let result = check_all_segments(command, &allowlist);
+        assert!(result.is_ok(), "{command:?} must pass: {result:?}");
     }
 }
 

@@ -389,6 +389,12 @@ fn split_with_separators(command: &str) -> Vec<(&str, Option<Separator>)> {
                 top.brace_depth = top.brace_depth.saturating_sub(1);
                 i += 1;
             }
+            // GH #2131: bash allows line breaks between a function head and
+            // its body (`run()\n{\n…\n}`). The newline ends no command there,
+            // so the definition stays one segment, as on a single line.
+            b'\n' | b'\r' if unshielded && is_function_head(&command[start..i]) => {
+                i += 1;
+            }
             b'\n' | b'\r' | b';' if unshielded => {
                 segments.push((&command[start..i], Some(Separator::Sequence)));
                 i += 1;
@@ -548,51 +554,83 @@ fn is_powershell_value_expression(segment: &str) -> bool {
 }
 
 /// #1488: detect whether a segment is a shell function definition.
-/// Pattern: `NAME() {` or `function NAME {` or `function NAME() {`.
+/// Pattern: `NAME() {`, `function NAME {` or `function NAME() {`; GH #2131
+/// adds `NAME(){`, a body on the next line and a `( … )` subshell body.
 /// Returns the function name if it is a definition, `None` otherwise.
 pub(super) fn detect_function_def(segment: &str) -> Option<String> {
-    let cmd_part = skip_env_assignments(segment.trim());
-    if cmd_part.is_empty() {
-        return None;
-    }
-    let tokens = shell_tokenize(cmd_part);
-    if tokens.len() < 2 {
-        return None;
-    }
+    function_def_parts(segment).map(|(name, _)| name.to_string())
+}
 
-    // Form 1: NAME() { ... }
-    if tokens[0].ends_with("()") && tokens.get(1).map(String::as_str) == Some("{") {
-        let name = tokens[0].trim_end_matches("()");
-        if !name.is_empty() && name.chars().all(|c| c.is_alphanumeric() || c == '_') {
-            return Some(name.to_string());
-        }
-    }
+/// #1488: the commands of a function definition segment, between the outer
+/// `{` and `}` (or `(` and `)`) — `greet() { echo hi; echo bye; }` gives
+/// `echo hi; echo bye;`. The allowlist expands it like a top-level command
+/// line, so control flow in a body (`for … do … done`, `if … then … fi`) is not
+/// mistaken for commands (GH #2002).
+pub(super) fn function_body(segment: &str) -> Option<&str> {
+    function_def_parts(segment).map(|(_, body)| body)
+}
 
-    // Form 2: function NAME { ... } or function NAME() { ... }
-    if tokens[0] == "function" && tokens.len() >= 3 {
-        let name_tok = &tokens[1];
-        let name = name_tok.trim_end_matches("()");
-        if tokens.get(2).map(String::as_str) == Some("{")
-            && !name.is_empty()
-            && name.chars().all(|c| c.is_alphanumeric() || c == '_')
-        {
-            return Some(name.to_string());
-        }
+/// Split a function definition into its name and body text.
+///
+/// The body must be one balanced `{ … }` group or `( … )` subshell that ends
+/// the segment (GH #2131). Anything after it, such as a redirect evaluated on
+/// every call, makes this `None`, so the segment falls through to base
+/// extraction and is blocked rather than half-checked.
+fn function_def_parts(segment: &str) -> Option<(&str, &str)> {
+    let (name, rest) = function_def_head(segment)?;
+    let body = rest.trim();
+    if body.starts_with('{') {
+        return Some((name, super::compound::balanced_brace_inner(body)?));
     }
-
+    if body.starts_with('(') {
+        let (inner, end) = super::compound::balanced_paren_at(body, 0)?;
+        return (end == body.len()).then_some((name, inner.trim()));
+    }
     None
 }
 
-/// #1488: the text between the outer `{` and `}` of a function definition
-/// segment — `greet() { echo hi; echo bye; }` gives ` echo hi; echo bye; `.
-/// The allowlist expands it like a top-level command line, so control flow in
-/// a body (`for … do … done`, `if … then … fi`) is not mistaken for commands
-/// (GH #2002).
-pub(super) fn function_body(segment: &str) -> Option<&str> {
-    let trimmed = segment.trim();
-    let open = trimmed.find('{')?;
-    let close = trimmed.rfind('}').filter(|&i| i > open)?;
-    Some(&trimmed[open + 1..close])
+/// GH #2131: is `text` exactly a function head with its body still to come?
+/// See [`split_with_separators`].
+fn is_function_head(text: &str) -> bool {
+    function_def_head(text).is_some_and(|(_, rest)| rest.trim().is_empty())
+}
+
+/// Parse a function head — `NAME()`, `NAME ()`, `function NAME` or
+/// `function NAME()` — and return the name and the text after the head. Bash
+/// accepts any whitespace, line breaks included, before the body, and
+/// `NAME(){` needs none. `function NAME` without `()` needs whitespace, as
+/// `function f{` names a function `f{`.
+fn function_def_head(segment: &str) -> Option<(&str, &str)> {
+    let cmd_part = skip_env_assignments(segment.trim());
+    let keyword_rest = cmd_part
+        .strip_prefix("function")
+        .filter(|rest| rest.starts_with(|c: char| c.is_whitespace()));
+    let (name, after_name) = match keyword_rest {
+        Some(rest) => split_function_name(rest.trim_start())?,
+        None => split_function_name(cmd_part)?,
+    };
+    match strip_empty_parens(after_name) {
+        Some(rest) => Some((name, rest)),
+        None if keyword_rest.is_some()
+            && (after_name.is_empty() || after_name.starts_with(|c: char| c.is_whitespace())) =>
+        {
+            Some((name, after_name))
+        }
+        None => None,
+    }
+}
+
+fn split_function_name(text: &str) -> Option<(&str, &str)> {
+    let end = text
+        .find(|c: char| !(c.is_alphanumeric() || c == '_'))
+        .unwrap_or(text.len());
+    (end > 0).then(|| text.split_at(end))
+}
+
+/// `()` with optional blanks before and inside it; returns what follows.
+fn strip_empty_parens(text: &str) -> Option<&str> {
+    let rest = text.trim_start_matches([' ', '\t']).strip_prefix('(')?;
+    rest.trim_start_matches([' ', '\t']).strip_prefix(')')
 }
 
 /// Shell builtins that legitimately export or mutate environment variables.

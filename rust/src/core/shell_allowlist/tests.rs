@@ -1,6 +1,8 @@
 //! Tests for the shell allowlist. Extracted from `shell_allowlist/mod.rs`;
 //! `super::*` resolves to the `shell_allowlist` module.
 
+#[path = "case_arithmetic_tests.rs"]
+mod case_arithmetic_tests;
 #[path = "comment_strip_tests.rs"]
 mod comment_strip_tests;
 #[path = "delegation_option_tests.rs"]

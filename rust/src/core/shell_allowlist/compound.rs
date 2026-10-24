@@ -62,6 +62,20 @@ fn resolve_segment_leaves(
         .into());
     }
     let mut s = segment.trim();
+    // GH #2134: `(( expr ))` is arithmetic evaluation, like `$(( ))` (#1664),
+    // not a nested subshell or a PowerShell `( … )` expression. Walking it as
+    // one made a variable (`i`) or an expression fragment (`i++`) the command
+    // to gate. It runs only the command substitutions in its expression, so
+    // those are the leaves. Checked first, behind `while`/`if`/`do` too, so
+    // neither walk below can claim it.
+    if let Some(expr) = arithmetic_command_expr(strip_body_intro_keywords(s)) {
+        for inner in arithmetic_substitutions(expr, segment)? {
+            for inner_seg in extract_all_commands(inner) {
+                resolve_segment_leaves(&inner_seg, depth + 1, out)?;
+            }
+        }
+        return Ok(());
+    }
     // #1930: PowerShell control flow (`if (…) { … }`, `try { … } catch { … }`,
     // `foreach (…) { … }`) and expression statements (`$t.Actions`, `($t)`,
     // `@(cmd)`, `[Type]::Member()`) carry no command of their own; the
@@ -437,6 +451,93 @@ fn is_redirect_only_suffix(suffix: &str) -> bool {
     true
 }
 
+/// GH #2134: if `segment` is an arithmetic command `(( expr ))`, return `expr`.
+///
+/// Bash's rule: after `((`, the group opened by the second `(` must close
+/// directly before a final `)`. `((a) )` or `((a); (b))` fail it and are
+/// nested subshells, which keep the subshell walk and its leaf checks. A
+/// trailing redirect also fails it and stays blocked.
+pub(super) fn arithmetic_command_expr(segment: &str) -> Option<&str> {
+    let trimmed = segment.trim();
+    if !trimmed.starts_with("((") {
+        return None;
+    }
+    let (_, inner_end) = balanced_paren_at(trimmed, 1)?;
+    (trimmed.as_bytes().get(inner_end) == Some(&b')') && inner_end + 1 == trimmed.len())
+        .then(|| &trimmed[2..inner_end - 1])
+}
+
+/// GH #2134: does `command` contain an arithmetic command, also behind
+/// `while`/`if`/`do` …? Called only when the line resolved to no leaves: then
+/// `((i++))` or `while (( i < 3 )); do ((i++)); done` ran no command, which is
+/// not an empty command.
+pub(super) fn has_arithmetic_command(command: &str) -> bool {
+    let command = rewrite_case_constructs(command).unwrap_or_else(|_| command.to_string());
+    extract_all_commands(&command)
+        .iter()
+        .any(|segment| arithmetic_command_expr(strip_body_intro_keywords(segment)).is_some())
+}
+
+/// `segment` without its leading `while`/`if`/`do`/… keywords.
+fn strip_body_intro_keywords(segment: &str) -> &str {
+    let mut s = segment.trim();
+    while shell_tokenize(s)
+        .first()
+        .is_some_and(|kw| BODY_INTRO_KEYWORDS.contains(&kw.as_str()))
+    {
+        s = remainder_after_first_token(s).trim();
+    }
+    s
+}
+
+/// GH #2134: the inner text of every `$( … )` and backtick substitution in an
+/// arithmetic expression — the only commands `(( ))` can run. Bash expands the
+/// expression like a double-quoted word, so quotes protect nothing outside
+/// the substitutions and are not honoured here. A nested `$(( … ))` is walked
+/// into, not skipped, so a substitution inside it is found too. An
+/// unterminated substitution cannot be validated and blocks the command.
+fn arithmetic_substitutions<'a>(expr: &'a str, segment: &str) -> Result<Vec<&'a str>, ShellError> {
+    let bytes = expr.as_bytes();
+    let mut found = Vec::new();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b'$' if bytes.get(i + 1) == Some(&b'(') => {
+                let Some((inner, end)) = balanced_paren_at(expr, i + 1) else {
+                    return Err(unterminated_arithmetic_substitution(segment));
+                };
+                let nested_arithmetic = bytes.get(i + 2) == Some(&b'(')
+                    && balanced_paren_at(expr, i + 2).is_some_and(|(_, e)| e + 1 == end);
+                if nested_arithmetic {
+                    i += 3;
+                } else {
+                    found.push(inner);
+                    i = end;
+                }
+            }
+            b'`' => {
+                let Some(end) = super::case_construct::skip_backticks(bytes, i) else {
+                    return Err(unterminated_arithmetic_substitution(segment));
+                };
+                found.push(&expr[i + 1..end - 1]);
+                i = end;
+            }
+            _ => i += 1,
+        }
+    }
+    Ok(found)
+}
+
+fn unterminated_arithmetic_substitution(segment: &str) -> ShellError {
+    format!(
+        "[BLOCKED — DO NOT RETRY] Arithmetic command `(( … ))` contains an \
+         unterminated command substitution that cannot be validated safely.\n\
+         Command: {segment}"
+    )
+    .into()
+}
+
 /// If `s` is a single balanced `( … )` subshell, return the inner command
 /// (`(a; b)` → `a; b`). A trailing redirection is part of the subshell and is
 /// accepted (`(a) 2>&1`, #1751); any other trailing content returns `None`, so
@@ -504,7 +605,7 @@ fn balanced_paren_inner(segment: &str) -> Option<&str> {
 /// enclosing command's base is validated normally. `{ a; } b` returns `None`
 /// (trailing content → falls through to base extraction), matching the paren
 /// walker; such a form is a shell syntax error anyway.
-fn balanced_brace_inner(segment: &str) -> Option<&str> {
+pub(super) fn balanced_brace_inner(segment: &str) -> Option<&str> {
     let trimmed = segment.trim();
     let bytes = trimmed.as_bytes();
     if bytes.first() != Some(&b'{') {

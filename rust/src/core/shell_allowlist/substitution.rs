@@ -13,7 +13,20 @@ pub(crate) fn check_substitution_in_args(command: &str, strict: bool) -> Result<
 
     // Extract inner commands from $(...) and check against allowlist + builtins.
     // Only warn/block if the inner command is genuinely non-allowlisted (#1024).
-    let inner_cmds = extract_substitution_commands(command);
+    let mut inner_cmds = extract_substitution_commands(command);
+    // GH #2132: a `case` inside a substitution ends the raw scan at its first
+    // pattern `)`, which yields a `case …` fragment and misses the arm bodies.
+    // Scan the case-rewritten text as well, so the bodies are what gets
+    // checked; the raw scan stays, since it alone still sees substitutions in
+    // the case subject and patterns, which the rewrite drops. If the rewrite
+    // fails, the fragment keeps flagging `case` as before.
+    if let Ok(rewritten) = super::rewrite_case_constructs(command)
+        && rewritten != command
+    {
+        inner_cmds
+            .retain(|inner| !matches!(extract_base_from_segment(inner).as_str(), "case" | "esac"));
+        inner_cmds.extend(extract_substitution_commands(&rewritten));
+    }
     if inner_cmds.is_empty() {
         return Ok(());
     }

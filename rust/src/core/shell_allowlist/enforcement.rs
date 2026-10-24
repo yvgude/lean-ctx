@@ -852,6 +852,31 @@ fn entry_matches(entry: &str, tokens: &[String]) -> bool {
     }
 }
 
+/// Names of the function definitions in `command` that bash always executes:
+/// a top-level segment at the start of the line or after `;`/newline, not part
+/// of a pipeline or sent to the background (both run in a subshell, so the
+/// function never reaches the calling shell). A definition after `&&`/`||`,
+/// or inside an `if`/`while`/`{ … }` body, may not run — a call of its name
+/// then still reaches the real command and stays gated.
+fn unconditional_function_defs(command: &str) -> Vec<String> {
+    use super::tokenizer::Separator;
+    let segments = super::tokenizer::segments_with_separators(command);
+    let mut names = Vec::new();
+    let mut previous: Option<Separator> = None;
+    for (segment, separator) in &segments {
+        let starts_line = matches!(previous, None | Some(Separator::Sequence));
+        let stays_in_shell = !matches!(separator, Some(Separator::Pipe | Separator::Background));
+        if starts_line
+            && stays_in_shell
+            && let Some(name) = super::tokenizer::detect_function_def(segment)
+        {
+            names.push(name);
+        }
+        previous = *separator;
+    }
+    names
+}
+
 pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result<(), ShellError> {
     if allowlist.is_empty() {
         return Ok(());
@@ -875,10 +900,16 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
         if super::ps_statements::is_inert_powershell(command) {
             return Ok(());
         }
+        // GH #2134: nor does a line of arithmetic commands (`((i++))`) whose
+        // expressions contain no command substitution.
+        if super::compound::has_arithmetic_command(command) {
+            return Ok(());
+        }
         return Err("[BLOCKED — DO NOT RETRY] Empty command".into());
     }
 
     let total = segments.len();
+    let unconditional = unconditional_function_defs(command);
     let mut local_functions: Vec<String> = Vec::new();
     for (idx, seg) in segments.iter().enumerate() {
         check_inline_env_block(seg)?;
@@ -886,7 +917,12 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
         // #1488: a function definition (`name() { ... }`) is not a command
         // invocation — check the body commands instead of the function name.
         if let Some(fn_name) = super::tokenizer::detect_function_def(seg) {
-            local_functions.push(fn_name);
+            // Only a definition that always runs shadows a command of the
+            // same name: after `false && curl(){ :; }` bash still runs the
+            // real `curl`.
+            if unconditional.contains(&fn_name) {
+                local_functions.push(fn_name);
+            }
             // GH #2002: expand the body like a top-level line, so `for`/`if`/
             // `while`/`case` in it are control flow, not commands to gate.
             let body_cmds = match super::tokenizer::function_body(seg) {
