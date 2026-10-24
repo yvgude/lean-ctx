@@ -223,63 +223,65 @@ impl Admission {
     /// inspection are always stated, because the model must act on them.
     #[must_use]
     pub fn hud_line_placed(&self, redaction_counts: bool) -> Option<String> {
-        let c = self.counts;
-        let mut parts = Vec::new();
-        let redacted = self.decision.disposition == ContextDispositionV1::AllowRedacted;
-        let verb = if redacted { "redacted" } else { "detected" };
-        let show_values = !redacted || redaction_counts;
-        if c.secrets > 0 && show_values {
-            parts.push(format!("{} secret(s) {verb}", c.secrets));
-        }
-        if c.pii > 0 && show_values {
-            parts.push(format!("{} PII value(s) {verb}", c.pii));
-        }
-        if c.injection > 0 {
-            parts.push(format!("{} prompt-injection signal(s)", c.injection));
-        }
-        if c.markings > 0 {
-            parts.push(format!("{} classification marking(s)", c.markings));
-        }
-        if c.incomplete > 0 {
-            let reasons: Vec<&str> = self
-                .decision
-                .reason_codes
-                .iter()
-                .map(ReasonCodeV1::as_str)
-                .filter(|code| code.starts_with("coverage.") || code.starts_with("detector."))
-                .collect();
-            parts.push(format!("not fully inspected ({})", reasons.join(", ")));
-        }
-        if c.semantic > 0 {
-            parts.push(format!("{} semantic finding(s)", c.semantic));
-        }
-        let semantic_gaps: Vec<&str> = self
-            .decision
-            .reason_codes
-            .iter()
-            .map(ReasonCodeV1::as_str)
-            .filter(|code| matches!(*code, "semantic.partial" | "semantic.unavailable"))
-            .collect();
-        if !semantic_gaps.is_empty() {
-            parts.push(format!(
-                "semantic check incomplete ({})",
-                semantic_gaps.join(", ")
-            ));
-        }
-        if self.text.is_none() {
-            let reasons: Vec<&str> = self
-                .decision
-                .reason_codes
-                .iter()
-                .map(ReasonCodeV1::as_str)
-                .collect();
-            return Some(format!(
-                "[lean-ctx gateway: content withheld — {}]",
-                reasons.join(", ")
-            ));
-        }
-        (!parts.is_empty()).then(|| format!("[lean-ctx gateway: {}]", parts.join(" · ")))
+        render_hud(
+            self.counts,
+            &self.decision,
+            self.text.is_none(),
+            redaction_counts,
+        )
     }
+}
+
+/// The HUD line for `counts` under `decision`; see [`Admission::hud_line_placed`].
+fn render_hud(
+    c: AdmissionCounts,
+    decision: &ContextDecisionV1,
+    withheld: bool,
+    redaction_counts: bool,
+) -> Option<String> {
+    let mut parts = Vec::new();
+    let redacted = decision.disposition == ContextDispositionV1::AllowRedacted;
+    let verb = if redacted { "redacted" } else { "detected" };
+    let show_values = !redacted || redaction_counts;
+    if c.secrets > 0 && show_values {
+        parts.push(format!("{} secret(s) {verb}", c.secrets));
+    }
+    if c.pii > 0 && show_values {
+        parts.push(format!("{} PII value(s) {verb}", c.pii));
+    }
+    if c.injection > 0 {
+        parts.push(format!("{} prompt-injection signal(s)", c.injection));
+    }
+    if c.markings > 0 {
+        parts.push(format!("{} classification marking(s)", c.markings));
+    }
+    let codes = || decision.reason_codes.iter().map(ReasonCodeV1::as_str);
+    if c.incomplete > 0 {
+        let reasons: Vec<&str> = codes()
+            .filter(|code| code.starts_with("coverage.") || code.starts_with("detector."))
+            .collect();
+        parts.push(format!("not fully inspected ({})", reasons.join(", ")));
+    }
+    if c.semantic > 0 {
+        parts.push(format!("{} semantic finding(s)", c.semantic));
+    }
+    let semantic_gaps: Vec<&str> = codes()
+        .filter(|code| matches!(*code, "semantic.partial" | "semantic.unavailable"))
+        .collect();
+    if !semantic_gaps.is_empty() {
+        parts.push(format!(
+            "semantic check incomplete ({})",
+            semantic_gaps.join(", ")
+        ));
+    }
+    if withheld {
+        let reasons: Vec<&str> = codes().collect();
+        return Some(format!(
+            "[lean-ctx gateway: content withheld — {}]",
+            reasons.join(", ")
+        ));
+    }
+    (!parts.is_empty()).then(|| format!("[lean-ctx gateway: {}]", parts.join(" · ")))
 }
 
 /// Admit `text` (from `path`, when it came from a file) under `policy`.
@@ -494,8 +496,15 @@ pub fn admit_source(
         ));
     }
     let redaction_counts = policy.gateway.hud.redaction_counts_in_band();
-    if let Some(line) = admission.hud_line_placed(redaction_counts) {
-        notes::record(admitted, line);
+    if admission.hud_line_placed(redaction_counts).is_some() {
+        notes::record(
+            admitted,
+            notes::Note {
+                counts: admission.counts,
+                decision: admission.decision.clone(),
+                redaction_counts,
+            },
+        );
     }
     Ok(admission.text.unwrap_or_default())
 }
@@ -572,10 +581,32 @@ pub(crate) fn clear_clean_memo() {
     clean::clear();
 }
 
-/// The HUD line recorded when exactly `admitted` was produced, if any.
+/// The HUD line recorded when exactly `admitted` was produced, stated for
+/// `delivered`: the part of `admitted` a tool actually returns (a line
+/// window, a compressed view). Masked values are counted from the markers
+/// `delivered` carries, never above the object's own counts, so a window
+/// without a masked value gets no redaction count — and no line when nothing
+/// else applies (#2135). Every other part of the note describes the object.
 #[must_use]
-pub fn note_for(admitted: &str) -> Option<String> {
-    notes::lookup(admitted)
+pub fn note_for(admitted: &str, delivered: &str) -> Option<String> {
+    let note = notes::lookup(admitted)?;
+    let mut counts = note.counts;
+    if note.decision.disposition == ContextDispositionV1::AllowRedacted {
+        let pii = crate::core::input_filters::pii::checksummed_marker_count(delivered);
+        let other = delivered
+            .matches("[REDACTED:")
+            .count()
+            .saturating_sub(pii + delivered.matches(INJECTION_MARKER).count());
+        counts.pii = counts.pii.min(saturating_u32(pii));
+        counts.secrets = counts.secrets.min(saturating_u32(other));
+    }
+    render_hud(counts, &note.decision, false, note.redaction_counts)
+}
+
+const INJECTION_MARKER: &str = "[REDACTED:prompt-injection]";
+
+fn saturating_u32(n: usize) -> u32 {
+    u32::try_from(n).unwrap_or(u32::MAX)
 }
 
 fn reason(code: &str) -> ReasonCodeV1 {

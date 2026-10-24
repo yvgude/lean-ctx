@@ -22,7 +22,7 @@ pub(super) fn ctx_read_tool_def() -> Tool {
                     "type": "string",
                     "description": "Recommended (defaults to auto). full=complete(edit-ready; ≤turn budget, raw=true beyond) anchored=full+N:hh|anchors(edit via ctx_patch) raw=exact-bytes signatures=API map=structure auto=smart diff=cache-delta lines:N-M=window -N=tail 5,10-20=multi reference=pointer task=focus"
                 },
-                "raw": { "type": "boolean", "description": "Verbatim (= mode=raw + fresh)" },
+                "raw": { "type": "boolean", "description": "Verbatim except redaction (= mode=raw + fresh)" },
                 "start_line": { "type": "integer", "description": "1-based" },
                 "offset": { "type": "integer", "description": "start_line alias" },
                 "limit": { "type": "integer", "description": "Max lines" },

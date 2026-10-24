@@ -38,7 +38,7 @@ fn unified_tool_defs_raw() -> Vec<Tool> {
                     "offset": { "type": "integer", "description": "Alias for start_line (1-based first line)" },
                     "limit": { "type": "integer", "description": "Max number of lines to read from start_line/offset" },
                     "fresh": { "type": "boolean" },
-                    "raw": { "type": "boolean", "description": "Exact bytes, unframed — skips compression (verbatim escape hatch)" }
+                    "raw": { "type": "boolean", "description": "Exact bytes, unframed — skips compression (verbatim escape hatch); redaction still applies" }
                 },
                 "required": ["path"]
             }),

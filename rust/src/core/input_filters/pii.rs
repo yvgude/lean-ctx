@@ -128,6 +128,19 @@ pub fn redact_checksummed(text: &str) -> (String, Vec<(&'static str, usize)>) {
     redact_where(text, PiiKind::is_checksummed)
 }
 
+/// Number of `[REDACTED:<class>]` markers of the checksum-validated classes in
+/// `text`, i.e. how many masked values a delivered excerpt carries.
+#[must_use]
+pub(crate) fn checksummed_marker_count(text: &str) -> usize {
+    [PiiKind::ChAhv, PiiKind::Iban, PiiKind::Card]
+        .into_iter()
+        .map(|kind| {
+            text.matches(&format!("[REDACTED:{}]", kind.as_str()))
+                .count()
+        })
+        .sum()
+}
+
 fn checksummed_prefilter() -> &'static Regex {
     static RE: OnceLock<Regex> = OnceLock::new();
     RE.get_or_init(|| {
@@ -159,7 +172,11 @@ fn redact_where(text: &str, include: fn(PiiKind) -> bool) -> (String, Vec<(&'sta
                     || caps
                         .get(0)
                         .is_some_and(|matched| phone_match_is_valid(&source, matched));
-                if (rule.validate)(m) && valid_phone_shape {
+                let outside_version = rule.kind != PiiKind::Card
+                    || caps
+                        .get(0)
+                        .is_some_and(|matched| !inside_version_token(&source, &matched));
+                if (rule.validate)(m) && valid_phone_shape && outside_version {
                     n += 1;
                     format!("[REDACTED:{}]", rule.kind.as_str())
                 } else {
@@ -213,6 +230,38 @@ fn phone_match_is_valid(text: &str, matched: regex::Match<'_>) -> bool {
         .map(str::len)
         .collect::<Vec<_>>();
     matches!(groups.as_slice(), [3, 3, 4] | [3 | 2, 3, 2, 2] | [2, 4, 4])
+}
+
+/// True when `matched` is the `yyyymmddhhmmss` stamp of a Go pseudo-version,
+/// as in `v0.0.0-20260901124541-abcdef123456` (about one in ten of which
+/// passes Luhn, #2135): exactly 14 digits forming a plausible UTC timestamp,
+/// and an inner segment of a `-`/`.` separated token (both neighbours a
+/// separator glued to another alphanumeric segment). Any other digit run
+/// between dashes — a card in `txn-<card>-ok`, or one at a sentence end or
+/// after a label — stays a candidate.
+pub(crate) fn inside_version_token(text: &str, matched: &regex::Match<'_>) -> bool {
+    let mut before = text[..matched.start()].chars().rev();
+    let mut after = text[matched.end()..].chars();
+    let glued = |separator: Option<char>, segment: Option<char>| {
+        matches!(separator, Some('-' | '.')) && segment.is_some_and(|c| c.is_ascii_alphanumeric())
+    };
+    is_pseudo_version_stamp(matched.as_str())
+        && glued(before.next(), before.next())
+        && glued(after.next(), after.next())
+}
+
+/// `yyyymmddhhmmss` with a year from 1970 to 2099 and in-range fields.
+fn is_pseudo_version_stamp(digits: &str) -> bool {
+    if digits.len() != 14 || !digits.bytes().all(|b| b.is_ascii_digit()) {
+        return false;
+    }
+    let field = |range: std::ops::Range<usize>| digits[range].parse::<u32>().unwrap_or(u32::MAX);
+    (1970..=2099).contains(&field(0..4))
+        && (1..=12).contains(&field(4..6))
+        && (1..=31).contains(&field(6..8))
+        && field(8..10) < 24
+        && field(10..12) < 60
+        && field(12..14) < 60
 }
 
 fn overlaps_checksum_identifier(text: &str, phone: &regex::Match<'_>) -> bool {
@@ -415,6 +464,44 @@ mod tests {
             !card_layout_plausible("4111 1111-1111 1111"),
             "mixed separators"
         );
+    }
+
+    #[test]
+    fn go_pseudo_version_stamps_are_not_cards_but_cards_still_are() {
+        // #2135: the `yyyymmddhhmmss` stamp of a Go pseudo-version.
+        let stamp = (0..10)
+            .map(|d| format!("2026090112454{d}"))
+            .find(|s| luhn_valid(s))
+            .expect("one check digit makes the stamp Luhn-valid");
+        for line in [
+            format!("replace a/b => github.com/c/d v0.6.1-0.{stamp}-3de7acda5f88"),
+            format!("github.com/c/d v0.0.0-{stamp}-abcdef123456/go.mod h1:x="),
+        ] {
+            let (out, counts) = redact_checksummed(&line);
+            assert_eq!(out, line, "a version stamp is not a card");
+            assert!(counts.is_empty(), "{counts:?}");
+        }
+
+        // The Luhn-valid Visa test number, in its three printed layouts.
+        let groups = ["4111", "1111", "1111", "1111"];
+        let contiguous = groups.concat();
+        let spaced = groups.join(" ");
+        let dashed = groups.join("-");
+        for text in [
+            format!("pay with {contiguous} today"),
+            format!("pay with {spaced} today"),
+            format!("pay with {dashed} today"),
+            format!("card: {contiguous}."),
+            format!("card-{dashed} on file"),
+            format!("({stamp}) as a bare number"),
+            // Between dashes but not a 14-digit timestamp: still a card.
+            format!("txn-{contiguous}-ok"),
+            format!("v1.2.3-0.{contiguous}-abcdef"),
+        ] {
+            let (out, counts) = redact_checksummed(&text);
+            assert!(out.contains("[REDACTED:card]"), "{text}: {out}");
+            assert_eq!(counts, vec![("card", 1)], "{text}");
+        }
     }
 
     #[test]

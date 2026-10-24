@@ -1018,7 +1018,9 @@ impl CtxReadTool {
                     };
 
                     computed = crate::core::redaction::redact_text_if_enabled(&computed);
-                    if let Some(note) = crate::core::context_admission::note_for(&compute_content) {
+                    if let Some(note) =
+                        crate::core::context_admission::note_for(&compute_content, &computed)
+                    {
                         computed.push('\n');
                         computed.push_str(&note);
                     }

@@ -55,10 +55,16 @@ lean-ctx read src/main.rs --fresh    # bypass cache
 | `lines:N-M` | a specific range (`lines:5,10-20`, `lines:-N` tail) | you know where to look |
 | `anchored` | whole file + per-line `N:hh|` anchors | you'll edit it via `ctx_patch` |
 | `full-compact` | whole file, no header, trailing whitespace stripped | you need faithful bytes, minimal framing |
-| `raw` | exact bytes, no framing | byte-exact content matters |
+| `raw` | exact bytes, no framing (gateway redactions still apply) | byte-exact content matters |
 | `cognitive` | 7±2 semantic chunks | you want the shape of a long file |
 | `mdl` | minimal structural description | you want the most compact outline |
 | `density:X` | highest-entropy lines until ~X of the tokens remain | you have a token budget |
+
+Every mode, `raw=true` and `fresh=true` included, delivers admitted content:
+the context gateway masks secrets and checksum-validated PII
+(`[REDACTED:<class>]`) before any mode runs, so `raw` skips compression and
+framing but not redaction. The `[lean-ctx gateway: …]` line counts only the
+masked values in the returned content.
 
 **Under the hood:** `ctx_read` consults the `SessionCache`; a cache hit returns a
 file reference instead of content. The mode predictor (`mode_stats.json`) learns

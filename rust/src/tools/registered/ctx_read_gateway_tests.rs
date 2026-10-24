@@ -183,6 +183,52 @@ async fn hud_line_reports_what_the_gateway_did_without_values() {
     assert!(!hud.contains(VALID_CARD) && !hud.contains(AWS_KEY));
 }
 
+/// #2135: a line window states only the masked values it returns; a window
+/// without one carries no gateway line at all.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn hud_line_counts_only_redactions_in_the_returned_window() {
+    let fixture = Fixture::new();
+    fixture.config("[context_gateway]\nhud = \"in_band\"\n");
+    let path = fixture.file(
+        "go.mod",
+        &format!("module example.com/m\n\ngo 1.27.0\n// card {VALID_CARD}\n"),
+    );
+    let gateway_line = |mode: &str| {
+        let ctx = fixture.context(&path);
+        let out = fixture
+            .read(&ctx, &path, &json!({ "mode": mode }))
+            .unwrap_or_else(|e| panic!("mode {mode}: {e}"));
+        assert!(!out.contains(VALID_CARD), "mode {mode} leaked PII: {out}");
+        out.lines()
+            .find(|line| line.starts_with("[lean-ctx gateway:"))
+            .map(str::to_owned)
+    };
+    assert_eq!(gateway_line("lines:3-3"), None);
+    assert_eq!(
+        gateway_line("lines:3-4").as_deref(),
+        Some("[lean-ctx gateway: 1 PII value(s) redacted]")
+    );
+    assert_eq!(
+        gateway_line("full").as_deref(),
+        Some("[lean-ctx gateway: 1 PII value(s) redacted]")
+    );
+}
+
+/// #2135: a Go pseudo-version stamp that passes Luhn is not a card, so even a
+/// governed read returns the module line unchanged.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn go_pseudo_version_stamps_survive_admission() {
+    let fixture = Fixture::new();
+    let line = "replace a/b => github.com/c/d v0.6.1-0.20260901124541-3de7acda5f88";
+    let path = fixture.file("go.mod", &format!("module m\n\n{line}\n"));
+    let ctx = fixture.context(&path);
+    for extra in [json!({ "raw": true }), json!({ "mode": "lines:3-3" })] {
+        let out = fixture.read(&ctx, &path, &extra).expect("read");
+        assert!(out.contains(line), "{extra}: {out}");
+        assert!(!out.contains("[lean-ctx gateway:"), "{extra}: {out}");
+    }
+}
+
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn clean_source_reads_exactly_as_before() {
     let fixture = Fixture::new();

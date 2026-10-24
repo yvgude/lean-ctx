@@ -93,21 +93,23 @@ fn digits_of(s: &str) -> Vec<u8> {
         .collect()
 }
 
-/// A card-shaped (see `card_layout_plausible`), Luhn-valid candidate.
-fn is_card(candidate: &str) -> bool {
-    crate::core::input_filters::pii::card_layout_plausible(candidate)
-        && luhn_valid(&digits_of(candidate))
+/// A card-shaped (see `card_layout_plausible`), Luhn-valid candidate that is
+/// not a segment of a version token (#2135).
+fn is_card(text: &str, candidate: &regex::Match<'_>) -> bool {
+    crate::core::input_filters::pii::card_layout_plausible(candidate.as_str())
+        && luhn_valid(&digits_of(candidate.as_str()))
+        && !crate::core::input_filters::pii::inside_version_token(text, candidate)
 }
 
 fn has_credit_card(content: &str) -> bool {
-    card_re().find_iter(content).any(|m| is_card(m.as_str()))
+    card_re().find_iter(content).any(|m| is_card(content, &m))
 }
 
 fn redact_credit_cards(text: &str) -> String {
     card_re()
         .replace_all(text, |caps: &regex::Captures| {
             let m = caps.get(0).map(|x| x.as_str()).unwrap_or_default();
-            if is_card(m) {
+            if caps.get(0).is_some_and(|matched| is_card(text, &matched)) {
                 "[REDACTED:card]".to_string()
             } else {
                 m.to_string()
@@ -239,6 +241,23 @@ mod tests {
         let text = format!("session {stamp} archived");
         assert!(!has_credit_card(&text));
         assert_eq!(redact_credit_cards(&text), text);
+    }
+
+    #[test]
+    fn go_pseudo_version_stamps_are_not_cards() {
+        // #2135: the stamp segment of a Go pseudo-version.
+        let stamp = (0..10)
+            .map(|d| format!("2026090112454{d}"))
+            .find(|s| luhn_valid(&digits_of(s)))
+            .expect("one check digit makes the stamp Luhn-valid");
+        let text = format!("github.com/c/d v0.6.1-0.{stamp}-3de7acda5f88");
+        assert!(!has_credit_card(&text));
+        assert_eq!(redact_credit_cards(&text), text);
+        let card = format!(
+            "card {} on file",
+            ["4111", "1111", "1111", "1111"].join(" ")
+        );
+        assert!(has_credit_card(&card));
     }
 
     #[test]
