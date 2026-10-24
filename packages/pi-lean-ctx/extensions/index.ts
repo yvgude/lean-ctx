@@ -40,6 +40,7 @@ import { loadPiConfig, resolvePiShellPath, resolveSuppressedBuiltins } from "./c
 import { posixSafeEnv } from "./env.js";
 import { classifySearchExit, innerTimeoutEnv, sanitizeExtraEnv } from "./exec-result.js";
 import { withFooter } from "./footer.js";
+import { boundReadOutput, READ_OUTPUT_MAX_BYTES, READ_OUTPUT_MAX_LINES } from "./read-output.js";
 
 const BRIDGE_STARTUP_TIMEOUT_MS = 10_000;
 
@@ -226,6 +227,18 @@ async function readSlice(path: string, offset?: number, limit?: number) {
     maxBytes: DEFAULT_MAX_BYTES,
   });
   return { text: truncation.content, lines: lines.length, truncated: truncation.truncated };
+}
+
+// #2138: every successful ctx_read text result passes Pi's read limits. The
+// one-shot CLI read has no turn budget, so without this a CLI-only session
+// handed multi-megabyte reads to the model. Results within the limits keep
+// their text and details unchanged.
+function boundedReadResult(text: string, details: Record<string, unknown>, sourceText?: string) {
+  const bounded = boundReadOutput(text, { sourceText });
+  return {
+    content: [{ type: "text" as const, text: bounded.text }],
+    details: bounded.truncation ? { ...details, truncation: bounded.truncation } : details,
+  };
 }
 
 function replaceTabs(text: string) {
@@ -505,7 +518,9 @@ export default async function (pi: ExtensionAPI) {
       + "Auto-selects mode: configs (.yaml/.json/.toml/.env) are always full-read. "
       + "Code files: full (<8KB), map (8-96KB), signatures (>96KB). "
       + "Add mode=full to get complete file content. "
-      + "Use offset and limit to read specific line ranges.",
+      + "Use offset and limit to read specific line ranges. "
+      + `Output is capped at ${READ_OUTPUT_MAX_LINES} lines or ${READ_OUTPUT_MAX_BYTES / 1024}KB per result; `
+      + "a truncated result says how to read the rest.",
     promptSnippet: "Read file contents (always use instead of cat)",
     promptGuidelines: [
       "Use ctx_read to inspect file contents instead of cat or less.",
@@ -594,10 +609,7 @@ export default async function (pi: ExtensionAPI) {
             const bridgedText = bridged.content.map((block) => block.text).join("");
             const originalSlice = await readSlice(absolutePath, startOffset, params.limit);
             const decorated = withFooter(bridgedText, { originalText: originalSlice.text, always: true, preferEstimate: true, suppressIfNoSaving: true });
-            return {
-              content: [{ type: "text", text: decorated.text }],
-              details: { path: absolutePath, lines: originalSlice.lines, source: "lean-ctx-bridge", mode, compression: decorated.stats },
-            };
+            return boundedReadResult(decorated.text, { path: absolutePath, lines: originalSlice.lines, source: "lean-ctx-bridge", mode, compression: decorated.stats });
           } catch (err) {
             console.error(`[pi-lean-ctx] ctx_read(${mode}) bridge call failed, falling back to CLI: ${err}`);
           }
@@ -607,10 +619,7 @@ export default async function (pi: ExtensionAPI) {
           const output = await execLeanCtx(pi, args, { signal });
           const originalSlice = await readSlice(absolutePath, startOffset, params.limit);
           const decorated = withFooter(output, { originalText: originalSlice.text, always: true, preferEstimate: true, suppressIfNoSaving: true });
-          return {
-            content: [{ type: "text", text: decorated.text }],
-            details: { path: absolutePath, lines: originalSlice.lines, source: "lean-ctx", mode, compression: decorated.stats },
-          };
+          return boundedReadResult(decorated.text, { path: absolutePath, lines: originalSlice.lines, source: "lean-ctx", mode, compression: decorated.stats });
         } catch {
           const sliced = await readSlice(absolutePath, startOffset, params.limit);
           return {
@@ -627,6 +636,9 @@ export default async function (pi: ExtensionAPI) {
       const isExplicitFull = params.mode === "full";
       const wantsFresh = forceFresh || isExplicitFull;
       const mode = params.mode ?? await chooseReadMode(absolutePath);
+      // full/raw output is the file's own text, so a truncated result can name
+      // the exact start_line to continue from (checked against the file).
+      const verbatimSource = mode === "full" || mode === "raw";
 
       // When the embedded MCP bridge is available, route the read through it so
       // the persistent session cache engages: an unchanged re-read then costs
@@ -644,10 +656,11 @@ export default async function (pi: ExtensionAPI) {
           const bridgedText = bridged.content.map((block) => block.text).join("");
           const originalText = await readFile(absolutePath, "utf8");
           const decorated = withFooter(bridgedText, { originalText, always: true, preferEstimate: true, suppressIfNoSaving: true });
-          return {
-            content: [{ type: "text", text: decorated.text }],
-            details: { path: absolutePath, source: "lean-ctx-bridge", mode, compression: decorated.stats },
-          };
+          return boundedReadResult(
+            decorated.text,
+            { path: absolutePath, source: "lean-ctx-bridge", mode, compression: decorated.stats },
+            verbatimSource ? originalText : undefined,
+          );
         } catch (err) {
           console.error(`[pi-lean-ctx] ctx_read bridge call failed, falling back to CLI: ${err}`);
         }
@@ -658,10 +671,11 @@ export default async function (pi: ExtensionAPI) {
       const originalText = await readFile(absolutePath, "utf8");
       const decorated = withFooter(output, { originalText, always: true, preferEstimate: true, suppressIfNoSaving: true });
 
-      return {
-        content: [{ type: "text", text: decorated.text }],
-        details: { path: absolutePath, source: "lean-ctx", mode, compression: decorated.stats },
-      };
+      return boundedReadResult(
+        decorated.text,
+        { path: absolutePath, source: "lean-ctx", mode, compression: decorated.stats },
+        verbatimSource ? originalText : undefined,
+      );
     },
   });
 
