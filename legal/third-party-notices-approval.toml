@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "74e10ced62ce2ff5f24fa9e2aaa35255a99f441e6c87bbb096247c6529b16fcf"
+approved_content_sha256 = "e3bd124434d66a27ac9f2206f37567cf85a2c80a083ca6c8ad0a1f0a470b62a2"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval (explicit \"Ja, freigeben\" for THIRD_PARTY_NOTICES sha256 74e10ced...16fcf, 2026-10-24) of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for the vite 6.4.3 -> 6.4.5 dev-dependency bump in packages/pi-lean-ctx (Dependabot #2137): only the npm package-lock, asset-manifest and content digests change; no license or notice text changes."
+approval_evidence = "Copyright owner approval (explicit \"Ja, freigeben\" for THIRD_PARTY_NOTICES sha256 e3bd1244...0b62a2, 2026-10-24) of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for the packages/pi-lean-ctx security bumps (vitest 4.1.12, zod 4.6.7, fast-uri 3.1.9, body-parser 2.4.0, ip-address 10.7.4; dev: pi-coding-agent/pi-tui 1.4.0): the npm package-lock, asset-manifest, content and bundled MCP SDK 1.32.1 bundle digests change (the bundle now carries the patched dependencies); no license or notice text changes."
 approved_at = "2026-10-24"

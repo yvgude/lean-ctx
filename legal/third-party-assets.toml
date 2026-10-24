@@ -8,7 +8,7 @@ cargo_lock_sha256 = "957c7c901d5b4f5c9b706295fb10af475485b213c3087379da5a3be6d44
 sbom = "SBOM.cdx.json"
 sbom_sha256 = "fbb3b9e0caa434ec20e4d12fa386a93a62320c2097d3f5ff93c10b2be3ac392c"
 npm_lock = "packages/pi-lean-ctx/package-lock.json"
-npm_lock_sha256 = "28ecadc4897ba691e0278f2e9699a3d6e60365d8a078165ed970f6ffe3fcb4e8"
+npm_lock_sha256 = "1f4451809926e44c5edc0651f117aa9aed436ac8efdb927ea5001a9fade4c883"
 
 [license_texts]
 isc = """
@@ -246,7 +246,7 @@ evidence_paths = [
 [[assets]]
 id = "mcp-sdk-bundle"
 path = "packages/pi-lean-ctx/extensions/vendor/mcp-sdk.cjs"
-sha256 = "6a30e0f16413dd59f3b56eb5aabbe4afb60dbf8f2ffb0a9f83f79b9a8f97714e"
+sha256 = "c80e3574a7910c95a57d7d39ece30174a7c2dd7e923e030a3191666b331af77c"
 version = "1.32.1"
 source = "https://registry.npmjs.org/@modelcontextprotocol/sdk/-/sdk-1.32.1.tgz"
 spdx = "MIT"

@@ -246,6 +246,8 @@ fn token_wire(message: CanonicalTokenEnvelope) -> Result<CanonicalTokenEnvelopeV
         route_ref: message.route_ref,
         policy_ref: message.policy_ref,
         idempotency_key: message.idempotency_key,
+        // The v1 gRPC contract carries no content payload.
+        payload: None,
     })
 }
 

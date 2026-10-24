@@ -209,7 +209,7 @@ fn executable_rejects_remote_bind_without_echoing_input() {
         .output()
         .unwrap();
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
     assert_eq!(
         str::from_utf8(&output.stderr).unwrap(),
         "OCLA gRPC server rejected\n"

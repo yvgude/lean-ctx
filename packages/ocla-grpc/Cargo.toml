@@ -11,7 +11,7 @@ description = "Loopback-only gRPC verifier for public LeanCTX OCLA v1 envelopes"
 lean-ctx-client = { path = "../../clients/rust/lean-ctx-client" }
 prost = "=0.14.4"
 serde_json = "=1.0.145"
-tokio = { version = "=1.52.0", features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
+tokio = { version = "=1.53.3", features = ["macros", "net", "rt-multi-thread", "signal", "time"] }
 tokio-stream = { version = "=0.1.17", features = ["net"] }
 tonic = { version = "=0.14.6", features = ["transport"] }
 tonic-health = "=0.14.6"
