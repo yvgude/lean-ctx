@@ -7,7 +7,8 @@ use super::super::{
 use crate::core::ocla::response_cache::{
     CachedResponse, ResponseCache, ResponseCacheKey, global_response_cache,
 };
-use rmcp::model::{ContentBlock, Meta};
+use rmcp::model::{ContentBlock, ElicitRequestParams, ElicitationAction, ElicitationSchema, Meta};
+use rmcp::service::ElicitationMode;
 use serde::Deserialize;
 use serde_json::{Map, Value};
 use std::{
@@ -199,6 +200,68 @@ pub(super) fn cache_call_result(
 }
 
 impl LeanCtxServer {
+    async fn request_shell_one_shot_approval(&self, command: &str, tool_params: Value) -> bool {
+        let peer = {
+            let guard = self.peer.read().await;
+            guard.clone()
+        };
+        let Some(peer) = peer else {
+            return false;
+        };
+        if !peer
+            .supported_elicitation_modes()
+            .contains(&ElicitationMode::Form)
+        {
+            tracing::debug!(
+                "MCP client does not support form elicitation; keeping shell allowlist denial"
+            );
+            return false;
+        }
+
+        let Ok(requested_schema) = ElicitationSchema::builder().build() else {
+            return false;
+        };
+        let mut meta = Meta::new();
+        meta.0.insert(
+            "codex_request_type".to_string(),
+            serde_json::json!("approval_request"),
+        );
+        meta.0.insert(
+            "codex_approval_kind".to_string(),
+            serde_json::json!("mcp_tool_call"),
+        );
+        meta.0.insert(
+            "codex_sensitive_action".to_string(),
+            serde_json::json!(true),
+        );
+        meta.0.insert(
+            "codex_requires_user_input".to_string(),
+            serde_json::json!(true),
+        );
+        meta.0
+            .insert("tool_name".to_string(), serde_json::json!("ctx_shell"));
+        meta.0.insert("tool_params".to_string(), tool_params);
+
+        let request = ElicitRequestParams::FormElicitationParams {
+            meta: Some(meta),
+            message: format!(
+                "LeanCTX blocked this exact shell command because an executable is not in the host allowlist. Allow this command once?\n\n{command}"
+            ),
+            requested_schema,
+        };
+
+        match peer
+            .create_elicitation_with_timeout(request, Some(Duration::from_secs(300)))
+            .await
+        {
+            Ok(response) => matches!(response.action, ElicitationAction::Accept),
+            Err(error) => {
+                tracing::warn!(%error, "one-shot shell approval elicitation failed");
+                false
+            }
+        }
+    }
+
     pub(crate) async fn call_tool_guarded(
         &self,
         request: CallToolRequestParams,
@@ -900,6 +963,39 @@ impl crate::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
                         crate::core::execution_lifecycle::StageDisposition::Applied,
                     ));
                 }
+                let one_shot_shell_approved = if guard_name == "ctx_shell" {
+                    guard_args
+                        .as_ref()
+                        .and_then(|args| args.get("command"))
+                        .and_then(Value::as_str)
+                        .and_then(crate::core::shell_allowlist::one_shot_approval_required)
+                        .is_some_and(|blocked| {
+                            tracing::info!(
+                                reason = %blocked,
+                                "requesting one-shot host approval for shell allowlist miss"
+                            );
+                            true
+                        })
+                } else {
+                    false
+                };
+
+                let one_shot_shell_approved = if one_shot_shell_approved {
+                    let command = guard_args
+                        .as_ref()
+                        .and_then(|args| args.get("command"))
+                        .and_then(Value::as_str)
+                        .expect("shell approval candidate has command");
+                    self.server
+                        .request_shell_one_shot_approval(
+                            command,
+                            Value::Object(guard_args.clone().unwrap_or_default()),
+                        )
+                        .await
+                } else {
+                    false
+                };
+
                 if crate::server::native_receipts::requested(&call.name, call.args.as_ref()) {
                     self.native_receipt_capture = self
                         .server
@@ -920,11 +1016,14 @@ impl crate::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
                     call.minimal,
                     &call.args_fp,
                 );
-                let primitive = crate::server::native_receipts::NATIVE_RECEIPT_CAPTURE
+                let primitive = crate::server::tool_trait::SHELL_ONE_SHOT_APPROVED
                     .scope(
-                        self.native_receipt_capture.clone(),
-                        crate::core::context_kernel::bridge::runtime::KERNEL_PLANNING_HANDOFF
-                            .scope(call.kernel_handoff.clone(), dispatch),
+                        one_shot_shell_approved,
+                        crate::server::native_receipts::NATIVE_RECEIPT_CAPTURE.scope(
+                            self.native_receipt_capture.clone(),
+                            crate::core::context_kernel::bridge::runtime::KERNEL_PLANNING_HANDOFF
+                                .scope(call.kernel_handoff.clone(), dispatch),
+                        ),
                     )
                     .await;
                 self.server.record_tool_usage(

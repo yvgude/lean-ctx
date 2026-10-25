@@ -156,7 +156,13 @@ impl McpTool for CtxShellTool {
             });
         }
 
-        if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(&command) {
+        let one_shot_approved = crate::server::tool_trait::SHELL_ONE_SHOT_APPROVED
+            .try_with(|approved| *approved)
+            .unwrap_or(false);
+        if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist_with_one_shot(
+            &command,
+            one_shot_approved,
+        ) {
             return Ok(ToolOutput {
                 shell_outcome: Some(ShellOutcome::Blocked),
                 content_blocks: None,

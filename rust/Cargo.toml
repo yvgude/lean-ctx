@@ -185,6 +185,7 @@ rmcp = { version = "2", features = [
   # OAuth 2.1 for HTTP MCP servers that require a browser login (#1391):
   # discovery, dynamic client registration, PKCE, code exchange, refresh.
   "auth",
+  "elicitation",
 ] }
 # Header types for the gateway's downstream HTTP MCP client (already in the tree via rmcp/reqwest).
 http = "1.4"

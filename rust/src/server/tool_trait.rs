@@ -298,6 +298,12 @@ pub trait McpTool: Send + Sync {
 }
 
 tokio::task_local! {
+    /// True only while dispatching the exact ctx_shell call for which the MCP
+    /// host granted a one-shot allowlist exception.
+    pub static SHELL_ONE_SHOT_APPROVED: bool;
+}
+
+tokio::task_local! {
     /// #1781: the cancellation token of the request currently being served,
     /// scoped by `call_tool` around the whole guarded dispatch.
     ///

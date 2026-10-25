@@ -543,6 +543,9 @@ impl LeanCtxServer {
         let receipt_capture = crate::server::native_receipts::current_capture();
         let archive_capture = crate::core::archive::authority::current_capture();
         let admissions = crate::core::context_admission::capture::current();
+        let shell_one_shot_approved = crate::server::tool_trait::SHELL_ONE_SHOT_APPROVED
+            .try_with(|approved| *approved)
+            .unwrap_or(false);
         let policy_project = crate::core::policy::runtime::REQUEST_PROJECT
             .try_with(|slot| slot.borrow().clone())
             .ok()
@@ -564,7 +567,11 @@ impl LeanCtxServer {
                                             .sync_scope(handoff, || {
                                                 crate::core::context_admission::capture::ADMISSIONS
                                                     .sync_scope(admissions, || {
-                                                        tool.handle(&args_owned, &ctx)
+                                                        crate::server::tool_trait::SHELL_ONE_SHOT_APPROVED
+                                                            .sync_scope(
+                                                                shell_one_shot_approved,
+                                                                || tool.handle(&args_owned, &ctx),
+                                                            )
                                                     })
                                             })
                                     },

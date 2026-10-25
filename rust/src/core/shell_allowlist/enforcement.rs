@@ -73,6 +73,38 @@ pub fn passes_enforced(command: &str) -> bool {
     enforce_shell_allowlist(command).is_ok()
 }
 
+/// Returns the ordinary allowlist denial when the exact command is otherwise
+/// safe enough for a one-shot user approval. Hard restrictions remain blocked.
+pub fn one_shot_approval_required(command: &str) -> Option<ShellError> {
+    if ShellSecurity::resolve() != ShellSecurity::Enforce {
+        return None;
+    }
+    match enforce_shell_policy(command, false) {
+        Err(original) if enforce_shell_policy(command, true).is_ok() => Some(original),
+        _ => None,
+    }
+}
+
+/// Re-check an exact command after the host approved this invocation once.
+/// Only allowlist-membership misses are relaxed; hard shell-safety checks remain.
+pub fn check_shell_allowlist_with_one_shot(
+    command: &str,
+    one_shot_approved: bool,
+) -> Result<(), ShellError> {
+    if !one_shot_approved {
+        return check_shell_allowlist(command);
+    }
+    match ShellSecurity::resolve() {
+        ShellSecurity::Off | ShellSecurity::Warn => Ok(()),
+        ShellSecurity::Enforce => enforce_shell_policy(command, true).inspect_err(|_| {
+            crate::core::security_events::note(
+                crate::core::security_events::SecurityKind::ShellBlocked,
+                1,
+            );
+        }),
+    }
+}
+
 /// Allowlist + dangerous-pattern enforcement, evaluated as if in `enforce` mode.
 /// [`check_shell_allowlist`] decides whether a violation blocks, warns, or is
 /// skipped based on the active [`ShellSecurity`] mode.
@@ -80,6 +112,10 @@ pub fn passes_enforced(command: &str) -> bool {
 /// When the allowlist is empty, all commands pass (blocklist-only mode).
 /// When non-empty, EVERY command segment in the pipeline must match.
 pub(super) fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
+    enforce_shell_policy(command, false)
+}
+
+fn enforce_shell_policy(command: &str, allow_unlisted: bool) -> Result<(), ShellError> {
     let normalized = normalize_line_continuations(command);
     // #876: a quoted-delimiter heredoc body (`<<'EOF' … EOF`) is literal stdin
     // data, not commands. Strip it before analysis so the operator-splitter can't
@@ -118,7 +154,12 @@ pub(super) fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
         return Ok(());
     }
     let subcommand_scoping = crate::core::config::Config::load().shell_allowlist_subcommand_scoping;
-    check_all_segments(cmd_all, &Allowlist::new(allowlist, subcommand_scoping))
+    let allowlist = Allowlist::new(allowlist, subcommand_scoping);
+    if allow_unlisted {
+        check_all_segments_with_policy(cmd_all, &allowlist, true)
+    } else {
+        check_all_segments(cmd_all, &allowlist)
+    }
 }
 
 /// Normalize the command string: remove backslash-newline continuations and
@@ -195,7 +236,7 @@ pub(super) fn check_unconditional_blocked_only(command: &str) -> Result<(), Shel
 /// cannot smuggle inline code past the check (GH #391).
 fn check_interpreter_eval_only(segment: &str) -> Result<(), ShellError> {
     let inline_ok = crate::core::config::Config::load().shell_allow_inline_scripts_effective();
-    check_interpreter_inner(segment, None, 0, inline_ok)
+    check_interpreter_inner(segment, None, 0, inline_ok, false)
 }
 
 /// #823: unified interpreter-abuse walk. Both eval-only (empty allowlist) and
@@ -207,6 +248,7 @@ fn check_interpreter_inner(
     allowlist: Option<&Allowlist>,
     depth: usize,
     inline_ok: bool,
+    allow_unlisted: bool,
 ) -> Result<(), ShellError> {
     // Fail closed: stopping the walk early would let `env env env env bash -c …`
     // skip every check below.
@@ -279,7 +321,8 @@ fn check_interpreter_inner(
                 if let Some(first) = delegated_tokens.first_mut() {
                     *first = delegated.to_string();
                 }
-                if !delegated.is_empty()
+                if !allow_unlisted
+                    && !delegated.is_empty()
                     && !SHELL_BUILTINS.contains(&delegated)
                     && !matches_allowlist_entry(&delegated_tokens, al)
                 {
@@ -291,7 +334,13 @@ fn check_interpreter_inner(
                 }
             }
             let rest_str = rest_tokens.join(" ");
-            return check_interpreter_inner(&rest_str, allowlist, depth + 1, inline_ok);
+            return check_interpreter_inner(
+                &rest_str,
+                allowlist,
+                depth + 1,
+                inline_ok,
+                allow_unlisted,
+            );
         }
     }
 
@@ -574,9 +623,13 @@ fn is_assignment(word: &str) -> bool {
 
 /// Check if a segment uses an interpreter with an eval flag, or a delegation command
 /// whose target is not in the allowlist.
-fn check_interpreter_abuse(segment: &str, allowlist: &Allowlist) -> Result<(), ShellError> {
+fn check_interpreter_abuse(
+    segment: &str,
+    allowlist: &Allowlist,
+    allow_unlisted: bool,
+) -> Result<(), ShellError> {
     let inline_ok = crate::core::config::Config::load().shell_allow_inline_scripts_effective();
-    check_interpreter_inner(segment, Some(allowlist), 0, inline_ok)
+    check_interpreter_inner(segment, Some(allowlist), 0, inline_ok, allow_unlisted)
 }
 
 /// Check for combined flags like -pe, -ne, -ce that contain eval characters.
@@ -878,6 +931,14 @@ fn unconditional_function_defs(command: &str) -> Vec<String> {
 }
 
 pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result<(), ShellError> {
+    check_all_segments_with_policy(command, allowlist, false)
+}
+
+fn check_all_segments_with_policy(
+    command: &str,
+    allowlist: &Allowlist,
+    allow_unlisted: bool,
+) -> Result<(), ShellError> {
     if allowlist.is_empty() {
         return Ok(());
     }
@@ -937,16 +998,16 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
                 };
                 if SHELL_BUILTINS.contains(&body_base.as_str()) {
                     if DELEGATION_COMMANDS.contains(&body_base.as_str()) {
-                        check_interpreter_abuse(body_seg, allowlist)?;
+                        check_interpreter_abuse(body_seg, allowlist, allow_unlisted)?;
                     }
                     continue;
                 }
-                if !matches_allowlist_entry(&body_tokens, allowlist) {
+                if !allow_unlisted && !matches_allowlist_entry(&body_tokens, allowlist) {
                     return Err(format!(
                         "[BLOCKED — DO NOT RETRY] '{body_base}' (inside function body) is not in the shell allowlist.\nFix (additive, keeps the defaults): run  lean-ctx allow {body_base}",
                     ).into());
                 }
-                check_interpreter_abuse(body_seg, allowlist)?;
+                check_interpreter_abuse(body_seg, allowlist, allow_unlisted)?;
                 check_dangerous_flags(body_seg)?;
                 super::self_config::check_self_reconfiguration(&body_tokens)?;
             }
@@ -975,7 +1036,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
             // `command`/`builtin` need no entry themselves, but they run the
             // word after them, which must pass like any delegated command.
             if DELEGATION_COMMANDS.contains(&base.as_str()) {
-                check_interpreter_abuse(seg, allowlist)?;
+                check_interpreter_abuse(seg, allowlist, allow_unlisted)?;
             }
             continue;
         }
@@ -995,10 +1056,13 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
             }
             Some(false) | None => {} // allowlisted override or not a cmdlet
         }
-        check_interpreter_abuse(seg, allowlist)?;
+        check_interpreter_abuse(seg, allowlist, allow_unlisted)?;
         check_dangerous_flags(seg)?;
         super::self_config::check_self_reconfiguration(&tokens)?;
         if !matches_allowlist_entry(&tokens, allowlist) {
+            if allow_unlisted {
+                continue;
+            }
             // #813: auto-allow binaries that resolve to existing files under
             // the project root. The first token (before rsplit) carries the
             // path context (e.g. "./cbc_old", "../bin/bench").
@@ -1131,4 +1195,42 @@ fn has_substitution_at_command_pos(command: &str) -> bool {
         }
     }
     false
+}
+
+#[cfg(test)]
+mod one_shot_approval_tests {
+    use super::*;
+
+    #[test]
+    fn one_shot_relaxes_only_delegated_allowlist_membership() {
+        let allowlist = Allowlist::new(vec!["timeout".to_string()], false);
+        let command = "timeout 15s /tmp/s5b_axmol_timerquery_build/bin/S5BAxmolBackendProbe/S5BAxmolBackendProbe";
+
+        assert!(check_all_segments(command, &allowlist).is_err());
+        assert!(check_all_segments_with_policy(command, &allowlist, true).is_ok());
+    }
+
+    #[test]
+    fn one_shot_does_not_relax_interpreter_inline_code_block() {
+        let allowlist = Allowlist::new(vec!["timeout".to_string(), "python3".to_string()], false);
+
+        assert!(
+            check_all_segments_with_policy("timeout 5s python3 -c 'print(1)'", &allowlist, true,)
+                .is_err()
+        );
+    }
+
+    #[test]
+    fn one_shot_keeps_scanning_later_segments_for_hard_blocks() {
+        let allowlist = Allowlist::new(vec!["echo".to_string()], false);
+
+        assert!(
+            check_all_segments_with_policy(
+                "not-allowlisted && python3 -c 'print(1)'",
+                &allowlist,
+                true,
+            )
+            .is_err()
+        );
+    }
 }
