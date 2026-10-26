@@ -431,24 +431,61 @@ fn is_redirect_only_suffix(suffix: &str) -> bool {
             return false;
         };
         rest = op[op_len..].trim_start();
-        // Target: `&1`/`-` for descriptor dups, otherwise one plain word. A
-        // shell metacharacter here means this is not a bare redirect target.
-        let target = rest
-            .bytes()
-            .take_while(|byte| {
-                !byte.is_ascii_whitespace()
-                    && !matches!(
-                        byte,
-                        b';' | b'|' | b'&' | b'(' | b')' | b'`' | b'$' | b'<' | b'>' | b'"' | b'\''
-                    )
-            })
-            .count();
+        // Target: `&1`/`-` for descriptor dups, otherwise one shell word.
+        let Some(target) = redirect_target_len(rest) else {
+            return false;
+        };
         if target == 0 {
             return false;
         }
         rest = rest[target..].trim_start();
     }
     true
+}
+
+/// Byte length of the single shell word that forms a redirect target at the
+/// start of `rest` (#2149). Quoted parts, `$VAR`/`${VAR}`, and `$( … )` or
+/// backtick substitutions belong to the word, exactly as they would after a
+/// plain command (`echo ok > /tmp/lc_$(echo b).txt`): the word itself runs
+/// nothing, and the commands in its substitutions are extracted and gated by
+/// the same segment walk and substitution check as without the subshell.
+/// Unquoted whitespace or an operator ends the word; a word that starts with
+/// `<`/`>` (process substitution, herestring) yields 0. `None`: an
+/// unterminated quote or substitution, which is never accepted.
+fn redirect_target_len(rest: &str) -> Option<usize> {
+    let bytes = rest.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        match bytes[i] {
+            b if b.is_ascii_whitespace() => break,
+            b';' | b'|' | b'&' | b'(' | b')' | b'<' | b'>' => break,
+            b'\\' => i += 2,
+            b'\'' => i += rest[i + 1..].find('\'')? + 2,
+            b'"' => i = closing_double_quote(rest, i + 1)? + 1,
+            b'$' if bytes.get(i + 1) == Some(&b'(') => i = balanced_paren_at(rest, i + 1)?.1,
+            b'`' => i = super::case_construct::skip_backticks(bytes, i)?,
+            _ => i += 1,
+        }
+    }
+    Some(i.min(bytes.len()))
+}
+
+/// Index of the `"` closing a double-quoted string whose body starts at
+/// `from`, stepping over escapes and `$( … )`/backtick substitutions (which
+/// may themselves contain quotes).
+fn closing_double_quote(s: &str, from: usize) -> Option<usize> {
+    let bytes = s.as_bytes();
+    let mut i = from;
+    while i < bytes.len() {
+        match bytes[i] {
+            b'\\' => i += 2,
+            b'"' => return Some(i),
+            b'$' if bytes.get(i + 1) == Some(&b'(') => i = balanced_paren_at(s, i + 1)?.1,
+            b'`' => i = super::case_construct::skip_backticks(bytes, i)?,
+            _ => i += 1,
+        }
+    }
+    None
 }
 
 /// GH #2134: if `segment` is an arithmetic command `(( expr ))`, return `expr`.
