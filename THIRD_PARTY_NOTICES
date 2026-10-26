@@ -1,8 +1,8 @@
 # LeanCTX third-party notices
 Schema: leanctx.third-party-notices/v1
-Status: GENERATED - PENDING APPROVAL
+Status: GENERATED AND APPROVED
 Content-Digest-Scope: SHA-256 of this file with the Content-Digest value zeroed
-Content-Digest: sha256:46a97ab5d59d9dbedc6a900b737b87cdb0c8d08a82825d9feb06a52ef53bc8d1
+Content-Digest: sha256:d8f42ea922efe53b27e9dff83d841860d4d9fd4a9fba5ccaf89ec18253ef9d7d
 Source inventory: rust/Cargo.lock + cargo metadata --locked --offline --all-features + SBOM.cdx.json + legal/third-party-assets.toml + packages/pi-lean-ctx/package-lock.json
 Generation command: cargo metadata --locked --offline --all-features --manifest-path rust/Cargo.toml --format-version 1
 Approval contract: legal/third-party-notices-approval.toml binds approved_content_sha256 to this file's exact SHA-256

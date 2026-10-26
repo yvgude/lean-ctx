@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "e3bd124434d66a27ac9f2206f37567cf85a2c80a083ca6c8ad0a1f0a470b62a2"
+approved_content_sha256 = "4477a49e3a367ae7f0c5e2125d5b78e4c52e49ea9ec2a3031844a572d8dda395"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval (explicit \"Ja, freigeben\" for THIRD_PARTY_NOTICES sha256 e3bd1244...0b62a2, 2026-10-24) of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for the packages/pi-lean-ctx security bumps (vitest 4.1.12, zod 4.6.7, fast-uri 3.1.9, body-parser 2.4.0, ip-address 10.7.4; dev: pi-coding-agent/pi-tui 1.4.0): the npm package-lock, asset-manifest, content and bundled MCP SDK 1.32.1 bundle digests change (the bundle now carries the patched dependencies); no license or notice text changes."
-approved_at = "2026-10-24"
+approval_evidence = "Copyright owner approval (explicit \"yes mach alles\", 2026-10-26, for the generated content with pending digest 3f96cf8f...e946c7; this file binds its GENERATED AND APPROVED variant 4477a49e...dda395 of scripts/generate-third-party-notices.py) of the THIRD_PARTY_NOTICES for the zstd security bump (RUSTSEC-2026-0391/0398/0403/0410): zstd 0.13.3 and zstd-safe 7.2.4 leave the Cargo graph, zstd 0.14.3, zstd-safe 8.2.0 and zstd-sys 2.1.2 replace 0.14.2/8.1.0/2.1.1; the Cargo.lock, Cargo metadata inventory, SBOM, asset-manifest and content digests change; no new packages, licenses or notice text."
+approved_at = "2026-10-26"
