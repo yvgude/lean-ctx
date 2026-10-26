@@ -1773,3 +1773,71 @@ fn forwards_commandcode_cli_headers() {
         );
     }
 }
+
+/// A model alias that targets a `[[proxy.providers]]` entry with `api_key_env`
+/// moves a built-in route onto the operator's key. A request that only got in
+/// through the provider-key fallback must not have that key injected.
+#[tokio::test]
+async fn routed_gateway_credential_requires_lean_ctx_token() {
+    let _isolation = crate::core::data_dir::isolated_data_dir();
+    let mut config = crate::core::config::Config::default();
+    config.proxy.routing.enabled = Some(true);
+    config
+        .proxy
+        .routing
+        .aliases
+        .insert("acme/fast".into(), "foundry:gpt-4o-mini".into());
+    config.save().unwrap();
+    crate::test_env::set_var("LC_TEST_GATEWAY_HELD_KEY", "sk-gateway-held");
+    let body = serde_json::json!({
+        "model": "acme/fast",
+        "messages": [{"role": "user", "content": "hi"}]
+    });
+
+    for fallback_only in [true, false] {
+        let (upstream, server) = upstream_capturing_headers().await;
+        let mut state = proxy_test_state("http://127.0.0.1:9");
+        let (_sender, upstreams) =
+            tokio::sync::watch::channel(Arc::new(crate::core::config::Upstreams {
+                anthropic: "http://127.0.0.1:9".into(),
+                openai: "http://127.0.0.1:9".into(),
+                chatgpt: "http://127.0.0.1:9".into(),
+                gemini: "http://127.0.0.1:9".into(),
+                providers: vec![crate::core::config::ResolvedProvider {
+                    id: "foundry".into(),
+                    shape: crate::core::config::WireShape::OpenAi,
+                    base_url: upstream,
+                    api_key_env: Some("LC_TEST_GATEWAY_HELD_KEY".into()),
+                    aws_region: None,
+                    local: true,
+                }],
+            }));
+        state.upstreams = upstreams;
+        let mut driver = proxy_test_driver(state, &body, "http://127.0.0.1:9");
+        let request = driver.request.as_mut().unwrap();
+        request
+            .headers_mut()
+            .insert("x-api-key", "caller-junk".parse().unwrap());
+        if fallback_only {
+            request
+                .extensions_mut()
+                .insert(crate::proxy::server::ProviderKeyFallback);
+        }
+        let context = proxy_test_context();
+        driver.apply_security_boundaries(&context).await.unwrap();
+        let prepared = driver.gather_context_strategy(&context).await;
+        if fallback_only {
+            assert_eq!(prepared.err(), Some(StatusCode::UNAUTHORIZED));
+            server.abort();
+        } else {
+            prepared.unwrap();
+            driver.dispatch_primitive(&context).await.unwrap();
+            let headers = server.await.unwrap();
+            assert!(
+                headers.contains("authorization: bearer sk-gateway-held"),
+                "token-authenticated alias traffic still gets the gateway key: {headers}"
+            );
+        }
+    }
+    crate::test_env::remove_var("LC_TEST_GATEWAY_HELD_KEY");
+}

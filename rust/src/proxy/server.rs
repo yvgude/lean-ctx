@@ -916,13 +916,25 @@ pub(super) async fn proxy_auth_guard(
     // e.g. Grok dual-rail) stay open even when require_token is set — the
     // Authorization / x-xai-token-auth header must carry the upstream session
     // and cannot also hold the lean-ctx Bearer.
-    let client_auth_registry = is_client_auth_registry_route(path, &upstreams.borrow());
-    if provider_key_fallback_allowed(
-        require_token,
-        has_provider_api_key(&req),
-        is_provider_route(path),
-        client_auth_registry,
-    ) {
+    // Gateway-held key rails (`api_key_env` / Bedrock) swap the caller's
+    // header for the operator's credential, so a provider header there proves
+    // nothing: only the lean-ctx Bearer above admits them.
+    let (client_auth_registry, gateway_credential) = {
+        let upstreams = upstreams.borrow();
+        (
+            is_client_auth_registry_route(path, &upstreams),
+            is_gateway_credential_registry_route(path, &upstreams),
+        )
+    };
+    if !gateway_credential
+        && provider_key_fallback_allowed(
+            require_token,
+            has_provider_api_key(&req),
+            is_provider_route(path),
+            client_auth_registry,
+        )
+    {
+        req.extensions_mut().insert(ProviderKeyFallback);
         #[cfg(feature = "enterprise")]
         attach_gateway_tags(&mut req, gateway_identity::GatewayTags::default());
         return Ok(next.run(req).await);
@@ -930,6 +942,13 @@ pub(super) async fn proxy_auth_guard(
 
     Err(auth_error_response(path))
 }
+
+/// Request extension: admitted by the provider-key fallback, without the
+/// lean-ctx Bearer token. The forward path refuses to inject a gateway-held
+/// credential for such a request (a model alias can retarget a built-in route
+/// onto a `[[proxy.providers]]` entry with `api_key_env`).
+#[derive(Debug, Clone, Copy)]
+pub(super) struct ProviderKeyFallback;
 
 /// Returns true only for `TOKEN.TIMESTAMP` bearer tokens more than 24 hours
 /// old. Tokens without a valid timestamp suffix remain valid for backwards
@@ -1060,6 +1079,19 @@ fn is_client_auth_registry_route(path: &str, upstreams: &Upstreams) -> bool {
         .providers
         .iter()
         .any(|p| p.id == id && !p.injects_gateway_credential())
+}
+
+/// `/providers/{id}/...` where the registered provider injects a gateway-held
+/// credential (`api_key_env` set, or Bedrock SigV4).
+fn is_gateway_credential_registry_route(path: &str, upstreams: &Upstreams) -> bool {
+    let Some(rest) = path.strip_prefix("/providers/") else {
+        return false;
+    };
+    let id = rest.split('/').next().unwrap_or("");
+    upstreams
+        .providers
+        .iter()
+        .any(|p| p.id == id && p.injects_gateway_credential())
 }
 
 pub(super) fn is_provider_route(path: &str) -> bool {

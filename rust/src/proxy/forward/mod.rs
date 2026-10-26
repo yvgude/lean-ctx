@@ -689,6 +689,20 @@ async fn prepare_upstream_request(
         .and_then(|r| r.upstream_base.as_deref())
         .unwrap_or(upstream_base);
     if let Some(provider) = route.as_ref().and_then(|r| r.credential.as_ref()) {
+        // The gateway-held key is only for callers holding the lean-ctx token;
+        // a bare provider header must not buy it through an alias.
+        if parts
+            .extensions
+            .get::<super::server::ProviderKeyFallback>()
+            .is_some()
+        {
+            tracing::warn!(
+                "lean-ctx proxy: alias routes to '{}' (gateway-held key) but the request \
+                 carries no lean-ctx token (401)",
+                provider.id
+            );
+            return Err(StatusCode::UNAUTHORIZED);
+        }
         super::providers::inject_gateway_credential(provider, &mut parts.headers)?;
     }
     schedule_provider_connector(&parts, lineage.as_ref(), route.as_ref(), provider_label);

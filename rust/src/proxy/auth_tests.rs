@@ -542,3 +542,96 @@ async fn rate_limiter_enforces_burst_then_recovers() {
     tokio::time::sleep(std::time::Duration::from_millis(150)).await;
     assert!(limiter.allow().await, "bucket must refill at max_rps");
 }
+
+// A `[[proxy.providers]]` entry with `api_key_env` holds the upstream key and
+// injects it. A caller on such a route must present the lean-ctx Bearer token:
+// any non-empty provider header would otherwise buy the operator's credential.
+#[tokio::test]
+async fn gateway_credential_route_requires_lean_ctx_token() {
+    let provider = |id: &str, api_key_env: Option<&str>| crate::core::config::ResolvedProvider {
+        id: id.into(),
+        shape: crate::core::config::WireShape::OpenAi,
+        base_url: "http://127.0.0.1:9".into(),
+        api_key_env: api_key_env.map(str::to_string),
+        aws_region: None,
+        local: true,
+    };
+    let mut upstreams = crate::core::config::Config::default()
+        .proxy
+        .resolve_all_disk();
+    upstreams.providers = vec![
+        provider("foundry", Some("FOUNDRY_API_KEY")),
+        provider("grok-chat", None),
+    ];
+    let (_sender, upstreams) = tokio::sync::watch::channel(Arc::new(upstreams));
+    #[cfg(feature = "enterprise")]
+    let gateway_keys = Arc::new(gateway_identity::GatewayKeys::default());
+    let app = axum::Router::new()
+        .route(
+            "/providers/{id}/{*rest}",
+            axum::routing::any(|| async { "reached" }),
+        )
+        .route(
+            "/v1/chat/completions",
+            axum::routing::any(|| async { "reached" }),
+        )
+        .layer(axum::middleware::from_fn(move |request, next| {
+            proxy_auth_guard(
+                request,
+                next,
+                "gateway-fixture-token".into(),
+                false,
+                false,
+                #[cfg(feature = "enterprise")]
+                gateway_keys.clone(),
+                upstreams.clone(),
+            )
+        }));
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let (stop, stopped) = tokio::sync::oneshot::channel::<()>();
+    let server = tokio::spawn(async move {
+        axum::serve(listener, app)
+            .with_graceful_shutdown(async {
+                let _ = stopped.await;
+            })
+            .await
+            .unwrap();
+    });
+    let client = reqwest::Client::builder()
+        .no_proxy()
+        .timeout(std::time::Duration::from_secs(5))
+        .build()
+        .unwrap();
+
+    let foundry = "/providers/foundry/v1/chat/completions";
+    let grok = "/providers/grok-chat/v1/chat/completions";
+    for (path, header, value, expected) in [
+        // Gateway-held key: a provider header alone is not authentication.
+        (foundry, "x-api-key", "anything", 401),
+        (foundry, "authorization", "Bearer junk", 401),
+        (foundry, "api-key", "x", 401),
+        (
+            foundry,
+            "authorization",
+            "Bearer gateway-fixture-token",
+            200,
+        ),
+        // Client-auth rail and built-in loopback routes keep the fallback.
+        (grok, "authorization", "Bearer sess", 200),
+        ("/v1/chat/completions", "x-api-key", "sk-caller", 200),
+    ] {
+        let status = client
+            .post(format!("http://{address}{path}"))
+            .header(header, value)
+            .send()
+            .await
+            .unwrap()
+            .status()
+            .as_u16();
+        assert_eq!(status, expected, "{path} with {header}: {value}");
+    }
+
+    stop.send(()).unwrap();
+    server.await.unwrap();
+}
