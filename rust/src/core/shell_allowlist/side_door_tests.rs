@@ -197,7 +197,11 @@ const PROBES: &[Probe] = &[
     probe("echo $((1<<2))\nevil_marker", ALL, SUB),
     probe("(( x = 1 << 2 ))\nevil_marker", &["bash", "zsh"], REFUSED),
     probe(r"echo $'\'' '$(evil_marker)' $'\'''", &["dash"], REFUSED),
-    probe("cat <<EOF\n$(evil_marker)\nEOF", ALL, SUB),
+    probe(
+        "cat <<EOF\n$(evil_marker)\nEOF",
+        ALL,
+        &["evil_marker", "at command position"],
+    ),
     probe("echo a\u{2028}#$(evil_marker)", ALL, REFUSED),
     probe("echo $(true)#$(evil_marker)", ALL, SUB),
     probe("cat =(evil_marker)", &["zsh"], SUB),
@@ -262,20 +266,24 @@ fn inputs_that_execute_the_marker_are_blocked() {
 
     let inputs: Vec<&str> = PROBES.iter().map(|p| p.input).collect();
     let verdicts = verdicts("echo,cat,true", &inputs);
+    let mut failures = Vec::new();
     for (probe, (input, verdict)) in PROBES.iter().zip(&verdicts) {
-        let err = verdict
-            .as_ref()
-            .expect_err(&format!("the gate must block {input:?}"));
+        let Err(err) = verdict else {
+            failures.push(format!("the gate must block {input:?}"));
+            continue;
+        };
         let reason = reason_text(err);
-        assert!(reason.starts_with("[BLOCKED"), "{input:?}: {reason}");
-        assert!(
-            probe
+        if !reason.starts_with("[BLOCKED")
+            || !probe
                 .reasons
                 .iter()
-                .any(|expected| reason.contains(expected)),
-            "{input:?}: block reason names none of {:?}: {reason}",
-            probe.reasons
-        );
+                .any(|expected| reason.contains(expected))
+        {
+            failures.push(format!(
+                "{input:?}: block reason names none of {:?}: {reason}",
+                probe.reasons
+            ));
+        }
 
         let shells: Vec<String> = probe
             .shells
@@ -312,9 +320,11 @@ fn inputs_that_execute_the_marker_are_blocked() {
             let _ = child.wait();
             ran |= flag.exists();
         }
-        assert!(
-            ran,
-            "{input:?} never ran its marker in {shells:?}: the probe proves nothing"
-        );
+        if !ran {
+            failures.push(format!(
+                "{input:?} never ran its marker in {shells:?}: the probe proves nothing"
+            ));
+        }
     }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
