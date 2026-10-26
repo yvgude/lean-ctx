@@ -233,10 +233,19 @@ pub(crate) fn write_project_proof(
     std::fs::create_dir_all(&proofs_dir).map_err(|e| e.to_string())?;
 
     let ts = chrono::Utc::now().format("%Y-%m-%d_%H%M%S");
-    let name = filename.map_or_else(
-        || format!("context-proof-v1_{ts}.json"),
-        std::string::ToString::to_string,
-    );
+    let name = match filename {
+        None => format!("context-proof-v1_{ts}.json"),
+        // `filename` comes from the ctx_proof caller. Only a bare file name may
+        // be joined onto proofs/: `Path::join` drops the base for an absolute
+        // path, and `..` would walk out of it.
+        Some(f) => {
+            let mut components = Path::new(f).components();
+            match (components.next(), components.next()) {
+                (Some(std::path::Component::Normal(_)), None) => f.to_string(),
+                _ => return Err(format!("filename must be a plain file name: {f}")),
+            }
+        }
+    };
     let path = proofs_dir.join(name);
 
     let json = serde_json::to_string_pretty(proof).map_err(|e| e.to_string())?;
@@ -292,5 +301,42 @@ mod tests {
         assert!(path.exists());
         let content = std::fs::read_to_string(path).unwrap();
         assert!(content.contains("\"schema_version\": 1"));
+    }
+
+    #[test]
+    fn write_project_proof_rejects_filenames_outside_proofs_dir() {
+        let dir = tempfile::tempdir().unwrap();
+        let project = dir.path().join("proj");
+        std::fs::create_dir_all(&project).unwrap();
+        let proof = collect_v1(
+            ProofSources {
+                project_root: Some(project.to_string_lossy().to_string()),
+                ..Default::default()
+            },
+            ProofOptions {
+                max_evidence: 1,
+                max_ledger_files: 1,
+            },
+        );
+        let outside = dir.path().join("outside.json");
+        let outside_abs = outside.to_string_lossy().to_string();
+        for name in [
+            "../../../outside.json",
+            outside_abs.as_str(),
+            "sub/dir.json",
+            "..",
+            ".",
+            "",
+        ] {
+            assert!(
+                write_project_proof(&project, &proof, Some(name)).is_err(),
+                "filename {name:?} must be rejected"
+            );
+        }
+        assert!(!outside.exists(), "nothing may be written outside proofs/");
+
+        let path = write_project_proof(&project, &proof, Some("named.json")).unwrap();
+        assert_eq!(path.file_name().unwrap(), "named.json");
+        assert!(path.parent().unwrap().ends_with("proofs"));
     }
 }

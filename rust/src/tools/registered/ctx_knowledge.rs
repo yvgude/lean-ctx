@@ -192,7 +192,13 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
         // OKF export/import handled inline so `format`/`path`/`merge` stay off the
         // shared handle() signature (same pattern as restore/gotcha above).
         if action == "export" && get_str(args, "format").as_deref() == Some("okf") {
-            let out = get_str(args, "path").or_else(|| get_str(args, "output"));
+            let out = match get_str(args, "path").or_else(|| get_str(args, "output")) {
+                Some(p) => match jailed_path("ctx_knowledge.export", &p, &project_root) {
+                    Ok(p) => Some(p),
+                    Err(e) => return Ok(text_output(&action, e)),
+                },
+                None => None,
+            };
             return Ok(text_output(
                 &action,
                 crate::tools::ctx_knowledge::handle_export_okf(&project_root, out.as_deref()),
@@ -204,6 +210,10 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
                     &action,
                     "ERROR: import requires `path` (a file or an OKF directory)".to_string(),
                 ));
+            };
+            let path = match jailed_path("ctx_knowledge.import", &path, &project_root) {
+                Ok(p) => p,
+                Err(e) => return Ok(text_output(&action, e)),
             };
             let merge = get_str(args, "merge")
                 .and_then(|s| crate::core::knowledge::ImportMerge::parse(&s))
@@ -238,6 +248,21 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
     }
 }
 
+/// OKF export/import take a caller-supplied `path`. Like ctx_read and
+/// ctx_handoff, keep it inside the project jail; a relative path is taken from
+/// the project root.
+fn jailed_path(tool: &str, raw: &str, project_root: &str) -> Result<String, String> {
+    let root = std::path::Path::new(project_root);
+    let candidate = std::path::Path::new(raw);
+    let candidate = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        root.join(candidate)
+    };
+    crate::core::io_boundary::jail_and_check_path(tool, &candidate, root)
+        .map(|(p, _warning)| p.to_string_lossy().into_owned())
+}
+
 /// A plain text `ToolOutput` tagged with the action as its mode. `ctx_knowledge`
 /// results are already compressed prose, so token accounting is left at zero.
 fn text_output(action: &str, text: String) -> ToolOutput {
@@ -250,5 +275,64 @@ fn text_output(action: &str, text: String) -> ToolOutput {
         changed: false,
         shell_outcome: None,
         content_blocks: None,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn call(ctx: &ToolContext, args: &Value) -> String {
+        CtxKnowledgeTool
+            .handle(args.as_object().unwrap(), ctx)
+            .unwrap()
+            .text
+    }
+
+    #[test]
+    fn okf_export_and_import_paths_stay_in_the_project_jail() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+        let outside = tempfile::tempdir().unwrap();
+        let ctx = ToolContext {
+            project_root: root.path().to_string_lossy().into_owned(),
+            session: Some(std::sync::Arc::new(tokio::sync::RwLock::new(
+                crate::core::session::SessionState::new(),
+            ))),
+            ..ToolContext::default()
+        };
+        call(
+            &ctx,
+            &json!({"action": "remember", "category": "architecture",
+                    "key": "parser", "value": "the parser is bounded"}),
+        );
+
+        let export_dir = outside.path().join("okf");
+        let text = call(
+            &ctx,
+            &json!({"action": "export", "format": "okf", "path": export_dir}),
+        );
+        assert!(!export_dir.exists(), "OKF export left the jail: {text}");
+
+        let facts = outside.path().join("facts.json");
+        std::fs::write(
+            &facts,
+            r#"[{"category":"secret","key":"outside","value":"OUTSIDE-JAIL"}]"#,
+        )
+        .unwrap();
+        let text = call(&ctx, &json!({"action": "import", "path": facts}));
+        assert!(
+            !text.contains("Import complete"),
+            "import read outside the jail: {text}"
+        );
+
+        let inside = root.path().join("okf-export");
+        let text = call(
+            &ctx,
+            &json!({"action": "export", "format": "okf", "path": inside}),
+        );
+        assert!(inside.join("index.md").exists(), "{text}");
+        let text = call(&ctx, &json!({"action": "import", "path": inside}));
+        assert!(text.contains("import"), "{text}");
     }
 }
