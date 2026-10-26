@@ -118,10 +118,23 @@ fn extract_substitution_commands(command: &str) -> Vec<String> {
                     && bytes[i + 1] == b'('
                     && let Some((inner, end)) = super::compound::balanced_paren_at(command, i + 1)
                 {
-                    let trimmed = inner.trim();
-                    if !trimmed.is_empty() {
-                        results.extend(extract_all_commands(trimmed));
-                        results.extend(extract_substitution_commands(trimmed));
+                    // `$(( expr ))` is arithmetic (#1664, bash's rule as in
+                    // #2134): it runs nothing itself, only the substitutions
+                    // inside it. One that cannot be scanned stays a command.
+                    let arithmetic = (ch == b'$' && bytes.get(i + 2) == Some(&b'('))
+                        .then(|| super::compound::balanced_paren_at(command, i + 2))
+                        .flatten()
+                        .filter(|(_, e)| e + 1 == end)
+                        .and_then(|(expr, _)| {
+                            super::compound::arithmetic_substitutions(expr, command).ok()
+                        });
+                    let bodies = arithmetic.unwrap_or_else(|| vec![inner]);
+                    for body in bodies {
+                        let trimmed = body.trim();
+                        if !trimmed.is_empty() {
+                            results.extend(extract_all_commands(trimmed));
+                            results.extend(extract_substitution_commands(trimmed));
+                        }
                     }
                     i = end;
                     continue;

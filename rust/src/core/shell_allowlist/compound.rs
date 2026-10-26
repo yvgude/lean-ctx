@@ -533,7 +533,10 @@ fn strip_body_intro_keywords(segment: &str) -> &str {
 /// the substitutions and are not honoured here. A nested `$(( … ))` is walked
 /// into, not skipped, so a substitution inside it is found too. An
 /// unterminated substitution cannot be validated and blocks the command.
-fn arithmetic_substitutions<'a>(expr: &'a str, segment: &str) -> Result<Vec<&'a str>, ShellError> {
+pub(super) fn arithmetic_substitutions<'a>(
+    expr: &'a str,
+    segment: &str,
+) -> Result<Vec<&'a str>, ShellError> {
     let bytes = expr.as_bytes();
     let mut found = Vec::new();
     let mut i = 0;

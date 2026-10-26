@@ -48,6 +48,34 @@ fn substitution_with_unknown_cmd_blocks() {
     assert!(result.is_err(), "a non-allowlisted substitution must block");
 }
 
+/// `$(( expr ))` runs nothing itself (#1664), so it passes now that inner
+/// commands block; a substitution inside it is still gated.
+#[test]
+fn arithmetic_expansion_is_not_a_command_but_its_substitutions_are() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    for command in [
+        "echo $((2+3))",
+        "echo \"$(( (1+2) * 3 ))\"",
+        "x=1; echo $((x+1))",
+    ] {
+        let result = check_substitution_in_args(command);
+        assert!(
+            result.is_ok(),
+            "arithmetic must pass: {command}: {result:?}"
+        );
+    }
+    for command in [
+        "echo $((1+$(evil_binary)))",
+        "echo $(( `evil_binary` + 1 ))",
+        "echo $(( $(( $(evil_binary) )) ))",
+    ] {
+        assert!(
+            check_substitution_in_args(command).is_err(),
+            "a substitution inside arithmetic stays gated: {command}"
+        );
+    }
+}
+
 /// #1024: substitution with builtin inner command (echo) passes.
 #[test]
 fn substitution_with_builtin_cmd_passes() {
