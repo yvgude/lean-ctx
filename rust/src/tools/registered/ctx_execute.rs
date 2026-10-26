@@ -81,6 +81,17 @@ impl McpTool for CtxExecuteTool {
     ) -> Result<ToolOutput, ErrorData> {
         let action = get_str(args, "action").unwrap_or_default();
 
+        // action=file inspects text and never executes it; code and batch run
+        // code, so restricted clients are refused like ctx_shell refuses them.
+        if action != "file"
+            && let Some(message) = super::ctx_shell::shell_access_denial(ctx)
+        {
+            return Ok(ToolOutput {
+                shell_outcome: Some(crate::server::tool_trait::ShellOutcome::Blocked),
+                content_blocks: None,
+                ..ToolOutput::simple(message)
+            });
+        }
         let (result, outcome) = if action == "batch" {
             let items_str = get_str(args, "items")
                 .ok_or_else(|| ErrorData::invalid_params("items is required for batch", None))?;
@@ -125,5 +136,56 @@ impl McpTool for CtxExecuteTool {
             shell_outcome: Some(outcome),
             content_blocks: None,
         })
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::server::tool_trait::ShellOutcome;
+
+    fn args(pairs: &[(&str, &str)]) -> Map<String, Value> {
+        pairs
+            .iter()
+            .map(|(k, v)| ((*k).to_string(), Value::String((*v).to_string())))
+            .collect()
+    }
+
+    /// GHSA-rxv5-4c3x-g4q6 B: clients that may not run ctx_shell may not run
+    /// code through ctx_execute either.
+    #[test]
+    fn restricted_clients_cannot_execute_code() {
+        let code = args(&[("language", "python"), ("code", "print(1)")]);
+        let batch = args(&[
+            ("action", "batch"),
+            ("items", r#"[{"language":"python","code":"print(1)"}]"#),
+        ]);
+        let contexts = [
+            ToolContext {
+                client_role: Some("untrusted".to_string()),
+                ..ToolContext::default()
+            },
+            ToolContext {
+                client_role: Some("readonly".to_string()),
+                ..ToolContext::default()
+            },
+            ToolContext {
+                shell_access: Some(false),
+                ..ToolContext::default()
+            },
+        ];
+        for ctx in &contexts {
+            for request in [&code, &batch] {
+                let output = CtxExecuteTool
+                    .handle(request, ctx)
+                    .expect("denial is a tool result");
+                assert_eq!(output.shell_outcome, Some(ShellOutcome::Blocked));
+                assert!(
+                    output.text.contains("SHELL ACCESS DENIED"),
+                    "{}",
+                    output.text
+                );
+            }
+        }
     }
 }

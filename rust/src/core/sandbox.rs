@@ -110,10 +110,13 @@ pub fn execute_in(
             };
         }
 
+        // An explicitly requested OS sandbox that this platform cannot provide
+        // must not silently degrade to unsandboxed execution
+        // (GHSA-rxv5-4c3x-g4q6 B).
         #[cfg(not(any(target_os = "macos", target_os = "linux")))]
-        eprintln!(
-            "[lean-ctx] sandbox_level=1 requested but sandboxing not available on this platform; falling back to Level 0"
-        );
+        {
+            return sandbox_unavailable(language, start);
+        }
     }
 
     let result = if runtime.needs_temp_file {
@@ -147,6 +150,29 @@ pub fn batch_execute(items: &[(String, String)]) -> Vec<SandboxResult> {
         .iter()
         .map(|(lang, code)| execute(lang, code, None))
         .collect()
+}
+
+/// Whether `language` resolves to the shell runtime. Every alias must take
+/// the `ctx_shell` allowlist preflight (GHSA-rxv5-4c3x-g4q6 B), so callers
+/// use this instead of comparing against `"shell"`.
+#[must_use]
+pub fn is_shell_language(language: &str) -> bool {
+    matches!(language.to_lowercase().as_str(), "shell" | "bash" | "sh")
+}
+
+/// Refusal for `sandbox_level >= 1` on a platform without an OS sandbox.
+#[cfg_attr(any(target_os = "macos", target_os = "linux"), allow(dead_code))]
+fn sandbox_unavailable(language: &str, start: std::time::Instant) -> SandboxResult {
+    SandboxResult {
+        stdout: String::new(),
+        stderr: "sandbox_level >= 1 is configured but no OS sandbox is available on this \
+                 platform; refusing to run the code unsandboxed. Set sandbox_level = 0 to \
+                 accept unsandboxed execution."
+            .to_string(),
+        exit_code: 1,
+        language: language.to_string(),
+        duration_ms: start.elapsed().as_millis() as u64,
+    }
 }
 
 struct RuntimeConfig {
@@ -187,7 +213,7 @@ fn resolve_runtime(language: &str) -> Option<RuntimeConfig> {
             file_extension: "py".to_string(),
             env: HashMap::from([("PYTHONDONTWRITEBYTECODE".into(), "1".into())]),
         }),
-        "shell" | "bash" | "sh" => {
+        lang if is_shell_language(lang) => {
             #[cfg(target_os = "windows")]
             {
                 Some(RuntimeConfig {

@@ -26,7 +26,7 @@ pub fn handle_in(
     timeout: Option<u64>,
     cwd: Option<&std::path::Path>,
 ) -> (String, ShellOutcome) {
-    if language.eq_ignore_ascii_case("shell")
+    if sandbox::is_shell_language(language)
         && let Err(message) = crate::core::shell_allowlist::check_shell_allowlist(code)
     {
         return (message.to_string(), ShellOutcome::Blocked);
@@ -152,7 +152,7 @@ fn summarize_file_content(content: &str, intent: Option<&str>) -> String {
 /// tasks succeeded), so one failing task marks the whole batch as failed.
 pub fn handle_batch(items: &[(String, String)]) -> (String, ShellOutcome) {
     for (index, (language, code)) in items.iter().enumerate() {
-        if language.eq_ignore_ascii_case("shell")
+        if sandbox::is_shell_language(language)
             && let Err(message) = crate::core::shell_allowlist::check_shell_allowlist(code)
         {
             return (
@@ -305,6 +305,34 @@ mod tests {
         crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
         assert_eq!(outcome, ShellOutcome::Blocked);
         assert!(result.contains("batch item 2 blocked"));
+    }
+
+    /// GHSA-rxv5-4c3x-g4q6 B: `bash`/`sh` (any case) resolve to the same shell
+    /// runtime as `shell` and must not skip the allowlist preflight.
+    #[test]
+    #[serial_test::serial]
+    fn shell_aliases_cannot_bypass_ctx_shell_allowlist() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
+        crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo");
+        let single: Vec<_> = ["bash", "sh", "BASH", "Sh", "SHELL"]
+            .iter()
+            .map(|lang| {
+                (
+                    *lang,
+                    handle(lang, "definitely_not_allowed_command", None, None),
+                )
+            })
+            .collect();
+        let batch = handle_batch(&[(
+            "bash".to_string(),
+            "definitely_not_allowed_command".to_string(),
+        )]);
+        crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+        for (lang, (result, outcome)) in single {
+            assert_eq!(outcome, ShellOutcome::Blocked, "{lang}: {result}");
+            assert!(result.contains("shell allowlist"), "{lang}: {result}");
+        }
+        assert_eq!(batch.1, ShellOutcome::Blocked, "{}", batch.0);
     }
 
     #[test]

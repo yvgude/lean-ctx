@@ -510,7 +510,8 @@ impl McpTool for CtxShellTool {
 
 /// Deny shell execution for explicitly restricted MCP clients. Missing client
 /// context remains allowed so existing integrations retain their current access.
-fn shell_access_denial(ctx: &ToolContext) -> Option<String> {
+/// `ctx_execute` runs code too and applies the same gate (GHSA-rxv5-4c3x-g4q6 B).
+pub(crate) fn shell_access_denial(ctx: &ToolContext) -> Option<String> {
     if let Some(role) = ctx.client_role.as_deref()
         && (role.eq_ignore_ascii_case("untrusted") || role.eq_ignore_ascii_case("readonly"))
     {
