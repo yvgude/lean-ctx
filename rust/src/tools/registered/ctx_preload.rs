@@ -276,6 +276,19 @@ fn provider_prefetch_permitted(
     active.is_none_or(|policy| policy.tool_allowed("ctx_provider"))
 }
 
+fn merge_preload_artifacts(
+    all: &[crate::core::consolidation::ConsolidationArtifacts],
+) -> crate::core::consolidation::ConsolidationArtifacts {
+    let mut merged = crate::core::consolidation::ConsolidationArtifacts::default();
+    for a in all {
+        merged.bm25_chunks.extend(a.bm25_chunks.clone());
+        merged.edges.extend(a.edges.clone());
+        merged.facts.extend(a.facts.clone());
+        merged.cache_entries.extend(a.cache_entries.clone());
+    }
+    merged
+}
+
 #[cfg(test)]
 mod prefetch_policy_tests {
     use super::provider_prefetch_permitted;
@@ -305,17 +318,4 @@ mod prefetch_policy_tests {
         }
         assert!(provider_prefetch_permitted(Some(&builtin("baseline"))));
     }
-}
-
-fn merge_preload_artifacts(
-    all: &[crate::core::consolidation::ConsolidationArtifacts],
-) -> crate::core::consolidation::ConsolidationArtifacts {
-    let mut merged = crate::core::consolidation::ConsolidationArtifacts::default();
-    for a in all {
-        merged.bm25_chunks.extend(a.bm25_chunks.clone());
-        merged.edges.extend(a.edges.clone());
-        merged.facts.extend(a.facts.clone());
-        merged.cache_entries.extend(a.cache_entries.clone());
-    }
-    merged
 }
