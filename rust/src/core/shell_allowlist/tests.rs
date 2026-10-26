@@ -15,6 +15,8 @@ mod inline_script_tests;
 mod lexer_tests;
 #[path = "quoted_dot_tests.rs"]
 mod quoted_dot_tests;
+#[path = "side_door_tests.rs"]
+mod side_door_tests;
 #[path = "substitution_tests.rs"]
 mod substitution_tests;
 #[path = "tests_powershell.rs"]
@@ -1470,15 +1472,17 @@ fn redirect_block_contains_no_hook_guard() {
     );
 }
 
-/// `export PATH=…` is a shell builtin, not a bare inline `PATH=… cmd` hijack.
-/// Compound commands (newline/semicolon separated) must validate the real
-/// commands while still blocking `PATH=/evil cmd`.
+/// `export PATH=…` changes which binary every later command name resolves
+/// to, exactly like a bare `PATH=… cmd` (GHSA-rxv5-4c3x-g4q6 E: it used to
+/// pass, so `export PATH=/tmp/x:$PATH; ls` ran a planted `ls`). Both are
+/// blocked; other exports and the commands after them are validated.
 #[test]
-fn export_path_allowed_bare_inline_path_still_blocked() {
+fn export_path_and_bare_inline_path_are_blocked() {
     let list = allow(&["python3"]);
-    assert!(check_all_segments("export PATH=/usr/bin:$PATH", &list).is_ok());
-    assert!(check_all_segments("export PATH=/usr/bin:$PATH ; python3 script.py", &list).is_ok());
-    assert!(check_all_segments("export PATH=/usr/bin:$PATH\npython3 script.py", &list).is_ok());
+    assert!(check_all_segments("export PATH=/usr/bin:$PATH", &list).is_err());
+    assert!(check_all_segments("export PATH=/usr/bin:$PATH ; python3 script.py", &list).is_err());
+    assert!(check_all_segments("export PATH=/usr/bin:$PATH\npython3 script.py", &list).is_err());
+    assert!(check_all_segments("export FOO=1 ; python3 script.py", &list).is_ok());
 
     let bare = check_all_segments("PATH=/evil python3 script.py", &list);
     assert!(bare.is_err(), "bare PATH= prefix must stay blocked");

@@ -98,9 +98,23 @@ fn shift_operators_and_unterminated_heredocs_hide_no_lines() {
         heredoc_delims("echo ${x:-a<<EOF}", false),
         Vec::<String>::new()
     );
-    assert_eq!(
-        heredoc_delims("echo $[1<<EOF]", false),
-        Vec::<String>::new()
+}
+
+/// `$[ … ]` is arithmetic to bash/zsh and text with live quotes to dash, so
+/// where it ends depends on the shell — refused everywhere.
+#[test]
+fn legacy_arithmetic_is_refused_everywhere() {
+    assert_all_block(
+        "echo,cat",
+        &[
+            "echo $[1+2]",
+            "echo \"$[1+2]\"",
+            // dash: `"$["` is a string, `]` a word, `" # "` a string, then
+            // `evil_binary` runs; the old lexer skipped to `]` and took `#`
+            // for a comment.
+            "echo \"$[\"]\" # \"; evil_binary",
+            "cat <<EOF\n$[1+2]\nEOF",
+        ],
     );
 }
 
@@ -159,8 +173,14 @@ fn ordinary_commands_keep_passing() {
             "echo ${x:-default}",
             "echo \"${x:-default}\" ${#x} ${x#pre} ${x%%.*}",
             "echo \"${x:-\"quoted default\"}\"",
-            "echo $[1+2]",
             "echo $((1<<2))",
+            "f() { true; }; f",
+            "x=$(true) && echo \"$x\"",
+            "GIT_PAGER=cat git log",
+            "PAGER=cat git log",
+            "FOO=1 BAR=2 git status",
+            "export FOO=1 && echo $FOO",
+            "IFS= read -r line < /dev/null",
             "echo a#b",
             "ls # trailing comment",
             "# comment line\nls",
@@ -173,79 +193,4 @@ fn ordinary_commands_keep_passing() {
             "echo a \\\n  b",
         ],
     );
-}
-
-/// Every input whose marker command actually runs in an installed POSIX
-/// shell must be blocked. Deterministic and offline: the marker is a local
-/// script that touches a file in a temp dir.
-#[cfg(unix)]
-#[test]
-fn inputs_that_execute_the_marker_are_blocked() {
-    use std::os::unix::fs::PermissionsExt;
-    use std::process::{Command, Stdio};
-
-    let inputs = [
-        "echo ${x:- #$(evil_marker)}",
-        "echo ${x:-(#$(evil_marker))}",
-        "echo \"${x:-'$(evil_marker)'}\"",
-        "echo a\r#$(evil_marker)",
-        "echo ${x:-a<<EOF}\nevil_marker",
-        "x=abc; echo ${x:0:1<<EOF}\nevil_marker",
-        "echo $[1<<EOF]\nevil_marker",
-        "(true)#'\necho $(evil_marker)",
-        "f()#'\n{ true; }\necho $(evil_marker)",
-        "echo \"it's $(evil_marker)\"",
-        "(true)>$(evil_marker)",
-        "echo \\\\\nevil_marker",
-        "cat <<EOF\nx\\\nEOF\nit's $(evil_marker)\nEOF",
-        "echo $((1<<2))\nevil_marker",
-        "(( x = 1 << 2 ))\nevil_marker",
-        r"echo $'\'' '$(evil_marker)' $'\''",
-        "cat <<EOF\n$(evil_marker)\nEOF",
-        "echo a\u{2028}#$(evil_marker)",
-        "echo $(true)#$(evil_marker)",
-    ];
-    let shells: Vec<&str> = ["/bin/bash", "/bin/dash", "/bin/zsh", "/bin/sh"]
-        .into_iter()
-        .filter(|s| std::path::Path::new(s).exists())
-        .collect();
-    assert!(!shells.is_empty(), "no POSIX shell to probe");
-
-    let dir = tempfile::tempdir().expect("tempdir");
-    let marker = dir.path().join("evil_marker");
-    let flag = dir.path().join("ran");
-    std::fs::write(&marker, "#!/bin/sh\n: > \"$MARK\"\n").expect("marker script");
-    std::fs::set_permissions(&marker, std::fs::Permissions::from_mode(0o700))
-        .expect("chmod marker");
-    let path = format!(
-        "{}:{}",
-        dir.path().display(),
-        std::env::var("PATH").unwrap_or_default()
-    );
-
-    let verdicts = verdicts("echo,cat,true", &inputs);
-    let mut ran_somewhere = 0;
-    for (input, verdict) in &verdicts {
-        for shell in &shells {
-            let _ = std::fs::remove_file(&flag);
-            let _ = Command::new(shell)
-                .arg("-c")
-                .arg(input)
-                .env("PATH", &path)
-                .env("MARK", &flag)
-                .current_dir(dir.path())
-                .stdin(Stdio::null())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .status();
-            if flag.exists() {
-                ran_somewhere += 1;
-                assert!(
-                    verdict.is_err(),
-                    "{shell} runs the marker but the gate passes: {input:?}"
-                );
-            }
-        }
-    }
-    assert!(ran_somewhere > 0, "the probe never ran the marker");
 }

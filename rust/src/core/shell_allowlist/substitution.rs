@@ -89,7 +89,7 @@ pub(crate) fn check_substitution_in_args(command: &str) -> Result<(), ShellError
 fn extract_substitution_commands(command: &str) -> Result<Vec<String>, ShellError> {
     let mut results = Vec::new();
     for Expansion { body, arithmetic } in lex(command).expansions {
-        // `$(( expr ))` / `$[ expr ]` / `(( expr ))` is arithmetic (#1664, bash's rule as in
+        // `$(( expr ))` / `(( expr ))` is arithmetic (#1664, bash's rule as in
         // #2134): it runs nothing itself, only the substitutions inside it.
         let bodies = if arithmetic {
             super::compound::arithmetic_substitutions(body, command)?

@@ -17,8 +17,8 @@ use std::ops::Range;
 use super::compound::balanced_paren_at;
 
 /// One expansion the shell performs: the inner text of `$( … )`, `<( … )`,
-/// `>( … )` or a backtick pair, or — `arithmetic` — the expression of
-/// `$(( … ))`, `$[ … ]` or an arithmetic command `(( … ))`.
+/// `>( … )`, zsh `=( … )` or a backtick pair, or — `arithmetic` — the
+/// expression of `$(( … ))` or an arithmetic command `(( … ))`.
 pub(super) struct Expansion<'a> {
     pub(super) body: &'a str,
     pub(super) arithmetic: bool,
@@ -98,8 +98,14 @@ const QUOTE_IN_QUOTED_PARAM: &str =
 const BRACE_IN_PARAM: &str = "a `{` inside `${…}`, which bash/dash and zsh end differently";
 const SHIFT_IN_ARITHMETIC_COMMAND: &str =
     "`<<` inside an arithmetic command `(( … ))`, which dash reads as a here-document";
-const LEGACY_ARITHMETIC: &str =
-    "a `$[ … ]` that dash, which has no `$[`, would read as shell syntax";
+const LEGACY_ARITHMETIC: &str = "legacy `$[ … ]` arithmetic, which dash reads as shell syntax \
+     (use `$(( … ))`)";
+const ZSH_PARAM_FLAGS: &str =
+    "zsh parameter flags `${(…)…}`, which can evaluate a value as code (`(e)`)";
+const PROMPT_TRANSFORM: &str =
+    "a `${…@P}` prompt expansion, which runs the substitutions in the value";
+const ATTACHED_PAREN: &str = "a `(` attached to a word, which zsh reads as glob qualifiers that can \
+     run code (`*(e:…:)`, `*(+cmd)`) and bash as an extended glob";
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Mode {
@@ -203,6 +209,9 @@ impl<'a> Lexer<'a> {
                         continue;
                     }
                     Some(b'{') if mode != Mode::HeredocBody => {
+                        if bytes.get(i + 2) == Some(&b'(') {
+                            self.flag(ZSH_PARAM_FLAGS);
+                        }
                         let quoted = in_double || mode == Mode::Param { quoted: true };
                         match self.scan(end, i + 2, Mode::Param { quoted }, Close::Brace, collect) {
                             Some(after) => i = after,
@@ -211,25 +220,11 @@ impl<'a> Lexer<'a> {
                         continue;
                     }
                     Some(b'[') => {
-                        let Some(close_at) = closing_bracket(bytes, i + 2) else {
-                            self.flag(LEGACY_ARITHMETIC);
-                            i += 2;
-                            continue;
-                        };
-                        let expr = &s[i + 2..close_at];
-                        if mode == Mode::Shell
-                            && !in_double
-                            && expr.bytes().any(|b| {
-                                matches!(
-                                    b,
-                                    b'\'' | b'"' | b'#' | b'<' | b'>' | b';' | b'&' | b'|' | b'\n'
-                                )
-                            })
-                        {
-                            self.flag(LEGACY_ARITHMETIC);
-                        }
-                        self.push(collect, expr, true);
-                        i = close_at + 1;
+                        // bash/zsh arithmetic, plain text with live quotes to
+                        // dash: where it ends depends on the shell, wherever
+                        // it stands. Refused; the scan walks on through it.
+                        self.flag(LEGACY_ARITHMETIC);
+                        i += 2;
                         continue;
                     }
                     _ => {}
@@ -299,8 +294,35 @@ impl<'a> Lexer<'a> {
                     continue;
                 }
                 b'{' if param => self.flag(BRACE_IN_PARAM),
-                b'}' if close == Close::Brace => return Some(i + 1),
+                b'}' if close == Close::Brace => {
+                    if s[..i].ends_with("@P") {
+                        self.flag(PROMPT_TRANSFORM);
+                    }
+                    return Some(i + 1);
+                }
+                // zsh `=( … )` process substitution, where `=` starts a word
+                // (`a=(…)` is an array assignment).
+                b'=' if !param
+                    && bytes.get(i + 1) == Some(&b'(')
+                    && starts_word(bytes, i, start, bare_close_at) =>
+                {
+                    match self.substitution(end, i + 1, collect) {
+                        Some(after) => i = after,
+                        None => return unterminated,
+                    }
+                    continue;
+                }
                 b'(' => {
+                    if !param
+                        && i >= arithmetic_until
+                        && !starts_word(bytes, i, start, bare_close_at)
+                        && bytes[i - 1] != b'='
+                        && bytes.get(i + 1) != Some(&b')')
+                    {
+                        // `*(e:…:)`, `x(+cmd)`, `@(a|b)`: only a function
+                        // head `f()` or an array `a=(…)` may touch a word.
+                        self.flag(ATTACHED_PAREN);
+                    }
                     if !param
                         && bytes.get(i + 1) == Some(&b'(')
                         && let Some((expr, after)) = balanced_paren_at(&s[..end], i + 1)
@@ -464,24 +486,6 @@ fn starts_word(bytes: &[u8], i: usize, start: usize, bare_close_at: usize) -> bo
         b')' => bare_close_at == i - 1,
         _ => false,
     }
-}
-
-/// Index of the `]` closing a `$[` whose body starts at `from`, counting
-/// nested brackets. `None` when it is unterminated.
-fn closing_bracket(bytes: &[u8], from: usize) -> Option<usize> {
-    let mut depth = 0u32;
-    let mut j = from;
-    while j < bytes.len() {
-        match bytes[j] {
-            b'\\' => j += 1,
-            b'[' => depth += 1,
-            b']' if depth == 0 => return Some(j),
-            b']' => depth -= 1,
-            _ => {}
-        }
-        j += 1;
-    }
-    None
 }
 
 /// Index of the backtick closing a substitution opened before `from`,

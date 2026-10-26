@@ -228,6 +228,11 @@ pub(super) fn check_unconditional_blocked_only(command: &str) -> Result<(), Shel
         check_inline_env_block(seg)?;
         check_interpreter_eval_only(seg)?;
         check_dangerous_flags(seg)?;
+        // A `trap` action runs like `eval`: the same rules hold inside it.
+        let tokens = extract_command_tokens_from_segment(seg);
+        if let Some(action) = super::side_doors::trap_action(&tokens) {
+            check_unconditional_blocked_only(action)?;
+        }
     }
     Ok(())
 }
@@ -667,19 +672,6 @@ const DANGEROUS_GIT_FLAGS: &[&str] = &[
 
 const DANGEROUS_TAR_FLAGS: &[&str] = &["--to-command", "--use-compress-program"];
 
-/// Blocked inline environment assignments that can hijack execution.
-const BLOCKED_INLINE_ENV: &[&str] = &[
-    "PATH=",
-    "GIT_ASKPASS=",
-    "GIT_SSH=",
-    "GIT_SSH_COMMAND=",
-    "GIT_EDITOR=",
-    "GIT_EXTERNAL_DIFF=",
-    "SSH_ASKPASS=",
-    "LD_PRELOAD=",
-    "DYLD_INSERT_LIBRARIES=",
-];
-
 fn check_dangerous_flags(segment: &str) -> Result<(), ShellError> {
     let trimmed = skip_env_assignments(segment.trim());
     let tokens = shell_tokenize(trimmed);
@@ -745,29 +737,32 @@ fn check_dangerous_flags(segment: &str) -> Result<(), ShellError> {
     Ok(())
 }
 
+/// Inline or builtin assignments that can hijack execution; see
+/// `side_doors::check_env_assignments` (GHSA-rxv5-4c3x-g4q6 E: every
+/// assignment counts, not only the first word of the segment).
 fn check_inline_env_block(segment: &str) -> Result<(), ShellError> {
-    let trimmed = segment.trim();
-    for blocked in BLOCKED_INLINE_ENV {
-        if trimmed.starts_with(blocked) {
-            let var_name = blocked.trim_end_matches('=');
-            let all_blocked: Vec<&str> = BLOCKED_INLINE_ENV
-                .iter()
-                .map(|b| b.trim_end_matches('='))
-                .collect();
-            return Err(format!(
-                "[BLOCKED — DO NOT RETRY] Inline environment override '{blocked}' is blocked \
-                 (it can redirect which binary runs).\n\
-                 Use the env parameter instead:  ctx_shell(command=\"<your command>\", \
-                 env={{\"{}\": \"<value>\"}})\n\
-                 Blocked variables: {}\n\
-                 Other inline assignments (e.g. FOO=bar cmd) are allowed.",
-                var_name,
-                all_blocked.join(", "),
-            )
-            .into());
-        }
+    super::side_doors::check_env_assignments(segment)
+}
+
+/// Builtins that run code no segment shows (GHSA-rxv5-4c3x-g4q6 E): a `trap`
+/// action is a script of its own and is gated like one; `hash -p` and
+/// `enable -f` are refused.
+fn check_builtin_side_doors(tokens: &[String], allowlist: &Allowlist) -> Result<(), ShellError> {
+    super::side_doors::check_builtin_options(tokens)?;
+    let Some(action) = super::side_doors::trap_action(tokens) else {
+        return Ok(());
+    };
+    if let Some(reason) = super::lexer::lex(action).problem {
+        return Err(unvalidatable(reason, action));
     }
-    Ok(())
+    check_substitution_in_args(action)?;
+    check_all_segments(&strip_for_analysis(action, false, true), allowlist).map_err(|err| {
+        format!(
+            "[BLOCKED — DO NOT RETRY] A `trap` action runs like a command and is gated like one: {}",
+            err.message().trim_start_matches("[BLOCKED — DO NOT RETRY] ")
+        )
+        .into()
+    })
 }
 /// #813: check whether a command token resolves to an existing file under the
 /// project root. Called as a fallback when the base command name isn't in the
@@ -985,6 +980,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
                     if DELEGATION_COMMANDS.contains(&body_base.as_str()) {
                         check_interpreter_abuse(body_seg, allowlist)?;
                     }
+                    check_builtin_side_doors(&body_tokens, allowlist)?;
                     continue;
                 }
                 if !matches_allowlist_entry(&body_tokens, allowlist) {
@@ -1023,6 +1019,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
             if DELEGATION_COMMANDS.contains(&base.as_str()) {
                 check_interpreter_abuse(seg, allowlist)?;
             }
+            check_builtin_side_doors(&tokens, allowlist)?;
             continue;
         }
         // #1442: PowerShell verb-prefix matching — safe cmdlets (Get-*, Test-*,

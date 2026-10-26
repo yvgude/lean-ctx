@@ -101,6 +101,15 @@ fn resolve_segment_leaves(
             return Ok(()); // empty → no command
         };
         let kw = first.as_str();
+        // zsh's short loop `for x (a b) cmd` runs `cmd` from the header
+        // segment itself (GHSA-rxv5-4c3x-g4q6 E); bash has no such form.
+        if matches!(kw, "for" | "select" | "foreach")
+            && tokens[1..]
+                .iter()
+                .any(|t| t.starts_with('(') && !t.starts_with("(("))
+        {
+            return Err(zsh_only_form(segment));
+        }
         if HEADER_KEYWORDS.contains(&kw) {
             return Ok(()); // loop header / terminator carries no leaf command
         }
@@ -180,12 +189,39 @@ fn resolve_segment_leaves(
     // (`ForEach-Object { Remove-Item $_ }`), so each block body is resolved
     // into leaves of its own, after the cmdlet itself so its verdict comes
     // first.
-    out.push(s.to_string());
+    // GHSA-rxv5-4c3x-g4q6 E: a brace group with anything but redirections
+    // after it (`{ a; } b`, zsh `{ a } always { b }`) would be checked by its
+    // first command only.
+    if s.starts_with('{') && matches!(s.as_bytes().get(1), Some(b' ' | b'\t' | b'\n')) {
+        return Err(zsh_only_form(segment));
+    }
     let base = extract_base_from_segment(s);
-    for body in super::ps_statements::script_block_bodies(s, &base) {
+    let bodies = super::ps_statements::script_block_bodies(s, &base);
+    // zsh runs brace bodies without `do`/`then`: `while true { cmd }`,
+    // `if [[ x ]] { cmd }`, `repeat 2 { cmd }`. In bash a lone `{` argument
+    // is a syntax error waiting to happen; PowerShell script blocks are
+    // resolved below instead.
+    if bodies.is_empty()
+        && super::tokenizer::detect_function_def(s).is_none()
+        && shell_tokenize(s).iter().skip(1).any(|t| t == "{")
+    {
+        return Err(zsh_only_form(segment));
+    }
+    out.push(s.to_string());
+    for body in bodies {
         resolve_block_body(&body, depth, out)?;
     }
     Ok(())
+}
+
+fn zsh_only_form(segment: &str) -> ShellError {
+    format!(
+        "[BLOCKED — DO NOT RETRY] This command uses a brace body or short loop form that \
+         zsh runs but this gate cannot split into its commands (`while c {{ … }}`, \
+         `for x (…) cmd`, `{{ … }} always {{ … }}`). Use `do … done`/`then … fi` and end \
+         brace groups with `; }}`.\nCommand: {segment}"
+    )
+    .into()
 }
 
 /// Resolve every segment of a command text found inside PowerShell syntax.
@@ -688,11 +724,12 @@ pub(super) fn balanced_brace_inner(segment: &str) -> Option<&str> {
             b'}' => {
                 depth -= 1;
                 if depth == 0 {
-                    return if i == len - 1 {
-                        Some(trimmed[1..i].trim())
-                    } else {
-                        None
-                    };
+                    // A trailing redirection binds the group's descriptors
+                    // (`{ a; b; } > out`), as for a subshell (#1751): the
+                    // group must still be recursed into, or only `a` is
+                    // checked (GHSA-rxv5-4c3x-g4q6 E).
+                    return (i == len - 1 || is_redirect_only_suffix(&trimmed[i + 1..]))
+                        .then(|| trimmed[1..i].trim());
                 }
             }
             _ => {}
