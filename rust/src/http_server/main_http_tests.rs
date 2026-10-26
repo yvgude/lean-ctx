@@ -1392,8 +1392,10 @@ async fn a2a_handoff_rejects_unsigned_and_reports_untrusted_signers() {
 
     let _isolated_data_dir = crate::core::data_dir::isolated_data_dir();
     let root = tempfile::tempdir().unwrap();
+    let bearer = "handoff-test-bearer";
     let cfg = HttpServerConfig {
         project_root: root.path().to_path_buf(),
+        auth_token: Some(bearer.into()),
         ..HttpServerConfig::default()
     };
     let app = build_app_router(&cfg, None);
@@ -1409,6 +1411,7 @@ async fn a2a_handoff_rejects_unsigned_and_reports_untrusted_signers() {
             .uri("/v1/a2a/handoff")
             .header("Host", "localhost")
             .header("Content-Type", "application/json")
+            .header("Authorization", format!("Bearer {bearer}"))
             .body(Body::from(serde_json::to_vec(&envelope).unwrap()))
             .unwrap()
     };
