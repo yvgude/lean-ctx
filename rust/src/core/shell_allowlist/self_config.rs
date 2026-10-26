@@ -117,6 +117,7 @@ mod tests {
             "lean-ctx config set shell_security off",
             "lean-ctx config set allow_paths /",
             "lean-ctx config set path_jail_scope home",
+            "lean-ctx config set a2a_accept_untrusted_signers true",
             "lean-ctx.exe yolo",
         ] {
             let err = check(cmd).expect_err(cmd).to_string();

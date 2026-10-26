@@ -10,6 +10,7 @@ lean-ctx reads `~/.lean-ctx/config.toml` (and a project `.lean-ctx.toml` overlay
 
 Top-level configuration keys
 
+- `a2a_accept_untrusted_signers` (bool, default `false`) — Accept A2A handoff bundles and context packages (/v1/a2a/handoff, /a2a/deliver) signed by a key that is not pinned in trusted-signers.toml. Off by default: such signatures prove integrity, not who sent them, so they are rejected with 403 untrusted_signer. Global-only
 - `agent_token_budget` (usize, default `0`) — Default per-agent token budget. 0 = unlimited
 - `allow_auto_reroot` (bool, default `false` — env `LEAN_CTX_ALLOW_REROOT`) — Allow automatic project-root re-rooting when absolute paths outside the jail are seen
 - `allow_ide_config_dirs` (bool, default `null` — env `LEAN_CTX_ALLOW_IDE_DIRS`) — Allow jailed ctx_* tools to read home-level IDE config dirs (registry-derived; covers all editors). Off by default — exposes other agents' sessions/credentials

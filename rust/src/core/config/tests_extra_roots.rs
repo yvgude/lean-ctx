@@ -120,6 +120,17 @@ fn merge_local_never_weakens_the_context_gateway() {
     }
 }
 
+/// GHSA-gvg8-285q-m62g: accepting untrusted A2A signers is global-only; a
+/// cloned repository cannot open the network boundary, trusted or not.
+#[test]
+fn merge_local_never_accepts_untrusted_a2a_signers() {
+    for trusted in [false, true] {
+        let mut base = Config::default();
+        base.merge_local("a2a_accept_untrusted_signers = true\n", trusted);
+        assert!(!base.a2a_accept_untrusted_signers, "trusted={trusted}");
+    }
+}
+
 /// GH #833: untrusted workspace must not disable gitignore-respecting indexing.
 #[test]
 fn merge_local_untrusted_withholds_respect_gitignore_833() {

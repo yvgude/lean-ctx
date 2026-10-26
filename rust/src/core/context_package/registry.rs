@@ -605,6 +605,30 @@ fn publisher_subject(package_name: &str) -> String {
     }
 }
 
+/// Whether the package signer key is anchored for its publisher subject
+/// (pinned in `trusted-signers.toml`, or held by a local agent identity).
+fn package_signer_trusted(manifest: &PackageManifest) -> bool {
+    manifest.signature.as_ref().is_some_and(|signature| {
+        crate::core::signer_trust::is_trusted(
+            &publisher_subject(&manifest.name),
+            &signature.public_key,
+        )
+    })
+}
+
+/// `None` when the package is signed by an anchored key; otherwise the signer
+/// key fingerprint (or `"unsigned"`) for a rejection message
+/// (GHSA-gvg8-285q-m62g). Call after the signature itself verified.
+pub(crate) fn untrusted_package_signer(manifest: &PackageManifest) -> Option<String> {
+    if package_signer_trusted(manifest) {
+        return None;
+    }
+    Some(manifest.signature.as_ref().map_or_else(
+        || "unsigned".to_string(),
+        |signature| crate::core::signer_trust::key_fingerprint(&signature.public_key),
+    ))
+}
+
 /// One-line signature status for install output: integrity is not identity,
 /// so a signer key is only called trusted when it is anchored.
 pub(crate) fn describe_package_signature(manifest: &PackageManifest) -> String {

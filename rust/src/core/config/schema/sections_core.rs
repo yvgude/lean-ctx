@@ -741,6 +741,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
+        "a2a_accept_untrusted_signers".into(),
+        key(
+            "bool",
+            serde_json::json!(false),
+            "Accept A2A handoff bundles and context packages (/v1/a2a/handoff, /a2a/deliver) signed by a key that is not pinned in trusted-signers.toml. Off by default: such signatures prove integrity, not who sent them, so they are rejected with 403 untrusted_signer. Global-only",
+        ),
+    );
+    root.insert(
         "hook_binary".into(),
         key_with_env(
             "string?",

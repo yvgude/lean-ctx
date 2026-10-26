@@ -912,6 +912,36 @@ fn relay_storage_id(record: &crate::core::a2a::relay::RelayRecordV1) -> String {
     hex::encode(digest.finalize())
 }
 
+/// Global-only opt-in (`a2a_accept_untrusted_signers`): project-local config
+/// never sets it (GHSA-gvg8-285q-m62g).
+fn accept_untrusted_signers() -> bool {
+    crate::core::config::Config::load().a2a_accept_untrusted_signers
+}
+
+/// 403 + `SecurityViolation` audit entry for a payload whose signature
+/// verifies against a key that no trust anchor knows.
+fn reject_untrusted_signer(sender_agent_id: &str, fingerprint: &str) -> (StatusCode, Json<Value>) {
+    tracing::warn!("a2a handoff rejected: untrusted signer key {fingerprint}");
+    crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
+        agent_id: sender_agent_id.to_string(),
+        tool: "http:/v1/a2a/handoff".to_string(),
+        action: Some("import_untrusted_signer_rejected".to_string()),
+        input_hash: String::new(),
+        output_tokens: 0,
+        role: crate::core::roles::active_role_name(),
+        event_type: crate::core::audit_trail::AuditEventType::SecurityViolation,
+    });
+    (
+        StatusCode::FORBIDDEN,
+        Json(serde_json::json!({
+            "error": "untrusted_signer",
+            "signer_key_fingerprint": fingerprint,
+            "hint": "pin the sender's key in trusted-signers.toml, or set \
+                     a2a_accept_untrusted_signers = true in the global config",
+        })),
+    )
+}
+
 fn a2a_handoff_inner(
     State(state): State<AppState>,
     Json(body): Json<Value>,
@@ -944,15 +974,21 @@ fn a2a_handoff_inner(
 
     let response = match envelope.content_type {
         crate::core::a2a_transport::TransportContentType::ContextPackage => {
-            if crate::core::context_package::registry::parse_context_transfer(
+            let Ok((manifest, _)) = crate::core::context_package::registry::parse_context_transfer(
                 &envelope.payload_json,
-            )
-            .is_err()
-            {
+            ) else {
                 return (
                     StatusCode::BAD_REQUEST,
                     Json(serde_json::json!({"error": "invalid_context_package"})),
                 );
+            };
+            // GHSA-gvg8-285q-m62g: a valid signature from a key nobody
+            // anchored proves nothing about the sender — anyone can mint one.
+            if let Some(fingerprint) =
+                crate::core::context_package::registry::untrusted_package_signer(&manifest)
+                && !accept_untrusted_signers()
+            {
+                return reject_untrusted_signer(&envelope.sender.agent_id, &fingerprint);
             }
             let dir = std::path::Path::new(&state.project_root)
                 .join(".lean-ctx")
@@ -1028,6 +1064,15 @@ fn a2a_handoff_inner(
                         );
                     }
                     crate::core::handoff_transfer_bundle::BundleSignatureStatus::Signed(v) => {
+                        // GHSA-gvg8-285q-m62g: an untrusted or legacy (unbound)
+                        // signature proves integrity only; the network boundary
+                        // rejects it unless the user opted in globally.
+                        if !v.trusted && !accept_untrusted_signers() {
+                            return reject_untrusted_signer(
+                                &envelope.sender.agent_id,
+                                &v.key_fingerprint,
+                            );
+                        }
                         // Identity is only reported for an anchored key
                         // (GHSA-gvg8-285q-m62g); otherwise it is a claim.
                         serde_json::json!({

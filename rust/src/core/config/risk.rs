@@ -51,6 +51,9 @@ pub fn classify(key: &str) -> Option<ConfigRisk> {
         "proxy_loopback_open" => {
             "Disables ALL proxy authentication on loopback binds. Any local process can access the proxy without a token."
         }
+        "a2a_accept_untrusted_signers" => {
+            "Accepts A2A handoffs and context packages signed by any key, not only keys pinned in trusted-signers.toml. Anyone who can reach the endpoint can then plant content under a self-chosen identity."
+        }
         "proxy.anthropic_upstream"
         | "proxy.openai_upstream"
         | "proxy.chatgpt_upstream"
@@ -88,6 +91,7 @@ mod tests {
             "proxy.chatgpt_upstream",
             "proxy.anthropic_upstream",
             "proxy.gemini_upstream",
+            "a2a_accept_untrusted_signers",
         ] {
             assert!(is_consequential(key), "{key} should be consequential");
             assert!(
