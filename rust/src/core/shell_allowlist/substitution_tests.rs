@@ -264,7 +264,9 @@ fn apostrophe_outside_single_quotes_does_not_hide_a_substitution() {
         "echo,grep,cat",
         &[
             r#"echo 'it'"'"'s $(literal)'"#,
-            r"echo $'it\'s $(literal)'",
+            // (`$'it\'s'` is refused since dash ends it at the escaped quote;
+            // see `lexer_tests::ansi_c_escaped_quote_is_refused`.)
+            r"echo $'it s $(literal)'",
             r#"grep "it's" file.txt"#,
             "cat <<'EOF'\nDon't $(evil_binary)\nEOF",
             r#"echo "it's $(echo fine)""#,

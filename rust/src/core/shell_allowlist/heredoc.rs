@@ -36,7 +36,7 @@ pub fn strip_all_heredoc_bodies(command: &str) -> String {
 /// `<<-`), as in the shell. A body whose terminator never follows runs to the
 /// end of the input here; `enforce_shell_allowlist` blocks such a command.
 pub(crate) fn strip_for_analysis(command: &str, quoted_only: bool, comments: bool) -> String {
-    if !command.contains("<<") && !(comments && command.contains('#')) {
+    if !command.contains("<<") && (!comments || !command.contains('#')) {
         return command.to_string();
     }
     let lexed = lex(command);
