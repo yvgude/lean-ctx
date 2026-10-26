@@ -163,7 +163,10 @@ mod tests {
             PinOutcome::Mismatch { .. }
         ));
         assert!(!is_trusted("@acme", &key_b));
-        assert!(is_trusted("@acme", &key_a), "a rejected key never replaces the pin");
+        assert!(
+            is_trusted("@acme", &key_a),
+            "a rejected key never replaces the pin"
+        );
         assert_eq!(key_fingerprint(&key_a).len(), 16);
 
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
