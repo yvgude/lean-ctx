@@ -309,6 +309,14 @@ pub fn record_at(path: &Path, data: AuditEntryData) {
 }
 
 fn try_record_at(path: &Path, data: AuditEntryData) -> Result<AuditEntry, String> {
+    try_record_at_capped(path, data, MAX_SEGMENT_BYTES)
+}
+
+fn try_record_at_capped(
+    path: &Path,
+    data: AuditEntryData,
+    max_segment_bytes: u64,
+) -> Result<AuditEntry, String> {
     use fs2::FileExt;
 
     let mut file = OpenOptions::new()
@@ -320,16 +328,127 @@ fn try_record_at(path: &Path, data: AuditEntryData) -> Result<AuditEntry, String
     // Advisory lock serializes appends ACROSS processes; prev_hash is read
     // from the file under the same lock, so the chain cannot fork.
     lock_trail(&file)?;
-    let appended = append_locked(&mut file, data);
+    // A failed rotation must never lose evidence: the entry is still appended
+    // to the (then oversized) active segment.
+    if let Err(error) = rotate_locked(&mut file, path, max_segment_bytes) {
+        tracing::warn!("audit trail rotation failed: {error}");
+    }
+    let appended = append_locked(&mut file, path, data);
     let _ = FileExt::unlock(&file);
     appended
 }
 
-/// Build and append one entry. Caller holds the exclusive lock.
-fn append_locked(file: &mut fs::File, data: AuditEntryData) -> Result<AuditEntry, String> {
+/// Size at which the active segment is rotated (GHSA-jhf9-3pv4-m469).
+///
+/// The active `trail.jsonl` stays bounded (readers such as the compliance
+/// report and evidence bundle load it whole); full segments are archived as
+/// `trail.NNNNNN.jsonl` and the hash chain continues across them, so
+/// [`verify_chain_at`] still verifies the complete history. Archived
+/// segments are never deleted automatically: deleting one breaks chain
+/// verification by design, so retention is an explicit operator action.
+const MAX_SEGMENT_BYTES: u64 = 32 * 1024 * 1024;
+
+/// Archived segments of the trail at `path`, oldest first.
+fn archive_segments(path: &Path) -> Vec<(u64, PathBuf)> {
+    let (Some(dir), Some(stem)) = (path.parent(), path.file_stem().and_then(|s| s.to_str())) else {
+        return Vec::new();
+    };
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("jsonl");
+    let (prefix, suffix) = (format!("{stem}."), format!(".{ext}"));
+    let mut segments: Vec<(u64, PathBuf)> = fs::read_dir(dir)
+        .into_iter()
+        .flatten()
+        .flatten()
+        .filter_map(|entry| {
+            let name = entry.file_name();
+            let seq = name
+                .to_str()?
+                .strip_prefix(&prefix)?
+                .strip_suffix(&suffix)?
+                .to_string();
+            (seq.len() >= 6 && seq.bytes().all(|b| b.is_ascii_digit()))
+                .then(|| seq.parse().ok())
+                .flatten()
+                .map(|n| (n, entry.path()))
+        })
+        .collect();
+    segments.sort();
+    segments
+}
+
+fn archive_path(path: &Path, seq: u64) -> PathBuf {
+    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("trail");
+    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("jsonl");
+    path.with_file_name(format!("{stem}.{seq:06}.{ext}"))
+}
+
+/// Chain head carried into an empty active segment: the newest archive's
+/// last hash, or `genesis` when nothing was ever rotated.
+fn segment_start_hash(path: &Path) -> Result<String, String> {
+    match archive_segments(path).last() {
+        Some((_, newest)) => {
+            let file = fs::File::open(newest).map_err(|e| format!("audit archive open: {e}"))?;
+            read_last_hash_tail(&file)
+        }
+        None => Ok("genesis".to_string()),
+    }
+}
+
+/// Archive the active segment once it reaches `max_segment_bytes`. Caller
+/// holds the exclusive lock. The copy goes through the locked handle (Windows
+/// locks are mandatory) into a temp file that is renamed into place before
+/// the active segment is truncated, so a crash never loses entries.
+fn rotate_locked(file: &mut fs::File, path: &Path, max_segment_bytes: u64) -> Result<(), String> {
     use std::io::{Seek, SeekFrom};
 
-    let prev_hash = read_last_hash_tail(file)?;
+    let len = file
+        .seek(SeekFrom::End(0))
+        .map_err(|e| format!("audit seek: {e}"))?;
+    if len < max_segment_bytes {
+        return Ok(());
+    }
+    let archives = archive_segments(path);
+    // Crash recovery: archived but not yet truncated — the active segment is
+    // a duplicate of the newest archive and would fork the chain.
+    if let Some((_, newest)) = archives.last()
+        && let Ok(newest_file) = fs::File::open(newest)
+        && read_last_hash_tail(&newest_file).ok() == read_last_hash_tail(file).ok()
+    {
+        return file
+            .set_len(0)
+            .map_err(|e| format!("audit truncate after rotation: {e}"));
+    }
+    let target = archive_path(path, archives.last().map_or(1, |(seq, _)| seq + 1));
+    let tmp = target.with_extension("rotating");
+    let copied = (|| -> std::io::Result<()> {
+        let mut out = fs::File::create(&tmp)?;
+        file.seek(SeekFrom::Start(0))?;
+        std::io::copy(file, &mut out)?;
+        out.sync_all()?;
+        fs::rename(&tmp, &target)
+    })();
+    if let Err(error) = copied {
+        let _ = fs::remove_file(&tmp);
+        return Err(format!("audit archive write: {error}"));
+    }
+    file.set_len(0)
+        .and_then(|()| file.sync_data())
+        .map_err(|e| format!("audit truncate after rotation: {e}"))
+}
+
+/// Build and append one entry. Caller holds the exclusive lock.
+fn append_locked(
+    file: &mut fs::File,
+    path: &Path,
+    data: AuditEntryData,
+) -> Result<AuditEntry, String> {
+    use std::io::{Seek, SeekFrom};
+
+    let mut prev_hash = read_last_hash_tail(file)?;
+    if prev_hash == "genesis" {
+        // Empty active segment: continue the chain from the newest archive.
+        prev_hash = segment_start_hash(path)?;
+    }
     let authenticated_drift = matches!(
         &data.event_type,
         AuditEventType::AgentDriftDetected | AuditEventType::AgentDriftAcknowledged
@@ -530,105 +649,124 @@ fn verify_chain_with_drift_at(
     if lock_trail_shared(&file).is_err() {
         return (unavailable(), None);
     }
-    let reader = std::io::BufReader::new(file);
-    let mut prev_hash = "genesis".to_string();
-    let mut total = 0usize;
-    let mut unknown = 0usize;
-    let mut pending = None;
-
-    for line_result in reader.lines() {
-        let Ok(line) = line_result else {
-            return (invalid_at(total, unknown), None);
+    // Rotated segments are listed only while the active segment's shared lock
+    // is held: rotation archives under the exclusive lock, so the set of
+    // archives and the active segment form one consistent snapshot.
+    let mut state = VerifyState {
+        prev_hash: "genesis".to_string(),
+        total: 0,
+        unknown: 0,
+        pending: None,
+    };
+    for (_, archive) in archive_segments(path) {
+        let Ok(segment) = fs::File::open(&archive) else {
+            return (unavailable(), None);
         };
+        if verify_segment(std::io::BufReader::new(segment), &mut state, agent_id).is_err() {
+            return (invalid_at(state.total, state.unknown), None);
+        }
+    }
+    if verify_segment(std::io::BufReader::new(file), &mut state, agent_id).is_err() {
+        return (invalid_at(state.total, state.unknown), None);
+    }
+
+    (
+        ChainVerifyResult {
+            total_entries: state.total,
+            valid: true,
+            first_invalid_at: None,
+            source_present: true,
+            unknown_event_types: state.unknown,
+        },
+        state.pending,
+    )
+}
+
+/// Running state of a chain verification across rotated segments.
+struct VerifyState {
+    prev_hash: String,
+    total: usize,
+    unknown: usize,
+    pending: Option<(String, String)>,
+}
+
+/// Verify one segment, continuing the chain from `state`. `Err` means the
+/// chain is invalid at `state.total`.
+fn verify_segment(
+    reader: impl BufRead,
+    state: &mut VerifyState,
+    agent_id: Option<&str>,
+) -> Result<(), ()> {
+    for line_result in reader.lines() {
+        let line = line_result.map_err(|_| ())?;
         let mut saw_value = false;
         for parsed in serde_json::Deserializer::from_str(&line).into_iter::<serde_json::Value>() {
             saw_value = true;
-            let Ok(value) = parsed else {
-                return (invalid_at(total, unknown), None);
-            };
+            let value = parsed.map_err(|_| ())?;
             let (Some(entry_prev), Some(entry_hash)) = (
                 value.get("prev_hash").and_then(serde_json::Value::as_str),
                 value.get("entry_hash").and_then(serde_json::Value::as_str),
             ) else {
-                return (invalid_at(total, unknown), None);
+                return Err(());
             };
-            let Some(partial) = hashed_fields(&value) else {
-                return (invalid_at(total, unknown), None);
-            };
-            if entry_prev != prev_hash {
-                return (invalid_at(total, unknown), None);
+            let partial = hashed_fields(&value).ok_or(())?;
+            if entry_prev != state.prev_hash {
+                return Err(());
             }
             let data_json = serde_json::to_string(&partial).unwrap_or_default();
-            if entry_hash != compute_entry_hash(&prev_hash, &data_json) {
-                return (invalid_at(total, unknown), None);
+            if entry_hash != compute_entry_hash(&state.prev_hash, &data_json) {
+                return Err(());
             }
             let entry_hash = entry_hash.to_string();
-            let Ok(entry) = serde_json::from_value::<AuditEntry>(value) else {
-                return (invalid_at(total, unknown), None);
-            };
+            let entry = serde_json::from_value::<AuditEntry>(value).map_err(|_| ())?;
             if matches!(&entry.event_type, AuditEventType::Unknown(_)) {
-                unknown += 1;
+                state.unknown += 1;
             }
             if matches!(
                 &entry.event_type,
                 AuditEventType::AgentDriftDetected | AuditEventType::AgentDriftAcknowledged
             ) {
-                let Some(signature) = entry.signature.as_deref() else {
-                    return (invalid_at(total, unknown), None);
-                };
-                let Ok(signature) = crate::core::agent_identity::hex_decode(signature) else {
-                    return (invalid_at(total, unknown), None);
-                };
-                let Ok(public_key) = crate::core::agent_identity::load_public_key("lean-ctx")
-                else {
-                    return (invalid_at(total, unknown), None);
-                };
+                let signature = entry.signature.as_deref().ok_or(())?;
+                let signature =
+                    crate::core::agent_identity::hex_decode(signature).map_err(|_| ())?;
+                let public_key =
+                    crate::core::agent_identity::load_public_key("lean-ctx").map_err(|_| ())?;
                 if !crate::core::agent_identity::verify_signature(
                     public_key.as_bytes(),
                     entry.entry_hash.as_bytes(),
                     &signature,
                 ) {
-                    return (invalid_at(total, unknown), None);
+                    return Err(());
                 }
             }
             if agent_id == Some(entry.agent_id.as_str()) {
                 match entry.event_type {
                     AuditEventType::AgentDriftDetected => {
                         if let Some(evidence) = entry.action {
-                            pending = Some((
+                            state.pending = Some((
                                 entry.timestamp,
                                 format!("{evidence} observation={}", entry.entry_hash),
                             ));
                         }
                     }
                     AuditEventType::AgentDriftAcknowledged
-                        if pending.as_ref().is_some_and(|(_, evidence)| {
+                        if state.pending.as_ref().is_some_and(|(_, evidence)| {
                             entry.action.as_ref() == Some(evidence)
                         }) =>
                     {
-                        pending = None;
+                        state.pending = None;
                     }
                     _ => {}
                 }
             }
-            prev_hash = entry_hash;
-            total += 1;
+            state.prev_hash = entry_hash;
+            state.total += 1;
         }
         if !saw_value {
-            return (invalid_at(total, unknown), None);
+            return Err(());
         }
     }
-
-    (
-        ChainVerifyResult {
-            total_entries: total,
-            valid: true,
-            first_invalid_at: None,
-            source_present: true,
-            unknown_event_types: unknown,
-        },
-        pending,
-    )
+    Ok(())
 }
 
 pub fn verify_chain() -> ChainVerifyResult {
@@ -697,6 +835,55 @@ mod tests {
             chain.first_invalid_at
         );
         assert_eq!(chain.total_entries, 2);
+    }
+
+    fn tool_call(tool: &str) -> AuditEntryData {
+        AuditEntryData {
+            agent_id: "rotation-agent".to_string(),
+            tool: tool.to_string(),
+            action: None,
+            input_hash: hash_input(&serde_json::Map::new()),
+            output_tokens: 0,
+            role: "coder".to_string(),
+            event_type: AuditEventType::ToolCall,
+        }
+    }
+
+    /// GHSA-jhf9-3pv4-m469: the active segment stays bounded, rotated
+    /// segments continue one hash chain, and losing an archive is detected.
+    #[test]
+    fn rotation_bounds_the_active_segment_and_keeps_one_verifiable_chain() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trail.jsonl");
+        let cap = 1024;
+        let mut last = None;
+        for i in 0..40 {
+            last = Some(
+                try_record_at_capped(&path, tool_call(&format!("tool_{i}")), cap).expect("append"),
+            );
+        }
+        let archives = archive_segments(&path);
+        assert!(archives.len() >= 2, "expected rotation, got {archives:?}");
+        let active_len = std::fs::metadata(&path).unwrap().len();
+        assert!(
+            active_len < cap + 1024,
+            "active segment {active_len} not bounded"
+        );
+        // The first archived entry starts the chain; the chain head carries over.
+        let first = load_all_at(&archives[0].1);
+        assert_eq!(first[0].prev_hash, "genesis");
+        let chain = verify_chain_at(&path);
+        assert!(chain.valid, "{:?}", chain.first_invalid_at);
+        assert_eq!(chain.total_entries, 40);
+        assert_eq!(
+            read_last_hash_tail(&std::fs::File::open(&path).unwrap()).unwrap(),
+            last.unwrap().entry_hash
+        );
+
+        // Deleting an archived segment breaks verification (no silent pruning).
+        std::fs::remove_file(&archives[0].1).unwrap();
+        assert!(!verify_chain_at(&path).valid);
     }
 
     #[test]
