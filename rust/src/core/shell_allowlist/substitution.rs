@@ -3,10 +3,11 @@ use super::{
     extract_base_from_segment,
 };
 
-/// $(), backticks, <() in arguments: warn by default, **block** when
-/// `shell_strict_mode = true` (GH #391 — the strict knob previously only
-/// changed the log line and never actually blocked).
-pub(crate) fn check_substitution_in_args(command: &str, strict: bool) -> Result<(), ShellError> {
+/// $(), backticks, <() in arguments: a substituted command runs like any other,
+/// so it is gated like one (GHSA-rxv5-4c3x-g4q6 E, owner decision 26.10.;
+/// replaces the warn-only default of #1024). Whether a violation blocks or only
+/// warns is decided by the shell security mode in `check_shell_allowlist`.
+pub(crate) fn check_substitution_in_args(command: &str) -> Result<(), ShellError> {
     if !has_expanding_substitution_in_args(command) {
         return Ok(());
     }
@@ -31,6 +32,15 @@ pub(crate) fn check_substitution_in_args(command: &str, strict: bool) -> Result<
         return Ok(());
     }
 
+    // GHSA-rxv5-4c3x-g4q6 E: a substituted command executes like any other, so
+    // the rules that hold regardless of allowlist membership (eval/exec/source,
+    // interpreter inline code, dangerous flags, blocked inline env) apply to it
+    // in every mode — `echo "$(bash -c '…')"` must not run what `bash -c '…'`
+    // may not.
+    for inner in &inner_cmds {
+        super::enforcement::check_unconditional_blocked_only(inner)?;
+    }
+
     let allowlist = effective_allowlist();
     let dangerous: Vec<&str> = inner_cmds
         .iter()
@@ -52,26 +62,14 @@ pub(crate) fn check_substitution_in_args(command: &str, strict: bool) -> Result<
         .map(|c| extract_base_from_segment(c))
         .collect();
 
-    if strict {
-        tracing::warn!(
-            "[SECURITY] Command substitution blocked (shell_strict_mode=true): {}",
-            names.join(", ")
-        );
-        return Err(format!(
-            "[BLOCKED — DO NOT RETRY] Command substitution with non-allowlisted command: {}. \
-             Add to allowlist with `lean-ctx allow <cmd>` or set shell_strict_mode=false.\n\
-             Command: {command}",
-            names.join(", ")
-        )
-        .into());
-    }
-    // Advisory only: at `warn` it lands in the wrapped command's stderr, i.e.
-    // in the agent's tool result, on every call (#1866).
-    tracing::info!(
-        "[SECURITY] Command substitution with non-allowlisted command (warn-only): {}",
+    Err(format!(
+        "[BLOCKED — DO NOT RETRY] Command substitution with non-allowlisted command: {}. \
+         A substituted command is gated like one at the top level; add it with \
+         `lean-ctx allow <cmd>` if it is safe.\n\
+         Command: {command}",
         names.join(", ")
-    );
-    Ok(())
+    )
+    .into())
 }
 
 /// Extracts the base commands from `$(...)` substitutions in argument position.
@@ -111,7 +109,11 @@ fn extract_substitution_commands(command: &str) -> Vec<String> {
                 i += 1;
             }
             _ => {
-                if ch == b'$'
+                // `$(…)` command substitution and `<(…)`/`>(…)` process
+                // substitution both run their contents (GHSA-rxv5-4c3x-g4q6 E:
+                // only `$(` used to be scanned, so strict mode let the other
+                // forms through unchecked).
+                if (ch == b'$' || ch == b'<' || ch == b'>')
                     && i + 1 < len
                     && bytes[i + 1] == b'('
                     && let Some((inner, end)) = super::compound::balanced_paren_at(command, i + 1)
@@ -124,11 +126,36 @@ fn extract_substitution_commands(command: &str) -> Vec<String> {
                     i = end;
                     continue;
                 }
+                if ch == b'`'
+                    && let Some(close) = closing_backtick(bytes, i + 1)
+                {
+                    let trimmed = command[i + 1..close].trim();
+                    if !trimmed.is_empty() {
+                        results.extend(extract_all_commands(trimmed));
+                        results.extend(extract_substitution_commands(trimmed));
+                    }
+                    i = close + 1;
+                    continue;
+                }
                 i += 1;
             }
         }
     }
     results
+}
+
+/// Index of the backtick closing a substitution opened before `from`,
+/// skipping backslash escapes. `None` when it is unterminated.
+fn closing_backtick(bytes: &[u8], from: usize) -> Option<usize> {
+    let mut j = from;
+    while j < bytes.len() {
+        match bytes[j] {
+            b'\\' => j += 2,
+            b'`' => return Some(j),
+            _ => j += 1,
+        }
+    }
+    None
 }
 
 /// Check for $(), backticks, <(, >( in arguments wherever the shell would

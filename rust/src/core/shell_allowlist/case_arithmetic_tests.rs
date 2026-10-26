@@ -77,16 +77,16 @@ fn gh2132_case_inside_command_substitution_stays_gated() {
     // In argument position the substitution check sees the arm bodies.
     let _lock = crate::core::data_dir::test_env_lock();
     let command = "echo $(case x in x) evil_binary --attack;; esac)";
-    let err = check_substitution_in_args(command, true)
+    let err = check_substitution_in_args(command)
         .expect_err("strict mode must block a disallowed arm command")
         .to_string();
     assert!(err.contains("evil_binary"), "{err}");
     let allowed = "echo $(case x in x) echo hi;; esac)";
-    let result = check_substitution_in_args(allowed, true);
+    let result = check_substitution_in_args(allowed);
     assert!(result.is_ok(), "`case` itself is no command: {result:?}");
     // The case subject is still scanned, although the rewrite drops it.
     let subject = "echo $(case $(evil_binary) in x) echo hi;; esac)";
-    assert!(check_substitution_in_args(subject, true).is_err());
+    assert!(check_substitution_in_args(subject).is_err());
 }
 
 // ---------------------------------------------------------------------------

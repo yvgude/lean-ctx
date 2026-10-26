@@ -109,7 +109,7 @@ pub(super) fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
     }
 
     let strict = crate::core::config::Config::load().shell_strict_mode;
-    check_substitution_in_args(cmd, strict)?;
+    check_substitution_in_args(cmd)?;
     check_pipe_to_bare_interpreter(cmd, strict)?;
 
     let allowlist = effective_allowlist();

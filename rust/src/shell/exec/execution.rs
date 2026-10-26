@@ -987,6 +987,9 @@ mod exec_tests {
     /// gated whole, so a bare `eval`/`$()` keeps blocking.
     #[test]
     fn sandbox_launcher_gates_the_script_it_runs() {
+        // check_shell_allowlist reads LEAN_CTX_SHELL_SECURITY, which other tests
+        // set to `off` under this lock; without it the eval case races them.
+        let _lock = crate::core::data_dir::test_env_lock();
         let argv = |script: &str| -> Vec<String> {
             [
                 "/usr/bin/sandbox-exec",
