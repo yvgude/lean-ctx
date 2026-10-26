@@ -696,6 +696,80 @@ fn list_code_files_includes_extractable_pdf() {
     );
 }
 
+/// GHSA-rxv5-4c3x-g4q6 A: secret-like files never enter the persisted index,
+/// even with the context gateway (store admission) switched off.
+#[test]
+fn list_code_files_skips_secret_like_paths() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    std::fs::write(root.join("main.rs"), "pub fn main() {}\n").expect("main");
+    std::fs::create_dir_all(root.join("config")).expect("mkdir config");
+    std::fs::create_dir_all(root.join(".ssh")).expect("mkdir ssh");
+    for rel in [
+        ".env",
+        ".env.production",
+        "server.pem",
+        "config/secrets.yaml",
+        ".ssh/config",
+    ] {
+        std::fs::write(root.join(rel), "canary_value = 1\n").expect("write secret-like");
+    }
+
+    let files = list_code_files(root);
+    assert_eq!(files, vec!["main.rs".to_string()], "{files:?}");
+}
+
+/// An index persisted before the exclusion (or with the gateway off) that
+/// still tracks a secret-like file is stale, so the next load rebuilds it
+/// without that file.
+#[test]
+fn persisted_index_tracking_a_secret_like_file_is_stale() {
+    let td = tempdir().expect("tempdir");
+    let root = td.path();
+    std::fs::write(root.join("main.rs"), "pub fn main() {}\n").expect("main");
+    std::fs::write(root.join(".env"), "canary_value = 1\n").expect("env");
+    let mut index = BM25Index::build_from_directory(root);
+    assert!(!index.files.contains_key(".env"));
+    assert!(!bm25_index_looks_stale(&index, root));
+    let state = IndexedFileState::from_path(&root.join(".env")).expect("state");
+    index.files.insert(".env".to_string(), state);
+    index.add_chunk(CodeChunk {
+        file_path: ".env".to_string(),
+        symbol_name: ".env".to_string(),
+        kind: ChunkKind::Module,
+        start_line: 1,
+        end_line: 1,
+        content: "canary_value = 1".to_string(),
+        tokens: Vec::new(),
+        token_count: 0,
+    });
+    assert!(bm25_index_looks_stale(&index, root));
+    assert!(bm25_index_looks_stale_fast(&index, root));
+    let rebuilt = BM25Index::rebuild_incremental(root, &index);
+    assert!(!rebuilt.files.contains_key(".env"));
+    assert!(rebuilt.chunks.iter().all(|c| c.file_path != ".env"));
+}
+
+/// Rendered snippets are masked like `ctx_read`/`ctx_search` output.
+#[test]
+fn format_search_results_redacts_secret_values() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    let key = concat!("AK", "IAIOSFODNN7EXAMPLE");
+    let r = SearchResult {
+        chunk_idx: 0,
+        score: 1.0,
+        file_path: "deploy/settings.py".to_string(),
+        symbol_name: "settings".to_string(),
+        kind: ChunkKind::Module,
+        start_line: 1,
+        end_line: 1,
+        snippet: format!("AWS_ACCESS_KEY_ID = \"{key}\""),
+    };
+    let out = format_search_results(std::slice::from_ref(&r), false);
+    assert!(!out.contains(key), "{out}");
+    assert!(out.contains("deploy/settings.py"), "{out}");
+}
+
 #[test]
 fn list_code_files_honors_bm25_max_files_config() {
     // The cap is handed in as a `Config` value, not through

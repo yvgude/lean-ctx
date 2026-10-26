@@ -1009,6 +1009,16 @@ fn bm25_index_looks_stale_inner(index: &BM25Index, root: &Path, fast: bool) -> b
         return false;
     }
 
+    // An index persisted before secret-like paths were excluded from the walk
+    // must be rebuilt, which drops them (GHSA-rxv5-4c3x-g4q6 A).
+    if index
+        .files
+        .keys()
+        .any(|rel| crate::core::io_boundary::is_secret_like(Path::new(rel)).is_some())
+    {
+        return true;
+    }
+
     if index.files.is_empty() {
         let mut seen = std::collections::HashSet::<&str>::new();
         for chunk in &index.chunks {
@@ -1293,14 +1303,23 @@ fn list_code_files_with(root: &Path, rules: &CorpusRules) -> Vec<String> {
     list_code_files_bounded(root, rules, false).unwrap_or_default()
 }
 
-/// The corpus walk. `bounded` (source-admission views) fails closed on a
-/// walk or file budget instead of silently truncating.
+/// The persisted-index corpus walk. `bounded` fails closed on a walk or file
+/// budget instead of silently truncating.
+///
+/// Secret-like paths (`.env`, `*.pem`, `.ssh/`, …) never enter the persisted
+/// index, whatever the role or gateway setting (GHSA-rxv5-4c3x-g4q6 A): the
+/// index is shared across roles, served by dense/hybrid search and uploaded
+/// by `sync index push`. Store admission already refuses them while the
+/// context gateway is on; this keeps the guarantee when it is switched off.
+/// Role-aware fresh views use [`list_scoped_code_files`] and admit per read.
 fn list_code_files_bounded(
     root: &Path,
     rules: &CorpusRules,
     bounded: bool,
 ) -> Result<Vec<String>, String> {
-    list_scoped_code_files(root, rules, bounded, None, &|_| true)
+    list_scoped_code_files(root, rules, bounded, None, &|rel| {
+        crate::core::io_boundary::is_secret_like(Path::new(rel)).is_none()
+    })
 }
 
 /// [`list_code_files_bounded`] restricted to the caller's scope: the walk

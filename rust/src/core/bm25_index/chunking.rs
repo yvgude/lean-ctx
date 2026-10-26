@@ -664,7 +664,10 @@ pub fn format_search_results(results: &[SearchResult], compact: bool) -> String 
             ));
         }
     }
-    out
+    // Snippets come from persisted indexes (dense/hybrid/workspace/artifact
+    // modes) as well as fresh admitted views; mask secrets the same way
+    // `ctx_read`/`ctx_search` do before they reach the model (GHSA-rxv5-4c3x-g4q6 A).
+    crate::core::redaction::redact_text_if_enabled(&out)
 }
 
 /// Enrich chunk content with file-path components for BM25 path-matching.
