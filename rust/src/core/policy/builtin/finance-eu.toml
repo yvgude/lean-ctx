@@ -6,7 +6,7 @@ extends = "strict-redaction"
 [context]
 # Web fetches are an exfiltration sink for regulated codebases; shell output
 # compression still works, raw passthrough is reviewed case by case.
-deny_tools = ["ctx_url_read"]
+deny_tools = ["ctx_url_read", "ctx_provider", "ctx_tools"]
 max_context_tokens = 12000
 audit_retention_days = 365
 

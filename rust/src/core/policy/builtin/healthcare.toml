@@ -4,7 +4,7 @@ description = "HIPAA-aligned: strict redaction plus PHI identifiers, no web fetc
 extends = "strict-redaction"
 
 [context]
-deny_tools = ["ctx_url_read"]
+deny_tools = ["ctx_url_read", "ctx_provider", "ctx_tools"]
 max_context_tokens = 12000
 # HIPAA documentation-retention expectation (6 years).
 audit_retention_days = 2190

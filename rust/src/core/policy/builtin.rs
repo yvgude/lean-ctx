@@ -101,6 +101,23 @@ mod tests {
             assert_eq!(resolved.max_context_tokens, Some(12_000));
             assert!(resolved.audit_retention_days.unwrap_or(0) >= 365);
         }
+        // GHSA-jhf9-3pv4-m469: every pack that restricts egress blocks all
+        // egress-capable tools, not just the URL reader.
+        for name in [
+            "finance-eu",
+            "healthcare",
+            "soc2-context",
+            "iso42001-aligned",
+            "eu-ai-act-deployer",
+        ] {
+            let resolved =
+                crate::core::policy::resolve(&get(name).expect("exists")).expect("resolves");
+            assert_eq!(
+                crate::core::policy::coverage::egress_tools_permitted(&resolved),
+                Vec::<&str>::new(),
+                "'{name}' leaves egress open"
+            );
+        }
     }
 
     #[test]

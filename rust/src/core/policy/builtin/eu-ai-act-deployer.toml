@@ -9,8 +9,9 @@ extends = "strict-redaction"
 max_context_tokens = 12000
 # Art. 26(6): deployers keep logs >= 6 months; one year covers annual audits.
 audit_retention_days = 365
-# Art. 15(5): web fetches are the exfiltration sink for deployer codebases.
-deny_tools = ["ctx_url_read"]
+# Art. 15(5): web fetches, providers (GitHub/GitLab/Jira/Postgres) and the MCP
+# gateway are the exfiltration sinks for deployer codebases.
+deny_tools = ["ctx_url_read", "ctx_provider", "ctx_tools"]
 
 [redaction]
 # Art. 10(5): special-category and regulated personal identifiers must not

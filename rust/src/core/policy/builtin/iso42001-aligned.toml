@@ -9,7 +9,7 @@ extends = "strict-redaction"
 max_context_tokens = 16000
 audit_retention_days = 365
 # A.9.4: out-of-intended-use surface denied; violations are recorded.
-deny_tools = ["ctx_url_read"]
+deny_tools = ["ctx_url_read", "ctx_provider", "ctx_tools"]
 
 [redaction]
 # A.7.4: regulated identifiers controlled before context use.

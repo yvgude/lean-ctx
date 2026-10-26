@@ -8,7 +8,7 @@ max_context_tokens = 16000
 # Evidence window for a typical Type II reporting period.
 audit_retention_days = 365
 # CC6.6: external-boundary tools denied; path jail covers the read side.
-deny_tools = ["ctx_url_read"]
+deny_tools = ["ctx_url_read", "ctx_provider", "ctx_tools"]
 
 [redaction]
 # C1.1: confidential information beyond credentials — personal and

@@ -70,9 +70,28 @@ pub(crate) const DOMAIN_FIXTURES: &[(&str, &str)] = &[
     ("date of birth", "DOB: 03/14/1975"),
 ];
 
-/// Tool-name fragments that indicate network egress beyond the model
-/// provider (CGB-5.5 aspect: egress deniable by policy).
-const EGRESS_TOOL_HINTS: &[&str] = &["url", "web", "fetch", "http"];
+/// Tools that reach the network beyond the model provider (CGB-5.5 aspect:
+/// egress deniable by policy). An explicit list, not a name heuristic
+/// (GHSA-jhf9-3pv4-m469): `ctx_provider` (GitHub/GitLab/Jira/Postgres) and
+/// `ctx_tools` (MCP gateway) do not look like fetch tools but egress all the
+/// same. `ctx_preload`'s provider prefetch is gated on `ctx_provider`.
+pub(crate) const EGRESS_CAPABLE_TOOLS: &[&str] = &["ctx_url_read", "ctx_provider", "ctx_tools"];
+
+/// Egress-capable tools a resolved pack still permits (same allow/deny
+/// semantics as the runtime gate: deny wins, an allowlist is exclusive).
+pub(crate) fn egress_tools_permitted(policy: &ResolvedPolicy) -> Vec<&'static str> {
+    EGRESS_CAPABLE_TOOLS
+        .iter()
+        .copied()
+        .filter(|tool| {
+            !policy.deny_tools.iter().any(|t| t == tool)
+                && policy
+                    .allow_tools
+                    .as_ref()
+                    .is_none_or(|allow| allow.iter().any(|t| t == tool))
+        })
+        .collect()
+}
 
 /// Run all automated checks against a resolved policy.
 pub fn assess(policy: &ResolvedPolicy) -> Vec<CoverageCheck> {
@@ -220,37 +239,28 @@ pub fn assess(policy: &ResolvedPolicy) -> Vec<CoverageCheck> {
     });
 
     // CGB-5.5 — egress governed (pack aspect: egress tools restricted).
-    let egress_denied: Vec<&str> = policy
-        .deny_tools
-        .iter()
-        .filter(|t| {
-            let t = t.to_lowercase();
-            EGRESS_TOOL_HINTS.iter().any(|h| t.contains(h))
-        })
-        .map(String::as_str)
-        .collect();
-    let egress_allowed = policy.allow_tools.as_ref().map(|allow| {
-        allow
-            .iter()
-            .filter(|t| {
-                let t = t.to_lowercase();
-                EGRESS_TOOL_HINTS.iter().any(|h| t.contains(h))
-            })
-            .count()
-    });
-    checks.push(if !egress_denied.is_empty() {
+    // PASS only when every egress-capable tool is blocked; a pack that
+    // restricts some of them but not all FAILs and names the open ones.
+    let still_open = egress_tools_permitted(policy);
+    checks.push(if still_open.is_empty() {
         CoverageCheck {
             control: "CGB-5.5",
             title: "egress restricted",
             status: CheckStatus::Pass,
-            detail: format!("egress tools denied: {}", egress_denied.join(", ")),
+            detail: format!(
+                "all egress-capable tools blocked: {}",
+                EGRESS_CAPABLE_TOOLS.join(", ")
+            ),
         }
-    } else if egress_allowed == Some(0) {
+    } else if still_open.len() < EGRESS_CAPABLE_TOOLS.len() {
         CoverageCheck {
             control: "CGB-5.5",
             title: "egress restricted",
-            status: CheckStatus::Pass,
-            detail: "allowlist contains no egress-capable tools".to_string(),
+            status: CheckStatus::Fail,
+            detail: format!(
+                "egress only partially restricted — still permitted: {}",
+                still_open.join(", ")
+            ),
         }
     } else {
         CoverageCheck {
@@ -334,6 +344,23 @@ mod tests {
         assert_eq!(status_of(&checks, "CGB-3.2"), CheckStatus::Pass);
         assert_eq!(status_of(&checks, "CGB-4.3"), CheckStatus::Pass);
         assert_eq!(status_of(&checks, "CGB-5.5"), CheckStatus::Pass);
+    }
+
+    /// GHSA-jhf9-3pv4-m469: denying only `ctx_url_read` is not "egress
+    /// restricted" while providers and the MCP gateway still egress.
+    #[test]
+    fn partial_egress_denial_fails_and_names_open_tools() {
+        let mut policy = resolved("healthcare");
+        assert_eq!(status_of(&assess(&policy), "CGB-5.5"), CheckStatus::Pass);
+        policy.deny_tools = vec!["ctx_url_read".into()];
+        let checks = assess(&policy);
+        let check = checks.iter().find(|c| c.control == "CGB-5.5").unwrap();
+        assert_eq!(check.status, CheckStatus::Fail);
+        assert!(check.detail.contains("ctx_provider"), "{}", check.detail);
+        assert!(check.detail.contains("ctx_tools"), "{}", check.detail);
+        policy.deny_tools.clear();
+        policy.allow_tools = Some(vec!["ctx_read".into()]);
+        assert_eq!(status_of(&assess(&policy), "CGB-5.5"), CheckStatus::Pass);
     }
 
     #[test]

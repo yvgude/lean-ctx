@@ -178,6 +178,14 @@ fn predict_and_prefetch(
     cache: &mut crate::core::cache::SessionCache,
     project_root: &str,
 ) -> String {
+    // GHSA-jhf9-3pv4-m469: prefetch is provider egress without a model tool
+    // call, so it must honour the same gate as an explicit `ctx_provider`.
+    let policy = crate::core::policy::runtime::active();
+    if !provider_prefetch_permitted(policy.as_deref())
+        || !crate::core::roles::active_role().is_tool_allowed("ctx_provider")
+    {
+        return String::new();
+    }
     crate::core::providers::init::init_with_project_root(Some(std::path::Path::new(project_root)));
     let registry = crate::core::providers::registry::global_registry();
     let available = registry.available_provider_ids();
@@ -258,6 +266,45 @@ fn predict_and_prefetch(
     }
 
     out
+}
+
+/// Provider prefetch is allowed only when the active policy pack (if any)
+/// permits `ctx_provider`.
+fn provider_prefetch_permitted(
+    active: Option<&crate::core::policy::runtime::ActivePolicy>,
+) -> bool {
+    active.is_none_or(|policy| policy.tool_allowed("ctx_provider"))
+}
+
+#[cfg(test)]
+mod prefetch_policy_tests {
+    use super::provider_prefetch_permitted;
+    use crate::core::policy::runtime::ActivePolicy;
+
+    fn builtin(name: &str) -> ActivePolicy {
+        let pack = crate::core::policy::builtin::get(name).expect("built-in pack");
+        ActivePolicy::from_resolved(crate::core::policy::resolve(&pack).expect("resolves"))
+    }
+
+    /// GHSA-jhf9-3pv4-m469: packs that say "no web fetches" stop the
+    /// implicit provider prefetch, permissive packs keep it.
+    #[test]
+    fn no_egress_packs_block_provider_prefetch() {
+        assert!(provider_prefetch_permitted(None));
+        for pack in [
+            "healthcare",
+            "finance-eu",
+            "soc2-context",
+            "iso42001-aligned",
+            "eu-ai-act-deployer",
+        ] {
+            assert!(
+                !provider_prefetch_permitted(Some(&builtin(pack))),
+                "{pack} must block provider prefetch"
+            );
+        }
+        assert!(provider_prefetch_permitted(Some(&builtin("baseline"))));
+    }
 }
 
 fn merge_preload_artifacts(

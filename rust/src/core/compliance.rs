@@ -277,11 +277,8 @@ fn verify_pack_rule(control: &ControlMapping, p: &ResolvedPolicy) -> (RowStatus,
             .collect()
     };
     let tool_surface_scoped = p.allow_tools.is_some() || !p.deny_tools.is_empty();
-    let egress_denied = p.deny_tools.iter().any(|t| {
-        ["url", "web", "fetch", "http"]
-            .iter()
-            .any(|hint| t.contains(hint))
-    });
+    // GHSA-jhf9-3pv4-m469: every egress-capable tool must be blocked.
+    let egress_open = crate::core::policy::coverage::egress_tools_permitted(p);
 
     match control.id.as_str() {
         "AIA-26.6" => match p.audit_retention_days {
@@ -372,15 +369,18 @@ fn verify_pack_rule(control: &ControlMapping, p: &ResolvedPolicy) -> (RowStatus,
             ),
         },
         "SOC2-CC6.6" => {
-            if egress_denied {
+            if egress_open.is_empty() {
                 (
                     RowStatus::Enforced,
-                    format!("egress tools denied: {}", p.deny_tools.join(", ")),
+                    format!(
+                        "all egress-capable tools blocked: {}",
+                        crate::core::policy::coverage::EGRESS_CAPABLE_TOOLS.join(", ")
+                    ),
                 )
             } else {
                 (
                     RowStatus::NotEnforced,
-                    "no egress tool denied by pack".to_string(),
+                    format!("egress still permitted: {}", egress_open.join(", ")),
                 )
             }
         }
