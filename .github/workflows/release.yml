@@ -535,6 +535,7 @@ jobs:
     permissions:
       contents: write
       id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@v4 # v4
         with:
@@ -622,6 +623,19 @@ jobs:
             echo "$FILES"
             echo "LEANCTX_ASSETS_EOF"
           } >> "$GITHUB_OUTPUT"
+
+      # SLSA build provenance for every published binary archive, wheel and
+      # metadata file (GHSA-rxv5-4c3x-g4q6 D). Users verify a download with
+      # `gh attestation verify <file> --repo yvgude/lean-ctx` (SECURITY.md).
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: |
+            lean-ctx-*.tar.gz
+            lean-ctx-*.zip
+            thinkery_leanctx_engine*.whl
+            SHA256SUMS
+            release-manifest.json
 
       - name: Extract release notes from CHANGELOG
         id: notes
@@ -899,6 +913,11 @@ jobs:
           X86_64_DARWIN=$(grep "x86_64-apple-darwin\.tar\.gz" SHA256SUMS | awk '{print $1}')
           AARCH64_LINUX_GNU=$(grep "aarch64-unknown-linux-gnu\.tar\.gz" SHA256SUMS | awk '{print $1}')
           X86_64_LINUX_GNU=$(grep "x86_64-unknown-linux-gnu\.tar\.gz" SHA256SUMS | awk '{print $1}')
+          # Never publish a formula with an empty or ambiguous digest.
+          for sha in "$AARCH64_DARWIN" "$X86_64_DARWIN" "$AARCH64_LINUX_GNU" "$X86_64_LINUX_GNU"; do
+            printf '%s\n' "$sha" | grep -Eqx '[0-9a-f]{64}' \
+              || { echo "::error::SHA256SUMS lacks a unique Homebrew platform digest"; exit 1; }
+          done
 
           echo "aarch64_darwin_sha=${AARCH64_DARWIN}" >> "$GITHUB_OUTPUT"
           echo "x86_64_darwin_sha=${X86_64_DARWIN}" >> "$GITHUB_OUTPUT"

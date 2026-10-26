@@ -203,6 +203,32 @@ Use the checksums attached to the relevant [GitHub Release](https://github.com/y
 
 ---
 
+## Verifying Release Artifacts
+
+Every release publishes `SHA256SUMS` and `release-manifest.json`, each signed with keyless Cosign by the release workflow (`.sig` and `.pem` next to the file).
+
+- **`lean-ctx update`** verifies both signatures against the pinned release-workflow identity, then the archive digest, and refuses the update on any failure.
+- **`install.sh` and the npm package** verify the archive against `SHA256SUMS` and abort when the checksum file, its entry for the archive, or a SHA-256 tool is missing, or when the digest does not match. There is no opt-out. They do not check the Cosign signature, so a tampered release whose `SHA256SUMS` was replaced too is only caught by the checks below.
+
+To check a manual download yourself (replace `vX.Y.Z` with the release tag):
+
+```bash
+cosign verify-blob SHA256SUMS \
+  --signature SHA256SUMS.sig --certificate SHA256SUMS.pem \
+  --certificate-identity "https://github.com/yvgude/lean-ctx/.github/workflows/release.yml@refs/tags/vX.Y.Z" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+sha256sum --ignore-missing -c SHA256SUMS   # macOS: shasum -a 256 --ignore-missing -c SHA256SUMS
+```
+
+Releases built after GHSA-rxv5-4c3x-g4q6 also carry GitHub build-provenance attestations for every archive, wheel, `SHA256SUMS` and `release-manifest.json`:
+
+```bash
+gh attestation verify lean-ctx-aarch64-apple-darwin.tar.gz --repo yvgude/lean-ctx \
+  --signer-workflow yvgude/lean-ctx/.github/workflows/release.yml
+```
+
+---
+
 ## Disclosure Timeline
 
 When vulnerabilities are reported:
@@ -378,7 +404,8 @@ The team server is part of `lean-ctx-enterprise` (ADR-023). When deployed:
 
 - **`cargo audit`** runs on every CI push (zero known CVEs tolerated).
 - **`cargo deny`** checks licenses and advisories.
-- **npm `postinstall.js`** verifies SHA256 of downloaded binaries against `SHA256SUMS` release asset.
+- **Release signing:** `SHA256SUMS` and `release-manifest.json` are Cosign-signed and every published file carries a GitHub build-provenance attestation (see [Verifying Release Artifacts](#verifying-release-artifacts)).
+- **`install.sh` and npm `postinstall.js`** verify downloaded archives against the `SHA256SUMS` release asset and fail closed when it is missing or does not match.
 - **GitHub Actions** uses pinned action versions with hash verification.
 
 ---
