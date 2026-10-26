@@ -207,6 +207,7 @@ pub(crate) mod handoff_transfer_bundle;
 pub mod session;
 pub(crate) mod session_diff;
 pub(crate) mod session_summary;
+pub(crate) mod signer_trust;
 pub(crate) mod skillify;
 
 // ---------------------------------------------------------------------------

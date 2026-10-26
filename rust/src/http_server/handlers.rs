@@ -991,8 +991,7 @@ fn a2a_handoff_inner(
             // Signature enforcement at the network boundary (GL #465): a
             // payload that is not a parseable bundle, or whose signature
             // material does not verify, is rejected fail-closed before it
-            // ever touches disk. Legacy unsigned bundles are stored with the
-            // status surfaced so the importer can warn.
+            // ever touches disk. Unsigned bundles are rejected too.
             let bundle =
                 match crate::core::handoff_transfer_bundle::parse_bundle_v1(&envelope.payload_json)
                 {
@@ -1028,13 +1027,36 @@ fn a2a_handoff_inner(
                             Json(serde_json::json!({"error": "invalid_signature"})),
                         );
                     }
-                    crate::core::handoff_transfer_bundle::BundleSignatureStatus::Verified(
-                        signer,
-                    ) => {
-                        serde_json::json!({"status": "verified", "signer": signer})
+                    crate::core::handoff_transfer_bundle::BundleSignatureStatus::Signed(v) => {
+                        // Identity is only reported for an anchored key
+                        // (GHSA-gvg8-285q-m62g); otherwise it is a claim.
+                        serde_json::json!({
+                            "status": v.status(),
+                            "claimed_signer": v.claimed_signer,
+                            "signer_key_fingerprint": v.key_fingerprint,
+                            "trusted": v.trusted,
+                        })
                     }
                     crate::core::handoff_transfer_bundle::BundleSignatureStatus::Unsigned => {
-                        serde_json::json!({"status": "unsigned"})
+                        // GHSA-gvg8-285q-m62g: the network boundary never
+                        // stores an unsigned bundle.
+                        tracing::warn!("a2a handoff rejected: unsigned bundle");
+                        crate::core::audit_trail::record(
+                            crate::core::audit_trail::AuditEntryData {
+                                agent_id: envelope.sender.agent_id.clone(),
+                                tool: "http:/v1/a2a/handoff".to_string(),
+                                action: Some("import_unsigned_rejected".to_string()),
+                                input_hash: String::new(),
+                                output_tokens: 0,
+                                role: crate::core::roles::active_role_name(),
+                                event_type:
+                                    crate::core::audit_trail::AuditEventType::SecurityViolation,
+                            },
+                        );
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(serde_json::json!({"error": "unsigned_bundle"})),
+                        );
                     }
                 };
 

@@ -116,6 +116,7 @@ pub(super) fn materialize_handoff_bundle(
         signature: None,
         signer_public_key: None,
         signer_agent_id: None,
+        signature_scheme: None,
     };
     let value = serde_json::to_value(&bundle)
         .map_err(|_| ContextCheckpointLegacyErrorV1::LegacyOwnerRejected)?;

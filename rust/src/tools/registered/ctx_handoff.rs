@@ -36,7 +36,8 @@ impl McpTool for CtxHandoffTool {
                     "filename": { "type": "string", "description": "Custom filename for export" },
                     "apply_workflow": { "type": "boolean", "description": "Apply workflow state" },
                     "apply_session": { "type": "boolean", "description": "Apply session snapshot" },
-                    "apply_knowledge": { "type": "boolean", "description": "Import knowledge facts" }
+                    "apply_knowledge": { "type": "boolean", "description": "Import knowledge facts" },
+                    "allow_unsigned": { "type": "boolean", "description": "import: accept an unsigned bundle" }
                 },
                 "allOf": [
                     {
@@ -518,11 +519,22 @@ fn handle_import(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String,
                  Re-export it on the source agent (ctx_handoff export signs automatically)."
             ));
         }
-        crate::core::handoff_transfer_bundle::BundleSignatureStatus::Verified(signer) => {
-            format!(" signature: verified (signer={signer})")
+        crate::core::handoff_transfer_bundle::BundleSignatureStatus::Signed(verified) => {
+            format!(" signature: {}", verified.describe())
         }
         crate::core::handoff_transfer_bundle::BundleSignatureStatus::Unsigned => {
-            " signature: WARNING unsigned legacy bundle (re-export to sign)".to_string()
+            // GHSA-gvg8-285q-m62g: unsigned content is replayed into session
+            // and knowledge stores, so it needs an explicit opt-in.
+            if !get_bool(args, "allow_unsigned").unwrap_or(false) {
+                return Ok(
+                    "IMPORT BLOCKED: bundle is unsigned, so its origin and integrity \
+                     cannot be checked.\n\
+                     Re-export it on the source agent (ctx_handoff export signs automatically), \
+                     or pass allow_unsigned=true to import it anyway."
+                        .to_string(),
+                );
+            }
+            " signature: WARNING unsigned bundle imported (allow_unsigned=true)".to_string()
         }
     };
 

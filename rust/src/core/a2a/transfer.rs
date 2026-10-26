@@ -72,6 +72,7 @@ mod tests {
             signature: None,
             signer_public_key: None,
             signer_agent_id: None,
+            signature_scheme: None,
         }
     }
 

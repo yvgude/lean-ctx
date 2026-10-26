@@ -50,7 +50,15 @@ pub struct HandoffTransferBundleV1 {
     pub signer_public_key: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub signer_agent_id: Option<String>,
+    /// Signature scheme. [`BOUND_SIGNATURE_SCHEME`] covers `signer_agent_id`
+    /// and `signer_public_key` (GHSA-gvg8-285q-m62g); absent means a legacy
+    /// signature over the payload only, whose signer id is not bound.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub signature_scheme: Option<String>,
 }
+
+/// Signature over the whole bundle except `signature` itself.
+pub(crate) const BOUND_SIGNATURE_SCHEME: &str = "ed25519-bound-v2";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProjectIdentityV1 {
@@ -129,6 +137,7 @@ pub(crate) fn build_bundle_v1(
         signature: None,
         signer_public_key: None,
         signer_agent_id: None,
+        signature_scheme: None,
     }
 }
 
@@ -136,36 +145,85 @@ pub(crate) fn sign_bundle(
     bundle: &mut HandoffTransferBundleV1,
     agent_id: &str,
 ) -> Result<(), String> {
-    bundle.signature = None;
-    bundle.signer_public_key = None;
-    bundle.signer_agent_id = None;
-
-    let canonical =
-        serde_json::to_string(bundle).map_err(|e| format!("serialize for signing: {e}"))?;
-
     // One atomic key resolution — signature and embedded public key must come
     // from the same keypair (two separate lookups raced with concurrent
     // data-dir changes and produced unverifiable bundles).
-    let (sig_bytes, pub_key) =
-        crate::core::agent_identity::sign_with_public_key(agent_id, canonical.as_bytes())?;
+    let key = crate::core::agent_identity::get_or_create_keypair(agent_id)?;
 
-    bundle.signature = Some(crate::core::agent_identity::hex_encode(&sig_bytes));
-    bundle.signer_public_key = Some(crate::core::agent_identity::hex_encode(&pub_key.to_bytes()));
+    // GHSA-gvg8-285q-m62g: signer id, public key and scheme are part of the
+    // signed payload, so relabelling the signer breaks the signature.
+    bundle.signature = None;
+    bundle.signer_public_key = Some(crate::core::agent_identity::hex_encode(
+        &key.verifying_key().to_bytes(),
+    ));
     bundle.signer_agent_id = Some(agent_id.to_string());
+    bundle.signature_scheme = Some(BOUND_SIGNATURE_SCHEME.to_string());
+
+    let canonical =
+        serde_json::to_string(bundle).map_err(|e| format!("serialize for signing: {e}"))?;
+    let sig_bytes = crate::core::agent_identity::sign_bytes_with(&key, canonical.as_bytes());
+    bundle.signature = Some(crate::core::agent_identity::hex_encode(&sig_bytes));
     Ok(())
+}
+
+/// A signature that verified against the bundle's embedded public key.
+///
+/// Integrity only: the key travels inside the bundle, so `claimed_signer` is
+/// an identity *claim* unless `trusted` is set (GHSA-gvg8-285q-m62g).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct VerifiedSignature {
+    /// The bundle's `signer_agent_id`.
+    pub claimed_signer: String,
+    /// Fingerprint of the embedded public key (see `signer_trust::key_fingerprint`).
+    pub key_fingerprint: String,
+    /// `signer_agent_id` is covered by the signature (bound scheme). Legacy
+    /// signatures leave it unbound, so anyone can relabel the signer.
+    pub signer_bound: bool,
+    /// The key is anchored for `claimed_signer` (pinned in the signer trust
+    /// store, or held by a local agent identity). Never set when unbound.
+    pub trusted: bool,
+}
+
+impl VerifiedSignature {
+    /// Human-readable status that never claims identity without an anchor.
+    pub(crate) fn describe(&self) -> String {
+        let fp = &self.key_fingerprint;
+        let who = &self.claimed_signer;
+        if self.trusted {
+            format!("verified (signer={who}, key {fp}, trusted)")
+        } else if self.signer_bound {
+            format!("integrity ok, signer key {fp} (untrusted; claimed signer={who})")
+        } else {
+            format!(
+                "integrity ok, legacy signature (signer id not covered), signer key {fp} \
+                 (untrusted; claimed signer={who})"
+            )
+        }
+    }
+
+    /// Stable machine status for JSON responses.
+    pub(crate) fn status(&self) -> &'static str {
+        if self.trusted {
+            "verified"
+        } else if self.signer_bound {
+            "untrusted_signer"
+        } else {
+            "legacy_unbound"
+        }
+    }
 }
 
 /// Outcome of checking a bundle's embedded Ed25519 signature on import
 /// (GL #465). Fail-closed semantics: any *present-but-broken* signature
 /// material is [`Invalid`](BundleSignatureStatus::Invalid) and must block the
-/// import; only the complete absence of all three signature fields counts as
-/// a legacy [`Unsigned`](BundleSignatureStatus::Unsigned) bundle (allowed
-/// with a warning, for bundles produced before exports were signed).
+/// import; only the complete absence of all signature fields counts as
+/// [`Unsigned`](BundleSignatureStatus::Unsigned).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum BundleSignatureStatus {
-    /// Valid signature; carries the verified signer agent id.
-    Verified(String),
-    /// No signature fields at all (legacy bundle).
+    /// Signature verifies against the embedded key; see [`VerifiedSignature`]
+    /// for whether the signer identity is bound and trusted.
+    Signed(VerifiedSignature),
+    /// No signature fields at all.
     Unsigned,
     /// Signature material present but not verifiable — reject the bundle.
     Invalid(String),
@@ -177,16 +235,19 @@ pub(crate) fn check_bundle_signature(bundle: &HandoffTransferBundleV1) -> Bundle
     if bundle.signature.is_none()
         && bundle.signer_public_key.is_none()
         && bundle.signer_agent_id.is_none()
+        && bundle.signature_scheme.is_none()
     {
         return BundleSignatureStatus::Unsigned;
     }
     match verify_bundle_signature(bundle) {
-        Ok(signer) => BundleSignatureStatus::Verified(signer),
+        Ok(verified) => BundleSignatureStatus::Signed(verified),
         Err(e) => BundleSignatureStatus::Invalid(e),
     }
 }
 
-pub(crate) fn verify_bundle_signature(bundle: &HandoffTransferBundleV1) -> Result<String, String> {
+pub(crate) fn verify_bundle_signature(
+    bundle: &HandoffTransferBundleV1,
+) -> Result<VerifiedSignature, String> {
     let sig_hex = bundle
         .signature
         .as_deref()
@@ -205,17 +266,29 @@ pub(crate) fn verify_bundle_signature(bundle: &HandoffTransferBundleV1) -> Resul
 
     let mut verify_bundle = bundle.clone();
     verify_bundle.signature = None;
-    verify_bundle.signer_public_key = None;
-    verify_bundle.signer_agent_id = None;
+    let signer_bound = match bundle.signature_scheme.as_deref() {
+        Some(BOUND_SIGNATURE_SCHEME) => true,
+        None => {
+            // Legacy scheme: signed before the signer fields were filled in.
+            verify_bundle.signer_public_key = None;
+            verify_bundle.signer_agent_id = None;
+            false
+        }
+        Some(other) => return Err(format!("unsupported signature scheme `{other}`")),
+    };
 
     let canonical =
         serde_json::to_string(&verify_bundle).map_err(|e| format!("serialize for verify: {e}"))?;
 
-    if crate::core::agent_identity::verify_signature(&pk_bytes, canonical.as_bytes(), &sig_bytes) {
-        Ok(agent_id.to_string())
-    } else {
-        Err("signature verification failed".to_string())
+    if !crate::core::agent_identity::verify_signature(&pk_bytes, canonical.as_bytes(), &sig_bytes) {
+        return Err("signature verification failed".to_string());
     }
+    Ok(VerifiedSignature {
+        claimed_signer: agent_id.to_string(),
+        key_fingerprint: crate::core::signer_trust::key_fingerprint(pk_hex),
+        signer_bound,
+        trusted: signer_bound && crate::core::signer_trust::is_trusted(agent_id, pk_hex),
+    })
 }
 
 pub(crate) fn serialize_bundle_v1_pretty(
@@ -526,12 +599,30 @@ mod tests {
 
         let mut signed = build_bundle_v1(sample_ledger(), None, BundlePrivacyV1::Redacted);
         sign_bundle(&mut signed, "handoff-sig-test-agent").expect("sign");
+        // Signed by a key held by a local agent identity → trusted anchor.
         match check_bundle_signature(&signed) {
-            BundleSignatureStatus::Verified(signer) => {
-                assert_eq!(signer, "handoff-sig-test-agent");
+            BundleSignatureStatus::Signed(v) => {
+                assert_eq!(v.claimed_signer, "handoff-sig-test-agent");
+                assert!(v.signer_bound && v.trusted, "{v:?}");
+                assert_eq!(v.status(), "verified");
             }
-            other => panic!("expected Verified, got {other:?}"),
+            other => panic!("expected Signed, got {other:?}"),
         }
+
+        // GHSA-gvg8-285q-m62g: relabelling the signer breaks the signature.
+        let mut relabelled = signed.clone();
+        relabelled.signer_agent_id = Some("trusted-release-bot".to_string());
+        assert!(matches!(
+            check_bundle_signature(&relabelled),
+            BundleSignatureStatus::Invalid(_)
+        ));
+        // Stripping the scheme (downgrade to legacy) does not verify either.
+        let mut downgraded = signed.clone();
+        downgraded.signature_scheme = None;
+        assert!(matches!(
+            check_bundle_signature(&downgraded),
+            BundleSignatureStatus::Invalid(_)
+        ));
 
         // Tamper with the payload after signing → must be Invalid, not Unsigned.
         let mut tampered = signed.clone();
@@ -548,6 +639,59 @@ mod tests {
             check_bundle_signature(&partial),
             BundleSignatureStatus::Invalid(_)
         ));
+
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    /// GHSA-gvg8-285q-m62g: a self-embedded key is never reported as a
+    /// verified identity, and legacy signatures surface as unbound.
+    #[test]
+    fn foreign_and_legacy_signatures_are_not_verified_identities() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let data_dir = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data_dir.path());
+        let key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
+        let pk_hex = crate::core::agent_identity::hex_encode(&key.verifying_key().to_bytes());
+
+        // Bound signature from a key no anchor knows.
+        let mut bound = build_bundle_v1(sample_ledger(), None, BundlePrivacyV1::Redacted);
+        bound.signer_public_key = Some(pk_hex.clone());
+        bound.signer_agent_id = Some("trusted-release-bot".to_string());
+        bound.signature_scheme = Some(BOUND_SIGNATURE_SCHEME.to_string());
+        let canonical = serde_json::to_string(&bound).unwrap();
+        bound.signature = Some(crate::core::agent_identity::hex_encode(
+            &crate::core::agent_identity::sign_bytes_with(&key, canonical.as_bytes()),
+        ));
+        let BundleSignatureStatus::Signed(v) = check_bundle_signature(&bound) else {
+            panic!("bound signature must verify");
+        };
+        assert!(v.signer_bound && !v.trusted);
+        assert_eq!(v.status(), "untrusted_signer");
+        assert!(v.describe().contains("(untrusted"), "{}", v.describe());
+        assert!(!v.describe().starts_with("verified"));
+
+        // Pinning (subject, key) in the trust store anchors it.
+        crate::core::signer_trust::pin_if_absent("trusted-release-bot", &pk_hex, "test").unwrap();
+        let BundleSignatureStatus::Signed(v) = check_bundle_signature(&bound) else {
+            panic!("bound signature must verify");
+        };
+        assert!(v.trusted);
+
+        // Legacy signature (signer fields outside the payload) still verifies,
+        // but is reported unbound and never trusted — even for a pinned key.
+        let mut legacy = build_bundle_v1(sample_ledger(), None, BundlePrivacyV1::Redacted);
+        let canonical = serde_json::to_string(&legacy).unwrap();
+        legacy.signature = Some(crate::core::agent_identity::hex_encode(
+            &crate::core::agent_identity::sign_bytes_with(&key, canonical.as_bytes()),
+        ));
+        legacy.signer_public_key = Some(pk_hex);
+        legacy.signer_agent_id = Some("trusted-release-bot".to_string());
+        let BundleSignatureStatus::Signed(v) = check_bundle_signature(&legacy) else {
+            panic!("legacy signature must still verify");
+        };
+        assert!(!v.signer_bound && !v.trusted);
+        assert_eq!(v.status(), "legacy_unbound");
+        assert!(v.describe().contains("legacy signature"));
 
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }

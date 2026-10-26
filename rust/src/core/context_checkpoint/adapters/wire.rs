@@ -229,6 +229,7 @@ pub(super) fn validate_legacy_target_value(
                     "signature",
                     "signer_public_key",
                     "signer_agent_id",
+                    "signature_scheme",
                 ],
             )?;
             let bundle = strict_owner_round_trip::<HandoffTransferBundleV1>(value)?;
@@ -241,7 +242,8 @@ pub(super) fn validate_legacy_target_value(
             }
             let has_signature_material = bundle.signature.is_some()
                 || bundle.signer_public_key.is_some()
-                || bundle.signer_agent_id.is_some();
+                || bundle.signer_agent_id.is_some()
+                || bundle.signature_scheme.is_some();
             if has_signature_material
                 && crate::core::handoff_transfer_bundle::verify_bundle_signature(&bundle).is_err()
             {
