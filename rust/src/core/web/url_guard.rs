@@ -165,6 +165,25 @@ pub fn ip_is_blocked(ip: IpAddr) -> bool {
             if let Some(mapped) = v6.to_ipv4_mapped() {
                 return v4_is_blocked(mapped);
             }
+            // Transition prefixes that embed an IPv4 destination (GHSA-h693-v7jv-vmv9).
+            let v4 = |hi: u16, lo: u16| Ipv4Addr::from((u32::from(hi) << 16) | u32::from(lo));
+            match v6.segments() {
+                // NAT64 well-known prefix 64:ff9b::/96 (RFC 6052), 6to4 2002::/16
+                // (RFC 3056, v4 in bits 16..48) and deprecated IPv4-compatible
+                // ::a.b.c.d (RFC 4291; `::` and `::1` land in 0.0.0.0/8, blocked).
+                [0x64, 0xff9b, 0, 0, 0, 0, hi, lo]
+                | [0x2002, hi, lo, ..]
+                | [0, 0, 0, 0, 0, 0, hi, lo] => return v4_is_blocked(v4(hi, lo)),
+                // NAT64 local-use 64:ff9b:1::/48 (RFC 8215): the operator picks the
+                // prefix length, so the embedded v4 cannot be located; never public.
+                [0x64, 0xff9b, 1, ..] => return true,
+                // Teredo 2001::/32 (RFC 4380): server v4 in bits 32..64, client v4
+                // bit-inverted in the last 32 bits.
+                [0x2001, 0, shi, slo, _, _, chi, clo] => {
+                    return v4_is_blocked(v4(shi, slo)) || v4_is_blocked(v4(!chi, !clo));
+                }
+                _ => {}
+            }
             v6.is_loopback()
                 || v6.is_unspecified()
                 || is_unique_local_v6(v6)
@@ -300,6 +319,49 @@ mod tests {
         assert!(ip_is_blocked("fe80::1".parse().unwrap()));
         assert!(ip_is_blocked("fc00::1".parse().unwrap()));
         assert!(ip_is_blocked("::ffff:127.0.0.1".parse().unwrap()));
+    }
+
+    #[test]
+    fn blocks_v6_transition_addrs_embedding_internal_v4() {
+        // GHSA-h693-v7jv-vmv9: 169.254.169.254, 127.0.0.1 and 10.0.0.1 via
+        // NAT64, 6to4, Teredo (server and client) and IPv4-compatible forms.
+        for ip in [
+            "64:ff9b::a9fe:a9fe",
+            "64:ff9b::7f00:1",
+            "64:ff9b::a00:1",
+            "64:ff9b:1::a9fe:a9fe",
+            "2002:a9fe:a9fe::1",
+            "2002:7f00:1::1",
+            "2002:a00:1::1",
+            "2001:0:a9fe:a9fe::1",
+            "2001:0:808:808:0:0:5601:5601",
+            "2001:0:808:808:0:0:80ff:fffe",
+            "2001:0:808:808:0:0:f5ff:fffe",
+            "::a9fe:a9fe",
+            "::7f00:1",
+            "::a00:1",
+            "::",
+        ] {
+            assert!(ip_is_blocked(ip.parse().unwrap()), "{ip} must be blocked");
+            let u = validate(&format!("http://[{ip}]/")).unwrap();
+            assert!(
+                matches!(u.ensure_resolves_safely(), Err(UrlError::Blocked(_))),
+                "{ip} must be refused by ensure_resolves_safely"
+            );
+        }
+    }
+
+    #[test]
+    fn allows_v6_transition_addrs_embedding_public_v4() {
+        for ip in [
+            "64:ff9b::808:808",
+            "2002:808:808::1",
+            // Teredo: server 8.8.8.8, client 1.1.1.1 (inverted fefe:fefe).
+            "2001:0:808:808:0:0:fefe:fefe",
+            "::808:808",
+        ] {
+            assert!(!ip_is_blocked(ip.parse().unwrap()), "{ip} must be allowed");
+        }
     }
 
     #[test]
