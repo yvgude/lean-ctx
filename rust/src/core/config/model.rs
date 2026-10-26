@@ -517,7 +517,8 @@ pub struct Config {
     /// Override via the `LEAN_CTX_READ_DEDUP` env var.
     #[serde(default)]
     pub read_dedup: ReadDedup,
-    /// Disable the daily version check against leanctx.com/version.txt.
+    /// Disable the daily version check against
+    /// api.github.com/repos/yvgude/lean-ctx/releases/latest.
     /// Override via LEAN_CTX_NO_UPDATE_CHECK env var.
     #[serde(default)]
     pub update_check_disabled: bool,

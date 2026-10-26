@@ -110,9 +110,12 @@ In addition, roles can restrict **unsafe I/O**:
 - **Pipeline archive redaction** — shell output archives redacted before storage.
 - **UDS socket permissions** — `0o600` enforced on Unix domain sockets after bind.
 - **Error response sanitization** — internal details logged server-side, generic codes returned to clients.
+- **MCP gateway output redaction** — downstream `ctx_tools call` output (success and error text) passes secret detection before it reaches the model.
+- **Signed handoffs and packages** — handoff bundle signatures cover the signer id and key; context packages and addons must be signed unless a local import passes `--allow-unsigned` (`allow_unsigned=true` over MCP); `/v1/a2a/handoff` rejects unsigned bundles and context packages. An embedded key proves integrity only: a signer is reported as trusted only when its key is pinned in `<data_dir>/trusted-signers.toml` (`[[signers]] subject = "<agent id or @namespace>"`, `public_key = "<hex>"`) or held by a local agent identity. Remote `pack install` / `addon add` pin the namespace publisher key on first install and refuse a different key afterwards.
+- **Bounded audit trail** — `<data_dir>/audit/trail.jsonl` rotates at 32 MiB into `trail.NNNNNN.jsonl`; the hash chain continues across segments and `verify` checks all of them. Archived segments are not deleted automatically, because removing one breaks chain verification.
 
 **Optional network activity (review effective configuration):**
-- **Update check**: a lightweight daily GET to `leanctx.com/version.txt` to notify you of new versions. Sends only the current version as User-Agent. Disable with `update_check_disabled = true` in `~/.lean-ctx/config.toml` or `LEAN_CTX_NO_UPDATE_CHECK=1`.
+- **Update check**: a lightweight daily GET to `api.github.com/repos/yvgude/lean-ctx/releases/latest` to notify you of new versions. Sends only the current version as User-Agent. Disable with `update_check_disabled = true` in `~/.lean-ctx/config.toml` or `LEAN_CTX_NO_UPDATE_CHECK=1`.
 - **Telemetry**: product telemetry is on by default since v3.11.0 (v3.10.5 and earlier defaulted it off); an explicit earlier opt-out is kept. Inspect your installed build with `lean-ctx telemetry status` and `lean-ctx telemetry show`. Disable sending with `lean-ctx telemetry off`, `DO_NOT_TRACK=1`, or `LEAN_CTX_TELEMETRY=off`. Enabled telemetry sends installation and aggregate usage metadata. Do not infer zero network activity from telemetry being disabled.
 - **Configured providers and integrations**: source connectors, upstream model requests, submitted feedback, and remote endpoints have their own payloads and credentials. Review each enabled path.
 
@@ -384,7 +387,7 @@ export LEAN_CTX_ROLE=bank
 
 | Endpoint | Purpose | Disable |
 |----------|---------|---------|
-| `leanctx.com/version.txt` | Update check (daily GET) | `update_check_disabled = true` |
+| `api.github.com/repos/yvgude/lean-ctx/releases/latest` | Update check (daily GET) | `update_check_disabled = true` |
 | `api.leanctx.com` | Enabled telemetry (version, OS/arch, installation ID, client/setup categories, aggregate tool usage) | `lean-ctx telemetry off` or `DO_NOT_TRACK=1` |
 | `huggingface.co` | Embedding model download | Pre-provision models, set `LEAN_CTX_EMBEDDING_MODEL_DIR` |
 | `localhost:PORT` | Dashboard (local TCP) | Don't start dashboard, or bind to loopback only |
