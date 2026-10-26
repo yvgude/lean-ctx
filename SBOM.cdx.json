@@ -16255,7 +16255,7 @@
     },
     {
       "author": "Alexandre Bury <alexandre.bury@gmail.com>",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#zstd-safe@7.2.4",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#zstd-safe@8.2.0",
       "description": "Safe low-level bindings for the zstd compression library.",
       "externalReferences": [
         {
@@ -16266,34 +16266,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "8f49c4d5f0abb602a93fb8736af2a4f4dd9512e36f7f570d66e65ff867ed3b9d"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT OR Apache-2.0"
-        }
-      ],
-      "name": "zstd-safe",
-      "purl": "pkg:cargo/zstd-safe@7.2.4",
-      "scope": "required",
-      "type": "library",
-      "version": "7.2.4"
-    },
-    {
-      "author": "Alexandre Bury <alexandre.bury@gmail.com>",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#zstd-safe@8.1.0",
-      "description": "Safe low-level bindings for the zstd compression library.",
-      "externalReferences": [
-        {
-          "type": "vcs",
-          "url": "https://github.com/gyscos/zstd-rs"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "bdd44c6a7284e91f3717755b24315a302edd9153a01f753c3cba3d765e8eafac"
+          "content": "ded520f16b29e1a9b771c722221b2b0a0398c2316d9bb3c42b458a5414d7434b"
         }
       ],
       "licenses": [
@@ -16302,14 +16275,14 @@
         }
       ],
       "name": "zstd-safe",
-      "purl": "pkg:cargo/zstd-safe@8.1.0",
+      "purl": "pkg:cargo/zstd-safe@8.2.0",
       "scope": "required",
       "type": "library",
-      "version": "8.1.0"
+      "version": "8.2.0"
     },
     {
       "author": "Alexandre Bury <alexandre.bury@gmail.com>",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#zstd-sys@2.1.1+zstd.1.5.7",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#zstd-sys@2.1.2+zstd.1.5.7",
       "description": "Low-level bindings for the zstd compression library.",
       "externalReferences": [
         {
@@ -16324,7 +16297,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "aeec9eaf2dffbbd09201e23bd0ffcbaa33bb8e9266a10734fd7ed90a85eca078"
+          "content": "481ada9c543b2323cbb7bbdbb5249177fbf0188ed959ed2c15e4b22421c84ed3"
         }
       ],
       "licenses": [
@@ -16333,14 +16306,14 @@
         }
       ],
       "name": "zstd-sys",
-      "purl": "pkg:cargo/zstd-sys@2.1.1+zstd.1.5.7",
+      "purl": "pkg:cargo/zstd-sys@2.1.2+zstd.1.5.7",
       "scope": "required",
       "type": "library",
-      "version": "2.1.1+zstd.1.5.7"
+      "version": "2.1.2+zstd.1.5.7"
     },
     {
       "author": "Alexandre Bury <alexandre.bury@gmail.com>",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#zstd@0.13.3",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3",
       "description": "Binding for the zstd compression library.",
       "externalReferences": [
         {
@@ -16355,38 +16328,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "e91ee311a569c327171651566e07972200e76fcfe2242a4fa446149a3881c08a"
-        }
-      ],
-      "licenses": [
-        {
-          "expression": "MIT"
-        }
-      ],
-      "name": "zstd",
-      "purl": "pkg:cargo/zstd@0.13.3",
-      "scope": "required",
-      "type": "library",
-      "version": "0.13.3"
-    },
-    {
-      "author": "Alexandre Bury <alexandre.bury@gmail.com>",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.2",
-      "description": "Binding for the zstd compression library.",
-      "externalReferences": [
-        {
-          "type": "documentation",
-          "url": "https://docs.rs/zstd"
-        },
-        {
-          "type": "vcs",
-          "url": "https://github.com/gyscos/zstd-rs"
-        }
-      ],
-      "hashes": [
-        {
-          "alg": "SHA-256",
-          "content": "057cfd910cfac363a0ada849592624b4c9ff2e10bef504c3433810d78ed96f93"
+          "content": "db3ae9bf90af6e40197bef767eeefc46ad6397420fe873830bd85e5fbbfb3c70"
         }
       ],
       "licenses": [
@@ -16395,10 +16337,10 @@
         }
       ],
       "name": "zstd",
-      "purl": "pkg:cargo/zstd@0.14.2",
+      "purl": "pkg:cargo/zstd@0.14.3",
       "scope": "required",
       "type": "library",
-      "version": "0.14.2"
+      "version": "0.14.3"
     }
   ],
   "dependencies": [
@@ -16510,7 +16452,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#yaml_serde@0.10.4",
         "registry+https://github.com/rust-lang/crates.io-index#zeroize@1.9.0",
         "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.4",
-        "registry+https://github.com/rust-lang/crates.io-index#zstd@0.13.3"
+        "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3"
       ],
       "ref": "path+file://./rust#lean-ctx@3.11.4"
     },
@@ -20152,7 +20094,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#typed-path@0.12.3",
         "registry+https://github.com/rust-lang/crates.io-index#zeroize@1.9.0",
         "registry+https://github.com/rust-lang/crates.io-index#zopfli@0.8.3",
-        "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.2"
+        "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3"
       ],
       "ref": "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.4"
     },
@@ -20173,34 +20115,22 @@
     },
     {
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#zstd-sys@2.1.1+zstd.1.5.7"
+        "registry+https://github.com/rust-lang/crates.io-index#zstd-sys@2.1.2+zstd.1.5.7"
       ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#zstd-safe@7.2.4"
-    },
-    {
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#zstd-sys@2.1.1+zstd.1.5.7"
-      ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#zstd-safe@8.1.0"
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#zstd-safe@8.2.0"
     },
     {
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#cc@1.4.2",
         "registry+https://github.com/rust-lang/crates.io-index#pkg-config@0.3.33"
       ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#zstd-sys@2.1.1+zstd.1.5.7"
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#zstd-sys@2.1.2+zstd.1.5.7"
     },
     {
       "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#zstd-safe@7.2.4"
+        "registry+https://github.com/rust-lang/crates.io-index#zstd-safe@8.2.0"
       ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#zstd@0.13.3"
-    },
-    {
-      "dependsOn": [
-        "registry+https://github.com/rust-lang/crates.io-index#zstd-safe@8.1.0"
-      ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.2"
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3"
     }
   ],
   "metadata": {
@@ -20251,7 +20181,7 @@
       },
       {
         "name": "leanctx:cargo-lock-sha256",
-        "value": "957c7c901d5b4f5c9b706295fb10af475485b213c3087379da5a3be6d4482be0"
+        "value": "82a6fc6a46a03a37c27c28880d31338f511fddd965bb8eb4133ac5c9e7c1da6e"
       }
     ],
     "tools": [

@@ -1,20 +1,20 @@
 # LeanCTX third-party notices
 Schema: leanctx.third-party-notices/v1
-Status: GENERATED AND APPROVED
+Status: GENERATED - PENDING APPROVAL
 Content-Digest-Scope: SHA-256 of this file with the Content-Digest value zeroed
-Content-Digest: sha256:1e735e1fb8a88426b749709908093bc7ed153d76c16a06b10246ced31ce7156c
+Content-Digest: sha256:46a97ab5d59d9dbedc6a900b737b87cdb0c8d08a82825d9feb06a52ef53bc8d1
 Source inventory: rust/Cargo.lock + cargo metadata --locked --offline --all-features + SBOM.cdx.json + legal/third-party-assets.toml + packages/pi-lean-ctx/package-lock.json
 Generation command: cargo metadata --locked --offline --all-features --manifest-path rust/Cargo.toml --format-version 1
 Approval contract: legal/third-party-notices-approval.toml binds approved_content_sha256 to this file's exact SHA-256
-Cargo.lock SHA-256: 957c7c901d5b4f5c9b706295fb10af475485b213c3087379da5a3be6d4482be0
-Cargo metadata inventory SHA-256: 79b21d172145957df31a412aa20472bdd0b2bf73a8b9aeadfdce2b225765f107
-SBOM.cdx.json SHA-256: fbb3b9e0caa434ec20e4d12fa386a93a62320c2097d3f5ff93c10b2be3ac392c
-SBOM components: 543
-Asset manifest SHA-256: c01fb6825a92b70eb069619f9d315887c8d49bd415239c41e5e2dfe5d87ceb74
+Cargo.lock SHA-256: 82a6fc6a46a03a37c27c28880d31338f511fddd965bb8eb4133ac5c9e7c1da6e
+Cargo metadata inventory SHA-256: 49b082bef7074a01e730787c4b3f77386ed8a43ebbf970b1ded34e860064c7e9
+SBOM.cdx.json SHA-256: 391a1618bcd0b8329fe81daf1d030abea2529abc68ff2570896822da30f97db8
+SBOM components: 541
+Asset manifest SHA-256: 6fc0069e6835f4d5793fb63236b9be0f05b95219e262029057786ebf3f6c4ec8
 npm package-lock.json SHA-256: 1f4451809926e44c5edc0651f117aa9aed436ac8efdb927ea5001a9fade4c883
 Bundled MCP SDK: @modelcontextprotocol/sdk 1.32.1 (sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==)
-Cargo graph packages: 597
-Third-party Cargo packages: 587
+Cargo graph packages: 595
+Third-party Cargo packages: 585
 
 ## Cargo dependency graph
 ### adler2 2.0.1
@@ -4673,15 +4673,7 @@ Targets: zopfli[bin], zopfli[lib]
 Features: default, gzip, nightly, std, zlib
 Dependencies: bumpalo, crc32fast, log, simd-adler32
 
-### zstd 0.13.3
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/gyscos/zstd-rs
-SPDX-License-Identifier: MIT
-Targets: basic[example], benchmark[example], issue_182[test], stream[example], train[example], zstd[example], zstd[lib], zstdcat[example]
-Features: arrays, bindgen, debug, default, doc-cfg, experimental, fat-lto, legacy, no_asm, pkg-config, thin, thin-lto, wasm, zdict_builder, zstdmt
-Dependencies: zstd-safe
-
-### zstd 0.14.2
+### zstd 0.14.3
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/gyscos/zstd-rs
 SPDX-License-Identifier: BSD-3-Clause
@@ -4689,15 +4681,7 @@ Targets: basic[example], benchmark[example], invalid_dictionary[test], issue_182
 Features: arrays, bindgen, cmake, debug, default, doc-cfg, experimental, fat-lto, legacy, no_asm, pkg-config, thin, thin-lto, vendored, wasm, with-rust-allocator, zdict_builder, zstdmt
 Dependencies: zstd-safe
 
-### zstd-safe 7.2.4
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/gyscos/zstd-rs
-SPDX-License-Identifier: MIT OR Apache-2.0
-Targets: build-script-build[custom-build], zstd_safe[lib]
-Features: arrays, bindgen, debug, default, doc-cfg, experimental, fat-lto, legacy, no_asm, pkg-config, seekable, std, thin, thin-lto, zdict_builder, zstdmt
-Dependencies: zstd-sys
-
-### zstd-safe 8.1.0
+### zstd-safe 8.2.0
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/gyscos/zstd-rs
 SPDX-License-Identifier: BSD-3-Clause
@@ -4705,7 +4689,7 @@ Targets: build-script-build[custom-build], with_rust_allocator[test], with_rust_
 Features: arrays, bindgen, cmake, debug, default, doc-cfg, experimental, fat-lto, legacy, no_asm, pkg-config, seekable, std, thin, thin-lto, vendored, with-rust-allocator, zdict_builder, zstdmt
 Dependencies: zstd-sys
 
-### zstd-sys 2.1.1+zstd.1.5.7
+### zstd-sys 2.1.2+zstd.1.5.7
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/gyscos/zstd-rs
 SPDX-License-Identifier: BSD-3-Clause
