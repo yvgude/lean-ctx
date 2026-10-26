@@ -50,9 +50,16 @@ pub(super) fn cmd_pack_install(args: &[String], project_root: &str) {
                 return;
             }
         };
-        match registry.import_from_file(std::path::Path::new(&file_path)) {
+        match registry.import_from_file(
+            std::path::Path::new(&file_path),
+            local_signature_policy(args),
+        ) {
             Ok(manifest) => {
                 println!("Imported: {} v{}", manifest.name, manifest.version);
+                println!(
+                    "  Signature: {}",
+                    crate::core::context_package::registry::describe_package_signature(&manifest)
+                );
                 apply_or_report(&manifest.name, &manifest.version, project_root);
             }
             Err(e) => eprintln!("ERROR: import failed: {e}"),
@@ -62,7 +69,7 @@ pub(super) fn cmd_pack_install(args: &[String], project_root: &str) {
 
     let Some(name) = pkg_name else {
         eprintln!("ERROR: package name is required");
-        eprintln!("Usage: lean-ctx pack install <name>[@version] [--file=path]");
+        eprintln!("Usage: lean-ctx pack install <name>[@version] [--file=path [--allow-unsigned]]");
         eprintln!("       lean-ctx pack install <ns>/<name>[@version] [--registry <url>]");
         return;
     };
@@ -316,12 +323,25 @@ pub(super) fn cmd_pack_remove(args: &[String]) {
     }
 }
 
+/// Local file imports require a signature unless the caller passes
+/// `--allow-unsigned` (GHSA-gvg8-285q-m62g).
+pub(super) fn local_signature_policy(
+    args: &[String],
+) -> crate::core::context_package::registry::SignaturePolicy<'static> {
+    if args.iter().any(|a| a == "--allow-unsigned") {
+        eprintln!("WARNING: --allow-unsigned: an unsigned package's origin cannot be verified.");
+        crate::core::context_package::registry::SignaturePolicy::AllowUnsigned
+    } else {
+        crate::core::context_package::registry::SignaturePolicy::RequireSigned
+    }
+}
+
 pub(super) fn cmd_pack_import(args: &[String], project_root: &str) {
     let file_path = args.iter().find(|a| !a.starts_with("--") && *a != "import");
     let apply = args.iter().any(|a| a == "--apply");
 
     let Some(file_path) = file_path else {
-        eprintln!("Usage: lean-ctx pack import <file.ctxpkg> [--apply]");
+        eprintln!("Usage: lean-ctx pack import <file.ctxpkg> [--apply] [--allow-unsigned]");
         return;
     };
 
@@ -333,9 +353,16 @@ pub(super) fn cmd_pack_import(args: &[String], project_root: &str) {
         }
     };
 
-    match registry.import_from_file(std::path::Path::new(file_path)) {
+    match registry.import_from_file(
+        std::path::Path::new(file_path),
+        local_signature_policy(args),
+    ) {
         Ok(manifest) => {
             println!("Imported: {} v{}", manifest.name, manifest.version);
+            println!(
+                "  Signature: {}",
+                crate::core::context_package::registry::describe_package_signature(&manifest)
+            );
             println!(
                 "  Layers: {}",
                 manifest

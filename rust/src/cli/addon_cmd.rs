@@ -335,7 +335,9 @@ fn looks_like_a_path(arg: &str) -> bool {
 
 fn cmd_add(args: &[String]) {
     let Some(file) = positional(args, "add").or_else(|| positional(args, "install")) else {
-        eprintln!("Usage: lean-ctx addon add <file.ctxpkg | ns/name[@version]>");
+        eprintln!(
+            "Usage: lean-ctx addon add <file.ctxpkg | ns/name[@version]> [--yes] [--allow-unsigned]"
+        );
         std::process::exit(2);
     };
     let assume_yes = args.iter().any(|a| a == "--yes" || a == "-y");
@@ -462,7 +464,24 @@ fn cmd_add(args: &[String]) {
         return;
     }
 
-    match registry.install_addon_from_file(path) {
+    // GHSA-gvg8-285q-m62g: executable content is never installed unsigned
+    // from a registry, and a local file needs an explicit --allow-unsigned.
+    let remote_ns = (!local.is_file())
+        .then(|| crate::core::context_package::remote::parse_remote_ref(&file))
+        .flatten()
+        .map(|r| r.namespace);
+    let policy = match remote_ns.as_deref() {
+        Some(namespace) => {
+            crate::core::context_package::registry::SignaturePolicy::RequirePinnedPublisher {
+                namespace,
+            }
+        }
+        None if args.iter().any(|a| a == "--allow-unsigned") => {
+            crate::core::context_package::registry::SignaturePolicy::AllowUnsigned
+        }
+        None => crate::core::context_package::registry::SignaturePolicy::RequireSigned,
+    };
+    match registry.install_addon_from_file(path, policy) {
         Ok(manifest) => {
             println!("Installed {}@{}", manifest.name, manifest.version);
 

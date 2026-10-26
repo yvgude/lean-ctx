@@ -108,7 +108,14 @@ pub(crate) fn cmd_pack_install_remote(
     }
     let imported = (|| {
         let registry = LocalRegistry::open()?;
-        registry.import_from_file(&tmp)
+        // GHSA-gvg8-285q-m62g: remote artifacts must be signed by the
+        // namespace's pinned publisher key (trust on first use).
+        registry.import_from_file(
+            &tmp,
+            crate::core::context_package::registry::SignaturePolicy::RequirePinnedPublisher {
+                namespace: ns,
+            },
+        )
     })();
     std::fs::remove_file(&tmp).ok();
 
@@ -120,19 +127,11 @@ pub(crate) fn cmd_pack_install_remote(
         }
     };
 
-    // Registry compromise ≠ client compromise: re-verify the signature locally.
-    match crate::core::context_package::verify_signature(&manifest) {
-        Ok(true) => println!("Signature: ed25519 verified locally"),
-        Ok(false) => {
-            eprintln!(
-                "WARNING: package is unsigned — the hosted registry should not have accepted it"
-            );
-        }
-        Err(e) => {
-            eprintln!("ERROR: signature verification failed: {e}");
-            return;
-        }
-    }
+    // Signature and publisher pin were enforced before install.
+    println!(
+        "Signature: {}",
+        crate::core::context_package::registry::describe_package_signature(&manifest)
+    );
 
     if let Err(e) = lockfile::upsert(
         std::path::Path::new(project_root),
@@ -227,7 +226,12 @@ pub(crate) fn install_declared_dependencies(
             std::process::id()
         ));
         std::fs::write(&tmp, &bytes).map_err(|e| format!("stage dependency artifact: {e}"))?;
-        let imported = registry.import_from_file(&tmp);
+        let imported = registry.import_from_file(
+            &tmp,
+            crate::core::context_package::registry::SignaturePolicy::RequirePinnedPublisher {
+                namespace: ns,
+            },
+        );
         std::fs::remove_file(&tmp).ok();
         let dep_manifest = imported.map_err(|e| format!("dependency `{}`: {e}", dep.name))?;
 

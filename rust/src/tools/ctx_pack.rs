@@ -327,13 +327,24 @@ pub fn handle_export(name: &str, version: Option<&str>, output: Option<&str>) ->
     }
 }
 
-pub fn handle_import(file_path: &str, apply: bool, project_root: &str) -> String {
+pub fn handle_import(
+    file_path: &str,
+    apply: bool,
+    allow_unsigned: bool,
+    project_root: &str,
+) -> String {
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
         Err(e) => return format!("ERROR: {e}"),
     };
 
-    match registry.import_from_file(std::path::Path::new(file_path)) {
+    // GHSA-gvg8-285q-m62g: unsigned packages need an explicit opt-in.
+    let policy = if allow_unsigned {
+        crate::core::context_package::registry::SignaturePolicy::AllowUnsigned
+    } else {
+        crate::core::context_package::registry::SignaturePolicy::RequireSigned
+    };
+    match registry.import_from_file(std::path::Path::new(file_path), policy) {
         Ok(manifest) => {
             let layers_str = manifest
                 .layers
@@ -342,8 +353,12 @@ pub fn handle_import(file_path: &str, apply: bool, project_root: &str) -> String
                 .collect::<Vec<_>>()
                 .join(", ");
             let mut out = format!(
-                "Imported: {} v{}\n  Layers: {}\n  Size: {} bytes\n",
-                manifest.name, manifest.version, layers_str, manifest.integrity.byte_size,
+                "Imported: {} v{}\n  Signature: {}\n  Layers: {}\n  Size: {} bytes\n",
+                manifest.name,
+                manifest.version,
+                crate::core::context_package::registry::describe_package_signature(&manifest),
+                layers_str,
+                manifest.integrity.byte_size,
             );
             if apply {
                 match crate::core::context_package::LocalRegistry::open() {

@@ -1,9 +1,13 @@
 //! Client for the hosted ctxpkg registry (GL #406) — publish, resolve, fetch.
 //!
-//! Trust model: the registry is the authenticity gate, this client is the
-//! integrity gate. Every download is verified locally — artifact SHA-256
-//! against the package index AND the embedded ed25519 manifest signature —
-//! so a compromised registry cannot hand us altered content undetected.
+//! Trust model: the artifact SHA-256 is checked against the index served by
+//! the same registry, so it only detects transport corruption. Authenticity
+//! comes from the install path (GHSA-gvg8-285q-m62g): the ed25519 manifest
+//! signature is mandatory, and its key must match the publisher key pinned
+//! for the namespace in `trusted-signers.toml` (pinned on first install).
+//! A compromised registry can therefore not swap in unsigned or re-signed
+//! content for a namespace this client has installed before; the very first
+//! install of a namespace still trusts the registry (TOFU).
 
 use sha2::{Digest, Sha256};
 

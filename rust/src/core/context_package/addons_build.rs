@@ -156,7 +156,7 @@ mod tests {
 
         let registry = super::super::LocalRegistry::open().expect("registry");
         let manifest = registry
-            .install_addon_from_file(&out)
+            .install_addon_from_file(&out, super::super::registry::SignaturePolicy::RequireSigned)
             .expect("the package this repo builds must install in this repo");
         assert_eq!(manifest.name, "@ns/demo");
 
@@ -188,7 +188,7 @@ mod tests {
 
         let registry = super::super::LocalRegistry::open().expect("registry");
         let err = registry
-            .import_from_file(&out)
+            .import_from_file(&out, super::super::registry::SignaturePolicy::AllowUnsigned)
             .expect_err("import must not store executable content");
         assert!(
             err.contains("addon add"),
@@ -223,7 +223,7 @@ mod tests {
 
         let registry = super::super::LocalRegistry::open().expect("registry");
         let err = registry
-            .install_addon_from_file(&out)
+            .install_addon_from_file(&out, super::super::registry::SignaturePolicy::AllowUnsigned)
             .expect_err("a tampered module must not install");
         assert!(
             !err.is_empty(),

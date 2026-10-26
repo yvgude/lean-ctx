@@ -116,7 +116,9 @@ pub(super) fn cmd_pack_receive(args: &[String], project_root: &str) {
     let apply = args.iter().any(|a| a == "--apply");
 
     let Some(f) = file else {
-        eprintln!("Usage: lean-ctx pack receive <envelope.json> [--secret <key>] [--apply]");
+        eprintln!(
+            "Usage: lean-ctx pack receive <envelope.json> [--secret <key>] [--apply] [--allow-unsigned]"
+        );
         return;
     };
     let envelope_file = PathBuf::from(f);
@@ -177,7 +179,9 @@ pub(super) fn cmd_pack_receive(args: &[String], project_root: &str) {
                         return;
                     }
                 };
-                match registry.import_from_file(&tmp) {
+                match registry
+                    .import_from_file(&tmp, super::management::local_signature_policy(args))
+                {
                     Ok(manifest) => {
                         eprintln!("Imported: {} v{}", manifest.name, manifest.version);
                         apply_or_report(&manifest.name, &manifest.version, project_root);

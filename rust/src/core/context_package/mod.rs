@@ -36,4 +36,3 @@ pub(crate) use import::resume_package;
 pub(crate) use loader::load_package;
 pub(crate) use manifest::PackageLayer;
 pub(crate) use registry::LocalRegistry;
-pub(crate) use signing::verify_signature;
