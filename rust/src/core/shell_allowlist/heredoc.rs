@@ -103,6 +103,14 @@ pub(crate) fn heredoc_delims_from(
             i += 1;
             continue;
         }
+        // `$(( … ))` and `(( … ))` are arithmetic: their `<<` is a shift. Read
+        // as a heredoc, `echo $((1<<2))` queued a delimiter `2))` and every
+        // following line was dropped as its "body" — commands bash runs
+        // (GHSA-rxv5-4c3x-g4q6 E).
+        if let Some(end) = arithmetic_end(line, i, !in_double) {
+            i = end;
+            continue;
+        }
         if in_double {
             match ch {
                 b'\\' => i = (i + 2).min(len),
@@ -180,6 +188,22 @@ pub(crate) fn heredoc_delims_from(
         subst_depth,
     };
     delims
+}
+
+/// Index past an arithmetic expansion `$(( … ))` — or, with `command_ok`, an
+/// arithmetic command `(( … ))` — starting at `i`. Bash's rule as in #2134:
+/// the inner group must close directly before the final `)`.
+fn arithmetic_end(line: &str, i: usize, command_ok: bool) -> Option<usize> {
+    let rest = &line.as_bytes()[i..];
+    let open = if rest.starts_with(b"$((") {
+        i + 2
+    } else if command_ok && rest.starts_with(b"((") {
+        i + 1
+    } else {
+        return None;
+    };
+    let (_, end) = super::compound::balanced_paren_at(line, open)?;
+    (line.as_bytes().get(end) == Some(&b')')).then_some(end + 1)
 }
 
 /// Parse a heredoc delimiter token starting at `start`, returning its bare name

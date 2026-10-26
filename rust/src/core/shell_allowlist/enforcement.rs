@@ -109,7 +109,10 @@ pub(super) fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
     }
 
     let strict = crate::core::config::Config::load().shell_strict_mode;
-    check_substitution_in_args(cmd)?;
+    // The substitution scanner reads heredocs and comments itself and needs
+    // the unstripped line: with a quoted body already removed it would take
+    // the lines after the `<<'EOF'` operator for that body and skip them.
+    check_substitution_in_args(&normalized)?;
     check_pipe_to_bare_interpreter(cmd, strict)?;
 
     let allowlist = effective_allowlist();
