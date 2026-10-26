@@ -1,6 +1,6 @@
 //! End-to-end tests for deeper addon integration (#1102).
 //!
-//! These drive the *production* gateway path — `proxy` → `scrub_output` →
+//! These drive the *production* gateway path — `proxy` → secret redaction →
 //! `postprocess` → typed adapters — against a **spawned** Node.js MCP server
 //! (`tests/fixtures/mcp_stdio_addon.mjs`), with no protocol mocks. They assert:
 //!   * L2 spill   — oversized output becomes a `ctx_expand` retrieval handle
@@ -200,9 +200,8 @@ async fn proxy_compressed_output_is_deterministic() {
     pool::clear();
 }
 
-/// Security: `scrub_output` runs inside `proxy` *before* post-processing, so a
-/// secret in downstream output never reaches the model — even with all flags off.
-#[ignore = "scrub_output removed in module cleanup"]
+/// Security (GHSA-gvg8-285q-m62g): `proxy` redacts downstream output *before*
+/// post-processing, so a secret never reaches the model — even with all flags off.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(gateway_postprocess)]
 async fn proxy_redacts_secrets_before_postprocessing() {

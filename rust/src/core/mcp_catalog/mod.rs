@@ -84,8 +84,7 @@ pub async fn proxy(
     let result = call?;
     // Downstream output is untrusted content (#866): redact secrets + audit it
     // before it enters the model context.
-    let scrubbed = client::result_to_text(&result);
-    let _ = server_name;
+    let scrubbed = redact_downstream_output(server_name, &client::result_to_text(&result));
     if result.is_error.unwrap_or(false) {
         // Error text is surfaced verbatim (already scrubbed) — never compressed
         // or spilled, so the failure reason stays fully legible.
@@ -98,6 +97,37 @@ pub async fn proxy(
     // `gateway.*_output` flag is set.
     let text = postprocess::process(cfg, server, tool, scrubbed, project_root);
     Ok(text)
+}
+
+/// Redact secrets in downstream MCP output before it reaches the model
+/// (GHSA-gvg8-285q-m62g). Same layers as `ctx_shell` output: the role-aware
+/// redaction pass, then the configured secret scanner, with a security event
+/// for every hit. Applied to success *and* error text.
+fn redact_downstream_output(server_name: &str, text: &str) -> String {
+    let cfg = crate::core::config::Config::load();
+    redact_downstream_output_with(server_name, text, &cfg.secret_detection)
+}
+
+fn redact_downstream_output_with(
+    server_name: &str,
+    text: &str,
+    secret_cfg: &crate::core::config::SecretDetectionConfig,
+) -> String {
+    let text = crate::core::redaction::redact_text_if_enabled(text);
+    let (redacted, matches) = crate::core::secret_detection::scan_and_redact(&text, secret_cfg);
+    if !matches.is_empty() {
+        crate::core::security_events::note(
+            crate::core::security_events::SecurityKind::SecretRedacted,
+            matches.len(),
+        );
+        let names: Vec<&str> = matches.iter().map(|m| m.pattern_name).collect();
+        tracing::warn!(
+            "[GATEWAY SECRET REDACTION] {} secret(s) redacted from `{server_name}` output: {}",
+            matches.len(),
+            names.join(", ")
+        );
+    }
+    redacted
 }
 
 /// Per-server tool counts (for `ctx_tools list`).
@@ -220,6 +250,26 @@ mod tests {
         o.scored.clear();
         let s = render_cards(&o);
         assert!(s.contains("No matching downstream tools"));
+    }
+
+    /// GHSA-gvg8-285q-m62g: downstream output (success and `is_error` text go
+    /// through the same helper) never carries a detected secret verbatim.
+    #[test]
+    fn downstream_output_secrets_are_redacted() {
+        let cfg = crate::core::config::SecretDetectionConfig {
+            enabled: true,
+            redact: true,
+            custom_patterns: Vec::new(),
+            exclude_patterns: Vec::new(),
+        };
+        let secret = concat!("AK", "IAIOSFODNN7EXAMPLE");
+        let error_text = format!("permission denied for aws_key = {secret} (retry later)");
+        let out = redact_downstream_output_with("srv", &error_text, &cfg);
+        assert!(!out.contains(secret), "secret leaked: {out}");
+        assert!(
+            out.contains("retry later"),
+            "redaction must be surgical: {out}"
+        );
     }
 
     #[test]
