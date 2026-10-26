@@ -278,7 +278,8 @@ fn text_output(action: &str, text: String) -> ToolOutput {
     }
 }
 
-#[cfg(test)]
+// The `no-jail` feature turns the path jail off on purpose.
+#[cfg(all(test, not(feature = "no-jail")))]
 mod tests {
     use super::*;
 
@@ -289,8 +290,6 @@ mod tests {
             .text
     }
 
-    // The `no-jail` feature turns the path jail off on purpose.
-    #[cfg(not(feature = "no-jail"))]
     #[test]
     fn okf_export_and_import_paths_stay_in_the_project_jail() {
         let _data = crate::core::data_dir::isolated_data_dir();
