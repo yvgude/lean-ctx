@@ -749,6 +749,14 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
+        "mcp_import_allow_unverified".into(),
+        key(
+            "bool",
+            serde_json::json!(false),
+            "Let MCP tools (ctx_handoff import, ctx_pack import) import bundles and packages that are unsigned or signed by a key not pinned in trusted-signers.toml. A tool argument cannot grant this (prompt injection); CLI imports keep --allow-unsigned. Global-only",
+        ),
+    );
+    root.insert(
         "hook_binary".into(),
         key_with_env(
             "string?",

@@ -327,22 +327,19 @@ pub fn handle_export(name: &str, version: Option<&str>, output: Option<&str>) ->
     }
 }
 
-pub fn handle_import(
-    file_path: &str,
-    apply: bool,
-    allow_unsigned: bool,
-    project_root: &str,
-) -> String {
+pub fn handle_import(file_path: &str, apply: bool, project_root: &str) -> String {
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
         Err(e) => return format!("ERROR: {e}"),
     };
 
-    // GHSA-gvg8-285q-m62g: unsigned packages need an explicit opt-in.
-    let policy = if allow_unsigned {
+    // GHSA-gvg8-285q-m62g: this is the MCP door, so the caller may be a
+    // prompt-injected model. Unsigned or untrusted-signer packages need the
+    // user's global opt-in; no tool argument can grant it.
+    let policy = if crate::core::config::Config::load().mcp_import_allow_unverified {
         crate::core::context_package::registry::SignaturePolicy::AllowUnsigned
     } else {
-        crate::core::context_package::registry::SignaturePolicy::RequireSigned
+        crate::core::context_package::registry::SignaturePolicy::RequireTrustedSigner
     };
     match registry.import_from_file(std::path::Path::new(file_path), policy) {
         Ok(manifest) => {

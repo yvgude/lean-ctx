@@ -126,8 +126,12 @@ fn merge_local_never_weakens_the_context_gateway() {
 fn merge_local_never_accepts_untrusted_a2a_signers() {
     for trusted in [false, true] {
         let mut base = Config::default();
-        base.merge_local("a2a_accept_untrusted_signers = true\n", trusted);
+        base.merge_local(
+            "a2a_accept_untrusted_signers = true\nmcp_import_allow_unverified = true\n",
+            trusted,
+        );
         assert!(!base.a2a_accept_untrusted_signers, "trusted={trusted}");
+        assert!(!base.mcp_import_allow_unverified, "trusted={trusted}");
     }
 }
 

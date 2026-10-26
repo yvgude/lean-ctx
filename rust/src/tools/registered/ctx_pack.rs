@@ -140,10 +140,6 @@ impl McpTool for CtxPackTool {
                         "type": "boolean",
                         "description": "Apply after import (default: false)"
                     },
-                    "allow_unsigned": {
-                        "type": "boolean",
-                        "description": "import: accept an unsigned package (default: false)"
-                    },
                     "enable": {
                         "type": "boolean",
                         "description": "Enable auto-load (default: true)"
@@ -271,8 +267,7 @@ impl McpTool for CtxPackTool {
                 let file = get_str(args, "file")
                     .ok_or_else(|| ErrorData::invalid_params("file is required for import", None))?;
                 let apply = get_bool(args, "apply").unwrap_or(false);
-                let allow_unsigned = get_bool(args, "allow_unsigned").unwrap_or(false);
-                crate::tools::ctx_pack::handle_import(&file, apply, allow_unsigned, &project_root)
+                crate::tools::ctx_pack::handle_import(&file, apply, &project_root)
             }
             "auto_load" => {
                 let name = get_str(args, "name");

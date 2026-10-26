@@ -36,8 +36,7 @@ impl McpTool for CtxHandoffTool {
                     "filename": { "type": "string", "description": "Custom filename for export" },
                     "apply_workflow": { "type": "boolean", "description": "Apply workflow state" },
                     "apply_session": { "type": "boolean", "description": "Apply session snapshot" },
-                    "apply_knowledge": { "type": "boolean", "description": "Import knowledge facts" },
-                    "allow_unsigned": { "type": "boolean", "description": "import: accept an unsigned bundle" }
+                    "apply_knowledge": { "type": "boolean", "description": "Import knowledge facts" }
                 },
                 "allOf": [
                     {
@@ -466,6 +465,16 @@ fn handle_pull(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String, E
     Ok(lines.join("\n"))
 }
 
+/// How the user admits a bundle that the import refused (GHSA-gvg8-285q-m62g).
+const HANDOFF_UNVERIFIED_HINT: &str = "The user can pin the signer key for this agent id in \
+     trusted-signers.toml, or set `mcp_import_allow_unverified = true` in the global config. \
+     A tool argument cannot grant this.";
+
+/// Global-only user opt-in; never merged from project config.
+fn import_unverified_allowed() -> bool {
+    crate::core::config::Config::load().mcp_import_allow_unverified
+}
+
 fn handle_import(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String, ErrorData> {
     let path = get_str(args, "path")
         .ok_or_else(|| ErrorData::invalid_params("path is required for action=import", None))?;
@@ -519,22 +528,31 @@ fn handle_import(args: &Map<String, Value>, ctx: &ToolContext) -> Result<String,
                  Re-export it on the source agent (ctx_handoff export signs automatically)."
             ));
         }
+        // GHSA-gvg8-285q-m62g: imported content is replayed into session and
+        // knowledge stores. Unsigned or untrusted-signer bundles need the
+        // user's global opt-in — a tool argument would let a prompt-injected
+        // model vouch for the file itself.
         crate::core::handoff_transfer_bundle::BundleSignatureStatus::Signed(verified) => {
+            if !verified.trusted && !import_unverified_allowed() {
+                return Ok(format!(
+                    "IMPORT BLOCKED: {}.\n\
+                     A valid signature from a key that is not pinned for this signer proves \
+                     integrity only, not who sent the bundle.\n{HANDOFF_UNVERIFIED_HINT}",
+                    verified.describe()
+                ));
+            }
             format!(" signature: {}", verified.describe())
         }
         crate::core::handoff_transfer_bundle::BundleSignatureStatus::Unsigned => {
-            // GHSA-gvg8-285q-m62g: unsigned content is replayed into session
-            // and knowledge stores, so it needs an explicit opt-in.
-            if !get_bool(args, "allow_unsigned").unwrap_or(false) {
-                return Ok(
+            if !import_unverified_allowed() {
+                return Ok(format!(
                     "IMPORT BLOCKED: bundle is unsigned, so its origin and integrity \
                      cannot be checked.\n\
-                     Re-export it on the source agent (ctx_handoff export signs automatically), \
-                     or pass allow_unsigned=true to import it anyway."
-                        .to_string(),
-                );
+                     Re-export it on the source agent (ctx_handoff export signs automatically).\n\
+                     {HANDOFF_UNVERIFIED_HINT}"
+                ));
             }
-            " signature: WARNING unsigned bundle imported (allow_unsigned=true)".to_string()
+            " signature: WARNING unsigned bundle imported (mcp_import_allow_unverified)".to_string()
         }
     };
 
@@ -683,5 +701,83 @@ fn import_knowledge_from_ledger(
             format!("knowledge import save failed: {e}"),
             None,
         )),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::handoff_transfer_bundle as bundle_mod;
+
+    fn import(root: &std::path::Path, file: &std::path::Path, extra: Value) -> String {
+        let mut args = json!({
+            "action": "import",
+            "path": file.to_string_lossy(),
+            "apply_workflow": false,
+            "apply_session": false,
+            "apply_knowledge": false,
+        });
+        if let (Some(args), Value::Object(extra)) = (args.as_object_mut(), extra) {
+            args.extend(extra);
+        }
+        let ctx = ToolContext {
+            project_root: root.to_string_lossy().to_string(),
+            ..ToolContext::default()
+        };
+        match handle_import(args.as_object().unwrap(), &ctx) {
+            Ok(text) => text,
+            Err(e) => format!("error: {e:?}"),
+        }
+    }
+
+    /// GHSA-gvg8-285q-m62g: over MCP, unsigned and untrusted-signer bundles
+    /// need the user's global opt-in; the model cannot grant it by argument.
+    #[test]
+    fn mcp_import_requires_user_opt_in_for_unverified_bundles() {
+        let data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+
+        let unsigned = bundle_mod::build_bundle_v1(
+            crate::core::handoff_ledger::HandoffLedgerV1::default(),
+            None,
+            bundle_mod::BundlePrivacyV1::Redacted,
+        );
+        let key = ed25519_dalek::SigningKey::from_bytes(&[21u8; 32]);
+        let mut foreign = unsigned.clone();
+        foreign.signer_public_key = Some(crate::core::agent_identity::hex_encode(
+            &key.verifying_key().to_bytes(),
+        ));
+        foreign.signer_agent_id = Some("trusted-release-bot".into());
+        foreign.signature_scheme = Some(bundle_mod::BOUND_SIGNATURE_SCHEME.into());
+        let canonical = serde_json::to_string(&foreign).unwrap();
+        foreign.signature = Some(crate::core::agent_identity::hex_encode(
+            &crate::core::agent_identity::sign_bytes_with(&key, canonical.as_bytes()),
+        ));
+
+        let unsigned_path = project.path().join("unsigned.json");
+        std::fs::write(&unsigned_path, serde_json::to_string(&unsigned).unwrap()).unwrap();
+        let foreign_path = project.path().join("foreign.json");
+        std::fs::write(&foreign_path, serde_json::to_string(&foreign).unwrap()).unwrap();
+
+        for path in [&unsigned_path, &foreign_path] {
+            for extra in [json!({}), json!({"allow_unsigned": true})] {
+                let out = import(project.path(), path, extra);
+                assert!(out.starts_with("IMPORT BLOCKED"), "{out}");
+                assert!(out.contains("mcp_import_allow_unverified"), "{out}");
+                assert!(!out.contains("verified (signer="), "{out}");
+            }
+        }
+
+        let global = crate::core::config::Config::path().unwrap();
+        std::fs::create_dir_all(global.parent().unwrap()).unwrap();
+        std::fs::write(&global, "mcp_import_allow_unverified = true\n").unwrap();
+        for path in [&unsigned_path, &foreign_path] {
+            let out = import(project.path(), path, json!({}));
+            assert!(!out.starts_with("IMPORT BLOCKED"), "{out}");
+        }
+        let out = import(project.path(), &foreign_path, json!({}));
+        assert!(out.contains("(untrusted"), "{out}");
+        std::fs::remove_file(&global).unwrap();
+        drop(data);
     }
 }

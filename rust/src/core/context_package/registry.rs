@@ -414,6 +414,10 @@ impl LocalRegistry {
             // explicit opt-in; remote and network paths never opt in.
             return match policy {
                 SignaturePolicy::AllowUnsigned => Ok(()),
+                SignaturePolicy::RequireTrustedSigner => Err(format!(
+                    "`{}` is unsigned — its origin cannot be checked. {MCP_UNVERIFIED_HINT}",
+                    bundle.manifest.name
+                )),
                 SignaturePolicy::RequireSigned | SignaturePolicy::RequirePinnedPublisher { .. } => {
                     Err(format!(
                         "`{}` is unsigned — its origin cannot be checked. Re-export it with \
@@ -428,6 +432,17 @@ impl LocalRegistry {
             return Err(
                 "signature verification failed — the package was modified after signing".into(),
             );
+        }
+        if policy == SignaturePolicy::RequireTrustedSigner
+            && let Some(fingerprint) = untrusted_package_signer(&bundle.manifest)
+        {
+            return Err(format!(
+                "`{}` is signed by key {fingerprint}, which is not pinned for `{}` in \
+                 trusted-signers.toml — a valid signature from an unknown key proves \
+                 nothing about the publisher. {MCP_UNVERIFIED_HINT}",
+                bundle.manifest.name,
+                publisher_subject(&bundle.manifest.name),
+            ));
         }
         if let SignaturePolicy::RequirePinnedPublisher { namespace } = policy {
             // The key travels inside the package, so a registry could re-sign
@@ -581,6 +596,12 @@ pub(crate) fn parse_context_transfer(
     Ok((bundle.manifest, bundle.content))
 }
 
+/// How a user admits an unverified package that an MCP import refused.
+const MCP_UNVERIFIED_HINT: &str = "The user can pin the publisher key in trusted-signers.toml, \
+     run `lean-ctx pack import <file>` (with --allow-unsigned for an unsigned file) in their own \
+     terminal, or set `mcp_import_allow_unverified = true` in the global config. A tool \
+     argument cannot grant this.";
+
 /// How strictly an install door treats package signatures
 /// (GHSA-gvg8-285q-m62g).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -589,6 +610,9 @@ pub(crate) enum SignaturePolicy<'a> {
     AllowUnsigned,
     /// A valid signature is required (default for local imports).
     RequireSigned,
+    /// A valid signature from a key anchored for the package's publisher
+    /// subject (MCP imports: the model cannot vouch for a file).
+    RequireTrustedSigner,
     /// Remote registry installs: signed, the package belongs to the requested
     /// `namespace`, and the key matches the publisher key pinned for it
     /// (trust on first use).
@@ -1074,6 +1098,41 @@ mod tests {
         let bundle = ExportBundle { manifest, content };
         std::fs::write(&path, serde_json::to_string(&bundle).unwrap()).unwrap();
         path
+    }
+
+    /// GHSA-gvg8-285q-m62g: the MCP door admits only packages whose signer
+    /// key is anchored for the publisher; any self-made key is refused.
+    #[test]
+    fn mcp_imports_require_an_anchored_signer() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+        let dir = tempfile::tempdir().unwrap();
+        let publisher = ed25519_dalek::SigningKey::from_bytes(&[13u8; 32]);
+        let reg = LocalRegistry::open_at(&dir.path().join("reg")).unwrap();
+        let file = write_signed_package(dir.path(), "@acme/mcp", &publisher);
+
+        let err = reg
+            .import_from_file(&file, SignaturePolicy::RequireTrustedSigner)
+            .unwrap_err();
+        assert!(err.contains("not pinned"), "{err}");
+        assert!(err.contains("mcp_import_allow_unverified"), "{err}");
+        assert!(reg.list().unwrap().is_empty());
+        assert!(
+            reg.import_from_file(&file, SignaturePolicy::RequireSigned)
+                .is_ok(),
+            "the CLI door still accepts a valid signature"
+        );
+
+        let reg2 = LocalRegistry::open_at(&dir.path().join("reg2")).unwrap();
+        let pk = crate::core::agent_identity::hex_encode(&publisher.verifying_key().to_bytes());
+        crate::core::signer_trust::pin_if_absent("@acme", &pk, "test").unwrap();
+        let manifest = reg2
+            .import_from_file(&file, SignaturePolicy::RequireTrustedSigner)
+            .unwrap();
+        assert!(untrusted_package_signer(&manifest).is_none());
+
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 
     /// GHSA-gvg8-285q-m62g: a remote install pins the namespace's publisher

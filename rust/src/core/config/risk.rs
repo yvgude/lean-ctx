@@ -54,6 +54,9 @@ pub fn classify(key: &str) -> Option<ConfigRisk> {
         "a2a_accept_untrusted_signers" => {
             "Accepts A2A handoffs and context packages signed by any key, not only keys pinned in trusted-signers.toml. Anyone who can reach the endpoint can then plant content under a self-chosen identity."
         }
+        "mcp_import_allow_unverified" => {
+            "Lets the agent import unsigned or untrusted-signer handoff bundles and context packages into session, knowledge and package stores without asking you."
+        }
         "proxy.anthropic_upstream"
         | "proxy.openai_upstream"
         | "proxy.chatgpt_upstream"
@@ -92,6 +95,7 @@ mod tests {
             "proxy.anthropic_upstream",
             "proxy.gemini_upstream",
             "a2a_accept_untrusted_signers",
+            "mcp_import_allow_unverified",
         ] {
             assert!(is_consequential(key), "{key} should be consequential");
             assert!(
