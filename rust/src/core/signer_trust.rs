@@ -107,6 +107,21 @@ pub(crate) enum PinOutcome {
     Mismatch { pinned_fingerprint: String },
 }
 
+/// Read-only TOFU check: the fingerprint of the key pinned for `subject` when
+/// it differs from `public_key_hex`; `None` when no key or the same key is
+/// pinned. Lets a caller refuse a re-signed artifact *before* installing it
+/// and record the pin with [`pin_if_absent`] only after the install succeeded.
+pub(crate) fn pinned_key_conflict(subject: &str, public_key_hex: &str) -> Option<String> {
+    let key = normalize_key(public_key_hex);
+    load()
+        .signers
+        .iter()
+        .find(|s| s.subject == subject)
+        .map(|existing| normalize_key(&existing.public_key))
+        .filter(|pinned| *pinned != key)
+        .map(|pinned| key_fingerprint(&pinned))
+}
+
 /// Trust-on-first-use pin: record `public_key_hex` for `subject` unless a key
 /// is already pinned, in which case it must match.
 pub(crate) fn pin_if_absent(
@@ -148,6 +163,7 @@ mod tests {
         let key_a = "aa".repeat(32);
         let key_b = "bb".repeat(32);
         assert!(!is_trusted("@acme", &key_a));
+        assert_eq!(pinned_key_conflict("@acme", &key_a), None);
         assert_eq!(
             pin_if_absent("@acme", &key_a, "tofu").unwrap(),
             PinOutcome::NewlyPinned
@@ -163,6 +179,11 @@ mod tests {
             PinOutcome::Mismatch { .. }
         ));
         assert!(!is_trusted("@acme", &key_b));
+        assert_eq!(pinned_key_conflict("@acme", &key_a), None);
+        assert_eq!(
+            pinned_key_conflict("@acme", &key_b),
+            Some(key_fingerprint(&key_a))
+        );
         assert!(
             is_trusted("@acme", &key_a),
             "a rejected key never replaces the pin"

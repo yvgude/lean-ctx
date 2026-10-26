@@ -355,8 +355,8 @@ impl LocalRegistry {
             ));
         }
 
-        Self::verify_bundle_integrity(&bundle, &json, policy)?;
-        self.install(&bundle.manifest, &bundle.content)?;
+        let pending = Self::verify_bundle_integrity(&bundle, &json, policy)?;
+        self.install_then_pin(&bundle, pending)?;
         Ok(bundle.manifest)
     }
 
@@ -391,8 +391,8 @@ impl LocalRegistry {
             ));
         }
 
-        Self::verify_bundle_integrity(&bundle, &json, policy)?;
-        self.install(&bundle.manifest, &bundle.content)?;
+        let pending = Self::verify_bundle_integrity(&bundle, &json, policy)?;
+        self.install_then_pin(&bundle, pending)?;
         Ok(bundle.manifest)
     }
 
@@ -402,7 +402,7 @@ impl LocalRegistry {
         bundle: &ExportBundle,
         json: &str,
         policy: SignaturePolicy<'_>,
-    ) -> Result<(), String> {
+    ) -> Result<Option<PendingPin>, String> {
         let content_text = extract_top_level_value_text(json, "content")
             .ok_or_else(|| "package has no top-level content member".to_string())?;
         verify_integrity(&bundle.manifest, content_text)?;
@@ -413,7 +413,7 @@ impl LocalRegistry {
             // GHSA-gvg8-285q-m62g: unsigned content is only admitted on an
             // explicit opt-in; remote and network paths never opt in.
             return match policy {
-                SignaturePolicy::AllowUnsigned => Ok(()),
+                SignaturePolicy::AllowUnsigned => Ok(None),
                 SignaturePolicy::RequireTrustedSigner => Err(format!(
                     "`{}` is unsigned — its origin cannot be checked. {MCP_UNVERIFIED_HINT}",
                     bundle.manifest.name
@@ -456,29 +456,60 @@ impl LocalRegistry {
                     bundle.manifest.name
                 ));
             }
-            match crate::core::signer_trust::pin_if_absent(
-                &subject,
-                &signature.public_key,
-                "pack-install",
-            )? {
-                crate::core::signer_trust::PinOutcome::Mismatch { pinned_fingerprint } => {
-                    return Err(format!(
-                        "publisher key mismatch for `{subject}`: package signed by key {}, \
-                         but key {pinned_fingerprint} is pinned in trusted-signers.toml — \
-                         refusing a possibly re-signed artifact",
-                        crate::core::signer_trust::key_fingerprint(&signature.public_key),
-                    ));
-                }
-                crate::core::signer_trust::PinOutcome::NewlyPinned => {
-                    tracing::warn!(
-                        "pinned publisher key {} for `{subject}` (trust on first use)",
-                        crate::core::signer_trust::key_fingerprint(&signature.public_key)
-                    );
-                }
-                crate::core::signer_trust::PinOutcome::AlreadyPinned => {}
+            // Only check here; the pin is recorded after a successful install
+            // so a failed install never leaves a trust anchor behind.
+            if let Some(pinned_fingerprint) =
+                crate::core::signer_trust::pinned_key_conflict(&subject, &signature.public_key)
+            {
+                return Err(publisher_mismatch(
+                    &subject,
+                    &signature.public_key,
+                    &pinned_fingerprint,
+                ));
             }
+            return Ok(Some(PendingPin {
+                subject,
+                public_key: signature.public_key.clone(),
+            }));
         }
-        Ok(())
+        Ok(None)
+    }
+
+    /// Install, then record the TOFU publisher pin (GHSA-gvg8-285q-m62g):
+    /// a failed install must not leave a pin for a key nothing was installed
+    /// from.
+    fn install_then_pin(
+        &self,
+        bundle: &ExportBundle,
+        pending: Option<PendingPin>,
+    ) -> Result<(), String> {
+        self.install(&bundle.manifest, &bundle.content)?;
+        let Some(pin) = pending else {
+            return Ok(());
+        };
+        match crate::core::signer_trust::pin_if_absent(
+            &pin.subject,
+            &pin.public_key,
+            "pack-install",
+        )? {
+            crate::core::signer_trust::PinOutcome::Mismatch { pinned_fingerprint } => {
+                // A concurrent install pinned a different key in between.
+                Err(publisher_mismatch(
+                    &pin.subject,
+                    &pin.public_key,
+                    &pinned_fingerprint,
+                ))
+            }
+            crate::core::signer_trust::PinOutcome::NewlyPinned => {
+                tracing::warn!(
+                    "pinned publisher key {} for `{}` (trust on first use)",
+                    crate::core::signer_trust::key_fingerprint(&pin.public_key),
+                    pin.subject
+                );
+                Ok(())
+            }
+            crate::core::signer_trust::PinOutcome::AlreadyPinned => Ok(()),
+        }
     }
 
     fn package_dir(&self, name: &str, version: &str) -> PathBuf {
@@ -594,6 +625,22 @@ pub(crate) fn parse_context_transfer(
     // GHSA-rxv5-4c3x-g4q6 (P): a network peer never delivers unsigned content.
     LocalRegistry::verify_bundle_integrity(&bundle, json, SignaturePolicy::RequireSigned)?;
     Ok((bundle.manifest, bundle.content))
+}
+
+/// A TOFU publisher pin to record once the install succeeded.
+#[derive(Debug)]
+struct PendingPin {
+    subject: String,
+    public_key: String,
+}
+
+fn publisher_mismatch(subject: &str, public_key: &str, pinned_fingerprint: &str) -> String {
+    format!(
+        "publisher key mismatch for `{subject}`: package signed by key {}, but key \
+         {pinned_fingerprint} is pinned in trusted-signers.toml — refusing a possibly \
+         re-signed artifact",
+        crate::core::signer_trust::key_fingerprint(public_key),
+    )
 }
 
 /// How a user admits an unverified package that an MCP import refused.
@@ -1098,6 +1145,36 @@ mod tests {
         let bundle = ExportBundle { manifest, content };
         std::fs::write(&path, serde_json::to_string(&bundle).unwrap()).unwrap();
         path
+    }
+
+    /// GHSA-gvg8-285q-m62g: the TOFU publisher pin is recorded only after the
+    /// install succeeded; a failed install leaves no trust anchor behind.
+    #[test]
+    fn failed_install_leaves_no_publisher_pin() {
+        let _lock = crate::core::data_dir::test_env_lock();
+        let data = tempfile::tempdir().unwrap();
+        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+        let dir = tempfile::tempdir().unwrap();
+        let publisher = ed25519_dalek::SigningKey::from_bytes(&[14u8; 32]);
+        let pk = crate::core::agent_identity::hex_encode(&publisher.verifying_key().to_bytes());
+        let pinned = SignaturePolicy::RequirePinnedPublisher { namespace: "acme" };
+        let file = write_signed_package(dir.path(), "@acme/broken", &publisher);
+
+        // A regular file where the package directory must go fails the install.
+        let reg = LocalRegistry::open_at(&dir.path().join("reg")).unwrap();
+        std::fs::write(dir.path().join("reg").join("@acme"), b"not a dir").unwrap();
+        assert!(reg.import_from_file(&file, pinned).is_err());
+        assert!(
+            !crate::core::signer_trust::is_trusted("@acme", &pk),
+            "a failed install must not pin the publisher key"
+        );
+
+        // A successful install pins it.
+        let reg2 = LocalRegistry::open_at(&dir.path().join("reg2")).unwrap();
+        reg2.import_from_file(&file, pinned).unwrap();
+        assert!(crate::core::signer_trust::is_trusted("@acme", &pk));
+
+        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 
     /// GHSA-gvg8-285q-m62g: the MCP door admits only packages whose signer
