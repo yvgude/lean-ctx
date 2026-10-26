@@ -338,7 +338,7 @@ blake3 = "1.8"
 rayon = "1.12"
 moka = { version = "0.12", features = ["sync"] }
 postcard = { version = "1.1", features = ["use-std"] }
-zstd = "0.13"
+zstd = "0.14.3"
 lsp-types = "0.97"
 fs2 = "0.4"
 unicode-width = "0.2"
