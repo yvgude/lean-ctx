@@ -263,6 +263,8 @@ mod tests {
         let _policy = runtime::lock_test_override();
         let directory = tempfile::tempdir().unwrap();
         let root = directory.path().canonicalize().unwrap();
+        // Project-local providers load only for a trusted workspace.
+        crate::core::workspace_trust::trust(&root).unwrap();
         let configs = root.join(".lean-ctx/providers");
         std::fs::create_dir_all(&configs).unwrap();
         let body = r#"[{"id":"1","title":"K-731842","body":"Investigate login"}]"#;

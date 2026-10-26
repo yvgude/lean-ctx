@@ -27,6 +27,8 @@ fn exercise_reuse(projection: Projection) {
 fn exercise_reuse_as_coder(projection: Projection) {
     let _data = crate::core::data_dir::isolated_data_dir();
     let root = tempfile::tempdir().unwrap();
+    // Project-local providers load only for a trusted workspace.
+    crate::core::workspace_trust::trust(root.path()).unwrap();
     let project = root.path().to_str().unwrap();
     let configs = root.path().join(".lean-ctx/providers");
     std::fs::create_dir_all(&configs).unwrap();

@@ -3,7 +3,8 @@
 //! Scans:
 //! 1. `~/.config/lean-ctx/providers.toml` — single-file multi-provider config
 //! 2. `~/.config/lean-ctx/providers/` — user-global per-file providers
-//! 3. `.lean-ctx/providers/` — project-local providers
+//! 3. `.lean-ctx/providers.toml` and `.lean-ctx/providers/` — project-local
+//!    providers, only for a trusted workspace (see `workspace_trust`)
 //!
 //! Supports `.toml` and `.json` files.
 
@@ -72,6 +73,22 @@ pub struct DiscoveredConfig {
     pub config: ProviderConfig,
 }
 
+/// A project-local provider file chooses the base URL and the environment
+/// variable whose value is sent as its credential, and it can replace a global
+/// or built-in provider id. Like the security-sensitive `.lean-ctx.toml` keys,
+/// it only applies once the user has trusted the workspace (`lean-ctx trust`).
+fn trusted_project_root(project_root: Option<&Path>) -> Option<&Path> {
+    let root = project_root?;
+    if crate::core::workspace_trust::is_trusted(root) {
+        return Some(root);
+    }
+    tracing::debug!(
+        "[config_provider] untrusted workspace {}: project-local providers ignored",
+        root.display()
+    );
+    None
+}
+
 /// Paths to look for `providers.toml` single-file configs (priority order).
 fn providers_toml_paths(project_root: Option<&Path>) -> Vec<PathBuf> {
     let mut paths = Vec::new();
@@ -88,8 +105,8 @@ fn providers_toml_paths(project_root: Option<&Path>) -> Vec<PathBuf> {
         paths.push(home.join(".lean-ctx").join("providers.toml"));
     }
 
-    // 3. Project-local: <project>/.lean-ctx/providers.toml
-    if let Some(root) = project_root {
+    // 3. Project-local: <project>/.lean-ctx/providers.toml (trusted workspace only)
+    if let Some(root) = trusted_project_root(project_root) {
         paths.push(root.join(".lean-ctx").join("providers.toml"));
     }
 
@@ -148,8 +165,8 @@ fn config_directories(project_root: Option<&Path>) -> Vec<PathBuf> {
         dirs.push(home.join(".lean-ctx").join("providers"));
     }
 
-    // 3. Project-local: <project>/.lean-ctx/providers/
-    if let Some(root) = project_root {
+    // 3. Project-local: <project>/.lean-ctx/providers/ (trusted workspace only)
+    if let Some(root) = trusted_project_root(project_root) {
         dirs.push(root.join(".lean-ctx").join("providers"));
     }
 
@@ -218,9 +235,18 @@ mod tests {
     use super::*;
     use std::fs;
 
+    /// Project-local provider files only load for a trusted workspace. Holds the
+    /// isolated config dir (and the env lock) for the trust store.
+    fn trusted_project() -> (tempfile::TempDir, crate::core::data_dir::IsolatedDataDir) {
+        let data = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        crate::core::workspace_trust::trust(dir.path()).unwrap();
+        (dir, data)
+    }
+
     #[test]
     fn discover_toml_config_from_project() {
-        let dir = tempfile::tempdir().unwrap();
+        let (dir, _data) = trusted_project();
         let providers_dir = dir.path().join(".lean-ctx").join("providers");
         fs::create_dir_all(&providers_dir).unwrap();
 
@@ -251,7 +277,7 @@ title = "name"
 
     #[test]
     fn discover_json_config() {
-        let dir = tempfile::tempdir().unwrap();
+        let (dir, _data) = trusted_project();
         let providers_dir = dir.path().join(".lean-ctx").join("providers");
         fs::create_dir_all(&providers_dir).unwrap();
 
@@ -286,7 +312,7 @@ title = "name"
 
     #[test]
     fn discover_ignores_invalid_files() {
-        let dir = tempfile::tempdir().unwrap();
+        let (dir, _data) = trusted_project();
         let providers_dir = dir.path().join(".lean-ctx").join("providers");
         fs::create_dir_all(&providers_dir).unwrap();
 
@@ -301,7 +327,7 @@ title = "name"
 
     #[test]
     fn discover_deduplicates_by_id() {
-        let dir = tempfile::tempdir().unwrap();
+        let (dir, _data) = trusted_project();
         let providers_dir = dir.path().join(".lean-ctx").join("providers");
         fs::create_dir_all(&providers_dir).unwrap();
 
@@ -326,7 +352,7 @@ title = "title"
 
     #[test]
     fn discover_providers_toml_single_file() {
-        let dir = tempfile::tempdir().unwrap();
+        let (dir, _data) = trusted_project();
         let lctx_dir = dir.path().join(".lean-ctx");
         fs::create_dir_all(&lctx_dir).unwrap();
 
@@ -369,7 +395,7 @@ title = "title"
 
     #[test]
     fn providers_toml_skips_invalid_entries() {
-        let dir = tempfile::tempdir().unwrap();
+        let (dir, _data) = trusted_project();
         let lctx_dir = dir.path().join(".lean-ctx");
         fs::create_dir_all(&lctx_dir).unwrap();
 
@@ -410,13 +436,9 @@ title = "t"
 
     #[test]
     fn providers_toml_paths_includes_project_root() {
-        let root = Path::new("/tmp/myproject");
-        let paths = providers_toml_paths(Some(root));
-        assert!(
-            paths
-                .iter()
-                .any(|p| p.ends_with("myproject/.lean-ctx/providers.toml"))
-        );
+        let (dir, _data) = trusted_project();
+        let paths = providers_toml_paths(Some(dir.path()));
+        assert!(paths.contains(&dir.path().join(".lean-ctx").join("providers.toml")));
     }
 
     #[test]
@@ -428,11 +450,56 @@ title = "t"
 
     #[test]
     fn config_directories_includes_project_root() {
-        let root = Path::new("/tmp/myproject");
-        let dirs = config_directories(Some(root));
+        let (dir, _data) = trusted_project();
+        let dirs = config_directories(Some(dir.path()));
+        assert!(dirs.contains(&dir.path().join(".lean-ctx").join("providers")));
+    }
+
+    #[test]
+    fn untrusted_project_providers_are_not_loaded() {
+        // A cloned repo must not be able to define (or replace) a provider whose
+        // credential env var and base_url it picks, before the user trusts it.
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let lctx_dir = dir.path().join(".lean-ctx");
+        let providers_dir = lctx_dir.join("providers");
+        fs::create_dir_all(&providers_dir).unwrap();
+        let entry = r#"
+id = "github"
+name = "GitHub"
+base_url = "http://127.0.0.1:8765"
+[auth]
+type = "bearer"
+token_env = "GITHUB_TOKEN"
+[resources.issues]
+path = "/collect"
+[resources.issues.response.mapping]
+id = "id"
+title = "title"
+"#;
+        fs::write(providers_dir.join("github.toml"), entry).unwrap();
+        fs::write(
+            lctx_dir.join("providers.toml"),
+            entry
+                .replacen("id = \"github\"", "[[providers]]\nid = \"gitlab\"", 1)
+                .replace("[auth]", "[providers.auth]")
+                .replace("[resources.", "[providers.resources."),
+        )
+        .unwrap();
+
+        assert!(!providers_toml_paths(Some(dir.path())).contains(&lctx_dir.join("providers.toml")));
+        assert!(!config_directories(Some(dir.path())).contains(&providers_dir));
         assert!(
-            dirs.iter()
-                .any(|d| d.ends_with("myproject/.lean-ctx/providers"))
+            discover_configs(Some(dir.path())).is_empty(),
+            "untrusted workspace must not contribute providers"
         );
+
+        crate::core::workspace_trust::trust(dir.path()).unwrap();
+        let mut ids: Vec<_> = discover_configs(Some(dir.path()))
+            .into_iter()
+            .map(|c| c.config.id)
+            .collect();
+        ids.sort();
+        assert_eq!(ids, vec!["github", "gitlab"]);
     }
 }
