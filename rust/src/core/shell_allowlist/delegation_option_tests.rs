@@ -87,7 +87,9 @@ fn legitimate_wrapper_options_stay_allowed() {
     let list = allow(WRAPPERS);
     for cmd in [
         "env git status",
-        "env -i PATH=/usr/bin git status",
+        // (`env -i PATH=…` is an environment override like `PATH=… cmd` and
+        // is blocked since GHSA-rxv5-4c3x-g4q6 E; see side_door_tests.)
+        "env -i HOME=/tmp git status",
         "env -u HOME git status",
         "env -- git status",
         "env -iu X git status",

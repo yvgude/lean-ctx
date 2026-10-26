@@ -152,26 +152,26 @@ fn substitutions_in_conditionals_and_after_every_separator_are_gated() {
 }
 
 /// One probe: an input, the shells known to run its marker, and the text the
-/// block reason must contain (`None`: any gate block).
+/// block reason must contain (any one of them).
 struct Probe {
     input: &'static str,
     shells: &'static [&'static str],
-    reason: Option<&'static str>,
+    reasons: &'static [&'static str],
 }
 
 const ALL: &[&str] = &["bash", "dash", "zsh"];
-const SUB: Option<&str> = Some("evil_marker");
-const REFUSED: Option<&str> = Some("cannot be validated");
+const SUB: &[&str] = &["evil_marker"];
+const REFUSED: &[&str] = &["cannot be validated"];
 
 const fn probe(
     input: &'static str,
     shells: &'static [&'static str],
-    reason: Option<&'static str>,
+    reasons: &'static [&'static str],
 ) -> Probe {
     Probe {
         input,
         shells,
-        reason,
+        reasons,
     }
 }
 
@@ -208,13 +208,25 @@ const PROBES: &[Probe] = &[
     probe(
         "{ true } always { evil_marker }",
         &["zsh"],
-        Some("brace body"),
+        &["brace body", "evil_marker"],
     ),
     probe("{ true; evil_marker; } > /dev/null", ALL, SUB),
-    probe("for i (a) evil_marker", &["zsh"], Some("short loop")),
-    probe("repeat 1 { evil_marker }", &["zsh"], Some("brace body")),
+    probe(
+        "for i (a) evil_marker",
+        &["zsh"],
+        &["short loop", "evil_marker"],
+    ),
+    probe(
+        "repeat 1 { evil_marker }",
+        &["zsh"],
+        &["brace body", "evil_marker"],
+    ),
     probe("echo a |& evil_marker", &["bash", "zsh"], SUB),
-    probe("coproc evil_marker", &["bash", "zsh"], Some("coproc")),
+    probe(
+        "coproc evil_marker",
+        &["bash", "zsh"],
+        &["coproc", "evil_marker"],
+    ),
 ];
 
 /// The probe's block reason, without the echoed command (which always names
@@ -256,12 +268,14 @@ fn inputs_that_execute_the_marker_are_blocked() {
             .expect_err(&format!("the gate must block {input:?}"));
         let reason = reason_text(err);
         assert!(reason.starts_with("[BLOCKED"), "{input:?}: {reason}");
-        if let Some(expected) = probe.reason {
-            assert!(
-                reason.contains(expected),
-                "{input:?}: block reason lacks {expected:?}: {reason}"
-            );
-        }
+        assert!(
+            probe
+                .reasons
+                .iter()
+                .any(|expected| reason.contains(expected)),
+            "{input:?}: block reason names none of {:?}: {reason}",
+            probe.reasons
+        );
 
         let shells: Vec<String> = probe
             .shells

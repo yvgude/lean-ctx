@@ -96,9 +96,17 @@ fn assigned_names(segment: &str) -> Vec<String> {
             continue;
         }
         if env && token.starts_with('-') {
-            // `env -S 'PATH=… cmd'` splits its argument into words.
-            if token == "-S" || token.starts_with("--split-string") {
-                return vec!["env -S".to_string()];
+            // `env -S 'PATH=… cmd'` splits its argument into words, which
+            // are read like the rest of an `env` command line.
+            let split = match token.as_str() {
+                "-S" | "--split-string" => Some(tokens.get(i + 1).map_or("", String::as_str)),
+                t if t.starts_with("--split-string=") => Some(&t["--split-string=".len()..]),
+                t if t.starts_with("-S") => Some(&t[2..]),
+                _ => None,
+            };
+            if let Some(split) = split {
+                names.extend(assigned_names(&format!("env {split}")));
+                break;
             }
             skip_next = ENV_OPTIONS_WITH_ARG.contains(&token.as_str());
             continue;
@@ -132,7 +140,7 @@ fn assigned_names(segment: &str) -> Vec<String> {
 pub(super) fn check_env_assignments(segment: &str) -> Result<(), ShellError> {
     let Some(entry) = assigned_names(segment)
         .into_iter()
-        .find(|entry| entry == "env -S" || is_blocked_assignment(entry))
+        .find(|entry| is_blocked_assignment(entry))
     else {
         return Ok(());
     };

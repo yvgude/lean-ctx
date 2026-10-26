@@ -62,6 +62,9 @@ fn resolve_segment_leaves(
         .into());
     }
     let mut s = segment.trim();
+    if is_zsh_short_loop(strip_body_intro_keywords(s)) {
+        return Err(zsh_only_form(segment));
+    }
     // GH #2134: `(( expr ))` is arithmetic evaluation, like `$(( ))` (#1664),
     // not a nested subshell or a PowerShell `( … )` expression. Walking it as
     // one made a variable (`i`) or an expression fragment (`i++`) the command
@@ -101,15 +104,6 @@ fn resolve_segment_leaves(
             return Ok(()); // empty → no command
         };
         let kw = first.as_str();
-        // zsh's short loop `for x (a b) cmd` runs `cmd` from the header
-        // segment itself (GHSA-rxv5-4c3x-g4q6 E); bash has no such form.
-        if matches!(kw, "for" | "select" | "foreach")
-            && tokens[1..]
-                .iter()
-                .any(|t| t.starts_with('(') && !t.starts_with("(("))
-        {
-            return Err(zsh_only_form(segment));
-        }
         if HEADER_KEYWORDS.contains(&kw) {
             return Ok(()); // loop header / terminator carries no leaf command
         }
@@ -153,7 +147,15 @@ fn resolve_segment_leaves(
     // each inner command as its own leaf. This is a validation-only walk — the
     // command string is never rewritten — so the cd/env-persistence property
     // that #939 relied on (why it declined to recurse) is unaffected.
-    if let Some(inner) = balanced_brace_inner(s) {
+    //
+    // GHSA-rxv5-4c3x-g4q6 E: a trailing redirection binds the group's
+    // descriptors (`{ a; b; } > out`), as for a subshell (#1751), so the group
+    // is still recursed into — it used to be checked by `a` alone. Anything
+    // else after the `}` (`{ a; } b`, zsh `{ a } always { b }`) is refused.
+    if let Some((inner, suffix)) = brace_group(s) {
+        if !suffix.trim().is_empty() && !is_redirect_only_suffix(suffix) {
+            return Err(zsh_only_form(segment));
+        }
         for inner_seg in extract_all_commands(inner) {
             resolve_segment_leaves(&inner_seg, depth + 1, out)?;
         }
@@ -189,12 +191,6 @@ fn resolve_segment_leaves(
     // (`ForEach-Object { Remove-Item $_ }`), so each block body is resolved
     // into leaves of its own, after the cmdlet itself so its verdict comes
     // first.
-    // GHSA-rxv5-4c3x-g4q6 E: a brace group with anything but redirections
-    // after it (`{ a; } b`, zsh `{ a } always { b }`) would be checked by its
-    // first command only.
-    if s.starts_with('{') && matches!(s.as_bytes().get(1), Some(b' ' | b'\t' | b'\n')) {
-        return Err(zsh_only_form(segment));
-    }
     let base = extract_base_from_segment(s);
     let bodies = super::ps_statements::script_block_bodies(s, &base);
     // zsh runs brace bodies without `do`/`then`: `while true { cmd }`,
@@ -212,6 +208,22 @@ fn resolve_segment_leaves(
         resolve_block_body(&body, depth, out)?;
     }
     Ok(())
+}
+
+/// zsh's short loop `for x (a b) cmd` / `foreach x (a b)` runs `cmd` from
+/// the header segment itself (GHSA-rxv5-4c3x-g4q6 E); bash has no such form.
+/// Checked before the PowerShell walk, which would read `(a b)` as a loop
+/// header and drop `cmd`. PowerShell's own `for (…)`/`foreach (…)` put the
+/// parenthesis right after the keyword and stay with that walk.
+fn is_zsh_short_loop(s: &str) -> bool {
+    let tokens = shell_tokenize(s);
+    matches!(
+        tokens.first().map(String::as_str),
+        Some("for" | "select" | "foreach")
+    ) && tokens.get(1).is_some_and(|name| !name.starts_with('('))
+        && tokens[2..]
+            .iter()
+            .any(|t| t.starts_with('(') && !t.starts_with("(("))
 }
 
 fn zsh_only_form(segment: &str) -> ShellError {
@@ -682,6 +694,13 @@ fn balanced_paren_inner(segment: &str) -> Option<&str> {
 /// (trailing content → falls through to base extraction), matching the paren
 /// walker; such a form is a shell syntax error anyway.
 pub(super) fn balanced_brace_inner(segment: &str) -> Option<&str> {
+    brace_group(segment).and_then(|(inner, suffix)| suffix.is_empty().then_some(inner))
+}
+
+/// A closed `{ … }` brace group at the start of `segment`: its inner command
+/// list and the text after the closing `}`. `None` when `segment` does not
+/// open a group or the group never closes.
+fn brace_group(segment: &str) -> Option<(&str, &str)> {
     let trimmed = segment.trim();
     let bytes = trimmed.as_bytes();
     if bytes.first() != Some(&b'{') {
@@ -724,12 +743,7 @@ pub(super) fn balanced_brace_inner(segment: &str) -> Option<&str> {
             b'}' => {
                 depth -= 1;
                 if depth == 0 {
-                    // A trailing redirection binds the group's descriptors
-                    // (`{ a; b; } > out`), as for a subshell (#1751): the
-                    // group must still be recursed into, or only `a` is
-                    // checked (GHSA-rxv5-4c3x-g4q6 E).
-                    return (i == len - 1 || is_redirect_only_suffix(&trimmed[i + 1..]))
-                        .then(|| trimmed[1..i].trim());
+                    return Some((trimmed[1..i].trim(), &trimmed[i + 1..]));
                 }
             }
             _ => {}
