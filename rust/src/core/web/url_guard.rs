@@ -167,13 +167,26 @@ pub fn ip_is_blocked(ip: IpAddr) -> bool {
             }
             // Transition prefixes that embed an IPv4 destination (GHSA-h693-v7jv-vmv9).
             let v4 = |hi: u16, lo: u16| Ipv4Addr::from((u32::from(hi) << 16) | u32::from(lo));
-            match v6.segments() {
+            let segments = v6.segments();
+            // ISATAP (RFC 5214): any /64 prefix with interface ID
+            // `0:5efe:a.b.c.d`, or `200:5efe:…` with the universal/local bit
+            // (the group bit is masked too). Checked independently of the
+            // prefix forms below, which an ISATAP interface ID can share.
+            if segments[4] & !0x0300 == 0
+                && segments[5] == 0x5efe
+                && v4_is_blocked(v4(segments[6], segments[7]))
+            {
+                return true;
+            }
+            match segments {
                 // NAT64 well-known prefix 64:ff9b::/96 (RFC 6052), 6to4 2002::/16
-                // (RFC 3056, v4 in bits 16..48) and deprecated IPv4-compatible
-                // ::a.b.c.d (RFC 4291; `::` and `::1` land in 0.0.0.0/8, blocked).
+                // (RFC 3056, v4 in bits 16..48), deprecated IPv4-compatible
+                // ::a.b.c.d (RFC 4291; `::` and `::1` land in 0.0.0.0/8, blocked)
+                // and SIIT IPv4-translated ::ffff:0:a.b.c.d (RFC 2765).
                 [0x64, 0xff9b, 0, 0, 0, 0, hi, lo]
                 | [0x2002, hi, lo, ..]
-                | [0, 0, 0, 0, 0, 0, hi, lo] => return v4_is_blocked(v4(hi, lo)),
+                | [0, 0, 0, 0, 0, 0, hi, lo]
+                | [0, 0, 0, 0, 0xffff, 0, hi, lo] => return v4_is_blocked(v4(hi, lo)),
                 // NAT64 local-use 64:ff9b:1::/48 (RFC 8215): the operator picks the
                 // prefix length, so the embedded v4 cannot be located; never public.
                 [0x64, 0xff9b, 1, ..] => return true,
@@ -186,8 +199,10 @@ pub fn ip_is_blocked(ip: IpAddr) -> bool {
             }
             v6.is_loopback()
                 || v6.is_unspecified()
+                || v6.is_multicast()
                 || is_unique_local_v6(v6)
                 || is_link_local_v6(v6)
+                || is_site_local_v6(v6)
         }
     }
 }
@@ -233,10 +248,19 @@ fn v4_is_blocked(v4: Ipv4Addr) -> bool {
         || o[0] == 0
         // 100.64.0.0/10 carrier-grade NAT.
         || (o[0] == 100 && (o[1] & 0xc0) == 64)
+        // 224.0.0.0/4 multicast and 240.0.0.0/4 reserved (incl. broadcast).
+        || o[0] >= 224
+        // 198.18.0.0/15 benchmarking (RFC 2544), routed to internal test nets.
+        || (o[0] == 198 && (o[1] & 0xfe) == 18)
 }
 
 fn is_unique_local_v6(v6: Ipv6Addr) -> bool {
     (v6.segments()[0] & 0xfe00) == 0xfc00
+}
+
+/// fec0::/10, deprecated site-local (RFC 3879) — still routed internally.
+fn is_site_local_v6(v6: Ipv6Addr) -> bool {
+    (v6.segments()[0] & 0xffc0) == 0xfec0
 }
 
 fn is_link_local_v6(v6: Ipv6Addr) -> bool {
@@ -359,6 +383,69 @@ mod tests {
             // Teredo: server 8.8.8.8, client 1.1.1.1 (inverted fefe:fefe).
             "2001:0:808:808:0:0:fefe:fefe",
             "::808:808",
+        ] {
+            assert!(!ip_is_blocked(ip.parse().unwrap()), "{ip} must be allowed");
+        }
+    }
+
+    /// GHSA-h693-v7jv-vmv9 residuals: SIIT, ISATAP, IPv6 multicast and
+    /// site-local, IPv4 multicast/reserved and benchmarking ranges.
+    #[test]
+    fn blocks_siit_isatap_multicast_site_local_and_benchmarking() {
+        for ip in [
+            // SIIT IPv4-translated ::ffff:0:a.b.c.d.
+            "::ffff:0:a9fe:a9fe",
+            "::ffff:0:7f00:1",
+            "::ffff:0:a00:1",
+            // ISATAP interface IDs (local and universal) embedding internal v4.
+            "2001:db8::5efe:a9fe:a9fe",
+            "2606:4700::200:5efe:7f00:1",
+            "2606:4700::5efe:a00:1",
+            "fe80::200:5efe:c0a8:101",
+            // IPv6 multicast ff00::/8 and site-local fec0::/10.
+            "ff02::1",
+            "ff05::2",
+            "ff0e::1",
+            "fec0::1",
+            "feff::1",
+            // IPv4 multicast, reserved and benchmarking.
+            "224.0.0.1",
+            "239.255.255.250",
+            "240.0.0.1",
+            "198.18.0.1",
+            "198.19.255.255",
+        ] {
+            assert!(ip_is_blocked(ip.parse().unwrap()), "{ip} must be blocked");
+            let u = validate(&format!(
+                "http://{}/",
+                if ip.contains(':') {
+                    format!("[{ip}]")
+                } else {
+                    ip.to_string()
+                }
+            ))
+            .unwrap();
+            assert!(
+                matches!(u.ensure_resolves_safely(), Err(UrlError::Blocked(_))),
+                "{ip} must be refused by ensure_resolves_safely"
+            );
+        }
+    }
+
+    #[test]
+    fn allows_public_neighbours_of_the_new_blocked_ranges() {
+        for ip in [
+            // SIIT and ISATAP embedding public v4 stay allowed.
+            "::ffff:0:808:808",
+            "2606:4700::5efe:808:808",
+            "2606:4700::200:5efe:101:101",
+            // Global unicast neighbours of fec0::/10 and ff00::/8.
+            "2001:4860:4860::8888",
+            "fe00::1",
+            // Public v4 next to the benchmarking and multicast ranges.
+            "198.17.255.255",
+            "198.20.0.1",
+            "223.255.255.254",
         ] {
             assert!(!ip_is_blocked(ip.parse().unwrap()), "{ip} must be allowed");
         }
