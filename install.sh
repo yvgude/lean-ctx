@@ -148,6 +148,19 @@ detect_target() {
   esac
 }
 
+# Checksum verification fails closed (GHSA-rxv5-4c3x-g4q6 D): a missing
+# SHA256SUMS, a missing entry or a missing hash tool aborts before anything
+# is installed, so a blocked or stripped checksum fetch cannot downgrade the
+# install to an unverified binary.
+require_sha256_tool() {
+  if command -v sha256sum >/dev/null 2>&1 || command -v shasum >/dev/null 2>&1; then
+    return 0
+  fi
+  echo "Error: neither sha256sum nor shasum is available; refusing to install an unverified binary." >&2
+  echo "  Install coreutils (sha256sum) or perl (shasum) and re-run the installer." >&2
+  exit 1
+}
+
 verify_checksum() {
   file="$1"
   expected="$2"
@@ -156,11 +169,10 @@ verify_checksum() {
   elif command -v shasum >/dev/null 2>&1; then
     actual="$(shasum -a 256 "$file" | cut -d' ' -f1)"
   else
-    echo "Warning: no sha256sum/shasum found, skipping checksum verification"
-    return 0
+    require_sha256_tool
   fi
 
-  if [ "$actual" != "$expected" ]; then
+  if [ -z "$expected" ] || [ "$actual" != "$expected" ]; then
     echo "Error: checksum mismatch!"
     echo "  Expected: $expected"
     echo "  Got:      $actual"
@@ -201,6 +213,7 @@ install_download() {
   echo "Mode: download pre-built binary"
   echo "Platform: $target"
   echo ""
+  require_sha256_tool
 
   echo "Fetching latest release..."
   latest="$(curl -fsSL "https://api.github.com/repos/${REPO}/releases/latest" \
@@ -226,14 +239,21 @@ install_download() {
   fi
 
   echo "Downloading checksums..."
-  if curl -fsSL "$sums_url" -o "$tmpdir/SHA256SUMS" 2>/dev/null; then
-    expected="$(grep "lean-ctx-${target}.tar.gz" "$tmpdir/SHA256SUMS" | cut -d' ' -f1)"
-    if [ -n "$expected" ]; then
-      verify_checksum "$tmpdir/lean-ctx.tar.gz" "$expected"
-    fi
-  else
-    echo "  Warning: checksums not available, skipping verification"
+  if ! curl -fsSL "$sums_url" -o "$tmpdir/SHA256SUMS"; then
+    echo "Error: could not download SHA256SUMS for ${latest}; refusing to install an unverified binary." >&2
+    echo "  Check your network/proxy and retry, or verify manually: https://github.com/${REPO}/releases/tag/${latest}" >&2
+    exit 1
   fi
+  # Exact file-name match (sha256sum text or binary mode); exactly one entry.
+  expected="$(awk -v name="lean-ctx-${target}.tar.gz" \
+    '{ f = $2; sub(/^\*/, "", f) } f == name { print $1; n++ } END { if (n != 1) exit 1 }' \
+    "$tmpdir/SHA256SUMS")" || expected=""
+  if [ -z "$expected" ]; then
+    echo "Error: SHA256SUMS for ${latest} has no unique entry for lean-ctx-${target}.tar.gz; refusing to install." >&2
+    exit 1
+  fi
+  verify_checksum "$tmpdir/lean-ctx.tar.gz" "$expected"
+  echo "  Signed checksums: verify SHA256SUMS with cosign, see https://github.com/${REPO}/blob/main/SECURITY.md#verifying-release-artifacts"
 
   tar -xzf "$tmpdir/lean-ctx.tar.gz" -C "$tmpdir"
 

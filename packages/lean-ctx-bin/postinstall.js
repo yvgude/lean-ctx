@@ -365,6 +365,72 @@ async function fetchRelease() {
 }
 
 // ---------------------------------------------------------------------------
+// Checksum verification — fails closed (GHSA-rxv5-4c3x-g4q6 D): a release
+// without SHA256SUMS, a failed checksum fetch, a missing/duplicate entry or a
+// digest mismatch aborts before anything is extracted.
+// ---------------------------------------------------------------------------
+
+function expectedSha256(sumsText, assetName) {
+  const matches = [];
+  for (const line of sumsText.split(/\r?\n/)) {
+    const fields = line.trim().split(/\s+/);
+    if (fields.length !== 2) continue;
+    if (fields[1].replace(/^\*/, "") === assetName) matches.push(fields[0].toLowerCase());
+  }
+  if (matches.length !== 1 || !/^[0-9a-f]{64}$/.test(matches[0])) return null;
+  return matches[0];
+}
+
+// Same fallback chain as the binary download so a proxy that only Node's TLS
+// stack trips over does not turn into a hard checksum failure.
+async function fetchText(url) {
+  try {
+    const res = await httpsGet(url);
+    return await new Promise((resolve, reject) => {
+      let data = "";
+      res.setEncoding("utf8");
+      res.on("data", (c) => (data += c));
+      res.on("end", () => resolve(data));
+      res.on("error", reject);
+    });
+  } catch (nodeErr) {
+    const canFallback = IS_WIN || curlAvailable();
+    if (!canFallback) throw nodeErr;
+    const tmp = fs.mkdtempSync(path.join(require("os").tmpdir(), "lean-ctx-sums-"));
+    try {
+      const dest = path.join(tmp, "SHA256SUMS");
+      if (IS_WIN) powershellDownload(url, dest);
+      else curlDownload(url, dest);
+      return fs.readFileSync(dest, "utf8");
+    } finally {
+      fs.rmSync(tmp, { recursive: true, force: true });
+    }
+  }
+}
+
+async function verifyArchiveChecksum(release, assetName, archivePath, fetch = fetchText) {
+  const sumsAsset = (release.assets || []).find((a) => a.name === "SHA256SUMS");
+  if (!sumsAsset) {
+    throw new Error(`release ${release.tag_name} has no SHA256SUMS asset; refusing to install an unverified binary.`);
+  }
+  let sumsText;
+  try {
+    sumsText = await fetch(sumsAsset.browser_download_url);
+  } catch (err) {
+    throw new Error(`could not download SHA256SUMS (${err.message}); refusing to install an unverified binary.`);
+  }
+  const expectedHash = expectedSha256(sumsText, assetName);
+  if (!expectedHash) {
+    throw new Error(`SHA256SUMS has no unique entry for ${assetName}; refusing to install.`);
+  }
+  const fileHash = crypto.createHash("sha256").update(fs.readFileSync(archivePath)).digest("hex");
+  if (fileHash !== expectedHash) {
+    throw new Error(`SHA256 mismatch for ${assetName}: expected ${expectedHash}, got ${fileHash}. Binary may be compromised.`);
+  }
+  console.log("lean-ctx: SHA256 verified ✓");
+}
+
+// ---------------------------------------------------------------------------
 // Main
 // ---------------------------------------------------------------------------
 
@@ -398,31 +464,7 @@ async function main() {
   try {
     await downloadToFile(asset.browser_download_url, archivePath);
 
-    // SHA256 verification
-    const sumsAsset = (release.assets || []).find((a) => a.name === "SHA256SUMS");
-    if (sumsAsset) {
-      try {
-        const sumsText = await new Promise((resolve, reject) => {
-          httpsGet(sumsAsset.browser_download_url).then((res) => {
-            let data = "";
-            res.on("data", (c) => (data += c));
-            res.on("end", () => resolve(data));
-          }).catch(reject);
-        });
-        const expectedLine = sumsText.split("\n").find((l) => l.includes(assetName));
-        if (expectedLine) {
-          const expectedHash = expectedLine.trim().split(/\s+/)[0].toLowerCase();
-          const fileHash = crypto.createHash("sha256").update(fs.readFileSync(archivePath)).digest("hex");
-          if (fileHash !== expectedHash) {
-            throw new Error(`SHA256 mismatch: expected ${expectedHash}, got ${fileHash}. Binary may be compromised.`);
-          }
-          console.log("lean-ctx: SHA256 verified \u2713");
-        }
-      } catch (hashErr) {
-        if (hashErr.message.includes("mismatch")) throw hashErr;
-        console.log("lean-ctx: SHA256 check skipped (checksum fetch failed)");
-      }
-    }
+    await verifyArchiveChecksum(release, assetName, archivePath);
 
     console.log("lean-ctx: extracting...");
 
