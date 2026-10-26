@@ -414,9 +414,10 @@ fn rotate_locked(file: &mut fs::File, path: &Path, max_segment_bytes: u64) -> Re
         && let Ok(newest_file) = fs::File::open(newest)
         && read_last_hash_tail(&newest_file).ok() == read_last_hash_tail(file).ok()
     {
-        return file
-            .set_len(0)
-            .map_err(|e| format!("audit truncate after rotation: {e}"));
+        // The archive's directory entry may itself not be durable yet (the
+        // crash may have hit before its fsync); persist it before truncating.
+        sync_trail_dir(path)?;
+        return truncate_active(file);
     }
     let target = archive_path(path, archives.last().map_or(1, |(seq, _)| seq + 1));
     let tmp = target.with_extension("rotating");
@@ -431,6 +432,25 @@ fn rotate_locked(file: &mut fs::File, path: &Path, max_segment_bytes: u64) -> Re
         let _ = fs::remove_file(&tmp);
         return Err(format!("audit archive write: {error}"));
     }
+    // The rename must be durable before the truncate: otherwise a power loss
+    // could persist the (in-place) truncate but lose the directory entry of
+    // the archive, i.e. lose the whole segment. On failure the active segment
+    // stays untouched and the next append retries via the recovery branch.
+    sync_trail_dir(path)?;
+    truncate_active(file)
+}
+
+/// `fsync` the directory holding the trail so a preceding rename into it is
+/// durable (GHSA-jhf9-3pv4-m469).
+fn sync_trail_dir(path: &Path) -> Result<(), String> {
+    let dir = path
+        .parent()
+        .filter(|dir| !dir.as_os_str().is_empty())
+        .unwrap_or(Path::new("."));
+    super::atomic_fs::sync_directory(dir).map_err(|e| format!("audit archive dir sync: {e}"))
+}
+
+fn truncate_active(file: &fs::File) -> Result<(), String> {
     file.set_len(0)
         .and_then(|()| file.sync_data())
         .map_err(|e| format!("audit truncate after rotation: {e}"))
@@ -952,6 +972,30 @@ mod tests {
         // Deleting an archived segment breaks verification (no silent pruning).
         std::fs::remove_file(&archives[0].1).unwrap();
         assert!(!verify_chain_at(&path).valid);
+    }
+
+    /// GHSA-jhf9-3pv4-m469: a crash after the archive rename but before the
+    /// truncate leaves the active segment as a duplicate of the archive; the
+    /// next append syncs the directory, truncates, and keeps one chain.
+    #[test]
+    fn rotation_recovers_a_crash_between_rename_and_truncate() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trail.jsonl");
+        for i in 0..5 {
+            try_record_at_capped(&path, tool_call(&format!("tool_{i}")), u64::MAX).unwrap();
+        }
+        std::fs::copy(&path, archive_path(&path, 1)).unwrap();
+
+        try_record_at_capped(&path, tool_call("tool_5"), 1).unwrap();
+        assert_eq!(archive_segments(&path).len(), 1, "no second archive");
+        assert_eq!(load_all_at(&archive_path(&path, 1)).len(), 5);
+        let active = std::fs::read_to_string(&path).unwrap();
+        assert_eq!(active.lines().count(), 1, "duplicate truncated: {active}");
+        let chain = verify_chain_at(&path);
+        assert!(chain.valid, "{:?}", chain.first_invalid_at);
+        assert_eq!(chain.total_entries, 6);
+        assert!(sync_trail_dir(&path).is_ok());
     }
 
     #[test]
