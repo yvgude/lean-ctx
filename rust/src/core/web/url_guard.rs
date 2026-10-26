@@ -185,8 +185,7 @@ pub fn ip_is_blocked(ip: IpAddr) -> bool {
                 // and SIIT IPv4-translated ::ffff:0:a.b.c.d (RFC 2765).
                 [0x64, 0xff9b, 0, 0, 0, 0, hi, lo]
                 | [0x2002, hi, lo, ..]
-                | [0, 0, 0, 0, 0, 0, hi, lo]
-                | [0, 0, 0, 0, 0xffff, 0, hi, lo] => return v4_is_blocked(v4(hi, lo)),
+                | [0, 0, 0, 0, 0 | 0xffff, 0, hi, lo] => return v4_is_blocked(v4(hi, lo)),
                 // NAT64 local-use 64:ff9b:1::/48 (RFC 8215): the operator picks the
                 // prefix length, so the embedded v4 cannot be located; never public.
                 [0x64, 0xff9b, 1, ..] => return true,
