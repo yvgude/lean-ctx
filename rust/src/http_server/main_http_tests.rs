@@ -1372,12 +1372,7 @@ async fn relay_context_packages_validate_before_storage() {
             .await
             .unwrap();
         assert_eq!(response.status(), expected);
-        if expected != StatusCode::OK {
-            assert!(
-                !packages.exists(),
-                "invalid package must not create storage"
-            );
-        } else {
+        if expected == StatusCode::OK {
             accepted += 1;
             let files = std::fs::read_dir(&packages)
                 .unwrap()
@@ -1388,6 +1383,11 @@ async fn relay_context_packages_validate_before_storage() {
                 files
                     .iter()
                     .any(|entry| std::fs::read_to_string(entry.path()).unwrap() == payload)
+            );
+        } else {
+            assert!(
+                !packages.exists(),
+                "rejected package must not create storage"
             );
         }
     }
