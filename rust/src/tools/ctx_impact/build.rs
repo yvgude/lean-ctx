@@ -42,6 +42,12 @@ fn walk_supported_sources(root_path: &Path) -> (Vec<String>, Vec<(String, String
             .to_string_lossy()
             .replace('\\', "/");
 
+        // Secret-like paths never enter the persisted property graph, same
+        // rule as the BM25 walk (GHSA-rxv5-4c3x-g4q6 A).
+        if crate::core::io_boundary::is_secret_like(Path::new(&rel_path)).is_some() {
+            continue;
+        }
+
         file_paths.push(rel_path.clone());
 
         if let Ok(content) = std::fs::read_to_string(path) {

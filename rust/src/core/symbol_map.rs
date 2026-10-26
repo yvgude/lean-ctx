@@ -50,6 +50,12 @@ fn auto_detect_large_project() -> bool {
             .filter_map(std::result::Result::ok)
             .filter(|e| {
                 e.file_type().is_some_and(|ft| ft.is_file())
+                    // Same corpus rule as the persisted index walks
+                    // (GHSA-rxv5-4c3x-g4q6 A).
+                    && crate::core::io_boundary::is_secret_like(
+                        e.path().strip_prefix(&cwd).unwrap_or(e.path()),
+                    )
+                    .is_none()
                     && e.path()
                         .extension()
                         .and_then(|ext| ext.to_str())

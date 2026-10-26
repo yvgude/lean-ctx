@@ -547,6 +547,16 @@ fn index_looks_stale(index: &ProjectIndex, root_abs: &str) -> bool {
         return true;
     }
 
+    // An index persisted before secret-like paths were excluded from the scan
+    // must be rebuilt, which drops them (GHSA-rxv5-4c3x-g4q6 A).
+    if index
+        .files
+        .keys()
+        .any(|rel| crate::core::io_boundary::is_secret_like(Path::new(rel)).is_some())
+    {
+        return true;
+    }
+
     // TTL check: rebuild if index is older than configured max_age_hours
     if let Ok(scan_time) =
         chrono::NaiveDateTime::parse_from_str(&index.last_scan, "%Y-%m-%d %H:%M:%S")
@@ -691,7 +701,9 @@ fn source_content_changed_since_index(index: &ProjectIndex, root_abs: &str) -> b
         }
         // Candidate: confirm against the stored content hash.
         let rel = make_relative(&path.to_string_lossy(), root_abs);
-        if index_filter.is_excluded(&rel.replace('\\', "/")) {
+        if index_filter.is_excluded(&rel.replace('\\', "/"))
+            || crate::core::io_boundary::is_secret_like(Path::new(&rel)).is_some()
+        {
             continue;
         }
         let Some(file_entry) = index.files.get(&rel) else {
@@ -913,6 +925,12 @@ fn scan_inner(project_root: &str) -> (ProjectIndex, HashMap<String, String>) {
         }
 
         let rel = make_relative(&file_path, &project_root);
+        // Secret-like paths never enter the persisted graph index, whatever
+        // the role or gateway setting — same rule as the BM25 walk
+        // (GHSA-rxv5-4c3x-g4q6 A).
+        if crate::core::io_boundary::is_secret_like(Path::new(&rel)).is_some() {
+            continue;
+        }
         if extra_ignores.iter().any(|p| p.matches(&rel)) {
             continue;
         }

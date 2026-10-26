@@ -1208,3 +1208,48 @@ fn build_edges_cached_is_deterministic_across_runs() {
 
     assert_eq!(build(), build(), "edge build must be deterministic");
 }
+
+/// GHSA-rxv5-4c3x-g4q6 A: secret-like paths never enter the persisted graph
+/// index, and an index persisted with one is rebuilt.
+#[test]
+fn scan_skips_secret_like_paths_and_old_indexes_tracking_them_are_stale() {
+    let _env = crate::core::data_dir::test_env_lock();
+    let td = tempdir().expect("tempdir");
+    std::fs::write(
+        td.path().join("Cargo.toml"),
+        "[package]\nname = \"t\"\nversion = \"0.1.0\"\n",
+    )
+    .unwrap();
+    std::fs::write(td.path().join("a.rs"), "pub fn a() {}\n").unwrap();
+    for dir in [".aws", ".ssh"] {
+        std::fs::create_dir_all(td.path().join(dir)).unwrap();
+    }
+    std::fs::write(
+        td.path().join(".aws").join("creds.py"),
+        "AWS_SECRET = 'x'\ndef leak():\n    return AWS_SECRET\n",
+    )
+    .unwrap();
+    std::fs::write(td.path().join(".ssh").join("rc.sh"), "leak() { :; }\n").unwrap();
+    let root_s = normalize_project_root(&td.path().to_string_lossy());
+
+    let idx = scan(&root_s);
+    assert!(idx.files.contains_key("a.rs"), "{:?}", idx.files.keys());
+    assert!(
+        idx.files
+            .keys()
+            .all(|rel| crate::core::io_boundary::is_secret_like(Path::new(rel)).is_none()),
+        "secret-like path indexed: {:?}",
+        idx.files.keys()
+    );
+    assert!(!index_looks_stale(&idx, &root_s), "fresh scan is not stale");
+
+    let mut legacy = idx.clone();
+    legacy.files.insert(
+        ".aws/creds.py".to_string(),
+        fe(".aws/creds.py", "AWS_SECRET = 'x'\n", "py"),
+    );
+    assert!(
+        index_looks_stale(&legacy, &root_s),
+        "an index tracking a secret-like path must be rebuilt"
+    );
+}

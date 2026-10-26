@@ -34,7 +34,15 @@ pub(crate) fn save(project_root: &Path, idx: &BM25Index) -> std::io::Result<()> 
 pub(crate) fn load_or_build(project_root: &Path) -> (BM25Index, Vec<String>) {
     let (files_now, mut warnings) = list_artifact_files(project_root);
     if files_now.is_empty() {
-        return (load(project_root).unwrap_or_default(), warnings);
+        // An index persisted before secret-like paths were excluded is not
+        // served (GHSA-rxv5-4c3x-g4q6 A); with files present the staleness
+        // check below rebuilds it without them.
+        let prev = load(project_root).filter(|idx| {
+            !idx.files
+                .keys()
+                .any(|rel| crate::core::io_boundary::is_secret_like(Path::new(rel)).is_some())
+        });
+        return (prev.unwrap_or_default(), warnings);
     }
 
     if let Some(prev) = load(project_root) {
@@ -283,6 +291,11 @@ fn list_artifact_files(project_root: &Path) -> (Vec<String>, Vec<String>) {
                 if rel.is_empty() {
                     continue;
                 }
+                // Secret-like paths never enter the persisted artifact index,
+                // same rule as the BM25 walk (GHSA-rxv5-4c3x-g4q6 A).
+                if crate::core::io_boundary::is_secret_like(Path::new(&rel)).is_some() {
+                    continue;
+                }
                 if extra_ignores.iter().any(|p| p.matches(&rel)) {
                     continue;
                 }
@@ -292,7 +305,9 @@ fn list_artifact_files(project_root: &Path) -> (Vec<String>, Vec<String>) {
             if !abs.is_file() {
                 continue;
             }
-            if !is_artifact_text_file(&abs) {
+            if !is_artifact_text_file(&abs)
+                || crate::core::io_boundary::is_secret_like(Path::new(&a.path)).is_some()
+            {
                 continue;
             }
             if let Ok(meta) = abs.metadata()
@@ -564,6 +579,20 @@ mod tests {
                 .collect::<Vec<_>>()
         };
         assert_eq!(flat(&idx), flat(&idx2));
+    }
+
+    /// GHSA-rxv5-4c3x-g4q6 A: secret-like files inside a declared artifact
+    /// directory never enter the persisted artifact index.
+    #[test]
+    fn artifact_walk_skips_secret_like_files() {
+        let dir = project_with_docs(&[
+            ("runbook.md", b"# Runbook".as_slice()),
+            ("secrets.yaml", b"api_key: x".as_slice()),
+            ("credentials.json", b"{\"k\":\"x\"}".as_slice()),
+            ("service-account-prod.json", b"{\"k\":\"x\"}".as_slice()),
+        ]);
+        let (files, _) = list_artifact_files(dir.path());
+        assert_eq!(files, vec!["docs/runbook.md".to_string()]);
     }
 
     #[test]
