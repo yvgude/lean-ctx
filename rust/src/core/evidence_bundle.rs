@@ -143,6 +143,94 @@ fn sha256_hex(bytes: &[u8]) -> String {
     crate::core::agent_identity::hex_encode(&hasher.finalize())
 }
 
+/// The attested window of the audit trail.
+struct AuditWindow {
+    segment_lines: Vec<String>,
+    anchor_prev_hash: Option<String>,
+    head_hash: String,
+}
+
+/// Collect the in-window entries of the trail at `trail_path` across every
+/// rotated archive segment (oldest first) and the active segment
+/// (GHSA-jhf9-3pv4-m469). The trail is streamed one line at a time; only
+/// the in-window entries, which form the bundle itself, are retained.
+fn collect_audit_window(
+    trail_path: &Path,
+    from: chrono::DateTime<chrono::FixedOffset>,
+    to: chrono::DateTime<chrono::FixedOffset>,
+) -> Result<AuditWindow, String> {
+    let mut window = AuditWindow {
+        segment_lines: Vec::new(),
+        anchor_prev_hash: None,
+        head_hash: String::new(),
+    };
+    let present =
+        crate::core::audit_trail::for_each_line_at(trail_path, |segment, lineno, line| {
+            let at = || {
+                format!(
+                    "line {lineno} of {}",
+                    segment.file_name().map_or_else(
+                        || segment.display().to_string(),
+                        |n| n.to_string_lossy().into_owned()
+                    )
+                )
+            };
+            // Concurrent appends have historically produced lines holding two
+            // back-to-back JSON objects (`…}{…`). A stream deserializer splits
+            // them losslessly — entry hashes are untouched, so the chain still
+            // proves integrity. Lines that don't parse AT ALL are tolerated
+            // only outside the attested window; inside it they are a hard
+            // error — an evidence artifact must never paper over a gap.
+            let mut stream =
+                serde_json::Deserializer::from_str(line).into_iter::<serde_json::Value>();
+            let mut parsed_any = false;
+            loop {
+                let value = match stream.next() {
+                    None => break,
+                    Some(Ok(v)) => v,
+                    Some(Err(e)) => {
+                        if window.segment_lines.is_empty() && !parsed_any {
+                            break; // pre-window garbage
+                        }
+                        return Err(format!(
+                            "corrupt trail {} inside the attested period: {e}",
+                            at()
+                        ));
+                    }
+                };
+                parsed_any = true;
+                let entry: AuditEntry = match serde_json::from_value(value) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        if window.segment_lines.is_empty() {
+                            continue;
+                        }
+                        return Err(format!("malformed audit entry at {}: {e}", at()));
+                    }
+                };
+                let ts = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
+                    .map_err(|e| format!("corrupt trail timestamp at {}: {e}", at()))?;
+                if ts < from || ts > to {
+                    continue;
+                }
+                if window.anchor_prev_hash.is_none() {
+                    window.anchor_prev_hash = Some(entry.prev_hash.clone());
+                }
+                window.head_hash.clone_from(&entry.entry_hash);
+                // Re-serialize one-object-per-line; field order is the struct's
+                // declaration order, identical to what `record()` writes.
+                window
+                    .segment_lines
+                    .push(serde_json::to_string(&entry).map_err(|e| e.to_string())?);
+            }
+            Ok(())
+        })?;
+    if !present {
+        return Err(format!("no audit trail at {}", trail_path.display()));
+    }
+    Ok(window)
+}
+
 /// Generate the bundle. Fails loudly on every inconsistency — an evidence
 /// artifact with silently missing parts would be worse than none.
 pub fn generate(spec: &BundleSpec) -> Result<BundleResult, String> {
@@ -159,59 +247,11 @@ pub fn generate(spec: &BundleSpec) -> Result<BundleResult, String> {
         .map_err(|e| format!("data dir: {e}"))?
         .join("audit")
         .join("trail.jsonl");
-    let trail_raw = std::fs::read_to_string(&trail_path)
-        .map_err(|e| format!("no audit trail at {}: {e}", trail_path.display()))?;
-
-    let mut segment_lines: Vec<String> = Vec::new();
-    let mut anchor_prev_hash: Option<String> = None;
-    let mut head_hash = String::new();
-    for (lineno, line) in trail_raw.lines().enumerate() {
-        // Concurrent appends have historically produced lines holding two
-        // back-to-back JSON objects (`…}{…`). A stream deserializer splits
-        // them losslessly — entry hashes are untouched, so the chain still
-        // proves integrity. Lines that don't parse AT ALL are tolerated
-        // only outside the attested window; inside it they are a hard
-        // error — an evidence artifact must never paper over a gap.
-        let mut stream = serde_json::Deserializer::from_str(line).into_iter::<serde_json::Value>();
-        let mut parsed_any = false;
-        loop {
-            let value = match stream.next() {
-                None => break,
-                Some(Ok(v)) => v,
-                Some(Err(e)) => {
-                    if segment_lines.is_empty() && !parsed_any {
-                        break; // pre-window garbage
-                    }
-                    return Err(format!(
-                        "corrupt trail line {} inside the attested period: {e}",
-                        lineno + 1
-                    ));
-                }
-            };
-            parsed_any = true;
-            let entry: AuditEntry = match serde_json::from_value(value) {
-                Ok(e) => e,
-                Err(e) => {
-                    if segment_lines.is_empty() {
-                        continue;
-                    }
-                    return Err(format!("malformed audit entry at line {}: {e}", lineno + 1));
-                }
-            };
-            let ts = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
-                .map_err(|e| format!("corrupt trail timestamp at line {}: {e}", lineno + 1))?;
-            if ts < from || ts > to {
-                continue;
-            }
-            if anchor_prev_hash.is_none() {
-                anchor_prev_hash = Some(entry.prev_hash.clone());
-            }
-            head_hash.clone_from(&entry.entry_hash);
-            // Re-serialize one-object-per-line; field order is the struct's
-            // declaration order, identical to what `record()` writes.
-            segment_lines.push(serde_json::to_string(&entry).map_err(|e| e.to_string())?);
-        }
-    }
+    let AuditWindow {
+        segment_lines,
+        anchor_prev_hash,
+        head_hash,
+    } = collect_audit_window(&trail_path, from, to)?;
     if segment_lines.is_empty() {
         return Err(format!(
             "no audit entries between {} and {} — nothing to attest",
@@ -367,4 +407,64 @@ pub fn generate(spec: &BundleSpec) -> Result<BundleResult, String> {
         entries: segment_lines.len(),
         files: files.into_iter().map(|(p, _)| p).collect(),
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn line(ts: &str, tool: &str, prev: &str, hash: &str) -> String {
+        format!(
+            r#"{{"timestamp":"{ts}","agent_id":"a","tool":"{tool}","action":null,"input_hash":"x","output_tokens":0,"role":"r","event_type":"tool_call","prev_hash":"{prev}","entry_hash":"{hash}"}}"#
+        )
+    }
+
+    fn ts(s: &str) -> chrono::DateTime<chrono::FixedOffset> {
+        chrono::DateTime::parse_from_rfc3339(s).unwrap()
+    }
+
+    /// GHSA-jhf9-3pv4-m469: a bundle over a rotated trail attests the
+    /// archived segments too, in chain order, and only the requested window.
+    #[test]
+    fn audit_window_spans_rotated_archive_segments() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trail.jsonl");
+        std::fs::write(
+            dir.path().join("trail.000001.jsonl"),
+            format!(
+                "{}\n{}\n",
+                line("2026-05-01T10:00:00+00:00", "before", "genesis", "h0"),
+                line("2026-06-01T10:00:00+00:00", "archived", "h0", "h1")
+            ),
+        )
+        .unwrap();
+        std::fs::write(
+            &path,
+            format!(
+                "{}\n{}\n",
+                line("2026-06-01T11:00:00+00:00", "active", "h1", "h2"),
+                line("2026-07-01T11:00:00+00:00", "after", "h2", "h3")
+            ),
+        )
+        .unwrap();
+
+        let window = collect_audit_window(
+            &path,
+            ts("2026-06-01T00:00:00+00:00"),
+            ts("2026-06-30T00:00:00+00:00"),
+        )
+        .unwrap();
+        assert_eq!(window.segment_lines.len(), 2);
+        assert!(window.segment_lines[0].contains("\"archived\""));
+        assert!(window.segment_lines[1].contains("\"active\""));
+        assert_eq!(window.anchor_prev_hash.as_deref(), Some("h0"));
+        assert_eq!(window.head_hash, "h2");
+
+        let missing = collect_audit_window(
+            &dir.path().join("absent.jsonl"),
+            ts("2026-06-01T00:00:00+00:00"),
+            ts("2026-06-30T00:00:00+00:00"),
+        );
+        assert!(missing.is_err_and(|e| e.starts_with("no audit trail at")));
+    }
 }

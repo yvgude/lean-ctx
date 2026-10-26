@@ -156,21 +156,23 @@ pub fn build_from(
 
     if let Some(path) = trail_path {
         let verify = audit_trail::verify_chain_at(path);
-        let entries: Vec<AuditEntry> = audit_trail::load_all_at(path);
-        proof.audit.entries = verify.total_entries.max(entries.len());
         proof.audit.intact = verify.valid;
         proof.audit.first_invalid_at = verify.first_invalid_at;
-        for entry in &entries {
+        // Streams every rotated segment plus the active one (GHSA-jhf9-3pv4-m469).
+        let mut listed = 0usize;
+        audit_trail::for_each_entry_at(path, |entry: AuditEntry| {
+            listed += 1;
             let Some((kind, n, entry_session)) = entry.action.as_deref().and_then(parse_action)
             else {
-                continue;
+                return;
             };
             if !in_session(entry_session, session) {
-                continue;
+                return;
             }
             proof.security.add(kind, n);
             proof.audit_evidence.push(&entry.entry_hash);
-        }
+        });
+        proof.audit.entries = verify.total_entries.max(listed);
     }
     proof
 }
@@ -223,16 +225,16 @@ fn security_evidence_at(path: &Path) -> Option<(SecurityCounts, Evidence)> {
     }
     let mut counts = SecurityCounts::default();
     let mut evidence = Evidence::default();
-    for entry in audit_trail::load_all_at(path) {
+    audit_trail::for_each_entry_at(path, |entry| {
         let Some((kind, n, _)) = entry.action.as_deref().and_then(parse_action) else {
-            continue;
+            return;
         };
         if !kind.in_signed_tally() {
-            continue;
+            return;
         }
         counts.add(kind, n);
         evidence.push(&entry.entry_hash);
-    }
+    });
     Some((counts, evidence))
 }
 
@@ -241,19 +243,19 @@ fn security_since_at(path: &Path, cutoff: Option<DateTime<Utc>>) -> Option<Secur
         return None;
     }
     let mut counts = SecurityCounts::default();
-    for entry in audit_trail::load_all_at(path) {
+    audit_trail::for_each_entry_at(path, |entry| {
         if let Some(cutoff) = cutoff {
             let Ok(ts) = DateTime::parse_from_rfc3339(&entry.timestamp) else {
-                continue;
+                return;
             };
             if ts.with_timezone(&Utc) < cutoff {
-                continue;
+                return;
             }
         }
         if let Some((kind, n, _)) = entry.action.as_deref().and_then(parse_action) {
             counts.add(kind, n);
         }
-    }
+    });
     Some(counts)
 }
 
@@ -473,6 +475,29 @@ mod tests {
         assert!(text.contains("✓ measured"), "{text}");
         assert!(text.contains("2 secrets kept out of context"), "{text}");
         assert!(text.contains("savings ledger intact (3 entries)"), "{text}");
+    }
+
+    /// GHSA-jhf9-3pv4-m469: after the trail rotates, the proof and the
+    /// verified security counts include the archived segments.
+    #[test]
+    fn rotated_trail_segments_are_counted() {
+        let (dir, ledger, trail) = fixture();
+        // Rotate as the writer does: the full segment becomes the archive and
+        // the chain continues in a fresh active segment.
+        std::fs::rename(&trail, dir.path().join("trail.000001.jsonl")).unwrap();
+        security(&trail, "secret_redacted:4|session=s1");
+        assert!(audit_trail::verify_chain_at(&trail).valid);
+
+        let proof = build_from(Some(&ledger), Some(&trail), None, None);
+        assert!(!proof.tampered());
+        assert_eq!(proof.audit.entries, 4);
+        assert_eq!(proof.security.secrets_redacted, 6);
+        assert_eq!(proof.audit_evidence.entries, 3);
+        let since = security_since_at(&trail, None).expect("verified");
+        assert_eq!(since.secrets_redacted, 6);
+        assert_eq!(since.shell_blocked, 1);
+        let (tally, _) = security_evidence_at(&trail).expect("verified");
+        assert_eq!(tally.secrets_redacted, 6);
     }
 
     #[test]

@@ -82,12 +82,23 @@ pub fn aggregate(
         .map_err(|e| format!("data dir: {e}"))?
         .join("audit")
         .join("trail.jsonl");
-    let raw = match std::fs::read_to_string(&trail_path) {
-        Ok(s) => s,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(empty()),
-        Err(e) => return Err(format!("read {}: {e}", trail_path.display())),
-    };
-    aggregate_str(&raw, from, to)
+    aggregate_at(&trail_path, from, to)
+}
+
+/// Aggregate the trail at `trail_path` — every rotated archive segment in
+/// chain order, then the active segment (GHSA-jhf9-3pv4-m469), streamed one
+/// line at a time so memory stays bounded however long the history is.
+pub fn aggregate_at(
+    trail_path: &std::path::Path,
+    from: DateTime<FixedOffset>,
+    to: DateTime<FixedOffset>,
+) -> Result<Aggregation, String> {
+    let mut folder = Folder::new(from, to);
+    crate::core::audit_trail::for_each_line_at(trail_path, |_, _, line| {
+        folder.line(line);
+        Ok(())
+    })?;
+    Ok(folder.finish())
 }
 
 /// Pure aggregation over raw JSONL — testable without touching the data dir.
@@ -96,12 +107,34 @@ pub fn aggregate_str(
     from: DateTime<FixedOffset>,
     to: DateTime<FixedOffset>,
 ) -> Result<Aggregation, String> {
-    let mut agg = empty();
-    let mut events: BTreeMap<String, usize> = BTreeMap::new();
-    let mut tools: BTreeMap<String, usize> = BTreeMap::new();
-    let mut anchor: Option<String> = None;
+    let mut folder = Folder::new(from, to);
+    raw.lines().for_each(|line| folder.line(line));
+    Ok(folder.finish())
+}
 
-    for line in raw.lines() {
+/// Incremental aggregation state, fed one JSONL line at a time.
+struct Folder {
+    from: DateTime<FixedOffset>,
+    to: DateTime<FixedOffset>,
+    agg: Aggregation,
+    events: BTreeMap<String, usize>,
+    tools: BTreeMap<String, usize>,
+    anchor: Option<String>,
+}
+
+impl Folder {
+    fn new(from: DateTime<FixedOffset>, to: DateTime<FixedOffset>) -> Self {
+        Self {
+            from,
+            to,
+            agg: empty(),
+            events: BTreeMap::new(),
+            tools: BTreeMap::new(),
+            anchor: None,
+        }
+    }
+
+    fn line(&mut self, line: &str) {
         // Tolerate concurrent-append history (`…}{…`) with a streaming parse.
         for value in serde_json::Deserializer::from_str(line)
             .into_iter::<serde_json::Value>()
@@ -113,16 +146,18 @@ pub fn aggregate_str(
             let Ok(ts) = DateTime::parse_from_rfc3339(&entry.timestamp) else {
                 continue;
             };
-            if ts < from || ts > to {
+            if ts < self.from || ts > self.to {
                 continue;
             }
 
-            if anchor.is_none() {
-                anchor = Some(entry.prev_hash.clone());
+            if self.anchor.is_none() {
+                self.anchor = Some(entry.prev_hash.clone());
             }
+            let agg = &mut self.agg;
             agg.head_hash.clone_from(&entry.entry_hash);
             agg.entries += 1;
-            *events
+            *self
+                .events
                 .entry(event_label(&entry.event_type).to_string())
                 .or_default() += 1;
 
@@ -130,7 +165,7 @@ pub fn aggregate_str(
                 AuditEventType::ToolCall => agg.tool_calls += 1,
                 AuditEventType::ToolDenied => {
                     agg.blocked += 1;
-                    *tools.entry(entry.tool.clone()).or_default() += 1;
+                    *self.tools.entry(entry.tool.clone()).or_default() += 1;
                 }
                 AuditEventType::SecretDetected => agg.redacted += 1,
                 _ => agg.other_security += 1,
@@ -138,10 +173,13 @@ pub fn aggregate_str(
         }
     }
 
-    agg.anchor_prev_hash = anchor.unwrap_or_else(|| "genesis".to_string());
-    agg.by_event = top_rows(events, MAX_EVENT_ROWS);
-    agg.by_tool_blocked = top_rows(tools, MAX_TOOL_ROWS);
-    Ok(agg)
+    fn finish(self) -> Aggregation {
+        let mut agg = self.agg;
+        agg.anchor_prev_hash = self.anchor.unwrap_or_else(|| "genesis".to_string());
+        agg.by_event = top_rows(self.events, MAX_EVENT_ROWS);
+        agg.by_tool_blocked = top_rows(self.tools, MAX_TOOL_ROWS);
+        agg
+    }
 }
 
 fn empty() -> Aggregation {
@@ -371,5 +409,73 @@ mod tests {
         .unwrap();
         assert_eq!(agg.entries, 40);
         assert_eq!(agg.by_event.len(), MAX_EVENT_ROWS);
+    }
+
+    /// GHSA-jhf9-3pv4-m469: after rotation the report spans every archived
+    /// segment plus the active one, in chain order, filtered by the window.
+    #[test]
+    fn aggregates_rotated_archive_segments_in_chain_order() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("trail.jsonl");
+        let write = |name: &str, lines: &[String]| {
+            std::fs::write(dir.path().join(name), format!("{}\n", lines.join("\n"))).unwrap();
+        };
+        write(
+            "trail.000001.jsonl",
+            &[
+                line(
+                    "2026-05-01T10:00:00+00:00",
+                    "tool_denied",
+                    "old",
+                    "genesis",
+                    "h0",
+                ),
+                line(
+                    "2026-06-01T10:00:00+00:00",
+                    "tool_denied",
+                    "ctx_url_read",
+                    "h0",
+                    "h1",
+                ),
+            ],
+        );
+        write(
+            "trail.000002.jsonl",
+            &[line(
+                "2026-06-01T11:00:00+00:00",
+                "secret_detected",
+                "ctx_read",
+                "h1",
+                "h2",
+            )],
+        );
+        write(
+            "trail.jsonl",
+            &[line(
+                "2026-06-01T12:00:00+00:00",
+                "tool_call",
+                "ctx_read",
+                "h2",
+                "h3",
+            )],
+        );
+        let agg = aggregate_at(
+            &path,
+            ts("2026-06-01T00:00:00+00:00"),
+            ts("2026-06-02T00:00:00+00:00"),
+        )
+        .unwrap();
+        assert_eq!(agg.entries, 3, "out-of-window archive entry excluded");
+        assert_eq!((agg.blocked, agg.redacted, agg.tool_calls), (1, 1, 1));
+        assert_eq!(agg.anchor_prev_hash, "h0");
+        assert_eq!(agg.head_hash, "h3");
+
+        let missing = aggregate_at(
+            &dir.path().join("absent.jsonl"),
+            ts("2026-06-01T00:00:00+00:00"),
+            ts("2026-06-02T00:00:00+00:00"),
+        )
+        .unwrap();
+        assert_eq!(missing, super::empty());
     }
 }

@@ -514,34 +514,88 @@ pub fn default_trail_path() -> Option<PathBuf> {
 }
 
 pub fn load_recent(limit: usize) -> Vec<AuditEntry> {
-    let Some(path) = trail_path() else {
+    let Some(path) = trail_path().filter(|_| limit > 0) else {
         return Vec::new();
     };
-    let entries = load_all_at(&path);
-    let skip = entries.len().saturating_sub(limit);
-    entries.into_iter().skip(skip).collect()
+    // Bounded memory: only the newest `limit` entries are retained while the
+    // whole history (archives + active segment) streams past.
+    let mut recent = std::collections::VecDeque::with_capacity(limit.min(1024));
+    for_each_entry_at(&path, |entry| {
+        if recent.len() == limit {
+            recent.pop_front();
+        }
+        recent.push_back(entry);
+    });
+    recent.into_iter().collect()
 }
 
-/// Every parseable entry of the trail at `path`.
+/// Every parseable entry of the trail at `path`, across all rotated
+/// segments. Holds the whole history in memory; prefer
+/// [`for_each_entry_at`] for aggregation.
 pub fn load_all_at(path: &Path) -> Vec<AuditEntry> {
-    let Ok(file) = fs::File::open(path) else {
-        return Vec::new();
+    let mut entries = Vec::new();
+    for_each_entry_at(path, |entry| entries.push(entry));
+    entries
+}
+
+/// Stream every parseable entry of the trail at `path` in chain order:
+/// archived segments oldest first, then the active segment
+/// (GHSA-jhf9-3pv4-m469 — a rotated trail must not silently report only the
+/// active segment). Best effort like the historic listing: the first I/O
+/// error ends the listing early.
+pub fn for_each_entry_at(path: &Path, mut visit: impl FnMut(AuditEntry)) {
+    let streamed = for_each_line_at(path, |_, _, line| {
+        serde_json::Deserializer::from_str(line)
+            .into_iter::<AuditEntry>()
+            .map_while(Result::ok)
+            .for_each(&mut visit);
+        Ok(())
+    });
+    if let Err(error) = streamed {
+        tracing::debug!("audit listing ended early: {error}");
+    }
+}
+
+/// Stream every raw line of the trail at `path` in chain order: archived
+/// segments oldest first, then the active segment. `visit` receives the
+/// segment file, the 1-based line number within it and the line; only one
+/// line is held in memory at a time. Returns `Ok(false)` when no trail
+/// exists. The active segment's shared lock is held for the whole walk, so
+/// a concurrent rotation (which needs the exclusive lock) cannot move
+/// entries between segments mid-read.
+pub fn for_each_line_at(
+    path: &Path,
+    mut visit: impl FnMut(&Path, usize, &str) -> Result<(), String>,
+) -> Result<bool, String> {
+    let active = match fs::File::open(path) {
+        Ok(file) => file,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
+        Err(e) => return Err(format!("read {}: {e}", path.display())),
     };
     // Best effort: without the shared lock a Windows read can stop at an
     // in-progress append (see `lock_trail_shared`); the listing then ends early.
-    if let Err(error) = lock_trail_shared(&file) {
+    if let Err(error) = lock_trail_shared(&active) {
         tracing::debug!("audit listing reads unlocked and may end early: {error}");
     }
-    let reader = std::io::BufReader::new(file);
-    let mut entries = Vec::new();
-    for line in reader.lines().map_while(Result::ok) {
-        entries.extend(
-            serde_json::Deserializer::from_str(&line)
-                .into_iter::<AuditEntry>()
-                .map_while(Result::ok),
-        );
+    for (_, archive) in archive_segments(path) {
+        let segment =
+            fs::File::open(&archive).map_err(|e| format!("read {}: {e}", archive.display()))?;
+        visit_segment_lines(&archive, std::io::BufReader::new(segment), &mut visit)?;
     }
-    entries
+    visit_segment_lines(path, std::io::BufReader::new(active), &mut visit)?;
+    Ok(true)
+}
+
+fn visit_segment_lines(
+    segment: &Path,
+    reader: impl BufRead,
+    visit: &mut impl FnMut(&Path, usize, &str) -> Result<(), String>,
+) -> Result<(), String> {
+    for (index, line) in reader.lines().enumerate() {
+        let line = line.map_err(|e| format!("read {}: {e}", segment.display()))?;
+        visit(segment, index + 1, &line)?;
+    }
+    Ok(())
 }
 
 /// Reconstruct the latest unacknowledged drift from the append-only trail.
@@ -876,6 +930,20 @@ mod tests {
         let chain = verify_chain_at(&path);
         assert!(chain.valid, "{:?}", chain.first_invalid_at);
         assert_eq!(chain.total_entries, 40);
+        // Readers see the whole history, archives first, in chain order.
+        let listed: Vec<String> = load_all_at(&path).into_iter().map(|e| e.tool).collect();
+        let expected: Vec<String> = (0..40).map(|i| format!("tool_{i}")).collect();
+        assert_eq!(listed, expected);
+        let mut lines = 0usize;
+        assert!(
+            for_each_line_at(&path, |_, _, _| {
+                lines += 1;
+                Ok(())
+            })
+            .unwrap()
+        );
+        assert_eq!(lines, 40);
+        assert!(!for_each_line_at(&dir.path().join("absent.jsonl"), |_, _, _| Ok(())).unwrap());
         assert_eq!(
             read_last_hash_tail(&std::fs::File::open(&path).unwrap()).unwrap(),
             last.unwrap().entry_hash
