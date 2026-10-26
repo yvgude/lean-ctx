@@ -1,11 +1,11 @@
 use crate::core::error::ShellError;
 
+use super::heredoc::strip_for_analysis;
 use super::tokenizer::{Separator, segments_with_separators};
 use super::{
     ShellSecurity, allowlist_block_message, check_substitution_in_args, effective_allowlist,
     expand_to_leaf_segments, extract_all_commands, extract_base_from_segment,
     extract_command_tokens_from_segment, shell_tokenize, skip_env_assignments, split_on_operators,
-    strip_all_heredoc_bodies, strip_comments, strip_quoted_heredoc_bodies,
 };
 
 /// Checks whether a command may run, honouring the active [`ShellSecurity`] mode
@@ -80,21 +80,32 @@ pub fn passes_enforced(command: &str) -> bool {
 /// When the allowlist is empty, all commands pass (blocklist-only mode).
 /// When non-empty, EVERY command segment in the pipeline must match.
 pub(super) fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
+    // GHSA-rxv5-4c3x-g4q6 E: a carriage return not followed by a line feed, or
+    // a Unicode line/paragraph separator, is an ordinary word character to
+    // bash, dash and zsh, but a line break to the checks below (`echo a⏎#$(x)`
+    // would hide `$(x)` as a comment). Such a command cannot be validated.
+    // CRLF stays accepted: its CR always sits right before the line break.
+    if let Some(reason) = unvalidatable_line_break(command) {
+        return Err(unvalidatable(reason, command));
+    }
     let normalized = normalize_line_continuations(command);
+    // The one lexer pass behind every strip below (GHSA-rxv5-4c3x-g4q6 E):
+    // where the shells disagree on a construct, or a heredoc never ends, no
+    // strip can be trusted, so the command is refused.
+    if let Some(reason) = super::lexer::lex(&normalized).problem {
+        return Err(unvalidatable(reason, command));
+    }
     // #876: a quoted-delimiter heredoc body (`<<'EOF' … EOF`) is literal stdin
     // data, not commands. Strip it before analysis so the operator-splitter can't
     // dice a commit message (`feat(...)`) into bogus "segments" and block them.
-    // #876: quoted-delimiter heredoc body = literal stdin, not commands.
-    // Substitution checks ($(), backticks) need the quoted-only strip so they
-    // can still flag expanding substitutions in unquoted bodies.
-    // #1109: a shell comment (`# …`) is not a command. Strip comments after the
-    // heredoc bodies are gone, so a `#` inside a (now-removed) body can't be
-    // mistaken for a comment and, conversely, a real comment line between
-    // commands isn't diced into a bogus `#` segment and blocked.
-    let quoted_stripped = strip_comments(&strip_quoted_heredoc_bodies(&normalized));
+    // Unquoted bodies stay for the checks that read `cmd`: they expand.
+    // #1109: a shell comment (`# …`) is not a command; it goes in the same
+    // lexer pass, so a `#` in a body is never a comment and a comment's
+    // apostrophe never opens a string.
+    let quoted_stripped = strip_for_analysis(&normalized, true, true);
     // #931: for command-segment and redirect checks, strip ALL heredoc bodies
     // (quoted + unquoted) — a `>` or command word in any body is opaque data.
-    let all_stripped = strip_comments(&strip_all_heredoc_bodies(&normalized));
+    let all_stripped = strip_for_analysis(&normalized, false, true);
     let cmd = quoted_stripped.as_str();
     let cmd_all = all_stripped.as_str();
 
@@ -124,13 +135,45 @@ pub(super) fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
     check_all_segments(cmd_all, &Allowlist::new(allowlist, subcommand_scoping))
 }
 
-/// Normalize the command string: remove backslash-newline continuations and
-/// replace Unicode line separators (U+2028, U+2029) with newlines.
+/// Normalize the command string: remove the backslash-newline continuations
+/// the shell removes and replace Unicode line separators (U+2028, U+2029)
+/// with newlines.
+///
+/// Only real continuations go (GHSA-rxv5-4c3x-g4q6 E): an escaped backslash
+/// before a newline (`echo \\⏎cmd` runs `cmd`), one inside single quotes or a
+/// quoted heredoc body is kept, and `\`+CR+LF is an escaped CR followed by a
+/// line break, not a continuation. A blind replace joined `cmd` onto `echo`.
 pub(super) fn normalize_line_continuations(command: &str) -> String {
+    let joined = if command.contains("\\\n") {
+        super::lexer::remove_ranges(command, super::lexer::lex(command).continuations)
+    } else {
+        command.to_string()
+    };
+    joined.replace(['\u{2028}', '\u{2029}'], "\n")
+}
+
+/// Why `command` contains a line break the shell does not see, if it does.
+fn unvalidatable_line_break(command: &str) -> Option<&'static str> {
+    let bare_cr = command
+        .bytes()
+        .enumerate()
+        .any(|(i, b)| b == b'\r' && command.as_bytes().get(i + 1) != Some(&b'\n'));
+    if bare_cr {
+        return Some("a carriage return not followed by a line feed");
+    }
     command
-        .replace("\\\r\n", "")
-        .replace("\\\n", "")
-        .replace(['\u{2028}', '\u{2029}'], "\n")
+        .contains(['\u{2028}', '\u{2029}'])
+        .then_some("a Unicode line or paragraph separator")
+}
+
+fn unvalidatable(reason: &str, command: &str) -> ShellError {
+    format!(
+        "[BLOCKED — DO NOT RETRY] Command contains {reason}: the shells that may run it \
+         (bash, dash, zsh) read it differently, or the gate cannot tell where it ends, \
+         so it cannot be validated. Rewrite it without that construct.\n\
+         Command: {command}"
+    )
+    .into()
 }
 
 /// Piping into a bare interpreter (no script file): warn by default, **block**

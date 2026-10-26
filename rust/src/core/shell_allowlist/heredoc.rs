@@ -1,3 +1,9 @@
+//! Heredoc and comment stripping, derived from the one lexer (`lexer::lex`)
+//! so every check agrees with the substitution scanner on where a heredoc
+//! body, a comment, a quote or a `${…}` begins and ends (GHSA-rxv5-4c3x-g4q6 E).
+
+use super::lexer::{lex, remove_ranges};
+
 /// Strip the *bodies* of quoted-delimiter heredocs (`<<'EOF' … EOF`,
 /// `<<-"E" … E`) prior to allowlist analysis (#876).
 ///
@@ -10,200 +16,55 @@
 /// Only quoted delimiters are stripped. An *unquoted* `<<EOF` heredoc DOES expand
 /// `$()`/backticks/`$VAR` in its body, so those bodies are deliberately left
 /// intact for the command-substitution checks to see.
+#[cfg(test)]
 pub(crate) fn strip_quoted_heredoc_bodies(command: &str) -> String {
-    if !command.contains("<<") {
-        return command.to_string();
-    }
-    let mut out: Vec<&str> = Vec::new();
-    // Delimiters awaiting their terminator line, in body order (stacked heredocs
-    // `cmd <<'A' <<'B'` drain A's body first, then B's).
-    let mut pending: Vec<String> = Vec::new();
-    // GH #2003: a double-quoted string can span lines, so the quote state
-    // carries over; heredoc body lines are literal data and never touch it.
-    let mut state = QuoteState::default();
-    for line in command.lines() {
-        if pending.is_empty() {
-            out.push(line);
-            pending = heredoc_delims_from(line, true, &mut state);
-        } else if line.trim_start_matches('\t').trim() == pending[0] {
-            // Terminator line: drop it and resume. `<<-` allows leading tabs; be
-            // lenient (over-stripping body data is harmless — a heredoc body is
-            // never a command anyway).
-            pending.remove(0);
-        }
-        // else: a heredoc body line — dropped (not pushed to `out`).
-    }
-    out.join("\n")
+    strip_for_analysis(command, true, false)
 }
 
 /// Like `strip_quoted_heredoc_bodies` but strips bodies for **all** heredocs
 /// (quoted *and* unquoted delimiters). Use for checks that must never interpret
 /// heredoc body content as commands or redirects (#931).
 pub fn strip_all_heredoc_bodies(command: &str) -> String {
-    if !command.contains("<<") {
+    strip_for_analysis(command, false, false)
+}
+
+/// `command` without heredoc bodies (only quoted ones with `quoted_only`) and,
+/// with `comments`, without comments — in one lexer pass over the raw text, so
+/// neither strip can misread what the other one removed.
+///
+/// A terminator must match its delimiter exactly (after leading tabs for
+/// `<<-`), as in the shell. A body whose terminator never follows runs to the
+/// end of the input here; `enforce_shell_allowlist` blocks such a command.
+pub(crate) fn strip_for_analysis(command: &str, quoted_only: bool, comments: bool) -> String {
+    if !command.contains("<<") && !(comments && command.contains('#')) {
         return command.to_string();
     }
-    let mut out: Vec<&str> = Vec::new();
-    let mut pending: Vec<String> = Vec::new();
-    // GH #2003: a double-quoted string can span lines, so the quote state
-    // carries over; heredoc body lines are literal data and never touch it.
-    let mut state = QuoteState::default();
-    for line in command.lines() {
-        if pending.is_empty() {
-            out.push(line);
-            pending = heredoc_delims_from(line, false, &mut state);
-        } else if line.trim_start_matches('\t').trim() == pending[0] {
-            pending.remove(0);
-        }
+    let lexed = lex(command);
+    let mut ranges: Vec<_> = lexed
+        .heredocs
+        .iter()
+        .filter(|h| !quoted_only || h.quoted)
+        .map(|h| h.body.clone())
+        .collect();
+    if comments {
+        ranges.extend(lexed.comments);
     }
-    out.join("\n")
+    remove_ranges(command, ranges)
 }
 
-/// Scan one line for heredoc operators with a **quoted** delimiter and return
-/// their bare delimiter names in source order. Quote-aware, so a `<<` inside a
-/// quoted string is ignored; a `<<<` here-string (no body) is skipped.
+/// The delimiters of the heredoc operators in `line`, in source order (only
+/// quoted ones with `quoted_only`). A `<<` inside quotes, `${…}` or arithmetic
+/// is no operator; a `<<<` here-string has no body.
 pub(crate) fn heredoc_delims(line: &str, quoted_only: bool) -> Vec<String> {
-    heredoc_delims_from(line, quoted_only, &mut QuoteState::default())
-}
-
-/// Quote context at the end of a scanned line, carried into the next one.
-#[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct QuoteState {
-    in_single: bool,
-    in_double: bool,
-    /// Nesting depth of `$()` opened while inside double quotes (#1482).
-    subst_depth: usize,
-}
-
-/// [`heredoc_delims`] for one line of a multi-line command whose earlier lines
-/// may have left a quoted string open (GH #2003: `echo "a⏎b"; cat <<'EOF'`).
-/// An unquoted `#` that starts a word ends the line as a comment, so an
-/// apostrophe in a comment (`# don't`) cannot open a string that hides a later
-/// heredoc.
-pub(crate) fn heredoc_delims_from(
-    line: &str,
-    quoted_only: bool,
-    state: &mut QuoteState,
-) -> Vec<String> {
-    let bytes = line.as_bytes();
-    let len = bytes.len();
-    let mut i = 0;
-    let QuoteState {
-        mut in_single,
-        mut in_double,
-        mut subst_depth,
-    } = *state;
-    let mut delims = Vec::new();
-    while i < len {
-        let ch = bytes[i];
-        if in_single {
-            if ch == b'\'' {
-                in_single = false;
-            }
-            i += 1;
-            continue;
-        }
-        // `$(( … ))` and `(( … ))` are arithmetic: their `<<` is a shift. Read
-        // as a heredoc, `echo $((1<<2))` queued a delimiter `2))` and every
-        // following line was dropped as its "body" — commands bash runs
-        // (GHSA-rxv5-4c3x-g4q6 E).
-        if let Some(end) = arithmetic_end(line, i, !in_double) {
-            i = end;
-            continue;
-        }
-        if in_double {
-            match ch {
-                b'\\' => i = (i + 2).min(len),
-                b'$' if i + 1 < len && bytes[i + 1] == b'(' => {
-                    subst_depth += 1;
-                    in_double = false;
-                    i += 2;
-                }
-                b'"' => {
-                    in_double = false;
-                    i += 1;
-                }
-                _ => i += 1,
-            }
-            continue;
-        }
-        match ch {
-            b'#' if subst_depth == 0
-                && (i == 0 || matches!(bytes[i - 1], b' ' | b'\t' | b';' | b'|' | b'&' | b'(')) =>
-            {
-                break;
-            }
-            b'\\' => i = (i + 2).min(len),
-            b'\'' => {
-                in_single = true;
-                i += 1;
-            }
-            b'"' if subst_depth > 0 => {
-                // Nested quote inside `$()` — not the outer closing quote.
-                i += 1;
-            }
-            b'"' => {
-                in_double = true;
-                i += 1;
-            }
-            b'$' if subst_depth > 0 && i + 1 < len && bytes[i + 1] == b'(' => {
-                subst_depth += 1;
-                i += 2;
-            }
-            b')' if subst_depth > 0 => {
-                subst_depth -= 1;
-                if subst_depth == 0 {
-                    in_double = true;
-                }
-                i += 1;
-            }
-            b'<' if i + 1 < len && bytes[i + 1] == b'<' => {
-                // `<<<` is a here-string (no body), not a heredoc.
-                if i + 2 < len && bytes[i + 2] == b'<' {
-                    i += 3;
-                    continue;
-                }
-                let mut j = i + 2;
-                if j < len && bytes[j] == b'-' {
-                    j += 1; // `<<-` (tab-stripped terminator)
-                }
-                while j < len && (bytes[j] == b' ' || bytes[j] == b'\t') {
-                    j += 1;
-                }
-                if let Some((delim, quoted, next)) = read_heredoc_delim(bytes, j) {
-                    if !quoted_only || quoted {
-                        delims.push(delim);
-                    }
-                    i = next;
-                    continue;
-                }
-                i = j;
-            }
-            _ => i += 1,
-        }
+    if !line.contains("<<") {
+        return Vec::new();
     }
-    *state = QuoteState {
-        in_single,
-        in_double,
-        subst_depth,
-    };
-    delims
-}
-
-/// Index past an arithmetic expansion `$(( … ))` — or, with `command_ok`, an
-/// arithmetic command `(( … ))` — starting at `i`. Bash's rule as in #2134:
-/// the inner group must close directly before the final `)`.
-fn arithmetic_end(line: &str, i: usize, command_ok: bool) -> Option<usize> {
-    let rest = &line.as_bytes()[i..];
-    let open = if rest.starts_with(b"$((") {
-        i + 2
-    } else if command_ok && rest.starts_with(b"((") {
-        i + 1
-    } else {
-        return None;
-    };
-    let (_, end) = super::compound::balanced_paren_at(line, open)?;
-    (line.as_bytes().get(end) == Some(&b')')).then_some(end + 1)
+    lex(line)
+        .heredocs
+        .into_iter()
+        .filter(|h| !quoted_only || h.quoted)
+        .map(|h| h.delim)
+        .collect()
 }
 
 /// Parse a heredoc delimiter token starting at `start`, returning its bare name
@@ -259,103 +120,23 @@ pub(crate) fn read_heredoc_delim(bytes: &[u8], start: usize) -> Option<(String, 
 /// Strip shell comments (`#` to end-of-line) so the allowlist tokenizer never
 /// mistakes a comment for a command (#1109).
 ///
-/// Per POSIX, `#` only starts a comment when it is unquoted and begins a word:
-/// at the start of the command, or immediately after whitespace or one of the
-/// unquoted metacharacters `;`, `&`, `|`, `(`. Anywhere else the `#` is part of
-/// a word, so this deliberately leaves intact:
+/// A `#` starts a comment only where the shell starts one: unquoted, outside
+/// `${…}` and arithmetic, at the start of a word — at the start of the command,
+/// after a blank, after one of `;`, `&`, `|`, `(`, or after a `)` that closed a
+/// group (`(a)#c`, `f()#c`). This deliberately leaves intact:
 ///   - `#` inside single or double quotes (`echo "# not a comment"`),
-///   - parameter expansions like `${#arr}` and `${var#prefix}`,
+///   - parameter expansions like `${#arr}`, `${var#prefix}`, `${x:- #y}`,
 ///   - arithmetic bases like `$((16#ff))`,
-///   - URLs / fragments like `http://host/path#frag`,
-///   - an escaped `\#`.
+///   - URLs / fragments like `http://host/path#frag`, `$(a)#b`,
+///   - an escaped `\#`,
+///   - heredoc bodies (data, never comments).
 ///
-/// Run this AFTER heredoc bodies are stripped: a body line may legitimately
-/// contain `#`, and once the body is gone it can't be misread here.
+/// The gate strips comments together with heredoc bodies through
+/// [`strip_for_analysis`]; this form is kept for the comment tests.
+#[cfg(test)]
 pub(crate) fn strip_comments(command: &str) -> String {
     if !command.contains('#') {
         return command.to_string();
     }
-    let bytes = command.as_bytes();
-    let mut out: Vec<u8> = Vec::with_capacity(bytes.len());
-    let mut in_single = false;
-    let mut in_double = false;
-    // The start of the command counts as a word boundary.
-    let mut at_boundary = true;
-    let mut i = 0;
-    while i < bytes.len() {
-        let c = bytes[i];
-        if in_single {
-            out.push(c);
-            if c == b'\'' {
-                in_single = false;
-            }
-            at_boundary = false;
-            i += 1;
-            continue;
-        }
-        if in_double {
-            // A backslash inside double quotes escapes the next byte; copy both
-            // so a `\"` doesn't prematurely close the quote.
-            if c == b'\\' && i + 1 < bytes.len() {
-                out.push(c);
-                out.push(bytes[i + 1]);
-                at_boundary = false;
-                i += 2;
-                continue;
-            }
-            out.push(c);
-            if c == b'"' {
-                in_double = false;
-            }
-            at_boundary = false;
-            i += 1;
-            continue;
-        }
-        match c {
-            b'\'' => {
-                in_single = true;
-                out.push(c);
-                at_boundary = false;
-                i += 1;
-            }
-            b'"' => {
-                in_double = true;
-                out.push(c);
-                at_boundary = false;
-                i += 1;
-            }
-            b'\\' => {
-                // An unquoted backslash escapes the next byte, so `\#` is a
-                // literal `#`, never a comment.
-                out.push(c);
-                if i + 1 < bytes.len() {
-                    out.push(bytes[i + 1]);
-                    i += 2;
-                } else {
-                    i += 1;
-                }
-                at_boundary = false;
-            }
-            b'#' if at_boundary => {
-                // Comment: drop everything up to (but not including) the newline.
-                while i < bytes.len() && bytes[i] != b'\n' && bytes[i] != b'\r' {
-                    i += 1;
-                }
-                // `at_boundary` stays true; the newline (if any) is emitted next.
-            }
-            b'\n' | b'\r' | b' ' | b'\t' | b';' | b'&' | b'|' | b'(' => {
-                out.push(c);
-                at_boundary = true;
-                i += 1;
-            }
-            _ => {
-                out.push(c);
-                at_boundary = false;
-                i += 1;
-            }
-        }
-    }
-    // Every non-ASCII (multi-byte) byte is copied verbatim through the `_` arm,
-    // so the result is always valid UTF-8; fall back to the input if not.
-    String::from_utf8(out).unwrap_or_else(|_| command.to_string())
+    remove_ranges(command, lex(command).comments)
 }

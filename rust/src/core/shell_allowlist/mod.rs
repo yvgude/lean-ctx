@@ -10,6 +10,7 @@ mod compound;
 mod config;
 mod enforcement;
 mod heredoc;
+mod lexer;
 mod mode;
 mod powershell;
 mod ps_statements;
@@ -40,6 +41,7 @@ pub use enforcement::*;
 pub(crate) use heredoc::heredoc_delims;
 pub(crate) use heredoc::read_heredoc_delim;
 pub use heredoc::strip_all_heredoc_bodies;
+#[cfg(test)]
 pub(crate) use heredoc::{strip_comments, strip_quoted_heredoc_bodies};
 pub use mode::ShellSecurity;
 pub(crate) use substitution::check_substitution_in_args;
