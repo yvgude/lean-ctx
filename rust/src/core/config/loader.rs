@@ -125,6 +125,11 @@ pub(crate) fn strip_sensitive_overrides(local: &mut Config) -> Vec<&'static str>
         local.allow_symlink_roots.clear();
         withheld.push("allow_symlink_roots");
     }
+    // Destinations ctx_shell redirects and downloads may write to.
+    if !local.write_allow_paths.is_empty() {
+        local.write_allow_paths.clear();
+        withheld.push("write_allow_paths");
+    }
     if !local.custom_aliases.is_empty() {
         local.custom_aliases.clear();
         withheld.push("custom_aliases");

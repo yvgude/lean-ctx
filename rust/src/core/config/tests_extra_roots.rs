@@ -319,3 +319,24 @@ fn allow_symlink_roots_follows_extra_roots_trust_semantics() {
     trusted.merge_local(r#"allow_symlink_roots = ["/opt/dotfiles"]"#, true);
     assert_eq!(trusted.allow_symlink_roots, vec!["/opt/dotfiles"]);
 }
+
+#[test]
+fn write_allow_paths_follows_workspace_trust() {
+    // `write_allow_paths` decides where ctx_shell redirects and downloads may
+    // write, so an untrusted repo must not be able to add `/etc` to it.
+    let mut untrusted = Config::default();
+    untrusted.merge_local(r#"write_allow_paths = ["/etc"]"#, false);
+    assert!(
+        untrusted.write_allow_paths.is_empty(),
+        "shell write targets must be withheld for an untrusted workspace"
+    );
+    assert_eq!(
+        local_sensitive_overrides(r#"write_allow_paths = ["/etc"]"#),
+        vec!["write_allow_paths"],
+        "`lean-ctx trust` must list the key it is about to enable"
+    );
+
+    let mut trusted = Config::default();
+    trusted.merge_local(r#"write_allow_paths = ["/var/agent-scratch"]"#, true);
+    assert_eq!(trusted.write_allow_paths, vec!["/var/agent-scratch"]);
+}
