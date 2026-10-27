@@ -539,7 +539,7 @@ pub fn load_recent(limit: usize) -> Vec<AuditEntry> {
     };
     // Bounded memory: only the newest `limit` entries are retained while the
     // whole history (archives + active segment) streams past.
-    let mut recent = std::collections::VecDeque::with_capacity(limit.min(1024));
+    let mut recent = std::collections::VecDeque::new();
     for_each_entry_at(&path, |entry| {
         if recent.len() == limit {
             recent.pop_front();
