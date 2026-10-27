@@ -15,9 +15,10 @@ impl Fixture {
         let directory = tempfile::tempdir().unwrap();
         let executable = directory.path().join("agent");
         fs::write(&executable, format!(
-            "#!/bin/sh\nprintf 'call\\n' >> \"$0.calls\"\nif [ \"$1\" = '--version' ]; then printf 'fixture 1.0\\n'; exit 0; fi\nprintf '%s\\n' \"$@\" > \"$0.args\"\npwd > \"$0.cwd\"\nprintf '%s' \"$LEAN_CTX_PROFILE\" > \"$0.profile\"\n{body}\n"
+            "#!/bin/sh\n[ -n \"$LEAN_CTX_FIXTURE_PROBE\" ] && exit 0\nprintf 'call\\n' >> \"$0.calls\"\nif [ \"$1\" = '--version' ]; then printf 'fixture 1.0\\n'; exit 0; fi\nprintf '%s\\n' \"$@\" > \"$0.args\"\npwd > \"$0.cwd\"\nprintf '%s' \"$LEAN_CTX_PROFILE\" > \"$0.profile\"\n{body}\n"
         )).unwrap();
         fs::set_permissions(&executable, fs::Permissions::from_mode(0o700)).unwrap();
+        settle_executable(&executable);
         Self {
             directory,
             executable,
@@ -66,6 +67,35 @@ impl Fixture {
             profile_name: Some("isolated-profile".into()),
             profile_hash: None,
             delivery_profile: None,
+        }
+    }
+}
+
+/// Wait until the freshly written fixture can be executed. A test thread that
+/// forks while `fs::write` still holds the file open hands the child that
+/// write handle until it execs, and until then `exec` of the fixture fails
+/// with ETXTBSY — which the connector's health check reported as "agent
+/// runtime is unavailable or changed" on a busy CI host. The probe exits
+/// before the script records a call, so call-count assertions stay exact;
+/// once one exec succeeds no writer is left (ours is closed), so it stays
+/// executable. Same retry as `lsp::format`'s `spawn_fresh_script`.
+fn settle_executable(executable: &std::path::Path) {
+    let deadline = Instant::now() + Duration::from_secs(10);
+    loop {
+        match std::process::Command::new(executable)
+            .env("LEAN_CTX_FIXTURE_PROBE", "1")
+            .status()
+        {
+            Ok(status) => {
+                assert!(status.success(), "fixture probe failed: {status}");
+                return;
+            }
+            Err(error)
+                if error.raw_os_error() == Some(libc::ETXTBSY) && Instant::now() < deadline =>
+            {
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            Err(error) => panic!("fixture is not executable: {error}"),
         }
     }
 }
