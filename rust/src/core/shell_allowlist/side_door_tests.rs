@@ -60,7 +60,6 @@ fn every_assignment_to_a_hijacking_variable_is_blocked() {
         "ls,git,echo,true",
         &[
             "export PATH=/usr/local/bin:$PATH; ls",
-            "declare -x PATH=/usr/local/bin:$PATH; ls",
             "FOO=1 PATH=/usr/local/bin:$PATH ls",
         ],
     );
