@@ -337,9 +337,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_secs();
-        let history: String = (0..CRASH_LOOP_THRESHOLD)
-            .map(|_| format!("{now}\n"))
-            .collect();
+        let history = format!("{now}\n").repeat(CRASH_LOOP_THRESHOLD);
         std::fs::write(dir.path().join(".test-over-starts.log"), history).unwrap();
 
         // One start over the threshold: the smallest backoff (2 s, slept here).
