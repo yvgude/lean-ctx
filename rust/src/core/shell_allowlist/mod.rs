@@ -24,7 +24,6 @@ use crate::core::error::ShellError;
 use case_construct::find_shell_word;
 use compound::expand_to_leaf_segments;
 use config::{allowlist_block_message, effective_allowlist};
-use enforcement::SHELL_BUILTINS;
 #[cfg(test)]
 use enforcement::{
     check_all_segments, check_pipe_to_bare_interpreter, check_unconditional_blocked_only,
