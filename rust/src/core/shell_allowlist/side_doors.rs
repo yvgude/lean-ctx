@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Assignments and builtins that make the shell run code the segment check
 //! never sees as a command (GHSA-rxv5-4c3x-g4q6 E): an `LD_PRELOAD` or
 //! `BASH_ENV` set by `export` or by a second inline assignment, a `trap`

@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! The one lexical pass the shell gate trusts (GHSA-rxv5-4c3x-g4q6 E).
 //!
 //! Comment stripping, heredoc stripping and the substitution check used to run

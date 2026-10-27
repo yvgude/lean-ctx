@@ -740,22 +740,9 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "LEAN_CTX_ALLOW_REROOT",
         ),
     );
-    root.insert(
-        "a2a_accept_untrusted_signers".into(),
-        key(
-            "bool",
-            serde_json::json!(false),
-            "Accept A2A handoff bundles and context packages (/v1/a2a/handoff, /a2a/deliver) signed by a key that is not pinned in trusted-signers.toml. Off by default: such signatures prove integrity, not who sent them, so they are rejected with 403 untrusted_signer. Global-only",
-        ),
-    );
-    root.insert(
-        "mcp_import_allow_unverified".into(),
-        key(
-            "bool",
-            serde_json::json!(false),
-            "Let MCP tools (ctx_handoff import, ctx_pack import) import bundles and packages that are unsigned or signed by a key not pinned in trusted-signers.toml. A tool argument cannot grant this (prompt injection); CLI imports keep --allow-unsigned. Global-only",
-        ),
-    );
+    for (name, schema) in super::signer_trust_keys() {
+        root.insert(name.into(), schema);
+    }
     root.insert(
         "hook_binary".into(),
         key_with_env(

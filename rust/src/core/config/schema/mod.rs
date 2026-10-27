@@ -108,6 +108,29 @@ fn daemon_max_rss_key(cfg: &crate::core::config::Config) -> KeySchema {
     )
 }
 
+/// The global-only signer-trust opt-ins (root section); kept here so
+/// `sections_core.rs` stays under the LOC gate.
+fn signer_trust_keys() -> [(&'static str, KeySchema); 2] {
+    [
+        (
+            "a2a_accept_untrusted_signers",
+            key(
+                "bool",
+                serde_json::json!(false),
+                "Accept A2A handoff bundles and context packages (/v1/a2a/handoff, /a2a/deliver) signed by a key that is not pinned in trusted-signers.toml. Off by default: such signatures prove integrity, not who sent them, so they are rejected with 403 untrusted_signer. Global-only",
+            ),
+        ),
+        (
+            "mcp_import_allow_unverified",
+            key(
+                "bool",
+                serde_json::json!(false),
+                "Let MCP tools (ctx_handoff import, ctx_pack import) import bundles and packages that are unsigned or signed by a key not pinned in trusted-signers.toml. A tool argument cannot grant this (prompt injection); CLI imports keep --allow-unsigned. Global-only",
+            ),
+        ),
+    ]
+}
+
 impl ConfigSchema {
     pub fn generate() -> Self {
         let mut sections = BTreeMap::new();

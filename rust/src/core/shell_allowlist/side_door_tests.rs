@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! GHSA-rxv5-4c3x-g4q6 E: constructs that run code no segment shows —
 //! assignments, builtins, zsh-only syntax — and a probe that runs tricky
 //! inputs through the installed shells and checks the gate blocks each one
@@ -163,17 +164,23 @@ fn substitutions_in_conditionals_and_after_every_separator_are_gated() {
 }
 
 /// One probe: an input, the shells known to run its marker, and the text the
-/// block reason must contain (any one of them).
+/// block reason must contain (any one of them). Only the unix marker test
+/// below runs the probes.
+#[cfg(unix)]
 struct Probe {
     input: &'static str,
     shells: &'static [&'static str],
     reasons: &'static [&'static str],
 }
 
+#[cfg(unix)]
 const ALL: &[&str] = &["bash", "dash", "zsh"];
+#[cfg(unix)]
 const SUB: &[&str] = &["evil_marker"];
+#[cfg(unix)]
 const REFUSED: &[&str] = &["cannot be validated"];
 
+#[cfg(unix)]
 const fn probe(
     input: &'static str,
     shells: &'static [&'static str],
@@ -186,6 +193,7 @@ const fn probe(
     }
 }
 
+#[cfg(unix)]
 const PROBES: &[Probe] = &[
     probe("echo ${x:- #$(evil_marker)}", ALL, SUB),
     probe("echo ${x:-(#$(evil_marker))}", &["bash", "dash"], SUB),

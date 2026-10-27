@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! GHSA-rxv5-4c3x-g4q6 E: the shared lexer (`lexer.rs`) against inputs that
 //! bash, dash or zsh execute but the gate used to read as comments, heredoc
 //! bodies or quoted text.

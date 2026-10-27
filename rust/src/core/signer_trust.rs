@@ -1,3 +1,4 @@
+// SPDX-License-Identifier: Apache-2.0
 //! Signer trust anchors for handoff bundles and context packages
 //! (GHSA-gvg8-285q-m62g).
 //!

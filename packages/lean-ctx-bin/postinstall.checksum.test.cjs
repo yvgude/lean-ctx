@@ -11,7 +11,10 @@ const vm = require("node:vm");
 const crypto = require("node:crypto");
 const assert = require("node:assert/strict");
 
-const source = fs.readFileSync(path.join(__dirname, "postinstall.js"), "utf8");
+// A Windows checkout may carry CRLF line endings.
+const source = fs
+  .readFileSync(path.join(__dirname, "postinstall.js"), "utf8")
+  .replace(/\r\n/g, "\n");
 const start = source.indexOf("function expectedSha256");
 const end = source.indexOf("\n// ---------------------------------------------------------------------------\n// Main", start);
 assert(start >= 0 && end > start, "checksum helpers were not found");
