@@ -1,15 +1,17 @@
 //! Assignments and builtins that make the shell run code the segment check
-//! never sees as a command (GHSA-rxv5-4c3x-g4q6 E): a `PATH` set by `export`
-//! or by a second inline assignment, a `trap` action, `hash -p`, `enable -f`.
+//! never sees as a command (GHSA-rxv5-4c3x-g4q6 E): an `LD_PRELOAD` or
+//! `BASH_ENV` set by `export` or by a second inline assignment, a `trap`
+//! action, `hash -p`, `enable -f`.
 
 use crate::core::error::ShellError;
 
 use super::shell_tokenize;
 
 /// Variables whose value redirects which binary, library, startup file or
-/// hook runs.
+/// hook runs, wherever they are assigned. `PATH` is not among them: by owner
+/// decision only a segment that *starts* with `PATH=` is blocked (agents
+/// prepend to `PATH` constantly, and the allowlist is no sandbox).
 const BLOCKED_ENV: &[&str] = &[
-    "PATH",
     "GIT_ASKPASS",
     "GIT_SSH",
     "GIT_SSH_COMMAND",
@@ -138,10 +140,15 @@ fn assigned_names(segment: &str) -> Vec<String> {
 /// Block assignments to [`BLOCKED_ENV`] anywhere in the assignment prefix of
 /// `segment` or through a variable-setting builtin.
 pub(super) fn check_env_assignments(segment: &str) -> Result<(), ShellError> {
-    let Some(entry) = assigned_names(segment)
-        .into_iter()
-        .find(|entry| is_blocked_assignment(entry))
-    else {
+    let leading_path = segment
+        .trim_start()
+        .starts_with("PATH=")
+        .then(|| "PATH=".to_string());
+    let Some(entry) = leading_path.or_else(|| {
+        assigned_names(segment)
+            .into_iter()
+            .find(|entry| is_blocked_assignment(entry))
+    }) else {
         return Ok(());
     };
     let name = entry
@@ -152,7 +159,7 @@ pub(super) fn check_env_assignments(segment: &str) -> Result<(), ShellError> {
          which binary, library or startup code runs).\n\
          Use the env parameter instead:  ctx_shell(command=\"<your command>\", \
          env={{\"{name}\": \"<value>\"}})\n\
-         Blocked variables: {}, and {}*\n\
+         Blocked variables: PATH (as the first word of a command), {}, and {}*\n\
          Other assignments (e.g. FOO=bar cmd) are allowed.",
         BLOCKED_ENV.join(", "),
         BLOCKED_ENV_PREFIXES.join("*, "),

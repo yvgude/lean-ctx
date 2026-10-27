@@ -33,23 +33,35 @@ fn every_assignment_to_a_hijacking_variable_is_blocked() {
     assert_all_block(
         "ls,git,echo,true",
         &[
-            "FOO=1 PATH=/tmp/x ls",
-            "export PATH=/tmp/x; ls",
-            "export FOO=1 PATH=/tmp/x && ls",
-            "declare -x PATH=/tmp/x; ls",
+            "PATH=/tmp/x ls",
+            "FOO=1 LD_PRELOAD=/tmp/x.so ls",
+            "export LD_PRELOAD=/tmp/x.so; ls",
+            "export FOO=1 BASH_ENV=/tmp/x && ls",
+            "declare -x LD_PRELOAD=/tmp/x.so; ls",
             "readonly LD_PRELOAD=/tmp/x.so; ls",
-            "env FOO=1 PATH=/tmp/x ls",
-            "env -u HOME PATH=/tmp/x ls",
-            "env -S 'PATH=/tmp/x ls'",
+            "env FOO=1 LD_PRELOAD=/tmp/x.so ls",
+            "env -u HOME LD_PRELOAD=/tmp/x.so ls",
+            "env -S 'LD_PRELOAD=/tmp/x.so ls'",
             "BASH_ENV=/tmp/x git status",
             "ENV=/tmp/x git status",
             "PROMPT_COMMAND=x git status",
             "ZDOTDIR=/tmp/x git status",
             "GIT_CONFIG_COUNT=1 GIT_CONFIG_KEY_0=core.pager GIT_CONFIG_VALUE_0=x git log",
             "GIT_PAGER='sh -c x' git log",
-            "printf -v PATH /tmp/x; ls",
-            "read PATH < /dev/null; ls",
-            "PATH+=:/tmp/x ls",
+            "printf -v BASH_ENV /tmp/x; ls",
+            "read LD_PRELOAD < /dev/null; ls",
+            "LD_PRELOAD+=:/tmp/x.so ls",
+        ],
+    );
+    // Owner decision: PATH stays as before — only a segment that starts with
+    // `PATH=` is blocked; `export PATH=…`, `env [-i] PATH=…` and a later
+    // `PATH=` assignment are allowed (agents prepend to PATH constantly).
+    assert_all_pass(
+        "ls,git,echo,true",
+        &[
+            "export PATH=/usr/local/bin:$PATH; ls",
+            "declare -x PATH=/usr/local/bin:$PATH; ls",
+            "FOO=1 PATH=/usr/local/bin:$PATH ls",
         ],
     );
     assert_all_pass(
