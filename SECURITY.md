@@ -285,6 +285,21 @@ Enforcement applies to the MCP path, hook-child mode and every non-interactive C
 
 **`ctx_execute(language=shell)` is deliberately NOT allowlisted (GH #905).** The checks above gate `ctx_shell` and `lean-ctx -c` only. `ctx_execute` is the trusted script path: calling it is an explicit decision to write and run a script, the same decision a native Write plus `bash script.sh` would express, so re-running the allowlist there would only tax the sanctioned route. The consequence must be stated plainly rather than assumed: **the two tools are one trust tier, not a boundary and a bypass.** Any agent that can call `ctx_execute` has full shell reach no matter how `shell_allowlist` is configured — tightening the allowlist does not constrain it. Where that reach is unacceptable, deny the tool by role (`denied: ["ctx_execute"]`) or run the stack in an OS sandbox; those are the only controls that bind it.
 
+**Constructs the gate refuses (GHSA-rxv5-4c3x-g4q6 E).** The command runs in the user's `$SHELL`, which may be bash, dash or zsh. Where these shells read the same text differently, or where the gate cannot tell which commands a construct runs, the command is refused rather than guessed at. Rewrite the command without the construct:
+
+- legacy `$[ … ]` arithmetic (use `$(( … ))`);
+- zsh parameter flags `${(…)…}` and bash prompt expansion `${x@P}`, both of which can evaluate a value as code;
+- a `(` attached to a word: zsh glob qualifiers (`*(e:…:)`, `*(+cmd)`) and bash extended globs (`@(…)`, `!(…)`); function heads `f()` and arrays `a=(…)` are fine;
+- a bare `{` argument (zsh brace bodies such as `while c { … }` or `repeat n { … }`), zsh short loops (`for x (…) cmd`), and a brace group followed by anything other than redirections (`{ a; } b`, `{ a } always { b }`);
+- `hash -p` and `enable -f`; a `trap` action is checked like a command;
+- a carriage return not followed by a line feed, and the Unicode line/paragraph separators U+2028/U+2029;
+- a here-document whose terminator line never appears;
+- constructs that bash, dash and zsh end at different places: `$'…'` with an escaped quote, a `'` or `{` inside `${…}`, `<<` inside `(( … ))`, and here-documents queued across a command-substitution boundary.
+
+Assignments to variables that redirect which binary, library or startup code runs (`LD_*`, `DYLD_*`, `BASH_ENV`, `ENV`, `PROMPT_COMMAND`, `PS4`, `SHELLOPTS`, `ZDOTDIR`, `GIT_CONFIG*`, `BASH_FUNC_*`, pager and editor variables other than harmless values like `cat`, `NODE_OPTIONS`, `PERL5OPT`, `RUBYOPT`, …) are blocked anywhere in the assignment prefix and through `export`/`declare`/`env`/`read`/`printf -v`. `PATH` is blocked only as the first word of a command (`PATH=… cmd`); `export PATH=…` stays allowed.
+
+**Known limitation: arithmetic evaluation of variable contents.** The gate is syntactic. bash evaluates array subscripts inside variable *values* at run time whenever a value is used in an arithmetic context, and that evaluation performs command substitution: `x='a[$(cmd)]'; echo $((x))` runs `cmd`, as do `let`, `[[ x -eq … ]]`, `test -v`, `printf -v`, `unset` and `declare` with such a value. The value can come from a quoted string or from a file read at run time, so no syntactic check can see it. This is one more reason the allowlist is not a sandbox: for untrusted input, use an OS sandbox or the agent's approval flow.
+
 **Explicitly out of scope:** commands run with the invoking user's full privileges. Anything the user can do, an allowed command can do — `cp`/`rsync` can copy any file the OS lets the user read, package managers execute arbitrary install scripts, `npm test` runs project code. A blocklist cannot enumerate these; pretending otherwise would be security theater.
 
 **Rationale:** Shell filters can be bypassed by a sufficiently creative attacker, so the agent's permission model (Claude Code allowlists, Cursor approval dialogs) remains the primary boundary — lean-ctx's allowlist is a second, independent layer, not a replacement.
