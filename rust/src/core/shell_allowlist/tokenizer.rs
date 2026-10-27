@@ -406,9 +406,11 @@ fn split_with_separators(command: &str) -> Vec<(&str, Option<Separator>)> {
                     segments.push((&command[start..i], Some(Separator::And)));
                     i += 2;
                     start = i;
-                } else if (i > 0 && bytes[i - 1] == b'>') || (i + 1 < len && bytes[i + 1] == b'>') {
-                    // Redirect operator, NOT a separator: `2>&1`, `1>&2`, `>&file` (prev is '>')
-                    // or `&>file`, `&>>file` (next is '>'). The '&' belongs to the current
+                } else if (i > 0 && matches!(bytes[i - 1], b'>' | b'<'))
+                    || (i + 1 < len && bytes[i + 1] == b'>')
+                {
+                    // Redirect operator, NOT a separator: `2>&1`, `1>&2`, `>&file`, `<&3`,
+                    // `0<&-` (prev is '>' or '<') or `&>file`, `&>>file` (next is '>'). The '&' belongs to the current
                     // command — splitting here would mistake the fd/target (e.g. `1`) for a
                     // standalone command and falsely block it (#334).
                     i += 1;

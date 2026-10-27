@@ -339,3 +339,60 @@ fn inputs_that_execute_the_marker_are_blocked() {
     }
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+const ROUND4_ALLOWLIST: &str =
+    "echo,ls,git,cat,cargo,tail,find,xargs,grep,env,timeout,nice,nohup,lean-ctx";
+
+/// A substituted command and a wrapper's target get the same per-command
+/// checks as a top-level command: allowlist entry, environment overrides,
+/// dangerous flags, self-reconfiguration and builtin side doors.
+#[test]
+fn substituted_and_wrapped_commands_are_gated_like_top_level_ones() {
+    assert_all_block(
+        ROUND4_ALLOWLIST,
+        &[
+            "echo $(env LD_PRELOAD=/tmp/x.so ls)",
+            "echo $(trap 'evil_binary' EXIT)",
+            "echo \"$(hash -p /tmp/x ls)\"",
+            "echo \"$(lean-ctx allow evil_binary)\"",
+            "echo `lean-ctx allow evil_binary`",
+            "echo \"$(git fetch --upload-pack=evil origin)\"",
+            "echo \"$(timeout 5 evil_binary)\"",
+            "echo \"$(timeout 5 git fetch --upload-pack=evil origin)\"",
+            "cat <(lean-ctx allow evil_binary)",
+            "timeout 5 git fetch --upload-pack=evil origin",
+            "nice timeout 5 git fetch --upload-pack=evil origin",
+            "timeout 5 lean-ctx allow evil_binary",
+            "timeout 5 env LD_PRELOAD=/tmp/x.so ls",
+            "command trap 'evil_binary' EXIT",
+            "builtin hash -p /tmp/x ls",
+            "nohup env BASH_ENV=/tmp/x git status",
+        ],
+    );
+    assert_all_pass(
+        ROUND4_ALLOWLIST,
+        &[
+            "git commit -m \"$(cat <<'EOF'\nmsg\nEOF\n)\"",
+            "echo \"$(git rev-parse HEAD)\"",
+            "cargo test 2>&1 | tail -5",
+            "timeout 60 cargo test",
+            "find . -name '*.rs' | xargs grep -l foo",
+            "export PATH=\"$HOME/.cargo/bin:$PATH\"; cargo build",
+            "x=$((x+1))",
+            "echo \"$(timeout 5 git status)\"",
+            "timeout 5 env FOO=1 git status",
+        ],
+    );
+}
+
+/// `<&N` and `<&-` duplicate or close a descriptor; the `&` is no background
+/// operator.
+#[test]
+fn input_descriptor_duplication_is_not_a_background_operator() {
+    assert_all_pass(
+        "cat,cargo",
+        &["cat <&3", "cat 0<&-", "cargo test 2>&1", "cat 0<&3 2>&1"],
+    );
+    assert_eq!(split_on_operators("cat <&3").len(), 1);
+    assert_eq!(split_on_operators("cat 0<&-").len(), 1);
+}

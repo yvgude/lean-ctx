@@ -342,6 +342,13 @@ fn check_interpreter_inner(
                 }
             }
             let rest_str = rest_tokens.join(" ");
+            // GHSA-rxv5-4c3x-g4q6 E: the target runs like a top-level command,
+            // so it gets the same per-command checks at every unwrap level.
+            let mut target_tokens = rest_tokens.clone();
+            if let Some(first) = target_tokens.first_mut() {
+                *first = delegated.to_string();
+            }
+            check_delegated_target(&rest_str, &target_tokens, allowlist)?;
             return check_interpreter_inner(&rest_str, allowlist, depth + 1, inline_ok);
         }
     }
@@ -749,9 +756,36 @@ fn check_inline_env_block(segment: &str) -> Result<(), ShellError> {
 /// `enable -f` are refused.
 fn check_builtin_side_doors(tokens: &[String], allowlist: &Allowlist) -> Result<(), ShellError> {
     super::side_doors::check_builtin_options(tokens)?;
-    let Some(action) = super::side_doors::trap_action(tokens) else {
-        return Ok(());
-    };
+    match super::side_doors::trap_action(tokens) {
+        Some(action) => check_trap_action(action, allowlist),
+        None => Ok(()),
+    }
+}
+
+/// The per-command checks a wrapper's target (`env`, `timeout`, `xargs`,
+/// `command`, …) gets beyond allowlist membership and interpreter flags,
+/// which `check_interpreter_inner` applies itself: environment overrides,
+/// dangerous flags, self-reconfiguration and builtin side doors. Without an
+/// allowlist (blocklist-only mode) a `trap` action gets the unconditional
+/// rules, as at the top level.
+fn check_delegated_target(
+    target: &str,
+    tokens: &[String],
+    allowlist: Option<&Allowlist>,
+) -> Result<(), ShellError> {
+    check_inline_env_block(target)?;
+    check_dangerous_flags(target)?;
+    super::self_config::check_self_reconfiguration(tokens)?;
+    super::side_doors::check_builtin_options(tokens)?;
+    match (super::side_doors::trap_action(tokens), allowlist) {
+        (Some(action), Some(allowlist)) => check_trap_action(action, allowlist),
+        (Some(action), None) => check_unconditional_blocked_only(action),
+        (None, _) => Ok(()),
+    }
+}
+
+/// A `trap` action is a script of its own: it is gated like a command line.
+fn check_trap_action(action: &str, allowlist: &Allowlist) -> Result<(), ShellError> {
     if let Some(reason) = super::lexer::lex(action).problem {
         return Err(unvalidatable(reason, action));
     }

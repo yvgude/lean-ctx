@@ -1,9 +1,6 @@
 use super::heredoc::strip_for_analysis;
 use super::lexer::{Expansion, lex};
-use super::{
-    SHELL_BUILTINS, ShellError, effective_allowlist, extract_all_commands,
-    extract_base_from_segment,
-};
+use super::{ShellError, effective_allowlist, extract_all_commands, extract_base_from_segment};
 
 /// $(), backticks, <() in arguments: a substituted command runs like any other,
 /// so it is gated like one (GHSA-rxv5-4c3x-g4q6 E, owner decision 26.10.;
@@ -47,35 +44,28 @@ pub(crate) fn check_substitution_in_args(command: &str) -> Result<(), ShellError
         super::enforcement::check_unconditional_blocked_only(inner)?;
     }
 
+    // With an allowlist, each substituted command goes through the very
+    // checker a top-level segment does (`check_all_segments`): allowlist
+    // entry, wrapper targets, dangerous flags, self-reconfiguration, `trap`/
+    // `hash -p`/`enable -f`. It used to check the base name only.
     let allowlist = effective_allowlist();
-    let dangerous: Vec<&str> = inner_cmds
-        .iter()
-        .filter(|inner| {
-            let base = extract_base_from_segment(inner);
-            !base.is_empty()
-                && !SHELL_BUILTINS.contains(&base.as_str())
-                && !allowlist.iter().any(|a| a == &base)
-        })
-        .map(String::as_str)
-        .collect();
-
-    if dangerous.is_empty() {
+    if allowlist.is_empty() {
         return Ok(());
     }
-
-    let names: Vec<String> = dangerous
-        .iter()
-        .map(|c| extract_base_from_segment(c))
-        .collect();
-
-    Err(format!(
-        "[BLOCKED — DO NOT RETRY] Command substitution with non-allowlisted command: {}. \
-         A substituted command is gated like one at the top level; add it with \
-         `lean-ctx allow <cmd>` if it is safe.\n\
-         Command: {command}",
-        names.join(", ")
-    )
-    .into())
+    let scoping = crate::core::config::Config::load().shell_allowlist_subcommand_scoping;
+    let allowlist = super::enforcement::Allowlist::new(allowlist, scoping);
+    for inner in &inner_cmds {
+        super::enforcement::check_all_segments(inner, &allowlist).map_err(|err| {
+            ShellError::from(format!(
+                "[BLOCKED — DO NOT RETRY] Command substitution runs a command that is gated \
+                 like one at the top level: {}\n\
+                 Command: {command}",
+                err.message()
+                    .trim_start_matches("[BLOCKED — DO NOT RETRY] ")
+            ))
+        })?;
+    }
+    Ok(())
 }
 
 /// The commands every expanding substitution in `command` runs, recursively.
