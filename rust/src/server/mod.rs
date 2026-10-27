@@ -415,6 +415,8 @@ mod tests {
         let bare = tmp.path().join("bare-dir");
         std::fs::create_dir_all(&bare).unwrap();
 
+        // Every cwd-moving test shares the env lock (the cwd is process-global).
+        let _lock = crate::core::data_dir::test_env_lock();
         let original = std::env::current_dir().unwrap();
         std::env::set_current_dir(&bare).unwrap();
         let result = derive_project_root_from_cwd();

@@ -129,35 +129,39 @@ pub(crate) fn get_or_create() -> Result<String, String> {
 
 /// Read one lock-consistent installation ID and deletion credential snapshot.
 pub(crate) fn get_or_create_identity() -> Result<(String, String), String> {
-    with_deletion_lock(|dir| {
-        let path = dir.join(IDENTITY_FILE);
-        if let Ok(raw) = std::fs::read_to_string(&path) {
-            if let Ok(identity) = serde_json::from_str::<TelemetryIdentity>(&raw) {
-                if is_valid_uuid(&identity.installation_id)
-                    && is_lower_hex_256(&identity.deletion_token)
-                {
-                    tighten_secret_permissions(&path)?;
-                    retire_legacy_sidecars(dir)?;
-                    return Ok((identity.installation_id, identity.deletion_token));
-                }
+    with_deletion_lock(get_or_create_identity_locked)
+}
+
+/// [`get_or_create_identity`] for a caller that already holds the credential
+/// lock of `dir`.
+fn get_or_create_identity_locked(dir: &std::path::Path) -> Result<(String, String), String> {
+    let path = dir.join(IDENTITY_FILE);
+    if let Ok(raw) = std::fs::read_to_string(&path) {
+        if let Ok(identity) = serde_json::from_str::<TelemetryIdentity>(&raw) {
+            if is_valid_uuid(&identity.installation_id)
+                && is_lower_hex_256(&identity.deletion_token)
+            {
+                tighten_secret_permissions(&path)?;
+                retire_legacy_sidecars(dir)?;
+                return Ok((identity.installation_id, identity.deletion_token));
             }
         }
-        // A legacy sidecar in this directory is this directory's own identity;
-        // only a directory without one adopts the user's identity from a
-        // sibling data directory instead of minting a second one.
-        let own_sidecar = dir.join(ID_FILE).is_file();
-        if !own_sidecar && let Some(identity) = sibling_identity(&path) {
-            persist_identity(&path, &identity)?;
-            return Ok((identity.installation_id, identity.deletion_token));
-        }
-        let identity = TelemetryIdentity {
-            installation_id: load_or_create_id(dir)?,
-            deletion_token: load_or_create_token(dir)?,
-        };
+    }
+    // A legacy sidecar in this directory is this directory's own identity;
+    // only a directory without one adopts the user's identity from a
+    // sibling data directory instead of minting a second one.
+    let own_sidecar = dir.join(ID_FILE).is_file();
+    if !own_sidecar && let Some(identity) = sibling_identity(&path) {
         persist_identity(&path, &identity)?;
-        retire_legacy_sidecars(dir)?;
-        Ok((identity.installation_id, identity.deletion_token))
-    })
+        return Ok((identity.installation_id, identity.deletion_token));
+    }
+    let identity = TelemetryIdentity {
+        installation_id: load_or_create_id(dir)?,
+        deletion_token: load_or_create_token(dir)?,
+    };
+    persist_identity(&path, &identity)?;
+    retire_legacy_sidecars(dir)?;
+    Ok((identity.installation_id, identity.deletion_token))
 }
 
 fn load_or_create_id(dir: &std::path::Path) -> Result<String, String> {
@@ -365,11 +369,20 @@ mod tests {
     fn updates_keep_the_tracked_installation_id() {
         let _iso = crate::core::data_dir::isolated_data_dir();
         let legacy_id = generate_uuid_v4();
-        let dir = crate::core::paths::data_dir().unwrap();
-        std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("installation_id"), format!("{legacy_id}\n")).unwrap();
-
-        let (migrated, token) = get_or_create_identity().unwrap();
+        // Stage the pre-3.11 install and migrate it under the credential lock:
+        // a detached telemetry thread of an earlier test resolves the data dir
+        // when it runs and can mint an identity in this fresh dir first (CI
+        // saw a random ID instead of the legacy one). Clearing any such stray
+        // identity under the lock restores the exact pre-update state.
+        let (migrated, token) = with_deletion_lock(|dir| {
+            for stray in [IDENTITY_FILE, TOKEN_FILE] {
+                let _ = std::fs::remove_file(dir.join(stray));
+            }
+            std::fs::write(dir.join(ID_FILE), format!("{legacy_id}\n"))
+                .map_err(|e| e.to_string())?;
+            get_or_create_identity_locked(dir)
+        })
+        .unwrap();
         assert_eq!(migrated, legacy_id, "the v1 ID survives the move to v2");
         for _ in 0..3 {
             assert_eq!(

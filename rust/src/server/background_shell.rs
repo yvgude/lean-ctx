@@ -493,6 +493,39 @@ mod tests {
     #[cfg_attr(windows, ignore)]
     fn worker_counts_only_background_failures_and_as_commands() {
         use crate::core::telemetry_v2::ErrorCategory;
+        // The daily error counters are process-global: any parallel test whose
+        // failing command or detached job lands while this one holds the
+        // isolated data dir is counted here too (CI saw 2 instead of 1). Run
+        // the exact scenario alone in a fresh test process so the counts are
+        // this worker's own, like the MCP cancellation regression does.
+        if std::env::var_os("LEAN_CTX_BACKGROUND_TELEMETRY_SUBPROCESS").is_none() {
+            let environment = tempfile::tempdir().unwrap();
+            let mut command = std::process::Command::new(std::env::current_exe().unwrap());
+            command
+                .args([
+                    "--exact",
+                    "server::background_shell::tests::worker_counts_only_background_failures_and_as_commands",
+                    "--nocapture",
+                    "--test-threads=1",
+                ])
+                .env("LEAN_CTX_BACKGROUND_TELEMETRY_SUBPROCESS", "1");
+            for name in [
+                "LEAN_CTX_DATA_DIR",
+                "LEAN_CTX_CONFIG_DIR",
+                "LEAN_CTX_STATE_DIR",
+                "LEAN_CTX_CACHE_DIR",
+            ] {
+                command.env(name, environment.path());
+            }
+            let output = command.output().unwrap();
+            let stdout = String::from_utf8_lossy(&output.stdout);
+            assert!(
+                output.status.success() && stdout.contains("1 passed"),
+                "{stdout}\n{}",
+                String::from_utf8_lossy(&output.stderr)
+            );
+            return;
+        }
         let _iso = crate::core::data_dir::isolated_data_dir();
 
         let result = run_foreground_or_detach(

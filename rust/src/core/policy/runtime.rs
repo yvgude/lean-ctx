@@ -605,16 +605,15 @@ mod tests {
 
     struct CurrentDirGuard {
         previous: std::path::PathBuf,
-        _lock: std::sync::MutexGuard<'static, ()>,
+        _lock: crate::core::data_dir::TestEnvGuard,
     }
 
     impl CurrentDirGuard {
         fn enter(dir: &std::path::Path) -> Self {
-            static LOCK: OnceLock<std::sync::Mutex<()>> = OnceLock::new();
-            let lock = LOCK.get_or_init(|| std::sync::Mutex::new(()));
-            let guard = lock
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            // The cwd is process-global like the env (and here holds an invalid
+            // policy pack): share the reentrant env lock with every other
+            // test that moves or depends on it.
+            let guard = crate::core::data_dir::test_env_lock();
             let previous = std::env::current_dir().expect("read current directory");
             std::env::set_current_dir(dir).expect("enter temporary directory");
             Self {

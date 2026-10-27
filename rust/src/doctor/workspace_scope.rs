@@ -230,13 +230,10 @@ mod tests {
     }
 
     /// Run `workspace_scope_outcome` with the cwd temporarily set to `dir`.
-    /// Serialized via a mutex because `set_current_dir` is process-global.
+    /// Serialized via the shared env lock because `set_current_dir` is
+    /// process-global: every cwd-moving test takes the same lock.
     fn with_cwd<T>(dir: &std::path::Path, f: impl FnOnce() -> T) -> T {
-        use std::sync::Mutex;
-        static LOCK: Mutex<()> = Mutex::new(());
-        let _guard = LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let _guard = crate::core::data_dir::test_env_lock();
         let prev = std::env::current_dir().unwrap();
         std::env::set_current_dir(dir).unwrap();
         let out = f();

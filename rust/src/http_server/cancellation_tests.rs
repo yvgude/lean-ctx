@@ -250,7 +250,12 @@ async fn outer_rest_timeout_preserves_mcp_execution() {
     assert!(probe.read_succeeded.load(Ordering::Acquire));
     // The consumed router has no local strong server owner; observe the
     // detached per-call service releasing its server after real completion.
-    tokio::time::timeout(StdDuration::from_secs(5), async {
+    // `completed` fires inside the handler; the service still runs the whole
+    // post-handler pipeline (output shaping, receipts, ledger I/O on blocking
+    // threads) before it answers and drops the server. On a loaded CI runner
+    // that alone exceeded 5 s, so this is a liveness bound like the gate's own
+    // one-minute deadline: a leaked server never releases and still fails here.
+    tokio::time::timeout(StdDuration::from_mins(1), async {
         while service_lifetime.strong_count() != 0 {
             tokio::time::sleep(StdDuration::from_millis(10)).await;
         }

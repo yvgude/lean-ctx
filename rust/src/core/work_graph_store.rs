@@ -764,18 +764,23 @@ mod tests {
             &fence,
         )
         .unwrap();
-        let marker = project_dir.path().join("descendant-survived");
+        // The child never ends on its own: only the other process's durable
+        // cancel (or the generous timeout) can stop it. A child that exits
+        // after a fixed delay raced the writer process, whose cold start on a
+        // loaded runner outlasted it. The descendant beats into `marker` until
+        // it is killed, so a survivor is seen however late the cancel lands.
+        let marker = project_dir.path().join("descendant-heartbeat");
         let mut command = std::process::Command::new("sh");
         command
             .args([
                 "-c",
-                "(sleep 1; printf leaked > \"$1\") & wait",
+                "(while :; do printf x >> \"$1\"; sleep 0.1; done) & wait",
                 "cancel-test",
             ])
             .arg(&marker);
         let output = crate::core::agent_connector::timeout::run_with_timeout_cancellable(
             &mut command,
-            5_000,
+            120_000,
             Some(&format!("{key}:attempt-1")),
         )
         .unwrap();
@@ -785,8 +790,14 @@ mod tests {
         assert!(
             WorkGraphStore::execution_stop_requested(project, "graph", "child", &fence).unwrap()
         );
+        let beats = || std::fs::metadata(&marker).map_or(0, |meta| meta.len());
+        let after_cancel = beats();
         std::thread::sleep(std::time::Duration::from_millis(1100));
-        assert!(!marker.exists(), "cancelled descendant continued running");
+        assert_eq!(
+            beats(),
+            after_cancel,
+            "cancelled descendant continued running"
+        );
     }
 
     #[cfg(unix)]

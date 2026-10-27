@@ -125,10 +125,12 @@ pub fn try_acquire_lock(
 /// Detects rapid restart loops (e.g., IDE keeps respawning a crashing MCP server).
 /// Records each startup timestamp; if too many happen within the window, sleeps
 /// with exponential backoff to break the loop and avoid host degradation.
-pub fn crash_loop_backoff(process_name: &str) {
-    let Some(dir) = crate::core::data_dir::lean_ctx_data_dir().ok() else {
-        return;
-    };
+///
+/// Returns the backoff this start triggered (`None` below the threshold), so
+/// callers and tests can observe the decision itself instead of timing it.
+/// In MCP server mode the backoff is reported but not slept (#1294).
+pub fn crash_loop_backoff(process_name: &str) -> Option<Duration> {
+    let dir = crate::core::data_dir::lean_ctx_data_dir().ok()?;
     let _ = std::fs::create_dir_all(&dir);
     let ts_path = dir.join(format!(".{}-starts.log", sanitize_lock_name(process_name)));
 
@@ -179,7 +181,9 @@ pub fn crash_loop_backoff(process_name: &str) {
             eprintln!("{msg}");
             std::thread::sleep(Duration::from_secs(backoff_secs));
         }
+        return Some(Duration::from_secs(backoff_secs));
     }
+    None
 }
 
 /// Clears the crash-loop history file, resetting any active backoff.
@@ -313,14 +317,36 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let _guard = EnvVarGuard::set("LEAN_CTX_DATA_DIR", dir.path());
 
-        let start = std::time::Instant::now();
-        for _ in 0..CRASH_LOOP_THRESHOLD {
-            crash_loop_backoff("test-no-sleep");
+        // Observe the backoff decision itself: a wall-clock bound flakes on a
+        // loaded CI runner, where plain file I/O can take longer than a second.
+        for start in 1..=CRASH_LOOP_THRESHOLD {
+            assert_eq!(
+                crash_loop_backoff("test-no-sleep"),
+                None,
+                "start {start} is under the threshold and must not back off"
+            );
         }
-        assert!(
-            start.elapsed() < Duration::from_secs(5),
-            "under threshold should not sleep (elapsed {:?})",
-            start.elapsed()
+    }
+
+    #[test]
+    fn crash_loop_backoff_reports_the_backoff_above_threshold() {
+        let _env = crate::core::data_dir::test_env_lock();
+        let dir = tempfile::tempdir().unwrap();
+        let _guard = EnvVarGuard::set("LEAN_CTX_DATA_DIR", dir.path());
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .unwrap()
+            .as_secs();
+        let history: String = (0..CRASH_LOOP_THRESHOLD)
+            .map(|_| format!("{now}\n"))
+            .collect();
+        std::fs::write(dir.path().join(".test-over-starts.log"), history).unwrap();
+
+        // One start over the threshold: the smallest backoff (2 s, slept here).
+        // Proves the `None` assertions elsewhere observe a real decision.
+        assert_eq!(
+            crash_loop_backoff("test-over"),
+            Some(Duration::from_secs(2))
         );
     }
 
@@ -362,20 +388,21 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let _guard = EnvVarGuard::set("LEAN_CTX_DATA_DIR", dir.path());
 
-        let start = std::time::Instant::now();
         // Two full rounds of "threshold-many starts, then one handshake":
         // without the reset the second round would exceed CRASH_LOOP_THRESHOLD
-        // and sleep for seconds.
-        for _ in 0..2 {
-            for _ in 0..CRASH_LOOP_THRESHOLD {
-                crash_loop_backoff("test-handshake");
+        // and back off. The decision is asserted directly — timing the loop
+        // flaked on loaded CI runners where the file I/O alone exceeded 1 s.
+        for round in 0..2 {
+            for start in 1..=CRASH_LOOP_THRESHOLD {
+                assert_eq!(
+                    crash_loop_backoff("test-handshake"),
+                    None,
+                    "healthy start/handshake cycles must never trigger the backoff \
+                     (round {round}, start {start})"
+                );
             }
             reset_crash_loop("test-handshake");
         }
-        assert!(
-            start.elapsed() < Duration::from_secs(1),
-            "healthy start/handshake cycles must never trigger the backoff sleep"
-        );
     }
 
     #[test]

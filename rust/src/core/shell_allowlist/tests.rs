@@ -637,6 +637,8 @@ fn python_script_allowed() {
 
 #[test]
 fn env_delegates_to_unlisted_blocked() {
+    // Inline-script opt-in is read from the env (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["env", "git"]);
     let result = check_all_segments("env /bin/sh -c 'id'", &list);
     assert!(
@@ -649,6 +651,8 @@ fn env_delegates_to_unlisted_blocked() {
 
 #[test]
 fn gh391_bash_c_quoted_file_write_blocked_without_allowlist() {
+    // Inline-script opt-in is read from the env (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     // Bypass 1 from the report: `bash -c 'echo payload > /tmp/evil.sh'`.
     // The `>` hides inside single quotes, but the interpreter inline-code
     // check refuses `bash -c` regardless of allowlist configuration.
@@ -674,6 +678,8 @@ fn gh391_bash_c_quoted_file_write_blocked_without_allowlist() {
 
 #[test]
 fn gh391_delegation_wrappers_cannot_smuggle_inline_code() {
+    // Inline-script opt-in is read from the env (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     // Without an allowlist, delegation wrappers are followed recursively.
     for cmd in [
         "xargs bash -c 'id'",
@@ -762,6 +768,8 @@ fn backslash_newline_normalized() {
 
 #[test]
 fn delegation_recursive_interpreter_check() {
+    // Inline-script opt-in is read from the env (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["env", "python3"]);
     let result = check_all_segments("env python3 -c 'import os'", &list);
     assert!(
@@ -779,6 +787,8 @@ fn delegation_recursive_normal_allowed() {
 
 #[test]
 fn eval_flags_extended_r() {
+    // Inline-script opt-in is read from the env (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["php"]);
     let result = check_all_segments("php -r 'system(\"id\")'", &list);
     assert!(result.is_err(), "php -r must be blocked");
@@ -786,6 +796,8 @@ fn eval_flags_extended_r() {
 
 #[test]
 fn eval_flags_extended_p() {
+    // Inline-script opt-in is read from the env (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["node"]);
     let result = check_all_segments("node -p 'process.exit(1)'", &list);
     assert!(result.is_err(), "node -p must be blocked");
@@ -793,6 +805,8 @@ fn eval_flags_extended_p() {
 
 #[test]
 fn combined_flags_pe_blocked() {
+    // Inline-script opt-in is read from the env (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["perl"]);
     let result = check_all_segments("perl -pe 's/foo/bar/'", &list);
     assert!(result.is_err(), "perl -pe must be blocked (combined flag)");
@@ -800,6 +814,8 @@ fn combined_flags_pe_blocked() {
 
 #[test]
 fn combined_flags_ne_blocked() {
+    // Inline-script opt-in is read from the env (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["perl"]);
     let result = check_all_segments("perl -ne 'print'", &list);
     assert!(result.is_err(), "perl -ne must be blocked (combined flag)");
@@ -807,6 +823,8 @@ fn combined_flags_ne_blocked() {
 
 #[test]
 fn heredoc_to_interpreter_blocked() {
+    // Inline-script opt-in is read from the env (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["python3"]);
     let result = check_all_segments("python3 <<'EOF'", &list);
     assert!(result.is_err(), "heredoc to interpreter must be blocked");
@@ -816,6 +834,8 @@ fn heredoc_to_interpreter_blocked() {
 /// exact recovery path (write file → run file) instead of a bare "no".
 #[test]
 fn heredoc_block_message_names_the_workaround() {
+    // Inline-script opt-in is read from the env (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["python3"]);
     let err = check_all_segments("python3 - <<'PY'", &list).unwrap_err();
     assert!(err.contains("[BLOCKED — DO NOT RETRY]"), "got: {err}");
@@ -1117,6 +1137,9 @@ fn python3_inline_blocked_by_default() {
 /// the right one instead of a retry of the blocked form.
 #[test]
 fn inline_code_blocks_name_the_script_file_path() {
+    // Same env dependency as python_c_blocked (#975): the opt-in tests below
+    // set LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS=1 under this lock.
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["python3", "node", "perl"]);
     for (cmd, run) in [
         ("python3 -c 'print(1)'", "python3 /tmp/lean-ctx-snippet.py"),
@@ -1477,6 +1500,8 @@ fn redirect_block_contains_no_hook_guard() {
 /// commands while still blocking `PATH=/evil cmd`.
 #[test]
 fn export_path_allowed_bare_inline_path_still_blocked() {
+    // Inline-script opt-in is read from the env (#975).
+    let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["python3"]);
     assert!(check_all_segments("export PATH=/usr/bin:$PATH", &list).is_ok());
     assert!(check_all_segments("export PATH=/usr/bin:$PATH ; python3 script.py", &list).is_ok());

@@ -239,6 +239,10 @@ fn issuance_requires_host_grant_and_current_persisted_attempt() {
     .unwrap();
     let mut dispatch_plan = plan.clone();
     dispatch_plan.node = node;
+    // The issued delegation lives for `timeout_ms`; the child that uses it is
+    // a cold start of this test binary on a busy runner, so give it minutes,
+    // not the 60 s that the issuance checks above need.
+    dispatch_plan.timeout_ms = 240_000;
     let mut capsule = super::super::tests::capsule();
     capsule.agent_id = "host".into();
     capsule.chain.owner_agent_id = "host".into();
@@ -246,7 +250,7 @@ fn issuance_requires_host_grant_and_current_persisted_attempt() {
     capsule.chain.parent_capsule_ref = None;
     capsule.allowed_agent_ids = vec!["dispatched-child".into()];
     capsule.budget.cost_micros_remaining = 100;
-    capsule.budget.latency_ms_remaining = 120_000;
+    capsule.budget.latency_ms_remaining = 480_000;
     capsule.assign_capsule_id().unwrap();
     dispatch_plan.node.capsule_ref = capsule.capsule_id.clone();
     dispatch_plan.node.task_ref = capsule.task_ref.clone();
@@ -267,7 +271,8 @@ fn issuance_requires_host_grant_and_current_persisted_attempt() {
         &connector,
     );
     crate::test_env::remove_var("LEAN_CTX_DELIVERY_ISSUER_PROFILE");
-    assert!(result.unwrap_err().message.contains("inspection complete"));
+    let message = result.unwrap_err().message;
+    assert!(message.contains("inspection complete"), "{message}");
     let request = connector.0.lock().unwrap().take().unwrap();
     let profile = request.delivery_profile.unwrap();
     assert_eq!(profile.task_id, request.id);
@@ -403,8 +408,11 @@ impl crate::core::agent_connector::traits::AgentConnector for InspectProfileConn
             .env("LEAN_CTX_DELIVERY_PROFILE", "parent-authority")
             .env("LEAN_CTX_DELIVERY_ISSUER_PROFILE", "parent-issuer");
         crate::core::agent_connector::traits::apply_profile_environment(&mut command, request);
+        // Liveness bound only: the child is a cold start of this whole test
+        // binary, which on a CI runner busy with the parallel suite took
+        // longer than the former 15 s and failed the inspection.
         let observed =
-            crate::core::agent_connector::timeout::run_with_timeout(&mut command, 15_000)?;
+            crate::core::agent_connector::timeout::run_with_timeout(&mut command, 180_000)?;
         server.abort();
         anyhow::ensure!(
             !observed.timed_out && !observed.cancelled && observed.output.status.success(),
@@ -457,14 +465,11 @@ fn issued_profile_child_process() {
         .parse()
         .unwrap();
     assert!(address.ip().is_loopback());
-    let mut stream =
-        std::net::TcpStream::connect_timeout(&address, std::time::Duration::from_secs(3)).unwrap();
-    stream
-        .set_read_timeout(Some(std::time::Duration::from_secs(3)))
-        .unwrap();
-    stream
-        .set_write_timeout(Some(std::time::Duration::from_secs(3)))
-        .unwrap();
+    // Generous I/O bounds: the parent's server shares a loaded CI runner.
+    let io_timeout = std::time::Duration::from_secs(60);
+    let mut stream = std::net::TcpStream::connect_timeout(&address, io_timeout).unwrap();
+    stream.set_read_timeout(Some(io_timeout)).unwrap();
+    stream.set_write_timeout(Some(io_timeout)).unwrap();
     write!(stream, "POST /ocla/v1/delivery/scoped HTTP/1.1\r\nHost: {address}\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).unwrap();
     stream.write_all(&body).unwrap();
     let mut response = String::new();

@@ -179,15 +179,15 @@ fn crash_loop_scenario_normal_ide_startup() {
     // SAFETY: serialized by `test_env_lock()`.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.path()) };
 
-    let start = std::time::Instant::now();
-    for _ in 0..7 {
-        lean_ctx::core::startup_guard::crash_loop_backoff("scenario-normal");
+    // Assert the backoff decision, not wall-clock time: on a loaded runner the
+    // seven history rewrites alone took >1 s.
+    for start in 1..=7 {
+        assert_eq!(
+            lean_ctx::core::startup_guard::crash_loop_backoff("scenario-normal"),
+            None,
+            "7 starts within window should NOT trigger backoff (start {start})"
+        );
     }
-    let elapsed = start.elapsed();
-    assert!(
-        elapsed < std::time::Duration::from_secs(1),
-        "7 starts within window should NOT trigger backoff, took {elapsed:?}"
-    );
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
@@ -209,11 +209,10 @@ fn crash_loop_reset_allows_fresh_start() {
     let log_path = dir.path().join(".scenario-reset-starts.log");
     assert!(!log_path.exists(), "reset should remove the crash log file");
 
-    let start = std::time::Instant::now();
-    lean_ctx::core::startup_guard::crash_loop_backoff("scenario-reset");
-    assert!(
-        start.elapsed() < std::time::Duration::from_millis(100),
-        "after reset, first call should be instant"
+    assert_eq!(
+        lean_ctx::core::startup_guard::crash_loop_backoff("scenario-reset"),
+        None,
+        "after reset, first call must not back off"
     );
 
     // SAFETY: serialized by `test_env_lock()`.

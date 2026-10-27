@@ -430,15 +430,94 @@ mod tests {
         );
     }
 
+    /// CPU time consumed by the calling thread so far.
+    #[cfg(unix)]
+    fn thread_cpu_time() -> std::time::Duration {
+        let mut ts = libc::timespec {
+            tv_sec: 0,
+            tv_nsec: 0,
+        };
+        // SAFETY: `ts` is a valid, writable timespec and the clock id is a
+        // constant the platform defines for the calling thread.
+        let rc = unsafe { libc::clock_gettime(libc::CLOCK_THREAD_CPUTIME_ID, &raw mut ts) };
+        assert_eq!(rc, 0, "thread CPU clock unavailable");
+        std::time::Duration::new(
+            u64::try_from(ts.tv_sec).unwrap_or_default(),
+            u32::try_from(ts.tv_nsec).unwrap_or_default(),
+        )
+    }
+
+    /// CPU time consumed by the calling thread so far (user + kernel).
+    #[cfg(windows)]
+    fn thread_cpu_time() -> std::time::Duration {
+        use windows_sys::Win32::Foundation::FILETIME;
+        use windows_sys::Win32::System::Threading::{GetCurrentThread, GetThreadTimes};
+        let zero = || FILETIME {
+            dwLowDateTime: 0,
+            dwHighDateTime: 0,
+        };
+        let (mut creation, mut exit, mut kernel, mut user) = (zero(), zero(), zero(), zero());
+        // SAFETY: the pseudo handle of the current thread is always valid and
+        // every out-pointer refers to a live, writable FILETIME.
+        let ok = unsafe {
+            GetThreadTimes(
+                GetCurrentThread(),
+                &raw mut creation,
+                &raw mut exit,
+                &raw mut kernel,
+                &raw mut user,
+            )
+        };
+        assert_ne!(ok, 0, "thread CPU times unavailable");
+        let ticks = |t: FILETIME| (u64::from(t.dwHighDateTime) << 32) | u64::from(t.dwLowDateTime);
+        // FILETIME counts 100 ns intervals.
+        std::time::Duration::from_nanos((ticks(kernel) + ticks(user)) * 100)
+    }
+
+    /// Fastest-of-`LATENCY_SAMPLES` CPU time of compressing each workload.
+    ///
+    /// The 1 s budget is a regression tripwire for the pipeline's own work.
+    /// Wall clock measured the runner instead: on a CI host busy with the
+    /// parallel suite, all three wall samples of one workload took 2 s while
+    /// the same build compresses it in ~40 ms. The compression path runs on
+    /// the calling thread, so its CPU time is the pipeline's cost and does not
+    /// grow while the thread waits to be scheduled; a real regression (more
+    /// work per message) still raises it and still trips the assertion.
+    fn cpu_us_per_scenario() -> &'static [(&'static str, u128)] {
+        static CPU: std::sync::LazyLock<Vec<(&'static str, u128)>> =
+            std::sync::LazyLock::new(|| {
+                PipelineBenchmark::default()
+                    .scenarios
+                    .iter()
+                    .map(|scenario| {
+                        let messages = generate_realistic_messages(scenario.name);
+                        let fastest = (0..LATENCY_SAMPLES)
+                            .map(|_| {
+                                let input = messages.clone();
+                                let started = thread_cpu_time();
+                                let compressed = compress_messages(CompressRequest {
+                                    messages: input,
+                                    model: Some("gpt-4o".to_string()),
+                                });
+                                let spent = thread_cpu_time().saturating_sub(started);
+                                drop(compressed);
+                                spent.as_micros()
+                            })
+                            .min()
+                            .unwrap_or_default();
+                        (scenario.name, fastest)
+                    })
+                    .collect()
+            });
+        &CPU
+    }
+
     #[test]
     fn every_scenario_compresses_well_under_a_second() {
-        let report = report();
-        for result in &report.results {
+        for (scenario, cpu_us) in cpu_us_per_scenario() {
             assert!(
-                result.latency_us < 1_000_000,
-                "{} took {}us (>1s even in debug is too slow)",
-                result.scenario,
-                result.latency_us,
+                *cpu_us < 1_000_000,
+                "{scenario} took {cpu_us}us of CPU (>1s even in debug is too slow)",
             );
         }
     }
@@ -452,10 +531,14 @@ mod tests {
             "average savings were only {:.1}% — pipeline must produce >10% savings",
             report.average_savings_pct,
         );
+        let max_cpu_us = cpu_us_per_scenario()
+            .iter()
+            .map(|(_, cpu_us)| *cpu_us)
+            .max()
+            .unwrap_or_default();
         assert!(
-            report.max_latency_us < 1_000_000,
-            "maximum compression latency was {}us (debug mode allows up to 1s)",
-            report.max_latency_us,
+            max_cpu_us < 1_000_000,
+            "maximum compression CPU time was {max_cpu_us}us (debug mode allows up to 1s)",
         );
     }
 }

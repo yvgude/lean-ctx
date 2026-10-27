@@ -9,16 +9,15 @@ use crate::core::procedural_memory::Procedure;
 
 struct CurrentDirGuard {
     previous: std::path::PathBuf,
-    _lock: std::sync::MutexGuard<'static, ()>,
+    _lock: crate::core::data_dir::TestEnvGuard,
 }
 
 impl CurrentDirGuard {
     fn enter(dir: &std::path::Path) -> Self {
-        static LOCK: std::sync::OnceLock<std::sync::Mutex<()>> = std::sync::OnceLock::new();
-        let lock = LOCK.get_or_init(|| std::sync::Mutex::new(()));
-        let guard = lock
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // The cwd is process-global like the env: every test that moves it
+        // shares the (reentrant) env lock, so a test holding that lock sees a
+        // stable cwd.
+        let guard = crate::core::data_dir::test_env_lock();
         let previous = std::env::current_dir().unwrap();
         std::env::set_current_dir(dir).unwrap();
         Self {
@@ -299,17 +298,22 @@ fn consolidate_all_project_knowledge_runs_every_known_project() {
     knowledge_b.save().unwrap();
 
     let reports = consolidate_all_project_knowledge_with(&ConsolidateOptions::manual()).unwrap();
-    let roots: Vec<_> = reports.iter().map(|(root, _)| root.clone()).collect();
+    // Detached post-call threads of earlier tool tests (auto-capture, journal)
+    // resolve the data dir when they write, not when they were spawned, so a
+    // late one can add the runner's own checkout to this temp store while the
+    // test holds the env lock. Such a store is a known project too and is
+    // consolidated like any other; the test pins that both seeded projects are
+    // each consolidated exactly once.
     let mut expected = vec![root_a, root_b];
     expected.sort();
+    let seeded: Vec<_> = reports
+        .iter()
+        .filter(|(root, _)| expected.contains(root))
+        .collect();
+    let roots: Vec<_> = seeded.iter().map(|(root, _)| root.clone()).collect();
 
     assert_eq!(roots, expected);
-    assert_eq!(reports.len(), 2);
-    assert!(
-        reports
-            .iter()
-            .all(|(_, report)| report.session_id.is_none())
-    );
+    assert!(seeded.iter().all(|(_, report)| report.session_id.is_none()));
 }
 
 #[test]

@@ -364,8 +364,16 @@ mod tests {
 
     #[test]
     fn handle_search_rejects_unknown_mode() {
-        let (out, _) = handle_search(Some("q"), 10, None, Some("vector"));
-        assert!(out.contains("unknown search mode"));
+        // Mode validation runs inside the policy source view. Policy tests pin
+        // a process-wide override and others move the cwd, so pin "no policy"
+        // and name the request project instead of reading the shared cwd.
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let project = tempfile::tempdir().unwrap();
+        let (out, _) = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(project.path().to_path_buf())),
+            || handle_search(Some("q"), 10, None, Some("vector")),
+        );
+        assert!(out.contains("unknown search mode"), "{out}");
     }
 
     #[test]
