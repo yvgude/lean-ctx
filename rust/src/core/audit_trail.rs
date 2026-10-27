@@ -319,9 +319,13 @@ fn try_record_at_capped(
 ) -> Result<AuditEntry, String> {
     use fs2::FileExt;
 
+    // Not `append`: on Windows an append-only handle lacks the write access
+    // `set_len` needs, so rotation could never truncate the active segment.
+    // `append_locked` seeks to the end under the exclusive lock instead.
     let mut file = OpenOptions::new()
         .create(true)
-        .append(true)
+        .write(true)
+        .truncate(false)
         .read(true)
         .open(path)
         .map_err(|e| format!("audit trail open: {e}"))?;

@@ -59,43 +59,34 @@ fn plausible_command_names_are_recognised() {
 /// End-to-end for GH #1646: the exact commands from the report are no longer
 /// mis-split. Inline interpreter code inside `$( … )` is gated like
 /// `python3 -c …` at the top level (GHSA-rxv5-4c3x-g4q6 E): blocked by
-/// default, accepted with the `shell_allow_inline_scripts` opt-in.
+/// default, naming the `shell_allow_inline_scripts` opt-in. The opt-in itself
+/// is not toggled here: other tests read that variable without the env lock.
 /// `enforce_shell_allowlist` is the real entry point, so this exercises the
 /// whole path rather than the splitter in isolation.
 #[test]
-fn reported_inline_scripts_follow_the_inline_script_opt_in() {
+fn reported_inline_scripts_are_gated_like_top_level_inline_code() {
     // The override is process-global; without this lock a parallel test's
     // allowlist leaks in (the hazard gh391_strict_mode_blocks_substitution_in_args
     // documents, and which this test tripped when first written).
     let _lock = crate::core::data_dir::test_env_lock();
     crate::test_env::set_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE", "echo,python3");
-    let reported = [
+    let results: Vec<_> = [
         r#"echo "$(python3 -c "print(1)")""#,
         r#"echo "a=$(python3 -c "print('x')")&b=2""#,
         r#"echo "$(python3 -c "import sys;print(1)")""#,
         r#"echo "u=$(python3 -c "import sys;print(sys.argv[1])" "x")""#,
-    ];
-    let gate = |cmds: &[&'static str]| -> Vec<_> {
-        cmds.iter()
-            .map(|cmd| (*cmd, super::enforce_shell_allowlist(cmd)))
-            .collect()
-    };
-    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS", "0");
-    let default = gate(&reported);
-    crate::test_env::set_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS", "1");
-    let opted_in = gate(&reported);
-    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOW_INLINE_SCRIPTS");
+    ]
+    .iter()
+    .map(|cmd| (*cmd, super::enforce_shell_allowlist(cmd)))
+    .collect();
     crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
 
-    for (cmd, result) in default {
+    for (cmd, result) in results {
         let err = format!("{:?}", result.expect_err(cmd));
         assert!(
             err.contains("shell_allow_inline_scripts") && !err.contains("split your command"),
             "blocked as inline code, not as a mis-split: {cmd} -> {err}"
         );
-    }
-    for (cmd, result) in opted_in {
-        assert!(result.is_ok(), "opt-in passes: {cmd} -> {result:?}");
     }
 }
 
