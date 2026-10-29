@@ -30,7 +30,10 @@ runs:
         if ($env:GITHUB_REPOSITORY -ne 'yvgude/lean-ctx') { throw 'Unexpected signing repository' }
         $release = $env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -match '^refs/tags/v[0-9]'
         $smoke = $env:GITHUB_EVENT_NAME -eq 'workflow_dispatch' -and $env:GITHUB_REF -eq 'refs/heads/main'
-        if (-not ($release -or $smoke)) { throw 'Signing requires a release tag or manual main build' }
+        # The release prebuild of main (release.yml), which its tag reuses.
+        $prebuild = $env:GITHUB_EVENT_NAME -eq 'push' -and $env:GITHUB_REF -eq 'refs/heads/main' -and
+          $env:GITHUB_WORKFLOW_REF -eq 'yvgude/lean-ctx/.github/workflows/release.yml@refs/heads/main'
+        if (-not ($release -or $smoke -or $prebuild)) { throw 'Signing requires a release tag or a main build' }
         foreach ($value in @($env:SIGNING_CLIENT_ID, $env:SIGNING_TENANT_ID, $env:SIGNING_SUBSCRIPTION_ID)) {
           if ([string]::IsNullOrWhiteSpace($value)) { throw 'Missing Azure signing configuration' }
         }

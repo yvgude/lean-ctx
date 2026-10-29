@@ -226,12 +226,15 @@ cosign verify-blob SHA256SUMS \
 sha256sum --ignore-missing -c SHA256SUMS   # macOS: shasum -a 256 --ignore-missing -c SHA256SUMS
 ```
 
-Releases built after GHSA-rxv5-4c3x-g4q6 also carry GitHub build-provenance attestations for every archive, wheel, `SHA256SUMS` and `release-manifest.json`:
+Releases built after GHSA-rxv5-4c3x-g4q6 also carry GitHub build-provenance attestations for every archive, wheel, `SHA256SUMS` and `release-manifest.json`. Pin the release tag, so only the run of that release is accepted:
 
 ```bash
 gh attestation verify lean-ctx-aarch64-apple-darwin.tar.gz --repo yvgude/lean-ctx \
-  --signer-workflow yvgude/lean-ctx/.github/workflows/release.yml
+  --signer-workflow yvgude/lean-ctx/.github/workflows/release.yml \
+  --source-ref refs/tags/vX.Y.Z
 ```
+
+From 3.12.1 the release run may reuse the binaries that `release.yml` built for the same commit on `main`, after verifying them against that build's attested file manifest. Only the release run attests the archives and wheels.
 
 ---
 

@@ -121,11 +121,11 @@
    "size": 5837
   },
   {
-   "blob": "9daf2afd9fe09598fddef747fa109dc96f494f6e",
+   "blob": "c9b62ceaa4f194ea35825d76f0ccace00997c9a5",
    "mode": "100644",
    "path": ".github/actions/windows-signing/action.yml",
-   "sha256": "b95cd48d0086819e2548ebe824b7a96b4d7f92341abfe3e62fa0623fcfdf86b9",
-   "size": 2705
+   "sha256": "c62ecdc5d3dafb2bc5f7f410d27b49a520d977c29d1ef0699f228c27b7d7b4ae",
+   "size": 2995
   },
   {
    "blob": "be5be3b15d83dc03857572dff9d0c7482f48b865",
@@ -247,11 +247,11 @@
    "size": 3565
   },
   {
-   "blob": "baaad32011a5fa47b828ba7ce3d66bfa67336fb6",
+   "blob": "672c6530206eafd60c790c0ada0467a4710dc416",
    "mode": "100644",
    "path": ".github/workflows/release.yml",
-   "sha256": "afc288cf252f338870d5268f57a6af08eb19bb70200c1aced82bee6f91349e62",
-   "size": 58410
+   "sha256": "e9d5f5b6183282a39f69ee2b6388f78f27d7aeac108d06029c47d23344fe2a1b",
+   "size": 76157
   },
   {
    "blob": "75a4d6a3ea3e0e6bf69efff80c68bc5cca72e7b4",
@@ -457,11 +457,11 @@
    "size": 525
   },
   {
-   "blob": "5387e27f55f84aa12ce91cf27ae9dd80437c2fad",
+   "blob": "3a4e873ce8cb130d2a2324e7d0623fe02dde57b6",
    "mode": "100644",
    "path": "PUBLISH_MANIFEST.toml",
-   "sha256": "d7df663439f72fdd9b269838830cf88f48f7de72b549ab572f7955d84482b58d",
-   "size": 132651
+   "sha256": "a984764c729a67c955cb25d8e212155ed5d8154481747e6bcaeb6dde75aae4c7",
+   "size": 132804
   },
   {
    "blob": "68b17e5b578ceb2df7dca4efcd0b859428333d54",
@@ -478,11 +478,11 @@
    "size": 684664
   },
   {
-   "blob": "3ba16bfeee394fed44d45a9f01068ff49d968d12",
+   "blob": "c014f36ecc399252af9679b99c348abe66ad0fac",
    "mode": "100644",
    "path": "SECURITY.md",
-   "sha256": "f5a05a9bc50d6190dd20c3945c4a85dec90c6f89408e98fac7c2373164a21668",
-   "size": 32033
+   "sha256": "2d3422ddd0fe229eb979a54d73c837f9fbcac5eb53e0dbb646a8531fafd0c125",
+   "size": 32361
   },
   {
    "blob": "5dc4c2f5d1ae1be56f4df2bc4bd9e7c7bdc2e7d7",
@@ -5686,10 +5686,10 @@
    "size": 4024
   },
   {
-   "blob": "17aee035f1915a6167189f1a174719920c839cef",
+   "blob": "39391e736e429ea727a8c3beca6ffdca6f81b694",
    "mode": "100644",
    "path": "docs/contracts/delivery-evidence-v1.json",
-   "sha256": "746b50bf0ef3712f10d499729cd803f53aeaadf2cb036315c4bbc557084d93e1",
+   "sha256": "1e12bf2cc2b26fbeb303c9ef7ffb2d429b2ed04d96242b65070fcf1c591e4ac2",
    "size": 6892
   },
   {
@@ -28926,11 +28926,11 @@
    "size": 14289
   },
   {
-   "blob": "8398b1cec01d4f1ec10b30bfabdd26a217a397b7",
+   "blob": "b7bdbf166a879284e6d3943f66dcd5bcfdd5b795",
    "mode": "100644",
    "path": "rust/src/core/shell_allowlist/side_door_tests.rs",
-   "sha256": "c15e0e7a459826359b8aeab896fad9b171c9fcaa117a583f484b35a6b6bdf513",
-   "size": 13903
+   "sha256": "0abbdacaf59a63b582e412bc0dd4babb5506fdc6f0b3c6121e536a2aa540ae2b",
+   "size": 14353
   },
   {
    "blob": "31af8a934d2d84733e49e19e085a465962f0c018",
@@ -37725,6 +37725,13 @@
    "size": 8767
   },
   {
+   "blob": "d8431c7faf1008245abf60bc4baad8a670e8b8a1",
+   "mode": "100644",
+   "path": "scripts/release-prebuild.py",
+   "sha256": "9bc16f74415366966a583358a3ee258968ef67933090f58e2208835f211d928a",
+   "size": 23974
+  },
+  {
    "blob": "afef0f8e0eeff2ad08855261f23b6c12ccb39137",
    "mode": "100644",
    "path": "scripts/release_inventory.py",
@@ -38010,6 +38017,13 @@
    "path": "scripts/tests/test_publish_gate.py",
    "sha256": "8b60f94da858bcb1fdef8409426931655616fe91289c40acc955c62a76ddc6fe",
    "size": 11753
+  },
+  {
+   "blob": "fa6fe72aa3a5d6c9bda3bd5ba298cb8dc7782b1d",
+   "mode": "100644",
+   "path": "scripts/tests/test_release_prebuild.py",
+   "sha256": "f1db604d7a2e16b02c9141086c238316561ea90b0278c68ea97c9be02cf0dd37",
+   "size": 23400
   },
   {
    "blob": "65467d1e93b86bc5327211f6c22380cd610da4cb",
@@ -39002,9 +39016,9 @@
    "sha256": "d8ece87e85f847ba6ef03ac36623f3fa5675f01c3cd01ee22a4c8362eec48dda"
   }
  ],
- "manifest_sha256": "d7df663439f72fdd9b269838830cf88f48f7de72b549ab572f7955d84482b58d",
+ "manifest_sha256": "a984764c729a67c955cb25d8e212155ed5d8154481747e6bcaeb6dde75aae4c7",
  "schema": 1,
- "source_commit": "5b798e2d23677e08170b2543758240cad6a4ffda",
+ "source_commit": "8f939247df612fb2e608a23abc48a58ba82d4863",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "749d97bc805341dfd3010bfe87a36184b0d4ff38f2217ba2f79c7f5bdd302046"
+ "tree_sha256": "f50aaea9dd93e6140528907613810b867c68c9bf71b72368df4e44e5d2073ed1"
 }

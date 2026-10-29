@@ -318,12 +318,21 @@ fn inputs_that_execute_the_marker_are_blocked() {
             );
             continue;
         }
+        // A coprocess runs asynchronously: `sh -c 'coproc x'` may exit before
+        // x has written the flag, which made the probe flaky under load. The
+        // shell run (not the gated input) waits for it; the gate verdict above
+        // is still taken on the exact probe input.
+        let run_input = if input.starts_with("coproc ") {
+            format!("{input}; wait")
+        } else {
+            (*input).to_string()
+        };
         let mut ran = false;
         for shell in &shells {
             let _ = std::fs::remove_file(&flag);
             let mut child = Command::new(shell)
                 .arg("-c")
-                .arg(input)
+                .arg(&run_input)
                 .env("PATH", &path)
                 .env("MARK", &flag)
                 .current_dir(dir.path())

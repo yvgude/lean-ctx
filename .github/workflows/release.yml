@@ -7,6 +7,17 @@ on:
       # excludes the editor-extension tags (`vscode-v*`), which have their own
       # workflow (publish-vscode.yml) and must NOT trigger a binary release.
       - 'v[0-9]*'
+    # Build once, reuse on the tag: the push to main that changes the workspace
+    # Cargo version to a new stable, unpublished X.Y.Z (the release merge
+    # commit) builds and seals the full release matrix (`plan` mode
+    # `prebuild`); the tag of that commit then reuses the verified build
+    # instead of compiling again (`resolve-prebuild`). Other main pushes only
+    # run `plan`. Nothing is published from main: every publishing job
+    # requires a tag. Repository variable RELEASE_PREBUILD_REUSE=false turns
+    # reuse off (the tag builds as before).
+    branches: [main]
+  # Manual prebuild of main (e.g. after a failed or expired prebuild).
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -15,6 +26,123 @@ env:
   CARGO_BUILD_JOBS: "3"
 
 jobs:
+  plan:
+    name: Plan (release, prebuild or skip)
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      mode: ${{ steps.plan.outputs.mode }}
+      version: ${{ steps.plan.outputs.version }}
+      reusable: ${{ steps.plan.outputs.reusable }}
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - name: Decide the run mode
+        id: plan
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE: ${{ github.event.before }}
+        run: |
+          python3 scripts/release-prebuild.py plan --event "${GITHUB_EVENT_NAME}" \
+            --ref "${GITHUB_REF}" --repo "${GITHUB_REPOSITORY}" --before "${BEFORE}" --root .
+
+  resolve-prebuild:
+    # The tag reuses the main prebuild of the exact tagged commit when the run
+    # (release.yml, refs/heads/main, push/dispatch, this repository), its
+    # complete artifact set, its manifest's Sigstore attestation, the tree,
+    # version, the build configuration the build jobs compiled in and every
+    # file digest all match. A prebuild still running is awaited; anything
+    # else (or RELEASE_PREBUILD_REUSE=false, or a prerelease tag) falls back
+    # to building in this run.
+    name: Resolve verified prebuild
+    needs: plan
+    if: needs.plan.outputs.mode == 'release'
+    runs-on: ubuntu-latest
+    timeout-minutes: 150
+    permissions:
+      contents: read
+      actions: read
+      attestations: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      VERSION: ${{ needs.plan.outputs.version }}
+      LEANCTX_PRODUCTION_RUNTIME_CHANNEL_URL: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_URL }}
+      LEANCTX_PRODUCTION_RUNTIME_CHANNEL_SIGNATURE_URL: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_SIGNATURE_URL }}
+      LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX }}
+      LEANCTX_PRODUCTION_COCKPIT_CHANNEL_URL: ${{ vars.LEANCTX_PRODUCTION_COCKPIT_CHANNEL_URL }}
+      LEANCTX_PRODUCTION_COCKPIT_CHANNEL_SIGNATURE_URL: ${{ vars.LEANCTX_PRODUCTION_COCKPIT_CHANNEL_SIGNATURE_URL }}
+    outputs:
+      reuse: ${{ steps.resolve.outputs.reuse }}
+      run_id: ${{ steps.resolve.outputs.run_id }}
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+      - name: Find and verify the prebuild manifest of this commit
+        id: candidate
+        env:
+          REUSE_SWITCH: ${{ vars.RELEASE_PREBUILD_REUSE }}
+          REUSABLE: ${{ needs.plan.outputs.reusable }}
+        run: |
+          set -euo pipefail
+          run_id=""
+          dir="$RUNNER_TEMP/prebuild-manifest"
+          if [[ "$REUSE_SWITCH" == "false" ]]; then
+            echo "::notice::RELEASE_PREBUILD_REUSE=false: building the release matrix in this run"
+          elif [[ "$REUSABLE" != "true" ]]; then
+            echo "::notice::${VERSION} is not a stable X.Y.Z: building the release matrix in this run"
+          elif run_id="$(python3 scripts/release-prebuild.py find --repo "$GITHUB_REPOSITORY" \
+                --sha "$GITHUB_SHA" --wait-seconds 7200 --poll-seconds 60)" && [[ -n "$run_id" ]] \
+             && gh run download "$run_id" --repo "$GITHUB_REPOSITORY" \
+                --name release-prebuild-manifest --dir "$dir" \
+             && gh attestation verify "$dir/release-prebuild-manifest.json" --repo "$GITHUB_REPOSITORY" \
+                --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+                --source-ref refs/heads/main --source-digest "$GITHUB_SHA" \
+                --deny-self-hosted-runners --format json > "$dir/attestation.json" \
+             && python3 scripts/release-prebuild.py verify --manifest "$dir/release-prebuild-manifest.json" \
+                --attestation "$dir/attestation.json" --repo "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" \
+                --tree "$(git rev-parse 'HEAD^{tree}')" --version "$VERSION" --run-id "$run_id"; then
+            echo "Verified the manifest of prebuild run ${run_id}"
+          else
+            run_id=""
+          fi
+          echo "run_id=${run_id}" >> "$GITHUB_OUTPUT"
+
+      - name: Download the candidate prebuild artifacts
+        id: download
+        if: steps.candidate.outputs.run_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: lean-ctx-*
+          merge-multiple: true
+          path: ${{ runner.temp }}/prebuild-files
+          run-id: ${{ steps.candidate.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      - name: Decide reuse (every file digest checked)
+        id: resolve
+        env:
+          RUN_ID: ${{ steps.candidate.outputs.run_id }}
+          DOWNLOAD: ${{ steps.download.outcome }}
+        run: |
+          set -euo pipefail
+          reuse=false
+          dir="$RUNNER_TEMP/prebuild-manifest"
+          if [[ -n "$RUN_ID" && "$DOWNLOAD" == "success" ]] \
+             && python3 scripts/release-prebuild.py verify --manifest "$dir/release-prebuild-manifest.json" \
+                --attestation "$dir/attestation.json" --repo "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" \
+                --tree "$(git rev-parse 'HEAD^{tree}')" --version "$VERSION" --run-id "$RUN_ID" \
+                --dir "$RUNNER_TEMP/prebuild-files"; then
+            reuse=true
+            echo "::notice::Reusing verified prebuild run ${RUN_ID} for ${GITHUB_SHA}"
+          else
+            echo "::warning::No verified prebuild for ${GITHUB_SHA}; building the release matrix in this run"
+          fi
+          echo "reuse=${reuse}" >> "$GITHUB_OUTPUT"
+          echo "run_id=$([[ "$reuse" == true ]] && echo "$RUN_ID")" >> "$GITHUB_OUTPUT"
+
   sdk-gate:
     # GL #395: an engine release must never ship while a first-party SDK
     # cannot speak its http_mcp contract version. Minor-version drift across
@@ -24,6 +152,7 @@ jobs:
     # a stale package.json would let the publish step silently skip, shipping a
     # release whose Pi extension / npx wrapper lags the engine.
     name: Release gates (SDK + package versions)
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -54,7 +183,8 @@ jobs:
 
   delivery-gate:
     name: Release gates (tag + delivery evidence)
-    needs: sdk-gate
+    # The three gates run in parallel; `release` requires all of them.
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
@@ -101,9 +231,11 @@ jobs:
     # only matter when we ship: counsel sign-off, an SBOM, and approved
     # third-party notices. Nothing may be built or published before it passes,
     # so `build` — and therefore release/publish-crates/publish-npm/homebrew,
-    # which all chain off it — depends on this job.
+    # which all chain off it — depends on this job. It also runs before a main
+    # prebuild, so a reused build passed the same gate on the same commit.
     name: Release gates (IP provenance, strict)
-    needs: delivery-gate
+    needs: plan
+    if: needs.plan.outputs.mode != 'skip'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
@@ -133,12 +265,32 @@ jobs:
 
   build:
     name: Build ${{ matrix.artifact || matrix.target }}
-    needs: ip-provenance-gate
+    # A main prebuild, or a tag without a verified prebuild (fallback). It
+    # starts beside the tag-only gates; `release` still requires every gate.
+    needs: [plan, ip-provenance-gate, resolve-prebuild]
+    if: >-
+      !cancelled() && needs.ip-provenance-gate.result == 'success' &&
+      (needs.plan.outputs.mode == 'prebuild' ||
+       (needs.plan.outputs.mode == 'release' && needs.resolve-prebuild.result == 'success' &&
+        needs.resolve-prebuild.outputs.reuse != 'true'))
     runs-on: ${{ matrix.os }}
+    env:
+      RELEASE_VERSION: ${{ needs.plan.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
+        # macOS first: its runners are the scarcest, so they are requested first.
         include:
+          - target: aarch64-apple-darwin
+            os: macos-15
+            macos_deployment_target: "11.0"
+            wheel_distribution: thinkery-leanctx-engine
+            wheel_platform: macosx_11_0_arm64
+          - target: x86_64-apple-darwin
+            os: macos-15-intel
+            macos_deployment_target: "11.0"
+            wheel_distribution: thinkery-leanctx-engine
+            wheel_platform: macosx_11_0_x86_64
           - target: x86_64-unknown-linux-gnu
             os: ubuntu-22.04
             jemalloc: false
@@ -165,16 +317,6 @@ jobs:
             musl: true
             wheel_distribution: thinkery-leanctx-engine
             wheel_platform: musllinux_1_2_aarch64
-          - target: x86_64-apple-darwin
-            os: macos-15-intel
-            macos_deployment_target: "11.0"
-            wheel_distribution: thinkery-leanctx-engine
-            wheel_platform: macosx_11_0_x86_64
-          - target: aarch64-apple-darwin
-            os: macos-15
-            macos_deployment_target: "11.0"
-            wheel_distribution: thinkery-leanctx-engine
-            wheel_platform: macosx_11_0_arm64
 
     # Both build jobs share identical build/package steps, but only Windows
     # receives the signing environment and OIDC permission.
@@ -188,10 +330,16 @@ jobs:
         with:
           targets: ${{ matrix.target }}
 
+      # Dependency cache per artifact (target + features) and release profile;
+      # rust-cache never caches the workspace crates, so lean-ctx itself is
+      # always compiled from the checkout. Only main writes it: a tag scope's
+      # cache is unreachable by later runs, and PR/fork runs (other workflows)
+      # write into their own ref scope, which main and tags never restore.
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
         with:
           workspaces: rust -> target
-          key: release-${{ matrix.artifact || matrix.target }}
+          key: release-profile-${{ matrix.artifact || matrix.target }}
+          save-if: ${{ github.ref == 'refs/heads/main' }}
 
       - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with:
@@ -399,7 +547,7 @@ jobs:
           python scripts/build-python-engine-wheel.py \
             --binary "$binary" \
             --distribution "${{ matrix.wheel_distribution }}" \
-            --version "${GITHUB_REF_NAME#v}" \
+            --version "${RELEASE_VERSION:?}" \
             --platform-tag "${{ matrix.wheel_platform }}" \
             --output-dir dist-engine-wheels
 
@@ -439,11 +587,11 @@ jobs:
           fi
           "$wheel_python" -m pip install --quiet 'twine==7.0.0'
           "$wheel_python" -m twine check --strict "$wheel"
-          test "$("$wheel_engine" --version | awk '{print $2}')" = "${GITHUB_REF_NAME#v}"
+          test "$("$wheel_engine" --version | awk '{print $2}')" = "${RELEASE_VERSION:?}"
           # The Engine's own Agent Tools gate: every checkout, SDK or not.
           "$wheel_python" scripts/verify-engine-agent-tools.py \
             --engine "$wheel_engine" \
-            --expected-engine-version "${GITHUB_REF_NAME#v}"
+            --expected-engine-version "${RELEASE_VERSION:?}"
           # The colocated SDK against the same binary, where the checkout
           # carries one (check-sdk-engine-coupling.py refuses a product
           # checkout without it before any build leg starts).
@@ -451,7 +599,7 @@ jobs:
             PYTHONPATH=sdk/src "$wheel_python" \
               sdk/scripts/verify_agent_context_e2e.py \
               --engine "$wheel_engine" \
-              --expected-engine-version "${GITHUB_REF_NAME#v}"
+              --expected-engine-version "${RELEASE_VERSION:?}"
           fi
       - name: Install and inspect packaged artifact (Unix)
         if: runner.os != 'Windows'
@@ -511,15 +659,45 @@ jobs:
             lean-ctx-${{ matrix.artifact || matrix.target }}.tar.gz
             lean-ctx-${{ matrix.artifact || matrix.target }}.zip
             dist-engine-wheels/*.whl
+          if-no-files-found: error
+          # A main prebuild is reusable by its tag for this long (the tag
+          # falls back to building once it expired); a tag run consumes its
+          # own artifacts within minutes.
+          retention-days: 14
+
+      # The build configuration this job compiled in (the variables the
+      # "Configure optional production runtime channel" step exported), for
+      # the prebuild seal; a tag reuses a prebuild only for the same value.
+      - name: Record the compiled-in build configuration
+        shell: bash
+        run: |
+          artifact="${{ matrix.artifact || matrix.target }}"
+          mkdir -p build-config
+          python scripts/release-prebuild.py config-digest > "build-config/build-config-${artifact}.sha256"
+
+      - name: Upload the build configuration digest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-build-config-${{ matrix.artifact || matrix.target }}
+          path: build-config/build-config-${{ matrix.artifact || matrix.target }}.sha256
+          if-no-files-found: error
+          retention-days: 14
 
   build-windows:
     name: Build ${{ matrix.artifact || matrix.target }}
-    needs: delivery-gate
+    needs: [plan, ip-provenance-gate, resolve-prebuild]
+    if: >-
+      !cancelled() && needs.ip-provenance-gate.result == 'success' &&
+      (needs.plan.outputs.mode == 'prebuild' ||
+       (needs.plan.outputs.mode == 'release' && needs.resolve-prebuild.result == 'success' &&
+        needs.resolve-prebuild.outputs.reuse != 'true'))
     runs-on: windows-2025
     environment: windows-signing
     permissions:
       contents: read
       id-token: write
+    env:
+      RELEASE_VERSION: ${{ needs.plan.outputs.version }}
     strategy:
       fail-fast: false
       matrix:
@@ -558,23 +736,138 @@ jobs:
             macos_deployment_target: ''
     steps: *engine-build-steps
 
+  prebuild-seal:
+    # Main only: record every file digest of the complete prebuild and the
+    # build configuration all ten build jobs compiled in, in one manifest,
+    # and attest only that manifest as built by release.yml on
+    # refs/heads/main at this commit. The archives and wheels get no
+    # attestation here, so an unreleased main build never verifies as a
+    # release.yml artifact; the tag run attests them after verifying them
+    # against this manifest. No release, signature or publication here.
+    name: Seal prebuilt release matrix
+    needs: [plan, build, build-windows]
+    # Explicit results: the default success() also sees the skipped tag-only
+    # ancestors (gates, resolve-prebuild) and would skip this job.
+    if: >-
+      !cancelled() && needs.plan.outputs.mode == 'prebuild' &&
+      needs.build.result == 'success' && needs.build-windows.result == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    steps:
+      - uses: actions/checkout@v4 # v4
+        with:
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: lean-ctx-*
+          path: ${{ runner.temp }}/prebuild
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: release-build-config-*
+          path: ${{ runner.temp }}/prebuild-config
+
+      - name: Write the prebuild manifest
+        env:
+          VERSION: ${{ needs.plan.outputs.version }}
+        run: |
+          python3 scripts/release-prebuild.py seal --artifacts-dir "$RUNNER_TEMP/prebuild" \
+            --config-dir "$RUNNER_TEMP/prebuild-config" \
+            --repo "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" --tree "$(git rev-parse 'HEAD^{tree}')" \
+            --version "$VERSION" --run-id "$GITHUB_RUN_ID" --run-attempt "$GITHUB_RUN_ATTEMPT" \
+            --output "$RUNNER_TEMP/prebuild-manifest/release-prebuild-manifest.json"
+
+      - name: Attest the prebuild manifest
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/prebuild-manifest/release-prebuild-manifest.json
+
+      - name: Upload the prebuild manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: release-prebuild-manifest
+          path: ${{ runner.temp }}/prebuild-manifest/release-prebuild-manifest.json
+          if-no-files-found: error
+          retention-days: 14
+
   release:
     name: Create Release
-    needs: [build, build-windows]
+    needs: [plan, resolve-prebuild, sdk-gate, delivery-gate, ip-provenance-gate, build, build-windows]
+    # Tag pushes only, after every gate, with exactly one artifact source:
+    # this run's build, or the verified main prebuild of the same commit.
+    if: >-
+      !cancelled() &&
+      github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') &&
+      needs.plan.outputs.mode == 'release' &&
+      needs.sdk-gate.result == 'success' && needs.delivery-gate.result == 'success' &&
+      needs.ip-provenance-gate.result == 'success' && needs.resolve-prebuild.result == 'success' &&
+      ((needs.resolve-prebuild.outputs.reuse == 'true' &&
+        needs.build.result == 'skipped' && needs.build-windows.result == 'skipped') ||
+       (needs.resolve-prebuild.outputs.reuse != 'true' &&
+        needs.build.result == 'success' && needs.build-windows.result == 'success'))
     runs-on: ubuntu-latest
     permissions:
       contents: write
       id-token: write
       attestations: write
+      actions: read
     steps:
       - uses: actions/checkout@v4 # v4
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+      - name: Download this run's build artifacts
+        if: needs.resolve-prebuild.outputs.reuse != 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
+          pattern: lean-ctx-*
           merge-multiple: true
+
+      - name: Download the verified prebuild artifacts
+        if: needs.resolve-prebuild.outputs.reuse == 'true'
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: lean-ctx-*
+          merge-multiple: true
+          run-id: ${{ needs.resolve-prebuild.outputs.run_id }}
+          github-token: ${{ github.token }}
+
+      # Fail closed: once reuse was chosen, any mismatch stops the release.
+      # To recover, set the repository variable RELEASE_PREBUILD_REUSE=false
+      # and re-run all jobs: resolve-prebuild then chooses the fallback build.
+      - name: Verify the prebuild artifacts against their attested manifest
+        if: needs.resolve-prebuild.outputs.reuse == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_ID: ${{ needs.resolve-prebuild.outputs.run_id }}
+          VERSION: ${{ needs.plan.outputs.version }}
+          LEANCTX_PRODUCTION_RUNTIME_CHANNEL_URL: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_URL }}
+          LEANCTX_PRODUCTION_RUNTIME_CHANNEL_SIGNATURE_URL: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_SIGNATURE_URL }}
+          LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX }}
+          LEANCTX_PRODUCTION_COCKPIT_CHANNEL_URL: ${{ vars.LEANCTX_PRODUCTION_COCKPIT_CHANNEL_URL }}
+          LEANCTX_PRODUCTION_COCKPIT_CHANNEL_SIGNATURE_URL: ${{ vars.LEANCTX_PRODUCTION_COCKPIT_CHANNEL_SIGNATURE_URL }}
+        run: |
+          set -euo pipefail
+          [[ "$RUN_ID" =~ ^[1-9][0-9]*$ ]]
+          dir="$RUNNER_TEMP/prebuild-manifest"
+          gh run download "$RUN_ID" --repo "$GITHUB_REPOSITORY" --name release-prebuild-manifest --dir "$dir"
+          gh attestation verify "$dir/release-prebuild-manifest.json" --repo "$GITHUB_REPOSITORY" \
+            --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+            --source-ref refs/heads/main --source-digest "$GITHUB_SHA" \
+            --deny-self-hosted-runners --format json > "$dir/attestation.json"
+          python3 scripts/release-prebuild.py verify --manifest "$dir/release-prebuild-manifest.json" \
+            --attestation "$dir/attestation.json" --repo "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" \
+            --tree "$(git rev-parse 'HEAD^{tree}')" --version "$VERSION" --run-id "$RUN_ID" --dir .
+          {
+            echo "### Reused prebuild"
+            echo "Artifacts built by release.yml run [${RUN_ID}](${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${RUN_ID}) on refs/heads/main at ${GITHUB_SHA}; manifest attestation and every file digest verified."
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Collect companion wheels
         run: |
@@ -732,9 +1025,14 @@ jobs:
     # LeanCTX Cockpit from this release. Its bundles are built and signed from
     # private sources by cockpit-release.yml in the private release repository
     # (repository variable LEANCTX_COCKPIT_RELEASE_REPOSITORY), which uploads
-    # them to this draft. The release is not published without them.
+    # them to this draft. The release is not published without them. Dispatch
+    # it right when the tag is pushed: it builds in parallel and its package
+    # job waits for this draft.
     name: Release gates (Cockpit bundles)
     needs: release
+    # Explicit: the default success() also counts skipped ancestors (the build
+    # jobs when a verified prebuild is reused) and would skip this job.
+    if: ${{ !cancelled() && needs.release.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 240
     permissions:
@@ -823,6 +1121,7 @@ jobs:
   publish-release:
     name: Publish GitHub Release
     needs: [release, cockpit-assets]
+    if: ${{ !cancelled() && needs.release.result == 'success' && needs.cockpit-assets.result == 'success' }}
     runs-on: ubuntu-latest
     timeout-minutes: 75
     permissions:
@@ -926,6 +1225,7 @@ jobs:
   publish-crates:
     name: Publish to crates.io
     needs: publish-release
+    if: ${{ !cancelled() && needs.publish-release.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4 # v4
@@ -984,6 +1284,7 @@ jobs:
   publish-npm:
     name: Publish to npm
     needs: publish-release
+    if: ${{ !cancelled() && needs.publish-release.result == 'success' }}
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -1032,6 +1333,7 @@ jobs:
   publish-python-engine:
     name: Publish Python Engine wheels (${{ matrix.project }})
     needs: publish-release
+    if: ${{ !cancelled() && needs.publish-release.result == 'success' }}
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -1082,6 +1384,7 @@ jobs:
   update-homebrew:
     name: Update Homebrew
     needs: publish-release
+    if: ${{ !cancelled() && needs.publish-release.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - name: Download checksums and extract platform hashes
@@ -1234,6 +1537,7 @@ jobs:
   announce-twitter:
     name: Announce on Twitter
     needs: [publish-release, publish-crates, publish-npm, publish-python-engine, update-homebrew]
+    if: ${{ !cancelled() && needs.publish-release.result == 'success' && needs.publish-crates.result == 'success' && needs.publish-npm.result == 'success' && needs.publish-python-engine.result == 'success' && needs.update-homebrew.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4 # v4
@@ -1257,13 +1561,35 @@ jobs:
   announce-discord:
     name: Announce on Discord
     needs: [publish-release, publish-crates, publish-npm, publish-python-engine, update-homebrew]
+    if: ${{ !cancelled() && needs.publish-release.result == 'success' && needs.publish-crates.result == 'success' && needs.publish-npm.result == 'success' && needs.publish-python-engine.result == 'success' && needs.update-homebrew.result == 'success' }}
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
     steps:
+      # The n8n workflow renders release.name as the embed title and
+      # release.body as its description: send the published release itself.
+      # jq builds the JSON (no shell interpolation of the notes); the body is
+      # cut to 3800 characters, inside Discord's 4096-character embed limit.
       - name: Notify Discord via n8n webhook
         env:
           WEBHOOK_URL: ${{ secrets.DISCORD_RELEASE_WEBHOOK }}
           RELEASE_TAG: ${{ github.ref_name }}
+          GH_TOKEN: ${{ github.token }}
         run: |
-          curl -fsSL -X POST "$WEBHOOK_URL" \
+          set -euo pipefail
+          gh release view "$RELEASE_TAG" --repo "$GITHUB_REPOSITORY" \
+            --json name,body,publishedAt,url > release.json
+          jq -c --arg tag "$RELEASE_TAG" --arg repo "$GITHUB_REPOSITORY" '{
+              action: "published",
+              release: {
+                tag_name: $tag,
+                name: (.name // $tag),
+                body: ((.body // "") | .[0:3800]),
+                html_url: .url,
+                published_at: .publishedAt
+              },
+              repository: {full_name: $repo}
+            }' release.json > payload.json
+          curl -fsSL --retry 3 --retry-all-errors --max-time 60 -X POST "$WEBHOOK_URL" \
             -H "Content-Type: application/json" \
-            -d "{\"action\":\"published\",\"release\":{\"tag_name\":\"${RELEASE_TAG}\",\"html_url\":\"https://github.com/${{ github.repository }}/releases/tag/${RELEASE_TAG}\"}}"
+            --data-binary @payload.json
