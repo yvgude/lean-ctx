@@ -7,7 +7,24 @@ use serde::{Deserialize, Serialize};
 
 use super::{OclaError, OclaResult};
 
-pub use crate::core::agent_connector::traits::TaskRequest as AgentTaskRequest;
+/// Agent task description carried by `CapabilityInput::AgentTask`. LeanCTX
+/// does not launch agents; the host executes the task under these limits.
+#[derive(Debug, Clone, Eq, PartialEq, Serialize, Deserialize)]
+pub struct AgentTaskRequest {
+    pub id: String,
+    pub prompt: String,
+    pub working_dir: std::path::PathBuf,
+    pub timeout_ms: u64,
+    pub model: Option<String>,
+    pub max_turns: Option<u32>,
+    /// Profile selected for this isolated agent invocation.
+    #[serde(default)]
+    pub profile_name: Option<String>,
+    pub profile_hash: Option<String>,
+    /// Explicit host-provided child identity; never inherited from the parent.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub delivery_profile: Option<Box<crate::core::work_graph_delegation::ChildDeliveryProfileV1>>,
+}
 
 /// Version of the public observation shape emitted by native adapters.
 pub const CAPABILITY_OBSERVATION_SCHEMA_VERSION: u32 = 1;

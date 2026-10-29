@@ -56,6 +56,32 @@ pub(super) fn lookup(
     Ok(row)
 }
 
+/// `lookup` for a caller that USES the answer (an edge it writes, a target
+/// it names): the row is returned only while every file it derives from is
+/// still served — the caller file and each target file (`target_file` holds
+/// several, newline-separated, for `implementations`). `serves` is the
+/// serve-time check of the opened graph (`CodeGraph::serves_file`: the file
+/// is present inside the project, and under protection the admitted rooted
+/// reader returns it now); it is asked per call and nothing is kept here.
+///
+/// A row is derived from ALL its files: one that is withdrawn withholds the
+/// answer, which is then asked from the backend again like any miss. A row
+/// without a target (`external`, `ambiguous`) depends on the caller alone.
+pub fn lookup_served(
+    conn: &Connection,
+    site: SiteKey<'_>,
+    caller_hash: &str,
+    mut serves: impl FnMut(&str) -> bool,
+) -> anyhow::Result<Option<CachedResolution>> {
+    Ok(lookup(conn, site, caller_hash)?.filter(|row| {
+        serves(site.0)
+            && row
+                .target_file
+                .as_deref()
+                .is_none_or(|targets| targets.lines().all(&mut serves))
+    }))
+}
+
 pub(super) fn store(
     conn: &Connection,
     site: SiteKey<'_>,
@@ -92,6 +118,38 @@ pub(super) fn store(
     )?;
     Ok(())
 }
+
+/// `store` through storage admission (E3), for the writer of an enrichment
+/// run: `admission` is the ONE policy snapshot of that run. The row is
+/// persisted only if every text it keeps — caller file, backend, outcome,
+/// target file(s), target symbol — passes that snapshot verbatim. `Ok(false)`:
+/// withheld, restricted or rewritten by admission; nothing was written and
+/// the answer is asked from the backend again like any miss.
+pub fn store_admitted(
+    conn: &Connection,
+    site: SiteKey<'_>,
+    caller_hash: &str,
+    value: &CachedResolution,
+    admission: &crate::core::context_admission::stores::StoreAdmission,
+) -> anyhow::Result<bool> {
+    let kept = [
+        Some(site.0),
+        Some(value.backend.as_str()),
+        Some(value.outcome.as_str()),
+        value.target_file.as_deref(),
+        value.target_symbol.as_deref(),
+    ]
+    .into_iter()
+    .flatten()
+    .collect::<Vec<_>>()
+    .join("\n");
+    if admission.admit_text(&kept).as_deref() != Some(kept.as_str()) {
+        return Ok(false);
+    }
+    store(conn, site, caller_hash, value)?;
+    Ok(true)
+}
+
 /// Whether any semantic answer is stored — evidence that enrichment has
 /// consolidated this graph's call edges at least once.
 pub(super) fn any(conn: &Connection) -> anyhow::Result<bool> {
@@ -123,4 +181,46 @@ pub(super) fn prune(
         )?;
     }
     Ok(removed)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::core::property_graph::CodeGraph;
+
+    /// G04: a cached answer is used while the caller file and its target are
+    /// served by the opened graph, and no longer once the target is
+    /// withdrawn. The row stays in the store; it is not handed to a user.
+    #[test]
+    fn a_cached_answer_is_used_only_while_its_files_are_served() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let project = tempfile::tempdir().expect("project");
+        let root = project.path().canonicalize().expect("canonical root");
+        let root_text = root.to_str().expect("utf-8 root");
+        for name in ["app.rs", "billing.rs"] {
+            std::fs::write(root.join(name), "pub fn settle() {}\n").expect("source");
+        }
+        let site: SiteKey<'_> = ("app.rs", 2, 4, "definition");
+        let answer = CachedResolution {
+            backend: "lsp:test".to_owned(),
+            outcome: "resolved".to_owned(),
+            target_file: Some("billing.rs".to_owned()),
+            target_line: Some(1),
+            target_symbol: Some("settle".to_owned()),
+            context: "c".to_owned(),
+        };
+        // One opened graph is one request: its gate decides each file once.
+        let used = || {
+            let graph = CodeGraph::open(root_text).expect("graph");
+            lookup_served(&graph.conn, site, "h", |file| graph.serves_file(file)).expect("query")
+        };
+        let graph = CodeGraph::open(root_text).expect("graph");
+        store(&graph.conn, site, "h", &answer).expect("stored");
+        assert_eq!(used(), Some(answer.clone()));
+
+        std::fs::remove_file(root.join("billing.rs")).expect("withdraw");
+        assert_eq!(used(), None);
+        assert_eq!(lookup(&graph.conn, site, "h").expect("row"), Some(answer));
+    }
 }

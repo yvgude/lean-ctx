@@ -145,6 +145,15 @@ impl ContextProvider for ConfigProvider {
         self.config.cache_ttl_secs
     }
 
+    fn descriptor(&self) -> super::provider_trait::ConnectorDescriptor {
+        descriptor(
+            self.config
+                .resources
+                .values()
+                .any(|resource| !resource.method.eq_ignore_ascii_case("GET")),
+        )
+    }
+
     fn reuse_binding(&self, action: &str, _params: &ProviderParams) -> Option<String> {
         let resource = self.config.resources.get(action)?;
         if !resource.method.eq_ignore_ascii_case("GET") {
@@ -203,6 +212,30 @@ pub(crate) fn base64_encode(data: &[u8]) -> String {
         }
     }
     result
+}
+
+pub(crate) fn descriptor(writes: bool) -> super::provider_trait::ConnectorDescriptor {
+    use super::provider_trait::{CapabilityLevel as L, ConnectorDescriptor as C};
+    C {
+        principal_binding: "configured auth (none, bearer, basic or header), digest-bound with base URL and resource",
+        search: L::Unsupported,
+        list: L::Supported,
+        get: L::Partial,
+        delta: L::Unsupported,
+        revalidate_acl: L::Supported,
+        revalidate_revision: L::Supported,
+        delete_event: L::Partial,
+        content_trust: C::UNTRUSTED,
+        write_surface: if writes {
+            "declared non-GET resources (explicit configuration); never re-checked or reused"
+        } else {
+            C::NO_WRITES
+        },
+        failure_policy: C::FAIL_CLOSED,
+        notes: "re-check re-runs the GET resource with the current credential and keeps only the stored id \
+                (an item that left the first page reads as no longer accessible); non-GET resources have no \
+                binding and are withheld from governed reuse",
+    }
 }
 
 #[cfg(test)]

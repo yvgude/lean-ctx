@@ -1,0 +1,9 @@
+{
+  "mode": "interactive",
+  "tasks_per_day": 5,
+  "tokens_per_day": null,
+  "usd_cents_per_day": null,
+  "window": null,
+  "max_sessions": 1,
+  "consent_id": "cns_abcdefgh234567ab"
+}

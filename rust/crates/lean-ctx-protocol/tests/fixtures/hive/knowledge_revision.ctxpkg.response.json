@@ -1,0 +1,87 @@
+{
+  "ctxpkg_commit": "sha256:668f83d2788fc35009a3349288cd2b93b632d6fe79d2477b60b272752d233a66",
+  "ctxpkg_tree": "sha256:fd4e10d20c8b3174f732b6a4964b765085733e7680cb7ddd6edc34174d7b9a62",
+  "document": {
+    "facts": [
+      {
+        "appliesTo": [
+          "rust/src/core/hive"
+        ],
+        "from_contributions": [
+          "p11"
+        ],
+        "id": "hive.never-blocks",
+        "kind": "decision",
+        "statement": "Hive never blocks a tool call; outbound items go through a durable outbox."
+      },
+      {
+        "appliesTo": [
+          "rust/src/core/hive"
+        ],
+        "id": "hive.screening-first",
+        "kind": "decision",
+        "statement": "Every outbound item passes engine screening before it is queued."
+      },
+      {
+        "anchors": [
+          {
+            "digest": "sha256:6869c3fea0619de5444550d1f7a0f31b01f79ea56eafcb78fbe15102fd4975be",
+            "lang": "rust",
+            "path": "rust/src/core/hive/outbox.rs",
+            "symbol": "hive::outbox::enqueue"
+          }
+        ],
+        "appliesTo": [
+          "rust/src/core/hive"
+        ],
+        "id": "hive.outbox-order",
+        "kind": "gotcha",
+        "statement": "The outbox keeps upload order per project; reordering breaks expected_revision."
+      }
+    ],
+    "format": "ctxpkg.research-context.v1",
+    "open_gaps": [
+      "How are drafts rebased after a merge?"
+    ],
+    "pages": [
+      {
+        "id": "hive.outbound",
+        "items": [
+          {
+            "kind": "prose",
+            "text": "Everything an engine sends to Hive takes one path."
+          },
+          {
+            "id": "hive.screening-first",
+            "kind": "fact"
+          },
+          {
+            "id": "hive.never-blocks",
+            "kind": "fact"
+          },
+          {
+            "id": "hive.outbox-order",
+            "kind": "fact"
+          }
+        ],
+        "title": "Outbound path"
+      }
+    ],
+    "relations": [
+      {
+        "from": "hive.screening-first",
+        "to": "hive.never-blocks",
+        "type": "supports"
+      },
+      {
+        "from": "hive.outbox-order",
+        "to": "hive.never-blocks",
+        "type": "explains"
+      }
+    ]
+  },
+  "revision": 4,
+  "schema": "leanctx.hive.knowledge-revision/v1",
+  "updated_at": "2026-10-20T12:00:00Z",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

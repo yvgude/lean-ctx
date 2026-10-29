@@ -1,0 +1,22 @@
+{
+  "route": "W62",
+  "method": "DELETE",
+  "path": "/api/v1/orgs/acme/vaults/payments/retention/pending",
+  "request": null,
+  "response": {
+    "status": 204,
+    "body": null
+  },
+  "errors": [
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "No retention change is pending.",
+          "reason": "retention_not_pending"
+        }
+      }
+    }
+  ]
+}

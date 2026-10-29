@@ -1,6 +1,8 @@
 pub mod cache;
 pub mod config;
 pub mod config_provider;
+pub mod connection;
+pub mod credentials;
 pub mod github;
 pub mod gitlab;
 pub mod hardened_http;
@@ -72,29 +74,40 @@ pub struct ProviderItem {
 
 impl ProviderResult {
     pub fn format_compact(&self) -> String {
-        let mut out = format!(
+        let mut out = self.compact_header(self.items.len());
+        for item in &self.items {
+            out.push_str(&item.format_compact());
+        }
+        out
+    }
+
+    /// The list line of [`Self::format_compact`] for `count` listed items.
+    pub(crate) fn compact_header(&self, count: usize) -> String {
+        format!(
             "{} {} ({}{}):\n",
             self.provider,
             self.resource_type,
-            self.items.len(),
+            count,
             if self.truncated { "+" } else { "" }
-        );
-        for item in &self.items {
-            let state = item.state.as_deref().unwrap_or("");
-            let labels = if item.labels.is_empty() {
-                String::new()
-            } else {
-                format!(" [{}]", item.labels.join(","))
-            };
-            out.push_str(&format!(
-                "  #{} {} ({}){}\n",
-                item.id, item.title, state, labels
-            ));
-            for claim in &item.claims {
-                out.push_str("    ▸ ");
-                out.push_str(&claim.render());
-                out.push('\n');
-            }
+        )
+    }
+}
+
+impl ProviderItem {
+    /// The lines of one item in [`ProviderResult::format_compact`]: all it
+    /// shows of the item, so it can be admitted as that item's source.
+    pub(crate) fn format_compact(&self) -> String {
+        let state = self.state.as_deref().unwrap_or("");
+        let labels = if self.labels.is_empty() {
+            String::new()
+        } else {
+            format!(" [{}]", self.labels.join(","))
+        };
+        let mut out = format!("  #{} {} ({}){}\n", self.id, self.title, state, labels);
+        for claim in &self.claims {
+            out.push_str("    ▸ ");
+            out.push_str(&claim.render());
+            out.push('\n');
         }
         out
     }

@@ -1,0 +1,640 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/worker.schema.json",
+  "title": "Workers, worker keys, revocation statement, instance card (SPEC-CONTRACT-SERVER §3.17, §3.18; routes E8, E10–E12, E44)",
+  "$defs": {
+    "host_app": {
+      "type": "string",
+      "pattern": "^([a-z0-9][a-z0-9-]{0,31}|mcp-client:[A-Za-z0-9._ -]{1,64})$"
+    },
+    "role": {
+      "type": "string",
+      "pattern": "^[a-z0-9](?:[a-z0-9-]{0,30}[a-z0-9])?$",
+      "description": "normalised (vectors/worker_id.vectors.json)"
+    },
+    "name": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 64
+    },
+    "card": {
+      "type": "object",
+      "required": [
+        "host_app",
+        "model",
+        "model_source",
+        "tools",
+        "budget",
+        "availability"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "host_app": {
+          "$ref": "#/$defs/host_app"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "model_source": {
+          "enum": [
+            "self_reported",
+            "unknown"
+          ]
+        },
+        "tools": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "budget": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tasks_per_day": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            },
+            "usd_cents_per_day": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 50000,
+              "description": "C0 carries integers only: USD amounts are integer cents"
+            }
+          }
+        },
+        "availability": {
+          "enum": [
+            "online",
+            "idle",
+            "offline"
+          ]
+        }
+      }
+    },
+    "card_with_history": {
+      "type": "object",
+      "required": [
+        "host_app",
+        "model",
+        "model_source",
+        "tools",
+        "budget",
+        "availability",
+        "history"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "host_app": {
+          "$ref": "#/$defs/card/properties/host_app"
+        },
+        "model": {
+          "$ref": "#/$defs/card/properties/model"
+        },
+        "model_source": {
+          "$ref": "#/$defs/card/properties/model_source"
+        },
+        "tools": {
+          "$ref": "#/$defs/card/properties/tools"
+        },
+        "budget": {
+          "$ref": "#/$defs/card/properties/budget"
+        },
+        "availability": {
+          "$ref": "#/$defs/card/properties/availability"
+        },
+        "history": {
+          "type": "object",
+          "required": [
+            "done",
+            "reverted",
+            "median_minutes"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "done": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "reverted": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "median_minutes": {
+              "anyOf": [
+                {
+                  "$ref": "common.schema.json#/$defs/u32"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "worker_register_request": {
+      "description": "E10 POST /v1/workers; signed by the instance key, domain leanctx.hive.worker.v1\\n, over the body without signature. place + alias_pubkey + hlc_node: exactly for swarms (and public vaults); refused elsewhere (400 invalid_body).",
+      "type": "object",
+      "required": [
+        "worker_id",
+        "host_app",
+        "role",
+        "name",
+        "card",
+        "key_id",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "host_app": {
+          "$ref": "#/$defs/host_app"
+        },
+        "role": {
+          "$ref": "#/$defs/role"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "place": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        },
+        "alias_pubkey": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{43}$",
+          "description": "base64url (no padding) of the 32-byte Ed25519 alias public key"
+        },
+        "hlc_node": {
+          "$ref": "common.schema.json#/$defs/hex16"
+        },
+        "card": {
+          "$ref": "#/$defs/card"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        },
+        "signature": {
+          "$ref": "common.schema.json#/$defs/signature"
+        }
+      },
+      "dependentRequired": {
+        "place": [
+          "alias_pubkey",
+          "hlc_node"
+        ],
+        "alias_pubkey": [
+          "place"
+        ],
+        "hlc_node": [
+          "place"
+        ]
+      }
+    },
+    "worker": {
+      "description": "Engine-facing Worker (E10/E11 responses). The web W33 Worker shape is separate.",
+      "type": "object",
+      "required": [
+        "id",
+        "host_app",
+        "role",
+        "name",
+        "place",
+        "card",
+        "status",
+        "registered_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "host_app": {
+          "$ref": "#/$defs/host_app"
+        },
+        "role": {
+          "$ref": "#/$defs/role"
+        },
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "place": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/place_ref"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "card": {
+          "$ref": "#/$defs/card_with_history"
+        },
+        "status": {
+          "enum": [
+            "revoked",
+            "stopped",
+            "held",
+            "working",
+            "online",
+            "idle",
+            "offline"
+          ]
+        },
+        "registered_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    },
+    "worker_register_response": {
+      "type": "object",
+      "required": [
+        "worker"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "worker": {
+          "$ref": "#/$defs/worker"
+        },
+        "alias_key_id": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        }
+      }
+    },
+    "worker_patch_request": {
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/name"
+        },
+        "card": {
+          "$ref": "#/$defs/card"
+        }
+      }
+    },
+    "worker_patch_response": {
+      "type": "object",
+      "required": [
+        "worker"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "worker": {
+          "$ref": "#/$defs/worker"
+        }
+      }
+    },
+    "worker_keys_response": {
+      "description": "E8; in swarms and public vaults only alias keys, worker_ids are aliases, no instance id or instance key.",
+      "type": "object",
+      "required": [
+        "keys",
+        "next_since"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "keys": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "type": "object",
+            "required": [
+              "key_id",
+              "kind",
+              "public_key",
+              "worker_ids",
+              "created_at",
+              "revoked_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "key_id": {
+                "$ref": "common.schema.json#/$defs/key_id"
+              },
+              "kind": {
+                "enum": [
+                  "instance",
+                  "alias"
+                ]
+              },
+              "public_key": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{43}$"
+              },
+              "worker_ids": {
+                "type": "array",
+                "items": {
+                  "$ref": "common.schema.json#/$defs/worker_id"
+                }
+              },
+              "created_at": {
+                "$ref": "common.schema.json#/$defs/ms"
+              },
+              "revoked_at": {
+                "anyOf": [
+                  {
+                    "$ref": "common.schema.json#/$defs/ms"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "next_since": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    },
+    "revocation": {
+      "description": "leanctx.hive.revocation.v1, signed by the Hive key of purpose revocation over the statement without signature (domain leanctx.hive.revocation.v1\\n).",
+      "type": "object",
+      "required": [
+        "schema",
+        "instance_id",
+        "org_id",
+        "revoked_at",
+        "reason",
+        "key_id",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.revocation.v1"
+        },
+        "instance_id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "org_id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "revoked_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "reason": {
+          "enum": [
+            "web_revoke",
+            "admin",
+            "key_compromise"
+          ]
+        },
+        "compromised_since": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        },
+        "signature": {
+          "$ref": "common.schema.json#/$defs/signature"
+        }
+      },
+      "if": {
+        "properties": {
+          "reason": {
+            "const": "key_compromise"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "compromised_since"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "compromised_since"
+          ]
+        }
+      }
+    },
+    "error": {
+      "type": "object",
+      "required": [
+        "error"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "object",
+          "required": [
+            "code",
+            "message"
+          ],
+          "properties": {
+            "code": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            },
+            "message": {
+              "type": "string",
+              "minLength": 1
+            },
+            "field": {
+              "type": "string"
+            },
+            "reason": {
+              "type": "string",
+              "pattern": "^[a-z][a-z0-9_]*$"
+            }
+          }
+        }
+      }
+    },
+    "instance_revoked_error": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/error"
+        }
+      ],
+      "properties": {
+        "error": {
+          "properties": {
+            "code": {
+              "const": "instance_revoked"
+            },
+            "revocation": {
+              "$ref": "#/$defs/revocation"
+            }
+          },
+          "required": [
+            "revocation"
+          ]
+        }
+      }
+    },
+    "instance_card_request": {
+      "description": "E44 PATCH /v1/instances/{id}/card; signed by the instance key, domain leanctx.hive.instance_card.v1\\n. presence_key may only be null (clears the binding).",
+      "type": "object",
+      "required": [
+        "engine_version",
+        "consent_channel",
+        "key_id",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "engine_version": {
+          "type": "string",
+          "pattern": "^[0-9]+\\.[0-9]+\\.[0-9]+(-[0-9A-Za-z.-]+)?$"
+        },
+        "consent_channel": {
+          "enum": [
+            "os_presence",
+            "tty_only"
+          ]
+        },
+        "presence_key": {
+          "type": "null"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        },
+        "signature": {
+          "$ref": "common.schema.json#/$defs/signature"
+        }
+      }
+    },
+    "presence_key": {
+      "type": "object",
+      "required": [
+        "alg",
+        "key_id",
+        "hardware",
+        "bound_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "alg": {
+          "enum": [
+            "p256_ecdsa_sha256",
+            "rsa2048_pkcs1_sha256",
+            "ed25519"
+          ]
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/hex16"
+        },
+        "hardware": {
+          "type": "boolean"
+        },
+        "bound_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    },
+    "instance_card_response": {
+      "type": "object",
+      "required": [
+        "card",
+        "account",
+        "presence_key"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "card": {
+          "type": "object",
+          "required": [
+            "engine_version",
+            "consent_channel",
+            "updated_at"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "engine_version": {
+              "$ref": "#/$defs/instance_card_request/properties/engine_version"
+            },
+            "consent_channel": {
+              "enum": [
+                "os_presence",
+                "tty_only"
+              ],
+              "description": "server-derived: os_presence iff a presence key is bound"
+            },
+            "updated_at": {
+              "$ref": "common.schema.json#/$defs/ms"
+            }
+          }
+        },
+        "account": {
+          "type": "object",
+          "required": [
+            "user_id",
+            "handle"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "user_id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "handle": {
+              "description": "the account's public handle; null until the person chooses one (never derived, W0 alike)",
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,38}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "presence_key": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/presence_key"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "presence_key_bind": {
+      "description": "member presence_key of POST /v1/device/token (R58)",
+      "type": "object",
+      "required": [
+        "alg",
+        "public_key",
+        "key_id",
+        "hardware",
+        "card_bind_signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "alg": {
+          "$ref": "#/$defs/presence_key/properties/alg"
+        },
+        "public_key": {
+          "$ref": "common.schema.json#/$defs/base64url"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/hex16"
+        },
+        "hardware": {
+          "type": "boolean"
+        },
+        "card_bind_signature": {
+          "$ref": "common.schema.json#/$defs/base64url"
+        }
+      }
+    }
+  }
+}

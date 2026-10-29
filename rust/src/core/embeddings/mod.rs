@@ -25,8 +25,12 @@ pub mod tokenizer;
 
 use std::path::{Path, PathBuf};
 
-use model_registry::{EmbeddingModel, ModelConfig, VocabSource};
-use tokenizer::{TokenizedInput, WordPieceTokenizer};
+#[cfg(feature = "embeddings")]
+use model_registry::VocabSource;
+use model_registry::{EmbeddingModel, ModelConfig};
+use tokenizer::TokenizedInput;
+#[cfg(feature = "embeddings")]
+use tokenizer::WordPieceTokenizer;
 
 // `embed_batch` parallelises tokenization in every build (rayon is a core, non
 // optional dependency), so this import must not be feature-gated — otherwise the
@@ -60,8 +64,11 @@ struct OnnxSession {
 }
 
 /// Abstraction over different tokenizer backends.
+/// Built only by the ORT loader: empty without `embeddings`.
 enum TokenizerKind {
+    #[cfg(feature = "embeddings")]
     WordPiece(WordPieceTokenizer),
+    #[cfg(feature = "embeddings")]
     HfTokenizer(tokenizer::HfTokenizerWrapper),
 }
 
@@ -736,6 +743,7 @@ impl EmbeddingEngine {
 }
 
 /// Load the appropriate tokenizer for the model config.
+#[cfg(feature = "embeddings")]
 fn load_tokenizer(model_dir: &Path, config: &ModelConfig) -> anyhow::Result<TokenizerKind> {
     match &config.vocab_file {
         VocabSource::VocabTxt(filename) => {
@@ -759,9 +767,13 @@ fn load_tokenizer(model_dir: &Path, config: &ModelConfig) -> anyhow::Result<Toke
 
 /// Tokenize text using whatever tokenizer backend is loaded.
 fn tokenize(tokenizer: &TokenizerKind, text: &str, max_len: usize) -> TokenizedInput {
-    match tokenizer {
-        TokenizerKind::WordPiece(wp) => wp.encode(text, max_len),
-        TokenizerKind::HfTokenizer(hf) => hf.encode(text, max_len),
+    #[cfg(not(feature = "embeddings"))]
+    let _ = (text, max_len);
+    match *tokenizer {
+        #[cfg(feature = "embeddings")]
+        TokenizerKind::WordPiece(ref wp) => wp.encode(text, max_len),
+        #[cfg(feature = "embeddings")]
+        TokenizerKind::HfTokenizer(ref hf) => hf.encode(text, max_len),
     }
 }
 

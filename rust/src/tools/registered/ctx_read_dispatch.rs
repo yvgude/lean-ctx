@@ -35,7 +35,7 @@ impl McpTool for CtxReadTool {
             .and_then(|v| v.as_array())
             .is_some_and(|a| !a.is_empty())
         {
-            let result = super::super::ctx_multi_read::batch_read(args, ctx);
+            let result = super::super::ctx_read_batch::batch_read(args, ctx);
             if let Ok(output) = &result {
                 record_attribution_result(ctx, "ctx_read batch".to_string(), output);
             }
@@ -105,5 +105,26 @@ impl McpTool for CtxReadTool {
             record_attribution_result(ctx, format!("ctx_read {path}"), output);
         }
         result
+    }
+
+    /// Single reads and batches share one implementation per file,
+    /// `handle_inner_prepared`, and that is where the lineage is settled:
+    ///
+    /// - the requested file is published on every path — fresh reads through
+    ///   `tools::ctx_read::read_file_*` (handler thread or
+    ///   `TaskSpine::spawn_thread` workers), and cache hits, `[unchanged]`
+    ///   stubs and deltas through `publish_requested_source`, bound to what
+    ///   is on disk now;
+    /// - whenever the reply carries content from anywhere else — graph
+    ///   neighbours, cross-source hints, rule files, proactively expanded
+    ///   content, the kernel supplement of a batch — the capture is marked
+    ///   incomplete there, so that reply's lineage is unknown;
+    /// - a source that cannot be bound (another repository via `repo`, an
+    ///   image, a path outside the root) marks it incomplete as well.
+    ///
+    /// So a captured set that is still complete at the end IS the whole set,
+    /// for every mode (the modes differ in rendering, not in what they read).
+    fn publishes_every_source(&self, _args: Option<&Map<String, Value>>) -> bool {
+        true
     }
 }

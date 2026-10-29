@@ -62,8 +62,9 @@ array, for example `performance-profile://codex-rust-monorepo-v3@3.0.0`.
 The reference records which configuration shaped the run while the receipt
 records its cost, latency, decisions, and evidence.
 
-Routing fields align with the profile overrides described by
-[Intent Route v1](../intent-route-v1.md); provider choices can be described by
+Context pressure overrides degrade the read view only; they never select a model.
+Legacy model-tier profile fields remain readable but have no effect on context
+or model choice. The caller's explicit provider selection can be described by
 the [CapabilityManifestV1](../capability-manifest-v1.schema.json) contract.
 
 ## Examples
@@ -155,7 +156,6 @@ the [CapabilityManifestV1](../capability-manifest-v1.schema.json) contract.
     "require_verification": true
   },
   "routing": {
-    "max_model_tier": "premium",
     "degrade_under_pressure": false
   },
   "pipeline": {

@@ -142,6 +142,11 @@ fn try_open_db(path: &std::path::Path) -> Result<Connection, rusqlite::Error> {
              command,
              content,
              archive_id UNINDEXED
+         );
+         CREATE TABLE IF NOT EXISTS archive_project (
+             archive_id TEXT NOT NULL,
+             project TEXT NOT NULL,
+             PRIMARY KEY (archive_id, project)
          );",
     )?;
     invalidate_unadmitted_rows(&conn)?;
@@ -201,12 +206,21 @@ pub fn index_entry(archive_id: &str, tool: &str, command: &str, content: &str) {
     if archive_id.len() == 64 || super::archive::is_protected(archive_id) {
         return;
     }
+    // Rows are served only to the projects that stored them (AP05-G4); rows
+    // indexed before 3.11.5 name no project and are never served.
+    let Some(partition) = super::archive::current_partition() else {
+        return;
+    };
     let Some(mut guard) = DB.lock().ok() else {
         return;
     };
     let Some(conn) = guard.current() else {
         return;
     };
+    let _ = conn.execute(
+        "INSERT OR IGNORE INTO archive_project (archive_id, project) VALUES (?1, ?2)",
+        params![archive_id, partition],
+    );
 
     let exists: bool = conn
         .query_row(
@@ -288,6 +302,10 @@ fn enforce_cap_locked(conn: &Connection) {
                 params![id],
             );
             let _ = conn.execute("DELETE FROM archive_fts WHERE archive_id = ?1", params![id]);
+            let _ = conn.execute(
+                "DELETE FROM archive_project WHERE archive_id = ?1",
+                params![id],
+            );
             super::archive::remove_files(id);
             deleted += 1;
             if deleted >= batch {
@@ -336,6 +354,10 @@ pub fn remove_entry(archive_id: &str) {
         "DELETE FROM archive_fts WHERE archive_id = ?1",
         params![archive_id],
     );
+    let _ = conn.execute(
+        "DELETE FROM archive_project WHERE archive_id = ?1",
+        params![archive_id],
+    );
 }
 
 #[derive(Debug, Clone)]
@@ -348,6 +370,7 @@ pub struct FtsResult {
 }
 
 pub fn search(query: &str, limit: usize) -> Vec<FtsResult> {
+    super::legacy_adoption::auto_adopt_archives();
     super::policy::runtime::with_source_view(|| search_current(query, limit)).unwrap_or_default()
 }
 
@@ -356,8 +379,11 @@ fn search_current(query: &str, limit: usize) -> Vec<FtsResult> {
     if super::policy::runtime::is_active() {
         return results;
     }
-    let legacy =
-        with_legacy_index(|conn| search_connection(conn, query, limit)).unwrap_or_default();
+    let legacy = super::archive::current_partition()
+        .and_then(|partition| {
+            with_legacy_index(|conn| search_partition(conn, query, limit, &partition))
+        })
+        .unwrap_or_default();
     // BM25 scores from different corpora are not comparable. Interleave by
     // within-corpus position, with admitted results first at an equal position.
     let mut ranked: Vec<_> = results
@@ -445,8 +471,32 @@ fn search_connection(conn: &Connection, query: &str, limit: usize) -> Vec<FtsRes
     ) else {
         return Vec::new();
     };
+    fts_rows(&mut stmt, params![query, limit as i64])
+}
 
-    stmt.query_map(params![query, limit as i64], |row| {
+/// The persistent index restricted to the rows `partition` stored.
+fn search_partition(
+    conn: &Connection,
+    query: &str,
+    limit: usize,
+    partition: &str,
+) -> Vec<FtsResult> {
+    let Ok(mut stmt) = conn.prepare(
+        "SELECT archive_fts.archive_id, archive_fts.tool, archive_fts.command,
+                snippet(archive_fts, 2, '»', '«', '…', 40), rank
+         FROM archive_fts
+         JOIN archive_project ON archive_project.archive_id = archive_fts.archive_id
+         WHERE archive_fts MATCH ?1 AND archive_project.project = ?3
+          ORDER BY rank, archive_fts.archive_id
+         LIMIT ?2",
+    ) else {
+        return Vec::new();
+    };
+    fts_rows(&mut stmt, params![query, limit as i64, partition])
+}
+
+fn fts_rows(stmt: &mut rusqlite::Statement<'_>, params: impl rusqlite::Params) -> Vec<FtsResult> {
+    stmt.query_map(params, |row| {
         Ok(FtsResult {
             archive_id: row.get(0)?,
             tool: row.get(1)?,
@@ -461,6 +511,7 @@ fn search_connection(conn: &Connection, query: &str, limit: usize) -> Vec<FtsRes
 }
 
 pub fn entry_count() -> usize {
+    super::legacy_adoption::auto_adopt_archives();
     super::policy::runtime::with_source_view(entry_count_current).unwrap_or_default()
 }
 
@@ -469,11 +520,18 @@ fn entry_count_current() -> usize {
     if super::policy::runtime::is_active() {
         return bound;
     }
+    let Some(partition) = super::archive::current_partition() else {
+        return bound;
+    };
     bound
         + with_legacy_index(|conn| {
-            conn.query_row("SELECT COUNT(*) FROM archive_meta", [], |row| {
-                row.get::<_, i64>(0)
-            })
+            conn.query_row(
+                "SELECT COUNT(*) FROM archive_meta
+                 JOIN archive_project ON archive_project.archive_id = archive_meta.archive_id
+                 WHERE archive_project.project = ?1",
+                params![partition],
+                |row| row.get::<_, i64>(0),
+            )
             .unwrap_or(0) as usize
         })
         .unwrap_or(0)
@@ -524,6 +582,52 @@ pub mod tests {
         assert_eq!(ids, vec!["t1"]);
     }
 
+    /// AP05-G4: one index per installation served every project's archive
+    /// snippets, ids, counts and listings, and any id resolved anywhere.
+    #[test]
+    fn archives_are_discovered_and_resolved_only_in_their_project() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        crate::test_env::set_var("LEAN_CTX_ARCHIVE", "1");
+        let a = tempfile::tempdir().unwrap();
+        let b = tempfile::tempdir().unwrap();
+        let in_project = |root: &std::path::Path, f: &dyn Fn()| {
+            crate::core::policy::runtime::REQUEST_PROJECT
+                .sync_scope(std::cell::RefCell::new(Some(root.to_path_buf())), f);
+        };
+        let content = "ap05g4 quartzmarker output line\n".repeat(64);
+        let id = std::cell::RefCell::new(String::new());
+        in_project(a.path(), &|| {
+            *id.borrow_mut() = super::super::archive::store("ctx_shell", "make", &content, None)
+                .expect("archived");
+        });
+        let id = id.into_inner();
+        in_project(b.path(), &|| {
+            assert!(search("quartzmarker", 10).is_empty());
+            assert_eq!(entry_count(), 0);
+            assert!(super::super::archive::list_entries(None).is_empty());
+            assert!(super::super::archive::retrieve(&id).is_none());
+            // The same text stored here is this project's own entry: none of
+            // A's metadata (command, session, aliases) is shared (review S1).
+            let own = super::super::archive::store("ctx_shell", "make b", &content, None)
+                .expect("archived");
+            assert_ne!(own, id);
+            let listed = super::super::archive::list_entries(None);
+            assert_eq!(listed.len(), 1);
+            assert_eq!(listed[0].command, "make b");
+        });
+        in_project(a.path(), &|| {
+            assert_eq!(search("quartzmarker", 10)[0].archive_id, id);
+            assert_eq!(entry_count(), 1);
+            assert_eq!(super::super::archive::list_entries(None).len(), 1);
+            assert_eq!(
+                super::super::archive::retrieve(&id).as_deref(),
+                Some(content.as_str())
+            );
+        });
+        crate::test_env::remove_var("LEAN_CTX_ARCHIVE");
+    }
+
     #[test]
     fn open_db_bounds_the_wal() {
         let _lock = crate::core::data_dir::test_env_lock();
@@ -555,36 +659,44 @@ pub mod tests {
         let first = tempfile::tempdir().unwrap();
         let second = tempfile::tempdir().unwrap();
 
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", first.path());
-        index_entry(
-            "mes1609_first",
-            "ctx_shell",
-            "first",
-            "mes1609_fts_first_only",
-        );
-        assert_eq!(
-            search("mes1609_fts_first_only", 10)[0].archive_id,
-            "mes1609_first"
-        );
+        // Rows are served to the project that indexed them (AP05-G4).
+        let project = first.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(project)),
+            || {
+                crate::test_env::set_var("LEAN_CTX_DATA_DIR", first.path());
+                index_entry(
+                    "mes1609_first",
+                    "ctx_shell",
+                    "first",
+                    "mes1609_fts_first_only",
+                );
+                assert_eq!(
+                    search("mes1609_fts_first_only", 10)[0].archive_id,
+                    "mes1609_first"
+                );
 
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", second.path());
-        index_entry(
-            "mes1609_second",
-            "ctx_shell",
-            "second",
-            "mes1609_fts_second_only",
-        );
-        assert_eq!(
-            search("mes1609_fts_second_only", 10)[0].archive_id,
-            "mes1609_second"
-        );
-        assert!(search("mes1609_fts_first_only", 10).is_empty());
+                crate::test_env::set_var("LEAN_CTX_DATA_DIR", second.path());
+                index_entry(
+                    "mes1609_second",
+                    "ctx_shell",
+                    "second",
+                    "mes1609_fts_second_only",
+                );
+                assert_eq!(
+                    search("mes1609_fts_second_only", 10)[0].archive_id,
+                    "mes1609_second"
+                );
+                assert!(search("mes1609_fts_first_only", 10).is_empty());
 
-        crate::test_env::set_var(
-            "LEAN_CTX_DATA_DIR",
-            original_path.parent().unwrap().parent().unwrap(),
+                crate::test_env::set_var(
+                    "LEAN_CTX_DATA_DIR",
+                    original_path.parent().unwrap().parent().unwrap(),
+                );
+                assert!(search("mes1609_fts_first_only", 10).is_empty());
+                assert!(search("mes1609_fts_second_only", 10).is_empty());
+            },
         );
-        assert!(search("mes1609_fts_first_only", 10).is_empty());
-        assert!(search("mes1609_fts_second_only", 10).is_empty());
     }
 }

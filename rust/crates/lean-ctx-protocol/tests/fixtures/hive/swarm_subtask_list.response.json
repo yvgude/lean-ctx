@@ -1,0 +1,22 @@
+{
+  "items": [
+    {
+      "acceptance": "The constant and the file it lives in.",
+      "expected_kind": "number",
+      "mine": false,
+      "number": 7,
+      "state": "open",
+      "subtask_id": "ss_01jbretry7",
+      "swarm": {
+        "licence": "CC-BY-4.0",
+        "scope": "public",
+        "swarm_id": "sw_01jbretry",
+        "title": "Which retry budget does payments use?"
+      },
+      "swarm_id": "sw_01jbretry",
+      "title": "Find the retry budget in code"
+    }
+  ],
+  "schema": "leanctx.hive.swarm-subtask-list/v1",
+  "trust": "untrusted"
+}

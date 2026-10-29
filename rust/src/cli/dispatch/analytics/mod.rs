@@ -2,7 +2,6 @@
 //! graph tools. Split by domain (GL#439) — each submodule owns exactly one
 //! command surface; this hub re-exports the dispatch entry points.
 
-mod billing;
 mod finops;
 mod gain;
 mod graph;
@@ -11,7 +10,6 @@ pub mod provider_run;
 mod savings;
 mod spend;
 
-pub(in crate::cli::dispatch) use billing::cmd_billing;
 pub(in crate::cli::dispatch) use finops::cmd_finops;
 pub(in crate::cli::dispatch) use gain::cmd_gain;
 pub(in crate::cli::dispatch) use graph::{cmd_compact, cmd_graph, cmd_smells};

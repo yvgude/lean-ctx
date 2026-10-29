@@ -27,6 +27,11 @@ impl ComposeSectionCache {
         if crate::core::policy::runtime::is_active() {
             return None;
         }
+        // A record does not carry the Workspace revision it was composed
+        // under; under a Workspace every compose is fresh (#2120).
+        if crate::core::workspace_authority::is_configured() {
+            return None;
+        }
         let key = (task.trim().to_string(), path.to_string());
         let record = self.records.lock().ok()?.get(&key)?.clone();
         if source_revision(path)? != record.corpus_revision {

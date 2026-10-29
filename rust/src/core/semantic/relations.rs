@@ -273,6 +273,8 @@ pub fn resolve_relation_edges(
         deadline: None,
     };
     let revision = project_revision(file_hashes);
+    // One storage-admission snapshot for every answer this pass keeps.
+    let admission = crate::core::context_admission::stores::StoreAdmission::current();
     let started = Instant::now();
     let mut pass = RelationPass::default();
     let mut live_identity: HashMap<String, LiveIdentity> = HashMap::new();
@@ -342,6 +344,7 @@ pub fn resolve_relation_edges(
                                         target_symbol: Some(sym.name.clone()),
                                         context: revision.clone(),
                                     },
+                                    &admission,
                                 );
                             }
                             live_identity.insert(ext, LiveIdentity::Known(backend.clone()));

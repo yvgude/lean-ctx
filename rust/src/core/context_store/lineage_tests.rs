@@ -21,6 +21,7 @@ fn digest(fill: char) -> Sha256Digest {
 fn receipt(task: Option<&str>, id: &str) -> ContextDecisionReceiptV1 {
     ContextDecisionReceiptV1 {
         schema_version: V1_SCHEMA_VERSION,
+        object_digest: None,
         receipt_id: ProtocolReference::new(id).expect("reference"),
         mode: GatewayModeV1::Developer,
         principal: PrincipalV1::unknown(),
@@ -77,6 +78,83 @@ fn receipt(task: Option<&str>, id: &str) -> ContextDecisionReceiptV1 {
     }
 }
 
+#[test]
+fn outbound_legacy_receipt_is_preparation_not_model_delivery() {
+    let mut outbound = receipt(Some(TASK), "rcpt-outbound");
+    outbound.destination.provider = ProtocolReference::new("openai").expect("provider");
+    let summary = summarize(&outbound);
+    assert_eq!(summary.outcome, "prepared");
+    assert_eq!(summary.delivery_semantics, "prepared_for_dispatch");
+    assert_eq!(outbound.outcome, DeliveryOutcomeV1::Delivered);
+    let host = summarize(&receipt(Some(TASK), "rcpt-host"));
+    assert_eq!(host.outcome, "delivered");
+    assert_eq!(host.delivery_semantics, "returned_to_host");
+}
+
+#[test]
+fn egress_lineage_distinguishes_missing_preparation_and_host_reported_response() {
+    use lean_ctx_protocol::context_gateway::{
+        EgressAdmissionOutcomeV1, EgressAdmissionReceiptV1, EgressTransportObserverV1,
+        EgressTransportResultV1, EgressTransportV1,
+    };
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let mut decision = receipt(Some(TASK), "rcpt-egress-lineage");
+    decision.destination.provider = ProtocolReference::new("openai").expect("provider");
+    let decision_digest = receipt_store::persist(&decision, "/p", Some(SCOPE)).expect("decision");
+    let missing = load(SCOPE, TASK);
+    assert!(missing.gaps.contains(&"egress_admission_unverified"));
+    assert!(
+        missing.deliveries[0]
+            .egress
+            .as_ref()
+            .expect("egress")
+            .admission
+            .is_none()
+    );
+
+    let admission = EgressAdmissionReceiptV1 {
+        schema_version: 1,
+        receipt_id: ProtocolReference::new("egress-lineage").expect("id"),
+        decision_receipt_digest: Some(decision_digest),
+        outcome: EgressAdmissionOutcomeV1::Prepared,
+        prepared_bytes_digest: decision.final_context.clone(),
+    };
+    let admission_digest = receipt_store::persist_admission(&admission).expect("admission");
+    let prepared = load(SCOPE, TASK);
+    assert!(prepared.gaps.contains(&"no_transport_observation"));
+    assert!(!prepared.gaps.contains(&"egress_admission_unverified"));
+
+    receipt_store::append_host_observation(
+        &admission_digest,
+        1,
+        EgressTransportV1::Http,
+        EgressTransportResultV1::ResponseObserved,
+        Some(200),
+        None,
+    )
+    .expect("host report");
+    let observed = load(SCOPE, TASK);
+    assert!(!observed.gaps.contains(&"no_transport_observation"));
+    let egress = observed.deliveries[0].egress.as_ref().expect("egress");
+    assert_eq!(egress.observations.len(), 1);
+    assert_eq!(
+        egress.observations[0].observer,
+        EgressTransportObserverV1::HostReported
+    );
+    assert_eq!(
+        observed.deliveries[0]
+            .summary
+            .as_ref()
+            .expect("summary")
+            .outcome,
+        "prepared"
+    );
+    assert_eq!(
+        observed.outcome, "unknown",
+        "a response is not task acceptance"
+    );
+}
+
 fn ledger_chain(store: &ExecutionLedgerStore) {
     store
         .append(ExecutionEvent::TaskStarted {
@@ -125,7 +203,7 @@ fn none() -> TaskReceipts {
     }
 }
 
-/// Gate 5: one task reconstructs plan → what reached the model → cost, and
+/// Gate 5: one task reconstructs plan → host delivery → cost, and
 /// names the missing outcome instead of inventing one.
 #[test]
 fn a_task_reconstructs_plan_delivery_and_cost_from_real_stores() {
@@ -281,11 +359,13 @@ fn an_edited_receipt_is_reported_not_shown() {
             .expect("persist");
     let path = gateway
         .join("receipts")
-        .join(format!("{}.json", digest.hex()));
-    let edited = std::fs::read_to_string(&path)
-        .expect("stored receipt")
+        .join(format!("{}.json.zst", digest.hex()));
+    let stored = zstd::decode_all(std::fs::read(&path).expect("stored receipt").as_slice())
+        .expect("packed receipt");
+    let edited = String::from_utf8(stored)
+        .expect("json")
         .replace("\"delivered\":120", "\"delivered\":1");
-    std::fs::write(&path, edited).expect("edit");
+    std::fs::write(&path, zstd::encode_all(edited.as_bytes(), 3).expect("pack")).expect("edit");
 
     let receipts = receipt_store::for_task_in(&gateway, SCOPE, TASK);
     assert!(!receipts.complete());
@@ -365,7 +445,7 @@ fn a_held_index_lock_keeps_the_receipt_and_marks_the_task_incomplete() {
     assert!(
         gateway
             .join("receipts")
-            .join(format!("{}.json", digest.hex()))
+            .join(format!("{}.json.zst", digest.hex()))
             .exists()
     );
     let receipts = receipt_store::for_task_in(&gateway, SCOPE, TASK);

@@ -298,6 +298,7 @@ pub fn repack_decision(messages: &[Value], cached: usize) -> bool {
 /// True once the warm-prefix cost gate compressed this conversation's system
 /// prompt (#1912). The latch keeps every later turn on the compressed prefix the
 /// provider cached — re-deciding per turn could flip back and bust it again.
+#[cfg(feature = "http-server")]
 pub(crate) fn system_compression_latched(key: u64) -> bool {
     store()
         .lock()
@@ -309,6 +310,7 @@ pub(crate) fn system_compression_latched(key: u64) -> bool {
 /// Engages the system-compression latch for a conversation and persists it
 /// eagerly, so a proxy restart cannot flip the conversation back to the
 /// uncompressed prefix.
+#[cfg(feature = "http-server")]
 pub(crate) fn latch_system_compression(key: u64) {
     let now = now_secs();
     {

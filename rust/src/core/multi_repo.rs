@@ -207,6 +207,11 @@ impl MultiRepoManager {
             alias: alias.map(String::from),
         };
         let root = ActiveRepoRoot::new(config)?;
+        if !authorized(&root.path) {
+            return Err(format!(
+                "{path} is not a root of the launcher-bound Workspace — repo roots cannot widen it"
+            ));
+        }
         if self.roots.iter().any(|r| r.path == root.path) {
             return Err(format!("Root already exists: {path}"));
         }
@@ -245,6 +250,7 @@ impl MultiRepoManager {
     pub fn list_roots(&self) -> Vec<RootInfo> {
         self.roots
             .iter()
+            .filter(|r| authorized(&r.path))
             .map(|r| RootInfo {
                 path: r.path.to_string_lossy().to_string(),
                 alias: r.alias(),
@@ -286,6 +292,9 @@ impl MultiRepoManager {
         let mut all_results: HashMap<String, FusedSearchResult> = HashMap::new();
 
         for root in &mut self.roots {
+            if !authorized(&root.path) {
+                continue;
+            }
             if let Some(filter) = filter_roots {
                 let alias = root.alias();
                 let path = root.path.to_string_lossy().to_string();
@@ -341,6 +350,11 @@ impl MultiRepoManager {
         let idx = self
             .resolve_root(repo)
             .ok_or_else(|| format!("Unknown repo: {repo}"))?;
+        if !authorized(&self.roots[idx].path) {
+            return Err(format!(
+                "{repo} is not a root of the launcher-bound Workspace"
+            ));
+        }
         Ok(self.roots[idx].search(query, max_results))
     }
 }
@@ -405,7 +419,8 @@ pub fn resolve_repo_root(repo: &str) -> Option<String> {
     let manager = global_manager();
     let mgr = manager.lock().ok()?;
     let idx = mgr.resolve_root(repo)?;
-    Some(mgr.roots[idx].path.to_string_lossy().to_string())
+    let root = &mgr.roots[idx].path;
+    authorized(root).then(|| root.to_string_lossy().to_string())
 }
 
 /// Every registered repo alias, for naming known aliases in an "unknown repo"
@@ -433,8 +448,17 @@ pub fn all_root_paths() -> Vec<String> {
     };
     mgr.roots
         .iter()
+        .filter(|r| authorized(&r.path))
         .map(|r| r.path.to_string_lossy().to_string())
         .collect()
+}
+
+/// Whether a registered repo root may be used now: every registered root
+/// without a Workspace, only roots of the request's snapshot under one
+/// (#2120) — a root registered earlier or saved in `multi-repo.toml` grants
+/// nothing by itself.
+fn authorized(root: &Path) -> bool {
+    crate::core::workspace_authority::root_authorized(root)
 }
 
 /// Format search results for MCP output.

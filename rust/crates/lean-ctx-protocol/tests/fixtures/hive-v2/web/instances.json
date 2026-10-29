@@ -1,0 +1,83 @@
+{
+  "route": "W96",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/instances?state=all",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "id": "3e7cbd85-6f41-4a0d-8c93-5db18eaf0234",
+          "label": "ada-mbp",
+          "owner": {
+            "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
+            "name": "Ada"
+          },
+          "engine_version": "3.12.0",
+          "os": "macos",
+          "enrolled_at": "2026-10-20T07:00:00Z",
+          "last_seen_at": "2026-10-26T06:58:00Z",
+          "connected": true,
+          "pending": false,
+          "revoked_at": null,
+          "lease": {
+            "expires_at": "2026-10-27T06:58:00Z",
+            "grace_until": "2026-10-28T06:58:00Z"
+          },
+          "slot_free_at": null
+        },
+        {
+          "id": "4f8dce96-7052-4b1e-9da4-6ec29fb01345",
+          "label": "ada-old-laptop",
+          "owner": {
+            "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
+            "name": "Ada"
+          },
+          "engine_version": "3.12.0",
+          "os": "macos",
+          "enrolled_at": "2026-10-20T07:00:00Z",
+          "last_seen_at": "2026-10-23T18:10:00Z",
+          "connected": false,
+          "pending": false,
+          "revoked_at": "2026-10-24T09:00:00Z",
+          "lease": null,
+          "slot_free_at": "2026-10-31T09:00:00Z"
+        },
+        {
+          "id": "5a9edfa7-8163-4c2f-8eb5-7fd3a0c12456",
+          "label": "ada-broken-phone",
+          "owner": {
+            "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
+            "name": "Ada"
+          },
+          "engine_version": "3.12.0",
+          "os": "macos",
+          "enrolled_at": "2026-10-20T07:00:00Z",
+          "last_seen_at": "2026-10-21T12:00:00Z",
+          "connected": false,
+          "pending": false,
+          "revoked_at": "2026-10-25T16:20:00Z",
+          "lease": null,
+          "slot_free_at": null
+        }
+      ],
+      "next_cursor": null,
+      "limit": 3,
+      "used": 1
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "invalid_field",
+          "message": "state is connected, offline, revoked or all",
+          "field": "state",
+          "reason": "invalid"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,109 @@
+{
+  "claim_id": "cl_ccccccccccccccccccccccccca",
+  "events": [
+    {
+      "actor": {
+        "kind": "worker"
+      },
+      "body": {
+        "artefacts": [
+          {
+            "kind": "material",
+            "ref": "flamegraph-checkout.svg",
+            "sha256": "d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7"
+          }
+        ],
+        "body_nonce": "17171717171717171717171717171717",
+        "goal": "n_aaaaaaaaaaaaaaaaaaaaaadaai",
+        "summary": "Flame graph attached; JSON encoding, the tax lookup and TLS session setup dominate.",
+        "usage": {
+          "source": "cli_summary",
+          "tasks": 1,
+          "tokens": 182000,
+          "usd_cents": 41
+        }
+      },
+      "body_commit": "c63e8f41e9a2cde6eb9d9eff40f249907b2eb8fdbec76e50902332444a2e4b52",
+      "capture": {
+        "evidence": "observed",
+        "gate_version": 1,
+        "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+      },
+      "causal_base": 3,
+      "event_id": "01M5NKA5X0005G00000000W004",
+      "hlc": {
+        "counter": 0,
+        "node": "0e9c7f2455744dc1",
+        "wall_ms": 1792800004000
+      },
+      "key_id": "a81b399e9440c8ad",
+      "node_type": "result",
+      "op": "node.add",
+      "place": {
+        "id": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+        "kind": "swarm"
+      },
+      "provenance_claim": "workspace",
+      "schema": "leanctx.hive.event/v2",
+      "screening": {
+        "counts": {
+          "forbidden": 0,
+          "local_path": 0,
+          "pii": 0,
+          "redaction": 0,
+          "secret": 0
+        },
+        "scanner_version": 1
+      },
+      "signature": "c63da3b70d0d0a9bf3f0b17ae6d84c0d43d7fd3b73c496d872f7ef886ed2093851fd7c5a4ba40759d0c7b62a6bfe88ba102d2392e0c3f9acfa63363d6bbcaf02",
+      "target": "n_aaaaaaaaaaaaaaaaaaaaaadaam",
+      "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+    },
+    {
+      "actor": {
+        "kind": "worker"
+      },
+      "body": {
+        "body_nonce": "18181818181818181818181818181818",
+        "from": "n_aaaaaaaaaaaaaaaaaaaaaadaam",
+        "kind": "result_of",
+        "to": "n_aaaaaaaaaaaaaaaaaaaaaadaai"
+      },
+      "body_commit": "6308098ce6341acf3997509555cf6e2dbe5417f0099155ca795c9b2fb6d197fe",
+      "capture": {
+        "evidence": "observed",
+        "gate_version": 1,
+        "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+      },
+      "causal_base": 4,
+      "event_id": "01M5NKA6W8005G00000000W005",
+      "hlc": {
+        "counter": 0,
+        "node": "0e9c7f2455744dc1",
+        "wall_ms": 1792800005000
+      },
+      "key_id": "a81b399e9440c8ad",
+      "op": "edge.add",
+      "place": {
+        "id": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+        "kind": "swarm"
+      },
+      "provenance_claim": "workspace",
+      "schema": "leanctx.hive.event/v2",
+      "screening": {
+        "counts": {
+          "forbidden": 0,
+          "local_path": 0,
+          "pii": 0,
+          "redaction": 0,
+          "secret": 0
+        },
+        "scanner_version": 1
+      },
+      "signature": "2064168009c0535ba6febae1c26b7bc4282a00b6f951516d7add004e74145de8b37d5e5a1b9cfaab5b0c8bc11cb84714cc644d2c3031ce289843e046d7ece80f",
+      "target": "e_aaaaaaaaaaaaaaaaaaaaaacqaq",
+      "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+    }
+  ],
+  "fencing_token": 12
+}

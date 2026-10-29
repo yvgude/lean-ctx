@@ -19,8 +19,8 @@ pub struct SearchHistory {
 
 /// Tracks autonomous action state independently of the MCP tool layer.
 pub struct AutonomyState {
-    pub session_initialized: AtomicBool,
-    pub dedup_applied: AtomicBool,
+    /// Set once the session's wake-up briefing was delivered.
+    pub session_briefed: AtomicBool,
     pub last_consolidation_unix: AtomicU64,
     pub config: AutonomyConfig,
     /// Repeated `pattern|path` keys for search tools (see [`AutonomyState::track_search`]).
@@ -39,8 +39,7 @@ impl AutonomyState {
     /// Creates a new autonomy state with config loaded from disk.
     pub fn new() -> Self {
         Self {
-            session_initialized: AtomicBool::new(false),
-            dedup_applied: AtomicBool::new(false),
+            session_briefed: AtomicBool::new(false),
             last_consolidation_unix: AtomicU64::new(0),
             config: AutonomyConfig::load(),
             search_repetition: Mutex::new(HashMap::new()),

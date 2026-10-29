@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_request",
+    "field": "summary",
+    "message": "sealed drafts carry no plaintext",
+    "reason": "sealed_plaintext"
+  }
+}

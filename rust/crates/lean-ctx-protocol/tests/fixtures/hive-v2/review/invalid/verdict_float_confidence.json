@@ -1,0 +1,14 @@
+{
+  "case": "verdict_float_confidence",
+  "base": "routes/review_reveal.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/verdict/confidence",
+      "value": 0.9
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

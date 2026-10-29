@@ -80,14 +80,16 @@ fn handle_inner(
     let root = root_buf.as_path();
 
     // Query-conditioned IB (#542): remember the latest search query as a
-    // fallback relevance signal for subsequent compressed reads.
-    if !crate::core::policy::runtime::is_active()
-        && !query.trim().is_empty()
-        && let Some(mut session) = crate::core::session::SessionState::load_latest()
-        && session.last_semantic_query.as_deref() != Some(query)
-    {
-        session.last_semantic_query = Some(query.to_string());
-        let _ = session.save();
+    // fallback relevance signal for subsequent compressed reads — in the
+    // caller's own session only, never the project's latest saved one, which
+    // may be another agent's (I07/S03). No caller (CLI): nothing is written.
+    if !crate::core::policy::runtime::is_active() && !query.trim().is_empty() {
+        crate::core::session::caller::with_mut(|session| {
+            if session.last_semantic_query.as_deref() != Some(query) {
+                session.last_semantic_query = Some(query.to_string());
+                session.increment();
+            }
+        });
     }
 
     let filter = match SearchFilter::new(languages, path_glob) {
@@ -125,7 +127,7 @@ fn handle_inner(
             Bm25LoadResult::Ready(idx) => idx,
             Bm25LoadResult::Building => {
                 return "BM25 index is being built in the background. \
-                    Run ctx_semantic_search again in ~30s, or use action=reindex to wait for completion."
+                    Run ctx_search(action=\"semantic\") again in ~30s, or ctx_index(action=\"build\") to wait for completion."
                 .to_string();
             }
         }
@@ -438,10 +440,23 @@ fn handle_find_related_inner(
         return "ERR: empty index. Try action=reindex first.".to_string();
     }
 
-    let source_chunk = index
-        .chunks
-        .iter()
-        .find(|c| c.file_path == file_path && c.start_line <= line && c.end_line >= line);
+    // The chunk's text becomes the query: a chunk of a loaded index whose
+    // source no longer admits it (G04, one serve-time gate for this request)
+    // is neither used nor named — the answer is the one for a missing chunk.
+    // Pack and role are pinned for the decision; a view that reports a change
+    // answers like a missing chunk.
+    let source_chunk =
+        crate::core::bm25_index::source_gate::pinned(index.source_root.as_deref(), || {
+            let mut gate = index.source_gate();
+            index
+                .chunks
+                .iter()
+                .find(|c| c.file_path == file_path && c.start_line <= line && c.end_line >= line)
+                .filter(|chunk| {
+                    crate::core::bm25_index::source_gate::chunk_served(&mut gate, chunk)
+                })
+        })
+        .flatten();
 
     let Some(source_chunk) = source_chunk else {
         return format!(

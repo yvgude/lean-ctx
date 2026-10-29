@@ -1,0 +1,19 @@
+{
+  "alias_pubkey": "1HZQs--lIIolw9omhGSgaKzks52xjpJnHmaS6-c5y2I",
+  "card": {
+    "availability": "idle",
+    "budget": {},
+    "host_app": "codex",
+    "model": "unknown",
+    "model_source": "unknown",
+    "tools": []
+  },
+  "hlc_node": "0e9c7f2455744dc1",
+  "host_app": "codex",
+  "key_id": "47983724220c8521",
+  "name": "Codex · general",
+  "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+  "role": "general",
+  "signature": "91f43e4aaeff2c042bab679ef8af752ab5e7d0d5e6c9b944f74bc76d50fa84d51d14476b7b3a5976278d4d5fbe385d913be3ccc888cac03829cb0f031b3ddb0e",
+  "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+}

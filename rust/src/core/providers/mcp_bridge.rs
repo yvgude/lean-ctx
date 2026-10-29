@@ -85,9 +85,9 @@ impl ContextProvider for McpBridgeProvider {
             ));
         }
         match action {
-            "resources" => list_resources(&self.server_url, &self.server_name, params),
-            "read_resource" => read_resource(&self.server_url, &self.server_name, params),
-            "tools" => list_tools(&self.server_url, &self.server_name, params),
+            "resources" => list_resources(self.id, &self.server_url, &self.server_name, params),
+            "read_resource" => read_resource(self.id, &self.server_url, &self.server_name, params),
+            "tools" => list_tools(self.id, &self.server_url, &self.server_name, params),
             _ => Err(format!("Unsupported action: {action}")),
         }
     }
@@ -100,33 +100,72 @@ impl ContextProvider for McpBridgeProvider {
         false
     }
 
+    fn descriptor(&self) -> super::provider_trait::ConnectorDescriptor {
+        descriptor()
+    }
+
     fn is_available(&self) -> bool {
         match &self.transport {
-            McpTransport::Http { url } => !url.is_empty(),
+            McpTransport::Http { url } => admissible_server_url(url),
             McpTransport::Stdio { command, .. } => !command.is_empty(),
         }
     }
 }
 
+/// A bridge talks HTTPS, or plain HTTP only to this machine: an MCP server's
+/// answers become context, so they must not cross a network unprotected.
+fn admissible_server_url(url: &str) -> bool {
+    let Ok(parsed) = reqwest::Url::parse(url) else {
+        return false;
+    };
+    if !parsed.username().is_empty() || parsed.password().is_some() || parsed.query().is_some() {
+        return false;
+    }
+    match parsed.scheme() {
+        "https" => parsed.host_str().is_some(),
+        "http" => parsed.host_str().is_some_and(|host| {
+            host == "localhost"
+                || host
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback())
+        }),
+        _ => false,
+    }
+}
+
+/// One bridge request through the hardened client: bounded time and size,
+/// no redirects, no response body in an error.
+fn bridge_call(
+    provider_id: &str,
+    url: &str,
+    post_body: Option<&str>,
+) -> Result<serde_json::Value, String> {
+    if !admissible_server_url(url) {
+        return Err(format!(
+            "MCP bridge {provider_id}: server URL must be HTTPS or loopback"
+        ));
+    }
+    let client = super::hardened_http::HardenedClient::new(provider_id);
+    let outcome = match post_body {
+        Some(body) => client.post_with_headers(url, body, &[("Content-Type", "application/json")]),
+        None => client.get_with_headers(url, &[("Accept", "application/json")]),
+    };
+    let text = outcome
+        .into_body()
+        .map_err(|e| format!("MCP bridge error ({provider_id}): {e}"))?;
+    serde_json::from_str(&text).map_err(|e| format!("MCP bridge JSON error: {e}"))
+}
+
 fn list_resources(
+    provider_id: &str,
     server_url: &str,
     server_name: &str,
     params: &ProviderParams,
 ) -> Result<ProviderResult, String> {
     let limit = params.limit.unwrap_or(20);
-    let url = format!("{server_url}/resources/list");
-
-    let response = ureq::get(&url)
-        .header("Accept", "application/json")
-        .call()
-        .map_err(|e| format!("MCP bridge error ({server_name}): {e}"))?;
-
-    let text = response
-        .into_body()
-        .read_to_string()
-        .map_err(|e| format!("MCP bridge read error: {e}"))?;
-    let body: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("MCP bridge JSON error: {e}"))?;
+    let body = bridge_call(provider_id, &format!("{server_url}/resources/list"), None)?;
 
     let resources = body["resources"].as_array().cloned().unwrap_or_default();
 
@@ -148,7 +187,7 @@ fn list_resources(
         .collect();
 
     Ok(ProviderResult {
-        provider: format!("mcp_bridge:{server_name}"),
+        provider: provider_id.to_string(),
         resource_type: "resources".into(),
         items,
         total_count: Some(resources.len()),
@@ -157,6 +196,7 @@ fn list_resources(
 }
 
 fn read_resource(
+    provider_id: &str,
     server_url: &str,
     server_name: &str,
     params: &ProviderParams,
@@ -169,20 +209,12 @@ fn read_resource(
             format!("read_resource requires 'id' (resource URI). Use action=resources to discover URIs for {server_name}")
         })?;
 
-    let url = format!("{server_url}/resources/read");
-
-    let body = serde_json::json!({ "uri": uri });
-    let response = ureq::post(&url)
-        .header("Content-Type", "application/json")
-        .send(&serde_json::to_vec(&body).map_err(|e| format!("JSON encode error: {e}"))?)
-        .map_err(|e| format!("MCP bridge read error ({server_name}): {e}"))?;
-
-    let text = response
-        .into_body()
-        .read_to_string()
-        .map_err(|e| format!("MCP bridge read body error: {e}"))?;
-    let body: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("MCP bridge JSON error: {e}"))?;
+    let request = serde_json::json!({ "uri": uri }).to_string();
+    let body = bridge_call(
+        provider_id,
+        &format!("{server_url}/resources/read"),
+        Some(&request),
+    )?;
 
     let contents = body["contents"].as_array().cloned().unwrap_or_default();
     let content_text = contents
@@ -205,7 +237,7 @@ fn read_resource(
     }];
 
     Ok(ProviderResult {
-        provider: format!("mcp_bridge:{server_name}"),
+        provider: provider_id.to_string(),
         resource_type: "resource_content".into(),
         items,
         total_count: Some(1),
@@ -214,24 +246,13 @@ fn read_resource(
 }
 
 fn list_tools(
+    provider_id: &str,
     server_url: &str,
     server_name: &str,
     params: &ProviderParams,
 ) -> Result<ProviderResult, String> {
     let limit = params.limit.unwrap_or(20);
-    let url = format!("{server_url}/tools/list");
-
-    let response = ureq::get(&url)
-        .header("Accept", "application/json")
-        .call()
-        .map_err(|e| format!("MCP bridge error ({server_name}): {e}"))?;
-
-    let text = response
-        .into_body()
-        .read_to_string()
-        .map_err(|e| format!("MCP bridge read error: {e}"))?;
-    let body: serde_json::Value =
-        serde_json::from_str(&text).map_err(|e| format!("MCP bridge JSON error: {e}"))?;
+    let body = bridge_call(provider_id, &format!("{server_url}/tools/list"), None)?;
 
     let tools = body["tools"].as_array().cloned().unwrap_or_default();
 
@@ -253,12 +274,31 @@ fn list_tools(
         .collect();
 
     Ok(ProviderResult {
-        provider: format!("mcp_bridge:{server_name}"),
+        provider: provider_id.to_string(),
         resource_type: "tools".into(),
         items,
         total_count: Some(tools.len()),
         truncated: tools.len() > limit,
     })
+}
+
+pub(crate) fn descriptor() -> super::provider_trait::ConnectorDescriptor {
+    use super::provider_trait::{CapabilityLevel as L, ConnectorDescriptor as C};
+    C {
+        principal_binding: "none: server identity is its HTTPS host (or loopback); no per-user principal",
+        search: L::Unsupported,
+        list: L::Supported,
+        get: L::Supported,
+        delta: L::Unsupported,
+        revalidate_acl: L::Unsupported,
+        revalidate_revision: L::Unsupported,
+        delete_event: L::Unsupported,
+        content_trust: C::UNTRUSTED,
+        write_surface: C::NO_WRITES,
+        failure_policy: C::FAIL_CLOSED,
+        notes: "no principal, so no ACL to re-check: personal-local use only, withheld from governed reuse; \
+                tool listing does not call tools; stdio transport not implemented",
+    }
 }
 
 #[cfg(test)]
@@ -285,6 +325,58 @@ mod tests {
         assert_eq!(a.id(), "mcp:knowledge-base");
         assert_eq!(b.id(), "mcp:github-issues");
         assert_ne!(a.id(), b.id());
+    }
+
+    #[test]
+    fn a_bridge_speaks_https_or_loopback_only() {
+        for ok in [
+            "https://kb.example.test",
+            "http://127.0.0.1:8080",
+            "http://localhost:9",
+            "http://[::1]:7",
+        ] {
+            assert!(McpBridgeProvider::new("kb", ok).is_available(), "{ok}");
+        }
+        for bad in [
+            "http://kb.example.test",
+            "http://10.0.0.5:8080",
+            "ftp://kb.example.test",
+            "https://user:pw@kb.example.test",
+            "https://kb.example.test/?token=x",
+        ] {
+            let provider = McpBridgeProvider::new("kb", bad);
+            assert!(!provider.is_available(), "{bad}");
+            assert!(
+                provider
+                    .execute("resources", &ProviderParams::default())
+                    .is_err()
+            );
+        }
+    }
+
+    #[test]
+    fn answers_carry_the_provider_id_and_stay_bounded_and_unredirected() {
+        use crate::core::providers::hardened_http::redirect_tests::Server;
+        let server = Server::new(
+            200,
+            None,
+            r#"{"resources":[{"uri":"kb://a","name":"A","description":"d"}]}"#,
+        );
+        let provider = McpBridgeProvider::new("kb", &server.url);
+        let result = provider
+            .execute("resources", &ProviderParams::default())
+            .unwrap();
+        assert_eq!(result.provider, provider.id());
+        // A redirect is refused, its target never asked.
+        let target = Server::new(200, None, "{}");
+        let redirecting = Server::new(302, Some(&target.url), "");
+        let provider = McpBridgeProvider::new("kb2", &redirecting.url);
+        assert!(
+            provider
+                .execute("tools", &ProviderParams::default())
+                .is_err()
+        );
+        assert_eq!(target.count(), 0);
     }
 
     #[test]

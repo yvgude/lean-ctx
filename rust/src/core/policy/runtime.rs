@@ -32,6 +32,8 @@ pub(crate) const REQUIRED_POLICY_ROOT_ENV: &str = "LEAN_CTX_REQUIRED_POLICY_ROOT
 pub(crate) const REQUIRED_POLICY_DIGEST_ENV: &str = "LEAN_CTX_REQUIRED_POLICY_DIGEST";
 pub(crate) use refresh::{protected_authority_paths, protected_policy_digest};
 #[cfg(test)]
+mod held_horizon_tests;
+#[cfg(test)]
 mod refresh_tests;
 
 tokio::task_local! {
@@ -48,8 +50,49 @@ pub(crate) struct SourceView {
     fingerprint: blake3::Hash,
     role: crate::core::roles::Role,
     role_fingerprint: blake3::Hash,
+    /// Set when the pinned policy rests on a verifier's decision.
+    ///
+    /// Two different bounds, deliberately: the request deadline bounded the
+    /// decision itself — asking, recording, handing out — and ended with the
+    /// refresh that produced this view. The operation running on the view is
+    /// bounded by the signed horizon instead, checked on a fresh clock at
+    /// every use of the held policy, at every nested admission and last,
+    /// after all closing waits, before anything is published. A lifted
+    /// requirement has no horizon: it is durable marker state, and the view
+    /// stays bound to it through the fingerprint.
+    lifetime: Option<super::org::Lifetime>,
+    /// What the verifier's answer stated, from the same verification the
+    /// pinned policy rests on. Never read again for this view.
+    observation: Option<super::org::Observation>,
     valid: Arc<AtomicBool>,
     live: Arc<AtomicBool>,
+}
+
+impl SourceView {
+    /// Whether the signed horizon still holds; a view past it is invalid for
+    /// good, like one whose authority changed.
+    fn within_horizon(&self) -> bool {
+        let holds = self
+            .lifetime
+            .is_none_or(|lifetime| lifetime.check_horizon().is_ok());
+        if !holds {
+            self.valid.store(false, Ordering::Release);
+        }
+        holds
+    }
+
+    /// Invalidate the view for its owner — but only while it is still live.
+    /// A straggler that merely finds the view ended (a timed-out worker whose
+    /// result its caller already discarded) must not poison the owner's
+    /// closing check: that turned complete, unchanged `ctx_compose` results
+    /// into "source authority changed" refusals (~3 % of calls, focus
+    /// analysis 2026-10-15). Inconsistencies seen during the view's life
+    /// still invalidate it.
+    fn invalidate_if_live(&self) {
+        if self.live.load(Ordering::Acquire) {
+            self.valid.store(false, Ordering::Release);
+        }
+    }
 }
 
 struct SourceViewLifetime(Arc<AtomicBool>);
@@ -61,16 +104,22 @@ pub(crate) struct PublicationAuthority {
     project: PathBuf,
     fingerprint: blake3::Hash,
     role_fingerprint: blake3::Hash,
+    /// The horizon of the view the buffered data was produced under.
+    lifetime: Option<super::org::Lifetime>,
     valid: Arc<AtomicBool>,
 }
 
 impl PublicationAuthority {
     pub(crate) fn capture() -> Result<Self, String> {
         let view = current_source_view().ok_or("source authority unavailable")?;
+        if !view.within_horizon() {
+            return Err("source authority unavailable".into());
+        }
         Ok(Self {
             project: view.project,
             fingerprint: view.fingerprint,
             role_fingerprint: view.role_fingerprint,
+            lifetime: view.lifetime,
             valid: view.valid,
         })
     }
@@ -94,9 +143,28 @@ impl PublicationAuthority {
                 if latest.fingerprint != self.fingerprint || role != self.role_fingerprint {
                     return Err("source authority changed before publication".into());
                 }
+                // Last, after the waits above: the buffered data was made
+                // under a floor signed up to a horizon, and is not published
+                // past it even though the authority verifies afresh.
+                if let Some(lifetime) = &self.lifetime {
+                    lifetime.check_horizon()?;
+                }
                 Ok(())
             })
         })
+    }
+
+    /// Fingerprint used to bind derived decisions to this exact project and
+    /// policy snapshot without exposing any policy contents.
+    pub(crate) fn fingerprint_bytes(&self) -> [u8; 32] {
+        *self.fingerprint.as_bytes()
+    }
+
+    /// Role authorization is a separate part of source authority and must be
+    /// bound independently into persisted provenance metadata.
+    #[cfg(any(test, feature = "http-server"))]
+    pub(crate) fn role_fingerprint_bytes(&self) -> [u8; 32] {
+        *self.role_fingerprint.as_bytes()
     }
 }
 
@@ -116,6 +184,27 @@ fn current_source_view() -> Option<SourceView> {
 /// Capture the pinned view when propagating a synchronous worker scope.
 pub(crate) fn inherited_source_view() -> Option<SourceView> {
     current_source_view()
+}
+
+/// Resolve the project root for a detached worker without retaining request-
+/// lifetime policy or capture state. The worker must reopen a fresh source view
+/// from this root when it stores output.
+pub(crate) fn detached_project_root(fallback: &Path) -> Result<PathBuf, String> {
+    let request_project = REQUEST_PROJECT
+        .try_with(|slot| slot.borrow().clone())
+        .ok()
+        .flatten();
+    if let Some(view) = current_source_view() {
+        if !view.live.load(Ordering::Acquire)
+            || !view.valid.load(Ordering::Acquire)
+            || request_project.as_ref() != Some(&view.project)
+        {
+            view.invalidate_if_live();
+            return Err("source policy view is no longer active".into());
+        }
+        return Ok(view.project);
+    }
+    Ok(request_project.unwrap_or_else(|| fallback.to_path_buf()))
 }
 
 /// Restore a previously captured source view in a detached worker.
@@ -141,12 +230,28 @@ pub(crate) fn pinned_role() -> Option<crate::core::roles::Role> {
             || !view.valid.load(Ordering::Acquire)
             || project.as_ref() != Some(&view.project)
         {
-            view.valid.store(false, Ordering::Release);
+            view.invalidate_if_live();
             crate::core::roles::closed_source_view_role()
         } else {
             view.role
         }
     })
+}
+
+/// Run `operation` as part of a request for `project`.
+pub(crate) fn in_project<T>(project: impl Into<PathBuf>, operation: impl FnOnce() -> T) -> T {
+    REQUEST_PROJECT.sync_scope(std::cell::RefCell::new(Some(project.into())), operation)
+}
+
+/// Start `operation` on its own thread as part of a request for `project`.
+/// A spawned thread inherits no task-local: without this it reads the
+/// configuration and admission state of the process's own project (AP04-G3).
+pub(crate) fn spawn_for_project<T: Send + 'static>(
+    project: impl Into<PathBuf>,
+    operation: impl FnOnce() -> T + Send + 'static,
+) -> std::thread::JoinHandle<T> {
+    let project = project.into();
+    std::thread::spawn(move || in_project(project, operation))
 }
 
 pub(crate) fn bind_request_project(project: Option<&str>) {
@@ -156,6 +261,32 @@ pub(crate) fn bind_request_project(project: Option<&str>) {
     let _ = REQUEST_PROJECT.try_with(|slot| {
         *slot.borrow_mut() = project.map(PathBuf::from);
     });
+}
+
+/// The one spelling of a request project: resolved, and on Windows without
+/// the verbatim `\\?\` prefix (`pathutil::canonicalize_secure`), as the proxy
+/// (`request_project`) and the policy refresh resolve it. A source view
+/// pinned to another spelling of the same root no longer matched the request
+/// project and fell to deny-all on every governed Windows request.
+fn canonical_project_root(project: &Path) -> Result<PathBuf, String> {
+    let project = crate::core::pathutil::canonicalize_secure(project)
+        .map_err(|_| "policy project root unavailable")?;
+    if !project.is_dir() {
+        return Err("policy project root unavailable".into());
+    }
+    Ok(project)
+}
+
+/// Whether the bound request project (if any) is `root`, a root already in
+/// the one spelling of `canonical_project_root`. The bound side is resolved
+/// the same way first: a caller may have bound another spelling of the same
+/// directory (on Windows the verbatim `\\?\` form of `std::fs::canonicalize`).
+/// No bound request project: `true`, the operation's own root governs.
+pub(crate) fn request_project_is(root: &Path) -> bool {
+    match REQUEST_PROJECT.try_with(|slot| slot.borrow().clone()) {
+        Ok(Some(bound)) => canonical_project_root(&bound).is_ok_and(|bound| bound == root),
+        _ => true,
+    }
 }
 
 /// Run a source operation with an explicit fallback project root. An existing
@@ -171,8 +302,48 @@ pub(crate) fn with_project_source_view<T>(
         .flatten()
         .or_else(|| current_source_view().map(|view| view.project))
         .unwrap_or_else(|| PathBuf::from(project_root));
+    let project = canonical_project_root(&project)?;
     REQUEST_PROJECT.sync_scope(std::cell::RefCell::new(Some(project)), || {
         with_source_view(operation)
+    })
+}
+
+/// Run an egress preparation for one explicitly selected project. Unlike the
+/// source-view fallback helper, this rejects a conflicting trusted request root
+/// and revalidates authority after the operation before its result is published.
+pub(crate) fn with_explicit_project_source_view<T>(
+    project_root: &Path,
+    operation: impl FnOnce(&PublicationAuthority) -> T,
+) -> Result<T, String> {
+    let project = canonical_project_root(project_root)?;
+
+    let bound = REQUEST_PROJECT
+        .try_with(|slot| slot.borrow().clone())
+        .ok()
+        .flatten();
+    if let Some(bound) = bound {
+        let bound = crate::core::pathutil::canonicalize_secure(&bound)
+            .map_err(|_| "request project authority unavailable")?;
+        if bound != project {
+            return Err("request project authority does not match egress root".into());
+        }
+    }
+    if let Some(view) = current_source_view()
+        && (!view.live.load(Ordering::Acquire)
+            || !view.valid.load(Ordering::Acquire)
+            || view.project != project)
+    {
+        view.invalidate_if_live();
+        return Err("source policy view does not match egress root".into());
+    }
+
+    REQUEST_PROJECT.sync_scope(std::cell::RefCell::new(Some(project)), || {
+        with_source_view(|| {
+            let authority = PublicationAuthority::capture()?;
+            let result = operation(&authority);
+            authority.verify()?;
+            Ok(result)
+        })?
     })
 }
 
@@ -180,29 +351,71 @@ pub(crate) fn with_project_source_view<T>(
 /// snapshot. Publish the returned value only if the same authority still holds.
 /// Nested calls reuse the parent snapshot; they never refresh into a weaker view.
 pub(crate) fn with_source_view<T>(operation: impl FnOnce() -> T) -> Result<T, String> {
+    with_source_view_when(|_, _| true, operation)?
+        .ok_or_else(|| "source policy view is no longer active".into())
+}
+
+/// [`with_source_view`], entered only when the verification the view is
+/// pinned to established something to act under: a policy, or an observed
+/// organization decision (a signed unpin leaves no policy and is one all the
+/// same). `Ok(None)`: it established neither, no view was opened and
+/// `operation` did not run.
+///
+/// The decision whether to enter and the view are made of ONE verification:
+/// there is no probe first and a second resolution after, so what the caller
+/// branched on is what its view holds. Everything else is `with_source_view`
+/// — the nested-view rules, the closing recheck and the horizon. Inside,
+/// [`is_active`] and [`active_observed`] read the held view.
+#[cfg(feature = "http-server")]
+pub(crate) fn with_governed_source_view<T>(
+    operation: impl FnOnce() -> T,
+) -> Result<Option<T>, String> {
+    with_source_view_when(|policy, observed| policy || observed, operation)
+}
+
+/// `enter(policy present, organization decision observed)` is asked once, of
+/// the view that would be used; `false` leaves without running `operation`.
+fn with_source_view_when<T>(
+    enter: impl FnOnce(bool, bool) -> bool,
+    operation: impl FnOnce() -> T,
+) -> Result<Option<T>, String> {
     if let Some(view) = current_source_view() {
         let project = REQUEST_PROJECT
             .try_with(|slot| slot.borrow().clone())
             .ok()
-            .flatten();
+            .flatten()
+            .ok_or("source policy view is no longer active")?;
+        let project = canonical_project_root(&project)
+            .map_err(|_| "source policy view is no longer active")?;
         if !view.live.load(Ordering::Acquire)
             || !view.valid.load(Ordering::Acquire)
-            || project.as_ref() != Some(&view.project)
+            || project != view.project
+            || !view.within_horizon()
         {
-            view.valid.store(false, Ordering::Release);
+            view.invalidate_if_live();
             return Err("source policy view is no longer active".into());
         }
-        return Ok(operation());
+        if !enter(view.policy.is_some(), view.observation.is_some()) {
+            return Ok(None);
+        }
+        return REQUEST_PROJECT
+            .sync_scope(std::cell::RefCell::new(Some(view.project.clone())), || {
+                Ok(Some(operation()))
+            });
     }
 
-    let project = REQUEST_PROJECT
-        .try_with(|slot| slot.borrow().clone())
-        .ok()
-        .flatten()
-        .or_else(|| std::env::current_dir().ok())
-        .ok_or("policy project root unavailable")?;
+    // A request bound to no project gets no source view: its project is not
+    // invented from the process's working directory (AP01 §3). Only work
+    // outside any request (the CLI) acts for the directory it runs in.
+    let project = match REQUEST_PROJECT.try_with(|slot| slot.borrow().clone()) {
+        Ok(project) => project.ok_or("project_unresolved")?,
+        Err(_) => std::env::current_dir().map_err(|_| "policy project root unavailable")?,
+    };
+    let project = canonical_project_root(&project)?;
     REQUEST_PROJECT.sync_scope(std::cell::RefCell::new(Some(project.clone())), || {
         let verified = refresh::current_verified_settled(&project)?;
+        let lifetime = verified.lifetime;
+        let observation = verified.observation;
         let role = crate::core::roles::active_role();
         let pinned_role_fingerprint = role_fingerprint(&role)?;
         let view = SourceView {
@@ -211,13 +424,24 @@ pub(crate) fn with_source_view<T>(operation: impl FnOnce() -> T) -> Result<T, St
             fingerprint: verified.fingerprint,
             role,
             role_fingerprint: pinned_role_fingerprint,
+            lifetime,
+            observation,
             valid: Arc::new(AtomicBool::new(true)),
             live: Arc::new(AtomicBool::new(true)),
         };
 
-        let lifetime = SourceViewLifetime(view.live.clone());
+        // The reads since the verification took time: the operation is not
+        // entered on a floor whose horizon has already passed.
+        if !view.within_horizon() {
+            return Err("source policy view is no longer active".into());
+        }
+        // Asked of this very verification, before anything runs on it.
+        if !enter(view.policy.is_some(), view.observation.is_some()) {
+            return Ok(None);
+        }
+        let view_lifetime = SourceViewLifetime(view.live.clone());
         let value = SOURCE_VIEW.sync_scope(std::cell::RefCell::new(Some(view.clone())), operation);
-        drop(lifetime);
+        drop(view_lifetime);
 
         // SOURCE_VIEW has ended, while REQUEST_PROJECT still identifies the
         // same request root; re-resolve the complete role before publishing.
@@ -234,7 +458,13 @@ pub(crate) fn with_source_view<T>(operation: impl FnOnce() -> T) -> Result<T, St
         {
             return Err("source policy view changed during operation".into());
         }
-        Ok(value)
+        // Last, after every closing wait: the operation ran on a floor signed
+        // up to a horizon. If that passed in the meantime its result is not
+        // published, whatever the fresh verification above said.
+        if !view.within_horizon() {
+            return Err("source policy view changed during operation".into());
+        }
+        Ok(Some(value))
     })
 }
 
@@ -272,6 +502,9 @@ pub struct ActivePolicy {
     /// Invalid/over-budget compilation makes the whole policy fail closed.
     pub redaction: Vec<(String, Regex)>,
     pub(crate) blocked_patterns: Vec<(String, Regex)>,
+    /// How many of `redaction` + `blocked_patterns` a Hive filter pack
+    /// added; they have their own budget next to the pack's.
+    pub(crate) hive_rules: usize,
     pub(crate) content_valid: bool,
     /// Compiled inbound content filters (GL #675), built once from the pack's
     /// `[filters]` section.
@@ -279,13 +512,72 @@ pub struct ActivePolicy {
     /// Compiled egress/output DLP config (GL #676), built once from the pack's
     /// `[egress]` section.
     pub egress: crate::core::egress::EgressConfig,
+    /// The signed instant this policy's organization floor runs out at, set
+    /// before the policy is shared and never changed. `None` for every policy
+    /// that rests on no verifier decision: local, version one, or a lifted
+    /// requirement. The fields above describe the policy; they authorize
+    /// nothing once this instant has passed — see [`Self::within_horizon`].
+    horizon: Option<chrono::DateTime<chrono::Utc>>,
+    /// Set the first time the horizon is observed to have passed, and never
+    /// cleared. It lives in the policy itself, so every holder of the same
+    /// shared policy sees it: once expired, a clock set back revives nothing.
+    expired: AtomicBool,
 }
 
 impl ActivePolicy {
+    /// Whether this policy may still be acted on: read on the real clock at
+    /// every use, so a policy that is kept — in a view, a snapshot or a
+    /// caller's variable — ends with its signed horizon and not with the
+    /// request that obtained it. Exclusive, like the verifier's own check.
+    /// An expiry once observed is final for this policy.
+    #[must_use]
+    pub fn within_horizon(&self) -> bool {
+        if self.expired.load(Ordering::Acquire) {
+            return false;
+        }
+        let holds = self
+            .horizon
+            .is_none_or(|horizon| chrono::Utc::now() < horizon);
+        if !holds {
+            self.expired.store(true, Ordering::Release);
+        }
+        holds
+    }
+
+    /// This policy, ending at `horizon`. Only for a policy not yet shared.
+    fn until(mut self, horizon: Option<chrono::DateTime<chrono::Utc>>) -> Self {
+        self.horizon = horizon;
+        self
+    }
+
     pub(crate) fn from_resolved(resolved: ResolvedPolicy) -> Self {
+        Self::from_resolved_with_hive(resolved, &crate::core::hive::policy::FilterRules::default())
+    }
+
+    /// As [`Self::from_resolved`], with the rules of the installed Hive
+    /// filter packs added under their own budget. A Hive rule over its
+    /// bounds fails the policy closed like a pack rule; installation
+    /// refuses such sets, so this is defensive.
+    pub(crate) fn from_resolved_with_hive(
+        mut resolved: ResolvedPolicy,
+        hive: &crate::core::hive::policy::FilterRules,
+    ) -> Self {
         use super::content::{MAX_REDACTION_RULES, MAX_RULE_LABEL_BYTES, MAX_RULE_PATTERN_BYTES};
-        let bounded = resolved.redaction.len() + resolved.filters.blocked_patterns.len()
-            <= MAX_REDACTION_RULES
+        let hive_rules = hive.redaction.len() + hive.blocked.len();
+        let hive_bounded = hive_rules <= crate::core::hive::policy::HIVE_MAX_RULES
+            && hive
+                .redaction
+                .iter()
+                .chain(&hive.blocked)
+                .all(|(label, pattern)| {
+                    label.starts_with(super::HIVE_LABEL_PREFIX)
+                        && label.len() <= MAX_RULE_LABEL_BYTES
+                        && !label.chars().any(char::is_control)
+                        && pattern.len() <= MAX_RULE_PATTERN_BYTES
+                });
+        let bounded = hive_bounded
+            && resolved.redaction.len() + resolved.filters.blocked_patterns.len()
+                <= MAX_REDACTION_RULES
             && resolved.egress.forbidden_patterns.len() <= MAX_REDACTION_RULES
             && resolved
                 .egress
@@ -302,6 +594,13 @@ impl ActivePolicy {
                         && !label.chars().any(char::is_control)
                         && pattern.len() <= MAX_RULE_PATTERN_BYTES
                 });
+        // Pack labels never start with the Hive prefix (pack validation), so
+        // a Hive rule neither replaces nor is replaced by a pack rule.
+        resolved.redaction.extend(hive.redaction.iter().cloned());
+        resolved
+            .filters
+            .blocked_patterns
+            .extend(hive.blocked.iter().cloned());
         let compiled = bounded.then(|| {
             resolved
                 .redaction
@@ -348,9 +647,12 @@ impl ActivePolicy {
             resolved,
             redaction,
             blocked_patterns,
+            hive_rules,
             content_valid,
             filters,
             egress,
+            horizon: None,
+            expired: AtomicBool::new(false),
         }
     }
 
@@ -381,7 +683,7 @@ impl ActivePolicy {
     /// exclusive (only listed tools pass).
     #[must_use]
     pub fn tool_allowed(&self, tool: &str) -> bool {
-        if !self.content_valid {
+        if !self.content_valid || !self.within_horizon() {
             return false;
         }
         if self.resolved.deny_tools.iter().any(|t| t == tool) {
@@ -413,23 +715,74 @@ fn load_from_disk() -> Option<Arc<ActivePolicy>> {
             return Some(Arc::new(ActivePolicy::deny_all()));
         }
     };
-    apply_org_floor(local, crate::core::policy::org::active_resolved_checked())
+    apply_org_floor(
+        local,
+        crate::core::policy::org::active_resolved_checked(),
+        None,
+        &crate::core::hive::policy::FilterRules::default(),
+        None,
+    )
 }
 
+/// `horizon` is the signed end of the organization floor, when a verifier
+/// decided it; it is attached here, before the policy is shared.
+/// `hive_floor` is the Hive effective policy (Release B): folded under
+/// everything else, so nothing local can loosen it.
 fn apply_org_floor(
     local: Option<ResolvedPolicy>,
     org: Result<Option<ResolvedPolicy>, String>,
+    horizon: Option<chrono::DateTime<chrono::Utc>>,
+    hive: &crate::core::hive::policy::FilterRules,
+    hive_floor: Option<&ResolvedPolicy>,
 ) -> Option<Arc<ActivePolicy>> {
     // Invalid configured org policy must not silently remove the org floor.
     let effective = match org {
-        Ok(Some(org)) => crate::core::policy::floor::merge_floor(&org, local.as_ref()),
-        Ok(None) => local?,
+        Ok(Some(org)) => Some(crate::core::policy::floor::merge_floor(
+            &org,
+            local.as_ref(),
+        )),
+        Ok(None) => local,
         Err(error) => {
             tracing::error!("org policy rejected; enforcing deny-all: {error}");
             return Some(Arc::new(ActivePolicy::deny_all()));
         }
     };
-    Some(Arc::new(ActivePolicy::from_resolved(effective)))
+    let effective = match hive_floor {
+        Some(floor) => Some(crate::core::hive::effective_floor::apply(
+            floor,
+            effective.as_ref(),
+        )),
+        None => effective,
+    };
+    let effective = match effective {
+        Some(effective) => effective,
+        None if hive.redaction.is_empty() && hive.blocked.is_empty() => return None,
+        // Hive filter packs alone: content rules only, no tool or path rule.
+        None => hive_filters_only(),
+    };
+    Some(Arc::new(
+        ActivePolicy::from_resolved_with_hive(effective, hive).until(horizon),
+    ))
+}
+
+/// The policy that carries nothing but the rules of Hive filter packs.
+fn hive_filters_only() -> ResolvedPolicy {
+    ResolvedPolicy {
+        name: "hive-filters".into(),
+        version: "1.0.0".into(),
+        description: "content rules of the installed Hive filter packs".into(),
+        chain: Vec::new(),
+        default_read_mode: None,
+        allow_tools: None,
+        deny_tools: Vec::new(),
+        max_context_tokens: None,
+        audit_retention_days: None,
+        redaction: std::collections::BTreeMap::new(),
+        filters: crate::core::policy::FilterRules::default(),
+        egress: crate::core::policy::EgressRules::default(),
+        routing: crate::core::policy::RoutingPolicyRules::default(),
+        budgets: crate::core::policy::BudgetRules::default(),
+    }
 }
 
 /// The project-local pack (`.lean-ctx/policy.toml`), resolved. `None` only when
@@ -463,19 +816,36 @@ pub fn for_project(project_root: &Path) -> Result<Option<Arc<ActivePolicy>>, Str
 /// Fresh source bytes are mandatory even when compiled rules are cached.
 #[must_use]
 pub fn active() -> Option<Arc<ActivePolicy>> {
+    active_observed().0
+}
+
+/// [`active`], together with the organization decision the verifier stated
+/// in the very verification that policy comes from — one read, one answer,
+/// no second look at policy, trust store or marker. For whoever records what
+/// it decided under: the observation it files is the one of its own
+/// snapshot, never a later one.
+///
+/// The observation is `None` whenever no verifier was asked (no organization
+/// policy, a version-one one) and whenever the policy is the deny-all that
+/// stands for an authority that could not be established: a refusal records
+/// no organization decision it did not get. A lifted requirement is observed
+/// although it leaves no floor, and so possibly no policy at all.
+#[must_use]
+pub(crate) fn active_observed() -> (Option<Arc<ActivePolicy>>, Option<super::org::Observation>) {
+    let deny_all = || (Some(Arc::new(ActivePolicy::deny_all())), None);
     if let Some(view) = current_source_view() {
         if !view.live.load(Ordering::Acquire) || !view.valid.load(Ordering::Acquire) {
-            return Some(Arc::new(ActivePolicy::deny_all()));
+            return deny_all();
         }
         let project = REQUEST_PROJECT
             .try_with(|slot| slot.borrow().clone())
             .ok()
             .flatten();
-        if project.as_ref() != Some(&view.project) {
-            view.valid.store(false, Ordering::Release);
-            return Some(Arc::new(ActivePolicy::deny_all()));
+        if project.as_ref() != Some(&view.project) || !view.within_horizon() {
+            view.invalidate_if_live();
+            return deny_all();
         }
-        return view.policy;
+        return (view.policy, view.observation);
     }
     #[cfg(test)]
     {
@@ -483,7 +853,7 @@ pub fn active() -> Option<Arc<ActivePolicy>> {
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let OverrideState::Fixed(policy) = &*state {
-            return policy.clone();
+            return (policy.clone(), None);
         }
     }
     let scoped = REQUEST_PROJECT
@@ -493,11 +863,76 @@ pub fn active() -> Option<Arc<ActivePolicy>> {
     match scoped
         .map_or_else(std::env::current_dir, Ok)
         .map_err(|_| "policy project root unavailable".into())
-        .and_then(refresh::current)
+        .and_then(refresh::current_verified)
     {
-        Ok(policy) => policy,
-        Err(_) => Some(Arc::new(ActivePolicy::deny_all())),
+        Ok(verified) => (verified.policy, verified.observation),
+        Err(_) => deny_all(),
     }
+}
+
+/// Run `operation` under a pinned view of `project` whose verification
+/// observed `observation` and left no policy — the state after a signed
+/// unpin on an endpoint without a project pack. Tests only: a real view comes
+/// from `with_source_view` and nowhere else.
+#[cfg(test)]
+pub(crate) fn with_observed_view_for_test<T>(
+    project: &Path,
+    observation: Option<super::org::Observation>,
+    operation: impl FnOnce() -> T,
+) -> T {
+    let project = canonical_project_root(project).expect("test project root");
+    let role = crate::core::roles::active_role();
+    // The authority as it really verifies for this root (no organization
+    // artifact in a test's data directory), so that a holder's own closing
+    // verification finds the same fingerprint; only the observation is given.
+    let verified = refresh::current_verified(project.clone()).expect("test authority");
+    let view = SourceView {
+        project: project.clone(),
+        policy: verified.policy,
+        fingerprint: verified.fingerprint,
+        role_fingerprint: role_fingerprint(&role).expect("test role"),
+        role,
+        lifetime: None,
+        observation,
+        valid: Arc::new(AtomicBool::new(true)),
+        live: Arc::new(AtomicBool::new(true)),
+    };
+    REQUEST_PROJECT.sync_scope(std::cell::RefCell::new(Some(project)), || {
+        SOURCE_VIEW.sync_scope(std::cell::RefCell::new(Some(view)), operation)
+    })
+}
+
+/// What a source view that is already held says about the organization.
+pub(crate) enum HeldObservation {
+    /// No usable view is held here: nothing can be said, and nothing is.
+    NotHeld,
+    /// The held view's own observation (`None`: its verification asked no
+    /// verifier).
+    Held(Option<super::org::Observation>),
+}
+
+/// The organization observation of the source view the caller already runs
+/// under — and nothing else. It never resolves, refreshes or reads: without a
+/// held view that is live, valid, of the request's own project and within its
+/// signed horizon, the answer is [`HeldObservation::NotHeld`]. For a path
+/// that must not start a verification of its own but may record the decision
+/// its caller's view was verified with.
+pub(crate) fn held_observation() -> HeldObservation {
+    let Some(view) = current_source_view() else {
+        return HeldObservation::NotHeld;
+    };
+    let project = REQUEST_PROJECT
+        .try_with(|slot| slot.borrow().clone())
+        .ok()
+        .flatten();
+    if !view.live.load(Ordering::Acquire)
+        || !view.valid.load(Ordering::Acquire)
+        || project.as_ref() != Some(&view.project)
+        || !view.within_horizon()
+    {
+        return HeldObservation::NotHeld;
+    }
+    HeldObservation::Held(view.observation)
 }
 
 /// Current "is a policy active?" probe; refresh failure requires protection.
@@ -529,49 +964,39 @@ fn test_override_lock() -> &'static std::sync::Mutex<()> {
     LOCK.get_or_init(|| std::sync::Mutex::new(()))
 }
 
-/// Held while a test pins the process-wide policy override.
-///
-/// Lock order is always `test_env_lock` → override lock. Tests take both in
-/// either order (`isolated_data_dir()` then `TestPolicyOverride::set`, or
-/// `lock_test_override()` then `isolated_data_dir()`); taking them as two
-/// independent locks deadlocked the suite (ABBA) once enough tests ran in
-/// parallel — 28 threads on a 28-core runner hung it for good. The env lock is
-/// reentrant per thread, so acquiring it first here is free for a test that
-/// already holds it.
+/// The policy-override lock together with the test environment lock, in the
+/// one order every test takes them: environment first, then policy. Held as
+/// one value so that neither outlives the other; the fields are declared in
+/// release order — policy before environment.
 #[cfg(test)]
-pub(crate) struct TestOverrideLock {
-    _lock: std::sync::MutexGuard<'static, ()>,
-    _env: crate::core::data_dir::TestEnvGuard,
+pub(crate) struct TestOverrideGuard {
+    _policy: std::sync::MutexGuard<'static, ()>,
+    _environment: crate::core::data_dir::TestEnvGuard,
 }
 
 #[cfg(test)]
-fn acquire_test_override() -> TestOverrideLock {
-    let env = crate::core::data_dir::test_env_lock();
-    let lock = test_override_lock()
+pub(crate) fn lock_test_override() -> TestOverrideGuard {
+    let environment = crate::core::data_dir::test_env_lock();
+    let policy = test_override_lock()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    TestOverrideLock {
-        _lock: lock,
-        _env: env,
+    TestOverrideGuard {
+        _policy: policy,
+        _environment: environment,
     }
-}
-
-#[cfg(test)]
-pub(crate) fn lock_test_override() -> TestOverrideLock {
-    acquire_test_override()
 }
 
 /// Process-wide test override held under a shared lock for its whole lifetime.
 #[cfg(test)]
 pub struct TestPolicyOverride {
     previous: OverrideState,
-    _lock: TestOverrideLock,
+    _lock: TestOverrideGuard,
 }
 
 #[cfg(test)]
 impl TestPolicyOverride {
     pub fn set(resolved: Option<ResolvedPolicy>) -> Self {
-        let lock = acquire_test_override();
+        let lock = lock_test_override();
         let previous = std::mem::replace(
             &mut *test_override()
                 .write()
@@ -598,370 +1023,5 @@ impl Drop for TestPolicyOverride {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use std::collections::BTreeMap;
-    use std::fs;
-
-    struct CurrentDirGuard {
-        previous: std::path::PathBuf,
-        _lock: crate::core::data_dir::TestEnvGuard,
-    }
-
-    impl CurrentDirGuard {
-        fn enter(dir: &std::path::Path) -> Self {
-            // The cwd is process-global like the env (and here holds an invalid
-            // policy pack): share the reentrant env lock with every other
-            // test that moves or depends on it.
-            let guard = crate::core::data_dir::test_env_lock();
-            let previous = std::env::current_dir().expect("read current directory");
-            std::env::set_current_dir(dir).expect("enter temporary directory");
-            Self {
-                previous,
-                _lock: guard,
-            }
-        }
-    }
-
-    impl Drop for CurrentDirGuard {
-        fn drop(&mut self) {
-            std::env::set_current_dir(&self.previous).expect("restore current directory");
-        }
-    }
-
-    fn rp(allow: Option<Vec<&str>>, deny: Vec<&str>, redaction: &[(&str, &str)]) -> ResolvedPolicy {
-        ResolvedPolicy {
-            name: "test".into(),
-            version: "1.0.0".into(),
-            description: "t".into(),
-            chain: vec![],
-            default_read_mode: None,
-            allow_tools: allow.map(|a| a.into_iter().map(String::from).collect()),
-            deny_tools: deny.into_iter().map(String::from).collect(),
-            max_context_tokens: None,
-            audit_retention_days: None,
-            redaction: redaction
-                .iter()
-                .map(|(k, v)| ((*k).to_string(), (*v).to_string()))
-                .collect::<BTreeMap<_, _>>(),
-            filters: crate::core::policy::FilterRules::default(),
-            egress: crate::core::policy::EgressRules::default(),
-            routing: crate::core::policy::RoutingPolicyRules::default(),
-            budgets: crate::core::policy::BudgetRules::default(),
-        }
-    }
-
-    fn write_policy(root: &std::path::Path, name: &str) -> std::path::PathBuf {
-        let directory = root.join(".lean-ctx");
-        fs::create_dir_all(&directory).expect("create policy directory");
-        let path = directory.join("policy.toml");
-        fs::write(
-            &path,
-            format!("name = {name:?}\nversion = \"1.0.0\"\ndescription = \"source view test\"\n"),
-        )
-        .expect("write policy");
-        path
-    }
-
-    #[test]
-    fn deny_list_blocks_listed_tool() {
-        let p = ActivePolicy::from_resolved(rp(None, vec!["ctx_url_read"], &[]));
-        assert!(!p.tool_allowed("ctx_url_read"));
-        assert!(p.tool_allowed("ctx_read"));
-    }
-
-    #[test]
-    fn allow_list_is_exclusive() {
-        let p = ActivePolicy::from_resolved(rp(Some(vec!["ctx_read"]), vec![], &[]));
-        assert!(p.tool_allowed("ctx_read"));
-        assert!(!p.tool_allowed("ctx_shell"));
-    }
-
-    #[test]
-    fn compiles_redaction_patterns() {
-        let p = ActivePolicy::from_resolved(rp(None, vec![], &[("emp", r"EMP-\d{4}")]));
-        assert_eq!(p.redaction.len(), 1);
-        assert_eq!(p.redaction[0].0, "emp");
-    }
-
-    #[test]
-    fn load_from_disk_fails_closed_on_invalid_pack() {
-        let temp = tempfile::tempdir().expect("create temporary directory");
-        let policy_dir = temp.path().join(".lean-ctx");
-        fs::create_dir(&policy_dir).expect("create policy directory");
-        fs::write(policy_dir.join("policy.toml"), "[policy\n").expect("write invalid policy");
-        let _cwd = CurrentDirGuard::enter(temp.path());
-
-        let policy = load_from_disk().expect("invalid pack activates deny-all");
-
-        assert!(!policy.tool_allowed("ctx_read"));
-        assert!(!policy.tool_allowed("ctx_shell"));
-    }
-
-    #[test]
-    fn invalid_org_policy_cannot_fall_back_to_permissive_local_policy() {
-        for local in [None, Some(rp(None, vec![], &[]))] {
-            let policy = apply_org_floor(local, Err("invalid org signature".into())).unwrap();
-            assert!(!policy.tool_allowed("ctx_read"));
-            assert!(!policy.tool_allowed("ctx_shell"));
-        }
-        assert!(apply_org_floor(None, Ok(None)).is_none());
-    }
-
-    #[test]
-    fn explicit_project_policy_does_not_leak_between_roots() {
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let denied = tempfile::tempdir().unwrap();
-        let absent = tempfile::tempdir().unwrap();
-        let directory = denied.path().join(".lean-ctx");
-        fs::create_dir(&directory).unwrap();
-        fs::write(directory.join("policy.toml"),
-            "name = \"project\"\nversion = \"1.0.0\"\ndescription = \"test\"\n[context]\ndeny_tools = [\"ctx_work_graph\"]\n").unwrap();
-        assert!(
-            !for_project(denied.path())
-                .unwrap()
-                .unwrap()
-                .tool_allowed("ctx_work_graph")
-        );
-        assert!(for_project(absent.path()).unwrap().is_none());
-        fs::write(directory.join("policy.toml"), "invalid policy").unwrap();
-        assert!(for_project(denied.path()).is_err());
-        assert!(for_project(&absent.path().join("missing")).is_err());
-    }
-
-    #[test]
-    fn source_view_pins_active_policy_and_rejects_persistent_change() {
-        let _override_guard = lock_test_override();
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let root = tempfile::tempdir().expect("create project");
-        let path = write_policy(root.path(), "view-a");
-
-        let result = REQUEST_PROJECT.sync_scope(
-            std::cell::RefCell::new(Some(root.path().to_path_buf())),
-            || {
-                with_source_view(|| {
-                    assert_eq!(active().unwrap().resolved.name, "view-a");
-                    write_policy(root.path(), "view-b");
-                    assert_eq!(active().unwrap().resolved.name, "view-a");
-                })
-            },
-        );
-
-        assert!(result.is_err());
-        assert!(path.exists());
-    }
-
-    #[test]
-    fn source_view_a_to_b_to_a_never_uses_transient_policy_b() {
-        let _override_guard = lock_test_override();
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let root = tempfile::tempdir().expect("create project");
-        write_policy(root.path(), "view-a");
-
-        let result = REQUEST_PROJECT.sync_scope(
-            std::cell::RefCell::new(Some(root.path().to_path_buf())),
-            || {
-                with_source_view(|| {
-                    write_policy(root.path(), "view-b");
-                    assert_eq!(active().unwrap().resolved.name, "view-a");
-                    write_policy(root.path(), "view-a");
-                    active().unwrap().resolved.name.clone()
-                })
-            },
-        );
-
-        assert_eq!(result.unwrap(), "view-a");
-    }
-
-    #[test]
-    fn source_view_pins_explicit_no_policy_and_rejects_policy_creation() {
-        let _override_guard = lock_test_override();
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let root = tempfile::tempdir().expect("create project");
-
-        let result = REQUEST_PROJECT.sync_scope(
-            std::cell::RefCell::new(Some(root.path().to_path_buf())),
-            || {
-                with_source_view(|| {
-                    assert!(active().is_none());
-                    write_policy(root.path(), "new-policy");
-                    assert!(active().is_none());
-                })
-            },
-        );
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn source_view_rejects_nested_project_rebinding() {
-        let _override_guard = lock_test_override();
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let first = tempfile::tempdir().expect("create first project");
-        let second = tempfile::tempdir().expect("create second project");
-        write_policy(first.path(), "first-project");
-        write_policy(second.path(), "second-project");
-
-        let result = REQUEST_PROJECT.sync_scope(
-            std::cell::RefCell::new(Some(first.path().to_path_buf())),
-            || {
-                with_source_view(|| {
-                    REQUEST_PROJECT.sync_scope(
-                        std::cell::RefCell::new(Some(second.path().to_path_buf())),
-                        || assert!(!active().unwrap().tool_allowed("ctx_read")),
-                    );
-                })
-            },
-        );
-
-        assert!(result.is_err());
-    }
-
-    #[test]
-    fn source_view_rejects_policy_removal_and_invalid_initial_policy() {
-        let _override_guard = lock_test_override();
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let root = tempfile::tempdir().expect("create project");
-        let path = write_policy(root.path(), "view-a");
-
-        let removed = REQUEST_PROJECT.sync_scope(
-            std::cell::RefCell::new(Some(root.path().to_path_buf())),
-            || {
-                with_source_view(|| {
-                    assert_eq!(active().unwrap().resolved.name, "view-a");
-                    fs::remove_file(&path).expect("remove policy");
-                    assert_eq!(active().unwrap().resolved.name, "view-a");
-                })
-            },
-        );
-        assert!(removed.is_err());
-
-        fs::write(&path, "[policy\n").expect("write invalid policy");
-        let called = std::cell::Cell::new(false);
-        let invalid = REQUEST_PROJECT.sync_scope(
-            std::cell::RefCell::new(Some(root.path().to_path_buf())),
-            || with_source_view(|| called.set(true)),
-        );
-        assert!(invalid.is_err());
-        assert!(!called.get());
-    }
-
-    fn fixture_role(
-        name: &str,
-        boundary_mode: &str,
-        allow_secret_paths: bool,
-        allowed: &[&str],
-    ) -> crate::core::roles::Role {
-        use crate::core::roles::{IoPolicy, Role, RoleMeta, ToolPolicy};
-        Role {
-            role: RoleMeta {
-                name: name.into(),
-                inherits: None,
-                description: "source view test".into(),
-                shell_policy: "deny".into(),
-            },
-            tools: ToolPolicy {
-                allowed: allowed.iter().map(|tool| (*tool).into()).collect(),
-                denied: Vec::new(),
-            },
-            io: IoPolicy {
-                boundary_mode: boundary_mode.into(),
-                allow_secret_paths,
-                ..Default::default()
-            },
-        }
-    }
-
-    #[test]
-    fn source_view_pins_full_role_through_a_to_b_to_a_and_rejects_persistent_change() {
-        let _override_guard = lock_test_override();
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let root = tempfile::tempdir().expect("create project");
-        let role_a = fixture_role("role-a", "warn", true, &["ctx_read"]);
-        // Secret-path visibility stays fixed so the regression exercises the
-        // full role fingerprint (tool and boundary policy), not only that bit.
-        let role_b = fixture_role("role-b", "enforce", true, &["ctx_shell"]);
-
-        let transient = crate::core::roles::with_test_active_role(role_a.clone(), || {
-            with_project_source_view(root.path().to_str().unwrap(), || {
-                with_source_view(|| {
-                    assert_eq!(
-                        role_fingerprint(&crate::core::roles::active_role()).unwrap(),
-                        role_fingerprint(&role_a).unwrap()
-                    );
-                    crate::core::roles::set_test_active_role(role_b.clone());
-                    let pinned = crate::core::roles::active_role();
-                    assert_eq!(pinned.role.name, "role-a");
-                    assert_eq!(pinned.io.boundary_mode, "warn");
-                    assert!(pinned.io.allow_secret_paths);
-                    assert!(pinned.is_tool_allowed("ctx_read"));
-                    assert!(!pinned.is_tool_allowed("ctx_shell"));
-                    crate::core::roles::set_test_active_role(role_a.clone());
-                })
-            })
-        });
-        assert!(transient.is_ok(), "a transient role B is never observed");
-
-        let persistent = crate::core::roles::with_test_active_role(role_a.clone(), || {
-            with_project_source_view(root.path().to_str().unwrap(), || {
-                with_source_view(|| {
-                    crate::core::roles::set_test_active_role(role_b.clone());
-                    assert_eq!(crate::core::roles::active_role().role.name, "role-a");
-                })
-            })
-        });
-        assert!(
-            persistent.is_err(),
-            "a changed full role invalidates the view"
-        );
-    }
-
-    #[test]
-    fn closed_inherited_source_view_returns_a_denying_pinned_role() {
-        let root = tempfile::tempdir().expect("create project");
-        let role = fixture_role("role-a", "warn", true, &["ctx_read"]);
-        let role_fingerprint = role_fingerprint(&role).unwrap();
-        let view = SourceView {
-            project: root.path().to_path_buf(),
-            policy: None,
-            fingerprint: blake3::hash(b"test"),
-            role,
-            role_fingerprint,
-            valid: Arc::new(AtomicBool::new(true)),
-            live: Arc::new(AtomicBool::new(false)),
-        };
-
-        REQUEST_PROJECT.sync_scope(
-            std::cell::RefCell::new(Some(root.path().to_path_buf())),
-            || {
-                SOURCE_VIEW.sync_scope(std::cell::RefCell::new(Some(view)), || {
-                    let closed = crate::core::roles::active_role();
-                    assert_eq!(closed.role.name, "closed-source-view");
-                    assert!(!closed.is_tool_allowed("ctx_read"));
-                    assert!(!closed.io.allow_secret_paths);
-                });
-            },
-        );
-    }
-
-    #[test]
-    fn project_source_view_uses_fallback_and_preserves_bound_project() {
-        let _override_guard = lock_test_override();
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let fallback = tempfile::tempdir().expect("create fallback project");
-        let bound = tempfile::tempdir().expect("create bound project");
-        write_policy(fallback.path(), "fallback-project");
-        write_policy(bound.path(), "bound-project");
-        let fallback_root = fallback.path().to_str().unwrap();
-
-        let unbound =
-            with_project_source_view(fallback_root, || active().unwrap().resolved.name.clone());
-        assert_eq!(unbound.unwrap(), "fallback-project");
-
-        let already_bound = REQUEST_PROJECT.sync_scope(
-            std::cell::RefCell::new(Some(bound.path().to_path_buf())),
-            || with_project_source_view(fallback_root, || active().unwrap().resolved.name.clone()),
-        );
-        assert_eq!(already_bound.unwrap(), "bound-project");
-    }
-}
+#[path = "runtime/tests.rs"]
+mod tests;

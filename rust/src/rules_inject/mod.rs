@@ -26,7 +26,9 @@ pub(crate) use content::cursor_mdc_document;
 pub use content::{
     GEMINI_DEDICATED_CONTEXT_FILENAME, gemini_dedicated_rules_path, opencode_dedicated_rules_path,
 };
-pub use skills::{install_all_skills, install_skill_for_agent};
+pub use skills::{
+    install_all_skills, install_skill_for_agent, install_skills_where, planned_skill_files,
+};
 
 /// The tool set client-neutral rule files may name: what `tools/list` offers a
 /// client without quirks (the lean core when no profile is pinned). These files
@@ -157,6 +159,79 @@ enum RulesResult {
 }
 
 pub fn inject_all_rules(home: &std::path::Path) -> InjectResult {
+    inject_rules_where(home, &|_| true)
+}
+
+/// Agent key (as `init --agent` / `setup --agents` spell it) that owns a
+/// rules target, so a setup agent selection can filter rules files too.
+fn rules_agent_key(target_name: &str) -> Option<&'static str> {
+    Some(match target_name {
+        "Gemini CLI" => "gemini",
+        "VS Code" => "vscode",
+        "Copilot CLI" => "copilot",
+        "Cursor" => "cursor",
+        "Windsurf" => "windsurf",
+        "Zed" => "zed",
+        "Cline" => "cline",
+        "Roo Code" => "roo",
+        "OpenCode" => "opencode",
+        "Continue" => "continue",
+        "Amp" => "amp",
+        "Qwen Code" => "qwen",
+        "Trae" => "trae",
+        "Amazon Q Developer" => "amazonq",
+        "JetBrains IDEs" => "jetbrains",
+        "Antigravity" => "antigravity",
+        "Pi Coding Agent" => "pi",
+        "AWS Kiro" => "kiro",
+        "Verdent" => "verdent",
+        "Crush" => "crush",
+        "Augment" => "augment",
+        "OpenClaw" => "openclaw",
+        "Codex CLI" => "codex",
+        "Grok" => "grok",
+        "Oh My Pi" => "omp",
+        "Hermes Agent" => "hermes",
+        "Qoder" => "qoder",
+        _ => return None,
+    })
+}
+
+/// Rules files a setup run would write for the agents `allows` admits: the
+/// installed tools' targets plus the Claude Code pointer block. Writes nothing.
+/// The real run additionally skips tools whose MCP entry is missing (GH #1435).
+#[must_use]
+pub fn planned_rules_files(
+    home: &std::path::Path,
+    allows: &dyn Fn(&str) -> bool,
+) -> Vec<(String, PathBuf)> {
+    let cfg = crate::core::config::Config::load();
+    let injection = cfg.rules_injection_effective();
+    if cfg.rules_scope_effective() == crate::core::config::RulesScope::Project
+        || injection == crate::core::config::RulesInjection::Off
+    {
+        return Vec::new();
+    }
+    let mut files = Vec::new();
+    if injection == crate::core::config::RulesInjection::Shared
+        && allows("claude")
+        && detect::is_named_agent_ready("Claude Code", home)
+    {
+        files.push((
+            "Claude Code".to_string(),
+            crate::core::editor_registry::claude_state_dir(home).join("CLAUDE.md"),
+        ));
+    }
+    for target in build_rules_targets(home, injection) {
+        if rules_agent_key(target.name).is_some_and(allows) && is_tool_detected(&target, home) {
+            files.push((target.name.to_string(), target.path));
+        }
+    }
+    files
+}
+
+/// [`inject_all_rules`] restricted to the agents `allows` admits (by agent key).
+pub fn inject_rules_where(home: &std::path::Path, allows: &dyn Fn(&str) -> bool) -> InjectResult {
     let cfg = crate::core::config::Config::load();
     if cfg.rules_scope_effective() == crate::core::config::RulesScope::Project {
         return InjectResult::default();
@@ -166,22 +241,21 @@ pub fn inject_all_rules(home: &std::path::Path) -> InjectResult {
     }
 
     let targets = build_rules_targets(home, cfg.rules_injection_effective());
-    let selected = selected_rules_names(&cfg, home);
 
     let mut result = InjectResult::default();
 
     if cfg.rules_injection_effective() == crate::core::config::RulesInjection::Shared
-        && cfg.setup.allows_agent("claude", "Claude Code")
+        && allows("claude")
         && detect::is_named_agent_ready("Claude Code", home)
     {
         sync_claude_pointer_block(home, &mut result);
     }
 
     for target in &targets {
-        if !is_tool_detected(target, home) {
+        if !rules_agent_key(target.name).is_some_and(allows) {
             continue;
         }
-        if !rules_target_selected(&cfg, selected.as_deref(), target.name) {
+        if !is_tool_detected(target, home) {
             continue;
         }
         // GH #1435: skip rules injection when the tool's MCP server is not
@@ -358,40 +432,6 @@ fn match_agent_name(cli_key: &str, target_name: &str) -> bool {
         || (needle == "openclaw" && tn.contains("openclaw"))
         || (needle == "grok" && tn.contains("grok"))
         || (needle == "vscode" && (tn.contains("vs code") || tn.contains("vscode")))
-}
-
-/// Display names of the editor targets the `setup.agents` selection keeps,
-/// or `None` when every agent is selected.
-fn selected_rules_names(
-    cfg: &crate::core::config::Config,
-    home: &std::path::Path,
-) -> Option<Vec<&'static str>> {
-    cfg.setup.agents.as_ref()?;
-    Some(
-        crate::core::editor_registry::build_targets(home)
-            .into_iter()
-            .filter(|t| cfg.setup.allows_agent(&t.agent_key, t.name))
-            .map(|t| t.name)
-            .collect(),
-    )
-}
-
-/// A rules target follows the agent selection: it is kept when its name is a
-/// selected editor, or a selected entry names it (rules names are coarser
-/// than editor names, e.g. "Antigravity" covers IDE and CLI).
-fn rules_target_selected(
-    cfg: &crate::core::config::Config,
-    selected_names: Option<&[&'static str]>,
-    target_name: &str,
-) -> bool {
-    let (Some(entries), Some(names)) = (cfg.setup.agents.as_deref(), selected_names) else {
-        return true;
-    };
-    names.contains(&target_name)
-        || entries
-            .iter()
-            .map(|e| e.trim())
-            .any(|e| !e.is_empty() && match_agent_name(e, target_name))
 }
 
 /// Check if the rules file for a given MCP client is up-to-date.

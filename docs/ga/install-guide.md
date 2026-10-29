@@ -44,8 +44,28 @@ curl -fsSL https://leanctx.com/install.sh | sh
 ```
 
 It detects the platform, downloads the current release, verifies its SHA-256
-checksum when supported locally, ad-hoc signs the binary on macOS, and runs
-`lean-ctx onboard` unless you opt out.
+checksum against the release `SHA256SUMS`, ad-hoc signs the binary on macOS,
+and runs `lean-ctx onboard` unless you opt out.
+
+The checksum check fails closed: the installer aborts without installing when
+`SHA256SUMS` cannot be downloaded, has no entry for the archive, no
+`sha256sum`/`shasum` tool is available, or the digest differs. The installer
+does not verify the Sigstore/cosign signature of `SHA256SUMS`; `lean-ctx update`
+does. To verify a manual download, fetch `SHA256SUMS`, `SHA256SUMS.sig` and
+`SHA256SUMS.pem` from the release and run:
+
+```bash
+cosign verify-blob --signature SHA256SUMS.sig --certificate SHA256SUMS.pem \
+  --certificate-identity "https://github.com/yvgude/lean-ctx/.github/workflows/release.yml@refs/tags/<TAG>" \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+```
+
+`lean-ctx onboard` changes configuration outside lean-ctx: it adds the lean-ctx
+MCP server, hooks and rules to the detected AI tools (for example Claude Code,
+Cursor, Codex) and the lean-ctx shell hook to your shell rc file. The installer
+lists these changes before it runs onboard. `lean-ctx uninstall` removes them.
+`LEAN_CTX_NO_PATH_FIX=1` stops the installer from editing your shell rc file
+for `PATH`.
 
 To install first and onboard explicitly:
 

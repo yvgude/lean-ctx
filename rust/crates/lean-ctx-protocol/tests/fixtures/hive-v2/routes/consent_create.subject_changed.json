@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "This consent was created with another subject.",
+    "reason": "subject_changed"
+  }
+}

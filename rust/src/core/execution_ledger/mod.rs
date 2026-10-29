@@ -11,6 +11,7 @@ pub(crate) mod host;
 pub mod migration;
 pub mod producer;
 pub mod projection;
+pub(crate) mod receipt_inputs;
 pub mod store;
 pub mod verify;
 

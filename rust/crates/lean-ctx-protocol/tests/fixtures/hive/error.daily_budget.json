@@ -1,0 +1,10 @@
+{
+  "error": {
+    "code": "rate_limited",
+    "limit": 5,
+    "message": "Today's task budget is used up.",
+    "reason": "daily_budget",
+    "retry_after_s": 43200,
+    "used": 5
+  }
+}

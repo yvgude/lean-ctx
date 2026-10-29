@@ -7,6 +7,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::core::eval_ab::arm_study::{self, Arm, ProviderCondition};
 use crate::core::eval_ab::artifact::{self, SignedAbReportV1};
 use crate::core::eval_ab::conditions::Condition;
 use crate::core::eval_ab::footprint::{
@@ -33,6 +34,7 @@ pub fn cmd_eval(args: &[String]) {
         Some("footprint" | "delta") => cmd_footprint(&args[1..]),
         Some("testbench") => cmd_testbench(&args[1..]),
         Some("verify") => cmd_verify(&args[1..]),
+        Some("arm-study") => cmd_arm_study(&args[1..]),
         Some("init") => cmd_init(&args[1..]),
         Some("-h" | "--help") | None => print_help(),
         Some(other) => {
@@ -93,6 +95,300 @@ frontier options: --limit <n>, --budget <n>, --replay <file>, --record <file>, -
     println!(
         "Model revision provenance: LEAN_CTX_EVAL_MODEL_VERSION (defaults to a colon-tagged model revision when available)."
     );
+    println!(
+        "  lean-ctx eval arm-study --protocol <file> --observations <file> [--json]\n\
+arm-study: medians, 95% intervals and p95 latency over SUPPLIED four-arm observations of a\n\
+registered task list. It runs nothing and measures nothing, and what it prints is no proof\n\
+that the observations are authentic, blind or preregistered in time."
+    );
+    println!(
+        "Optional provider metadata: --provider-report <file> --provider-arm <unchanged_agent|community|team|company> --provider-condition <baseline|lean_ctx>"
+    );
+}
+
+/// A regular file that is not a link, read up to `limit` bytes; one byte more
+/// is a refusal, never a truncation.
+///
+/// The open itself decides: it does not follow a link in the last component
+/// and does not wait on a FIFO, so nothing swapped in after an earlier look can
+/// be read or block. What was opened must be a regular file, and the path must
+/// still name that very file. Where the platform has no such open here, the
+/// read is refused instead of done the unsafe way.
+#[cfg(unix)]
+fn bounded_regular_file(path: &Path, limit: usize) -> Result<Vec<u8>, &'static str> {
+    use std::io::Read;
+    use std::os::unix::fs::{MetadataExt, OpenOptionsExt};
+    let file = std::fs::OpenOptions::new()
+        .read(true)
+        .custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK | libc::O_CLOEXEC)
+        .open(path)
+        .map_err(|_| "cannot be opened as a file that is not a link")?;
+    let opened = file.metadata().map_err(|_| "cannot be read")?;
+    if !opened.is_file() {
+        return Err("is not a regular file");
+    }
+    let named = std::fs::symlink_metadata(path).map_err(|_| "cannot be read")?;
+    if !named.file_type().is_file() || (named.dev(), named.ino()) != (opened.dev(), opened.ino()) {
+        return Err("was replaced while it was opened");
+    }
+    let mut bytes = Vec::new();
+    file.take(limit as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| "cannot be read")?;
+    if bytes.len() > limit {
+        return Err("exceeds its size bound");
+    }
+    Ok(bytes)
+}
+
+/// Windows: the parent directory is opened and held as the object it is (a
+/// reparse point is refused, not followed), and the file is opened by its one
+/// name RELATIVE to that held handle with the shared opener
+/// (`leanctx_native_storage::windows_file::open_relative`: `RootDirectory` +
+/// `OBJ_DONT_REPARSE`), read-only, as a non-directory, without following a final
+/// reparse point — the flags `agent_identity::read_key_file` opens a key with.
+/// The admitted length is checked before a byte is read; after the read the
+/// same name is opened once more against the same held directory and must be
+/// the same file (volume serial and file index) of the same length.
+///
+/// The protection is of the parent and the final component. A reparse point in
+/// an EARLIER component of the path is not looked for, and the handles share
+/// write and delete like the opener's other callers: a change is detected by
+/// the checks above, it is not prevented.
+#[cfg(windows)]
+fn bounded_regular_file(path: &Path, limit: usize) -> Result<Vec<u8>, &'static str> {
+    use leanctx_native_storage::windows_file::open_relative;
+    use std::fs::File;
+    use std::io::Read;
+    use std::os::windows::ffi::OsStrExt;
+    use std::os::windows::fs::MetadataExt;
+    use std::os::windows::io::{AsRawHandle, FromRawHandle};
+    use windows_sys::Wdk::Storage::FileSystem::{
+        FILE_NON_DIRECTORY_FILE, FILE_OPEN, FILE_OPEN_REPARSE_POINT, FILE_SYNCHRONOUS_IO_NONALERT,
+    };
+    use windows_sys::Win32::Foundation::INVALID_HANDLE_VALUE;
+    use windows_sys::Win32::Storage::FileSystem::{
+        BY_HANDLE_FILE_INFORMATION, CreateFileW, FILE_ATTRIBUTE_REPARSE_POINT,
+        FILE_FLAG_BACKUP_SEMANTICS, FILE_FLAG_OPEN_REPARSE_POINT, FILE_LIST_DIRECTORY,
+        FILE_READ_ATTRIBUTES, FILE_READ_DATA, FILE_SHARE_DELETE, FILE_SHARE_READ, FILE_SHARE_WRITE,
+        GetFileInformationByHandle, OPEN_EXISTING, SYNCHRONIZE,
+    };
+
+    const NOT_OPENED: &str = "cannot be opened as a file that is not a link";
+    const NOT_READ: &str = "cannot be read";
+    const NOT_REGULAR: &str = "is not a regular file";
+    const TOO_LARGE: &str = "exceeds its size bound";
+
+    // A relative path is taken against the working directory as it is now,
+    // lexically: nothing is canonicalized and then opened the ordinary way.
+    let absolute = if path.is_absolute() {
+        path.to_path_buf()
+    } else {
+        std::env::current_dir().map_err(|_| NOT_READ)?.join(path)
+    };
+    let parent = absolute.parent().ok_or(NOT_OPENED)?;
+    let name: Vec<u16> = absolute
+        .file_name()
+        .ok_or(NOT_OPENED)?
+        .encode_wide()
+        .collect();
+    // The parent as it is named, first WITHOUT a terminator: a NUL inside it would
+    // make the call open a shorter path than the one that was checked. Refused;
+    // then exactly one terminator is appended.
+    let mut wide_parent: Vec<u16> = parent.as_os_str().encode_wide().collect();
+    if wide_parent.contains(&0) {
+        return Err(NOT_OPENED);
+    }
+    wide_parent.push(0);
+    // SAFETY: `wide_parent` is NUL-terminated and lives through the call;
+    // security attributes and template handle are null.
+    let handle = unsafe {
+        CreateFileW(
+            wide_parent.as_ptr(),
+            FILE_LIST_DIRECTORY | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
+            std::ptr::null(),
+            OPEN_EXISTING,
+            FILE_FLAG_BACKUP_SEMANTICS | FILE_FLAG_OPEN_REPARSE_POINT,
+            std::ptr::null_mut(),
+        )
+    };
+    if handle == INVALID_HANDLE_VALUE || handle.is_null() {
+        return Err(NOT_OPENED);
+    }
+    // SAFETY: a successful `CreateFileW` returned this owned handle.
+    let directory = unsafe { File::from_raw_handle(handle) };
+    let held = directory.metadata().map_err(|_| NOT_READ)?;
+    if held.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 || !held.is_dir() {
+        return Err(NOT_OPENED);
+    }
+
+    let open = || {
+        open_relative(
+            &directory,
+            &name,
+            FILE_READ_DATA | FILE_READ_ATTRIBUTES | SYNCHRONIZE,
+            FILE_OPEN,
+            FILE_NON_DIRECTORY_FILE | FILE_OPEN_REPARSE_POINT | FILE_SYNCHRONOUS_IO_NONALERT,
+        )
+        .map_err(|_| NOT_OPENED)
+    };
+    // The length of what was opened, if it is a regular file and no reparse point.
+    let regular_length = |file: &File| -> Result<u64, &'static str> {
+        let about = file.metadata().map_err(|_| NOT_READ)?;
+        if about.file_attributes() & FILE_ATTRIBUTE_REPARSE_POINT != 0 || !about.is_file() {
+            return Err(NOT_REGULAR);
+        }
+        Ok(about.len())
+    };
+    let identity = |file: &File| -> Result<(u32, u32, u32), &'static str> {
+        let mut info = BY_HANDLE_FILE_INFORMATION::default();
+        // SAFETY: a live handle and exactly the writable storage the call fills.
+        if unsafe { GetFileInformationByHandle(file.as_raw_handle(), &raw mut info) } == 0 {
+            return Err(NOT_READ);
+        }
+        Ok((
+            info.dwVolumeSerialNumber,
+            info.nFileIndexHigh,
+            info.nFileIndexLow,
+        ))
+    };
+
+    let file = open()?;
+    if regular_length(&file)? > limit as u64 {
+        return Err(TOO_LARGE);
+    }
+    let opened = identity(&file)?;
+    let mut bytes = Vec::new();
+    (&file)
+        .take(limit as u64 + 1)
+        .read_to_end(&mut bytes)
+        .map_err(|_| NOT_READ)?;
+    if bytes.len() > limit {
+        return Err(TOO_LARGE);
+    }
+    let again = open()?;
+    if regular_length(&again)? != bytes.len() as u64
+        || regular_length(&file)? != bytes.len() as u64
+        || identity(&again)? != opened
+    {
+        return Err("was replaced while it was opened");
+    }
+    Ok(bytes)
+}
+
+#[cfg(not(any(unix, windows)))]
+fn bounded_regular_file(path: &Path, limit: usize) -> Result<Vec<u8>, &'static str> {
+    let _ = (path, limit);
+    Err("cannot be read: this command has no link-safe file open on this platform")
+}
+
+/// The optional provider source is one explicit all-or-none tuple. Admission of
+/// these arguments precedes every file read, including the unchanged old inputs.
+fn arm_study_provider_args(
+    args: &[String],
+) -> Result<Option<(&str, Arm, ProviderCondition)>, &'static str> {
+    let mut values = [None; 3];
+    for (index, arg) in args.iter().enumerate() {
+        let slot = match arg.as_str() {
+            "--provider-report" => 0,
+            "--provider-arm" => 1,
+            "--provider-condition" => 2,
+            _ if arg.split_once('=').is_some_and(|(flag, _)| {
+                matches!(
+                    flag,
+                    "--provider-report" | "--provider-arm" | "--provider-condition"
+                )
+            }) =>
+            {
+                return Err("provider flags require separate values");
+            }
+            _ => continue,
+        };
+        if values[slot].is_some() {
+            return Err("provider flags must occur exactly once");
+        }
+        values[slot] = Some(
+            args.get(index + 1)
+                .map(String::as_str)
+                .filter(|value| !value.is_empty() && !value.starts_with('-'))
+                .ok_or("provider flags require a value")?,
+        );
+    }
+    match values {
+        [None, None, None] => Ok(None),
+        [Some(path), Some(arm), Some(condition)] => {
+            let arm = match arm {
+                "unchanged_agent" => Arm::UnchangedAgent,
+                "community" => Arm::Community,
+                "team" => Arm::Team,
+                "company" => Arm::Company,
+                _ => {
+                    return Err("provider arm must be unchanged_agent, community, team or company");
+                }
+            };
+            let condition = match condition {
+                "baseline" => ProviderCondition::Baseline,
+                "lean_ctx" => ProviderCondition::LeanCtx,
+                _ => return Err("provider condition must be baseline or lean_ctx"),
+            };
+            Ok(Some((path, arm, condition)))
+        }
+        _ => Err("provider-report, provider-arm and provider-condition are required together"),
+    }
+}
+
+/// `eval arm-study`: inputs are admitted by size before they are
+/// parsed, the protocol's own work bounds before anything is analysed
+/// (`arm_study::parse_protocol`), and a refusal exits 1 with the rule it broke.
+fn cmd_arm_study(args: &[String]) {
+    let provider = arm_study_provider_args(args).unwrap_or_else(|error| {
+        eprintln!("eval arm-study: {error}");
+        std::process::exit(2);
+    });
+    let (Some(protocol_path), Some(observations_path)) = (
+        flag_value(args, "--protocol"),
+        flag_value(args, "--observations"),
+    ) else {
+        eprintln!("eval arm-study: --protocol <file> and --observations <file> are required");
+        std::process::exit(2);
+    };
+    let read = |path: &str, limit: usize| {
+        bounded_regular_file(Path::new(path), limit).unwrap_or_else(|error| {
+            eprintln!("eval arm-study: {path} {error}");
+            std::process::exit(1);
+        })
+    };
+    let protocol_bytes = read(protocol_path, arm_study::MAX_PROTOCOL_BYTES);
+    let observation_bytes = read(observations_path, arm_study::MAX_OBSERVATIONS_BYTES);
+    let provider_bytes = provider.map(|(path, arm, condition)| {
+        (
+            read(path, arm_study::MAX_PROVIDER_REPORT_BYTES),
+            arm,
+            condition,
+        )
+    });
+    let report = arm_study::parse_protocol(&protocol_bytes).and_then(|(protocol, digest)| {
+        let mut observations = arm_study::parse_observations(&observation_bytes)?;
+        if let Some((bytes, arm, condition)) = &provider_bytes {
+            let provider_report = arm_study::parse_provider_report(bytes)?;
+            arm_study::attach_provider_observations(
+                &mut observations,
+                &provider_report,
+                *arm,
+                *condition,
+            )?;
+        }
+        arm_study::analyze(&protocol, &digest, &observations)
+    });
+    match report {
+        Ok(report) if has_flag(args, "--json") => println!("{}", report.to_json()),
+        Ok(report) => print!("{}", report.render()),
+        Err(refusal) => {
+            eprintln!("eval arm-study: refused: {refusal}");
+            std::process::exit(1);
+        }
+    }
 }
 
 /// Returns the value following `flag` in `args`, if present.
@@ -804,6 +1100,123 @@ background and intentionally does not list the consolidation stores.\n",
 #[cfg(test)]
 mod recording_guard_tests {
     use super::*;
+
+    #[test]
+    fn arm_study_provider_flags_are_explicit_complete_and_unique() {
+        let strings = |values: &[&str]| values.iter().map(|s| (*s).to_owned()).collect::<Vec<_>>();
+        assert_eq!(
+            arm_study_provider_args(&strings(&["--protocol", "p", "--observations", "o"])),
+            Ok(None)
+        );
+        let pairs = [
+            ["--provider-report", "report.json"],
+            ["--provider-arm", "team"],
+            ["--provider-condition", "lean_ctx"],
+        ];
+        let valid = pairs
+            .iter()
+            .flatten()
+            .map(|s| (*s).to_owned())
+            .collect::<Vec<_>>();
+        assert_eq!(
+            arm_study_provider_args(&valid),
+            Ok(Some(("report.json", Arm::Team, ProviderCondition::LeanCtx)))
+        );
+        for mask in 1..7 {
+            let mut args = Vec::new();
+            for (index, pair) in pairs.iter().enumerate() {
+                if mask & (1 << index) != 0 {
+                    args.extend(pair.iter().map(|s| (*s).to_owned()));
+                }
+            }
+            assert!(arm_study_provider_args(&args).is_err());
+        }
+        for pair in pairs {
+            let mut duplicated = valid.clone();
+            duplicated.extend(pair.map(str::to_owned));
+            assert!(arm_study_provider_args(&duplicated).is_err());
+        }
+        for bad in [
+            vec!["--provider-report"],
+            vec!["--provider-report", "--provider-arm", "team"],
+            vec!["--provider-report", ""],
+            vec!["--provider-arm=team"],
+            vec![
+                "--provider-report",
+                "r",
+                "--provider-arm",
+                "baseline",
+                "--provider-condition",
+                "lean_ctx",
+            ],
+            vec![
+                "--provider-report",
+                "r",
+                "--provider-arm",
+                "team",
+                "--provider-condition",
+                "company",
+            ],
+        ] {
+            assert!(arm_study_provider_args(&strings(&bad)).is_err());
+        }
+        for (name, arm) in [
+            ("unchanged_agent", Arm::UnchangedAgent),
+            ("community", Arm::Community),
+            ("team", Arm::Team),
+            ("company", Arm::Company),
+        ] {
+            assert_eq!(
+                arm_study_provider_args(&strings(&[
+                    "--provider-report",
+                    "r",
+                    "--provider-arm",
+                    name,
+                    "--provider-condition",
+                    "baseline",
+                ])),
+                Ok(Some(("r", arm, ProviderCondition::Baseline)))
+            );
+        }
+    }
+
+    /// The arm-study inputs: the exact bytes of a regular file at its bound, and
+    /// a refusal — never a truncation, a followed link or a wait — for anything else.
+    #[cfg(unix)]
+    #[test]
+    fn arm_study_input_is_a_bounded_regular_file_and_nothing_else() {
+        use std::ffi::CString;
+        use std::os::unix::ffi::OsStrExt;
+        let dir = tempfile::tempdir().unwrap();
+        let regular = dir.path().join("exact");
+        std::fs::write(&regular, b"12345678").unwrap();
+        assert_eq!(bounded_regular_file(&regular, 8).unwrap(), b"12345678");
+        assert_eq!(
+            bounded_regular_file(&regular, 7),
+            Err("exceeds its size bound")
+        );
+        let link = dir.path().join("link");
+        std::os::unix::fs::symlink(&regular, &link).unwrap();
+        let fifo = dir.path().join("fifo");
+        let name = CString::new(fifo.as_os_str().as_bytes()).unwrap();
+        // SAFETY: a NUL-terminated path inside this test's own directory.
+        assert_eq!(unsafe { libc::mkfifo(name.as_ptr(), 0o600) }, 0);
+        let not_opened = "cannot be opened as a file that is not a link";
+        for (path, refusal) in [
+            (link, not_opened),
+            // Opened without waiting for a writer, then refused for what it is.
+            (fifo, "is not a regular file"),
+            (dir.path().to_path_buf(), "is not a regular file"),
+            (dir.path().join("absent"), not_opened),
+        ] {
+            assert_eq!(
+                bounded_regular_file(&path, 8),
+                Err(refusal),
+                "{}",
+                path.display()
+            );
+        }
+    }
 
     /// The committed recording (`rust/eval/recording.json`) is what flips the CI
     /// quality-gate from "skipped" to "enforced" (#361 Phase 3). Guard it

@@ -1,0 +1,45 @@
+{
+  "actor": {
+    "kind": "server"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaaf4am",
+  "body": {
+    "bus_cascade": [
+      {
+        "bus": {
+          "id": "card-vault",
+          "kind": "v",
+          "ws": "acme"
+        },
+        "seq": 10
+      }
+    ],
+    "cascade": [],
+    "purge_id": "prg_aaaaaaaaaaaaaaaaaaaaaaezym",
+    "reason": "leaked_secret",
+    "targets": [
+      "01M5NKA2Z8006000000000W001"
+    ]
+  },
+  "body_commit": "3c1943efbd31110bae09ff4e2c1db50dc51535a93bf20bc6d04d8ec872e33d66",
+  "causal_base": 2,
+  "event_id": "01M5NKA4XR006000000000W003",
+  "hlc": {
+    "counter": 0,
+    "node": "4fc7bebc302357bd",
+    "wall_ms": 1792800003000
+  },
+  "key_id": "4fc7bebc302357bd",
+  "op": "purge",
+  "place": {
+    "id": "c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03",
+    "kind": "vault"
+  },
+  "provenance": "workspace",
+  "received_at": 1792800003350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "seq": 3,
+  "signature": "a9521900626ccf0ce637d877fdec585349c5f70d66b3d13783d6dd715e6ee6c9258b7b15de61ecc5d3a459adce25047d29476cecabc4997b8547cb64b3fd8307"
+}

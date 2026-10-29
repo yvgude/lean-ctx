@@ -18,6 +18,7 @@ mod common;
 pub mod context_checkpoint;
 pub mod context_checkpoint_unicode;
 pub mod context_gateway;
+pub mod context_lineage;
 mod context_plan;
 pub mod context_policy_evidence;
 mod context_session;
@@ -27,6 +28,7 @@ pub mod decision;
 pub mod edge_via;
 pub mod eligibility;
 mod engine_context_materialization;
+mod engine_context_materialization_v2;
 mod engine_context_plan;
 mod engine_context_source_execution;
 mod engine_context_source_execution_v2;
@@ -34,16 +36,17 @@ mod engine_context_sources;
 mod engine_egress;
 mod engine_interface;
 mod engine_outcome;
+mod engine_presented_use;
 mod engine_provider_execution;
 mod entitlement;
 mod execution;
 pub mod fleet_control;
+pub mod hive;
 mod identity;
-mod invocation_context_binding;
-mod invocation_evidence;
 pub mod knowledge;
 #[doc(hidden)]
 pub mod knowledge_routing;
+pub mod org_policy_verifier;
 pub mod outcome;
 pub mod outcome_engine;
 pub mod rollout;
@@ -102,6 +105,7 @@ pub use context_session::{
 pub use control_plane::*;
 pub use decision::*;
 pub use engine_context_materialization::*;
+pub use engine_context_materialization_v2::*;
 pub use engine_context_plan::*;
 pub use engine_context_source_execution::*;
 pub use engine_context_source_execution_v2::*;
@@ -109,6 +113,7 @@ pub use engine_context_sources::*;
 pub use engine_egress::*;
 pub use engine_interface::*;
 pub use engine_outcome::*;
+pub use engine_presented_use::*;
 pub use engine_provider_execution::*;
 pub use entitlement::*;
 pub use evidence::{EvidenceKind, EvidenceRefV1, SignatureStatus};
@@ -119,15 +124,6 @@ pub use gap::{BillingPeriodStatus, EvidenceGapClosedV1, EvidenceGapOpenedV1, Gap
 pub use identity::{
     EventId, HandoffId, KitId, PackageId, PolicyId, ProfileId, ProjectContextId, ProtocolReference,
     RunId, SemanticVersion, Sha256Digest, SourceId, UtcTimestamp, ViewId, WorkspaceId,
-};
-pub use invocation_context_binding::{
-    INVOCATION_CONTEXT_BINDING_SIGNATURE_DOMAIN, InvocationContextBindingSignerV1,
-    InvocationContextBindingV1, MAX_INVOCATION_CONTEXT_BINDING_ITEMS,
-};
-pub use invocation_evidence::{
-    InvocationCapabilityBindingV1, InvocationEngineReceiptBindingV1, InvocationEvidenceManifestV1,
-    InvocationPolicyBindingV1, InvocationPolicyRoleV1, InvocationSourceBindingV1,
-    InvocationSourceRoleV1, MAX_INVOCATION_EVIDENCE_ITEMS,
 };
 pub use knowledge::{ClassificationLevel, KnowledgeObjectV1, ValidityWindow};
 #[doc(hidden)]

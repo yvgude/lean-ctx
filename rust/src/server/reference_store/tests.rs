@@ -9,20 +9,6 @@ fn policy() -> TestPolicyOverride {
     ).unwrap()))
 }
 
-/// `store` never blocks on the shared pool (try_lock), and tests elsewhere in
-/// the crate hold it for a moment; a single attempt can miss on contention
-/// alone. Retry for a bounded while — an in-budget entry must land.
-fn stored(text: &str) -> String {
-    (0..500)
-        .find_map(|_| {
-            store(text).or_else(|| {
-                std::thread::sleep(std::time::Duration::from_millis(2));
-                None
-            })
-        })
-        .expect("in-budget entry is stored once the pool is free")
-}
-
 fn scope<T>(root: &Path, operation: impl FnOnce() -> T) -> T {
     // Other full-suite tests change the process-wide role without the data-dir
     // guard. Keep this fixture's expected caller independent of those tests.
@@ -35,26 +21,92 @@ fn scope<T>(root: &Path, operation: impl FnOnce() -> T) -> T {
     )
 }
 
+/// Retries only while a parallel test holds the shared pool: it returns at the
+/// first free moment, so the bound only matters on a loaded host (750 ms ran
+/// out in a full gate, 25.10.).
+const CONTENTION_BOUND: std::time::Duration = std::time::Duration::from_secs(10);
+
+fn store_until_available(text: &str) -> Option<String> {
+    let deadline = std::time::Instant::now() + CONTENTION_BOUND;
+    loop {
+        if let Some(id) = store(text) {
+            return Some(id);
+        }
+        if std::time::Instant::now() >= deadline {
+            return None;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(1));
+    }
+}
+
+/// `resolve_checked` waits only 50 ms for the shared pool and answers
+/// `Missing` when a parallel test holds it longer (upstream #2020). Only
+/// that answer is retried; every other refusal is returned as it is.
+fn resolve_until_available(id: &str) -> Result<String, ReferenceResolveError> {
+    let deadline = std::time::Instant::now() + CONTENTION_BOUND;
+    loop {
+        match resolve_checked(id) {
+            Err(ReferenceResolveError::Missing) if std::time::Instant::now() < deadline => {
+                std::thread::sleep(std::time::Duration::from_millis(2));
+            }
+            answer => return answer,
+        }
+    }
+}
+
 #[test]
-fn source_reference_rechecks_current_secret_path_permission() {
+fn a_readable_secret_path_never_backs_a_stored_reference() {
+    // Deliberate change (G01/G04, owner decision E3): this test used to expect
+    // a reference bound to `.env` to be stored for a role with
+    // `allow_secret_paths` and withheld again without it. Permission to read a
+    // restricted source is not permission to retain what was derived from it.
     let _data = crate::core::data_dir::isolated_data_dir();
     let _policy = policy();
     let root = tempfile::tempdir().unwrap();
-    let path = root.path().join(".env");
-    std::fs::write(&path, "allowed source").unwrap();
+    let secret = root.path().join(".env");
+    let ordinary = root.path().join("source.txt");
+    std::fs::write(&ordinary, "allowed source").unwrap();
     scope(root.path(), || {
         let mut permitted = crate::core::roles::load_role("coder").unwrap();
         permitted.io.allow_secret_paths = true;
         crate::core::roles::with_test_active_role(permitted, || {
-            let authority = origin_in_scope(root.path(), &path);
-            let id = store_with_authority("role-bound payload", Some(&authority)).unwrap();
-            crate::core::roles::with_test_active_role(
-                crate::core::roles::load_role("coder").unwrap(),
-                || assert!(resolve(&id).is_none()),
-            );
-            assert_eq!(resolve(&id).as_deref(), Some("role-bound payload"));
+            // Readable for this role, neutral content, neutral derived text.
+            std::fs::write(&secret, "allowed source").unwrap();
+            let authority = origin_in_scope(root.path(), &secret);
+            assert!(store_with_authority("neutral derived text", Some(&authority)).is_none());
+
+            // The same path with content that is restricted on its own.
+            std::fs::write(&secret, "*** TOP SECRET ***\nplans\n").unwrap();
+            let stored = try_origin_in_scope(root.path(), &secret).and_then(|authority| {
+                store_with_authority("neutral derived text", Some(&authority))
+            });
+            assert!(stored.is_none());
+
+            // Control: an ordinary source under the same role is stored and
+            // resolved, and follows its source.
+            let authority = origin_in_scope(root.path(), &ordinary);
+            let id = store_with_authority("neutral derived text", Some(&authority)).unwrap();
+            assert_eq!(resolve(&id).as_deref(), Some("neutral derived text"));
+            std::fs::remove_file(&ordinary).unwrap();
+            assert!(resolve(&id).is_none());
         });
     });
+}
+
+fn try_origin_in_scope(root: &Path, path: &Path) -> Option<ArchiveAuthority> {
+    runtime::with_source_view(|| {
+        let mut remaining = crate::core::limits::max_read_bytes();
+        let read = crate::tools::ctx_read::read_file_for_tool_rooted_with_path(
+            path.to_str().unwrap(),
+            root.to_str().unwrap(),
+            "ctx_execute",
+            &mut remaining,
+        )
+        .ok()?;
+        ArchiveAuthority::file(root, &read.canonical_path, "ctx_execute", &read.content)
+    })
+    .ok()
+    .flatten()
 }
 
 fn origin(root: &Path, path: &Path) -> ArchiveAuthority {
@@ -137,32 +189,27 @@ fn source_reference_requires_explicit_matching_project_and_fixed_binding() {
 #[test]
 fn public_reference_survives_community_use_but_not_policy_activation() {
     let _data = crate::core::data_dir::isolated_data_dir();
-    let no_policy = TestPolicyOverride::set(None);
-    // `store` never waits for the shared pool and `resolve` waits only 50 ms;
-    // a parallel test can hold it that long on a loaded machine. Retry like
-    // the pool-budget test does — only contention can make an attempt miss.
-    let retry = |attempt: &dyn Fn() -> Option<String>| {
-        (0..200).find_map(|_| {
-            attempt().or_else(|| {
-                std::thread::sleep(Duration::from_millis(2));
-                None
-            })
-        })
-    };
-    let id = retry(&|| store("community payload")).unwrap();
-    assert_eq!(retry(&|| store("community payload")), Some(id.clone()));
-    assert_eq!(
-        retry(&|| resolve(&id)).as_deref(),
-        Some("community payload")
-    );
-    drop(no_policy);
-    {
-        let _policy = policy();
-        assert!(resolve(&id).is_none());
-        assert!(store("unbound protected output").is_none());
-    }
-    let _no_policy = TestPolicyOverride::set(None);
-    assert_eq!(resolve(&id).as_deref(), Some("community payload"));
+    let root = tempfile::tempdir().unwrap();
+    scope(root.path(), || {
+        let no_policy = TestPolicyOverride::set(None);
+        let id = store_until_available("community payload").unwrap();
+        assert_eq!(store_until_available("community payload"), Some(id.clone()));
+        assert_eq!(
+            resolve_until_available(&id),
+            Ok("community payload".to_owned())
+        );
+        drop(no_policy);
+        {
+            let _policy = policy();
+            assert!(resolve(&id).is_none());
+            assert!(store("unbound protected output").is_none());
+        }
+        let _no_policy = TestPolicyOverride::set(None);
+        assert_eq!(
+            resolve_until_available(&id),
+            Ok("community payload".to_owned())
+        );
+    });
 }
 
 #[test]
@@ -188,7 +235,7 @@ fn references_filter_current_output_rules() {
 fn expired_or_modified_reference_is_not_retrievable() {
     let _data = crate::core::data_dir::isolated_data_dir();
     let _policy = TestPolicyOverride::set(None);
-    let id = stored("ttl payload");
+    let id = store_until_available("ttl payload").unwrap();
     store_lock()
         .lock()
         .unwrap()
@@ -196,7 +243,7 @@ fn expired_or_modified_reference_is_not_retrievable() {
         .unwrap()
         .created_at = Instant::now().checked_sub(TTL).unwrap();
     assert!(resolve(&id).is_none());
-    let id = stored("integrity payload");
+    let id = store_until_available("integrity payload").unwrap();
     store_lock().lock().unwrap().get_mut(&id).unwrap().content = Arc::from("substituted content");
     assert!(resolve(&id).is_none());
 }
@@ -206,21 +253,24 @@ fn invalid_policy_cannot_restore_or_create_an_unbound_reference() {
     let _data = crate::core::data_dir::isolated_data_dir();
     let _policy = TestPolicyOverride::set(None);
     let root = tempfile::tempdir().unwrap();
-    let id = stored("community retained payload");
+    let id = store_until_available("community retained payload").unwrap();
     std::fs::create_dir(root.path().join(".lean-ctx")).unwrap();
     std::fs::write(root.path().join(".lean-ctx/policy.toml"), "[invalid").unwrap();
     scope(root.path(), || {
         assert!(resolve(&id).is_none());
         assert!(store("new unverified payload").is_none());
     });
-    assert_eq!(resolve(&id).as_deref(), Some("community retained payload"));
+    assert_eq!(
+        resolve_until_available(&id).ok().as_deref(),
+        Some("community retained payload")
+    );
 }
 
 #[test]
 fn resolve_waits_out_a_concurrent_store_instead_of_reporting_missing() {
     let _data = crate::core::data_dir::isolated_data_dir();
     let _policy = TestPolicyOverride::set(None);
-    let id = stored("briefly contended payload");
+    let id = store_until_available("briefly contended payload").unwrap();
     let held = store_lock().lock().unwrap();
     let (tx, rx) = std::sync::mpsc::channel();
     let resolver = std::thread::spawn({
@@ -241,6 +291,15 @@ fn resolve_waits_out_a_concurrent_store_instead_of_reporting_missing() {
 
 #[test]
 fn reference_pool_enforces_entry_and_aggregate_byte_budgets() {
+    // This test clears and fills the process-wide pool to its eviction limit;
+    // in the shared test process that evicted the entries of every parallel
+    // test using the pool (inte 2c15242854, 25.10.). Its own process.
+    if crate::test_env::run_in_own_process(
+        "server::reference_store::tests::reference_pool_enforces_entry_and_aggregate_byte_budgets",
+        &[],
+    ) {
+        return;
+    }
     let _data = crate::core::data_dir::isolated_data_dir();
     let _policy = TestPolicyOverride::set(None);
     store_lock().lock().unwrap().clear();
@@ -252,14 +311,8 @@ fn reference_pool_enforces_entry_and_aggregate_byte_budgets() {
         // `store` never blocks on the shared pool (try_lock); a parallel test
         // elsewhere in the crate may hold it for a moment. Every body here is
         // within budget, so only contention can make a single attempt miss.
-        let id = (0..200)
-            .find_map(|_| {
-                store(&body).or_else(|| {
-                    std::thread::sleep(Duration::from_millis(2));
-                    None
-                })
-            })
-            .expect("in-budget entry is stored once the pool is free");
+        let id =
+            store_until_available(&body).expect("in-budget entry is stored once the pool is free");
         if first.is_none() {
             first = Some(id);
         }

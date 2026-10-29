@@ -1,0 +1,20 @@
+{
+  "case": "receipts_v2_v1_document",
+  "base": "routes/receipts_v2.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/receipts/0/document",
+      "value": {
+        "schema": "leanctx.engine-receipt/v1",
+        "receipt_id": "rcpt_01jb8z5",
+        "tool": "ctx_read",
+        "tokens_saved": 1200
+      }
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a free-form v1 document"
+}

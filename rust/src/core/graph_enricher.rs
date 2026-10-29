@@ -240,7 +240,11 @@ pub(crate) fn index_knowledge(
 
     let mut mentioned_files: HashSet<String> = HashSet::new();
 
-    for fact in &knowledge.facts {
+    // A graph node keeps the fact's value: only facts that may be delivered
+    // now are indexed (`ProjectKnowledge::delivery_filter`). The node keeps
+    // no source binding, so what is later read from the graph has no lineage.
+    let deliverable = knowledge.delivery_filter();
+    for fact in knowledge.facts.iter().filter(|&fact| deliverable(fact)) {
         let node = Node::knowledge(&fact.key, &format!("[{}] {}", fact.category, fact.value));
         let knowledge_id = graph.upsert_node(&node)?;
         stats.knowledge_indexed += 1;
@@ -1002,5 +1006,27 @@ mod tests {
             1,
             "unsettled caller kept"
         );
+    }
+
+    /// Only facts that are served now become graph nodes: the fact bound to
+    /// a deleted file is not indexed into a new graph.
+    #[test]
+    fn a_fact_that_is_not_served_is_not_indexed_into_the_graph() {
+        use crate::core::context_admission::stored::lineage_support::{
+            governed, project, scoped, two_facts, withdraw_source,
+        };
+        let _data = governed();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        two_facts(&root, "architecture");
+        let indexed = || {
+            let graph = CodeGraph::open_in_memory().expect("graph");
+            scoped(&root, || index_knowledge(&graph, &root))
+                .expect("index")
+                .knowledge_indexed
+        };
+        assert_eq!(indexed(), 2);
+        withdraw_source(&root);
+        assert_eq!(indexed(), 1);
     }
 }

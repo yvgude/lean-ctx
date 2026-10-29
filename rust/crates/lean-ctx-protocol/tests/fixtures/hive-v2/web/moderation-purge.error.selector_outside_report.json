@@ -1,0 +1,28 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "The purge may only remove what the report names.",
+          "reason": "selector_outside_report"
+        }
+      },
+      "status": 409
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/moderation/purges",
+  "request": {
+    "report_id": "rpt_4712",
+    "selector": {
+      "node_ids": [
+        "n_6c2wqk3vmhyzoaybrnvqg2dzuy"
+      ]
+    },
+    "statement_of_reasons": "Trying to purge a node the report does not name; this is refused.",
+    "totp_code": "482913"
+  },
+  "response": null,
+  "route": "W56"
+}

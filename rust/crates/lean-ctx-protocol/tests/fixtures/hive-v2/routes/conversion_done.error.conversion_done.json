@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "This vault is converted already.",
+    "reason": "conversion_done"
+  }
+}

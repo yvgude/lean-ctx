@@ -1,0 +1,13 @@
+{
+  "case": "decided_without_decision",
+  "base": "review/item.decided.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/decision"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

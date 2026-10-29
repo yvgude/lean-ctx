@@ -1,0 +1,87 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_field",
+          "field": "weeks",
+          "message": "weeks is 1 to 26",
+          "reason": "invalid"
+        }
+      },
+      "status": 400
+    },
+    {
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "not found"
+        }
+      },
+      "status": 404
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/knowledge/reuse?weeks=2",
+  "request": null,
+  "response": {
+    "body": {
+      "evidence": [
+        {
+          "at": "2026-10-27T09:14:05Z",
+          "cited_by": "n_7yq3kz2m5d4vb6xw2rtnpa4hce",
+          "edge_id": "e_4jw6tq2xk5bn7mr3yd2pvc6sa2",
+          "node_id": "n_2b5xd7kq3wr4mz6tnp2va7ychq",
+          "source_worker": {
+            "id": "wkr_vk4oelpv5lzjmev44hun",
+            "name": "claude-backend"
+          },
+          "user_worker": {
+            "id": "wkr_3qx7mzbd2kp5vt6wnr4c",
+            "name": "codex-web"
+          },
+          "vault": {
+            "name": "payments",
+            "ws": "acme"
+          }
+        }
+      ],
+      "weeks": [
+        {
+          "delivery": {
+            "engines": 2,
+            "nodes": 9,
+            "pairs": 12
+          },
+          "from": "2026-10-19T00:00:00Z",
+          "reuse": {
+            "engines": 0,
+            "nodes": 0,
+            "pairs": 0,
+            "verified_knowledge_pairs": 0
+          },
+          "to": "2026-10-26T00:00:00Z",
+          "week": "2026-W43"
+        },
+        {
+          "delivery": {
+            "engines": 1,
+            "nodes": 3,
+            "pairs": 3
+          },
+          "from": "2026-10-26T00:00:00Z",
+          "reuse": {
+            "engines": 1,
+            "nodes": 1,
+            "pairs": 1,
+            "verified_knowledge_pairs": 1
+          },
+          "to": "2026-11-02T00:00:00Z",
+          "week": "2026-W44"
+        }
+      ]
+    },
+    "status": 200
+  },
+  "route": "W68"
+}

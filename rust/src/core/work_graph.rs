@@ -55,6 +55,26 @@ pub struct ChildExecutionReceipt {
     pub execution_fence: Option<String>,
     #[serde(default)]
     pub claims: Vec<ResultClaim>,
+    /// Who established `tokens_consumed`/`cost_micros_consumed`.
+    #[serde(default, skip_serializing_if = "UsageSource::is_measured")]
+    pub usage_source: UsageSource,
+}
+
+/// Provenance of a receipt's consumption figures. Receipts from earlier
+/// releases carry connector-measured usage; host-run nodes report their own,
+/// which stays bounded by the node budget either way.
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum UsageSource {
+    #[default]
+    Measured,
+    Reported,
+}
+
+impl UsageSource {
+    fn is_measured(&self) -> bool {
+        *self == Self::Measured
+    }
 }
 
 /// Canonically verified provider spend that exceeded its authorization.
@@ -434,9 +454,15 @@ pub enum WorkGraphError {
         child_requested: u64,
         parent_remaining: u64,
     },
-    #[error("invalid status transition for node: {0}")]
+    #[error(
+        "invalid status transition for node: {0} (only a pending child of an active parent can \
+         be claimed; completed, failed and cancelled nodes are final — inspect with action=get)"
+    )]
     InvalidTransition(String),
-    #[error("local concurrency exceeds max {0}")]
+    #[error(
+        "local concurrency exceeds max {0} (finish an active node with complete or receipt, \
+         or cancel one, first)"
+    )]
     LocalConcurrencyExceeded(usize),
     #[error("invalid or oversized {0}")]
     InvalidIdentifier(&'static str),

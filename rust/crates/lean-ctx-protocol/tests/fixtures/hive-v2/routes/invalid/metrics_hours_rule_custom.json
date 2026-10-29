@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_rule_custom",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets/0/slices/0/policy_blocks/0/rule",
+      "value": "acme.project_x"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a rule outside the registry (K2 H3)"
+}

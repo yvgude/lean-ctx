@@ -97,7 +97,7 @@ pub fn resolve_tool_path_with_roots(
 ) -> Result<String, String> {
     let normalized = crate::core::pathutil::normalize_tool_path(raw);
     if normalized.is_empty() || normalized == "." {
-        return Ok(normalized);
+        return crate::core::workspace_authority::project_dot(&normalized, project_root);
     }
 
     let p = Path::new(&normalized);

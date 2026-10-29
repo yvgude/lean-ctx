@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "upload_disabled",
+    "message": "the workspace has switched metrics upload off",
+    "kind": "metrics"
+  }
+}

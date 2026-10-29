@@ -12,7 +12,6 @@ Source files referenced here:
   `cognitive.rs` (S3776), `naming.rs`, `coupling.rs`, `analyze.rs`, `annotate.rs`,
   `delta.rs`, `gate.rs`, `scan.rs`, `persist.rs` (`health.json`), `fabric.rs`
   (BM25 / graph / knowledge fan-out + pruning)
-- `rust/src/tools/ctx_quality.rs`, `rust/src/tools/registered/ctx_quality.rs` — the MCP tool
 - `rust/src/cli/health_cmd.rs` — the `lean-ctx health` command
 - `rust/src/core/gain/gain_score.rs` — the `navigability` gain component
 - `rust/src/hook_handlers/edit_health.rs` — the native-edit PostToolUse notice
@@ -61,21 +60,17 @@ every over-threshold fn → property-graph `health_hotspot` edge (cc = edge weig
 ```
 
 Stale signals are pruned on every refresh, so a fixed hotspot disappears instead
-of lingering. This is what lets `ctx_semantic_search` find hotspots and
+of lingering. This is what lets `ctx_search action="semantic"` find hotspots and
 `ctx_callgraph` annotate a risky symbol with its complexity.
 
 ---
 
-## 3. `ctx_quality` — the on-demand report (MCP)
+## 3. On-demand reports (MCP)
 
-```
-ctx_quality action=report                  # whole-project score + hotspots + USD tax
-ctx_quality action=file path=src/auth.rs   # one file, function by function
-ctx_quality action=delta                   # health change vs the last baseline
-ctx_quality action=report format=json      # machine-readable
-```
-
-Read-only, in the **standard** profile — it never costs a write-permission prompt.
+The `ctx_quality` MCP tool was removed in 3.11.5: code review and linting
+belong to the host's own tooling. The score still reaches the agent through
+read annotations and the edit-gate (§5); the full report is `lean-ctx health`
+(§4).
 
 ---
 

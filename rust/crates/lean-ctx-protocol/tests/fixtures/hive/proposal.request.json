@@ -1,0 +1,44 @@
+{
+  "body": "Two decisions from the connector session.",
+  "context_patch": {
+    "base_revision": 3,
+    "ops": [
+      {
+        "fact": {
+          "appliesTo": [
+            "rust/src/core/hive"
+          ],
+          "id": "hive.drafts-rebase",
+          "kind": "decision",
+          "statement": "Pending drafts are rebased onto the newest revision before upload."
+        },
+        "op": "add_fact"
+      },
+      {
+        "op": "add_relation",
+        "relation": {
+          "from": "hive.drafts-rebase",
+          "to": "hive.never-blocks",
+          "type": "related_to"
+        }
+      },
+      {
+        "op": "close_gap",
+        "text": "How are drafts rebased after a merge?"
+      }
+    ]
+  },
+  "engine_screening": {
+    "items_dropped": 1,
+    "pii_removed": 0,
+    "scanner_version": 1,
+    "secrets_removed": 1
+  },
+  "schema": "leanctx.hive.proposal/v1",
+  "session_ref": "ses_01jb8z6",
+  "sources": [
+    "session:ses_01jb8z6"
+  ],
+  "state": "draft",
+  "summary": "Session learnings: draft rebasing"
+}

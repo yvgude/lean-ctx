@@ -1,0 +1,39 @@
+{
+  "kid": "552e43422b3589fa",
+  "lease": {
+    "expires_at": "2026-10-21T12:00:00Z",
+    "grace_until": "2026-10-27T12:00:00Z",
+    "instance_id": "inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+    "issued_at": "2026-10-20T12:00:00Z",
+    "lease_id": "lse_01jb8z4a2b3c4d5e6f7g8h9j0k",
+    "org_id": "org_acme",
+    "org_settings": {
+      "metrics_upload": true,
+      "receipts_upload": false
+    },
+    "plan": "team",
+    "policy_signer_keys": [
+      {
+        "ed25519_pub": "AOPFa5GrCgFxdLlmRer5KDZs264eh/0hv4ZmHYbz5+8=",
+        "org": "org_acme"
+      }
+    ],
+    "rights": [
+      "knowledge.read",
+      "knowledge.draft",
+      "knowledge.merge",
+      "metrics.upload",
+      "receipts.upload",
+      "policy.pull",
+      "bus.relay",
+      "bus.control",
+      "sealed",
+      "runtime"
+    ],
+    "schema": "leanctx.hive.lease/v1",
+    "seats_limit": 25,
+    "server_time": "2026-10-20T12:00:00Z"
+  },
+  "schema": "leanctx.hive.lease-envelope/v1",
+  "signature": "dzRPJl6AvE6yaRK9Tptn4sM6n/M2lZWRatvn5b/Pc8YDUVTsKgkuHiqtm4gsM3nIR34GOKnnjnO61pmYk8evBA=="
+}

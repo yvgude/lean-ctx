@@ -64,6 +64,17 @@ pub struct CtxSessionTool;
 /// wait behind a long-lived writer. Explicitly retryable operations fail fast.
 const SESSION_LOCK_BUDGET: Duration = Duration::from_millis(250);
 
+fn session_matches_snapshot(
+    live: &crate::core::session::SessionState,
+    snapshot: &crate::core::session::SessionState,
+) -> bool {
+    live.id == snapshot.id
+        && live.version == snapshot.version
+        && live.project_root == snapshot.project_root
+        && live.shell_cwd == snapshot.shell_cwd
+        && live.extra_roots == snapshot.extra_roots
+}
+
 impl McpTool for CtxSessionTool {
     fn name(&self) -> &'static str {
         "ctx_session"
@@ -83,8 +94,9 @@ impl McpTool for CtxSessionTool {
                         "description": "status|handoff|load|save|task|finding|decision|compact|restore|list|… (invalid action lists all)"
                     },
                     "value": { "type": "string" },
+                    "tag": { "type": "string", "enum": ["note", "dead_end"], "description": "finding: dead_end = tried and abandoned" },
                     "keep_recent_turns": { "type": "integer", "description": "compact: trailing user turns kept verbatim (default 6)" },
-                    "session_id": { "type": "string", "description": "Omit for latest" }
+                    "session_id": { "type": "string", "description": "Omit for your own session" }
                 },
                 "required": ["action"]
             }),
@@ -105,12 +117,50 @@ impl McpTool for CtxSessionTool {
         let write = get_bool(args, "write").unwrap_or(false);
         let privacy = get_str(args, "privacy");
         let terse = get_bool(args, "terse");
+        let dead_end = match get_str(args, "tag").as_deref() {
+            None | Some("note") => false,
+            Some("dead_end") => true,
+            Some(_) => {
+                return Err(ErrorData::invalid_params(
+                    "tag must be note or dead_end",
+                    None,
+                ));
+            }
+        };
 
-        // #1570 P1: agent-driven reversible compaction. Handled here for
-        // direct args access; independent of the session store. The proxy
-        // applies the directive cache-safely on every subsequent request.
-        if action == "compact" || action == "restore" {
+        // Restore is content-free. Compact summaries are admitted against a
+        // detached, trusted session scope before the directive reaches disk.
+        if action == "restore" {
             return Ok(handle_compact_action(&action, value.as_deref(), args));
+        }
+        if action == "compact" {
+            let Some(summary) = value.as_deref().filter(|summary| !summary.is_empty()) else {
+                return Ok(handle_compact_action(&action, value.as_deref(), args));
+            };
+            let session_handle = ctx
+                .session
+                .as_ref()
+                .ok_or_else(|| ErrorData::internal_error("session not available", None))?;
+            let Some(snapshot) = crate::server::bounded_lock::read_for(
+                session_handle,
+                "ctx_session compact admission snapshot",
+                SESSION_LOCK_BUDGET,
+            )
+            .map(|session| session.clone()) else {
+                return Err(ErrorData::internal_error(
+                    "session is busy; retry the operation",
+                    None,
+                ));
+            };
+            let admitted =
+                crate::core::session::admission::admit_storable_session_text(&snapshot, summary)
+                    .map_err(|_| {
+                        ErrorData::invalid_params(
+                            "compact summary withheld by current policy",
+                            None,
+                        )
+                    })?;
+            return Ok(handle_compact_action(&action, Some(&admitted), args));
         }
 
         let tool_calls_handle = ctx
@@ -142,7 +192,121 @@ impl McpTool for CtxSessionTool {
                 .as_ref()
                 .ok_or_else(|| ErrorData::internal_error("session not available", None))?;
 
-            if matches!(action.as_str(), "export" | "resume" | "snapshot") {
+            if action == "save" {
+                let Some(snapshot) = crate::server::bounded_lock::read_for(
+                    session_handle,
+                    "ctx_session save snapshot",
+                    SESSION_LOCK_BUDGET,
+                )
+                .map(|session| session.clone()) else {
+                    return Err(ErrorData::internal_error(
+                        "session is busy; retry the operation",
+                        None,
+                    ));
+                };
+                let result =
+                    match crate::core::session::SessionState::save_shared_sync(session_handle) {
+                        Err(error) => format!("Save failed: {error}"),
+                        Ok(receipt) if receipt.current => {
+                            format!("Session {} saved (v{}).", receipt.id, receipt.version)
+                        }
+                        Ok(receipt) => format!(
+                            "Session {} snapshot v{} saved; newer session changes remain pending.",
+                            receipt.id, receipt.version
+                        ),
+                    };
+                crate::core::session::admission::admit_tool_value(&snapshot, &result)
+                    .unwrap_or_else(|_| {
+                        "ERROR: session save result withheld by current policy.".into()
+                    })
+            } else if action == "reset" {
+                let Some(snapshot) = crate::server::bounded_lock::read_for(
+                    session_handle,
+                    "ctx_session reset snapshot",
+                    SESSION_LOCK_BUDGET,
+                )
+                .map(|session| session.clone()) else {
+                    return Err(ErrorData::internal_error(
+                        "session is busy; retry the operation",
+                        None,
+                    ));
+                };
+                let output =
+                    match crate::core::session::SessionState::save_shared_sync(session_handle) {
+                        Err(error) => {
+                            format!("Reset refused: current session was not saved: {error}")
+                        }
+                        Ok(receipt)
+                            if !receipt.current
+                                || receipt.id != snapshot.id
+                                || receipt.version != snapshot.version =>
+                        {
+                            "Reset refused: session changed while it was being saved; retry.".into()
+                        }
+                        Ok(_) => {
+                            let Some(mut live) = crate::server::bounded_lock::write_for(
+                                session_handle,
+                                "ctx_session reset commit",
+                                SESSION_LOCK_BUDGET,
+                            ) else {
+                                return Err(ErrorData::internal_error(
+                                    "session is busy; retry the operation",
+                                    None,
+                                ));
+                            };
+                            if !session_matches_snapshot(&live, &snapshot)
+                                || !std::sync::Arc::ptr_eq(&live.save_gate, &snapshot.save_gate)
+                            {
+                                return Err(ErrorData::internal_error(
+                                    "session changed during reset; retry the operation",
+                                    None,
+                                ));
+                            }
+                            crate::tools::ctx_session::reset_after_save(&mut live)
+                        }
+                    };
+                crate::core::session::admission::admit_tool_value(&snapshot, &output)
+                    .unwrap_or_else(|_| "ERROR: reset result withheld by current policy.".into())
+            } else if action == "load" {
+                let Some(snapshot) = crate::server::bounded_lock::read_for(
+                    session_handle,
+                    "ctx_session load snapshot",
+                    SESSION_LOCK_BUDGET,
+                )
+                .map(|session| session.clone()) else {
+                    return Err(ErrorData::internal_error(
+                        "session is busy; retry the operation",
+                        None,
+                    ));
+                };
+                let (candidate, output) =
+                    crate::tools::ctx_session::prepare_load(&snapshot, sid.as_deref()).map_err(
+                        |_| {
+                            ErrorData::invalid_params(
+                                "session load denied by current project scope or content policy",
+                                None,
+                            )
+                        },
+                    )?;
+                let Some(mut live) = crate::server::bounded_lock::write_for(
+                    session_handle,
+                    "ctx_session load commit",
+                    SESSION_LOCK_BUDGET,
+                ) else {
+                    return Err(ErrorData::internal_error(
+                        "session is busy; retry the operation",
+                        None,
+                    ));
+                };
+                if !session_matches_snapshot(&live, &snapshot) {
+                    return Err(ErrorData::internal_error(
+                        "session changed during load; retry the operation",
+                        None,
+                    ));
+                }
+                *live = candidate;
+                output
+            } else if matches!(action.as_str(), "export" | "resume" | "snapshot") {
                 let Some(snapshot) = crate::server::bounded_lock::read_for(
                     session_handle,
                     "ctx_session snapshot",
@@ -169,18 +333,115 @@ impl McpTool for CtxSessionTool {
                 )
                 .expect("snapshot action is explicitly handled")
             } else if matches!(action.as_str(), "status" | "show" | "handoff") {
-                let Some(session) = crate::server::bounded_lock::read_for(
+                let Some(snapshot) = crate::server::bounded_lock::read_for(
                     session_handle,
                     "ctx_session read",
                     SESSION_LOCK_BUDGET,
-                ) else {
+                )
+                .map(|session| session.clone()) else {
                     return Err(ErrorData::internal_error(
                         "session is busy; retry the operation",
                         None,
                     ));
                 };
-                crate::tools::ctx_session::handle_read_only(&session, &action)
+                crate::tools::ctx_session::handle_read_only(&snapshot, &action)
                     .expect("read-only action is explicitly handled")
+            } else if matches!(
+                action.as_str(),
+                "task" | "finding" | "decision" | "list" | "episodes" | "procedures"
+            ) {
+                let Some(snapshot) = crate::server::bounded_lock::read_for(
+                    session_handle,
+                    "ctx_session admitted action snapshot",
+                    SESSION_LOCK_BUDGET,
+                )
+                .map(|session| session.clone()) else {
+                    return Err(ErrorData::internal_error(
+                        "session is busy; retry the operation",
+                        None,
+                    ));
+                };
+                let prepared = crate::tools::ctx_session::prepare_admitted_action(
+                    &snapshot,
+                    &call_durations,
+                    &action,
+                    value.as_deref(),
+                    sid.as_deref(),
+                    crate::tools::ctx_session::SessionToolOptions {
+                        format: format.as_deref(),
+                        path: path.as_deref(),
+                        write,
+                        privacy: privacy.as_deref(),
+                        terse,
+                        agent_id: agent_id.as_deref(),
+                    },
+                )
+                .map_err(|_| {
+                    ErrorData::invalid_params(
+                        "session action withheld by current project or content policy",
+                        None,
+                    )
+                })?;
+                if matches!(action.as_str(), "task" | "finding" | "decision") {
+                    let completed_task = prepared.completed_task;
+                    let candidate = prepared.candidate;
+                    let mut output = prepared.output;
+                    let Some(mut live) = crate::server::bounded_lock::write_for(
+                        session_handle,
+                        "ctx_session admitted action commit",
+                        SESSION_LOCK_BUDGET,
+                    ) else {
+                        return Err(ErrorData::internal_error(
+                            "session is busy; retry the operation",
+                            None,
+                        ));
+                    };
+                    if !session_matches_snapshot(&live, &snapshot) {
+                        return Err(ErrorData::internal_error(
+                            "session changed during content admission; retry the operation",
+                            None,
+                        ));
+                    }
+                    if !prepared.store_admission.is_current() {
+                        return Err(ErrorData::internal_error(
+                            "session policy changed during content admission; retry the operation",
+                            None,
+                        ));
+                    }
+                    *live = candidate.clone();
+                    drop(live);
+                    // The finding as the session keeps it (admitted, redacted)
+                    // becomes one of the session episode's dead ends.
+                    if dead_end
+                        && action == "finding"
+                        && let Some(finding) = candidate.findings.last()
+                    {
+                        crate::core::hive::capture::episode::note_dead_end(
+                            &candidate.id,
+                            &finding.summary,
+                        );
+                    }
+                    if let Some(note) =
+                        crate::tools::ctx_session::record_completed_task_after_commit(
+                            &candidate,
+                            completed_task,
+                            &call_durations,
+                            agent_id.as_deref(),
+                        )
+                    {
+                        output.push_str(&note);
+                    }
+                    crate::core::session::admission::admit_tool_value(&candidate, &output)
+                        .unwrap_or_else(|_| "[lean-ctx gateway: session content withheld]".into())
+                } else {
+                    if !prepared.store_admission.is_current() {
+                        return Err(ErrorData::internal_error(
+                            "session policy changed during content admission; retry the operation",
+                            None,
+                        ));
+                    }
+                    prepared.output
+                }
             } else {
                 let Some(mut session) = crate::server::bounded_lock::write_for(
                     session_handle,
@@ -221,4 +482,13 @@ impl McpTool for CtxSessionTool {
             content_blocks: None,
         })
     }
+
+    // No action declares `publishes_every_source` (the trait default applies).
+    // `status` and `show` print a counters line and `Root: <project>`: that
+    // is session-derived context, which is neither published into the call's
+    // source capture nor marks it incomplete, so their reply cannot claim a
+    // complete source set. A session reply is therefore never registered in
+    // the delivered-lineage register. The delivery calls stay
+    // (`SessionState::format_compact_delivered`, `finding_served`): a finding
+    // bound to a source that no longer admits is left out of the reply.
 }

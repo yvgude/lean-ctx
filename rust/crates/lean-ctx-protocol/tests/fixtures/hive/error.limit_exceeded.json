@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "rate_limited",
+    "field": "open_swarms",
+    "limit": 1,
+    "message": "Free handles keep one open question.",
+    "reason": "limit_exceeded",
+    "retry_after_s": 3600,
+    "used": 1
+  }
+}

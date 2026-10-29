@@ -11,10 +11,12 @@ pub(crate) mod context_plan;
 pub(crate) mod planning;
 pub(crate) mod source_execution;
 
+#[cfg(test)]
+use lean_ctx_protocol::EngineInterfaceV1;
 use lean_ctx_protocol::{
-    CapabilityId, EngineFailureCodeV1, EngineFailureV1, EngineInterfaceV1, EngineInvocationIdV1,
-    EngineInvocationV1, EngineMeasurementV1, EngineObservationStatusV1, EngineObservationV1,
-    EngineOperationV1, EnginePolicyAdmissionV1, EnginePolicyDecisionV1, EngineReceiptLinkV1,
+    CapabilityId, EngineFailureCodeV1, EngineFailureV1, EngineInvocationIdV1, EngineInvocationV1,
+    EngineMeasurementV1, EngineObservationStatusV1, EngineObservationV1, EngineOperationV1,
+    EnginePolicyAdmissionV1, EnginePolicyDecisionV1, EngineReceiptLinkV1,
     EngineValueClassificationV1, ProtocolReference, ReceiptId, ResolvedLocalEngineIdentityV1,
     SemanticVersion, Sha256Digest, V1_SCHEMA_VERSION,
 };
@@ -138,6 +140,7 @@ struct NativeContextEngineRequest {
 }
 
 impl NativeContextEngineRequest {
+    #[cfg(test)]
     fn ctx_read_snapshot(
         path: &str,
         raw_input: &str,
@@ -381,6 +384,7 @@ impl NativeContextEngine {
         })
     }
 
+    #[cfg(test)]
     fn interface(&self) -> Result<EngineInterfaceV1, String> {
         let interface = EngineInterfaceV1 {
             schema_version: V1_SCHEMA_VERSION,
@@ -417,6 +421,7 @@ impl NativeContextEngine {
     }
 
     /// Bind and execute the production `ctx_read` snapshot as one operation.
+    #[cfg(test)]
     pub(crate) fn execute_ctx_read_snapshot(
         &self,
         path: &str,
@@ -672,6 +677,14 @@ impl NativeContextEngine {
                 ));
             }
         };
+        // Queued for Hive only when receipt uploads are on (a marker check).
+        crate::core::hive::receipts::note_engine_receipt(
+            self.adapter.root(),
+            receipt_link.receipt_id.as_str(),
+            &invocation,
+            &observation,
+            chrono::Utc::now(),
+        );
         let mut observation = observation;
         observation.receipt_link = Some(receipt_link);
         observation

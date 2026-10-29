@@ -5,7 +5,9 @@ use std::fmt::Write;
 use std::path::Path;
 
 use crate::core::bm25_index::{BM25Index, format_search_results};
-use crate::core::hybrid_search::{HybridConfig, HybridResult, format_hybrid_results};
+#[cfg(feature = "embeddings")]
+use crate::core::hybrid_search::HybridConfig;
+use crate::core::hybrid_search::{HybridResult, format_hybrid_results};
 
 #[allow(clippy::wildcard_imports)]
 use super::*;
@@ -125,7 +127,10 @@ pub(crate) fn workspace_search(
     mode: &str,
 ) -> String {
     let linked = crate::core::workspace_config::load_linked_projects(root);
+    #[cfg(feature = "embeddings")]
     let mut warnings = linked.warnings;
+    #[cfg(not(feature = "embeddings"))]
+    let warnings = linked.warnings;
 
     let mut roots: Vec<std::path::PathBuf> = vec![root.to_path_buf()];
     roots.extend(linked.roots);
@@ -133,8 +138,14 @@ pub(crate) fn workspace_search(
     roots.dedup();
 
     let mut per_project: Vec<(String, Vec<HybridResult>)> = Vec::new();
+    #[cfg(feature = "embeddings")]
     let mut avg_cov: Option<f64> = None;
+    #[cfg(not(feature = "embeddings"))]
+    let avg_cov: Option<f64> = None;
+    #[cfg(feature = "embeddings")]
     let mut cov_count = 0usize;
+    #[cfg(not(feature = "embeddings"))]
+    let cov_count = 0usize;
 
     for r in &roots {
         let label = label_for_root(r);
@@ -505,6 +516,7 @@ pub(crate) fn boost_with_splade(
 /// Symbols with higher cognitive complexity (handle, dispatch, orchestration
 /// functions) are more likely edit targets than small leaf helpers sharing
 /// vocabulary with the query.
+#[cfg(feature = "embeddings")]
 pub(crate) fn boost_with_complexity(results: &mut [HybridResult], project_root: &str, weight: f64) {
     if weight <= 0.0 || results.is_empty() {
         return;
@@ -538,20 +550,17 @@ pub(crate) fn graph_rrf_ranks_for_search_root(
     root: &Path,
 ) -> Option<std::collections::HashMap<String, usize>> {
     let root_s = root.to_string_lossy().to_string();
-    let session = crate::core::session::SessionState::load_latest_for_project_root(&root_s)?;
-
-    if session.files_touched.is_empty() {
-        return None;
-    }
-
-    let recent: Vec<String> = session
-        .files_touched
-        .iter()
-        .rev()
-        .filter(|f| path_under_search_root(&f.path, root))
-        .take(12)
-        .map(|f| f.path.clone())
-        .collect();
+    // The caller's own working set, never another agent's (I07/S03).
+    let recent: Vec<String> = crate::core::session::caller::with_for_project(&root_s, |session| {
+        session
+            .files_touched
+            .iter()
+            .rev()
+            .filter(|f| path_under_search_root(&f.path, root))
+            .take(12)
+            .map(|f| f.path.clone())
+            .collect()
+    })?;
 
     if recent.is_empty() {
         return None;

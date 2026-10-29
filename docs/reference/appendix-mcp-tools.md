@@ -1,151 +1,176 @@
-# Appendix — Complete MCP Tool Map
+# Appendix — MCP Tool Map
 
-Every tool lean-ctx registers via `rust/src/server/registry.rs`. Your AI editor
-calls these instead of its native file/search tools. The **Profile** column
-shows the smallest tool profile that exposes the tool (`M` minimal, `S` standard,
-`P` power). Set your profile with `lean-ctx tools <minimal|standard|power>`.
+A categorized overview of the MCP tools lean-ctx advertises. Your AI editor
+calls these instead of its native file/search tools.
 
-> Authoritative parameter schemas live in `rust/src/tools/registered/<tool>.rs`
-> (`tool_def()`). This map is the human index.
+> **Full parameter detail:** [`generated/mcp-tools.md`](generated/mcp-tools.md)
+> is generated from the registry (`rust/src/server/registry.rs`) and is the
+> single source of truth for tool names, descriptions and parameters. This page
+> only groups the tools and shows profile membership. Regenerate with
+> `cargo run --example gen_docs --features dev-tools`.
 
-## Tool profiles at a glance
+## Tool profiles
 
-| Profile | Count | Who it's for |
-|---------|-------|--------------|
-| **minimal** | 5 | Lowest context overhead; the absolute essentials |
-| **standard** | 16 | Balanced default for most coding workflows |
-| **power** | 72 | Everything (default for existing installs) |
+The profile decides which tools are *advertised* in `tools/list`. Every
+registered tool stays callable through `ctx_call`. Switch with
+`lean-ctx tools <lean|minimal|standard|power|auto>`; `lean-ctx tools show`
+prints the active set.
 
-- **minimal (5):** `ctx_read`, `ctx_shell`, `ctx_search`, `ctx_glob`, `ctx_tree`
-- **standard (+11):** + `ctx_compose`, `ctx_explore`, `ctx_knowledge`, `ctx_callgraph`, `ctx_graph`, `ctx_delta`, `ctx_execute`, `ctx_expand`, `ctx_overview`, `ctx_url_read`, `ctx_patch`
-- **power (+43):** all remaining tools.
+| Profile | Tools advertised | Notes |
+|---------|------------------|-------|
+| **lean** (default, no profile pinned) | 12 (lazy core) | Smallest surface with `ctx_call` for the rest |
+| **minimal** | 5 | `ctx_read`, `ctx_shell`, `ctx_search`, `ctx_glob`, `ctx_tree` |
+| **standard** | 15 | minimal + `ctx_compose`, `ctx_knowledge`, `ctx_session`, `ctx_callgraph`, `ctx_graph`, `ctx_delta`, `ctx_execute`, `ctx_expand`, `ctx_url_read`, `ctx_patch` |
+| **power** | all public tools (51) | Every advertised tool |
+| **auto** | 5 → all | Starts minimal, escalates with session complexity |
+
+- **Lazy core (12):** `ctx_read`, `ctx_shell`, `shell`, `ctx_search`,
+  `ctx_glob`, `ctx_tree`, `ctx_session`, `ctx_compose`, `ctx_callgraph`,
+  `ctx_patch`, `ctx_call`, `ctx_expand`. Clients with a reliable native
+  str-replace editor (Cursor, Zed, Windsurf, …) do not get `ctx_patch` in the
+  lazy core.
+- Profile definitions: `rust/src/core/tool_profiles.rs` (`MINIMAL_TOOLS`,
+  `STANDARD_TOOLS`) and `rust/src/tool_defs/mod.rs` (`CORE_TOOL_NAMES`).
+
+In the tables below, **Core** marks lazy-core membership and **Profile** the
+smallest pinned profile that advertises the tool (`M` minimal, `S` standard,
+`P` power).
 
 ---
 
-## 1. Core — read / search / shell
+## 1. Read, search, edit, shell
 
-| Tool | Purpose | Key params / actions | Profile |
-|------|---------|----------------------|---------|
-| `ctx_read` | Read a file with session cache + compression; eligible unchanged reads return a compact reference | `path`*, `mode` (full\|raw\|map\|signatures\|diff\|aggressive\|entropy\|task\|reference\|lines:N-M\|auto), `start_line`, `fresh` | M |
-| `ctx_multi_read` | Read many files in one call (same modes) | `paths[]`*, `mode`, `fresh` | S |
-| `ctx_smart_read` | Auto-pick the optimal read mode for a file | `path`* | P |
-| `ctx_delta` | Incremental diff — only lines changed since last read | `path`* | S |
-| `ctx_edit` | Legacy search-and-replace edit; preimage guards, backup | `path`*, `new_string`*, `old_string`, `replace_all`, `create` | P |
-| `ctx_patch` | Hash-anchored line edits — `LINE:HASH` anchors from `ctx_read mode=anchored`; no exact-recall, batch-atomic, tree-sitter gate, `create` for new files | `path`*, `ops[]` (set_line\|replace_lines\|insert_after\|delete\|replace_symbol\|create) | S |
-| `ctx_fill` | Budget-aware context fill within a token limit | `paths[]`, `budget`*, `task` | P |
-| `ctx_symbol` | Read just one named symbol block (fn/struct/class) | `name`*, `file`, `kind` | P |
-| `ctx_outline` | List all symbols of a file with signatures | `path`*, `kind` | P |
-| `ctx_retrieve` | Fetch uncompressed original from cache (CCR) | `path`*, `query` | P |
-| `ctx_shell` | Run shell commands with pattern compression | `command`*, `raw`, `cwd` | M |
-| `shell` | Alias of `ctx_shell` (same compression) for clients whose model reaches for a native `shell`/`bash` tool — e.g. Codex Desktop / Codex Cloud | `command`*, `raw`, `cwd` | M |
-| `ctx_search` | Regex search across the codebase, token-efficient | `pattern`*, `path`, `include` (glob, e.g. `*.{rs,ts}`), `ext` (deprecated alias), `max_results`, `ignore_gitignore` | M |
-| `ctx_glob` | Find files by glob pattern (path match), gitignore-aware, multi-root, deterministically sorted | `pattern`*, `path`, `paths[]`, `max_results`, `ignore_gitignore` | P |
-| `ctx_tree` | Compact directory tree with file counts | `path`, `depth`, `show_hidden` | M |
-| `ctx_semantic_search` | Semantic search (BM25 + embeddings / hybrid) | `query`*, `action` (search\|reindex\|find_related), `mode` (bm25\|dense\|hybrid), `top_k` | S |
-| `ctx_compose` | Task composer: keywords + ranked files + matches + top symbol | `task`*, `path` | P |
-| `ctx_explore` | Iterative, deterministic exploration → compact `path:start-end` citations (BM25 + static graph + AST symbols, bounded turns); cheaper than `ctx_compose` for locating code across files | `query`*, `path`, `max_turns`, `citation` | S |
-| `ctx_execute` | Sandboxed code execution (11 languages); only stdout enters context | `language`*, `code`*, `action`, `timeout` | S |
-| `ctx_multi_repo` | Multi-repo management + cross-repo search (RRF) | `action` (add_root\|remove_root\|list_roots\|search\|status\|save_config) | P |
-| `ctx_url_read` | Fetch a web page, PDF, RSS/Atom feed, or YouTube video as compressed, cited context (HTML→Markdown incl. GFM tables, PDF→text, feeds→dated items, transcript; GitHub blob/raw URLs auto-resolve to the raw file; facts/quotes carry confidence + source); SSRF-guarded | `url`*, `mode` (auto\|markdown\|text\|links\|facts\|quotes\|transcript), `query`, `max_tokens`, `max_items`, `timeout_secs` | S |
-| `ctx_git_read` | Read a remote git repo via a cached shallow clone instead of scraping its web page | `url`*, `mode` (overview\|tree\|read\|grep), `path`, `ref`, `query`, `max_tokens` | P |
+| Tool | Purpose | Key actions / modes | Core | Profile |
+|------|---------|---------------------|------|---------|
+| `ctx_read` | Read files with session cache and compression; batch via `paths[]` | `mode`: auto (default), full, anchored, raw, signatures, map, diff, lines:N-M, reference, task | ✓ | M |
+| `ctx_delta` | Only the lines changed since the last `ctx_read` of a file | — | | S |
+| `ctx_outline` | Syntax-aware symbol table of a file or directory | `kind`, `match`, `format` | | P |
+| `ctx_search` | Code search; one entry for all engines | `action`: regex (default), semantic, symbol, find_related | ✓ | M |
+| `ctx_glob` | Find files by glob pattern, gitignore-aware, multi-root | — | ✓ | M |
+| `ctx_tree` | Compact directory tree with file counts | — | ✓ | M |
+| `ctx_compose` | First-pass context for one task: ranked files with inline source | `task`* | ✓ | S |
+| `ctx_patch` | Hash-anchored edits from `ctx_read mode="anchored"`; `replace_unique`, `create` | `op` / `ops[]` | ✓ | S |
+| `ctx_edit` | Legacy search-and-replace edit with race guards | — | | P |
+| `ctx_shell` | Run shell commands with output compression | `raw`, `inline`, `run_in_background` | ✓ | M |
+| `shell` | Alias of `ctx_shell` for clients whose model prefers a `shell` tool | — | ✓ | P |
+| `ctx_execute` | Sandboxed code execution (11 languages) | code \| batch \| file | | S |
+| `ctx_expand` | Retrieve archived or withheld tool output | retrieve \| list \| search_all | ✓ | S |
+| `ctx_url_read` | Web page, PDF, feed or YouTube transcript as compressed context; SSRF-guarded | `mode`: auto \| markdown \| text \| links \| facts \| quotes \| transcript | | S |
+| `ctx_git_read` | Read a remote git repo via cached shallow clone | `mode`: overview \| tree \| read \| grep | | P |
+| `ctx_multi_repo` | Register several repositories and search across them | add_root \| remove_root \| list_roots \| search \| status \| save_config | | P |
 
-## 2. Memory & knowledge
+## 2. Session, memory, knowledge
 
-| Tool | Purpose | Key actions | Profile |
-|------|---------|-------------|---------|
-| `ctx_knowledge` | Persistent project knowledge base across sessions | remember\|recall\|search\|relate\|consolidate\|timeline\|rooms\|wakeup\|status\|export\|remove | S |
-| `ctx_compress` | Context checkpoint for long conversations | `include_signatures` | S |
-| `ctx_compress_memory` | Compress memory/config files (CLAUDE.md, .cursorrules); backs up `.original.md` | `path`* | P |
-| `ctx_artifacts` | Context-artifact registry with BM25 search | list\|status\|index\|reindex\|search\|remove | P |
-| `ctx_index` | Build & manage the code index; explain why a file is not indexed | status\|build\|build-full\|why | P |
+| Tool | Purpose | Key actions | Core | Profile |
+|------|---------|-------------|------|---------|
+| `ctx_session` | Session memory: tasks, findings, decisions | status \| handoff \| load \| save \| task \| finding \| decision \| compact \| restore \| list \| … | ✓ | S |
+| `ctx_knowledge` | Persistent project knowledge across sessions | remember \| recall \| search \| pattern \| gotcha \| relate \| relations \| consolidate \| restore \| status \| timeline \| rooms \| wakeup \| remove \| export \| import | | S |
+| `ctx_memory` | Durable cross-agent facts with deduplication | put \| get \| list \| stats \| prune | | P |
+| `ctx_compress` | Compress the read cache to free token budget | `include_signatures` | | P |
+| `ctx_compress_memory` | Compress a memory/config file (CLAUDE.md, .cursorrules); `.original.md` backup | `path`* | | P |
+| `ctx_transcript_compact` | Deterministically compact an OpenAI-format message array | `messages`* | | P |
+| `ctx_artifacts` | Context-artifact registry with BM25 search | list \| status \| index \| reindex \| search \| remove | | P |
+| `ctx_index` | Code index state and builds; explain why a file is not indexed | status \| build \| build-full \| why | | P |
+| `ctx_checkpoint` | Shadow git history of the agent's changes, separate from the project's `.git` | snapshot \| log \| diff \| restore | | P |
+| `ctx_package` | Portable session/summary/knowledge bundles for handoff | save \| resume \| list \| info | | P |
+| `ctx_pack` | Context Package Manager (PR packs, installable context, budgeted bundle) | pr \| create \| list \| info \| remove \| install \| export \| import \| auto_load \| summary \| bundle | | P |
 
-## 3. Session & multi-agent
+## 3. Code graph
 
-| Tool | Purpose | Key actions | Profile |
-|------|---------|-------------|---------|
-| `ctx_session` | Cross-session memory (CCP): tasks, findings, decisions, snapshots | status\|load\|save\|task\|finding\|decision\|snapshot\|restore\|resume\|diff\|verify | M |
-| `ctx_checkpoint` | Snapshot / diff / restore the agent's code changes via a shadow git history kept outside the project's `.git` | snapshot\|log\|diff\|restore; `message`, `from`, `to`, `ref`, `path`, `limit` | P |
-| `ctx_agent` | Multi-agent coordination + message bus | register\|list\|post\|read\|handoff\|sync\|diary\|share_knowledge | S |
-| `ctx_share` | Share cached file contexts between agents | push\|pull\|list\|clear | P |
-| `ctx_task` | Multi-agent task orchestration (A2A) | create\|update\|list\|get\|cancel\|message | P |
-| `ctx_handoff` | Context Ledger Protocol — deterministic handoff bundles | create\|show\|list\|pull\|export\|import | P |
-| `ctx_workflow` | Workflow state machine with evidence tracking | start\|status\|transition\|complete\|evidence_add | P |
+| Tool | Purpose | Key actions | Core | Profile |
+|------|---------|-------------|------|---------|
+| `ctx_graph` | File-level dependency graph: definitions, impact, chains, diagrams | build \| related \| symbol \| impact \| status \| enrich \| context \| diagram \| neighbors \| path \| explain \| diff | | S |
+| `ctx_callgraph` | Function call edges for one symbol | callers \| callees \| trace \| risk | ✓ | S |
 
-## 4. Code intelligence & graph
+## 4. Context control and proof
 
-| Tool | Purpose | Key actions | Profile |
-|------|---------|-------------|---------|
-| `ctx_graph` | Unified code graph: deps, symbols, impact | build\|related\|symbol\|impact\|context\|diagram | P |
-| `ctx_callgraph` | Call-graph queries (BFS, trace, risk) | callers\|callees\|trace\|risk | S |
-| `ctx_impact` | Graph-based impact / blast-radius analysis | analyze\|diff\|chain\|build\|update\|status | S |
-| `ctx_architecture` | Architecture analysis over the property graph | overview\|clusters\|layers\|cycles\|entrypoints\|hotspots\|health | S |
-| `ctx_repomap` | PageRank-ranked map of the most important symbols | `max_tokens`, `focus_files[]` | S |
-| `ctx_routes` | Extract HTTP routes (Express, Flask, FastAPI, Actix, Spring, Rails, Next.js) | `method`, `path` | S |
-| `ctx_refactor` | LSP-backed refactoring | rename\|references\|definition\|implementations | S |
-| `ctx_review` | Automated code review (impact, callers, tests, smells) | review\|diff-review\|checklist | P |
-| `ctx_smells` | Code-smell detection (8 rules over property graph) | scan\|summary\|rules\|file | P |
-| `ctx_pack` | Context Package Manager (PR packs, installable context) | pr\|create\|list\|info\|install\|export\|import\|auto_load | S |
+| Tool | Purpose | Key actions | Core | Profile |
+|------|---------|-------------|------|---------|
+| `ctx_control` | Reversible overlays on the delivered context | exclude \| include \| pin \| unpin \| evict \| set_view \| set_priority \| mark_outdated \| reset \| list \| history | | P |
+| `ctx_context` | Session context overview: cached files, seen files, state | — | | P |
+| `ctx_preload` | Cache task-relevant files and return a compact summary | `task`* | | P |
+| `ctx_prefetch` | Warm the cache for blast-radius files | `task`, `changed_files`, `budget_tokens` | | P |
+| `ctx_dedup` | Cross-file deduplication hints for read output | analyze \| apply | | P |
+| `ctx_verify` | Tool-call statistics and ContextProofV2 claims | stats \| proof \| v2 | | P |
+| `ctx_proof` | Export machine-readable ContextProofV1 | export | | P |
 
-## 5. Analytics & gain
+## 5. Usage and analytics
 
-| Tool | Purpose | Key actions | Profile |
-|------|---------|-------------|---------|
-| `ctx_metrics` | Session token stats, cache rates, per-tool savings | — | P |
-| `ctx_radar` | Full context-budget breakdown (prompt, messages, tools, reads, shell) | `format` | P |
-| `ctx_cost` | Local cost attribution per agent/tool | report\|agent\|tools\|reset | P |
-| `ctx_gain` | Gain report incl. "Wrapped" summary | status\|report\|score\|wrapped\|agents\|json | P |
-| `ctx_heatmap` | File-access heatmap | status\|directory\|cold\|json | P |
-| `ctx_benchmark` | Benchmark compression modes for a file/project | `path`*, `action`, `format` | P |
-| `ctx_analyze` | Entropy analysis — recommends optimal compression mode | `path`* | P |
-| `ctx_compare` | Preview compression — original vs the bytes lean-ctx would emit, with token counts + line diff (read-only) | `path` \| `content`+`ext` \| `command`+`output` | P |
-| `ctx_feedback` | Harness feedback for LLM output tokens & latency | record\|report\|reset | P |
-| `ctx_discover` | Find missed compression opportunities in shell history | `limit` | P |
-| `ctx_verify` | Verification observability + ContextProofV2 | stats\|proof\|v2 | P |
-| `ctx_proof` | Export machine-readable ContextProofV1 | export* | P |
+| Tool | Purpose | Key actions | Core | Profile |
+|------|---------|-------------|------|---------|
+| `ctx_metrics` | Session token statistics and cache rates | — | | P |
+| `ctx_radar` | Context-budget breakdown (prompt, messages, tools, reads, shell) | `format` | | P |
+| `ctx_cost` | Local cost attribution per agent/tool | report \| agent \| tools \| json \| reset \| status | | P |
+| `ctx_gain` | Local context-usage report incl. "wrapped" summary | status \| report \| score \| cost \| tasks \| heatmap \| wrapped \| agents \| json | | P |
+| `ctx_heatmap` | File-access heatmap | status \| detail | | P |
+| `ctx_feedback` | Record and report LLM token/latency metrics | record \| report \| json \| reset \| status | | P |
+| `ctx_discover` | Shell commands not yet using lean-ctx compression | `limit` | | P |
 
-## 6. Advanced — providers / plugins / proactive context
+## 6. External context gateways
 
-| Tool | Purpose | Key actions | Profile |
-|------|---------|-------------|---------|
-| `ctx_provider` | External context providers (GitHub, GitLab, Jira, Postgres, MCP bridges) | discover\|list\|status\|refresh\|configure\|query\|gitlab_issues\|gitlab_mrs | P |
-| `ctx_tools` | MCP Tool-Catalog Gateway — route/proxy unlimited downstream MCP servers at constant context cost | find\|call\|list\|refresh | P |
-| `ctx_plugins` | Plugin management | list\|enable\|disable\|info\|hooks | P |
-| `ctx_rules` | Cross-agent rules governance (ContextOps) | sync\|diff\|lint\|status\|init | P |
-| `ctx_skillify` | Codify recurring session-diary + knowledge patterns into versioned, git-committable `.cursor/rules/skillify-*.mdc` (precision-biased, idempotent) | mine\|list\|status\|promote; `slug` | P |
-| `ctx_summary` | Record + recall AI session summaries (semantic when warm, else lexical); auto-captured on the checkpoint cadence | recall\|record\|list; `query`, `top_k` | P |
-| `ctx_package` | Save/resume portable context packages (session + summaries + knowledge bundle) for agent handoffs or session persistence | save\|resume\|list\|info; `path`, `description` | P |
-| `ctx_overview` | Task-relevant project map — ideal at session start | `task`, `path` | S |
-| `ctx_preload` | Proactively load task-relevant files; compact L-curve summary | `task`*, `path` | P |
-| `ctx_prefetch` | Predictive prefetch for blast-radius files | `root`, `task`, `changed_files[]`, `budget_tokens` | P |
+| Tool | Purpose | Key actions | Core | Profile |
+|------|---------|-------------|------|---------|
+| `ctx_provider` | GitHub, GitLab, Jira, Postgres, MCP bridges, custom REST | discover \| list \| status \| refresh \| configure \| query \| mcp_resources \| gitlab_issues \| gitlab_issue \| gitlab_mrs \| gitlab_pipelines | | P |
+| `ctx_tools` | Gateway to downstream MCP servers at near-constant context cost | find \| call \| list \| refresh | | P |
 
-## 7. Meta — context-field-theory / dispatch / dynamic tools
+## 7. Meta and coordination
 
-| Tool | Purpose | Key actions | Profile |
-|------|---------|-------------|---------|
-| `ctx_call` | Call any lean-ctx tool by name (lazy-loading) | `name`*, `arguments` | P |
-| `ctx_discover_tools` | Keyword search across all available tools | `query` | P |
-| `ctx_load_tools` | Load/unload dynamic tool categories at runtime | load\|unload\|list; `category` | P |
-| `ctx_control` | Context Field Theory — overlay-based context manipulation | exclude\|include\|pin\|unpin\|set_view\|set_priority\|reset\|list | P |
-| `ctx_plan` | Context planning (CFT) with Phi scoring + budget allocation | `task`*, `budget`, `profile` | P |
-| `ctx_compile` | Context compilation via knapsack + Boltzmann view selection | `mode`, `budget` | P |
-| `ctx_context` | Session-context overview (cache, seen files, state) | — | P |
-| `ctx_ledger` | Context-ledger ops for pressure management | status\|reset\|evict | P |
-| `ctx_cache` | Session-cache operations | status\|clear\|invalidate | P |
-| `ctx_dedup` | Cross-file deduplication | analyze\|apply | P |
-| `ctx_intent` | Structured intent input with routing policy | `query`*, `format` | P |
-| `ctx_response` | Compress LLM response text (strip filler, TDD) | `text`* | P |
-| `ctx_expand` | Zero-loss retrieval of archived tool outputs | retrieve\|list\|search_all | P |
+| Tool | Purpose | Key actions | Core | Profile |
+|------|---------|-------------|------|---------|
+| `ctx_call` | Invoke any registered tool by name | `name`*, `arguments` | ✓ | P |
+| `ctx_discover_tools` | Keyword search across all tools | `query` | | P |
+| `ctx_load_tools` | Load/unload tool categories at runtime | load \| unload \| list | | P |
+| `ctx_tasks` | From 3.12.1 (hidden in 3.12.0): Hive tasks of the project: read, claim (under the opt-in), report, submit with evidence, release, propose | list \| show \| claim \| update \| submit \| release \| propose | | P |
+| `ctx_compute` | From 3.12.1 (hidden in 3.12.0): optional Hive Task Compute: one defined job (tests, static analysis, index build) of this checkout in an isolated sandbox, within the workspace's caps and prepaid credit | submit \| status \| cancel \| result | | P |
+| `ctx_work_graph` | Project-scoped local Work Graph for multi-agent coordination; the host launches agents, `start` binds and controls them | create \| delegate \| claim \| start \| consume \| complete \| receipt \| accept \| fuse \| attribution \| value_report \| cancel \| get \| observe \| list | | P |
 
 `*` = required parameter.
 
 ## Notes
 
-1. `power` enables every registered tool; `ToolProfile::is_tool_enabled()` returns `true`
+1. `power` enables every tool; `ToolProfile::is_tool_enabled()` returns `true`
    for everything under power.
-2. `ctx_load_tools` controls *dynamic* categories (`arch`, `debug`, `memory`,
-   `metrics`, `session`) independently of the static profile filter.
-3. Lazy clients use `ctx_call` + `ctx_discover_tools` + `ctx_load_tools` to reach
-   tools not in their active profile without listing all 79 upfront.
+2. `ctx_load_tools` controls the dynamic categories (`arch`, `debug`, `memory`,
+   `metrics`, `session`; `rust/src/server/dynamic_tools.rs`). The category gate
+   applies only to the default lean surface on clients that support
+   `list_changed`; a pinned profile is authoritative.
+3. Not advertised on any profile, but callable: the local collaboration
+   compatibility tools `ctx_agent`, `ctx_share`, `ctx_handoff`, and
+   the host-integration hook `ctx_shape`.
+
+## Removed in the focus release
+
+The focus release (2026-10, [`docs/migration/focus-2026-10.md`](../migration/focus-2026-10.md))
+removed the tools below. Only the names survive: a call, directly or through
+`ctx_call`, returns the way forward instead of "Unknown tool"
+(`removed_tool` in `rust/src/server/dynamic_tools.rs`).
+
+| Removed tool | Use instead |
+|--------------|-------------|
+| `ctx_smart_read` | `ctx_read` — auto-selects the mode (omit `mode`, or `mode="auto"`) |
+| `ctx_multi_read` | `ctx_read` — batch-reads via `paths=[…]` |
+| `ctx_semantic_search` | `ctx_search action="semantic"`; reindex/find_related are actions too |
+| `ctx_symbol` | `ctx_search action="symbol"` (`name=…`, optional `file`/`kind`) |
+| `ctx_overview`, `ctx_summary`, `ctx_explore` | `ctx_compose(task=…)` — ranked files, symbols and structure for a task |
+| `ctx_plan`, `ctx_compile`, `ctx_fill` | `ctx_compose` selects under the turn budget; read chosen files with `ctx_read` |
+| `ctx_impact` | `ctx_graph action="impact"` (`path=…`), `action="path"` for chains, `action="diff"` for changes |
+| `ctx_architecture`, `ctx_repomap` | `ctx_graph action="diagram"\|"explain"\|"related"`; `ctx_tree` for the directory map |
+| `ctx_routes` | `ctx_search` for route definitions, `ctx_graph action="related"` for handlers |
+| `ctx_retrieve` | `ctx_expand id=…` — withheld or archived content |
+| `ctx_cache` | `ctx_read fresh=true` re-reads; maintenance via `lean-ctx cache prune\|reset` |
+| `ctx_smells`, `ctx_quality`, `ctx_optimize`, `ctx_review` | Retired — use the host's own review and linting |
+| `ctx_quality_lab`, `ctx_benchmark`, `ctx_perf`, `ctx_cognitive`, `ctx_ledger`, `ctx_live_zone` | Retired — `lean-ctx gain`, `lean-ctx doctor`, dashboard |
+| `ctx_refactor` | Retired — write refactorings are host execution; `ctx_callgraph` keeps references |
+| `ctx_analyze`, `ctx_compare` | Retired — `ctx_read mode="auto"`; `lean-ctx compress diff <file>` previews compression |
+| `ctx_crush` | Retired — `ctx_read`/`ctx_shell` apply the JSON/CSV/YAML crushers automatically |
+| `ctx_response` | Retired — LeanCTX shapes the context the model reads, not its responses |
+| `ctx_skillify`, `ctx_rules` | Retired — `lean-ctx rules status\|diff` or `lean-ctx doctor` |
+| `ctx_workflow` | Retired — workflow execution belongs to the host; `ctx_work_graph` keeps shared coordination state |
+| `ctx_task` | Retired — task assignment is host execution; `ctx_work_graph` keeps shared coordination state |
+| `ctx_intent` | Retired — intent is inferred from tool calls; `ctx_compose(task=…)` selects context for a task |
+
+`ctx_plugins` was also removed; it has no entry in the table above, so a call
+returns "Unknown tool".
 
 ---
 
@@ -160,3 +185,5 @@ addon repo.
 
 - **Integration reference:** [`21-lean-md.md`](21-lean-md.md)
 - **Addon repo:** https://github.com/dasTholo/lean-md
+
+---

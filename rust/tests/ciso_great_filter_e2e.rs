@@ -13,14 +13,14 @@
 //!    DLP stops a forbidden prod-DB action before dispatch; **#675** inbound
 //!    filters detect + redact PII; pack `[redaction]` scrubs an employee id.
 //!    Every decision is written to the append-only audit chain.
-//! 3. **#677 compliance report** — the CISO deliverable folds those enforcement
-//!    counts together, is Ed25519-signed, and verifies **offline** (a tamper
-//!    check must break the signature).
+//! 3. **Audit evidence** — every one of those decisions is on the hash-chained
+//!    audit trail with the right event type, and the chain verifies. (The
+//!    signed compliance report built from it is part of LeanCTX Enterprise.)
 //!
 //! Local-Free Invariant: this only ever constrains the agent pipeline; the test
 //! asserts the meta tools (`ctx_session`) can never be locked out.
 
-use lean_ctx::core::compliance_report::{self, ReportSpec};
+use lean_ctx::core::audit_trail::{self, AuditEventType};
 use lean_ctx::core::input_filters;
 use lean_ctx::core::policy::org::{self, OrgPolicyV1};
 use lean_ctx::core::policy::runtime;
@@ -179,43 +179,26 @@ fn great_filter_golden_path_enforces_and_attests() {
         "employee id redacted: {redacted}"
     );
 
-    // ── 3. CISO compliance report (#677): fold + sign + verify OFFLINE ────────
-    let spec = ReportSpec {
-        from: "2020-01-01T00:00:00+00:00".into(),
-        to: "2100-01-01T00:00:00+00:00".into(),
-        frameworks: vec![],
-        pack: None,
-    };
-    let mut report = compliance_report::build(&spec).expect("build compliance report");
+    // ── 3. Audit evidence: every decision recorded, chain intact ──────────────
+    let entries = audit_trail::load_recent(10_000);
+    let blocked = entries
+        .iter()
+        .filter(|e| matches!(e.event_type, AuditEventType::ToolDenied))
+        .count();
     assert_eq!(
-        report.enforcement.blocked, 3,
-        "pre-trust denial + trusted tool-deny + egress block must each be counted"
+        blocked, 3,
+        "pre-trust denial + trusted tool-deny + egress block must each be recorded"
     );
     assert!(
-        report.enforcement.redacted >= 1,
-        "PII filter counted as redacted (got {})",
-        report.enforcement.redacted
+        entries
+            .iter()
+            .any(|e| matches!(e.event_type, AuditEventType::SecretDetected)),
+        "PII filter decision recorded"
     );
-    assert!(report.audit.chain_valid, "audit hash chain intact");
-    assert_eq!(report.owasp.rows.len(), 10, "OWASP Agentic Top-10 covered");
-
-    report
-        .sign("ciso-machine")
-        .expect("sign report with machine identity");
-    let report_path = tmp.join("compliance-report.json");
-    compliance_report::write_artifact(&report, &report_path).expect("write report");
-
-    let loaded = compliance_report::load_artifact(&report_path).expect("load report");
+    let chain = audit_trail::verify_chain();
     assert!(
-        loaded.verify().signature_valid,
-        "compliance report verifies offline, without the audit trail"
-    );
-
-    let mut tampered = loaded.clone();
-    tampered.enforcement.blocked = 0;
-    assert!(
-        !tampered.verify().signature_valid,
-        "editing the enforcement counts invalidates the attestation"
+        chain.valid && chain.source_present,
+        "audit hash chain intact"
     );
 
     // ── teardown ──────────────────────────────────────────────────────────────

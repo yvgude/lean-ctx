@@ -224,7 +224,7 @@ struct ProviderItem {
 
 ## Caching & Indexing
 
-- **Provider request cache**: GitHub issue/PR keys bind the provider, exact effective API URL (including project and filters), and credential using a length-framed BLAKE3 digest. Keys contain no raw URL or credential. Built-in GitLab reads do not use this cache, including pre-existing fresh or stale entries.
+- **Provider request cache**: keys bind the provider, exact effective API URL (including project and filters), and credential using a length-framed BLAKE3 digest; keys contain no raw URL or credential. An expired entry is a miss, never an answer. Built-in GitLab, GitHub and Jira reads do not use this cache: a list answer is the principal's current access.
 - **Session cache**: Consolidated context can still be stored separately; removing the GitLab request-cache shortcut does not revoke previously indexed or exported copies.
 - **BM25 index**: External chunks indexed with `ChunkKind` metadata (Issue, PullRequest, DbSchema, etc.)
 - **Graph index**: Cross-source edges link external URIs to code files (e.g. issue → `src/auth.rs`)
@@ -237,8 +237,34 @@ struct ProviderItem {
 - CI job logs pass through secret scanner before delivery
 - Tokens never appear in tool output
 - MCP bridges: optional `auth_env` field for token injection from env vars
-- Request-cache partitioning is not reauthorization. Other cache consumers retain their existing TTL and stale-serving behavior. Built-in GitLab acquisitions require a new successful source request; authorization and purge of previously consolidated BM25, graph, knowledge and session data remain separate requirements.
+- Request-cache partitioning is not reauthorization. Built-in GitLab, GitHub and Jira acquisitions require a new successful source request; a stored item is reused only after `reacquire_item` re-reads it with the principal's own credential (see the matrix below). MCP bridges speak HTTPS (or plain HTTP to loopback) through the hardened client: bounded time and size, no redirects.
 - GitLab configuration Debug output replaces the credential with a fixed redaction marker. Ordinary sessions retain environment-based discovery; the explicit protected launcher uses the handoff described above.
+
+## Connector capability matrix
+
+Each connector declares what it can prove (`ContextProvider::descriptor`). A connector without
+`revalidate ACL` keeps its content personal-local: under governed policy its chunks are withheld
+from reuse. The table is rendered from the code; a test keeps it equal.
+
+<!-- connector-capability-matrix:begin -->
+| Connector | search | list | get | delta | revalidate ACL | revalidate revision | delete event | shared reuse |
+|---|---|---|---|---|---|---|---|---|
+| GitLab (project configured) | partial | yes | yes | no | yes | yes | partial | yes |
+| GitLab (no project) | partial | yes | yes | no | no | no | no | no |
+| GitHub | partial | yes | yes | no | yes | yes | partial | yes |
+| Jira | partial | yes | yes | no | yes | yes | partial | yes |
+| MCP bridge | no | yes | yes | no | no | no | no | no |
+| Config provider (GET resources) | no | yes | partial | no | yes | yes | partial | yes |
+| Other providers (default) | no | yes | no | no | no | no | no | no |
+
+- **GitLab (project configured)** — principal: personal access token (PRIVATE-TOKEN), bound with host and project; a selected source is pinned by id and namespace; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. search = state/label filters, no full text; issues and merge requests re-checked per item with the principal's token against the configured project (current item digest); a selected source also re-verifies its pinned project identity on every request; without a configured project list-only; deletion seen as 404 on re-check, no event feed; pipelines are list-only
+- **GitLab (no project)** — principal: personal access token (PRIVATE-TOKEN), bound with host and project; a selected source is pinned by id and namespace; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. search = state/label filters, no full text; issues and merge requests re-checked per item with the principal's token against the configured project (current item digest); a selected source also re-verifies its pinned project identity on every request; without a configured project list-only; deletion seen as 404 on re-check, no event feed; pipelines are list-only
+- **GitHub** — principal: token (GITHUB_TOKEN / GH_TOKEN / LEAN_CTX_GITHUB_TOKEN), bound with API origin and repository; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. search = state filter, no full text; issues and pull requests re-checked per item with the principal's token (404 = no longer accessible, kind checked); actions runs are list-only and never stored with an origin; no response cache
+- **Jira** — principal: API-token user (Basic) or OAuth 3LO data source, bound with site and deployment; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. search = JQL by validated project key only; issues re-checked per item with the principal's identity (404 incl. issue security = no longer accessible, moved key refused); comments and attachments not fetched; sprints are list-only; rich-text bodies are not rendered
+- **MCP bridge** — principal: none: server identity is its HTTPS host (or loopback); no per-user principal; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. no principal, so no ACL to re-check: personal-local use only, withheld from governed reuse; tool listing does not call tools; stdio transport not implemented
+- **Config provider (GET resources)** — principal: configured auth (none, bearer, basic or header), digest-bound with base URL and resource; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. re-check re-runs the GET resource with the current credential and keeps only the stored id (an item that left the first page reads as no longer accessible); non-GET resources have no binding and are withheld from governed reuse
+- **Other providers (default)** — principal: token or none; content: untrusted data; writes: none; on failure: deny; no stale or cached answer. no item re-check: personal-local use only, withheld from governed reuse
+<!-- connector-capability-matrix:end -->
 
 ## Shell Compression (`glab` / `gh` CLI)
 

@@ -1,0 +1,13 @@
+{
+  "case": "claim_without_worker",
+  "base": "routes/swarm_claim.v2.request.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/worker_id"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

@@ -20,6 +20,10 @@ fn walk_supported_sources(root_path: &Path) -> (Vec<String>, Vec<(String, String
 
     let mut file_paths: Vec<String> = Vec::new();
     let mut file_contents: Vec<(String, String, String)> = Vec::new();
+    let root = root_path.to_string_lossy().into_owned();
+    // No total budget beyond the reader's per-file limit: a build covers the
+    // project, as before.
+    let mut remaining = usize::MAX;
 
     for entry in walker.flatten() {
         if !entry.file_type().is_some_and(|ft| ft.is_file()) {
@@ -50,8 +54,19 @@ fn walk_supported_sources(root_path: &Path) -> (Vec<String>, Vec<(String, String
 
         file_paths.push(rel_path.clone());
 
-        if let Ok(content) = std::fs::read_to_string(path) {
-            file_contents.push((rel_path, content, ext.to_string()));
+        // The property graph is a persisted derived store: symbols, edges and
+        // content hashes are built from the ADMITTED text of a source whose
+        // ORIGINAL may be kept (G01), read through the common rooted reader.
+        // A source that is withheld, restricted or incompletely decoded keeps
+        // its path as a file node above and contributes nothing else.
+        let read = crate::tools::admitted_sources::read(
+            &path.to_string_lossy(),
+            &root,
+            "ctx_impact",
+            &mut remaining,
+        );
+        if let Some(content) = read.storable() {
+            file_contents.push((rel_path, content.to_owned(), ext.to_string()));
         }
     }
 
@@ -813,6 +828,71 @@ pub(super) fn handle_update(root: &str, fmt: OutputFormat) -> String {
             serde_json::to_string_pretty(&v).unwrap_or_else(|_| "{}".to_string())
         }
         OutputFormat::Text => format!("{summary}\n[ctx_impact update: {tokens} tok]"),
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::walk_supported_sources;
+
+    const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+
+    /// G01: the graph builder read every source with `fs::read_to_string`
+    /// and built a persisted index from the raw bytes. It now builds from
+    /// admitted, storable text only; a clean source keeps its bytes.
+    #[test]
+    fn the_graph_is_built_from_admitted_storable_sources_only() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let project = tempfile::tempdir().unwrap();
+        let clean = "pub fn clean() {}\n";
+        std::fs::write(project.path().join("clean.rs"), clean).unwrap();
+        std::fs::write(
+            project.path().join("keyed.rs"),
+            format!("pub fn connect() {{\n    let aws_key = \"{AWS_KEY}\";\n}}\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            project.path().join("marked.rs"),
+            "// TOP SECRET\npub fn plan() {}\n",
+        )
+        .unwrap();
+
+        let (paths, contents) = walk_supported_sources(project.path());
+        assert_eq!(paths, ["clean.rs", "keyed.rs", "marked.rs"]);
+        let content_of = |name: &str| {
+            contents
+                .iter()
+                .find(|(path, _, _)| path == name)
+                .map(|(_, content, _)| content.as_str())
+        };
+        assert_eq!(content_of("clean.rs"), Some(clean));
+        assert!(content_of("keyed.rs").is_some_and(|text| !text.contains(AWS_KEY)));
+        assert_eq!(
+            content_of("marked.rs"),
+            None,
+            "a restricted source must not enter the graph"
+        );
+    }
+
+    #[test]
+    fn a_withheld_source_contributes_only_its_path() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let policy = crate::core::policy::load(
+            "name = \"ctx-impact-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )
+        .unwrap();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+        let project = tempfile::tempdir().unwrap();
+        std::fs::write(
+            project.path().join("plan.rs"),
+            "CONFIDENTIAL\npub fn hidden_marker() {}\n",
+        )
+        .unwrap();
+        let (paths, contents) = walk_supported_sources(project.path());
+        assert_eq!(paths, ["plan.rs"]);
+        assert!(contents.is_empty());
     }
 }
 

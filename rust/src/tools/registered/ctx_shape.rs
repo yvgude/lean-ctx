@@ -102,7 +102,7 @@ fn shape(tool: &str, command: Option<&str>, exit_code: Option<i32>, output: &str
         ("Bash", Some(cmd)) if !cmd.trim().is_empty() => {
             crate::proxy::compress::shape_command_output(cmd, &redacted, exit_code)
         }
-        _ => crate::proxy::compress::compress_tool_result(&redacted, Some(tool)),
+        _ => crate::proxy::compress::shape_tool_output(&redacted, Some(tool)),
     };
     // Never hand back more than the host already has.
     if shaped.len() >= redacted.len() {

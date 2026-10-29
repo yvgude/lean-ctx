@@ -1,0 +1,63 @@
+{
+  "key_id": "47983724220c8521",
+  "receipts": [
+    {
+      "created_at": "2026-10-26T17:12:00Z",
+      "digest": "sha256:015033cd705fc09a269415e9ff37e0f33cabb20b87fe5576786a78939fa9c155",
+      "document": {
+        "invocation": {
+          "engine": {
+            "engine_id": "lean-ctx-local",
+            "engine_version": "3.12.0"
+          },
+          "input_hmac": "hmac-sha256:4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f",
+          "invocation_id": "5f0c2a9e7b14d3c6a8e1f02b49d7c3a5",
+          "operation": {
+            "capability_id": "capability://leanctx/context-optimization",
+            "capability_version": "1.0.0"
+          },
+          "policy_admission": {
+            "decision": "admitted",
+            "policy_digest": "sha256:a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1"
+          },
+          "schema_version": 1,
+          "source_count": 1
+        },
+        "observation": {
+          "failure": null,
+          "invocation_id": "5f0c2a9e7b14d3c6a8e1f02b49d7c3a5",
+          "measurements": [
+            {
+              "classification": "measured",
+              "name": "tokens_baseline",
+              "unit": "tokens",
+              "value": 1800
+            },
+            {
+              "classification": "measured",
+              "name": "tokens_delivered",
+              "unit": "tokens",
+              "value": 600
+            },
+            {
+              "classification": "measured",
+              "name": "latency",
+              "unit": "ms",
+              "value": 41
+            }
+          ],
+          "output_hmac": "hmac-sha256:7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c",
+          "schema_version": 1,
+          "source_count": 1,
+          "status": "succeeded"
+        },
+        "schema": "leanctx.engine-receipt/v2"
+      },
+      "kind": "engine",
+      "receipt_id": "rcpt_01jb8z5",
+      "vault_id": "3f9a1c7e5b2d4a6f8e0c1b3d5f7a9c2e"
+    }
+  ],
+  "schema": "leanctx.hive.receipts/v2",
+  "signature": "42add87ad073dd8be45ea16d53e660e6a53e92c85d3fc5e42c3ac807846f91bde5ec49071b4c5ecd7c72bf9b85d730b0e2234e582cd373afdb976c0e970b2205"
+}

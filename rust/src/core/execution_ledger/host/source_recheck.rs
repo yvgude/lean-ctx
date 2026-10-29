@@ -44,9 +44,10 @@ impl super::HostReceiptAuthority {
             .root
             .to_str()
             .ok_or_else(|| anyhow::anyhow!("unsafe receiving root"))?;
-        if let Ok(Some(bound)) = runtime::REQUEST_PROJECT.try_with(|slot| slot.borrow().clone()) {
-            ensure!(bound == verified.root, "receiving source scope mismatch");
-        }
+        ensure!(
+            runtime::request_project_is(&verified.root),
+            "receiving source scope mismatch"
+        );
         runtime::with_project_source_view(root, || -> Result<serde_json::Value> {
             let current = self.inspect_checkpoint_sources(request)?;
             ensure!(
@@ -126,9 +127,10 @@ pub(super) fn check_providers(
     let root_text = root
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("unsafe receiving root"))?;
-    if let Ok(Some(bound)) = runtime::REQUEST_PROJECT.try_with(|slot| slot.borrow().clone()) {
-        ensure!(bound == root, "receiving source scope mismatch");
-    }
+    ensure!(
+        runtime::request_project_is(root),
+        "receiving source scope mismatch"
+    );
     runtime::with_project_source_view(root_text, || -> Result<()> {
         ensure!(
             runtime::REQUEST_PROJECT
@@ -201,9 +203,10 @@ pub(super) fn check_files(
     let root_text = root
         .to_str()
         .ok_or_else(|| anyhow::anyhow!("unsafe receiving root"))?;
-    if let Ok(Some(bound)) = runtime::REQUEST_PROJECT.try_with(|slot| slot.borrow().clone()) {
-        ensure!(bound == root, "receiving source scope mismatch");
-    }
+    ensure!(
+        runtime::request_project_is(root),
+        "receiving source scope mismatch"
+    );
     runtime::with_project_source_view(root_text, || -> Result<()> {
         ensure!(
             runtime::REQUEST_PROJECT
@@ -262,7 +265,7 @@ mod tests {
         let _data = crate::core::data_dir::isolated_data_dir();
         let _policy = runtime::lock_test_override();
         let directory = tempfile::tempdir().unwrap();
-        let root = directory.path().canonicalize().unwrap();
+        let root = crate::core::pathutil::canonicalize_secure(directory.path()).unwrap();
         // Project-local providers load only for a trusted workspace.
         crate::core::workspace_trust::trust(&root).unwrap();
         let configs = root.join(".lean-ctx/providers");
@@ -334,7 +337,7 @@ mod tests {
     fn actual_receiving_file_must_match_and_remain_authorized() {
         let _policy = runtime::lock_test_override();
         let directory = tempfile::tempdir().unwrap();
-        let root = directory.path().canonicalize().unwrap();
+        let root = crate::core::pathutil::canonicalize_secure(directory.path()).unwrap();
         std::fs::write(root.join("source.txt"), "K-482193").unwrap();
         let dependencies = BTreeMap::from([(
             "source:fixture".into(),
@@ -367,7 +370,7 @@ mod tests {
     fn receiving_mappings_cannot_omit_duplicate_or_escape_sources() {
         let _policy = runtime::lock_test_override();
         let directory = tempfile::tempdir().unwrap();
-        let root = directory.path().canonicalize().unwrap();
+        let root = crate::core::pathutil::canonicalize_secure(directory.path()).unwrap();
         let dependencies = BTreeMap::from([(
             "source:fixture".into(),
             super::super::digest(b"safe").unwrap(),

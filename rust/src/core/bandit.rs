@@ -158,31 +158,6 @@ impl ThresholdBandit {
             arm.decay(factor);
         }
     }
-
-    pub fn update_from_session(&mut self, outcomes: &[crate::core::feedback::CompressionOutcome]) {
-        for outcome in outcomes {
-            let efficiency = if outcome.tokens_original > 0 {
-                outcome.tokens_saved as f64 / outcome.tokens_original as f64
-            } else {
-                0.0
-            };
-            let success = efficiency > 0.3 && outcome.task_completed;
-
-            let arm_name = if outcome.entropy_threshold >= 1.0 {
-                "conservative"
-            } else if outcome.entropy_threshold >= 0.7 {
-                "balanced"
-            } else {
-                "aggressive"
-            };
-
-            self.update(arm_name, success);
-        }
-
-        if !outcomes.is_empty() {
-            self.decay_all(0.98);
-        }
-    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]

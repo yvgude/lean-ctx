@@ -1,0 +1,28 @@
+{
+  "name": "trust",
+  "buckets": [
+    {
+      "value": "high",
+      "min_score": 70
+    },
+    {
+      "value": "normal",
+      "min_score": 40
+    },
+    {
+      "value": "low",
+      "min_score": 0
+    }
+  ],
+  "review_states": [
+    {
+      "value": "confirmed"
+    },
+    {
+      "value": "unconfirmed"
+    },
+    {
+      "value": "reviewed_needs_person"
+    }
+  ]
+}

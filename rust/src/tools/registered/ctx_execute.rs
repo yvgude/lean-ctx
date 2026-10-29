@@ -3,7 +3,7 @@ use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
 
 use crate::server::tool_trait::{
-    McpTool, ToolContext, ToolOutput, get_int, get_str, require_resolved_path,
+    McpTool, ShellOutcome, ToolContext, ToolOutput, get_int, get_str, require_resolved_path,
 };
 use crate::tool_defs::tool_def;
 
@@ -19,7 +19,8 @@ impl McpTool for CtxExecuteTool {
             "ctx_execute",
             "Run code in sandbox (11 languages) — use when conditionals, multi-line or cross-language transforms.\n\
              ANTIPATTERN: for simple one-liners, prefer ctx_shell (lower overhead, auto-compressed).\n\
-             language=shell supports multi-line scripts but shares ctx_shell's security policy.\n\
+             language=shell supports multi-line scripts but shares ctx_shell's security policy;\n\
+             other languages run only after the user approves them.\n\
              action=code (default) for one-shot; action=batch for parallel multi-language;\n\
              action=file to summarize admitted project text as data, without executing it.\n\
              For code/batch, intent annotates large output; file records the intent alongside its preview. Languages: javascript,\n\
@@ -105,7 +106,12 @@ impl McpTool for CtxExecuteTool {
                     Some((lang, code))
                 })
                 .collect();
-            crate::tools::ctx_execute::handle_batch(&batch)
+            match crate::tools::ctx_execute::refuse_unapproved(
+                batch.iter().map(|(language, _)| language.as_str()),
+            ) {
+                Ok(()) => crate::tools::ctx_execute::handle_batch(&batch),
+                Err(message) => (message, ShellOutcome::Blocked),
+            }
         } else if action == "file" {
             let path = require_resolved_path(ctx, args, "path")?;
             let project_root = if ctx.project_root.is_empty() {
@@ -122,7 +128,12 @@ impl McpTool for CtxExecuteTool {
                 .ok_or_else(|| ErrorData::invalid_params("code is required", None))?;
             let intent = get_str(args, "intent");
             let timeout = get_int(args, "timeout").and_then(|t| u64::try_from(t).ok());
-            crate::tools::ctx_execute::handle(&language, &code, intent.as_deref(), timeout)
+            match crate::tools::ctx_execute::refuse_unapproved([language.as_str()]) {
+                Ok(()) => {
+                    crate::tools::ctx_execute::handle(&language, &code, intent.as_deref(), timeout)
+                }
+                Err(message) => (message, ShellOutcome::Blocked),
+            }
         };
 
         let result = crate::core::redaction::redact_text_if_enabled(&result);
@@ -136,6 +147,16 @@ impl McpTool for CtxExecuteTool {
             shell_outcome: Some(outcome),
             content_blocks: None,
         })
+    }
+
+    /// `action=file` reads exactly one source, through the admitted rooted
+    /// reader on the handler thread (`tools::ctx_execute::handle_file_in_view`)
+    /// and derives its summary from that text alone. `code` and `batch` run
+    /// arbitrary programs whose reads nothing here observes: not declared.
+    fn publishes_every_source(&self, args: Option<&Map<String, Value>>) -> bool {
+        args.and_then(|args| args.get("action"))
+            .and_then(Value::as_str)
+            == Some("file")
     }
 }
 

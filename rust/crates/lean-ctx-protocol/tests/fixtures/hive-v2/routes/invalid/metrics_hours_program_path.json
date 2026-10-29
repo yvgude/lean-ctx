@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_program_path",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets/0/slices/0/unregulated/0/name",
+      "value": "../bin/deploy.sh"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a path as program name"
+}

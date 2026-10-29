@@ -1,0 +1,49 @@
+{
+  "route": "W69",
+  "method": "PUT",
+  "path": "/api/v1/companies/acme-group/message-retention",
+  "request": {
+    "message_retention_days": 14
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "slug": "acme-group",
+      "name": "Acme Group",
+      "role": "owner",
+      "workspaces": 2,
+      "members": 3,
+      "message_retention_days": 14,
+      "created_at": "2026-10-20T08:00:00Z",
+      "teams": 2,
+      "plan": {
+        "name": "enterprise",
+        "status": "active",
+        "seats": 20,
+        "seats_used": 3
+      }
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "invalid_field",
+          "message": "1–30 days, or null for the plans' defaults",
+          "field": "message_retention_days",
+          "reason": "invalid"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "confirm with your authenticator code first"
+        }
+      }
+    }
+  ]
+}

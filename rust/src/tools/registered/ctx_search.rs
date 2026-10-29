@@ -142,6 +142,20 @@ impl McpTool for CtxSearchTool {
         }
         result
     }
+
+    /// `action=regex` only. `tools::ctx_search::handle_filtered` reads scanned
+    /// files outside the capture and then publishes exactly the files that
+    /// contributed a returned match (enclosing-symbol tags come from the same
+    /// file). Three results name no source and therefore stay of unknown
+    /// lineage rather than being claimed: a result without matches, a
+    /// delivery stub for a repeated query (`cached_or_search`), and an error.
+    ///
+    /// Not declared: `semantic` and `find_related` (ranked from the BM25/dense
+    /// index and the graph — derived stores without source lineage) and
+    /// `symbol` (the symbol index decides which file is read).
+    fn publishes_every_source(&self, args: Option<&Map<String, Value>>) -> bool {
+        args.is_some_and(|args| matches!(SearchAction::resolve(args), SearchAction::Regex))
+    }
 }
 
 fn record_attribution_result(
@@ -259,7 +273,8 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     if no_gitignore
         && let Err(e) = crate::core::io_boundary::ensure_ignore_gitignore_allowed("ctx_search")
     {
-        return Ok(ToolOutput::simple(e));
+        // A refusal, not a search result: the same text, as a tool error.
+        return Err(crate::server::tool_trait::tool_execution_error(e));
     }
 
     let crp = ctx.crp_mode;
@@ -288,6 +303,10 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     let mut total_observed: usize = 0;
     let mut total_sent: usize = 0;
     let mut remaining_budget = max;
+    // Roots whose search failed, and roots that answered (matches or "0
+    // matches"). A call in which every searched root failed is a failed call.
+    let mut failed_roots: usize = 0;
+    let mut answered_roots: usize = 0;
 
     for root in &resolved.roots {
         if remaining_budget == 0 {
@@ -314,8 +333,10 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
 
         let Some(outcome) = search_result else {
             combined.push_str(&format!("── {root} ──\nERROR: search panicked\n\n"));
+            failed_roots += 1;
             continue;
         };
+        let failed = outcome.failed;
         let result = outcome.text;
 
         if result.trim().is_empty() {
@@ -324,9 +345,11 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
 
         combined.push_str(&format!("── {root} ──\n{result}\n\n"));
 
-        if result.starts_with("ERROR:") {
+        if failed {
+            failed_roots += 1;
             continue;
         }
+        answered_roots += 1;
 
         let result_matches = result.lines().filter(|l| !l.is_empty()).count();
         remaining_budget = remaining_budget.saturating_sub(result_matches);
@@ -343,6 +366,10 @@ fn handle_regex(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolOutp
     // numbers (GL #573). It only feeds the explicitly-estimated stats
     // series via `tool_lifecycle::record_search`.
     let final_out = crate::core::protocol::append_savings(&combined, total_observed, total_sent);
+    if failed_roots > 0 && answered_roots == 0 {
+        // Nothing was searched successfully: the same text, as a tool error.
+        return Err(crate::server::tool_trait::tool_execution_error(final_out));
+    }
     let saved = total_observed.saturating_sub(total_sent);
     // #685: `actual_tokens` is the *sent* output, not the saving — passing
     // `saved` here recorded `actual=observed−sent` and `saved=sent` (both
@@ -464,6 +491,8 @@ fn resolve_symbol_root(args: &Map<String, Value>, session_root: &str) -> String 
     if let Some(abs_path) = candidate
         && let Some(detected) = crate::core::protocol::detect_project_root(&abs_path)
         && detected != session_root
+        // Under a Workspace only one of its roots may be looked into (#2120).
+        && crate::core::workspace_authority::root_authorized(std::path::Path::new(&detected))
     {
         return detected;
     }
@@ -626,6 +655,7 @@ fn cached_or_search(
             text,
             modeled_baseline: entry.token_count as usize,
             observed_tokens: entry.token_count as usize,
+            failed: false,
         };
     }
 
@@ -641,7 +671,7 @@ fn cached_or_search(
         exclude,
         exclude_pattern,
     );
-    if !outcome.text.starts_with("ERROR:")
+    if !outcome.failed
         && let Some(builder) = builder
     {
         crate::core::ocla::cache_delivery::record(
@@ -812,12 +842,15 @@ fn search_single(
             ));
         }
     };
+    let failed = outcome.failed;
     let result = outcome.text;
     // Observed tokens only — the modeled native-grep baseline stays out of
     // dashboard/footer/ledger (GL #573); see the multi-root branch above.
     let observed = outcome.observed_tokens;
 
-    if result.starts_with("ERROR:") {
+    // The search's own typed failure (`SearchOutcome::failed`), not the
+    // wording of its text: a result that begins with "ERROR" is a result.
+    if failed {
         return Err(ErrorData::invalid_params(result, None));
     }
 
@@ -857,28 +890,58 @@ fn search_single(
 /// `pattern` and `include`; they mean exactly that here.
 const QUERY_KEYS: &[&str] = &[
     "pattern",
-    "regex",
-    "query",
-    "path",
-    "file_path",
     "include",
-    "glob",
     "ext",
     "exclude",
     "exclude_pattern",
     "max_results",
+    "path",
+    "file_path",
 ];
 
-/// Reject a query entry that carries a key `handle_batch_queries` would ignore.
-fn validate_query_keys(obj: &Map<String, Value>, idx: usize) -> Result<(), String> {
-    match obj.keys().find(|k| !QUERY_KEYS.contains(&k.as_str())) {
-        Some(unknown) => Err(format!(
-            "queries[{}]: unknown key '{unknown}' — accepted keys are {}",
-            idx + 1,
-            QUERY_KEYS.join(", ")
-        )),
-        None => Ok(()),
+/// Near-miss spellings agents guess for a query key, mapped to the canonical
+/// one. Each rejection cost a whole extra request (focus 2026-10-15: 259
+/// failures across 74 installations); a key whose meaning is unambiguous is
+/// accepted instead. The canonical key wins when both are present.
+const QUERY_KEY_ALIASES: &[(&str, &str)] = &[
+    ("regex", "pattern"),
+    ("query", "pattern"),
+    ("maxResults", "max_results"),
+    ("limit", "max_results"),
+    ("glob", "include"),
+    ("filePattern", "include"),
+    ("file_pattern", "include"),
+    ("excludePattern", "exclude_pattern"),
+    ("filePath", "file_path"),
+];
+
+/// Canonicalize a query entry's keys and reject any key `handle_batch_queries`
+/// would ignore.
+fn normalize_query_keys(
+    obj: &Map<String, Value>,
+    idx: usize,
+) -> Result<Map<String, Value>, String> {
+    let mut out = Map::with_capacity(obj.len());
+    for (key, value) in obj {
+        let canonical = if QUERY_KEYS.contains(&key.as_str()) {
+            key.as_str()
+        } else if let Some((_, canonical)) =
+            QUERY_KEY_ALIASES.iter().find(|(alias, _)| *alias == key)
+        {
+            if obj.contains_key(*canonical) {
+                continue;
+            }
+            canonical
+        } else {
+            return Err(format!(
+                "queries[{}]: unknown key '{key}' — accepted keys are {}",
+                idx + 1,
+                QUERY_KEYS.join(", ")
+            ));
+        };
+        out.insert(canonical.to_string(), value.clone());
     }
+    Ok(out)
 }
 
 /// The cap for one query: its own `max_results` when present, otherwise its
@@ -940,6 +1003,10 @@ fn handle_batch_queries(
     let mut combined = String::new();
     let mut total_observed: usize = 0;
     let mut total_sent: usize = 0;
+    // Queries that failed, and queries that answered (matches or "0
+    // matches"). A call in which every query failed is a failed call.
+    let mut failed_queries: usize = 0;
+    let mut answered_queries: usize = 0;
 
     for (idx, q) in queries.iter().enumerate() {
         let Some(obj) = q.as_object() else {
@@ -947,25 +1014,24 @@ fn handle_batch_queries(
                 "── query {} ──\nERROR: expected object\n\n",
                 idx + 1
             ));
-            continue;
-        };
-        let Some(pattern) = get_str(obj, "pattern")
-            .or_else(|| get_str(obj, "regex"))
-            .or_else(|| get_str(obj, "query"))
-        else {
-            combined.push_str(&format!(
-                "── query {} ──\nERROR: pattern required\n\n",
-                idx + 1
-            ));
+            failed_queries += 1;
             continue;
         };
         // #1625: an untyped `items` schema meant a misspelled or unsupported
         // key vanished without a word — the reporter lost half their results to
-        // exactly that. Name the offending key and the accepted set instead.
-        validate_query_keys(obj, idx).map_err(|e| ErrorData::invalid_params(e, None))?;
-        let include = get_str(obj, "include")
-            .or_else(|| get_str(obj, "glob"))
-            .or_else(|| get_str(obj, "ext").map(|e| ext_to_include(&e)));
+        // exactly that. Near-misses are canonicalized; anything else is named.
+        let obj =
+            &normalize_query_keys(obj, idx).map_err(|e| ErrorData::invalid_params(e, None))?;
+        let Some(pattern) = get_str(obj, "pattern") else {
+            combined.push_str(&format!(
+                "── query {} ──\nERROR: pattern required\n\n",
+                idx + 1
+            ));
+            failed_queries += 1;
+            continue;
+        };
+        let include =
+            get_str(obj, "include").or_else(|| get_str(obj, "ext").map(|e| ext_to_include(&e)));
         let exclude = get_str(obj, "exclude");
         let exclude_pattern = get_str(obj, "exclude_pattern");
         let per_query_max = resolve_query_cap(obj, default_share, idx)
@@ -1017,9 +1083,15 @@ fn handle_batch_queries(
 
         let Some(outcome) = search_result else {
             combined.push_str(&format!("{label}ERROR: search panicked\n\n"));
+            failed_queries += 1;
             continue;
         };
 
+        if outcome.failed {
+            failed_queries += 1;
+        } else {
+            answered_queries += 1;
+        }
         if !outcome.text.trim().is_empty() {
             combined.push_str(&format!("{label}{}\n\n", outcome.text));
             total_observed += outcome.observed_tokens;
@@ -1032,6 +1104,10 @@ fn handle_batch_queries(
     }
 
     let final_out = crate::core::protocol::append_savings(&combined, total_observed, total_sent);
+    if failed_queries > 0 && answered_queries == 0 {
+        // No query was searched successfully: the same text, as a tool error.
+        return Err(crate::server::tool_trait::tool_execution_error(final_out));
+    }
     let saved = total_observed.saturating_sub(total_sent);
     crate::core::savings_ledger::record_tool_event(
         "ctx_search",
@@ -1074,361 +1150,8 @@ fn ext_to_include(ext: &str) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        SearchAction, ToolContext, ext_to_include, handle_symbol, resolve_query_cap,
-        validate_query_keys,
-    };
-    use serde_json::{Map, Value, json};
-
-    fn args(pairs: &[(&str, Value)]) -> Map<String, Value> {
-        pairs
-            .iter()
-            .cloned()
-            .map(|(k, v)| (k.to_string(), v))
-            .collect()
-    }
-
-    #[test]
-    fn explicit_action_selects_engine() {
-        // #509: an explicit action always wins, including synonyms.
-        assert_eq!(
-            SearchAction::resolve(&args(&[("action", json!("semantic"))])),
-            SearchAction::Semantic
-        );
-        assert_eq!(
-            SearchAction::resolve(&args(&[("action", json!("symbol"))])),
-            SearchAction::Symbol
-        );
-        assert_eq!(
-            SearchAction::resolve(&args(&[("action", json!("grep"))])),
-            SearchAction::Regex
-        );
-        assert_eq!(
-            SearchAction::resolve(&args(&[("action", json!("related"))])),
-            SearchAction::FindRelated
-        );
-        assert_eq!(
-            SearchAction::resolve(&args(&[("action", json!("reindex"))])),
-            SearchAction::MovedReindex
-        );
-    }
-
-    /// #1624: `ctx_search` was unusable in read-only client modes (Devin Plan
-    /// mode, Cursor's restricted contexts) because MCP annotations are per
-    /// *tool*, and the single mutating action `reindex` withheld
-    /// `readOnlyHint` from every search call. The rebuild belongs to
-    /// `ctx_index`, which already owns it and advertises itself as mutating.
-    #[test]
-    fn search_is_annotated_read_only_so_plan_mode_can_call_it() {
-        use crate::server::tool_trait::McpTool;
-        let defs = crate::tool_defs::apply_tool_annotations(vec![super::CtxSearchTool.tool_def()]);
-        let annotations = defs[0]
-            .annotations
-            .as_ref()
-            .expect("ctx_search must carry annotations at all");
-        assert_eq!(
-            annotations.read_only_hint,
-            Some(true),
-            "without readOnlyHint a read-only client mode refuses the call before dispatch"
-        );
-        assert_ne!(
-            annotations.destructive_hint,
-            Some(true),
-            "search destroys nothing"
-        );
-    }
-
-    /// The published action list must not advertise what the tool no longer
-    /// does — an enum still naming `reindex` would send agents into an error.
-    #[test]
-    fn reindex_is_gone_from_the_published_action_list() {
-        use crate::server::tool_trait::McpTool;
-        let def = super::CtxSearchTool.tool_def();
-        let schema = serde_json::to_value(&*def.input_schema).expect("schema");
-        let actions = schema["properties"]["action"]["enum"]
-            .as_array()
-            .expect("action enum")
-            .iter()
-            .filter_map(|v| v.as_str())
-            .collect::<Vec<_>>();
-        assert!(
-            !actions.contains(&"reindex"),
-            "reindex must not be offered by a read-only tool: {actions:?}"
-        );
-        assert!(
-            !def.description
-                .as_deref()
-                .unwrap_or_default()
-                .contains("reindex"),
-            "the description must not advertise it either"
-        );
-        for kept in ["regex", "semantic", "symbol", "find_related"] {
-            assert!(
-                actions.contains(&kept),
-                "the read-only actions must all survive: {actions:?}"
-            );
-        }
-    }
-
-    /// A call that still asks for `reindex` gets the replacement, not a bare
-    /// rejection: agents that learned the old spelling must be able to recover
-    /// from the error text alone.
-    #[test]
-    fn a_reindex_call_is_answered_with_the_replacement_command() {
-        let error = super::moved_reindex_error();
-        assert!(
-            error.message.contains("ctx_index(action=\"build-full\")"),
-            "the error must carry the exact replacement call: {}",
-            error.message
-        );
-        assert!(
-            error.message.contains("read-only"),
-            "and say why it moved, so the change does not look arbitrary: {}",
-            error.message
-        );
-    }
-
-    #[test]
-    fn action_inferred_from_fields_for_backward_compat() {
-        // Pre-#509 call sites set only one of these fields and no action.
-        assert_eq!(
-            SearchAction::resolve(&args(&[("pattern", json!("fn .*"))])),
-            SearchAction::Regex
-        );
-        assert_eq!(
-            SearchAction::resolve(&args(&[("query", json!("user auth"))])),
-            SearchAction::Semantic
-        );
-        assert_eq!(
-            SearchAction::resolve(&args(&[("name", json!("handle"))])),
-            SearchAction::Symbol
-        );
-        assert_eq!(
-            SearchAction::resolve(&args(&[("file_path", json!("a.rs")), ("line", json!(10))])),
-            SearchAction::FindRelated
-        );
-    }
-
-    #[test]
-    fn handle_infers_symbol_action() {
-        // A bare `handle` (no action) must route to the symbol engine.
-        assert_eq!(
-            SearchAction::resolve(&args(&[("handle", json!("src/lib.rs#Config::load@L22"))])),
-            SearchAction::Symbol
-        );
-    }
-
-    #[test]
-    fn pattern_wins_over_query_and_unknown_action_falls_back_to_inference() {
-        // A regex caller that also carries a stray query must stay regex.
-        assert_eq!(
-            SearchAction::resolve(&args(&[("pattern", json!("x")), ("query", json!("y"))])),
-            SearchAction::Regex
-        );
-        // Unknown action value → infer from fields (here: symbol).
-        assert_eq!(
-            SearchAction::resolve(&args(&[("action", json!("bogus")), ("name", json!("f"))])),
-            SearchAction::Symbol
-        );
-        // Nothing recognizable → default regex (the empty-call default).
-        assert_eq!(SearchAction::resolve(&args(&[])), SearchAction::Regex);
-    }
-
-    #[test]
-    fn symbol_action_takes_the_name_from_symbol_query_or_pattern() {
-        let dir = tempfile::tempdir().unwrap();
-        std::fs::write(dir.path().join("lib.rs"), "pub fn load_config() {}\n").unwrap();
-        let ctx = ToolContext {
-            project_root: dir.path().to_string_lossy().into_owned(),
-            ..ToolContext::default()
-        };
-        for key in ["symbol", "query", "pattern"] {
-            let call = args(&[("action", json!("symbol")), (key, json!("load_config"))]);
-            if let Err(error) = handle_symbol(&call, &ctx) {
-                assert!(
-                    !error.message.contains("name or handle is required"),
-                    "`{key}` must name the symbol: {}",
-                    error.message
-                );
-            }
-        }
-        let Err(error) = handle_symbol(&args(&[("action", json!("symbol"))]), &ctx) else {
-            panic!("no name at all must still be rejected");
-        };
-        assert!(error.message.contains("name or handle is required"));
-    }
-
-    #[test]
-    fn ext_alias_bare_extension_becomes_glob() {
-        assert_eq!(ext_to_include("rs"), "*.rs");
-        assert_eq!(ext_to_include("ts"), "*.ts");
-    }
-
-    #[test]
-    fn ext_alias_strips_leading_dot() {
-        assert_eq!(ext_to_include(".rs"), "*.rs");
-        assert_eq!(ext_to_include(".tsx"), "*.tsx");
-    }
-
-    #[test]
-    fn ext_alias_passes_through_glob_like_values() {
-        // Already a glob/path → keep verbatim, don't double-wrap.
-        assert_eq!(ext_to_include("*.rs"), "*.rs");
-        assert_eq!(ext_to_include("*.{rs,ts}"), "*.{rs,ts}");
-        assert_eq!(ext_to_include("src/**/*.tsx"), "src/**/*.tsx");
-    }
-
-    #[test]
-    fn lenient_fallback_uses_unknown_string_key_as_pattern() {
-        use super::{KNOWN_KEYS, get_str};
-
-        // Simulate Gemma sending {"search_term": "fn main"} — an unknown key
-        // with a string value should be picked up by the lenient fallback.
-        let a = args(&[("search_term", json!("fn main"))]);
-        let pattern = get_str(&a, "pattern").or_else(|| {
-            a.iter()
-                .find(|(k, v)| !KNOWN_KEYS.contains(&k.as_str()) && v.is_string())
-                .and_then(|(_, v)| v.as_str().map(String::from))
-        });
-        assert_eq!(pattern, Some("fn main".to_string()));
-    }
-
-    #[test]
-    fn lenient_fallback_does_not_grab_known_keys() {
-        use super::{KNOWN_KEYS, get_str};
-
-        // If only known keys are present (but pattern is missing), fallback
-        // should NOT pick them up — it returns None.
-        let a = args(&[("path", json!("/src")), ("max_results", json!(10))]);
-        let pattern = get_str(&a, "pattern").or_else(|| {
-            a.iter()
-                .find(|(k, v)| !KNOWN_KEYS.contains(&k.as_str()) && v.is_string())
-                .and_then(|(_, v)| v.as_str().map(String::from))
-        });
-        assert_eq!(pattern, None);
-    }
-
-    /// #1625: a `max_results` inside a query object was read by nothing. The
-    /// caller saw exactly half the default budget per query and no indication
-    /// that the value they had written was ignored.
-    #[test]
-    fn per_query_max_results_overrides_its_share_of_the_shared_budget() {
-        // Two queries under the default budget of 20 → 10 each.
-        let share = 10;
-        assert_eq!(
-            resolve_query_cap(&args(&[("pattern", json!("x"))]), share, 0),
-            Ok(share),
-            "without its own cap a query keeps its share of the shared budget"
-        );
-        assert_eq!(
-            resolve_query_cap(
-                &args(&[("pattern", json!("x")), ("max_results", json!(20))]),
-                share,
-                0
-            ),
-            Ok(20),
-            "a per-query cap must win over the split"
-        );
-        assert_eq!(
-            resolve_query_cap(
-                &args(&[("pattern", json!("x")), ("max_results", json!(9_000))]),
-                share,
-                0
-            ),
-            Ok(500),
-            "a per-query cap may not escape the 500 ceiling the top level has"
-        );
-    }
-
-    #[test]
-    fn non_positive_per_query_max_results_is_rejected_not_ignored() {
-        let error = resolve_query_cap(
-            &args(&[("pattern", json!("x")), ("max_results", json!(0))]),
-            10,
-            1,
-        )
-        .expect_err("zero is not a usable cap");
-        assert!(
-            error.contains("queries[2].max_results"),
-            "the error must point at the offending entry, 1-based: {error}"
-        );
-    }
-
-    /// The untyped `items` schema is why the ignored key produced no validation
-    /// error on the client side either. Both halves are closed now: the schema
-    /// says `additionalProperties: false`, and the handler checks it too, since
-    /// not every client validates before dispatch.
-    #[test]
-    fn unknown_query_keys_are_named_rather_than_dropped() {
-        assert_eq!(
-            validate_query_keys(&args(&[("pattern", json!("x"))]), 0),
-            Ok(())
-        );
-        let error = validate_query_keys(
-            &args(&[("pattern", json!("x")), ("maxResults", json!(20))]),
-            0,
-        )
-        .expect_err("a camelCase near-miss must not be silently dropped");
-        assert!(
-            error.contains("unknown key 'maxResults'"),
-            "the offending key must be named: {error}"
-        );
-        assert!(
-            error.contains("max_results"),
-            "the accepted set must be listed so the fix is obvious: {error}"
-        );
-    }
-
-    /// Other search tools spell the pattern `regex`/`query` and the file
-    /// filter `glob`; a query entry written that way means the same thing.
-    #[test]
-    fn query_entries_accept_other_tools_spellings() {
-        for (key, value) in [
-            ("regex", json!("x")),
-            ("query", json!("x")),
-            ("glob", json!("*.rs")),
-        ] {
-            assert_eq!(
-                validate_query_keys(&args(&[("pattern", json!("x")), (key, value)]), 0),
-                Ok(()),
-                "{key} must be accepted"
-            );
-        }
-    }
-
-    /// The published schema must describe the shared-budget semantics the
-    /// reporter had to reverse-engineer from the results — and must do it
-    /// without paying for a fully expanded `queries.items` object.
-    ///
-    /// Typing every `items` key (`additionalProperties: false` + six property
-    /// entries) cost ~52 tokens on *every turn of every session* and broke
-    /// `minimal_arm_per_turn_prefix_stays_within_budget`. Its only benefit is
-    /// client-side rejection of a rare malformed call, which
-    /// `validate_query_keys` already catches at dispatch with a better message
-    /// (it names the offending key and the accepted set). In a tool whose
-    /// purpose is context economy, the per-turn cost loses. The one line kept
-    /// is the shared-budget note, because that is the misconception #1625 was
-    /// actually made of.
-    #[test]
-    fn schema_documents_the_shared_budget_without_paying_for_typed_items() {
-        use crate::server::tool_trait::McpTool;
-        let def = super::CtxSearchTool.tool_def();
-        let schema = serde_json::to_value(&*def.input_schema).expect("schema");
-        let top = schema["properties"]["max_results"]["description"]
-            .as_str()
-            .unwrap_or_default();
-        assert!(
-            top.contains("shared across queries"),
-            "the top-level budget must announce that it is split across queries: {top}"
-        );
-        assert!(
-            schema["properties"]["queries"]["items"]["properties"].is_null(),
-            "queries.items must stay unexpanded — the per-turn token cost is not \
-             worth duplicating a check validate_query_keys already makes"
-        );
-    }
-}
+#[path = "ctx_search_tests.rs"]
+mod tests;
 
 #[cfg(test)]
 #[path = "ctx_search_mcp_tests.rs"]

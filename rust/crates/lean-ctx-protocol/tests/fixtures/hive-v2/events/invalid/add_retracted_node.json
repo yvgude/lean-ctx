@@ -1,0 +1,18 @@
+{
+  "case": "add_retracted_node",
+  "description": "node.add of a retracted node: re-add must use restore",
+  "base": "events/node.add.decision.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/seq",
+      "value": 19
+    }
+  ],
+  "resign_with": "instance_a",
+  "expect": {
+    "layer": "use_restore",
+    "code": "invalid_event",
+    "reason": "use_restore"
+  }
+}

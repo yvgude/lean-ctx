@@ -110,12 +110,11 @@ an MCP server and registers its available advanced tools directly in Pi:
 |------|---------|
 | `ctx_session` | Session state management and persistence |
 | `ctx_knowledge` | Project knowledge graph with temporal validity |
-| `ctx_semantic_search` | Find code by meaning, not exact text |
-| `ctx_overview` | Codebase overview and architecture analysis |
+| `ctx_compose` | Ranked files and symbols for a task in one call |
+| `ctx_graph` | Dependencies, impact and architecture views |
 | `ctx_compress` | Manual compression control |
 | `ctx_metrics` | Local usage diagnostics |
-| `ctx_multi_read` | Batch file reads |
-| `ctx_search` | MCP-native search |
+| `ctx_search` | MCP-native search (regex, `action=semantic` by meaning) |
 | `ctx_tree` | File tree listing |
 
 To opt out, set `LEAN_CTX_PI_ENABLE_MCP=0` (or `"enableMcp": false`) and use
@@ -161,7 +160,7 @@ On by default, pi-lean-ctx uses the `lean-ctx` binary as an MCP server (JSON-RPC
 This persistent process holds the **session cache**: `ctx_read` (every mode, including line
 ranges) is routed through the bridge, allowing unchanged re-reads to use the Runtime's cached
 representation. Token use depends on the file, mode, cache policy, and host. The bridge
-also discovers the server's advertised tools (`ctx_overview`, `ctx_graph`, `ctx_session`, …),
+also discovers the server's advertised tools (`ctx_compose`, `ctx_graph`, `ctx_session`, …),
 filters out those already exposed as `ctx_` CLI tools, and registers the rest as native Pi tools.
 By default that surface is the lean core + `ctx_call`; set `toolProfile: power` (see the
 [Tool surface](#tool-surface-lean--standard--power) section) to also surface `ctx_edit`
@@ -305,13 +304,13 @@ Use `/lean-ctx` in Pi to check:
 To disable specific MCP tools, configure `disabled_tools` in `~/.lean-ctx/config.toml`:
 
 ```toml
-disabled_tools = ["ctx_graph", "ctx_benchmark"]
+disabled_tools = ["ctx_graph", "ctx_heatmap"]
 ```
 
 Or via environment variable:
 
 ```bash
-LEAN_CTX_DISABLED_TOOLS=ctx_graph,ctx_benchmark pi
+LEAN_CTX_DISABLED_TOOLS=ctx_graph,ctx_heatmap pi
 ```
 
 ## Coexisting with AFT and magic-context

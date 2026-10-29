@@ -207,6 +207,7 @@ mod tests {
             signature: None,
             graph_summary: None,
             marketplace: None,
+            redistributable: None,
         }
     }
 

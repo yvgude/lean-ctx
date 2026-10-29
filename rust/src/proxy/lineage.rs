@@ -1,4 +1,7 @@
 //! Trusted, payload-free OCLA lineage admitted at the HTTP proxy boundary.
+//! Only the `enterprise` gateway admits it; other builds compile the parser
+//! for its tests.
+#![cfg_attr(not(any(test, feature = "enterprise")), allow(dead_code))]
 
 use axum::http::{HeaderMap, request::Parts};
 

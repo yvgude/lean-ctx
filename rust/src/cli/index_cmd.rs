@@ -18,12 +18,14 @@ pub(crate) fn cmd_index(args: &[String]) {
         Some("status") => {
             let json_flag = args.iter().any(|a| a == "--json");
             if json_flag {
-                println!(
-                    "{}",
-                    crate::core::index_orchestrator::status_json(&project_root)
-                );
+                match index_run(&project_root)
+                    .deliver_json(|| crate::core::index_orchestrator::status_json(&project_root))
+                {
+                    Ok(document) => super::common::print_released(&document),
+                    Err(reason) => super::common::exit_withheld(&reason),
+                }
             } else {
-                print_human_status(&project_root);
+                print_report(&project_root, || human_status(&project_root));
             }
         }
         Some("build") => {
@@ -126,15 +128,21 @@ pub(crate) fn cmd_index(args: &[String]) {
             // #682.1: mirror the proven graph_index extractor into the property
             // graph (complete symbols + file_catalog).
             match crate::core::graph_provider::build_property_graph(&project_root) {
-                Ok(()) => match crate::core::property_graph::CodeGraph::open(&project_root) {
-                    Ok(g) => println!(
-                        "property graph built from graph_index: {} nodes, {} edges, {} files",
-                        g.node_count().unwrap_or(0),
-                        g.edge_count().unwrap_or(0),
-                        g.file_catalog_count().unwrap_or(0),
-                    ),
-                    Err(_) => println!("property graph built from graph_index"),
-                },
+                Ok(()) => {
+                    let summary = match crate::core::property_graph::CodeGraph::open(&project_root)
+                    {
+                        Ok(g) => format!(
+                            "property graph built from graph_index: {} nodes, {} edges, {} files",
+                            g.node_count().unwrap_or(0),
+                            g.edge_count().unwrap_or(0),
+                            g.file_catalog_count().unwrap_or(0),
+                        ),
+                        Err(_) => "property graph built from graph_index".to_string(),
+                    };
+                    super::common::print_released(
+                        &index_run(&project_root).deliver_text(|| summary),
+                    );
+                }
                 Err(e) => eprintln!("property graph build failed: {e}"),
             }
         }
@@ -182,12 +190,15 @@ pub(crate) fn cmd_index(args: &[String]) {
             };
             let coverage = crate::core::bm25_index::coverage::explain(root, file);
             if args.iter().any(|a| a == "--json") {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&coverage).unwrap_or_default()
-                );
+                match index_run(&project_root)
+                    .deliver_json(|| serde_json::to_string_pretty(&coverage).unwrap_or_default())
+                {
+                    Ok(document) => super::common::print_released(&document),
+                    Err(reason) => super::common::exit_withheld(&reason),
+                }
             } else {
-                print!("{}", crate::core::bm25_index::coverage::render(&coverage));
+                let rendered = crate::core::bm25_index::coverage::render(&coverage);
+                print_report(&project_root, || rendered);
             }
             if coverage.exclusion.is_some() {
                 std::process::exit(1);
@@ -491,10 +502,46 @@ fn daemon_session_project_root() -> Option<String> {
     crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)
 }
 
-fn print_human_status(project_root: &str) {
-    let disk = crate::core::index_orchestrator::disk_status(project_root);
+/// The run of an `index` report. Status, coverage and build summaries are
+/// counters, paths and filter rules about the indexes — a report for the
+/// person at the terminal, not a tool result: they pass the release point and
+/// are never recorded as a delivery of project sources.
+fn index_run(project_root: &str) -> super::common::CliToolRun<'_> {
+    super::common::CliToolRun::new("ctx_index", project_root, None).human_facing()
+}
 
-    println!("  Project:        {project_root}");
+/// Print an `index` report that ends with its own newline (the former
+/// `print!`). The report is released without that final `\n`, which the one
+/// observed writer adds back: the bytes on stdout are the same and the
+/// hand-over is observed (G08). A report without a final newline is printed
+/// as before and stays unconfirmed.
+fn print_report(project_root: &str, render: impl FnOnce() -> String) {
+    let mut ends_with_newline = false;
+    let released = index_run(project_root).deliver_text(|| {
+        let report = render();
+        match report.strip_suffix('\n') {
+            Some(body) => {
+                ends_with_newline = true;
+                body.to_owned()
+            }
+            None => report,
+        }
+    });
+    if ends_with_newline {
+        super::common::print_released(&released);
+    } else {
+        print!("{released}");
+    }
+}
+
+/// The lines of `index status`, each ending with a newline, as they were
+/// printed line by line before.
+fn human_status(project_root: &str) -> String {
+    use std::fmt::Write as _;
+    let disk = crate::core::index_orchestrator::disk_status(project_root);
+    let mut out = String::new();
+
+    let _ = writeln!(out, "  Project:        {project_root}");
     // #1437: surface the daemon session root when it differs from the CLI root
     // so users can diagnose the "status says ready but queries fail" mismatch.
     if let Some(daemon_root) = daemon_session_project_root() {
@@ -512,24 +559,29 @@ fn print_human_status(project_root: &str) {
             }
         };
         if !same_root(&daemon_root, project_root) {
-            println!(
+            let _ = writeln!(
+                out,
                 "  ⚠ Daemon root:  {daemon_root} (differs from CLI — dense queries use this root)"
             );
         }
     }
-    println!(
+    let _ = writeln!(
+        out,
         "  Graph Index:    {}",
         format_disk_line(&disk.graph_index, "files")
     );
-    println!(
+    let _ = writeln!(
+        out,
         "  BM25 Index:     {}",
         format_disk_line(&disk.bm25_index, "chunks")
     );
-    println!(
+    let _ = writeln!(
+        out,
         "  Code Graph:     {}",
         format_disk_line(&disk.code_graph, "nodes")
     );
-    println!(
+    let _ = writeln!(
+        out,
         "  Semantic Index: {}",
         format_disk_line(&disk.semantic_index, "vectors")
     );
@@ -537,8 +589,9 @@ fn print_human_status(project_root: &str) {
     // recognizable. Absent for the default (unfiltered) config, keeping the
     // default output byte-identical.
     if let Some(summary) = crate::core::index_filter::IndexFileFilter::effective().summary() {
-        println!("  Index Filters:  {summary}");
+        let _ = writeln!(out, "  Index Filters:  {summary}");
     }
+    out
 }
 
 fn format_disk_line(ds: &crate::core::index_orchestrator::DiskStatus, count_label: &str) -> String {
@@ -709,5 +762,55 @@ mod tests {
         assert!(include.is_empty(), "{include:?}");
         assert!(exclude.is_empty(), "{exclude:?}");
         assert_eq!(gitignore, None);
+    }
+
+    use crate::cli::common::carrier_tests_support::{
+        AWS_KEY, acquire_source, governed, lineage, project, source_file,
+    };
+
+    /// `index status` / `why` / build summaries are reports about the indexes:
+    /// released, never registered — even when the handler read a source.
+    #[test]
+    fn an_index_report_is_human_facing() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        governed();
+        let (_project, root) = project();
+        let path = source_file(&root, "lib.rs", "pub fn indexed() {}\n");
+        let report = "  Project:        /p\n  BM25 Index:     12 chunks\n";
+        let printed = super::index_run(&root).deliver_text(|| {
+            acquire_source(&root, &path);
+            report.to_string()
+        });
+        assert_eq!(
+            printed, report,
+            "the report keeps its bytes, newline included"
+        );
+        assert_eq!(lineage(&root, &printed), None);
+        let leaked = super::index_run(&root).deliver_text(|| format!("filter {AWS_KEY}\n"));
+        assert!(!leaked.contains(AWS_KEY), "{leaked}");
+    }
+
+    /// The status lines are collected exactly as they were printed: one
+    /// line each, the project first.
+    #[test]
+    fn the_human_status_lists_the_project_and_every_index() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_project, root) = project();
+        let status = super::human_status(&root);
+        assert!(
+            status.starts_with(&format!("  Project:        {root}\n")),
+            "{status}"
+        );
+        for label in [
+            "Graph Index:",
+            "BM25 Index:",
+            "Code Graph:",
+            "Semantic Index:",
+        ] {
+            assert!(status.contains(label), "{status}");
+        }
+        assert!(status.ends_with('\n'));
     }
 }

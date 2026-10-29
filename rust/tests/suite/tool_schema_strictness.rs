@@ -52,8 +52,10 @@ fn check_schema(tool: &str, node: &Value, path: &str, errors: &mut Vec<String>) 
 fn all_tool_schemas_survive_strict_validators() {
     let registry = lean_ctx::server::registry::build_registry();
     let tools = registry.tool_defs();
+    // Floor for the public surface (≈50 since the focus release hid 30
+    // deprecated tools, 2026-10-15); a much smaller count means broken wiring.
     assert!(
-        tools.len() >= 60,
+        tools.len() >= 40,
         "registry unexpectedly small ({}) — wiring broken?",
         tools.len()
     );

@@ -41,14 +41,31 @@ pub struct SearchOutcome {
     /// Tokens actually measured in the raw match lines — no model applied.
     /// Feeds the verified savings ledger.
     pub observed_tokens: usize,
+    /// The search itself failed (pattern refused, invalid regex, missing or
+    /// refused root) and `text` is its error message. This is the signal
+    /// callers act on — never the wording of `text`: a search whose output
+    /// merely begins with "ERROR" is a result, and "0 matches" is one too.
+    pub failed: bool,
 }
 
 impl SearchOutcome {
+    /// A search that did not run: `text` is the error message.
     fn error(text: String) -> Self {
         Self {
             text,
             modeled_baseline: 0,
             observed_tokens: 0,
+            failed: true,
+        }
+    }
+
+    /// A search that ran and returned no match lines: `text` is the report.
+    fn without_matches(text: String) -> Self {
+        Self {
+            text,
+            modeled_baseline: 0,
+            observed_tokens: 0,
+            failed: false,
         }
     }
 
@@ -58,6 +75,7 @@ impl SearchOutcome {
             text,
             modeled_baseline: modeled.max(observed_tokens),
             observed_tokens,
+            failed: false,
         }
     }
 }
@@ -189,6 +207,8 @@ fn search_compiled_pattern(
     let admission = crate::core::context_admission::stores::StoreAdmission::current();
     let mut protected_budget = crate::core::limits::max_read_bytes()
         .min(crate::core::policy::content::MAX_PROTECTED_CONTENT_BYTES);
+    // Files that contributed at least one returned match, in scan order.
+    let mut matched_sources: Vec<std::path::PathBuf> = Vec::new();
     if pattern.len() > MAX_PATTERN_LEN {
         return SearchOutcome::error(format!(
             "ERROR: pattern too long ({} > {MAX_PATTERN_LEN} chars)",
@@ -247,6 +267,10 @@ fn search_compiled_pattern(
     // that quit after one file reported "10 matches in 1 files (scanned 1)" —
     // indistinguishable from an exhaustive scan that genuinely found ten.
     let mut cap_hit = false;
+    // Under a policy every scanned original is charged to one byte budget. When
+    // it cannot cover the next file the scan stops and says so; the files left
+    // unscanned were not withheld by the policy and must not be counted as such.
+    let mut budget_hit = false;
     // Set when any hit gained an `∈name@Lstart` enclosing tag, so the
     // self-describing legend is emitted only when it is actually needed (#580).
     let mut any_enclosing = false;
@@ -383,6 +407,7 @@ fn search_compiled_pattern(
         // device node would block `read_to_string` forever — the root cause of
         // #336 — and oversized or unstatable files are skipped. `metadata`
         // (stat) never opens the file, so it cannot block on a special file.
+        let file_len: u64;
         let state = match std::fs::metadata(path) {
             Ok(meta) if !meta.file_type().is_file() => {
                 files_skipped_special += 1;
@@ -398,7 +423,10 @@ fn search_compiled_pattern(
                 }
                 continue;
             }
-            Ok(meta) => crate::core::content_cache::FileState::from_metadata(&meta),
+            Ok(meta) => {
+                file_len = meta.len();
+                crate::core::content_cache::FileState::from_metadata(&meta)
+            }
             Err(_) => {
                 files_skipped_encoding += 1;
                 continue;
@@ -411,14 +439,26 @@ fn search_compiled_pattern(
         // it for the next caller. `(mtime, size)` validation guarantees we never
         // verify against stale bytes.
         let content: std::sync::Arc<str> = if protected {
+            // The budget decision rests on the file size alone, never on its
+            // content, so stopping here discloses nothing about any source.
+            if (protected_budget as u64) < file_len {
+                budget_hit = true;
+                break;
+            }
+            // Scanning a file does not make it a source of the result: only a
+            // file that contributes a match is published (below, after the
+            // scan). Publishing every scanned file would bind the result to
+            // the whole tree.
             let admitted = protected_root.as_ref().and_then(|root| {
-                crate::tools::ctx_read::read_file_for_tool_rooted_budgeted(
-                    path.to_str()?,
-                    root.to_str()?,
-                    "ctx_search",
-                    &mut protected_budget,
-                )
-                .ok()
+                crate::core::archive::authority::without_capture(|| {
+                    crate::tools::ctx_read::read_file_for_tool_rooted_budgeted(
+                        path.to_str()?,
+                        root.to_str()?,
+                        "ctx_search",
+                        &mut protected_budget,
+                    )
+                    .ok()
+                })
             });
             if let Some(text) = admitted {
                 std::sync::Arc::from(text)
@@ -435,10 +475,23 @@ fn search_compiled_pattern(
             if state.is_some() {
                 crate::core::cache::record_search_content_read(false);
             }
-            let Ok(text) = crate::core::text_decode::read_text(path) else {
+            let Ok(decoded) = crate::core::text_decode::read_text_checked(path) else {
                 files_skipped_encoding += 1;
                 continue;
             };
+            // Replaced or dropped bytes mean the text is not the whole source.
+            // Governed and sovereign mode demand full inspection: the file is
+            // withheld from the search. Developer mode still searches it, but
+            // it is never published to the shared content cache.
+            let complete = decoded.complete();
+            if !complete
+                && admission.admission_policy().gateway.mode
+                    != lean_ctx_protocol::context_gateway::GatewayModeV1::Developer
+            {
+                files_withheld += 1;
+                continue;
+            }
+            let text = decoded.text;
             // Search matches only ever come from admitted text: a masked value
             // cannot be found, and a withheld or restricted source is skipped
             // without disclosing it (G5).
@@ -449,7 +502,8 @@ fn search_compiled_pattern(
             let arc: std::sync::Arc<str> = std::sync::Arc::from(text);
             // An explicitly named file above the walk cap is read once and
             // not published: it would evict the whole shared cache.
-            if let Some(s) = state
+            if complete
+                && let Some(s) = state
                 && arc.len() as u64 <= MAX_FILE_SIZE
             {
                 crate::core::content_cache::insert(
@@ -472,6 +526,13 @@ fn search_compiled_pattern(
             if re.is_match(line) && !exclude_re.as_ref().is_some_and(|ex| ex.is_match(line)) {
                 let short_path =
                     protocol::shorten_path_relative(&path.to_string_lossy(), &root_str);
+                let source: &Path = path.as_ref();
+                if matched_sources
+                    .last()
+                    .is_none_or(|last| last.as_path() != source)
+                {
+                    matched_sources.push(source.to_path_buf());
+                }
                 // Count raw tokens incrementally (avoids separate Vec + join)
                 raw_tokens_accum += count_tokens(line.trim()) + 2;
                 let mut shown = if redact {
@@ -514,6 +575,24 @@ fn search_compiled_pattern(
                 }
             }
         }
+    }
+
+    // Source lineage of the result (G04): every file that contributed a match,
+    // and nothing else. Each is read once through the admitted rooted reader,
+    // which publishes it bound to what is on disk now; a file that cannot be
+    // bound makes the set unknown. A no-op without a capture or protection.
+    // A result WITHOUT matches names no source and stays of unknown lineage:
+    // "nothing matched" is a statement about every scanned file.
+    let lineage_root = crate::core::policy::diagnostics::project().map_or_else(
+        || dir.to_owned(),
+        |root| root.to_string_lossy().into_owned(),
+    );
+    for source in &matched_sources {
+        crate::tools::ctx_read::publish_requested_source(
+            &source.to_string_lossy(),
+            &lineage_root,
+            "ctx_search",
+        );
     }
 
     // #883: sort matches by file match-density — files with more hits surface
@@ -572,7 +651,10 @@ fn search_compiled_pattern(
                 " (search stopped at the time budget — refine the pattern or scope with path=)",
             );
         }
-        return SearchOutcome::error(msg);
+        if budget_hit {
+            msg.push_str(&budget_note(files_covered));
+        }
+        return SearchOutcome::without_matches(msg);
     }
 
     // Prefix-cache-friendly: structural file list before per-query match content
@@ -653,6 +735,10 @@ fn search_compiled_pattern(
              refine the pattern or scope with path= for full coverage)",
             search_deadline().map_or(0, |d| d.as_secs())
         ));
+    }
+    if budget_hit {
+        result.push('\n');
+        result.push_str(budget_note(files_covered).trim_start());
     }
     // #1625: the cap stopping the scan is the same class of event as the
     // deadline above, and it was silent. A caller auditing a codebase read
@@ -898,6 +984,17 @@ fn split_top_level_commas(raw: &str) -> Vec<&str> {
     }
     pieces.push(raw[start..].trim());
     pieces
+}
+
+/// Why a policy-protected search stopped early: every scanned original is
+/// charged to one byte budget per search (`LEAN_CTX_MAX_READ_BYTES`, at most the
+/// protected-content cap). The unscanned rest was not withheld by the policy.
+fn budget_note(files_covered: u32) -> String {
+    format!(
+        " (search stopped after {files_covered} files: the protected-content read budget of this \
+         search is spent; the remaining files were not scanned, not withheld — narrow with \
+         path= or include= for full coverage)"
+    )
 }
 
 /// The path include/exclude globs are matched against: relative to the search

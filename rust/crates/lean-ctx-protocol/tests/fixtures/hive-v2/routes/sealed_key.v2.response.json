@@ -1,0 +1,14 @@
+{
+  "epoch": 2,
+  "epoch_required": 2,
+  "instance_id": "inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+  "place_secret_wrapped": "WlpaWlpaWlpaWlpaWlpaWlpaWlpaWlpaAAECAwQFBgcICQoLDA0ODxAREhMUFRYXGBkaGxwdHh8gISIjJCUmJygpKissLS4v",
+  "schema": "leanctx.hive.sealed-key/v1",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42",
+  "wrapped_key": {
+    "alg": "x25519-hkdf-sha256-xchacha20poly1305",
+    "ciphertext": "KY/SovtMnNsUWRBa6FU1twtUEL8Nkcu+kqy5qlSRLlWPJan4mXv3CBApuWoKpONB",
+    "ephemeral_pub": "MoaJTNKEWm22oo+/BndgX4DlpiOFv04Qp5CuX942c2s=",
+    "nonce": "Tk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5O"
+  }
+}

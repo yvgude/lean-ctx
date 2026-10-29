@@ -127,24 +127,6 @@ pub fn infer_from_tool_call(
                 timestamp: Utc::now(),
             })
         }
-        "ctx_workflow" => {
-            let a = action
-                .or_else(|| get_str(args, "action"))
-                .unwrap_or("unknown");
-            Some(IntentRecord {
-                id: stable_id(tool, Some(a), a),
-                source: IntentSource::Inferred,
-                intent_type: IntentType::WorkflowTransition,
-                subject: IntentSubject::Workflow {
-                    action: a.to_string(),
-                },
-                assertion: truncate_one_line(a, 180),
-                confidence: 0.75,
-                evidence_keys: evidence_keys_for(tool, Some(a)),
-                occurrences: 1,
-                timestamp: Utc::now(),
-            })
-        }
         "ctx_knowledge" => {
             let a = action
                 .or_else(|| get_str(args, "action"))
@@ -187,10 +169,6 @@ pub fn infer_from_tool_call(
                 _ => None,
             }
         }
-        "ctx_intent" => {
-            let query = get_str(args, "query").unwrap_or_default();
-            Some(intent_from_query(query, project_root))
-        }
         "ctx_session" => {
             let a = action
                 .or_else(|| get_str(args, "action"))
@@ -229,144 +207,6 @@ pub fn infer_from_tool_call(
             occurrences: 1,
             timestamp: Utc::now(),
         }),
-        _ => None,
-    }
-}
-
-pub fn intent_from_query(query: &str, project_root: Option<&str>) -> IntentRecord {
-    let now = Utc::now();
-    let q = query.trim();
-    if let Ok(v) = serde_json::from_str::<Value>(q)
-        && let Some(obj) = v.as_object()
-        && let Some(intent_type) = obj.get("intent_type").and_then(|v| v.as_str())
-        && let Some(intent) = intent_from_json(intent_type, obj, project_root, now)
-    {
-        return intent;
-    }
-
-    // Plain text → deterministic intent classification (short, no reads).
-    let multi = crate::core::intent_engine::detect_multi_intent(q);
-    let primary = multi.first();
-    let (intent_type, confidence) = if let Some(p) = primary {
-        (
-            IntentType::Task,
-            (p.confidence as f32).clamp(0.0, 1.0).max(0.6),
-        )
-    } else {
-        (IntentType::Task, 0.6)
-    };
-
-    let assertion = truncate_one_line(q, 220);
-    IntentRecord {
-        id: stable_id("ctx_intent", Some("query"), &assertion),
-        source: IntentSource::Explicit,
-        intent_type,
-        subject: IntentSubject::Project {
-            root: project_root.map(std::string::ToString::to_string),
-        },
-        assertion,
-        confidence,
-        evidence_keys: evidence_keys_for("ctx_intent", Some("query")),
-        occurrences: 1,
-        timestamp: now,
-    }
-}
-
-pub fn apply_side_effects(
-    intent: &IntentRecord,
-    project_root: Option<&str>,
-    session_id: &str,
-) -> Result<(), String> {
-    let Some(root) = project_root else {
-        return Ok(());
-    };
-
-    let IntentSubject::KnowledgeFact {
-        category,
-        key,
-        value,
-    } = &intent.subject
-    else {
-        return Ok(());
-    };
-
-    let policy = crate::core::config::Config::load()
-        .memory_policy_effective()
-        .map_err(|e| format!("invalid memory policy: {e}"))?;
-    // Load-modify-save under the shared lock so an intent side effect never
-    // clobbers a fact a concurrent (possibly background) writer commits in
-    // between (issue #326): a bare load + save would lose that update.
-    let confidence = intent.confidence.clamp(0.0, 1.0);
-    crate::core::knowledge::ProjectKnowledge::mutate_locked(root, |knowledge| {
-        let _ = knowledge.remember(category, key, value, session_id, confidence, &policy);
-        let _ = knowledge.run_memory_lifecycle(&policy);
-    })?;
-    Ok(())
-}
-
-fn intent_from_json(
-    intent_type: &str,
-    obj: &serde_json::Map<String, Value>,
-    project_root: Option<&str>,
-    now: DateTime<Utc>,
-) -> Option<IntentRecord> {
-    match intent_type {
-        "knowledge_fact" => {
-            let category = obj.get("category")?.as_str()?.to_string();
-            let key = obj.get("key")?.as_str()?.to_string();
-            let value = obj.get("value")?.as_str()?.to_string();
-            let assertion = truncate_one_line(&format!("{category}:{key}={value}"), 220);
-            Some(IntentRecord {
-                id: stable_id(
-                    "ctx_intent",
-                    Some("knowledge_fact"),
-                    &format!("{category}/{key}"),
-                ),
-                source: IntentSource::Explicit,
-                intent_type: IntentType::KnowledgeFact,
-                subject: IntentSubject::KnowledgeFact {
-                    category,
-                    key,
-                    value,
-                },
-                assertion,
-                confidence: obj
-                    .get("confidence")
-                    .and_then(serde_json::Value::as_f64)
-                    .unwrap_or(0.8)
-                    .clamp(0.0, 1.0) as f32,
-                evidence_keys: evidence_keys_for("ctx_intent", Some("knowledge_fact")),
-                occurrences: 1,
-                timestamp: now,
-            })
-        }
-        "task" => {
-            let assertion = obj
-                .get("assertion")
-                .and_then(|v| v.as_str())
-                .unwrap_or("")
-                .to_string();
-            if assertion.trim().is_empty() {
-                return None;
-            }
-            Some(IntentRecord {
-                id: stable_id("ctx_intent", Some("task"), &assertion),
-                source: IntentSource::Explicit,
-                intent_type: IntentType::Task,
-                subject: IntentSubject::Project {
-                    root: project_root.map(std::string::ToString::to_string),
-                },
-                assertion: truncate_one_line(&assertion, 220),
-                confidence: obj
-                    .get("confidence")
-                    .and_then(serde_json::Value::as_f64)
-                    .unwrap_or(0.75)
-                    .clamp(0.0, 1.0) as f32,
-                evidence_keys: evidence_keys_for("ctx_intent", Some("task")),
-                occurrences: 1,
-                timestamp: now,
-            })
-        }
         _ => None,
     }
 }

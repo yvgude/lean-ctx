@@ -1,0 +1,271 @@
+{
+  "cases": [
+    {
+      "accepted": true,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "file:services/payments/retry.rs"
+        }
+      ],
+      "name": "file_whole_blob",
+      "reason": null
+    },
+    {
+      "accepted": true,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "file:services/payments/retry.rs#L1-3"
+        }
+      ],
+      "name": "file_line_range",
+      "reason": null
+    },
+    {
+      "accepted": true,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "sym:services/payments/retry.rs::backoff"
+        }
+      ],
+      "name": "symbol_span",
+      "reason": null
+    },
+    {
+      "accepted": true,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "sym:src/lib.rs::Client::send"
+        }
+      ],
+      "name": "nested_symbol",
+      "reason": null
+    },
+    {
+      "accepted": true,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc4524a551fc4524a551fc4524a55",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "file:src/lib.rs"
+        }
+      ],
+      "name": "sha256_repository_commit",
+      "reason": null
+    },
+    {
+      "accepted": true,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "file:src/lib.rs",
+          "verified_at": 1792800000000
+        }
+      ],
+      "name": "verified_at",
+      "reason": null
+    },
+    {
+      "accepted": true,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "file:src/lib.rs"
+        },
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "sym:src/lib.rs::relay"
+        }
+      ],
+      "name": "two_distinct_refs",
+      "reason": null
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "sha256:a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "file:src/lib.rs"
+        }
+      ],
+      "name": "digest_with_sha256_prefix",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "A2CBED1079CADF4DF4F7D54E9517E7934EBC5EFC8AECC91519728A984B407A6F",
+          "ref": "file:src/lib.rs"
+        }
+      ],
+      "name": "digest_upper_case",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6",
+          "ref": "file:src/lib.rs"
+        }
+      ],
+      "name": "digest_63_hex",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc45",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "file:src/lib.rs"
+        }
+      ],
+      "name": "commit_39_hex",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "commit": "4A551FC4524A551FC4524A551FC4524A551FC452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "file:src/lib.rs"
+        }
+      ],
+      "name": "commit_upper_case",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "file:src/lib.rs"
+        }
+      ],
+      "name": "commit_missing",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "lang": "rust",
+          "ref": "file:src/lib.rs"
+        }
+      ],
+      "name": "unknown_field",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "http://example.com/x.rs"
+        }
+      ],
+      "name": "http_ref",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "https://docs.rs/blake3/"
+        }
+      ],
+      "name": "https_ref",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "file:/etc/passwd"
+        }
+      ],
+      "name": "absolute_path",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "file:../secrets.env"
+        }
+      ],
+      "name": "parent_path",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "sym:src/lib.rs#Client::send"
+        }
+      ],
+      "name": "symbol_hash_form",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [],
+      "name": "empty_list",
+      "reason": "shape"
+    },
+    {
+      "accepted": false,
+      "anchors": [
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+          "ref": "file:src/lib.rs"
+        },
+        {
+          "commit": "4a551fc4524a551fc4524a551fc4524a551fc452",
+          "digest": "d9298a10d1b0735837dc4bd85dac641b0f3cef27a47e5d53a54f2f3f5b2fcffa",
+          "ref": "file:src/lib.rs"
+        }
+      ],
+      "name": "duplicate_refs",
+      "reason": "duplicate_ref"
+    }
+  ],
+  "rules": {
+    "content": "digest of the whole blob for file:<path>, of lines a-b including their terminators for #L<a>-<b>, of the symbol's source span for sym:",
+    "content_example": {
+      "content": "fn backoff(attempt: u32) -> Duration {\n    full_jitter(64, attempt)\n}\n",
+      "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f"
+    },
+    "reasons": "shape = the list or an anchor breaks the shape (server: invalid_event reason shape); duplicate_ref = two anchors with one ref",
+    "shape": "CodeAnchorV1 = {ref, digest, commit, verified_at?} (C0 event.schema.json $defs.code_anchor): ref = file:<path>[#L<a>[-<b>]] or sym:<path>::<symbol> (RESOLUTIONS R127: the sym:<path>#<symbol> input form is never stored or sent); digest = 64 lower-case hex SHA-256 of the anchored content, no prefix (R120 as amended: C0 wins); commit = 40 or 64 lower-case hex; anchors[] holds 1-16 anchors with unique refs",
+    "version": 1
+  }
+}

@@ -9,7 +9,7 @@
 use chrono::{DateTime, Duration, Utc};
 use std::path::PathBuf;
 
-use super::knowledge::{KnowledgeFact, sort_fact_for_output};
+use super::knowledge::KnowledgeFact;
 use super::memory_archive::{ArchiveConfig, MemoryStore};
 
 const DEFAULT_DECAY_RATE: f32 = 0.01;
@@ -523,6 +523,9 @@ fn build_digest(members: &[&KnowledgeFact], now: DateTime<Utc>) -> KnowledgeFact
 
     let sensitivity = crate::core::sensitivity::classify_content(&value);
     KnowledgeFact {
+        anchors: Vec::new(),
+        review: None,
+        capture: Default::default(),
         origin: if members
             .iter()
             .all(|f| f.origin == crate::core::knowledge::FactOrigin::Local)
@@ -555,6 +558,8 @@ fn build_digest(members: &[&KnowledgeFact], now: DateTime<Utc>) -> KnowledgeFact
         archetype: crate::core::knowledge::KnowledgeArchetype::Observation,
         fidelity: None,
         revision_count: 0,
+        status: None,
+        validity: None,
     }
 }
 
@@ -581,36 +586,20 @@ pub fn run_lifecycle(
         archive_facts(&archived)?;
     }
 
-    // Capacity reclaim (#995): facts settle at headroom via the single capacity
-    // manager, archiving the evicted tail losslessly under the legacy facts root
-    // — the same path quality archival uses, so recall rehydration is uniform.
-    let capacity_archived = crate::core::memory_capacity::reclaim_store(
-        MemoryStore::Facts,
-        None,
-        facts,
-        config.max_facts,
-        config.reclaim_headroom_pct,
-        config.reclaim_enabled,
-        |a, b| {
-            b.is_current()
-                .cmp(&a.is_current())
-                .then_with(|| sort_fact_for_output(a, b))
-        },
-    )?
-    .len();
-
+    // No capacity reclaim for facts: knowledge has no count limit (owner
+    // decision 24.10.); only the quality rules above archive a fact.
     Ok(LifecycleReport {
         decayed_count: decayed,
         consolidated_count: consolidated,
-        archived_count: archived.len() + capacity_archived,
-        compacted_count: compacted + capacity_archived,
-        capacity_archived,
+        archived_count: archived.len(),
+        compacted_count: compacted,
+        capacity_archived: 0,
         remaining_facts: facts.len(),
     })
 }
 
-/// Archive evicted facts (lossless). Facts keep the legacy global archive root
-/// for backward compatibility; the generic multi-store archive lives in
+/// Archive evicted facts (lossless) into the request project's facts
+/// partition; the generic multi-store archive lives in
 /// [`crate::core::memory_archive`].
 pub fn archive_facts(facts: &[KnowledgeFact]) -> Result<(), String> {
     crate::core::memory_archive::archive_items(
@@ -622,21 +611,40 @@ pub fn archive_facts(facts: &[KnowledgeFact]) -> Result<(), String> {
     .map(|_| ())
 }
 
-/// Restore the facts from a single archive file (legacy `facts` key supported).
-pub fn restore_archive(archive_path: &str) -> Result<Vec<KnowledgeFact>, String> {
-    crate::core::memory_archive::restore_items(std::path::Path::new(archive_path))
+/// Run `f` with `project_root` as the request project, so the facts archive
+/// resolves to that project's partition and never to the process directory.
+fn in_project<T>(project_root: &str, f: impl FnOnce() -> T) -> T {
+    crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+        std::cell::RefCell::new(Some(PathBuf::from(project_root))),
+        f,
+    )
 }
 
-/// All facts archive files, sorted ascending (chronological).
-pub fn list_archives() -> Vec<PathBuf> {
-    crate::core::memory_archive::list_archives(MemoryStore::Facts, None)
+/// Restore the facts from a single archive file of `project_root`'s partition
+/// (legacy `facts` key supported).
+pub fn restore_archive(
+    project_root: &str,
+    archive_path: &str,
+) -> Result<Vec<KnowledgeFact>, String> {
+    in_project(project_root, || {
+        crate::core::memory_archive::restore_items(std::path::Path::new(archive_path))
+    })
 }
 
-/// The newest reachable facts archives for the recall-miss rehydrate path —
-/// bounded by [`ArchiveConfig::rehydrate_reach`] so every retained archive is
-/// reachable (closes the pre-#995 retained-vs-reachable gap).
-pub fn reachable_archives(cfg: &ArchiveConfig) -> Vec<PathBuf> {
-    crate::core::memory_archive::reachable_archives(MemoryStore::Facts, None, cfg)
+/// All facts archive files of `project_root`, sorted ascending (chronological).
+pub fn list_archives(project_root: &str) -> Vec<PathBuf> {
+    in_project(project_root, || {
+        crate::core::memory_archive::list_archives(MemoryStore::Facts, None)
+    })
+}
+
+/// The newest reachable facts archives of `project_root` for the recall-miss
+/// rehydrate path — bounded by [`ArchiveConfig::rehydrate_reach`] so every
+/// retained archive is reachable (closes the pre-#995 retained-vs-reachable gap).
+pub fn reachable_archives(project_root: &str, cfg: &ArchiveConfig) -> Vec<PathBuf> {
+    in_project(project_root, || {
+        crate::core::memory_archive::reachable_archives(MemoryStore::Facts, None, cfg)
+    })
 }
 
 fn word_similarity(a: &str, b: &str) -> f32 {
@@ -683,6 +691,9 @@ pub mod tests {
 
     fn make_fact(category: &str, key: &str, value: &str, confidence: f32) -> KnowledgeFact {
         KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: category.to_string(),
             key: key.to_string(),
@@ -706,6 +717,8 @@ pub mod tests {
             archetype: KnowledgeArchetype::default(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         }
     }
 
@@ -718,6 +731,9 @@ pub mod tests {
     ) -> KnowledgeFact {
         let past = Utc::now() - Duration::days(days_old);
         KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: category.to_string(),
             key: key.to_string(),
@@ -741,6 +757,8 @@ pub mod tests {
             archetype: KnowledgeArchetype::default(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         }
     }
 
@@ -942,49 +960,25 @@ pub mod tests {
     }
 
     #[test]
-    fn run_lifecycle_reclaims_capacity_to_headroom() {
+    fn run_lifecycle_never_reclaims_capacity() {
         with_temp_data_dir(|| {
+            // Owner decision 24.10.: knowledge has no count limit. A store over
+            // `max_facts` with only healthy facts keeps all of them, the
+            // expired one included (only quality rules archive).
             let config = LifecycleConfig {
-                max_facts: 8,
+                max_facts: 4,
                 ..Default::default()
             };
             let mut facts: Vec<KnowledgeFact> = (0..8)
                 .map(|i| make_fact("finding", &format!("k{i}"), &format!("value {i}"), 0.8))
                 .collect();
+            facts[0].valid_until = Some(Utc::now() - Duration::seconds(1));
 
             let report = run_lifecycle(&mut facts, &config).expect("lifecycle succeeds");
 
-            // Hysteresis: at cap (8) → settle to headroom target (6), archive 2.
-            assert_eq!(report.capacity_archived, 2);
-            assert_eq!(facts.len(), 6);
-            assert_eq!(report.remaining_facts, 6);
-        });
-    }
-
-    #[test]
-    fn run_lifecycle_evicts_expired_before_current() {
-        with_temp_data_dir(|| {
-            let config = LifecycleConfig {
-                max_facts: 4,
-                ..Default::default()
-            };
-            let decision = make_fact("decision", "keep-decision", "important decision", 0.7);
-            let finding = make_fact("finding", "keep-finding", "fresh finding", 0.9);
-            let mut old = make_fact("decision", "drop-archived", "old decision", 0.95);
-            // Definitively expired (not just "now") so retention ordering is stable.
-            old.valid_until = Some(Utc::now() - Duration::seconds(1));
-            let low = make_fact("misc", "drop-low", "low salience", 0.6);
-            let mut facts = vec![old, low, finding, decision];
-
-            let report = run_lifecycle(&mut facts, &config).expect("lifecycle succeeds");
-            let keys: Vec<&str> = facts.iter().map(|f| f.key.as_str()).collect();
-
-            // 4 at cap → settle to 3; the expired fact sorts last (not current) and
-            // is the single eviction, so every current fact survives.
-            assert_eq!(report.capacity_archived, 1);
-            assert!(keys.contains(&"keep-decision"));
-            assert!(keys.contains(&"keep-finding"));
-            assert!(!keys.contains(&"drop-archived"));
+            assert_eq!(report.capacity_archived, 0);
+            assert_eq!(facts.len(), 8);
+            assert_eq!(report.remaining_facts, 8);
         });
     }
 
@@ -1061,7 +1055,7 @@ pub mod tests {
             ];
 
             let report = run_lifecycle(&mut facts, &config).expect("lifecycle succeeds");
-            assert!(report.remaining_facts <= config.max_facts);
+            assert!(report.remaining_facts < 5, "the stale facts are archived");
             assert!(report.decayed_count > 0 || report.compacted_count > 0);
         });
     }

@@ -1,0 +1,24 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "unauthorized",
+          "message": "Sign in to star this vault."
+        }
+      },
+      "status": 401
+    }
+  ],
+  "method": "PUT",
+  "path": "/api/v1/public/vaults/acme/payments/star",
+  "request": null,
+  "response": {
+    "body": {
+      "starred": true,
+      "stars": 13
+    },
+    "status": 200
+  },
+  "route": "W46"
+}

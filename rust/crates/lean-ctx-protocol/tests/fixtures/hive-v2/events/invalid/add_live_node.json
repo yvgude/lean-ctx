@@ -1,0 +1,18 @@
+{
+  "case": "add_live_node",
+  "description": "node.add of a live node",
+  "base": "events/node.add.fact.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/seq",
+      "value": 19
+    }
+  ],
+  "resign_with": "instance_a",
+  "expect": {
+    "layer": "target_state",
+    "code": "invalid_event",
+    "reason": "target_state"
+  }
+}

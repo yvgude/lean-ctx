@@ -53,22 +53,16 @@ pub(crate) fn session_matches_project_root(
     session: &SessionState,
     target_root: &std::path::Path,
 ) -> bool {
-    if let Some(root) = session.project_root.as_deref() {
-        let root_path = resolve_for_match(std::path::Path::new(root));
-        if root_path == target_root {
-            return true;
-        }
-        if session.canonical_checkpoint.is_some() || has_project_marker(&root_path) {
-            return false;
-        }
-    }
-
-    if let Some(cwd) = session.shell_cwd.as_deref() {
-        let cwd_path = resolve_for_match(std::path::Path::new(cwd));
-        return cwd_path == target_root || cwd_path.starts_with(target_root);
-    }
-
-    false
+    // A session belongs to exactly one project: its recorded root decides.
+    // Matching a markerless root through a `shell_cwd` below the target let a
+    // nested directory's session restore into its parent project (AP04-G8).
+    // Only a session that never recorded a root falls back to the directory
+    // it worked in, and only to exactly that directory.
+    let recorded = session
+        .project_root
+        .as_deref()
+        .or(session.shell_cwd.as_deref());
+    recorded.is_some_and(|path| resolve_for_match(std::path::Path::new(path)) == target_root)
 }
 
 /// Resolves a persisted session path for root matching. Lexical comparison is

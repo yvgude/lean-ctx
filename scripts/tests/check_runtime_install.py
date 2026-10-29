@@ -21,12 +21,32 @@ def sha(data):
     return hashlib.sha256(data).hexdigest()
 
 
+def isolated_environment(root, runtime_license_config=None):
+    # Host pins and provider credentials must not escape into an installation
+    # test. Inherited LEAN_CTX_CONFIG_DIR otherwise overrides the temporary HOME.
+    env = {key: value for key, value in os.environ.items()
+           if key in ('PATH', 'TMPDIR', 'TMP', 'TEMP', 'SystemRoot', 'SYSTEMROOT', 'WINDIR')}
+    env.update(HOME=str(root / 'home'), XDG_CONFIG_HOME=str(root / 'config'),
+               XDG_DATA_HOME=str(root / 'data'), XDG_STATE_HOME=str(root / 'state'),
+               XDG_CACHE_HOME=str(root / 'cache'), LEAN_CTX_DATA_DIR=str(root / 'data'),
+               LEAN_CTX_CONFIG_DIR=str(root / 'data'), LEAN_CTX_STATE_DIR=str(root / 'data'),
+               LEAN_CTX_CACHE_DIR=str(root / 'data'), LEAN_CTX_PROJECT_ROOT=str(root),
+               DO_NOT_TRACK='1', LEAN_CTX_LIVE_PRICING='off',
+               NO_PROXY='127.0.0.1,localhost')
+    if runtime_license_config is not None:
+        assert runtime_license_config.is_absolute() and runtime_license_config.is_file()
+        env['LEANCTX_INTELLIGENCE_LICENSE_CONFIG'] = str(runtime_license_config)
+    return env
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--health', action='store_true')
     parser.add_argument('--invoke', action='store_true')
     parser.add_argument('--license-cases', type=Path,
-                        help='Independent private fixture index; requires --invoke')
+                         help='Independent private fixture index; requires --invoke')
+    parser.add_argument('--runtime-license-config', type=Path,
+                        help='Explicit disposable license fixture; never inherited from the host')
     parser.add_argument('--select', action='store_true')
     parser.add_argument('--configure', action='store_true')
     parser.add_argument('--channel', action='store_true')
@@ -51,7 +71,6 @@ def main():
         assert sha(args.previous_host.read_bytes()) == args.previous_host_sha256
     args.catalog = args.catalog or args.catalog_setup or args.catalog_rotation
     args.configure = args.configure or args.proxy
-    args.select = args.select or args.configure or args.outcomes
     args.health = args.health or args.invoke or args.outcomes
     assert sha(args.binary.read_bytes()) == args.binary_sha256
     manifest_raw = args.manifest.read_bytes()
@@ -83,9 +102,7 @@ def main():
         home.mkdir(mode=0o700)
         marker = state / 'unrelated-user-state'
         marker.write_bytes(b'component-state-must-survive')
-        env = dict(os.environ, HOME=str(home), XDG_CONFIG_HOME=str(root / 'config'),
-                   XDG_DATA_HOME=str(root / 'data'), XDG_STATE_HOME=str(root / 'state'),
-                   XDG_CACHE_HOME=str(root / 'cache'), LEAN_CTX_DATA_DIR=str(root / 'data'))
+        env = isolated_environment(root, args.runtime_license_config)
         if args.catalog_setup or args.catalog_rotation:
             env['LEAN_CTX_CONFIG_DIR'] = str(root / 'config' / 'lean-ctx')
             env['DO_NOT_TRACK'] = '1'
@@ -97,7 +114,7 @@ def main():
         target = ['--root', str(state), '--accept-proprietary']
 
         def run(name, arguments, success, prefix=('engine', 'runtime'), json_output=True,
-                tty_input=None):
+                tty_input=None, expected_error=None):
             argv = [str(args.binary), *prefix, *arguments]
             if tty_input is None:
                 result = subprocess.run(argv, cwd=root, env=env, capture_output=True, timeout=30)
@@ -129,6 +146,9 @@ def main():
             retain({'passed': False, 'user_acceptance': False, 'commands': records,
                     'host_binary_sha256': args.binary_sha256})
             assert result.returncode == (0 if success else 2), name
+            if expected_error is not None:
+                assert result.stdout == b'', name
+                assert result.stderr.decode().splitlines() == [expected_error], name
             return (json.loads(result.stdout) if json_output else result.stdout.decode()) if success else None
 
         result = run('verify', ['verify', *common, *inputs], True)
@@ -161,7 +181,16 @@ def main():
         if args.health:
             health = ['health', *common, *target, '--expected-active', args.manifest_sha256]
             result = run('authenticated-native-health', health, True)
-            capability_version = result['description']['capabilities'][0]['version']
+            runtime_engine_version = result['receipt']['version']
+            capabilities = result['description']['capabilities']
+            context_versions = [capability.get('version') for capability in capabilities
+                                if capability.get('id') == 'pro.runtime.adaptive_context']
+            assert len(context_versions) <= 1, 'duplicate adaptive context capability'
+            context_capability_version = context_versions[0] if context_versions else None
+            if args.invoke or args.outcomes:
+                assert context_capability_version == '1.0.0', (
+                    'runtime invocation checks require the advertised adaptive context 1.0.0 capability')
+                assert isinstance(runtime_engine_version, str) and runtime_engine_version
             assert result['status'] == 'healthy' and result['runtime_started'] is True
             assert result['service_running'] is False and result['release_approved'] is False
             assert result['receipt']['binary_sha256'] == binary_digest
@@ -189,27 +218,31 @@ def main():
             (state / 'selection.json').write_bytes(selection)
             run('health-recovered', health, True)
         if args.invoke:
+            from check_runtime_outcomes import (
+                INVOCATION_ADMISSION_ERROR, assert_context_result, check_retired_routing,
+                context_projection,
+            )
             request_file = root / 'request.json'
-            projection = json.dumps({'schema_version': 1, 'seed': 42, 'exploration_bonus': 0.0,
-                'candidates': [{'model_id': name, 'observations': [{'succeeded': succeeded,
-                    'cost_micros': 1, 'latency_ms': 2.0}]} for name, succeeded in [('good', True), ('poor', False)]]})
+            projection = json.dumps(context_projection())
             base = {'protocol_version': 'leanctx.runtime-exchange/v1', 'session_id': 'component-session',
                 'request_id': 'component-request', 'sequence': 1, 'input': projection,
                 'invocation': {'schema_version': 1, 'invocation_id': 'component-invocation',
-                    'engine': {'engine_id': 'leanctx-intelligence', 'engine_version': '4.0.0'},
-                    'operation': {'capability_id': 'pro.runtime.adaptive_routing', 'capability_version': '1.0.0'},
+                    'engine': {'engine_id': 'leanctx-intelligence', 'engine_version': runtime_engine_version},
+                    'operation': {'capability_id': 'pro.runtime.adaptive_context',
+                                  'capability_version': context_capability_version},
                     'input_ref': 'projection:component', 'input_digest': 'sha256:' + sha(projection.encode()),
                     'source_refs': ['projection:component'],
                     'policy_admission': {'policy_ref': 'policy:component', 'decision': 'admitted'}}}
+            mismatched_engine = '0.0.1' if runtime_engine_version != '0.0.1' else '0.0.2'
             for name in ('invoke', 'expired', 'wrong-engine', 'wrong-capability', 'sequence',
-                         'denied', 'input-digest', 'invalid-routing', 'invoke-again'):
+                         'denied', 'input-digest', 'invalid-context', 'invoke-again'):
                 request = json.loads(json.dumps(base))
                 request['deadline_unix_ms'] = time.time_ns() // 1_000_000 + 5000
                 invocation = request['invocation']
                 if name == 'expired':
                     request['deadline_unix_ms'] -= 6000
                 elif name == 'wrong-engine':
-                    invocation['engine']['engine_version'] = '0.0.1'
+                    invocation['engine']['engine_version'] = mismatched_engine
                 elif name == 'wrong-capability':
                     invocation['operation']['capability_version'] = '2.0.0'
                 elif name == 'sequence':
@@ -218,24 +251,21 @@ def main():
                     invocation['policy_admission']['decision'] = 'rejected'
                 elif name == 'input-digest':
                     request['input'] += 'changed'
-                elif name == 'invalid-routing':
+                elif name == 'invalid-context':
                     request['input'] = '{}'
                     invocation['input_digest'] = 'sha256:' + sha(b'{}')
                 request_file.write_text(json.dumps(request))
                 success = name in ('invoke', 'invoke-again')
+                expected_error = (INVOCATION_ADMISSION_ERROR
+                                  if name in ('wrong-engine', 'wrong-capability') else None)
                 result = run(name, ['invoke', *common, *target, '--expected-active', args.manifest_sha256,
-                                    '--request', str(request_file)], success)
+                                    '--request', str(request_file)], success,
+                             expected_error=expected_error)
                 if success:
-                    assert result['status'] == 'executed' and result['service_running'] is False
-                    response = result['response']
-                    output = json.loads(response['output'])
-                    assert output['model_id'] in ('good', 'poor') and output['candidate_count'] == 2
-                    assert output['strategy'] == 'thompson_sampling'
-                    assert response['observation']['output_digest'] == 'sha256:' + sha(response['output'].encode())
-                    assert response['observation']['invocation_id'] == invocation['invocation_id']
-                    assert response['observation']['source_lineage'] == invocation['source_refs']
-                    assert response['observation']['status'] == 'succeeded'
-                    assert response['observation'].get('receipt_link') is None
+                    assert_context_result(result, invocation, len(context_projection()['candidates']))
+                    if name == 'invoke':
+                        check_retired_routing(run, root, common, target, args.manifest_sha256,
+                                              runtime_engine_version)
             if args.license_cases is not None:
                 cases = json.loads(args.license_cases.read_bytes())
                 assert isinstance(cases, list) and 1 <= len(cases) <= 32
@@ -257,21 +287,23 @@ def main():
                                   args.manifest_sha256, '--request', str(request_file)],
                                  case['success'])
                     if case['success']:
-                        assert result['status'] == 'executed'
-                        assert json.loads(result['response']['output'])['candidate_count'] == 2
+                        assert_context_result(result, request['invocation'],
+                                              len(context_projection()['candidates']))
                     else:
-                        assert 'thompson_sampling' not in records[-1]['stdout']
+                        stderr = records[-1]['stderr']
+                        assert records[-1]['stdout'] == '' and stderr.startswith('engine runtime: ')
+                        assert stderr.strip() != INVOCATION_ADMISSION_ERROR
                 if original_config is None:
                     env.pop('LEANCTX_INTELLIGENCE_LICENSE_CONFIG', None)
                 else:
                     env['LEANCTX_INTELLIGENCE_LICENSE_CONFIG'] = original_config
         if args.select:
-            from check_runtime_ranking import check_ranking
-            check_ranking(run, root, installed, common, target, args.manifest_sha256,
-                          capability_version if args.outcomes else None)
+            from check_runtime_ranking import check_retired_selection
+            check_retired_selection(run)
         if args.outcomes:
             from check_runtime_outcomes import check_outcomes
-            check_outcomes(run, root, common, target, args.manifest_sha256, capability_version)
+            check_outcomes(run, root, common, target, args.manifest_sha256,
+                           context_capability_version, runtime_engine_version)
         if args.configure:
             from check_runtime_configuration import check_configuration
             env['LEAN_CTX_PROJECT_ROOT'] = str(root)
@@ -302,10 +334,10 @@ def main():
         assert marker.read_bytes() == b'component-state-must-survive'
         assert sha(installed.read_bytes()) == binary_digest
         report = {'schema': 'leanctx.runtime-install-component/v1', 'passed': True,
-                  'user_acceptance': False, 'runtime_started': args.health or args.select or args.proxy_scope or args.channel or args.catalog_setup,
-                  'runtime_invoked': args.invoke or args.select or args.outcomes or args.proxy_scope,
+                  'user_acceptance': False, 'runtime_started': args.health or args.configure or args.proxy_scope or args.channel or args.catalog_setup,
+                  'runtime_invoked': args.invoke or args.outcomes,
                   'runtime_outcomes_checked': args.outcomes,
-                  'runtime_ranking_checked': args.select,
+                  'runtime_selection_retired_checked': args.select,
                   'runtime_configuration_checked': args.configure,
                   'runtime_channel_requests': channel_requests,
                   'runtime_catalog_requests': catalog_requests,

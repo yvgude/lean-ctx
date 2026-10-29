@@ -78,16 +78,20 @@ pub(crate) fn cmd_proof(args: &[String]) {
         ..Default::default()
     };
 
-    match crate::tools::ctx_proof::handle_export(
-        &project_root,
-        format.as_deref(),
-        write,
-        filename.as_deref(),
-        max_evidence,
-        max_ledger_files,
-        sources,
-    ) {
-        Ok(out) => println!("{out}"),
+    match super::common::CliToolRun::new("ctx_proof", &project_root, None)
+        .human_facing()
+        .deliver(|| {
+            crate::tools::ctx_proof::handle_export(
+                &project_root,
+                format.as_deref(),
+                write,
+                filename.as_deref(),
+                max_evidence,
+                max_ledger_files,
+                sources,
+            )
+        }) {
+        Ok(out) => super::common::print_released(&out),
         Err(e) => {
             eprintln!("ERROR: {e}");
             eprintln!(

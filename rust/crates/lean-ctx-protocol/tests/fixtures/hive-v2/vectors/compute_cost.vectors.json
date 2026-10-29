@@ -1,0 +1,75 @@
+{
+  "description": "Reserve, spend and refund of one job (1 credit = 1 vCPU-minute): reserved = ceil(cpu x max_runtime_s / 60), refused (409 cap_reached cap job_budget) above budget; spent = 0 when it never started, else min(reserved, max(1, ceil(cpu x wall_seconds / 60))); refunded = reserved - spent. The server reproduces every case (compute::reserve_for, compute::spent_for).",
+  "cases": [
+    {
+      "case": "tests_short",
+      "cpu": 2,
+      "max_runtime_s": 600,
+      "budget": 20,
+      "wall_seconds": 95,
+      "expect": {
+        "reserved": 20,
+        "spent": 4,
+        "refunded": 16
+      }
+    },
+    {
+      "case": "never_started",
+      "cpu": 1,
+      "max_runtime_s": 300,
+      "budget": 10,
+      "wall_seconds": null,
+      "expect": {
+        "reserved": 5,
+        "spent": 0,
+        "refunded": 5
+      }
+    },
+    {
+      "case": "ran_to_limit",
+      "cpu": 4,
+      "max_runtime_s": 900,
+      "budget": 60,
+      "wall_seconds": 960,
+      "expect": {
+        "reserved": 60,
+        "spent": 60,
+        "refunded": 0
+      }
+    },
+    {
+      "case": "minimum_one",
+      "cpu": 1,
+      "max_runtime_s": 10,
+      "budget": 1,
+      "wall_seconds": 0,
+      "expect": {
+        "reserved": 1,
+        "spent": 1,
+        "refunded": 0
+      }
+    },
+    {
+      "case": "rounding_up",
+      "cpu": 3,
+      "max_runtime_s": 100,
+      "budget": 5,
+      "wall_seconds": 61,
+      "expect": {
+        "reserved": 5,
+        "spent": 4,
+        "refunded": 1
+      }
+    },
+    {
+      "case": "budget_too_small",
+      "cpu": 8,
+      "max_runtime_s": 3600,
+      "budget": 100,
+      "wall_seconds": null,
+      "expect": {
+        "error": "job_budget"
+      }
+    }
+  ]
+}

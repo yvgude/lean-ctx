@@ -1,6 +1,7 @@
 pub mod background_shell;
 pub mod bounded_lock;
 pub mod bypass_hint;
+mod call_identity;
 pub mod compaction_sync;
 pub mod context_gate;
 mod dispatch;
@@ -25,6 +26,7 @@ pub mod resources;
 pub mod role_guard;
 pub mod roots;
 pub mod schema_hook;
+pub(crate) mod shell_approval;
 use roots::has_project_marker;
 pub mod tool_trait;
 pub mod tool_visibility;
@@ -43,6 +45,7 @@ use std::path::PathBuf;
 
 use crate::tools::{CrpMode, LeanCtxServer};
 mod call_tool;
+pub(crate) use call_tool::SessionSwitch;
 mod post_dispatch;
 mod post_process;
 mod server_handler;
@@ -81,8 +84,13 @@ fn git_toplevel_from(dir: &std::path::Path) -> Option<String> {
 }
 
 pub fn derive_project_root_from_cwd() -> Option<String> {
-    let cwd = std::env::current_dir().ok()?;
-    let canonical = crate::core::pathutil::safe_canonicalize_or_self(&cwd);
+    derive_project_root_from(&std::env::current_dir().ok()?)
+}
+
+/// The project an MCP session started in `cwd` binds to. The dashboard binds
+/// a folder by the same rule, so both name one project the same way.
+pub fn derive_project_root_from(cwd: &std::path::Path) -> Option<String> {
+    let canonical = crate::core::pathutil::safe_canonicalize_or_self(cwd);
 
     if crate::core::pathutil::is_broad_or_unsafe_root(&canonical) {
         return git_toplevel_from(&canonical);
@@ -200,11 +208,11 @@ pub const WORKFLOW_PASSTHROUGH_TOOLS: &[&str] = &[
 
 /// A workflow is stale if it hasn't been updated in 30 minutes.
 /// This prevents dead workflows from blocking tools across sessions.
+///
+/// The rule itself is `core::workflow::is_run_stale` (shared with the store
+/// and the tool gate): the stand-in for a withheld workflow is never stale.
 pub fn is_workflow_stale(run: &crate::core::workflow::types::WorkflowRun) -> bool {
-    let elapsed = chrono::Utc::now()
-        .signed_duration_since(run.updated_at)
-        .num_minutes();
-    elapsed > 30
+    crate::core::workflow::is_run_stale(run)
 }
 
 /// Whether the MCP client has lean-ctx hooks installed that compress native
@@ -415,12 +423,10 @@ mod tests {
         let bare = tmp.path().join("bare-dir");
         std::fs::create_dir_all(&bare).unwrap();
 
-        // Every cwd-moving test shares the env lock (the cwd is process-global).
-        let _lock = crate::core::data_dir::test_env_lock();
-        let original = std::env::current_dir().unwrap();
-        std::env::set_current_dir(&bare).unwrap();
-        let result = derive_project_root_from_cwd();
-        std::env::set_current_dir(original).unwrap();
+        let result = {
+            let _cwd = crate::test_env::CurrentDirGuard::enter(&bare);
+            derive_project_root_from_cwd()
+        };
 
         assert!(result.is_some(), "bare dir should produce a project root");
         let root = result.unwrap();

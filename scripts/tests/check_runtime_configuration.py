@@ -8,10 +8,7 @@ def check_configuration(run, root, installed, common, target, digest):
     discovery = run('setup-runtime-absent', status, True, prefix=('setup', 'runtime'))
     assert discovery['status'] == 'not_configured' and not discovery['runtime_started']
     assert 'proprietary' in discovery['disclosure'] and 'public reference' in discovery['disclosure']
-    configured = ['select-configured', '--staging', '--request', str(root / 'selection-request.json')]
     activate = ['activate', *common, *target, '--expected-active', digest]
-    reference = run('configured-default-reference', configured, True)
-    assert reference['enhancement'] == 'reference_only'
     without_consent = [value for value in activate if value != '--accept-proprietary']
     run('activation-consent-required', without_consent, False, prefix=('setup', 'runtime'))
     # Project files cannot supply pins or accept a license on behalf of the user.
@@ -19,8 +16,8 @@ def check_configuration(run, root, installed, common, target, digest):
     local.write_text('[intelligence_runtime]\nenabled = true\naccept_proprietary = true\n'
                      'staging = true\nroot = "/untrusted"\nmanifest_sha256 = "project-pin"\n'
                      'trust_key_hex = "project-key"\n')
-    assert run('project-cannot-activate', configured, True) == reference
-    assert run('project-cannot-supply-discovery', status, True, prefix=('setup', 'runtime')) == discovery
+    assert run('project-config-does-not-replace-global-status', status, True,
+               prefix=('setup', 'runtime')) == discovery
     result = run('setup-activate', activate, True, prefix=('setup', 'runtime'))
     assert result['status'] == 'activated' and result['health']['status'] == 'healthy'
     assert result['release_approved'] is False
@@ -31,11 +28,22 @@ def check_configuration(run, root, installed, common, target, digest):
     assert current['enabled'] and current['accept_proprietary'] and current['staging']
     assert current['manifest_sha256'] == digest and current['root'] != '/untrusted'
     config_file.write_text('# retain comment\nruntime_test_marker = "keep"\n' + config_file.read_text())
-    printed = run('merged-project-cannot-replace-pins', [], True, prefix=('config',), json_output=False)
+    printed = run('merged-project-cannot-replace-runtime-pins', [], True,
+                  prefix=('config',), json_output=False)
     effective = tomllib.loads(printed.split('\n\n', 1)[1].split('\n\nLocal config', 1)[0])
-    assert effective['intelligence_runtime'] == current
-    active = run('configured-private-selection', configured, True)
-    assert active['enhancement'] == 'private_runtime'
+    # Serialization expands defaults absent from the persisted opt-in table.
+    expected = {
+        'channel_url': '',
+        'channel_signature_url': '',
+        'channel_root_key_hex': '',
+        'license_configuration': '',
+        'context_policy_apply': False,
+        'team_artifact_projects': [],
+        **current,
+    }
+    assert effective['intelligence_runtime'] == expected
+    configured = run('global-runtime-status-after-activation', status, True, prefix=('setup', 'runtime'))
+    assert configured['status'] == 'configured' and not configured['runtime_started']
     run('setup-activate-again', activate, True, prefix=('setup', 'runtime'))
     assert '# retain comment' in config_file.read_text() and 'runtime_test_marker = "keep"' in config_file.read_text()
     before = config_file.read_bytes()
@@ -51,26 +59,26 @@ def check_configuration(run, root, installed, common, target, digest):
         run('activation-tamper', activate, False, prefix=('setup', 'runtime'))
         run('setup-discovery-rejects-tamper', status, False, prefix=('setup', 'runtime'))
         assert config_file.read_bytes() == before
-        fallback = run('configured-tamper-fallback', configured, True)
-        assert fallback['enhancement'] == 'runtime_unavailable_reference_fallback'
-        assert fallback['decision'] == reference['decision']
     finally:
         installed.write_bytes(original)
         installed.chmod(0o500)
+    assert run('status-recovers-after-package-restoration', status, True,
+               prefix=('setup', 'runtime'))['status'] == 'configured'
     config_file.write_text('intelligence_runtime = [invalid TOML')
     run('activation-corrupt-config', activate, False, prefix=('setup', 'runtime'))
     assert config_file.read_text() == 'intelligence_runtime = [invalid TOML'
-    assert run('corrupt-config-reference', configured, True) == reference
-    config_file.write_bytes(b'\xff\xfe')
+    run('status-corrupt-config', status, False, prefix=('setup', 'runtime'))
+    config_file.write_bytes(bytes([0xff, 0xfe]))
     run('activation-unreadable-config', activate, False, prefix=('setup', 'runtime'))
     run('deactivation-unreadable-config', ['deactivate', '--staging'], False, prefix=('setup', 'runtime'))
-    assert config_file.read_bytes() == b'\xff\xfe'
-    assert run('unreadable-config-reference', configured, True) == reference
+    assert config_file.read_bytes() == bytes([0xff, 0xfe])
+    run('status-unreadable-config', status, False, prefix=('setup', 'runtime'))
     config_file.write_bytes(before)
     disabled = run('setup-deactivate', ['deactivate', '--staging'], True, prefix=('setup', 'runtime'))
     assert disabled['status'] == 'disabled'
     assert not tomllib.loads(config_file.read_text())['intelligence_runtime']['enabled']
-    assert run('configured-disabled-reference', configured, True) == reference
+    disabled_status = run('status-after-deactivation', status, True, prefix=('setup', 'runtime'))
+    assert disabled_status['status'] == 'available' and not disabled_status['runtime_started']
     assert '# retain comment' in config_file.read_text() and 'runtime_test_marker = "keep"' in config_file.read_text()
     disabled_bytes = config_file.read_bytes()
     runtime_setup = ['configure', '--staging']

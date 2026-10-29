@@ -61,24 +61,57 @@ fn id_arg(args: &[String]) -> Option<String> {
     args.iter().filter(|a| !a.starts_with("--")).nth(1).cloned()
 }
 
+/// The run of a `snapshot` output. A snapshot is stored session context
+/// (task, findings, touched files); what this command prints about it is a
+/// summary for the person at the terminal or a `--json` document for a
+/// script. Both pass the release point; neither is recorded as a delivery of
+/// project sources.
+fn snapshot_run(project_root: &str) -> super::common::CliToolRun<'_> {
+    super::common::CliToolRun::new("ctx_session", project_root, None).human_facing()
+}
+
+/// Print a rendered report (it ends with its own newline) through the run.
+/// It is released without that final `\n`, which the one observed writer
+/// adds back: the bytes on stdout are unchanged and the hand-over is
+/// observed (G08). A report without a final newline is printed as before.
+fn print_report(project_root: &str, rendered: String) {
+    let run = snapshot_run(project_root);
+    match rendered.strip_suffix('\n') {
+        Some(body) => {
+            let body = body.to_owned();
+            super::common::print_released(&run.deliver_text(|| body));
+        }
+        None => print!("{}", run.deliver_text(|| rendered)),
+    }
+}
+
+/// Print a `--json` document through the run: valid JSON or nothing.
+fn print_document(project_root: &str, document: String) {
+    match snapshot_run(project_root).deliver_json(|| document) {
+        Ok(document) => super::common::print_released(&document),
+        Err(reason) => super::common::exit_withheld(&reason),
+    }
+}
+
 fn cmd_create(args: &[String]) {
     let opts = SnapshotOptions {
         project_root: super::common::detect_project_root(args),
         sign: has_flag(args, "--sign"),
     };
     match context_snapshot::create(&opts) {
-        Ok(snap) => print!("{}", render_summary(&snap)),
+        Ok(snap) => print_report(&opts.project_root, render_summary(&snap)),
         Err(e) => fail(&e),
     }
 }
 
 fn cmd_list(args: &[String]) {
+    use std::fmt::Write as _;
     let project_root = super::common::detect_project_root(args);
     let entries = context_snapshot::load_entries(&project_root);
 
     if has_flag(args, "--json") {
         match serde_json::to_string_pretty(&entries) {
-            Ok(j) => println!("{j}"),
+            Ok(j) => print_document(&project_root, j),
             Err(e) => fail(&e.to_string()),
         }
         return;
@@ -87,7 +120,7 @@ fn cmd_list(args: &[String]) {
         println!("No snapshots yet. Create one with: lean-ctx snapshot create");
         return;
     }
-    println!("{} snapshot(s):", entries.len());
+    let mut listing = format!("{} snapshot(s):\n", entries.len());
     for e in &entries {
         let commit = e
             .git_commit
@@ -95,13 +128,15 @@ fn cmd_list(args: &[String]) {
             .map_or_else(|| "-------".to_string(), short_commit);
         let branch = e.git_branch.as_deref().unwrap_or("-");
         let sig = if e.signed { " [signed]" } else { "" };
-        println!(
+        let _ = writeln!(
+            listing,
             "  {}  {}  {commit} {branch}  saved {} tok{sig}",
             short(&e.snapshot_id),
             e.created_at,
             e.tokens_saved
         );
     }
+    print_report(&project_root, listing);
 }
 
 fn cmd_show(args: &[String]) {
@@ -119,10 +154,10 @@ fn cmd_show(args: &[String]) {
     };
     match context_snapshot::read_snapshot(&project_root, &id) {
         Ok(snap) if has_flag(args, "--json") => match serde_json::to_string_pretty(&snap) {
-            Ok(j) => println!("{j}"),
+            Ok(j) => print_document(&project_root, j),
             Err(e) => fail(&e.to_string()),
         },
-        Ok(snap) => print!("{}", render_summary(&snap)),
+        Ok(snap) => print_report(&project_root, render_summary(&snap)),
         Err(e) => fail(&e),
     }
 }
@@ -192,7 +227,7 @@ fn cmd_restore(args: &[String]) {
         checkout_git: has_flag(args, "--git"),
     };
     match context_snapshot::restore(&snap, &opts) {
-        Ok(outcome) => print!("{}", render_restore(&snap, &outcome)),
+        Ok(outcome) => print_report(&opts.project_root, render_restore(&snap, &outcome)),
         Err(e) => fail(&e),
     }
 }
@@ -265,7 +300,7 @@ fn cmd_publish(args: &[String]) {
         out: flag_value(args, "--out").map(std::path::PathBuf::from),
     };
     match context_snapshot::publish(&snap, &opts) {
-        Ok(outcome) => print!("{}", render_publish(&snap, &outcome)),
+        Ok(outcome) => print_report(&opts.project_root, render_publish(&snap, &outcome)),
         Err(e) => fail(&e),
     }
 }
@@ -277,7 +312,7 @@ fn cmd_import(args: &[String]) {
         return;
     };
     match context_snapshot::import(std::path::Path::new(&file), &project_root) {
-        Ok(outcome) => print!("{}", render_import(&outcome)),
+        Ok(outcome) => print_report(&project_root, render_import(&outcome)),
         Err(e) => fail(&e),
     }
 }
@@ -387,4 +422,40 @@ fn fail_usage(msg: &str) {
     eprintln!("ERROR: {msg}");
     usage();
     std::process::exit(2);
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::cli::common::carrier_tests_support::{
+        AWS_KEY, acquire_source, governed, lineage, project, source_file,
+    };
+
+    /// A snapshot summary or `--json` document is a report about stored
+    /// session context: released, never registered as a delivery.
+    #[test]
+    fn a_snapshot_report_is_human_facing() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        governed();
+        let (_project, root) = project();
+        let path = source_file(&root, "lib.rs", "pub fn touched() {}\n");
+        let summary = "snapshot 0123abcd\n  ledger   3 items\n";
+        let printed = super::snapshot_run(&root).deliver_text(|| {
+            acquire_source(&root, &path);
+            summary.to_string()
+        });
+        assert_eq!(printed, summary);
+        assert_eq!(lineage(&root, &printed), None);
+
+        let document = serde_json::json!({ "snapshot_id": "0123abcd", "task": AWS_KEY });
+        let pretty = serde_json::to_string_pretty(&document).expect("document");
+        match super::snapshot_run(&root).deliver_json(|| pretty) {
+            Ok(released) => {
+                assert!(!released.contains(AWS_KEY), "{released}");
+                let value: serde_json::Value = serde_json::from_str(&released).expect("valid JSON");
+                assert_eq!(value["snapshot_id"], "0123abcd");
+            }
+            Err(reason) => assert!(!reason.contains(AWS_KEY), "{reason}"),
+        }
+    }
 }

@@ -1,0 +1,20 @@
+{
+  "name": "presence-key-algs",
+  "values": [
+    {
+      "value": "p256_ecdsa_sha256",
+      "platform": "macos",
+      "public_key": "SPKI DER"
+    },
+    {
+      "value": "rsa2048_pkcs1_sha256",
+      "platform": "windows",
+      "public_key": "SPKI DER"
+    },
+    {
+      "value": "ed25519",
+      "platform": "linux",
+      "public_key": "raw 32 bytes"
+    }
+  ]
+}

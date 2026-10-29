@@ -71,6 +71,7 @@ mod tests {
             recurrence,
             confidence,
             sources: vec![],
+            derivation: super::super::candidate::Derivation::default(),
         }
     }
 

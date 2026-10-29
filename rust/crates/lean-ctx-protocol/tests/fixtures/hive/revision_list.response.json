@@ -1,0 +1,18 @@
+{
+  "revisions": [
+    {
+      "created_at": "2026-10-19T08:30:00Z",
+      "digest": "454d377459df3a19f85b2570068ad2698617d4505dbb17c01389f5a5e018ff18",
+      "proposal": 10,
+      "revision": 2
+    },
+    {
+      "created_at": "2026-10-20T12:00:00Z",
+      "digest": "6f86e9981328fc8b382dd56059439c78132e5ac00c01695455600ffc9f5e0f9b",
+      "proposal": 11,
+      "revision": 3
+    }
+  ],
+  "schema": "leanctx.hive.revision-list/v1",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

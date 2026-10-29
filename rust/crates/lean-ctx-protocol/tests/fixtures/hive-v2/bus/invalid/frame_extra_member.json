@@ -1,0 +1,14 @@
+{
+  "case": "frame_extra_member",
+  "base": "bus/frame.resync.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/seq",
+      "value": 3
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

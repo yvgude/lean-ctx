@@ -1,7 +1,16 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Legacy tee files have no source authority. They are Community recovery only;
 //! protected file recovery uses the existing source-bound archive store.
+//!
+//! "Protected" is the one shared rule every store follows
+//! (`context_admission::stored::source_authority_required`): a project policy
+//! pack, the global gateway in governed or sovereign mode, or a global
+//! configuration that could not be loaded. Under any of them an originless
+//! tee file is neither written nor handed back — by the proxy, by in-band
+//! recovery, by `ctx_expand` or by the `tee` CLI, which all read through
+//! [`read_detailed`].
 
+use crate::core::context_admission::stored::source_authority_required;
 use crate::core::policy::{content, runtime};
 use std::path::Path;
 
@@ -11,7 +20,7 @@ fn limit() -> usize {
 
 fn community<T>(operation: impl FnOnce() -> Option<T>) -> Option<T> {
     runtime::with_source_view(|| {
-        if runtime::is_active() {
+        if source_authority_required() {
             return None;
         }
         operation()
@@ -40,7 +49,9 @@ pub(crate) fn read(path: &Path) -> Option<String> {
 
 pub(crate) fn read_detailed(path: &Path) -> Result<String, &'static str> {
     runtime::with_source_view(|| {
-        if runtime::is_active() {
+        // Checked here, at the one read every caller shares — not only where
+        // a caller thought of it, and not only for a policy pack.
+        if source_authority_required() {
             return Err(
                 "stored output has no source authority; repeat the original authorized operation",
             );

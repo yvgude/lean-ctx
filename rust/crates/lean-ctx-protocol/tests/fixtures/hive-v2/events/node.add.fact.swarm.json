@@ -1,0 +1,55 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqay",
+  "body": {
+    "applies_to": [
+      "services/checkout"
+    ],
+    "body_nonce": "19191919191919191919191919191919",
+    "evidence": "observed",
+    "sensitivity": "internal",
+    "statement": "Checkout spends 40 percent of its time serialising the cart with serde_json."
+  },
+  "body_commit": "1a64e6871b43b15e494bc2d91bab23a87b0d86cfae2e7aac3330dd0c83fd30a7",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 5,
+  "event_id": "01M5NKA7VG005G00000000W006",
+  "hlc": {
+    "counter": 0,
+    "node": "0e9c7f2455744dc1",
+    "wall_ms": 1792800006000
+  },
+  "key_id": "a81b399e9440c8ad",
+  "node_type": "fact",
+  "op": "node.add",
+  "place": {
+    "id": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+    "kind": "swarm"
+  },
+  "provenance": "workspace",
+  "provenance_claim": "workspace",
+  "received_at": 1792800006350,
+  "review_state": "confirmed",
+  "reviewed_by": "reviewer",
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 6,
+  "signature": "fd936f03901a6ede61f041bcdd55b6216c457c07fd28e32f8cea98bbe40f6ef171fbd599b059573ad94e7a9dfd24d70420db272a7da3f1319dfe094d8f6c1f0e",
+  "target": "n_afztx7ilohw6ve7cbhwrj7p53p",
+  "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+}

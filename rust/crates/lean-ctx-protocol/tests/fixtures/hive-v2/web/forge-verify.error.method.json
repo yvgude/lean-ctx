@@ -1,0 +1,23 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_body",
+          "field": "method",
+          "message": "method is token or dns"
+        }
+      },
+      "status": 400
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/vaults/payments/forge/verify",
+  "request": {
+    "host": "github.com",
+    "method": "app",
+    "repo": "acme/payments"
+  },
+  "response": null,
+  "route": "W27"
+}

@@ -11,7 +11,7 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::core::benchmark_spec::types::{is_safe_relative_file, is_safe_shell_test};
+use super::safe_paths::{is_safe_relative_file, is_safe_shell_test};
 
 /// What kind of task this is — selects the scorer and how the model output is interpreted.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

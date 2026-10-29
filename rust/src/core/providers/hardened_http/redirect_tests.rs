@@ -101,6 +101,14 @@ impl Server {
         self.requests.lock().unwrap().len()
     }
 
+    /// The request line (`GET /path?query HTTP/1.1`) of the latest request.
+    pub(crate) fn last_request_line(&self) -> Option<String> {
+        let requests = self.requests.lock().unwrap();
+        requests
+            .last()
+            .and_then(|request| request.lines().next().map(str::to_owned))
+    }
+
     pub(crate) fn respond(&self, status: u16, body: &str) {
         *self.response.lock().unwrap() = format!(
             "HTTP/1.1 {status} Test\r\nConnection: close\r\nContent-Length: {}\r\n\r\n{body}",

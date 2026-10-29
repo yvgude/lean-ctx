@@ -36,7 +36,11 @@ impl PackageKind {
     }
 }
 
+/// Serialization is derived (`remote = "Self"` makes the derives inherent
+/// functions); [`Deserialize`] first folds the spec's dependency map forms into
+/// the list this engine writes, see [`normalize_dependencies`].
 #[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(remote = "Self")]
 pub(crate) struct PackageManifest {
     pub schema_version: u32,
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -76,6 +80,86 @@ pub(crate) struct PackageManifest {
     pub graph_summary: Option<GraphSummary>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub marketplace: Option<MarketplaceMeta>,
+    /// V02: the author's grant that a recipient may pass the package on
+    /// (export, send, publish). Absent means not granted: a received package
+    /// without it stays with its recipient. Only a grant covered by the full
+    /// manifest signature counts, see [`super::rights`]. Omitted when absent,
+    /// so earlier packages stay byte-identical.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub redistributable: Option<bool>,
+}
+
+impl Serialize for PackageManifest {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        PackageManifest::serialize(self, serializer)
+    }
+}
+
+impl<'de> Deserialize<'de> for PackageManifest {
+    fn deserialize<D: serde::Deserializer<'de>>(deserializer: D) -> Result<Self, D::Error> {
+        use serde::de::Error;
+        let mut value = serde_json::Value::deserialize(deserializer)?;
+        normalize_dependencies(&mut value).map_err(D::Error::custom)?;
+        PackageManifest::deserialize(value).map_err(D::Error::custom)
+    }
+}
+
+/// Spec v2 §3.2 writes `dependencies` and `optional_dependencies` as maps of
+/// scoped name → SemVer range; this engine writes the list form. Both forms
+/// read into the one list, entries from `optional_dependencies` flagged
+/// optional, so neither form is silently dropped.
+fn normalize_dependencies(manifest: &mut serde_json::Value) -> Result<(), String> {
+    let Some(object) = manifest.as_object_mut() else {
+        return Ok(());
+    };
+    let mut entries = match object.remove("dependencies") {
+        None | Some(serde_json::Value::Null) => Vec::new(),
+        Some(value) => dependency_entries(value, false, "dependencies")?,
+    };
+    if let Some(value) = object
+        .remove("optional_dependencies")
+        .filter(|value| !value.is_null())
+    {
+        entries.extend(dependency_entries(value, true, "optional_dependencies")?);
+    }
+    object.insert("dependencies".into(), serde_json::Value::Array(entries));
+    Ok(())
+}
+
+fn dependency_entries(
+    value: serde_json::Value,
+    optional: bool,
+    member: &str,
+) -> Result<Vec<serde_json::Value>, String> {
+    match value {
+        serde_json::Value::Array(mut items) => {
+            if optional {
+                for item in items
+                    .iter_mut()
+                    .filter_map(serde_json::Value::as_object_mut)
+                {
+                    item.insert("optional".into(), serde_json::Value::Bool(true));
+                }
+            }
+            Ok(items)
+        }
+        serde_json::Value::Object(map) => map
+            .into_iter()
+            .map(|(name, range)| match range {
+                serde_json::Value::String(range) => Ok(serde_json::json!({
+                    "name": name,
+                    "version_req": range,
+                    "optional": optional,
+                })),
+                other => Err(format!(
+                    "{member}.{name} must be a SemVer range string, got {other}"
+                )),
+            })
+            .collect(),
+        other => Err(format!(
+            "{member} must be a list or a map of name to SemVer range, got {other}"
+        )),
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -83,6 +167,11 @@ pub(crate) struct PackageSignature {
     pub algorithm: String,
     pub public_key: String,
     pub value: String,
+    /// Signature over the whole manifest without this signature object
+    /// (`value` covers name, version and package digest only). Absent on
+    /// packages signed before it existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub manifest_value: Option<String>,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -191,6 +280,20 @@ impl PackageManifest {
         }) {
             errors.push("name must only contain [a-zA-Z0-9._@/-]".into());
         }
+        // K-P1-8: scopes are lowercase — the `@scope/` of a scoped name and
+        // the `scope` field alike. Uppercase is refused, never normalized.
+        let name_scope = self
+            .name
+            .strip_prefix('@')
+            .and_then(|scoped| scoped.split_once('/'))
+            .map(|(scope, _)| scope);
+        for scope in [name_scope, self.scope.as_deref()].into_iter().flatten() {
+            if scope.chars().any(char::is_uppercase) {
+                errors.push(
+                    "scope must be lowercase (uppercase scopes are refused, not normalized)".into(),
+                );
+            }
+        }
         if self.version.is_empty() {
             errors.push("version must not be empty".into());
         }
@@ -231,19 +334,11 @@ impl PackageManifest {
                 errors.push(format!("duplicate layer: {}", layer.as_str()));
             }
         }
-        if self.integrity.sha256.len() != 64
-            || !self.integrity.sha256.chars().all(|c| c.is_ascii_hexdigit())
-        {
-            errors.push("integrity.sha256 must be a 64-char hex string".into());
+        if !is_lower_hex(&self.integrity.sha256, 64) {
+            errors.push("integrity.sha256 must be a 64-char lowercase hex string".into());
         }
-        if self.integrity.content_hash.len() != 64
-            || !self
-                .integrity
-                .content_hash
-                .chars()
-                .all(|c| c.is_ascii_hexdigit())
-        {
-            errors.push("integrity.content_hash must be a 64-char hex string".into());
+        if !is_lower_hex(&self.integrity.content_hash, 64) {
+            errors.push("integrity.content_hash must be a 64-char lowercase hex string".into());
         }
         if self.integrity.byte_size == 0 {
             errors.push("integrity.byte_size must be > 0".into());
@@ -259,6 +354,14 @@ impl PackageManifest {
     pub(crate) fn has_layer(&self, layer: PackageLayer) -> bool {
         self.layers.contains(&layer)
     }
+}
+
+/// Spec §1: digests, keys and signatures are lowercase hex.
+pub(crate) fn is_lower_hex(value: &str, len: usize) -> bool {
+    value.len() == len
+        && value
+            .bytes()
+            .all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
 }
 
 #[cfg(test)]
@@ -297,6 +400,7 @@ mod tests {
             signature: None,
             graph_summary: None,
             marketplace: None,
+            redistributable: None,
         }
     }
 
@@ -413,10 +517,56 @@ mod tests {
         assert!(decoded.marketplace.is_none());
     }
 
+    /// Regression (AP13 K-P1-5): the spec writes dependencies as a map and
+    /// optional ones under `optional_dependencies`; the engine refused the map
+    /// and dropped the optional member. Both read into the list form it writes.
+    #[test]
+    fn spec_dependency_maps_read_into_the_written_list_form() {
+        let mut value = serde_json::to_value(minimal_manifest()).unwrap();
+        value["dependencies"] = serde_json::json!({"@acme/base": "^1.2"});
+        value["optional_dependencies"] = serde_json::json!({"@acme/extra": "~0.3"});
+        let manifest: PackageManifest = serde_json::from_value(value).unwrap();
+        let read: Vec<_> = manifest
+            .dependencies
+            .iter()
+            .map(|d| (d.name.as_str(), d.version_req.as_str(), d.optional))
+            .collect();
+        assert_eq!(
+            read,
+            [("@acme/base", "^1.2", false), ("@acme/extra", "~0.3", true)]
+        );
+        let written = serde_json::to_value(&manifest).unwrap();
+        assert!(written["dependencies"].is_array());
+        assert!(written.get("optional_dependencies").is_none());
+
+        let mut bad = serde_json::to_value(minimal_manifest()).unwrap();
+        bad["dependencies"] = serde_json::json!({"@acme/base": 1});
+        assert!(serde_json::from_value::<PackageManifest>(bad).is_err());
+    }
+
     #[test]
     fn nested_scope_validates() {
         let mut m = minimal_manifest();
         m.name = "@org/team/service".into();
+        assert!(m.validate().is_ok());
+    }
+
+    /// K-P1-8: an uppercase scope — in a scoped name or in the `scope`
+    /// field — is refused with one error and never normalized. Uppercase
+    /// outside the scope stays a valid name.
+    #[test]
+    fn uppercase_scopes_are_refused_not_normalized() {
+        let lowercase = "scope must be lowercase (uppercase scopes are refused, not normalized)";
+        for (name, scope) in [("@Acme/tool", None), ("@acme/tool", Some("@Acme"))] {
+            let mut m = minimal_manifest();
+            m.name = name.into();
+            m.scope = scope.map(Into::into);
+            assert_eq!(m.validate().unwrap_err(), vec![lowercase.to_string()]);
+            assert_eq!(m.name, name, "not normalized");
+        }
+        let mut m = minimal_manifest();
+        m.name = "@acme/Tool".into();
+        m.scope = Some("@acme".into());
         assert!(m.validate().is_ok());
     }
 

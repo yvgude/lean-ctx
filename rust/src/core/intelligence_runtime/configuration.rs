@@ -7,7 +7,7 @@ use crate::core::config::{Config, IntelligenceRuntimeConfig};
 
 use super::{InstallError, Result, health};
 
-pub(crate) const DISCLOSURE: &str = "Optional Intelligence Runtime: proprietary, runs locally. New commercial builds require a Pro or Enterprise entitlement. The public reference runtime works without it. Staging packages are not production releases.";
+pub(crate) const DISCLOSURE: &str = "Optional Intelligence Runtime: proprietary, runs locally. Its commercial features are licensed through LeanCTX Hive or a commercial licence; the public reference runtime works without either. Staging packages are not production releases.";
 
 /// Verified setup snapshot: discovery never starts proprietary code or grants consent.
 pub(crate) struct SetupRuntime {
@@ -46,9 +46,45 @@ impl SetupRuntime {
     }
 
     pub(crate) fn report(&self) -> serde_json::Value {
-        serde_json::json!({"schema_version": 1, "status": self.status(),
+        // Reported here, once and without content, instead of as an
+        // unavailable semantic check on every admission: a configured
+        // runtime whose package does not offer semantic detectors is a
+        // property of the installation.
+        // The install-side fields are the ones `runtime health` prints, from
+        // the same function: what the authenticated package and its
+        // installed model set offer. `semantic_categories` are the categories
+        // that set examines; a category that is not listed is not covered.
+        let mut report = serde_json::json!({"schema_version": 1, "status": self.status(),
             "version": self.version, "disclosure": DISCLOSURE,
-            "runtime_started": false, "release_approved": false})
+            "semantic_detectors": "not_configured",
+            "semantic_descriptor_sha256_prefix": null,
+            "semantic_versions": [], "semantic_categories": [],
+            "runtime_started": false, "release_approved": false});
+        if self.enabled() {
+            let authenticated = super::trust_key(&self.config.trust_key_hex)
+                .and_then(|key| {
+                    super::install::verified_active(
+                        Path::new(&self.config.root),
+                        &self.config.manifest_sha256,
+                        &key,
+                    )
+                })
+                .ok();
+            if let Some(package) = authenticated {
+                let state = super::install::semantic_state(&package);
+                let versions = super::install::semantic_set(&package)
+                    .map_or_else(Vec::new, |set| set.versions);
+                for (key, value) in health::semantic_report(&package, &state, versions) {
+                    report[key] = value;
+                }
+            } else {
+                report["semantic_detectors"] = "unverified".into();
+            }
+        }
+        for (key, value) in health::semantic_worker_report(&self.config) {
+            report[key] = value;
+        }
+        report
     }
 
     /// The caller must obtain explicit consent for this captured, trusted selection.

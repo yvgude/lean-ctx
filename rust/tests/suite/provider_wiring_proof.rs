@@ -194,7 +194,10 @@ fn proof_knowledge_facts_roundtrip() {
         "WIRING BROKEN: extract_facts produces no facts from provider chunks"
     );
 
-    let mut knowledge = ProjectKnowledge::new("/tmp/wiring-proof-test");
+    // A real project root: knowledge of a root that does not exist is
+    // withheld (a deleted project revokes what was derived from it).
+    let project = tempfile::tempdir().expect("project root");
+    let mut knowledge = ProjectKnowledge::new(project.path().to_str().expect("utf-8 root"));
     let policy = lean_ctx::core::memory_policy::MemoryPolicy::default();
 
     for fact in &facts {
@@ -420,7 +423,9 @@ fn proof_end_to_end_provider_data_searchable() {
     );
 
     // Knowledge should have extracted facts
-    let mut knowledge = ProjectKnowledge::new("/tmp/wiring-e2e-test");
+    // A real project root (see `proof_knowledge_facts_roundtrip`).
+    let project = tempfile::tempdir().expect("project root");
+    let mut knowledge = ProjectKnowledge::new(project.path().to_str().expect("utf-8 root"));
     let policy = lean_ctx::core::memory_policy::MemoryPolicy::default();
     for fact in &artifacts.facts {
         knowledge.remember(

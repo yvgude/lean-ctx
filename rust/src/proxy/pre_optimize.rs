@@ -67,6 +67,7 @@ pub fn classify_task(message: Option<&str>) -> &'static str {
     }
 }
 
+#[cfg(test)]
 fn classify_with_triage(message: Option<&str>, engine: &TriageEngine) -> String {
     engine
         .analyze(&TaskAnalysisInput {
@@ -148,6 +149,15 @@ fn truncate_message(message: &mut Value) {
     let Some((byte_index, _)) = content.char_indices().nth(MAX_PRUNED_CHARS) else {
         return;
     };
+    // Under protection a cut needs a recovery copy bound to the lineage of
+    // the text. Host-authored turns have none, so they stay whole and the
+    // reason is counted; text the Engine delivered is cut with its stub.
+    if super::compress::protected() {
+        if let Some(cut) = super::compress::shorten_with_copy(content, &content[..byte_index]) {
+            *content = cut;
+        }
+        return;
+    }
     content.truncate(byte_index);
 }
 
@@ -233,6 +243,8 @@ mod tests {
 
     #[test]
     fn prunes_old_low_relevance_messages_and_counts_tokens() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let old_content = "a".repeat(300);
         let mut messages: Vec<Value> = (0..12)
             .map(|_| json!({"role": "assistant", "content": old_content}))

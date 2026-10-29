@@ -75,6 +75,8 @@ pub fn run(args: &Map<String, Value>, project_root: &str) -> Result<String, Stri
                 None | Some(Value::Null) => Map::new(),
                 Some(_) => return Err("'arguments' must be a JSON object".to_string()),
             };
+            // K13: no engine rule regulates a downstream server's tools.
+            crate::core::hive::metrics_v2::signals::mcp_relay_call(tool);
             block_on(mcp_catalog::proxy(
                 &cfg.gateway,
                 tool,

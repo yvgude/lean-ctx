@@ -50,7 +50,13 @@ pub fn compress_prose(text: &str, aggressiveness: f64) -> Option<String> {
     };
     let before = count_tokens(text);
     let after = count_tokens(&squeezed);
-    (after < before).then_some(squeezed)
+    if after >= before {
+        return None;
+    }
+    // The squeeze drops and ranks sentences: it loses text. Under protection
+    // it is applied only with a recovery copy bound to the lineage of `text`
+    // (the shared gate); otherwise the prose stays whole and is counted.
+    super::compress::gate::shortened(text, squeezed)
 }
 
 /// Conservative prose gate: substantial, letter-dense, low on code symbols.
@@ -209,6 +215,8 @@ mod tests {
 
     #[test]
     fn compresses_long_prose_deterministically() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let text = long_prose();
         let a = compress_prose(&text, 0.5);
         let b = compress_prose(&text, 0.5);
@@ -254,6 +262,8 @@ mod tests {
 
     #[test]
     fn text_blocks_skip_cache_control() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let big = long_prose();
         let mut blocks = vec![
             serde_json::json!({"type": "text", "text": big, "cache_control": {"type": "ephemeral"}}),
@@ -273,6 +283,8 @@ mod tests {
 
     #[test]
     fn system_value_handles_string_and_array() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let big = long_prose();
         let mut as_string = Value::String(big.clone());
         assert_eq!(compress_system_value(&mut as_string, 0.5), 1);

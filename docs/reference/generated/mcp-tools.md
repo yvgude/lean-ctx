@@ -4,54 +4,16 @@
 
 Source of truth: `rust/src/server/registry.rs` and the tool definitions it registers.
 
-lean-ctx registers **79 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
-
-## `ctx_analyze`
-
-Entropy analysis — recommends optimal compression mode for a file path.
-WORKFLOW: Use BEFORE ctx_read to pick the best mode (full/signatures/auto).
-Saves tokens by selecting the mode that minimizes size while retaining information.
-
-Parameters: `path`*
-
-## `ctx_architecture`
-
-Architecture analysis — understand module structure without reading every file.
-WORKFLOW: use ctx_compose FIRST for code understanding; ctx_architecture for high-level structure.
-action=overview→high-level; clusters|communities→groupings;
-layers|cycles→dependency violations; entrypoints|hotspots→risk areas;
-health→quality; module path='src/' to zoom into a specific module.
-ANTIPATTERN: does NOT show source code — only structural relationships.
-
-Parameters: `action`, `format`, `path`, `root`
+lean-ctx registers **49 MCP tools** (granular profile). Each entry below lists the tool name, what it does, and its parameters (`*` marks required).
 
 ## `ctx_artifacts`
 
 Context artifact registry with BM25 search — manage and query indexed code artifacts.
 WORKFLOW: index artifacts first (index/reindex), then search with query for semantic retrieval.
 Actions: list|status|index|reindex|search|remove.
-ANTIPATTERN: NOT for general code search — use ctx_semantic_search for codebase queries.
+ANTIPATTERN: NOT for general code search — use ctx_search (action="semantic") for codebase queries.
 
 Parameters: `action`*, `format`, `name`, `project_root`, `query`, `top_k`
-
-## `ctx_benchmark`
-
-Local representation comparison for a file or project. It reports the selected modes' context size; it does not establish task quality or a universal gain.
-WORKFLOW: use before ctx_read when choosing a local representation.
-Provide a file path, or use action=project for project-wide results.
-ANTIPATTERN: not the Research Performance Benchmark — this tool does not compare matched workloads or quality gates.
-
-Parameters: `action`, `format`, `path`*
-
-## `ctx_cache`
-
-Cache operations — inspect, clear, or invalidate the read cache.
-Actions: status lists cached files; clear empties all (recover token budget);
-invalidate path=... refreshes a single entry.
-Use to diagnose stale content or recover budget after large reads.
-ANTIPATTERN: does NOT affect disk files — only cached read content.
-
-Parameters: `action`*, `path`
 
 ## `ctx_call`
 
@@ -80,30 +42,6 @@ ANTIPATTERN: Never touches the user's repository — completely isolated shadow 
 
 Parameters: `action`, `from`, `limit`, `message`, `path`, `ref`, `to`
 
-## `ctx_cognitive`
-
-Read science-driven context intelligence status and cognitive impact.
-action=status reports the active mode; impact reports interruption savings; features lists every science feature and whether it is enabled.
-
-Parameters: `action`*
-
-## `ctx_compare`
-
-Preview compression — original vs the bytes lean-ctx would emit, with token counts + line diff.
-INPUT (pick one): path=<file> (read pipeline) | content=<text> [+ ext=rs|json|csv] (read pipeline) | command=<cmd> + output=<text> (shell pipeline).
-Read-only: never changes files, cache, or session. Use to decide whether a mode/pipeline is worth it.
-ANTIPATTERN: not for reading files (use ctx_read) or restoring archived output (use ctx_expand).
-
-Parameters: `command`, `content`, `ext`, `output`, `path`
-
-## `ctx_compile`
-
-Build minimal context package within token budget. Modes: handles (references), compressed (content), full (all cached).
-WORKFLOW: after ctx_read/ctx_compose, package focused context for handoff/subagent.
-ANTIPATTERN: not for exploration — use ctx_compose/ctx_read first.
-
-Parameters: `budget`, `mode`
-
 ## `ctx_compose`
 
 First-pass context for one task; returns ranked files and inline source — use instead of search→read chains.
@@ -127,19 +65,19 @@ Parameters: `path`*
 ## `ctx_context`
 
 Session context overview — cached files, seen files, session state, CRP mode.
-WORKFLOW: track context budget periodically — use before ctx_compress/ctx_compile.
+WORKFLOW: track context budget periodically — use before ctx_compress or ctx_control(action="evict").
 ANTIPATTERN: not for reading file content — use ctx_read or ctx_compose.
 
 Parameters: _none_
 
 ## `ctx_control`
 
-Fine-tune context — exclude, include, pin, unpin, set_view, set_priority, mark_outdated, reset, list, history.
+Fine-tune context — exclude, include, pin, unpin, evict, set_view, set_priority, mark_outdated, reset, list, history.
 Overlay-based, reversible, scoped to call/session/project.
 WORKFLOW: after ctx_compose, exclude low-relevance files.
 ANTIPATTERN: not for initial context building — use ctx_compose/ctx_read first.
 
-Parameters: `action`*, `reason`, `scope`, `target`, `value`
+Parameters: `action`*, `reason`, `scope`, `target`, `targets`, `value`
 
 ## `ctx_cost`
 
@@ -148,12 +86,6 @@ Actions: report (summary), agent (per-agent), tools (per-tool), json (machine), 
 WORKFLOW: call report to find top cost drivers, then agent/tools for detail.
 
 Parameters: `action`, `agent_id`, `limit`
-
-## `ctx_crush`
-
-Compress JSON arrays, nested JSON objects, and logs while preserving schema, anomalies, and representative samples.
-
-Parameters: `content`*, `keep_anomalies`, `max_items`, `mode`
 
 ## `ctx_dedup`
 
@@ -196,7 +128,7 @@ For editing code you've read, prefer ctx_patch (hash-anchored): it never makes y
 old_string must be unique unless replace_all=true. create=true writes new files.
 backup creates .bak. MD5/size/mtime pre-guards prevent race conditions.
 ANTIPATTERN: Do NOT loop on failures — switch to ctx_patch (anchored), or verify file content and adjust old_string.
-For LSP-aware refactoring (rename, move, inline), use ctx_refactor.
+To replace a whole symbol body use ctx_patch(op="replace_symbol"); find its references with ctx_callgraph.
 
 Parameters: `create`, `new_string`*, `old_string`, `path`*, `replace_all`
 
@@ -204,7 +136,8 @@ Parameters: `create`, `new_string`*, `old_string`, `path`*, `replace_all`
 
 Run code in sandbox (11 languages) — use when conditionals, multi-line or cross-language transforms.
 ANTIPATTERN: for simple one-liners, prefer ctx_shell (lower overhead, auto-compressed).
-language=shell supports multi-line scripts but shares ctx_shell's security policy.
+language=shell supports multi-line scripts but shares ctx_shell's security policy;
+other languages run only after the user approves them.
 action=code (default) for one-shot; action=batch for parallel multi-language;
 action=file to summarize admitted project text as data, without executing it.
 For code/batch, intent annotates large output; file records the intent alongside its preview. Languages: javascript,
@@ -219,17 +152,6 @@ ANTIPATTERN: not for project files — use ctx_read or ctx_compose.
 
 Parameters: `action`, `end_line`, `head`, `id`, `json_keys`, `json_path`, `query`, `search`, `session_id`, `start_line`, `tail`
 
-## `ctx_explore`
-
-Iterative, deterministic code exploration → compact file:line citations.
-Runs a bounded multi-turn loop (BM25 + static call/import graph + AST symbols)
-and returns a <final_answer> block of `path:start-end` spans instead of bodies.
-USE WHEN: locating WHERE behavior lives across many files, cheaply.
-vs ctx_compose: compose inlines bodies in one shot; explore returns citations
-over N turns (far fewer tokens). citation=true emits only the block.
-
-Parameters: `citation`, `max_turns`, `path`, `query`*
-
 ## `ctx_feedback`
 
 Record and report LLM token/latency metrics — use to track efficiency and optimize context usage.
@@ -240,15 +162,6 @@ ANTIPATTERN: not for debugging code behavior — this tracks token/latency stats
 record requires llm_input_tokens + llm_output_tokens.
 
 Parameters: `action`, `agent_id`, `intent`, `latency_ms`, `limit`, `llm_input_tokens`, `llm_output_tokens`, `model`, `note`
-
-## `ctx_fill`
-
-Budget-aware context fill — compress N files to fit a token budget.
-WORKFLOW: pass paths[] + budget=N; task="..." enables intent-driven pruning.
-ANTIPATTERN: does NOT decide which files to include — use ctx_plan for project-wide selection.
-Saves tokens vs per-file reads (for many files with a budget).
-
-Parameters: `budget`*, `paths`*, `task`
 
 ## `ctx_gain`
 
@@ -291,14 +204,6 @@ Identify hot files to optimize context usage.
 
 Parameters: `action`, `path`
 
-## `ctx_impact`
-
-Change impact analysis — assess blast radius before refactoring.
-action=analyze path="file.rs" maps downstream dependents; action=diff compares git refs;
-action=chain traces from→to dependency paths. depth controls traversal (default 5).
-
-Parameters: `action`, `depth`, `format`, `path`, `root`
-
 ## `ctx_index`
 
 Index orchestration — manage code graph index.
@@ -308,14 +213,6 @@ Actions: status (state), build (incremental), build-full (rebuild),
 why (is `path` indexed? if not, the rule that dropped it).
 
 Parameters: `action`*, `path`, `project_root`
-
-## `ctx_intent`
-
-Submit task goals as JSON or short text — server infers from tool calls.
-ANTI-PATTERN: not needed for simple tasks.
-query=task|JSON; format=json for JSON output; project_root=scope.
-
-Parameters: `format`, `project_root`, `query`*
 
 ## `ctx_knowledge`
 
@@ -327,22 +224,7 @@ action=consolidate imports latest session if present, runs lifecycle, then frees
 action=gotcha trigger='X' resolution='Y' for known pitfalls.
 mode=semantic|exact for recall. category groups related facts.
 
-Parameters: `action`*, `as_of`, `category`, `confidence`, `content`, `dry_run`, `examples`, `format`, `key`, `limit`, `merge`, `mode`, `path`, `pattern_type`, `query`, `resolution`, `severity`, `store`, `trigger`, `value`
-
-## `ctx_ledger`
-
-Context ledger — track persistent context pressure.
-WORKFLOW: status → evict → reset (reset only if budget needs full flush).
-ANTI-PATTERN: don't evict files you actively need — check status first.
-Actions: status, reset, evict.
-
-Parameters: `action`*, `targets`
-
-## `ctx_live_zone`
-
-Manage context freeze zones for optimal provider cache utilization. Freeze stable prefix to guarantee provider KV-cache reuse.
-
-Parameters: `action`*
+Parameters: `action`*, `anchors`, `as_of`, `category`, `commands`, `confidence`, `content`, `dry_run`, `evidence`, `examples`, `format`, `key`, `limit`, `merge`, `mode`, `path`, `pattern_type`, `query`, `refs`, `resolution`, `severity`, `sources`, `steps`, `store`, `trigger`, `type`, `validity`, `value`
 
 ## `ctx_load_tools`
 
@@ -383,12 +265,6 @@ alias instead of the project root — list_roots shows the aliases.
 
 Parameters: `action`*, `alias`, `max_results`, `mode`, `path`, `query`, `roots`
 
-## `ctx_optimize`
-
-Review code for over-engineering and propose simplifications.
-
-Parameters: `action`*, `category`, `decision`, `format`, `path`, `scope`, `symbol`
-
 ## `ctx_outline`
 
 WORKFLOW: call BEFORE ctx_read to map code structure (a syntax-aware table of contents).
@@ -400,15 +276,6 @@ ANTIPATTERN: NOT for file content (use ctx_read) or deep understanding (use ctx_
 
 Parameters: `format`, `kind`, `match`, `path`*
 
-## `ctx_overview`
-
-WORKFLOW: call at session START before ctx_compose/ctx_read.
-ANTIPATTERN: NOT for source code — structure only. Use ctx_compose for code understanding.
-Project map — task='your goal' scopes files by relevance (PageRank on symbol graph) and appends a task briefing plus up to 5 task-relevant knowledge facts. With enable_wakeup_ctx (default on) a WAKE-UP BRIEFING follows: last session task, recent decisions, reminders, active peer agents on this project. behavior_nudges="off" drops the OUTPUT-HINT line.
-High-level structure only, no source body. ~10x cheaper than ctx_compose.
-
-Parameters: `path`, `task`
-
 ## `ctx_pack`
 
 WORKFLOW: create -> export -> import -> install for sharing context state.
@@ -416,10 +283,11 @@ ANTIPATTERN: NOT for ephemeral session save (use ctx_session).
 Context Package Manager — create, install, manage portable context packages
 with knowledge, graph, session patterns, and gotchas.
 Actions: pr, create, list, info, remove, install, export, import, auto_load, summary, bundle.
+create: select layers/categories/keys/facts; preview:true lists what would be packed, writes nothing.
 bundle: one budgeted XML document (task-ranked files, signatures, tree) that fits a chat input box.
 Saves tokens: pre-built context state (avoids re-building).
 
-Parameters: `action`*, `apply`, `author`, `base`, `depth`, `description`, `diff`, `emit`, `enable`, `file`, `format`, `ignore`, `include`, `intent`, `knowledge_limit`, `layers`, `level`, `limit`, `name`, `path`, `project_root`, `scope`, `tags`, `unit`, `version`, `with_auto`, `with_knowledge`
+Parameters: `action`*, `apply`, `author`, `base`, `categories`, `depth`, `description`, `diff`, `emit`, `enable`, `facts`, `file`, `format`, `ignore`, `include`, `intent`, `keys`, `knowledge_limit`, `layers`, `level`, `limit`, `name`, `path`, `preview`, `project_root`, `redistributable`, `scope`, `tags`, `unit`, `version`, `with_auto`, `with_knowledge`
 
 ## `ctx_package`
 
@@ -436,22 +304,6 @@ Parameters: `action`, `description`, `path`
 Safe file edit. Anchored ops use line+hash from ctx_read(mode="anchored"); CONFLICT means re-read. replace_unique(path,old_text,new_text) is a no-read, exact unique replacement. replace_symbol/create/replace_all supported as top-level ops. Cross-file ops[] batch (incl. replace_unique) supported; replace_all and create must be sent as separate top-level calls, not inside ops[].
 
 Parameters: `dry_run`, `end_hash`, `end_line`, `find`, `hash`, `line`, `name`, `new_text`, `old_text`, `op`, `ops`, `path`, `replace`, `start_hash`, `start_line`
-
-## `ctx_perf`
-
-Current-session local context metrics, agent budget, and triage profile. These observations are not a matched-workload benchmark.
-
-Parameters: _none_
-
-## `ctx_plan`
-
-WORKFLOW: set task+profile -> ctx_plan -> use results with ctx_read/ctx_compose.
-ANTIPATTERN: NOT for compressing already-selected files (use ctx_fill).
-Selects files for context via Phi scoring + budget + policy.
-task=short English; budget=token limit (default 12000);
-profile=ultra_lean|balanced|forensic. Saves tokens by prioritizing relevant files.
-
-Parameters: `budget`, `profile`, `task`*
 
 ## `ctx_prefetch`
 
@@ -489,24 +341,9 @@ Query GitHub, GitLab, Jira, Postgres, MCP bridges, custom REST.
 WORKFLOW: action=list first to discover configured providers.
 ANTIPATTERN: not for file content — use ctx_compose/ctx_read instead.
 provider=id (github|gitlab|jira|mcp:<name>); resource=issues|pull_requests.
-Data flows through consolidation pipeline; results searchable via ctx_semantic_search.
+Data flows through consolidation pipeline; results searchable via ctx_search (action="semantic").
 
 Parameters: `action`*, `id`, `iid`, `labels`, `limit`, `mode`, `project`, `provider`, `query`, `resource`, `state`, `status`
-
-## `ctx_quality`
-
-WORKFLOW: report (project score+hotspots+$ tax) → file (one file) → delta (vs HEAD).
-Code health = clean code as a token-cost lever: cognitive complexity, naming,
-and the estimated token 'quality tax' of over-threshold functions.
-ANTIPATTERN: NOT a linter/style checker — it scores navigability, not formatting.
-
-Parameters: `action`, `format`, `path`, `root`
-
-## `ctx_quality_lab`
-
-Run Quality Lab: compression fidelity, cache effectiveness, tokenizer calibration, ETPAO. Pass original+compressed text, or omit for runtime-only metrics.
-
-Parameters: `compressed`, `ext`, `format`, `original`
 
 ## `ctx_radar`
 
@@ -526,75 +363,6 @@ anchored → edit by reference via ctx_patch (no exact-recall).
 
 Parameters: `aggressiveness`, `engine_interface`, `fresh`, `limit`, `mode`, `offset`, `path`, `paths`, `protect`, `raw`, `start_line`
 
-## `ctx_refactor`
-
-Rename, move, safe_delete, inline, read-only analyses via LSP/IDE.
-WORKFLOW: use action=references first to find usages before refactoring.
-ANTIPATTERN: not for symbol discovery — use ctx_symbol/ctx_compose.
-Single-phase edits (replace_symbol_body, reformat) work headless via name_path.
-Two-phase ops (_preview+_apply) need JetBrains IDE (else BACKEND_REQUIRED).
-Conflicts blocked unless force=true. See `action` parameter for full list.
-
-Parameters: `action`*, `column`, `direction`, `end_line`, `expected_hash`, `file`, `force`, `keep_definition`, `line`, `mode`, `name_path`, `new_name`, `new_text`, `optimize_imports`, `path`, `plan_hash`, `propagate`, `scope`, `search_comments`, `search_text_occurrences`, `target_parent`, `target_path`, `text`
-
-## `ctx_repomap`
-
-PageRank symbol map ranked by structural importance + session relevance.
-WORKFLOW: call for codebase-wide orientation at session start.
-ANTIPATTERN: not for task-scoped views — use ctx_overview instead.
-focus_files=['path/*.rs'] boosts specific areas; max_tokens controls size
-(default 2048). Saves tokens vs reading all files individually.
-
-Parameters: `focus_files`, `max_tokens`, `path`
-
-## `ctx_response`
-
-Compress LLM response text via structural de-duplication.
-Removes repetitive patterns while preserving key information.
-WORKFLOW: use after receiving a response, before storing/forwarding.
-ANTIPATTERN: no-op when CRP mode is off — use ctx_read compression instead.
-
-Parameters: `text`*
-
-## `ctx_retrieve`
-
-Retrieve original uncompressed content from the session cache (CCR) —
-restores full verbatim source when compressed ctx_read output is insufficient.
-WORKFLOW: call ctx_read FIRST to populate cache, then ctx_retrieve for verbatim.
-query='text' to find matching lines within cached content.
-ANTIPATTERN: not for reading files directly — use ctx_read.
-
-Parameters: `path`*, `query`
-
-## `ctx_review`
-
-Automated code review with impact analysis, caller tracking, and test discovery.
-Actions: review (single file), diff-review (from git diff text),
-checklist (structured review questions). depth=N (default 3).
-WORKFLOW: run tests first, then use review for structured analysis.
-ANTIPATTERN: not a substitute for actual test execution.
-
-Parameters: `action`*, `depth`, `path`
-
-## `ctx_routes`
-
-Discover HTTP API endpoints without reading route definition files.
-Auto-detects: Express, Flask, FastAPI, Actix, Spring, Rails, Next.js.
-method=GET|POST filters by verb; path='/api' filters by prefix.
-ANTIPATTERN: not for filesystem paths — use ctx_tree.
-Saves tokens vs grepping route definitions.
-
-Parameters: `method`, `path`
-
-## `ctx_rules`
-
-Cross-agent rules governance (ContextOps).
-Actions: sync (distribute rules to agents), diff (show drift),
-lint (check consistency), status (sync state), init (create central config).
-WORKFLOW: run status first to check state, then sync if out of date.
-
-Parameters: `action`*, `agent`
-
 ## `ctx_search`
 
 Search code: regex(pattern, default) | semantic(query) | symbol(name|handle) | find_related(file_path,line). Read-only. anchored=true enables ctx_patch refs; queries batches regex searches. Run ctx_compose FIRST.
@@ -607,7 +375,7 @@ Session memory. save at session end, load at start, status = snapshot;
 task|finding|decision record progress (value=text).
 ANTIPATTERN: permanent project knowledge → ctx_knowledge.
 
-Parameters: `action`*, `keep_recent_turns`, `session_id`, `value`
+Parameters: `action`*, `keep_recent_turns`, `session_id`, `tag`, `value`
 
 ## `ctx_shell`
 
@@ -619,33 +387,6 @@ A [BLOCKED] command is permanent; ctx_execute shares the same allowlist — fix 
 ANTIPATTERN: multi-line scripts, sh/bash script.sh, $var-as-command → ctx_execute (when exposed).
 
 Parameters: `background_action`, `command`, `cwd`, `env`, `inline`, `job_id`, `raw`, `run_in_background`, `timeout_ms`
-
-## `ctx_skillify`
-
-WORKFLOW: mine to extract patterns → list to review → promote to activate.
-Codifies patterns into .cursor/rules/skillify-*.mdc.
-Actions: mine|list|status|promote. Idempotent.
-ANTIPATTERN: one-off rules → write .mdc by hand.
-
-Parameters: `action`, `slug`
-
-## `ctx_smells`
-
-WORKFLOW: rules (list detectors) → scan (run on project).
-Code smell detection: dead_code, long_function, god_file, complexity, etc.
-rule='name' or path='file' to filter.
-ANTIPATTERN: NOT a linter — no style/format enforcement.
-
-Parameters: `action`, `format`, `path`, `root`, `rule`
-
-## `ctx_summary`
-
-WORKFLOW: record after tasks → recall with query.
-Compact session digests (task, files, decisions, next steps).
-Actions: recall|record|list. Auto-captured on checkpoints.
-ANTIPATTERN: structured facts → ctx_knowledge.
-
-Parameters: `action`, `query`, `top_k`
 
 ## `ctx_tools`
 
@@ -671,7 +412,7 @@ Parameters: `focus_topic`, `fresh_tail_tokens`, `messages`*, `protect_min_messag
 Directory tree with file counts per directory. depth=N (default 3);
 show_hidden for dotfiles; paths for multi-root.
 respect_gitignore filters ignored files (default true).
-WORKFLOW: lightweight orientation before ctx_repomap or ctx_compose.
+WORKFLOW: lightweight orientation before ctx_compose.
 
 Parameters: `depth`, `path`, `paths`, `respect_gitignore`, `show_hidden`
 
@@ -695,9 +436,9 @@ Parameters: `action`, `format`
 
 ## `ctx_work_graph`
 
-Free persistent project-scoped bounded local Work Graph for multi-agent execution. Actions: create|delegate|claim|execute|consume|complete|receipt|accept|fuse|attribution|value_report|cancel|get|observe|list. Observe returns compact state without context payloads or execution fences.
+Free persistent project-scoped bounded local Work Graph for multi-agent coordination. The host launches agents; start binds a host-launched child to its node (verified context capsule, leases, launch env with the child's delivery profile), receipt or cancel ends it and a stop revokes its delivery. Actions: create|delegate|claim|start|consume|complete|receipt|accept|fuse|attribution|value_report|cancel|get|observe|list. Observe returns compact state without context payloads or execution fences. Node path claims share one lease namespace with ctx_agent path leases: an agent holding src blocks starting a node that claims src/x.
 
-Parameters: `accepted_nodes`, `action`*, `capsule_ref`, `claims`, `connector`, `cost_micros`, `execution_fence`, `expected_outcome_ref`, `graph_id`, `if_revision`, `max_attempts`, `max_concurrency`, `model`, `node_id`, `outcome`, `outcome_ref`, `parent_node_id`, `path_claims`, `policy_ref`, `receipt_id`, `stop_reason`, `task_ref`, `timeout_ms`, `to_agent`, `tokens`
+Parameters: `accepted_nodes`, `action`*, `capsule_ref`, `claims`, `cost_micros`, `execution_fence`, `expected_outcome_ref`, `graph_id`, `if_revision`, `max_concurrency`, `node_id`, `outcome`, `outcome_ref`, `parent_node_id`, `path_claims`, `policy_ref`, `receipt_id`, `stop_reason`, `task_ref`, `timeout_ms`, `to_agent`, `tokens`
 
 ## `shell`
 

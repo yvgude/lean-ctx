@@ -533,10 +533,14 @@ pub fn find_pids_by_name(name: &str) -> Vec<u32> {
 
     #[cfg(unix)]
     {
+        // Only this user's processes: `stop` and `uninstall` act for the caller
+        // and never reach another account's lean-ctx, even when run as root.
+        // SAFETY: getuid has no preconditions and cannot fail.
+        let uid = unsafe { libc::getuid() }.to_string();
+
         // Exact name match first
         if let Ok(output) = std::process::Command::new("pgrep")
-            .arg("-x")
-            .arg(name)
+            .args(["-U", &uid, "-x", name])
             .output()
         {
             collect_pids(&output.stdout, &protected, &mut pids);
@@ -545,6 +549,7 @@ pub fn find_pids_by_name(name: &str) -> Vec<u32> {
         // Also find processes where the full command line contains the binary path
         // (catches processes launched via absolute path, e.g. /Users/x/.local/bin/lean-ctx)
         if let Ok(output) = std::process::Command::new("pgrep")
+            .args(["-U", &uid])
             .arg("-f")
             .arg(format!("/{name}(\\s|$)"))
             .output()
@@ -824,6 +829,18 @@ mod tests {
     #[test]
     fn current_process_is_alive() {
         assert!(is_alive(std::process::id()));
+    }
+
+    /// `stop`/`uninstall` never reach another account's processes: root's
+    /// launchd (PID 1) is not a candidate for an ordinary user.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn name_lookup_is_scoped_to_this_user() {
+        // SAFETY: getuid has no preconditions and cannot fail.
+        if unsafe { libc::getuid() } == 0 {
+            return;
+        }
+        assert!(!find_pids_by_name("launchd").contains(&1));
     }
 
     #[test]

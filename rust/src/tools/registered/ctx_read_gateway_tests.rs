@@ -502,3 +502,115 @@ async fn the_kill_switch_restores_unfiltered_reads() {
         "disabled gateway must not filter: {out}"
     );
 }
+
+/// A failing call of a tool that declares every source
+/// (`McpTool::publishes_every_source`) is a tool error carrying its text —
+/// a handler `Err`, or a `ShellOutcome` that reports the error — and that
+/// text is never recorded as a delivery of the call's sources. An error
+/// sentence answered as a successful reply would be recorded at the release
+/// point (`record_tool_delivery`) and reported to the host as a success.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn a_failing_call_of_a_declaring_tool_is_an_error_and_never_a_delivery() {
+    use crate::core::archive::delivered::{LineageRefusal, record_tool_delivery};
+    use crate::core::context_admission::stored::lineage_support::reusable;
+    use crate::server::tool_trait::{McpTool, ShellOutcome};
+    use crate::tools::registered::{
+        ctx_agent::CtxAgentTool, ctx_execute::CtxExecuteTool, ctx_expand::CtxExpandTool,
+        ctx_handoff::CtxHandoffTool, ctx_knowledge::CtxKnowledgeTool, ctx_search::CtxSearchTool,
+    };
+
+    let fixture = Fixture::new();
+    let root = fixture.root.path().to_string_lossy().into_owned();
+    let missing = format!("{root}/gone.rs");
+    // (tool, arguments, resolved `path`, text the failure must carry).
+    let cases: [(&dyn McpTool, serde_json::Value, &str, &str); 8] = [
+        (
+            &CtxExpandTool,
+            json!({}),
+            root.as_str(),
+            "ERROR: 'id' parameter is required",
+        ),
+        (
+            &CtxReadTool,
+            json!({ "path": missing, "mode": "diff" }),
+            missing.as_str(),
+            "",
+        ),
+        (
+            &CtxReadTool,
+            json!({ "paths": [missing] }),
+            missing.as_str(),
+            "",
+        ),
+        (
+            &CtxSearchTool,
+            // A syntax error is searched literally now; a pattern over the
+            // compiled size limit still fails the call.
+            json!({ "action": "regex", "pattern": "(\\w{100}){100}", "path": root }),
+            root.as_str(),
+            "ERROR: invalid regex",
+        ),
+        (
+            &CtxKnowledgeTool,
+            json!({ "action": "search" }),
+            root.as_str(),
+            "Error:",
+        ),
+        (
+            &CtxAgentTool,
+            json!({ "action": "read" }),
+            root.as_str(),
+            "Error: agent must be registered first",
+        ),
+        (
+            &CtxExecuteTool,
+            json!({ "action": "file", "path": missing }),
+            missing.as_str(),
+            "File processing",
+        ),
+        (
+            &CtxHandoffTool,
+            json!({ "action": "show", "path": missing }),
+            missing.as_str(),
+            "",
+        ),
+    ];
+    for (tool, args, path, expected) in cases {
+        let name = tool.name();
+        let args = args.as_object().expect("args").clone();
+        assert!(
+            tool.publishes_every_source(Some(&args)),
+            "{name}: the case must be a declaring call"
+        );
+        let ctx = fixture.context(path);
+        let (text, recorded) = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(fixture.root.path().to_path_buf())),
+            || {
+                let (outcome, capture) = crate::core::archive::authority::capture_sync(|| {
+                    tokio::task::block_in_place(|| tool.handle(&args, &ctx))
+                });
+                let (text, failed) = match outcome {
+                    Ok(output) => {
+                        let failed = output
+                            .shell_outcome
+                            .as_ref()
+                            .is_some_and(ShellOutcome::is_error);
+                        (output.text, failed)
+                    }
+                    Err(error) => (error.message.to_string(), true),
+                };
+                assert!(failed, "{name}: answered a failure as a reply: {text}");
+                assert!(text.contains(expected), "{name}: {text}");
+                // The release point, with the flags this call really has.
+                let recorded = record_tool_delivery(true, failed, capture, &[text.as_str()]);
+                (text, recorded)
+            },
+        );
+        assert_eq!(recorded, 0, "{name}: an error was recorded as a delivery");
+        assert_eq!(
+            reusable(&root, &text),
+            Err(LineageRefusal::Unknown),
+            "{name}"
+        );
+    }
+}

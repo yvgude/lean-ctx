@@ -1,3 +1,5 @@
+use std::fmt::Write as _;
+
 /// Parse a package reference like `name@version` or `@scope/name@version`.
 /// Scoped names start with `@`, so a bare `@scope/name` has no version,
 /// while `@scope/name@1.0.0` splits at the *last* `@` that follows a `/`.
@@ -17,6 +19,16 @@ pub(super) fn parse_pkg_ref(s: &str) -> (&str, Option<&str>) {
         (&s[..at_pos], Some(&s[at_pos + 1..]))
     } else {
         (s, None)
+    }
+}
+
+/// K02: a local install takes unsigned and identity-only packages, and
+/// says what that means.
+pub(super) fn warn_signature_gap(
+    coverage: Option<crate::core::context_package::signing::SignatureCoverage>,
+) {
+    if let Some(gap) = crate::core::context_package::signing::signature_gap(coverage) {
+        eprintln!("WARNING: package is {gap}");
     }
 }
 
@@ -50,16 +62,17 @@ pub(super) fn cmd_pack_install(args: &[String], project_root: &str) {
                 return;
             }
         };
-        match registry.import_from_file(
+        match registry.import_from_file_checked(
             std::path::Path::new(&file_path),
             local_signature_policy(args),
         ) {
-            Ok(manifest) => {
+            Ok((manifest, coverage)) => {
                 println!("Imported: {} v{}", manifest.name, manifest.version);
                 println!(
                     "  Signature: {}",
                     crate::core::context_package::registry::describe_package_signature(&manifest)
                 );
+                warn_signature_gap(coverage);
                 apply_or_report(&manifest.name, &manifest.version, project_root);
             }
             Err(e) => eprintln!("ERROR: import failed: {e}"),
@@ -70,23 +83,15 @@ pub(super) fn cmd_pack_install(args: &[String], project_root: &str) {
     let Some(name) = pkg_name else {
         eprintln!("ERROR: package name is required");
         eprintln!("Usage: lean-ctx pack install <name>[@version] [--file=path [--allow-unsigned]]");
-        eprintln!("       lean-ctx pack install <ns>/<name>[@version] [--registry <url>]");
         return;
     };
 
-    // `ns/name` (or `@ns/name`) → hosted-registry install (GL #406).
-    if crate::core::context_package::remote::parse_remote_ref(&name).is_some() {
-        let raw_ref = match pkg_version {
-            Some(v) => format!("{name}@{v}"),
-            None => name,
-        };
-        super::super::pack_remote::cmd_pack_install_remote(
-            &raw_ref,
-            parse_flag(args, "--registry").as_deref(),
-            project_root,
-            false,
+    // Hosted registries are gone; a scoped `ns/name` is not a local package.
+    if name.contains('/') {
+        eprintln!(
+            "ERROR: remote package sources are not supported; install a local .ctxpkg file with --file=<path>"
         );
-        return;
+        std::process::exit(1);
     }
 
     let registry = match crate::core::context_package::LocalRegistry::open() {
@@ -115,29 +120,39 @@ pub(super) fn cmd_pack_install(args: &[String], project_root: &str) {
         &resolved_version
     };
 
-    apply_or_report(&name, version, project_root);
+    if !apply_or_report(&name, version, project_root) {
+        std::process::exit(1);
+    }
 }
 
-fn apply_package(name: &str, version: &str, project_root: &str) {
+/// Whether the package was applied; the error is printed.
+fn apply_package(name: &str, version: &str, project_root: &str) -> bool {
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
         Err(e) => {
             eprintln!("ERROR: {e}");
-            return;
+            return false;
         }
     };
 
-    match registry.load_package(name, version) {
-        Ok((manifest, content)) => {
-            match crate::core::context_package::load_package(&manifest, &content, project_root) {
+    match registry.load_admitted(name, version) {
+        Ok(package) => {
+            match crate::core::context_package::load_admitted_package(&package, project_root) {
                 Ok(report) => {
                     println!("{report}");
                     println!("Package applied successfully.");
+                    true
                 }
-                Err(e) => eprintln!("ERROR: load failed: {e}"),
+                Err(e) => {
+                    eprintln!("ERROR: load failed: {e}");
+                    false
+                }
             }
         }
-        Err(e) => eprintln!("ERROR: {e}"),
+        Err(e) => {
+            eprintln!("ERROR: {e}");
+            false
+        }
     }
 }
 
@@ -218,8 +233,9 @@ pub(super) fn cmd_pack_info(args: &[String]) {
 
     match registry.load_package(name, ver) {
         Ok((manifest, content)) => {
-            println!("Package: {} v{}", manifest.name, manifest.version);
-            println!("Schema:  v{}", manifest.schema_version);
+            let mut out = String::new();
+            let _ = writeln!(out, "Package: {} v{}", manifest.name, manifest.version);
+            let _ = writeln!(out, "Schema:  v{}", manifest.schema_version);
             if let Some(lvl) = manifest.conformance_level {
                 let label = match lvl {
                     1 => "Basic",
@@ -227,22 +243,24 @@ pub(super) fn cmd_pack_info(args: &[String]) {
                     3 => "Cognitive",
                     _ => "Unknown",
                 };
-                println!("Level:   {lvl} ({label})");
+                let _ = writeln!(out, "Level:   {lvl} ({label})");
             }
             if let Some(ref s) = manifest.scope {
-                println!("Scope:   {s}");
+                let _ = writeln!(out, "Scope:   {s}");
             }
             if !manifest.description.is_empty() {
-                println!("Description: {}", manifest.description);
+                let _ = writeln!(out, "Description: {}", manifest.description);
             }
             if let Some(ref a) = manifest.author {
-                println!("Author: {a}");
+                let _ = writeln!(out, "Author: {a}");
             }
-            println!(
+            let _ = writeln!(
+                out,
                 "Created: {}",
                 manifest.created_at.format("%Y-%m-%d %H:%M UTC")
             );
-            println!(
+            let _ = writeln!(
+                out,
                 "Layers: {}",
                 manifest
                     .layers
@@ -252,48 +270,75 @@ pub(super) fn cmd_pack_info(args: &[String]) {
                     .join(", ")
             );
             if !manifest.tags.is_empty() {
-                println!("Tags: {}", manifest.tags.join(", "));
+                let _ = writeln!(out, "Tags: {}", manifest.tags.join(", "));
             }
-            println!("\nStats:");
-            println!("  Knowledge facts:  {}", manifest.stats.knowledge_facts);
-            println!("  Graph nodes:      {}", manifest.stats.graph_nodes);
-            println!("  Graph edges:      {}", manifest.stats.graph_edges);
-            println!("  Patterns:         {}", manifest.stats.pattern_count);
-            println!("  Gotchas:          {}", manifest.stats.gotcha_count);
-            println!(
+            let _ = writeln!(out, "\nStats:");
+            let _ = writeln!(
+                out,
+                "  Knowledge facts:  {}",
+                manifest.stats.knowledge_facts
+            );
+            let _ = writeln!(out, "  Graph nodes:      {}", manifest.stats.graph_nodes);
+            let _ = writeln!(out, "  Graph edges:      {}", manifest.stats.graph_edges);
+            let _ = writeln!(out, "  Patterns:         {}", manifest.stats.pattern_count);
+            let _ = writeln!(out, "  Gotchas:          {}", manifest.stats.gotcha_count);
+            let _ = writeln!(
+                out,
                 "  Compression:      {:.1}%",
                 manifest.stats.compression_ratio * 100.0
             );
             if let Some(ref gs) = manifest.graph_summary {
-                println!("\nGraph v2:");
-                println!("  Nodes:       {}", gs.node_count);
-                println!("  Edges:       {}", gs.edge_count);
+                let _ = writeln!(out, "\nGraph v2:");
+                let _ = writeln!(out, "  Nodes:       {}", gs.node_count);
+                let _ = writeln!(out, "  Edges:       {}", gs.edge_count);
                 if let Some(mean) = gs.activation_mean {
-                    println!("  Activation:  {mean:.2}");
+                    let _ = writeln!(out, "  Activation:  {mean:.2}");
                 }
                 if !gs.node_types.is_empty() {
-                    println!("  Types:       {}", gs.node_types.join(", "));
+                    let _ = writeln!(out, "  Types:       {}", gs.node_types.join(", "));
                 }
             }
-            println!("  Est. tokens:      ~{}", content.estimated_token_count());
-            println!("\nIntegrity:");
-            println!("  SHA256:       {}", manifest.integrity.sha256);
-            println!("  Content hash: {}", manifest.integrity.content_hash);
-            println!(
+            let _ = writeln!(
+                out,
+                "  Est. tokens:      ~{}",
+                content.estimated_token_count()
+            );
+            let _ = writeln!(out, "\nIntegrity:");
+            let _ = writeln!(out, "  SHA256:       {}", manifest.integrity.sha256);
+            let _ = writeln!(out, "  Content hash: {}", manifest.integrity.content_hash);
+            let _ = writeln!(
+                out,
                 "  Size:         {}",
                 format_bytes(manifest.integrity.byte_size)
             );
-            println!("\nProvenance:");
-            println!(
+            let _ = writeln!(out, "\nProvenance:");
+            let _ = writeln!(
+                out,
                 "  Tool:    {} v{}",
                 manifest.provenance.tool, manifest.provenance.tool_version
             );
             if let Some(ref h) = manifest.provenance.project_hash {
-                println!("  Project: {h}");
+                let _ = writeln!(out, "  Project: {h}");
             }
+            // Every line ends with `\n`: the info is released without its
+            // final newline, which the one observed writer adds back (G08).
+            let out = out.strip_suffix('\n').unwrap_or(&out).to_owned();
+            crate::cli::common::print_released(&released_info(out));
         }
         Err(e) => eprintln!("ERROR: {e}"),
     }
+}
+
+/// `pack info` renders a package's manifest text (description, author, tags,
+/// scope, graph node types, provenance) and counters. The package was
+/// admitted as it is when it was loaded; the rendering still passes the
+/// release point like every other CLI output and is never recorded as a
+/// delivery of project sources.
+fn released_info(info: String) -> String {
+    let root = crate::cli::common::detect_project_root(&[]);
+    crate::cli::common::CliToolRun::new("ctx_pack", &root, None)
+        .human_facing()
+        .deliver_text(|| info)
 }
 
 pub(super) fn cmd_pack_remove(args: &[String]) {
@@ -353,12 +398,13 @@ pub(super) fn cmd_pack_import(args: &[String], project_root: &str) {
         }
     };
 
-    match registry.import_from_file(
+    match registry.import_from_file_checked(
         std::path::Path::new(file_path),
         local_signature_policy(args),
     ) {
-        Ok(manifest) => {
+        Ok((manifest, coverage)) => {
             println!("Imported: {} v{}", manifest.name, manifest.version);
+            warn_signature_gap(coverage);
             println!(
                 "  Signature: {}",
                 crate::core::context_package::registry::describe_package_signature(&manifest)
@@ -385,7 +431,7 @@ pub(super) fn cmd_pack_import(args: &[String], project_root: &str) {
     }
 }
 
-pub(super) fn cmd_pack_auto_load(args: &[String]) {
+pub(super) fn cmd_pack_auto_load(args: &[String], project_root: &str) {
     let mut pkg_ref: Option<&str> = None;
     let mut enable = true;
 
@@ -408,12 +454,12 @@ pub(super) fn cmd_pack_auto_load(args: &[String]) {
                 return;
             }
         };
-        match registry.auto_load_packages() {
+        match registry.auto_load_packages(project_root) {
             Ok(entries) => {
                 if entries.is_empty() {
-                    println!("No packages set for auto-load.");
+                    println!("No packages set for auto-load in this project.");
                 } else {
-                    println!("Auto-load packages:");
+                    println!("Auto-load packages (this project):");
                     for e in &entries {
                         println!("  {} v{}", e.name, e.version);
                     }
@@ -421,6 +467,7 @@ pub(super) fn cmd_pack_auto_load(args: &[String]) {
             }
             Err(e) => eprintln!("ERROR: {e}"),
         }
+        print_unbound_auto_load(&registry);
         return;
     };
 
@@ -454,15 +501,36 @@ pub(super) fn cmd_pack_auto_load(args: &[String]) {
         }
     };
 
-    match registry.set_auto_load(name, &version, enable) {
+    match registry.set_auto_load(name, &version, enable, project_root) {
         Ok(()) => {
             if enable {
-                println!("Auto-load enabled for {name}@{version}");
+                println!("Auto-load enabled for {name}@{version} in this project");
             } else {
-                println!("Auto-load disabled for {name}@{version}");
+                println!("Auto-load disabled for {name}@{version} in this project");
             }
         }
         Err(e) => eprintln!("ERROR: {e}"),
+    }
+}
+
+/// Auto-load entries from before the project binding (V03) load nowhere;
+/// say so, and how to bind one.
+fn print_unbound_auto_load(registry: &crate::core::context_package::LocalRegistry) {
+    let unbound: Vec<_> = registry
+        .list()
+        .unwrap_or_default()
+        .into_iter()
+        .filter(crate::core::context_package::registry::PackageEntry::auto_load_unbound)
+        .collect();
+    if unbound.is_empty() {
+        return;
+    }
+    println!("Not loaded (auto-load is now bound to a project — enable it again in one):");
+    for e in &unbound {
+        println!(
+            "  {} v{}  → lean-ctx pack auto-load {}@{}",
+            e.name, e.version, e.name, e.version
+        );
     }
 }
 
@@ -478,7 +546,8 @@ pub(crate) fn format_bytes(bytes: u64) -> String {
 
 /// Apply a context pack to the project — or, for kind=skills, report where
 /// the verified files were materialized (they load from disk, not sessions).
-pub(crate) fn apply_or_report(name: &str, version: &str, project_root: &str) {
+/// Returns whether that succeeded; the error is printed.
+pub(crate) fn apply_or_report(name: &str, version: &str, project_root: &str) -> bool {
     use crate::core::context_package::manifest::PackageKind;
 
     let kind = crate::core::context_package::LocalRegistry::open()
@@ -496,13 +565,14 @@ pub(crate) fn apply_or_report(name: &str, version: &str, project_root: &str) {
                     dir.display()
                 );
                 println!("  Files are read-only and SHA-256 verified against the manifest.");
+                return true;
             }
             Err(e) => eprintln!("ERROR: {e}"),
         }
-        return;
+        return false;
     }
 
-    apply_package(name, version, project_root);
+    apply_package(name, version, project_root)
 }
 
 /// Parse `--flag=value` or `--flag value` from args.

@@ -1,0 +1,14 @@
+{
+  "case": "join_two_proofs",
+  "base": "routes/swarm_join.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/consent_proof",
+      "value": {}
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

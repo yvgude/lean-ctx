@@ -47,7 +47,6 @@ pub struct SolutionConfig {
     pub track_loc: bool,
     #[serde(default = "default_true")]
     pub platform_hints: bool,
-    pub commercial: crate::core::solution_commercial::SolutionCommercialConfig,
 }
 
 const fn default_true() -> bool {
@@ -65,7 +64,6 @@ impl Default for SolutionConfig {
             track_decisions: true,
             track_loc: true,
             platform_hints: true,
-            commercial: Default::default(),
         }
     }
 }

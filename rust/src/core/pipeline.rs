@@ -16,7 +16,6 @@
 //! - **Translation**: Token shorthand (TDD), symbol replacement
 //! - **Delivery**: LITM positioning, CRP formatting, final output assembly
 //!
-//! Each layer can be enabled/disabled per profile (see `core::profiles`).
 //! `PipelineStats` aggregates per-layer metrics across all runs for observability.
 
 use std::collections::HashMap;
@@ -89,22 +88,6 @@ impl std::str::FromStr for LayerKind {
     }
 }
 
-/// Content and metadata passed into a pipeline layer for processing.
-#[derive(Debug, Clone)]
-pub struct LayerInput {
-    pub content: String,
-    pub tokens: usize,
-    pub metadata: HashMap<String, String>,
-}
-
-/// Result produced by a pipeline layer after processing.
-#[derive(Debug, Clone)]
-pub struct LayerOutput {
-    pub content: String,
-    pub tokens: usize,
-    pub metadata: HashMap<String, String>,
-}
-
 /// Performance metrics for a single layer execution: tokens in/out, timing, ratio.
 #[derive(Debug, Clone)]
 pub struct LayerMetrics {
@@ -134,121 +117,6 @@ impl LayerMetrics {
             duration_us,
             compression_ratio: ratio,
         }
-    }
-}
-
-/// A single processing stage in the compression pipeline.
-pub trait Layer {
-    fn kind(&self) -> LayerKind;
-    fn process(&self, input: LayerInput) -> LayerOutput;
-}
-
-/// Returns whether a given layer is enabled according to a profile's pipeline config.
-pub fn is_layer_enabled(kind: LayerKind, cfg: &crate::core::profiles::PipelineConfig) -> bool {
-    match kind {
-        LayerKind::Input | LayerKind::Autonomy | LayerKind::Delivery => true,
-        LayerKind::Intent => cfg.intent_effective(),
-        LayerKind::Relevance => cfg.relevance_effective(),
-        LayerKind::Compression => cfg.compression_effective(),
-        LayerKind::Translation => cfg.translation_effective(),
-    }
-}
-
-/// A chain of processing layers that content flows through sequentially.
-pub struct Pipeline {
-    layers: Vec<Box<dyn Layer>>,
-}
-
-impl Pipeline {
-    /// Creates an empty pipeline with no layers.
-    pub fn new() -> Self {
-        Self { layers: Vec::new() }
-    }
-
-    /// Appends a processing layer to the pipeline (builder pattern).
-    pub fn add_layer(mut self, layer: Box<dyn Layer>) -> Self {
-        self.layers.push(layer);
-        self
-    }
-
-    /// Appends a layer only if the profile's pipeline config allows it.
-    pub fn add_layer_if_enabled(
-        self,
-        layer: Box<dyn Layer>,
-        cfg: &crate::core::profiles::PipelineConfig,
-    ) -> Self {
-        if is_layer_enabled(layer.kind(), cfg) {
-            self.add_layer(layer)
-        } else {
-            self
-        }
-    }
-
-    /// Runs all layers in sequence, collecting per-layer metrics.
-    pub fn execute(&self, input: LayerInput) -> (LayerOutput, Vec<LayerMetrics>) {
-        let mut current = input;
-        let mut metrics = Vec::new();
-
-        for layer in &self.layers {
-            let start = std::time::Instant::now();
-            let input_tokens = current.tokens;
-            let output = layer.process(current);
-            let duration = start.elapsed().as_micros() as u64;
-
-            metrics.push(LayerMetrics::new(
-                layer.kind(),
-                input_tokens,
-                output.tokens,
-                duration,
-            ));
-
-            current = LayerInput {
-                content: output.content,
-                tokens: output.tokens,
-                metadata: output.metadata,
-            };
-        }
-
-        let final_output = LayerOutput {
-            content: current.content,
-            tokens: current.tokens,
-            metadata: current.metadata,
-        };
-
-        (final_output, metrics)
-    }
-
-    /// Formats pipeline metrics as a human-readable summary with per-layer and total stats.
-    pub fn format_metrics(metrics: &[LayerMetrics]) -> String {
-        let mut out = String::from("Pipeline Metrics:\n");
-        let mut total_saved = 0usize;
-        for m in metrics {
-            let saved = m.input_tokens.saturating_sub(m.output_tokens);
-            total_saved += saved;
-            out.push_str(&format!(
-                "  {} : {} -> {} tok ({:.0}%, {:.1}ms)\n",
-                m.layer,
-                m.input_tokens,
-                m.output_tokens,
-                m.compression_ratio * 100.0,
-                m.duration_us as f64 / 1000.0,
-            ));
-        }
-        if let (Some(first), Some(last)) = (metrics.first(), metrics.last()) {
-            let total_ratio = if first.input_tokens == 0 {
-                1.0
-            } else {
-                last.output_tokens as f64 / first.input_tokens as f64
-            };
-            out.push_str(&format!(
-                "  TOTAL: {} -> {} tok ({:.0}%, saved {})\n",
-                first.input_tokens,
-                last.output_tokens,
-                total_ratio * 100.0,
-                total_saved,
-            ));
-        }
-        out
     }
 }
 
@@ -370,12 +238,6 @@ impl PipelineStats {
     }
 }
 
-impl Default for Pipeline {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
 #[cfg(test)]
 pub mod tests {
     use super::*;
@@ -408,48 +270,6 @@ pub mod tests {
         );
     }
 
-    struct PassthroughLayer {
-        kind: LayerKind,
-    }
-
-    impl Layer for PassthroughLayer {
-        fn kind(&self) -> LayerKind {
-            self.kind
-        }
-
-        fn process(&self, input: LayerInput) -> LayerOutput {
-            LayerOutput {
-                content: input.content,
-                tokens: input.tokens,
-                metadata: input.metadata,
-            }
-        }
-    }
-
-    struct CompressionLayer {
-        ratio: f64,
-    }
-
-    impl Layer for CompressionLayer {
-        fn kind(&self) -> LayerKind {
-            LayerKind::Compression
-        }
-
-        fn process(&self, input: LayerInput) -> LayerOutput {
-            let new_tokens = (input.tokens as f64 * self.ratio) as usize;
-            let truncated = if input.content.len() > new_tokens * 4 {
-                input.content[..new_tokens * 4].to_string()
-            } else {
-                input.content
-            };
-            LayerOutput {
-                content: truncated,
-                tokens: new_tokens,
-                metadata: input.metadata,
-            }
-        }
-    }
-
     #[test]
     fn layer_kind_all_ordered() {
         let all = LayerKind::all();
@@ -460,87 +280,9 @@ pub mod tests {
     }
 
     #[test]
-    fn passthrough_preserves_content() {
-        let layer = PassthroughLayer {
-            kind: LayerKind::Input,
-        };
-        let input = LayerInput {
-            content: "hello world".to_string(),
-            tokens: 2,
-            metadata: HashMap::new(),
-        };
-        let output = layer.process(input);
-        assert_eq!(output.content, "hello world");
-        assert_eq!(output.tokens, 2);
-    }
-
-    #[test]
-    fn compression_layer_reduces() {
-        let layer = CompressionLayer { ratio: 0.5 };
-        let input = LayerInput {
-            content: "a ".repeat(100),
-            tokens: 100,
-            metadata: HashMap::new(),
-        };
-        let output = layer.process(input);
-        assert_eq!(output.tokens, 50);
-    }
-
-    #[test]
-    fn pipeline_chains_layers() {
-        let pipeline = Pipeline::new()
-            .add_layer(Box::new(PassthroughLayer {
-                kind: LayerKind::Input,
-            }))
-            .add_layer(Box::new(CompressionLayer { ratio: 0.5 }))
-            .add_layer(Box::new(PassthroughLayer {
-                kind: LayerKind::Delivery,
-            }));
-
-        let input = LayerInput {
-            content: "a ".repeat(100),
-            tokens: 100,
-            metadata: HashMap::new(),
-        };
-        let (output, metrics) = pipeline.execute(input);
-        assert_eq!(output.tokens, 50);
-        assert_eq!(metrics.len(), 3);
-        assert_eq!(metrics[0].layer, LayerKind::Input);
-        assert_eq!(metrics[1].layer, LayerKind::Compression);
-        assert_eq!(metrics[2].layer, LayerKind::Delivery);
-    }
-
-    #[test]
     fn metrics_new_calculates_ratio() {
         let m = LayerMetrics::new(LayerKind::Compression, 100, 50, 1000);
         assert!((m.compression_ratio - 0.5).abs() < f64::EPSILON);
-    }
-
-    #[test]
-    fn metrics_format_readable() {
-        let metrics = vec![
-            LayerMetrics::new(LayerKind::Input, 1000, 1000, 100),
-            LayerMetrics::new(LayerKind::Compression, 1000, 300, 5000),
-            LayerMetrics::new(LayerKind::Delivery, 300, 300, 50),
-        ];
-        let formatted = Pipeline::format_metrics(&metrics);
-        assert!(formatted.contains("input"));
-        assert!(formatted.contains("compression"));
-        assert!(formatted.contains("delivery"));
-        assert!(formatted.contains("TOTAL"));
-    }
-
-    #[test]
-    fn empty_pipeline_passes_through() {
-        let pipeline = Pipeline::new();
-        let input = LayerInput {
-            content: "test".to_string(),
-            tokens: 1,
-            metadata: HashMap::new(),
-        };
-        let (output, metrics) = pipeline.execute(input);
-        assert_eq!(output.content, "test");
-        assert!(metrics.is_empty());
     }
 
     #[test]
@@ -623,117 +365,5 @@ pub mod tests {
         assert_eq!(agg.total_input_tokens, 1000);
         assert_eq!(agg.total_output_tokens, 300);
         assert_eq!(agg.count, 1);
-    }
-
-    #[test]
-    fn pipeline_full_flow_integration() {
-        let pipeline = Pipeline::new()
-            .add_layer(Box::new(PassthroughLayer {
-                kind: LayerKind::Input,
-            }))
-            .add_layer(Box::new(PassthroughLayer {
-                kind: LayerKind::Autonomy,
-            }))
-            .add_layer(Box::new(PassthroughLayer {
-                kind: LayerKind::Intent,
-            }))
-            .add_layer(Box::new(PassthroughLayer {
-                kind: LayerKind::Relevance,
-            }))
-            .add_layer(Box::new(CompressionLayer { ratio: 0.3 }))
-            .add_layer(Box::new(PassthroughLayer {
-                kind: LayerKind::Translation,
-            }))
-            .add_layer(Box::new(PassthroughLayer {
-                kind: LayerKind::Delivery,
-            }));
-
-        let input = LayerInput {
-            content: "x ".repeat(500),
-            tokens: 500,
-            metadata: HashMap::new(),
-        };
-        let (output, metrics) = pipeline.execute(input);
-
-        assert_eq!(metrics.len(), 7, "all layers should produce metrics");
-        assert_eq!(output.tokens, 150, "compression at 0.3 ratio");
-
-        for (i, kind) in LayerKind::all().iter().enumerate() {
-            assert_eq!(metrics[i].layer, *kind, "layer order must match");
-        }
-
-        let mut stats = PipelineStats::new();
-        stats.record(&metrics);
-        assert_eq!(stats.runs, 1);
-        assert_eq!(stats.total_tokens_saved(), 350);
-
-        let formatted = Pipeline::format_metrics(&metrics);
-        assert!(formatted.contains("TOTAL"));
-        assert!(formatted.contains("500"));
-    }
-
-    #[test]
-    fn is_layer_enabled_respects_config() {
-        let cfg = crate::core::profiles::PipelineConfig {
-            intent: Some(false),
-            relevance: Some(false),
-            compression: Some(true),
-            translation: Some(true),
-        };
-
-        assert!(is_layer_enabled(LayerKind::Input, &cfg));
-        assert!(!is_layer_enabled(LayerKind::Intent, &cfg));
-        assert!(!is_layer_enabled(LayerKind::Relevance, &cfg));
-        assert!(is_layer_enabled(LayerKind::Compression, &cfg));
-        assert!(is_layer_enabled(LayerKind::Translation, &cfg));
-        assert!(is_layer_enabled(LayerKind::Delivery, &cfg));
-    }
-
-    #[test]
-    fn add_layer_if_enabled_skips_disabled() {
-        let cfg = crate::core::profiles::PipelineConfig {
-            intent: Some(false),
-            relevance: Some(true),
-            compression: Some(true),
-            translation: Some(true),
-        };
-
-        let pipeline = Pipeline::new()
-            .add_layer_if_enabled(
-                Box::new(PassthroughLayer {
-                    kind: LayerKind::Input,
-                }),
-                &cfg,
-            )
-            .add_layer_if_enabled(
-                Box::new(PassthroughLayer {
-                    kind: LayerKind::Intent,
-                }),
-                &cfg,
-            )
-            .add_layer_if_enabled(Box::new(CompressionLayer { ratio: 0.5 }), &cfg)
-            .add_layer_if_enabled(
-                Box::new(PassthroughLayer {
-                    kind: LayerKind::Delivery,
-                }),
-                &cfg,
-            );
-
-        let input = LayerInput {
-            content: "x ".repeat(100),
-            tokens: 100,
-            metadata: HashMap::new(),
-        };
-        let (output, metrics) = pipeline.execute(input);
-
-        assert_eq!(
-            metrics.len(),
-            3,
-            "Intent layer should be skipped, leaving Input + Compression + Delivery"
-        );
-        assert_eq!(metrics[0].layer, LayerKind::Input);
-        assert_eq!(metrics[1].layer, LayerKind::Compression);
-        assert_eq!(metrics[2].layer, LayerKind::Delivery);
-        assert_eq!(output.tokens, 50);
     }
 }

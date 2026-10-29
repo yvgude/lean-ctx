@@ -585,3 +585,41 @@ fn bfs_handles_cycle_without_infinite_loop() {
     assert_eq!(nodes.len(), 1);
     assert_eq!(nodes[0].symbol, "b");
 }
+
+/// The resident call graph belongs to the project it was built from: a
+/// request for a second project gets that project's graph, also when both
+/// projects have the same file names (so nothing looks withdrawn).
+#[test]
+fn a_resident_call_graph_is_not_handed_to_another_project() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let project = |body: &str| {
+        let dir = tempfile::tempdir().expect("project");
+        std::fs::write(dir.path().join("lib.rs"), body).expect("source");
+        let inputs = CallGraphInputs {
+            project_root: normalize_project_root(&dir.path().to_string_lossy()),
+            file_paths: vec!["lib.rs".to_owned()],
+            ..Default::default()
+        };
+        let built = CallGraph::build(&inputs);
+        built.save().expect("persisted");
+        (dir, Arc::new(inputs), built)
+    };
+    let (_dir_a, inputs_a, built_a) = project("fn first() { helper_a(); }\n");
+    let (_dir_b, inputs_b, built_b) = project("fn second() { helper_b(); helper_c(); }\n");
+    assert_ne!(built_a.file_hashes, built_b.file_hashes);
+
+    let resident_a = CallGraph::get_or_start_build(&inputs_a.project_root, Arc::clone(&inputs_a))
+        .expect("the persisted graph of the first project");
+    assert_eq!(resident_a.file_hashes, built_a.file_hashes);
+
+    let resident_b = CallGraph::get_or_start_build(&inputs_b.project_root, Arc::clone(&inputs_b))
+        .expect("the persisted graph of the second project");
+    assert_eq!(resident_b.project_root, inputs_b.project_root);
+    assert_eq!(resident_b.file_hashes, built_b.file_hashes);
+
+    // And the first project still gets its own.
+    let again = CallGraph::get_or_start_build(&inputs_a.project_root, Arc::clone(&inputs_a))
+        .expect("resident graph of the first project");
+    assert_eq!(again.file_hashes, built_a.file_hashes);
+}

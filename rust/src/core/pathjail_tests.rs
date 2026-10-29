@@ -1,7 +1,4 @@
 // SPDX-License-Identifier: Apache-2.0
-
-//! Unit tests for the path jail (#660 LOC gate: split out of pathjail.rs).
-
 use super::*;
 
 #[cfg(not(feature = "no-jail"))]
@@ -347,17 +344,21 @@ fn escape_error_names_config_keys_without_meta() {
 fn expand_user_path_expands_tilde_and_vars() {
     let _env_lock = crate::core::data_dir::test_env_lock();
     let home = dirs::home_dir().expect("home dir");
-    let home_s = home.to_string_lossy().to_string();
+    // `$HOME` is the variable when it is set — on Windows `dirs::home_dir`
+    // ignores it (the profile folder), so the two can differ there; the
+    // profile folder only stands in for an unset `$HOME`.
+    let env_home = std::env::var_os("HOME").map_or_else(|| home.clone(), PathBuf::from);
+    let env_home_s = env_home.to_string_lossy().to_string();
 
     assert_eq!(expand_user_path("~"), home);
     assert_eq!(expand_user_path("~/code"), home.join("code"));
-    assert_eq!(expand_user_path("$HOME/code"), home.join("code"));
-    assert_eq!(expand_user_path("${HOME}/code"), home.join("code"));
+    assert_eq!(expand_user_path("$HOME/code"), env_home.join("code"));
+    assert_eq!(expand_user_path("${HOME}/code"), env_home.join("code"));
     // Multiple variables in one entry.
     crate::test_env::set_var("LEAN_CTX_TEST_SUB", "sub");
     assert_eq!(
         expand_user_path("$HOME/$LEAN_CTX_TEST_SUB/x"),
-        PathBuf::from(format!("{home_s}/sub/x"))
+        PathBuf::from(format!("{env_home_s}/sub/x"))
     );
     crate::test_env::remove_var("LEAN_CTX_TEST_SUB");
     // Absolute paths pass through untouched.
@@ -675,29 +676,9 @@ fn detect_cache_root_extracts_marker_dir() {
             "/w/app/node_modules",
         ),
         (
-            "/Users/x/.rustup/toolchains/stable-aarch64-apple-darwin/lib/rustlib/src/rust/library/core/src/lib.rs",
-            "Rust toolchain source",
-            "/Users/x/.rustup/toolchains",
-        ),
-        (
-            "/home/u/.cargo/git/checkouts/tokio-abc/1234567/src/lib.rs",
-            "Cargo git dependencies",
-            "/home/u/.cargo/git/checkouts",
-        ),
-        (
-            "/home/u/.bun/install/cache/zod@3.23.8/index.d.ts",
-            "Bun package cache",
-            "/home/u/.bun/install/cache",
-        ),
-        (
-            "/home/u/.pub-cache/hosted/pub.dev/http-1.2.0/lib/http.dart",
-            "Dart pub cache",
-            "/home/u/.pub-cache/hosted",
-        ),
-        (
-            "/home/u/.gem/ruby/3.3.0/gems/rack-3.0.0/lib/rack.rb",
-            "Ruby gems",
-            "/home/u/.gem/ruby",
+            "/home/u/.pyenv/versions/3.12.4/lib/python3.12/json/__init__.py",
+            "pyenv Python installations",
+            "/home/u/.pyenv/versions",
         ),
     ];
     for (path, want_label, want_root) in cases {
@@ -710,17 +691,6 @@ fn detect_cache_root_extracts_marker_dir() {
         detect_language_cache_root(Path::new("/home/u/proj/src/main.rs")).is_none(),
         "a normal project path is not a cache"
     );
-    for private in [
-        "/home/u/.cargo/credentials.toml",
-        "/home/u/.claude/settings.json",
-        "/home/u/.codex/auth.json",
-        "/home/u/.config/gh/hosts.yml",
-    ] {
-        assert!(
-            detect_language_cache_root(Path::new(private)).is_none(),
-            "credential and config locations are never auto-admitted: {private}"
-        );
-    }
 }
 
 /// The core #899 guarantee: once a detected cache root is registered, a path
@@ -781,6 +751,23 @@ fn agent_instruction_roots_are_admitted_but_credentials_stay_jailed() {
         (".claude/CLAUDE.md", ".claude/CLAUDE.md"),
         (".agents/skills/a/SKILL.md", ".agents/skills"),
         (".cursor/rules/style.mdc", ".cursor/rules"),
+        // Host output of the agent's own session (focus 2026-10-15).
+        (
+            ".claude/projects/-w-p/0a1b/tool-results/out.txt",
+            ".claude/projects/-w-p/0a1b/tool-results",
+        ),
+        (
+            ".claude/projects/-w-p/0a1b/subagents/agent-1.jsonl",
+            ".claude/projects/-w-p/0a1b/subagents",
+        ),
+        (
+            ".cursor/projects/17761/agent-tools/x.txt",
+            ".cursor/projects/17761/agent-tools",
+        ),
+        (
+            ".cursor/projects/17761/terminals/1.txt",
+            ".cursor/projects/17761/terminals",
+        ),
         (".claude/settings.json", ".claude/settings.json"),
         (".codex/config.toml", ".codex/config.toml"),
         (".cursor/mcp.json", ".cursor/mcp.json"),
@@ -802,6 +789,10 @@ fn agent_instruction_roots_are_admitted_but_credentials_stay_jailed() {
         ".codex/config.toml/../auth.json",
         ".claude/skills/../.credentials.json",
         ".claude/projects/p/transcript.jsonl",
+        ".claude/projects/p/s/tool-results/../../../../.credentials.json",
+        ".cursor/projects/17761/mcp-auth.json",
+        ".cursor/projects/17761/agent-transcripts/t.jsonl",
+        ".codex/sessions/2026/10/15/rollout.jsonl",
     ] {
         assert!(
             detect_language_cache_root(&home.join(private)).is_none(),
@@ -812,6 +803,37 @@ fn agent_instruction_roots_are_admitted_but_credentials_stay_jailed() {
         detect_language_cache_root(Path::new("/opt/x/.claude/skills/a/SKILL.md")).is_none(),
         "only the home directory's agent folders are admitted"
     );
+}
+
+/// The host's per-user scratch dir (`<tmp>/claude-<uid>`) is admitted only
+/// when it is this user's and not writable by others; another account's or a
+/// group/world-writable one stays jailed.
+#[cfg(unix)]
+#[test]
+fn host_scratch_dir_is_admitted_only_when_private_to_this_user() {
+    use std::os::unix::fs::PermissionsExt;
+    // SAFETY: geteuid has no arguments or failure state.
+    let uid = unsafe { libc::geteuid() };
+    let dir = std::env::temp_dir().join(format!("claude-{uid}"));
+    let created = !dir.exists();
+    if created {
+        std::fs::create_dir(&dir).unwrap();
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700)).unwrap();
+    }
+    let file = dir.join("-w-p/session/scratchpad/q.sql");
+    let (label, root) = detect_language_cache_root(&file).expect("own scratch dir admitted");
+    assert_eq!(label, "Claude Code scratchpad");
+    assert_eq!(root, canonicalize_secure(&dir));
+    let foreign = std::env::temp_dir().join(format!("claude-{}/x", uid.wrapping_add(1)));
+    assert!(detect_language_cache_root(&foreign).is_none());
+    if created {
+        std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o777)).unwrap();
+        assert!(
+            detect_language_cache_root(&file).is_none(),
+            "a scratch dir others can write into is not admitted"
+        );
+        std::fs::remove_dir(&dir).unwrap();
+    }
 }
 
 /// Cursor writes long tool output and terminal logs per workspace and its

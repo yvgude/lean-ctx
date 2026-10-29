@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use super::{
-    CtxShellTool, collect_extra_env, detect_heredoc_reroute, format_background_state,
+    CtxShellTool, collect_extra_env, detect_heredoc_reroute, format_background_snapshot,
     is_timeout_notice_only, resolve_effective_cwd, shell_access_denial, should_auto_background,
 };
 use crate::server::background_shell::JobState;
@@ -69,6 +69,77 @@ fn background(outcome: ShellOutcome) -> BackgroundShellOutcome {
     outcome
 }
 
+fn format_snapshot_state(
+    id: &str,
+    is_cancel: bool,
+    state: Option<JobState>,
+) -> (String, ShellOutcome) {
+    format_noticed_snapshot(id, is_cancel, state, None)
+}
+
+fn format_noticed_snapshot(
+    id: &str,
+    is_cancel: bool,
+    state: Option<JobState>,
+    notice: Option<&'static str>,
+) -> (String, ShellOutcome) {
+    let snapshot = state.map(|state| {
+        let actual_exit_code = match &state {
+            JobState::Running { .. } => 0,
+            JobState::Completed { exit_code, .. } => *exit_code,
+            JobState::Cancelled { .. } => 130,
+        };
+        let output_withheld = !matches!(&state, JobState::Running { .. });
+        crate::server::background_shell::JobSnapshot {
+            state,
+            generation: 1,
+            completeness: crate::core::context_admission::OutputCompleteness::complete(),
+            // This fixture exercises the safe withheld-output path without
+            // inserting or retaining a synthetic job in the global registry.
+            output_withheld,
+            actual_exit_code,
+            notice,
+        }
+    });
+    format_background_snapshot(id, is_cancel, snapshot)
+}
+
+/// Q13: a finished job's notice is the first line of what a status poll or a
+/// cancel shows, once: in the header, which is put in front of the reply
+/// after the text was archived and shortened — never in that text. A job
+/// without a notice is rendered exactly as before.
+#[test]
+fn a_finished_jobs_notice_leads_the_header_and_is_not_in_the_text() {
+    const NOTICE: &str = "[lean-ctx: a fixed notice]";
+    let finished = [
+        JobState::Completed {
+            output: "out".into(),
+            exit_code: 3,
+        },
+        JobState::Cancelled {
+            output: "out".into(),
+        },
+    ];
+    for state in finished {
+        for is_cancel in [false, true] {
+            let (plain_text, plain) =
+                format_snapshot_state("shell_x", is_cancel, Some(state.clone()));
+            let (text, noticed) =
+                format_noticed_snapshot("shell_x", is_cancel, Some(state.clone()), Some(NOTICE));
+            assert_eq!(text, plain_text, "the text is the same with a notice");
+            assert!(!text.contains(NOTICE));
+            let (plain, mut noticed) = (background(plain), background(noticed));
+            let plain_header = plain.display.as_ref().unwrap().header.clone();
+            let header = noticed.display.as_ref().unwrap().header.clone();
+            assert_eq!(header, format!("{NOTICE}\n{plain_header}"));
+            assert_eq!(header.matches(NOTICE).count(), 1);
+            // Nothing else of the outcome differs.
+            noticed.display.as_mut().unwrap().header = plain_header;
+            assert_eq!(noticed, plain);
+        }
+    }
+}
+
 /// #1246: a cancel must never come back as a tool error, and must not read
 /// like a status poll that did nothing.
 ///
@@ -82,7 +153,7 @@ fn cancel_is_acknowledged_and_never_reports_a_failure() {
     let running = JobState::Running {
         output: String::new(),
     };
-    let (text, outcome) = format_background_state("shell_x", true, Some(running.clone()));
+    let (text, outcome) = format_snapshot_state("shell_x", true, Some(running.clone()));
     let outcome = background(outcome);
     assert!(!outcome.is_error);
     assert_eq!(outcome.state, BackgroundJobState::Cancelled);
@@ -96,11 +167,11 @@ fn cancel_is_acknowledged_and_never_reports_a_failure() {
     );
 
     // A status poll of the same state keeps the old wording.
-    let (text, outcome) = format_background_state("shell_x", false, Some(running));
+    let (text, outcome) = format_snapshot_state("shell_x", false, Some(running));
     let outcome = background(outcome);
     assert!(!outcome.is_error);
     assert_eq!(outcome.state, BackgroundJobState::Running);
-    assert!(text.is_empty(), "{text:?}");
+    assert_eq!(text, "[background:shell_x running]");
     assert!(
         outcome
             .display
@@ -110,7 +181,7 @@ fn cancel_is_acknowledged_and_never_reports_a_failure() {
 
     // The terminal child code is data; the requested cancel remains a
     // successful tool action even though structuredContent keeps 130.
-    let (text, outcome) = format_background_state(
+    let (text, outcome) = format_snapshot_state(
         "shell_x",
         true,
         Some(JobState::Cancelled {
@@ -121,7 +192,7 @@ fn cancel_is_acknowledged_and_never_reports_a_failure() {
     assert!(!outcome.is_error);
     assert_eq!(outcome.state, BackgroundJobState::Cancelled);
     assert_eq!(outcome.exit_code, Some(130));
-    assert!(text.contains("[cancelled: command stopped on request]"));
+    assert!(text.contains("retained output withheld by storage policy"));
     assert!(
         outcome
             .display
@@ -136,21 +207,21 @@ fn cancel_is_acknowledged_and_never_reports_a_failure() {
         exit_code: 1,
     };
     let cancelled_finished =
-        background(format_background_state("shell_x", true, Some(finished.clone())).1);
+        background(format_snapshot_state("shell_x", true, Some(finished.clone())).1);
     assert!(!cancelled_finished.is_error);
     assert_eq!(cancelled_finished.state, BackgroundJobState::Failed);
     assert_eq!(cancelled_finished.exit_code, Some(1));
 
-    let polled_finished = background(format_background_state("shell_x", false, Some(finished)).1);
+    let polled_finished = background(format_snapshot_state("shell_x", false, Some(finished)).1);
     assert!(polled_finished.is_error);
     assert_eq!(polled_finished.state, BackgroundJobState::Failed);
     assert_eq!(polled_finished.exit_code, Some(1));
 
-    let missing_cancel = format_background_state("shell_x", true, None).1;
+    let missing_cancel = format_snapshot_state("shell_x", true, None).1;
     assert!(!missing_cancel.is_error());
     assert_eq!(missing_cancel, ShellOutcome::Exit(0));
 
-    let missing_status = format_background_state("shell_x", false, None).1;
+    let missing_status = format_snapshot_state("shell_x", false, None).1;
     assert!(missing_status.is_error());
     assert!(matches!(
         missing_status,

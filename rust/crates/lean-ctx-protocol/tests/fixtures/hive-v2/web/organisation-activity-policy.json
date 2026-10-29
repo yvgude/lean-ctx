@@ -1,0 +1,52 @@
+{
+  "route": "W75",
+  "method": "GET",
+  "path": "/api/v1/companies/acme-group/activity/policy?limit=1",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "view": "policy",
+      "items": [
+        {
+          "id": "5a9edfa7-8163-4c2f-8eb5-7fd3a0c12456:0000000000000000042",
+          "at": "2026-10-25T09:30:00Z",
+          "workspace": "acme",
+          "action": "policy.document_saved",
+          "actor": {
+            "kind": "user",
+            "user": {
+              "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
+              "name": "Ada"
+            },
+            "instance": null,
+            "agent": null
+          },
+          "target": {
+            "kind": "org",
+            "id": null,
+            "label": null
+          },
+          "details": {
+            "level": "workspace",
+            "version": 3,
+            "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        }
+      ],
+      "next_cursor": "1761384600000000.5a9edfa7-8163-4c2f-8eb5-7fd3a0c12456:0000000000000000042"
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "this needs the company admin role",
+          "required_role": "admin"
+        }
+      }
+    }
+  ]
+}

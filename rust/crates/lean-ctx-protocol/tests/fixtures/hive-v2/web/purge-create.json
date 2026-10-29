@@ -1,0 +1,81 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_body",
+          "field": "confirm_name",
+          "message": "Type the vault name to confirm."
+        }
+      },
+      "status": 400
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_body",
+          "field": "request_ref",
+          "message": "request_ref is only for GDPR erasure."
+        }
+      },
+      "status": 400
+    },
+    {
+      "body": {
+        "error": {
+          "code": "purge_reason_invalid",
+          "message": "Use one of the four purge reasons."
+        }
+      },
+      "status": 400
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/vaults/payments/purges",
+  "request": {
+    "confirm_name": "payments",
+    "reason": "leaked_secret",
+    "selector": {
+      "node_ids": [
+        "n_zcjqmmor453nyxqgshlgpogwdm"
+      ]
+    },
+    "totp_code": "123456"
+  },
+  "response": {
+    "body": {
+      "purge": {
+        "acks": {
+          "m": 0,
+          "n": 0
+        },
+        "approvals": [],
+        "backups_clear_at": null,
+        "created_at": "2026-10-24T08:00:10Z",
+        "expires_at": "2026-10-27T08:00:10Z",
+        "id": "prg_aaaaaaaaaaaaaaaaaaaaaaezcm",
+        "item_count": 1,
+        "keys_destroyed_at": null,
+        "legacy_replicas": 0,
+        "offline_pending": 0,
+        "reason": "leaked_secret",
+        "requested_by": {
+          "handle": "mara"
+        },
+        "second_approval_required": false,
+        "selector": {
+          "node_ids": [
+            "n_zcjqmmor453nyxqgshlgpogwdm"
+          ]
+        },
+        "state": "requested",
+        "vault": {
+          "name": "payments",
+          "ws": "acme"
+        }
+      }
+    },
+    "status": 201
+  },
+  "route": "W31"
+}

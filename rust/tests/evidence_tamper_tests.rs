@@ -53,7 +53,6 @@ fn generate_test_bundle(temp: &tempfile::TempDir) -> PathBuf {
     generate(&BundleSpec {
         from: (now - chrono::Duration::hours(1)).to_rfc3339(),
         to: (now + chrono::Duration::hours(1)).to_rfc3339(),
-        framework: Some("eu-ai-act".into()),
         pack: None,
         out: Some(path.clone()),
     })

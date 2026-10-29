@@ -1,0 +1,95 @@
+{
+  "route": "W50",
+  "method": "POST",
+  "path": "/api/v1/consents/cns_abcdefgh234567ab",
+  "request": {
+    "pairing_code": "7KQ2-M9XA",
+    "answer": "allow",
+    "totp_code": "123456"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "state": "approved"
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "Enter the code from your authenticator app.",
+          "reason": "action_code_required"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "That code is not right.",
+          "reason": "code_wrong"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "Too many wrong codes; use a recovery code or sign in again.",
+          "reason": "step_up_locked"
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "consent_code_wrong",
+          "message": "That pairing code is not right.",
+          "attempts_left": 4
+        }
+      }
+    },
+    {
+      "status": 429,
+      "body": {
+        "error": {
+          "code": "consent_locked",
+          "message": "Too many wrong pairing codes; wait 15 minutes."
+        }
+      }
+    },
+    {
+      "status": 410,
+      "body": {
+        "error": {
+          "code": "consent_expired",
+          "message": "The pairing code expired; run the command again.",
+          "reason": "code"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "consent_terminal_only",
+          "message": "Answer this one in the terminal."
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "This request was already answered."
+        }
+      }
+    }
+  ]
+}

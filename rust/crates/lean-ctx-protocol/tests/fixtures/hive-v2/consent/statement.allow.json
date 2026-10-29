@@ -1,0 +1,10 @@
+{
+  "answer": "allow",
+  "answered_at": 1792800120000,
+  "consent_id": "cns_abcdefgh234567ab",
+  "key_id": "b7bda707a8979c46",
+  "schema": "leanctx.hive.consent.v1",
+  "signature": "d71141b28f52d2f1265873486c97abc7e49346336fa75260a16032b68fd40b0c767a24bb95d13759ed7d80fcb4f4ba760b20fc8c1119e17f138e6988ebcc1f0d",
+  "subject_digest": "aadc65c3aeeb5df86987fc43cf88bec7c7bdf4d2beb47558dfe9b8a9cdccf591",
+  "user_id": "2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f"
+}

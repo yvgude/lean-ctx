@@ -45,8 +45,7 @@ pub struct CoverageCheck {
 
 /// Synthetic credential fixtures for CGB-1.1 — one per credential class the
 /// control names. A class counts as covered when any resolved redaction
-/// pattern matches its fixture. Shared with the framework compliance
-/// reports (GL #424) so CGB and framework claims test identical fixtures.
+/// pattern matches its fixture.
 pub(crate) const CREDENTIAL_FIXTURES: &[(&str, &str)] = &[
     ("private key block", "-----BEGIN RSA PRIVATE KEY-----"),
     ("cloud access key", concat!("AK", "IAIOSFODNN7EXAMPLE")),
@@ -62,7 +61,6 @@ pub(crate) const CREDENTIAL_FIXTURES: &[(&str, &str)] = &[
 
 /// Synthetic non-credential sensitivity fixtures for CGB-1.3 (regulated
 /// identifiers). Matching ≥ 1 demonstrates classification beyond secrets.
-/// Shared with the framework compliance reports (GL #424).
 pub(crate) const DOMAIN_FIXTURES: &[(&str, &str)] = &[
     ("IBAN", "DE89 3704 0044 0532 0130 00"),
     ("payment card", "4111 1111 1111 1111"),
@@ -318,6 +316,30 @@ mod tests {
         super::super::resolve(&pack).expect("resolves")
     }
 
+    /// A user-authored regulated pack: own identifier patterns on top of the
+    /// community floor, web egress denied, budget and retention pinned.
+    fn regulated() -> ResolvedPolicy {
+        let pack = super::super::parse(
+            r#"
+name = "regulated-test"
+version = "1.0.0"
+description = "test pack with own identifier classes"
+extends = "strict-redaction"
+
+[context]
+deny_tools = ["ctx_url_read", "ctx_provider", "ctx_tools"]
+max_context_tokens = 12000
+audit_retention_days = 365
+
+[redaction]
+iban = '\b[A-Z]{2}\d{2}[A-Z0-9]{11,30}\b'
+us_ssn = '\b\d{3}-\d{2}-\d{4}\b'
+"#,
+        )
+        .expect("parses");
+        super::super::resolve(&pack).expect("resolves")
+    }
+
     fn status_of(checks: &[CoverageCheck], control: &str) -> CheckStatus {
         checks
             .iter()
@@ -337,8 +359,8 @@ mod tests {
     }
 
     #[test]
-    fn finance_eu_demonstrates_domain_classes_and_egress_denial() {
-        let checks = assess(&resolved("finance-eu"));
+    fn regulated_pack_demonstrates_domain_classes_and_egress_denial() {
+        let checks = assess(&regulated());
         assert_eq!(status_of(&checks, "CGB-1.1"), CheckStatus::Pass);
         assert_eq!(status_of(&checks, "CGB-1.3"), CheckStatus::Pass);
         assert_eq!(status_of(&checks, "CGB-3.2"), CheckStatus::Pass);
@@ -350,7 +372,7 @@ mod tests {
     /// restricted" while providers and the MCP gateway still egress.
     #[test]
     fn partial_egress_denial_fails_and_names_open_tools() {
-        let mut policy = resolved("healthcare");
+        let mut policy = regulated();
         assert_eq!(status_of(&assess(&policy), "CGB-5.5"), CheckStatus::Pass);
         policy.deny_tools = vec!["ctx_url_read".into()];
         let checks = assess(&policy);
@@ -361,12 +383,6 @@ mod tests {
         policy.deny_tools.clear();
         policy.allow_tools = Some(vec!["ctx_read".into()]);
         assert_eq!(status_of(&assess(&policy), "CGB-5.5"), CheckStatus::Pass);
-    }
-
-    #[test]
-    fn healthcare_demonstrates_phi_classes() {
-        let checks = assess(&resolved("healthcare"));
-        assert_eq!(status_of(&checks, "CGB-1.3"), CheckStatus::Pass);
     }
 
     #[test]
@@ -394,7 +410,7 @@ mod tests {
 
     #[test]
     fn summary_counts_are_consistent() {
-        let checks = assess(&resolved("finance-eu"));
+        let checks = assess(&regulated());
         let s = summarize(&checks);
         assert_eq!(s.pass + s.fail + s.inconclusive, checks.len());
         assert_eq!(s.controls_total, CONTROLS_TOTAL);

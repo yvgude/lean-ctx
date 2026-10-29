@@ -1,0 +1,14 @@
+{
+  "case": "journal_place_scope_reason",
+  "base": "records/shred_journal.place.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/reason",
+      "value": "leaked_secret"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

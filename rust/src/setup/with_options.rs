@@ -10,7 +10,7 @@ use super::index_build::{may_autoindex_cwd, spawn_index_build_background};
 use super::mcp::configure_agent_mcp_with_rule_steering;
 use super::options::SetupOptions;
 
-pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String> {
+pub fn run_setup_with_options(opts: &SetupOptions) -> Result<SetupReport, String> {
     let _quiet_guard = opts.json.then(crate::core::runtime_flags::scoped_quiet);
     let started_at = Utc::now();
     let home = crate::core::home::resolve_home_dir()
@@ -18,41 +18,68 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     let binary = resolve_agent_binary();
     let home_str = home.to_string_lossy().to_string();
 
-    // Commit to the XDG layout (and drain any residual ~/.lean-ctx) so a stray
-    // marker can never re-collapse config/data/state/cache later (GL #623).
-    crate::core::layout_pin::heal();
+    // Only the selected tools are touched; the rest are reported, not written.
+    let all_targets = crate::core::editor_registry::build_targets(&home);
+    let scope = super::agent_selection::scope_for_run(
+        &home,
+        &all_targets,
+        opts.agents.as_ref(),
+        opts.refresh_only,
+    );
+    let (targets, deselected): (Vec<EditorTarget>, Vec<EditorTarget>) = all_targets
+        .into_iter()
+        .partition(|t| scope.allows(&t.agent_key));
+    let allows = |key: &str| scope.allows(key);
 
-    let targets = crate::core::editor_registry::build_targets(&home);
     let cfg = crate::core::config::Config::load();
     let update_mcp = cfg.setup.should_update_mcp();
     let should_inject = should_inject_rules(opts, cfg.setup.should_inject_rules());
     let allow_rule_steering = should_allow_rule_steering(opts, &cfg);
     let should_install_skills = should_inject_skills(opts, cfg.setup.should_inject_skills());
 
+    if opts.dry_run {
+        let steps = super::dry_run::plan_steps(&super::dry_run::PlanInput {
+            opts,
+            home: &home,
+            scope: &scope,
+            targets: &targets,
+            deselected: &deselected,
+            update_mcp,
+            inject_rules: should_inject,
+            inject_skills: should_install_skills,
+        });
+        return Ok(build_setup_report(started_at, steps));
+    }
+
+    // Commit to the XDG layout (and drain any residual ~/.lean-ctx) so a stray
+    // marker can never re-collapse config/data/state/cache later (GL #623).
+    crate::core::layout_pin::heal();
+
+    let mut editor_step = build_editor_step(
+        opts,
+        &home_str,
+        &binary,
+        &targets,
+        update_mcp,
+        allow_rule_steering,
+    );
+    editor_step
+        .items
+        .extend(deselected_items(&deselected, &home_str));
     let mut steps = vec![
         build_shell_hook_step(opts, &binary),
         build_daemon_step(),
-        build_editor_step(
-            opts,
-            &home_str,
-            &binary,
-            &targets,
-            &cfg.setup,
-            update_mcp,
-            allow_rule_steering,
-        ),
-        build_rules_step(opts, &home, should_inject),
+        editor_step,
+        build_rules_step(opts, &home, should_inject, &allows),
     ];
 
     if let Some(step) = build_rules_dedup_step(&home, should_inject) {
         steps.push(step);
     }
-    if let Some(step) = build_skill_step(&home, should_install_skills) {
+    if let Some(step) = build_skill_step(&home, should_install_skills, &allows) {
         steps.push(step);
     }
-    if let Some(step) =
-        build_agent_hooks_step(&targets, &cfg.setup, update_mcp, allow_rule_steering)
-    {
+    if let Some(step) = build_agent_hooks_step(&targets, update_mcp, allow_rule_steering) {
         steps.push(step);
     }
 
@@ -64,6 +91,9 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     ]);
     if let Some(step) = build_claude_mod_step(opts, &targets) {
         steps.push(step);
+    }
+    if let Some(keys) = &opts.agents {
+        steps.push(build_selection_step(keys));
     }
 
     maybe_add_project_root_warning(&mut steps);
@@ -95,7 +125,7 @@ pub fn run_setup_with_options(opts: SetupOptions) -> Result<SetupReport, String>
     Ok(report)
 }
 
-fn setup_step(name: &str) -> SetupStepReport {
+pub(super) fn setup_step(name: &str) -> SetupStepReport {
     SetupStepReport {
         name: name.to_string(),
         ok: true,
@@ -105,7 +135,47 @@ fn setup_step(name: &str) -> SetupStepReport {
     }
 }
 
-fn build_shell_hook_step(opts: SetupOptions, _binary: &str) -> SetupStepReport {
+/// Installed tools outside the agent selection: reported, never written.
+pub(super) fn deselected_items(deselected: &[EditorTarget], home_str: &str) -> Vec<SetupItem> {
+    deselected
+        .iter()
+        .filter(|t| t.detect_path.exists())
+        .map(|t| SetupItem {
+            name: t.name.to_string(),
+            status: "deselected".to_string(),
+            path: Some(shorten_path(&t.config_path.to_string_lossy(), home_str)),
+            note: Some(format!(
+                "not in the agent selection; connect: lean-ctx init --agent {}",
+                t.agent_key
+            )),
+        })
+        .collect()
+}
+
+/// `--agents` records the choice so later updates refresh exactly these tools.
+fn build_selection_step(keys: &std::collections::BTreeSet<String>) -> SetupStepReport {
+    let mut step = setup_step("agent_selection");
+    let list = keys.iter().cloned().collect::<Vec<_>>().join(",");
+    match super::agent_selection::save_selection(keys) {
+        Ok(()) => step.items.push(SetupItem {
+            name: "setup.agents".to_string(),
+            status: "saved".to_string(),
+            path: None,
+            note: Some(if list.is_empty() {
+                "none".to_string()
+            } else {
+                list
+            }),
+        }),
+        Err(e) => {
+            step.ok = false;
+            step.errors.push(e);
+        }
+    }
+    step
+}
+
+fn build_shell_hook_step(opts: &SetupOptions, _binary: &str) -> SetupStepReport {
     let mut shell_step = setup_step("shell_hook");
     if !opts.non_interactive || opts.yes {
         if opts.json {
@@ -199,11 +269,10 @@ fn build_daemon_step() -> SetupStepReport {
 }
 
 fn build_editor_step(
-    opts: SetupOptions,
+    opts: &SetupOptions,
     home_str: &str,
     binary: &str,
     targets: &[EditorTarget],
-    selection: &crate::core::config::SetupConfig,
     update_mcp: bool,
     allow_rule_steering: bool,
 ) -> SetupStepReport {
@@ -216,15 +285,6 @@ fn build_editor_step(
                 status: "not_detected".to_string(),
                 path: Some(short_path),
                 note: None,
-            });
-            continue;
-        }
-        if !selection.allows_agent(&target.agent_key, target.name) {
-            editor_step.items.push(SetupItem {
-                name: target.name.to_string(),
-                status: "not_selected".to_string(),
-                path: Some(short_path),
-                note: Some("excluded by setup.agents (lean-ctx setup --agents …)".to_string()),
             });
             continue;
         }
@@ -286,7 +346,7 @@ fn build_editor_step(
     editor_step
 }
 
-fn should_inject_rules(opts: SetupOptions, config_value: bool) -> bool {
+fn should_inject_rules(opts: &SetupOptions, config_value: bool) -> bool {
     if opts.skip_rules {
         false
     } else if opts.force_inject_rules {
@@ -298,7 +358,7 @@ fn should_inject_rules(opts: SetupOptions, config_value: bool) -> bool {
     }
 }
 
-fn should_allow_rule_steering(opts: SetupOptions, cfg: &crate::core::config::Config) -> bool {
+fn should_allow_rule_steering(opts: &SetupOptions, cfg: &crate::core::config::Config) -> bool {
     // `rules_injection=off` is absolute: #1599 established "off means off,
     // on every channel". The setup force flag must not resurrect steering.
     if cfg.rules_injection_effective() == crate::core::config::RulesInjection::Off {
@@ -322,18 +382,19 @@ fn should_allow_rule_steering(opts: SetupOptions, cfg: &crate::core::config::Con
     !cfg.declines_rule_steering()
 }
 
-fn should_inject_skills(opts: SetupOptions, config_value: bool) -> bool {
+fn should_inject_skills(opts: &SetupOptions, config_value: bool) -> bool {
     should_inject_rules(opts, config_value)
 }
 
 fn build_rules_step(
-    opts: SetupOptions,
+    opts: &SetupOptions,
     home: &std::path::Path,
     should_inject: bool,
+    allows: &dyn Fn(&str) -> bool,
 ) -> SetupStepReport {
     let mut rules_step = setup_step("agent_rules");
     if should_inject {
-        let rules_result = crate::rules_inject::inject_all_rules(home);
+        let rules_result = crate::rules_inject::inject_rules_where(home, allows);
         for n in rules_result.injected {
             rules_step.items.push(SetupItem {
                 name: n,
@@ -412,10 +473,11 @@ fn build_rules_dedup_step(home: &std::path::Path, should_inject: bool) -> Option
 fn build_skill_step(
     home: &std::path::Path,
     should_install_skills: bool,
+    allows: &dyn Fn(&str) -> bool,
 ) -> Option<SetupStepReport> {
     let mut skill_step = setup_step("skill_files");
     if should_install_skills {
-        let skill_results = crate::rules_inject::install_all_skills(home);
+        let skill_results = crate::rules_inject::install_skills_where(home, allows);
         for (name, is_new) in &skill_results {
             skill_step.items.push(SetupItem {
                 name: name.clone(),
@@ -437,17 +499,13 @@ fn build_skill_step(
 
 fn build_agent_hooks_step(
     targets: &[EditorTarget],
-    selection: &crate::core::config::SetupConfig,
     update_mcp: bool,
     allow_rule_steering: bool,
 ) -> Option<SetupStepReport> {
     let mut hooks_step = setup_step("agent_hooks");
 
     for target in targets {
-        if !target.detect_path.exists()
-            || target.agent_key.is_empty()
-            || !selection.allows_agent(&target.agent_key, target.name)
-        {
+        if !target.detect_path.exists() || target.agent_key.is_empty() {
             continue;
         }
 
@@ -486,7 +544,7 @@ fn build_agent_hooks_step(
 /// alike — and an installed one is rolled forward to this engine. It runs
 /// inside Claude Code, so the report says what was installed and how to remove
 /// it, and a removal (`lean-ctx claude-mod uninstall`) is never undone here.
-fn build_claude_mod_step(opts: SetupOptions, targets: &[EditorTarget]) -> Option<SetupStepReport> {
+fn build_claude_mod_step(opts: &SetupOptions, targets: &[EditorTarget]) -> Option<SetupStepReport> {
     use crate::hooks::agents::claude_mod::{self, ModStatus};
     let claude_present = targets
         .iter()
@@ -570,7 +628,7 @@ fn build_tool_profile_step() -> SetupStepReport {
     tool_profile_step
 }
 
-fn build_proxy_step(opts: SetupOptions, home: &std::path::Path) -> SetupStepReport {
+fn build_proxy_step(opts: &SetupOptions, home: &std::path::Path) -> SetupStepReport {
     let mut proxy_step = setup_step("proxy");
     if opts.skip_proxy {
         proxy_step.items.push(SetupItem {
@@ -675,7 +733,7 @@ fn maybe_spawn_background_index() {
     }
 }
 
-fn maybe_enable_ide_config_access(opts: SetupOptions) {
+fn maybe_enable_ide_config_access(opts: &SetupOptions) {
     if !opts.yes
         || opts.fix
         || crate::core::config::Config::load()
@@ -759,11 +817,10 @@ mod rule_steering_policy_tests {
         };
 
         let report = build_editor_step(
-            SetupOptions::default(),
+            &SetupOptions::default(),
             tmp.path().to_string_lossy().as_ref(),
             "lean-ctx",
             &[target],
-            &crate::core::config::SetupConfig::default(),
             true,
             false,
         );
@@ -787,50 +844,12 @@ mod rule_steering_policy_tests {
     }
 
     #[test]
-    fn editor_step_leaves_unselected_agents_untouched() {
-        let tmp = tempfile::tempdir().unwrap();
-        let detect = tmp.path().join("commandcode");
-        let config = detect.join("mcp.json");
-        std::fs::create_dir_all(&detect).unwrap();
-
-        let target = EditorTarget {
-            name: "Command Code",
-            agent_key: "commandcode".to_string(),
-            detect_path: detect,
-            config_path: config.clone(),
-            config_type: crate::core::editor_registry::ConfigType::CommandCode,
-        };
-        let selection = crate::core::config::SetupConfig {
-            agents: Some(vec!["claude".to_string()]),
-            ..Default::default()
-        };
-
-        let report = build_editor_step(
-            SetupOptions::default(),
-            tmp.path().to_string_lossy().as_ref(),
-            "lean-ctx",
-            std::slice::from_ref(&target),
-            &selection,
-            true,
-            false,
-        );
-        assert_eq!(report.items[0].status, "not_selected");
-        assert!(
-            !config.exists(),
-            "an unselected agent's config must not be written"
-        );
-
-        let hooks = build_agent_hooks_step(&[target], &selection, true, false);
-        assert!(hooks.is_none(), "no hooks for unselected agents");
-    }
-
-    #[test]
     fn explicit_auto_false_declines_setup_steering() {
         let _env = without_rules_injection_env();
         let mut cfg = crate::core::config::Config::default();
         cfg.setup.auto_inject_rules = Some(false);
 
-        assert!(!should_allow_rule_steering(SetupOptions::default(), &cfg));
+        assert!(!should_allow_rule_steering(&SetupOptions::default(), &cfg));
     }
 
     #[test]
@@ -845,14 +864,14 @@ mod rule_steering_policy_tests {
         cfg.setup.auto_inject_rules = Some(false);
 
         assert!(
-            should_allow_rule_steering(force, &cfg),
+            should_allow_rule_steering(&force, &cfg),
             "--force-inject-rules must override setup.auto_inject_rules=false"
         );
 
         cfg.rules_injection = Some("off".to_string());
 
         assert!(
-            !should_allow_rule_steering(force, &cfg),
+            !should_allow_rule_steering(&force, &cfg),
             "rules_injection=off remains absolute even with force"
         );
     }
@@ -868,7 +887,7 @@ mod rule_steering_policy_tests {
 
         let cfg = crate::core::config::Config::default();
 
-        assert!(!should_allow_rule_steering(opts, &cfg));
+        assert!(!should_allow_rule_steering(&opts, &cfg));
     }
 
     #[test]
@@ -877,7 +896,7 @@ mod rule_steering_policy_tests {
         let default_cfg = crate::core::config::Config::default();
 
         assert!(should_allow_rule_steering(
-            SetupOptions::default(),
+            &SetupOptions::default(),
             &default_cfg
         ));
 
@@ -885,7 +904,7 @@ mod rule_steering_policy_tests {
         explicit_true.setup.auto_inject_rules = Some(true);
 
         assert!(should_allow_rule_steering(
-            SetupOptions::default(),
+            &SetupOptions::default(),
             &explicit_true
         ));
     }

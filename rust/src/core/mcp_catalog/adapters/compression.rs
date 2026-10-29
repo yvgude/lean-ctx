@@ -76,7 +76,17 @@ fn try_compress(server: &str, input: &str) -> Option<String> {
     let transport = srv.resolve().ok()?;
     let timeout = Duration::from_secs(gw.call_timeout_secs.max(1));
     let input = input.to_string();
-    let _server = server.to_string();
+    let server = server.to_string();
+    // The input is egress to the addon. Decide before the session is opened:
+    // a withheld input keeps the caller's (already admitted) text and nothing
+    // is spawned or connected.
+    let mut probe = Map::new();
+    probe.insert("input".to_string(), json!(input));
+    crate::core::context_admission::carrier::admit_downstream_arguments(
+        &super::super::downstream(&server, &transport, ""),
+        &mut probe,
+    )
+    .ok()?;
 
     // On the gateway runtime, like every pooled-session call: a per-call runtime
     // stopped the pooled session's tasks, so every second compression failed (#2040).
@@ -91,10 +101,21 @@ fn try_compress(server: &str, input: &str) -> Option<String> {
         let arg = first_string_param(tool)?;
         let mut args = Map::new();
         args.insert(arg, json!(input));
-        let result = client::proxy_call(&transport, &tool.name, args, timeout)
-            .await
-            .ok()?;
-        Some(client::result_to_text(&result))
+        let result = super::super::admitted_call(
+            &super::super::downstream(&server, &transport, &tool.name),
+            args,
+            |args| client::proxy_call(&transport, &tool.name, args, timeout),
+        )
+        .await
+        .ok()?;
+        // The addon's answer is foreign content: admitted before it replaces
+        // the input. A withheld answer keeps the input.
+        crate::core::context_admission::admit_source(
+            &client::result_to_text(&result),
+            &format!("mcp://{server}::{}", tool.name),
+            false,
+        )
+        .ok()
     })
     .ok()
     .flatten()

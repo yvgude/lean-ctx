@@ -6,9 +6,22 @@ pub(super) fn handle(
 ) -> Option<(&'static str, &'static str, String)> {
     match path {
         "/api/stats" => {
-            let store = crate::core::stats::load_for_display();
+            // A named project reads its own counters (kept per project since
+            // they were split); the device view keeps the device total.
+            let scope = super::helpers::request_ledger_scope();
+            let store = match &scope {
+                Some(scope) => crate::core::stats::load_for_project(scope),
+                None => crate::core::stats::load_for_display(),
+            };
             let mut value = serde_json::to_value(&store).unwrap_or_else(|_| serde_json::json!({}));
             if let Some(obj) = value.as_object_mut() {
+                if scope.is_some() {
+                    // Live process figures that no project owns.
+                    obj.insert(
+                        "device_wide".to_string(),
+                        serde_json::json!(["output_echo", "edit_efficiency", "cache_runtime"]),
+                    );
+                }
                 let echo = crate::core::output_echo::load_stats();
                 obj.insert(
                     "output_echo".to_string(),
@@ -25,9 +38,6 @@ pub(super) fn handle(
                 obj.insert("channel_breakdown".to_string(), channel_breakdown(&store));
                 if let Some(cache_runtime) = load_cache_runtime() {
                     obj.insert("cache_runtime".to_string(), cache_runtime);
-                }
-                if let Some(science) = load_science_stats() {
-                    obj.insert("science".to_string(), science);
                 }
             }
             let json = serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string());
@@ -69,16 +79,37 @@ pub(super) fn handle(
             Some(("200 OK", "application/json", json))
         }
         "/api/spend" => {
-            // Measured spend: real model + billed tokens the proxy read from
-            // provider responses (cross-process, from proxy_usage.json).
-            let per_model = crate::proxy::usage_meter::persisted_snapshot();
+            // Provider-reported tokens per model (cross-process, from
+            // proxy_usage.json), priced at list price unless a response
+            // carried the provider's own charge (`measured_cost_usd`). A named
+            // project reads its share: the turns whose request named a folder
+            // of it. The device view is the device total, split per project.
+            let scope = super::helpers::request_ledger_scope();
+            let per_model = match &scope {
+                Some(scope) => {
+                    let keys = scope.repo_hashes();
+                    crate::proxy::usage_meter::persisted_snapshot_where(|key| {
+                        keys.iter().any(|k| k == key)
+                    })
+                }
+                None => crate::proxy::usage_meter::persisted_snapshot(),
+            };
             let total_usd: f64 = per_model.iter().map(|m| m.cost_usd).sum();
+            let charged_usd: f64 = per_model.iter().map(|m| m.measured_cost_usd).sum();
+            // Token counts are measured; money is list price unless every
+            // dollar came from a provider-reported charge.
+            let source = if charged_usd > 0.0 && (total_usd - charged_usd).abs() < 0.005 {
+                "provider_charge"
+            } else {
+                "list_price"
+            };
             // Blended rate (the `fallback-blended` tier) so the dashboard's
             // *estimated* cost model reads its price from the server, not a
             // hardcoded JS constant.
             let blended = crate::core::gain::model_pricing::ModelPricing::load().quote(None);
-            let payload = serde_json::json!({
-                "source": "measured",
+            let mut payload = serde_json::json!({
+                "source": source,
+                "charged_usd": charged_usd,
                 "available": !per_model.is_empty(),
                 "total_usd": total_usd,
                 "per_model": per_model,
@@ -86,8 +117,11 @@ pub(super) fn handle(
                     "input_per_m": blended.cost.input_per_m,
                     "output_per_m": blended.cost.output_per_m,
                 },
-                "note": "Real provider bill for proxy-routed clients (Claude Code, Codex, Pi, Gemini CLI, OpenCode). MCP-only IDEs are priced as estimated.",
+                "note": "Provider-reported tokens of proxy-routed clients at public API list prices, except where a response carried the provider's own charge. Not an invoice; subscription plans are not billed per token.",
             });
+            if scope.is_none() {
+                payload["by_project"] = spend_by_project(total_usd);
+            }
             let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
             Some(("200 OK", "application/json", json))
         }
@@ -95,17 +129,46 @@ pub(super) fn handle(
     }
 }
 
+/// The device's spend split per project, named like the project switch, and
+/// the rest no project can be named for (turns before projects were kept, or
+/// whose request named no folder).
+fn spend_by_project(total_usd: f64) -> serde_json::Value {
+    let names = super::helpers::project_names();
+    let mut by_name: std::collections::BTreeMap<String, (f64, u64)> = Default::default();
+    let mut assigned = 0.0;
+    for (key, models) in crate::proxy::usage_meter::persisted_projects() {
+        let cost: f64 = models.iter().map(|m| m.cost_usd).sum();
+        let requests: u64 = models.iter().map(|m| m.requests).sum();
+        assigned += cost;
+        let name = names
+            .get(&key)
+            .cloned()
+            .unwrap_or_else(|| "Other folder".to_string());
+        let row = by_name.entry(name).or_default();
+        row.0 += cost;
+        row.1 += requests;
+    }
+    let mut rows: Vec<serde_json::Value> = by_name
+        .into_iter()
+        .map(|(project, (cost, requests))| {
+            serde_json::json!({"project": project, "cost_usd": cost, "requests": requests})
+        })
+        .collect();
+    rows.sort_by(|a, b| {
+        b["cost_usd"]
+            .as_f64()
+            .partial_cmp(&a["cost_usd"].as_f64())
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    serde_json::json!({
+        "projects": rows,
+        "unassigned_usd": (total_usd - assigned).max(0.0),
+    })
+}
+
 /// Current MCP-process cache telemetry. Historical cache totals remain in
 /// `StatsStore::cep`; this snapshot makes the hot cache visible to the live
 /// cockpit without teaching the browser where runtime state files live.
-
-fn load_science_stats() -> Option<serde_json::Value> {
-    let path = crate::core::paths::state_dir()
-        .ok()?
-        .join("science-live.json");
-    let content = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&content).ok()
-}
 
 fn load_cache_runtime() -> Option<serde_json::Value> {
     let mcp_path = crate::core::paths::state_dir().ok()?.join("mcp-live.json");

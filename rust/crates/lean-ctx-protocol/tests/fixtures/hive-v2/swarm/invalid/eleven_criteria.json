@@ -1,0 +1,70 @@
+{
+  "case": "eleven_criteria",
+  "base": "swarm/swarm.running.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/success_criteria",
+      "value": [
+        {
+          "id": "sc_1",
+          "text": "c",
+          "goal": "g_sssssssssssssssssssssssssa"
+        },
+        {
+          "id": "sc_2",
+          "text": "c",
+          "goal": "g_sssssssssssssssssssssssssa"
+        },
+        {
+          "id": "sc_3",
+          "text": "c",
+          "goal": "g_sssssssssssssssssssssssssa"
+        },
+        {
+          "id": "sc_4",
+          "text": "c",
+          "goal": "g_sssssssssssssssssssssssssa"
+        },
+        {
+          "id": "sc_5",
+          "text": "c",
+          "goal": "g_sssssssssssssssssssssssssa"
+        },
+        {
+          "id": "sc_6",
+          "text": "c",
+          "goal": "g_sssssssssssssssssssssssssa"
+        },
+        {
+          "id": "sc_7",
+          "text": "c",
+          "goal": "g_sssssssssssssssssssssssssa"
+        },
+        {
+          "id": "sc_8",
+          "text": "c",
+          "goal": "g_sssssssssssssssssssssssssa"
+        },
+        {
+          "id": "sc_9",
+          "text": "c",
+          "goal": "g_sssssssssssssssssssssssssa"
+        },
+        {
+          "id": "sc_10",
+          "text": "c",
+          "goal": "g_sssssssssssssssssssssssssa"
+        },
+        {
+          "id": "sc_1",
+          "text": "c",
+          "goal": "g_sssssssssssssssssssssssssa"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

@@ -91,7 +91,7 @@ impl WorkGraphStore {
             .as_deref()
             .ok_or("execution fence missing")?;
         let attempt = node.delivery_attempt.ok_or("execution attempt missing")?;
-        let task = crate::core::work_graph_executor::execution_key_for_scope(
+        let task = crate::core::work_graph_delegation::execution_key_for_scope(
             &self.project_root_hash,
             graph.graph_id(),
             &node.node_id,
@@ -101,7 +101,7 @@ impl WorkGraphStore {
             graph_id: graph.graph_id().into(),
             node_id: node.node_id.clone(),
             fence: fence.into(),
-            task_id: format!("{task}:attempt-{attempt}"),
+            task_id: crate::core::work_graph_delegation::attempt_task_id(&task, attempt),
             attempt,
         };
         let host = graph
@@ -142,6 +142,19 @@ impl WorkGraphStore {
         expected_revision: &str,
         mutate: impl FnOnce(&mut BoundedWorkGraph) -> Result<T, String>,
     ) -> Result<T, String> {
+        Self::mutate_if_revision(project_root, graph_id, expected_revision, |store| {
+            mutate(store.graph_mut(graph_id)?)
+        })
+    }
+
+    /// [`Self::mutate_graph_if_revision`] for mutations that need the whole
+    /// store (a claim checks path conflicts across graphs).
+    pub fn mutate_if_revision<T>(
+        project_root: &str,
+        graph_id: &str,
+        expected_revision: &str,
+        mutate: impl FnOnce(&mut Self) -> Result<T, String>,
+    ) -> Result<T, String> {
         if expected_revision.len() != 64
             || !expected_revision
                 .bytes()
@@ -153,7 +166,7 @@ impl WorkGraphStore {
             if store.graph_revision(graph_id)? != expected_revision {
                 return Err("work graph revision conflict".into());
             }
-            mutate(store.graph_mut(graph_id)?)
+            mutate(store)
         })
     }
 
@@ -171,7 +184,9 @@ impl WorkGraphStore {
     pub fn create(&mut self, graph_id: &str, mut graph: BoundedWorkGraph) -> Result<(), String> {
         validate_id(graph_id, "graph_id")?;
         if self.graphs.contains_key(graph_id) {
-            return Err(format!("duplicate graph: {graph_id}"));
+            return Err(format!(
+                "duplicate graph: {graph_id} (inspect it with action=get or choose a new graph_id)"
+            ));
         }
         if self.graphs.len() >= MAX_GRAPHS {
             return Err(format!("work graph store at capacity ({MAX_GRAPHS})"));
@@ -216,32 +231,13 @@ impl WorkGraphStore {
         {
             return Err("path claim conflicts with a live work graph execution".into());
         }
-        let execution_scope = self.project_root_hash.clone();
         let graph = self.graph_mut(graph_id)?;
+        // An expired lease stops the node; the stop revokes its delegated
+        // delivery. The host owns the child process and is told to end it.
         let stopped = graph
             .recover_expired_execution(node_id, now_epoch_ms)
             .map_err(|error| error.to_string())?;
         if !stopped.is_empty() {
-            let cancellation_keys = stopped
-                .iter()
-                .filter_map(|stopped_id| {
-                    graph
-                        .get_node(stopped_id)
-                        .and_then(|node| node.execution_fence.as_deref())
-                        .map(|fence| {
-                            crate::core::work_graph_executor::execution_key_for_scope(
-                                &execution_scope,
-                                graph_id,
-                                stopped_id,
-                                fence,
-                            )
-                        })
-                })
-                .collect::<Result<Vec<_>, _>>()?;
-            crate::core::agent_connector::timeout::request_cancellations(
-                cancellation_keys.iter().map(String::as_str),
-            )
-            .map_err(|error| error.to_string())?;
             return Ok(ClaimNodeExecution::RecoveredExpired);
         }
         graph
@@ -261,36 +257,6 @@ impl WorkGraphStore {
         reject_symlink(parent)?;
         let _lock = FileLock::acquire(&path.with_extension("lock"))?;
         load_at(&path, project_root)
-    }
-
-    /// Observe an atomically published snapshot without waiting on the writer.
-    /// Missing, invalid or replaced execution state is an error, never an ACK.
-    pub(crate) fn execution_stop_requested(
-        project_root: &str,
-        graph_id: &str,
-        node_id: &str,
-        fence: &str,
-    ) -> Result<bool, String> {
-        let path = store_path(project_root)?;
-        #[cfg(unix)]
-        let store = {
-            let directory = open_parent_directory(&path).map_err(|error| error.to_string())?;
-            load_in_directory(&directory, &path, project_root)?
-        };
-        #[cfg(not(unix))]
-        let store = load_at(&path, project_root)?;
-        let node = store
-            .graph(graph_id)
-            .and_then(|graph| graph.get_node(node_id))
-            .ok_or_else(|| "watched execution is missing".to_string())?;
-        if node.execution_fence.as_deref() != Some(fence) || !node.execution_started {
-            return Err("watched execution fence is no longer current".into());
-        }
-        match node.status {
-            crate::core::work_graph::NodeStatus::Active => Ok(false),
-            crate::core::work_graph::NodeStatus::Stopped => Ok(true),
-            _ => Err("watched execution is no longer active".into()),
-        }
     }
 
     pub fn mutate<T>(
@@ -696,176 +662,6 @@ mod tests {
         assert!(validate_id(&"a".repeat(129), "graph_id").is_err());
     }
 
-    #[cfg(unix)]
-    #[test]
-    fn durable_cancel_writer_process() {
-        let Some(path) = std::env::var_os("LEANCTX_TEST_CANCEL_STORE") else {
-            return;
-        };
-        let project = std::env::var("LEANCTX_TEST_CANCEL_PROJECT").unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(150));
-        let path = PathBuf::from(path);
-        let mut store = load_at(&path, &project).unwrap();
-        store
-            .graph_mut("graph")
-            .unwrap()
-            .stop("child", crate::core::work_graph::StopReason::ManualStop)
-            .unwrap();
-        let directory = open_parent_directory(&path).unwrap();
-        save_in_directory(&directory, &path, &store).unwrap();
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn durable_cancel_observes_another_process_and_reaps_owned_child() {
-        let _isolation = crate::core::data_dir::isolated_data_dir();
-        let project_dir = tempfile::tempdir().unwrap();
-        let project = project_dir.path().to_str().unwrap();
-        let fence = WorkGraphStore::mutate(project, |store| {
-            store.create(
-                "graph",
-                graph_with_claim("root", "child", "path:src/owned.rs"),
-            )?;
-            let ClaimNodeExecution::Claimed(node) =
-                store.claim_node_execution("graph", "child", 1, u64::MAX)?
-            else {
-                return Err("fixture claim failed".into());
-            };
-            Ok(node.execution_fence.unwrap())
-        })
-        .unwrap();
-        let path = store_path(project).unwrap();
-        // A held writer lock must not stall cancellation observation.
-        let _writer_lock = FileLock::acquire(&path.with_extension("lock")).unwrap();
-        assert!(
-            !WorkGraphStore::execution_stop_requested(project, "graph", "child", &fence).unwrap()
-        );
-        assert!(
-            WorkGraphStore::execution_stop_requested(project, "graph", "child", "stale").is_err()
-        );
-        let _watch = crate::core::agent_connector::timeout::durable::Guard::install(
-            project, "graph", "child", &fence,
-        )
-        .unwrap();
-        let mut writer = std::process::Command::new(std::env::current_exe().unwrap())
-            .args([
-                "--exact",
-                "core::work_graph_store::tests::durable_cancel_writer_process",
-                "--nocapture",
-            ])
-            .env("LEANCTX_TEST_CANCEL_STORE", &path)
-            .env("LEANCTX_TEST_CANCEL_PROJECT", project)
-            .spawn()
-            .unwrap();
-        let key = crate::core::work_graph_executor::execution_key(
-            project_dir.path(),
-            "graph",
-            "child",
-            &fence,
-        )
-        .unwrap();
-        // The child never ends on its own: only the other process's durable
-        // cancel (or the generous timeout) can stop it. A child that exits
-        // after a fixed delay raced the writer process, whose cold start on a
-        // loaded runner outlasted it. The descendant beats into `marker` until
-        // it is killed, so a survivor is seen however late the cancel lands.
-        let marker = project_dir.path().join("descendant-heartbeat");
-        let mut command = std::process::Command::new("sh");
-        command
-            .args([
-                "-c",
-                "(while :; do printf x >> \"$1\"; sleep 0.1; done) & wait",
-                "cancel-test",
-            ])
-            .arg(&marker);
-        let output = crate::core::agent_connector::timeout::run_with_timeout_cancellable(
-            &mut command,
-            120_000,
-            Some(&format!("{key}:attempt-1")),
-        )
-        .unwrap();
-        assert!(writer.wait().unwrap().success());
-        assert!(output.cancelled);
-        assert!(!output.timed_out);
-        assert!(
-            WorkGraphStore::execution_stop_requested(project, "graph", "child", &fence).unwrap()
-        );
-        let beats = || std::fs::metadata(&marker).map_or(0, |meta| meta.len());
-        let after_cancel = beats();
-        std::thread::sleep(std::time::Duration::from_millis(1100));
-        assert_eq!(
-            beats(),
-            after_cancel,
-            "cancelled descendant continued running"
-        );
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn durable_cancel_corrupt_snapshot_is_failure_not_acknowledgement() {
-        let _isolation = crate::core::data_dir::isolated_data_dir();
-        let directory = tempfile::tempdir().unwrap();
-        let project = directory.path().to_str().unwrap();
-        let fence = WorkGraphStore::mutate(project, |store| {
-            store.create(
-                "graph",
-                graph_with_claim("root", "child", "path:src/owned.rs"),
-            )?;
-            let ClaimNodeExecution::Claimed(node) =
-                store.claim_node_execution("graph", "child", 1, u64::MAX)?
-            else {
-                return Err("fixture claim failed".into());
-            };
-            Ok(node.execution_fence.unwrap())
-        })
-        .unwrap();
-        let watch = crate::core::agent_connector::timeout::durable::Guard::install(
-            project, "graph", "child", &fence,
-        )
-        .unwrap();
-        assert!(
-            crate::core::agent_connector::timeout::durable::Guard::install(
-                project, "graph", "child", &fence
-            )
-            .is_err()
-        );
-        let key = crate::core::work_graph_executor::execution_key(
-            directory.path(),
-            "graph",
-            "child",
-            &fence,
-        )
-        .unwrap();
-        fs::write(store_path(project).unwrap(), b"{malformed").unwrap();
-        let mut command = std::process::Command::new("sh");
-        command.args(["-c", "sleep 2"]);
-        let result = crate::core::agent_connector::timeout::run_with_timeout_cancellable(
-            &mut command,
-            5_000,
-            Some(&key),
-        );
-        let Err(error) = result else {
-            panic!("corrupt snapshot must not report cancellation success");
-        };
-        assert!(
-            error
-                .to_string()
-                .contains("durable cancellation observation failed")
-        );
-        assert!(error.to_string().contains("child reaped"));
-        drop(watch);
-        let mut command = std::process::Command::new("sh");
-        command.args(["-c", "printf done"]);
-        let output = crate::core::agent_connector::timeout::run_with_timeout_cancellable(
-            &mut command,
-            1_000,
-            Some(&key),
-        )
-        .unwrap();
-        assert!(!output.cancelled);
-        assert_eq!(output.output.stdout, b"done");
-    }
-
     #[test]
     fn store_round_trip_preserves_project_scope_and_graph() {
         let temp = tempfile::tempdir().expect("tempdir");
@@ -1012,26 +808,8 @@ mod tests {
                 .status,
             crate::core::work_graph::NodeStatus::Stopped
         );
-        assert!(
-            store
-                .claim_node_execution("g2", "child2", 100, 200)
-                .is_err(),
-            "lease expiry is not evidence of process exit"
-        );
-        let graph = store.graph_mut("g1").unwrap();
-        let fence = graph
-            .get_node("child1")
-            .unwrap()
-            .execution_fence
-            .clone()
-            .unwrap();
-        assert!(
-            graph
-                .acknowledge_execution_exit("child1", "stale-fence")
-                .is_err()
-        );
-        graph.acknowledge_execution_exit("child1", &fence).unwrap();
-        graph.acknowledge_execution_exit("child1", &fence).unwrap();
+        // The expired incarnation is stopped durably; its delegated delivery
+        // is revoked and its path claims no longer block other work.
         let bytes = serde_json::to_vec(&store).unwrap();
         let mut store: WorkGraphStore = serde_json::from_slice(&bytes).unwrap();
         store.validate().unwrap();

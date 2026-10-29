@@ -58,7 +58,7 @@ pub fn check_provider_health(
         return health_without_network(provider_id, provider_type, cache_fresh, cache_age_secs);
     };
 
-    if std::env::var_os(env_var).is_none() {
+    if !super::credentials::is_set(env_var) {
         return ProviderHealth {
             provider_id: provider_id.to_string(),
             provider_type: provider_type.to_string(),
@@ -135,12 +135,12 @@ fn network_endpoint(provider_type: &str) -> Option<String> {
 
     match provider_type {
         "gitlab" => {
-            let host = std::env::var("GITLAB_HOST")
-                .or_else(|_| std::env::var("CI_SERVER_HOST"))
+            let host = super::credentials::var("GITLAB_HOST")
+                .or_else(|_| super::credentials::var("CI_SERVER_HOST"))
                 .unwrap_or_else(|_| "gitlab.com".to_string());
             Some(format!("https://{host}/api/v4/version"))
         }
-        "jira" => std::env::var("JIRA_URL")
+        "jira" => super::credentials::var("JIRA_URL")
             .ok()
             .map(|base| format!("{}/rest/api/2/serverInfo", base.trim_end_matches('/'))),
         _ => None,
@@ -156,17 +156,20 @@ fn probe_endpoint(provider_type: &str, endpoint: &str) -> Result<(), String> {
                 "Authorization",
                 &format!(
                     "Bearer {}",
-                    std::env::var("GITHUB_TOKEN").unwrap_or_default()
+                    super::credentials::var("GITHUB_TOKEN").unwrap_or_default()
                 ),
             )
             .header("Accept", "application/vnd.github+json"),
         "gitlab" => agent.get(endpoint).header(
             "PRIVATE-TOKEN",
-            &std::env::var("GITLAB_TOKEN").unwrap_or_default(),
+            &super::credentials::var("GITLAB_TOKEN").unwrap_or_default(),
         ),
         "jira" => agent.get(endpoint).header(
             "Authorization",
-            &format!("Bearer {}", std::env::var("JIRA_TOKEN").unwrap_or_default()),
+            &format!(
+                "Bearer {}",
+                super::credentials::var("JIRA_TOKEN").unwrap_or_default()
+            ),
         ),
         _ => agent.get(endpoint),
     };

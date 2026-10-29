@@ -1,0 +1,881 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/purge.schema.json",
+  "title": "Purge protocol: W30–W32, W60, E9 ack, shred journal (SPEC-CONTRACT-SERVER §3.22; RESOLUTIONS R3, R7, R54, R59, R75, R88, R118, R141)",
+  "$defs": {
+    "reason": {
+      "enum": [
+        "leaked_secret",
+        "gdpr_erasure",
+        "retention_schedule",
+        "illegal_content"
+      ]
+    },
+    "shred_reason": {
+      "enum": [
+        "leaked_secret",
+        "gdpr_erasure",
+        "retention_schedule",
+        "illegal_content",
+        "vault_deleted",
+        "sealed_conversion"
+      ]
+    },
+    "state": {
+      "enum": [
+        "requested",
+        "approved",
+        "keys_destroying",
+        "keys_destroyed",
+        "propagating",
+        "done",
+        "expired",
+        "cancelled"
+      ]
+    },
+    "selector": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "node_ids"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "node_ids": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1000,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "common.schema.json#/$defs/node_id"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "message_gids"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "message_gids": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1000,
+              "uniqueItems": true,
+              "items": {
+                "$ref": "common.schema.json#/$defs/msg_id"
+              }
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "batch_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "batch_id": {
+              "$ref": "common.schema.json#/$defs/batch_id"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "worker_id",
+            "since"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "worker_id": {
+              "$ref": "common.schema.json#/$defs/worker_id"
+            },
+            "since": {
+              "$ref": "web.schema.json#/$defs/time"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "wiki_pages"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "wiki_pages": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 100,
+              "items": {
+                "$ref": "common.schema.json#/$defs/wiki_page_id"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "purge": {
+      "type": "object",
+      "required": [
+        "id",
+        "vault",
+        "reason",
+        "state",
+        "selector",
+        "item_count",
+        "requested_by",
+        "approvals",
+        "second_approval_required",
+        "created_at",
+        "expires_at",
+        "keys_destroyed_at",
+        "backups_clear_at",
+        "acks",
+        "offline_pending",
+        "legacy_replicas"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/purge_id"
+        },
+        "vault": {
+          "type": "object",
+          "required": [
+            "ws",
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "ws": {
+              "$ref": "web.schema.json#/$defs/slug"
+            },
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{2,40}$"
+            }
+          }
+        },
+        "reason": {
+          "enum": [
+            "leaked_secret",
+            "gdpr_erasure",
+            "retention_schedule",
+            "illegal_content"
+          ]
+        },
+        "state": {
+          "enum": [
+            "requested",
+            "approved",
+            "keys_destroying",
+            "keys_destroyed",
+            "propagating",
+            "done",
+            "expired",
+            "cancelled"
+          ]
+        },
+        "selector": {
+          "$ref": "#/$defs/selector"
+        },
+        "item_count": {
+          "type": "integer",
+          "minimum": 1,
+          "description": "selected nodes + messages before the cascade (R88)"
+        },
+        "requested_by": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "handle"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "handle": {
+                  "$ref": "web.schema.json#/$defs/handle"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "null for retention_schedule (system)"
+        },
+        "approvals": {
+          "type": "array",
+          "maxItems": 2,
+          "items": {
+            "type": "object",
+            "required": [
+              "handle",
+              "at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "handle": {
+                "$ref": "web.schema.json#/$defs/handle"
+              },
+              "at": {
+                "$ref": "web.schema.json#/$defs/time"
+              }
+            }
+          }
+        },
+        "second_approval_required": {
+          "type": "boolean"
+        },
+        "created_at": {
+          "$ref": "web.schema.json#/$defs/time"
+        },
+        "expires_at": {
+          "$ref": "web.schema.json#/$defs/time"
+        },
+        "keys_destroyed_at": {
+          "anyOf": [
+            {
+              "$ref": "web.schema.json#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "backups_clear_at": {
+          "anyOf": [
+            {
+              "$ref": "web.schema.json#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "acks": {
+          "type": "object",
+          "required": [
+            "n",
+            "m"
+          ],
+          "additionalProperties": false,
+          "description": "2.x replicas only (R75)",
+          "properties": {
+            "n": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "m": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        },
+        "offline_pending": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "legacy_replicas": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "active C0 1.x instances of the workspace (R98)"
+        },
+        "c0_1x_sunset_at": {
+          "anyOf": [
+            {
+              "$ref": "web.schema.json#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "statement_of_reasons": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 2000
+        },
+        "backups_held": {
+          "const": true,
+          "description": "only while an ops backup hold is active and backups_clear_at is not known yet (R141)"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "reason": {
+                "const": "illegal_content"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "statement_of_reasons"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "statement_of_reasons"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "keys_destroyed",
+                  "propagating",
+                  "done"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "keys_destroyed_at": {
+                "$ref": "web.schema.json#/$defs/time"
+              }
+            },
+            "oneOf": [
+              {
+                "properties": {
+                  "backups_clear_at": {
+                    "$ref": "web.schema.json#/$defs/time"
+                  }
+                },
+                "not": {
+                  "required": [
+                    "backups_held"
+                  ]
+                }
+              },
+              {
+                "required": [
+                  "backups_held"
+                ],
+                "properties": {
+                  "backups_clear_at": {
+                    "type": "null"
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "not": {
+                  "enum": [
+                    "keys_destroyed",
+                    "propagating",
+                    "done"
+                  ]
+                }
+              }
+            }
+          },
+          "then": {
+            "not": {
+              "required": [
+                "backups_held"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "preview_request": {
+      "type": "object",
+      "required": [
+        "reason",
+        "selector"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "enum": [
+            "leaked_secret",
+            "gdpr_erasure",
+            "retention_schedule",
+            "illegal_content"
+          ]
+        },
+        "selector": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/selector"
+            },
+            {
+              "type": "object",
+              "required": [
+                "q"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "q": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 200
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "preview_response": {
+      "type": "object",
+      "required": [
+        "items",
+        "item_count",
+        "node_ids",
+        "message_gids",
+        "wiki_pages",
+        "cascade"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "id",
+              "label"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "enum": [
+                  "node",
+                  "message",
+                  "wiki_page"
+                ]
+              },
+              "id": {
+                "type": "string",
+                "maxLength": 64
+              },
+              "label": {
+                "type": "string",
+                "maxLength": 300
+              }
+            }
+          }
+        },
+        "item_count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "node_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/node_id"
+          }
+        },
+        "message_gids": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/msg_id"
+          }
+        },
+        "wiki_pages": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/wiki_page_id"
+          }
+        },
+        "cascade": {
+          "type": "object",
+          "required": [
+            "derived",
+            "messages",
+            "wiki",
+            "snapshots"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "derived": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "messages": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "wiki": {
+              "type": "integer",
+              "minimum": 0
+            },
+            "snapshots": {
+              "type": "integer",
+              "minimum": 0
+            }
+          }
+        }
+      }
+    },
+    "create_request": {
+      "type": "object",
+      "required": [
+        "reason",
+        "selector",
+        "confirm_name",
+        "totp_code"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "enum": [
+            "leaked_secret",
+            "gdpr_erasure"
+          ],
+          "description": "W31: retention_schedule is the schedule job, illegal_content is W56"
+        },
+        "selector": {
+          "$ref": "#/$defs/selector"
+        },
+        "request_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "confirm_name": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{2,40}$"
+        },
+        "approve": {
+          "type": "boolean"
+        },
+        "totp_code": {
+          "$ref": "web.schema.json#/$defs/totp_code"
+        }
+      },
+      "if": {
+        "properties": {
+          "reason": {
+            "const": "gdpr_erasure"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "request_ref"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "request_ref"
+          ]
+        }
+      },
+      "description": "W31 create (class F: totp_code bound to the new purge)"
+    },
+    "create_request_without_code": {
+      "type": "object",
+      "required": [
+        "reason",
+        "selector",
+        "confirm_name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reason": {
+          "enum": [
+            "leaked_secret",
+            "gdpr_erasure"
+          ],
+          "description": "W31: retention_schedule is the schedule job, illegal_content is W56"
+        },
+        "selector": {
+          "$ref": "#/$defs/selector"
+        },
+        "request_ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "confirm_name": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{2,40}$"
+        },
+        "approve": {
+          "type": "boolean"
+        },
+        "totp_code": {
+          "$ref": "web.schema.json#/$defs/totp_code"
+        }
+      },
+      "if": {
+        "properties": {
+          "reason": {
+            "const": "gdpr_erasure"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "request_ref"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "request_ref"
+          ]
+        }
+      }
+    },
+    "approve_request": {
+      "type": "object",
+      "required": [
+        "totp_code"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "totp_code": {
+          "$ref": "web.schema.json#/$defs/totp_code"
+        }
+      }
+    },
+    "moderation_create_request": {
+      "description": "W56 POST /api/v1/moderation/purges (a Thinkery moderator, class F, R49, R51): an illegal_content purge of a public vault limited to what the report names; above 100 items it waits for a different moderator",
+      "type": "object",
+      "required": [
+        "report_id",
+        "selector",
+        "statement_of_reasons",
+        "totp_code"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "report_id": {
+          "type": "string",
+          "pattern": "^rpt_[0-9]{1,19}$"
+        },
+        "selector": {
+          "$ref": "#/$defs/selector"
+        },
+        "statement_of_reasons": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 2000
+        },
+        "totp_code": {
+          "type": "string",
+          "pattern": "^([0-9]{6}|[0-9a-fA-F]{4}-[0-9a-fA-F]{4})$"
+        }
+      }
+    },
+    "moderation_approve_request": {
+      "description": "W56 POST /api/v1/moderation/purges/{id}/approve: a different moderator (403 purge_second_moderator otherwise)",
+      "type": "object",
+      "required": [
+        "totp_code"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "totp_code": {
+          "type": "string",
+          "pattern": "^([0-9]{6}|[0-9a-fA-F]{4}-[0-9a-fA-F]{4})$"
+        }
+      }
+    },
+    "purge_response": {
+      "type": "object",
+      "required": [
+        "purge"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "purge": {
+          "$ref": "#/$defs/purge"
+        }
+      }
+    },
+    "list_response": {
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/purge"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ack": {
+      "description": "E9 POST /v1/places/{p}/purges/{prg}/ack (also purge_acks[] on E5), one per tombstone seq; Ed25519 by the instance key over \"leanctx.hive.purge_ack.v1\\n\" ‖ canonical_json(body without signature)",
+      "type": "object",
+      "required": [
+        "purge_id",
+        "place",
+        "seq",
+        "applied_at",
+        "key_id",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "purge_id": {
+          "$ref": "common.schema.json#/$defs/purge_id"
+        },
+        "place": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "applied_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        },
+        "signature": {
+          "$ref": "common.schema.json#/$defs/signature"
+        }
+      }
+    },
+    "shred_journal": {
+      "description": "one file <shredded_at ms>-<purge_id>.json in the append-only journal directory; Ed25519 (hex) by an Hive key of purpose purge over \"leanctx.hive.shred_journal.v1\\n\" ‖ canonical_json(object without signature); ids only",
+      "type": "object",
+      "required": [
+        "v",
+        "purge_id",
+        "place_id",
+        "scope",
+        "keys",
+        "place_key_versions",
+        "count",
+        "reason",
+        "shredded_at",
+        "key_id",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "v": {
+          "const": 1
+        },
+        "purge_id": {
+          "type": "string",
+          "pattern": "^(prg|vdel|conv)_[a-z2-7]{26}$"
+        },
+        "place_id": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        },
+        "scope": {
+          "enum": [
+            "keys",
+            "place"
+          ]
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kind",
+              "key_ref"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kind": {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 5
+              },
+              "key_ref": {
+                "type": "string",
+                "pattern": "^([0-9A-HJKMNP-TV-Z]{26}|m:msg_[0-9a-f]{16}|s:[0-9]+|w:wp_[a-z2-7]{26}:[0-9]+|l:[0-9]+)$"
+              }
+            }
+          }
+        },
+        "place_key_versions": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reason": {
+          "$ref": "#/$defs/shred_reason"
+        },
+        "shredded_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        },
+        "signature": {
+          "$ref": "common.schema.json#/$defs/signature"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "scope": {
+                "const": "place"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "reason": {
+                "const": "vault_deleted"
+              },
+              "place_key_versions": {
+                "minItems": 1
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "place_key_versions": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    }
+  }
+}

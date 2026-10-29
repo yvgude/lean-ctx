@@ -1,0 +1,15 @@
+{
+  "case": "receipts_v2_raw_digest",
+  "base": "routes/receipts_v2.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/receipts/0/document/invocation/input_hmac",
+      "value": "sha256:4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "an unsalted content digest (M3)"
+}

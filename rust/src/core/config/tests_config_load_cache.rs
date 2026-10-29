@@ -31,6 +31,85 @@ fn load_honors_content_change_with_preserved_mtime() {
     );
 }
 
+/// AP04-G3: inside a request `Config::load()` merges that request project's
+/// `.lean-ctx.toml`, not the one the process resolved first and kept.
+#[test]
+fn load_inside_a_request_merges_that_projects_local_config() {
+    let _iso = isolated_data_dir();
+    let projects = [tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap()];
+    for (project, command) in projects.iter().zip(["ap04-first", "ap04-second"]) {
+        std::fs::write(
+            project.path().join(".lean-ctx.toml"),
+            format!("excluded_commands = [\"{command}\"]\n"),
+        )
+        .unwrap();
+    }
+    let excluded = |project: &tempfile::TempDir| {
+        crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(project.path().to_path_buf())),
+            || Config::load().excluded_commands,
+        )
+    };
+
+    assert!(excluded(&projects[0]).contains(&"ap04-first".to_string()));
+    let second = excluded(&projects[1]);
+    assert!(second.contains(&"ap04-second".to_string()));
+    assert!(!second.contains(&"ap04-first".to_string()));
+}
+
+/// AP04-G3: two projects with the same `.lean-ctx.toml` are not one cache
+/// entry — trusting one does not apply its security-sensitive keys to the
+/// other.
+#[test]
+fn trust_of_one_project_is_not_reused_for_an_identical_local_config() {
+    let _iso = isolated_data_dir();
+    let extra = tempfile::tempdir().unwrap();
+    let extra_root = extra.path().to_string_lossy().to_string();
+    let projects = [tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap()];
+    for project in &projects {
+        std::fs::write(
+            project.path().join(".lean-ctx.toml"),
+            format!("extra_roots = [{extra_root:?}]\n"),
+        )
+        .unwrap();
+    }
+    crate::core::workspace_trust::trust(projects[0].path()).expect("trust the first project");
+    let extra_roots = |project: &tempfile::TempDir| {
+        crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(project.path().to_path_buf())),
+            || Config::load().extra_roots,
+        )
+    };
+
+    assert!(extra_roots(&projects[0]).contains(&extra_root));
+    assert!(!extra_roots(&projects[1]).contains(&extra_root));
+}
+
+/// AP04 review S2: work a request hands to a background thread reads that
+/// request project's configuration — here its `auto_capture = false` —
+/// not the configuration of the project the process runs in.
+#[test]
+fn a_background_thread_of_a_request_reads_its_projects_config() {
+    let _iso = isolated_data_dir();
+    let path = Config::path().expect("config path under isolated data dir");
+    std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+    std::fs::write(&path, "auto_capture = true\n").unwrap();
+    let project = tempfile::tempdir().unwrap();
+    std::fs::write(
+        project.path().join(".lean-ctx.toml"),
+        "auto_capture = false\n",
+    )
+    .unwrap();
+
+    let in_thread = crate::core::policy::runtime::spawn_for_project(project.path(), || {
+        Config::load().auto_capture
+    })
+    .join()
+    .unwrap();
+
+    assert!(!in_thread);
+}
+
 /// #2144 regression: `lean-ctx trust` / `untrust` change no config file, so a
 /// cache keyed only on content kept a running MCP server on the trust state of
 /// its first load — the project's narrower `shell_allowlist` never applied.

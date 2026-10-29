@@ -177,23 +177,14 @@ fn builtin_reviewer() -> Role {
         tools: ToolPolicy {
             allowed: vec![
                 "ctx_read".into(),
-                "ctx_multi_read".into(),
-                "ctx_smart_read".into(),
-                "ctx_fill".into(),
                 "ctx_search".into(),
                 "ctx_tree".into(),
                 "ctx_graph".into(),
-                "ctx_architecture".into(),
-                "ctx_analyze".into(),
                 "ctx_diff".into(),
-                "ctx_symbol".into(),
                 "ctx_expand".into(),
                 "ctx_deps".into(),
-                "ctx_review".into(),
                 "ctx_session".into(),
                 "ctx_knowledge".into(),
-                "ctx_semantic_search".into(),
-                "ctx_overview".into(),
                 "ctx_preload".into(),
                 "ctx_metrics".into(),
                 "ctx_cost".into(),
@@ -240,7 +231,6 @@ fn builtin_ops() -> Role {
                 "ctx_tree".into(),
                 "ctx_session".into(),
                 "ctx_knowledge".into(),
-                "ctx_overview".into(),
                 "ctx_metrics".into(),
                 "ctx_cost".into(),
             ],
@@ -673,7 +663,6 @@ pub mod tests {
     fn reviewer_denies_edits() {
         let r = builtin_reviewer();
         assert!(r.is_tool_allowed("ctx_read"));
-        assert!(r.is_tool_allowed("ctx_review"));
         assert!(!r.is_tool_allowed("ctx_edit"));
         assert!(!r.is_tool_allowed("ctx_shell"));
         assert!(!r.is_tool_allowed("ctx_execute"));

@@ -1,0 +1,13 @@
+{
+  "revision": 3,
+  "schema": "leanctx.hive.knowledge-revision/v1",
+  "sealed": {
+    "alg": "xchacha20poly1305",
+    "ciphertext": "LSTaoQYah0+yXCdKs7dSSNvu5OJGtIlzupH/y2qtHT4n5ytvxWb++iCE/Bqh29hPtrbAk3uuvoT0IH7Tb4wiZvRwWR5m1O0n6PEmU3ZhEISSYtfjFN0AACaRhs8KUqGlVo3vGxAl8pAW2lx4KmNymQvKNC2rocbPgg84vTnaQnaAxRiUMQqmvKC/ohvt0RjxjxuZ7himjMPKFXN5oSYJb3APnvZsMyDcw+Uj1NJXBfEUjG12uPk2Qj5uEKOSY3MkMoSk+zo48ysdRYc38sQ1Ebzq3b4v1mIW7yE1VzTSb1SWysCjs8VnMzD02q0gCI5qN0ir5obQYRRGCzD8M19/dz8yWBtYRcEqPLrSj/yaLIRl3vxhWNsL4iwBc+UVXw/JC2jFGX0eEbZr5lQX0iL60ciXaVOgADl6Ntga73NasQM61mH1BRIXH/+2HArT/uwWzI3zZ6zAshmyx2tZmKccJhYDmYJq2cLvf6X5tzOs3hQj6zV2mhhAsoaKehgl+18/UWyIuc9ETyYcjiHHSEA0gNlDltqmwiE7AL9j1vWV7R0Oxa+kzvfOZkuL0wFn6OTvKpdOReQI5wEqMjO5dsh3oB1boLtVJMdStOYXHoCs8H+SHB/LGEsX7NS8PI/esbnSbNWnhUDlpVFnfl2XGDbgLM78gItphVgPuBj4kDgplG/7/bUA+ZxsY75yTNCp3VA67PDPL5SbouGs0V6C4LQAoCF27SrYHPivOXgD+OxTDr9g26pd7AyuXw==",
+    "content_schema": "ctxpkg.research-context.v1",
+    "epoch": 1,
+    "nonce": "MTExMTExMTExMTExMTExMTExMTExMTEx"
+  },
+  "updated_at": "2026-10-20T12:00:00Z",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

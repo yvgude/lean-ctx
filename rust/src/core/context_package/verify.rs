@@ -25,95 +25,7 @@ pub(crate) use text::compact_json_text;
 /// Extract the exact text of one top-level member's value from a JSON object
 /// document, so integrity hashing sees the writer's bytes (spec §8).
 pub(crate) fn extract_top_level_value_text<'a>(doc: &'a str, member: &str) -> Option<&'a str> {
-    let bytes = doc.as_bytes();
-    let n = bytes.len();
-    let mut i = 0;
-
-    let skip_ws = |i: &mut usize| {
-        while *i < n && matches!(bytes[*i], b' ' | b'\t' | b'\n' | b'\r') {
-            *i += 1;
-        }
-    };
-    let skip_string = |i: &mut usize| {
-        *i += 1; // opening quote
-        while *i < n {
-            match bytes[*i] {
-                b'\\' => *i += 2,
-                b'"' => {
-                    *i += 1;
-                    return;
-                }
-                _ => *i += 1,
-            }
-        }
-    };
-    let skip_value = |i: &mut usize| {
-        skip_ws(i);
-        match bytes.get(*i) {
-            Some(b'"') => skip_string(i),
-            Some(&open @ (b'{' | b'[')) => {
-                let close = if open == b'{' { b'}' } else { b']' };
-                let mut depth = 0usize;
-                while *i < n {
-                    match bytes[*i] {
-                        b'"' => {
-                            skip_string(i);
-                            continue;
-                        }
-                        c if c == open => depth += 1,
-                        c if c == close => {
-                            depth -= 1;
-                            if depth == 0 {
-                                *i += 1;
-                                return;
-                            }
-                        }
-                        _ => {}
-                    }
-                    *i += 1;
-                }
-            }
-            _ => {
-                while *i < n
-                    && !matches!(bytes[*i], b',' | b'}' | b']' | b' ' | b'\t' | b'\n' | b'\r')
-                {
-                    *i += 1;
-                }
-            }
-        }
-    };
-
-    skip_ws(&mut i);
-    if bytes.get(i) != Some(&b'{') {
-        return None;
-    }
-    i += 1;
-    loop {
-        skip_ws(&mut i);
-        match bytes.get(i) {
-            Some(b'"') => {}
-            _ => return None,
-        }
-        let key_start = i;
-        skip_string(&mut i);
-        let key: String = serde_json::from_str(&doc[key_start..i]).ok()?;
-        skip_ws(&mut i);
-        if bytes.get(i) != Some(&b':') {
-            return None;
-        }
-        i += 1;
-        skip_ws(&mut i);
-        if key == member {
-            let start = i;
-            skip_value(&mut i);
-            return Some(&doc[start..i]);
-        }
-        skip_value(&mut i);
-        skip_ws(&mut i);
-        if bytes.get(i) == Some(&b',') {
-            i += 1;
-        }
-    }
+    crate::core::context_package::integrity::member_text(doc, member)
 }
 
 /// Kind ↔ payload coherence (GH #724/#726): the declared `kind` must match
@@ -1273,6 +1185,8 @@ pub(crate) struct VerifyReport {
     pub content_hash: CheckOutcome,
     pub package_hash: CheckOutcome,
     pub signature: CheckOutcome,
+    /// What a passing signature covers.
+    pub signature_coverage: Option<super::signing::SignatureCoverage>,
     pub errors: Vec<String>,
 }
 
@@ -1289,6 +1203,7 @@ impl VerifyReport {
             content_hash: CheckOutcome::Skipped,
             package_hash: CheckOutcome::Skipped,
             signature: CheckOutcome::Skipped,
+            signature_coverage: None,
             errors: vec![error],
         }
     }
@@ -1325,6 +1240,7 @@ pub(crate) fn verify_package_text(doc: &str) -> VerifyReport {
         content_hash: CheckOutcome::Skipped,
         package_hash: CheckOutcome::Skipped,
         signature: CheckOutcome::Skipped,
+        signature_coverage: None,
         errors: Vec::new(),
     };
     if let Err(errs) = manifest.validate() {
@@ -1353,57 +1269,52 @@ pub(crate) fn verify_package_text(doc: &str) -> VerifyReport {
         return report;
     }
 
-    // §8 — integrity against the writer's bytes.
-    let Some(content_text) = extract_top_level_value_text(doc, "content") else {
+    // §8 — integrity against the writer's bytes, recomputed exactly as the
+    // hosted registry recomputes it.
+    let Some(recomputed) = super::integrity::recompute(doc, &manifest.name, &manifest.version)
+    else {
         report.structure = CheckOutcome::Fail;
         report
             .errors
             .push("could not locate the content member in the document".into());
         return report;
     };
-    let canonical = compact_json_text(content_text);
-    let actual_content_hash = sha256_hex(canonical.as_bytes());
 
-    if actual_content_hash == manifest.integrity.content_hash {
+    if recomputed.content_hash == manifest.integrity.content_hash {
         report.content_hash = CheckOutcome::Pass;
     } else {
         report.content_hash = CheckOutcome::Fail;
         report.errors.push(format!(
-            "content_hash mismatch: manifest says {}, content hashes to {actual_content_hash}",
-            manifest.integrity.content_hash
+            "content_hash mismatch: manifest says {}, content hashes to {}",
+            manifest.integrity.content_hash, recomputed.content_hash
         ));
     }
-    if manifest.integrity.byte_size != canonical.len() as u64 {
+    if manifest.integrity.byte_size != recomputed.byte_size {
         report.content_hash = CheckOutcome::Fail;
         report.errors.push(format!(
             "byte_size mismatch: manifest says {}, content is {} bytes",
-            manifest.integrity.byte_size,
-            canonical.len()
+            manifest.integrity.byte_size, recomputed.byte_size
         ));
     }
 
-    let expected_sha = sha256_hex(
-        format!(
-            "{}:{}:{actual_content_hash}",
-            manifest.name, manifest.version
-        )
-        .as_bytes(),
-    );
-    if expected_sha == manifest.integrity.sha256 {
+    if recomputed.sha256 == manifest.integrity.sha256 {
         report.package_hash = CheckOutcome::Pass;
     } else {
         report.package_hash = CheckOutcome::Fail;
         report.errors.push(format!(
-            "package sha256 mismatch: manifest says {}, recomputed {expected_sha}",
-            manifest.integrity.sha256
+            "package sha256 mismatch: manifest says {}, recomputed {}",
+            manifest.integrity.sha256, recomputed.sha256
         ));
     }
 
     // §9 — a present-but-invalid signature is always tampering.
     if manifest.signature.is_some() {
-        match super::signing::verify_signature(&manifest) {
-            Ok(true) => report.signature = CheckOutcome::Pass,
-            Ok(false) => {
+        match super::signing::signature_coverage_of(manifest_value) {
+            Ok(Some(coverage)) => {
+                report.signature = CheckOutcome::Pass;
+                report.signature_coverage = Some(coverage);
+            }
+            Ok(None) => {
                 report.signature = CheckOutcome::Fail;
                 report.errors.push(
                     "signature verification failed — the package was modified after signing".into(),

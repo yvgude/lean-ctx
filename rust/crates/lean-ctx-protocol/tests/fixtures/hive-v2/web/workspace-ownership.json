@@ -1,0 +1,39 @@
+{
+  "route": "W7o",
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/ownership",
+  "request": {
+    "to": "7c1e3a52-9d1b-4f60-8c2a-3f5b6d7e8f90",
+    "confirm": "acme"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "owner": "7c1e3a52-9d1b-4f60-8c2a-3f5b6d7e8f90",
+      "you": "admin"
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "invalid_field",
+          "message": "type the workspace's slug to confirm",
+          "field": "confirm",
+          "reason": "mismatch"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "in a team of a company, only a Company admin does this (team admins manage their members and team policies)",
+          "required_role": "company_admin"
+        }
+      }
+    }
+  ]
+}

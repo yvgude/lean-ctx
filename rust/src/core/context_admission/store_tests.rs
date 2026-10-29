@@ -96,6 +96,78 @@ fn e3_store_admission_masks_values_and_refuses_restricted_sources() {
     assert_clean(&text, "admitted command line");
 }
 
+/// What the index HOLDS, not what a reader returned: a file the decoder could
+/// not represent completely contributes no chunk — invalid UTF-8, a UTF-16
+/// file with a dangling byte, one with an unpaired surrogate. Before, each
+/// was decoded to a bare `String` and indexed as a complete source (the
+/// incremental rebuild read it with `read_text` until this change).
+#[test]
+fn incompletely_decoded_sources_leave_no_chunk_in_any_bm25_build() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path();
+    let utf16 = |units: &[u16], tail: &[u8]| {
+        let mut bytes = vec![0xFF, 0xFE];
+        for unit in units {
+            bytes.extend_from_slice(&unit.to_le_bytes());
+        }
+        bytes.extend_from_slice(tail);
+        bytes
+    };
+    let words = |text: &str| text.encode_utf16().collect::<Vec<u16>>();
+    let mut stray = "fn strayutfmarker() { let ä = \"ö\"; }\n"
+        .as_bytes()
+        .to_vec();
+    stray.push(0xFF);
+    let mut unpaired = words("fn unpairedmarker() {}\n");
+    unpaired.insert(3, 0xD800);
+    let fixtures: [(&str, Vec<u8>); 5] = [
+        ("clean.rs", b"fn cleanmarker() {}\n".to_vec()),
+        ("wide.rs", utf16(&words("fn widemarker() {}\n"), &[])),
+        ("stray.rs", stray),
+        ("odd.rs", utf16(&words("fn oddtailmarker() {}\n"), &[0x41])),
+        ("unpaired.rs", utf16(&unpaired, &[])),
+    ];
+    for (name, bytes) in &fixtures {
+        std::fs::write(root.join(name), bytes).expect("fixture");
+    }
+    let files: Vec<String> = fixtures
+        .iter()
+        .map(|(name, _)| (*name).to_string())
+        .collect();
+    let admission = builtin();
+    let hint = HashMap::new();
+    let first = BM25Index::build_sequential(root, &hint, &files, &admission);
+    let builds = [
+        (
+            "parallel",
+            BM25Index::build_parallel(root, &hint, &files, &admission),
+        ),
+        ("incremental", BM25Index::rebuild_incremental(root, &first)),
+        ("sequential", first),
+    ];
+    for (label, index) in &builds {
+        let indexed: Vec<&str> = index.chunks.iter().map(|c| c.file_path.as_str()).collect();
+        for complete in ["clean.rs", "wide.rs"] {
+            assert!(
+                indexed.contains(&complete),
+                "{label}: {complete} is indexed"
+            );
+        }
+        for incomplete in ["stray.rs", "odd.rs", "unpaired.rs"] {
+            assert!(
+                !indexed.contains(&incomplete),
+                "{label}: {incomplete} indexed"
+            );
+        }
+        for marker in ["strayutfmarker", "oddtailmarker", "unpairedmarker"] {
+            assert!(
+                index.chunks.iter().all(|c| !c.content.contains(marker)),
+                "{label}: content of an incomplete source reached the index"
+            );
+        }
+    }
+}
+
 #[test]
 fn e3_bm25_builds_never_index_raw_values_or_restricted_files() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -163,6 +235,82 @@ fn e3_persisted_index_from_another_policy_is_never_served() {
         BM25Index::load(root).is_some(),
         "the rebuilt index is served"
     );
+}
+
+/// What the resident stores HOLD after their own builders ran over a tree
+/// with an incompletely decoded file, and what `ctx_search` does with it per
+/// mode. Before: the search read such a file with `read_text`, searched it in
+/// every mode and published it to the shared content cache as a complete
+/// source.
+#[test]
+#[serial_test::serial(cache_telemetry)]
+fn incomplete_sources_stay_out_of_the_content_cache_and_search_per_mode() {
+    use crate::core::content_cache::{self, FileState};
+    use lean_ctx_protocol::context_gateway::GatewayModeV1;
+
+    let search = |root: &Path| {
+        crate::tools::ctx_search::handle_filtered(
+            "lossymarker|cleanmarker",
+            &root.to_string_lossy(),
+            None,
+            20,
+            crate::tools::CrpMode::Off,
+            true,
+            false,
+            false,
+            None,
+            None,
+        )
+        .text
+    };
+    for mode in [
+        GatewayModeV1::Developer,
+        GatewayModeV1::Governed,
+        GatewayModeV1::Sovereign,
+    ] {
+        let config = match mode {
+            GatewayModeV1::Developer => "",
+            GatewayModeV1::Governed => "[context_gateway]\nmode = \"governed\"\n",
+            GatewayModeV1::Sovereign => "[context_gateway]\nmode = \"sovereign\"\n",
+        };
+        let _env = isolated(config);
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        content_cache::clear();
+        let dir = tempfile::tempdir().expect("tempdir");
+        let root = dir.path().canonicalize().expect("canonical root");
+        let (clean, lossy) = (root.join("clean.rs"), root.join("lossy.rs"));
+        std::fs::write(&clean, "fn cleanmarker() {}\n").expect("clean");
+        let mut bytes = "fn lossymarker() { let ä = \"ö\"; }\n".as_bytes().to_vec();
+        bytes.push(0xFF);
+        std::fs::write(&lossy, bytes).expect("lossy");
+        let cached = |path: &Path| {
+            FileState::from_path(path).and_then(|state| content_cache::get(path, state))
+        };
+
+        // The shared reader of the cache refuses the incomplete source.
+        assert!(content_cache::get_or_read(&lossy).is_none(), "{mode:?}");
+        assert!(content_cache::get_or_read(&clean).is_some(), "{mode:?}");
+        content_cache::clear();
+
+        // The trigram index build publishes what it reads to the cache.
+        let _index =
+            crate::core::search_index::SearchIndex::build(&root.to_string_lossy(), true, false);
+        assert!(cached(&lossy).is_none(), "{mode:?}: index build cached it");
+        content_cache::clear();
+
+        // The search itself.
+        let found = search(&root);
+        assert!(found.contains("cleanmarker"), "{mode:?}: {found}");
+        assert_eq!(
+            found.contains("lossymarker"),
+            mode == GatewayModeV1::Developer,
+            "{mode:?}: developer mode still searches it, governed and sovereign withhold: {found}"
+        );
+        assert!(
+            cached(&lossy).is_none(),
+            "{mode:?}: an incomplete source was published to the content cache"
+        );
+    }
 }
 
 #[test]
@@ -246,12 +394,54 @@ fn case_30_archives_store_and_return_admitted_text_only() {
 #[serial_test::serial(cache_telemetry)]
 fn case_31_tee_store_holds_and_returns_admitted_text_only() {
     let _env = isolated("");
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let output = format!("{}\n{}", leaky_source(), "line\n".repeat(200));
     let handle = crate::proxy::ccr::persist(&output).expect("tee handle");
     let on_disk = std::fs::read_to_string(&handle).expect("tee file");
     assert_clean(&on_disk, "tee file");
     let recovered = crate::proxy::ccr::read_tee_detailed(Path::new(&handle)).expect("read");
     assert_clean(&recovered, "recovered tee");
+}
+
+/// The store read used to decode to a bare `String`: a file with replaced or
+/// dropped bytes was admitted as a complete source and indexed.
+#[test]
+fn incompletely_decoded_sources_are_not_admitted_to_derived_stores() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let write = |name: &str, bytes: &[u8]| {
+        let path = dir.path().join(name);
+        std::fs::write(&path, bytes).expect("fixture");
+        path
+    };
+    let mut stray = "fn grüezi() { let ä = \"ö\"; }\n".as_bytes().to_vec();
+    stray.push(0xFF);
+    let admission = builtin();
+    assert_eq!(admission.read(&write("stray.rs", &stray)), None);
+    for (name, bom) in [("odd_le.rs", [0xFF, 0xFE]), ("odd_be.rs", [0xFE, 0xFF])] {
+        let mut odd = bom.to_vec();
+        odd.extend_from_slice(&[0x68, 0x00, 0x69, 0x00, 0x41]);
+        assert_eq!(admission.read(&write(name, &odd)), None, "{name}");
+    }
+    // Controls: complete decodes are admitted with the same text as before.
+    assert_eq!(
+        admission
+            .read(&write("plain.rs", b"fn a() {}\n"))
+            .as_deref(),
+        Some("fn a() {}\n")
+    );
+    assert_eq!(
+        admission
+            .read(&write("ansi.rs", b"// Gr\xF6\xDFe\r\n"))
+            .as_deref(),
+        Some("// Größe\r\n"),
+        "Windows-1252 maps every byte: complete"
+    );
+    assert_eq!(
+        admission
+            .read(&write("utf16.rs", &[0xFF, 0xFE, 0x68, 0x00, 0x69, 0x00]))
+            .as_deref(),
+        Some("hi")
+    );
 }
 
 #[test]
@@ -316,7 +506,9 @@ fn case_33_handoffs_persist_admitted_text_and_skip_restricted_files() {
 #[serial_test::serial(cache_telemetry)]
 fn case_34_knowledge_stores_admitted_facts_and_recalls_through_the_gateway() {
     let _env = isolated("");
-    let mut knowledge = crate::core::knowledge::ProjectKnowledge::new("/tmp/g5-knowledge");
+    let knowledge_root = tempfile::tempdir().unwrap();
+    let mut knowledge =
+        crate::core::knowledge::ProjectKnowledge::new(knowledge_root.path().to_str().unwrap());
     let policy = crate::core::memory_policy::MemoryPolicy::default();
     knowledge.remember(
         "deploy",

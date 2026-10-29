@@ -154,7 +154,7 @@ pub fn print_command_box() {
         "  {dim}│{rst}  {cmd}{bold}lean-ctx gain{rst}        {m}Token savings dashboard{rst}         {dim}│{rst}"
     );
     println!(
-        "  {dim}│{rst}  {cmd}{bold}lean-ctx dashboard{rst}   {m}Web analytics (browser){rst}        {dim}│{rst}"
+        "  {dim}│{rst}  {cmd}{bold}lean-ctx cockpit{rst}     {m}The Cockpit (browser){rst}          {dim}│{rst}"
     );
     println!(
         "  {dim}│{rst}  {cmd}{bold}lean-ctx heatmap{rst}     {m}Project context heat map{rst}        {dim}│{rst}"

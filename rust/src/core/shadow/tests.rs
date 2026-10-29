@@ -16,7 +16,7 @@ fn task(raw: u64, compressed: u64) -> ShadowTask {
 
 #[test]
 fn test_baseline_calculation() {
-    let actual = simulate_baseline(&task(1_000, 600), &BaselineConfig::default());
+    let actual = simulate_baseline(&task(1_000, 600));
     assert_eq!(
         actual.total_cost_micros,
         calculate_cost(1_000, 1_000, 0, "gpt-4o")
@@ -62,7 +62,7 @@ fn test_quality_maintained() {
 
 #[test]
 fn test_quality_not_maintained() {
-    let baseline = simulate_baseline(&task(1_000, 600), &BaselineConfig::default());
+    let baseline = simulate_baseline(&task(1_000, 600));
     let mut treatment = measure_treatment(&task(1_000, 600));
     treatment.outcome_accepted = false;
     assert!(
@@ -91,20 +91,44 @@ fn test_recommendations_generated() {
     );
 }
 
+/// G07: the host's model is never compared against a reference model. An uncompressed task on a
+/// non-default model saves nothing and produces no recommendation of any kind.
 #[test]
-fn recommendations_name_model_providers() {
-    let mut routed_task = task(1_000_000, 100_000);
-    routed_task.model_used = "claude-sonnet".into();
-    let report = ShadowEngine::run_comparison(&[routed_task]);
+fn host_model_without_context_reduction_saves_nothing_and_recommends_no_model() {
+    let mut host_task = task(1_000_000, 1_000_000);
+    host_task.model_used = "claude-sonnet".into();
+    let report = ShadowEngine::run_comparison(&[host_task]);
 
-    let descriptions: Vec<_> = report
+    assert_eq!(report.savings.absolute_micros, 0);
+    assert_eq!(report.savings.tokens_saved, 0);
+    assert_eq!(report.delta.cost_micros, 0);
+    assert!(report.recommendations.is_empty());
+    assert!(!format_report(&report).contains("Route"));
+}
+
+/// Several tasks on different host models are each priced with their own model, so the whole
+/// difference is context compression and the only recommendation is to keep it.
+#[test]
+fn each_task_is_compared_with_its_own_host_model() {
+    let mut cheap = task(10_000, 4_000);
+    cheap.model_used = "gpt-4o-mini".into();
+    let mut sonnet = task(20_000, 5_000);
+    sonnet.model_used = "claude-sonnet".into();
+    let report = ShadowEngine::run_comparison(&[cheap, sonnet]);
+
+    let baseline = calculate_cost(10_000, 1_000, 0, "gpt-4o-mini")
+        + calculate_cost(20_000, 1_000, 0, "claude-sonnet");
+    let treatment = calculate_cost(4_000, 1_000, 0, "gpt-4o-mini")
+        + calculate_cost(5_000, 1_000, 0, "claude-sonnet");
+    assert_eq!(report.baseline.total_cost_micros, baseline);
+    assert_eq!(report.treatment.total_cost_micros, treatment);
+    assert_eq!(report.savings.tokens_saved, 21_000);
+    let categories: Vec<_> = report
         .recommendations
         .iter()
-        .map(|recommendation| recommendation.description.as_str())
+        .map(|item| item.category.as_str())
         .collect();
-    assert!(descriptions.iter().any(|description| {
-        description.contains("OpenAI GPT-4o") && description.contains("Anthropic Claude Sonnet")
-    }));
+    assert_eq!(categories, ["Context compression"]);
 }
 
 #[test]

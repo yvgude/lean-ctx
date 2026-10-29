@@ -4,7 +4,15 @@ Authoritative sources:
 
 - Plugin: `packages/jetbrains-lean-ctx/src/main/kotlin/com/leanctx/plugin/{server,endpoint,psi,dto}/…`
 - Rust backend: `rust/src/lsp/{backend,jetbrains_backend,router,edit_apply,port_discovery}.rs`
-- MCP tool schema: `rust/src/tools/registered/ctx_refactor.rs`
+- MCP entry point: `rust/src/tools/registered/ctx_patch.rs` (`op="replace_symbol"`)
+
+> **3.11.5:** the `ctx_refactor` MCP tool was removed (write refactorings are
+> host execution). The plugin and its HTTP endpoints are unchanged. From MCP,
+> lean-ctx reaches the plugin in two ways: `ctx_patch op="replace_symbol"` runs
+> `replace_symbol_body`, and the navigation/structure endpoints supply `verified`
+> evidence for `ctx_callgraph` and the code graph
+> ([semantic intelligence](../guides/semantic-intelligence.md)). The other
+> endpoints have no MCP entry point; call them over HTTP or use the IDE.
 
 ---
 
@@ -28,34 +36,34 @@ lean-ctx becomes the sole interface for symbols, navigation, and refactoring.
 | Aspect         | Serena                     | lean-ctx JetBrains plugin                                                |
 |----------------|----------------------------|--------------------------------------------------------------------------|
 | Hosting        | external Oraios component  | in the lean-ctx repo (`packages/jetbrains-lean-ctx`)                     |
-| Interface      | several separate MCP tools | bundled under `ctx_refactor` (token compression)                         |
+| Interface      | several separate MCP tools | `ctx_patch op="replace_symbol"` + semantic evidence; rest HTTP-only      |
 | Backend model  | running IDE only           | Backing B (IDE) **+** Backing A (rust-analyzer) **+** Headless           |
 | Headless / CI  | no                         | yes — tree-sitter fallback for `symbols_overview` + edits                |
 | Conflict guard | none                       | BLAKE3 `expected_hash` (edits) / `plan_hash` (refactoring), Rust-central |
 | Security       | —                          | PathJail (project-root validation) + token auth per project              |
 | License        | proprietary (Oraios)       | lean-ctx project license                                                 |
 
-### 0.2 Mapping: Serena concept → `ctx_refactor` action → HTTP endpoint
+### 0.2 Mapping: Serena concept → MCP entry point (3.11.5) → HTTP endpoint
 
-| Serena concept             | `ctx_refactor` action            | HTTP endpoint                                       |
-|----------------------------|----------------------------------|-----------------------------------------------------|
-| `find_referencing_symbols` | `references`                     | `POST /references`                                  |
-| `find_declaration`         | `declaration`                    | `POST /declaration`                                 |
-| (goto definition)          | `definition`                     | `POST /definition`                                  |
-| `find_implementations`     | `implementations`                | `POST /implementations`                             |
-| `get_symbols_overview`     | `symbols_overview`               | `POST /symbols_overview`                            |
-| `type_hierarchy`           | `type_hierarchy`                 | `POST /type_hierarchy`                              |
-| `run_inspections` / list   | `inspections` (`mode=run\|list`) | `POST /inspections`, `POST /list_inspections`       |
-| `replace_symbol_body`      | `replace_symbol_body`            | `POST /replaceSymbolBody`                           |
-| `insert_before_symbol`     | `insert_before_symbol`           | `POST /insertBeforeSymbol`                          |
-| `insert_after_symbol`      | `insert_after_symbol`            | `POST /insertAfterSymbol`                           |
-| `rename`                   | `rename`                         | `POST /renamePreview` → `POST /renameApply`         |
-| (reformat_file)            | `reformat`                       | `POST /reformat`                                    |
-| `move`                     | `move`                           | `POST /movePreview` → `POST /moveApply`             |
-| `safe_delete`              | `safe_delete`                    | `POST /safeDeletePreview` → `POST /safeDeleteApply` |
-| `inline`                   | `inline`                         | `POST /inlinePreview` → `POST /inlineApply`         |
+| Serena concept             | MCP entry point (3.11.5)                   | HTTP endpoint                                       |
+|----------------------------|--------------------------------------------|-----------------------------------------------------|
+| `find_referencing_symbols` | semantic evidence (`references` edges)     | `POST /references`                                  |
+| `find_declaration`         | —                                          | `POST /declaration`                                 |
+| (goto definition)          | semantic evidence (`ctx_callgraph`)        | `POST /definition`                                  |
+| `find_implementations`     | semantic evidence (`implements` edges)     | `POST /implementations`                             |
+| `get_symbols_overview`     | `ctx_outline` (tree-sitter)                | `POST /symbols_overview`                            |
+| `type_hierarchy`           | semantic evidence (`extends` edges)        | `POST /type_hierarchy`                              |
+| `run_inspections` / list   | —                                          | `POST /inspections`, `POST /list_inspections`       |
+| `replace_symbol_body`      | `ctx_patch op="replace_symbol"`            | `POST /replaceSymbolBody`                           |
+| `insert_before_symbol`     | —                                          | `POST /insertBeforeSymbol`                          |
+| `insert_after_symbol`      | —                                          | `POST /insertAfterSymbol`                           |
+| `rename`                   | —                                          | `POST /renamePreview` → `POST /renameApply`         |
+| (reformat_file)            | —                                          | `POST /reformat`                                    |
+| `move`                     | —                                          | `POST /movePreview` → `POST /moveApply`             |
+| `safe_delete`              | —                                          | `POST /safeDeletePreview` → `POST /safeDeleteApply` |
+| `inline`                   | —                                          | `POST /inlinePreview` → `POST /inlineApply`         |
 
-> `find_symbol` (pure symbol search) is not part of `ctx_refactor` but of
+> `find_symbol` (pure symbol search) maps to
 > `ctx_search action="symbol"` / `ctx_outline` (lean-ctx symbol index). See
 > [MCP tool map](appendix-mcp-tools.md).
 
@@ -65,9 +73,9 @@ lean-ctx becomes the sole interface for symbols, navigation, and refactoring.
 
 ```text
    Agent
-     │  ctx_refactor action=… (MCP)
+     │  ctx_patch op=replace_symbol · semantic lookups (MCP)
      ▼
-  │ Rust: ctx_refactor  →  select_backend        │
+  │ Rust: lsp router  →  select_backend          │
         │ IDE reachable?         │ no
         ▼ yes                    ▼
   Backing B                 Headless / Backing A
@@ -149,7 +157,7 @@ Conventions for all endpoints:
 
 - HTTP: `POST` to `127.0.0.1:<port>`, header `X-LeanCtx-Token: <token>`,
   body = JSON. `GET /health` is the only exception (no body).
-- **Coordinates:** At the `ctx_refactor` level, `line` is **1-indexed**, `column`
+- **Coordinates:** At the Rust (MCP) level, `line` is **1-indexed**, `column`
   is **0-indexed**. At the **wire level** (HTTP DTO), `line`/`character` of the
   navigation/edit endpoints are **0-based** (LSP convention); the `line` fields in
   `type_hierarchy`, `symbols_overview`, and `inspections` responses are **1-based**.
@@ -164,11 +172,8 @@ Conventions for all endpoints:
 **What it does:** Finds semantic occurrences of a symbol (usages,
 declaration, implementations). `declaration` is only available via Backing B.
 
-**Agent invocation:**
-
-```text
-ctx_refactor action=references path=src/Main.kt line=42 column=8 scope=project
-```
+**Agent access:** no direct MCP call since 3.11.5 — these answers become
+`verified` evidence behind `ctx_callgraph` and the code graph.
 
 **HTTP (curl):**
 
@@ -198,12 +203,8 @@ curl -s -X POST http://127.0.0.1:$PORT/references \
 **What it does:** `type_hierarchy` returns the super-/subtype tree; `symbols_overview`
 lists the top-level symbols of a file.
 
-**Agent invocation:**
-
-```text
-ctx_refactor action=type_hierarchy path=src/Main.kt line=10 column=6 direction=subtypes
-ctx_refactor action=symbols_overview path=src/Main.kt
-```
+**Agent access:** `ctx_outline path=src/Main.kt` lists a file's symbols
+(tree-sitter); `type_hierarchy` answers become `extends` edges in the code graph.
 
 **HTTP (curl):**
 
@@ -258,12 +259,8 @@ is not registered; the Rust backend serves the equivalent via `ctx_outline`
 **What it does:** `mode=run` runs the active inspections on a file and
 returns diagnostics; `mode=list` lists the inspections enabled in the project profile.
 
-**Agent invocation:**
-
-```text
-ctx_refactor action=inspections path=src/Main.kt mode=run
-ctx_refactor action=inspections path=src/Main.kt mode=list
-```
+**Agent access:** no MCP entry point since 3.11.5 — call the endpoint or use
+the IDE.
 
 **Response `run` (`InspectionsResponse`, `line` 1-based):**
 
@@ -291,14 +288,12 @@ inserts a sibling element before/after it. The target is addressed via `name_pat
 (`'Class/method'` qualified or bare `'name'`), resolved through the
 symbol index. Alternatively as a fallback via `path`+`line`(+`end_line`).
 
-**Agent invocation:**
+**Agent invocation** (`replace_symbol_body`; the insert endpoints have no MCP
+entry point since 3.11.5):
 
 ```text
-ctx_refactor action=replace_symbol_body name_path=Main/run \
+ctx_patch op=replace_symbol path=src/Main.kt name=Main/run \
   new_text="fun run() { println(\"new\") }" expected_hash=<blake3-hex>
-
-ctx_refactor action=insert_after_symbol name_path=Main/run \
-  text="fun helper() = 42"
 ```
 
 **HTTP (curl) — wire body carries `path`/`range`/`text` (no hash, see §7.1):**
@@ -320,8 +315,9 @@ curl -s -X POST http://127.0.0.1:$PORT/replaceSymbolBody \
  "editedText":"fun run() { println(\"new\") }"}
 ```
 
-**Parameters (action):** `name_path` **or** `path`+`line`(+`end_line`);
-`new_text` (replace) or `text` (insert); optional `expected_hash`.
+**Parameters (`ctx_patch`):** `name` (passed on as `name_path`) **or**
+`path`+`line`(+`end_line`); `new_text`; optional `expected_hash`. The insert
+endpoints take `text`.
 **Behavior:** Backing B executes the edit as a `WriteCommandAction` (a
 single undo entry, document save). Headless writes atomically via `local_range_write`
 (temp file + `rename`). **Both paths apply the same tree-sitter range
@@ -336,6 +332,8 @@ All refactorings (except `reformat`) run through the **shared two-phase engine**
 performs the multi-file change as **one** transaction (one undo entry).
 Because the semantic usage search needs the finished IDE index, there is **no**
 lossless headless path — without a running IDE you get `BACKEND_REQUIRED`.
+Since 3.11.5 lean-ctx offers no MCP entry point for these operations; the
+endpoints below remain for direct HTTP use.
 
 ### 3.1 Rename (two-phase)
 
@@ -346,12 +344,6 @@ lossless headless path — without a running IDE you get `BACKEND_REQUIRED`.
 Phase 1 (`/renamePreview`) collects `usages` and `conflicts` and forms the
 `plan_hash` from them; Phase 2 (`/renameApply`) performs the rename as **one**
 multi-file transaction.
-
-**Agent invocation:**
-
-```text
-ctx_refactor action=rename path=src/Main.kt line=7 column=4 new_name=execute
-```
 
 **HTTP (curl) — Phase 1:**
 
@@ -389,12 +381,6 @@ curl -s -X POST http://127.0.0.1:$PORT/renameApply \
 **What it does:** Formats a file in place according to the IDE's active code-style
 profile (`CodeStyleManager` — equivalent to `mcp__jetbrains__reformat_file`).
 Single-phase (no preview): formatting is idempotent and scoped to one file.
-
-**Agent invocation:**
-
-```text
-ctx_refactor action=reformat path=src/Main.kt
-```
 
 **HTTP (curl):**
 
@@ -752,7 +738,7 @@ as `200` + `INTERNAL`.)
 | `FILE_NOT_FOUND`        | file not readable                                                              | Rust (`edit_apply`) / plugin               | verify the path with `ctx_tree`                    |
 | `POSITION_OUT_OF_RANGE` | line/column past EOF / `end < start`                                           | Rust / plugin                              | re-resolve the range (`ctx_read`)                  |
 | `CONFLICT`              | `expected_hash`/`plan_hash` mismatch; or conflicts ∧ `!force`                  | Rust                                       | read fresh, refresh the hash; if needed `force`    |
-| `AMBIGUOUS_SYMBOL`      | `name_path` matches >1 symbol                                                  | Rust (`ctx_refactor`)                      | qualify (`Class/method`) — note the candidate list |
+| `AMBIGUOUS_SYMBOL`      | `name_path` matches >1 symbol                                                  | Rust (`ctx_patch`)                         | qualify (`Class/method`) — note the candidate list |
 | `NO_SYMBOL`             | `name_path` / target range matches 0 symbols                                   | Rust / plugin (refactor)                   | correct the name/path                              |
 | `NO_SYMBOL_AT_POSITION` | no resolvable element/reference at the given `line:character`                  | plugin (nav/structure PSI)                 | re-resolve the position (`ctx_read`)               |
 | `INVALID_TARGET`        | unknown move/reformat scope kind, or move destination missing/not a directory  | plugin (`SymbolMover`/`SymbolReformatter`) | fix the `target`/`scope` kind or destination path  |
@@ -769,31 +755,16 @@ as `200` + `INTERNAL`.)
 **Example 1 — Replace a function body conflict-safely.**
 
 ```text
-# 1. fetch the current range + hash (ctx_read delivers bytes; hash = BLAKE3 of the range)
-ctx_refactor action=symbols_overview path=src/Main.kt        # find symbol + line
-# 2. replace, secured against the expected hash
-ctx_refactor action=replace_symbol_body name_path=Main/run \
+# 1. find the symbol + line
+ctx_outline path=src/Main.kt
+# 2. replace, secured against the expected hash (BLAKE3 of the range)
+ctx_patch op=replace_symbol path=src/Main.kt name=Main/run \
   new_text="fun run() { println(\"v2\") }" expected_hash=<blake3-hex>
 # → applied:true ; on a concurrent change → CONFLICT (file untouched)
 ```
 
-**Example 2 — Project-wide rename (two-phase).**
-
-```text
-# Phase 1: preview — see usages + conflicts
-ctx_refactor action=rename path=src/Main.kt line=7 column=4 new_name=execute
-#   internal: POST /renamePreview → {usages:[…], conflicts:[]}
-# Phase 2: with empty conflicts, apply automatically (one transaction, one undo)
-#   internal: POST /renameApply → {applied:true, changed_paths:[…]}
-```
-
-**Example 3 — Reformat a file (after an edit).**
-
-```text
-ctx_refactor action=replace_symbol_body name_path=Main/run new_text="…"
-ctx_refactor action=reformat path=src/Main.kt    # apply code style afterward
-# → {"reformatted":true,"path":"src/Main.kt"}
-```
+Rename, move, safe delete, inline and reformat have no MCP entry point since
+3.11.5: run them in the IDE, or call the two-phase endpoints in §3 directly.
 
 ---
 
@@ -801,9 +772,9 @@ ctx_refactor action=reformat path=src/Main.kt    # apply code style afterward
 
 - [Concise agent reference](appendix-jetbrains-plugin.md) — tables for quick lookup
 - [Per-IDE quickstarts](appendix-ide-quickstarts.md) — setup for JetBrains IDEs
-- [MCP tool map](appendix-mcp-tools.md) — all MCP tools incl. `ctx_refactor`, `ctx_search`
+- [MCP tool map](appendix-mcp-tools.md) — all MCP tools incl. `ctx_patch`, `ctx_search`, and the removed ones
 - [Journey 4 — Code Intelligence](04-code-intelligence.md)
 - [Journey 13 — Security & Governance](13-security-and-governance.md) — PathJail, auth
 - Source code: `rust/src/lsp/{backend,jetbrains_backend,router,edit_apply,port_discovery}.rs`,
-  `rust/src/tools/registered/ctx_refactor.rs`,
+  `rust/src/tools/registered/ctx_patch.rs`,
   `packages/jetbrains-lean-ctx/src/main/kotlin/com/leanctx/plugin/{server,endpoint,psi,dto}/…`

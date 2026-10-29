@@ -1,0 +1,14 @@
+{
+  "case": "manifest_with_ck",
+  "base": "records/snapshot_manifest.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/ck_wrapped",
+      "value": "x"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

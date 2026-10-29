@@ -51,7 +51,7 @@ fn apply_harden(level: &str) {
             fix: true,
             ..Default::default()
         };
-        if let Err(e) = crate::setup::run_setup_with_options(opts) {
+        if let Err(e) = crate::setup::run_setup_with_options(&opts) {
             eprintln!("  Setup error: {e}");
         }
         println!();

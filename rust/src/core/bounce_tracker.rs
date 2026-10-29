@@ -20,8 +20,17 @@ struct ReadEvent {
     _original_tokens: usize,
     seq: u64,
     view: ReadView,
+    /// File mtime when a compressed view was served. A later full read of a
+    /// file whose mtime moved re-reads *changed* content — an edit (a host's
+    /// native Edit/Write included, which never reaches `record_edit`), not a
+    /// compression failure.
+    mtime: Option<std::time::SystemTime>,
     /// Scope and task the read ran under; a bounce is that task's signal.
     origin: Option<crate::core::context_store::task_signals::Origin>,
+}
+
+fn file_mtime(path: &str) -> Option<std::time::SystemTime> {
+    std::fs::metadata(path).and_then(|m| m.modified()).ok()
 }
 
 /// What a read showed of the file, for correction (bounce) accounting.
@@ -101,6 +110,11 @@ struct PendingBounce {
     /// Wall-clock detection time, compared against host edits other
     /// processes report through the edit beacon.
     detected_unix_ms: u64,
+    /// The request project at detection. The bounce is booked later (after
+    /// the edit window, or by the shutdown flush) outside that request.
+    project_root: Option<String>,
+    /// The read mode of the compressed view the full read corrected.
+    mode: String,
 }
 
 #[derive(Debug, Default)]
@@ -159,12 +173,19 @@ impl BounceTracker {
         let compressed = view == ReadView::Compressed;
 
         if view == ReadView::Full {
-            self.detect_bounce(&norm, seq);
+            self.detect_bounce(&norm, path, seq);
         }
-        if self.persist {
-            // Keep the long-term majority rule honest: clean reads dilute
-            // historical bounces (#496).
-            crate::core::path_mode_memory::record_read_if_tracked(&norm);
+        if self.persist && compressed {
+            // K10: a compressed view is a truncated output of its read mode.
+            {
+                use crate::core::hive::metrics_v2::signals;
+                signals::truncated(&signals::read_mode_filter(mode));
+            }
+            // Keep the long-term majority rule honest: compressed reads that
+            // did not bounce dilute historical bounces (#496). Full and
+            // partial reads — the bounce re-read itself included — are not
+            // compression attempts and stay out of the denominator.
+            crate::core::path_mode_memory::record_compressed_read_if_tracked(&norm);
         }
 
         let current = if self.persist {
@@ -186,6 +207,7 @@ impl BounceTracker {
                 _original_tokens: original_tokens,
                 seq,
                 view,
+                mtime: if compressed { file_mtime(path) } else { None },
                 origin,
             },
         );
@@ -210,7 +232,7 @@ impl BounceTracker {
     /// Detect the correction a full read completes: only a full read whose
     /// immediately preceding read of the path was a compressed view within
     /// `BOUNCE_WINDOW`. A partial or full read in between ends the chain.
-    fn detect_bounce(&mut self, norm_path: &str, full_seq: u64) {
+    fn detect_bounce(&mut self, norm_path: &str, fs_path: &str, full_seq: u64) {
         // A full re-read the system itself forced after an edit is not a
         // compression failure (GL #622): `should_force_full` returns `full` for
         // EDIT_FORCE_WINDOW ticks post-edit, so the agent had no choice. Counting
@@ -230,6 +252,11 @@ impl BounceTracker {
         if let Some(ev) = events.iter().next_back()
             && ev.view == ReadView::Compressed
             && full_seq.saturating_sub(ev.seq) <= BOUNCE_WINDOW
+            // The file changed since the view was served: the full re-read
+            // fetches new content after an edit. A host's native Edit/Write
+            // in another process may reach neither `record_edit` nor the
+            // edit beacon in time; the moved mtime is direct evidence of it.
+            && (ev.mtime.is_none() || file_mtime(fs_path) == ev.mtime)
         {
             // Provisional until EDIT_FORCE_WINDOW passes without an edit of
             // this path (see `PendingBounce`).
@@ -239,6 +266,8 @@ impl BounceTracker {
                 wasted: ev.tokens_sent,
                 origin: ev.origin.clone(),
                 detected_unix_ms: now_unix_ms(),
+                project_root: crate::core::scent_field::current_project(),
+                mode: ev._mode.clone(),
             };
             self.pending.push(pending);
             if self.pending.len() > MAX_PENDING_BOUNCES {
@@ -289,6 +318,8 @@ impl BounceTracker {
             path: norm_path,
             wasted,
             origin,
+            project_root,
+            mode,
             ..
         } = pending;
         self.total_bounces += 1;
@@ -302,7 +333,6 @@ impl BounceTracker {
         }
 
         if self.persist {
-            crate::core::anti_interrupt::spawn_bounce_waste(wasted as u64);
             if let Some(origin) = origin {
                 // Off this tracker's lock: recording waits on a file lock.
                 std::thread::spawn(move || {
@@ -313,26 +343,30 @@ impl BounceTracker {
                 });
             }
             crate::core::savings_ledger::record_bounce_event(wasted);
+            // K10: the compressed view was fetched back in full.
+            {
+                use crate::core::hive::metrics_v2::signals;
+                signals::refetched(&signals::read_mode_filter(&mode));
+            }
             // Long-term per-path memory (#496): remember which exact
             // files keep bouncing so auto-mode learns across restarts.
             crate::core::path_mode_memory::record_bounce(&norm_path);
-            // Quality signal (#538): bounces push the learned entropy
-            // threshold down for this extension (compress less) and
-            // penalize the bandit arm that produced the read (#593).
-            crate::core::adaptive_thresholds::record_quality_signal(
-                &norm_path,
-                crate::core::threshold_learning::QualitySignal::Bounce,
-            );
+            // A bounce penalizes the bandit arm that produced the read (#593).
+            crate::core::adaptive_thresholds::penalize_read_arm(&norm_path);
             // Stigmergy (#540): a bounce marks this path as Stuck so
             // other agents see friction here. Background: lock may block.
-            std::thread::spawn(move || {
-                crate::core::scent_field::deposit(
-                    crate::core::scent_field::scent_agent_id(),
-                    crate::core::scent_field::ScentKind::Stuck,
-                    &norm_path,
-                    0.5,
-                );
-            });
+            // The project was resolved at detection, inside the request.
+            if let Some(project_root) = project_root {
+                std::thread::spawn(move || {
+                    crate::core::scent_field::deposit_for(
+                        &project_root,
+                        crate::core::scent_field::scent_agent_id(),
+                        crate::core::scent_field::ScentKind::Stuck,
+                        &norm_path,
+                        0.5,
+                    );
+                });
+            }
         }
     }
 
@@ -345,7 +379,7 @@ impl BounceTracker {
         self.commit_due();
         let seq = self.seq_counter;
         if view == ReadView::Full {
-            self.detect_bounce(&norm, seq);
+            self.detect_bounce(&norm, path, seq);
         }
         self.push_event(
             norm,
@@ -360,6 +394,7 @@ impl BounceTracker {
                 } else {
                     view
                 },
+                mtime: None,
                 origin: None,
             },
         );
@@ -704,6 +739,40 @@ pub mod tests {
         bt.flush_pending();
         assert_eq!(bt.total_bounces(), 1);
         assert_eq!(bt.total_wasted_tokens(), 50);
+    }
+
+    #[test]
+    fn full_reread_of_externally_edited_file_is_not_a_bounce() {
+        // A host's native Edit/Write runs in another process and never calls
+        // `record_edit`; the moved mtime is what exempts the re-read.
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("edited.rs");
+        std::fs::write(&file, "fn a() {}\n").unwrap();
+        let path = file.to_str().unwrap();
+        let old = std::time::SystemTime::now() - std::time::Duration::from_mins(2);
+        std::fs::File::options()
+            .write(true)
+            .open(&file)
+            .unwrap()
+            .set_times(std::fs::FileTimes::new().set_modified(old))
+            .unwrap();
+
+        let mut bt = BounceTracker::new();
+        bt.seq_counter = 1;
+        bt.record_read(path, "map", 40, 500);
+        std::fs::write(&file, "fn a() { changed() }\n").unwrap();
+        bt.seq_counter = 2;
+        bt.record_read(path, "full", 500, 500);
+        bt.flush_pending();
+        assert_eq!(bt.total_bounces(), 0, "re-read after an edit is no bounce");
+
+        // Unchanged file: the same pattern is still a real bounce.
+        bt.seq_counter = 10;
+        bt.record_read(path, "map", 40, 500);
+        bt.seq_counter = 11;
+        bt.record_read(path, "full", 500, 500);
+        bt.flush_pending();
+        assert_eq!(bt.total_bounces(), 1);
     }
 
     #[test]

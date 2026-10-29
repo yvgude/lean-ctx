@@ -1,6 +1,7 @@
 //! `lean-ctx proxy …` — proxy lifecycle, upstream stats, Codex ChatGPT opt-in.
 
 #[allow(clippy::wildcard_imports)]
+#[cfg(feature = "http-server")]
 use super::*;
 
 /// Parse `--port=N` from proxy args, falling back to the configured default.
@@ -83,6 +84,7 @@ fn print_compression_by_upstream(v: &serde_json::Value) {
 /// counted by Anthropic on the same request — receipts, not the bytes/4
 /// estimate above. Silent when the opt-in feature is off or no probe has
 /// answered yet (`verified_savings` is `null`).
+#[cfg(feature = "http-server")]
 fn print_verified_savings(v: &serde_json::Value) {
     let Some(vs) = v.get("verified_savings").filter(|x| x.is_object()) else {
         return;
@@ -778,6 +780,7 @@ pub(crate) fn cmd_proxy(rest: &[String]) {
 
     #[cfg(not(feature = "http-server"))]
     {
+        let _ = rest;
         eprintln!("lean-ctx proxy is not available in this build");
         std::process::exit(1);
     }

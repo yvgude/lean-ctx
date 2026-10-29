@@ -1,0 +1,54 @@
+{
+  "name": "swarm-states",
+  "values": [
+    {
+      "value": "open"
+    },
+    {
+      "value": "running"
+    },
+    {
+      "value": "paused"
+    },
+    {
+      "value": "done"
+    },
+    {
+      "value": "archived"
+    }
+  ],
+  "transitions": [
+    [
+      "open",
+      "running"
+    ],
+    [
+      "running",
+      "paused"
+    ],
+    [
+      "paused",
+      "running"
+    ],
+    [
+      "running",
+      "done"
+    ],
+    [
+      "open",
+      "archived"
+    ],
+    [
+      "running",
+      "archived"
+    ],
+    [
+      "paused",
+      "archived"
+    ],
+    [
+      "done",
+      "archived"
+    ]
+  ]
+}

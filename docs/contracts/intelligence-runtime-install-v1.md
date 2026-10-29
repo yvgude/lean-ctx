@@ -61,6 +61,120 @@ one. Stored content policies continue to apply if optional private execution fai
 This mechanism does not publish a channel or provision real signing keys. Native
 platform, migration and external-user qualification remain explicit release gates.
 
+## Cockpit package kind
+
+The Cockpit web UI is a second signed package kind on the same channel
+authority. It is proprietary and free for everyone: no account, no entitlement.
+Manifest formats, signature domains, catalog schema, root key, rotation and
+delegation checks are exactly those of the Intelligence Runtime. What differs:
+
+- **Kind.** The signed `runtime-description.json` declares `engine_id`
+  `leanctx-cockpit`, `protocol_version` `leanctx.cockpit-start/v1`,
+  `account_required: false`, `entitlement_required: false`,
+  `receipt_authority` `public_host` and exactly the capabilities
+  `[{"id": "free.cockpit.ui", "version": "1.0.0"}]`. `SOURCE-PROVENANCE.json`
+  carries `entitlement_required: false`. A Cockpit package that claims an
+  entitlement is refused; every Intelligence package outside staging stays
+  licence-bound. Every use authenticates the package as the kind it expects,
+  so a Cockpit never runs as the Intelligence Runtime and vice versa.
+- **Archive.** The same seven members. The executable member keeps the name
+  `leanctx-intelligence`, so the archive shape and the bounds are unchanged; the
+  host runs its private copy as `leanctx-cockpit`. Static assets are embedded
+  in the binary. Manifest format v4 (companion model sets) is refused.
+- **Store.** `<data>/cockpit-runtime-production` (production host) or
+  `<data>/cockpit-runtime` (staging), each with its own `packages/`,
+  `selection.json`, `install.lock` and `activation.json` (selected manifest
+  digest, artifact key, enabled). Installing or updating one kind never
+  touches the other's store or the global `[intelligence_runtime]` settings.
+- **Channel.** A separate catalog per track, same schema
+  (`leanctx.runtime-channel/v2` production, `/v1` staging), same signature
+  domain and the same root key as the runtime channel of that track. The
+  host bundles its two URLs from `LEANCTX_PRODUCTION_COCKPIT_CHANNEL_URL` and
+  `LEANCTX_PRODUCTION_COCKPIT_CHANNEL_SIGNATURE_URL` (staging:
+  `LEANCTX_STAGING_COCKPIT_CHANNEL_URL`, `..._SIGNATURE_URL`); build.rs admits
+  the pair only beside the complete runtime triple of that track.
+
+### Commands
+
+```sh
+lean-ctx setup runtime status --kind cockpit
+lean-ctx setup runtime sync-configured --kind cockpit --accept-proprietary   # add --staging on a staging host
+lean-ctx setup runtime deactivate --kind cockpit
+# Explicit staging operator path; --root must be <data>/cockpit-runtime:
+lean-ctx setup runtime verify   --staging --kind cockpit --archive A --manifest M --signature S --manifest-sha256 D --trust-key-hex K
+lean-ctx setup runtime install  --staging --kind cockpit --accept-proprietary --archive A --manifest M --signature S --manifest-sha256 D --trust-key-hex K --root R --expected-active none
+lean-ctx setup runtime activate --staging --kind cockpit --accept-proprietary --root R --manifest-sha256 D --trust-key-hex K --expected-active D
+```
+
+`sync-configured --kind cockpit` downloads from the bundled Cockpit channel,
+verifies, installs and activates; `lean-ctx cockpit` uses the same path on
+demand. `--kind cockpit` with any other operation is a usage error, and a
+`--root` named `cockpit-runtime*` is refused for the Intelligence kind.
+
+### Start contract `leanctx.cockpit-start/v1`
+
+The Engine dashboard starts one Cockpit per dashboard process, from a private
+0700 copy of the authenticated bytes, with a cleared environment (only a
+private `HOME`/`TMPDIR`) and stderr discarded. It writes one JSON line to stdin:
+`{"home_dir","engine_cache_dir","engine_config_dir","search_path","cockpit_token","engine_url","engine_token","engine_exe","project_root","data_dir","engine_state_dir","engine_version"}`
+(`cockpit_token`: 32 random bytes, hex; `engine_url`: `http://127.0.0.1:<dashboard port>`;
+`engine_token`: the dashboard bearer token; `data_dir` and `engine_state_dir`:
+the Engine's absolute data and state directories, resolved as the Engine
+resolves them — with the cleared environment they are the Cockpit's only way
+to find them; `home_dir`: the user's absolute home directory or `null`, for
+the host session logs the Cockpit reads; `engine_cache_dir` and
+`engine_config_dir`: the Engine's absolute cache and config directories or
+`null`; `search_path`: the Engine's `PATH` or `null`, for the Engine CLI
+calls the Cockpit makes). The Cockpit binds `127.0.0.1:0` and
+writes `{"listening":<port>}` as its first stdout line within 10 seconds, or the
+start fails and the process is killed. The host keeps stdin open; the Cockpit
+must exit at stdin EOF. A crash is restarted on the next dashboard request after
+1 s, 5 s, then 30 s between attempts; a Cockpit that ran a minute resets the
+row. Tokens are never logged. Unavailability is `not_installed`,
+`verification_failed`, `start_failed` or `disabled`, and the dashboard falls back.
+
+### Signing a production Cockpit (owner)
+
+Two keys are involved, exactly as for a Pro release:
+
+- the **artifact key** (Ed25519, owner-only PEM): signs the package manifest. A
+  dedicated Cockpit artifact key is recommended; its public half is what the
+  catalog delegates, for this one manifest digest only.
+- the **production channel root key**: the private half of
+  `LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX` (or the current root after a
+  signed rotation). It signs the Cockpit catalog. No new trust root exists.
+
+Steps, per target (`aarch64-apple-darwin`, `x86_64-apple-darwin`,
+`aarch64-unknown-linux-gnu`, `x86_64-unknown-linux-gnu`):
+
+1. Build the Cockpit binary for the target in release mode, stripped (static
+   assets embedded), and collect its `Cargo.lock`, `LICENSE.md`,
+   `LICENSE_MATRIX.toml`, `SBOM.cdx.json`.
+2. Package and sign the manifest with the artifact key. `--openssl` must be
+   OpenSSL 3 (Ed25519 signing); the LibreSSL `openssl` that ships with macOS
+   cannot sign Ed25519 — use e.g. Homebrew `openssl@3`:
+   `ee/packaging/cockpit/package_cockpit.py --production --binary BIN --version X.Y.Z --revision <commit> --cargo-lock … --license … --license-matrix … --sbom … --artifact-key ARTIFACT.pem --openssl /opt/homebrew/opt/openssl@3/bin/openssl --first-install --output OUT`
+   (for an update, `--rollback-sha256 <artifact_sha256 of the installed package>`
+   instead of `--first-install`). `OUT/package.json` lists `manifest_sha256`,
+   `artifact_sha256` and `artifact_key_hex`.
+3. Upload `archive.tar.gz`, `manifest.json`, `manifest.sig` to HTTPS URLs.
+4. Write the Cockpit catalog `{"schema": "leanctx.runtime-channel/v2",
+   "channel": "production", "sequence": N, "expires_unix_ms": <≤ 7 days ahead>,
+   "releases": [{"target", "manifest_sha256", "artifact_key_hex", "archive_url",
+   "manifest_url", "signature_url"}, …]}` — one entry per target, `sequence`
+   strictly above the last published Cockpit catalog.
+5. Sign it with the root key: `scripts/sign_runtime_channel.py --production
+   --catalog cockpit-channel.json --private-key ROOT.pem --key-id <id> --openssl …
+   --output SIGNED` in the private release repository (the same tool as the
+   runtime catalog). Upload the catalog and its 64-byte detached signature.
+6. Set the repository variables `LEANCTX_PRODUCTION_COCKPIT_CHANNEL_URL` and
+   `LEANCTX_PRODUCTION_COCKPIT_CHANNEL_SIGNATURE_URL` beside the runtime triple
+   and tag a host release. Re-sign the catalog (step 5) before it expires.
+
+Before publishing, a staging host can rehearse the same package with
+`--staging` (staging licence, v1 catalog signed with the staging root) and the
+explicit commands above.
+
 ## Personal project sync setup
 
 On macOS and Linux, `lean-ctx engine runtime sync-project-enable --project <ABS_PROJECT> --staging --accept-proprietary`

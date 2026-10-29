@@ -159,21 +159,29 @@ fn file_ref(key: &str, store: &CliCacheStore) -> String {
     format!("F{}", idx + 1)
 }
 
-pub(crate) fn check_and_read(path: &str) -> CacheResult {
-    let Ok(content) = crate::core::io_boundary::read_file_lossy(path) else {
+/// Check/update the CLI metadata cache only after the caller has freshly
+/// admitted the source. A hit is metadata-only; the source must be re-read and
+/// re-admitted before this function is called.
+pub(crate) fn check_admitted(
+    path: &str,
+    source: &crate::core::context_admission::SourceAdmission,
+) -> CacheResult {
+    let content = &source.text;
+    if !source.storable {
         return CacheResult::Miss {
-            content: String::new(),
+            content: content.clone(),
         };
-    };
-
+    }
     let key = normalize_key(path);
-    let hash = compute_md5(&content);
+    let hash = compute_md5(content);
     let line_count = content.lines().count();
-    let original_tokens = crate::core::tokens::count_tokens(&content);
+    let original_tokens = crate::core::tokens::count_tokens(content);
     let nonce = process_nonce();
     let now = now_secs();
     let Ok(mut transaction) = CacheTransaction::load() else {
-        return CacheResult::Miss { content };
+        return CacheResult::Miss {
+            content: content.clone(),
+        };
     };
     let store = &mut transaction.store;
 
@@ -194,7 +202,9 @@ pub(crate) fn check_and_read(path: &str) -> CacheResult {
         return if transaction.save().is_ok() {
             result
         } else {
-            CacheResult::Miss { content }
+            CacheResult::Miss {
+                content: content.clone(),
+            }
         };
     }
 
@@ -213,7 +223,22 @@ pub(crate) fn check_and_read(path: &str) -> CacheResult {
 
     // Cache persistence is optional for a full-content read, never for eviction.
     let _ = transaction.save();
-    CacheResult::Miss { content }
+    CacheResult::Miss {
+        content: content.clone(),
+    }
+}
+
+/// Compatibility adapter for callers that need the cache to perform its own
+/// read. It still admits the freshly decoded source before any metadata lookup
+/// or persistence; the CLI hot path passes its already-admitted source above.
+#[cfg(test)]
+pub(crate) fn check_and_read(path: &str) -> CacheResult {
+    let Ok(source) = crate::tools::ctx_read::read_file_lossy_admitted_for_cli(path) else {
+        return CacheResult::Miss {
+            content: String::new(),
+        };
+    };
+    check_admitted(path, &source)
 }
 
 pub(crate) fn invalidate(path: &str) -> std::io::Result<()> {

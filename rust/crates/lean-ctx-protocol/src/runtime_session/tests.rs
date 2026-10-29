@@ -164,3 +164,42 @@ fn authenticated_malformed_typed_scope_is_rejected_before_state_change() {
     }
     assert!(session.accept(&frame(&request), 1000).is_ok());
 }
+
+#[test]
+fn a_request_cannot_widen_the_session_it_arrives_in() {
+    use crate::runtime_frame::encode_runtime_frame_in;
+    let verifier = RuntimeExchangeProfile::ORG_POLICY_VERIFIER;
+    let mut wide = request();
+    wide.input = "a".repeat(crate::runtime_exchange::MAX_RUNTIME_EXCHANGE_BYTES + 1);
+    wide.invocation.input_digest = digest_bytes(wide.input.as_bytes()).unwrap();
+    // Authenticated with the right key and well inside the wider profile.
+    let frame = encode_runtime_frame_in(
+        &KEY,
+        RuntimeFrameDirection::Request,
+        &[0x0d; 24],
+        &wide.to_bytes_in(verifier).unwrap(),
+        verifier,
+    )
+    .unwrap();
+
+    // The session was admitted ordinary: the length alone refuses the frame,
+    // whatever it says inside, and the receiver does not move.
+    let mut ordinary =
+        RuntimeRequestSession::new(&KEY, wide.session_id.clone(), &wide.invocation).unwrap();
+    assert_eq!(
+        error(&mut ordinary, &frame),
+        RuntimeSessionError::Frame(RuntimeFrameError::InvalidLength)
+    );
+    let mut small = wide.clone();
+    small.input = "hello".into();
+    small.invocation.input_digest = digest_bytes(b"hello").unwrap();
+    let mut ordinary =
+        RuntimeRequestSession::new(&KEY, small.session_id.clone(), &small.invocation).unwrap();
+    assert!(ordinary.accept(&self::frame(&small), 1000).is_ok());
+
+    // Only the owner's own admission opens the wider session.
+    let mut admitted =
+        RuntimeRequestSession::new_in(&KEY, wide.session_id.clone(), &wide.invocation, verifier)
+            .unwrap();
+    assert!(admitted.accept(&frame, 1000).unwrap() == wide);
+}

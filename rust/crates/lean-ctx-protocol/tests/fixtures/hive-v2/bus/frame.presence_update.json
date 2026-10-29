@@ -1,0 +1,8 @@
+{
+  "address": "~checkout-latency",
+  "at": 1792800060000,
+  "role": "general",
+  "state": "idle",
+  "t": "presence.update",
+  "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+}

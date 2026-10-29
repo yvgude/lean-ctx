@@ -136,6 +136,11 @@ pub(crate) fn verify_handle(handle: &str, expected_digest: Option<&str>) -> Reco
             Err(crate::server::reference_store::ReferenceResolveError::Refused(reason)) => {
                 RecoveryVerification::unavailable(RecoveryOutcome::Refused(reason.to_owned()))
             }
+            Err(crate::server::reference_store::ReferenceResolveError::Gateway(_)) => {
+                RecoveryVerification::unavailable(RecoveryOutcome::Refused(
+                    "stored output is withheld by the context gateway".to_owned(),
+                ))
+            }
         };
     }
 

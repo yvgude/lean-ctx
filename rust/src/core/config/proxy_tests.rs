@@ -545,6 +545,8 @@ fn entry(id: &str, shape: WireShape, base_url: &str) -> ProviderEntry {
         base_url: base_url.into(),
         api_key_env: None,
         aws_region: None,
+        account_ref: None,
+        region: None,
         enabled: None,
         local: None,
     }
@@ -610,6 +612,8 @@ fn bedrock_provider_requires_region_matching_endpoint_and_aws_env_mode() {
         "https://bedrock-runtime.us-east-1.amazonaws.com",
     );
     valid.aws_region = Some("us-east-1".into());
+    valid.region = Some("us-east-1".into());
+    valid.account_ref = Some("production-account".into());
     let mut wrong_region = valid.clone();
     wrong_region.id = "wrong-region".into();
     wrong_region.aws_region = Some("eu-west-1".into());
@@ -624,7 +628,50 @@ fn bedrock_provider_requires_region_matching_endpoint_and_aws_env_mode() {
     assert_eq!(resolved.len(), 1);
     assert_eq!(resolved[0].shape, WireShape::Bedrock);
     assert_eq!(resolved[0].aws_region.as_deref(), Some("us-east-1"));
+    assert_eq!(resolved[0].region.as_deref(), Some("us-east-1"));
+    assert_eq!(
+        resolved[0].account_ref.as_deref(),
+        Some("production-account")
+    );
     assert!(resolved[0].injects_gateway_credential());
+}
+
+#[test]
+fn provider_registry_validates_optional_account_and_region_labels() {
+    let mut bound = entry("foundry", WireShape::OpenAi, "https://foundry.example");
+    bound.api_key_env = Some("FOUNDRY_KEY".into());
+    bound.account_ref = Some(" finance-prod ".into());
+    bound.region = Some(" eastus ".into());
+    let mut providers = vec![bound.clone()];
+    for (index, invalid) in [
+        "\nsecret-looking-value".to_owned(),
+        "label\r".to_owned(),
+        "\tlabel".to_owned(),
+        "\u{0000}".to_owned(),
+        " \n ".to_owned(),
+        "x".repeat(8192),
+    ]
+    .into_iter()
+    .enumerate()
+    {
+        let mut invalid_account = bound.clone();
+        invalid_account.id = format!("invalid-account-{index}");
+        invalid_account.account_ref = Some(invalid.clone());
+        providers.push(invalid_account);
+        let mut invalid_region = bound.clone();
+        invalid_region.id = format!("invalid-region-{index}");
+        invalid_region.region = Some(invalid);
+        providers.push(invalid_region);
+    }
+
+    let resolved = ProxyConfig {
+        providers,
+        ..Default::default()
+    }
+    .resolve_providers();
+    assert_eq!(resolved.len(), 1);
+    assert_eq!(resolved[0].account_ref.as_deref(), Some("finance-prod"));
+    assert_eq!(resolved[0].region.as_deref(), Some("eastus"));
 }
 
 #[test]
@@ -690,6 +737,8 @@ fn provider_entry_toml_round_trip() {
         shape = "openai"
         base_url = "https://acme.services.ai.azure.com"
         api_key_env = "FOUNDRY_API_KEY"
+        account_ref = "finance-prod"
+        region = "eastus"
 
         [[providers]]
         id = "claude-gw"
@@ -704,6 +753,11 @@ fn provider_entry_toml_round_trip() {
         cfg.providers[0].api_key_env.as_deref(),
         Some("FOUNDRY_API_KEY")
     );
+    assert_eq!(
+        cfg.providers[0].account_ref.as_deref(),
+        Some("finance-prod")
+    );
+    assert_eq!(cfg.providers[0].region.as_deref(), Some("eastus"));
     assert_eq!(cfg.providers[1].enabled, Some(false));
     // Only the enabled entry resolves.
     assert_eq!(cfg.resolve_providers().len(), 1);

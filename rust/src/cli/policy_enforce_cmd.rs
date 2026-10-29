@@ -10,7 +10,7 @@
 //! * CISO policy authoring/testing: prove what a pack denies, redacts and blocks
 //!   before rolling it out, from the CLI or CI.
 //! * Auditable enforcement evidence: every gate decision is appended to the
-//!   tamper-evident audit trail, which `lean-ctx compliance report` then signs.
+//!   tamper-evident audit trail, exported by `lean-ctx audit evidence`.
 //!
 //! It honors the policy resolved by [`crate::core::policy::runtime`] — the local
 //! project pack (`.lean-ctx/policy.toml`) folded under a trusted, signed org
@@ -60,6 +60,17 @@ impl EnforceOutcome {
     }
 }
 
+/// A failed call whose message is the policy's own refusal: the read path applies
+/// the same block-before-mask decision as step 5 before any text exists, so that
+/// refusal is the policy's verdict (`blocked-filter`), not a failed handler.
+fn dispatch_failure(message: String) -> EnforceOutcome {
+    if message.contains("withheld by policy") {
+        EnforceOutcome::BlockedFilter(message)
+    } else {
+        EnforceOutcome::DispatchError(message)
+    }
+}
+
 struct EnforceArgs {
     tool: String,
     project_root: String,
@@ -86,10 +97,26 @@ pub(crate) fn cmd_enforce(args: &[String]) {
     };
 
     let outcome = run_enforce(&parsed.tool, &parsed.project_root, &parsed.json, &map);
+    // The verdict is the ONE output of this command. The evaluated tool's
+    // text is never written (it is no delivery, see `run_enforce`); the
+    // verdict can quote a guard message or the text of a failed operation,
+    // so it is released as human-facing output, receipted for exactly the
+    // bytes written, and handed over by the one observed writer (G08). It is
+    // released and receipted under the project it evaluated — the explicit
+    // `--project-root`, normalized as every explicit root is — not under the
+    // directory the command happens to be called from.
+    let root = super::common::detect_project_root(&[
+        "--project-root".to_owned(),
+        parsed.project_root.clone(),
+    ]);
+    let run = super::common::CliToolRun::new("ctx_proof", &root, None).human_facing();
     if parsed.as_json {
-        print_json(&parsed.tool, &outcome);
+        match run.deliver_json(|| render_json(&parsed.tool, &outcome)) {
+            Ok(document) => super::common::print_released(&document),
+            Err(reason) => super::common::exit_withheld(&reason),
+        }
     } else {
-        print_text(&parsed.tool, &outcome);
+        super::common::print_released(&run.deliver_text(|| render_text(&parsed.tool, &outcome)));
     }
 }
 
@@ -206,7 +233,10 @@ pub(crate) fn run_enforce(
     }
 
     // 4. Dispatch the real tool (the guard is applied here, around the same
-    //    handler the server invokes).
+    //    handler the server invokes). The tool's text is evaluated below and
+    //    never written, so the call is no delivery: nothing is released or
+    //    receipted for it (`run_call_undelivered`). What this command writes
+    //    — the verdict — is released where it is printed (`cmd_enforce`).
     let call_args = vec![
         tool.to_string(),
         "--project-root".to_string(),
@@ -214,9 +244,9 @@ pub(crate) fn run_enforce(
         "--json".to_string(),
         args_json.to_string(),
     ];
-    let text = match super::call_cmd::run_call(&call_args) {
+    let text = match super::call_cmd::run_call_undelivered(&call_args) {
         Ok(t) => t,
-        Err(e) => return EnforceOutcome::DispatchError(e.to_string()),
+        Err(e) => return dispatch_failure(e.to_string()),
     };
 
     // 5. Use the same block-before-mask decision as model/storage boundaries.
@@ -248,16 +278,17 @@ pub(crate) fn run_enforce(
     }
 }
 
-fn print_text(tool: &str, outcome: &EnforceOutcome) {
+/// The verdict as text, without the final newline the writer adds.
+fn render_text(tool: &str, outcome: &EnforceOutcome) -> String {
     match outcome {
         EnforceOutcome::DeniedRole(msg) | EnforceOutcome::DeniedPolicy(msg) => {
-            println!("DENIED  {tool}\n{msg}");
+            format!("DENIED  {tool}\n{msg}")
         }
         EnforceOutcome::BlockedEgress(reason) => {
-            println!("BLOCKED {tool}  egress DLP ({reason}) — write/action withheld; audited");
+            format!("BLOCKED {tool}  egress DLP ({reason}) — write/action withheld; audited")
         }
         EnforceOutcome::BlockedFilter(reason) => {
-            println!("BLOCKED {tool}  input filter ({reason}) — output withheld; audited");
+            format!("BLOCKED {tool}  input filter ({reason}) — output withheld; audited")
         }
         EnforceOutcome::Allowed {
             redactions,
@@ -272,15 +303,16 @@ fn print_text(tool: &str, outcome: &EnforceOutcome) {
                     .collect::<Vec<_>>()
                     .join(", ")
             };
-            println!("ALLOWED {tool}  redactions={redactions}  filters=[{filt}]");
+            format!("ALLOWED {tool}  redactions={redactions}  filters=[{filt}]")
         }
         EnforceOutcome::DispatchError(e) => {
-            println!("ERROR   {tool}  tool handler failed: {e}");
+            format!("ERROR   {tool}  tool handler failed: {e}")
         }
     }
 }
 
-fn print_json(tool: &str, outcome: &EnforceOutcome) {
+/// The verdict as a `--as-json` document, without the final newline.
+fn render_json(tool: &str, outcome: &EnforceOutcome) -> String {
     let detail = match outcome {
         EnforceOutcome::DeniedRole(m)
         | EnforceOutcome::DeniedPolicy(m)
@@ -303,14 +335,23 @@ fn print_json(tool: &str, outcome: &EnforceOutcome) {
         "status": outcome.status(),
         "detail": detail,
     });
-    println!(
-        "{}",
-        serde_json::to_string_pretty(&v).unwrap_or_else(|_| v.to_string())
-    );
+    serde_json::to_string_pretty(&v).unwrap_or_else(|_| v.to_string())
 }
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn a_read_the_policy_withholds_is_blocked_and_any_other_failure_is_a_dispatch_error() {
+        let blocked = super::dispatch_failure(
+            "error: -32602: Cannot read file: /p/notes.md: source content withheld by policy"
+                .into(),
+        );
+        assert_eq!(blocked.status(), "blocked-filter");
+        let failed =
+            super::dispatch_failure("error: -32602: Cannot read file: /p/x: not found".into());
+        assert_eq!(failed.status(), "dispatch-error");
+    }
+
     use super::*;
     use serde_json::Map;
 

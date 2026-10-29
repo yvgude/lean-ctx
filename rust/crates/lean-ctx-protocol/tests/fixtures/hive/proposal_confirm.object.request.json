@@ -1,0 +1,6 @@
+{
+  "reason": "The runbook still says 5; the fact needs its source.",
+  "schema": "leanctx.hive.proposal-confirm/v1",
+  "session_ref": "ses_01jbq9d",
+  "verdict": "object"
+}

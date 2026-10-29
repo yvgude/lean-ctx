@@ -2,7 +2,12 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 use std::path::Path;
 
-use super::task::{Task, TaskMessage, TaskPart, TaskState, TaskStore};
+use super::task::{
+    REASON_CANCELED_VIA_A2A, REASON_INPUT_RECEIVED, Task, TaskMessage, TaskPart, TaskState,
+    TaskStore,
+};
+
+use crate::core::context_admission::carrier::Withheld;
 
 #[derive(Debug, Deserialize)]
 pub struct JsonRpcRequest {
@@ -145,6 +150,11 @@ fn handle_send_message(req: &JsonRpcRequest, path: &Path) -> JsonRpcResponse {
         .or_else(|| params.get("id"))
         .and_then(Value::as_str);
 
+    // The parts are new caller content: admitted for the store before
+    // anything is written. A refusal rejects inside the locked mutation, so
+    // nothing of the message is saved.
+    let refuse =
+        |withheld: Withheld| LegacyMutationError::rejected(message_withheld(req, &withheld));
     match TaskStore::mutate_locked(path, |store| {
         let task_id = if let Some(id) = existing {
             let Some(task) = store
@@ -153,24 +163,28 @@ fn handle_send_message(req: &JsonRpcRequest, path: &Path) -> JsonRpcResponse {
             else {
                 return Err(LegacyMutationError::rejected(task_not_found(req)));
             };
-            task.add_message(role, parts);
+            task.append_message(role, &parts).map_err(refuse)?;
             if task.state == TaskState::InputRequired {
-                task.transition(TaskState::Working, Some("input received via A2A"))
+                task.transition(TaskState::Working, Some(REASON_INPUT_RECEIVED))
                     .map_err(std::io::Error::other)?;
             }
             id.to_string()
         } else {
-            let id = store.create_task(A2A_CALLER, to_agent, &description);
+            let parts = parts
+                .iter()
+                .map(TaskPart::admitted)
+                .collect::<Result<Vec<_>, _>>()
+                .map_err(refuse)?;
+            let task = store
+                .create_admitted(A2A_CALLER, to_agent, &description)
+                .map_err(refuse)?;
             // `Task::new` seeds the opening message with the originator id as
             // its role; an A2A message keeps the caller's role and all parts.
-            if let Some(opening) = store
-                .get_task_mut(&id)
-                .and_then(|task| task.messages.first_mut())
-            {
+            if let Some(opening) = task.messages.first_mut() {
                 opening.role = role.to_string();
                 opening.parts = parts;
             }
-            id
+            task.id.clone()
         };
         Ok(JsonRpcResponse::success(
             req.id.clone(),
@@ -212,7 +226,7 @@ fn handle_cancel_task(req: &JsonRpcRequest, path: &Path) -> JsonRpcResponse {
         else {
             return Err(LegacyMutationError::rejected(task_not_found(req)));
         };
-        if let Err(error) = task.transition(TaskState::Canceled, Some("canceled via A2A")) {
+        if let Err(error) = task.transition(TaskState::Canceled, Some(REASON_CANCELED_VIA_A2A)) {
             return Err(LegacyMutationError::rejected(JsonRpcResponse::error(
                 req.id.clone(),
                 -32603,
@@ -253,10 +267,21 @@ fn storage_error(req: &JsonRpcRequest, error: &std::io::Error) -> JsonRpcRespons
     JsonRpcResponse::error(req.id.clone(), -32603, "task storage unavailable")
 }
 
+/// New message content the gateway does not admit for the store: typed
+/// reason codes only, never the content.
+fn message_withheld(req: &JsonRpcRequest, withheld: &Withheld) -> JsonRpcResponse {
+    JsonRpcResponse::error(req.id.clone(), -32602, &withheld.message("message"))
+}
+
+/// The task as it leaves towards a peer: the served copy ([`Task::served`]),
+/// so stored text is re-authorized now and a withheld part is the typed
+/// gateway notice. The one renderer for `message/send`, `tasks/get` and
+/// `tasks/cancel`.
 fn task_to_a2a_json(task: Option<&Task>) -> Value {
     let Some(task) = task else {
         return Value::Null;
     };
+    let task = task.served();
 
     let messages: Vec<Value> = task.messages.iter().map(message_to_a2a_json).collect();
 

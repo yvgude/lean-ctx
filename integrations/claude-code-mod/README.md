@@ -86,8 +86,9 @@ were waiting** — 7,551 status polls for 1,030 background jobs plus 1,770
   background launches and commands with `LEAN_CTX_RAW=1` / `lean-ctx raw` stay
   byte-for-byte; any failure keeps the native result. Turn it off with the
   `shape_native_output` setting.
-- **Focused tool surface.** Front-loads `ctx_read`, `ctx_search`, `ctx_shell`,
-  `ctx_compose`, `ctx_callgraph`, `ctx_session` (setting `front_loaded_tools`)
+- **Focused tool surface.** Front-loads every tool the rules route to —
+  `ctx_read`, `ctx_search`, `ctx_shell`, `ctx_glob`, `ctx_tree`, `ctx_compose`,
+  `ctx_patch`, `ctx_callgraph`, `ctx_session` (setting `front_loaded_tools`)
   and defers every other lean-ctx tool — including the `shell` alias — behind
   ToolSearch, with descriptions byte-identical. Verified by capturing the real
   `/v1/messages` request: exactly the configured six keep their schema.

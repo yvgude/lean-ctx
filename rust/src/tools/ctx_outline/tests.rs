@@ -276,3 +276,94 @@ fn dir_json_is_deterministic_and_sorted() {
     assert_eq!(files[0]["path"], "a.rs");
     assert_eq!(files[1]["path"], "z.rs");
 }
+
+// --- admission before extraction (G01) -----------------------------------
+
+fn policy(body: &str) -> crate::core::policy::ResolvedPolicy {
+    crate::core::policy::load(&format!(
+        "name = \"ctx-outline-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n{body}"
+    ))
+    .unwrap()
+}
+
+/// The old outline read every file raw: a source the project policy blocks
+/// was parsed and its symbols listed. Now it contributes nothing and is
+/// reported as withheld — in the text listing, in JSON and for a single file.
+#[test]
+fn a_blocked_source_contributes_no_symbol_and_is_reported_as_withheld() {
+    use crate::core::policy::runtime::TestPolicyOverride;
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let tmp = tempfile::tempdir().unwrap();
+    write(tmp.path(), "open.rs", "pub fn visible() {}\n");
+    write(
+        tmp.path(),
+        "plan.rs",
+        "CONFIDENTIAL\npub fn hidden_marker() {}\n",
+    );
+    let dir = tmp.path().to_str().unwrap();
+    let json = OutlineOpts {
+        as_json: true,
+        ..Default::default()
+    };
+    {
+        // Control: without a pack both files are outlined and nothing in the
+        // output mentions a withheld source.
+        let _community = TestPolicyOverride::set(None);
+        let (out, _) = run(dir, &OutlineOpts::default());
+        assert!(
+            out.contains("visible") && out.contains("hidden_marker"),
+            "{out}"
+        );
+        assert!(!out.contains("withheld"), "{out}");
+        let (out, _) = run(dir, &json);
+        assert!(!out.contains("withheld"), "{out}");
+    }
+    let _policy = TestPolicyOverride::set(Some(policy(
+        "[filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+    )));
+    let (out, _) = run(dir, &OutlineOpts::default());
+    assert!(out.contains("visible"), "{out}");
+    assert!(!out.contains("hidden_marker"), "{out}");
+    assert!(!out.contains("plan.rs"), "{out}");
+    assert!(
+        out.contains("[1 file(s) withheld by policy — not outlined]"),
+        "{out}"
+    );
+
+    let (out, _) = run(dir, &json);
+    assert!(!out.contains("hidden_marker"), "{out}");
+    let v: serde_json::Value = serde_json::from_str(&out).expect("valid json");
+    assert_eq!(v["withheld"], 1);
+    assert_eq!(v["files"].as_array().unwrap().len(), 1);
+
+    let plan = tmp.path().join("plan.rs");
+    let (out, original) = run(plan.to_str().unwrap(), &OutlineOpts::default());
+    assert!(out.starts_with("ERROR: Cannot read"), "{out}");
+    assert!(out.contains("withheld"), "{out}");
+    assert!(!out.contains("hidden_marker"), "{out}");
+    assert_eq!(original, 0);
+}
+
+/// Symbols are extracted from the admitted text: a name a project rule masks
+/// is not listed under its original spelling (the old raw read listed it).
+#[test]
+fn symbols_are_extracted_from_the_admitted_text() {
+    use crate::core::policy::runtime::TestPolicyOverride;
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _policy = TestPolicyOverride::set(Some(policy(
+        "[redaction]\ncodename = \"bluefin[0-9]{4}\"\n",
+    )));
+    let tmp = tempfile::tempdir().unwrap();
+    write(
+        tmp.path(),
+        "a.rs",
+        "pub fn launch_bluefin1234() {}\npub fn helper() {}\n",
+    );
+    let (out, _) = run(tmp.path().to_str().unwrap(), &OutlineOpts::default());
+    assert!(out.contains("helper"), "{out}");
+    assert!(!out.contains("bluefin1234"), "{out}");
+    let path = tmp.path().join("a.rs");
+    let (out, _) = run(path.to_str().unwrap(), &OutlineOpts::default());
+    assert!(out.contains("helper"), "{out}");
+    assert!(!out.contains("bluefin1234"), "{out}");
+}

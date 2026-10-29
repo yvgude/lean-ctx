@@ -1,0 +1,32 @@
+{
+  "name": "bus-types",
+  "values": [
+    {
+      "value": "question"
+    },
+    {
+      "value": "offer"
+    },
+    {
+      "value": "handoff"
+    },
+    {
+      "value": "finding"
+    },
+    {
+      "value": "answer"
+    },
+    {
+      "value": "need"
+    },
+    {
+      "value": "claim"
+    },
+    {
+      "value": "progress"
+    },
+    {
+      "value": "result"
+    }
+  ]
+}

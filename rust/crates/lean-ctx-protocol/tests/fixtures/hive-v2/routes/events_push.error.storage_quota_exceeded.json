@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "storage_quota_exceeded",
+    "limit_bytes": 1073741824,
+    "message": "This workspace has reached its Hive storage quota.",
+    "used_bytes": 1073741824
+  }
+}

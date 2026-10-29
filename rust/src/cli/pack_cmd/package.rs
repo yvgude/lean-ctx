@@ -1,6 +1,6 @@
 use std::path::PathBuf;
 
-use super::{format_bytes, parse_flag, parse_pkg_ref};
+use super::{format_bytes, parse_pkg_ref};
 
 pub(crate) fn cmd_pack_migrate(args: &[String]) {
     let Some(file) = args.iter().find(|arg| arg.ends_with(".lctxpkg")) else {
@@ -62,6 +62,20 @@ struct PackCreateArgs {
     private: bool,
     kind: Option<String>,
     from_dir: Option<String>,
+    categories: Vec<String>,
+    keys: Vec<String>,
+    facts: Vec<String>,
+    preview: bool,
+    redistributable: bool,
+}
+
+fn list_value(value: &str) -> Vec<String> {
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(str::to_string)
+        .collect()
 }
 
 fn parse_pack_create_args(args: &[String]) -> PackCreateArgs {
@@ -90,6 +104,21 @@ fn parse_pack_create_option(parsed: &mut PackCreateArgs, args: &[String], index:
         "--private" => {
             parsed.private = true;
             1
+        }
+        "--preview" => {
+            parsed.preview = true;
+            1
+        }
+        "--redistributable" => {
+            parsed.redistributable = true;
+            1
+        }
+        "--layers" | "--tags" | "--category" | "--categories" | "--key" | "--keys" | "--fact"
+        | "--facts" => {
+            if let Some(value) = flag_value(args, index + 1) {
+                parse_pack_create_inline_option(parsed, &format!("{arg}={value}"));
+            }
+            2
         }
         "--kind" => {
             parsed.kind = flag_value(args, index + 1);
@@ -157,6 +186,21 @@ fn parse_pack_create_inline_option(parsed: &mut PackCreateArgs, arg: &str) {
         parsed.level = parse_pack_level(value);
     } else if let Some(value) = arg.strip_prefix("--scope=") {
         parsed.scope = Some(value.to_string());
+    } else if let Some(value) = arg
+        .strip_prefix("--category=")
+        .or_else(|| arg.strip_prefix("--categories="))
+    {
+        parsed.categories.extend(list_value(value));
+    } else if let Some(value) = arg
+        .strip_prefix("--key=")
+        .or_else(|| arg.strip_prefix("--keys="))
+    {
+        parsed.keys.extend(list_value(value));
+    } else if let Some(value) = arg
+        .strip_prefix("--fact=")
+        .or_else(|| arg.strip_prefix("--facts="))
+    {
+        parsed.facts.extend(list_value(value));
     }
 }
 
@@ -178,6 +222,11 @@ pub(super) fn cmd_pack_create(args: &[String], project_root: &str) {
         private,
         kind,
         from_dir,
+        categories,
+        keys,
+        facts,
+        preview,
+        redistributable,
     } = parsed;
 
     let Some(pkg_name) = name else {
@@ -216,53 +265,48 @@ pub(super) fn cmd_pack_create(args: &[String], project_root: &str) {
         }
     }
 
-    let requested_layers: Vec<&str> = layers_str.as_deref().map_or_else(
-        || vec!["knowledge", "graph", "session", "gotchas"],
-        |s| s.split(',').map(str::trim).collect(),
-    );
+    // V01: one build for create and preview — the preview shows exactly
+    // what the create would store.
+    use crate::core::context_package::selection::{self, PackRequest, PackSelection};
+    let request = PackRequest {
+        name: pkg_name,
+        version,
+        description,
+        author,
+        tags,
+        level,
+        scope,
+        private,
+        redistributable,
+        selection: PackSelection {
+            layers: layers_str.as_deref().map(list_value).unwrap_or_default(),
+            categories,
+            keys,
+            facts,
+        },
+    };
+    let session = request
+        .selection
+        .wants("session")
+        .then(crate::core::session::SessionState::load_latest)
+        .flatten();
+    let built = selection::plan(project_root, &request, session.as_ref()).map(|plan| {
+        if preview {
+            print!("{}", plan.render(true));
+            return None;
+        }
+        for withheld in &plan.withheld {
+            eprintln!("NOTE: withheld {} — {}", withheld.fact, withheld.reason);
+        }
+        for name in &plan.unmatched {
+            eprintln!("WARNING: fact `{name}` matches no fact");
+        }
+        Some((plan.manifest, plan.content))
+    });
 
-    let mut builder = crate::core::context_package::PackageBuilder::new(&pkg_name, &version)
-        .description(&description)
-        .tags(tags)
-        .level(level);
-
-    if let Some(ref a) = author {
-        builder = builder.author(a);
-    }
-    if let Some(ref s) = scope {
-        builder = builder.scope(s);
-    }
-    if private {
-        builder = builder.private();
-    }
-
-    let phash = crate::core::project_hash::hash_project_root(project_root);
-    builder = builder.project_hash(&phash);
-
-    if level >= 2 {
-        builder.build_context_graph(project_root);
-    }
-
-    if requested_layers.contains(&"knowledge") || requested_layers.contains(&"patterns") {
-        builder = builder.add_knowledge_from_project(project_root);
-    }
-    if requested_layers.contains(&"patterns") {
-        builder = builder.add_patterns_from_project(project_root);
-    }
-    if requested_layers.contains(&"graph") {
-        builder = builder.add_graph_from_project(project_root);
-    }
-    if requested_layers.contains(&"session")
-        && let Some(session) = crate::core::session::SessionState::load_latest()
-    {
-        builder = builder.add_session(&session);
-    }
-    if requested_layers.contains(&"gotchas") {
-        builder = builder.add_gotchas_from_project(project_root);
-    }
-
-    match builder.build() {
-        Ok((manifest, content)) => {
+    match built {
+        Ok(None) => {}
+        Ok(Some((manifest, content))) => {
             let registry = match crate::core::context_package::LocalRegistry::open() {
                 Ok(r) => r,
                 Err(e) => {
@@ -271,7 +315,7 @@ pub(super) fn cmd_pack_create(args: &[String], project_root: &str) {
                 }
             };
 
-            match registry.install(&manifest, &content) {
+            match registry.install_local_build(&manifest, &content) {
                 Ok(dir) => {
                     println!("Package created successfully:");
                     println!("  Name:    {}", manifest.name);
@@ -317,6 +361,25 @@ pub(super) fn cmd_pack_create(args: &[String], project_root: &str) {
                         &manifest.integrity.sha256[..8],
                         &manifest.integrity.sha256[56..]
                     );
+                    if let Some(knowledge) = &content.knowledge {
+                        let verified = knowledge
+                            .facts
+                            .iter()
+                            .filter(|f| f.status() == crate::core::knowledge::FactStatus::Verified)
+                            .count();
+                        println!(
+                            "  Fact status: {verified} verified, {} assumption",
+                            knowledge.facts.len() - verified
+                        );
+                    }
+                    println!(
+                        "  Redistribution: {}",
+                        if manifest.redistributable == Some(true) {
+                            "granted to recipients"
+                        } else {
+                            "not granted (recipients cannot pass it on)"
+                        }
+                    );
                     println!("  Stored:  {}", dir.display());
 
                     // Early warning — export blocks these, the registry hard-rejects them.
@@ -330,7 +393,7 @@ pub(super) fn cmd_pack_create(args: &[String], project_root: &str) {
                             );
                             print_secret_findings(&findings);
                             eprintln!(
-                                "  Remove them and re-create — export and ctxpkg.com publishing will refuse this pack."
+                                "  Remove them and re-create — export will refuse this pack."
                             );
                         }
                     }
@@ -376,7 +439,7 @@ fn create_skills_pack(
             return;
         }
     };
-    match registry.install(&plan.manifest, &plan.content) {
+    match registry.install_local_build(&plan.manifest, &plan.content) {
         Ok(pkg_dir) => {
             println!("Skills pack created successfully:");
             println!("  Name:     {}", plan.name);
@@ -401,7 +464,7 @@ fn create_skills_pack(
 }
 
 /// Serialize a stored package's content and run the built-in secret scanner
-/// over it — the same patterns the hosted registry hard-blocks at publish.
+/// over it.
 fn scan_package_content(
     registry: &crate::core::context_package::LocalRegistry,
     name: &str,
@@ -498,7 +561,7 @@ pub(super) fn cmd_pack_export(args: &[String]) {
         }
     };
 
-    // Pre-flight secret scan — same patterns the hosted registry enforces.
+    // Pre-flight secret scan.
     let findings = scan_package_content(&registry, &name, &version);
     if !findings.is_empty() {
         eprintln!(
@@ -512,9 +575,7 @@ pub(super) fn cmd_pack_export(args: &[String]) {
                 "  Remove the secrets (e.g. `lean-ctx knowledge remove --category <cat> --key <key>`),"
             );
             eprintln!("  rotate them if they were live, then re-create and export.");
-            eprintln!(
-                "  `--allow-secrets` forces a local-only export — ctxpkg.com rejects it at publish anyway."
-            );
+            eprintln!("  `--allow-secrets` forces a local-only export.");
             return;
         }
         eprintln!("WARNING: continuing because of --allow-secrets — do NOT publish this artifact.");
@@ -599,10 +660,13 @@ pub(super) fn cmd_pack_verify(args: &[String]) {
                 println!("  structure      {}", label(report.structure));
                 println!("  content hash   {}", label(report.content_hash));
                 println!("  package hash   {}", label(report.package_hash));
-                let sig = if report.signature == CheckOutcome::Skipped {
-                    "skipped (unsigned)"
-                } else {
-                    label(report.signature)
+                use crate::core::context_package::signing::SignatureCoverage;
+                let sig = match (report.signature, report.signature_coverage) {
+                    (CheckOutcome::Skipped, _) => "skipped (unsigned)",
+                    (CheckOutcome::Pass, Some(SignatureCoverage::IdentityOnly)) => {
+                        "pass (v1: covers name, version and package hash only; re-sign to cover the manifest)"
+                    }
+                    (outcome, _) => label(outcome),
                 };
                 println!("  signature      {sig}");
                 for err in &report.errors {
@@ -621,62 +685,5 @@ pub(super) fn cmd_pack_verify(args: &[String]) {
     }
     if !all_valid {
         std::process::exit(1);
-    }
-}
-
-pub(super) fn cmd_pack_publish(args: &[String]) {
-    use crate::core::context_package::remote;
-
-    let file = args.iter().find(|a| a.ends_with(".ctxpkg"));
-    let Some(file) = file else {
-        eprintln!(
-            "Usage: lean-ctx pack publish <file.ctxpkg> [--registry <url>] [--token <ctxp_…>]"
-        );
-        eprintln!();
-        eprintln!("The token comes from your ctxpkg.com account (ctxpkg.com/account) or");
-        eprintln!("the CTXPKG_TOKEN environment variable. Packages must be signed and");
-        eprintln!("scoped (@namespace/name) — see `lean-ctx pack export --sign`.");
-        return;
-    };
-
-    let path = std::path::Path::new(file);
-    let bytes = match std::fs::read(path) {
-        Ok(b) => b,
-        Err(e) => {
-            eprintln!("ERROR: read {file}: {e}");
-            return;
-        }
-    };
-
-    // Fail locally before any network call: parse, verify signature, check scope.
-    let (ns, name, version) = match remote::preflight_bundle(&bytes) {
-        Ok(t) => t,
-        Err(e) => {
-            eprintln!("ERROR: {e}");
-            return;
-        }
-    };
-
-    let base = remote::registry_base(parse_flag(args, "--registry").as_deref());
-    let Some(token) = remote::publish_token(parse_flag(args, "--token").as_deref()) else {
-        eprintln!("ERROR: no publish token — pass --token or set CTXPKG_TOKEN");
-        eprintln!("Mint one at ctxpkg.com/account (sign in, then Tokens → Mint).");
-        return;
-    };
-    if token.starts_with("ctxr_") {
-        eprintln!(
-            "ERROR: this is a read-only install token (ctxr_) — publishing needs a ctxp_ token"
-        );
-        return;
-    }
-
-    println!("Publishing @{ns}/{name}@{version} to {base} …");
-    match remote::publish(&base, &token, &ns, &name, &version, &bytes) {
-        Ok(receipt) => {
-            println!("Published: {}", receipt.published);
-            println!("Artifact SHA-256: {}", receipt.artifact_sha256);
-            println!("Install with: lean-ctx pack install {ns}/{name}");
-        }
-        Err(e) => eprintln!("ERROR: {e}"),
     }
 }

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "The presence key can only be cleared here; bind a new one with lean-ctx hive connect --bind-presence-key.",
+    "reason": "presence_key_locked"
+  }
+}

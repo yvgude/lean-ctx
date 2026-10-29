@@ -1,8 +1,11 @@
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::fs::{self, OpenOptions};
-use std::io::{BufRead, Write};
+use std::io::{BufRead, Read, Write};
 use std::path::{Path, PathBuf};
+
+mod checkpoint;
+mod segments;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct AuditEntry {
@@ -183,6 +186,14 @@ fn trail_path() -> Option<PathBuf> {
 /// one at that point, so the old fallback silently forked the chain and still
 /// returned `Ok` to a caller (attestation drift) that commits state on it.
 fn read_last_hash_tail(file: &fs::File) -> Result<String, String> {
+    Ok(read_tail_entry(file)?
+        .and_then(|entry| entry.get("entry_hash")?.as_str().map(str::to_string))
+        .unwrap_or_else(|| "genesis".to_string()))
+}
+
+/// The last entry of `file` as raw JSON; `None` for an empty file. A
+/// non-empty file without a readable entry in its tail is an error.
+fn read_tail_entry(file: &fs::File) -> Result<Option<serde_json::Value>, String> {
     use std::io::{Read, Seek, SeekFrom};
     const TAIL: i64 = 64 * 1024;
 
@@ -191,7 +202,7 @@ fn read_last_hash_tail(file: &fs::File) -> Result<String, String> {
         .seek(SeekFrom::End(0))
         .map_err(|e| format!("audit tail seek: {e}"))?;
     if len == 0 {
-        return Ok("genesis".to_string());
+        return Ok(None);
     }
     let start = if (len as i64) > TAIL {
         -TAIL
@@ -209,15 +220,15 @@ fn read_last_hash_tail(file: &fs::File) -> Result<String, String> {
         if line.trim().is_empty() {
             continue;
         }
-        let mut last: Option<String> = None;
+        let mut last: Option<serde_json::Value> = None;
         for parsed in serde_json::Deserializer::from_str(line).into_iter::<serde_json::Value>() {
             let v = parsed.map_err(|e| format!("audit tail parse: {e}"))?;
-            if let Some(h) = v.get("entry_hash").and_then(|h| h.as_str()) {
-                last = Some(h.to_string());
+            if v.get("entry_hash").and_then(|h| h.as_str()).is_some() {
+                last = Some(v);
             }
         }
-        if let Some(h) = last {
-            return Ok(h);
+        if last.is_some() {
+            return Ok(last);
         }
     }
     // Non-empty file with no parseable entry_hash in the tail window: the
@@ -260,6 +271,32 @@ fn lock_trail(file: &fs::File) -> Result<(), String> {
 /// the verifier a consistent snapshot on every platform.
 fn lock_trail_shared(file: &fs::File) -> Result<(), String> {
     lock_trail_with(file, fs2::FileExt::try_lock_shared)
+}
+
+/// End a reader's shared lock once it has taken the trail's length. Appends
+/// hold the exclusive lock and only ever extend the file (a failed append
+/// truncates back to its own start), so `file[..len]` stays exactly as it was
+/// and the reader goes on without the lock: a pass over a large trail no
+/// longer makes every append in every process time out behind it. Windows
+/// locks are mandatory, so a reader there keeps its lock to the end.
+///
+/// This rests on the trail being append-only in place. Anything that
+/// rewrites, repairs or rotates `trail.jsonl` must write a new file and
+/// rename it over the old one (an open reader keeps its own inode), never
+/// truncate or edit it in place; a verifier that finds its file shorter
+/// than the length it took reports the trail unavailable
+/// ([`still_holds_prefix`]).
+fn release_read_lock(file: &fs::File) {
+    #[cfg(not(windows))]
+    let _ = fs2::FileExt::unlock(file);
+    #[cfg(windows)]
+    let _ = file;
+}
+
+/// Whether `file` still holds the `len` bytes a reader took (see
+/// [`release_read_lock`]): false only if something truncated it in place.
+fn still_holds_prefix(file: &fs::File, len: u64) -> bool {
+    file.metadata().is_ok_and(|meta| meta.len() >= len)
 }
 
 fn lock_trail_with(
@@ -309,174 +346,180 @@ pub fn record_at(path: &Path, data: AuditEntryData) {
 }
 
 fn try_record_at(path: &Path, data: AuditEntryData) -> Result<AuditEntry, String> {
-    try_record_at_capped(path, data, MAX_SEGMENT_BYTES)
+    try_record_at_time(path, data, chrono::Utc::now())
 }
 
-fn try_record_at_capped(
+/// [`try_record_at`] with the clock that decides whether a day has passed.
+fn try_record_at_time(
     path: &Path,
     data: AuditEntryData,
-    max_segment_bytes: u64,
+    now: chrono::DateTime<chrono::Utc>,
 ) -> Result<AuditEntry, String> {
-    use fs2::FileExt;
-
-    // Not `append`: on Windows an append-only handle lacks the write access
-    // `set_len` needs, so rotation could never truncate the active segment.
-    // `append_locked` seeks to the end under the exclusive lock instead.
-    let mut file = OpenOptions::new()
-        .create(true)
-        .write(true)
-        .truncate(false)
-        .read(true)
-        .open(path)
-        .map_err(|e| format!("audit trail open: {e}"))?;
-    // Advisory lock serializes appends ACROSS processes; prev_hash is read
-    // from the file under the same lock, so the chain cannot fork.
-    lock_trail(&file)?;
-    // A failed rotation must never lose evidence: the entry is still appended
-    // to the (then oversized) active segment.
-    if let Err(error) = rotate_locked(&mut file, path, max_segment_bytes) {
-        tracing::warn!("audit trail rotation failed: {error}");
-    }
-    let appended = append_locked(&mut file, path, data);
-    let _ = FileExt::unlock(&file);
-    appended
-}
-
-/// Size at which the active segment is rotated (GHSA-jhf9-3pv4-m469).
-///
-/// The active `trail.jsonl` stays bounded (readers such as the compliance
-/// report and evidence bundle load it whole); full segments are archived as
-/// `trail.NNNNNN.jsonl` and the hash chain continues across them, so
-/// [`verify_chain_at`] still verifies the complete history. Archived
-/// segments are never deleted automatically: deleting one breaks chain
-/// verification by design, so retention is an explicit operator action.
-const MAX_SEGMENT_BYTES: u64 = 32 * 1024 * 1024;
-
-/// Archived segments of the trail at `path`, oldest first.
-fn archive_segments(path: &Path) -> Vec<(u64, PathBuf)> {
-    let (Some(dir), Some(stem)) = (path.parent(), path.file_stem().and_then(|s| s.to_str())) else {
-        return Vec::new();
-    };
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("jsonl");
-    let (prefix, suffix) = (format!("{stem}."), format!(".{ext}"));
-    let mut segments: Vec<(u64, PathBuf)> = fs::read_dir(dir)
-        .into_iter()
-        .flatten()
-        .flatten()
-        .filter_map(|entry| {
-            let name = entry.file_name();
-            let seq = name
-                .to_str()?
-                .strip_prefix(&prefix)?
-                .strip_suffix(&suffix)?
-                .to_string();
-            (seq.len() >= 6 && seq.bytes().all(|b| b.is_ascii_digit()))
-                .then(|| seq.parse().ok())
-                .flatten()
-                .map(|n| (n, entry.path()))
-        })
-        .collect();
-    segments.sort();
-    segments
-}
-
-fn archive_path(path: &Path, seq: u64) -> PathBuf {
-    let stem = path.file_stem().and_then(|s| s.to_str()).unwrap_or("trail");
-    let ext = path.extension().and_then(|e| e.to_str()).unwrap_or("jsonl");
-    path.with_file_name(format!("{stem}.{seq:06}.{ext}"))
-}
-
-/// Chain head carried into an empty active segment: the newest archive's
-/// last hash, or `genesis` when nothing was ever rotated.
-fn segment_start_hash(path: &Path) -> Result<String, String> {
-    match archive_segments(path).last() {
-        Some((_, newest)) => {
-            let file = fs::File::open(newest).map_err(|e| format!("audit archive open: {e}"))?;
-            read_last_hash_tail(&file)
+    // At most one seal per append: after it the next file is fresh.
+    let mut data = data;
+    for _ in 0..SNAPSHOT_ATTEMPTS {
+        let mut file = open_active_locked(path)?;
+        let appended = append_or_seal(path, &mut file, data, now);
+        let _ = fs2::FileExt::unlock(&file);
+        match appended? {
+            Appended::Done(entry) => return Ok(entry),
+            Appended::Moved(back) => data = back,
         }
-        None => Ok("genesis".to_string()),
     }
+    Err("audit trail: the active file kept moving".to_string())
 }
 
-/// Archive the active segment once it reaches `max_segment_bytes`. Caller
-/// holds the exclusive lock. The copy goes through the locked handle (Windows
-/// locks are mandatory) into a temp file that is renamed into place before
-/// the active segment is truncated, so a crash never loses entries.
-fn rotate_locked(file: &mut fs::File, path: &Path, max_segment_bytes: u64) -> Result<(), String> {
-    use std::io::{Seek, SeekFrom};
+/// What [`append_or_seal`] did with the entry.
+enum Appended {
+    Done(AuditEntry),
+    /// The file was sealed and moved: append the entry to the new one.
+    Moved(AuditEntryData),
+}
 
-    let len = file
-        .seek(SeekFrom::End(0))
-        .map_err(|e| format!("audit seek: {e}"))?;
-    if len < max_segment_bytes {
-        return Ok(());
+/// Open the active trail and take the exclusive lock. Advisory lock
+/// serializes appends ACROSS processes; prev_hash is read from the file
+/// under the same lock, so the chain cannot fork. A writer that waited on a
+/// file another writer sealed and renamed meanwhile opens the new one.
+fn open_active_locked(path: &Path) -> Result<fs::File, String> {
+    for _ in 0..SNAPSHOT_ATTEMPTS {
+        let file = OpenOptions::new()
+            .create(true)
+            .append(true)
+            .read(true)
+            .open(path)
+            .map_err(|e| format!("audit trail open: {e}"))?;
+        lock_trail(&file)?;
+        if is_current(path, &file) {
+            return Ok(file);
+        }
+        let _ = fs2::FileExt::unlock(&file);
     }
-    let archives = archive_segments(path);
-    // Crash recovery: archived but not yet truncated — the active segment is
-    // a duplicate of the newest archive and would fork the chain.
-    if let Some((_, newest)) = archives.last()
-        && let Ok(newest_file) = fs::File::open(newest)
-        && read_last_hash_tail(&newest_file).ok() == read_last_hash_tail(file).ok()
+    Err("audit trail: the active file kept moving".to_string())
+}
+
+/// Whether `file` is still the file at `path`.
+fn is_current(path: &Path, file: &fs::File) -> bool {
+    #[cfg(unix)]
     {
-        // The archive's directory entry may itself not be durable yet (the
-        // crash may have hit before its fsync); persist it before truncating.
-        sync_trail_dir(path)?;
-        return truncate_active(file);
+        use std::os::unix::fs::MetadataExt;
+        match (fs::metadata(path), file.metadata()) {
+            (Ok(named), Ok(open)) => (named.dev(), named.ino()) == (open.dev(), open.ino()),
+            _ => false,
+        }
     }
-    let target = archive_path(path, archives.last().map_or(1, |(seq, _)| seq + 1));
-    let tmp = target.with_extension("rotating");
-    let copied = (|| -> std::io::Result<()> {
-        let mut out = fs::File::create(&tmp)?;
-        file.seek(SeekFrom::Start(0))?;
-        std::io::copy(file, &mut out)?;
-        out.sync_all()?;
-        fs::rename(&tmp, &target)
-    })();
-    if let Err(error) = copied {
-        let _ = fs::remove_file(&tmp);
-        return Err(format!("audit archive write: {error}"));
+    // lean-ctx: std has no stable file id on Windows; a renamed file is
+    // caught there by its tail (a seal) on the next append instead.
+    #[cfg(not(unix))]
+    {
+        let _ = (path, file);
+        true
     }
-    // The rename must be durable before the truncate: otherwise a power loss
-    // could persist the (in-place) truncate but lose the directory entry of
-    // the archive, i.e. lose the whole segment. On failure the active segment
-    // stays untouched and the next append retries via the recovery branch.
-    sync_trail_dir(path)?;
-    truncate_active(file)
 }
 
-/// `fsync` the directory holding the trail so a preceding rename into it is
-/// durable (GHSA-jhf9-3pv4-m469).
-fn sync_trail_dir(path: &Path) -> Result<(), String> {
-    let dir = path
-        .parent()
-        .filter(|dir| !dir.as_os_str().is_empty())
-        .unwrap_or(Path::new("."));
-    super::atomic_fs::sync_directory(dir).map_err(|e| format!("audit archive dir sync: {e}"))
+/// Append `data` to the locked active trail, sealing it first when it is
+/// due.
+fn append_or_seal(
+    path: &Path,
+    file: &mut fs::File,
+    data: AuditEntryData,
+    now: chrono::DateTime<chrono::Utc>,
+) -> Result<Appended, String> {
+    let Some(last) = read_tail_entry(file)? else {
+        // A fresh active file continues the chain of the newest segment.
+        let prev_hash = match segments::sealed(path).last() {
+            Some((_, segment)) => fs::File::open(segment)
+                .map_err(|e| format!("audit segment open: {e}"))
+                .and_then(|segment| read_last_hash_tail(&segment))?,
+            None => "genesis".to_string(),
+        };
+        return append_locked(file, data, prev_hash).map(Appended::Done);
+    };
+    let last_hash = last
+        .get("entry_hash")
+        .and_then(serde_json::Value::as_str)
+        .unwrap_or_default()
+        .to_string();
+    let next_seq = segments::sealed(path).last().map_or(0, |(seq, _)| seq + 1);
+    let sealed_seq = if last.get("event_type").and_then(serde_json::Value::as_str)
+        == Some(segments::SEAL_EVENT)
+    {
+        segments::sealed_seq(last.get("action").and_then(serde_json::Value::as_str))
+    } else {
+        None
+    };
+    let len = file
+        .metadata()
+        .map_err(|e| format!("audit stat: {e}"))?
+        .len();
+    let last_at = last.get("timestamp").and_then(serde_json::Value::as_str);
+    let seq = match sealed_seq {
+        // Sealed before, but the rename did not happen.
+        Some(seq) if seq == next_seq => seq,
+        // Already moved to its segment (a handle that outlived the rename).
+        Some(seq) if seq < next_seq => return Ok(Appended::Moved(data)),
+        _ if segments::due(len, last_at, now)
+            && !segments::backing_off()
+            && verified_once(path, file) =>
+        {
+            append_locked(file, seal_data(next_seq), last_hash.clone())?;
+            next_seq
+        }
+        _ => return append_locked(file, data, last_hash).map(Appended::Done),
+    };
+    match segments::retire(path, seq) {
+        Ok(()) => Ok(Appended::Moved(data)),
+        Err(error) => {
+            // The seal stays in the active file and the chain runs on; this
+            // process tries again after a back-off.
+            tracing::warn!("audit trail not sealed: {error}");
+            segments::back_off();
+            let prev_hash = read_last_hash_tail(file)?;
+            append_locked(file, data, prev_hash).map(Appended::Done)
+        }
+    }
 }
 
-fn truncate_active(file: &fs::File) -> Result<(), String> {
-    file.set_len(0)
-        .and_then(|()| file.sync_data())
-        .map_err(|e| format!("audit truncate after rotation: {e}"))
+/// Never seal a trail this build has not verified: only a trail with a
+/// valid checkpoint (from a successful pass) is sealed. Trails outside the
+/// data dir have no checkpoint and are never sealed.
+fn verified_once(path: &Path, file: &fs::File) -> bool {
+    let Some(store) = checkpoint::Store::for_trail(path) else {
+        return false;
+    };
+    checkpoint::FileStamp::of(file).is_some_and(|stamp| store.holds_prefix_of(file, &stamp))
 }
 
-/// Build and append one entry. Caller holds the exclusive lock.
+fn seal_data(seq: u64) -> AuditEntryData {
+    AuditEntryData {
+        agent_id: "lean-ctx".to_string(),
+        tool: "audit_trail".to_string(),
+        action: Some(segments::seal_action(seq)),
+        input_hash: String::new(),
+        output_tokens: 0,
+        role: "system".to_string(),
+        event_type: AuditEventType::Unknown(segments::SEAL_EVENT.to_string()),
+    }
+}
+
+/// Whether an entry is the seal that closes a trail segment: chain
+/// bookkeeping, not an agent action.
+pub fn is_seal(event_type: &AuditEventType) -> bool {
+    matches!(event_type, AuditEventType::Unknown(label) if label == segments::SEAL_EVENT)
+}
+
+/// Build and append one entry after `prev_hash`. Caller holds the
+/// exclusive lock.
 fn append_locked(
     file: &mut fs::File,
-    path: &Path,
     data: AuditEntryData,
+    prev_hash: String,
 ) -> Result<AuditEntry, String> {
     use std::io::{Seek, SeekFrom};
 
-    let mut prev_hash = read_last_hash_tail(file)?;
-    if prev_hash == "genesis" {
-        // Empty active segment: continue the chain from the newest archive.
-        prev_hash = segment_start_hash(path)?;
-    }
     let authenticated_drift = matches!(
         &data.event_type,
         AuditEventType::AgentDriftDetected | AuditEventType::AgentDriftAcknowledged
-    );
+    ) || is_seal(&data.event_type);
 
     let partial = serde_json::json!({
         "agent_id": data.agent_id,
@@ -537,89 +580,182 @@ pub fn default_trail_path() -> Option<PathBuf> {
     trail_path()
 }
 
+/// The last `limit` entries of the default trail.
 pub fn load_recent(limit: usize) -> Vec<AuditEntry> {
-    let Some(path) = trail_path().filter(|_| limit > 0) else {
+    let Some(path) = trail_path() else {
         return Vec::new();
     };
-    // Bounded memory: only the newest `limit` entries are retained while the
-    // whole history (archives + active segment) streams past.
-    let mut recent = std::collections::VecDeque::new();
-    for_each_entry_at(&path, |entry| {
-        if recent.len() == limit {
-            recent.pop_front();
-        }
-        recent.push_back(entry);
-    });
-    recent.into_iter().collect()
+    load_recent_at(&path, limit)
 }
 
-/// Every parseable entry of the trail at `path`, across all rotated
-/// segments. Holds the whole history in memory; prefer
-/// [`for_each_entry_at`] for aggregation.
-pub fn load_all_at(path: &Path) -> Vec<AuditEntry> {
-    let mut entries = Vec::new();
-    for_each_entry_at(path, |entry| entries.push(entry));
+/// Bytes read per step when [`load_recent_at`] walks back from the end.
+const TAIL_BLOCK: u64 = 256 * 1024;
+
+/// The last `limit` entries of the trail at `path`, read back from its end
+/// in blocks until enough whole lines are in, never the whole trail; a
+/// short active trail is topped up from the newest sealed segments.
+pub fn load_recent_at(path: &Path, limit: usize) -> Vec<AuditEntry> {
+    let mut entries: Vec<AuditEntry> = Vec::new();
+    for file in segments::chain(path).iter().rev() {
+        if entries.len() >= limit {
+            break;
+        }
+        let mut older = load_recent_in(file, limit - entries.len());
+        older.append(&mut entries);
+        entries = older;
+    }
     entries
 }
 
-/// Stream every parseable entry of the trail at `path` in chain order:
-/// archived segments oldest first, then the active segment
-/// (GHSA-jhf9-3pv4-m469 — a rotated trail must not silently report only the
-/// active segment). Best effort like the historic listing: the first I/O
-/// error ends the listing early.
-pub fn for_each_entry_at(path: &Path, mut visit: impl FnMut(AuditEntry)) {
-    let streamed = for_each_line_at(path, |_, _, line| {
-        serde_json::Deserializer::from_str(line)
-            .into_iter::<AuditEntry>()
-            .map_while(Result::ok)
-            .for_each(&mut visit);
-        Ok(())
-    });
-    if let Err(error) = streamed {
-        tracing::debug!("audit listing ended early: {error}");
+fn load_recent_in(path: &Path, limit: usize) -> Vec<AuditEntry> {
+    use std::io::{Seek, SeekFrom};
+
+    if limit == 0 {
+        return Vec::new();
     }
+    let Some((file, len)) = open_for_listing(path) else {
+        return Vec::new();
+    };
+    let mut start = len;
+    let mut blocks: Vec<Vec<u8>> = Vec::new();
+    let mut newlines = 0usize;
+    while start > 0 && newlines <= limit {
+        let from = start.saturating_sub(TAIL_BLOCK);
+        let mut block = Vec::new();
+        let read = (&file)
+            .seek(SeekFrom::Start(from))
+            .and_then(|_| (&file).take(start - from).read_to_end(&mut block));
+        if read.is_err() {
+            break;
+        }
+        newlines += bytecount::count(&block, b'\n');
+        blocks.push(block);
+        start = from;
+    }
+    let mut tail: Vec<u8> = blocks.into_iter().rev().flatten().collect();
+    // Unless the walk reached the start, the first line may be cut.
+    if start > 0 {
+        let cut = tail
+            .iter()
+            .position(|&byte| byte == b'\n')
+            .map_or(tail.len(), |at| at + 1);
+        tail.drain(..cut);
+    }
+    let entries = parse_entries(std::io::BufReader::new(tail.as_slice()));
+    let skip = entries.len().saturating_sub(limit);
+    entries.into_iter().skip(skip).collect()
 }
 
-/// Stream every raw line of the trail at `path` in chain order: archived
-/// segments oldest first, then the active segment. `visit` receives the
-/// segment file, the 1-based line number within it and the line; only one
-/// line is held in memory at a time. Returns `Ok(false)` when no trail
-/// exists. The active segment's shared lock is held for the whole walk, so
-/// a concurrent rotation (which needs the exclusive lock) cannot move
-/// entries between segments mid-read.
-pub fn for_each_line_at(
-    path: &Path,
-    mut visit: impl FnMut(&Path, usize, &str) -> Result<(), String>,
-) -> Result<bool, String> {
-    let active = match fs::File::open(path) {
-        Ok(file) => file,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok(false),
-        Err(e) => return Err(format!("read {}: {e}", path.display())),
-    };
+/// Every parseable entry of the trail at `path`, its sealed segments first.
+pub fn load_all_at(path: &Path) -> Vec<AuditEntry> {
+    let mut entries = Vec::new();
+    for file in segments::chain(path) {
+        if let Some((file, len)) = open_for_listing(&file) {
+            entries.extend(parse_entries(std::io::BufReader::new(file.take(len))));
+        }
+    }
+    entries
+}
+
+/// The files of the trail at `trail` in chain order: its sealed segments,
+/// oldest first, then the active trail if it exists. With `since`, a sealed
+/// segment whose last entry (its seal) is older than `since` is left out;
+/// that takes one tail read per segment. Lines keep the trail's format and
+/// run in time order across the files.
+pub fn trail_files_since(
+    trail: &Path,
+    since: Option<chrono::DateTime<chrono::Utc>>,
+) -> Vec<PathBuf> {
+    let mut files: Vec<PathBuf> = segments::sealed(trail)
+        .into_iter()
+        .map(|(_, path)| path)
+        .filter(|path| {
+            since.is_none_or(|since| {
+                fs::File::open(path)
+                    .ok()
+                    .and_then(|file| read_tail_entry(&file).ok().flatten())
+                    .and_then(|last| entry_time(&last))
+                    .is_none_or(|sealed_at| sealed_at >= since)
+            })
+        })
+        .collect();
+    if trail.exists() {
+        files.push(trail.to_path_buf());
+    }
+    files
+}
+
+/// The text of [`trail_files_since`] joined in order; `None` when the trail
+/// has no file at all. A seal that lands while the files are read moves the
+/// active trail away, so the read is repeated until the segment list held
+/// still across it.
+pub fn read_trail_since(
+    trail: &Path,
+    since: Option<chrono::DateTime<chrono::Utc>>,
+) -> std::io::Result<Option<String>> {
+    for _ in 0..SNAPSHOT_ATTEMPTS {
+        let before = segments::sealed(trail);
+        let files = trail_files_since(trail, since);
+        if files.is_empty() {
+            return Ok(None);
+        }
+        let mut text = String::new();
+        for file in files {
+            match fs::read_to_string(&file) {
+                Ok(part) => {
+                    text.push_str(&part);
+                    if !text.is_empty() && !text.ends_with('\n') {
+                        text.push('\n');
+                    }
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(error),
+            }
+        }
+        if segments::sealed(trail) == before {
+            return Ok(Some(text));
+        }
+    }
+    Err(std::io::Error::other(
+        "the audit trail kept being sealed while it was read",
+    ))
+}
+
+/// How often a reader retries when a seal moved the active trail under it.
+const SNAPSHOT_ATTEMPTS: usize = 3;
+
+fn entry_time(entry: &serde_json::Value) -> Option<chrono::DateTime<chrono::Utc>> {
+    let stamp = entry.get("timestamp")?.as_str()?;
+    Some(chrono::DateTime::parse_from_rfc3339(stamp).ok()?.to_utc())
+}
+
+/// Open the trail at `path` for a listing, with its length taken under the
+/// shared lock (see [`release_read_lock`]).
+fn open_for_listing(path: &Path) -> Option<(fs::File, u64)> {
+    let file = fs::File::open(path).ok()?;
     // Best effort: without the shared lock a Windows read can stop at an
     // in-progress append (see `lock_trail_shared`); the listing then ends early.
-    if let Err(error) = lock_trail_shared(&active) {
+    let locked = lock_trail_shared(&file);
+    if let Err(error) = &locked {
         tracing::debug!("audit listing reads unlocked and may end early: {error}");
     }
-    for (_, archive) in archive_segments(path) {
-        let segment =
-            fs::File::open(&archive).map_err(|e| format!("read {}: {e}", archive.display()))?;
-        visit_segment_lines(&archive, std::io::BufReader::new(segment), &mut visit)?;
+    let len = file.metadata().ok()?.len();
+    if locked.is_ok() {
+        release_read_lock(&file);
     }
-    visit_segment_lines(path, std::io::BufReader::new(active), &mut visit)?;
-    Ok(true)
+    Some((file, len))
 }
 
-fn visit_segment_lines(
-    segment: &Path,
-    reader: impl BufRead,
-    visit: &mut impl FnMut(&Path, usize, &str) -> Result<(), String>,
-) -> Result<(), String> {
-    for (index, line) in reader.lines().enumerate() {
-        let line = line.map_err(|e| format!("read {}: {e}", segment.display()))?;
-        visit(segment, index + 1, &line)?;
+fn parse_entries(reader: impl BufRead) -> Vec<AuditEntry> {
+    let mut entries = Vec::new();
+    for line in reader.lines().map_while(Result::ok) {
+        entries.extend(
+            serde_json::Deserializer::from_str(&line)
+                .into_iter::<AuditEntry>()
+                .map_while(Result::ok),
+        );
     }
-    Ok(())
+    entries
 }
 
 /// Reconstruct the latest unacknowledged drift from the append-only trail.
@@ -709,149 +845,437 @@ fn verify_chain_with_drift_at(
     path: &Path,
     agent_id: Option<&str>,
 ) -> (ChainVerifyResult, Option<(String, String)>) {
-    let empty = ChainVerifyResult {
-        total_entries: 0,
-        valid: true,
-        first_invalid_at: None,
-        source_present: false,
-        unknown_event_types: 0,
-    };
-    let file = match fs::File::open(path) {
-        Ok(file) => file,
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => return (empty, None),
-        Err(_) => return (unavailable(), None),
-    };
-    // Contention is not corruption: a reader that cannot get the lock in time
-    // reports the trail unavailable (fail-closed), never invalid. The lock is
-    // released when `file` closes at the end of the read.
-    if lock_trail_shared(&file).is_err() {
-        return (unavailable(), None);
-    }
-    // Rotated segments are listed only while the active segment's shared lock
-    // is held: rotation archives under the exclusive lock, so the set of
-    // archives and the active segment form one consistent snapshot.
-    let mut state = VerifyState {
-        prev_hash: "genesis".to_string(),
-        total: 0,
-        unknown: 0,
-        pending: None,
-    };
-    for (_, archive) in archive_segments(path) {
-        let Ok(segment) = fs::File::open(&archive) else {
-            return (unavailable(), None);
-        };
-        if verify_segment(std::io::BufReader::new(segment), &mut state, agent_id).is_err() {
-            return (invalid_at(state.total, state.unknown), None);
-        }
-    }
-    if verify_segment(std::io::BufReader::new(file), &mut state, agent_id).is_err() {
-        return (invalid_at(state.total, state.unknown), None);
-    }
-
-    (
-        ChainVerifyResult {
-            total_entries: state.total,
-            valid: true,
-            first_invalid_at: None,
-            source_present: true,
-            unknown_event_types: state.unknown,
-        },
-        state.pending,
-    )
+    verify_chain_mode(path, agent_id, false)
 }
 
-/// Running state of a chain verification across rotated segments.
-struct VerifyState {
+/// Chain state after a verified prefix: everything a verifier needs to
+/// continue with the next entry exactly as a full pass would.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub(super) struct ChainState {
     prev_hash: String,
     total: usize,
     unknown: usize,
-    pending: Option<(String, String)>,
+    /// Latest unacknowledged drift per agent id, with the same transition
+    /// rule a single-agent pass applies (an agent's state depends only on
+    /// its own entries, so tracking all agents is exactly equivalent).
+    pending: std::collections::BTreeMap<String, (String, String)>,
+    /// Signed-tally security evidence of the verified entries.
+    tally: SignedTallyEvidence,
+    /// Security evidence of every kind (the lifetime value proof), so the
+    /// proof needs no second read of the trail.
+    security: SignedTallyEvidence,
+    /// The segment the last entry sealed, if it was a seal.
+    sealed: Option<u64>,
 }
 
-/// Verify one segment, continuing the chain from `state`. `Err` means the
-/// chain is invalid at `state.total`.
-fn verify_segment(
-    reader: impl BufRead,
-    state: &mut VerifyState,
-    agent_id: Option<&str>,
-) -> Result<(), ()> {
-    for line_result in reader.lines() {
-        let line = line_result.map_err(|_| ())?;
-        let mut saw_value = false;
-        for parsed in serde_json::Deserializer::from_str(&line).into_iter::<serde_json::Value>() {
-            saw_value = true;
-            let value = parsed.map_err(|_| ())?;
-            let (Some(entry_prev), Some(entry_hash)) = (
-                value.get("prev_hash").and_then(serde_json::Value::as_str),
-                value.get("entry_hash").and_then(serde_json::Value::as_str),
-            ) else {
-                return Err(());
-            };
-            let partial = hashed_fields(&value).ok_or(())?;
-            if entry_prev != state.prev_hash {
-                return Err(());
-            }
-            let data_json = serde_json::to_string(&partial).unwrap_or_default();
-            if entry_hash != compute_entry_hash(&state.prev_hash, &data_json) {
-                return Err(());
-            }
-            let entry_hash = entry_hash.to_string();
-            let entry = serde_json::from_value::<AuditEntry>(value).map_err(|_| ())?;
-            if matches!(&entry.event_type, AuditEventType::Unknown(_)) {
-                state.unknown += 1;
-            }
-            if matches!(
-                &entry.event_type,
-                AuditEventType::AgentDriftDetected | AuditEventType::AgentDriftAcknowledged
-            ) {
-                let signature = entry.signature.as_deref().ok_or(())?;
-                let signature =
-                    crate::core::agent_identity::hex_decode(signature).map_err(|_| ())?;
-                let public_key =
-                    crate::core::agent_identity::load_public_key("lean-ctx").map_err(|_| ())?;
-                if !crate::core::agent_identity::verify_signature(
-                    public_key.as_bytes(),
-                    entry.entry_hash.as_bytes(),
-                    &signature,
-                ) {
-                    return Err(());
-                }
-            }
-            if agent_id == Some(entry.agent_id.as_str()) {
-                match entry.event_type {
-                    AuditEventType::AgentDriftDetected => {
-                        if let Some(evidence) = entry.action {
-                            state.pending = Some((
-                                entry.timestamp,
-                                format!("{evidence} observation={}", entry.entry_hash),
-                            ));
-                        }
-                    }
-                    AuditEventType::AgentDriftAcknowledged
-                        if state.pending.as_ref().is_some_and(|(_, evidence)| {
-                            entry.action.as_ref() == Some(evidence)
-                        }) =>
-                    {
-                        state.pending = None;
-                    }
-                    _ => {}
-                }
-            }
-            state.prev_hash = entry_hash;
-            state.total += 1;
-        }
-        if !saw_value {
-            return Err(());
+impl ChainState {
+    fn genesis() -> Self {
+        Self {
+            prev_hash: "genesis".to_string(),
+            total: 0,
+            unknown: 0,
+            pending: std::collections::BTreeMap::new(),
+            tally: SignedTallyEvidence::default(),
+            security: SignedTallyEvidence::default(),
+            sealed: None,
         }
     }
-    Ok(())
+
+    fn invalid(&self) -> (ChainVerifyResult, Option<(String, String)>) {
+        (invalid_at(self.total, self.unknown), None)
+    }
+
+    fn valid(&self, agent_id: Option<&str>) -> (ChainVerifyResult, Option<(String, String)>) {
+        (
+            ChainVerifyResult {
+                total_entries: self.total,
+                valid: true,
+                first_invalid_at: None,
+                source_present: true,
+                unknown_event_types: self.unknown,
+            },
+            agent_id.and_then(|id| self.pending.get(id).cloned()),
+        )
+    }
+
+    /// Verify one parsed entry and advance. `Err` leaves `total`/`unknown`
+    /// at the values a report of the failure must carry.
+    fn advance(&mut self, value: serde_json::Value) -> Result<(), ()> {
+        let (Some(entry_prev), Some(entry_hash)) = (
+            value.get("prev_hash").and_then(serde_json::Value::as_str),
+            value.get("entry_hash").and_then(serde_json::Value::as_str),
+        ) else {
+            return Err(());
+        };
+        let partial = hashed_fields(&value).ok_or(())?;
+        if entry_prev != self.prev_hash {
+            return Err(());
+        }
+        let data_json = serde_json::to_string(&partial).unwrap_or_default();
+        if entry_hash != compute_entry_hash(&self.prev_hash, &data_json) {
+            return Err(());
+        }
+        let entry_hash = entry_hash.to_string();
+        let entry = serde_json::from_value::<AuditEntry>(value).map_err(|_| ())?;
+        let seal = is_seal(&entry.event_type);
+        if matches!(&entry.event_type, AuditEventType::Unknown(_)) && !seal {
+            self.unknown += 1;
+        }
+        self.sealed = if seal {
+            Some(segments::sealed_seq(entry.action.as_deref()).ok_or(())?)
+        } else {
+            None
+        };
+        if seal
+            || matches!(
+                &entry.event_type,
+                AuditEventType::AgentDriftDetected | AuditEventType::AgentDriftAcknowledged
+            )
+        {
+            let signature = entry.signature.as_deref().ok_or(())?;
+            let signature = crate::core::agent_identity::hex_decode(signature).map_err(|_| ())?;
+            let public_key =
+                crate::core::agent_identity::load_public_key("lean-ctx").map_err(|_| ())?;
+            if !crate::core::agent_identity::verify_signature(
+                public_key.as_bytes(),
+                entry.entry_hash.as_bytes(),
+                &signature,
+            ) {
+                return Err(());
+            }
+        }
+        if let Some((kind, n, _)) = entry
+            .action
+            .as_deref()
+            .and_then(crate::core::security_events::parse_action)
+        {
+            self.security.record(kind, n, &entry.entry_hash);
+            if kind.in_signed_tally() {
+                self.tally.record(kind, n, &entry.entry_hash);
+            }
+        }
+        match entry.event_type {
+            AuditEventType::AgentDriftDetected => {
+                if let Some(evidence) = entry.action {
+                    self.pending.insert(
+                        entry.agent_id,
+                        (
+                            entry.timestamp,
+                            format!("{evidence} observation={}", entry.entry_hash),
+                        ),
+                    );
+                }
+            }
+            AuditEventType::AgentDriftAcknowledged
+                if self
+                    .pending
+                    .get(&entry.agent_id)
+                    .is_some_and(|(_, evidence)| entry.action.as_ref() == Some(evidence)) =>
+            {
+                self.pending.remove(&entry.agent_id);
+            }
+            _ => {}
+        }
+        self.prev_hash = entry_hash;
+        self.total += 1;
+        Ok(())
+    }
+
+    /// Verify every line of `reader` (the same line rules as
+    /// `BufRead::lines`). Returns the bytes consumed and whether the input
+    /// ended on a line boundary (empty input counts as one).
+    fn verify_stream(&mut self, reader: &mut impl BufRead) -> Result<(u64, bool), ()> {
+        let mut consumed = 0u64;
+        let mut ends_on_newline = true;
+        let mut buf = Vec::new();
+        loop {
+            buf.clear();
+            let read = reader.read_until(b'\n', &mut buf).map_err(|_| ())?;
+            if read == 0 {
+                return Ok((consumed, ends_on_newline));
+            }
+            consumed += read as u64;
+            ends_on_newline = buf.last() == Some(&b'\n');
+            if ends_on_newline {
+                buf.pop();
+                if buf.last() == Some(&b'\r') {
+                    buf.pop();
+                }
+            }
+            let line = std::str::from_utf8(&buf).map_err(|_| ())?;
+            let mut saw_value = false;
+            for parsed in serde_json::Deserializer::from_str(line).into_iter::<serde_json::Value>()
+            {
+                saw_value = true;
+                self.advance(parsed.map_err(|_| ())?)?;
+            }
+            if !saw_value {
+                return Err(());
+            }
+        }
+    }
 }
 
+/// Verify the trail at `path`. With `force_full == false` a signed,
+/// identity-bound checkpoint of the last verified prefix (see
+/// [`checkpoint`]) lets the verifier read only the appended suffix; any
+/// doubt about the prefix falls back to a full pass. A full pass refreshes
+/// the checkpoint.
+fn verify_chain_mode(
+    path: &Path,
+    agent_id: Option<&str>,
+    force_full: bool,
+) -> (ChainVerifyResult, Option<(String, String)>) {
+    verify_chain_mode_at(path, agent_id, force_full, chrono::Utc::now().timestamp())
+}
+
+/// [`verify_chain_mode`] at an explicit wall-clock `now` (Unix seconds).
+fn verify_chain_mode_at(
+    path: &Path,
+    agent_id: Option<&str>,
+    force_full: bool,
+    now: i64,
+) -> (ChainVerifyResult, Option<(String, String)>) {
+    match verify_state_at(path, force_full, now) {
+        Verified::Missing => (
+            ChainVerifyResult {
+                total_entries: 0,
+                valid: true,
+                first_invalid_at: None,
+                source_present: false,
+                unknown_event_types: 0,
+            },
+            None,
+        ),
+        Verified::Unavailable => (unavailable(), None),
+        Verified::Invalid(state) => state.invalid(),
+        Verified::Valid(state) => state.valid(agent_id),
+    }
+}
+
+enum Verified {
+    /// No trail file: a valid empty history.
+    Missing,
+    /// Unreadable or lock contention: fail closed, but not corruption.
+    Unavailable,
+    /// Broken at `state.total`.
+    Invalid(ChainState),
+    Valid(ChainState),
+}
+
+/// Verify the trail at `path` through its sealed segments and the active
+/// file, in chain order. The segment list is read before and after the
+/// active file is opened, so a seal that lands in between is retried
+/// instead of read as a gap.
+fn verify_state_at(path: &Path, force_full: bool, now: i64) -> Verified {
+    for _ in 0..SNAPSHOT_ATTEMPTS {
+        let sealed = segments::sealed(path);
+        let active = match fs::File::open(path) {
+            Ok(file) => Some(file),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
+            Err(_) => return Verified::Unavailable,
+        };
+        if segments::sealed(path) == sealed {
+            return verify_snapshot(path, &sealed, active, force_full, now);
+        }
+    }
+    Verified::Unavailable
+}
+
+fn verify_snapshot(
+    path: &Path,
+    sealed: &[(u64, PathBuf)],
+    active: Option<fs::File>,
+    force_full: bool,
+    now: i64,
+) -> Verified {
+    if sealed.is_empty() && active.is_none() {
+        return Verified::Missing;
+    }
+    // A sealed segment is never written again, so its checkpoint is trusted
+    // past the 24 h full pass, except for one segment per day in rotation.
+    let day = usize::try_from(now.div_euclid(24 * 60 * 60)).unwrap_or(0);
+    let sample = day.checked_rem(sealed.len());
+    let mut state = ChainState::genesis();
+    for (index, (seq, segment)) in sealed.iter().enumerate() {
+        let Ok(file) = fs::File::open(segment) else {
+            return Verified::Unavailable;
+        };
+        let max_age = (Some(index) == sample).then_some(checkpoint::FULL_REVERIFY_SECS);
+        state = match verify_file(segment, &file, &state, force_full, max_age, now) {
+            // Each segment ends with the seal that names it.
+            Verified::Valid(state) if state.sealed == Some(*seq) => state,
+            Verified::Valid(state) => return Verified::Invalid(state),
+            other => return other,
+        };
+    }
+    match active {
+        Some(file) => verify_file(
+            path,
+            &file,
+            &state,
+            force_full,
+            Some(checkpoint::FULL_REVERIFY_SECS),
+            now,
+        ),
+        None => Verified::Valid(state),
+    }
+}
+
+/// Verify one file of the trail, continuing from `start`: from its
+/// checkpoint when one resumes (see [`checkpoint::Store::resume`]), else in
+/// full.
+fn verify_file(
+    path: &Path,
+    file: &fs::File,
+    start: &ChainState,
+    force_full: bool,
+    max_age: Option<i64>,
+    now: i64,
+) -> Verified {
+    use std::io::{Seek, SeekFrom};
+
+    let mut cursor = file;
+    // Contention is not corruption: a reader that cannot get the lock in time
+    // reports the trail unavailable (fail-closed), never invalid. Appends need
+    // the exclusive lock, so the stamp taken under it describes exactly the
+    // prefix `file[..len]` read below, which no append changes afterwards (see
+    // `release_read_lock`); the pass itself runs without the lock.
+    if lock_trail_shared(file).is_err() {
+        return Verified::Unavailable;
+    }
+    let store = checkpoint::Store::for_trail(path);
+    let stamp = checkpoint::FileStamp::of(file);
+    let Some(len) = stamp
+        .as_ref()
+        .map(|stamp| stamp.size)
+        .or_else(|| file.metadata().ok().map(|meta| meta.len()))
+    else {
+        return Verified::Unavailable;
+    };
+    release_read_lock(file);
+
+    if !force_full {
+        if let (Some(store), Some(stamp)) = (&store, &stamp) {
+            if let Some(resumed) = store.resume(file, stamp, start, max_age, now) {
+                let mut state = resumed.state;
+                if resumed.offset == stamp.size {
+                    return Verified::Valid(state);
+                }
+                if cursor.seek(SeekFrom::Start(resumed.offset)).is_ok() {
+                    let suffix = state.verify_stream(&mut std::io::BufReader::new(
+                        file.take(len - resumed.offset),
+                    ));
+                    if !still_holds_prefix(file, len) {
+                        return Verified::Unavailable;
+                    }
+                    if let Ok((read, clean)) = suffix {
+                        if clean && resumed.offset + read == stamp.size {
+                            store.save(file, stamp, start, &state, resumed.full_verified_at);
+                        }
+                        return Verified::Valid(state);
+                    }
+                }
+                // A broken suffix is reported by a full pass, so the index
+                // is the true first invalid entry even if the prefix changed.
+            }
+        }
+    }
+
+    if cursor.seek(SeekFrom::Start(0)).is_err() {
+        return Verified::Unavailable;
+    }
+    let mut state = start.clone();
+    let pass = state.verify_stream(&mut std::io::BufReader::new(file.take(len)));
+    // Cut in place while it was read: what the pass saw is no verdict.
+    if !still_holds_prefix(file, len) {
+        return Verified::Unavailable;
+    }
+    let Ok((read, clean)) = pass else {
+        if let Some(store) = &store {
+            store.discard();
+        }
+        return Verified::Invalid(state);
+    };
+    if let (Some(store), Some(stamp)) = (&store, &stamp) {
+        if clean && read == stamp.size {
+            store.save(file, stamp, start, &state, now);
+        }
+    }
+    Verified::Valid(state)
+}
+
+/// Security evidence a signed savings-batch tally rests on, aggregated while
+/// the chain is verified: the counts of the kinds the tally carries and the
+/// entry hashes of the entries they come from.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct SignedTallyEvidence {
+    pub counts: crate::core::security_events::SecurityCounts,
+    pub entries: u64,
+    pub first_hash: Option<String>,
+    pub last_hash: Option<String>,
+}
+
+impl SignedTallyEvidence {
+    fn record(&mut self, kind: crate::core::security_events::SecurityKind, n: u64, hash: &str) {
+        self.counts.add(kind, n);
+        self.entries += 1;
+        self.first_hash.get_or_insert_with(|| hash.to_string());
+        self.last_hash = Some(hash.to_string());
+    }
+}
+
+/// The signed-tally evidence of the trail at `path`, from the same
+/// (incremental) pass that verifies the chain. `None` when the trail fails
+/// verification or is unavailable; a missing trail is an empty tally.
+pub fn verified_signed_tally_at(path: &Path) -> Option<SignedTallyEvidence> {
+    match verify_state_at(path, false, chrono::Utc::now().timestamp()) {
+        Verified::Missing => Some(SignedTallyEvidence::default()),
+        Verified::Valid(state) => Some(state.tally),
+        Verified::Unavailable | Verified::Invalid(_) => None,
+    }
+}
+
+/// The chain check of the trail at `path` and the security evidence of
+/// every kind it holds, from one (incremental) verification: what the
+/// lifetime value proof shows, without reading the trail a second time.
+/// The evidence is `None` unless the chain verifies; a missing trail is an
+/// empty, intact chain.
+pub fn verified_security_at(path: &Path) -> (ChainVerifyResult, Option<SignedTallyEvidence>) {
+    match verify_state_at(path, false, chrono::Utc::now().timestamp()) {
+        Verified::Missing => (
+            ChainVerifyResult {
+                total_entries: 0,
+                valid: true,
+                first_invalid_at: None,
+                source_present: false,
+                unknown_event_types: 0,
+            },
+            Some(SignedTallyEvidence::default()),
+        ),
+        Verified::Unavailable => (unavailable(), None),
+        Verified::Invalid(state) => (state.invalid().0, None),
+        Verified::Valid(state) => (state.valid(None).0, Some(state.security)),
+    }
+}
+
+/// Verify the default trail, resuming from the verified checkpoint when it
+/// is still trustworthy (hot path: billing, dashboard, drift reconstruction).
 pub fn verify_chain() -> ChainVerifyResult {
     verify_chain_with_drift(None).0
 }
 
-/// Verify the hash chain of the trail at an explicit `path`.
+/// Verify the default trail with a full pass from genesis, ignoring any
+/// checkpoint. For explicit audit commands and signed compliance reports.
+pub fn verify_chain_full() -> ChainVerifyResult {
+    let Some(path) = trail_path() else {
+        return unavailable();
+    };
+    verify_chain_mode(&path, None, true).0
+}
+
+/// Verify the hash chain of the trail at an explicit `path` (incremental,
+/// like [`verify_chain`]).
 pub fn verify_chain_at(path: &Path) -> ChainVerifyResult {
     verify_chain_with_drift_at(path, None).0
 }
@@ -864,413 +1288,5 @@ pub fn hash_input(args: &serde_json::Map<String, serde_json::Value>) -> String {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn drift_data() -> AuditEntryData {
-        AuditEntryData {
-            agent_id: "drift-agent".to_string(),
-            tool: "agent_registry".to_string(),
-            action: Some("attestation drift dimensions=binary+config".to_string()),
-            input_hash: hash_input(&serde_json::Map::new()),
-            output_tokens: 0,
-            role: "coder".to_string(),
-            event_type: AuditEventType::AgentDriftDetected,
-        }
-    }
-
-    /// The drift event must be a first-class, on-disk-stable event type:
-    /// the OCP Part 4 contract enumerates the snake_case label, so a rename
-    /// would silently invalidate every consumer's schema check.
-    #[test]
-    fn drift_event_type_has_a_stable_wire_label() {
-        let json = serde_json::to_string(&AuditEventType::AgentDriftDetected).expect("serialize");
-        assert_eq!(json, "\"agent_drift_detected\"");
-        let parsed: AuditEventType =
-            serde_json::from_str("\"agent_drift_detected\"").expect("deserialize");
-        assert!(matches!(parsed, AuditEventType::AgentDriftDetected));
-    }
-
-    #[test]
-    fn try_record_appends_a_chained_drift_entry() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let first = try_record(drift_data()).expect("first append");
-        assert_eq!(first.prev_hash, "genesis");
-        let second = try_record(drift_data()).expect("second append");
-        assert_eq!(second.prev_hash, first.entry_hash);
-
-        let entries = load_recent(10);
-        assert_eq!(entries.len(), 2);
-        assert!(
-            entries
-                .iter()
-                .all(|e| matches!(e.event_type, AuditEventType::AgentDriftDetected))
-        );
-        let chain = verify_chain();
-        assert!(
-            chain.valid,
-            "chain must verify: {:?}",
-            chain.first_invalid_at
-        );
-        assert_eq!(chain.total_entries, 2);
-    }
-
-    fn tool_call(tool: &str) -> AuditEntryData {
-        AuditEntryData {
-            agent_id: "rotation-agent".to_string(),
-            tool: tool.to_string(),
-            action: None,
-            input_hash: hash_input(&serde_json::Map::new()),
-            output_tokens: 0,
-            role: "coder".to_string(),
-            event_type: AuditEventType::ToolCall,
-        }
-    }
-
-    /// GHSA-jhf9-3pv4-m469: the active segment stays bounded, rotated
-    /// segments continue one hash chain, and losing an archive is detected.
-    #[test]
-    fn rotation_bounds_the_active_segment_and_keeps_one_verifiable_chain() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("trail.jsonl");
-        let cap = 1024;
-        let mut last = None;
-        for i in 0..40 {
-            last = Some(
-                try_record_at_capped(&path, tool_call(&format!("tool_{i}")), cap).expect("append"),
-            );
-        }
-        let archives = archive_segments(&path);
-        assert!(archives.len() >= 2, "expected rotation, got {archives:?}");
-        let active_len = std::fs::metadata(&path).unwrap().len();
-        assert!(
-            active_len < cap + 1024,
-            "active segment {active_len} not bounded"
-        );
-        // The first archived entry starts the chain; the chain head carries over.
-        let first = load_all_at(&archives[0].1);
-        assert_eq!(first[0].prev_hash, "genesis");
-        let chain = verify_chain_at(&path);
-        assert!(chain.valid, "{:?}", chain.first_invalid_at);
-        assert_eq!(chain.total_entries, 40);
-        // Readers see the whole history, archives first, in chain order.
-        let listed: Vec<String> = load_all_at(&path).into_iter().map(|e| e.tool).collect();
-        let expected: Vec<String> = (0..40).map(|i| format!("tool_{i}")).collect();
-        assert_eq!(listed, expected);
-        let mut lines = 0usize;
-        assert!(
-            for_each_line_at(&path, |_, _, _| {
-                lines += 1;
-                Ok(())
-            })
-            .unwrap()
-        );
-        assert_eq!(lines, 40);
-        assert!(!for_each_line_at(&dir.path().join("absent.jsonl"), |_, _, _| Ok(())).unwrap());
-        assert_eq!(
-            read_last_hash_tail(&std::fs::File::open(&path).unwrap()).unwrap(),
-            last.unwrap().entry_hash
-        );
-
-        // Deleting an archived segment breaks verification (no silent pruning).
-        std::fs::remove_file(&archives[0].1).unwrap();
-        assert!(!verify_chain_at(&path).valid);
-    }
-
-    /// GHSA-jhf9-3pv4-m469: a crash after the archive rename but before the
-    /// truncate leaves the active segment as a duplicate of the archive; the
-    /// next append syncs the directory, truncates, and keeps one chain.
-    #[test]
-    fn rotation_recovers_a_crash_between_rename_and_truncate() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("trail.jsonl");
-        for i in 0..5 {
-            try_record_at_capped(&path, tool_call(&format!("tool_{i}")), u64::MAX).unwrap();
-        }
-        std::fs::copy(&path, archive_path(&path, 1)).unwrap();
-
-        try_record_at_capped(&path, tool_call("tool_5"), 1).unwrap();
-        assert_eq!(archive_segments(&path).len(), 1, "no second archive");
-        assert_eq!(load_all_at(&archive_path(&path, 1)).len(), 5);
-        let active = std::fs::read_to_string(&path).unwrap();
-        assert_eq!(active.lines().count(), 1, "duplicate truncated: {active}");
-        let chain = verify_chain_at(&path);
-        assert!(chain.valid, "{:?}", chain.first_invalid_at);
-        assert_eq!(chain.total_entries, 6);
-        assert!(sync_trail_dir(&path).is_ok());
-    }
-
-    #[test]
-    fn drift_entries_require_a_valid_local_signature() {
-        let iso = crate::core::data_dir::isolated_data_dir();
-        let entry = try_record(drift_data()).expect("append signed drift");
-        assert!(
-            entry.signature.is_some(),
-            "drift writes must fail without a signature"
-        );
-
-        let path = iso.path().join("audit").join("trail.jsonl");
-        let mut value: serde_json::Value =
-            serde_json::from_str(std::fs::read_to_string(&path).expect("trail").trim_end())
-                .expect("entry JSON");
-        value["signature"] = serde_json::Value::String("00".repeat(64));
-        std::fs::write(
-            &path,
-            format!("{}\n", serde_json::to_string(&value).expect("JSON")),
-        )
-        .expect("forge signature");
-
-        let chain = verify_chain();
-        assert!(
-            !chain.valid,
-            "a hash-linked forged drift entry must fail authentication"
-        );
-        assert_eq!(chain.first_invalid_at, Some(0));
-    }
-
-    /// A blocked sink must surface as an error rather than being swallowed —
-    /// that is the whole reason `try_record` exists. `record` keeps the
-    /// historical fire-and-forget contract on the same failure.
-    #[test]
-    fn try_record_surfaces_sink_failure_that_record_swallows() {
-        let iso = crate::core::data_dir::isolated_data_dir();
-        // A regular file where the audit directory belongs makes
-        // `create_dir_all` fail, so no trail path can be resolved.
-        std::fs::write(iso.path().join("audit"), b"not a directory").expect("block audit dir");
-
-        let error = try_record(drift_data()).expect_err("blocked sink must fail");
-        assert!(error.contains("audit trail unavailable"), "{error}");
-        record(drift_data());
-        assert!(load_recent(10).is_empty(), "nothing may be persisted");
-    }
-
-    #[test]
-    fn unknown_additive_event_verifies_as_forward_compatible_not_tampered() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let path = trail_path().expect("trail path");
-        let event_type = "x-agent_future_observed";
-        let partial = serde_json::json!({
-            "agent_id": "forward-agent",
-            "tool": "agent_registry",
-            "action": null,
-            "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "output_tokens": 0,
-            "role": "coder",
-            "event_type": event_type,
-        });
-        let data_json = serde_json::to_string(&partial).expect("partial serializes");
-        let entry_hash = compute_entry_hash("genesis", &data_json);
-        let mut entry = serde_json::json!({
-            "timestamp": "2026-09-06T20:00:00Z",
-            "agent_id": "forward-agent",
-            "tool": "agent_registry",
-            "action": null,
-            "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "output_tokens": 0,
-            "role": "coder",
-            "event_type": event_type,
-            "prev_hash": "genesis",
-            "entry_hash": entry_hash,
-        });
-        std::fs::write(
-            &path,
-            format!(
-                "{}\n",
-                serde_json::to_string(&entry).expect("entry serializes")
-            ),
-        )
-        .expect("write forward entry");
-
-        let forward = verify_chain();
-        assert!(forward.valid, "unknown additive event is not tampering");
-        assert_eq!(forward.total_entries, 1);
-        assert_eq!(forward.unknown_event_types, 1);
-        assert_eq!(forward.first_invalid_at, None);
-        let recent = load_recent(1);
-        assert!(matches!(
-            recent.as_slice(),
-            [AuditEntry {
-                event_type: AuditEventType::Unknown(label),
-                ..
-            }] if label == event_type
-        ));
-
-        try_record(drift_data()).expect("append after unknown event");
-        let continued = verify_chain();
-        assert!(continued.valid);
-        assert_eq!(continued.total_entries, 2);
-        assert_eq!(continued.unknown_event_types, 1);
-
-        entry["entry_hash"] = serde_json::json!("0".repeat(64));
-        std::fs::write(
-            &path,
-            format!(
-                "{}\n",
-                serde_json::to_string(&entry).expect("tampered serializes")
-            ),
-        )
-        .expect("write tampered entry");
-        let tampered = verify_chain();
-        assert!(
-            !tampered.valid,
-            "actual hash corruption must remain invalid"
-        );
-        assert_eq!(tampered.first_invalid_at, Some(0));
-    }
-
-    #[test]
-    fn unnamespaced_unknown_event_is_rejected_even_when_hash_linked() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let path = trail_path().expect("trail path");
-        let event_type = "agent_future_observed";
-        let partial = serde_json::json!({
-            "agent_id": "forward-agent",
-            "tool": "agent_registry",
-            "action": null,
-            "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "output_tokens": 0,
-            "role": "coder",
-            "event_type": event_type,
-        });
-        let data_json = serde_json::to_string(&partial).expect("partial serializes");
-        let entry_hash = compute_entry_hash("genesis", &data_json);
-        let entry = serde_json::json!({
-            "timestamp": "2026-09-06T20:00:00Z",
-            "agent_id": "forward-agent",
-            "tool": "agent_registry",
-            "action": null,
-            "input_hash": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-            "output_tokens": 0,
-            "role": "coder",
-            "event_type": event_type,
-            "prev_hash": "genesis",
-            "entry_hash": entry_hash,
-        });
-        std::fs::write(
-            &path,
-            format!("{}\n", serde_json::to_string(&entry).unwrap()),
-        )
-        .expect("write future entry");
-
-        let result = verify_chain();
-        assert!(!result.valid);
-        assert_eq!(result.first_invalid_at, Some(0));
-        assert!(load_recent(1).is_empty());
-    }
-
-    #[test]
-    fn writers_reject_unsafe_unknown_event_labels() {
-        let unsafe_event = AuditEventType::Unknown("future\nlabel".to_string());
-        assert!(serde_json::to_string(&unsafe_event).is_err());
-        assert!(
-            serde_json::to_string(&AuditEventType::Unknown(
-                "agent_future_observed".to_string()
-            ))
-            .is_err()
-        );
-        assert!(
-            serde_json::to_string(&AuditEventType::Unknown(
-                "x-agent_future_observed".to_string()
-            ))
-            .is_ok()
-        );
-        assert!(
-            serde_json::to_string(&AuditEventType::Unknown(format!("x-a{}", "b".repeat(64))))
-                .is_err(),
-            "extension labels must stay report-bounded"
-        );
-    }
-
-    #[test]
-    fn verifier_accepts_legacy_multiple_objects_on_one_line() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        try_record(drift_data()).expect("first append");
-        try_record(drift_data()).expect("second append");
-        let path = trail_path().expect("trail path");
-        let joined = std::fs::read_to_string(&path)
-            .expect("audit trail")
-            .lines()
-            .collect::<String>();
-        std::fs::write(&path, format!("{joined}\n")).expect("legacy joined line");
-
-        let chain = verify_chain();
-        assert!(chain.valid, "legacy stream must remain verifiable");
-        assert_eq!(chain.total_entries, 2);
-        assert_eq!(load_recent(2).len(), 2);
-    }
-
-    #[test]
-    fn audited_state_fails_closed_when_trail_disappears() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        try_record(drift_data()).expect("append drift");
-        let path = trail_path().expect("trail path");
-        std::fs::remove_file(path).expect("remove audit trail");
-
-        let chain = verify_chain();
-        assert!(chain.valid, "missing file is an empty history generically");
-        assert!(!chain.source_present);
-        let error = latest_unacknowledged_drift("drift-agent").expect_err("evidence loss");
-        assert!(error.contains("unavailable"), "{error}");
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn audit_lock_contention_is_bounded() {
-        use fs2::FileExt;
-        use std::time::{Duration, Instant};
-
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let path = trail_path().expect("trail path");
-        let held = OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .read(true)
-            .write(true)
-            .open(path)
-            .expect("trail lock file");
-        held.lock_exclusive().expect("hold trail lock");
-
-        let started = Instant::now();
-        let error = try_record(drift_data()).expect_err("contention must fail closed");
-        assert!(error.contains("timed out"), "unexpected error: {error}");
-        assert!(
-            started.elapsed() < Duration::from_secs(2),
-            "bounded audit lock exceeded two seconds"
-        );
-    }
-
-    /// A verifier that meets an in-progress append waits for it under a
-    /// shared lock; if the append outlasts the bound, contention reads as an
-    /// unavailable trail, never as corruption ("invalid at entry 0" on
-    /// Windows, where the writer's lock is mandatory).
-    #[test]
-    fn verifier_reports_contention_as_unavailable_not_invalid() {
-        use fs2::FileExt;
-
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        try_record(drift_data()).expect("append drift");
-        let path = trail_path().expect("trail path");
-        let held = OpenOptions::new()
-            .read(true)
-            .write(true)
-            .open(&path)
-            .expect("trail lock file");
-        held.lock_exclusive()
-            .expect("hold trail lock like an append");
-
-        let contended = verify_chain();
-        assert!(
-            !contended.source_present,
-            "contention is not a present-but-invalid trail"
-        );
-        let error = latest_unacknowledged_drift("drift-agent").expect_err("fail closed");
-        assert!(error.contains("unavailable"), "{error}");
-
-        FileExt::unlock(&held).expect("release");
-        let released = verify_chain();
-        assert!(released.valid && released.source_present);
-        assert_eq!(released.total_entries, 1);
-    }
-}
+#[path = "audit_trail_tests.rs"]
+mod tests;

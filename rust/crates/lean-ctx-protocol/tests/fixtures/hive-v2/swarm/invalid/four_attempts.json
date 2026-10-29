@@ -1,0 +1,14 @@
+{
+  "case": "four_attempts",
+  "base": "swarm/goal_node.task.in_review.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/attempts",
+      "value": 4
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

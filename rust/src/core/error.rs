@@ -149,6 +149,21 @@ pub enum PathJailError {
 
     #[error("symlink not allowed in jailed path: {path}")]
     Symlink { path: PathBuf },
+
+    /// Outside every root of the launcher-bound Workspace (#2120).
+    #[error(
+        "path is outside the Workspace '{workspace}' (rev {revision}): {path} — attached roots: {roots}"
+    )]
+    OutsideWorkspace {
+        path: PathBuf,
+        workspace: String,
+        revision: u64,
+        roots: String,
+    },
+
+    /// A Workspace is configured but unusable: every path is denied (#2120).
+    #[error("{reason}")]
+    WorkspaceUnavailable { reason: String },
 }
 
 impl From<String> for ConfigError {

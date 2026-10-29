@@ -1,0 +1,60 @@
+{
+  "instance_id": "inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+  "keys": {
+    "keys": [
+      {
+        "ed25519_pub": "+AzM3OSuHAeuIIoq35mjEK5CB+Awb6AjYRCwaCe7uNA=",
+        "kid": "hive-2026-10",
+        "not_after": "2027-10-20T12:00:00Z"
+      }
+    ],
+    "schema": "leanctx.hive.keyset/v1",
+    "signature": "5DWLVwAal3wblvpvgdO1zO77S75iZ3hzeLDQZxbuUHamgLSa9oJlUG3dl+z+dsx0En2innBypf9fGds4Gy84Bw=="
+  },
+  "lease": {
+    "kid": "hive-2026-10",
+    "lease": {
+      "expires_at": "2026-10-21T12:00:00Z",
+      "grace_until": "2026-10-27T12:00:00Z",
+      "instance_id": "inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+      "issued_at": "2026-10-20T12:00:00Z",
+      "lease_id": "lse_01jb8z4a2b3c4d5e6f7g8h9j0k",
+      "org_id": "org_acme",
+      "org_settings": {
+        "metrics_upload": true,
+        "receipts_upload": false
+      },
+      "plan": "team",
+      "policy_signer_keys": [
+        {
+          "ed25519_pub": "AOPFa5GrCgFxdLlmRer5KDZs264eh/0hv4ZmHYbz5+8=",
+          "org": "org_acme"
+        }
+      ],
+      "rights": [
+        "knowledge.read",
+        "knowledge.draft",
+        "knowledge.merge",
+        "metrics.upload",
+        "receipts.upload",
+        "policy.pull",
+        "bus.relay",
+        "bus.control",
+        "sealed",
+        "runtime"
+      ],
+      "schema": "leanctx.hive.lease/v1",
+      "seats_limit": 25,
+      "server_time": "2026-10-20T12:00:00Z"
+    },
+    "schema": "leanctx.hive.lease-envelope/v1",
+    "signature": "dzRPJl6AvE6yaRK9Tptn4sM6n/M2lZWRatvn5b/Pc8YDUVTsKgkuHiqtm4gsM3nIR34GOKnnjnO61pmYk8evBA=="
+  },
+  "org": {
+    "id": "org_acme",
+    "name": "Acme AG"
+  },
+  "org_salt_id": "salt_2026_10",
+  "schema": "leanctx.hive.enrollment/v1",
+  "web_url": "https://hive.leanctx.com"
+}

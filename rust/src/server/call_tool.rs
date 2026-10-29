@@ -10,6 +10,7 @@ mod guarded;
 mod outcome;
 mod pipeline;
 mod policy;
+pub(crate) use policy::SessionSwitch;
 
 pub(super) use outcome::*;
 #[cfg(test)]

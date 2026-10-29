@@ -5,11 +5,7 @@
 > function those commands call.
 
 Source files referenced here:
-- `rust/src/wrap/mod.rs` — one-command wrap engine
-- `rust/src/wrap/snapshot.rs` — pre-wrap config backup
-- `rust/src/wrap/verify.rs` — MCP connection probe
-- `rust/src/wrap/launch.rs` — agent launch/restart logic
-- `rust/src/wrap/unwrap.rs` — restore pre-wrap state
+- `rust/src/cli/wrap_cmd.rs` — one-command wrap/unwrap (config backup, MCP probe, restore)
 - `rust/src/setup.rs` — the full setup engine
 - `rust/src/cli/dispatch/mod.rs` — command routing
 - `rust/src/cli/dispatch/help.rs` — quickstart / help text
@@ -66,36 +62,12 @@ the MCP/shell path only; existing custom endpoints remain untouched. See
 
 ## 1b. `lean-ctx onboard` — connect all agents at once
 
-**What it does:** Connects the AI tools found on your machine using sensible
-defaults, then prints one clear "you're connected" message. On a terminal it
-asks one question first — which detected tools to connect (Enter = all).
-Without a terminal (CI, agents, scripts) it connects every detected tool.
+**What it does:** Connects every AI tool found on your machine using sensible
+defaults, with zero questions, then prints one clear "you're connected" message.
 
 ```bash
 lean-ctx onboard
-lean-ctx onboard --agents claude,cursor   # no prompt, only these tools
-lean-ctx onboard --dry-run                # preview, writes nothing
 ```
-
-### Choosing which AI tools lean-ctx touches
-
-The selection lives in `config.toml` as `[setup] agents = ["claude", "cursor"]`
-and applies to `setup`, `onboard`, `update` and every rules/skills refresh:
-MCP entries, agent hooks, rules files, `SKILL.md` and the `claude`/`codex`/…
-shell aliases are only written for selected tools. Unset (the default) means
-every detected tool, including ones installed later.
-
-```bash
-lean-ctx setup --agents claude,cursor   # save the selection, then set up
-lean-ctx setup --agents all             # back to every detected tool
-lean-ctx setup --dry-run                # what setup would do; writes nothing
-lean-ctx update --dry-run               # the available update + what it would reconfigure
-```
-
-Deselecting a tool stops lean-ctx from writing to it; entries it wrote earlier
-stay until you remove them (`lean-ctx uninstall` removes everything).
-The installer honors `LEAN_CTX_AGENTS=claude,cursor` and otherwise asks on
-the terminal.
 
 **Under the hood** (`setup::run_onboard` in `rust/src/setup.rs`):
 
@@ -124,11 +96,9 @@ about the proxy, telemetry, auto-updates, compression level, and tool profile.
 lean-ctx setup
 ```
 
-**Routing** (`dispatch/mod.rs`): with no flags it calls `setup::run_setup()`,
-which first asks which detected AI tools to connect. With `--non-interactive`,
-`--yes/-y`, `--fix`, or `--json` it calls `run_setup_with_options(...)`
-instead (no prompts). `--agents LIST` saves the tool selection first;
-`--dry-run` prints the plan and exits without writing.
+**Routing** (`dispatch/mod.rs`): with no flags it calls `setup::run_setup()`.
+With `--non-interactive`, `--yes/-y`, `--fix`, `--json`, or `--skip-rules` it
+calls `run_setup_with_options(...)` instead (no prompts).
 
 ### The first-run menu (`first_run_setup_level`)
 

@@ -5,7 +5,7 @@ use std::path::{Component, Path, PathBuf};
 
 use crate::core::config::IntelligenceRuntimeConfig;
 
-use super::{InstallError, Result};
+use super::{InstallError, Result, RuntimeKind};
 
 // build.rs rejects a partial or malformed channel, so the all-or-none match
 // below only ever sees a complete, validated triple.
@@ -26,24 +26,93 @@ const BUNDLED_PRODUCTION_CHANNEL: Option<(&str, &str, &str)> = match (
     _ => None,
 };
 
+// The Cockpit has its own catalog: same schema, signature domain and root key
+// as the runtime channel of the same track, separate URLs, so a Cockpit
+// release never re-signs or replaces an Intelligence release. build.rs admits
+// a pair only beside the complete runtime triple whose root signs it.
+const BUNDLED_STAGING_COCKPIT_CHANNEL: Option<(&str, &str)> = match (
+    option_env!("LEANCTX_STAGING_COCKPIT_CHANNEL_URL"),
+    option_env!("LEANCTX_STAGING_COCKPIT_CHANNEL_SIGNATURE_URL"),
+) {
+    (Some(url), Some(signature)) => Some((url, signature)),
+    _ => None,
+};
+const BUNDLED_PRODUCTION_COCKPIT_CHANNEL: Option<(&str, &str)> = match (
+    option_env!("LEANCTX_PRODUCTION_COCKPIT_CHANNEL_URL"),
+    option_env!("LEANCTX_PRODUCTION_COCKPIT_CHANNEL_SIGNATURE_URL"),
+) {
+    (Some(url), Some(signature)) => Some((url, signature)),
+    _ => None,
+};
+
 pub(super) fn production_root() -> Result<PathBuf> {
+    production_root_for(RuntimeKind::Intelligence)
+}
+
+fn production_root_for(kind: RuntimeKind) -> Result<PathBuf> {
     let data_dir =
         crate::core::data_dir::resolve_data_dir().map_err(|_| InstallError::Directory)?;
     if !data_dir.is_absolute() {
         return Err(InstallError::Directory);
     }
-    let root =
-        canonical_absolute_directory(&data_dir.join("intelligence-runtime-production"), true)?;
-    let staging = canonical_absolute_directory(&data_dir.join("intelligence-runtime"), false)?;
+    let root = canonical_absolute_directory(
+        &data_dir.join(format!("{}-production", kind.store_name())),
+        true,
+    )?;
+    let staging = canonical_absolute_directory(&data_dir.join(kind.store_name()), false)?;
     if root == staging {
         return Err(InstallError::Directory);
     }
     Ok(root)
 }
 
+/// The Cockpit store this host uses: the production store when it carries the
+/// production root, the staging store otherwise.
+pub(super) fn cockpit_root() -> Result<PathBuf> {
+    if BUNDLED_PRODUCTION_CHANNEL.is_some() {
+        return production_root_for(RuntimeKind::Cockpit);
+    }
+    let data_dir =
+        crate::core::data_dir::resolve_data_dir().map_err(|_| InstallError::Directory)?;
+    if !data_dir.is_absolute() {
+        return Err(InstallError::Directory);
+    }
+    canonical_absolute_directory(&data_dir.join(RuntimeKind::Cockpit.store_name()), true)
+}
+
+/// The bundled Cockpit catalog of this host: whether it is staging, its two
+/// URLs and the root key of the runtime channel of the same track.
+pub(super) struct CockpitChannel {
+    pub(super) staging: bool,
+    pub(super) urls: [&'static str; 2],
+    pub(super) key: [u8; 32],
+}
+
+pub(super) fn cockpit_channel() -> Result<Option<CockpitChannel>> {
+    // A production host never falls back to a staging Cockpit.
+    let (staging, cockpit, key) = match (BUNDLED_PRODUCTION_CHANNEL, BUNDLED_STAGING_CHANNEL) {
+        (Some((.., key)), _) => (false, BUNDLED_PRODUCTION_COCKPIT_CHANNEL, key),
+        (None, Some((.., key))) => (true, BUNDLED_STAGING_COCKPIT_CHANNEL, key),
+        (None, None) => return Ok(None),
+    };
+    let Some((url, signature)) = cockpit else {
+        return Ok(None);
+    };
+    let urls = [url, signature];
+    super::channel::validate_urls(&urls)?;
+    Ok(Some(CockpitChannel {
+        staging,
+        urls,
+        key: super::trust_key(key)?,
+    }))
+}
+
 pub(super) fn production_key(root: &Path) -> Result<Option<[u8; 32]>> {
-    let production_root = production_root()?;
-    if root != production_root.as_path() {
+    // A Cockpit store that cannot be resolved is no production store; it
+    // never makes the Intelligence store unusable.
+    if root != production_root()?.as_path()
+        && !production_root_for(RuntimeKind::Cockpit).is_ok_and(|cockpit| root == cockpit)
+    {
         return Ok(None);
     }
     let Some((url, signature_url, key)) = BUNDLED_PRODUCTION_CHANNEL else {

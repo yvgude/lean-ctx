@@ -25,7 +25,8 @@ impl LeanCtxServer {
     pub async fn resolve_path(&self, path: &str) -> Result<String, String> {
         let normalized = crate::core::pathutil::normalize_tool_path(path);
         if normalized.is_empty() || normalized == "." {
-            return Ok(normalized);
+            let root = self.session.read().await.project_root.clone();
+            return crate::core::workspace_authority::project_dot(&normalized, root.as_deref());
         }
         let p = std::path::Path::new(&normalized);
 
@@ -117,6 +118,9 @@ impl LeanCtxServer {
                                 "unknown",
                                 crate::core::security_events::SecurityKind::PathBlocked,
                             );
+                            crate::core::hive::metrics_v2::signals::blocked(
+                                &crate::core::hive::metrics_v2::signals::path_jail_rule(),
+                            );
                             return Err(retry.to_string());
                         }
                     }
@@ -132,6 +136,9 @@ impl LeanCtxServer {
                         "resolve_path",
                         "unknown",
                         crate::core::security_events::SecurityKind::PathBlocked,
+                    );
+                    crate::core::hive::metrics_v2::signals::blocked(
+                        &crate::core::hive::metrics_v2::signals::path_jail_rule(),
                     );
                     return Err(e.to_string());
                 }
@@ -151,10 +158,32 @@ impl LeanCtxServer {
         jail_root_path: &std::path::Path,
         extra_roots: &[String],
     ) -> Result<Option<std::path::PathBuf>, String> {
-        if !resolved.is_absolute() {
+        // A shared session is every client's: one client's path never moves
+        // it (AP04-G5/G6).
+        if !resolved.is_absolute() || self.session_mode == super::SessionMode::Shared {
             return Ok(None);
         }
-        let Some(new_root) = maybe_derive_project_root_from_absolute(resolved) else {
+        // Under a Workspace the session root follows the snapshot only
+        // (#2120); a path never moves it.
+        if crate::core::workspace_authority::is_configured() {
+            return Ok(None);
+        }
+        // A root pinned with `LEAN_CTX_PROJECT_ROOT` is a boundary the operator
+        // set, not a guess to correct: a markerless pinned directory inside a
+        // larger checkout must not be widened to that checkout — and every
+        // index, policy and receipt moved with it — by the first absolute path.
+        if crate::server::roots::pinned_root().is_some_and(|pinned| {
+            crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(&pinned))
+                == crate::core::pathutil::safe_canonicalize_or_self(jail_root_path)
+        }) {
+            return Ok(None);
+        }
+        // The outermost marker above a path can be `~` itself (a dotfiles
+        // repository) or an agent directory: never a project to move to
+        // (AP04-G6).
+        let Some(new_root) = maybe_derive_project_root_from_absolute(resolved)
+            .filter(|root| !crate::core::pathutil::is_broad_or_unsafe_root(root))
+        else {
             return Ok(None);
         };
         let jail_is_real_project =
@@ -181,23 +210,44 @@ impl LeanCtxServer {
             return Ok(None);
         }
 
-        self.reroot_to_project(&new_root).await;
+        if !self.reroot_to_project(&new_root).await {
+            return Ok(None);
+        }
         crate::core::pathjail::jail_path_with_roots(resolved, &new_root, extra_roots)
             .map(Some)
             .map_err(|e| e.to_string())
     }
 
-    async fn reroot_to_project(&self, new_root: &std::path::Path) {
-        let mut session = self.session.write().await;
+    /// Move the session — and the request that corrected it — to `new_root`
+    /// through the same switch as a host's root change: that project's own
+    /// session, the stale one saved where it was (AP04 review S4). Refused
+    /// under a pinned source view, whose request project cannot follow.
+    async fn reroot_to_project(&self, new_root: &std::path::Path) -> bool {
+        if crate::core::policy::runtime::inherited_source_view().is_some() {
+            return false;
+        }
         let new_root_str = new_root.to_string_lossy().to_string();
-        session.project_root = Some(new_root_str.clone());
-        session.shell_cwd = self
+        let shell_cwd = self
             .startup_shell_cwd
             .as_ref()
             .filter(|cwd| std::path::Path::new(cwd).starts_with(new_root))
             .cloned()
             .or_else(|| Some(new_root_str.clone()));
-        let _ = session.save();
+        let current = self.session.instance();
+        let extra_roots = current.read().await.extra_roots.clone();
+        let switch = crate::server::SessionSwitch {
+            new_root: &new_root_str,
+            extra_roots,
+            shell_cwd,
+            rebind_request: true,
+        };
+        let Some(saves) = self.switch_session_root(&current, switch).await else {
+            return false;
+        };
+        for save in saves {
+            let _ = save.await;
+        }
+        true
     }
 
     /// Like `resolve_path`, but returns the original path on failure instead of an error.

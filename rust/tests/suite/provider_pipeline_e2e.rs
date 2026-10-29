@@ -327,7 +327,10 @@ fn scenario_knowledge_remember_recall_roundtrip() {
 
     let artifacts = consolidation::consolidate(&chunks);
     let policy = MemoryPolicy::default();
-    let mut knowledge = ProjectKnowledge::new("/tmp/provider-pipeline-test");
+    // A real project root: knowledge of a root that does not exist is
+    // withheld (a deleted project revokes what was derived from it).
+    let project = tempfile::tempdir().expect("project root");
+    let mut knowledge = ProjectKnowledge::new(project.path().to_str().expect("utf-8 root"));
     let session_id = "test-session-1";
 
     for fact in &artifacts.facts {

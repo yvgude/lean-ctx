@@ -8,13 +8,14 @@ use axum::{
 };
 
 use super::ProxyState;
+use super::admitted::{self, AdmittedBody};
 use super::connector::schedule_provider_connector;
 use super::intent::classify_and_store_proxy_intent;
-use crate::core::context_admission::egress::{self, EgressBody, EgressOutcome, EgressTarget};
 
 #[cfg(feature = "shape-xlat")]
 mod xlat;
 
+mod admission;
 mod driver;
 pub(crate) mod enterprise_headers;
 mod headers;
@@ -25,6 +26,7 @@ mod transport;
 #[cfg(test)]
 mod tests;
 
+pub(super) use admission::{principal_of, sealed_principal};
 #[allow(unused_imports)] // re-exported for proxy::* and tests
 pub(super) use headers::{
     ALLOWED_REQUEST_HEADERS, FORWARDED_HEADERS, is_allowed_request_header,
@@ -53,38 +55,6 @@ pub use pipeline::{CompressionPipeline, PipelineReport, StageReport};
 const HEADROOM_COMPRESSED_HEADER: &str = "x-headroom-compressed";
 const OCLA_BUDGET_SCOPE_HEADER: &str = "x-ocla-budget-scope";
 const ESTIMATED_CHARS_PER_TOKEN: u64 = 4;
-
-/// Final egress control (G6): admit the body that is about to leave. A
-/// parsed body is admitted string by string and re-encoded only when the
-/// gateway changed something, so an unchanged request keeps its exact bytes
-/// (#1912); a body the proxy cannot parse is handled as an opaque payload.
-fn admit_egress(
-    parts: &Parts,
-    body: Vec<u8>,
-    parsed: Option<&serde_json::Value>,
-    provider: &str,
-    upstream_base: &str,
-) -> Result<(Vec<u8>, EgressOutcome), StatusCode> {
-    let target = EgressTarget {
-        provider,
-        model: parsed
-            .and_then(|doc| doc.get("model"))
-            .and_then(serde_json::Value::as_str),
-        upstream_base,
-    };
-    let outcome = match parsed {
-        Some(doc) => egress::admit_request(doc, &target),
-        None => egress::admit_opaque(body.len(), &target),
-    };
-    let body = match &outcome.body {
-        EgressBody::Rewritten(doc) => {
-            let logical = serde_json::to_vec(doc).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            prepare::encode_request_body(parts, logical)?
-        }
-        EgressBody::Unchanged | EgressBody::Refused(_) => body,
-    };
-    Ok((body, outcome))
-}
 
 /// Check whether an incoming request was already compressed by Headroom.
 pub(super) fn is_headroom_compressed(parts: &axum::http::request::Parts) -> bool {
@@ -152,9 +122,18 @@ struct ProxyPrepared {
     prefix_replay: Option<(u64, Vec<u8>, Vec<serde_json::Value>, usize)>,
     // A response confirms the send, independently of later response decoding.
     upstream_send_succeeded: bool,
+    /// A sent attempt whose transport observation could not be saved
+    /// (AP10-C5): the reply carries `transport::EGRESS_EVIDENCE_HEADER`.
+    egress_unobserved: bool,
+    /// Records the provider-sealed items of the response, bound to the
+    /// context and authority of this request.
+    sealed_recorder: Option<super::sealed_origin::Recorder>,
     upstream_started: Option<std::time::Instant>,
     context_ir: Option<ProxyContextIntent>,
     terminal: Option<ProxyTerminalKind>,
+    /// Blocks this request's compression left whole under protection because
+    /// no recovery copy could back a shorter form: codes and counts only.
+    kept_whole: super::compress::KeptWhole,
 }
 
 struct AdmittedProxyRequest {
@@ -167,10 +146,10 @@ struct AdmittedProxyRequest {
 
 struct ProxyOutbound {
     parts: Parts,
-    upstream_url: String,
     upstream_base: String,
-    forwarded_body: Vec<u8>,
-    preserve_content_encoding: bool,
+    /// The only body dispatch can send: admitted, receipt-bound and tied to
+    /// the upstream URL it was admitted for.
+    forwarded_body: AdmittedBody,
     prepared: ProxyPrepared,
 }
 
@@ -192,6 +171,8 @@ enum ProxyPrimitive {
         response: Response,
         original_tokens: usize,
         trace_id: String,
+        /// Which gate refused; recorded as the skipped stages' reason.
+        reason: &'static str,
     },
 }
 
@@ -319,7 +300,10 @@ pub async fn forward_request(
     extra_stream_types: &[&str],
 ) -> Result<Response, StatusCode> {
     let trace_id = trace_id::extract_or_generate_trace_id(req.headers());
-    let (parts, body) = req.into_parts();
+    let (mut parts, body) = req.into_parts();
+    // A presenter capability the host showed: taken out of the headers here,
+    // before anything else sees the request; request state from now on.
+    let presenter = super::request_project::take_presenter(&mut parts.headers);
     let body_limit = super::bedrock::request_body_limit(&parts).unwrap_or_else(max_body_bytes);
     let body_bytes = axum::body::to_bytes(body, body_limit)
         .await
@@ -332,38 +316,42 @@ pub async fn forward_request(
     );
     let req = Request::from_parts(parts, Body::from(body_bytes));
     let lifecycle = crate::core::execution_lifecycle::ExecutionLifecycle::global();
-    let result = lifecycle
-        .run(
-            crate::core::execution_lifecycle::ToolRequest {
-                tool_name: "proxy_forward".to_owned(),
-                query: None,
-                session_id: trace_id.clone(),
-                agent_id: provider_label.to_owned(),
-                surface: crate::core::execution_lifecycle::ToolSurface::Proxy,
-                idempotency_key: Some(request_scope),
-            },
-            crate::core::execution_lifecycle::RuntimeContext {
-                client_name: Some(provider_label.to_owned()),
-                project_root: None,
-            },
-            crate::core::execution_lifecycle::ProductEntitlements::default(),
-            ProxyDriver {
-                state: Some(state),
-                request: Some(req),
-                admitted: None,
-                prepared_request: None,
-                upstream_base,
-                default_path,
-                compress_body: Some(compress_body),
-                provider_label,
-                extra_stream_types: extra_stream_types
-                    .iter()
-                    .map(|value| (*value).to_owned())
-                    .collect(),
-                trace_id,
-            },
-        )
-        .await;
+    let result = super::request_project::as_presenter(
+        presenter,
+        Box::pin(
+            lifecycle.run(
+                crate::core::execution_lifecycle::ToolRequest {
+                    tool_name: "proxy_forward".to_owned(),
+                    query: None,
+                    session_id: trace_id.clone(),
+                    agent_id: provider_label.to_owned(),
+                    surface: crate::core::execution_lifecycle::ToolSurface::Proxy,
+                    idempotency_key: Some(request_scope),
+                },
+                crate::core::execution_lifecycle::RuntimeContext {
+                    client_name: Some(provider_label.to_owned()),
+                    project_root: None,
+                },
+                crate::core::execution_lifecycle::ProductEntitlements::default(),
+                ProxyDriver {
+                    state: Some(state),
+                    request: Some(req),
+                    admitted: None,
+                    prepared_request: None,
+                    upstream_base,
+                    default_path,
+                    compress_body: Some(compress_body),
+                    provider_label,
+                    extra_stream_types: extra_stream_types
+                        .iter()
+                        .map(|value| (*value).to_owned())
+                        .collect(),
+                    trace_id,
+                },
+            ),
+        ),
+    )
+    .await;
 
     let completed = match result {
         Ok(completed) => completed,
@@ -378,7 +366,14 @@ pub async fn forward_request(
         }
     };
     if let Some(status) = completed.error {
-        return Err(status);
+        // A failure the proxy answers itself; when a sent attempt is not on
+        // record its answer states that (AP10-C5).
+        let stated = completed
+            .response
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        return stated.ok_or(status);
     }
     let mut response = completed
         .response
@@ -421,47 +416,6 @@ async fn prepare_upstream_request(
         #[cfg(feature = "enterprise")]
         gate_rules,
     } = admitted;
-    let original_parsed =
-        super::determinism_guard::parse_request_body(&raw_body_bytes, &parts, body_limit);
-    let original_messages = original_parsed
-        .as_ref()
-        .map(super::determinism_guard::cache_relevant_messages);
-    // #1905: decide the input-compression holdout arm once, on the caller's
-    // pristine body. The control arm skips pre-optimization here and every
-    // compression stage in `prepare_request_body` and the pipeline below.
-    let compression_arm = original_parsed
-        .as_ref()
-        .and_then(super::holdout::compression_holdout_arm);
-    let compression_control = compression_arm == Some(super::holdout::Arm::Control);
-    let (mut body_bytes, mut pre_optimize_result) =
-        serde_json::from_slice::<serde_json::Value>(&raw_body_bytes)
-            .ok()
-            .filter(|_| !compression_control)
-            .and_then(|mut parsed_body| {
-                let result = crate::proxy::pre_optimize::pre_optimize(&mut parsed_body)?;
-                #[cfg(feature = "enterprise")]
-                crate::proxy::reasoning_budget::apply_reasoning_budget_with_config(
-                    &mut parsed_body,
-                    &result.task_class,
-                    &result.complexity,
-                    &crate::core::config::Config::load().proxy.reasoning_budget,
-                );
-                let serialized = serde_json::to_vec(&parsed_body).ok()?;
-                Some((serialized.into(), Some(result)))
-            })
-            .unwrap_or((raw_body_bytes.clone(), None));
-    // Determinism telemetry: report a warning score to the caller, but keep the
-    // request byte-for-byte intact. Scanning the raw body also makes this work
-    // consistently for every provider shape handled by the shared forwarder.
-    let cache_alignment_score = crate::proxy::cache_aligner::detect_volatile_content(
-        std::str::from_utf8(&body_bytes).unwrap_or_default(),
-    )
-    .alignment_score;
-    let mut lineage = super::lineage::from_trusted_request(&parts, &raw_body_bytes);
-    if let Some(context) = lineage.as_mut() {
-        context.trace_id.clone_from(&trace_id);
-    }
-
     // Operator aliases: may rewrite `model` in the parsed body (before
     // compression, so exactly one serialization) and re-target the upstream.
     // Fail-open: any miss routes nothing. An org policy may exempt specific
@@ -489,6 +443,136 @@ async fn prepare_upstream_request(
             .path()
             .trim_end_matches('/')
             .ends_with("/v1/messages");
+
+    // G01: the gateway decides on what the caller supplied before any
+    // optimisation, selection, compression or derived store reads it. From
+    // here on `raw_body_bytes` is the admitted body: every later stage —
+    // including the cache-safety revert — sees and restores only that.
+    let mut original_parsed =
+        super::determinism_guard::parse_request_body(&raw_body_bytes, &parts, body_limit);
+    let caller_bytes = raw_body_bytes.len();
+    // The host's own tool list, read on the document as the host sent it —
+    // before the gateway's decision or any pass changes the body: the only
+    // thing a recovery stub of this request may name (see below).
+    let mut handles = super::sticky_tools::HandleUse::for_request(
+        original_parsed.as_ref(),
+        provider_label != "Bedrock",
+    );
+    // The alias decision depends on the requested model alone; taking it on a
+    // model-only probe names the expected destination without reading content.
+    let expected_route = original_parsed
+        .as_ref()
+        .and_then(|doc| doc.get("model"))
+        .and_then(|model| {
+            let mut probe = serde_json::json!({ "model": model });
+            route_upstreams.as_ref().and_then(|up| {
+                super::routing::route_request(
+                    &mut probe,
+                    provider_label,
+                    up,
+                    &routing_rules,
+                    xlat_ok,
+                )
+            })
+        });
+    let leaving = admission::Leaving {
+        provider: provider_label,
+        upstream_base,
+        route: expected_route.as_ref(),
+    };
+    // The caller's path, query and relayed headers leave with the body:
+    // admitted first (AP10-C2).
+    if let Err(refusal) = admission::admit_target(&parts, original_parsed.as_ref(), leaving).await {
+        return Ok(admission::refused(
+            &refusal,
+            provider_label,
+            caller_bytes,
+            &trace_id,
+        ));
+    }
+    let mut caller =
+        match admission::admit_caller(&parts, original_parsed.as_ref(), caller_bytes, leaving) {
+            Ok(caller) => caller,
+            Err(refusal) => {
+                return Ok(admission::refused(
+                    &refusal,
+                    provider_label,
+                    caller_bytes,
+                    &trace_id,
+                ));
+            }
+        };
+    if caller.is_refused() {
+        let refusal = admitted::record_refusal(caller.into_admission(), caller_bytes, None).await;
+        return Ok(admission::refused(
+            &refusal,
+            provider_label,
+            caller_bytes,
+            &trace_id,
+        ));
+    }
+    let raw_body_bytes = match caller.take_rewritten() {
+        Some(admitted_doc) => {
+            let logical =
+                serde_json::to_vec(&admitted_doc).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            original_parsed = Some(admitted_doc);
+            axum::body::Bytes::from(prepare::encode_request_body(&parts, logical)?)
+        }
+        None => raw_body_bytes,
+    };
+    let original_messages = original_parsed
+        .as_ref()
+        .map(super::determinism_guard::cache_relevant_messages);
+    // #1905: decide the input-compression holdout arm once, on the admitted
+    // form of the caller's body, before any stage rewrites it. The control
+    // arm skips pre-optimization here and every compression stage in
+    // `prepare_request_body` and the pipeline below. "Uncompressed" is not
+    // "unadmitted": the arm is read after the gateway's decision above, and
+    // the control arm passes the final egress admission below like any other
+    // request.
+    let compression_arm = original_parsed
+        .as_ref()
+        .and_then(super::holdout::compression_holdout_arm);
+    let compression_control = compression_arm == Some(super::holdout::Arm::Control);
+    // Every pass below that may shorten a block runs observed: what it leaves
+    // whole under protection for want of a recovery copy is counted by code
+    // (`compress::KeptWhole`) and stated with the response and the receipt.
+    // The same passes carry what the request knows about the recovery stubs
+    // it hands to the model (`sticky_tools`). A stub names the Engine's
+    // expand tool, and the proxy declares no tool: whether a stub may be
+    // issued at all was settled above (`handles`), on the caller's document
+    // as the host sent it, for every pass — only a request whose own tool list names
+    // that tool and whose settings let the model call it gets one, under
+    // the name the host registered. A Bedrock request — its body is the
+    // provider's own format, not one whose tool list is read here — issues
+    // no stub. `issued` holds each stubbed block next to its original until
+    // the request has left (`compress::gate`).
+    let mut kept_whole = super::compress::KeptWhole::default();
+    let mut issued = super::compress::gate::Issued::default();
+    let (mut body_bytes, mut pre_optimize_result) =
+        observed_pass(&mut kept_whole, &mut handles, &mut issued, || {
+            serde_json::from_slice::<serde_json::Value>(&raw_body_bytes)
+                .ok()
+                .filter(|_| !compression_control)
+                .and_then(|mut parsed_body| {
+                    let result = crate::proxy::pre_optimize::pre_optimize(&mut parsed_body)?;
+                    let serialized = serde_json::to_vec(&parsed_body).ok()?;
+                    Some((serialized.into(), Some(result)))
+                })
+                .unwrap_or((raw_body_bytes.clone(), None))
+        });
+    // Determinism telemetry: report a warning score to the caller, but keep the
+    // request byte-for-byte intact. Scanning the raw body also makes this work
+    // consistently for every provider shape handled by the shared forwarder.
+    let cache_alignment_score = crate::proxy::cache_aligner::detect_volatile_content(
+        std::str::from_utf8(&body_bytes).unwrap_or_default(),
+    )
+    .alignment_score;
+    let mut lineage = super::lineage::from_trusted_request(&parts, &raw_body_bytes);
+    if let Some(context) = lineage.as_mut() {
+        context.trace_id.clone_from(&trace_id);
+    }
+
     let route_hook = |parsed: &mut serde_json::Value| {
         route_upstreams.as_ref().and_then(|up| {
             super::routing::route_request(parsed, provider_label, up, &routing_rules, xlat_ok)
@@ -498,15 +582,18 @@ async fn prepare_upstream_request(
     if headroom_compatible {
         super::anthropic::set_headroom_request(true);
     }
-    let mut prepared = prepare::prepare_request_body(
-        &parts,
-        &body_bytes,
-        compress_body,
-        route_hook,
-        upstream_base,
-        provider_label == "OpenAI",
-        compression_arm,
-    )?;
+    let prepared = observed_pass(&mut kept_whole, &mut handles, &mut issued, || {
+        prepare::prepare_request_body(
+            &parts,
+            &body_bytes,
+            compress_body,
+            route_hook,
+            upstream_base,
+            provider_label == "OpenAI",
+            compression_arm,
+        )
+    });
+    let mut prepared = prepared?;
     let guard = super::determinism_guard::DeterminismGuard::new(&trace_id);
     let mut determinism_proof = original_messages.as_deref().map_or_else(
         || guard.verify(&[], &[]),
@@ -529,7 +616,8 @@ async fn prepare_upstream_request(
             "lean-ctx determinism violation: reverting request modifications"
         );
         // Safe mode is deliberately fail-closed for cache safety: resend exactly
-        // what the caller supplied instead of allowing a cache-busting rewrite.
+        // the admitted form of what the caller supplied instead of allowing a
+        // cache-busting rewrite. The caller's unadmitted bytes are gone.
         prepared.body = raw_body_bytes.to_vec();
         prepared.parsed = original_parsed.clone();
         prepared.original_size = raw_body_bytes.len();
@@ -545,7 +633,14 @@ async fn prepare_upstream_request(
         );
     }
     if !super::outbound_model_policy::allows_outbound(prepared.parsed.as_ref()) {
-        return Err(StatusCode::FORBIDDEN);
+        let refusal = admitted::GatewayRefusal::withheld("destination.model_not_allowed");
+        tracing::warn!("lean-ctx proxy: {}", refusal.message());
+        return Ok(admission::refused(
+            &refusal,
+            provider_label,
+            caller_bytes,
+            &trace_id,
+        ));
     }
     apply_ocla_budget_admission(&parts, prepared.body.len())?;
     let original_size = prepared.original_size;
@@ -629,13 +724,16 @@ async fn prepare_upstream_request(
         } else {
             None
         };
-        if let Ok(report) = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-            CompressionPipeline::run_with_context_advice(
-                messages,
-                &pipeline_config,
-                context_advice.as_ref(),
-            )
-        })) {
+        let outcome = observed_pass(&mut kept_whole, &mut handles, &mut issued, || {
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                CompressionPipeline::run_with_context_advice(
+                    messages,
+                    &pipeline_config,
+                    context_advice.as_ref(),
+                )
+            }))
+        });
+        if let Ok(report) = outcome {
             pipeline_changed = *messages != messages_before_pipeline;
             pipeline_report = Some(report);
         } else {
@@ -649,10 +747,8 @@ async fn prepare_upstream_request(
         }
     }
 
-    if let (Some(report), Some(parsed_body)) = (pipeline_report.as_ref(), prepared.parsed.as_mut())
-    {
-        let effort_changed = report.apply_effort_budget(parsed_body);
-        if pipeline_changed || effort_changed {
+    if let (Some(_), Some(parsed_body)) = (pipeline_report.as_ref(), prepared.parsed.as_mut()) {
+        if pipeline_changed {
             let serialized =
                 serde_json::to_vec(parsed_body).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             // The upstream still receives the caller's Content-Encoding, so a
@@ -662,11 +758,35 @@ async fn prepare_upstream_request(
         }
     }
 
+    // A block that still carries a recovery stub of this request leaves only
+    // in a body that still lists the tool the stub names, exactly as the
+    // host registered it. Every pass decided that before it wrote a stub;
+    // this checks it on the document that leaves. Where it does not hold,
+    // the stubbed blocks go back to their originals, whole and counted. The
+    // tool list itself is never touched.
+    if let Some(parsed_body) = prepared.parsed.as_mut() {
+        let followable = handles.follows(parsed_body);
+        if issued.settle(parsed_body, followable, &mut kept_whole) {
+            let serialized =
+                serde_json::to_vec(parsed_body).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
+            prepared.body = prepare::encode_request_body(&parts, serialized)?;
+            prepared.compression_candidate = true;
+        }
+    }
+
     // #1912: when nothing changed the request's meaning — every rewrite was a
     // no-op or reverted — forward the caller's bytes untouched. A re-serialized
     // body reorders keys and reformats numbers, which busts provider prompt
     // caches keyed on the exact prefix bytes.
-    if prepared.parsed.is_some() && prepared.parsed == original_parsed {
+    //
+    // `untouched` also tells the final admission that the body is exactly the
+    // one the gateway already admitted.
+    let untouched = if prepared.parsed.is_some() {
+        prepared.parsed == original_parsed
+    } else {
+        prepared.body.as_slice() == raw_body_bytes.as_ref()
+    };
+    if untouched && prepared.parsed.is_some() {
         prepared.body = raw_body_bytes.to_vec();
         compressed_size = original_size;
     }
@@ -679,6 +799,13 @@ async fn prepare_upstream_request(
             .as_ref()
             .map_or(0, PipelineReport::dedup_tokens_saved);
     let route = prepared.route;
+    if let Some(provider) = route.as_ref().and_then(|r| r.credential.as_ref())
+        && provider.shape == crate::core::config::WireShape::Gemini
+    {
+        // Remove the caller's Gemini credential selector before destination
+        // admission and before build_upstream_url preserves the query string.
+        super::providers::strip_gemini_api_key_query(&mut parts.uri)?;
+    }
     let parsed = prepared.parsed;
     let intent_classification =
         classify_and_store_proxy_intent(&mut parts, parsed.as_ref(), lineage.as_ref(), &body_bytes);
@@ -826,9 +953,12 @@ async fn prepare_upstream_request(
             introspect,
             prefix_replay: None,
             upstream_send_succeeded: false,
+            egress_unobserved: false,
+            sealed_recorder: None,
             upstream_started: None,
             context_ir,
             terminal: Some(ProxyTerminalKind::CacheHit),
+            kept_whole,
         };
         return Ok(PreparedProxyRequest::Terminal(Box::new(
             ProxyPrimitive::Cache { response, prepared },
@@ -845,37 +975,84 @@ async fn prepare_upstream_request(
         crate::proxy::codec::build_upstream_url(&parts, upstream_base, default_path)
     };
 
-    // G6: final egress control, on exactly the body that leaves — after
-    // compression, routing, translation and every cache-safety revert.
-    let (request_body, egress) = admit_egress(
+    // G5/G6: final egress control, on exactly the body that leaves — after
+    // compression, in-band recovery, prefix replay, routing, translation and
+    // every cache-safety revert — and for the upstream it actually leaves for.
+    let egress_agent = lineage.as_ref().map(|context| context.agent_id.clone());
+    let final_admission = match admission::admit_final(
         &parts,
         prepared.body,
         parsed.as_ref(),
-        provider_label,
-        upstream_base,
-    )?;
-    let egress_agent = lineage.as_ref().map(|context| context.agent_id.clone());
-    if let EgressBody::Refused(refusal) = &egress.body {
-        tracing::warn!("lean-ctx proxy: {refusal} (see `lean-ctx inspect --proxy`)");
-        egress::finish_off_runtime(egress, None, original_size, egress_agent).await;
-        return Err(StatusCode::FORBIDDEN);
+        admission::Leaving {
+            provider: provider_label,
+            upstream_base,
+            route: route.as_ref(),
+        },
+        caller,
+        untouched,
+        // A stub this request issued that the decision would alter or
+        // withhold: the block is sent as its original instead, admitted as
+        // such, and counted (`recovery.stub_not_admissible`).
+        |admitted| {
+            parsed
+                .as_ref()
+                .and_then(|sent| issued.restore_unadmitted(sent, admitted, &mut kept_whole))
+        },
+    ) {
+        Ok(final_admission) => final_admission,
+        Err(refusal) => {
+            return Ok(admission::refused(
+                &refusal,
+                provider_label,
+                caller_bytes,
+                &trace_id,
+            ));
+        }
+    };
+    let admission::FinalAdmission {
+        body: request_body,
+        admission: egress,
+    } = final_admission;
+    if egress.is_refused() {
+        // The request is already refused; failure to record that refusal must
+        // never turn it into a forwarded request.
+        let refusal = admitted::record_refusal(egress, original_size, egress_agent).await;
+        return Ok(admission::refused(
+            &refusal,
+            provider_label,
+            caller_bytes,
+            &trace_id,
+        ));
     }
 
-    let forwarded_body = super::bedrock::finalize_request(
-        provider_label,
-        &mut parts,
-        &body_bytes,
-        request_body,
-        body_limit,
-        &upstream_url,
-    )?;
-    egress::finish_off_runtime(
+    let request_body =
+        super::bedrock::finalize_request(&mut parts, request_body, body_limit, &upstream_url)?;
+    // The receipt binds these exact bytes, this URL and the head they are
+    // sent with; dispatch, its retry and every observation can only use what
+    // is bound here. It also states, by code and count, the blocks that
+    // stayed whole under protection.
+    let egress = egress.note_kept_whole(&kept_whole);
+    let forwarded_body = match AdmittedBody::bind(
         egress,
-        Some(forwarded_body.clone()),
+        request_body,
+        upstream_base,
+        &upstream_url,
+        transport::forwarded_head(&parts, preserve_content_encoding),
         original_size,
         egress_agent,
     )
-    .await;
+    .await
+    {
+        Ok(forwarded_body) => forwarded_body,
+        Err(refusal) => {
+            return Ok(admission::refused(
+                &refusal,
+                provider_label,
+                caller_bytes,
+                &trace_id,
+            ));
+        }
+    };
 
     let prefix_replay = if let Some(ref pre) = parsed {
         let cfg_replay = crate::core::config::Config::load();
@@ -886,7 +1063,12 @@ async fn prepare_upstream_request(
             let system_val = pre.get("system");
             if let Some(msgs) = pre.get("messages").and_then(|m| m.as_array()) {
                 let conv_id = super::prefix_replay::conversation_id(system_val, msgs);
-                Some((conv_id, forwarded_body.clone(), msgs.clone(), msgs.len()))
+                Some((
+                    conv_id,
+                    forwarded_body.bytes().to_vec(),
+                    msgs.clone(),
+                    msgs.len(),
+                ))
             } else {
                 None
             }
@@ -942,6 +1124,10 @@ async fn prepare_upstream_request(
         original_size,
         lineage,
     );
+    // The project the agent works in, from the folder it named in the request.
+    wire.project_key = parsed
+        .as_ref()
+        .and_then(super::project_attribution::project_key);
     if let Some(route) = &route {
         wire.routed_from = Some(route.routed_from.clone());
         if let Some(id) = &route.provider_id {
@@ -1015,18 +1201,41 @@ async fn prepare_upstream_request(
         introspect,
         prefix_replay,
         upstream_send_succeeded: false,
+        egress_unobserved: false,
+        sealed_recorder: Some(forwarded_body.sealed_recorder()),
         upstream_started: None,
         context_ir,
         terminal: None,
+        kept_whole,
     };
     Ok(PreparedProxyRequest::Upstream(Box::new(ProxyOutbound {
         parts,
-        upstream_url,
         upstream_base,
         forwarded_body,
-        preserve_content_encoding,
         prepared,
     })))
+}
+
+/// One synchronous pass of a request that may shorten blocks, observed for
+/// the two things later stages need: the blocks it left whole under
+/// protection (merged into `kept`) and the recovery stubs it handed to the
+/// model (`handles`, carried from one pass of the request into the next —
+/// the passes are separated by awaits and may run on different threads).
+fn observed_pass<T>(
+    kept: &mut super::compress::KeptWhole,
+    handles: &mut super::sticky_tools::HandleUse,
+    issued: &mut super::compress::gate::Issued,
+    pass: impl FnOnce() -> T,
+) -> T {
+    let so_far = std::mem::take(handles);
+    let ((result, left_whole), known) = super::sticky_tools::within(so_far, || {
+        super::compress::gate::collecting(issued, || {
+            super::compress::observing(super::compress::Reader::Model, pass)
+        })
+    });
+    kept.merge(left_whole);
+    *handles = known;
+    result
 }
 
 fn apply_response_headers(response: &mut Response, prepared: &ProxyPrepared) {
@@ -1040,34 +1249,25 @@ fn apply_response_headers(response: &mut Response, prepared: &ProxyPrepared) {
     if let Ok(value) = HeaderValue::from_str(&prepared.task_class) {
         headers.insert("x-leanctx-task-class", value);
     }
-    if let Some(rank) = super::leaderboard::rank_header_if_due()
-        && let Ok(value) = HeaderValue::from_str(&rank)
-    {
-        headers.insert("x-leanctx-rank", value);
-    }
     if let Ok(value) = HeaderValue::from_str(&prepared.cache_alignment_score.to_string()) {
         headers.insert("x-leanctx-cache-alignment", value);
     }
     if let Some(report) = prepared.pipeline_report.as_ref() {
         report.apply_response_headers(headers);
     }
-    if let Some((prepared_body, _)) = prepared.introspect.as_ref() {
-        let messages = prepared_body
-            .get("messages")
-            .or_else(|| prepared_body.get("input"))
-            .and_then(serde_json::Value::as_array);
-        if let Some(messages) = messages {
-            // Same session-stable score the effort stage injects (#1912).
-            let task = crate::proxy::effort_routing::TaskComplexity::from_score(
-                crate::proxy::effort_routing::score_session_complexity(messages),
-            );
-            if let Ok(value) = HeaderValue::from_str(&task.score.to_string()) {
-                headers.insert("x-leanctx-complexity", value);
-            }
-            if let Ok(value) = HeaderValue::from_str(&task.budget_tokens.to_string()) {
-                headers.insert("x-leanctx-effort-budget", value);
-            }
-        }
+    // On a request that WAS forwarded: the distinct codes of why blocks
+    // stayed whole under protection (`recovery.*`). Without the refusal
+    // header beside it, this header is a statement, not a refusal.
+    if let Some(codes) = prepared.kept_whole.codes()
+        && let Ok(value) = HeaderValue::from_str(&codes)
+    {
+        headers.insert(admitted::REASON_CODES_HEADER, value);
+    }
+    if prepared.egress_unobserved {
+        headers.insert(
+            transport::EGRESS_EVIDENCE_HEADER,
+            HeaderValue::from_static(transport::OBSERVATION_UNAVAILABLE),
+        );
     }
     super::determinism_guard::apply_response_headers(response, &prepared.determinism_proof);
     trace_id::inject_trace_id(response, &prepared.determinism_proof.request_id);

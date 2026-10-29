@@ -72,7 +72,7 @@ output channel. The extension finds the binary in this order:
 | Command | What it does |
 |---|---|
 | lean-ctx: Show proof | `lean-ctx value` in a terminal |
-| lean-ctx: Open dashboard | `lean-ctx dashboard` in a terminal |
+| lean-ctx: Open Cockpit | `lean-ctx cockpit` in a terminal |
 | lean-ctx: Refresh status bar | re-reads the numbers now |
 
 ## Development

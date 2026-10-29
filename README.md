@@ -99,9 +99,9 @@ first-class paths from other compatibility references.
       Map-mode reads + compressed CLI output
     </td>
     <td align="center" width="33%">
-      <img src="assets/leanctx-gain.gif" width="320" alt="lean-ctx gain live dashboard demo">
+      <img src="assets/leanctx-gain.gif" width="320" alt="lean-ctx gain terminal summary demo">
       <br/>
-      <strong>Gain (live)</strong>
+      <strong>Gain (terminal)</strong>
       <br/>
       Token usage + estimated cost differences
     </td>
@@ -150,7 +150,7 @@ of files and command output, with references for recovering detail.
 - **JIT disclosure**: `signatures` carries line spans and points at `lines:N-M` for targeted expansion — outline first, bodies on demand
 - **Shell output**: 85+ shell-output patterns compress git, npm, cargo, docker, kubectl, terraform and more (250+ passthrough rules)
 - **Tree-sitter AST**: structural understanding for 27 languages — not just text compression
-- **Source recovery (CCR)**: supported compact views retain source or archive references for expansion through `ctx_expand`, `ctx_retrieve` or the reference API. Recovery depends on permissions, retention and the source remaining available. [Read modes and detail →](docs/reference/02-daily-use.md#1-reading-files)
+- **Source recovery (CCR)**: supported compact views retain source or archive references for expansion through `ctx_expand` or the reference API. Recovery depends on permissions, retention and the source remaining available. [Read modes and detail →](docs/reference/02-daily-use.md#1-reading-files)
 
 ### 2. Control — configured rules on supported paths
 
@@ -182,7 +182,7 @@ supported paths. `lean-ctx inspect` explains observed context operations. A
 context-only integration records its prepared result; it cannot prove a later
 model call made by the host.
 
-- **Context Manager**: browser dashboard with real-time token tracking, compression stats, utilization gauge
+- **Cockpit** (`lean-ctx cockpit`): local browser view with token tracking, compression stats, spend and recorded calls
 - **Audit export:** retain the recorded evidence for review within its stated scope.
 - **Context Proof** (`ctx_proof`, `ctx_verify`): exportable audit trail (verifier, SLO, pipeline and provenance records) plus runtime-checked policy claims (PathJail per touched file, budget)
 
@@ -226,13 +226,13 @@ lean-ctx shadow --latest
 
 - **Web & Research** (`ctx_url_read`): pull a public web page, PDF, or YouTube transcript into context as compressed, citation-backed text — `facts`/`quotes` return claims with a confidence score + source URL, relevance-ranked research-compression distils to a token budget, SSRF-guarded (http/https only)
 - **Graph-Powered Intelligence**: hybrid search (BM25 + embeddings + graph proximity via RRF), incremental git-diff updates
-- **LSP Refactoring** (`ctx_refactor`): language-server-powered rename, references, go-to-definition via rust-analyzer, typescript-language-server, pylsp, gopls
+- **LSP-backed symbols**: `ctx_patch op=replace_symbol` edits a whole symbol body and `ctx_callgraph` finds references, through rust-analyzer, typescript-language-server, pylsp or gopls
 - **Multi-Agent — Research** (`ctx_agent`, `ctx_handoff`): experimental local agent handoff with context transfer bundles, diary system, and shared state; not a hosted or generally available team service
 - **Archive Full-Text Search** (`ctx_expand search_all`): FTS5-powered cross-archive search over all previously archived tool outputs
 - **PR Context Packs**: `lean-ctx pack --pr` builds a PR-ready context pack (changed files, related tests, impact, artifacts)
 - **Context Packages — Research**: `lean-ctx pack create` bundles local Knowledge, Graph and Session state into `.ctxpkg` files with SHA-256 integrity; this is experimental local packaging, not a generally available Context Kits or hosted sharing product
 - **Context Time Machine — Research**: `lean-ctx snapshot create|list|show|verify|restore|publish|import` handles git-anchored, signed local snapshots and file-based sharing; dashboard replay and restore are experimental, and hosted history or a hosted registry is not a generally available product ([concept →](docs/concepts/context-time-machine.md))
-- **Observability**: `lean-ctx gain --live`, `lean-ctx wrapped`, `lean-ctx watch` and the browser dashboard show local activity and recorded context metrics; `gain --svg`/`--share` creates a shareable card or self-hostable page
+- **Observability**: `lean-ctx cockpit` shows local activity and recorded context metrics (Savings · Spend · Report · Proof, recorded calls in the Ledger); `lean-ctx gain` is the terminal summary (`--json` for scripts), and `gain --svg`/`--share` creates a shareable card or self-hostable page
 - **Usage ledger**: `lean-ctx savings` is a local per-event ledger with tokenizer transparency, bounce-netting and a tamper-evident SHA-256 chain; provider-measured savings require the proxy's counterfactual holdout
 - **HTTP mode**: `lean-ctx serve` for Streamable HTTP MCP + `/v1/tools/call` (used by the Cookbook and external clients)
 
@@ -299,7 +299,7 @@ wire path:   AI tool  →  lean-ctx proxy        →  model provider   (supporte
 - **Request proxy** *(wire path, opt-in)*: `lean-ctx proxy enable` routes supported requests through a local proxy. Configured transformations can reduce eligible prompt, history and tool-result content while respecting supported provider-cache boundaries. Provider-specific effort mapping (`proxy.effort`), verbosity controls and volatile-prefix handling have their own compatibility limits. Recovery requires retained, authorized artifacts; usage and cost evidence depend on the provider data the path observes.
 - **Property Graph**: multi-edge code graph powers impact analysis, related file discovery, and search ranking
 - **Session memory**: persists selected session state for recovery when authorized records remain available
-- **Context Manager**: browser dashboard for inspecting context activity and records visible to LeanCTX
+- **Cockpit** (`lean-ctx cockpit`): local browser view for inspecting context activity and records visible to LeanCTX
 
 <a id="get-started-30-seconds"></a>
 
@@ -316,7 +316,9 @@ cargo install lean-ctx                               # Rust
 lean-ctx wrap cursor      # or: wrap claude / wrap codex
 
 # Inspect recorded context metrics after your AI's first lean-ctx call.
-lean-ctx gain
+lean-ctx cockpit          # Savings · Spend · Report · Proof in the browser (also: lean-ctx dashboard)
+lean-ctx gain --terminal  # the same numbers as a terminal summary (--json for scripts)
+lean-ctx cockpit stop     # stop the background Cockpit server (--foreground keeps it in the terminal)
 ```
 
 `lean-ctx wrap` registers the MCP server and configures the supported local
@@ -497,16 +499,14 @@ Shared message bus, diaries, knowledge, and deterministic handoffs.
 <tr>
 <td width="50%" valign="top">
 
-### 🏢 Explore team and CI context — Research
-*"One shared index, headless in pipelines."*
+### 🏢 Headless in CI
+*"The same engine, headless in pipelines."*
 
 ```bash
-lean-ctx team serve --config team.toml
 lean-ctx bootstrap            # zero-prompt CI setup
 ```
-Experimental local team-server path with scoped tokens and verifiable context
-gates; no hosted team or cloud service is publicly available.
-→ **[Journey 9 — Team, Cloud & CI](docs/reference/09-team-cloud-ci.md)**
+Everything local works without an account. LeanCTX Hive (shared knowledge for teams
+and your own machines) follows with 3.12.1.
 
 </td>
 <td width="50%" valign="top">
@@ -530,11 +530,12 @@ Compression levels, tool profiles, themes, and rules governance.
 *"Show me the numbers."*
 
 ```bash
-lean-ctx gain --deep          # savings, cost, per-agent, heatmap
-lean-ctx wrapped              # shareable recap (also: gain --svg / gain --share)
+lean-ctx cockpit              # Savings · Spend · Report · Proof in the browser
+lean-ctx gain --deep --terminal  # terminal: savings, cost, per-agent, heatmap (--json for scripts)
+lean-ctx gain --svg           # shareable recap card (also: gain --share / gain --wrapped)
 lean-ctx savings              # verified per-event ledger (auditable; savings verify)
 ```
-All analytics live in the CLI/dashboard — never burning agent tokens.
+All analytics live in the Cockpit and the CLI — never burning agent tokens.
 → **[Journey 11 — Analytics & Insights](docs/reference/11-analytics-and-insights.md)**
 
 </td>
@@ -632,8 +633,8 @@ Try these in any repo:
 ```bash
 lean-ctx read rust/src/server/mod.rs -m map
 lean-ctx -c "git log -n 5 --oneline"
-lean-ctx gain --live
-lean-ctx dashboard                              # Context Manager (browser)
+lean-ctx gain                                   # terminal summary
+lean-ctx cockpit                                # Savings · Spend · Report · Proof (browser)
 lean-ctx benchmark report .
 ```
 
@@ -766,6 +767,14 @@ Start with [CONTRIBUTING.md](CONTRIBUTING.md). Easy first PR: propose a new CLI 
 
 ## License
 
-Mixed licensing: the Trust Core remains Apache-2.0 while explicitly mapped v4
-modules may use commercial source-visible terms. See [LICENSE.md](LICENSE.md)
-and [LICENSE_MATRIX.toml](LICENSE_MATRIX.toml).
+The LeanCTX Engine and its open interfaces (`rust/`, `packages/`, `docs/`,
+`scripts/`) are Apache-2.0. [LICENSE.md](LICENSE.md) and
+[LICENSE_MATRIX.toml](LICENSE_MATRIX.toml) are the path-level authority for
+that Apache host.
+
+The consolidated development tree also carries `sdk/` (client bindings) and
+`ee/` (commercial Runtime, Suite and services) next to the host. Both keep
+their own existing terms, are not Apache-2.0 and are not approved for
+publication; the host-only mirror contains neither directory. Their presence
+in one checkout relicenses nothing. [SOURCE_LAYOUT.md](SOURCE_LAYOUT.md) lists
+each path with its current terms.

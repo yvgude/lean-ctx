@@ -119,7 +119,7 @@ fn render_session_block(health: &PersistedHealth) -> String {
             h.file, h.line, h.symbol, h.cognitive
         ));
     }
-    out.push_str("(ctx_quality / lean-ctx health for full report)\n---");
+    out.push_str("(lean-ctx health for full report)\n---");
     out
 }
 

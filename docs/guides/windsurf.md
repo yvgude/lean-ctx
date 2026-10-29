@@ -86,7 +86,7 @@ If native Edit is unavailable, use the anchored editor: `ctx_read(mode="anchored
 `ctx_patch` (reachable via `ctx_call` in the default profile).
 
 ## Proactive (use without being asked)
-- `ctx_overview(task)` at session start
+- `ctx_compose(task)` at session start
 - `ctx_compress` when context grows large
 
 ## Session Documentation
@@ -128,7 +128,7 @@ ctx_read("src/api/routes.rs", "full")
 
 ```
 # Find code by meaning, not just text
-ctx_semantic_search("how does the payment flow work?")
+ctx_search(action="semantic", query="how does the payment flow work?")
 
 # Token-efficient grep
 ctx_search("async fn handle_payment", "src/")
@@ -140,10 +140,7 @@ Before Cascade makes changes:
 
 ```
 ctx_graph("impact", "src/models/user.rs")
-# Returns: what files import/depend on this file
-
-ctx_impact("src/models/user.rs")
-# Returns: blast radius analysis
+# Returns: what files import/depend on this file (blast radius)
 ```
 
 ## Windsurf-Specific Best Practices
@@ -186,12 +183,12 @@ ctx_compress  # Creates memory checkpoint, frees context space
 ctx_metrics   # Inspect local token and context metrics
 ```
 
-### 4. Use ctx_overview for Flow Starts
+### 4. Use ctx_compose for Flow Starts
 
 At the beginning of each Cascade flow:
 
 ```
-ctx_overview("implement rate limiting for API endpoints")
+ctx_compose("implement rate limiting for API endpoints")
 ```
 
 This gives Cascade immediate project orientation with task-relevant files and context.

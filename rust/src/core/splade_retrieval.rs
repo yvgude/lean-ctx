@@ -3,8 +3,10 @@
 //! Stage 1: BM25 top-100. Stage 2: programming-term synonym / association expansion.
 //! Stage 3: additive expansion BM25-like scoring combined with stage-1 scores.
 
+#[cfg(feature = "embeddings")]
 use std::collections::{HashMap, HashSet};
 
+#[cfg(feature = "embeddings")]
 use crate::core::bm25_index::{BM25Index, tokenize_for_index};
 
 /// Result row after hybrid retrieval + re-ranking.
@@ -19,6 +21,7 @@ pub struct SpladeResult {
 }
 
 /// Static programming-term associations (token → related tokens with weights).
+#[cfg(feature = "embeddings")]
 fn expansion_dictionary() -> HashMap<&'static str, Vec<(&'static str, f64)>> {
     HashMap::from([
         (
@@ -103,6 +106,7 @@ fn expansion_dictionary() -> HashMap<&'static str, Vec<(&'static str, f64)>> {
     ])
 }
 
+#[cfg(feature = "embeddings")]
 fn build_expanded_weights(query_tokens: &[String]) -> HashMap<String, f64> {
     let dict = expansion_dictionary();
     let mut out: HashMap<String, f64> = HashMap::new();
@@ -122,6 +126,7 @@ fn build_expanded_weights(query_tokens: &[String]) -> HashMap<String, f64> {
     out
 }
 
+#[cfg(feature = "embeddings")]
 fn expansion_bm25_for_chunk(
     index: &BM25Index,
     chunk_idx: usize,
@@ -168,6 +173,7 @@ fn expansion_bm25_for_chunk(
 }
 
 /// BM25 top-100 → SPLADE-like expansion → combined re-rank.
+#[cfg(feature = "embeddings")]
 pub(crate) fn hybrid_retrieve(
     query: &str,
     bm25_index: &BM25Index,

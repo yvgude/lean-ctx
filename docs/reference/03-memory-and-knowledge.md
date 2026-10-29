@@ -158,6 +158,102 @@ what the project knows. OKF is a **local feature, free on every plan**. See the
 [OKF interop guide](../guides/okf-interop.md) and
 [Knowledge Formats — which one, when](../guides/knowledge-formats.md).
 
+### Restore limits — backups, archives, `cloud pull` and `sync`
+
+Three ways bring knowledge back: copying a backup of the data directory,
+`lean-ctx knowledge restore` (from the reclaim archive), and
+`lean-ctx cloud pull` (Pro, from your account). `lean-ctx snapshot restore`
+only resumes a saved session slice and, with `--git`, checks out its commit
+(never over a dirty tree); it does not touch knowledge or account access.
+
+- **What a restore brings back:** the facts, history, patterns and procedures
+  in the backup, archive or cloud copy.
+- **What it never brings back:**
+  - Access you have lost. Revoked plans, seats and grants stay revoked. A
+    restored entitlement file is not trusted: the record of what your account
+    accepted lives in the OS credential store, not in the data directory.
+    Until the next check against your account, a restored file grants nothing
+    paid. After that check, you have only what the account grants today.
+  - Sources you can no longer read. Archived items are checked again before
+    they return.
+  - Newer values. `knowledge restore` never puts an older value on a key that
+    a current fact owns. `cloud pull` never overwrites a local fact and never
+    writes to the cloud.
+- **How conflicts show:** `cloud pull` reports
+  `Conflicts: N kept local, cloud value differs: category/key, …`. Your local
+  value stays, the cloud copy stays unchanged, and you decide which one is
+  right (see the sync rules below).
+- **Sync never replaces newer cloud values unasked.** `lean-ctx sync` (and
+  the background auto-sync) reads the cloud copy first, then uploads your
+  local knowledge as the new cloud copy.
+  - Keys that only the cloud holds (another device's facts) are kept: the
+    upload carries them along, so a sync never deletes another device's
+    knowledge. A key you remove only on this machine therefore stays in the
+    cloud.
+  - For a key both sides hold, the upload is refused (exit code 1,
+    `Knowledge upload refused: the cloud copy has newer values for: …`) when
+    the cloud value differs from every value this machine holds for that
+    key, current or superseded, and either:
+    - the cloud entry has a timestamp newer than the key's local
+      `last_confirmed`, or
+    - the cloud entry has no timestamp. The encrypted cloud copy carries
+      none, so a differing value this machine never saw counts as a
+      conflict.
+
+  Other surfaces (stats, commands, gotchas) still sync. Run
+  `lean-ctx cloud pull` to see the cloud values. To take a cloud value,
+  `knowledge remember` it and sync again. To keep your local values instead,
+  `lean-ctx sync --force` replaces them in the cloud copy; keys only the
+  cloud holds are still kept. If the account has no cloud copy yet, sync
+  uploads. If the cloud copy can't be fetched, sync refuses the upload, and
+  `--force` replaces it with the local copy. A cloud copy this device cannot
+  decrypt is never replaced, not even with `--force` (see below).
+
+### Encrypted vault — one account key on every device
+
+Knowledge and gotchas are end-to-end encrypted under one random **account
+vault key**. The service keeps only a copy wrapped under your **recovery
+code**, which it never sees.
+
+- **First device:** the first `lean-ctx sync` creates the key and shows the
+  recovery code once (`XXXXX-XXXXX-XXXXX-XXXXX-XXXXX-XXXXX`). Store it in your
+  password manager; LeanCTX cannot recover it.
+- **Every other device, once:** `lean-ctx cloud vault unlock` asks for the
+  code at a hidden prompt (or `--code-file <owner-private file>`; never on the
+  command line). A typo is caught locally before anything is sent.
+- **New code:** on an unlocked device, `lean-ctx cloud vault new-code` replaces
+  the code; the key and your data stay the same.
+- **Status:** `lean-ctx cloud status` (or `cloud vault status`) shows
+  `Vault: unlocked (key 1a2b3c4d…)`, `locked on this device — run lean-ctx
+  cloud vault unlock`, or `not set up`.
+- **Locked device:** sync and auto-sync keep the cloud copy untouched and say
+  `Personal Cloud vault locked: …` with the command that fixes it.
+- **Upgrade from 3.11.4 or earlier:** vaults sealed under the old
+  per-device key still open on the device that wrote them. That device
+  creates the account key on its next sync and re-seals the cloud copy. If two
+  devices race to create it, the first one the service stores wins; the other
+  is told to unlock.
+
+### Cloud Cockpit metrics (Pro)
+
+On a signed-in Pro account each device also uploads the numbers its Cockpit
+shows, per project and UTC day, so the Cloud Dashboard adds up all your
+devices (contract `cloud-cockpit-metrics-v1`). Free accounts upload nothing.
+
+- **What is sent:** savings and tool calls, model spend at list price, ledger
+  entries by kind, guard counts, agents per host, knowledge counts and
+  receipts. Never paths, file names, commands, URLs, fact keys or values.
+- **Who is who:** a project is a salted id of its identity (`.lean-ctx-id`,
+  else git origin, else manifest name), so one repository on two devices is
+  one project. Its label is the folder name; `cloud.metrics_project_labels =
+  false` sends none. The device is a random id in `<data>/cloud/device-id`
+  (delete it to appear as a new device) labelled with the hostname.
+- **When:** after the first tool call and on `lean-ctx sync`, at most once an
+  hour, covering today and the two days before. `lean-ctx sync
+  --metrics-backfill` uploads the last 90 days once. Failures retry silently.
+- **Off switch:** `cloud.metrics_upload = false`. `lean-ctx cloud status`
+  shows whether uploads are on and when the last one ran.
+
 ### Gotchas — auto-learned mistakes
 
 lean-ctx auto-detects recurring error patterns and stores them as **gotchas**
@@ -167,7 +263,7 @@ lean-ctx auto-detects recurring error patterns and stores them as **gotchas**
 
 ---
 
-## 3. Starting a session right — `lean-ctx overview` / `ctx_overview`
+## 3. Starting a session right — `lean-ctx overview` / `ctx_compose`
 
 **What it does:** A task-relevant map of the project — the ideal first call in a
 new session. Combines structure, recent knowledge, and (optionally) task focus.
@@ -178,9 +274,11 @@ lean-ctx overview "fix the login bug"   # task-contextualized
 lean-ctx overview --json
 ```
 
-`ctx_overview` is in the **standard** profile, so most setups expose it. It pulls
-the knowledge `wakeup` bundle when `enable_wakeup_ctx = true` (default), so your
-AI sees relevant prior facts immediately.
+Over MCP, `ctx_compose(task=…)` is the first call: ranked files, symbols and
+structure for the task. The knowledge `wakeup` bundle no longer needs a call: when
+`enable_wakeup_ctx = true` (default) it rides on the first tool reply of a
+session as an `--- AUTO CONTEXT ---` block, so your AI sees relevant prior facts
+immediately.
 
 ---
 

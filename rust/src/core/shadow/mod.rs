@@ -9,28 +9,18 @@ pub mod runtime;
 pub use comparison::ShadowReport;
 pub use recommendation::ShadowTask;
 
-use baseline::{BaselineConfig, simulate_baseline};
+use baseline::simulate_baseline;
 use comparison::compare;
 use recommendation::measure_treatment;
 
-/// Runs the LeanCTX treatment beside a deterministic unoptimized baseline.
+/// Runs the LeanCTX treatment beside a deterministic baseline without context reduction. Each
+/// task is compared with its own host-chosen model; only context changes count as savings.
 #[derive(Debug, Default)]
 pub struct ShadowEngine;
 
 impl ShadowEngine {
     pub fn run_comparison(tasks: &[ShadowTask]) -> ShadowReport {
-        Self::run_comparison_with_baseline(tasks, BaselineConfig::default())
-    }
-
-    #[allow(clippy::needless_pass_by_value)]
-    pub fn run_comparison_with_baseline(
-        tasks: &[ShadowTask],
-        config: BaselineConfig,
-    ) -> ShadowReport {
-        let baselines: Vec<_> = tasks
-            .iter()
-            .map(|task| simulate_baseline(task, &config))
-            .collect();
+        let baselines: Vec<_> = tasks.iter().map(simulate_baseline).collect();
         let treatments: Vec<_> = tasks.iter().map(measure_treatment).collect();
         compare(&baselines, &treatments)
     }

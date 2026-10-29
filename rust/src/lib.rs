@@ -36,7 +36,6 @@ pub mod instructions;
 pub mod lsp;
 pub mod marked_block;
 pub mod mcp_stdio;
-pub mod ocla;
 pub mod rewrite_registry;
 pub mod rules_inject;
 pub mod server;
@@ -50,7 +49,6 @@ pub mod tools;
 // Always compiled: the shared accounting the rest of the engine reads (CCR
 // archive, usage meters, savings, introspection). The HTTP proxy server and its
 // provider adapters inside are gated on `http-server` (#586).
-#[allow(dead_code)]
 pub mod proxy;
 pub mod proxy_autostart;
 pub mod proxy_setup;
@@ -58,10 +56,9 @@ pub mod proxy_setup;
 // ---------------------------------------------------------------------------
 // Pillar: Cloud — hosted API, accounts, sync, billing edge
 // ---------------------------------------------------------------------------
-pub mod cloud_client;
-pub mod cloud_sync;
 #[cfg(feature = "http-server")]
 pub mod http_server;
+pub mod telemetry_transport;
 
 // ---------------------------------------------------------------------------
 // Shared — CLI, IPC, config, diagnostics, setup
@@ -77,4 +74,3 @@ pub mod status;
 #[cfg(test)]
 pub(crate) mod test_env;
 pub mod uninstall;
-pub mod wrap;

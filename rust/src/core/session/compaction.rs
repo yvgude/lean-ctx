@@ -35,6 +35,30 @@ fn resume_block_hint(level: &CompressionLevel) -> Option<String> {
 impl SessionState {
     /// Formats the session state as a compact multi-line summary for agent context.
     pub fn format_compact(&self) -> String {
+        self.compact_summary().0
+    }
+
+    /// [`Self::format_compact`] as the reply of a tool that declares its
+    /// sources (`ctx_session status`). Findings publish their sources or mark
+    /// the call's capture themselves ([`Self::finding_served`]); every other
+    /// session text in the summary — task, decisions, touched files, test
+    /// results, next steps, playbook — was typed or derived without a source
+    /// binding, so a summary that carries any of it marks the capture
+    /// incomplete. What remains unmarked is fixed text, the session counters
+    /// and the project root the request is bound to.
+    pub(crate) fn format_compact_delivered(&self) -> String {
+        let (summary, unsourced) = self.compact_summary();
+        if unsourced {
+            crate::core::archive::authority::mark_unbound();
+        }
+        summary
+    }
+
+    /// The compact summary, and whether it carries session text other than
+    /// findings (see [`Self::format_compact_delivered`]). A new section that
+    /// prints stored session text sets `unsourced`.
+    fn compact_summary(&self) -> (String, bool) {
+        let mut unsourced = false;
         let duration = self.updated_at - self.started_at;
         let hours = duration.num_hours();
         let mins = duration.num_minutes() % 60;
@@ -68,18 +92,25 @@ impl SessionState {
                 .progress_pct
                 .map_or(String::new(), |p| format!(" [{p}%]"));
             lines.push(format!("Task: {}{pct}", task.description));
+            unsourced = true;
         }
 
         if let Some(ref root) = self.project_root {
             lines.push(format!("Root: {}", shorten_path(root)));
         }
 
-        if !self.findings.is_empty() {
-            let items: Vec<String> = self
-                .findings
-                .iter()
-                .rev()
-                .take(5)
+        // Only findings that may be delivered now (`finding_served`); when
+        // none of the stored ones may, the line is left out.
+        let recent_findings: Vec<&super::types::Finding> = self
+            .findings
+            .iter()
+            .rev()
+            .filter(|finding| self.finding_served(finding))
+            .take(5)
+            .collect();
+        if !recent_findings.is_empty() {
+            let items: Vec<String> = recent_findings
+                .into_iter()
                 .map(|f| {
                     let loc = match (&f.file, f.line) {
                         (Some(file), Some(line)) => format!("{}:{line}", shorten_path(file)),
@@ -109,6 +140,7 @@ impl SessionState {
                 .map(|d| d.summary.as_str())
                 .collect();
             lines.push(format!("Decisions: {}", items.join(" | ")));
+            unsourced = true;
         }
 
         if !self.files_touched.is_empty() {
@@ -128,6 +160,7 @@ impl SessionState {
                 self.files_touched.len(),
                 items.join(" ")
             ));
+            unsourced = true;
         }
 
         if let Some(ref tests) = self.test_results {
@@ -135,10 +168,12 @@ impl SessionState {
                 "Tests: {}/{} pass ({})",
                 tests.passed, tests.total, tests.command
             ));
+            unsourced = true;
         }
 
         if !self.next_steps.is_empty() {
             lines.push(format!("Next: {}", self.next_steps.join(" | ")));
+            unsourced = true;
         }
 
         // ACE playbook (#541): restore the delta log (top entries by
@@ -147,9 +182,10 @@ impl SessionState {
         let playbook_block = self.playbook.render(12);
         if !playbook_block.is_empty() {
             lines.push(playbook_block.trim_end().to_string());
+            unsourced = true;
         }
 
-        lines.join("\n")
+        (lines.join("\n"), unsourced)
     }
 
     /// Builds a size-limited XML snapshot of session state for context compaction.
@@ -203,14 +239,16 @@ impl SessionState {
             sections.push((2, format!("<decisions>{}</decisions>", items.join(" | "))));
         }
 
-        if !self.findings.is_empty() {
-            let items: Vec<String> = self
-                .findings
-                .iter()
-                .rev()
-                .take(5)
-                .map(|f| f.summary.clone())
-                .collect();
+        // Only findings that may be delivered now (`finding_served`).
+        let items: Vec<String> = self
+            .findings
+            .iter()
+            .rev()
+            .filter(|finding| self.finding_served(finding))
+            .take(5)
+            .map(|f| f.summary.clone())
+            .collect();
+        if !items.is_empty() {
             sections.push((2, format!("<findings>{}</findings>", items.join(" | "))));
         }
 
@@ -408,7 +446,13 @@ impl SessionState {
             bits.push(Self::task_keyword_stem(&t.description));
         }
         if bits.iter().all(std::string::String::is_empty) {
-            if let Some(f) = self.findings.last() {
+            // The stem is text of the finding: only one that may be delivered.
+            if let Some(f) = self
+                .findings
+                .iter()
+                .rev()
+                .find(|finding| self.finding_served(finding))
+            {
                 bits.push(Self::task_keyword_stem(&f.summary));
             } else if let Some(d) = self.decisions.last() {
                 bits.push(Self::task_keyword_stem(&d.summary));
@@ -551,14 +595,16 @@ impl SessionState {
             }
         }
 
-        if !self.findings.is_empty() {
-            let recent: Vec<&str> = self
-                .findings
-                .iter()
-                .rev()
-                .take(5)
-                .map(|f| f.summary.as_str())
-                .collect();
+        // Only findings that may be delivered now (`finding_served`).
+        let recent: Vec<&str> = self
+            .findings
+            .iter()
+            .rev()
+            .filter(|finding| self.finding_served(finding))
+            .take(5)
+            .map(|f| f.summary.as_str())
+            .collect();
+        if !recent.is_empty() {
             parts.push(format!("Key findings: {}", recent.join("; ")));
         }
 

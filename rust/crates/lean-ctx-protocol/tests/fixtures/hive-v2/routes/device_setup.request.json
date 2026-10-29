@@ -1,0 +1,12 @@
+{
+  "device_code": "dc_3q7cvbm5n2xwk8ht4rz6pj9g",
+  "project": {
+    "name": "payments",
+    "remote": "gitlab.acme.example/acme/payments"
+  },
+  "schema": "leanctx.hive.device-setup/v1",
+  "shares": [
+    "bus",
+    "knowledge"
+  ]
+}

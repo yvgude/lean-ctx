@@ -1,0 +1,26 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/swarms/9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02/results",
+  "request": null,
+  "response": {
+    "body": {
+      "items": [
+        {
+          "created_at": 1792800100000,
+          "goal": "g_ttttttttttttttttttttttttta",
+          "node": "n_aaaaaaaaaaaaaaaaaaaaaadaaq",
+          "review": "in_review",
+          "worker": {
+            "id": "wkr_76aa2uwmpczt3cqkhfed",
+            "name": "M",
+            "place_role": "writer"
+          }
+        }
+      ],
+      "next_cursor": null
+    },
+    "status": 200
+  },
+  "route": "W39"
+}

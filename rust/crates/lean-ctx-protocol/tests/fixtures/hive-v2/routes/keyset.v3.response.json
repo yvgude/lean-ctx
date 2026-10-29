@@ -1,0 +1,88 @@
+{
+  "keys": [
+    {
+      "created_at": 1790208000000,
+      "key_id": "552e43422b3589fa",
+      "public_key": "-AzM3OSuHAeuIIoq35mjEK5CB-Awb6AjYRCwaCe7uNA",
+      "purposes": [
+        "policy"
+      ],
+      "revoked_at": null
+    },
+    {
+      "created_at": 1790208000000,
+      "key_id": "4fc7bebc302357bd",
+      "public_key": "Y1VpHBeKj_kQB6dHivuVXvc1LGPnslcDmEz3iybiGlY",
+      "purposes": [
+        "event"
+      ],
+      "revoked_at": null
+    },
+    {
+      "created_at": 1775520000000,
+      "key_id": "5c4707450391efe5",
+      "public_key": "7pOk9m-NFrgZu5vrn_zN_NwUEuh_7moyTCqZoeDmcUg",
+      "purposes": [
+        "event"
+      ],
+      "revoked_at": 1790121600000
+    },
+    {
+      "created_at": 1790208000000,
+      "key_id": "7bc9f7e9dc1a0621",
+      "public_key": "DXVQdU4IAKXSN-71gmA1dmubPloVhoqUCrKJlYeI47A",
+      "purposes": [
+        "snapshot"
+      ],
+      "revoked_at": null
+    },
+    {
+      "created_at": 1790208000000,
+      "key_id": "41dad53017a5f8de",
+      "public_key": "iN9VZBNTiwAgFelhmwG9tcxIxyFWRXklY_VGD3MHp2M",
+      "purposes": [
+        "revocation"
+      ],
+      "revoked_at": null
+    },
+    {
+      "created_at": 1790208000000,
+      "key_id": "b7bda707a8979c46",
+      "public_key": "2sMevKFZ0oP4NB_ZDX-hzZW_XsyrZX95UmYuZ-Vq--M",
+      "purposes": [
+        "consent"
+      ],
+      "revoked_at": null
+    },
+    {
+      "created_at": 1790208000000,
+      "key_id": "fac2346807329f09",
+      "public_key": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY",
+      "purposes": [
+        "control"
+      ],
+      "revoked_at": null
+    },
+    {
+      "created_at": 1790208000000,
+      "key_id": "5d2abe57a3a2c50f",
+      "public_key": "a3NKjv8kb-c0s41ARsFI7uXwT-h7OgpCOVWneVbeBms",
+      "purposes": [
+        "purge"
+      ],
+      "revoked_at": null
+    }
+  ],
+  "schema": "leanctx.hive.keyset/v3",
+  "signature": "FPd+2wOsqqsmvtxV+MRe28bBLn9xIJ09ce//sMBwvDYGCnMRoauCoT5x7LZgwtjqFfVscxtFxk8Gew8SPko3Bg==",
+  "signatures": [
+    {
+      "key_id": "7c05bc3512a2bbe7",
+      "signature": "8a9784a08577d16d579b51e324d0fc8fb5833a6f03286de73b1be6f282bddfaa0eb4fe9c442362a7c504494cff8305caa6536910108f7b9e01e8405b53f1610a"
+    },
+    {
+      "key_id": "168d42cf763161e3",
+      "signature": "78eddc47fc969dabfc3cd6f2c879d605f8316a10cb9b5cd621e4353f383d822f62af17505ab1da01e4dab3875d32b23123a1d8a63a1acbe1939d539c23478d09"
+    }
+  ]
+}

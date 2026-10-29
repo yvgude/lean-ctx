@@ -1,0 +1,13 @@
+{
+  "case": "alias_without_hlc_node",
+  "base": "routes/worker_register.alias.request.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/hlc_node"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

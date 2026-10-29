@@ -262,3 +262,134 @@ fn legacy_registry_deserializes_without_claiming_session_telemetry() {
     );
     assert!(!registry.logical_session_telemetry_seen);
 }
+
+/// Dogfood 24.10.: a quiet session's registration expired silently and its
+/// next claim failed. A heartbeat of its own process renews it, once
+/// reported; a live one is a plain heartbeat.
+#[test]
+fn an_expired_worker_registration_is_renewed_and_reported_once() {
+    let _isolated = crate::core::data_dir::isolated_data_dir();
+    let mut registry = AgentRegistry::new();
+    let id = registry
+        .register("claude", Some("server"), "/project", None)
+        .expect("register");
+    registry.agents[0].last_active = Utc::now() - chrono::Duration::hours(1);
+    registry.cleanup_stale(super::presence_ttl());
+    assert_eq!(registry.agents[0].status, AgentStatus::Finished);
+    registry.save().expect("save");
+
+    assert!(AgentRegistry::renew_worker_persistent(&id).expect("renewed"));
+    let loaded = AgentRegistry::load().expect("registry");
+    assert_eq!(loaded.agents[0].status, AgentStatus::Active);
+    assert!(super::take_renewed(&id));
+    assert!(!super::take_renewed(&id), "reported once");
+    assert!(!AgentRegistry::renew_worker_persistent(&id).expect("heartbeat"));
+    assert!(!super::take_renewed(&id));
+}
+
+fn post(from: &str, text: &str) {
+    AgentRegistry::mutate_locked(|r| {
+        r.post_message_scoped(
+            Some("/project"),
+            from,
+            None,
+            "finding",
+            text,
+            crate::core::a2a::message::PrivacyLevel::Team,
+            crate::core::a2a::message::MessagePriority::Normal,
+            None,
+        )
+    })
+    .expect("post")
+    .1
+    .expect("posted");
+}
+
+/// `ctx_agent wait`: its own post never wakes the agent, one from another
+/// agent in its project does.
+#[test]
+fn wait_sees_a_message_for_the_agent_and_times_out_otherwise() {
+    let _isolated = crate::core::data_dir::isolated_data_dir();
+    let mut registry = AgentRegistry::new();
+    let me = registry
+        .register("claude", Some("dev"), "/project", None)
+        .expect("register");
+    registry.save().expect("save");
+    let short = std::time::Duration::from_millis(50);
+    assert!(!AgentRegistry::wait_for_unread(
+        &me,
+        "/project",
+        short,
+        || {}
+    ));
+    post(&me, "mine");
+    assert!(!AgentRegistry::wait_for_unread(
+        &me,
+        "/project",
+        short,
+        || {}
+    ));
+    let waiter = std::thread::spawn({
+        let me = me.clone();
+        move || {
+            AgentRegistry::wait_for_unread(
+                &me,
+                "/project",
+                std::time::Duration::from_secs(10),
+                || {},
+            )
+        }
+    });
+    std::thread::sleep(std::time::Duration::from_millis(100));
+    post("peer", "hello");
+    assert!(
+        waiter.join().expect("waiter"),
+        "woken by the peer's message"
+    );
+    assert!(
+        !AgentRegistry::wait_for_unread(&me, "/elsewhere", short, || {}),
+        "another project's message"
+    );
+}
+
+/// A post that replaces the registry within the same timestamp tick as the
+/// version the waiter last read leaves the mtime unchanged (coarse clocks,
+/// 1 s on HFS+): the wait still sees it, not only at the 30 s keepalive.
+#[test]
+fn wait_sees_a_post_that_left_the_registry_mtime_unchanged() {
+    let _isolated = crate::core::data_dir::isolated_data_dir();
+    let mut registry = AgentRegistry::new();
+    let me = registry
+        .register("claude", Some("dev"), "/project", None)
+        .expect("register");
+    registry.save().expect("save");
+    let path = super::agents_dir()
+        .expect("agents dir")
+        .join("registry.json");
+    let before = std::fs::metadata(&path)
+        .and_then(|meta| meta.modified())
+        .expect("mtime");
+    let waiter = std::thread::spawn({
+        let me = me.clone();
+        move || {
+            let started = std::time::Instant::now();
+            let woke = AgentRegistry::wait_for_unread(
+                &me,
+                "/project",
+                std::time::Duration::from_secs(10),
+                || {},
+            );
+            (woke, started.elapsed())
+        }
+    });
+    std::thread::sleep(std::time::Duration::from_millis(200));
+    post("peer", "same tick");
+    std::fs::OpenOptions::new()
+        .write(true)
+        .open(&path)
+        .and_then(|file| file.set_modified(before))
+        .expect("restore mtime");
+    let (woke, waited) = waiter.join().expect("waiter");
+    assert!(woke, "woken by the peer's message");
+    assert!(waited < std::time::Duration::from_secs(5), "{waited:?}");
+}

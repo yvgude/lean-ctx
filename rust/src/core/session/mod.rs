@@ -1,4 +1,7 @@
+pub(crate) mod admission;
+pub mod caller;
 mod compaction;
+mod finding_sources;
 mod heuristics;
 pub(crate) mod housekeeping;
 mod journal;
@@ -6,18 +9,21 @@ mod paths;
 mod persistence;
 pub mod playbook;
 mod save_outcome;
+mod slot;
 mod state;
 pub(crate) use journal::AttachSessionJournalV1;
 #[cfg(test)]
 pub(crate) use state::{GIT_TASK_INTENT, INFERRED_TASK_INTENT};
 pub(crate) use state::{extract_session_facts, is_auto_task_intent};
 mod types;
+pub(crate) use paths::{EngineSessionId, parse_engine_session_id};
 
 pub use playbook::{DeltaOutcome, EntryKind, Playbook, PlaybookEntry};
+pub use slot::{SessionSlot, SharedSession};
 pub use types::{
     Decision, EvidenceKind, EvidenceRecord, FileTouched, Finding, LiveZoneSessionState,
-    ManifestEntry, PreparedSave, ProgressEntry, SessionState, SessionStats, SessionSummary,
-    TaskInfo, TestSnapshot,
+    ManifestEntry, PreparedSave, ProgressEntry, SaveError, SessionDayCounts, SessionState,
+    SessionStats, SessionSummary, TaskInfo, TestSnapshot,
 };
 
 #[cfg(test)]
@@ -25,6 +31,26 @@ mod tests {
     use super::paths::{extract_cd_target, sessions_dir};
     use super::types::*;
     use chrono::{Duration, Utc};
+
+    /// Bypass path "memory": findings and decisions the agent records are
+    /// recalled into later context, so a credential never enters them.
+    #[test]
+    fn session_memory_never_stores_a_credential() {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let credential = concat!("AK", "IAQ3EGRZ7MEMORYKEY");
+        let mut session = SessionState::new();
+        session.add_finding(Some("deploy.env"), Some(3), &format!("key is {credential}"));
+        session.add_decision(
+            &format!("rotate {credential}"),
+            Some(&format!("it leaked as {credential}")),
+        );
+        let stored = serde_json::to_string(&session).expect("serialize session");
+        assert!(
+            !stored.contains(credential),
+            "session memory kept the credential"
+        );
+        assert!(stored.contains("key is"), "the finding itself is kept");
+    }
 
     /// A git-derived task names the uncommitted files; it was a `--stat`
     /// summary ("Modified: 2 files changed, 19 insertions(+) … in ") whose
@@ -48,26 +74,6 @@ mod tests {
             .as_deref(),
             Some("Uncommitted changes: entropy.rs, call_graph.rs, quality.rs (+2 more)")
         );
-    }
-
-    /// Bypass path "memory": findings and decisions the agent records are
-    /// recalled into later context, so a credential never enters them.
-    #[test]
-    fn session_memory_never_stores_a_credential() {
-        let _isolation = crate::core::data_dir::isolated_data_dir();
-        let credential = concat!("AK", "IAQ3EGRZ7MEMORYKEY");
-        let mut session = SessionState::new();
-        session.add_finding(Some("deploy.env"), Some(3), &format!("key is {credential}"));
-        session.add_decision(
-            &format!("rotate {credential}"),
-            Some(&format!("it leaked as {credential}")),
-        );
-        let stored = serde_json::to_string(&session).expect("serialize session");
-        assert!(
-            !stored.contains(credential),
-            "session memory kept the credential"
-        );
-        assert!(stored.contains("key is"), "the finding itself is kept");
     }
 
     #[test]
@@ -357,6 +363,54 @@ mod tests {
         let mut session = SessionState::new();
         session.project_root = Some("/project".to_string());
         assert_eq!(session.effective_cwd(Some(".")), "/project");
+    }
+
+    /// A command must never run in a directory the caller did not name. An
+    /// explicit `cwd` outside the project jail is an error, not the project
+    /// root; a stored shell cwd that is no longer inside the project is one
+    /// too. Accepted directories resolve as before.
+    #[cfg(not(feature = "no-jail"))]
+    #[test]
+    fn execution_cwd_refuses_instead_of_substituting_the_project_root() {
+        let base = tempfile::tempdir().unwrap();
+        let root = base.path().join("project");
+        let inside = root.join("src");
+        let outside = base.path().join("elsewhere");
+        for dir in [&inside, &outside] {
+            std::fs::create_dir_all(dir).unwrap();
+        }
+        let canon = |path: &std::path::Path| {
+            crate::core::pathutil::safe_canonicalize_or_self(path)
+                .to_string_lossy()
+                .to_string()
+        };
+        let (root, inside, outside) = (canon(&root), canon(&inside), canon(&outside));
+
+        let mut session = SessionState::new();
+        session.project_root = Some(root.clone());
+
+        let refused = session.execution_cwd(Some(&outside));
+        assert!(
+            refused.as_ref().is_err_and(|reason| !reason.is_empty()),
+            "an explicit cwd outside the project must fail: {refused:?}"
+        );
+        assert_eq!(session.execution_cwd(Some(&inside)), Ok(inside.clone()));
+        assert_eq!(session.execution_cwd(None), Ok(root.clone()));
+        assert_eq!(session.execution_cwd(Some(".")), Ok(root.clone()));
+
+        session.shell_cwd = Some(inside.clone());
+        assert_eq!(session.execution_cwd(None), Ok(inside));
+
+        session.shell_cwd = Some(outside.clone());
+        let stale = session.execution_cwd(None);
+        assert!(
+            stale.is_err(),
+            "a stored shell cwd outside the project must fail: {stale:?}"
+        );
+
+        // Without a project root there is no jail to hold a stored cwd to.
+        session.project_root = None;
+        assert_eq!(session.execution_cwd(None), Ok(outside));
     }
 
     #[test]

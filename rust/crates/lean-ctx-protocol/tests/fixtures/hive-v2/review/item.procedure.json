@@ -1,0 +1,39 @@
+{
+  "also": [],
+  "command_digests": [
+    "7eebe61a9cb4e8846e4385ac47de89ee5885b5872f7e4874f7bc9e58be2d3e7c"
+  ],
+  "created_at": 1792800004350,
+  "events": [
+    "01M5NKA5X0005000000000W004"
+  ],
+  "id": "rv_aaaaaaaaaaaaaaaaaaaaaadxaq",
+  "independence": "normal",
+  "item_digest": "ee8ebef8190836e50eb76f8899693eedeef5d4357c391402ffed8021d8678eca",
+  "node_ids": [
+    "n_aaaaaaaaaaaaaaaaaaaaaacaaq"
+  ],
+  "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+  "required_weight": 2,
+  "sla_due_at": 1792886400000,
+  "state": "needs_person",
+  "trigger": "procedure_with_commands",
+  "verdicts": [
+    {
+      "confidence": "high",
+      "host_app": "codex",
+      "model": "gpt-6-luna",
+      "reason_code": "correct",
+      "revealed_at": 1792807200000,
+      "verdict": "accept",
+      "weight": 3,
+      "worker_id": "wkr_gawyravj36igdp3irdfo"
+    }
+  ],
+  "weight_accept": 3,
+  "weight_reject": 0,
+  "writer": {
+    "owner_hash": "3c9a5e7b1d2f4a60",
+    "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+  }
+}

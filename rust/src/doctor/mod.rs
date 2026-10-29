@@ -1,5 +1,18 @@
 //! Environment diagnostics for lean-ctx installation and integration.
 
+/// Every doctor line goes through [`emit_line`], which drops the ANSI styling
+/// under `NO_COLOR`, `TERM=dumb` or a non-TTY stdout. Shadowing `println!` for
+/// this module tree keeps the many styled format strings unchanged while making
+/// it impossible for a new check to leak escape codes into a pipe or log.
+macro_rules! println {
+    () => {
+        ::std::println!()
+    };
+    ($($arg:tt)*) => {
+        $crate::doctor::emit_line(&::std::format!($($arg)*))
+    };
+}
+
 mod checks;
 mod common;
 mod deprecations;
@@ -11,9 +24,9 @@ mod overhead;
 mod report;
 mod workspace_scope;
 
-pub(crate) use checks::configured_host_coverage;
 #[allow(clippy::wildcard_imports)]
 use checks::*;
+pub(crate) use checks::{configured_host_coverage, shadow_hosts, shadow_status};
 #[allow(clippy::wildcard_imports)]
 use common::*;
 
@@ -88,6 +101,15 @@ fn strip_ansi(s: &str) -> String {
     result
 }
 
+/// Print one doctor line, stripped of ANSI styling when colour is off.
+pub(crate) fn emit_line(line: &str) {
+    if crate::core::theme::no_color() {
+        ::std::println!("{}", strip_ansi(line));
+    } else {
+        ::std::println!("{line}");
+    }
+}
+
 impl Scoreboard {
     fn new(json_mode: bool) -> Self {
         Self {
@@ -110,7 +132,7 @@ impl Scoreboard {
             scored: true,
         });
         if !self.json_mode {
-            print_check(outcome);
+            print_check(outcome, true);
         }
     }
 
@@ -122,7 +144,7 @@ impl Scoreboard {
             scored: false,
         });
         if !self.json_mode {
-            print_check(outcome);
+            print_check(outcome, false);
         }
     }
 }
@@ -186,10 +208,18 @@ fn run_inner(json: bool) -> u32 {
                 p.display()
             ),
         },
+        // A fresh install creates it on first use, like stats.json below.
+        Some(p) if !p.exists() => Outcome {
+            ok: true,
+            line: format!(
+                "{BOLD}data dir{RST}  {WHITE}not yet created{RST}  {DIM}(will appear after first use) {}{RST}",
+                p.display()
+            ),
+        },
         Some(p) => Outcome {
             ok: false,
             line: format!(
-                "{BOLD}data dir{RST}  {RED}missing or not a directory{RST}  {DIM}{}{RST}",
+                "{BOLD}data dir{RST}  {RED}not a directory{RST}  {DIM}{}{RST}",
                 p.display()
             ),
         },
@@ -234,7 +264,7 @@ fn run_inner(json: bool) -> u32 {
             ok: true,
             line: match &stats_path {
                 Some(p) => format!(
-                    "{BOLD}stats.json{RST}  {YELLOW}not yet created{RST}  {DIM}(will appear after first use) {}{RST}",
+                    "{BOLD}stats.json{RST}  {WHITE}not yet created{RST}  {DIM}(will appear after first use) {}{RST}",
                     p.display()
                 ),
                 None => format!("{BOLD}stats.json{RST}  {RED}could not resolve path{RST}"),
@@ -333,7 +363,7 @@ fn run_inner(json: bool) -> u32 {
             Err(_) => Outcome {
                 ok: true,
                 line: format!(
-                    "{BOLD}config.toml{RST}  {YELLOW}not found, using defaults{RST}  {DIM}(expected at {}){RST}",
+                    "{BOLD}config.toml{RST}  {WHITE}not found, using defaults{RST}  {DIM}(expected at {}){RST}",
                     p.display()
                 ),
             },
@@ -408,9 +438,32 @@ fn run_inner(json: bool) -> u32 {
     let proxy_outcome = proxy_upstream_outcome();
     board.check(&proxy_outcome);
 
+    // Exit-code contract: `doctor` exits non-zero only when a scored check
+    // fails. On a fresh install that was never set up (no host carries a
+    // lean-ctx MCP entry, hooks or proxy route), the setup items below are the
+    // next step, not errors: they render as optional (–) with the setup hint
+    // and are not counted. Once any host is configured they are scored again,
+    // so a half-broken setup still fails the gate.
+    let setup_pending = dirs::home_dir().is_some_and(|home| {
+        lean_ctx_mcp_location_names(&home).is_empty()
+            && checks::configured_host_coverage(&home).is_empty()
+    });
+    if setup_pending && !json {
+        println!(
+            "  {DIM}Not set up yet — run {RST}{BOLD}lean-ctx setup{RST}{DIM} to connect your AI tools (items marked – are optional until then).{RST}"
+        );
+    }
+    let setup_item = |board: &mut Scoreboard, outcome: &Outcome| {
+        if setup_pending {
+            board.info(outcome);
+        } else {
+            board.check(outcome);
+        }
+    };
+
     // 7) Shell aliases
     let aliases = shell_aliases_outcome();
-    board.check(&aliases);
+    setup_item(&mut board, &aliases);
 
     // 7b) Agent aliases opt-out
     let agent_aliases = skip_agent_aliases_outcome();
@@ -418,7 +471,7 @@ fn run_inner(json: bool) -> u32 {
 
     // 8) MCP
     let mcp = mcp_config_outcome();
-    board.check(&mcp);
+    setup_item(&mut board, &mcp);
     let user_scope_mcp_locations = dirs::home_dir()
         .map(|home| lean_ctx_mcp_location_names(&home))
         .unwrap_or_default();
@@ -436,11 +489,16 @@ fn run_inner(json: bool) -> u32 {
 
     // 9) SKILL.md
     let skill = skill_files_outcome();
-    board.check(&skill);
+    setup_item(&mut board, &skill);
 
     // 9a) Optional Claude Code mod (informational; never fails doctor).
     if let Some(claude_mod) = checks::claude_mod_outcome() {
         board.check(&claude_mod);
+    }
+
+    // 9a') Hive org policy (HIVE-RT-D5): informational, never fails doctor.
+    if let Some(hive_policy) = checks::hive_policy_outcome() {
+        board.info(&hive_policy);
     }
 
     // 9b) Output triage (#1534): the 3.9.19 filter ran invisibly while doctor
@@ -712,7 +770,7 @@ fn run_inner(json: bool) -> u32 {
     // LSP servers (optional, informational)
     if !json {
         println!(
-            "\n  {BOLD}{WHITE}Semantic intelligence (optional — ctx_refactor + verified graph edges):{RST}"
+            "\n  {BOLD}{WHITE}Semantic intelligence (optional — LSP references + verified graph edges):{RST}"
         );
     }
     board.info(&semantic_mode_outcome());
@@ -742,13 +800,20 @@ fn run_inner(json: bool) -> u32 {
             "{YELLOW}rewrite{RST} {DIM}(unknown commands pass through raw — shell_hook_mode=deny closes this){RST}"
         )
     };
-    let shadow_line = if cfg.shadow_mode {
+    // Only claim "active" when a host really has lean-ctx hooks installed —
+    // `shadow_mode = true` is the default even before anything is configured.
+    let shadow_hosts = dirs::home_dir()
+        .map(|home| checks::shadow_hosts(&home))
+        .unwrap_or_default();
+    let (shadow_state, shadow_detail) = checks::shadow_status(cfg.shadow_mode, &shadow_hosts);
+    let state_color = if shadow_state == "active" { GREEN } else { DIM };
+    let shadow_line = if shadow_state == "not active" || shadow_state == "disabled" {
         format!(
-            "{BOLD}Shadow mode{RST}  {GREEN}active{RST}  {DIM}(Read/Grep/Glob denied → ctx_* mandatory){RST}  shell: {shell_desc}"
+            "{BOLD}Shadow mode{RST}  {state_color}{shadow_state}{RST}  {DIM}{shadow_detail}{RST}"
         )
     } else {
         format!(
-            "{BOLD}Shadow mode{RST}  {DIM}disabled{RST}  {DIM}(default: on — explicitly disabled via config){RST}  shell: {shell_desc}"
+            "{BOLD}Shadow mode{RST}  {state_color}{shadow_state}{RST}  {DIM}{shadow_detail}{RST}  shell: {shell_desc}"
         )
     };
     if !json {
@@ -866,6 +931,10 @@ pub fn run_cli(args: &[String]) -> i32 {
         println!("  lean-ctx doctor integrations [--json]");
         println!("  lean-ctx doctor --fix [--json]");
         println!("  lean-ctx doctor --migrate-check [--json]");
+        println!();
+        println!(
+            "Exit status: 0 when every scored check passes (optional items and a not-yet-set-up install never fail), 1 when a check needs attention."
+        );
         return 0;
     }
 

@@ -1,5 +1,6 @@
 pub fn handle_proof(format: Option<&str>) -> Result<String, String> {
-    let session = crate::core::session::SessionState::load_latest();
+    // The caller's own session: a proof never covers another agent's (I07).
+    let session = crate::core::session::caller::with(Clone::clone);
     let run_id = session
         .as_ref()
         .map_or_else(|| "anonymous".to_string(), |s| s.id.clone());

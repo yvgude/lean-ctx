@@ -1,0 +1,47 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "rate_limited",
+          "message": "Too many requests. Try again in 30 s.",
+          "retry_after_s": 30
+        }
+      },
+      "status": 429
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/public/vaults/acme/payments/graph?hops=2&max=300",
+  "request": null,
+  "response": {
+    "body": {
+      "clusters": [],
+      "edges": [
+        {
+          "from": "n_6c2wqk3vmhyzoaybrnvqg2dzuy",
+          "kind": "supports",
+          "to": "n_zcjqmmor453nyxqgshlgpogwdm"
+        }
+      ],
+      "nodes": [
+        {
+          "id": "n_zcjqmmor453nyxqgshlgpogwdm",
+          "label": "Refunds are idempotent per order id.",
+          "reviewed_by": "maintainer",
+          "trust_bucket": "high",
+          "type": "fact"
+        },
+        {
+          "id": "n_6c2wqk3vmhyzoaybrnvqg2dzuy",
+          "label": "Retries double-charge without the idempotency key.",
+          "reviewed_by": "none",
+          "trust_bucket": null,
+          "type": "gotcha"
+        }
+      ]
+    },
+    "status": 200
+  },
+  "route": "W44"
+}

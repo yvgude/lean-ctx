@@ -795,3 +795,127 @@ mod tests {
         assert_eq!(std::fs::read_to_string(&file).unwrap(), "fn new() {}\n");
     }
 }
+
+/// A failed edit quotes the file back to the model (closest line, full
+/// re-read). Those quotes come from the admitted reading; the edit itself
+/// keeps working on, and writing, the original bytes.
+#[cfg(test)]
+mod admitted_reread_tests {
+    use super::*;
+
+    fn policy(body: &str) -> crate::core::policy::ResolvedPolicy {
+        crate::core::policy::load(&format!(
+            "name = \"ctx-edit-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n{body}"
+        ))
+        .unwrap()
+    }
+
+    fn params(path: &Path, old: &str, new: &str) -> EditParams {
+        EditParams {
+            path: path.to_string_lossy().to_string(),
+            old_string: old.to_string(),
+            new_string: new.to_string(),
+            replace_all: false,
+            create: false,
+            expected_blake3: None,
+            expected_size: None,
+            expected_mtime_ms: None,
+            backup: false,
+            backup_path: None,
+            evidence: false,
+            diff_max_lines: 200,
+            allow_lossy_utf8: false,
+        }
+    }
+
+    #[test]
+    fn a_withheld_file_is_neither_quoted_nor_cached_by_a_failed_edit() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy(
+            "[filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )));
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("plan.rs");
+        let original = "// CONFIDENTIAL\nfn merger_target_acme() {}\n";
+        std::fs::write(&file, original).unwrap();
+
+        let (text, effect) = run_io(
+            &params(&file, "fn merger_target() {}", "fn renamed() {}"),
+            "signatures",
+        );
+
+        assert!(
+            text.starts_with("ERROR: old_string not found"),
+            "got: {text}"
+        );
+        assert!(!text.contains("merger_target_acme"), "got: {text}");
+        assert!(!text.contains("[auto-escalation]"), "got: {text}");
+        assert!(!text.contains("Closest match"), "got: {text}");
+        assert!(matches!(effect, CacheEffect::None));
+        assert_eq!(std::fs::read_to_string(&file).unwrap(), original);
+    }
+
+    #[test]
+    fn the_escalated_reread_shows_the_admitted_text_and_the_write_keeps_original_bytes() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy(
+            "[redaction]\ncustomer = \"CUS-[0-9]{4}\"\n",
+        )));
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("billing.rs");
+        std::fs::write(&file, "const OWNER: &str = \"CUS-1234\";\nfn old() {}\n").unwrap();
+
+        let (text, effect) = run_io(
+            &params(&file, "fn missing_owner() {}", "fn renamed() {}"),
+            "signatures",
+        );
+        assert!(text.contains("[auto-escalation]"), "got: {text}");
+        assert!(text.contains("[REDACTED:customer]"), "got: {text}");
+        assert!(!text.contains("CUS-1234"), "got: {text}");
+        if let CacheEffect::StoreFull(stored) = &effect {
+            assert!(!stored.contains("CUS-1234"), "cache must hold admitted text");
+        }
+
+        let (applied, _) = run_io(&params(&file, "fn old() {}", "fn new() {}"), "");
+        assert!(!applied.starts_with("ERROR"), "got: {applied}");
+        assert_eq!(
+            std::fs::read_to_string(&file).unwrap(),
+            "const OWNER: &str = \"CUS-1234\";\nfn new() {}\n",
+            "the write keeps the original bytes of every untouched line"
+        );
+    }
+
+    #[test]
+    fn a_restricted_reread_is_never_handed_to_the_cache() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("notes.rs");
+        std::fs::write(&file, "// TOP SECRET\nfn old() {}\n").unwrap();
+
+        let (_, effect) = run_io(
+            &params(&file, "fn missing() {}", "fn renamed() {}"),
+            "signatures",
+        );
+        assert!(!matches!(effect, CacheEffect::StoreFull(_)));
+    }
+
+    #[test]
+    fn an_admitted_reread_is_unchanged_without_a_policy() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("plain.rs");
+        std::fs::write(&file, "line a\nline b\n").unwrap();
+
+        let (text, effect) = run_io(
+            &params(&file, "definitely-not-present", "x"),
+            "signatures",
+        );
+        assert!(
+            text.ends_with("retry edit with exact text from here:\n\nline a\nline b\n"),
+            "got: {text}"
+        );
+        assert!(matches!(effect, CacheEffect::StoreFull(content) if content == "line a\nline b\n"));
+    }
+}

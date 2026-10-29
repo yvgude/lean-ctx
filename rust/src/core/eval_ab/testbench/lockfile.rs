@@ -13,7 +13,7 @@ use std::path::{Component, Path, PathBuf};
 use anyhow::{Context, Result, bail};
 use serde::{Deserialize, Serialize};
 
-use crate::core::benchmark_spec::types::is_safe_relative_file;
+use crate::core::eval_ab::safe_paths::is_safe_relative_file;
 use crate::core::eval_ab::sha256_hex;
 
 /// Lockfile schema discriminator.

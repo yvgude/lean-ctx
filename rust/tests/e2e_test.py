@@ -240,11 +240,10 @@ pub fn check_permission(token: &AuthToken, required: &str) -> bool {
             check(f"Has tool: {tool}", tools,
                   lambda t, name=tool: name in t)
 
-        # #509: ctx_semantic_search + ctx_symbol are folded into ctx_search. They
-        # stay callable as deprecated aliases (exercised in Tests 4+ via tools/call)
-        # but must be hidden from tools/list for one release.
+        # #509: ctx_semantic_search + ctx_symbol were folded into ctx_search and
+        # are removed; neither may appear in tools/list.
         for hidden in ("ctx_semantic_search", "ctx_symbol"):
-            check(f"Folded alias hidden from list: {hidden}", tools,
+            check(f"Removed tool not listed: {hidden}", tools,
                   lambda t, name=hidden: name not in t)
 
         print(f"  Total tools: {len(tools)}")
@@ -272,11 +271,12 @@ pub fn check_permission(token: &AuthToken, required: &str) -> bool {
         check("Second read is cached", resp2,
               lambda r: "cached" in text2.lower() or len(text2) < len(text))
         
-        # === Test 4: ctx_semantic_search ===
-        print("\n--- Test 4: ctx_semantic_search (auto-index + search) ---")
+        # === Test 4: ctx_search action=semantic ===
+        print("\n--- Test 4: ctx_search action=semantic (auto-index + search) ---")
         resp = client.request("tools/call", {
-            "name": "ctx_semantic_search",
+            "name": "ctx_search",
             "arguments": {
+                "action": "semantic",
                 "query": "fibonacci calculation number",
                 "path": project_dir,
                 "top_k": 5,
@@ -292,14 +292,13 @@ pub fn check_permission(token: &AuthToken, required: &str) -> bool {
         check("Found fibonacci in results", resp,
               lambda r: "fibonacci" in text.lower() or "main.rs" in text.lower())
         
-        # === Test 5: ctx_semantic_search reindex ===
-        print("\n--- Test 5: ctx_semantic_search (reindex) ---")
+        # === Test 5: ctx_index build-full ===
+        print("\n--- Test 5: ctx_index (build-full) ---")
         resp = client.request("tools/call", {
-            "name": "ctx_semantic_search",
+            "name": "ctx_index",
             "arguments": {
-                "query": "",
-                "path": project_dir,
-                "action": "reindex",
+                "project_root": project_dir,
+                "action": "build-full",
             }
         }, 5)
         text = get_text(resp)
@@ -313,8 +312,9 @@ pub fn check_permission(token: &AuthToken, required: &str) -> bool {
         # === Test 6: Cross-file search ===
         print("\n--- Test 6: Cross-file semantic search ---")
         resp = client.request("tools/call", {
-            "name": "ctx_semantic_search",
+            "name": "ctx_search",
             "arguments": {
+                "action": "semantic",
                 "query": "JWT token authentication validate",
                 "path": project_dir,
                 "top_k": 5,
@@ -394,11 +394,10 @@ pub fn check_permission(token: &AuthToken, required: &str) -> bool {
         # === Test 11: Reindex reports embedding status ===
         print("\n--- Test 11: Reindex with embeddings ---")
         resp = client.request("tools/call", {
-            "name": "ctx_semantic_search",
+            "name": "ctx_index",
             "arguments": {
-                "query": "",
-                "path": project_dir,
-                "action": "reindex",
+                "project_root": project_dir,
+                "action": "build-full",
             }
         }, 11)
         text = get_text(resp)
@@ -426,8 +425,9 @@ pub fn check_permission(token: &AuthToken, required: &str) -> bool {
         
         for query, expected_file, expected_term in queries:
             resp = client.request("tools/call", {
-                "name": "ctx_semantic_search",
+                "name": "ctx_search",
                 "arguments": {
+                    "action": "semantic",
                     "query": query,
                     "path": project_dir,
                     "top_k": 3,
@@ -443,8 +443,9 @@ pub fn check_permission(token: &AuthToken, required: &str) -> bool {
         # === Test 13: Search mode indicator ===
         print("\n--- Test 13: Search mode indicator ---")
         resp = client.request("tools/call", {
-            "name": "ctx_semantic_search",
+            "name": "ctx_search",
             "arguments": {
+                "action": "semantic",
                 "query": "test query",
                 "path": project_dir,
                 "top_k": 1,
@@ -480,18 +481,18 @@ pub fn standard_deviation(numbers: &[f64]) -> f64 {
 """)
         
         resp = client.request("tools/call", {
-            "name": "ctx_semantic_search",
+            "name": "ctx_index",
             "arguments": {
-                "query": "",
-                "path": project_dir,
-                "action": "reindex",
+                "project_root": project_dir,
+                "action": "build-full",
             }
         }, 141)
         reindex2_text = get_text(resp)
         
         resp = client.request("tools/call", {
-            "name": "ctx_semantic_search",
+            "name": "ctx_search",
             "arguments": {
+                "action": "semantic",
                 "query": "calculate average standard deviation statistics",
                 "path": project_dir,
                 "top_k": 3,

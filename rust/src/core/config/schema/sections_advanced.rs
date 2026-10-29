@@ -102,6 +102,15 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     proxy.insert(
+        "project_root".into(),
+        key_with_env(
+            "string",
+            serde_json::json!(cfg.proxy.configured_project_root()),
+            "Absolute project root the proxy acts for: its admissions apply that project's policy pack, and sources of provider-sealed items and recovery copies are re-admitted for it. Operator-set only — no request header, tag or body field selects it. Verified at every use (exists, canonical, not a broad or unsafe root, equal to LEAN_CTX_REQUIRED_POLICY_ROOT when that is set; a mismatch refuses every request). Unset: no configured project — under a policy pack, governed or sovereign mode, sealed provider items with sources and recovery copies then need a launch-pinned root with a verified pack",
+            "LEAN_CTX_PROXY_PROJECT_ROOT",
+        ),
+    );
+    proxy.insert(
         "live_compress_exclude".into(),
         key(
             "string[]",
@@ -522,23 +531,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "usize",
             serde_json::json!(mem.gotcha.max_gotchas_per_project),
-            "Maximum gotchas stored per project",
-        ),
-    );
-    mem_gotcha.insert(
-        "retrieval_budget_per_room".into(),
-        key(
-            "usize",
-            serde_json::json!(mem.gotcha.retrieval_budget_per_room),
-            "Maximum gotchas retrieved per room per query",
-        ),
-    );
-    mem_gotcha.insert(
-        "default_decay_rate".into(),
-        key(
-            "f32",
-            clean_f32(mem.gotcha.default_decay_rate),
-            "Default decay rate for gotcha importance",
+            "Maximum gotchas kept per project (lowest confidence dropped first)",
         ),
     );
     sections.insert(
@@ -637,7 +630,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "string[]",
             serde_json::json!(null),
-            "AI tools setup/onboard/update may configure (agent keys like claude, cursor, codex). Unset = every detected tool. Set with: lean-ctx setup --agents claude,cursor (--agents all resets)",
+            "AI tools (agent keys, e.g. claude,cursor) that setup, onboard and updates may configure. null=no choice yet: setup offers every detected tool, updates refresh only already-connected ones. Set by the `lean-ctx setup` selection or --agents",
         ),
     );
     sections.insert(

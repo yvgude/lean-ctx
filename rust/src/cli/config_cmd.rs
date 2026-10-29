@@ -253,8 +253,18 @@ fn cmd_apply() {
             }
         }
         collect_flat(&table, "", &mut user_keys);
+        for key in &user_keys {
+            if let Some(entry) = config::retired::retired_key(key) {
+                eprintln!("  [WARN] Retired key (no effect, {}): {key}", entry.note);
+            }
+        }
+        for hint in config::renamed::hints(&user_keys) {
+            eprintln!("  [INFO] Renamed key: {hint}");
+        }
         let warnings: Vec<_> = user_keys
             .iter()
+            .filter(|uk| config::retired::retired_key(uk).is_none())
+            .filter(|uk| config::renamed::renamed_key(uk).is_none())
             .filter(|uk| {
                 !known.contains(uk) && !known.iter().any(|k| uk.starts_with(&format!("{k}.")))
             })
@@ -951,6 +961,18 @@ fn record_removed_dir(
     }
 }
 
+/// Files a local (per-checkout) index writes into its directory. Anything
+/// else there, such as `hosted-v2/`, is not the local index's to delete.
+const LOCAL_INDEX_FILES: &[&str] = &[
+    "bm25_index.bin.zst",
+    "bm25_index.bin",
+    "bm25_index.json",
+    "embeddings.json",
+    "embeddings.bin",
+    "bm25_provider_origins.json",
+    "project_root.txt",
+];
+
 pub fn prune_bm25_caches() -> PruneResult {
     let mut result = PruneResult {
         scanned: 0,
@@ -1003,7 +1025,17 @@ pub fn prune_bm25_caches() -> PruneResult {
         let marker = dir.join("project_root.txt");
         if let Ok(root_str) = std::fs::read_to_string(&marker) {
             let root_path = std::path::Path::new(root_str.trim());
-            if !root_path.exists() {
+            if !root_path.exists() && dir.join("hosted-v2").exists() {
+                // The namespace directory also holds the hosted index of
+                // every checkout of this repository: only the local index
+                // files of the gone checkout go.
+                for name in LOCAL_INDEX_FILES {
+                    let file = dir.join(name);
+                    if file.exists() {
+                        record_removed_file(&mut result, &file, "Removed orphaned");
+                    }
+                }
+            } else if !root_path.exists() {
                 let freed = dir_size(&dir);
                 record_removed_dir(&mut result, &dir, freed, || {
                     format!(
@@ -1158,12 +1190,30 @@ max_ram_percent = 5
 # proxy_port = 3128
 "#;
 
+/// Create the simplified config. An existing one is never replaced: the
+/// template would reset every setting the person tightened.
 fn write_simplified_config() -> Result<String, String> {
+    use std::io::Write as _;
     let path = config::Config::path().ok_or_else(|| "Cannot determine config path".to_string())?;
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(|e| format!("{e}"))?;
     }
-    std::fs::write(&path, SIMPLIFIED_TEMPLATE).map_err(|e| format!("{e}"))?;
+    let mut file = std::fs::OpenOptions::new()
+        .write(true)
+        .create_new(true)
+        .open(&path)
+        .map_err(|e| {
+            if e.kind() == std::io::ErrorKind::AlreadyExists {
+                format!(
+                    "{} exists and stays as it is; `lean-ctx config init --full` merges into it, `lean-ctx config set` changes one key",
+                    path.display()
+                )
+            } else {
+                format!("{e}")
+            }
+        })?;
+    file.write_all(SIMPLIFIED_TEMPLATE.as_bytes())
+        .map_err(|e| format!("{e}"))?;
     Ok(path.to_string_lossy().to_string())
 }
 
@@ -1322,129 +1372,4 @@ fn dir_size(path: &std::path::Path) -> u64 {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn mcp_cache_stats_distinguish_session_cache_and_content_dedup() {
-        let current = serde_json::json!({
-            "total_reads": 55,
-            "cache_hits": 2,
-            "tokens_saved": 178_015,
-            "dedup_reads": 10,
-            "dedup_hits": 8,
-            "dedup_tokens_saved": 12_345,
-            "updated_at": "2026-07-24T14:17:30+02:00"
-        });
-        let lines = mcp_cache_stats_lines(&current);
-        assert!(lines.iter().any(|line| line == "  Hit Rate:      4%"));
-        assert!(
-            lines
-                .iter()
-                .any(|line| line == "Content Dedup (repeated ctx_read output):")
-        );
-        assert!(lines.iter().any(|line| line == "  Hit Rate:      80.0%"));
-        assert!(lines.iter().any(|line| line == "  Tokens Saved:  12345"));
-
-        let legacy = serde_json::json!({"total_reads": 3, "cache_hits": 1});
-        let legacy_lines = mcp_cache_stats_lines(&legacy);
-        assert!(
-            legacy_lines
-                .iter()
-                .all(|line| !line.contains("Content Dedup"))
-        );
-    }
-
-    #[test]
-    fn stats_json_embeds_mcp_cache_snapshot() {
-        let store = crate::core::stats::StatsStore::default();
-        let cache = serde_json::json!({"cache_hits": 2, "dedup_hits": 8});
-        let value = stats_json_value(&store, Some(cache));
-
-        assert_eq!(value["mcp_cache"]["cache_hits"], 2);
-        assert_eq!(value["mcp_cache"]["dedup_hits"], 8);
-        assert!(stats_json_value(&store, None).get("mcp_cache").is_none());
-    }
-
-    #[test]
-    fn show_box_borders_line_up() {
-        use crate::core::theme::{pad_right, visual_len};
-        let bottom = visual_len(&box_bottom());
-        for label in ["Simplified (high-level)", "Derived effective limits", ""] {
-            assert_eq!(visual_len(&box_top(label)), bottom, "top border: {label:?}");
-        }
-        // Rows track the same width, short and overlong alike.
-        for row in ["", " x = 1", &" long ".repeat(40)] {
-            assert_eq!(visual_len(&pad_right(row, SHOW_BOX_W)) + 2, bottom);
-        }
-    }
-
-    // Reproduces `Config::save()`'s on-disk merge without touching the real
-    // config path: serialize `cfg`, then merge it onto `existing` exactly as
-    // save() does, and return the value that `max_ram_percent` ends up with.
-    fn merged_max_ram(cfg: &config::Config, existing: &str) -> u8 {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("config.toml");
-        std::fs::write(&path, existing).unwrap();
-        let new_content = toml::to_string_pretty(cfg).unwrap();
-        let baseline = toml::from_str::<config::Config>("").unwrap();
-        let defaults = toml::to_string_pretty(&baseline).unwrap();
-        crate::config_io::write_toml_preserving_minimal(&path, &new_content, &defaults).unwrap();
-        let written = std::fs::read_to_string(&path).unwrap();
-        toml::from_str::<config::Config>(&written)
-            .unwrap()
-            .max_ram_percent
-    }
-
-    #[test]
-    fn full_init_uses_existing_values_not_defaults() {
-        let existing = "max_ram_percent = 30\ncompression_level = \"standard\"\n";
-        let cfg = config_for_full_init(Some(existing)).expect("parse existing");
-        assert_eq!(cfg.max_ram_percent, 30, "must keep the user's value, not 5");
-        assert_eq!(cfg.compression_level, config::CompressionLevel::Standard);
-    }
-
-    #[test]
-    fn full_init_falls_back_to_defaults_on_fresh_install() {
-        let cfg = config_for_full_init(None).expect("default");
-        assert_eq!(
-            cfg.max_ram_percent,
-            config::Config::default().max_ram_percent
-        );
-        let cfg_empty = config_for_full_init(Some("   \n")).expect("blank -> default");
-        assert_eq!(
-            cfg_empty.max_ram_percent,
-            config::Config::default().max_ram_percent
-        );
-    }
-
-    #[test]
-    fn full_init_refuses_unparseable_config() {
-        assert!(config_for_full_init(Some("max_ram_percent = = =")).is_err());
-    }
-
-    // #443 end-to-end: `config init --full` must not reset a customized value.
-    #[test]
-    fn full_init_preserves_value_through_save_merge() {
-        let existing = "max_ram_percent = 30\n";
-        let cfg = config_for_full_init(Some(existing)).unwrap();
-        assert_eq!(
-            merged_max_ram(&cfg, existing),
-            30,
-            "user value must survive `config init --full`"
-        );
-    }
-
-    // Guards the root cause: seeding the write from `Config::default()` (the old
-    // behavior) DOES reset the value — proving why `config_for_full_init` must
-    // load the existing config instead.
-    #[test]
-    fn default_seed_resets_value_root_cause_marker() {
-        let existing = "max_ram_percent = 30\n";
-        assert_eq!(
-            merged_max_ram(&config::Config::default(), existing),
-            5,
-            "default seed resets to 5 — the #443 regression we fixed"
-        );
-    }
-}
+mod tests;

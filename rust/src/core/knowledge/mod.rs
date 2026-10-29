@@ -1,3 +1,5 @@
+pub mod agents_md;
+pub mod anchors;
 pub mod chunking;
 mod core;
 mod fact;
@@ -45,7 +47,8 @@ mod tests {
     #[test]
     fn admission_merges_same_category_near_duplicate_without_growing() {
         let policy = default_policy(); // enabled, merge 0.9, floor 0
-        let mut k = ProjectKnowledge::new("/tmp/test-admission-merge");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
 
         let r1 = k.remember_admitted(
             "architecture",
@@ -94,7 +97,9 @@ mod tests {
         let mut policy = default_policy();
         policy.admission.min_salience = 100; // plain text (base 20) is below it
 
-        let mut k = ProjectKnowledge::new("/tmp/test-admission-floor");
+        let k_root = tempfile::tempdir().unwrap();
+
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         let r = k.remember_admitted("misc", "note", "a quiet plain note", "s1", 0.8, &policy);
         assert!(matches!(r, AdmissionResult::RejectedLowSalience { .. }));
         assert_eq!(current_count(&k), 0, "rejected fact is never stored");
@@ -115,7 +120,8 @@ mod tests {
     #[test]
     fn admission_preserves_contradiction_supersede_on_same_key() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test-admission-contradiction");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
 
         let r1 = k.remember_admitted("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
         assert!(matches!(r1, AdmissionResult::Stored(None)));
@@ -139,7 +145,9 @@ mod tests {
         let mut policy = default_policy();
         policy.admission.enabled = false;
 
-        let mut k = ProjectKnowledge::new("/tmp/test-admission-off");
+        let k_root = tempfile::tempdir().unwrap();
+
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember_admitted(
             "architecture",
             "a",
@@ -166,7 +174,8 @@ mod tests {
     #[test]
     fn admission_does_not_merge_across_categories() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test-admission-xcat");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
 
         k.remember_admitted(
             "architecture",
@@ -192,7 +201,8 @@ mod tests {
     #[test]
     fn remember_and_recall() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test-project");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember(
             "architecture",
             "auth",
@@ -215,7 +225,8 @@ mod tests {
     #[test]
     fn recall_for_task_matches_content_words_only() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test-task-recall");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember(
             "finding",
             "deploy",
@@ -245,7 +256,8 @@ mod tests {
     #[test]
     fn remember_infers_archetype_from_category() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test-archetype");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("architecture", "db", "PostgreSQL", "s1", 0.9, &policy);
         k.remember("decision", "lang", "Rust", "s1", 0.9, &policy);
         k.remember("known_bugs", "src/a.rs:1", "panics", "s1", 0.9, &policy);
@@ -269,7 +281,8 @@ mod tests {
     #[test]
     fn recall_surfaces_synthesized_observation_first() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test-recall-obs");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         // A raw decision and a synthesized observation, equally relevant to "jwt".
         k.remember(
             "decision",
@@ -303,7 +316,8 @@ mod tests {
         // outranks a synthesized summary (+0.4), so a stale summary can never bury a
         // precisely-queried raw fact. This is the guarantee the reference docs make.
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test-recall-exact-vs-obs");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember(
             "decision",
             "jwt",
@@ -332,12 +346,12 @@ mod tests {
     }
 
     #[test]
-    fn facts_evict_down_to_cap_not_double() {
+    fn writes_never_evict_facts_by_count() {
         let _iso = crate::core::data_dir::isolated_data_dir();
         let root = tempfile::tempdir().unwrap();
-        // Regression: remember() must keep the fact count at or below max_facts.
-        // Previously the lifecycle only fired above 2 * max_facts, so a store
-        // could silently grow to twice its configured budget before reclaiming.
+        // Owner decision 24.10.: knowledge has no limits. A store over
+        // `max_facts` keeps every fact, whether remembered or imported; only
+        // the quality lifecycle archives, and writes do not run it.
         let mut policy = default_policy();
         policy.knowledge.max_facts = 5;
         let mut k = ProjectKnowledge::new(root.path().to_str().unwrap());
@@ -351,106 +365,117 @@ mod tests {
                 &policy,
             );
         }
+        assert_eq!(k.facts.len(), 40);
+
+        let other = tempfile::tempdir().unwrap();
+        let mut imported = ProjectKnowledge::new(other.path().to_str().unwrap());
+        imported.import_facts(k.facts.clone(), ImportMerge::Append, "s2");
+        assert_eq!(imported.facts.len(), 40);
+
+        let report = k.run_memory_lifecycle(&policy).expect("lifecycle");
+        assert_eq!(report.capacity_archived, 0);
+        assert_eq!(k.facts.len(), 40, "healthy facts stay over max_facts");
+    }
+
+    /// Loads reuse the parsed store while its file is unchanged and parse
+    /// again after any write: a rewrite through the store, and an edit in
+    /// place that keeps the inode.
+    #[test]
+    fn a_cached_store_follows_every_write() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+        let root = root.path().to_str().unwrap();
+        let policy = default_policy();
+        ProjectKnowledge::mutate_locked(root, |k| {
+            k.remember("decision", "first", "first value", "s1", 0.9, &policy);
+        })
+        .unwrap();
+        let keys = |k: &ProjectKnowledge| {
+            let mut keys: Vec<String> = k.facts.iter().map(|f| f.key.clone()).collect();
+            keys.sort();
+            keys
+        };
+        assert_eq!(keys(&ProjectKnowledge::load(root).unwrap()), ["first"]);
+        assert_eq!(keys(&ProjectKnowledge::load(root).unwrap()), ["first"]);
+
+        ProjectKnowledge::mutate_locked(root, |k| {
+            k.remember("decision", "second", "second value", "s1", 0.9, &policy);
+        })
+        .unwrap();
+        assert_eq!(
+            keys(&ProjectKnowledge::load(root).unwrap()),
+            ["first", "second"]
+        );
+
+        let path = crate::core::data_dir::lean_ctx_data_dir()
+            .unwrap()
+            .join("knowledge")
+            .join(super::ranking::hash_project_root(root))
+            .join("knowledge.json");
+        let text = std::fs::read_to_string(&path).unwrap();
+        std::fs::write(
+            &path,
+            text.replace("second value", "edited in place, longer"),
+        )
+        .unwrap();
+        let loaded = ProjectKnowledge::load(root).unwrap();
         assert!(
-            k.facts.len() <= policy.knowledge.max_facts,
-            "expected <= {} facts after eviction, got {}",
-            policy.knowledge.max_facts,
-            k.facts.len()
+            loaded
+                .facts
+                .iter()
+                .any(|f| f.value == "edited in place, longer"),
+            "an in-place edit is seen"
         );
     }
 
+    /// 24.10.: a store of 7 317 facts (8.4 MB) was over the 8 MiB
+    /// protected-content cap, so its checked read failed and every
+    /// `remember` and auto-capture after it was refused. A store far over
+    /// the cap and 10 000 facts must stay writable and recallable.
     #[test]
-    fn batches_of_prebuilt_facts_settle_at_the_cap() {
+    fn a_store_over_eight_mib_stays_writable_and_recallable() {
         let _iso = crate::core::data_dir::isolated_data_dir();
         let root = tempfile::tempdir().unwrap();
-        // Regression: the session-save path adds pre-built facts with add_fact()
-        // and never ran the lifecycle, so a store grew to 638 records against a
-        // budget of 200. enforce_capacity() after the batch settles it. The store
-        // is filled under a generous budget, then held to the real one.
-        let mut generous = default_policy();
-        generous.knowledge.max_facts = 1000;
-        let mut k = ProjectKnowledge::new(root.path().to_str().unwrap());
-        for i in 0..40 {
-            k.remember(
-                "finding",
-                &format!("key-{i}"),
-                &format!("value number {i}"),
-                "s1",
-                0.7,
-                &generous,
-            );
+        let root = root.path().to_str().unwrap();
+        let policy = default_policy();
+        let mut k = ProjectKnowledge::new(root);
+        k.remember("finding", "seed", "seed value", "s1", 0.7, &policy);
+        let template = k.facts[0].clone();
+        let filler = "x".repeat(800);
+        for i in 0..12_000 {
+            let mut fact = template.clone();
+            fact.key = format!("bulk-{i}");
+            fact.value = format!("bulk fact {i} {filler}");
+            k.facts.push(fact);
         }
-        let mut policy = default_policy();
-        policy.knowledge.max_facts = 5;
+        k.rebuild_index();
+        let size = serde_json::to_string_pretty(&k).unwrap().len();
         assert!(
-            k.facts.len() > policy.knowledge.max_facts,
-            "{}",
-            k.facts.len()
+            size > crate::core::policy::content::MAX_PROTECTED_CONTENT_BYTES,
+            "{size}"
         );
-        k.enforce_capacity(&policy);
+        k.save().expect("a large store is saved");
+
+        let started = std::time::Instant::now();
+        let (stored, ()) = ProjectKnowledge::mutate_locked(root, |k| {
+            k.remember("decision", "needle", "the needle fact", "s2", 0.9, &policy);
+        })
+        .expect("remember into a store over the cap");
+        assert_eq!(stored.facts.len(), 12_002);
+        let loaded = ProjectKnowledge::load(root).expect("load");
+        assert!(loaded.recall("needle").iter().any(|f| f.key == "needle"));
+        let elapsed = started.elapsed();
         assert!(
-            k.facts.len() <= policy.knowledge.max_facts,
-            "expected <= {} facts after the batch, got {}",
-            policy.knowledge.max_facts,
-            k.facts.len()
+            elapsed < std::time::Duration::from_secs(30),
+            "remember + recall took {elapsed:?}"
         );
-    }
-
-    #[test]
-    fn import_facts_evict_down_to_cap_not_double() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        let root = tempfile::tempdir().unwrap();
-        // Regression: import_facts() must settle the store at <= max_facts, just
-        // like remember(). The import path previously only ran the lifecycle above
-        // 2 * max_facts, so a bulk import could inflate a store to twice its
-        // budget (observed live as doctor CRIT facts 232/200) while remember()
-        // already capped at max_facts.
-        let mut policy = default_policy();
-        policy.knowledge.max_facts = 5;
-
-        // Eviction archives into the data dir. Own it, so a parallel test that
-        // swaps LEAN_CTX_DATA_DIR cannot make the archive (and so the eviction)
-        // fail, and nothing lands in the real data dir.
-        let _lock = crate::core::data_dir::test_env_lock();
-        let data = tempfile::tempdir().expect("data dir");
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path().to_str().unwrap());
-
-        // Produce a batch larger than 2x the cap via a generously-capped source.
-        let mut source_policy = default_policy();
-        source_policy.knowledge.max_facts = 1000;
-        let mut source = ProjectKnowledge::new("/tmp/test-import-source");
-        for i in 0..40 {
-            source.remember(
-                "finding",
-                &format!("key-{i}"),
-                &format!("value number {i}"),
-                "s1",
-                0.7,
-                &source_policy,
-            );
-        }
-        let incoming = source.facts.clone();
-        assert!(
-            incoming.len() > policy.knowledge.max_facts * 2,
-            "test needs a batch larger than 2x cap to exercise the old guard, got {}",
-            incoming.len()
-        );
-
-        let mut k = ProjectKnowledge::new(root.path().to_str().unwrap());
-        k.import_facts(incoming, ImportMerge::Append, "s2", &policy);
-        assert!(
-            k.facts.len() <= policy.knowledge.max_facts,
-            "expected <= {} facts after import eviction, got {}",
-            policy.knowledge.max_facts,
-            k.facts.len()
-        );
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 
     #[test]
     fn upsert_existing_fact() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.7, &policy);
         k.remember(
             "arch",
@@ -469,7 +494,8 @@ mod tests {
     #[test]
     fn contradiction_detection() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
         k.facts[0].confirmation_count = 3;
 
@@ -482,7 +508,8 @@ mod tests {
     #[test]
     fn temporal_validity() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
         k.facts[0].confirmation_count = 3;
 
@@ -499,7 +526,8 @@ mod tests {
     #[test]
     fn confirmation_count() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.9, &policy);
         assert_eq!(k.facts[0].confirmation_count, 1);
 
@@ -510,7 +538,8 @@ mod tests {
     #[test]
     fn remove_fact() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.9, &policy);
         assert!(k.remove_fact("arch", "db"));
         assert!(k.facts.is_empty());
@@ -520,7 +549,8 @@ mod tests {
     #[test]
     fn list_rooms() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("architecture", "auth", "JWT", "s1", 0.9, &policy);
         k.remember("architecture", "db", "PG", "s1", 0.9, &policy);
         k.remember("deploy", "host", "AWS", "s1", 0.8, &policy);
@@ -532,7 +562,8 @@ mod tests {
     #[test]
     fn aaak_format() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("architecture", "auth", "JWT RS256", "s1", 0.95, &policy);
         k.remember("architecture", "db", "PostgreSQL", "s1", 0.7, &policy);
 
@@ -544,7 +575,8 @@ mod tests {
     #[test]
     fn consolidate_history() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.consolidate(
             "Migrated from REST to GraphQL",
             vec!["s1".into(), "s2".into()],
@@ -558,7 +590,8 @@ mod tests {
     #[test]
     fn format_summary_output() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("architecture", "auth", "JWT RS256", "s1", 0.9, &policy);
         k.add_pattern(
             "naming",
@@ -576,7 +609,8 @@ mod tests {
     #[test]
     fn temporal_recall_at_time() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
         k.facts[0].confirmation_count = 3;
 
@@ -597,7 +631,8 @@ mod tests {
     #[test]
     fn timeline_shows_history() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
         k.facts[0].confirmation_count = 3;
         k.remember("arch", "db", "MySQL", "s2", 0.9, &policy);
@@ -611,7 +646,8 @@ mod tests {
     #[test]
     fn wakeup_format() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "auth", "JWT", "s1", 0.95, &policy);
         k.remember("arch", "db", "PG", "s1", 0.8, &policy);
 
@@ -627,7 +663,8 @@ mod tests {
     #[test]
     fn salience_prioritizes_decisions_over_findings_at_similar_confidence() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("finding", "f1", "some thing", "s1", 0.9, &policy);
         k.remember("decision", "d1", "important", "s1", 0.85, &policy);
 
@@ -645,7 +682,8 @@ mod tests {
     #[test]
     fn low_confidence_contradiction() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.4, &policy);
 
         let c = k.check_contradiction("arch", "db", "MySQL", &policy);
@@ -656,7 +694,8 @@ mod tests {
     #[test]
     fn no_contradiction_for_same_value() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
 
         let c = k.check_contradiction("arch", "db", "PostgreSQL", &policy);
@@ -666,7 +705,8 @@ mod tests {
     #[test]
     fn no_contradiction_for_similar_values() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember(
             "arch",
             "db",
@@ -688,10 +728,14 @@ mod tests {
     #[test]
     fn import_skip_existing() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
 
         let incoming = vec![KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: "arch".into(),
             key: "db".into(),
@@ -715,9 +759,11 @@ mod tests {
             archetype: KnowledgeArchetype::default(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         }];
 
-        let result = k.import_facts(incoming, ImportMerge::SkipExisting, "imp-1", &policy);
+        let result = k.import_facts(incoming, ImportMerge::SkipExisting, "imp-1");
         assert_eq!(result.skipped, 1);
         assert_eq!(result.added, 0);
         assert_eq!(k.facts.iter().filter(|f| f.is_current()).count(), 1);
@@ -726,10 +772,14 @@ mod tests {
     #[test]
     fn import_replace_existing() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
 
         let incoming = vec![KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: "arch".into(),
             key: "db".into(),
@@ -753,9 +803,11 @@ mod tests {
             archetype: KnowledgeArchetype::default(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         }];
 
-        let result = k.import_facts(incoming, ImportMerge::Replace, "imp-1", &policy);
+        let result = k.import_facts(incoming, ImportMerge::Replace, "imp-1");
         assert_eq!(result.replaced, 1);
         let current: Vec<_> = k.facts.iter().filter(|f| f.is_current()).collect();
         assert_eq!(current.len(), 1);
@@ -765,10 +817,14 @@ mod tests {
     #[test]
     fn import_adds_new_facts() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
 
         let incoming = vec![KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: "security".into(),
             key: "auth".into(),
@@ -792,9 +848,11 @@ mod tests {
             archetype: KnowledgeArchetype::default(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         }];
 
-        let result = k.import_facts(incoming, ImportMerge::SkipExisting, "imp-1", &policy);
+        let result = k.import_facts(incoming, ImportMerge::SkipExisting, "imp-1");
         assert_eq!(result.added, 1);
         assert_eq!(k.facts.iter().filter(|f| f.is_current()).count(), 2);
     }
@@ -822,7 +880,8 @@ mod tests {
     #[test]
     fn export_simple_only_current() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
         k.remember("arch", "db", "MySQL", "s2", 0.9, &policy);
 
@@ -850,7 +909,8 @@ mod tests {
     #[test]
     fn revision_count_on_new_fact() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.9, &policy);
         let cur = k.facts.iter().find(|f| f.is_current()).unwrap();
         assert_eq!(cur.revision_count, 1);
@@ -859,7 +919,8 @@ mod tests {
     #[test]
     fn revision_count_increments_on_confirm() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.9, &policy);
         k.remember("arch", "db", "PostgreSQL", "s2", 0.9, &policy);
         k.remember("arch", "db", "PostgreSQL", "s3", 0.9, &policy);
@@ -871,7 +932,8 @@ mod tests {
     #[test]
     fn revision_count_carries_over_on_supersede() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL", "s1", 0.95, &policy);
         k.remember("arch", "db", "PostgreSQL", "s2", 0.9, &policy);
         assert_eq!(
@@ -917,7 +979,8 @@ mod tests {
     #[test]
     fn cross_key_similar_finds_related_facts() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember(
             "architecture",
             "auth",
@@ -953,7 +1016,8 @@ mod tests {
     #[test]
     fn cross_key_similar_excludes_same_key() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("arch", "db", "PostgreSQL 16", "s1", 0.9, &policy);
 
         let similar =
@@ -964,7 +1028,8 @@ mod tests {
     #[test]
     fn cross_key_similar_excludes_judged_pairs() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember(
             "architecture",
             "auth",
@@ -1003,7 +1068,8 @@ mod tests {
     #[test]
     fn cross_key_similar_ignores_unrelated_facts() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember(
             "arch",
             "db",
@@ -1028,7 +1094,8 @@ mod tests {
     #[test]
     fn judge_supersedes_archives_target() {
         let policy = default_policy();
-        let mut k = ProjectKnowledge::new("/tmp/test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember("architecture", "auth", "JWT RS256", "s1", 0.9, &policy);
         k.remember("decision", "session", "JWT tokens", "s1", 0.85, &policy);
 

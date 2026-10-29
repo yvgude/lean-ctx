@@ -1293,6 +1293,9 @@ mod tests {
 
     #[test]
     fn successful_local_retry_atomically_persists_removal() {
+        // A retry persists the agent registry below the data directory: an own
+        // one, or the run lands in whatever a parallel test set and removes.
+        let _data = crate::core::data_dir::isolated_data_dir();
         let dir = tempfile::tempdir().unwrap();
         let legacy = dir.path().join("dead-letters-v1.json");
         let scope = scope("tenant-a", "project-a");

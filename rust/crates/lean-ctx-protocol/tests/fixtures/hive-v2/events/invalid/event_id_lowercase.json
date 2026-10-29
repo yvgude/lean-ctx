@@ -1,0 +1,17 @@
+{
+  "case": "event_id_lowercase",
+  "base": "events/node.add.fact.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/event_id",
+      "value": "01jbz8d3k4m5n6p7q8r9s0t1v2"
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/event_id"
+  }
+}

@@ -35,9 +35,13 @@ use std::path::{Path, PathBuf};
 /// snaps keep each app's dot dirs — cookies, logins — under `~/snap/<app>`).
 const PROTECTED_HOME_DIRS: &[&str] = &["Library", "AppData", "snap"];
 
-/// Upper bound on remembered session roots; a long-lived daemon serving many
-/// sessions keeps the most recent ones.
-const MAX_SESSION_WRITE_ROOTS: usize = 64;
+tokio::task_local! {
+    /// The roots the tool call being served may write in: its project and its
+    /// session's host-declared roots. Set per call and never accumulated, so a
+    /// root one call (or one client) declared is not writable for the next
+    /// (AP04-G9).
+    static REQUEST_WRITE_ROOTS: Vec<PathBuf>;
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PathJailScope {
@@ -69,8 +73,13 @@ impl PathJailScope {
         }
     }
 
-    /// Active scope: env override → config → default (`home`).
+    /// Active scope: env override → config → default (`home`). A
+    /// launcher-bound Workspace (#2120) always means `project`: its roots,
+    /// not the home directory, bound every path.
     pub fn resolve() -> Self {
+        if crate::core::workspace_authority::is_configured() {
+            return Self::Project;
+        }
         Self::explicit().unwrap_or_default()
     }
 
@@ -205,31 +214,19 @@ pub(crate) fn protected_zone_permits(base: &Path, root: &Path, allow: &[PathBuf]
             .any(|p| p.starts_with(&zone) && base.starts_with(p))
 }
 
-fn session_write_roots() -> &'static std::sync::Mutex<Vec<PathBuf>> {
-    static ROOTS: std::sync::OnceLock<std::sync::Mutex<Vec<PathBuf>>> = std::sync::OnceLock::new();
-    ROOTS.get_or_init(|| std::sync::Mutex::new(Vec::new()))
-}
-
-/// Records a session's project (or host-declared) root as writable. Called
-/// for every tool call; broad roots (`/`, `~`, temp dirs) are never recorded.
-pub fn register_session_root(root: &str) {
+/// A declared root as a write root; broad roots (`/`, `~`, temp dirs) never are.
+fn write_root(root: &str) -> Option<PathBuf> {
     if root.trim().is_empty() {
-        return;
+        return None;
     }
     let path = super::pathjail::canonicalize_secure(Path::new(root));
-    if crate::core::pathutil::is_broad_or_unsafe_root(&path) {
-        return;
-    }
-    let mut roots = session_write_roots()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    if roots.iter().any(|r| r == &path) {
-        return;
-    }
-    if roots.len() >= MAX_SESSION_WRITE_ROOTS {
-        roots.remove(0);
-    }
-    roots.push(path);
+    (!crate::core::pathutil::is_broad_or_unsafe_root(&path)).then_some(path)
+}
+
+/// Runs one tool call with its project and host-declared roots writable.
+pub(crate) fn with_request_write_roots<T>(roots: &[String], operation: impl FnOnce() -> T) -> T {
+    let roots = roots.iter().filter_map(|root| write_root(root)).collect();
+    REQUEST_WRITE_ROOTS.sync_scope(roots, operation)
 }
 
 /// The `projects` scope opens *reads* across your projects; writes stay in the
@@ -246,21 +243,34 @@ pub(crate) fn home_scope_write_denial(target: &Path) -> Option<String> {
     if !admits_below(target, &home) {
         return None;
     }
-    let mut writable: Vec<PathBuf> = session_write_roots()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .clone();
+    // A tool call writes in its own roots; work it hands to another thread
+    // keeps at least its request project. CLI invocations (`lean-ctx pack`,
+    // `lean-ctx call`) have no session; the directory the user ran them in is
+    // their project.
+    let mut writable: Vec<PathBuf> = REQUEST_WRITE_ROOTS
+        .try_with(Clone::clone)
+        .ok()
+        .or_else(|| {
+            crate::core::policy::runtime::REQUEST_PROJECT
+                .try_with(|slot| slot.borrow().clone())
+                .ok()
+                .map(|project| {
+                    project
+                        .and_then(|root| write_root(&root.to_string_lossy()))
+                        .into_iter()
+                        .collect()
+                })
+        })
+        .unwrap_or_else(|| {
+            std::env::current_dir()
+                .ok()
+                .and_then(|cwd| write_root(&cwd.to_string_lossy()))
+                .into_iter()
+                .collect()
+        });
     writable.extend(super::pathjail::allow_paths_from_env_and_config());
     if let Ok(state) = crate::core::paths::state_dir() {
         writable.push(super::pathjail::canonicalize_secure(&state));
-    }
-    // CLI invocations (`lean-ctx pack`, `lean-ctx call`) have no session; the
-    // directory the user ran them in is their project.
-    if let Ok(cwd) = std::env::current_dir() {
-        let cwd = super::pathjail::canonicalize_secure(&cwd);
-        if !crate::core::pathutil::is_broad_or_unsafe_root(&cwd) {
-            writable.push(cwd);
-        }
     }
     if writable.iter().any(|w| target.starts_with(w)) {
         return None;
@@ -570,8 +580,17 @@ mod tests {
             "{err}"
         );
         assert!(write(&b.join(".git/hooks/pre-commit")).is_err());
-        register_session_root(&b.to_string_lossy());
-        assert!(write(&b.join("lib.rs")).is_ok(), "session root is writable");
+        let as_call = |roots: &[&Path], target: &Path| {
+            let roots: Vec<String> = roots.iter().map(|r| r.to_string_lossy().into()).collect();
+            with_request_write_roots(&roots, || write(target))
+        };
+        assert!(
+            as_call(&[b.as_path()], &b.join("lib.rs")).is_ok(),
+            "session root is writable"
+        );
+        // AP04-G9: a root an earlier call (another client) declared is not
+        // writable for the next call in another project.
+        assert!(as_call(&[a.as_path()], &b.join("lib.rs")).is_err());
 
         crate::test_env::set_var("LEAN_CTX_PATH_JAIL_SCOPE", "project");
         let err = jail(&b.join("lib.rs"), &a).unwrap_err().to_string();

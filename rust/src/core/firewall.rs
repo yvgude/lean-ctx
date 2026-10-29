@@ -34,7 +34,7 @@ pub(crate) fn is_firewallable_tool(name: &str) -> bool {
 /// read always returns content"; both the firewall and the reference-results path
 /// honour it so a `ctx_read` can never degrade to a preview the agent can't edit.
 pub(crate) fn is_protected_read(name: &str) -> bool {
-    matches!(name, "ctx_read" | "ctx_multi_read" | "ctx_smart_read")
+    name == "ctx_read"
 }
 
 /// Effective minimum token count before firewalling (config + env override).
@@ -307,7 +307,6 @@ mod tests {
         assert!(is_firewallable_tool("ctx_tree"));
         assert!(is_firewallable_tool("ctx_execute"));
         assert!(!is_firewallable_tool("ctx_read"));
-        assert!(!is_firewallable_tool("ctx_multi_read"));
         assert!(!is_firewallable_tool("ctx_knowledge"));
     }
 
@@ -315,13 +314,8 @@ mod tests {
     fn protected_reads_are_file_readers_and_never_firewallable() {
         // Explicit reads must always return content (no firewall digest, no
         // reference stub) so the agent can edit against the lines.
-        for read in ["ctx_read", "ctx_multi_read", "ctx_smart_read"] {
-            assert!(is_protected_read(read), "{read} must be a protected read");
-            assert!(
-                !is_firewallable_tool(read),
-                "{read} must never be firewallable"
-            );
-        }
+        assert!(is_protected_read("ctx_read"));
+        assert!(!is_firewallable_tool("ctx_read"));
         assert!(!is_protected_read("ctx_shell"));
         assert!(!is_protected_read("ctx_search"));
     }

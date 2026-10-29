@@ -1,0 +1,26 @@
+{
+  "answer_revision": 0,
+  "body": "Code says 3, the runbook says 5.",
+  "licence": "CC-BY-4.0",
+  "material": [
+    {
+      "bytes": 7,
+      "media_type": "text/markdown",
+      "name": "runbook.md",
+      "sha256": "e95a2edc459c5ba34b244df70403dd6981f11aa1bca8e325206d1cc5bc43180e"
+    }
+  ],
+  "owner": {
+    "handle": "quiet-heron"
+  },
+  "schema": "leanctx.hive.swarm/v1",
+  "scope": "public",
+  "state": "working",
+  "swarm_id": "sw_01jbretry",
+  "title": "Which retry budget does payments use?",
+  "topics": [
+    "payments",
+    "retries"
+  ],
+  "trust": "untrusted"
+}

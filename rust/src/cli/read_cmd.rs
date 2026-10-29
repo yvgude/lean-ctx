@@ -16,6 +16,10 @@ use super::context_execution::{CommandOutput, LocalOperation, Recording, excerpt
 #[path = "read_cmd_policy.rs"]
 mod policy_read;
 
+#[path = "read_cmd_carrier.rs"]
+mod carrier;
+use carrier::{Stdout, deliver_carrier, tool_arguments};
+
 /// Detect legacy daemon read failures for the exit status. A completed daemon
 /// request must not fall through to standalone and dispatch the operation twice.
 /// Catches: `"file.rs 0L"` stubs and `"Cannot read file:"` handler errors.
@@ -218,11 +222,26 @@ pub(crate) fn observe_read<'a>(
 
     // Active project protection must precede the legacy daemon/cache routes.
     // The prepared value is released only after its source authority is rechecked.
-    match policy_read::prepare(&path, &mode) {
+    //
+    // The acquisition runs inside the shared CLI tool run's request scope and
+    // source capture; the capture travels with the prepared value and the
+    // publication finishes the same run (release, lineage record of the
+    // printed text). The scope is the working directory — exactly the project
+    // authority `prepare` resolved before.
+    let read_arguments = tool_arguments(serde_json::json!({ "path": path, "mode": mode }));
+    let cwd = std::env::current_dir()
+        .map(|dir| dir.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    let protected_run = super::common::CliToolRun::new("ctx_read", &cwd, Some(&read_arguments))
+        .admitted_reader_output();
+    let (prepared, capture) = protected_run.acquire(|| policy_read::prepare(&path, &mode));
+    match prepared {
         Ok(Some(prepared)) => {
             return super::context_execution::run_protected(
                 super::context_execution::ContextCommand::Read,
-                Box::new(move || prepared.publish()),
+                Box::new(move || {
+                    prepared.publish(|printable| protected_run.finish(printable, capture))
+                }),
             );
         }
         Ok(None) => {}
@@ -288,24 +307,71 @@ pub(crate) fn observe_read<'a>(
 
     let requested_auto = mode == "auto";
     run_local(Box::new(move || {
-        local_read(&path, &mode, force_fresh, requested_auto)
+        deliver_carrier(
+            "ctx_read",
+            &project_root,
+            Some(&read_arguments),
+            false,
+            |out| {
+                local_read(
+                    &path,
+                    &project_root,
+                    &mode,
+                    force_fresh,
+                    requested_auto,
+                    out,
+                )
+            },
+        )
     }))
 }
 
-fn local_read(path: &str, mode: &str, force_fresh: bool, requested_auto: bool) -> CommandOutput {
+fn local_read(
+    path: &str,
+    project_root: &str,
+    mode: &str,
+    force_fresh: bool,
+    requested_auto: bool,
+    out: &mut Stdout,
+) -> CommandOutput {
     let short = protocol::shorten_path(path);
     let read_start = std::time::Instant::now();
+    let source = match crate::tools::ctx_read::read_file_lossy_admitted_for_cli(path) {
+        Ok(source) => source,
+        Err(e) => {
+            eprintln!("Error: {e}");
+            return CommandOutput::local(1, None);
+        }
+    };
+    // The CLI's admitted reader does not publish what it read. The source is
+    // published here, exactly as the rooted reader does it for the MCP tool
+    // (`archive::authority::publish_read`): the admitted text of the whole
+    // file, under the project the run is bound to. A no-op without a capture
+    // or without protection; a file outside the project marks the capture
+    // incomplete, so its output stays unknown lineage.
+    crate::core::archive::authority::publish_read(
+        Path::new(project_root),
+        &crate::core::pathutil::safe_canonicalize_bounded(Path::new(path), 2000).to_string_lossy(),
+        "ctx_read",
+        &source.text,
+    );
+    let content = source.text.as_str();
+    let storable = source.storable;
+    let original_tokens = count_tokens(content);
 
     if !force_fresh && mode == "full" {
         use crate::core::cli_cache::{self, CacheResult};
-        match cli_cache::check_and_read(path) {
+        match cli_cache::check_admitted(path, &source) {
             CacheResult::Hit { entry, file_ref } => {
                 let msg = cli_cache::format_hit(&entry, &file_ref, &short);
-                println!("{msg}");
+                // A cache-hit stub is session state ("cached … [NL]"), not the
+                // source's text: printed as before, never a delivery record.
+                out.hint();
+                out.line(&msg);
                 let sent = count_tokens(&msg);
                 return CommandOutput::local(
                     0,
-                    Some(Recording::Read {
+                    storable.then_some(Recording::Read {
                         path: path.to_string(),
                         mode: "full".to_string(),
                         input_tokens: entry.original_tokens,
@@ -322,17 +388,16 @@ fn local_read(path: &str, mode: &str, force_fresh: bool, requested_auto: bool) -
             }
             CacheResult::Miss { content } => {
                 let line_count = content.lines().count();
-                let raw_tokens = count_tokens(&content);
                 let framed = format!("{short} [{line_count}L]\n{content}");
-                let output = cap_cli_to_raw(framed, &content, raw_tokens);
-                println!("{output}");
+                let output = cap_cli_to_raw(framed, &content, original_tokens);
+                out.line(&output);
                 let sent = count_tokens(&output);
                 return CommandOutput::local(
                     0,
-                    Some(Recording::Read {
+                    storable.then_some(Recording::Read {
                         path: path.to_string(),
                         mode: "full".to_string(),
-                        input_tokens: raw_tokens,
+                        input_tokens: original_tokens,
                         output_tokens: sent,
                         cache_hit: false,
                         elapsed: read_start.elapsed(),
@@ -343,20 +408,11 @@ fn local_read(path: &str, mode: &str, force_fresh: bool, requested_auto: bool) -
         }
     }
 
-    let content = match crate::tools::ctx_read::read_file_lossy(path) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error: {e}");
-            return CommandOutput::local(1, None);
-        }
-    };
-
     let ext = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
     let line_count = content.lines().count();
-    let original_tokens = count_tokens(&content);
 
     let mode = if mode == "auto" {
         // Unified resolver — the single source of truth shared with the MCP
@@ -448,10 +504,10 @@ fn local_read(path: &str, mode: &str, force_fresh: bool, requested_auto: bool) -
                 output_buf = cap_cli_to_raw(output_buf, &content, original_tokens);
             }
             let sent = count_tokens(&output_buf);
-            println!("{output_buf}");
+            out.line(&output_buf);
             CommandOutput::local(
                 0,
-                Some(Recording::Read {
+                storable.then_some(Recording::Read {
                     path: path.to_string(),
                     mode: "map".to_string(),
                     input_tokens: original_tokens,
@@ -480,12 +536,12 @@ fn local_read(path: &str, mode: &str, force_fresh: bool, requested_auto: bool) -
             if requested_auto {
                 output_buf = cap_cli_to_raw(output_buf, &content, original_tokens);
             }
-            println!("{output_buf}");
+            out.line(&output_buf);
             let sent = count_tokens(&output_buf);
-            print_savings(original_tokens, sent);
+            out.savings(original_tokens, sent);
             CommandOutput::local(
                 0,
-                Some(Recording::Read {
+                storable.then_some(Recording::Read {
                     path: path.to_string(),
                     mode: "signatures".to_string(),
                     input_tokens: original_tokens,
@@ -498,13 +554,13 @@ fn local_read(path: &str, mode: &str, force_fresh: bool, requested_auto: bool) -
         }
         "aggressive" => {
             let compressed = compressor::aggressive_compress(&content, Some(ext));
-            println!("{short} [{line_count}L]");
-            println!("{compressed}");
+            out.line(format_args!("{short} [{line_count}L]"));
+            out.line(&compressed);
             let sent = count_tokens(&compressed);
-            print_savings(original_tokens, sent);
+            out.savings(original_tokens, sent);
             CommandOutput::local(
                 0,
-                Some(Recording::Read {
+                storable.then_some(Recording::Read {
                     path: path.to_string(),
                     mode: "aggressive".to_string(),
                     input_tokens: original_tokens,
@@ -518,16 +574,16 @@ fn local_read(path: &str, mode: &str, force_fresh: bool, requested_auto: bool) -
         "entropy" => {
             let result = entropy::entropy_compress(&content);
             let avg_h = entropy::analyze_entropy(&content).avg_entropy;
-            println!("{short} [{line_count}L] (H̄={avg_h:.1})");
+            out.line(format_args!("{short} [{line_count}L] (H̄={avg_h:.1})"));
             for tech in &result.techniques {
-                println!("{tech}");
+                out.line(tech);
             }
-            println!("{}", result.output);
+            out.line(&result.output);
             let sent = count_tokens(&result.output);
-            print_savings(original_tokens, sent);
+            out.savings(original_tokens, sent);
             CommandOutput::local(
                 0,
-                Some(Recording::Read {
+                storable.then_some(Recording::Read {
                     path: path.to_string(),
                     mode: "entropy".to_string(),
                     input_tokens: original_tokens,
@@ -551,12 +607,16 @@ fn local_read(path: &str, mode: &str, force_fresh: bool, requested_auto: bool) -
             };
             let output =
                 format!("{short} [{line_count}L] lines:{range_str}\n{extracted}{multi_hint}");
-            println!("{output}");
+            if !multi_hint.is_empty() {
+                // A usage hint rides on the selection: no delivery record.
+                out.hint();
+            }
+            out.line(&output);
             let sent = count_tokens(&output);
-            print_savings(original_tokens, sent);
+            out.savings(original_tokens, sent);
             CommandOutput::local(
                 0,
-                Some(Recording::Read {
+                storable.then_some(Recording::Read {
                     path: path.to_string(),
                     mode: "lines".to_string(),
                     input_tokens: original_tokens,
@@ -590,11 +650,11 @@ fn local_read(path: &str, mode: &str, force_fresh: bool, requested_auto: bool) -
                 output
             };
             let sent = count_tokens(&output);
-            println!("{output}");
-            print_savings(original_tokens, sent);
+            out.line(&output);
+            out.savings(original_tokens, sent);
             CommandOutput::local(
                 0,
-                Some(Recording::Read {
+                storable.then_some(Recording::Read {
                     path: path.to_string(),
                     mode: mode.to_string(),
                     input_tokens: original_tokens,
@@ -627,11 +687,11 @@ fn local_read(path: &str, mode: &str, force_fresh: bool, requested_auto: bool) -
             // Full/verbatim reads never beat raw via framing — if terse didn't
             // compress below the bare file, ship the file itself (#361).
             let output = cap_cli_to_raw(output, &content, original_tokens);
-            println!("{output}");
+            out.line(&output);
             let sent = count_tokens(&output);
             CommandOutput::local(
                 0,
-                Some(Recording::Read {
+                storable.then_some(Recording::Read {
                     path: path.to_string(),
                     mode: "full".to_string(),
                     input_tokens: original_tokens,
@@ -667,19 +727,26 @@ pub(crate) fn observe_diff<'a>(
     run_local(Box::new(move || local_diff(&path1, &path2)))
 }
 
-fn local_diff(path1: &str, path2: &str) -> CommandOutput {
-    let content1 = match crate::tools::ctx_read::read_file_lossy(path1) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error reading {path1}: {e}");
-            return CommandOutput::local(1, None);
-        }
+/// Both sides of a diff are sources: each is admitted like `lean-ctx read`
+/// admits its file (G01), and the diff is computed from the admitted texts.
+/// The generic unscoped reader is a plain local read outside a request scope,
+/// so it printed both originals here — a value `read` masks appeared in the
+/// diff. A side that is withheld ends the command with its content-free
+/// reason; no partial diff is printed.
+fn admitted_diff_sides(path1: &str, path2: &str) -> Result<(String, String), String> {
+    let side = |path: &str| {
+        crate::tools::ctx_read::read_file_lossy_admitted_for_cli(path)
+            .map(|source| source.text)
+            .map_err(|e| format!("Error reading {path}: {e}"))
     };
+    Ok((side(path1)?, side(path2)?))
+}
 
-    let content2 = match crate::tools::ctx_read::read_file_lossy(path2) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("Error reading {path2}: {e}");
+fn local_diff(path1: &str, path2: &str) -> CommandOutput {
+    let (content1, content2) = match admitted_diff_sides(path1, path2) {
+        Ok(sides) => sides,
+        Err(message) => {
+            eprintln!("{message}");
             return CommandOutput::local(1, None);
         }
     };
@@ -750,10 +817,22 @@ pub(crate) fn observe_grep<'a>(
     }
     super::common::daemon_fallback_hint();
 
-    run_local(Box::new(move || local_grep(pattern, path)))
+    // The arguments the daemon route sends for the same search: `ctx_search`
+    // decides from them whether this call declares every source.
+    let search_arguments = tool_arguments(serde_json::json!({ "pattern": pattern, "path": path }));
+    run_local(Box::new(move || {
+        let project_root = super::common::detect_project_root(&[]);
+        deliver_carrier(
+            "ctx_search",
+            &project_root,
+            Some(&search_arguments),
+            false,
+            |out| local_grep(pattern, path, out),
+        )
+    }))
 }
 
-fn local_grep(pattern: String, path: String) -> CommandOutput {
+fn local_grep(pattern: String, path: String, stdout: &mut Stdout) -> CommandOutput {
     // Search latency for the Context IR lineage (#566), standalone path only.
     let search_start = std::time::Instant::now();
 
@@ -767,10 +846,11 @@ fn local_grep(pattern: String, path: String) -> CommandOutput {
         roles::active_role().io.allow_secret_paths,
         false,
     );
+    let failed = outcome.failed;
     let out = outcome.text;
-    println!("{out}");
+    stdout.line(&out);
     let output_tokens = count_tokens(&out);
-    let exit_code = grep_exit_status(&out);
+    let exit_code = if failed { 2 } else { grep_exit_status(&out) };
     CommandOutput::local(
         exit_code,
         Some(Recording::Search {
@@ -854,10 +934,16 @@ pub(crate) fn observe_glob<'a>(
     }
     super::common::daemon_fallback_hint();
 
-    run_local(Box::new(move || local_glob(&pattern, &path)))
+    run_local(Box::new(move || {
+        let project_root = super::common::detect_project_root(&[]);
+        // A listing: released like every carrier, never a delivery record.
+        deliver_carrier("ctx_glob", &project_root, None, true, |out| {
+            local_glob(&pattern, &path, out)
+        })
+    }))
 }
 
-fn local_glob(pattern: &str, path: &str) -> CommandOutput {
+fn local_glob(pattern: &str, path: &str, stdout: &mut Stdout) -> CommandOutput {
     let (out, _original) = crate::tools::ctx_glob::handle(
         pattern,
         path,
@@ -865,7 +951,7 @@ fn local_glob(pattern: &str, path: &str) -> CommandOutput {
         roles::active_role().io.allow_secret_paths,
         200,
     );
-    println!("{out}");
+    stdout.line(&out);
     let exit_code = i32::from(out.starts_with("ERROR:"));
     CommandOutput::local(
         exit_code,
@@ -1022,18 +1108,28 @@ pub(crate) fn observe_ls<'a>(
     super::common::daemon_fallback_hint();
 
     run_local(Box::new(move || {
-        local_ls(&path, depth, show_hidden, respect_gitignore)
+        let project_root = super::common::detect_project_root(&[]);
+        // A listing: released like every carrier, never a delivery record.
+        deliver_carrier("ctx_tree", &project_root, None, true, |out| {
+            local_ls(&path, depth, show_hidden, respect_gitignore, out)
+        })
     }))
 }
 
-fn local_ls(path: &str, depth: usize, show_hidden: bool, respect_gitignore: bool) -> CommandOutput {
+fn local_ls(
+    path: &str,
+    depth: usize,
+    show_hidden: bool,
+    respect_gitignore: bool,
+    stdout: &mut Stdout,
+) -> CommandOutput {
     let (out, original) =
         crate::tools::ctx_tree::handle(path, depth, show_hidden, respect_gitignore);
     if out.starts_with("ERROR:") {
         eprintln!("{out}");
         std::process::exit(1);
     }
-    println!("{out}");
+    stdout.line(&out);
     CommandOutput::local(
         0,
         Some(Recording::Tree {
@@ -1083,385 +1179,6 @@ fn local_deps(path: &str) -> CommandOutput {
 #[path = "read_cmd_adapter_tests.rs"]
 mod adapter_tests;
 
-#[cfg(all(test, unix))]
-mod empty_daemon_tests {
-    use super::is_failed_daemon_result;
-
-    #[test]
-    fn detects_tcc_empty_stub() {
-        assert!(is_failed_daemon_result(
-            "file.rs 0L
-"
-        ));
-        assert!(is_failed_daemon_result(
-            "F1=file.rs 0L
-[lean-ctx: 0 tok saved]"
-        ));
-    }
-
-    #[test]
-    fn accepts_real_content() {
-        assert!(!is_failed_daemon_result(
-            "file.rs 10L
-fn main() {}
-"
-        ));
-    }
-
-    #[test]
-    fn accepts_nonzero_line_count() {
-        assert!(!is_failed_daemon_result(
-            "file.rs 1L
-"
-        ));
-    }
-
-    #[test]
-    fn ignores_structure_markers_in_body() {
-        assert!(is_failed_daemon_result(
-            "file.rs 0L
-[no extractable structure for .rs]
-"
-        ));
-    }
-
-    #[test]
-    fn detects_tcc_restricted_marker() {
-        assert!(is_failed_daemon_result(
-            "ERROR:TCC_RESTRICTED: daemon cannot access /Users/me/Documents/proj (sandboxed)"
-        ));
-    }
-
-    #[test]
-    fn detects_daemon_project_root_denial() {
-        assert!(is_failed_daemon_result(
-            "ERROR: path escapes project root: /work/current/scripts (root: /work/stale)"
-        ));
-    }
-}
-
 #[cfg(test)]
-mod cap_tests {
-    use super::{cap_cli_to_raw, count_tokens};
-
-    #[test]
-    fn caps_to_raw_when_framing_inflates() {
-        // A tiny file: the `path [NL]` header (+ any footer) pushes the framed
-        // payload past the bare content, so the cap must ship the content
-        // verbatim — the additive CLI default must never inflate a read (#361).
-        let raw = "x = 1\n";
-        let raw_tokens = count_tokens(raw);
-        let framed = format!("some/very/long/path/header.rs [1L]\n{raw}\n[lean-ctx: 0 tok saved]");
-        assert!(count_tokens(&framed) > raw_tokens, "fixture must inflate");
-        assert_eq!(cap_cli_to_raw(framed, raw, raw_tokens), raw);
-    }
-
-    #[test]
-    fn keeps_framing_when_it_saves() {
-        // A genuinely compressed payload (fewer tokens than raw) is kept as-is.
-        let raw = "fn a() {}\n".repeat(300);
-        let raw_tokens = count_tokens(&raw);
-        let framed = "f.rs [300L]\nfn a() {} …".to_string();
-        assert!(count_tokens(&framed) < raw_tokens);
-        assert_eq!(cap_cli_to_raw(framed.clone(), &raw, raw_tokens), framed);
-    }
-
-    #[test]
-    fn keeps_framing_for_empty_file() {
-        // raw_tokens == 0 disables the cap so an empty file still gets a signal.
-        let framed = "empty.rs [0L]\n".to_string();
-        assert_eq!(cap_cli_to_raw(framed.clone(), "", 0), framed);
-    }
-
-    #[test]
-    fn break_even_is_not_inflation() {
-        // Equal token counts use strict `>`, so framing is preserved at break-even.
-        let raw = "alpha beta gamma delta";
-        let raw_tokens = count_tokens(raw);
-        let framed = raw.to_string();
-        assert_eq!(count_tokens(&framed), raw_tokens);
-        assert_eq!(cap_cli_to_raw(framed.clone(), raw, raw_tokens), framed);
-    }
-
-    #[test]
-    fn emitted_never_exceeds_raw_across_sizes() {
-        // The invariant itself: for any bloated framing over a non-empty file the
-        // emitted token count is ≤ the raw token count.
-        for n in [1usize, 5, 50, 500] {
-            let raw = "data line here\n".repeat(n);
-            let raw_tokens = count_tokens(&raw);
-            let framed = format!("a/b/c/path.txt [{n}L]\n{raw}\n[lean-ctx: {n} tok saved ({n}%)]");
-            let out = cap_cli_to_raw(framed, &raw, raw_tokens);
-            assert!(
-                count_tokens(&out) <= raw_tokens,
-                "n={n}: emitted {} tok exceeds raw {raw_tokens}",
-                count_tokens(&out)
-            );
-        }
-    }
-}
-
-#[cfg(test)]
-mod fresh_tests {
-    use super::{cmd_read, should_force_fresh};
-
-    #[test]
-    fn invalid_request_returns_control_to_lifecycle_caller() {
-        assert!(!cmd_read(&[]));
-    }
-
-    #[test]
-    fn hook_child_forces_fresh_even_without_flags() {
-        // #1037: a hook child must always read verbatim (no `cached … [NL]` stub),
-        // even when the caller passed no `--fresh`/`--no-cache` flag.
-        assert!(should_force_fresh(&[], true));
-        assert!(!should_force_fresh(&[], false));
-    }
-
-    #[test]
-    fn explicit_flags_force_fresh() {
-        assert!(should_force_fresh(&["--fresh".to_string()], false));
-        assert!(should_force_fresh(&["--no-cache".to_string()], false));
-        assert!(!should_force_fresh(&["file.rs".to_string()], false));
-    }
-}
-
-/// #1903: the CLI read boundary must match MCP `ctx_read` (same resolver,
-/// same verdict, same error text).
-#[cfg(test)]
-mod jail_parity_tests {
-    use super::jail_cli_read_path;
-    use crate::core::path_resolve::resolve_tool_path;
-
-    fn project() -> (tempfile::TempDir, String) {
-        let tmp = tempfile::tempdir().unwrap();
-        let root = tmp.path().join("proj");
-        std::fs::create_dir_all(&root).unwrap();
-        std::fs::write(root.join("inside.txt"), "in").unwrap();
-        std::fs::write(tmp.path().join("outside.txt"), "out").unwrap();
-        (tmp, root.to_string_lossy().into_owned())
-    }
-
-    // Parity holds in every build: with the `no-jail` feature both paths admit
-    // the read, otherwise both refuse it with the same text.
-    #[test]
-    fn out_of_root_read_is_denied_like_mcp() {
-        // Both paths render the effective config location into the denial, so
-        // a concurrent test must not move LEAN_CTX_CONFIG_DIR between them.
-        let _env = crate::core::data_dir::test_env_lock();
-        let (_tmp, root) = project();
-        for raw in [
-            format!("{root}/../outside.txt"),
-            format!("{root}/../../../../../../etc/hosts"),
-        ] {
-            let cli = jail_cli_read_path(&raw, &root);
-            let mcp = resolve_tool_path(Some(&root), None, &raw);
-            assert_eq!(cli, mcp, "CLI and MCP must decide {raw} alike");
-            if !cfg!(feature = "no-jail") {
-                let err = cli.expect_err("CLI must deny out-of-root");
-                assert!(err.contains("path escapes project root"), "{err}");
-            }
-        }
-    }
-
-    #[test]
-    fn in_root_read_resolves_like_mcp() {
-        let (_tmp, root) = project();
-        let raw = format!("{root}/inside.txt");
-        let cli = jail_cli_read_path(&raw, &root).unwrap();
-        assert_eq!(cli, resolve_tool_path(Some(&root), None, &raw).unwrap());
-        assert_eq!(std::fs::read_to_string(&cli).unwrap(), "in");
-    }
-
-    #[test]
-    fn broad_root_is_refused() {
-        let Some(home) = dirs::home_dir() else { return };
-        let home = home.to_string_lossy().into_owned();
-        let err = jail_cli_read_path(&format!("{home}/.profile"), &home).unwrap_err();
-        assert!(err.contains("no project detected"), "{err}");
-    }
-
-    #[test]
-    fn secret_path_enforcement_matches_mcp() {
-        let _env = crate::core::data_dir::test_env_lock();
-        let (_tmp, root) = project();
-        let secret = format!("{root}/.env");
-        std::fs::write(&secret, "TOKEN=x").unwrap();
-        let prev = std::env::var("LEAN_CTX_IO_BOUNDARY_MODE").ok();
-        crate::test_env::set_var("LEAN_CTX_IO_BOUNDARY_MODE", "enforce");
-        let cli = jail_cli_read_path(&secret, &root);
-        let mcp = resolve_tool_path(Some(&root), None, &secret);
-        match prev {
-            Some(v) => crate::test_env::set_var("LEAN_CTX_IO_BOUNDARY_MODE", v),
-            None => crate::test_env::remove_var("LEAN_CTX_IO_BOUNDARY_MODE"),
-        }
-        let cli = cli.expect_err("enforce mode must refuse a secret path");
-        assert_eq!(cli, mcp.unwrap_err());
-        assert!(cli.contains("Secret-like path"), "{cli}");
-    }
-}
-
-#[cfg(test)]
-mod mode_arg_tests {
-    use super::resolve_cli_read_mode;
-
-    fn args(list: &[&str]) -> Vec<String> {
-        list.iter().map(ToString::to_string).collect()
-    }
-
-    // `lean-ctx read f.ps1 map` used to silently IGNORE the positional mode and
-    // serve the `auto` default — reads must honour it like `--mode map`
-    // (limitations audit 2026-07-03).
-    #[test]
-    fn positional_mode_is_honoured() {
-        assert_eq!(resolve_cli_read_mode(&args(&["f.ps1", "map"])), "map");
-        assert_eq!(
-            resolve_cli_read_mode(&args(&["f.rs", "lines:5-10"])),
-            "lines:5-10"
-        );
-    }
-
-    #[test]
-    fn mode_flag_wins_over_positional() {
-        assert_eq!(
-            resolve_cli_read_mode(&args(&["f.rs", "map", "--mode", "signatures"])),
-            "signatures"
-        );
-        assert_eq!(
-            resolve_cli_read_mode(&args(&["f.rs", "-m", "full"])),
-            "full"
-        );
-    }
-
-    #[test]
-    fn defaults_to_auto_and_skips_flags_and_junk() {
-        assert_eq!(resolve_cli_read_mode(&args(&["f.rs"])), "auto");
-        assert_eq!(resolve_cli_read_mode(&args(&["f.rs", "--fresh"])), "auto");
-        // An unknown positional is not silently treated as a mode.
-        assert_eq!(resolve_cli_read_mode(&args(&["f.rs", "banana"])), "auto");
-    }
-}
-
-/// #1889: the CLI and the MCP server must render the same symbol lines (and
-/// the same TDD legend) for map/signatures under every CRP mode.
-#[cfg(test)]
-mod crp_parity_tests {
-    use super::push_signature_lines;
-    use crate::core::cache::SessionCache;
-    use crate::core::signatures;
-    use crate::tools::CrpMode;
-
-    /// Bodies are long so map/signatures are clearly smaller than the file —
-    /// otherwise the MCP never-inflate guard serves the raw file instead.
-    fn src() -> String {
-        use std::fmt::Write as _;
-        let body = (0..60).fold(String::new(), |mut acc, i| {
-            let _ = writeln!(acc, "    let v{i} = source.len() as u64 + {i};");
-            acc
-        });
-        format!(
-            "pub struct Totals {{ pub n: u64 }}\n\n\
-             pub fn count_source(source: &'static str) -> u64 {{\n{body}    0\n}}\n\n\
-             pub fn source_counts() -> Vec<(&'static str, u64)> {{\n    let source = \"\";\n{body}    Vec::new()\n}}\n\n\
-             fn private_helper(x: i32) -> i32 {{\n    let source = \"\";\n{body}    x + 1\n}}\n"
-        )
-    }
-
-    fn mcp(mode: &str, crp: CrpMode) -> String {
-        let dir = tempfile::tempdir().unwrap();
-        let file = dir.path().join("parity.rs");
-        std::fs::write(&file, src()).unwrap();
-        let mut cache = SessionCache::new();
-        crate::tools::ctx_read::handle_fresh(&mut cache, &file.to_string_lossy(), mode, crp)
-    }
-
-    fn assert_lines_in(cli: &str, mcp: &str, what: &str) {
-        for line in cli.lines().map(str::trim).filter(|l| !l.is_empty()) {
-            assert!(
-                mcp.lines()
-                    .any(|m| m.trim_start().starts_with(line) || m.contains(line)),
-                "{what}: CLI line `{line}` missing from MCP output:\n{mcp}"
-            );
-        }
-    }
-
-    #[test]
-    fn signatures_match_mcp_for_every_crp_mode() {
-        let sigs = signatures::extract_signatures(&src(), "rs");
-        let refs: Vec<&signatures::Signature> = sigs.iter().collect();
-        for crp in [CrpMode::Off, CrpMode::Compact, CrpMode::Tdd] {
-            let mut cli = String::new();
-            push_signature_lines(&mut cli, &refs, crp, "", false);
-            assert_lines_in(&cli, &mcp("signatures", crp), crp.as_str());
-            assert_eq!(
-                cli.contains("λ=fn"),
-                crp.is_tdd(),
-                "legend iff tdd ({crp:?})"
-            );
-        }
-    }
-
-    #[test]
-    fn map_api_matches_mcp_for_every_crp_mode() {
-        let sigs = signatures::extract_signatures(&src(), "rs");
-        let key: Vec<&signatures::Signature> = sigs
-            .iter()
-            .filter(|s| s.is_exported || s.indent == 0)
-            .collect();
-        for crp in [CrpMode::Off, CrpMode::Compact, CrpMode::Tdd] {
-            let mut cli = String::from("  API:");
-            push_signature_lines(&mut cli, &key, crp, "    ", true);
-            let out = mcp("map", crp);
-            let api_header = cli.lines().next().unwrap();
-            assert!(
-                out.contains(api_header),
-                "{crp:?}: header `{api_header}` in\n{out}"
-            );
-            assert_lines_in(&cli, &out, crp.as_str());
-        }
-    }
-
-    #[test]
-    fn tdd_uses_symbol_notation_not_compact() {
-        let sigs = signatures::extract_signatures(&src(), "rs");
-        let refs: Vec<&signatures::Signature> = sigs.iter().collect();
-        let mut tdd = String::new();
-        push_signature_lines(&mut tdd, &refs, CrpMode::Tdd, "", false);
-        assert!(tdd.contains("λ+count_source"), "{tdd}");
-        assert!(!tdd.contains("fn pub count_source"), "{tdd}");
-    }
-}
-
-/// #1917: `lean-ctx grep` must not report "not found" (exit 1) when it never
-/// looked at part of the corpus.
-#[cfg(test)]
-mod grep_exit_status_tests {
-    use super::grep_exit_status;
-
-    #[test]
-    fn matches_exit_zero() {
-        assert_eq!(grep_exit_status("3 matches in 1 files:\nsrc/a.rs:1 x"), 0);
-    }
-
-    #[test]
-    fn complete_miss_exits_one() {
-        assert_eq!(grep_exit_status("0 matches for 'x' (scanned 12 files)"), 1);
-    }
-
-    #[test]
-    fn incomplete_miss_exits_two() {
-        for out in [
-            "0 matches for 'x' (scanned 1 files) (1 large files skipped: big.log)",
-            "0 matches for 'x' (scanned 4 files)\n(2 files skipped: binary/encoding)",
-            "0 matches for 'x' (scanned 9 files) (search stopped at the time budget)",
-        ] {
-            assert_eq!(grep_exit_status(out), 2, "{out}");
-        }
-    }
-
-    #[test]
-    fn errors_exit_two() {
-        assert_eq!(grep_exit_status("ERROR: /nope does not exist"), 2);
-        assert_eq!(grep_exit_status("  ERROR: refusing to scan /"), 2);
-    }
-}
+#[path = "read_cmd_tests.rs"]
+mod tests;

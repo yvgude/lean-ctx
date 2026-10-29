@@ -1,4 +1,6 @@
+use super::admission::trusted_destination_binding;
 use super::*;
+use crate::core::context_admission::egress::EgressTarget;
 use crate::core::execution_lifecycle::{
     ExecutionDriver, ExecutionLifecycle, ProductEntitlements, RuntimeContext, StageDisposition,
     TaskContext, ToolRequest, ToolSurface,
@@ -105,7 +107,7 @@ fn proxy_test_state(upstream: &str) -> ProxyState {
         providers: Vec::new(),
     }));
     ProxyState {
-        client: reqwest::Client::builder()
+        client: crate::proxy::upstream_http_client_builder()
             .timeout(std::time::Duration::from_secs(2))
             .build()
             .unwrap(),
@@ -117,9 +119,6 @@ fn proxy_test_state(upstream: &str) -> ProxyState {
         upstreams,
         chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
         mcp_servers: Arc::new(Vec::new()),
-        web_app_tracker: Arc::new(std::sync::Mutex::new(
-            crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
-        )),
     }
 }
 
@@ -246,6 +245,7 @@ fn recorded_stage(
 #[tokio::test]
 async fn failed_send_keeps_attempt_ledger_without_advancing_prefix() {
     let isolation = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let body = cache_mode_request("failed-send-prefix-regression", &isolation);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let upstream = format!("http://{}", listener.local_addr().unwrap());
@@ -280,6 +280,7 @@ async fn failed_send_keeps_attempt_ledger_without_advancing_prefix() {
 #[tokio::test]
 async fn successful_send_advances_exact_prefix_even_if_response_body_fails() {
     let isolation = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let body = cache_mode_request("successful-send-decode-error-prefix-regression", &isolation);
     let (upstream, server) = upstream_response_with_wire(
         b"HTTP/1.1 200 OK\r\ncontent-length: 100\r\nconnection: close\r\n\r\n{}",
@@ -297,7 +298,7 @@ async fn successful_send_advances_exact_prefix_even_if_response_body_fails() {
     let (id, bytes, originals, _) = outbound.prepared.prefix_replay.as_ref().unwrap();
     let id = *id;
     let expected_bytes = bytes.clone();
-    assert_eq!(expected_bytes, outbound.forwarded_body);
+    assert_eq!(expected_bytes, outbound.forwarded_body.bytes());
     let mut extended = originals.clone();
     extended.push(serde_json::json!({"role": "user", "content": "next"}));
     assert_eq!(stats.requests_total.load(Ordering::Relaxed), 0);
@@ -327,6 +328,7 @@ async fn successful_send_advances_exact_prefix_even_if_response_body_fails() {
 #[tokio::test]
 async fn response_cache_hit_skips_dispatch() {
     let _isolation = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let upstream = format!("http://{}", listener.local_addr().unwrap());
     let body = serde_json::json!({"model": "gpt-5", "messages": [{"role": "user", "content": "cache-hit-no-dispatch"}]});
@@ -432,6 +434,7 @@ async fn policy_refusal_skips_context_preparation_and_dispatch() {
 #[tokio::test]
 async fn transport_failure_reaches_ledger_and_preserves_original_error() {
     let _isolation = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let upstream = format!("http://{}", listener.local_addr().unwrap());
     drop(listener);
@@ -457,9 +460,6 @@ async fn transport_failure_reaches_ledger_and_preserves_original_error() {
         upstreams,
         chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
         mcp_servers: Arc::new(Vec::new()),
-        web_app_tracker: Arc::new(std::sync::Mutex::new(
-            crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
-        )),
     };
     let request = Request::builder()
         .method("POST")
@@ -533,6 +533,36 @@ fn add_test_marker(mut value: serde_json::Value, original_size: usize) -> (Vec<u
     (out, original_size, compressed_size)
 }
 
+/// A gateway refusal is a typed answer (P5): 400, the reason code in a
+/// response header and in the provider-shaped JSON error — never a bare
+/// status, and never anything from the request.
+async fn assert_typed_refusal(result: Result<Response, StatusCode>, code: &str) {
+    assert_typed_refusal_status(result, StatusCode::BAD_REQUEST, code).await;
+}
+
+async fn assert_typed_refusal_status(
+    result: Result<Response, StatusCode>,
+    status: StatusCode,
+    code: &str,
+) {
+    let response = result.expect("a gateway refusal is a typed response, not a bare status");
+    assert_eq!(response.status(), status);
+    assert_eq!(
+        response.headers()[crate::proxy::admitted::REFUSAL_HEADER],
+        "context_gateway"
+    );
+    assert_eq!(
+        response.headers()[crate::proxy::admitted::REASON_CODES_HEADER],
+        code
+    );
+    let body = to_bytes(response.into_body(), usize::MAX)
+        .await
+        .expect("refusal body");
+    let body: serde_json::Value = serde_json::from_slice(&body).expect("JSON refusal body");
+    assert_eq!(body["lean_ctx"]["reason_codes"], serde_json::json!([code]));
+    assert_eq!(body["error"]["code"], "context_gateway_refused");
+}
+
 async fn upstream_response() -> (String, tokio::task::JoinHandle<serde_json::Value>) {
     upstream_response_with_wire(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}").await
 }
@@ -576,6 +606,7 @@ async fn upstream_response_with_wire(
 #[tokio::test]
 async fn upstream_receives_only_admitted_content() {
     let _isolation = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let key = concat!("AK", "IAIOSFODNN7EXAMPLE");
     let body = serde_json::json!({
         "model": "gpt-5",
@@ -646,9 +677,6 @@ async fn invalid_org_policy_refuses_forwarding_without_upstream_connection() {
         upstreams,
         chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
         mcp_servers: Arc::new(Vec::new()),
-        web_app_tracker: Arc::new(std::sync::Mutex::new(
-            crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
-        )),
     };
     let request = Request::builder()
         .method("POST")
@@ -679,9 +707,176 @@ async fn invalid_org_policy_refuses_forwarding_without_upstream_connection() {
     );
 }
 
+#[tokio::test(flavor = "current_thread")]
+#[serial_test::serial(cache_telemetry)]
+async fn required_receipt_failure_never_connects_to_http_upstream() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let config = crate::core::paths::config_dir_read_only().expect("config directory");
+    std::fs::create_dir_all(&config).expect("config directory");
+    std::fs::write(
+        config.join("config.toml"),
+        "[context_gateway]\nmode = \"governed\"\n",
+    )
+    .expect("governed config");
+    let data = crate::core::data_dir::lean_ctx_data_dir().expect("data directory");
+    std::fs::create_dir_all(&data).expect("data directory");
+    std::fs::write(data.join("gateway"), b"blocked test store").expect("store obstruction");
+    let listener = TcpListener::bind("127.0.0.1:0")
+        .await
+        .expect("test listener");
+    let upstream = format!(
+        "http://{}",
+        listener.local_addr().expect("listener address")
+    );
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"model":"m","messages":[{"role":"user","content":"hello"}]}"#,
+        ))
+        .expect("request");
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        forward_request(
+            State(proxy_test_state(&upstream)),
+            request,
+            &upstream,
+            "/v1/chat/completions",
+            add_test_marker,
+            "OpenAI",
+            &[],
+        ),
+    )
+    .await
+    .expect("receipt refusal must not wait for upstream");
+    assert_typed_refusal_status(
+        result,
+        StatusCode::SERVICE_UNAVAILABLE,
+        "receipt.unavailable",
+    )
+    .await;
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), listener.accept())
+            .await
+            .is_err()
+    );
+}
+
+#[tokio::test(flavor = "current_thread")]
+#[serial_test::serial(cache_telemetry)]
+async fn destination_allowlist_denial_never_connects_to_direct_registry_upstream() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let config = crate::core::paths::config_dir_read_only().expect("config directory");
+    std::fs::create_dir_all(&config).expect("config directory");
+    std::fs::write(
+        config.join("config.toml"),
+        r#"
+            [context_gateway]
+            enabled = false
+
+            [[context_gateway.allowed_destinations]]
+            provider = "approved-provider"
+            locality = "remote"
+            organization_managed = false
+            account_ref = "production-account"
+            region = "eu-west-1"
+        "#,
+    )
+    .expect("destination allow-list config");
+
+    let listener = TcpListener::bind("127.0.0.1:0").await.expect("listener");
+    let upstream = format!("http://{}", listener.local_addr().expect("address"));
+    let mut request = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header(CONTENT_TYPE, "application/json")
+        .body(Body::from(
+            r#"{"model":"m","messages":[{"role":"user","content":"hello"}]}"#,
+        ))
+        .expect("request");
+    request
+        .extensions_mut()
+        .insert(super::super::providers::RegistryProviderId {
+            id: "unapproved-provider".into(),
+            local: false,
+            account_ref: None,
+            region: Some("eu-west-1".into()),
+            gateway_managed_credential: false,
+        });
+
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        forward_request(
+            State(proxy_test_state(&upstream)),
+            request,
+            &upstream,
+            "/v1/chat/completions",
+            add_test_marker,
+            "OpenAI",
+            &[],
+        ),
+    )
+    .await
+    .expect("destination denial must not wait for upstream");
+    assert_typed_refusal(result, "destination.constraint_unsatisfied").await;
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), listener.accept())
+            .await
+            .is_err(),
+        "an unapproved registry destination must be denied before dispatch"
+    );
+
+    // Even a matching registry and gateway-held credential do not establish
+    // the configured account label when the caller supplies an OpenAI scope.
+    let mut spoofed_scope = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header(CONTENT_TYPE, "application/json")
+        .header("openai-project", "caller-selected-scope")
+        .body(Body::from(
+            r#"{"model":"m","messages":[{"role":"user","content":"hello"}]}"#,
+        ))
+        .expect("scoped request");
+    spoofed_scope
+        .extensions_mut()
+        .insert(super::super::providers::RegistryProviderId {
+            id: "approved-provider".into(),
+            local: false,
+            account_ref: Some("production-account".into()),
+            region: Some("eu-west-1".into()),
+            gateway_managed_credential: true,
+        });
+    let scoped_result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        forward_request(
+            State(proxy_test_state(&upstream)),
+            spoofed_scope,
+            &upstream,
+            "/v1/chat/completions",
+            add_test_marker,
+            "OpenAI",
+            &[],
+        ),
+    )
+    .await
+    .expect("unbound account scope must fail before upstream dispatch");
+    assert_typed_refusal(scoped_result, "destination.constraint_unsatisfied").await;
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), listener.accept())
+            .await
+            .is_err(),
+        "caller-selected account scope must not reach an upstream under the configured account label"
+    );
+}
+
 #[tokio::test]
 #[ignore = "determinism guard reverts unstable modifications"]
 async fn forward_request_applies_pre_optimization_and_reports_its_result() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let (upstream, server) = upstream_response().await;
     let old_message = "a".repeat(400);
     let mut messages = (0..11)
@@ -725,9 +920,6 @@ async fn forward_request_applies_pre_optimization_and_reports_its_result() {
         upstreams: state_upstreams,
         chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
         mcp_servers: Arc::new(Vec::new()),
-        web_app_tracker: Arc::new(std::sync::Mutex::new(
-            crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
-        )),
     };
 
     let response = forward_request(
@@ -884,6 +1076,9 @@ fn wire_context_prefers_registry_provider_id_over_shape_label() {
         .insert(super::super::providers::RegistryProviderId {
             id: "local".into(),
             local: false,
+            account_ref: None,
+            region: None,
+            gateway_managed_credential: false,
         });
     let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:11434", 0, 400, None);
     assert_eq!(wire.provider, "local");
@@ -901,6 +1096,9 @@ fn wire_context_registry_local_flag_beats_url_heuristic() {
         .insert(super::super::providers::RegistryProviderId {
             id: "local".into(),
             local: true,
+            account_ref: None,
+            region: None,
+            gateway_managed_credential: false,
         });
     let wire = wire_context(
         &parts,
@@ -918,9 +1116,216 @@ fn wire_context_registry_local_flag_beats_url_heuristic() {
         .insert(super::super::providers::RegistryProviderId {
             id: "tunnel".into(),
             local: false,
+            account_ref: None,
+            region: None,
+            gateway_managed_credential: false,
         });
     let wire = wire_context(&parts, "OpenAI", "http://127.0.0.1:9999", 0, 400, None);
     assert!(!wire.is_local, "declared non-local flag must win");
+}
+
+#[test]
+fn trusted_destination_binding_uses_routed_provider_and_declared_metadata() {
+    let parts = parts_for("/v1/chat/completions");
+    let route = super::super::routing::RouteDecision {
+        model: "gpt-5".into(),
+        routed_from: "team/fast".into(),
+        provider_id: Some("foundry-prod".into()),
+        upstream_base: Some("https://foundry.example".into()),
+        credential: None,
+        local: Some(false),
+        account_ref: Some("finance-prod".into()),
+        region: Some("eu-west-1".into()),
+        gateway_managed_credential: true,
+        xlat: false,
+    };
+    let binding = trusted_destination_binding(&parts, Some(&route));
+    let destination = crate::core::context_admission::egress::destination_with_binding(
+        &EgressTarget {
+            provider: "OpenAI",
+            model: Some("gpt-5"),
+            upstream_base: "http://127.0.0.1:9999",
+        },
+        binding,
+    );
+    assert_eq!(destination.provider.as_str(), "foundry-prod");
+    assert_eq!(
+        destination.locality,
+        lean_ctx_protocol::context_gateway::DestinationLocalityV1::Remote
+    );
+    assert_eq!(
+        destination
+            .account_ref
+            .as_ref()
+            .map(lean_ctx_protocol::ProtocolReference::as_str),
+        Some("finance-prod")
+    );
+    assert_eq!(
+        destination
+            .region
+            .as_ref()
+            .map(lean_ctx_protocol::ProtocolReference::as_str),
+        Some("eu-west-1")
+    );
+
+    // A model alias that has no provider identity keeps the shape label and URL
+    // behavior for backwards-compatible built-in routing.
+    let builtin = super::super::routing::RouteDecision {
+        provider_id: None,
+        local: None,
+        account_ref: None,
+        region: None,
+        gateway_managed_credential: false,
+        ..route
+    };
+    let binding = trusted_destination_binding(&parts, Some(&builtin));
+    assert_eq!(binding.provider_id, None);
+    assert_eq!(binding.local, None);
+}
+
+#[test]
+fn model_only_alias_preserves_direct_registry_binding_but_builtin_target_replaces_it() {
+    let mut parts = parts_for("/v1/chat/completions");
+    parts
+        .extensions
+        .insert(super::super::providers::RegistryProviderId {
+            id: "foundry-prod".into(),
+            local: false,
+            account_ref: Some("finance-prod".into()),
+            region: Some("eu-west-1".into()),
+            gateway_managed_credential: true,
+        });
+    let model_only = super::super::routing::RouteDecision {
+        model: "gpt-5".into(),
+        routed_from: "team/fast".into(),
+        provider_id: None,
+        upstream_base: None,
+        credential: None,
+        local: None,
+        account_ref: None,
+        region: None,
+        gateway_managed_credential: false,
+        xlat: false,
+    };
+
+    let retained = trusted_destination_binding(&parts, Some(&model_only));
+    assert_eq!(retained.provider_id, Some("foundry-prod"));
+    assert_eq!(retained.local, Some(false));
+    assert_eq!(retained.account_ref, Some("finance-prod"));
+    assert_eq!(retained.region, Some("eu-west-1"));
+
+    let explicit_builtin = super::super::routing::RouteDecision {
+        upstream_base: Some("https://api.openai.com".into()),
+        ..model_only
+    };
+    let replaced = trusted_destination_binding(&parts, Some(&explicit_builtin));
+    assert_eq!(replaced.provider_id, None);
+    assert_eq!(replaced.local, None);
+    assert_eq!(replaced.account_ref, None);
+    assert_eq!(replaced.region, None);
+}
+
+#[test]
+fn direct_registry_and_bedrock_bindings_ignore_caller_scope_headers() {
+    let mut parts = parts_for("/v1/chat/completions");
+    parts
+        .extensions
+        .insert(super::super::providers::RegistryProviderId {
+            id: "bedrock-prod".into(),
+            local: false,
+            account_ref: Some("aws-account-prod".into()),
+            region: Some("us-east-1".into()),
+            gateway_managed_credential: true,
+        });
+    parts
+        .extensions
+        .insert(super::super::bedrock::SigningContext {
+            region: "us-west-2".into(),
+        });
+    parts
+        .headers
+        .insert("openai-project", HeaderValue::from_static("caller-scope"));
+
+    let binding = trusted_destination_binding(&parts, None);
+    let destination = crate::core::context_admission::egress::destination_with_binding(
+        &EgressTarget {
+            provider: "Bedrock",
+            model: Some("model-x"),
+            upstream_base: "https://bedrock-runtime.us-east-1.amazonaws.com",
+        },
+        binding,
+    );
+    assert_eq!(destination.provider.as_str(), "bedrock-prod");
+    assert_eq!(
+        destination.locality,
+        lean_ctx_protocol::context_gateway::DestinationLocalityV1::Remote
+    );
+    assert_eq!(
+        destination.account_ref, None,
+        "caller scope must not inherit the configured account label"
+    );
+    assert_eq!(
+        destination
+            .region
+            .as_ref()
+            .map(lean_ctx_protocol::ProtocolReference::as_str),
+        Some("us-west-2")
+    );
+}
+
+#[test]
+fn caller_key_query_cannot_inherit_a_configured_account_label() {
+    let mut parts = parts_for("/v1/models?alt=sse&%6Bey=caller-key&key=duplicate");
+    parts
+        .extensions
+        .insert(super::super::providers::RegistryProviderId {
+            id: "gemini-prod".into(),
+            local: false,
+            account_ref: Some("configured-gemini-account".into()),
+            region: Some("europe-west4".into()),
+            gateway_managed_credential: true,
+        });
+
+    let binding = trusted_destination_binding(&parts, None);
+
+    assert_eq!(binding.provider_id, Some("gemini-prod"));
+    assert_eq!(binding.local, Some(false));
+    assert_eq!(binding.region, Some("europe-west4"));
+    assert_eq!(
+        binding.account_ref, None,
+        "caller query credentials must not be attributed to the configured account"
+    );
+}
+
+#[test]
+fn sanitized_gemini_query_is_the_query_used_for_upstream_url_and_binding() {
+    let mut parts = parts_for("/v1/models?alt=sse&%6Bey=caller-key&key=duplicate");
+    parts
+        .extensions
+        .insert(super::super::providers::RegistryProviderId {
+            id: "gemini-prod".into(),
+            local: false,
+            account_ref: Some("configured-gemini-account".into()),
+            region: Some("europe-west4".into()),
+            gateway_managed_credential: true,
+        });
+    assert_eq!(
+        trusted_destination_binding(&parts, None).account_ref,
+        None,
+        "raw caller query must suppress account attribution before sanitization"
+    );
+
+    super::super::providers::strip_gemini_api_key_query(&mut parts.uri)
+        .expect("Gemini query can be sanitized");
+    let upstream_url =
+        crate::proxy::codec::build_upstream_url(&parts, "https://gemini.example", "/v1/models");
+
+    assert_eq!(upstream_url, "https://gemini.example/v1/models?alt=sse");
+    assert_eq!(
+        trusted_destination_binding(&parts, None).account_ref,
+        Some("configured-gemini-account"),
+        "the gateway credential is the only remaining key selector"
+    );
 }
 
 // --- enterprise#51: fail-open single retry ---
@@ -1201,8 +1606,247 @@ fn invalid_json_request_bodies_are_not_compression_candidates() {
     assert!(!prepared.preserve_content_encoding);
 }
 
-#[path = "tests_header_relay.rs"]
-mod header_relay;
+static COMPRESSOR_INPUT: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
+
+fn example_access_key() -> &'static str {
+    concat!("AK", "IAIOSFODNN7EXAMPLE")
+}
+
+/// Records what the compression stage was handed, then tries to put the
+/// caller's protected value back into the request.
+fn reintroducing_compressor(
+    mut value: serde_json::Value,
+    original_size: usize,
+) -> (Vec<u8>, usize, usize) {
+    *COMPRESSOR_INPUT.lock().unwrap() = Some(value.to_string());
+    value["metadata"] =
+        serde_json::json!({ "note": format!("rotate {} later", example_access_key()) });
+    let out = serde_json::to_vec(&value).unwrap();
+    let compressed_size = out.len();
+    (out, original_size, compressed_size)
+}
+
+/// G-02: admission decides on the caller's body first, so compression only
+/// ever sees admitted content, and the final admission masks whatever a
+/// transformation brings back before the bytes are bound and sent.
+#[tokio::test]
+async fn compression_sees_only_admitted_content_and_cannot_put_a_value_back() {
+    let _isolation = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let key = example_access_key();
+    let body = serde_json::json!({
+        "model": "gpt-5",
+        "messages": [{"role": "user", "content": format!("deploy with {key} today")}]
+    });
+    let (upstream, server) = upstream_response_with_wire(
+        b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}",
+    )
+    .await;
+    let mut driver = proxy_test_driver(proxy_test_state(&upstream), &body, &upstream);
+    driver.compress_body = Some(reintroducing_compressor);
+    let context = proxy_test_context();
+    driver.apply_security_boundaries(&context).await.unwrap();
+    driver.gather_context_strategy(&context).await.unwrap();
+    let PreparedProxyRequest::Upstream(outbound) = driver.prepared_request.as_ref().unwrap() else {
+        panic!("upstream prepared")
+    };
+    let bound = outbound.forwarded_body.bytes().to_vec();
+    let _ = driver.dispatch_primitive(&context).await.unwrap();
+
+    let seen = COMPRESSOR_INPUT
+        .lock()
+        .unwrap()
+        .take()
+        .expect("the compressor ran");
+    assert!(
+        !seen.contains(key),
+        "compression was handed the caller's unadmitted value: {seen}"
+    );
+    assert!(seen.contains("deploy with"), "{seen}");
+
+    let received = server.await.unwrap();
+    let wire = received.to_string();
+    assert!(
+        !wire.contains(key),
+        "a transformation put the value back on the wire: {wire}"
+    );
+    assert!(
+        wire.contains("rotate"),
+        "the rest of the note arrives: {wire}"
+    );
+    assert_eq!(
+        received,
+        serde_json::from_slice::<serde_json::Value>(&bound).unwrap(),
+        "the upstream receives exactly the bytes the receipt was bound to"
+    );
+}
+
+fn project_policy(body: &str) -> crate::core::policy::ResolvedPolicy {
+    crate::core::policy::load(&format!(
+        "name = \"proxy-egress-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n{body}"
+    ))
+    .unwrap()
+}
+
+/// The policy the proxy runs under holds for proxied bodies as it does for
+/// every other carrier: its redaction rules rewrite what leaves.
+#[tokio::test]
+async fn project_policy_redaction_applies_to_proxied_bodies() {
+    let _isolation = crate::core::data_dir::isolated_data_dir();
+    let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(project_policy(
+        "[redaction]\ncustomer = \"K-[0-9]{6}\"\n",
+    )));
+    let body = serde_json::json!({
+        "model": "gpt-5",
+        "messages": [{"role": "user", "content": "invoice for K-482193 is due"}]
+    });
+    let (upstream, server) = upstream_response().await;
+    let mut driver = proxy_test_driver(proxy_test_state(&upstream), &body, &upstream);
+    let context = proxy_test_context();
+    driver.apply_security_boundaries(&context).await.unwrap();
+    driver.gather_context_strategy(&context).await.unwrap();
+    let _ = driver.dispatch_primitive(&context).await.unwrap();
+
+    let received = server.await.unwrap().to_string();
+    assert!(
+        !received.contains("K-482193"),
+        "the project rule was not applied: {received}"
+    );
+    assert!(received.contains("[REDACTED:customer]"), "{received}");
+    assert!(received.contains("invoice for"), "{received}");
+}
+
+/// A body the policy cannot inspect has no provable admission: under an
+/// active project policy it is refused with its reason and never dispatched,
+/// even in developer mode.
+#[tokio::test]
+async fn uninspectable_body_under_a_project_policy_is_refused_without_a_connection() {
+    let _isolation = crate::core::data_dir::isolated_data_dir();
+    let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(project_policy("")));
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = format!("http://{}", listener.local_addr().unwrap());
+    let request = Request::builder()
+        .method("POST")
+        .uri("/v1/chat/completions")
+        .header(CONTENT_TYPE, "application/octet-stream")
+        .body(Body::from(vec![0xff_u8, 0xfe, 0x00, 0x01, 0x80]))
+        .unwrap();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(5),
+        forward_request(
+            State(proxy_test_state(&upstream)),
+            request,
+            &upstream,
+            "/v1/chat/completions",
+            add_test_marker,
+            "OpenAI",
+            &[],
+        ),
+    )
+    .await
+    .expect("a refusal must not wait for upstream");
+    assert_typed_refusal(result, "policy.content_withheld").await;
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(50), listener.accept())
+            .await
+            .is_err(),
+        "a refused body must not open an upstream connection"
+    );
+}
+
+/// The proxy mode of a test that compares forwarded bytes, stated by the test
+/// instead of inherited from whichever test set the variable before it: in
+/// `cache` mode a request the gateway admits unchanged is forwarded byte for
+/// byte. (The default `token` mode appends the verbosity steer to the last
+/// user turn — `egress_lifecycle::token_mode_changes_only_the_last_user_turn`.)
+/// Take it after the data-directory guard, which holds the environment lock;
+/// the previous value is restored on drop.
+fn proxy_mode(mode: &str) -> crate::setup::EnvVarGuard {
+    crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", mode)
+}
+
+fn write_gateway_config(text: &str) {
+    let config = crate::core::paths::config_dir_read_only().expect("config directory");
+    std::fs::create_dir_all(&config).expect("config directory");
+    std::fs::write(config.join("config.toml"), text).expect("gateway config");
+}
+
+fn identity_compression(
+    value: &serde_json::Value,
+    original_size: usize,
+) -> (Vec<u8>, usize, usize) {
+    let out = serde_json::to_vec(value).unwrap();
+    let compressed_size = out.len();
+    (out, original_size, compressed_size)
+}
+
+/// Runs between the caller admission and the final one, like any transformation.
+const COMPRESSOR_WHILE_POLICY_TIGHTENS: TestCompressor = |value, original_size| {
+    write_gateway_config("[context_gateway]\nmode = \"governed\"\n");
+    identity_compression(&value, original_size)
+};
+
+const COMPRESSOR_WHILE_CONFIG_BREAKS: TestCompressor = |value, original_size| {
+    write_gateway_config("[context_gateway\nmode = ");
+    identity_compression(&value, original_size)
+};
+
+/// An admission is only valid under the policy it was decided under. When the
+/// global policy changes — or stops being loadable — after the caller's body
+/// was admitted, an untouched body is not sent on the strength of the old
+/// decision: the request is refused with the typed reason, without any
+/// upstream connection.
+#[tokio::test]
+#[serial_test::serial(cache_telemetry)]
+async fn policy_change_after_admission_refuses_an_untouched_body_before_dispatch() {
+    for (compressor, status, code) in [
+        (
+            COMPRESSOR_WHILE_POLICY_TIGHTENS,
+            StatusCode::BAD_REQUEST,
+            "policy.changed",
+        ),
+        (
+            COMPRESSOR_WHILE_CONFIG_BREAKS,
+            StatusCode::SERVICE_UNAVAILABLE,
+            "gateway.config_unloadable",
+        ),
+    ] {
+        let _isolation = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream = format!("http://{}", listener.local_addr().unwrap());
+        let request = Request::builder()
+            .method("POST")
+            .uri("/v1/chat/completions")
+            .header(CONTENT_TYPE, "application/json")
+            .body(Body::from(
+                r#"{"model":"m","messages":[{"role":"user","content":"hello"}]}"#,
+            ))
+            .unwrap();
+        let result = tokio::time::timeout(
+            std::time::Duration::from_secs(5),
+            forward_request(
+                State(proxy_test_state(&upstream)),
+                request,
+                &upstream,
+                "/v1/chat/completions",
+                compressor,
+                "OpenAI",
+                &[],
+            ),
+        )
+        .await
+        .expect("a refusal must not wait for upstream");
+        assert_typed_refusal_status(result, status, code).await;
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), listener.accept())
+                .await
+                .is_err(),
+            "{code}: bytes admitted under the old policy must not reach the upstream"
+        );
+    }
+}
+
 /// #1905: the compression holdout's control arm is the uncompressed baseline.
 /// The same request is compressed in the treatment arm and forwarded with its
 /// content unchanged in the control arm, and both carry their arm to the meter.
@@ -1210,6 +1854,8 @@ mod header_relay;
 fn compression_holdout_control_arm_is_forwarded_uncompressed() {
     use crate::proxy::holdout::Arm;
     let _iso = crate::core::data_dir::isolated_data_dir();
+    // The treatment arm is compressed without a recovery copy: pin the mode.
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     // Output shaping is the other, independent holdout; keep it out of the way
     // so the body comparison is about input compression alone.
     crate::test_env::remove_var("LEAN_CTX_PROXY_VERBOSITY_STEER");
@@ -1250,7 +1896,6 @@ fn compression_holdout_control_arm_is_forwarded_uncompressed() {
         treatment.compressed_size < treatment.original_size,
         "the treatment arm must be compressed"
     );
-    assert_eq!(treatment.compression_arm, Some(Arm::Treatment));
 
     let control = prepare(Arm::Control);
     assert_eq!(control.compressed_size, control.original_size);
@@ -1259,585 +1904,13 @@ fn compression_holdout_control_arm_is_forwarded_uncompressed() {
         body,
         "the control arm must reach the upstream uncompressed"
     );
-    assert_eq!(control.compression_arm, Some(Arm::Control));
 }
 
-#[test]
-fn upstream_url_preserves_subpath() {
-    let base = "https://api.anthropic.com";
-    let parts = parts_for("/v1/messages/count_tokens");
-    assert_eq!(
-        crate::proxy::codec::build_upstream_url(&parts, base, "/v1/messages"),
-        "https://api.anthropic.com/v1/messages/count_tokens"
-    );
-}
+#[path = "tests_header_relay.rs"]
+mod header_relay;
 
-#[test]
-fn upstream_url_preserves_batches_subpath() {
-    let base = "https://api.anthropic.com";
-    let parts = parts_for("/v1/messages/batches/batch_123/results");
-    assert_eq!(
-        crate::proxy::codec::build_upstream_url(&parts, base, "/v1/messages"),
-        "https://api.anthropic.com/v1/messages/batches/batch_123/results"
-    );
-}
+#[path = "tests_egress_lifecycle.rs"]
+mod egress_lifecycle;
 
-#[test]
-fn upstream_url_exact_path() {
-    let base = "https://api.anthropic.com";
-    let parts = parts_for("/v1/messages");
-    assert_eq!(
-        crate::proxy::codec::build_upstream_url(&parts, base, "/v1/messages"),
-        "https://api.anthropic.com/v1/messages"
-    );
-}
-
-#[test]
-fn upstream_url_preserves_query_params() {
-    let base = "https://api.anthropic.com";
-    let parts = parts_for("/v1/messages/count_tokens?model=claude-4");
-    assert_eq!(
-        crate::proxy::codec::build_upstream_url(&parts, base, "/v1/messages"),
-        "https://api.anthropic.com/v1/messages/count_tokens?model=claude-4"
-    );
-}
-
-#[test]
-fn forwards_openai_project_and_auth_headers() {
-    // #366: project-scoped OpenAI keys carry the scope via `OpenAI-Project`.
-    // It must be forwarded upstream, otherwise the Responses API rejects the
-    // call with `Missing scopes: api.responses.write`.
-    for required in ["authorization", "openai-project", "openai-organization"] {
-        assert!(
-            ALLOWED_REQUEST_HEADERS.contains(&required),
-            "request header `{required}` must be forwarded upstream"
-        );
-    }
-}
-
-#[test]
-fn forwards_chatgpt_codex_oauth_headers() {
-    for required in [
-        "authorization",
-        "chatgpt-account-id",
-        "x-openai-fedramp",
-        "x-openai-internal-codex-residency",
-        "x-openai-product-sku",
-        "oai-product-sku",
-        "x-client-request-id",
-        "x-codex-installation-id",
-        "x-codex-turn-metadata",
-        "x-openai-subagent",
-        "x-codex-turn-state",
-        "originator",
-    ] {
-        assert!(
-            is_allowed_request_header(required),
-            "request header `{required}` must be forwarded upstream"
-        );
-    }
-}
-
-#[test]
-fn forwards_streamable_http_mcp_headers() {
-    for required in ["mcp-session-id", "last-event-id"] {
-        assert!(
-            ALLOWED_REQUEST_HEADERS.contains(&required),
-            "request header `{required}` must be forwarded upstream"
-        );
-    }
-    assert!(
-        is_forwarded_response_header("mcp-session-id"),
-        "MCP session id response header must be forwarded downstream"
-    );
-}
-
-#[test]
-fn forwards_grok_cli_chat_proxy_headers() {
-    // Grok CLI → cli-chat-proxy.grok.com. Stripping these used to yield
-    // HTTP 426 Upgrade Required with client-version "(none)" on /responses.
-    for required in [
-        "x-xai-token-auth",
-        "x-models-etag",
-        "x-grok-client-version",
-        "x-grok-client-identifier",
-        "x-grok-client-mode",
-        "x-grok-client-surface",
-        "x-grok-model-override",
-        "x-grok-agent-id",
-        "x-grok-session-id",
-        "x-grok-turn-id",
-        "x-grok-conv-id",
-        "x-grok-req-id",
-        "x-grok-deployment-id",
-        "x-grok-user-id",
-        "x-grok-context-window",
-        "x-grok-max-completion-tokens",
-        "x-grok-doom-loop-check",
-        "x-grok-managed-gateway",
-    ] {
-        assert!(
-            ALLOWED_REQUEST_HEADERS.contains(&required),
-            "request header `{required}` must be on the allowlist"
-        );
-    }
-    // Internal gateway tag must stay off the allowlist (enterprise#11).
-    assert!(!is_allowed_request_header("x-leanctx-project"));
-}
-
-#[test]
-fn forwards_codex_state_response_headers() {
-    for required in [
-        "x-codex-turn-state",
-        "x-codex-primary-used-percent",
-        "openai-model",
-        "x-models-etag",
-        "x-reasoning-included",
-        "x-oai-request-id",
-        "cf-ray",
-        "x-openai-authorization-error",
-        "x-error-json",
-    ] {
-        assert!(
-            is_forwarded_response_header(required),
-            "response header `{required}` must be forwarded downstream"
-        );
-    }
-}
-
-/// #1638: Claude Code fills its plan-usage windows *only* from the
-/// `anthropic-ratelimit-unified-*` response headers. The allowlist enumerated
-/// the four legacy `requests-`/`tokens-` names, so when the `unified-*` family
-/// arrived upstream the proxy silently dropped all of it: `rate_limits`
-/// disappeared from the statusline payload, and — the part that actually
-/// matters — the near-limit warning machinery reads the same state, so a user
-/// behind the proxy was never warned before hitting a limit.
-///
-/// The names below are the full family as parsed by Claude Code 2.1.236,
-/// quoted from the report. They are asserted individually rather than through
-/// the prefix, so narrowing the rule back to an enumeration fails here.
-#[test]
-fn forwards_the_whole_anthropic_ratelimit_family() {
-    for required in [
-        "anthropic-ratelimit-unified-status",
-        "anthropic-ratelimit-unified-reset",
-        "anthropic-ratelimit-unified-5h-utilization",
-        "anthropic-ratelimit-unified-5h-reset",
-        "anthropic-ratelimit-unified-5h-surpassed-threshold",
-        "anthropic-ratelimit-unified-7d-utilization",
-        "anthropic-ratelimit-unified-7d-reset",
-        "anthropic-ratelimit-unified-7d-surpassed-threshold",
-        "anthropic-ratelimit-unified-grace-status",
-        "anthropic-ratelimit-unified-grace-5h-utilization",
-        "anthropic-ratelimit-unified-grace-7d-utilization",
-        "anthropic-ratelimit-unified-overage-status",
-        "anthropic-ratelimit-unified-overage-utilization",
-        "anthropic-ratelimit-unified-overage-reset",
-        "anthropic-ratelimit-unified-overage-period",
-        "anthropic-ratelimit-unified-representative-claim",
-        "anthropic-ratelimit-unified-fallback",
-        "anthropic-ratelimit-unified-upgrade-paths",
-        // The legacy names the allowlist used to carry explicitly must keep
-        // working — the prefix replaced the enumeration, not the coverage.
-        "anthropic-ratelimit-requests-limit",
-        "anthropic-ratelimit-requests-remaining",
-        "anthropic-ratelimit-tokens-limit",
-        "anthropic-ratelimit-tokens-remaining",
-    ] {
-        assert!(
-            is_forwarded_response_header(required),
-            "response header `{required}` carries the client's own quota state \
-             and must reach it"
-        );
-    }
-}
-
-/// Also reported in #1638: without `request-id` a user cannot correlate a
-/// failed request with Anthropic support, and `x-should-retry` is what tells
-/// an SDK whether a failure is worth retrying at all.
-#[test]
-fn forwards_request_correlation_and_retry_headers() {
-    for required in ["request-id", "x-should-retry", "retry-after"] {
-        assert!(
-            is_forwarded_response_header(required),
-            "response header `{required}` must reach the client"
-        );
-    }
-}
-
-/// The fix widens one family; it must not turn the allowlist into a
-/// pass-through. Hop-by-hop and framing headers stay out — the proxy rewrites
-/// the body (decompression, SSE re-framing), so relaying the upstream's
-/// framing would describe a response that no longer exists.
-#[test]
-fn the_allowlist_stays_an_allowlist() {
-    for denied in [
-        "transfer-encoding",
-        "connection",
-        "content-length",
-        "server",
-        "set-cookie",
-    ] {
-        assert!(
-            !is_forwarded_response_header(denied),
-            "`{denied}` must not be relayed"
-        );
-    }
-}
-
-#[test]
-fn chatgpt_responses_use_openai_responses_holdout_key() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::core::config::Config::update_global(|c| {
-        c.proxy.output_holdout = Some(1.0);
-    })
-    .unwrap();
-
-    let body = serde_json::json!({
-        "model": "gpt-5",
-        "input": "same conversation",
-    });
-
-    assert_eq!(
-        cohort_arm(&body, "ChatGPT", "/backend-api/codex/responses"),
-        cohort_arm(&body, "OpenAI", "/v1/responses")
-    );
-}
-
-#[test]
-fn cache_prompt_hash_is_content_sensitive() {
-    let hash = super::super::ocla_cache_bridge::prompt_hash;
-    assert_ne!(hash(b"one"), hash(b"two"));
-}
-
-/// Loopback upstream that answers exactly one request and hands back its raw,
-/// lowercased request header block. Lets a test assert what actually leaves the
-/// proxy, not only what the allowlist constant claims.
-async fn upstream_capturing_headers() -> (String, tokio::task::JoinHandle<String>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        let mut request = Vec::new();
-        let mut buffer = [0_u8; 1024];
-        let header_end = loop {
-            let read = stream.read(&mut buffer).await.unwrap();
-            if read == 0 {
-                break request.len();
-            }
-            request.extend_from_slice(&buffer[..read]);
-            if let Some(end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
-                break end + 4;
-            }
-        };
-        stream
-            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}")
-            .await
-            .unwrap();
-        String::from_utf8_lossy(&request[..header_end]).to_lowercase()
-    });
-    (format!("http://{address}"), server)
-}
-
-/// Minimal state for the transport layer. `send_upstream` reads only
-/// `state.client`; the watch receiver keeps serving its last value after the
-/// sender drops, so no keep-alive is needed.
-fn relay_test_state() -> ProxyState {
-    let (_upstreams, state_upstreams) =
-        tokio::sync::watch::channel(Arc::new(crate::core::config::Upstreams {
-            anthropic: "https://api.anthropic.com".into(),
-            openai: "https://api.openai.com".into(),
-            chatgpt: "https://chatgpt.com".into(),
-            gemini: "https://generativelanguage.googleapis.com".into(),
-            providers: Vec::new(),
-        }));
-    ProxyState {
-        client: reqwest::Client::new(),
-        port: 0,
-        stats: Arc::new(crate::proxy::ProxyStats::default()),
-        break_even: Arc::new(crate::proxy::break_even::BreakEvenCalculator::new(1500)),
-        introspect: Arc::new(crate::proxy::introspect::IntrospectState::default()),
-        ocla_cache: None,
-        upstreams: state_upstreams,
-        chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
-        mcp_servers: Arc::new(Vec::new()),
-        web_app_tracker: Arc::new(std::sync::Mutex::new(
-            crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
-        )),
-    }
-}
-
-/// Stub upstream that answers `200 {}` and yields the exact request body
-/// bytes it received, so a test can assert byte-identity on the wire.
-async fn upstream_capturing_body() -> (String, tokio::task::JoinHandle<Vec<u8>>) {
-    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let address = listener.local_addr().unwrap();
-    let server = tokio::spawn(async move {
-        let (mut stream, _) = listener.accept().await.unwrap();
-        let mut request = Vec::new();
-        let mut buffer = [0_u8; 4096];
-        let header_end = loop {
-            let read = stream.read(&mut buffer).await.unwrap();
-            request.extend_from_slice(&buffer[..read]);
-            if let Some(end) = request.windows(4).position(|window| window == b"\r\n\r\n") {
-                break end + 4;
-            }
-        };
-        let header = String::from_utf8_lossy(&request[..header_end]).to_lowercase();
-        let content_length = header
-            .lines()
-            .find_map(|line| line.strip_prefix("content-length: "))
-            .unwrap()
-            .trim()
-            .parse::<usize>()
-            .unwrap();
-        while request.len() < header_end + content_length {
-            let read = stream.read(&mut buffer).await.unwrap();
-            request.extend_from_slice(&buffer[..read]);
-        }
-        stream
-            .write_all(b"HTTP/1.1 200 OK\r\ncontent-length: 2\r\n\r\n{}")
-            .await
-            .unwrap();
-        request[header_end..header_end + content_length].to_vec()
-    });
-    (format!("http://{address}"), server)
-}
-
-/// #1912: a request the proxy does not change must reach the provider as the
-/// client's exact bytes. Re-serializing reorders keys and rewrites number and
-/// whitespace formatting, which moves the prompt-cache prefix every turn.
-#[tokio::test]
-async fn unchanged_request_is_forwarded_byte_identical() {
-    let _iso = crate::core::data_dir::isolated_data_dir();
-    let (upstream, server) = upstream_capturing_body().await;
-    // Key order, spacing and `1.0` all differ from serde_json's canonical form.
-    let raw = br#"{ "temperature": 1.0,  "model": "claude-sonnet-4-5",
-  "messages": [ {"role": "user", "content": "hi"} ] }"#
-        .to_vec();
-    let request = Request::builder()
-        .method("POST")
-        .uri("/v1/messages")
-        .header(CONTENT_TYPE, "application/json")
-        .body(Body::from(raw.clone()))
-        .unwrap();
-
-    let response = forward_request(
-        State(relay_test_state()),
-        request,
-        &upstream,
-        "/v1/messages",
-        |value, original_size| {
-            let out = serde_json::to_vec(&value).unwrap();
-            let size = out.len();
-            (out, original_size, size)
-        },
-        "Anthropic",
-        &[],
-    )
-    .await
-    .unwrap();
-    assert!(response.status().is_success());
-
-    assert_eq!(
-        server.await.unwrap(),
-        raw,
-        "an unchanged request must be forwarded as the client's exact bytes"
-    );
-}
-
-#[test]
-fn forwards_opencode_session_header() {
-    // #1752: OpenCode (and OpenCode zen) key session affinity off their own
-    // header. #1730 enumerated only the Claude Code spellings, so this sibling
-    // kept being stripped and every relayed request looked like a new session.
-    assert!(ALLOWED_REQUEST_HEADERS.contains(&"x-opencode-session"));
-    assert!(is_allowed_request_header("x-opencode-session"));
-    assert!(should_forward_request_header("x-opencode-session", false));
-}
-
-#[tokio::test]
-async fn opencode_session_reaches_the_upstream_verbatim() {
-    // #1752 end-to-end: assert what the upstream actually receives, including
-    // the mixed-case spelling OpenCode puts on the wire.
-    let (upstream, server) = upstream_capturing_headers().await;
-    let parts = Request::builder()
-        .method("POST")
-        .uri("/v1/messages")
-        .header("X-OpenCode-Session", "0f9c2b71-4d3a-4e58-9c11-7a6e5b2d8f40")
-        .header("X-Leanctx-Project", "internal-only")
-        .body(())
-        .unwrap()
-        .into_parts()
-        .0;
-
-    let response = transport::send_upstream(
-        &relay_test_state(),
-        &parts,
-        &upstream,
-        b"{}".to_vec(),
-        "Anthropic",
-        false,
-    )
-    .await
-    .unwrap();
-    assert!(response.status().is_success());
-
-    let seen = server.await.unwrap();
-    assert!(
-        seen.contains("x-opencode-session: 0f9c2b71-4d3a-4e58-9c11-7a6e5b2d8f40"),
-        "session header must reach the upstream verbatim, got: {seen}"
-    );
-    // Widening the allowlist for #1752 must not widen it for anything else.
-    assert!(
-        !seen.contains("x-leanctx-project"),
-        "internal header must stay stripped, got: {seen}"
-    );
-}
-
-#[test]
-fn forwards_claude_code_session_id_header() {
-    // #1730: Claude Code's per-conversation UUID must survive the relay so a
-    // downstream proxy can key session affinity and prompt-cache reuse on it.
-    assert!(ALLOWED_REQUEST_HEADERS.contains(&"x-claude-code-session-id"));
-    assert!(is_allowed_request_header("x-claude-code-session-id"));
-    assert!(should_forward_request_header(
-        "x-claude-code-session-id",
-        false
-    ));
-}
-
-#[tokio::test]
-async fn claude_code_session_id_reaches_the_upstream_verbatim() {
-    // #1730 end-to-end: assert what the upstream actually receives, including
-    // the mixed-case spelling Claude Code puts on the wire.
-    let (upstream, server) = upstream_capturing_headers().await;
-    let parts = Request::builder()
-        .method("POST")
-        .uri("/v1/messages")
-        .header(
-            "X-Claude-Code-Session-Id",
-            "11111111-2222-3333-4444-555555555555",
-        )
-        .header("X-Leanctx-Project", "internal-only")
-        .body(())
-        .unwrap()
-        .into_parts()
-        .0;
-
-    let response = transport::send_upstream(
-        &relay_test_state(),
-        &parts,
-        &upstream,
-        b"{}".to_vec(),
-        "Anthropic",
-        false,
-    )
-    .await
-    .unwrap();
-    assert!(response.status().is_success());
-
-    let seen = server.await.unwrap();
-    assert!(
-        seen.contains("x-claude-code-session-id: 11111111-2222-3333-4444-555555555555"),
-        "session id must reach the upstream verbatim, got: {seen}"
-    );
-    // Widening the allowlist for #1730 must not widen it for anything else:
-    // the internal gateway tag stays stripped (enterprise#11).
-    assert!(
-        !seen.contains("x-leanctx-project"),
-        "internal header must stay stripped, got: {seen}"
-    );
-}
-
-#[test]
-fn forwards_commandcode_cli_headers() {
-    // Command Code (`cmd`) gates agent calls on `x-command-code-version`.
-    // Stripping it yields 403 upgrade_required ("CLI is out of date").
-    for required in [
-        "x-command-code-version",
-        "x-cli-environment",
-        "x-oauth-token",
-        "x-oauth-provider",
-        "x-project-slug",
-        "x-taste-learning",
-        "x-taste-usage",
-        "x-oss-primary-provider",
-        "x-system-prompt-breakdown",
-        "x-cmd-zdr",
-        "x-session-id", // shared; pin so CC session stays wired
-    ] {
-        assert!(
-            ALLOWED_REQUEST_HEADERS.contains(&required),
-            "Command Code CLI header `{required}` must be on the request allowlist"
-        );
-    }
-}
-
-/// A model alias that targets a `[[proxy.providers]]` entry with `api_key_env`
-/// moves a built-in route onto the operator's key. A request that only got in
-/// through the provider-key fallback must not have that key injected.
-#[tokio::test]
-async fn routed_gateway_credential_requires_lean_ctx_token() {
-    let _isolation = crate::core::data_dir::isolated_data_dir();
-    let mut config = crate::core::config::Config::default();
-    config.proxy.routing.enabled = Some(true);
-    config
-        .proxy
-        .routing
-        .aliases
-        .insert("acme/fast".into(), "foundry:gpt-4o-mini".into());
-    config.save().unwrap();
-    crate::test_env::set_var("LC_TEST_GATEWAY_HELD_KEY", "sk-gateway-held");
-    let body = serde_json::json!({
-        "model": "acme/fast",
-        "messages": [{"role": "user", "content": "hi"}]
-    });
-
-    for fallback_only in [true, false] {
-        let (upstream, server) = upstream_capturing_headers().await;
-        let mut state = proxy_test_state("http://127.0.0.1:9");
-        let (_sender, upstreams) =
-            tokio::sync::watch::channel(Arc::new(crate::core::config::Upstreams {
-                anthropic: "http://127.0.0.1:9".into(),
-                openai: "http://127.0.0.1:9".into(),
-                chatgpt: "http://127.0.0.1:9".into(),
-                gemini: "http://127.0.0.1:9".into(),
-                providers: vec![crate::core::config::ResolvedProvider {
-                    id: "foundry".into(),
-                    shape: crate::core::config::WireShape::OpenAi,
-                    base_url: upstream,
-                    api_key_env: Some("LC_TEST_GATEWAY_HELD_KEY".into()),
-                    aws_region: None,
-                    local: true,
-                }],
-            }));
-        state.upstreams = upstreams;
-        let mut driver = proxy_test_driver(state, &body, "http://127.0.0.1:9");
-        let request = driver.request.as_mut().unwrap();
-        request
-            .headers_mut()
-            .insert("x-api-key", "caller-junk".parse().unwrap());
-        if fallback_only {
-            request
-                .extensions_mut()
-                .insert(crate::proxy::server::ProviderKeyFallback);
-        }
-        let context = proxy_test_context();
-        driver.apply_security_boundaries(&context).await.unwrap();
-        let prepared = driver.gather_context_strategy(&context).await;
-        if fallback_only {
-            assert_eq!(prepared.err(), Some(StatusCode::UNAUTHORIZED));
-            server.abort();
-        } else {
-            prepared.unwrap();
-            driver.dispatch_primitive(&context).await.unwrap();
-            let headers = server.await.unwrap();
-            assert!(
-                headers.contains("authorization: bearer sk-gateway-held"),
-                "token-authenticated alias traffic still gets the gateway key: {headers}"
-            );
-        }
-    }
-    crate::test_env::remove_var("LC_TEST_GATEWAY_HELD_KEY");
-}
+#[path = "tests_receipt.rs"]
+mod receipt;

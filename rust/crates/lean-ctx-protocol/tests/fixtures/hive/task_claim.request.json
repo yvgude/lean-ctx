@@ -1,0 +1,7 @@
+{
+  "agent": "claude-3e",
+  "minutes": 15,
+  "optin_id": "optin_01jb8z",
+  "schema": "leanctx.hive.task-claim-request/v1",
+  "session_ref": "ses_01jb8z6"
+}

@@ -56,15 +56,10 @@ pub const READONLY_TOOL_NAMES: &[&str] = &[
     // of read-only client modes (Devin Plan mode, Cursor's restricted context).
     "ctx_search",
     "ctx_callgraph",
-    "ctx_overview",
     "ctx_expand",
-    "ctx_explore",
     "ctx_delta",
     "ctx_url_read",
-    "ctx_benchmark",
-    "ctx_analyze",
     "ctx_discover",
-    "ctx_response",
 ];
 
 /// Tools that may destructively modify their environment.

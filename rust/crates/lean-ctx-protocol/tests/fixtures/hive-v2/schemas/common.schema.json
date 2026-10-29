@@ -1,0 +1,270 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/common.schema.json",
+  "title": "C0 2.0 common definitions (SPEC-CONTRACT-SERVER §3.3)",
+  "$defs": {
+    "uuid": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$"
+    },
+    "u16": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 65535
+    },
+    "u32": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 4294967295
+    },
+    "u64": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 18446744073709551615
+    },
+    "ms": {
+      "$ref": "#/$defs/u64",
+      "description": "integer milliseconds since the Unix epoch (C0 routes, §2.2 S17)"
+    },
+    "hex16": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$"
+    },
+    "hex32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32}$"
+    },
+    "hex48": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{48}$"
+    },
+    "hex64": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "signature": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{128}$",
+      "description": "Ed25519 signature, lowercase hex"
+    },
+    "key_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{16}$",
+      "description": "hex(blake3(public_key))[..16]"
+    },
+    "base64url": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]+$",
+      "description": "RFC 4648 §5 alphabet, no padding"
+    },
+    "event_id": {
+      "type": "string",
+      "pattern": "^[0-9A-HJKMNP-TV-Z]{26}$",
+      "description": "Crockford base32, upper (ULID layout)"
+    },
+    "node_id": {
+      "type": "string",
+      "pattern": "^n_[a-z2-7]{26}$"
+    },
+    "edge_id": {
+      "type": "string",
+      "pattern": "^e_[a-z2-7]{26}$"
+    },
+    "worker_id": {
+      "type": "string",
+      "pattern": "^wkr_[a-z2-7]{20}$"
+    },
+    "msg_id": {
+      "type": "string",
+      "pattern": "^msg_[0-9a-f]{16}$"
+    },
+    "review_id": {
+      "type": "string",
+      "pattern": "^rv_[a-z2-7]{26}$"
+    },
+    "purge_id": {
+      "type": "string",
+      "pattern": "^prg_[a-z2-7]{26}$"
+    },
+    "batch_id": {
+      "type": "string",
+      "pattern": "^b_[a-z2-7]{26}$"
+    },
+    "goal_id": {
+      "type": "string",
+      "pattern": "^g_[a-z2-7]{26}$"
+    },
+    "claim_id": {
+      "type": "string",
+      "pattern": "^cl_[a-z2-7]{26}$"
+    },
+    "pledge_id": {
+      "type": "string",
+      "pattern": "^plg_[a-z2-7]{26}$"
+    },
+    "invite_id": {
+      "type": "string",
+      "pattern": "^inv_[0-9A-HJKMNP-TV-Z]{26}$"
+    },
+    "consent_id": {
+      "type": "string",
+      "pattern": "^cns_[a-z2-7]{16}$"
+    },
+    "criterion_id": {
+      "type": "string",
+      "pattern": "^sc_([1-9]|10)$"
+    },
+    "place_kind": {
+      "enum": [
+        "vault",
+        "swarm"
+      ]
+    },
+    "place": {
+      "type": "object",
+      "required": [
+        "kind",
+        "id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/place_kind"
+        },
+        "id": {
+          "$ref": "#/$defs/uuid"
+        }
+      }
+    },
+    "place_ref": {
+      "type": "string",
+      "pattern": "^(vault|swarm):[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$",
+      "description": "`{kind}:{id}`: the place id string used in derivations, AAD and subjects"
+    },
+    "evidence": {
+      "enum": [
+        "observed",
+        "stated",
+        "imported"
+      ]
+    },
+    "provenance": {
+      "enum": [
+        "own",
+        "workspace",
+        "public",
+        "foreign"
+      ]
+    },
+    "review_state": {
+      "enum": [
+        "confirmed",
+        "unconfirmed",
+        "reviewed_needs_person"
+      ]
+    },
+    "reviewed_by": {
+      "enum": [
+        "reviewer",
+        "maintainer",
+        "none"
+      ]
+    },
+    "artefact": {
+      "type": "object",
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "node",
+            "commit",
+            "url",
+            "file",
+            "material"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        },
+        "sha256": {
+          "$ref": "#/$defs/hex64"
+        }
+      }
+    },
+    "usage": {
+      "type": "object",
+      "required": [
+        "tasks",
+        "tokens",
+        "usd_cents",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "tasks": {
+          "$ref": "#/$defs/u32"
+        },
+        "tokens": {
+          "$ref": "#/$defs/u64"
+        },
+        "usd_cents": {
+          "$ref": "#/$defs/u64"
+        },
+        "source": {
+          "enum": [
+            "cell_parsed_output",
+            "cli_summary",
+            "self_report"
+          ]
+        }
+      }
+    },
+    "vault_address": {
+      "type": "string",
+      "maxLength": 300,
+      "description": "<ws>/<vault>[@<server>] (lead addition 24.10.): no @server = hosted hive.leanctx.com; a server with a dot or a port = self-hosted (origin https://<server>); a bare dotless name without port is refused; canonical form lowercase",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,38}/[a-z0-9-]{2,40}(@([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?(\\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)+(:[0-9]{1,5})?|[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?:[0-9]{1,5}|\\[[0-9a-f:.]+\\]:[0-9]{1,5}))?$"
+    },
+    "wiki_page_id": {
+      "type": "string",
+      "pattern": "^wp_[a-z2-7]{26}$",
+      "description": "wiki_pages.page_id (CHECK of migration 0058)"
+    },
+    "knowledge_state": {
+      "description": "Derived knowledge state (enums/knowledge-states.json, vectors/knowledge_state.vectors.json); never stored in an event",
+      "enum": [
+        "verified",
+        "provisional",
+        "outdated",
+        "conflicting",
+        "rejected"
+      ]
+    },
+    "knowledge_reason": {
+      "description": "Why a node is not verified; null when verified",
+      "anyOf": [
+        {
+          "enum": [
+            "retracted",
+            "reverted",
+            "superseded",
+            "anchor_gone",
+            "anchor_changed",
+            "contradicted",
+            "unconfirmed",
+            "not_observed"
+          ]
+        },
+        {
+          "type": "null"
+        }
+      ]
+    }
+  }
+}

@@ -17,6 +17,10 @@ pub(crate) enum CallError {
     BadJson(String),
     UnsafeRoot(String),
     Dispatch(DispatchError),
+    /// An operation that ran and failed (`TOOL_EXECUTION_ERROR`): the whole
+    /// stderr line as it left the release point, prepared for stderr. It is
+    /// written unchanged — nothing is prefixed to it.
+    ToolFailed(String),
 }
 
 impl std::fmt::Display for CallError {
@@ -32,6 +36,7 @@ impl std::fmt::Display for CallError {
                 write!(f, "error: refusing broad/unsafe --project-root '{p}'")
             }
             CallError::Dispatch(e) => write!(f, "error: {e}"),
+            CallError::ToolFailed(line) => f.write_str(line),
         }
     }
 }
@@ -52,6 +57,9 @@ struct CallArgs {
     tool: String,
     project_root: String,
     json: String,
+    /// File holding the presenter capability of the calling host, if it
+    /// shows one (`--presenter-capability-file`). Never an argument value.
+    presenter_capability_file: Option<String>,
 }
 
 fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
@@ -59,6 +67,7 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
     let mut project_root: Option<String> = None;
     let mut json: Option<String> = None;
     let mut json_file: Option<String> = None;
+    let mut presenter_capability_file: Option<String> = None;
 
     let mut i = 0;
     while i < args.len() {
@@ -84,6 +93,16 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
                 json_file = Some(
                     args.get(i)
                         .ok_or_else(|| CallError::Usage("--json-file needs a value".into()))?
+                        .clone(),
+                );
+            }
+            "--presenter-capability-file" => {
+                i += 1;
+                presenter_capability_file = Some(
+                    args.get(i)
+                        .ok_or_else(|| {
+                            CallError::Usage("--presenter-capability-file needs a value".into())
+                        })?
                         .clone(),
                 );
             }
@@ -124,6 +143,7 @@ fn parse_args(args: &[String]) -> Result<CallArgs, CallError> {
         tool,
         project_root,
         json,
+        presenter_capability_file,
     })
 }
 
@@ -194,8 +214,35 @@ fn oneshot_ctx(project_root: String, resolved_paths: HashMap<String, String>) ->
 /// Core, testable entry point. Returns the tool's stdout text on success;
 /// `CallError` only for CLI-usage problems (never for functional tool errors).
 pub(crate) fn run_call(args: &[String]) -> Result<String, CallError> {
-    let parsed = parse_args(args)?;
+    run_call_as(args, true)
+}
 
+/// [`run_call`] for a caller that EVALUATES the tool's text and never writes
+/// it (`policy enforce`): the handler runs in the same request scope and
+/// source capture, but the text is not a delivery — it is not released, no
+/// receipt is prepared and no lineage is recorded for it. The returned text
+/// and the text of a failed operation are therefore UNRELEASED: whatever the
+/// caller writes of them must pass a release of its own first.
+pub(crate) fn run_call_undelivered(args: &[String]) -> Result<String, CallError> {
+    run_call_as(args, false)
+}
+
+fn run_call_as(args: &[String], deliver: bool) -> Result<String, CallError> {
+    let parsed = parse_args(args)?;
+    // A host that shows a presenter capability shows it for the whole call:
+    // the capability is request state of the lineage checks, not a tool
+    // argument, and it never reaches the handler, its output or an error.
+    let Some(file) = parsed.presenter_capability_file.clone() else {
+        return run_parsed(parsed, deliver);
+    };
+    let capability = crate::core::archive::presented::read_capability_file(Path::new(&file))
+        .ok_or_else(|| CallError::Usage("--presenter-capability-file is not usable".into()))?;
+    crate::core::archive::presented::with_presenter(Some(capability), || {
+        run_parsed(parsed, deliver)
+    })
+}
+
+fn run_parsed(parsed: CallArgs, deliver: bool) -> Result<String, CallError> {
     // Same defense as MCP root resolution: never operate on a broad/unsafe root.
     if crate::core::pathutil::is_broad_or_unsafe_root(Path::new(&parsed.project_root)) {
         return Err(CallError::UnsafeRoot(parsed.project_root));
@@ -247,13 +294,67 @@ pub(crate) fn run_call(args: &[String]) -> Result<String, CallError> {
 
     // Handlers are synchronous (the JetBrains backend uses blocking `ureq`),
     // so no tokio runtime is required here.
-    let output = tool.handle(&args_map, &ctx).map_err(|e| {
-        CallError::Dispatch(DispatchError::Tool {
-            message: e.to_string(),
-        })
-    })?;
-
-    Ok(crate::server::policy_guard::redact_model_text(&output.text))
+    //
+    // Request scope, source capture, release point, output redaction and the
+    // lineage record of the printed text are one sequence, owned by
+    // `CliToolRun` (see `cli/common.rs`): the handler runs exactly as under
+    // the MCP dispatcher, and the text returned here is the text `cmd_call`
+    // prints, unchanged.
+    //
+    // A tool error is never a delivery. The signals that exist in the tool
+    // contract are used, not the output text: a handler `Err` (nothing is
+    // released or recorded) and `ToolOutput::shell_outcome` reporting an
+    // error (`ShellOutcome::is_error`). A tool that answers `Ok` with an
+    // error sentence carries no flag today — see the report's requests.
+    //
+    // `TOOL_EXECUTION_ERROR` is the registry's signal for an operation that
+    // ran and failed; its body can quote file excerpts. It is reported on
+    // stderr as before, but only after it passed the same release point as a
+    // result (as a failed text: released, redacted, never recorded). What
+    // is released is the WHOLE stderr line, prepared for stderr, so the
+    // receipt binds the bytes `cmd_call` writes (G08).
+    let run = super::common::CliToolRun::new(&parsed.tool, &parsed.project_root, Some(&args_map));
+    let (handled, capture) = run.acquire(|| tool.handle(&args_map, &ctx));
+    match handled {
+        // Not a delivery (`run_call_undelivered`): the run ends after the
+        // acquisition — nothing is released, receipted or recorded.
+        Ok(output) if !deliver => Ok(output.text),
+        Ok(output) => {
+            let failed = output
+                .shell_outcome
+                .as_ref()
+                .is_some_and(crate::server::tool_trait::ShellOutcome::is_error);
+            let printable = super::common::Printable {
+                text: output.text,
+                source_only: true,
+                failed,
+            };
+            Ok(run.finish(printable, capture))
+        }
+        Err(mut error) if error.code == crate::server::tool_trait::TOOL_EXECUTION_ERROR => {
+            // Nothing but the code and the message of the failure is passed
+            // on; the line is the one a dispatch error is reported with.
+            error.data = None;
+            let failure = CallError::Dispatch(DispatchError::Tool {
+                message: error.to_string(),
+            });
+            if !deliver {
+                return Err(failure);
+            }
+            let line = failure.to_string();
+            let printable = super::common::Printable {
+                text: line,
+                source_only: false,
+                failed: true,
+            };
+            Err(CallError::ToolFailed(
+                run.to_stderr().finish(printable, capture),
+            ))
+        }
+        Err(error) => Err(CallError::Dispatch(DispatchError::Tool {
+            message: error.to_string(),
+        })),
+    }
 }
 
 /// Thin CLI wrapper: print result to stdout (exit 0, even for functional
@@ -265,10 +366,16 @@ pub(crate) fn cmd_call(args: &[String]) {
     let tool = args.first().cloned().unwrap_or_default();
     spawn_watchdog(tool, call_time_limit());
     match run_call(args) {
-        Ok(text) => println!("{text}"),
+        Ok(text) => super::common::print_released(&text),
         Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(e.exit_code());
+            let code = e.exit_code();
+            match &e {
+                // The released line of a failed operation goes through the
+                // one observed stderr writer, with the status it ends with.
+                CallError::ToolFailed(line) => super::common::eprint_released(line, Some(code)),
+                other => eprintln!("{other}"),
+            }
+            std::process::exit(code);
         }
     }
 }
@@ -397,6 +504,9 @@ mod tests {
 
     #[test]
     fn happy_path_dispatches_to_real_tool() {
+        // Its own data directory: the call stores a receipt, and a parallel
+        // test switching the process's data directory must not take it away.
+        let _data = crate::core::data_dir::isolated_data_dir();
         let dir = std::env::temp_dir().join(format!("leanctx-call-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let marker = dir.join("MARKER_FILE.txt");
@@ -416,6 +526,227 @@ mod tests {
         );
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+
+    /// G01/G05: `lean-ctx call` printed a tool's text after the legacy output
+    /// redaction only; the release point the MCP path applies was skipped. A
+    /// text that bypassed admission is now redacted there, a clean text keeps
+    /// its bytes.
+    #[test]
+    fn a_tool_text_passes_the_mcp_release_point() {
+        const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let project = tempfile::tempdir().expect("project dir");
+        let root = project.path().to_string_lossy().into_owned();
+        let run = crate::cli::common::CliToolRun::new("ctx_tree", &root, None);
+        let clean = "src/\n  main.rs\n  lib.rs";
+        assert_eq!(run.deliver_text(|| clean.to_string()), clean);
+        let leaked = format!("deploy.env\n  AWS_ACCESS_KEY_ID={AWS_KEY}");
+        let released = run.deliver_text(|| leaked.clone());
+        assert!(!released.contains(AWS_KEY), "{released}");
+        assert!(released.contains("deploy.env"), "{released}");
+    }
+
+    /// Governed mode without a pack: protection is active, so the admitted
+    /// readers publish their sources into the capture.
+    fn governed() {
+        let dir = crate::core::paths::config_dir_read_only().expect("isolated config dir");
+        std::fs::create_dir_all(&dir).expect("config dir");
+        std::fs::write(
+            dir.join("config.toml"),
+            "[context_gateway]\nmode = \"governed\"\n",
+        )
+        .expect("config");
+    }
+
+    fn call(tool: &str, root: &str, arguments: &serde_json::Value) -> String {
+        let args = vec![
+            tool.to_string(),
+            "--project-root".to_string(),
+            root.to_string(),
+            "--json".to_string(),
+            arguments.to_string(),
+        ];
+        run_call(&args).unwrap_or_else(|error| error.to_string())
+    }
+
+    /// The lineage on record for exactly `printed`, looked up and judged
+    /// inside the project scope, as the proxy does.
+    fn lineage(root: &str, printed: &str) -> Option<bool> {
+        crate::tools::admitted_sources::as_agent_acquisition(root, || {
+            crate::core::archive::delivered::lineage_of(&crate::core::archive::delivered::digest(
+                printed,
+            ))
+            .map(|lineage| lineage.still_admitted().is_ok())
+        })
+    }
+
+    /// G03/G04: an allowed `lean-ctx call ctx_read` printed checked text whose
+    /// lineage stayed unknown — no source capture, no delivered record. The
+    /// printed text now has a lineage entry; it stops admitting when the
+    /// source is deleted; an undeclared tool and an error record nothing.
+    #[test]
+    fn a_declared_call_records_the_lineage_of_the_printed_text() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        governed();
+        let project = tempfile::tempdir().expect("project dir");
+        let root = std::fs::canonicalize(project.path())
+            .expect("root")
+            .to_string_lossy()
+            .into_owned();
+        let file = std::path::Path::new(&root).join("sample.rs");
+        std::fs::write(&file, "pub fn sample() -> u32 { 7 }\n").expect("write sample");
+        let path = file.to_string_lossy().into_owned();
+
+        let printed = call(
+            "ctx_read",
+            &root,
+            &serde_json::json!({ "path": path, "mode": "full" }),
+        );
+        assert!(printed.contains("pub fn sample"), "{printed}");
+        assert_eq!(
+            lineage(&root, &printed),
+            Some(true),
+            "printed text has a lineage"
+        );
+        // The same delivery as stdout carries it (`println!` adds one `\n`).
+        assert_eq!(lineage(&root, &format!("{printed}\n")), Some(true));
+
+        // An undeclared tool: checked output, no lineage entry.
+        let outlined = call("ctx_outline", &root, &serde_json::json!({ "path": path }));
+        assert!(outlined.contains("sample"), "{outlined}");
+        assert_eq!(lineage(&root, &outlined), None);
+
+        // Source deleted: the entry is found and no longer admits.
+        std::fs::remove_file(&file).expect("delete source");
+        assert_eq!(lineage(&root, &printed), Some(false));
+
+        // A tool error prints an error and records nothing.
+        let failed = call(
+            "ctx_read",
+            &root,
+            &serde_json::json!({ "path": path, "mode": "full" }),
+        );
+        assert_eq!(lineage(&root, &failed), None, "{failed}");
+    }
+
+    /// The entry belongs to the text that is printed — after release and
+    /// redaction — never to the text the handler returned.
+    #[test]
+    fn the_lineage_entry_is_for_the_redacted_printed_text() {
+        const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+        let _data = crate::core::data_dir::isolated_data_dir();
+        // An empty project pack in developer mode: the pack makes protection
+        // active, so the admitted reader publishes its source into the
+        // capture, and the release point masks the key in a plain text block
+        // that bypassed admission. A key alone never withholds the result,
+        // with a pack as without one (`policy_guard::release`).
+        let pack = crate::core::policy::load(
+            "name = \"cli-call-lineage\"\nversion = \"1.0.0\"\ndescription = \"test\"\n",
+        )
+        .expect("empty pack");
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(pack));
+        let project = tempfile::tempdir().expect("project dir");
+        let root = std::fs::canonicalize(project.path())
+            .expect("root")
+            .to_string_lossy()
+            .into_owned();
+        let file = std::path::Path::new(&root).join("notes.rs");
+        std::fs::write(&file, "pub fn notes() {}\n").expect("write");
+        let path = file.to_string_lossy().into_owned();
+
+        // A declared tool whose handler read one admitted source and then
+        // returned a text that still carries a value the release point masks.
+        let raw = format!("pub fn notes() {{}}\nkey {AWS_KEY}");
+        let run = crate::cli::common::CliToolRun::new("ctx_read", &root, None);
+        let printed = run.deliver_text(|| {
+            crate::tools::ctx_read::read_file_for_tool_rooted(&path, &root, "ctx_read")
+                .expect("admitted source");
+            raw.clone()
+        });
+        assert!(!printed.contains(AWS_KEY), "{printed}");
+        assert_ne!(printed, raw);
+        assert!(
+            printed.ends_with("pub fn notes() {}\nkey [REDACTED:AWS key]"),
+            "masked once, the rest delivered: {printed}"
+        );
+        assert_eq!(lineage(&root, &raw), None, "never the pre-redaction text");
+        assert_eq!(lineage(&root, &printed), Some(true), "{printed}");
+    }
+
+    /// The handler runs as an agent acquisition: a file read through
+    /// `lean-ctx call` is admitted like under the MCP dispatcher (it was a
+    /// plain local read without the request scope).
+    #[test]
+    fn a_call_reads_as_an_agent_acquisition() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let policy = crate::core::policy::load(
+            "name = \"cli-call-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )
+        .unwrap();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+        let project = tempfile::tempdir().expect("project dir");
+        let file = project.path().join("plan.rs");
+        std::fs::write(&file, "CONFIDENTIAL\npub fn roadmap_marker() {}\n").expect("write");
+        let args = vec![
+            "ctx_outline".to_string(),
+            "--project-root".to_string(),
+            project.path().to_string_lossy().to_string(),
+            "--json".to_string(),
+            format!(
+                r#"{{"path": {}}}"#,
+                serde_json::to_string(file.to_string_lossy().as_ref()).expect("encode path")
+            ),
+        ];
+        let out = run_call(&args).unwrap_or_else(|error| error.to_string());
+        assert!(!out.contains("roadmap_marker"), "{out}");
+    }
+
+    /// A failed operation (`TOOL_EXECUTION_ERROR`, or a tool's own error
+    /// answer) is reported, and whatever text reports it is never a delivery:
+    /// no lineage entry exists for it, and the file is unchanged.
+    #[test]
+    fn a_failed_operation_registers_nothing() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        governed();
+        let project = tempfile::tempdir().expect("project dir");
+        let root = std::fs::canonicalize(project.path())
+            .expect("root")
+            .to_string_lossy()
+            .into_owned();
+        let file = std::path::Path::new(&root).join("kept.rs");
+        std::fs::write(&file, "pub fn kept() {}\n").expect("write");
+        let args = vec![
+            "ctx_edit".to_string(),
+            "--project-root".to_string(),
+            root.clone(),
+            "--json".to_string(),
+            serde_json::json!({
+                "path": file.to_string_lossy(),
+                "old_string": "pub fn absent() {}",
+                "new_string": "pub fn replaced() {}",
+            })
+            .to_string(),
+        ];
+        let reported = match run_call(&args) {
+            Ok(text) => text,
+            Err(error) => error.to_string(),
+        };
+        assert!(!reported.is_empty());
+        assert_eq!(lineage(&root, &reported), None, "{reported}");
+        assert_eq!(
+            lineage(&root, reported.trim_start_matches("error: ")),
+            None,
+            "{reported}"
+        );
+        assert_eq!(
+            std::fs::read_to_string(&file).expect("file"),
+            "pub fn kept() {}\n"
+        );
     }
 
     #[test]

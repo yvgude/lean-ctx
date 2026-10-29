@@ -20,7 +20,7 @@ impl McpTool for CtxArtifactsTool {
             "Context artifact registry with BM25 search — manage and query indexed code artifacts.\n\
             WORKFLOW: index artifacts first (index/reindex), then search with query for semantic retrieval.\n\
             Actions: list|status|index|reindex|search|remove.\n\
-            ANTIPATTERN: NOT for general code search — use ctx_semantic_search for codebase queries.",
+            ANTIPATTERN: NOT for general code search — use ctx_search (action=\"semantic\") for codebase queries.",
             json!({
                 "type": "object",
                 "properties": {

@@ -1,5 +1,5 @@
 //! Opt-in runtime buffer for Shadow Mode reports.
-use super::{ShadowEngine, ShadowReport, ShadowTask, baseline::BaselineConfig};
+use super::{ShadowEngine, ShadowReport, ShadowTask};
 use crate::core::config::{Config, ShadowConfig};
 use std::{
     panic::{AssertUnwindSafe, catch_unwind},
@@ -67,14 +67,8 @@ impl ShadowRuntime {
         if tasks.is_empty() {
             return None;
         }
-        let cfg = load_shadow_config();
-        let report = ShadowEngine::run_comparison_with_baseline(
-            &tasks,
-            BaselineConfig {
-                model: cfg.baseline_model,
-                ..BaselineConfig::default()
-            },
-        );
+        // `[shadow] baseline_model` is deliberately not used: each task keeps its host model.
+        let report = ShadowEngine::run_comparison(tasks);
         let _ = persist_report(&report);
         if let Ok(mut state) = state().lock() {
             state.latest = Some(report.clone());

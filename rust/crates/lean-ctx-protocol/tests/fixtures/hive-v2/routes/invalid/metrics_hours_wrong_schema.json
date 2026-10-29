@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_wrong_schema",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/schema",
+      "value": "leanctx.cloud-metrics/v1"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "v1 body on the v2 route"
+}

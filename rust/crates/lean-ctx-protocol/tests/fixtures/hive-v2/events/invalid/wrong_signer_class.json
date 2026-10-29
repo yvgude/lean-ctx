@@ -1,0 +1,10 @@
+{
+  "case": "wrong_signer_class",
+  "base": "events/node.add.fact.json",
+  "patch": [],
+  "expect": {
+    "layer": "signature",
+    "code": "sig_invalid"
+  },
+  "resign_with": "hive_event"
+}

@@ -1,0 +1,17 @@
+{
+  "case": "verified_at_on_other_field",
+  "base": "events/field.set.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/body/verified_at",
+      "value": 1792800000000
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/body/verified_at"
+  }
+}

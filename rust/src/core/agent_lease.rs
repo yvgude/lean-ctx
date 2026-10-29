@@ -8,8 +8,20 @@
 //! `<data_dir>/agents/leases.json` under an exclusive file lock, so every
 //! lean-ctx process on the machine (each agent's MCP server, the daemon, the
 //! CLI) sees the same holders (#1913).
+//!
+//! Path and symbol resources are bound to one project store: the Work Graph
+//! and `ctx_agent` both name a path as `project-path:<project>/<relative>`, so
+//! the same relative path in two projects never collides and a relative and
+//! an absolute spelling of one file always meet. The unbound legacy `path:`
+//! namespace (stores written before) is a separate namespace and never
+//! compared with it; such leases simply expire.
+//!
+//! Leases are cooperative: the edit tools do not consult them. They exclude
+//! agents that acquire before they write; an agent that never asks is not
+//! stopped by them.
 
 use std::collections::BTreeMap;
+use std::fmt::Write as _;
 use std::path::{Path, PathBuf};
 
 use serde::{Deserialize, Serialize};
@@ -17,6 +29,11 @@ use serde::{Deserialize, Serialize};
 pub const AGENT_LEASE_SCHEMA_VERSION: u16 = 1;
 const DEFAULT_MAX_LEASES: usize = 1_024;
 const MAX_LEASE_DURATION_MS: u64 = 60 * 60 * 1_000;
+const MAX_RESOURCE_REF_BYTES: usize = 256;
+/// Path namespaces whose references nest by `/`: the project-bound one and
+/// the unbound legacy one.
+const PROJECT_PATH_SCHEME: &str = "project-path:";
+const HIERARCHICAL_PATH_SCHEMES: [&str; 2] = [PROJECT_PATH_SCHEME, "path:"];
 
 #[derive(Clone, Copy, Debug, Eq, Ord, PartialEq, PartialOrd, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
@@ -80,10 +97,57 @@ pub enum AgentLeaseAcquireV1 {
     },
 }
 
+/// A waiter keeps its place while it asks again within this time.
+const WAITER_TTL_MS: u64 = 2 * 60 * 1_000;
+/// While another agent waits, a holder may renew only until it has held the
+/// lease this long since its grant; the lease then runs out (at most
+/// `MAX_LEASE_DURATION_MS` later) and goes to the oldest waiter.
+const MAX_CONTENDED_HOLD_MS: u64 = 60 * 60 * 1_000;
+/// `lease_ref` a reservation is reported under (`HeldBy`): it fences nothing.
+const RESERVED_LEASE_REF: &str = "reserved-for-waiter";
+
+/// Fairness state (O04), kept beside the lease store in its own file, so the
+/// lease file keeps its exact schema: processes that predate it read the
+/// lease file as before and simply do not honour reservations.
+#[derive(Clone, Debug, Default, Serialize, Deserialize)]
+struct LeaseFairnessV1 {
+    #[serde(default)]
+    waiters: Vec<LeaseWaiterV1>,
+    /// `lease_ref` → epoch ms of the grant that started the hold.
+    #[serde(default)]
+    held_since: BTreeMap<String, u64>,
+}
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct LeaseWaiterV1 {
+    resource_kind: AgentLeaseResourceKindV1,
+    resource_ref: String,
+    owner_agent_id: String,
+    since_epoch_ms: u64,
+    seen_epoch_ms: u64,
+}
+
+fn resources_overlap(
+    kind: AgentLeaseResourceKindV1,
+    held: &str,
+    other_kind: AgentLeaseResourceKindV1,
+    other: &str,
+) -> bool {
+    kind == other_kind
+        && (held == other
+            || (kind == AgentLeaseResourceKindV1::Path
+                && HIERARCHICAL_PATH_SCHEMES.into_iter().any(|scheme| {
+                    held.starts_with(scheme)
+                        && other.starts_with(scheme)
+                        && crate::core::work_graph::path_claims_overlap(held, other)
+                })))
+}
+
 /// Local registry with caller-provided clock for deterministic tests.
 pub struct AgentLeaseRegistryV1 {
     leases: BTreeMap<(AgentLeaseResourceKindV1, String), AgentLeaseV1>,
     max_leases: usize,
+    fairness: LeaseFairnessV1,
 }
 
 impl Default for AgentLeaseRegistryV1 {
@@ -98,9 +162,16 @@ impl AgentLeaseRegistryV1 {
         Self {
             leases: BTreeMap::new(),
             max_leases: max_leases.max(1),
+            fairness: LeaseFairnessV1::default(),
         }
     }
 
+    /// Bounded waiting (O04): every refused request records its agent as a
+    /// waiter for the resource. A free resource goes to the agent that has
+    /// waited longest and is still asking (within `WAITER_TTL_MS`); anyone
+    /// else is told it is held for that waiter. An agent that stops asking
+    /// loses its place after the TTL, so a gone waiter blocks nothing for
+    /// longer than that.
     pub fn acquire(
         &mut self,
         request: AgentLeaseRequestV1,
@@ -108,6 +179,86 @@ impl AgentLeaseRegistryV1 {
     ) -> Result<AgentLeaseAcquireV1, AgentLeaseError> {
         request.validate()?;
         self.remove_expired(now_epoch_ms);
+        let acquired = self.acquire_unfair(&request, now_epoch_ms)?;
+        Ok(match acquired {
+            AgentLeaseAcquireV1::Granted(lease) => {
+                let owner = &request.owner_agent_id;
+                self.fairness.waiters.retain(|waiter| {
+                    &waiter.owner_agent_id != owner
+                        || waiter.resource_kind != request.resource_kind
+                        || waiter.resource_ref != request.resource_ref
+                });
+                self.fairness
+                    .held_since
+                    .entry(lease.lease_ref.clone())
+                    .or_insert(now_epoch_ms);
+                AgentLeaseAcquireV1::Granted(lease)
+            }
+            held @ AgentLeaseAcquireV1::HeldBy { .. } => {
+                self.wait(request, now_epoch_ms);
+                held
+            }
+        })
+    }
+
+    fn wait(&mut self, request: AgentLeaseRequestV1, now_epoch_ms: u64) {
+        let waiters = &mut self.fairness.waiters;
+        let known = waiters.iter().position(|waiter| {
+            waiter.owner_agent_id == request.owner_agent_id
+                && waiter.resource_kind == request.resource_kind
+                && waiter.resource_ref == request.resource_ref
+        });
+        match known {
+            Some(index) => waiters[index].seen_epoch_ms = now_epoch_ms,
+            // Bounded like the leases: a full list refuses no one, it only
+            // stops recording new waiters.
+            None if waiters.len() < self.max_leases => waiters.push(LeaseWaiterV1 {
+                resource_kind: request.resource_kind,
+                resource_ref: request.resource_ref,
+                owner_agent_id: request.owner_agent_id,
+                since_epoch_ms: now_epoch_ms,
+                seen_epoch_ms: now_epoch_ms,
+            }),
+            None => {}
+        }
+    }
+
+    /// The longest-waiting other agent whose resource overlaps `request`.
+    fn waiting_before(&self, request: &AgentLeaseRequestV1) -> Option<&LeaseWaiterV1> {
+        let own_since = self
+            .fairness
+            .waiters
+            .iter()
+            .filter(|waiter| {
+                waiter.owner_agent_id == request.owner_agent_id
+                    && waiter.resource_kind == request.resource_kind
+                    && waiter.resource_ref == request.resource_ref
+            })
+            .map(|waiter| waiter.since_epoch_ms)
+            .min()
+            .unwrap_or(u64::MAX);
+        self.fairness
+            .waiters
+            .iter()
+            .filter(|waiter| {
+                waiter.owner_agent_id != request.owner_agent_id
+                    && waiter.since_epoch_ms < own_since
+                    && resources_overlap(
+                        waiter.resource_kind,
+                        &waiter.resource_ref,
+                        request.resource_kind,
+                        &request.resource_ref,
+                    )
+            })
+            .min_by_key(|waiter| waiter.since_epoch_ms)
+    }
+
+    fn acquire_unfair(
+        &mut self,
+        request: &AgentLeaseRequestV1,
+        now_epoch_ms: u64,
+    ) -> Result<AgentLeaseAcquireV1, AgentLeaseError> {
+        let request = request.clone();
         let key = (request.resource_kind, request.resource_ref.clone());
         if let Some(existing) = self.leases.get(&key) {
             if existing.request.owner_agent_id == request.owner_agent_id
@@ -121,12 +272,16 @@ impl AgentLeaseRegistryV1 {
                 expires_at_epoch_ms: existing.expires_at_epoch_ms,
             });
         }
-        // Only the path: namespace has hierarchical semantics; other references
-        // remain opaque. Exact replays were handled above.
+        // Only the path namespaces have hierarchical semantics, each compared
+        // with itself alone; other references remain opaque. Exact replays
+        // were handled above.
         if request.resource_kind == AgentLeaseResourceKindV1::Path
-            && request.resource_ref.starts_with("path:")
+            && let Some(scheme) = HIERARCHICAL_PATH_SCHEMES
+                .into_iter()
+                .find(|scheme| request.resource_ref.starts_with(scheme))
             && let Some(existing) = self.leases.values().find(|lease| {
                 lease.request.resource_kind == AgentLeaseResourceKindV1::Path
+                    && lease.request.resource_ref.starts_with(scheme)
                     && crate::core::work_graph::path_claims_overlap(
                         &lease.request.resource_ref,
                         &request.resource_ref,
@@ -137,6 +292,13 @@ impl AgentLeaseRegistryV1 {
                 owner_agent_id: existing.request.owner_agent_id.clone(),
                 lease_ref: existing.lease_ref.clone(),
                 expires_at_epoch_ms: existing.expires_at_epoch_ms,
+            });
+        }
+        if let Some(waiter) = self.waiting_before(&request) {
+            return Ok(AgentLeaseAcquireV1::HeldBy {
+                owner_agent_id: waiter.owner_agent_id.clone(),
+                lease_ref: RESERVED_LEASE_REF.to_string(),
+                expires_at_epoch_ms: waiter.seen_epoch_ms.saturating_add(WAITER_TTL_MS),
             });
         }
         if self.leases.len() >= self.max_leases {
@@ -176,6 +338,29 @@ impl AgentLeaseRegistryV1 {
         Ok(true)
     }
 
+    /// Release every lease of one execution incarnation: its node lease
+    /// (`lease_request_ref == fence`) and its path leases (`<fence>:<n>`).
+    /// Selected by owner and fence, never by resource name.
+    pub fn release_fence(
+        &mut self,
+        owner_agent_id: &str,
+        fence: &str,
+        now_epoch_ms: u64,
+    ) -> Result<usize, AgentLeaseError> {
+        opaque_ref("lease_request_ref", fence)?;
+        agent_id(owner_agent_id)?;
+        self.remove_expired(now_epoch_ms);
+        let path_prefix = format!("{fence}:");
+        let before = self.leases.len();
+        self.leases.retain(|_, lease| {
+            let request = &lease.request;
+            request.owner_agent_id != owner_agent_id
+                || (request.lease_request_ref != fence
+                    && !request.lease_request_ref.starts_with(&path_prefix))
+        });
+        Ok(before - self.leases.len())
+    }
+
     /// Extend an active lease without changing its fencing token.
     ///
     /// Renewals are owner- and token-bound, so a delayed worker cannot extend
@@ -209,6 +394,20 @@ impl AgentLeaseRegistryV1 {
         if existing.request.owner_agent_id != owner_agent_id || existing.lease_ref != lease_ref {
             return Err(AgentLeaseError::NotOwner);
         }
+        self.remove_expired(now_epoch_ms);
+        let held_since = self.fairness.held_since.get(lease_ref).copied();
+        if held_since
+            .is_some_and(|since| now_epoch_ms.saturating_sub(since) >= MAX_CONTENDED_HOLD_MS)
+            && self
+                .waiting_before(&self.leases[&key].request.clone())
+                .is_some()
+        {
+            return Err(AgentLeaseError::Invalid(
+                "another agent is waiting and this lease reached its maximum hold; \
+                 it is not renewed and goes to the waiter when it runs out"
+                    .into(),
+            ));
+        }
         let existing = self.leases.get_mut(&key).expect("lease checked above");
         existing.request.duration_ms = duration_ms;
         existing.expires_at_epoch_ms = now_epoch_ms.saturating_add(duration_ms);
@@ -225,6 +424,14 @@ impl AgentLeaseRegistryV1 {
 
     fn remove_expired(&mut self, now_epoch_ms: u64) {
         self.leases.retain(|_, l| l.is_active_at(now_epoch_ms));
+        let held: std::collections::BTreeSet<&str> =
+            self.leases.values().map(|l| l.lease_ref.as_str()).collect();
+        self.fairness
+            .held_since
+            .retain(|lease_ref, _| held.contains(lease_ref.as_str()));
+        self.fairness
+            .waiters
+            .retain(|waiter| now_epoch_ms < waiter.seen_epoch_ms.saturating_add(WAITER_TTL_MS));
     }
 }
 
@@ -282,7 +489,17 @@ fn load_registry(path: &Path) -> Result<AgentLeaseRegistryV1, AgentLeaseError> {
         );
         registry.leases.insert(key, lease);
     }
+    // Fairness is an ordering among waiters, not an exclusion: a missing or
+    // unreadable file only means no one waits yet.
+    registry.fairness = std::fs::read_to_string(fairness_path(path))
+        .ok()
+        .and_then(|json| serde_json::from_str(&json).ok())
+        .unwrap_or_default();
     Ok(registry)
+}
+
+fn fairness_path(lease_store: &Path) -> PathBuf {
+    lease_store.with_file_name("lease-waiters.json")
 }
 
 fn save_registry(path: &Path, registry: &AgentLeaseRegistryV1) -> Result<(), AgentLeaseError> {
@@ -293,7 +510,13 @@ fn save_registry(path: &Path, registry: &AgentLeaseRegistryV1) -> Result<(), Age
     let json = serde_json::to_string_pretty(&file)
         .map_err(|error| AgentLeaseError::Serialize(error.to_string()))?;
     crate::config_io::write_atomic(path, &json)
-        .map_err(|error| AgentLeaseError::Store(format!("persist {}: {error}", path.display())))
+        .map_err(|error| AgentLeaseError::Store(format!("persist {}: {error}", path.display())))?;
+    let fairness = serde_json::to_string(&registry.fairness)
+        .map_err(|error| AgentLeaseError::Serialize(error.to_string()))?;
+    let fairness_path = fairness_path(path);
+    crate::config_io::write_atomic(&fairness_path, &fairness).map_err(|error| {
+        AgentLeaseError::Store(format!("persist {}: {error}", fairness_path.display()))
+    })
 }
 
 /// Runs `mutate` against the shared registry while holding the store lock, so
@@ -333,6 +556,26 @@ pub fn release_shared(
     })
 }
 
+/// Drops the lease `lease_ref` whoever holds it: an organization veto took
+/// it (Hive bus control, SPEC-ENGINE §3.7.4). Returns the dropped lease,
+/// `None` when no such lease is held.
+pub fn revoke_shared(lease_ref: &str) -> Result<Option<AgentLeaseV1>, AgentLeaseError> {
+    with_shared_registry(|registry, _| {
+        let key = registry
+            .leases
+            .iter()
+            .find(|(_, lease)| lease.lease_ref == lease_ref)
+            .map(|(key, _)| key.clone());
+        Ok(key.and_then(|key| registry.leases.remove(&key)))
+    })
+}
+
+/// Releases every lease one execution incarnation of `owner_agent_id` holds,
+/// under a single store lock; leases of other incarnations stay.
+pub fn release_fence_shared(owner_agent_id: &str, fence: &str) -> Result<usize, AgentLeaseError> {
+    with_shared_registry(|registry, now| registry.release_fence(owner_agent_id, fence, now))
+}
+
 /// Renews an owned lease in the machine-wide registry without rotating its
 /// fencing token. Renewal must use the same store as acquisition, otherwise a
 /// lease held by another process could never be renewed.
@@ -355,6 +598,134 @@ pub fn renew_shared(
     })
 }
 
+// ─── Project-Bound Resources ─────────────────────────────────────────────────
+
+/// Paths name files case-insensitively on the default macOS and Windows file
+/// systems; folding there makes `Src/Lib.rs` and `src/lib.rs` one resource.
+/// On a case-sensitive volume of those systems this only over-excludes.
+const CASE_INSENSITIVE_PATHS: bool = cfg!(any(target_os = "macos", windows));
+
+/// Lease resource of one project-relative path (`src/core`, no `.`/`..`).
+/// Nested paths of one project overlap; paths of different projects never do.
+/// The Work Graph and `ctx_agent` both name their path leases through here.
+pub(crate) fn project_path_resource(
+    project_root: &str,
+    relative: &str,
+) -> Result<String, AgentLeaseError> {
+    let mut relative = relative.replace('\\', "/");
+    if CASE_INSENSITIVE_PATHS {
+        relative = relative.to_lowercase();
+    }
+    if relative.is_empty()
+        || relative.starts_with('/')
+        || relative
+            .split('/')
+            .any(|part| part.is_empty() || part == "." || part == "..")
+        || relative.chars().any(char::is_control)
+    {
+        return Err(AgentLeaseError::Invalid(
+            "lease path must be a normalized path inside the project".into(),
+        ));
+    }
+    let scope = crate::core::project_hash::hash_project_root(project_root);
+    let mut resource = format!("{PROJECT_PATH_SCHEME}{scope}/");
+    for byte in relative.bytes() {
+        if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'-' | b'_') {
+            resource.push(byte as char);
+        } else {
+            let _ = write!(resource, "%{byte:02X}");
+        }
+    }
+    // Keep the bounded reference contract for unusually long paths. The hash
+    // stays project-bound but cannot express nesting.
+    if resource.len() > MAX_RESOURCE_REF_BYTES {
+        resource = format!(
+            "project-pathref:{}",
+            scoped_digest(&scope, relative.as_bytes())
+        );
+    }
+    Ok(resource)
+}
+
+/// Lease resource of a caller-named path: relative to the project root, or
+/// absolute inside it (Windows verbatim prefixes, drive-letter case and
+/// separators normalized). Both spellings of one file name the same resource.
+/// Like a Work Graph path claim, the path may not traverse a symlink or
+/// leave the project, and the project root itself cannot be leased.
+pub(crate) fn project_path_target_resource(
+    project_root: &str,
+    target: &str,
+) -> Result<String, AgentLeaseError> {
+    let invalid = |reason: &str| AgentLeaseError::Invalid(reason.into());
+    // Lexical only: resolving the target would follow the very symlinks the
+    // walk below must refuse.
+    let target = crate::core::pathutil::normalize_tool_path_lexical(target);
+    let root = crate::core::pathutil::normalize_tool_path_lexical(project_root);
+    let canonical_root = crate::core::pathutil::safe_canonicalize_or_self(Path::new(project_root));
+    let canonical_root_text =
+        crate::core::pathutil::normalize_tool_path_lexical(&canonical_root.to_string_lossy());
+    let relative = if Path::new(&target).is_absolute() || target.starts_with('/') {
+        [root.as_str(), canonical_root_text.as_str()]
+            .into_iter()
+            .find_map(|root| strip_root(&target, root))
+            .ok_or_else(|| invalid("lease path must be inside the project root"))?
+    } else {
+        target.as_str()
+    };
+    let mut parts = Vec::new();
+    for part in relative.split('/') {
+        match part {
+            "" | "." => {}
+            ".." => return Err(invalid("lease path must not leave the project root")),
+            part => parts.push(part),
+        }
+    }
+    if parts.is_empty() {
+        return Err(invalid(
+            "the project root itself cannot be leased; lease a path inside it",
+        ));
+    }
+    let mut cursor = canonical_root;
+    for part in &parts {
+        cursor.push(part);
+        if std::fs::symlink_metadata(&cursor).is_ok_and(|meta| meta.file_type().is_symlink()) {
+            return Err(invalid("lease path traverses a symlink"));
+        }
+    }
+    project_path_resource(project_root, &parts.join("/"))
+}
+
+/// `target` below `root` (both lexically normalized), compared the way the
+/// platform's default file system compares names.
+fn strip_root<'a>(target: &'a str, root: &str) -> Option<&'a str> {
+    let root = root.trim_end_matches('/');
+    let head = target.get(..root.len())?;
+    let same = if CASE_INSENSITIVE_PATHS {
+        head.eq_ignore_ascii_case(root)
+    } else {
+        head == root
+    };
+    let rest = &target[root.len()..];
+    (same && (rest.is_empty() || rest.starts_with('/'))).then_some(rest)
+}
+
+/// Lease resource of a symbol name within one project.
+pub(crate) fn project_symbol_resource(project_root: &str, symbol: &str) -> String {
+    let scope = crate::core::project_hash::hash_project_root(project_root);
+    format!(
+        "project-symbolref:{}",
+        scoped_digest(&scope, symbol.as_bytes())
+    )
+}
+
+fn scoped_digest(scope: &str, value: &[u8]) -> String {
+    let mut hash = blake3::Hasher::new();
+    hash.update(scope.as_bytes());
+    hash.update(b"\0");
+    hash.update(value);
+    hash.finalize().to_hex().to_string()
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 fn compute_lease_ref(
@@ -375,7 +746,7 @@ fn opaque_ref(label: &str, value: &str) -> Result<(), AgentLeaseError> {
             .bytes()
             .all(|b| b.is_ascii_lowercase() || b.is_ascii_digit() || b == b'-');
     let identifier_valid = !identifier.is_empty()
-        && value.len() <= 256
+        && value.len() <= MAX_RESOURCE_REF_BYTES
         && identifier.bytes().all(|b| b.is_ascii_graphic());
     (scheme_valid && identifier_valid)
         .then_some(())
@@ -516,6 +887,37 @@ pub mod tests {
     }
 
     #[test]
+    fn incarnation_release_never_frees_a_newer_holder() {
+        let mut reg = AgentLeaseRegistryV1::default();
+        let _ = reg.acquire(request("agent-a", "fence:old"), 10).unwrap();
+        let path_lease =
+            |owner: &str, lease_request_ref: &str, resource: &str| AgentLeaseRequestV1 {
+                resource_ref: resource.into(),
+                ..request(owner, lease_request_ref)
+            };
+        let _ = reg
+            .acquire(path_lease("agent-a", "fence:old:0", "pathref:docs"), 10)
+            .unwrap();
+        let _ = reg
+            .acquire(path_lease("agent-a", "fence:older", "pathref:other"), 10)
+            .unwrap();
+        let release = |reg: &mut AgentLeaseRegistryV1, owner: &str, fence: &str| {
+            reg.release_fence(owner, fence, 20).unwrap()
+        };
+        assert_eq!(release(&mut reg, "agent-b", "fence:old"), 0);
+        assert_eq!(release(&mut reg, "agent-a", "fence:new"), 0);
+        // The node lease and the incarnation's path lease; never `fence:older`.
+        assert_eq!(release(&mut reg, "agent-a", "fence:old"), 2);
+        assert_eq!(reg.active_count(20), 1);
+        let _ = reg.acquire(request("agent-a", "fence:new"), 30).unwrap();
+        assert_eq!(release(&mut reg, "agent-a", "fence:old"), 0);
+        assert!(matches!(
+            reg.acquire(request("agent-b", "request:b"), 40),
+            Ok(AgentLeaseAcquireV1::HeldBy { .. })
+        ));
+    }
+
+    #[test]
     fn renew_extends_owned_lease_without_rotating_fence() {
         let mut reg = AgentLeaseRegistryV1::default();
         let AgentLeaseAcquireV1::Granted(granted) =
@@ -616,6 +1018,185 @@ pub mod tests {
         ));
     }
 
+    /// O04: a holder that releases and asks again at once, or renews for
+    /// ever, cannot starve an agent that keeps asking. The waiter gets the
+    /// freed lease; a waiter that stops asking loses its place after the
+    /// TTL; past the maximum hold a contended lease is not renewed.
+    #[test]
+    fn a_waiting_agent_is_served_before_a_holder_asking_again() {
+        let mut reg = AgentLeaseRegistryV1::default();
+        let grant = |reg: &mut AgentLeaseRegistryV1, owner: &str, now| match reg
+            .acquire(long_request(owner, &format!("request:{owner}")), now)
+            .unwrap()
+        {
+            AgentLeaseAcquireV1::Granted(lease) => Some(lease),
+            AgentLeaseAcquireV1::HeldBy { .. } => None,
+        };
+        let held = grant(&mut reg, "agent-a", 0).expect("free");
+        assert!(grant(&mut reg, "agent-b", 1).is_none(), "b waits");
+        assert!(
+            reg.release(
+                held.request.resource_kind,
+                &held.request.resource_ref,
+                "agent-a",
+                &held.lease_ref,
+                2
+            )
+            .unwrap()
+        );
+        // a asks again first: the lease is kept for b, who waited.
+        assert!(matches!(
+            reg.acquire(long_request("agent-a", "request:a2"), 3).unwrap(),
+            AgentLeaseAcquireV1::HeldBy { owner_agent_id, lease_ref, .. }
+                if owner_agent_id == "agent-b" && lease_ref == RESERVED_LEASE_REF
+        ));
+        let b = grant(&mut reg, "agent-b", 4).expect("b is served");
+        // a now waits behind b; c, who never waited, does not pass a.
+        assert!(grant(&mut reg, "agent-a", 5).is_none());
+        reg.release(
+            b.request.resource_kind,
+            &b.request.resource_ref,
+            "agent-b",
+            &b.lease_ref,
+            6,
+        )
+        .unwrap();
+        assert!(grant(&mut reg, "agent-c", 7).is_none());
+        // a stops asking: after the TTL its place is gone.
+        assert!(grant(&mut reg, "agent-c", 5 + WAITER_TTL_MS).is_some());
+
+        // A holder renews while nobody waits, but not past the maximum hold
+        // once someone does.
+        let mut reg = AgentLeaseRegistryV1::default();
+        let held = grant(&mut reg, "agent-a", 0).expect("free");
+        let renew = |reg: &mut AgentLeaseRegistryV1, now| {
+            reg.renew(
+                held.request.resource_kind,
+                &held.request.resource_ref,
+                "agent-a",
+                &held.lease_ref,
+                60_000,
+                now,
+            )
+        };
+        let late = MAX_CONTENDED_HOLD_MS + 30_000;
+        let mut now = 30_000;
+        while now < late {
+            renew(&mut reg, now).expect("uncontended renew");
+            now += 30_000;
+        }
+        assert!(grant(&mut reg, "agent-b", now).is_none());
+        assert!(
+            renew(&mut reg, now + 1).is_err(),
+            "contended past the maximum"
+        );
+        assert!(
+            grant(&mut reg, "agent-b", now + 60_000).is_some(),
+            "runs out to b"
+        );
+    }
+
+    /// O04: two humans with two agents each contend for one path of P1
+    /// while a lease on the same path of P2 is held throughout. Released
+    /// together; each holder keeps the lease until every agent still waiting
+    /// has been refused once. Exactly one holder at a time, P2 blocks
+    /// nothing, and every agent is granted after at most three others
+    /// (bounded bypass: no agent starves while the others finish).
+    #[test]
+    fn four_contending_agents_each_get_the_lease_after_at_most_three_others() {
+        use std::collections::BTreeSet;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Barrier, Mutex};
+
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let (p1, p2) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let resource = |project: &tempfile::TempDir| {
+            project_path_resource(project.path().to_str().unwrap(), "src/lib.rs").unwrap()
+        };
+        let lease = |owner: &str, resource_ref: String| AgentLeaseRequestV1 {
+            resource_ref,
+            ..long_request(owner, &format!("request:{owner}"))
+        };
+        assert!(matches!(
+            acquire_shared(lease("human-c-agent-1", resource(&p2))),
+            Ok(AgentLeaseAcquireV1::Granted(_))
+        ));
+
+        let agents = [
+            "human-a-agent-1",
+            "human-a-agent-2",
+            "human-b-agent-1",
+            "human-b-agent-2",
+        ];
+        let start = Barrier::new(agents.len());
+        let waiting: Mutex<BTreeSet<&str>> = Mutex::new(agents.into_iter().collect());
+        let refused: Mutex<BTreeSet<&str>> = Mutex::new(BTreeSet::new());
+        let (holders, granted) = (AtomicUsize::new(0), AtomicUsize::new(0));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        let bypassed = std::thread::scope(|scope| {
+            let contend = |owner: &'static str| {
+                let (start, waiting, refused) = (&start, &waiting, &refused);
+                let (holders, granted, lease) = (&holders, &granted, &lease);
+                let target = resource(&p1);
+                move || {
+                    start.wait();
+                    let before = granted.load(Ordering::SeqCst);
+                    let held = loop {
+                        assert!(std::time::Instant::now() < deadline, "{owner} starved");
+                        match acquire_shared(lease(owner, target.clone())) {
+                            Ok(AgentLeaseAcquireV1::Granted(held)) => break held,
+                            Ok(AgentLeaseAcquireV1::HeldBy { .. }) => {
+                                refused.lock().unwrap().insert(owner);
+                            }
+                            // The store lock is bounded: busy is a retry.
+                            Err(AgentLeaseError::Store(_)) => {}
+                            Err(error) => panic!("{owner}: {error:?}"),
+                        }
+                        std::thread::sleep(std::time::Duration::from_millis(2));
+                    };
+                    assert_eq!(holders.fetch_add(1, Ordering::SeqCst), 0, "two holders");
+                    let bypassed = granted.fetch_add(1, Ordering::SeqCst) - before;
+                    waiting.lock().unwrap().remove(owner);
+                    refused.lock().unwrap().clear();
+                    // Hold until every agent still waiting was refused once.
+                    while !waiting.lock().unwrap().is_subset(&refused.lock().unwrap()) {
+                        assert!(std::time::Instant::now() < deadline, "waiters never asked");
+                        std::thread::yield_now();
+                    }
+                    holders.fetch_sub(1, Ordering::SeqCst);
+                    while !matches!(
+                        release_shared(
+                            AgentLeaseResourceKindV1::Path,
+                            &target,
+                            owner,
+                            &held.lease_ref
+                        ),
+                        Ok(true)
+                    ) {
+                        assert!(std::time::Instant::now() < deadline, "release never landed");
+                    }
+                    bypassed
+                }
+            };
+            let threads: Vec<_> = agents
+                .into_iter()
+                .map(|owner| scope.spawn(contend(owner)))
+                .collect();
+            threads
+                .into_iter()
+                .map(|thread| thread.join().expect("agent"))
+                .collect::<Vec<_>>()
+        });
+        assert_eq!(granted.load(Ordering::SeqCst), agents.len());
+        assert!(bypassed.iter().all(|&n| n < agents.len()), "{bypassed:?}");
+        // P2's holder kept its lease the whole time.
+        assert!(matches!(
+            acquire_shared(lease("human-a-agent-1", resource(&p2))),
+            Ok(AgentLeaseAcquireV1::HeldBy { owner_agent_id, .. })
+                if owner_agent_id == "human-c-agent-1"
+        ));
+    }
+
     #[test]
     fn corrupt_shared_store_fails_closed() {
         let iso = crate::core::data_dir::isolated_data_dir();
@@ -631,6 +1212,58 @@ pub mod tests {
             "{not json",
             "a corrupt store is never overwritten"
         );
+    }
+
+    /// AP07-G1: `path:src` collided across projects, and a relative and an
+    /// absolute spelling of one file never met.
+    #[test]
+    fn path_leases_are_bound_to_their_project() {
+        let project_a = tempfile::tempdir().unwrap();
+        let project_b = tempfile::tempdir().unwrap();
+        let root_a = project_a.path().to_str().unwrap();
+        let root_b = project_b.path().to_str().unwrap();
+        let path = |owner: &str, resource_ref: String| AgentLeaseRequestV1 {
+            resource_ref,
+            ..request(owner, &format!("request:{owner}"))
+        };
+        let mut reg = AgentLeaseRegistryV1::default();
+        let held = project_path_target_resource(root_a, "src").unwrap();
+        assert!(matches!(
+            reg.acquire(path("agent-a", held), 1),
+            Ok(AgentLeaseAcquireV1::Granted(_))
+        ));
+        let other_project = project_path_target_resource(root_b, "./src").unwrap();
+        assert!(matches!(
+            reg.acquire(path("agent-b", other_project), 1),
+            Ok(AgentLeaseAcquireV1::Granted(_))
+        ));
+        let absolute_child =
+            project_path_target_resource(root_a, &format!("{root_a}/src/lib.rs")).unwrap();
+        assert_eq!(
+            absolute_child,
+            project_path_resource(root_a, "src/lib.rs").unwrap()
+        );
+        assert!(matches!(
+            reg.acquire(path("agent-c", absolute_child), 1),
+            Ok(AgentLeaseAcquireV1::HeldBy { owner_agent_id, .. }) if owner_agent_id == "agent-a"
+        ));
+        // A lease of the unbound legacy namespace neither blocks nor is blocked.
+        assert!(matches!(
+            reg.acquire(path("agent-d", "path:src".into()), 1),
+            Ok(AgentLeaseAcquireV1::Granted(_))
+        ));
+        for outside in ["../src".to_string(), format!("{root_b}/src"), root_a.into()] {
+            assert!(project_path_target_resource(root_a, &outside).is_err());
+        }
+        // A symlink inside the project may point anywhere: refused like a
+        // Work Graph path claim, whether spelled relative or absolute.
+        #[cfg(unix)]
+        {
+            std::os::unix::fs::symlink(project_b.path(), project_a.path().join("link")).unwrap();
+            for through_link in ["link/src".to_string(), format!("{root_a}/link/src")] {
+                assert!(project_path_target_resource(root_a, &through_link).is_err());
+            }
+        }
     }
 }
 // SPDX-License-Identifier: Apache-2.0

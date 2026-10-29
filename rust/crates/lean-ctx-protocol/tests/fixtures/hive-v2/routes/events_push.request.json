@@ -1,0 +1,150 @@
+{
+  "capture_counts": {
+    "captured": 3,
+    "considered": 14,
+    "gate_version": 1,
+    "rejected": {
+      "duplicate": 5,
+      "too_short": 6
+    },
+    "window_from": 1792800000000,
+    "window_to": 1792803600000
+  },
+  "events": [
+    {
+      "actor": {
+        "kind": "worker"
+      },
+      "body": {
+        "body_nonce": "09090909090909090909090909090909",
+        "field": "applies_to",
+        "value": [
+          "services/payments/retry.rs",
+          "services/payments/client.rs"
+        ]
+      },
+      "body_commit": "e63b417267ed7aac17b703ccf6f6869952e12def9285f741fc328f57f8534b41",
+      "capture": {
+        "evidence": "observed",
+        "gate_version": 1,
+        "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+      },
+      "causal_base": 8,
+      "event_id": "01M5NKAAS8005000000000W009",
+      "hlc": {
+        "counter": 0,
+        "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+        "wall_ms": 1792800009000
+      },
+      "key_id": "47983724220c8521",
+      "op": "field.set",
+      "place": {
+        "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+        "kind": "vault"
+      },
+      "provenance_claim": "own",
+      "schema": "leanctx.hive.event/v2",
+      "screening": {
+        "counts": {
+          "forbidden": 0,
+          "local_path": 0,
+          "pii": 0,
+          "redaction": 0,
+          "secret": 0
+        },
+        "scanner_version": 1
+      },
+      "signature": "7bd20007febdbfcddd967654637ae86533e0b32fc2ec6996a89a7018dde0f5aa83022608a1e95abac0d2faba8bbc417e17d8d907e9cf942999a457f300a0c705",
+      "target": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+      "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+    },
+    {
+      "actor": {
+        "kind": "worker"
+      },
+      "body": {
+        "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+        "reason": "The sandbox processor fixed the small-amount bug."
+      },
+      "body_commit": "f2938aded8ffbba65066d4d2e1b67fb0657ed16567408f409678df15b34ca1c7",
+      "capture": {
+        "evidence": "observed",
+        "gate_version": 1,
+        "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+      },
+      "causal_base": 9,
+      "event_id": "01M5NKABRG005000000000W00A",
+      "hlc": {
+        "counter": 0,
+        "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+        "wall_ms": 1792800010000
+      },
+      "key_id": "47983724220c8521",
+      "op": "retract",
+      "place": {
+        "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+        "kind": "vault"
+      },
+      "provenance_claim": "own",
+      "schema": "leanctx.hive.event/v2",
+      "screening": {
+        "counts": {
+          "forbidden": 0,
+          "local_path": 0,
+          "pii": 0,
+          "redaction": 0,
+          "secret": 0
+        },
+        "scanner_version": 1
+      },
+      "signature": "903526182cad17e768d5ba468e8b90fb201883f9149a1329250a2e201fc126ed06c0f319200bb817d0050c5a8fa5ee6dfbc422f9bf185148c3f809a475e18109",
+      "target": "n_ni4efcql5cttozq2pxust6len4",
+      "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+    },
+    {
+      "actor": {
+        "kind": "worker"
+      },
+      "body": {
+        "body_nonce": "08080808080808080808080808080808",
+        "from": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+        "kind": "references",
+        "to": "n_aaaaaaaaaaaaaaaaaaaaaacaa4"
+      },
+      "body_commit": "15d63f27328f6f4aad89dcaa5cb6c814e7bf4e7df6fca972151e1d0b61449418",
+      "capture": {
+        "evidence": "observed",
+        "gate_version": 1,
+        "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+      },
+      "causal_base": 7,
+      "event_id": "01M5NKA9T0005000000000W008",
+      "hlc": {
+        "counter": 0,
+        "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+        "wall_ms": 1792800008000
+      },
+      "key_id": "47983724220c8521",
+      "op": "edge.add",
+      "place": {
+        "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+        "kind": "vault"
+      },
+      "provenance_claim": "own",
+      "schema": "leanctx.hive.event/v2",
+      "screening": {
+        "counts": {
+          "forbidden": 0,
+          "local_path": 0,
+          "pii": 0,
+          "redaction": 0,
+          "secret": 0
+        },
+        "scanner_version": 1
+      },
+      "signature": "624f3525db299c3eed5d7d1b61e860ed488016c440f1d809d1f7aef5dc08b133c388c47b64629b810c673d12da1c6ae935b72b3db03c6bb0f01425475fa48005",
+      "target": "e_aaaaaaaaaaaaaaaaaaaaaacqba",
+      "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+    }
+  ]
+}

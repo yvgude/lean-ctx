@@ -1,5 +1,15 @@
 use std::collections::HashMap;
 
+/// The events this dashboard SHOWS (`/api/events`): each passes the
+/// serve-time rule of the observation store for a reader working in the
+/// dashboard's one project (`detect_project_root_for_dashboard`). An event
+/// that names a file outside that project, or one no longer admitted, is
+/// not shown; an event without a file follows the originless rule.
+fn served_events(n: usize) -> Vec<crate::core::events::LeanCtxEvent> {
+    let project = super::helpers::detect_project_root_for_dashboard();
+    crate::core::events::load_served_events(n, Some(std::path::Path::new(&project)))
+}
+
 pub(super) fn handle(
     path: &str,
     _query_str: &str,
@@ -24,14 +34,14 @@ pub(super) fn handle(
             r#"{"error":"method not allowed"}"#.to_string(),
         )),
         "/api/events" => {
-            let evs = crate::core::events::load_events_from_file(200);
+            let evs = served_events(200);
             let json = serde_json::to_string(&evs).unwrap_or_else(|_| "[]".to_string());
             Some(("200 OK", "application/json", json))
         }
         p if p.starts_with("/api/events/") => {
             let id_str = &p["/api/events/".len()..];
             if let Ok(id) = id_str.parse::<u64>() {
-                let evs = crate::core::events::load_events_from_file(500);
+                let evs = served_events(500);
                 if let Some(ev) = evs.iter().find(|e| e.id == id) {
                     let json = serde_json::to_string(ev).unwrap_or_else(|_| "{}".to_string());
                     Some(("200 OK", "application/json", json))
@@ -80,11 +90,21 @@ fn build_agents_json() -> String {
         .iter()
         .map(|a| {
             let age_min = (chrono::Utc::now() - a.last_active).num_minutes().max(0);
+            let is_transport = a.transport.is_some() || a.agent_type == "mcp";
             serde_json::json!({
                 "id": a.agent_id,
                 "project_root": a.project_root,
                 "type": a.agent_type,
+                "kind": if is_transport { "transport" } else { "agent" },
+                // Identified MCP host (`claude-code`, `codex`, `cursor`,
+                // `vscode`, …); null for records written before attribution.
+                "host": a.transport.as_ref().map(|t| t.host.as_str()),
+                "client": a.transport.as_ref().map(|t| serde_json::json!({
+                    "name": t.name,
+                    "version": t.version
+                })),
                 "role": a.role,
+                "role_source": a.role_source.map(crate::core::agents::RoleSource::as_str),
                 "status": format!("{}", a.status),
                 "status_message": a.status_message,
                 "last_active_minutes_ago": age_min,
@@ -127,10 +147,15 @@ fn build_agents_json() -> String {
                 })
         })
         .count();
+    // Only the dashboard's project's shares (`ctx_share` partitions by
+    // project); other projects' partitions are not counted.
     let shared_dir = crate::core::data_dir::lean_ctx_data_dir()
         .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".lean-ctx"))
         .join("agents")
-        .join("shared");
+        .join("shared")
+        .join(crate::core::project_hash::hash_project_root(
+            &super::helpers::detect_project_root_for_dashboard(),
+        ));
     let shared_count = if shared_dir.exists() {
         std::fs::read_dir(&shared_dir).map_or(0, std::iter::Iterator::count)
     } else {
@@ -145,6 +170,7 @@ fn build_agents_json() -> String {
         "logical_session_count": logical_session_count,
         "logical_session_presence_available": registry.logical_session_telemetry_seen,
         "recent_tool_activity": infer_agents_from_events(),
+        "active_model": active_model(),
         // Compatibility for older dashboard clients: agents always means transports.
         "agents": transports,
         "total_active": transports.len(),
@@ -161,7 +187,10 @@ fn pending_for_recipient(
     agent_id: &str,
     project_root: &str,
 ) -> bool {
-    message.project_root.as_deref() == Some(project_root)
+    message
+        .project_root
+        .as_deref()
+        .is_some_and(|own| crate::core::pathutil::same_project(own, project_root))
         && message.to_agent.as_deref().is_none_or(|id| id == agent_id)
         && message.from_agent != agent_id
         && !message.read_by.iter().any(|id| id == agent_id)
@@ -281,20 +310,83 @@ fn infer_agents_from_events() -> Vec<serde_json::Value> {
         (now - local_event_ts_to_utc(ts)).num_minutes().max(0)
     });
 
+    vec![aggregate_activity_row(recent_tool_count, age_min)]
+}
+
+/// Audit bug 4: this row is an aggregate of the event log, not a session —
+/// `pid` is the dashboard process itself. `synthetic`/`kind` let clients
+/// stop counting it as an agent; the older fields stay for compatibility.
+fn aggregate_activity_row(recent_tool_count: u64, age_min: i64) -> serde_json::Value {
     // #717: same freshness threshold as /api/workspaces — the two panels
     // used to disagree ("active" here, "idle" there) for the same session.
     let status = if age_min < 10 { "active" } else { "idle" };
-
-    vec![serde_json::json!({
+    serde_json::json!({
         "id": "lean-ctx-session",
         "type": "lean-ctx",
+        "kind": "aggregate",
+        "synthetic": true,
         "role": "context-engine",
         "status": status,
         "status_message": format!("{} tool calls in last 30min", recent_tool_count),
+        "tool_calls_30m": recent_tool_count,
         "last_active_minutes_ago": age_min,
         "pid": std::process::id(),
         "inferred": true
-    })]
+    })
+}
+
+/// Models older than this are not "active" (same window the savings ledger
+/// and the hook's own detection use).
+const ACTIVE_MODEL_MAX_AGE_SECS: u64 = 2 * 60 * 60;
+
+/// The model this device used most recently, from the host hook
+/// (`detected_model.json`) or the proxy's last foreground request. Both
+/// sources are device-global, so the model is reported per device, never
+/// per session: concurrent sessions cannot be told apart from them.
+fn active_model() -> Option<serde_json::Value> {
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    let proxy = crate::proxy::usage_meter::load_persisted()
+        .and_then(|usage| usage.last_model)
+        .map(|last| (last.model, last.at, "proxy"));
+    let hook = hook_detected_model().map(|(model, at)| (model, at, "hook"));
+    newest_fresh_model([proxy, hook], now).map(|(model, at, source)| {
+        serde_json::json!({
+            "model": model,
+            "source": source,
+            "at": chrono::DateTime::<chrono::Utc>::from_timestamp(i64::try_from(at).unwrap_or(0), 0)
+                .map(|at| at.to_rfc3339()),
+            "age_seconds": now.saturating_sub(at),
+            "scope": "device"
+        })
+    })
+}
+
+fn newest_fresh_model(
+    candidates: [Option<(String, u64, &'static str)>; 2],
+    now: u64,
+) -> Option<(String, u64, &'static str)> {
+    candidates
+        .into_iter()
+        .flatten()
+        .filter(|(model, at, _)| {
+            !model.trim().is_empty() && *at <= now && now - at <= ACTIVE_MODEL_MAX_AGE_SECS
+        })
+        .max_by_key(|(_, at, _)| *at)
+}
+
+/// `detected_model.json` with its timestamp; `load_detected_model` drops it.
+fn hook_detected_model() -> Option<(String, u64)> {
+    let path = crate::core::data_dir::lean_ctx_data_dir()
+        .ok()?
+        .join("detected_model.json");
+    let value: serde_json::Value =
+        serde_json::from_str(&std::fs::read_to_string(path).ok()?).ok()?;
+    let model = value.get("model")?.as_str()?.to_string();
+    let at = value.get("detected_at")?.as_u64()?;
+    Some((model, at))
 }
 
 fn build_mcp_tools_json() -> String {
@@ -317,12 +409,11 @@ fn build_mcp_tools_json() -> String {
         ("ctx_search", "Search code with compact results"),
         ("ctx_shell", "Shell commands with pattern compression"),
         ("ctx_tree", "Compact directory maps"),
-        ("ctx_overview", "Project overview with dependency graph"),
+        ("ctx_compose", "Task-ranked files, symbols and structure"),
         ("ctx_session", "Session management and state tracking"),
         ("ctx_compress", "Compress context when budget is tight"),
         ("ctx_metrics", "Token savings and performance metrics"),
         ("ctx_control", "Context overlays: pin, exclude, priority"),
-        ("ctx_plan", "Context-aware planning with budget estimation"),
     ];
 
     let mut tools: Vec<serde_json::Value> = Vec::new();
@@ -413,6 +504,89 @@ mod tests {
             started.elapsed() < std::time::Duration::from_millis(500),
             "read-only agents route must not wait for a registry writer"
         );
+    }
+
+    /// Audit bugs 1, 2 and 5: a connected MCP server is listed with its host,
+    /// raw clientInfo and whether its role was assumed — and stays listed
+    /// after the worker lease runs out.
+    #[test]
+    fn transports_carry_host_client_and_role_source_and_outlive_the_lease() {
+        let _isolated = crate::core::data_dir::isolated_data_dir();
+        let transport = crate::core::agents::TransportClient {
+            host: "claude-code".to_string(),
+            name: Some("claude-code".to_string()),
+            version: Some("2.1.300".to_string()),
+        };
+        let (_, agent_id) = crate::core::agents::AgentRegistry::mutate_locked(|registry| {
+            let id = registry
+                .register_transport(
+                    "coder",
+                    crate::core::agents::RoleSource::Assumed,
+                    "/repo",
+                    None,
+                    transport,
+                )
+                .expect("current process has an identity");
+            // Quiet for longer than any worker lease.
+            for agent in &mut registry.agents {
+                agent.last_active = chrono::Utc::now() - chrono::Duration::hours(1);
+            }
+            id
+        })
+        .expect("registry writable");
+
+        let (_, _, json) = handle("/api/agents", "", "GET", "").expect("agents route");
+        let payload: serde_json::Value = serde_json::from_str(&json).expect("agents JSON");
+        let row = payload["agents"]
+            .as_array()
+            .expect("agents array")
+            .iter()
+            .find(|row| row["id"] == agent_id)
+            .expect("quiet transport is still listed");
+        assert_eq!(row["kind"], "transport");
+        assert_eq!(row["host"], "claude-code");
+        assert_eq!(row["client"]["name"], "claude-code");
+        assert_eq!(row["client"]["version"], "2.1.300");
+        assert_eq!(row["role"], "coder");
+        assert_eq!(row["role_source"], "assumed");
+        assert_eq!(row["status"], "idle");
+        assert_eq!(payload["transports"], payload["agents"]);
+    }
+
+    #[test]
+    fn tool_activity_row_is_marked_as_a_synthetic_aggregate() {
+        let row = super::aggregate_activity_row(7, 3);
+        assert_eq!(row["kind"], "aggregate");
+        assert_eq!(row["synthetic"], true);
+        assert_eq!(row["tool_calls_30m"], 7);
+        assert_eq!(row["status"], "active");
+        // Backward-compatible fields stay.
+        assert_eq!(row["id"], "lean-ctx-session");
+        assert_eq!(row["inferred"], true);
+        assert_eq!(super::aggregate_activity_row(1, 10)["status"], "idle");
+    }
+
+    #[test]
+    fn active_model_prefers_the_newest_fresh_source() {
+        let now = 1_000_000;
+        let proxy = Some(("claude-opus-5".to_string(), now - 60, "proxy"));
+        let hook = Some(("claude-sonnet-5".to_string(), now - 10, "hook"));
+        assert_eq!(
+            super::newest_fresh_model([proxy.clone(), hook], now).map(|m| m.2),
+            Some("hook")
+        );
+        let stale_hook = Some((
+            "claude-sonnet-5".to_string(),
+            now - super::ACTIVE_MODEL_MAX_AGE_SECS - 1,
+            "hook",
+        ));
+        assert_eq!(
+            super::newest_fresh_model([proxy, stale_hook.clone()], now).map(|m| m.2),
+            Some("proxy")
+        );
+        assert_eq!(super::newest_fresh_model([None, stale_hook], now), None);
+        let blank = Some(("  ".to_string(), now, "proxy"));
+        assert_eq!(super::newest_fresh_model([blank, None], now), None);
     }
 
     #[test]

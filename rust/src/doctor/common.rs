@@ -58,13 +58,21 @@ pub(super) fn display_user_path(path: &std::path::Path) -> String {
     }
 }
 
-pub(super) fn print_check(outcome: &Outcome) {
-    let mark = if outcome.ok {
-        format!("{GREEN}✓{RST}")
-    } else {
-        format!("{RED}✗{RST}")
-    };
+/// Render one doctor line. The mark always matches the severity: a scored
+/// failure is a red ✗, a missing optional item a dim –, a passing check with a
+/// yellow advisory a yellow !, and only a clean pass a green ✓.
+pub(super) fn print_check(outcome: &Outcome, scored: bool) {
+    let mark = status_mark(outcome.ok, scored, &outcome.line);
     println!("  {mark}  {}", tildify_home(&outcome.line));
+}
+
+pub(super) fn status_mark(ok: bool, scored: bool, line: &str) -> String {
+    match (ok, scored) {
+        (false, true) => format!("{RED}✗{RST}"),
+        (false, false) => format!("{DIM}–{RST}"),
+        (true, _) if line.contains(super::YELLOW) => format!("{}!{RST}", super::YELLOW),
+        (true, _) => format!("{GREEN}✓{RST}"),
+    }
 }
 
 pub(super) fn path_in_path_env() -> bool {
@@ -551,34 +559,6 @@ pub(super) fn lean_ctx_mcp_location_names(
         }
     }
     names
-}
-
-pub(super) fn proxy_auth_probe(port: u16) -> bool {
-    use std::io::{Read, Write};
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    let token = crate::core::session_token::resolve_proxy_token("LEAN_CTX_PROXY_TOKEN");
-
-    let Ok(mut stream) = TcpStream::connect_timeout(&addr, crate::proxy_setup::proxy_timeout())
-    else {
-        return false;
-    };
-    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(3)));
-
-    let req = format!(
-        "GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nAuthorization: Bearer {token}\r\nConnection: close\r\n\r\n"
-    );
-    if stream.write_all(req.as_bytes()).is_err() {
-        return false;
-    }
-
-    let mut buf = [0u8; 128];
-    let Ok(n) = stream.read(&mut buf) else {
-        return false;
-    };
-    let response = String::from_utf8_lossy(&buf[..n]);
-    response.contains("200") || response.contains("ok")
 }
 
 /// Fetches the proxy's live upstreams from the authenticated `/status` endpoint.

@@ -82,6 +82,9 @@ pub(crate) struct PgvectorHit {
     pub kind: crate::core::bm25_index::ChunkKind,
     pub start_line: usize,
     pub end_line: usize,
+    /// `external_origin::chunk_digest` of the chunk the row was written for;
+    /// `None` on a row written before the column existed.
+    pub content_digest: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -92,6 +95,8 @@ struct PgRow {
     kind: String,
     start_line: usize,
     end_line: usize,
+    #[serde(default)]
+    content_digest: Option<String>,
 }
 
 impl PgvectorStore {
@@ -128,6 +133,7 @@ impl PgvectorStore {
                kind TEXT NOT NULL,\n\
                start_line BIGINT NOT NULL,\n\
                end_line BIGINT NOT NULL,\n\
+               content_digest TEXT,\n\
                embedding vector({dimensions}) NOT NULL\n\
              );\n\
              CREATE INDEX IF NOT EXISTS {table}_file_idx ON {table} (file_path);"
@@ -176,22 +182,40 @@ impl PgvectorStore {
         query_vec: &[f32],
         limit: usize,
     ) -> Result<Vec<PgvectorHit>, String> {
-        let vec_literal = vector_literal(query_vec);
-        // Cosine distance operator `<=>`: similarity = 1 - distance.
-        let sql = format!(
-            "SELECT json_build_object(\
-               'score', 1 - (embedding <=> '{vec_literal}'::vector), \
-               'file_path', file_path, \
-               'symbol_name', symbol_name, \
-               'kind', kind, \
-               'start_line', start_line, \
-               'end_line', end_line\
-             )::text \
-             FROM {table} \
-             ORDER BY embedding <=> '{vec_literal}'::vector \
-             LIMIT {limit};"
-        );
-        let stdout = self.run_sql(&sql)?;
+        self.search_rows(table, query_vec, limit, None)
+    }
+
+    /// [`Self::search`] restricted to the rows of `sources`: the database
+    /// orders only rows whose `file_path` is one of them, so a row of any
+    /// other source neither scores nor takes a place before the limit.
+    ///
+    /// The paths are never part of the SQL text. They are handed to `psql`
+    /// as ONE variable holding a JSON array and referenced as
+    /// `:'lctx_sources'` — `psql` itself quotes the value as a literal — and
+    /// the statement unpacks it with `jsonb_array_elements_text`.
+    pub(crate) fn search_within(
+        &self,
+        table: &str,
+        query_vec: &[f32],
+        limit: usize,
+        sources: &[String],
+    ) -> Result<Vec<PgvectorHit>, String> {
+        self.search_rows(table, query_vec, limit, Some(sources))
+    }
+
+    fn search_rows(
+        &self,
+        table: &str,
+        query_vec: &[f32],
+        limit: usize,
+        sources: Option<&[String]>,
+    ) -> Result<Vec<PgvectorHit>, String> {
+        let sql = search_sql(table, query_vec, limit, sources.is_some());
+        let variables = match sources {
+            Some(sources) => vec![sources_variable(sources)?],
+            None => Vec::new(),
+        };
+        let stdout = self.run_sql_with(&sql, &variables)?;
 
         let mut out = Vec::new();
         for line in stdout.lines() {
@@ -207,6 +231,7 @@ impl PgvectorStore {
                 kind: crate::core::dense_backend::kind_from_str(&row.kind),
                 start_line: row.start_line,
                 end_line: row.end_line,
+                content_digest: row.content_digest,
             });
         }
         Ok(out)
@@ -228,6 +253,8 @@ impl PgvectorStore {
         changed_set: Option<&HashSet<&str>>,
     ) -> Result<(), String> {
         let mut batch: Vec<String> = Vec::new();
+        // Content digest of each row of the batch, in row order.
+        let mut digests: Vec<String> = Vec::new();
         for (i, chunk) in index.chunks.iter().enumerate() {
             if let Some(set) = changed_set
                 && !set.contains(chunk.file_path.as_str())
@@ -237,21 +264,30 @@ impl PgvectorStore {
             let vec = aligned_embeddings
                 .get(i)
                 .ok_or_else(|| "embedding alignment missing".to_string())?;
-            batch.push(values_row_for_chunk(chunk, vec)?);
+            batch.push(values_row_for_chunk(chunk, vec, batch.len())?);
+            digests.push(crate::core::bm25_index::external_origin::chunk_digest(
+                &chunk.content,
+            ));
             if batch.len() >= UPSERT_BATCH_ROWS {
-                self.upsert_rows(table, &batch)?;
+                self.upsert_rows(table, &batch, &digests)?;
                 batch.clear();
+                digests.clear();
             }
         }
         if !batch.is_empty() {
-            self.upsert_rows(table, &batch)?;
+            self.upsert_rows(table, &batch, &digests)?;
         }
         Ok(())
     }
 
-    fn upsert_rows(&self, table: &str, rows: &[String]) -> Result<(), String> {
+    fn upsert_rows(&self, table: &str, rows: &[String], digests: &[String]) -> Result<(), String> {
+        // A table created before rows kept a content digest gets the column
+        // with the first write; its older rows stay without one (NULL) and
+        // are read as such (`search_sql` does not require the column).
         let sql = format!(
-            "INSERT INTO {table} (id, file_path, symbol_name, kind, start_line, end_line, embedding)\n\
+            "ALTER TABLE {table} ADD COLUMN IF NOT EXISTS content_digest TEXT;\n\
+             INSERT INTO {table} (id, file_path, symbol_name, kind, start_line, end_line, \
+             content_digest, embedding)\n\
              VALUES\n{}\n\
              ON CONFLICT (id) DO UPDATE SET\n\
                file_path = EXCLUDED.file_path,\n\
@@ -259,10 +295,12 @@ impl PgvectorStore {
                kind = EXCLUDED.kind,\n\
                start_line = EXCLUDED.start_line,\n\
                end_line = EXCLUDED.end_line,\n\
+               content_digest = EXCLUDED.content_digest,\n\
                embedding = EXCLUDED.embedding;",
             rows.join(",\n")
         );
-        self.run_sql(&sql).map(|_| ())
+        self.run_sql_with(&sql, &[digests_variable(digests)?])
+            .map(|_| ())
     }
 
     fn delete_by_file(&self, table: &str, file_path: &str) -> Result<(), String> {
@@ -275,6 +313,13 @@ impl PgvectorStore {
     /// limited by ARG_MAX. Uses the catalog provider's bounded, private capture.
     /// A deadline/error does not imply rollback of already executed SQL.
     fn run_sql(&self, sql: &str) -> Result<String, String> {
+        self.run_sql_with(sql, &[])
+    }
+
+    /// [`Self::run_sql`] with `psql` variables (`name=value`), each passed as
+    /// one `-v` argument and referenced in `sql` as `:'name'`: the value is
+    /// quoted by `psql`, it is never concatenated into the statement here.
+    fn run_sql_with(&self, sql: &str, variables: &[String]) -> Result<String, String> {
         let mut tmp = tempfile::NamedTempFile::new()
             .map_err(|e| format!("pgvector: temp file failed: {e}"))?;
         tmp.write_all(sql.as_bytes())
@@ -282,40 +327,118 @@ impl PgvectorStore {
         tmp.flush()
             .map_err(|e| format!("pgvector: temp flush failed: {e}"))?;
 
+        let mut command = self.sql_command(tmp.path())?;
+        for variable in variables {
+            command.arg("-v").arg(variable);
+        }
         crate::core::providers::postgres::run_psql(
-            &mut self.sql_command(tmp.path()),
+            &mut command,
             std::time::Duration::from_secs(self.cfg.timeout_secs),
         )
     }
 
-    fn sql_command(&self, sql_path: &Path) -> std::process::Command {
-        let mut command = std::process::Command::new("psql");
+    /// The connection travels only in `PG*` variables of the child: argv is
+    /// visible to every user in the process list.
+    fn sql_command(&self, sql_path: &Path) -> Result<std::process::Command, String> {
+        let mut command = crate::core::providers::postgres::psql_command_for(&self.cfg.url)
+            .map_err(|e| format!("pgvector: {e}"))?;
         command
-            .arg(&self.cfg.url)
             .args(["-X", "-w", "-q", "-v", "ON_ERROR_STOP=1", "-t", "-A", "-f"])
             .arg(sql_path)
             .env("PGCONNECT_TIMEOUT", self.cfg.timeout_secs.to_string())
             .env("PGCLIENTENCODING", "UTF8")
             .stdin(std::process::Stdio::null());
-        command
+        Ok(command)
     }
 }
 
 const UPSERT_BATCH_ROWS: usize = 256;
+
+/// Name of the `psql` variable that carries the admitted source paths.
+const SOURCES_VARIABLE: &str = "lctx_sources";
+/// Largest `name=value` argument handed to `psql` (one argument is bounded
+/// by the platform, 128 KiB on Linux). A larger source set is refused: the
+/// caller then serves nothing from the backend rather than an unfiltered
+/// ranking.
+const MAX_SOURCES_VARIABLE_BYTES: usize = 96 * 1024;
+
+/// The nearest-rows statement. With `within_sources` only rows whose
+/// `file_path` is an element of the JSON array in the `psql` variable
+/// [`SOURCES_VARIABLE`] are ordered; no path is part of this text.
+fn search_sql(table: &str, query_vec: &[f32], limit: usize, within_sources: bool) -> String {
+    let vec_literal = vector_literal(query_vec);
+    let restriction = if within_sources {
+        format!(
+            "WHERE file_path IN \
+             (SELECT jsonb_array_elements_text(:'{SOURCES_VARIABLE}'::jsonb)) "
+        )
+    } else {
+        String::new()
+    };
+    // Cosine distance operator `<=>`: similarity = 1 - distance.
+    format!(
+        "SELECT json_build_object(\
+           'score', 1 - (embedding <=> '{vec_literal}'::vector), \
+           'file_path', file_path, \
+           'symbol_name', symbol_name, \
+           'kind', kind, \
+           'start_line', start_line, \
+           'end_line', end_line, \
+           'content_digest', to_jsonb(t)->>'content_digest'\
+         )::text \
+         FROM {table} AS t \
+         {restriction}\
+         ORDER BY embedding <=> '{vec_literal}'::vector \
+         LIMIT {limit};"
+    )
+}
+
+/// The `name=value` argument that binds `sources` to [`SOURCES_VARIABLE`].
+fn sources_variable(sources: &[String]) -> Result<String, String> {
+    if sources.iter().any(|source| source.contains('\0')) {
+        return Err("pgvector: NUL byte in string".to_string());
+    }
+    let json = serde_json::to_string(sources).map_err(|e| e.to_string())?;
+    let variable = format!("{SOURCES_VARIABLE}={json}");
+    if variable.len() > MAX_SOURCES_VARIABLE_BYTES {
+        return Err("pgvector: source restriction too large".to_string());
+    }
+    Ok(variable)
+}
+
+/// Name of the `psql` variable that carries the content digests of the rows
+/// of one upsert statement, as a JSON array in row order.
+const DIGESTS_VARIABLE: &str = "lctx_digests";
+
+/// The `name=value` argument that binds the content digests of the chunks
+/// of one upsert statement (`external_origin::chunk_digest`, at most
+/// `UPSERT_BATCH_ROWS` of 64 hex characters) to [`DIGESTS_VARIABLE`].
+fn digests_variable(digests: &[String]) -> Result<String, String> {
+    let json = serde_json::to_string(digests).map_err(|e| e.to_string())?;
+    Ok(format!("{DIGESTS_VARIABLE}={json}"))
+}
 
 fn parse_row(line: &str) -> Result<PgRow, String> {
     // Serde diagnostics can include a database field's original value.
     serde_json::from_str(line).map_err(|_| "pgvector: invalid search result".to_owned())
 }
 
-/// One `(id, 'file', 'symbol', 'kind', start, end, '[...]'::vector)` row.
-fn values_row_for_chunk(chunk: &CodeChunk, vector: &[f32]) -> Result<String, String> {
+/// One `(id, 'file', 'symbol', 'kind', start, end, digest, '[...]'::vector)`
+/// row, the `ordinal`-th of its statement. The content digest is not part
+/// of the row text: the row takes it from the JSON array bound to the
+/// `psql` variable [`DIGESTS_VARIABLE`] at that position ([`digests_variable`]).
+fn values_row_for_chunk(
+    chunk: &CodeChunk,
+    vector: &[f32],
+    ordinal: usize,
+) -> Result<String, String> {
     let id = point_id_for_chunk(chunk) as i64; // BIGINT: deterministic wrap of the u64 hash
     let file = sql_string_literal(&chunk.file_path)?;
     let symbol = sql_string_literal(&chunk.symbol_name)?;
     let kind = sql_string_literal(crate::core::dense_backend::kind_to_str(&chunk.kind))?;
     Ok(format!(
-        "({id}, {file}, {symbol}, {kind}, {}, {}, '{}'::vector)",
+        "({id}, {file}, {symbol}, {kind}, {}, {}, :'{DIGESTS_VARIABLE}'::jsonb->>{ordinal}, \
+         '{}'::vector)",
         chunk.start_line,
         chunk.end_line,
         vector_literal(vector)
@@ -412,18 +535,23 @@ mod tests {
     fn psql_command_is_noninteractive_and_config_debug_omits_connection() {
         let store = PgvectorStore {
             cfg: PgvectorConfig {
-                url: "private-connection-marker".to_string(),
+                url: concat!(
+                    "postgres://lctx:",
+                    "private-connection-marker",
+                    "@db.example/lctx"
+                )
+                .to_string(),
                 timeout_secs: 7,
                 table_prefix: "lctx_test_".to_string(),
             },
         };
-        let command = store.sql_command(Path::new("query.sql"));
+        let command = store.sql_command(Path::new("query.sql")).unwrap();
         assert_eq!(command.get_program(), "psql");
+        // The address, and with it the password, never reaches argv.
         let args: Vec<_> = command.get_args().collect();
         assert_eq!(
             args,
             [
-                "private-connection-marker",
                 "-X",
                 "-w",
                 "-q",
@@ -444,8 +572,32 @@ mod tests {
             env[std::ffi::OsStr::new("PGCLIENTENCODING")],
             Some(std::ffi::OsStr::new("UTF8"))
         );
+        assert_eq!(
+            env[std::ffi::OsStr::new("PGPASSWORD")],
+            Some(std::ffi::OsStr::new("private-connection-marker"))
+        );
         assert!(!format!("{store:?}").contains("private-connection-marker"));
         assert!(!format!("{:?}", store.cfg).contains("private-connection-marker"));
+    }
+
+    /// A source restriction reaches the database as a `psql` variable, never
+    /// as SQL text: a path that would end a string literal cannot change the
+    /// statement, and it arrives as the exact value it is.
+    #[test]
+    fn a_source_restriction_binds_paths_as_a_variable_not_as_sql_text() {
+        let hostile = "src/it's'); DROP TABLE lctx_t; --.rs".to_string();
+        let restricted = search_sql("lctx_t", &[0.5, 0.25], 3, true);
+        assert!(
+            restricted.contains("(:'lctx_sources'::jsonb)"),
+            "{restricted}"
+        );
+        assert!(!restricted.contains("DROP"));
+        let variable = sources_variable(std::slice::from_ref(&hostile)).expect("bound");
+        let json = variable.strip_prefix("lctx_sources=").expect("named");
+        let bound: Vec<String> = serde_json::from_str(json).expect("json array");
+        assert_eq!(bound, vec![hostile]);
+        assert!(!search_sql("lctx_t", &[0.5, 0.25], 3, false).contains("lctx_sources"));
+        assert!(sources_variable(&["a\0b".to_string()]).is_err());
     }
 
     #[test]
@@ -503,7 +655,8 @@ mod tests {
     #[test]
     fn values_row_contains_escaped_fields() {
         let c = chunk("src/a'b.rs", "fn'x", 3, 9, ChunkKind::Method);
-        let row = values_row_for_chunk(&c, &[0.25, 0.75]).unwrap();
+        let row = values_row_for_chunk(&c, &[0.25, 0.75], 3).unwrap();
+        assert!(row.contains(":'lctx_digests'::jsonb->>3"));
         assert!(row.contains("'src/a''b.rs'"));
         assert!(row.contains("'fn''x'"));
         assert!(row.contains("'Method'"));

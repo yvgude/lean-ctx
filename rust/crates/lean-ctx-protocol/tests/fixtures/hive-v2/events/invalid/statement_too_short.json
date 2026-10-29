@@ -1,0 +1,17 @@
+{
+  "case": "statement_too_short",
+  "base": "events/node.add.fact.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/body/statement",
+      "value": "Retries back off."
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/body/statement"
+  }
+}

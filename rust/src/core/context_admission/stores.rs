@@ -23,7 +23,12 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Mutex, OnceLock, PoisonError};
 
-use super::{AdmissionPolicy, admit, clean, fingerprint_digest};
+use crate::core::input_filters::FilterAction;
+use crate::core::policy::runtime::PublicationAuthority;
+
+use super::{
+    AdmissionPolicy, OutputCompleteness, admit, admit_output_for_storage, clean, fingerprint_digest,
+};
 
 /// One resolved admission policy, applied to every object of a store build.
 #[derive(Debug, Clone)]
@@ -75,6 +80,12 @@ impl StoreAdmission {
         &self.digest
     }
 
+    /// The immutable detector snapshot used to admit a bounded source batch.
+    /// Callers must still reauthorize this snapshot before publishing derived data.
+    pub(crate) fn admission_policy(&self) -> &AdmissionPolicy {
+        &self.policy
+    }
+
     /// Whether text admitted by this snapshot may still enter a resident
     /// store: its policy is the most recently observed one.
     #[must_use]
@@ -86,6 +97,27 @@ impl StoreAdmission {
     #[must_use]
     pub fn epoch(&self) -> u64 {
         self.epoch
+    }
+
+    /// Revalidate both the project authority and global Gateway content digest
+    /// immediately before an admitted filesystem publication.
+    pub(crate) fn authorize_publication(
+        &self,
+        authority: &PublicationAuthority,
+    ) -> Result<(), String> {
+        if self.epoch == u64::MAX || !self.is_current() || !self.matches_current_config() {
+            return Err("session admission policy changed; retry".into());
+        }
+        authority.verify()
+    }
+
+    fn matches_current_config(&self) -> bool {
+        // Config::load_arc reads and content-hashes its inputs on every call.
+        // Do not use StoreAdmission::current here: it mutates the observed epoch
+        // and resident stores while callers hold a per-project memory lock.
+        let config = crate::core::config::Config::load_arc();
+        let policy = AdmissionPolicy::from_config(&config);
+        fingerprint_digest(&policy.fingerprint()).hex() == self.digest
     }
 
     /// Admit `text` read from `path`. `None`: it must not be stored or served
@@ -102,8 +134,60 @@ impl StoreAdmission {
         self.admit_object(text, None)
     }
 
+    /// The same snapshot with the advisory semantic stage left out, for
+    /// strings that must stay exact (identifiers, configuration tags, paths).
+    /// There a model finding could only withhold the whole record — a user
+    /// name in a project path read as a person ended every session save —
+    /// while semantic detection never blocks on its own. The built-in floor
+    /// still inspects them; content fields keep the semantic stage.
+    #[must_use]
+    pub(crate) fn built_in_floor(&self) -> Self {
+        let mut floor = self.clone();
+        floor.policy.semantic = None;
+        floor.fingerprint = floor.policy.fingerprint();
+        floor
+    }
+
+    /// Admit a parsed Engine session ID as typed metadata. Only the PII
+    /// detector is skipped; all other Gateway detectors still inspect it.
+    #[must_use]
+    pub(crate) fn admit_engine_session_id(
+        &self,
+        id: crate::core::session::EngineSessionId<'_>,
+    ) -> Option<String> {
+        let text = id.as_str();
+        let mut policy = self.policy.clone();
+        policy.gateway.pii = FilterAction::Off;
+        let admission = admit(text, None, &policy);
+        (admission.storable() && admission.text.as_deref() == Some(text)).then(|| text.to_owned())
+    }
+
+    /// Admit a shell command before writing it to persistent shell artifacts.
+    #[must_use]
+    pub(crate) fn admit_shell_command(&self, text: &str) -> Option<String> {
+        // Project policy sees original text before Gateway redactions.
+        crate::core::policy::content::protect_active(text).ok()?;
+        let admitted = self.admit_text(text)?;
+        crate::core::policy::content::protect_active(&admitted)
+            .ok()
+            .map(std::borrow::Cow::into_owned)
+    }
+
+    /// Admit captured shell output for persistent retention. Incomplete capture
+    /// is never made storable, even when Developer mode permits live delivery.
+    #[must_use]
+    pub(crate) fn admit_shell_output(
+        &self,
+        text: &str,
+        completeness: OutputCompleteness,
+    ) -> Option<String> {
+        super::semantic_deferred::for_stored_context(|| {
+            admit_output_for_storage(text, completeness, &self.policy)
+        })
+    }
+
     fn admit_object(&self, text: &str, path: Option<&Path>) -> Option<String> {
-        if !self.policy.gateway.enabled_effective() {
+        if !self.policy.enabled_effective() {
             return Some(text.to_owned());
         }
         // Clean memo: only built-in detectors are pure functions of the input.
@@ -121,7 +205,8 @@ impl StoreAdmission {
         {
             return Some(text.to_owned());
         }
-        let admission = admit(text, path, &self.policy);
+        let admission =
+            super::semantic_deferred::for_stored_context(|| admit(text, path, &self.policy));
         if !admission.storable() {
             return None;
         }
@@ -134,11 +219,21 @@ impl StoreAdmission {
         admission.text
     }
 
-    /// Read `path` as text, admitted.
+    /// Read `path` as text, admitted. A source the decoder could not
+    /// represent completely (invalid UTF-8 replaced, UTF-16 tail dropped,
+    /// unpaired surrogate) is never a complete source: it does not enter a
+    /// cache, an index or any other derived store, in any mode.
     #[must_use]
     pub fn read(&self, path: &Path) -> Option<String> {
-        let text = crate::core::text_decode::read_text(path).ok()?;
-        self.admit(&text, path)
+        let decoded = crate::core::text_decode::read_text_checked(path).ok()?;
+        if !decoded.complete() {
+            tracing::debug!(
+                "store admission: incompletely decoded source skipped ({})",
+                decoded.encoding.label()
+            );
+            return None;
+        }
+        self.admit(&decoded.text, path)
     }
 }
 

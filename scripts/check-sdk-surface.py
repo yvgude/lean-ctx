@@ -1,40 +1,24 @@
 #!/usr/bin/env python3
-"""Guard the single-SDK surface.
+# SPDX-License-Identifier: Apache-2.0
+"""Guard one canonical SDK source tree and reject competing package identities.
 
-There is exactly one LeanCTX SDK: `thinkery-leanctx-sdk`, developed in
-Thinkery-AG/leanctx-sdk and published to PyPI. It is a clean-room
-implementation that consumes the engine only through its public CLI wire
-boundary, so it deliberately does NOT live in this repository.
-
-Everything this repository publishes is something else — the engine, the
-extension contracts, thin HTTP clients, install wrappers — and this gate exists
-so none of it can drift back into calling itself an SDK. That drift is what
-produced the state this guard replaces: a second Python SDK on PyPI
-(`lean-ctx-python`), a Node package holding the name `lean-ctx-sdk`, and a
-release gate that asserted the in-repo package was "the one canonical Python
-SDK v1 surface".
-
-Two checks, both cheap and both about names rather than behaviour:
-
-1. No packaging manifest in this repository may declare one of the reserved SDK
-   names, or describe itself as *the* SDK.
-2. `docs/reference/sdk-surface.md` must exist and must name the external SDK, so
-   the answer to "which SDK do I use?" has exactly one written home.
-
-No third-party dependencies — standard library only.
+The consolidated checkout owns sdk/. The Apache-only export can omit that
+separately licensed tree; neither form may introduce a second SDK package.
+This checks source identity, not registry publication or usage rights.
 """
 
 from __future__ import annotations
 
+import configparser
 import json
+import os
 import pathlib
 import re
 import sys
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
-# Names that belong to the one SDK, or that would re-create the ambiguity this
-# guard exists to prevent. A manifest in THIS repository may not claim them.
+# Only the exact canonical manifest may claim a current SDK identity.
 RESERVED_SDK_NAMES = {
     "thinkery-leanctx-sdk",
     "thinkery_leanctx_sdk",
@@ -43,6 +27,13 @@ RESERVED_SDK_NAMES = {
     "leanctx-sdk",
     "leanctx_sdk",
     "lean-ctx-python",
+    "@thinkery/leanctx-sdk",
+}
+
+CANONICAL_MANIFESTS = {
+    "sdk/setup.cfg": "thinkery-leanctx-sdk",
+    "sdk/packages/typescript/package.json": "@thinkery/leanctx-sdk",
+    "sdk/packages/rust/Cargo.toml": "thinkery-leanctx-sdk",
 }
 
 SURFACE_DOC = pathlib.Path("docs/reference/sdk-surface.md")
@@ -67,49 +58,59 @@ def skipped(path: pathlib.Path) -> bool:
     return any(part in SKIP_PARTS for part in path.parts)
 
 
+def manifests(filename: str):
+    for directory, dirs, files in os.walk(ROOT, followlinks=False):
+        dirs[:] = [name for name in dirs if name not in SKIP_PARTS
+                   and not (pathlib.Path(directory) / name).is_symlink()]
+        if filename in files:
+            yield pathlib.Path(directory) / filename
+
+
+def check_identity(path: pathlib.Path, name: str | None) -> None:
+    relative = path.relative_to(ROOT).as_posix()
+    expected = CANONICAL_MANIFESTS.get(relative)
+    if expected is not None:
+        if name != expected:
+            FAILURES.append(f"{relative}: expected canonical SDK identity {expected!r}, got {name!r}")
+    elif name in RESERVED_SDK_NAMES:
+        FAILURES.append(f"{relative}: duplicate or retired SDK identity {name!r}; use sdk/.")
+
+
 def check_npm_manifests() -> None:
-    for path in ROOT.rglob("package.json"):
+    for path in manifests("package.json"):
         if skipped(path.relative_to(ROOT)):
             continue
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
+        except (OSError, json.JSONDecodeError) as error:
+            FAILURES.append(f"{path.relative_to(ROOT)}: invalid package manifest: {error}")
             continue
         name = data.get("name")
-        if name in RESERVED_SDK_NAMES:
-            FAILURES.append(
-                f"{path.relative_to(ROOT)} declares name {name!r}, which is reserved "
-                f"for the one SDK ({SDK_PACKAGE}). Rename it after what it actually is."
-            )
+        check_identity(path, name)
 
 
 def check_python_manifests() -> None:
-    for path in ROOT.rglob("pyproject.toml"):
+    for path in manifests("pyproject.toml"):
         if skipped(path.relative_to(ROOT)):
             continue
         match = re.search(
             r'^name\s*=\s*"([^"]+)"', path.read_text(encoding="utf-8"), re.MULTILINE
         )
-        if match and match.group(1) in RESERVED_SDK_NAMES:
-            FAILURES.append(
-                f"{path.relative_to(ROOT)} declares name {match.group(1)!r}, which is "
-                f"reserved for the one SDK ({SDK_PACKAGE})."
-            )
+        check_identity(path, match.group(1) if match else None)
+    for path in manifests("setup.cfg"):
+        config = configparser.ConfigParser(interpolation=None)
+        config.read(path, encoding="utf-8")
+        check_identity(path, config.get("metadata", "name", fallback=None))
 
 
 def check_cargo_manifests() -> None:
-    for path in ROOT.rglob("Cargo.toml"):
+    for path in manifests("Cargo.toml"):
         if skipped(path.relative_to(ROOT)):
             continue
         match = re.search(
             r'^name\s*=\s*"([^"]+)"', path.read_text(encoding="utf-8"), re.MULTILINE
         )
-        if match and match.group(1) in RESERVED_SDK_NAMES:
-            FAILURES.append(
-                f"{path.relative_to(ROOT)} declares name {match.group(1)!r}, which is "
-                f"reserved for the one SDK ({SDK_PACKAGE}). The in-process facade is "
-                f"`lean-ctx-embed`."
-            )
+        check_identity(path, match.group(1) if match else None)
 
 
 def check_surface_doc() -> None:
@@ -122,9 +123,16 @@ def check_surface_doc() -> None:
     text = doc.read_text(encoding="utf-8")
     if SDK_PACKAGE not in text:
         FAILURES.append(f"{SURFACE_DOC} does not name {SDK_PACKAGE}.")
+    if (ROOT / "sdk").exists():
+        if "sdk/" not in text:
+            FAILURES.append(f"{SURFACE_DOC} does not name the canonical sdk/ source tree.")
+        for relative in CANONICAL_MANIFESTS:
+            if not (ROOT / relative).is_file():
+                FAILURES.append(f"canonical SDK manifest is missing: {relative}")
 
 
 def main() -> int:
+    FAILURES.clear()
     check_npm_manifests()
     check_python_manifests()
     check_cargo_manifests()
@@ -137,7 +145,8 @@ def main() -> int:
         print(f"\nSee {SURFACE_DOC} for what each published artifact is.", file=sys.stderr)
         return 1
 
-    print(f"OK: one SDK ({SDK_PACKAGE}, external); no in-repo package claims the name")
+    location = "sdk/" if (ROOT / "sdk").exists() else "separate licensed source export"
+    print(f"OK: one SDK ({SDK_PACKAGE}, {location}); no duplicate SDK identity")
     return 0
 
 

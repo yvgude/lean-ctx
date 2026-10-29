@@ -1,0 +1,14 @@
+{
+  "case": "receipts_v2_unsigned",
+  "base": "routes/receipts_v2.request.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/signature"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "unsigned batch"
+}

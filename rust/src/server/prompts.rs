@@ -94,8 +94,8 @@ fn get_context_focus(
     let msg = format!(
         "Focus context on task: {task}\n\
          Current state: {} files, {:.0}% pressure\n\
-         Use ctx_plan(task=\"{task}\") to compute optimal modes for all tracked files.\n\
-         Files matching this task's intent targets should be read as 'full', others compressed.",
+         Use ctx_compose(task=\"{task}\") to select the files and symbols this task needs.\n\
+         Read those as 'full'; exclude or evict the rest with ctx_control.",
         ledger.entries.len(),
         pressure.utilization * 100.0,
     );
@@ -111,7 +111,7 @@ fn get_context_review(ledger: &crate::core::context_ledger::ContextLedger) -> Ge
     };
     let msg = format!(
         "Context Review:\n{summary}\nAdjusted savings: {adjusted} tokens\n{bounce_info}\n\n\
-         Use ctx_metrics() for detailed breakdown or ctx_plan(task=\"review context state\") for mode recommendations.",
+         Use ctx_metrics() for a detailed breakdown or ctx_control(action=\"list\") to review pins and exclusions.",
     );
     GetPromptResult::new(vec![assistant_text(&msg)])
 }

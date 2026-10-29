@@ -37,6 +37,14 @@ pub struct RouteDecision {
     /// Target's local-inference flag (shadow-rate billing): `Some` for
     /// registry targets, `None` for built-ins (URL heuristic applies).
     pub local: Option<bool>,
+    /// Non-secret destination account label from the trusted registry config.
+    /// It is bound only when the route authenticates with gateway-held credentials
+    /// and the caller supplies no provider scope headers.
+    pub account_ref: Option<String>,
+    /// Configured region for the routed provider (Bedrock uses its signing region).
+    pub region: Option<String>,
+    /// Whether authentication is controlled by the gateway for this route.
+    pub gateway_managed_credential: bool,
     /// Cross-shape route (enterprise#16, feature `shape-xlat`): the Anthropic
     /// request body must be translated to OpenAI Chat Completions before it
     /// leaves, and the response translated back. Always `false` within-shape.
@@ -94,6 +102,9 @@ pub fn route_request(
         upstream_base: resolved.upstream_base,
         credential: resolved.credential,
         local: resolved.local,
+        account_ref: resolved.account_ref,
+        region: resolved.region,
+        gateway_managed_credential: resolved.gateway_managed_credential,
         xlat: resolved.xlat,
     })
 }
@@ -105,6 +116,9 @@ struct ResolvedTarget {
     upstream_base: Option<String>,
     credential: Option<ResolvedProvider>,
     local: Option<bool>,
+    account_ref: Option<String>,
+    region: Option<String>,
+    gateway_managed_credential: bool,
     xlat: bool,
 }
 
@@ -118,15 +132,42 @@ fn resolve_provider(
     upstreams: &Upstreams,
     xlat_ok: bool,
 ) -> Option<ResolvedTarget> {
-    let (target_shape, base_url, credential, local) = match name {
+    let (
+        target_shape,
+        base_url,
+        credential,
+        local,
+        account_ref,
+        region,
+        gateway_managed_credential,
+    ) = match name {
         "anthropic" => (
             WireShape::Anthropic,
             upstreams.anthropic.clone(),
             None,
             None,
+            None,
+            None,
+            false,
         ),
-        "openai" => (WireShape::OpenAi, upstreams.openai.clone(), None, None),
-        "gemini" => (WireShape::Gemini, upstreams.gemini.clone(), None, None),
+        "openai" => (
+            WireShape::OpenAi,
+            upstreams.openai.clone(),
+            None,
+            None,
+            None,
+            None,
+            false,
+        ),
+        "gemini" => (
+            WireShape::Gemini,
+            upstreams.gemini.clone(),
+            None,
+            None,
+            None,
+            None,
+            false,
+        ),
         id => {
             let Some(p) = upstreams.provider_by_id(id) else {
                 tracing::warn!(
@@ -139,6 +180,9 @@ fn resolve_provider(
                 p.base_url.clone(),
                 p.api_key_env.is_some().then(|| p.clone()),
                 Some(p.local),
+                p.account_ref.clone(),
+                p.region.clone(),
+                p.api_key_env.is_some() || p.shape == WireShape::Bedrock,
             )
         }
     };
@@ -166,6 +210,9 @@ fn resolve_provider(
         upstream_base: Some(base_url),
         credential,
         local,
+        account_ref,
+        region,
+        gateway_managed_credential,
         xlat,
     })
 }
@@ -217,6 +264,8 @@ mod tests {
                     base_url: "https://acme.services.ai.azure.com/openai".into(),
                     api_key_env: Some("FOUNDRY_API_KEY".into()),
                     aws_region: None,
+                    account_ref: Some("finance-prod".into()),
+                    region: Some("eastus".into()),
                     local: false,
                 },
                 ResolvedProvider {
@@ -225,6 +274,8 @@ mod tests {
                     base_url: "https://anthropic-gw.example.com".into(),
                     api_key_env: None,
                     aws_region: None,
+                    account_ref: Some("caller-key-scope".into()),
+                    region: None,
                     local: false,
                 },
             ],
@@ -264,6 +315,9 @@ mod tests {
             d.credential.is_some(),
             "foundry has api_key_env — credential must be injected"
         );
+        assert_eq!(d.account_ref.as_deref(), Some("finance-prod"));
+        assert_eq!(d.region.as_deref(), Some("eastus"));
+        assert!(d.gateway_managed_credential);
     }
 
     #[test]
@@ -282,6 +336,9 @@ mod tests {
         assert_eq!(d.upstream_base, None);
         assert_eq!(d.provider_id, None);
         assert_eq!(d.credential, None);
+        assert_eq!(d.account_ref, None);
+        assert_eq!(d.region, None);
+        assert!(!d.gateway_managed_credential);
     }
 
     #[test]
@@ -347,6 +404,8 @@ mod tests {
             base_url: "https://oai-compat.example.com".into(),
             api_key_env: None,
             aws_region: None,
+            account_ref: None,
+            region: None,
             local: false,
         });
         let mut body =

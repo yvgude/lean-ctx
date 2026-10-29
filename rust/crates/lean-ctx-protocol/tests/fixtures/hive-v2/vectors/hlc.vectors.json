@@ -1,0 +1,86 @@
+{
+  "engine_receive": [
+    {
+      "counter": 8,
+      "last_counter": 2,
+      "last_wall_ms": 1792800000000,
+      "local_wall_ms": 1792800000000,
+      "remote_counter": 7,
+      "remote_wall_ms": 1792800000000,
+      "wall_ms": 1792800000000
+    },
+    {
+      "counter": 4,
+      "last_counter": 2,
+      "last_wall_ms": 1792800000000,
+      "local_wall_ms": 1792799000000,
+      "remote_counter": 3,
+      "remote_wall_ms": 1792800005000,
+      "wall_ms": 1792800005000
+    },
+    {
+      "counter": 0,
+      "last_counter": 2,
+      "last_wall_ms": 1792800000000,
+      "local_wall_ms": 1792800009000,
+      "remote_counter": 3,
+      "remote_wall_ms": 1792800005000,
+      "wall_ms": 1792800009000
+    }
+  ],
+  "engine_send": [
+    {
+      "counter": 0,
+      "last_counter": 4,
+      "last_wall_ms": 1792800000000,
+      "local_wall_ms": 1792800000500,
+      "wall_ms": 1792800000500
+    },
+    {
+      "counter": 5,
+      "last_counter": 4,
+      "last_wall_ms": 1792800000000,
+      "local_wall_ms": 1792799999000,
+      "wall_ms": 1792800000000
+    },
+    {
+      "counter": 0,
+      "last_counter": 65535,
+      "last_wall_ms": 1792800000000,
+      "local_wall_ms": 1792800000000,
+      "wall_ms": 1792800000001
+    }
+  ],
+  "rules": {
+    "engine_receive": "wall = max(local, last.wall, remote.wall); counter = max(last.counter, remote.counter) + 1 if wall equals both, last.counter + 1 if only last, remote.counter + 1 if only remote, else 0",
+    "engine_send": "wall = max(local, last.wall); counter = last.counter + 1 if wall = last.wall else 0 (SPEC-ENGINE §3.3.2)",
+    "overflow": "a counter above 65535 becomes wall + 1, counter 0",
+    "server_clamp": "accept iff wall_ms ≤ server_now_ms + 120000 and wall_ms ≥ place_created_at_ms − 300000, else hlc_skew (SPEC-CONTRACT-SERVER §3.10)"
+  },
+  "server_clamp": [
+    {
+      "place_created_at_ms": 1792700000000,
+      "result": "accept",
+      "server_now_ms": 1792800000000,
+      "wall_ms": 1792800120000
+    },
+    {
+      "place_created_at_ms": 1792700000000,
+      "result": "hlc_skew",
+      "server_now_ms": 1792800000000,
+      "wall_ms": 1792800120001
+    },
+    {
+      "place_created_at_ms": 1792700000000,
+      "result": "accept",
+      "server_now_ms": 1792800000000,
+      "wall_ms": 1792699700000
+    },
+    {
+      "place_created_at_ms": 1792700000000,
+      "result": "hlc_skew",
+      "server_now_ms": 1792800000000,
+      "wall_ms": 1792699699999
+    }
+  ]
+}

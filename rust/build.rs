@@ -30,7 +30,43 @@ fn validate_runtime_channels() -> Result<(), ()> {
         "LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX",
     ];
     validate_channel(STAGING_NAMES)?;
-    validate_channel(PRODUCTION_NAMES)
+    validate_channel(PRODUCTION_NAMES)?;
+    // The Cockpit catalog of a track is signed by that track's runtime root:
+    // its URL pair is admitted only beside the complete runtime triple.
+    validate_cockpit_channel(
+        [
+            "LEANCTX_STAGING_COCKPIT_CHANNEL_URL",
+            "LEANCTX_STAGING_COCKPIT_CHANNEL_SIGNATURE_URL",
+        ],
+        STAGING_NAMES[2],
+    )?;
+    validate_cockpit_channel(
+        [
+            "LEANCTX_PRODUCTION_COCKPIT_CHANNEL_URL",
+            "LEANCTX_PRODUCTION_COCKPIT_CHANNEL_SIGNATURE_URL",
+        ],
+        PRODUCTION_NAMES[2],
+    )
+}
+
+fn validate_cockpit_channel(names: [&str; 2], root_key: &str) -> Result<(), ()> {
+    for name in names {
+        println!("cargo::rerun-if-env-changed={name}");
+    }
+    match names.map(std::env::var) {
+        [
+            Err(std::env::VarError::NotPresent),
+            Err(std::env::VarError::NotPresent),
+        ] => Ok(()),
+        [Ok(url), Ok(signature)]
+            if build_channel_url(&url)
+                && build_channel_url(&signature)
+                && std::env::var(root_key).is_ok() =>
+        {
+            Ok(())
+        }
+        _ => Err(()),
+    }
 }
 
 fn validate_channel(names: [&str; 3]) -> Result<(), ()> {

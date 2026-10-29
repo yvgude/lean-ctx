@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "subject_digest does not match the subject.",
+    "reason": "subject_digest"
+  }
+}

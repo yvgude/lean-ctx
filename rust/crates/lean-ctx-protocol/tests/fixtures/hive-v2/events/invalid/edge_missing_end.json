@@ -1,0 +1,19 @@
+{
+  "case": "edge_missing_end",
+  "description": "edge.add whose to node does not exist",
+  "base": "events/edge.add.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/body/to",
+      "value": "n_zzzzzzzzzzzzzzzzzzzzzzzzza"
+    }
+  ],
+  "recommit": true,
+  "resign_with": "instance_a",
+  "expect": {
+    "layer": "target_state",
+    "code": "invalid_event",
+    "reason": "target_state"
+  }
+}

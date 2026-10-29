@@ -28,11 +28,14 @@ pub(crate) fn shape_response_if_enabled(resp_bytes: &[u8]) -> Option<ShapingResu
 
 /// Compress conversation messages if the request exceeds thresholds.
 /// Returns compressed messages array + savings stats, or `None` if not applicable.
-pub(crate) fn compress_conversation(body_bytes: &[u8]) -> Option<(Vec<u8>, usize, usize, usize)> {
+pub(crate) fn compress_conversation(
+    body_bytes: &[u8],
+    settings: &crate::core::config::ConversationConfig,
+) -> Option<(Vec<u8>, usize, usize, usize)> {
     let mut parsed: serde_json::Value = serde_json::from_slice(body_bytes).ok()?;
 
     let messages = parsed.get("messages")?.as_array()?.clone();
-    let result = conversation::compress_messages(&messages)?;
+    let result = conversation::compress_messages(&messages, settings)?;
 
     parsed["messages"] = serde_json::Value::Array(result.messages);
     let output = serde_json::to_vec(&parsed).ok()?;
@@ -53,7 +56,18 @@ pub(crate) fn compress_conversation_if_enabled(
     if !config.conversation.compression_enabled {
         return None;
     }
-    compress_conversation(body_bytes)
+    let compressed = compress_conversation(body_bytes, &config.conversation)?;
+    // Summarized and dropped turns have no recovery copy and no lineage of
+    // their own: under protection the conversation stays as it is, counted
+    // once per request.
+    if super::compress::protected() {
+        super::compress::note_kept_whole(
+            "conversation summary",
+            super::compress::SUMMARY_WITHOUT_COPY,
+        );
+        return None;
+    }
+    Some(compressed)
 }
 
 #[cfg(test)]
@@ -98,7 +112,10 @@ mod tests {
             ]
         });
         let bytes = serde_json::to_vec(&body).unwrap();
-        assert!(compress_conversation(&bytes).is_none());
+        assert!(
+            compress_conversation(&bytes, &crate::core::config::ConversationConfig::default())
+                .is_none()
+        );
     }
 
     #[test]

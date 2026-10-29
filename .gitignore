@@ -71,6 +71,7 @@ website/
 # but not ignored — ~25k artifacts one `git add -A` away from a commit, and
 # counted as "changed files" by preflight's change classification.
 .ctarget/
+target-wt*/
 AGENTS.md.lean-ctx.*.bak
 docs/gpt/
 
@@ -84,8 +85,22 @@ tmp/
 markdownai/
 .idea/
 .serena/
-.claude/
+.claude/*
+# Share only this portable skill link; machine settings and worktrees stay private.
+!.claude/skills/
+.claude/skills/*
+!.claude/skills/leanctx-gateway-delivery
 *.kt
+# Keep imported SDK build inputs visible in the consolidated checkout.
+!/sdk/packages/typescript/package-lock.json
+!/sdk/packages/jvm/src/**/*.kt
+# Reviewed product build inputs; per-installation suite.toml stays ignored.
+!/ee/governance/docker-compose.yml
+!/ee/services/cloud/docker-compose.yml
+!/ee/governance/admin/package-lock.json
+!/ee/governance/dashboard/package-lock.json
+!/ee/governance/portal/package-lock.json
+!/ee/governance/apps/console/package-lock.json
 
 # ── Internal strategy docs (confidential) ──
 # Internal strategy docs and packaged copies — never public
@@ -108,3 +123,11 @@ _archive/bench/lifecycle/.cache/
 .sprint-poc/
 
 .pytest_cache/
+__pycache__/
+*.py[cod]
+# Private integration evidence and temporary source stages are never release inputs.
+/.codex-builds/
+
+# Patch leftovers (`git apply --reject`, merge tools) never belong in the tree
+*.rej
+*.orig

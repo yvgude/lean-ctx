@@ -1,0 +1,61 @@
+{
+  "route": "W73",
+  "method": "GET",
+  "path": "/api/v1/companies/acme-group/engines?state=all&limit=2",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "id": "3e7cbd85-6f41-4a0d-8c93-5db18eaf0234",
+          "label": "ada-mbp",
+          "workspace": "acme",
+          "owner": {
+            "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
+            "name": "Ada"
+          },
+          "state": "connected",
+          "enrolled_at": "2026-10-22T07:00:00Z",
+          "last_seen_at": "2026-10-25T09:30:00Z",
+          "revoked_at": null,
+          "revocation_reason": null,
+          "policy": {
+            "state": "acked",
+            "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "conflict": null,
+            "refused": null
+          }
+        },
+        {
+          "id": "4f8dce96-7052-4b1e-9da4-6ec29fb01345",
+          "label": "bob-ci",
+          "workspace": "acme",
+          "owner": {
+            "id": "1c5a9b63-4d2f-4e8b-8a71-3b9f6c8dae12",
+            "name": "Bob"
+          },
+          "state": "revoked",
+          "enrolled_at": "2026-10-22T07:00:00Z",
+          "last_seen_at": "2026-10-25T09:30:00Z",
+          "revoked_at": "2026-10-24T16:00:00Z",
+          "revocation_reason": "admin",
+          "policy": null
+        }
+      ],
+      "next_cursor": "1761116400000000.4f8dce96-7052-4b1e-9da4-6ec29fb01345"
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "this needs the company admin role",
+          "required_role": "admin"
+        }
+      }
+    }
+  ]
+}

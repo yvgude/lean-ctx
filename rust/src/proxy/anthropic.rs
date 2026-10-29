@@ -70,6 +70,10 @@ fn is_copilot_host(url: &str) -> bool {
 /// Resolve the upstream for a Copilot-shaped Anthropic request.
 /// Prefers the token's `proxy-ep` field, falls back to the configured
 /// `openai_upstream` (which users set to their Copilot endpoint).
+///
+/// The token is caller-supplied, so its endpoint is honoured only when it is
+/// a plain GitHub Copilot host: a request header must never be able to send
+/// an admitted body to a destination of the caller's choosing.
 fn resolve_copilot_upstream(req: &Request<Body>, openai_upstream: &str) -> String {
     // Try extracting proxy-ep from the Authorization token
     if let Some(auth) = req
@@ -78,11 +82,21 @@ fn resolve_copilot_upstream(req: &Request<Body>, openai_upstream: &str) -> Strin
         .and_then(|v| v.to_str().ok())
     {
         let token = auth.strip_prefix("Bearer ").unwrap_or("");
-        if let Some(ep) = extract_proxy_ep(token) {
+        if let Some(ep) = extract_proxy_ep(token).filter(|ep| is_copilot_endpoint_host(ep)) {
             return format!("https://{ep}");
         }
     }
     openai_upstream.to_string()
+}
+
+/// A bare `githubcopilot.com` host name: no port, path, userinfo or look-alike
+/// suffix.
+fn is_copilot_endpoint_host(host: &str) -> bool {
+    let host = host.to_ascii_lowercase();
+    (host == "githubcopilot.com" || host.ends_with(".githubcopilot.com"))
+        && host
+            .bytes()
+            .all(|b| b.is_ascii_alphanumeric() || matches!(b, b'.' | b'-'))
 }
 
 /// Extract `proxy-ep=host` from a Copilot session token.
@@ -126,12 +140,26 @@ pub async fn handler(
     .await
 }
 
+/// One pass over a Messages request. The pass is the unit in which a block
+/// that leaves with a recovery stub and the conversation it belongs to are
+/// brought together (`sticky_tools`): inside the forward path it joins the
+/// request's pass, alone it is its own.
 pub(super) fn compress_request_body(
     parsed: Value,
     original_size: usize,
 ) -> (Vec<u8>, usize, usize) {
+    sticky_tools::in_pass(|| compress_in_pass(parsed, original_size))
+}
+
+fn compress_in_pass(parsed: Value, original_size: usize) -> (Vec<u8>, usize, usize) {
     let mut doc = parsed;
     let mut modified = false;
+    // Under protection a block leaves shortened only with a stub that names
+    // the Engine's expand tool as the host listed it in this request's own
+    // `tools`. A request that does not list it, or whose settings keep its
+    // model from calling it (`tool_choice` none), hands out no stub: settled
+    // before any block is touched.
+    sticky_tools::begin(sticky_tools::Shape::Messages, &doc);
 
     // Opt-in per-role prose aggressiveness (#710). Both default to `None`, in
     // which case nothing below fires and the body is byte-for-byte unchanged.
@@ -233,6 +261,12 @@ pub(super) fn compress_request_body(
     {
         let out = serde_json::to_vec(&doc).unwrap_or_default();
         return (out, original_size, original_size);
+    }
+    // K26: large tool descriptions leave shortened, their full definition one
+    // expand call away. The same bytes on every turn: the tool order and the
+    // `cache_control` markers stay as the host sent them.
+    if live_compress {
+        modified |= super::tool_descriptions::shorten(&mut doc);
     }
     let mut prose_segments: u64 = 0;
 
@@ -389,9 +423,11 @@ pub(super) fn compress_request_body(
                         continue;
                     }
 
-                    let name = block
-                        .get("tool_use_id")
-                        .and_then(|v| v.as_str())
+                    let call_id = block.get("tool_use_id").and_then(|v| v.as_str());
+                    // One tool-result block: what is shortened below is text
+                    // of the call with this id (`sticky_tools::block`).
+                    let _block = sticky_tools::block(call_id);
+                    let name = call_id
                         .and_then(|id| tool_names.get(id))
                         .map(String::as_str);
                     let kind = compress_shared::tool_result_kind(name);
@@ -498,7 +534,11 @@ pub(super) fn compress_request_body(
     let messages_for_id = doc.get("messages").and_then(Value::as_array);
     if let Some(msgs) = messages_for_id {
         let conv_id = prefix_replay::conversation_id(system_val, msgs);
-        if sticky_tools::ensure_tool_present(conv_id, &mut doc) {
+        // Under protection the proxy declares no tool: a declaration it adds
+        // is no evidence that the host can execute the call. The injection
+        // is the developer-mode path, and so is the mark it reads — a
+        // protected request marks no conversation.
+        if !super::compress::protected() && sticky_tools::ensure_tool_present(conv_id, &mut doc) {
             modified = true;
             prefix_cache_stats::record_sticky_injection();
         }
@@ -514,6 +554,7 @@ pub(super) fn compress_request_body(
         let conv_id = prefix_replay::conversation_id(system_val_replay.as_ref(), msgs);
         if let Some(delta) = prefix_replay::detect_append_only(conv_id, msgs)
             && delta.delta_start < msgs.len()
+            && prefix_replay::same_request_frame(&delta.prefix_bytes, &doc)
         {
             let delta_msgs = &msgs[delta.delta_start..];
             if let Some(replayed) = prefix_replay::overlay_prefix(&delta.prefix_bytes, delta_msgs) {

@@ -7,11 +7,13 @@ use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
 use std::{
     collections::HashMap,
-    path::{Path, PathBuf},
+    path::{Component, Path, PathBuf},
     sync::{Arc, Mutex, OnceLock},
 };
 
+use crate::core::context_admission::stores::StoreAdmission;
 use crate::core::memory_policy::EpisodicPolicy;
+use crate::core::policy::runtime::PublicationAuthority;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct EpisodicStore {
@@ -72,8 +74,12 @@ fn episodic_lock(project_hash: &str) -> Arc<Mutex<()>> {
     locks.entry(project_hash.to_string()).or_default().clone()
 }
 
+/// How long an episodic write waits for another holder of the store's file
+/// lock (a parallel CLI, daemon or MCP write). A single attempt dropped the
+/// episode whenever two writers met (#18, a flaky gate on 24.10.).
+const EPISODIC_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+
 fn acquire_file_lock(path: &Path) -> Option<std::fs::File> {
-    use fs2::FileExt;
     let parent = path.parent()?;
     let name = path.file_name()?.to_string_lossy();
     let lock_path = parent.join(format!(".{name}.lock"));
@@ -88,8 +94,97 @@ fn acquire_file_lock(path: &Path) -> Option<std::fs::File> {
         use std::os::unix::fs::PermissionsExt;
         let _ = std::fs::set_permissions(&lock_path, std::fs::Permissions::from_mode(0o600));
     }
-    file.lock_exclusive().ok()?;
+    crate::core::file_lock::acquire_exclusive_timeout(&file, EPISODIC_LOCK_WAIT).ok()?;
     Some(file)
+}
+
+/// Require every nonempty affected-path list to stay inside its owning project.
+/// This is retrieval scoping only: no file contents are opened and no stored
+/// episode is rewritten by the view.
+fn episode_paths_belong_to_project(
+    project_root: &Path,
+    canonical_root: &Path,
+    affected_files: &[String],
+) -> bool {
+    if affected_files.is_empty() {
+        return true;
+    }
+
+    affected_files.iter().all(|raw| {
+        if raw.is_empty() || raw.as_bytes().contains(&0) {
+            return false;
+        }
+        let path = Path::new(raw);
+        if has_ambiguous_foreign_path_syntax(raw, path)
+            || path
+                .components()
+                .any(|component| matches!(component, Component::ParentDir))
+        {
+            return false;
+        }
+
+        if path.is_absolute()
+            && !path.starts_with(project_root)
+            && !path.starts_with(canonical_root)
+        {
+            // Avoid probing an arbitrary absolute path from an untrusted store.
+            return false;
+        }
+        let candidate = if path.is_absolute() {
+            path.to_path_buf()
+        } else {
+            canonical_root.join(path)
+        };
+        canonicalized_existing_ancestor(&candidate)
+            .is_some_and(|resolved| resolved.starts_with(canonical_root))
+    })
+}
+
+/// On Unix, Windows absolute/drive paths otherwise look relative and could be
+/// reinterpreted beneath the active project. On Windows, reject rooted paths
+/// without a drive/share prefix and drive-relative paths.
+#[cfg(unix)]
+fn has_ambiguous_foreign_path_syntax(raw: &str, _path: &Path) -> bool {
+    let bytes = raw.as_bytes();
+    bytes.contains(&0x5c)
+        || (bytes.len() >= 2 && bytes[0].is_ascii_alphabetic() && bytes[1] == b':')
+}
+
+#[cfg(windows)]
+fn has_ambiguous_foreign_path_syntax(_raw: &str, path: &Path) -> bool {
+    !path.is_absolute()
+        && (path.has_root() || matches!(path.components().next(), Some(Component::Prefix(_))))
+}
+
+#[cfg(not(any(unix, windows)))]
+fn has_ambiguous_foreign_path_syntax(_raw: &str, _path: &Path) -> bool {
+    false
+}
+
+/// Resolve the longest existing ancestor before appending a missing historical
+/// suffix. symlink_metadata detects dangling symlinks; canonicalization then
+/// rejects existing and missing descendants that escape through a link.
+fn canonicalized_existing_ancestor(path: &Path) -> Option<PathBuf> {
+    let mut current = path.to_path_buf();
+    let mut missing: Vec<std::ffi::OsString> = Vec::new();
+    loop {
+        match std::fs::symlink_metadata(&current) {
+            Ok(_) => {
+                let mut resolved = std::fs::canonicalize(&current).ok()?;
+                for name in missing.iter().rev() {
+                    resolved.push(name);
+                }
+                return Some(resolved);
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                missing.push(current.file_name()?.to_os_string());
+                if !current.pop() {
+                    return None;
+                }
+            }
+            Err(_) => return None,
+        }
+    }
 }
 
 impl EpisodicStore {
@@ -197,13 +292,115 @@ impl EpisodicStore {
     }
 
     pub fn load(project_hash: &str) -> Option<Self> {
-        let path = Self::store_path(project_hash)?;
-        let data = std::fs::read_to_string(path).ok()?;
-        let mut store: Self = serde_json::from_str(&data).ok()?;
-        if store.migrate_legacy_episodes() {
-            let _ = store.save();
-        }
+        let mut store = Self::load_raw(project_hash).ok()??;
+        store.migrate_legacy_episodes();
         Some(store)
+    }
+
+    fn load_raw(project_hash: &str) -> Result<Option<Self>, String> {
+        let Some(path) = Self::store_path(project_hash) else {
+            return Err("Cannot determine data directory".into());
+        };
+        let data = match std::fs::read_to_string(path) {
+            Ok(data) => data,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => return Ok(None),
+            Err(error) => return Err(error.to_string()),
+        };
+        let store: Self = serde_json::from_str(&data).map_err(|error| error.to_string())?;
+        if store.project_hash != project_hash {
+            return Err("episodic store project scope mismatch".into());
+        }
+        Ok(Some(store))
+    }
+
+    /// Load content after admitting every textual field. Migration and project
+    /// scoping are in-memory only; reads never rewrite persisted history.
+    pub(crate) fn load_admitted(
+        project_hash: &str,
+        admission: &StoreAdmission,
+    ) -> Result<Self, String> {
+        Self::load_admitted_inner(project_hash, None, admission)
+    }
+
+    /// Retrieval-only view that withholds any episode whose affected paths do
+    /// not all resolve inside this project. Empty path lists keep the existing
+    /// per-project-store behavior because there is no path evidence to inspect.
+    pub(crate) fn load_admitted_for_project(
+        project_hash: &str,
+        project_root: &Path,
+        admission: &StoreAdmission,
+    ) -> Result<Self, String> {
+        let canonical_root = std::fs::canonicalize(project_root)
+            .map_err(|error| format!("cannot verify episodic project root: {error}"))?;
+        Self::load_admitted_inner(
+            project_hash,
+            Some((project_root, canonical_root.as_path())),
+            admission,
+        )
+    }
+
+    fn load_admitted_inner(
+        project_hash: &str,
+        project_scope: Option<(&Path, &Path)>,
+        admission: &StoreAdmission,
+    ) -> Result<Self, String> {
+        let mut store = Self::load_raw(project_hash)?.unwrap_or_else(|| Self::new(project_hash));
+        if let Some((root, canonical_root)) = project_scope {
+            store.retain_episodes_for_project(root, canonical_root);
+        }
+        let mut admit =
+            |text: &str| crate::core::session::admission::admit_store_text(admission, text);
+        store
+            .episodes
+            .retain_mut(|episode| sanitize_episode(episode, &mut admit));
+        store.migrate_legacy_episodes();
+        if !admission.is_current() {
+            return Err("session admission policy changed; retry".into());
+        }
+        Ok(store)
+    }
+
+    fn retain_episodes_for_project(&mut self, project_root: &Path, canonical_root: &Path) {
+        self.episodes.retain(|episode| {
+            episode_paths_belong_to_project(project_root, canonical_root, &episode.affected_files)
+        });
+    }
+
+    /// Mutate an admitted store under its project file lock. Old records are
+    /// scrubbed before migration or derivation, and the policy epoch is checked
+    /// under the lock immediately before persistence.
+    pub(crate) fn mutate_locked_admitted<T>(
+        project_hash: &str,
+        admission: &StoreAdmission,
+        mut admit: impl FnMut(&str) -> Option<String>,
+        mutate: impl FnOnce(&mut Self) -> Result<T, String>,
+    ) -> Result<(Self, T), String> {
+        let authority = PublicationAuthority::capture()
+            .map_err(|_| "source authority unavailable".to_string())?;
+        let lock = episodic_lock(project_hash);
+        let _guard = lock
+            .try_lock()
+            .map_err(|_| "episodic store is busy; retry".to_string())?;
+        let path = Self::store_path(project_hash)
+            .ok_or_else(|| "Cannot determine data directory".to_string())?;
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+        }
+        let _file_lock = acquire_file_lock(&path)
+            .ok_or_else(|| "episodic store lock unavailable".to_string())?;
+        let mut store = Self::load_raw(project_hash)?.unwrap_or_else(|| Self::new(project_hash));
+        store
+            .episodes
+            .retain_mut(|episode| sanitize_episode(episode, &mut admit));
+        store.migrate_legacy_episodes();
+        let result = mutate(&mut store)?;
+        store
+            .episodes
+            .retain_mut(|episode| sanitize_episode(episode, &mut admit));
+        let json = serde_json::to_string_pretty(&store).map_err(|error| error.to_string())?;
+        admission.authorize_publication(&authority)?;
+        crate::core::atomic_fs::write_bytes_with_fallback(&path, json.as_bytes(), None)?;
+        Ok((store, result))
     }
 
     /// One-time repair for episodes recorded before per-task metrics existed:
@@ -290,7 +487,8 @@ impl EpisodicStore {
         if let Some(dir) = path.parent() {
             std::fs::create_dir_all(dir).map_err(|e| format!("{e}"))?;
         }
-        let _file_lock = acquire_file_lock(&path);
+        let _file_lock = acquire_file_lock(&path)
+            .ok_or_else(|| "episodic store lock unavailable".to_string())?;
 
         let mut store = Self::load_or_create(project_hash);
         let result = mutate(&mut store);
@@ -393,32 +591,87 @@ pub fn record_session_episode(
     policy: &EpisodicPolicy,
     deduplicate: bool,
 ) -> Result<Option<String>, String> {
-    let normalized_agent_id = agent_id
-        .map(str::trim)
-        .filter(|id| !id.is_empty())
-        .map(str::to_string);
+    let root = session
+        .strict_project_root()
+        .ok_or_else(|| "session project scope unavailable".to_string())?;
+    if crate::core::project_hash::hash_project_root(&root) != project_hash {
+        return Err("episodic store project scope mismatch".into());
+    }
 
-    let (_, episode_id) = EpisodicStore::mutate_locked(project_hash, |store| {
-        let mut episode = create_episode_from_session(session, tool_calls);
+    crate::core::session::admission::with_store_admission(session, |admission| {
+        let admitted_session = crate::core::session::admission::for_storage(session)?;
+        let normalized_agent_id = agent_id
+            .map(str::trim)
+            .filter(|id| !id.is_empty())
+            .map(str::to_string);
+        let mut episode = create_episode_from_session(&admitted_session, tool_calls);
         episode.agent_id.clone_from(&normalized_agent_id);
-
-        if deduplicate
-            && store.episodes.iter().any(|existing| {
-                existing.session_id == episode.session_id
-                    && existing.agent_id == episode.agent_id
-                    && existing.task_description == episode.task_description
-            })
-        {
-            return None;
+        let mut admit =
+            |text: &str| crate::core::session::admission::admit_store_text(admission, text);
+        if !sanitize_episode(&mut episode, &mut admit) {
+            return Err("episode content withheld by current policy".into());
         }
 
-        finalize_episode_metrics(&mut episode, store, session.started_at);
-        let id = episode.id.clone();
-        store.record_episode(episode, policy);
-        Some(id)
-    })?;
+        let (_, episode_id) = EpisodicStore::mutate_locked_admitted(
+            project_hash,
+            admission,
+            |text| crate::core::session::admission::admit_store_text(admission, text),
+            |store| {
+                if deduplicate
+                    && store.episodes.iter().any(|existing| {
+                        existing.session_id == episode.session_id
+                            && existing.agent_id == episode.agent_id
+                            && existing.task_description == episode.task_description
+                    })
+                {
+                    return Ok(None);
+                }
+                let mut episode = episode;
+                finalize_episode_metrics(&mut episode, store, admitted_session.started_at);
+                let id = episode.id.clone();
+                store.record_episode(episode, policy);
+                Ok(Some(id))
+            },
+        )?;
+        Ok(episode_id)
+    })
+}
 
-    Ok(episode_id)
+fn sanitize_episode(episode: &mut Episode, admit: &mut impl FnMut(&str) -> Option<String>) -> bool {
+    fn field(value: &mut String, admit: &mut impl FnMut(&str) -> Option<String>) -> bool {
+        if value.is_empty() {
+            return true;
+        }
+        let Some(projected) = admit(value) else {
+            return false;
+        };
+        *value = projected;
+        true
+    }
+
+    if !field(&mut episode.task_description, admit)
+        || !field(&mut episode.summary, admit)
+        || !episode
+            .affected_files
+            .iter_mut()
+            .all(|path| field(path, admit))
+        || !episode
+            .actions
+            .iter_mut()
+            .all(|action| field(&mut action.tool, admit) && field(&mut action.description, admit))
+    {
+        return false;
+    }
+    let outcome_is_admitted = match &mut episode.outcome {
+        Outcome::Failure { error } => field(error, admit),
+        Outcome::Partial { details } => field(details, admit),
+        Outcome::Success { .. } | Outcome::Unknown => true,
+    };
+    outcome_is_admitted
+        && episode
+            .agent_id
+            .as_mut()
+            .is_none_or(|agent| field(agent, admit))
 }
 
 /// Converts the cumulative session counters captured by
@@ -548,6 +801,37 @@ pub mod tests {
     }
 
     #[test]
+    fn admission_scrubs_all_episode_text_and_drops_on_any_denial() {
+        let mut episode = make_episode(
+            "TASK PRIVATE",
+            Outcome::Failure {
+                error: "ERROR PRIVATE".into(),
+            },
+        );
+        episode.summary = "SUMMARY PRIVATE".into();
+        episode.affected_files = vec!["PATH PRIVATE".into()];
+        episode.actions[0].description = "ACTION PRIVATE".into();
+        episode.agent_id = Some("AGENT PRIVATE".into());
+        let mut admit = |text: &str| Some(text.replace("PRIVATE", "redacted"));
+
+        assert!(sanitize_episode(&mut episode, &mut admit));
+        assert_eq!(episode.task_description, "TASK redacted");
+        assert_eq!(episode.summary, "SUMMARY redacted");
+        assert_eq!(episode.affected_files[0], "PATH redacted");
+        assert_eq!(episode.actions[0].description, "ACTION redacted");
+        assert_eq!(episode.agent_id.as_deref(), Some("AGENT redacted"));
+        assert!(
+            matches!(&episode.outcome, Outcome::Failure { error } if error == "ERROR redacted")
+        );
+
+        let mut denied = make_episode("safe task", Outcome::Unknown);
+        denied.agent_id = Some("BLOCK".into());
+        assert!(!sanitize_episode(&mut denied, &mut |text| {
+            (text != "BLOCK").then(|| text.to_string())
+        }));
+    }
+
+    #[test]
     fn mutate_locked_preserves_successive_agent_episodes() {
         let policy = EpisodicPolicy::default();
         let mut store = EpisodicStore::new("locked-writes-unit");
@@ -575,18 +859,40 @@ pub mod tests {
         );
     }
 
+    /// #18: a write that meets another holder of the store's file lock waits
+    /// for it instead of failing with "episodic store lock unavailable".
+    #[test]
+    fn a_write_waits_for_another_holder_of_the_file_lock() {
+        use fs2::FileExt;
+        let _isolated = crate::core::data_dir::isolated_data_dir();
+        let path = EpisodicStore::store_path("waits").unwrap();
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        let other = acquire_file_lock(&path).expect("first holder");
+        let holder = std::thread::spawn(move || {
+            std::thread::sleep(std::time::Duration::from_millis(300));
+            FileExt::unlock(&other).unwrap();
+        });
+        let written = EpisodicStore::mutate_locked("waits", |_| ());
+        holder.join().unwrap();
+        assert!(written.is_ok(), "{written:?}");
+    }
+
     #[test]
     fn record_session_episode_deduplicates_per_agent() {
         let _isolated = crate::core::data_dir::isolated_data_dir();
         let policy = EpisodicPolicy::default();
-        let project_hash = "episodic-agent-dedup";
+        let project = tempfile::tempdir().expect("project root");
+        let project_root = project.path().to_string_lossy().into_owned();
+        let project_hash = crate::core::project_hash::hash_project_root(&project_root);
         let mut session = super::super::session::SessionState::new();
+        session.project_root = Some(project_root.clone());
+        session.shell_cwd = Some(project_root);
         session.set_task("same task", None);
         let tool_calls = vec![("ctx_read".to_string(), 10)];
 
         assert!(
             record_session_episode(
-                project_hash,
+                &project_hash,
                 &session,
                 &tool_calls,
                 Some("agent-a"),
@@ -598,7 +904,7 @@ pub mod tests {
         );
         assert!(
             record_session_episode(
-                project_hash,
+                &project_hash,
                 &session,
                 &tool_calls,
                 Some("agent-a"),
@@ -610,7 +916,7 @@ pub mod tests {
         );
         assert!(
             record_session_episode(
-                project_hash,
+                &project_hash,
                 &session,
                 &tool_calls,
                 Some("agent-b"),
@@ -621,7 +927,7 @@ pub mod tests {
             .is_some()
         );
 
-        let store = EpisodicStore::load_or_create(project_hash);
+        let store = EpisodicStore::load_or_create(&project_hash);
         assert_eq!(store.episodes.len(), 2);
     }
 
@@ -821,5 +1127,128 @@ pub mod tests {
         assert_eq!(tokens, vec![1000, 2000, 3000]);
         // Idempotent: unique ids → no second migration.
         assert!(!store.migrate_legacy_episodes());
+    }
+
+    #[test]
+    fn project_scope_withholds_whole_mixed_episode_and_keeps_empty_history() {
+        let root = tempfile::tempdir().unwrap();
+        let foreign = tempfile::tempdir().unwrap();
+        std::fs::create_dir_all(root.path().join("src")).unwrap();
+        std::fs::write(root.path().join("src/local.rs"), "local").unwrap();
+        std::fs::write(foreign.path().join("secret.rs"), "foreign").unwrap();
+        let canonical_root = std::fs::canonicalize(root.path()).unwrap();
+        let local = root
+            .path()
+            .join("src/local.rs")
+            .to_string_lossy()
+            .into_owned();
+        let historical_missing = root
+            .path()
+            .join("src/removed.rs")
+            .to_string_lossy()
+            .into_owned();
+        let outside = foreign
+            .path()
+            .join("secret.rs")
+            .to_string_lossy()
+            .into_owned();
+
+        assert!(episode_paths_belong_to_project(
+            root.path(),
+            &canonical_root,
+            std::slice::from_ref(&local),
+        ));
+        assert!(episode_paths_belong_to_project(
+            root.path(),
+            &canonical_root,
+            &[historical_missing],
+        ));
+        assert!(episode_paths_belong_to_project(
+            root.path(),
+            &canonical_root,
+            &[],
+        ));
+        assert!(!episode_paths_belong_to_project(
+            root.path(),
+            &canonical_root,
+            std::slice::from_ref(&outside),
+        ));
+        assert!(!episode_paths_belong_to_project(
+            root.path(),
+            &canonical_root,
+            &[local.clone(), outside.clone()],
+        ));
+        assert!(!episode_paths_belong_to_project(
+            root.path(),
+            &canonical_root,
+            &["../foreign/secret.rs".to_string()],
+        ));
+        assert!(!episode_paths_belong_to_project(
+            root.path(),
+            &canonical_root,
+            &["C:/foreign/secret.rs".to_string()],
+        ));
+
+        let root_name = root.path().file_name().unwrap().to_string_lossy();
+        let prefix_neighbor = root
+            .path()
+            .with_file_name(format!("{root_name}-neighbor/file.rs"));
+        assert!(!episode_paths_belong_to_project(
+            root.path(),
+            &canonical_root,
+            &[prefix_neighbor.to_string_lossy().into_owned()],
+        ));
+
+        let mut safe = make_episode("safe", Outcome::Unknown);
+        safe.id = "safe".into();
+        safe.affected_files = vec![local.clone()];
+        let mut mixed = make_episode("mixed", Outcome::Unknown);
+        mixed.id = "mixed".into();
+        mixed.affected_files = vec![local, outside];
+        let mut no_paths = make_episode("legacy without paths", Outcome::Unknown);
+        no_paths.id = "legacy-empty".into();
+        no_paths.affected_files.clear();
+        let mut view = EpisodicStore::new("scope-test");
+        view.episodes = vec![safe, mixed, no_paths];
+        view.retain_episodes_for_project(root.path(), &canonical_root);
+        let visible_ids: Vec<_> = view
+            .episodes
+            .iter()
+            .map(|episode| episode.id.as_str())
+            .collect();
+        assert_eq!(visible_ids, vec!["safe", "legacy-empty"]);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn project_scope_rejects_existing_and_missing_symlink_escapes() {
+        use std::os::unix::fs::symlink;
+
+        let root = tempfile::tempdir().unwrap();
+        let foreign = tempfile::tempdir().unwrap();
+        std::fs::write(foreign.path().join("existing.rs"), "foreign").unwrap();
+        symlink(foreign.path(), root.path().join("escape")).unwrap();
+        let canonical_root = std::fs::canonicalize(root.path()).unwrap();
+        let existing = root
+            .path()
+            .join("escape/existing.rs")
+            .to_string_lossy()
+            .into_owned();
+        let missing = root
+            .path()
+            .join("escape/not-yet-created.rs")
+            .to_string_lossy()
+            .into_owned();
+
+        assert!(!episode_paths_belong_to_project(
+            root.path(),
+            &canonical_root,
+            &[existing],
+        ));
+        assert!(!episode_paths_belong_to_project(
+            root.path(),
+            &canonical_root,
+            &[missing],
+        ));
     }
 }

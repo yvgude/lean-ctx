@@ -79,7 +79,7 @@ fn generate_prefill_hints(cache: &SessionCache) -> Vec<String> {
     let stale_count = entries.iter().filter(|(_, e)| e.read_count() == 1).count();
     if stale_count > 5 {
         hints.push(format!(
-            "{stale_count} files read only once — ctx_cache clear to free context"
+            "{stale_count} files read only once — ctx_control(action=\"evict\", targets=…) frees their context"
         ));
     }
 

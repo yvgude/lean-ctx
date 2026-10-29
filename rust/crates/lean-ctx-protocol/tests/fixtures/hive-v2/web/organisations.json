@@ -1,0 +1,31 @@
+{
+  "route": "W69",
+  "method": "GET",
+  "path": "/api/v1/companies",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "slug": "acme-group",
+          "name": "Acme Group",
+          "role": "owner",
+          "workspaces": 2,
+          "members": 3,
+          "message_retention_days": null,
+          "created_at": "2026-10-20T08:00:00Z",
+          "teams": 2,
+          "plan": {
+            "name": "enterprise",
+            "status": "active",
+            "seats": 20,
+            "seats_used": 3
+          }
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "errors": []
+}

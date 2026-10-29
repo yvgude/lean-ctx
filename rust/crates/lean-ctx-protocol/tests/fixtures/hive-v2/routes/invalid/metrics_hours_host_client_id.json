@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_host_client_id",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets/0/slices/0/unregulated/2/name",
+      "value": "claude-code"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "an unregulated host is a host family from the closed registry, not a client id (K13)"
+}

@@ -724,15 +724,21 @@ impl CtxReadTool {
                         // file — while the CLI path handled it correctly. Both
                         // paths now share `handle_diff`.
                         let outcome = if mode_eff == "diff" {
-                            let (out, _sent, baseline) = if fresh {
+                            // A file that cannot be read is this read's typed
+                            // failure (`"error"`, answered as a tool error
+                            // below) with the same text — never a `diff` reply.
+                            let (out, baseline, diff_mode) = if fresh {
                                 let warning = "[warning] fresh+diff is redundant — fresh invalidates the cache, so no baseline is left to diff against. Use mode=full with fresh=true instead.";
-                                (
-                                    warning.to_string(),
-                                    crate::core::tokens::count_tokens(warning),
-                                    None,
-                                )
+                                (warning.to_string(), None, "diff")
                             } else {
-                                crate::tools::ctx_read::prepare_diff(&cache, &path_owned, &file_ref)
+                                match crate::tools::ctx_read::prepare_diff(
+                                    &cache,
+                                    &path_owned,
+                                    &file_ref,
+                                ) {
+                                    Ok((out, _sent, baseline)) => (out, baseline, "diff"),
+                                    Err(failure) => (failure, None, "error"),
+                                }
                             };
                             let out = crate::core::redaction::redact_text_if_enabled(&out);
                             let orig = baseline.as_deref().map_or_else(
@@ -747,7 +753,7 @@ impl CtxReadTool {
                             let s = cache.get_stats();
                             PrepareOutcome::Hit(
                                 out,
-                                "diff".to_string(),
+                                diff_mode.to_string(),
                                 orig,
                                 false,
                                 fref,
@@ -1200,9 +1206,12 @@ impl CtxReadTool {
                         &edges,
                         &ctx.project_root,
                         |hint| {
-                            ranges.as_ref().is_none_or(|ranges| {
-                                hint_intersects_ranges(hint, ranges, &graph, &relative_path)
-                            })
+                            // The far end of the edge is asked again (G04);
+                            // the near end is the file this call just read.
+                            graph.serves_file(&hint.source_uri)
+                                && ranges.as_ref().is_none_or(|ranges| {
+                                    hint_intersects_ranges(hint, ranges, &graph, &relative_path)
+                                })
                         },
                     );
                     crate::core::cross_source_hints::format_hints(&hints)
@@ -1250,6 +1259,20 @@ impl CtxReadTool {
         } else {
             format!("{output}{hints_suffix}{graph_suffix}{rules_suffix}")
         };
+        // Source lineage of this reply (G04). The requested file is published
+        // even when the answer came from a cache or a stub. Everything the
+        // reply carries from somewhere ELSE — graph neighbours, cross-source
+        // hints, proactively expanded content — comes from stores whose
+        // sources are not bound here: the call's source set is then not
+        // complete and is recorded as such, never as "this file only".
+        // Rule files are not in that list: `rule_discovery` appends a rule
+        // only as the admitted rooted reader delivers it, and that reader
+        // publishes the rule file into this call's source set (or marks the
+        // set unbound itself when it cannot bind the file).
+        crate::tools::ctx_read::publish_requested_source(path, &ctx.project_root, "ctx_read");
+        let assembled_len = final_output.len();
+        let foreign_content = !hints_suffix.is_empty() || !graph_suffix.is_empty();
+
         // Proactive context: gated by profile `proactive_context` (default off).
         // When enabled, auto-expands previously compressed content that is
         // keyword-relevant to the current read (up to 2000 tokens).
@@ -1271,6 +1294,9 @@ impl CtxReadTool {
         } else {
             final_output
         };
+        if foreign_content || final_output.len() != assembled_len {
+            crate::core::archive::authority::mark_unbound();
+        }
 
         // Keep paid annotations outside the pending source/relay cache payload;
         // an expired license must never recover an old paid analysis as fresh.

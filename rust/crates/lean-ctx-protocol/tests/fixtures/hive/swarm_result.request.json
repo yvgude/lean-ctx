@@ -1,0 +1,11 @@
+{
+  "body": "retry.rs sets RETRY_BUDGET = 3 since 2026-09; the runbook predates it.",
+  "fencing_token": 3,
+  "schema": "leanctx.hive.swarm-result/v1",
+  "summary": "payments retries 3 times; the 5 in the runbook is stale",
+  "usage": {
+    "tokens": 48200,
+    "usd_micros": 190000
+  },
+  "value": 3
+}

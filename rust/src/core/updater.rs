@@ -9,6 +9,8 @@ use serde::{Deserialize, Serialize};
 mod flow;
 #[path = "updater/github_api.rs"]
 mod github_api;
+#[path = "updater/rewire.rs"]
+mod rewire;
 #[path = "updater/transaction.rs"]
 mod transaction;
 
@@ -25,6 +27,8 @@ use transaction::{
 pub(crate) use github_api::github_api_json;
 #[cfg(test)]
 use github_api::{github_token, rate_limit_message};
+pub(crate) use rewire::migrate_shadow_mode_default_public;
+use rewire::{post_update_rewire, print_rewire_plan};
 
 mod platform;
 #[cfg(any(windows, test))]
@@ -111,10 +115,11 @@ fn print_help(mode: UpdateMode) {
     println!();
     println!("  VERSION                install this release instead of the latest");
     println!("  --check                only report whether an update is available");
-    println!("  --dry-run              show the update and the AI tools it would reconfigure;");
-    println!("                         write nothing (choose tools: lean-ctx setup --agents)");
+    println!("  --dry-run              show the release and the setup refresh; change nothing");
     println!("  --quiet                suppress output unless something changes");
     println!("  --skip-rules           do not refresh agent rules after updating");
+    println!("  The refresh touches only the tools chosen in `lean-ctx setup` (setup.agents),");
+    println!("  or, without a choice, tools already connected — never newly installed ones.");
     if mode == UpdateMode::EnableGpu {
         println!("  --force                reinstall the CUDA build of the current release");
     }
@@ -145,6 +150,7 @@ fn run_with_mode(args: &[String], mode: UpdateMode) {
             std::process::exit(2);
         }
     }
+
     flow::run_with_mode(args, mode);
 }
 
@@ -186,6 +192,7 @@ mod argument_guard_tests {
             &[][..],
             &["--quiet", "--scheduled"][..],
             &["--check"][..],
+            &["--dry-run"][..],
             &["3.10.3", "--skip-rules"][..],
             &["--schedule", "12h"][..],
             &["--schedule", "off"][..],
@@ -198,8 +205,6 @@ mod argument_guard_tests {
             &["--insecure"][..],
             &["--force"][..],
             &["--rewire"][..],
-            &["--dry-run"][..],
-            &["3.10.3", "--dry-run", "--skip-rules"][..],
         ] {
             assert_eq!(check_flags(&args(ok)), FlagCheck::Run, "{ok:?}");
         }
@@ -274,6 +279,7 @@ struct PreparedTransaction {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg(feature = "secure-update")]
 struct ReleaseManifest {
     schema_version: String,
     tag: String,
@@ -284,6 +290,7 @@ struct ReleaseManifest {
 }
 
 #[derive(Debug, Deserialize)]
+#[cfg(feature = "secure-update")]
 struct ManifestArtifact {
     sha256: String,
     size: u64,
@@ -399,6 +406,7 @@ fn verify_download_integrity(
     }
 }
 
+#[cfg(feature = "secure-update")]
 fn fetch_api_json(url: &str) -> Result<serde_json::Value, String> {
     const API_PREFIX: &str = "https://api.github.com/repos/yvgude/lean-ctx/";
     if !url.starts_with(API_PREFIX) {
@@ -424,6 +432,7 @@ fn offers_update(target: &str, current: &str, pinned: bool) -> bool {
     }
 }
 
+#[cfg(feature = "secure-update")]
 fn verify_release_commit(release_tag: &str, expected_commit: &str) -> Result<(), String> {
     let tag = release_tag.trim_start_matches('v');
     let reference = fetch_api_json(&format!(
@@ -462,6 +471,7 @@ fn verify_release_commit(release_tag: &str, expected_commit: &str) -> Result<(),
     Ok(())
 }
 
+#[cfg(feature = "secure-update")]
 fn validate_manifest(
     manifest: &ReleaseManifest,
     release_tag: &str,
@@ -515,6 +525,7 @@ fn validate_manifest(
     Ok(())
 }
 
+#[cfg(feature = "secure-update")]
 fn parse_sha256sums(text: &str, asset_name: &str) -> Option<String> {
     let mut found = None;
     for line in text.lines() {
@@ -835,241 +846,6 @@ pub(crate) fn atomic_write_bytes(path: &Path, bytes: &[u8]) -> Result<(), String
     result.map_err(|e| format!("{}: {e}", path.display()))
 }
 
-/// #828: One-time migration — enable `shadow_mode` for users who never
-/// explicitly set it. Without shadow mode, most harnesses silently prefer
-/// native tools, negating lean-ctx's token savings. Idempotent: a state-dir
-/// marker prevents repeated flips if the user disables it after migration.
-fn migrate_shadow_mode_default() {
-    let Ok(state) = crate::core::paths::state_dir() else {
-        return;
-    };
-    let marker = state.join("shadow_mode_migrated");
-    if marker.exists() {
-        return;
-    }
-
-    // Read raw TOML to distinguish "explicitly set to false" from "never set".
-    let global = crate::core::config::Config::load_global();
-    let raw_toml = crate::core::config::Config::path()
-        .and_then(|p| std::fs::read_to_string(p).ok())
-        .unwrap_or_default();
-
-    let explicitly_set = raw_toml.lines().any(|line| {
-        let trimmed = line.trim();
-        trimmed.starts_with("shadow_mode") && trimmed.contains('=')
-    });
-
-    if !explicitly_set && !global.shadow_mode {
-        // User never touched shadow_mode — the old default was false.
-        // Set it to true in the global config so it persists.
-        match crate::core::config::Config::update_global(|c| c.shadow_mode = true) {
-            Ok(_) => {
-                eprintln!("  \u{2139} shadow_mode enabled (recommended default since v3.9.9).");
-                eprintln!("    Disable: lean-ctx config set shadow_mode false");
-            }
-            Err(e) => tracing::warn!("could not enable shadow_mode during update: {e}"),
-        }
-    } else if explicitly_set && !global.shadow_mode {
-        eprintln!("  \u{2139} shadow_mode is false in your config. Since v3.9.9, true is the");
-        eprintln!("    recommended default (60%+ more token savings). Enable:");
-        eprintln!("    lean-ctx config set shadow_mode true");
-    }
-
-    // Write marker so this migration runs only once.
-    if let Some(parent) = marker.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
-    let _ = std::fs::write(&marker, "migrated");
-}
-
-/// Public entry point for the shadow_mode migration, callable from
-/// `cmd_dev_install` and other lifecycle commands.
-pub(crate) fn migrate_shadow_mode_default_public() {
-    migrate_shadow_mode_default();
-}
-
-fn post_update_rewire(skip_rules: bool) {
-    // #356: regenerate installed LaunchAgent plists so they adopt the new
-    // deny-~/Documents seatbelt wrapper. A plist is only (re)written on install,
-    // so without this an upgrade keeps the old unwrapped plist — and the TCC
-    // prompt — until the next manual enable. Idempotent: install rewrites the
-    // plist and re-bootstraps it.
-    #[cfg(target_os = "macos")]
-    rewrap_launchagents_for_tcc();
-
-    // The persist decision reads the GLOBAL file only and writes via
-    // update_global, so a project-local override is never leaked into the
-    // global config (#443).
-    if crate::core::config::Config::load_global()
-        .proxy_enabled
-        .is_none()
-        && crate::proxy_autostart::is_installed()
-    {
-        match crate::core::config::Config::update_global(|c| c.proxy_enabled = Some(true)) {
-            Ok(_) => {
-                eprintln!("  \u{2139} Proxy was already active \u{2014} keeping enabled.");
-                eprintln!("    Disable anytime: lean-ctx proxy disable");
-            }
-            Err(e) => tracing::warn!("could not persist proxy_enabled during update: {e}"),
-        }
-    }
-
-    // #828: shadow_mode default changed to true. Migrate existing configs
-    // that never explicitly set it (still at old default false).
-    migrate_shadow_mode_default();
-
-    // Runtime decisions use the effective (global + project-local) config.
-    let cfg = crate::core::config::Config::load();
-    let proxy_active = cfg.proxy_enabled == Some(true);
-
-    // Determine whether rules should be injected during rewire.
-    // CLI --skip-rules always wins. Otherwise, respect the config setting.
-    let effective_skip_rules = if skip_rules {
-        true
-    } else {
-        !cfg.setup.should_inject_rules()
-    };
-
-    // PHASE 1: Restart proxy BEFORE writing env vars.
-    if proxy_active {
-        restart_proxy_if_running();
-        wait_for_proxy_health(crate::proxy_setup::default_port());
-    }
-
-    // PHASE 2: Run setup which writes MCP configs (always) and rules (if opted in).
-    // #1026: shell hooks are refreshed here — but install_all_with_style
-    // respects shell_hook_disabled, so users who opt out keep control.
-    if !cfg.shell_hook_disabled_effective() {
-        eprintln!("  \u{2139} Refreshing shell hooks in ~/.zshenv / ~/.bashenv.");
-        eprintln!("    Set shell_hook_disabled=true to prevent this in future updates.");
-    }
-    eprintln!(
-        "  \u{2139} AI tools: {}.",
-        crate::setup::describe_selection(cfg.setup.agents.as_deref())
-    );
-    eprintln!("    Choose which: lean-ctx setup --agents claude,cursor (preview: --dry-run)");
-    let opts = crate::setup::SetupOptions {
-        non_interactive: true,
-        yes: true,
-        fix: true,
-        skip_proxy: !proxy_active,
-        skip_rules: effective_skip_rules,
-        ..Default::default()
-    };
-    if let Err(e) = crate::setup::run_setup_with_options(opts) {
-        tracing::error!("Setup refresh error: {e}");
-    }
-}
-
-/// #356: rewrite every installed LaunchAgent plist (daemon, proxy, auto-updater)
-/// so an upgrade re-emits them with the deny-~/Documents seatbelt wrapper.
-/// plists are only generated on install, so an existing install would otherwise
-/// keep the pre-wrapper plist — and the prompt — until the next manual `enable`.
-/// Each `install` / `install_schedule` rewrites the plist and re-bootstraps it.
-#[cfg(target_os = "macos")]
-fn rewrap_launchagents_for_tcc() {
-    if crate::proxy_autostart::is_installed() {
-        crate::proxy_autostart::install(crate::proxy_setup::default_port(), true);
-    }
-    if crate::daemon_autostart::is_installed() {
-        crate::daemon_autostart::install(true);
-    }
-    if crate::core::update_scheduler::schedule_status().enabled {
-        let hours = crate::core::config::Config::load()
-            .updates
-            .check_interval_hours;
-        if let Err(e) = crate::core::update_scheduler::install_schedule(hours) {
-            tracing::warn!("#356 re-wrap of auto-update LaunchAgent failed: {e}");
-        }
-    }
-}
-
-fn wait_for_proxy_health(port: u16) {
-    let max_attempts = 20;
-    for i in 0..max_attempts {
-        if is_proxy_reachable(port) {
-            println!("  \x1b[32m✓\x1b[0m Proxy healthy on port {port}");
-            return;
-        }
-        if i == 0 {
-            print!("  \x1b[2mWaiting for proxy to become healthy");
-        }
-        print!(".");
-        use std::io::Write;
-        std::io::stdout().flush().ok();
-        std::thread::sleep(std::time::Duration::from_millis(500));
-    }
-    println!();
-    eprintln!(
-        "  \x1b[33m⚠\x1b[0m Proxy did not respond within {}s — writing env vars anyway",
-        max_attempts / 2
-    );
-    eprintln!("    If Claude Code shows connection errors, run: lean-ctx proxy start");
-}
-
-fn restart_proxy_if_running() {
-    let port = crate::proxy_setup::default_port();
-
-    if restart_managed_proxy() {
-        return;
-    }
-
-    if is_proxy_reachable(port) {
-        println!(
-            "  \x1b[33m⟳\x1b[0m Proxy running on port {port} — restart it to use the new binary:"
-        );
-        println!("    \x1b[1mlean-ctx proxy start --port={port}\x1b[0m");
-    }
-}
-
-/// Restart proxy managed by launchd (macOS) or systemd (Linux).
-/// Returns `true` if a managed service was found and restarted.
-fn restart_managed_proxy() -> bool {
-    #[cfg(target_os = "macos")]
-    {
-        let plist_path = dirs::home_dir()
-            .unwrap_or_default()
-            .join("Library/LaunchAgents/com.leanctx.proxy.plist");
-        if plist_path.exists() {
-            if crate::core::launchd::bootstrap("com.leanctx.proxy", &plist_path) {
-                println!("  \x1b[32m✓\x1b[0m Proxy restarted (LaunchAgent)");
-            } else {
-                println!("  \x1b[33m⚠\x1b[0m Could not restart proxy LaunchAgent");
-            }
-            return true;
-        }
-    }
-
-    #[cfg(target_os = "linux")]
-    {
-        let service_path = dirs::home_dir()
-            .unwrap_or_default()
-            .join(".config/systemd/user/lean-ctx-proxy.service");
-        if service_path.exists() {
-            let result = std::process::Command::new("systemctl")
-                .args(["--user", "restart", "lean-ctx-proxy"])
-                .output();
-            match result {
-                Ok(o) if o.status.success() => {
-                    println!("  \x1b[32m✓\x1b[0m Proxy restarted (systemd)");
-                }
-                _ => {
-                    println!("  \x1b[33m⚠\x1b[0m Could not restart proxy systemd service");
-                }
-            }
-            return true;
-        }
-    }
-
-    false
-}
-
-fn is_proxy_reachable(port: u16) -> bool {
-    ureq::get(&format!("http://127.0.0.1:{port}/health"))
-        .call()
-        .is_ok()
-}
-
 /// Builds the GitHub Releases API URL: the latest release when `version` is
 /// `None`, or a specific tag (`v{version}`) when pinned (#447). The leading
 /// `v` is normalised so both `3.8.5` and `v3.8.5` resolve to the `v3.8.5` tag.
@@ -1174,8 +950,15 @@ fn sign_staged_binary(staged_path: &std::path::Path, bytes: &[u8]) -> Result<Vec
     #[cfg(target_os = "macos")]
     let installed = {
         let _ = bytes;
-        let _ = crate::core::codesign::sign_binary(staged_path);
-        std::fs::read(staged_path).map_err(|e| format!("cannot read signed staged binary: {e}"))
+        // Which path signed is not consulted. That signing is over is: when a
+        // signing tool could not be confirmed ended it may still be writing
+        // the staged file, and then nothing is read, sealed or swapped.
+        crate::core::codesign::sign_binary(staged_path)
+            .map_err(|stopped| stopped.to_string())
+            .and_then(|_| {
+                std::fs::read(staged_path)
+                    .map_err(|e| format!("cannot read signed staged binary: {e}"))
+            })
     };
     #[cfg(not(target_os = "macos"))]
     let installed = {

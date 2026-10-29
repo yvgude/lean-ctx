@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 
 use super::super::{
-    CallToolRequestParams, CallToolResult, CrpMode, ErrorData, LeanCtxServer, elicitation, helpers,
+    CallToolRequestParams, CallToolResult, ErrorData, LeanCtxServer, elicitation, helpers,
     permission_inheritance,
 };
 use crate::core::ocla::response_cache::{
@@ -16,6 +16,7 @@ use std::{
 };
 
 mod kernel;
+pub(super) mod replay_lineage;
 
 #[cfg(test)]
 mod task_lineage_tests;
@@ -112,6 +113,11 @@ pub(super) fn response_cache_key(
         // A new lifecycle task must execute and bind its own native plan.
         return None;
     }
+    // A cached response does not carry the Workspace revision it was served
+    // under; a detached root must be gone on the next call (#2120).
+    if crate::core::workspace_authority::is_configured() {
+        return None;
+    }
     // Semantic results include mutable kernel context. Keep its underlying
     // search caches, but plan/reapply context before caching the whole response.
     if tool_name == "ctx_search"
@@ -148,9 +154,33 @@ pub(super) fn response_cache_key(
 }
 
 fn cache_allowed_for_current_egress(config: &crate::core::config::Config) -> bool {
-    !crate::core::policy::runtime::is_active()
+    // The response cache keeps whole tool results without their sources.
+    // Where stored output needs a source authority (policy pack, governed or
+    // sovereign gateway) it is neither read nor filled: an answer cached
+    // before the mode was tightened is not served afterwards.
+    !crate::core::context_admission::stored::source_authority_required()
+        && !crate::core::policy::runtime::is_active()
         && !config.sensitivity_effective().enabled_effective()
         && crate::core::redaction::redaction_enabled_for_active_role()
+}
+
+/// Under protection the response cache is not closed but BOUND: an entry is
+/// stored only together with the lineage of the dispatch that produced it
+/// (a complete captured source set, or an attested source-free output) and
+/// served only while that lineage re-admits under the current policy, role
+/// and project and the gateway policy is unchanged
+/// (`replay_lineage::{bind_cache_entry, cache_entry_current}`). The other
+/// reasons that close the cache — sensitivity floor, redaction switched off
+/// for the role — close the bound cache as well.
+fn bound_cache_allowed(config: &crate::core::config::Config) -> bool {
+    crate::core::context_admission::stored::source_authority_required()
+        && !config.sensitivity_effective().enabled_effective()
+        && crate::core::redaction::redaction_enabled_for_active_role()
+}
+
+/// The lineage record of a response-cache entry.
+fn cache_lineage_id(key: &ResponseCacheKey) -> String {
+    format!("{}:{:016x}", key.model, key.hash)
 }
 
 pub(super) fn cached_call_result(
@@ -199,10 +229,35 @@ pub(super) fn cache_call_result(
 }
 
 impl LeanCtxServer {
+    /// A call keeps the session instance it was bound to once its roots were
+    /// resolved, so a root change while it runs cannot redirect its late
+    /// writes into the next project's session (AP04-G1).
     pub(crate) async fn call_tool_guarded(
         &self,
         request: CallToolRequestParams,
     ) -> Result<CallToolResult, ErrorData> {
+        // One Workspace snapshot per call (#2120): every path check of this
+        // call sees one revision, and the next call sees a detached root gone.
+        let authority = crate::core::workspace_authority::current();
+        crate::core::workspace_authority::scope(
+            authority,
+            self.session
+                .scope(Box::pin(self.call_tool_guarded_bound(request))),
+        )
+        .await
+    }
+
+    async fn call_tool_guarded_bound(
+        &self,
+        request: CallToolRequestParams,
+    ) -> Result<CallToolResult, ErrorData> {
+        let project = self
+            .session
+            .read()
+            .await
+            .project_root
+            .as_ref()
+            .map(std::path::PathBuf::from);
         // Background cadence, counted here because this is the one point every
         // call passes regardless of how it is served: guard denials and
         // response-cache hits below return before `dispatch_and_post_process`.
@@ -217,32 +272,37 @@ impl LeanCtxServer {
             .background_tick
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed)
             + 1;
-        if tick == 1 || tick.is_multiple_of(100) {
-            std::thread::spawn(crate::cloud_sync::cloud_background_tasks);
-        } else if tick.is_multiple_of(10) {
-            std::thread::spawn(|| {
-                crate::cloud_sync::send_telemetry(
+        if tick == 1 || tick.is_multiple_of(10) {
+            // The first and every hundredth call also record the running
+            // version, as the daemon's tick does.
+            let record_version = tick == 1 || tick.is_multiple_of(100);
+            std::thread::spawn(move || {
+                if record_version
+                    && crate::core::telemetry_send::telemetry_send_eligible()
+                    && let Err(error) = crate::core::telemetry_aggregate::record_current_version()
+                {
+                    tracing::debug!("telemetry version aggregate unavailable: {error}");
+                }
+                crate::core::telemetry_send::send_telemetry(
                     crate::core::telemetry_aggregate::SendTrigger::Periodic,
                 );
             });
         }
-        let project = self
-            .session
-            .read()
-            .await
-            .project_root
-            .as_ref()
-            .map(std::path::PathBuf::from);
         crate::core::policy::runtime::REQUEST_PROJECT
             .scope(std::cell::RefCell::new(project), async {
                 // Establish client-root authority before early receipt/identity
                 // checks can return, as well as before lifecycle replay lookup.
                 self.resolve_roots_once().await;
+                self.session.pin();
                 let project = self.session.read().await.project_root.clone();
                 crate::core::policy::runtime::bind_request_project(project.as_deref());
                 // One Decision Receipt per call: every admission inside this
                 // call (handler and its read workers) lands in this capture.
-                let admissions = crate::core::context_admission::capture::AdmissionCapture::new();
+                // It carries the call's ONE policy snapshot, taken here.
+                let admissions =
+                    crate::core::context_admission::capture::AdmissionCapture::for_call(
+                        crate::core::context_admission::capture::CallSnapshot::take(),
+                    );
                 let tool_name = request.name.to_string();
                 let result = crate::core::context_admission::capture::ADMISSIONS
                     .scope(
@@ -250,9 +310,10 @@ impl LeanCtxServer {
                         self.call_tool_guarded_scoped(request),
                     )
                     .await;
-                self.finish_gateway_receipt(admissions, &result, &tool_name)
-                    .await;
-                result.map_err(|error| {
+                // Under a pack an error leaves as one fixed text. Replaced
+                // before the receipt, so the receipt and its observation name
+                // the bytes that actually leave (AP10-C3).
+                let result = result.map_err(|error| {
                     if crate::core::policy::runtime::is_active() {
                         ErrorData::internal_error(
                             "Tool request failed under the current policy",
@@ -261,7 +322,10 @@ impl LeanCtxServer {
                     } else {
                         error
                     }
-                })
+                });
+                // The receipt is stored before the result leaves (G08).
+                self.finish_gateway_receipt(admissions, result, &tool_name)
+                    .await
             })
             .await
     }
@@ -270,6 +334,14 @@ impl LeanCtxServer {
         &self,
         request: CallToolRequestParams,
     ) -> Result<CallToolResult, ErrorData> {
+        // A withheld Hive tool (release switch off) answers one fixed line
+        // before any lifecycle, ledger or tool state is touched.
+        if let Some(line) = crate::server::dynamic_tools::withheld_hive_tool_refusal(
+            &request.name,
+            request.arguments.as_ref(),
+        ) {
+            return Ok(CallToolResult::error(vec![ContentBlock::text(line)]));
+        }
         if crate::server::native_receipts::requested(&request.name, request.arguments.as_ref())
             && let Some(authority) = &self.native_receipt_authority
         {
@@ -356,37 +428,40 @@ impl LeanCtxServer {
             .to_owned();
         let decision_loop_enabled = config.decision_loop.enabled;
         let lifecycle = crate::core::execution_lifecycle::ExecutionLifecycle::global();
-        lifecycle
-            .run_with_task_identity(
-                crate::core::execution_lifecycle::ToolRequest {
-                    tool_name: semantic_call.map_or(tool_name, |(name, _)| name),
-                    query,
-                    session_id,
-                    agent_id,
-                    surface: crate::core::execution_lifecycle::ToolSurface::Mcp,
-                    idempotency_key,
-                },
-                crate::core::execution_lifecycle::RuntimeContext {
-                    client_name: Some(client_name),
-                    project_root,
-                },
-                crate::core::execution_lifecycle::ProductEntitlements {
-                    autopilot: decision_loop_enabled,
-                    personalized_learning: false,
-                },
-                McpDriver {
-                    server: self,
-                    request: Some(request),
-                    entitlements: Some(McpEntitlements { config }),
-                    prepared: None,
-                    checkpoint: None,
-                    pending_cache_key: None,
-                    native_receipt_capture: None,
-                    native_receipt_metadata: None,
-                    input_tokens,
-                },
-                task_identity,
-            )
+        // The replay key is not changed: it only names the lineage record the
+        // dispatch writes and a later replay admission re-authorizes.
+        let replay_key = idempotency_key.clone();
+        let run = lifecycle.run_with_task_identity(
+            crate::core::execution_lifecycle::ToolRequest {
+                tool_name: semantic_call.map_or(tool_name, |(name, _)| name),
+                query,
+                session_id,
+                agent_id,
+                surface: crate::core::execution_lifecycle::ToolSurface::Mcp,
+                idempotency_key,
+            },
+            crate::core::execution_lifecycle::RuntimeContext {
+                client_name: Some(client_name),
+                project_root,
+            },
+            crate::core::execution_lifecycle::ProductEntitlements {
+                autopilot: decision_loop_enabled,
+                personalized_learning: false,
+            },
+            McpDriver {
+                server: self,
+                request: Some(request),
+                entitlements: Some(McpEntitlements { config }),
+                prepared: None,
+                checkpoint: None,
+                pending_cache_key: None,
+                native_receipt_capture: None,
+                native_receipt_metadata: None,
+                input_tokens,
+            },
+            task_identity,
+        );
+        let outcome = replay_lineage::scope(replay_key, run)
             .await
             .map_err(|error| match error {
                 crate::core::execution_lifecycle::LifecycleRunError::Dispatch(error) => error,
@@ -402,8 +477,10 @@ impl LeanCtxServer {
                         None,
                     )
                 }
-            })
-            .map(|result| crate::server::policy_guard::release_result(&release_name, result))
+            });
+        // Both channels pass the release point: an error's message and data
+        // reach the host as surely as a result does (AP10-C1).
+        crate::server::policy_guard::release_outcome(&release_name, outcome)
     }
 
     async fn prepare_tool_call(
@@ -510,6 +587,32 @@ impl LeanCtxServer {
             }
         }
 
+        // Hive bus control (C5b): `hold`/`stop` refuse mutating tools,
+        // including via ctx_call. The agent id is copied out first so no
+        // lock is held across the file check.
+        let agent = match self.agent_id.read().await.clone() {
+            Some(agent) => Some(agent),
+            None => self.presence_agent_id.read().await.clone(),
+        };
+        if let Some(message) =
+            crate::core::hive::bus::control::tool_refusal(agent.as_deref(), guard_name)
+        {
+            return Ok(PreparedCallResult::Terminal(
+                CallToolResult::error(vec![ContentBlock::text(message)]),
+                "hive control denied",
+            ));
+        }
+        // A maintainer vetoed this agent's lock or handoff (§3.7.4): its next
+        // ctx_tasks / ctx_agent call says so, once.
+        if let Some(message) =
+            crate::core::hive::bus::veto::take_refusal(agent.as_deref(), guard_name)
+        {
+            return Ok(PreparedCallResult::Terminal(
+                CallToolResult::error(vec![ContentBlock::text(message)]),
+                "hive veto",
+            ));
+        }
+
         if let Some(blocked) = Self::guard_egress(guard_name, guard_args) {
             return Ok(PreparedCallResult::Terminal(blocked, "egress denied"));
         }
@@ -542,7 +645,7 @@ impl LeanCtxServer {
             .is_some_and(|tool| tool.produces_machine_readable(guard_args));
 
         // Skip the session wake-up briefing for machine-readable calls: the
-        // pre-hook latches `session_initialized` via compare-exchange, so calling
+        // wake-up briefing latches `session_briefed` via compare-exchange, so calling
         // it here would burn the once-per-session slot for a briefing we then
         // throw away. Deferring keeps the briefing intact for the next call.
         let args_fp = args
@@ -658,12 +761,17 @@ impl LeanCtxServer {
             .unwrap_or_default();
         // A cached answer is egress too: never served while a policy pack or
         // the sensitivity floor could withhold what it contains.
-        let cache_key = cache_allowed_for_current_egress(&config)
+        let bound_cache = bound_cache_allowed(&config);
+        let cache_key = (bound_cache || cache_allowed_for_current_egress(&config))
             .then(|| response_cache_key(name, args, &project_root))
             .flatten();
         let call_start = std::time::Instant::now();
         if let Some(cached) = cache_key
             .as_ref()
+            // Under protection a hit needs a lineage that re-admits now.
+            .filter(|key| {
+                !bound_cache || replay_lineage::cache_entry_current(&cache_lineage_id(key))
+            })
             .and_then(|key| cached_call_result(global_response_cache(), key))
         {
             self.record_tool_usage(
@@ -792,11 +900,16 @@ impl crate::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
         self.apply_security_boundaries(context).await?;
         // Replays revalidate admission only. Context gathering/planning already
         // belongs to the cached execution and must not run a second time.
+        // A current admission denial wins; otherwise the stored output is
+        // returned only while every source it was derived from is still
+        // authorized. Loss of rights yields a typed denial — the completed
+        // operation is never executed again.
         Ok(self
             .prepared
             .take()
             .expect("MCP replay admission consumed once")
-            .into_replay_override())
+            .into_replay_override()
+            .or_else(replay_lineage::denial))
     }
 
     async fn gather_context_strategy(
@@ -818,21 +931,16 @@ impl crate::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
                     session.project_root.clone(),
                 )
             };
-            let cache_timeout =
-                tokio::time::timeout(std::time::Duration::from_secs(5), self.server.cache.write())
-                    .await;
-            if let Ok(mut cache) = cache_timeout {
-                call.auto_context = crate::tools::autonomy::session_lifecycle_pre_hook(
-                    &self.server.autonomy,
-                    &call.name,
-                    &mut cache,
-                    task.as_deref(),
-                    project_root.as_deref(),
-                    CrpMode::effective(),
-                );
-            } else {
-                tracing::warn!("pre-dispatch: cache write-lock timeout (5s), skipping autonomy");
-            }
+            // Built from this caller's own session instance only (I07/S03).
+            call.auto_context =
+                crate::core::session::caller::scope(Some(self.server.session.instance()), || {
+                    crate::tools::autonomy::session_wakeup_briefing(
+                        &self.server.autonomy,
+                        &call.name,
+                        task.as_deref(),
+                        project_root.as_deref(),
+                    )
+                });
         }
         Ok(crate::core::execution_lifecycle::StageDisposition::Applied)
     }
@@ -900,6 +1008,48 @@ impl crate::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
                         crate::core::execution_lifecycle::StageDisposition::Applied,
                     ));
                 }
+                // A command refused only for unlisted programs is put to the
+                // user here, after every policy check and before dispatch.
+                let shell_command = (guard_name == "ctx_shell")
+                    .then(|| {
+                        guard_args
+                            .as_ref()
+                            .and_then(|args| args.get("command"))
+                            .and_then(Value::as_str)
+                    })
+                    .flatten();
+                // ctx_execute code in a language other than shell, likewise
+                // (GHSA-rxv5-4c3x-g4q6).
+                let execute_items = (guard_name == "ctx_execute")
+                    .then(|| {
+                        guard_args
+                            .as_ref()
+                            .map(crate::server::shell_approval::execute_items)
+                    })
+                    .flatten();
+                let approval = match (shell_command, execute_items) {
+                    (Some(command), _) => Some(self.server.shell_approval(command).await),
+                    (None, Some(items)) => Some(self.server.execute_approval(&items).await),
+                    (None, None) => None,
+                };
+                let shell_grant: Arc<[String]> = match approval {
+                    Some(outcome) => match outcome {
+                        crate::server::shell_approval::Outcome::Granted(programs) => {
+                            Arc::from(programs)
+                        }
+                        crate::server::shell_approval::Outcome::Refused(message) => {
+                            return Ok((
+                                McpDispatched::Terminal(
+                                    CallToolResult::error(vec![ContentBlock::text(message)]),
+                                    "shell command not approved",
+                                ),
+                                crate::core::execution_lifecycle::StageDisposition::Applied,
+                            ));
+                        }
+                        crate::server::shell_approval::Outcome::NotNeeded => Arc::from(Vec::new()),
+                    },
+                    None => Arc::from(Vec::new()),
+                };
                 if crate::server::native_receipts::requested(&call.name, call.args.as_ref()) {
                     self.native_receipt_capture = self
                         .server
@@ -920,11 +1070,14 @@ impl crate::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
                     call.minimal,
                     &call.args_fp,
                 );
-                let primitive = crate::server::native_receipts::NATIVE_RECEIPT_CAPTURE
+                let primitive = crate::server::shell_approval::SHELL_GRANT
                     .scope(
-                        self.native_receipt_capture.clone(),
-                        crate::core::context_kernel::bridge::runtime::KERNEL_PLANNING_HANDOFF
-                            .scope(call.kernel_handoff.clone(), dispatch),
+                        shell_grant,
+                        crate::server::native_receipts::NATIVE_RECEIPT_CAPTURE.scope(
+                            self.native_receipt_capture.clone(),
+                            crate::core::context_kernel::bridge::runtime::KERNEL_PLANNING_HANDOFF
+                                .scope(call.kernel_handoff.clone(), dispatch),
+                        ),
                     )
                     .await;
                 self.server.record_tool_usage(
@@ -1044,7 +1197,14 @@ impl crate::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
         let disposition =
             super::pipeline::record_checkpoint(self.server, self.checkpoint.take(), output).await;
         if let Some(key) = self.pending_cache_key.take() {
-            cache_call_result(global_response_cache(), key, output);
+            // Under protection a result is cached only together with the
+            // lineage of the dispatch that produced it; unknown lineage is
+            // not cached at all.
+            let bindable = !crate::core::context_admission::stored::source_authority_required()
+                || replay_lineage::bind_cache_entry(&cache_lineage_id(&key));
+            if bindable {
+                cache_call_result(global_response_cache(), key, output);
+            }
         }
         Ok(disposition)
     }
@@ -1088,377 +1248,5 @@ impl crate::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::{
-        CallToolResult, ContentBlock, Duration, Meta, PreparedCallResult, ResponseCache, Value,
-        cache_call_result, cached_call_result, response_cache_key,
-    };
-
-    #[test]
-    fn response_cache_cannot_reuse_a_result_under_changed_rules() {
-        use crate::core::policy::{parse, resolve, runtime::TestPolicyOverride};
-        let cache = ResponseCache::new(16, Duration::from_mins(1));
-        let policy = |prefix: &str| {
-            resolve(&parse(&format!(
-            "name = 'cache'\nversion = '1.0.0'\ndescription = 'test'\n[redaction]\ncustomer = '{prefix}-[0-9]{{4}}'\n"
-        )).unwrap()).unwrap()
-        };
-        let key = {
-            let _policy = TestPolicyOverride::set(Some(policy("CUS")));
-            response_cache_key("ctx_tree", None, "/fixture").unwrap()
-        };
-        cache_call_result(
-            &cache,
-            key.clone(),
-            &CallToolResult::success(vec![ContentBlock::text("ACC-1234")]),
-        );
-        assert!(cached_call_result(&cache, &key).is_some());
-        let _policy = TestPolicyOverride::set(Some(policy("ACC")));
-        let changed = response_cache_key("ctx_tree", None, "/fixture").unwrap();
-        assert!(cached_call_result(&cache, &changed).is_none());
-    }
-
-    #[tokio::test]
-    async fn policy_revoked_after_preparation_prevents_primitive_dispatch() {
-        use crate::core::execution_lifecycle::{
-            ExecutionDriver, ExecutionLifecycle, ProductEntitlements, RuntimeContext, ToolRequest,
-            ToolSurface,
-        };
-        let _isolation = crate::core::data_dir::isolated_data_dir();
-        let root = tempfile::tempdir().unwrap();
-        let policy = root.path().join(".lean-ctx/policy.toml");
-        std::fs::create_dir_all(policy.parent().unwrap()).unwrap();
-        let base = "name = 'revoke'\nversion = '1.0.0'\ndescription = 'test'\n";
-        std::fs::write(&policy, base).unwrap();
-        let source = root.path().join("sample.txt");
-        std::fs::write(&source, "CUS-1234").unwrap();
-        let server = crate::tools::LeanCtxServer::new_with_project_root(root.path().to_str());
-        crate::core::policy::runtime::REQUEST_PROJECT
-            .scope(std::cell::RefCell::new(Some(root.path().into())), async {
-                let request = serde_json::from_value(serde_json::json!({"name":"ctx_read",
-                    "arguments":{"path":source,"mode":"full"}}))
-                .unwrap();
-                let prepared = server
-                    .prepare_tool_call(
-                        request,
-                        super::McpEntitlements {
-                            config: std::sync::Arc::new(crate::core::config::Config::default()),
-                        },
-                    )
-                    .await
-                    .unwrap();
-                assert!(matches!(prepared, PreparedCallResult::Ready(_)));
-                let lifecycle = ExecutionLifecycle::default();
-                let context = lifecycle.begin(
-                    ToolRequest {
-                        tool_name: "ctx_read".into(),
-                        query: None,
-                        session_id: "revoke".into(),
-                        agent_id: "revoke".into(),
-                        surface: ToolSurface::Mcp,
-                        idempotency_key: None,
-                    },
-                    RuntimeContext {
-                        project_root: root.path().to_str().map(str::to_owned),
-                        ..RuntimeContext::default()
-                    },
-                    ProductEntitlements {
-                        autopilot: false,
-                        personalized_learning: false,
-                    },
-                );
-                let mut driver = super::McpDriver {
-                    server: &server,
-                    request: None,
-                    entitlements: None,
-                    prepared: Some(prepared),
-                    checkpoint: None,
-                    pending_cache_key: None,
-                    native_receipt_capture: None,
-                    native_receipt_metadata: None,
-                    input_tokens: 0,
-                };
-                tokio::task::yield_now().await;
-                std::fs::write(
-                    &policy,
-                    format!("{base}[context]\ndeny_tools = ['ctx_read']\n"),
-                )
-                .unwrap();
-                let (primitive, _) = driver.dispatch_primitive(&context).await.unwrap();
-                let super::McpDispatched::Terminal(result, reason) = primitive else {
-                    panic!("revoked request must never dispatch the primitive");
-                };
-                assert_eq!(reason, "policy changed before dispatch");
-                assert!(!serde_json::to_string(&result).unwrap().contains("CUS-1234"));
-            })
-            .await;
-    }
-
-    #[tokio::test]
-    async fn mcp_context_attachment_is_not_an_autopilot_decision() {
-        use crate::core::execution_lifecycle::{
-            ExecutionDriver, ExecutionLifecycle, ProductEntitlements, RuntimeContext,
-            StageDisposition, ToolRequest, ToolSurface,
-        };
-
-        let directory = tempfile::tempdir().unwrap();
-        let root = directory.path().to_str().unwrap();
-        let server = crate::tools::LeanCtxServer::new_with_project_root(Some(root));
-        let lifecycle = ExecutionLifecycle::default();
-        for enabled in [false, true] {
-            let context = lifecycle.begin(
-                ToolRequest {
-                    tool_name: "ctx_read".to_owned(),
-                    query: Some("inspect lifecycle".to_owned()),
-                    session_id: "autopilot-stage-test".to_owned(),
-                    agent_id: "autopilot-stage-test".to_owned(),
-                    surface: ToolSurface::Mcp,
-                    idempotency_key: None,
-                },
-                RuntimeContext {
-                    project_root: Some(root.to_owned()),
-                    ..RuntimeContext::default()
-                },
-                ProductEntitlements {
-                    autopilot: enabled,
-                    personalized_learning: false,
-                },
-            );
-            let mut driver = super::McpDriver {
-                server: &server,
-                request: None,
-                entitlements: None,
-                prepared: Some(PreparedCallResult::Ready(Box::new(
-                    super::PreparedMcpCall {
-                        name: "ctx_read".to_owned(),
-                        args: None,
-                        minimal: true,
-                        config: std::sync::Arc::new(crate::core::config::Config::default()),
-                        machine_readable: false,
-                        auto_context: None,
-                        throttle_warning: None,
-                        args_fp: String::new(),
-                        decision_context: None,
-                        kernel_handoff: Default::default(),
-                        cache_key: None,
-                    },
-                ))),
-                checkpoint: None,
-                pending_cache_key: None,
-                native_receipt_capture: None,
-                native_receipt_metadata: None,
-                input_tokens: 0,
-            };
-            assert_eq!(
-                driver.ask_autopilot(&context).await.unwrap(),
-                StageDisposition::Skipped(if enabled {
-                    "no canonical autopilot decision"
-                } else {
-                    "not entitled"
-                })
-            );
-            let Some(PreparedCallResult::Ready(call)) = driver.prepared.as_ref() else {
-                panic!("prepared call must remain available for dispatch");
-            };
-            assert_eq!(
-                call.decision_context.as_ref().map(|value| &value.task_id),
-                enabled.then_some(&context.task_id),
-                "existing completion-accounting handoff must remain intact"
-            );
-            if enabled {
-                assert_eq!(
-                    server.task_envelope.read().await.as_ref().unwrap().task_id,
-                    context.envelope.task_id
-                );
-            }
-            assert!(context.outcome().is_none());
-        }
-    }
-
-    #[test]
-    fn replay_admission_overrides_policy_terminal_but_not_response_cache() {
-        let result = || CallToolResult::success(vec![ContentBlock::text("result")]);
-        assert!(
-            PreparedCallResult::Terminal(result(), "policy denied")
-                .into_replay_override()
-                .is_some()
-        );
-        assert!(
-            PreparedCallResult::Cached(result())
-                .into_replay_override()
-                .is_none()
-        );
-    }
-
-    #[test]
-    fn cached_result_preserves_meta() {
-        let cache = ResponseCache::new(8, Duration::from_mins(1));
-        let key = response_cache_key("ctx_search", None, "/project").expect("cacheable tool");
-        let mut result = CallToolResult::success(vec![ContentBlock::text("cached")]);
-        let mut meta = Meta::new();
-        meta.0
-            .insert("cache_hint".to_owned(), Value::String("stable".to_owned()));
-        result.meta = Some(meta);
-
-        cache_call_result(&cache, key.clone(), &result);
-
-        let cached = cached_call_result(&cache, &key).expect("response should be cached");
-        assert_eq!(cached.meta, result.meta);
-    }
-
-    #[test]
-    fn ctx_read_is_not_response_cached() {
-        assert!(response_cache_key("ctx_read", None, "/project").is_none());
-    }
-
-    #[test]
-    fn remaining_response_cache_tools_are_cacheable() {
-        for tool_name in ["ctx_search", "ctx_tree", "ctx_glob"] {
-            assert!(response_cache_key(tool_name, None, "/project").is_some());
-        }
-    }
-
-    #[test]
-    fn active_policy_disables_response_cache_reuse() {
-        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(
-            crate::core::policy::ResolvedPolicy {
-                name: "cache-egress-test".into(),
-                version: "1.0.0".into(),
-                description: "cache egress guard".into(),
-                chain: vec![],
-                default_read_mode: None,
-                allow_tools: None,
-                deny_tools: vec![],
-                max_context_tokens: None,
-                audit_retention_days: None,
-                redaction: std::collections::BTreeMap::new(),
-                filters: crate::core::policy::FilterRules::default(),
-                egress: crate::core::policy::EgressRules::default(),
-                routing: crate::core::policy::RoutingPolicyRules::default(),
-                budgets: crate::core::policy::BudgetRules::default(),
-            },
-        ));
-
-        assert!(!super::cache_allowed_for_current_egress(
-            &crate::core::config::Config::default()
-        ));
-    }
-
-    /// The daily telemetry flush is scheduled off `background_tick`, so a call
-    /// rejected before dispatch must still advance it. Under the old gate
-    /// (`call_count`, only moved by `record_checkpoint`) a default install
-    /// never reached the cadence boundary and never sent a batch.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn background_tick_counts_calls_rejected_before_dispatch() {
-        use std::sync::atomic::Ordering;
-
-        let _data_dir = crate::core::data_dir::isolated_data_dir();
-        let root = env!("CARGO_MANIFEST_DIR").to_string();
-        let server = crate::tools::LeanCtxServer::new_with_project_root(Some(&root));
-        // Skip bus registration: this test is about the cadence, not presence.
-        *server.presence_agent_id.write().await = Some("tick-test".to_string());
-
-        for expected in 1..=2 {
-            // `ctx` without `tool` is rejected before any dispatch or checkpoint.
-            let rejected = server
-                .call_tool_guarded(rmcp::model::CallToolRequestParams::new("ctx"))
-                .await;
-            assert!(rejected.is_err());
-            assert_eq!(server.background_tick.load(Ordering::Relaxed), expected);
-        }
-        assert_eq!(server.call_count.load(Ordering::Relaxed), 0);
-    }
-
-    /// #2089: Claude Code 2.1.296+ only lets a mod call listed tools, so the mod
-    /// reaches the unlisted ctx_shape through ctx_call. The reporter's native
-    /// Bash output must come back shaped, as a success, with no decoration the
-    /// mod would splice into stdout.
-    #[tokio::test(flavor = "multi_thread")]
-    async fn ctx_shape_through_ctx_call_shapes_native_output() {
-        use std::fmt::Write as _;
-
-        let _data_dir = crate::core::data_dir::isolated_data_dir();
-        let root = env!("CARGO_MANIFEST_DIR").to_string();
-        let server = crate::tools::LeanCtxServer::new_with_project_root(Some(&root));
-        *server.presence_agent_id.write().await = Some("shape-test".to_string());
-        let mut output = String::new();
-        for i in 1..=150 {
-            let _ = writeln!(
-                output,
-                "2026-10-14T20:00:00Z INFO [build] compiling package github.com/example/pkg{} step {i} ok",
-                i % 7
-            );
-        }
-        let request: rmcp::model::CallToolRequestParams =
-            serde_json::from_value(serde_json::json!({
-                "name": "ctx_call",
-                "arguments": {"name": "ctx_shape", "arguments": {
-                    "tool": "Bash",
-                    "command": "for i in $(seq 1 150); do echo \"… step $i ok\"; done",
-                    "output": output,
-                    "exit_code": 0,
-                }},
-            }))
-            .unwrap();
-
-        let result = server.call_tool_guarded(request).await.unwrap();
-        assert_ne!(result.is_error, Some(true), "{result:?}");
-        let text = result
-            .content
-            .iter()
-            .filter_map(|block| block.as_text().map(|t| t.text.as_str()))
-            .collect::<String>();
-        assert!(
-            text.len() < output.len(),
-            "native output must shrink: {} >= {}",
-            text.len(),
-            output.len()
-        );
-        // The mod splices the body into stdout as-is: nothing may precede it.
-        assert!(
-            text.starts_with(output.lines().next().unwrap()),
-            "the body must start with the native output, undecorated: {text}"
-        );
-    }
-
-    #[test]
-    fn plan_mode_blocks_destructive_tools() {
-        let plan_tools = crate::core::editor_registry::plan_mode::plan_mode_tools();
-        for tool in crate::tool_defs::DESTRUCTIVE_TOOL_NAMES {
-            assert!(
-                !plan_tools.contains(tool),
-                "destructive tool '{tool}' must not be in plan_mode_tools"
-            );
-        }
-    }
-
-    #[test]
-    fn plan_mode_allows_read_only_tools() {
-        let plan_tools = crate::core::editor_registry::plan_mode::plan_mode_tools();
-        for tool in ["ctx_read", "ctx_search", "ctx_tree", "ctx_overview"] {
-            assert!(
-                plan_tools.contains(&tool),
-                "read-only tool '{tool}' must be in plan_mode_tools"
-            );
-        }
-    }
-
-    #[test]
-    fn interaction_mode_atomic_swap() {
-        use crate::tools::InteractionMode;
-        let mode = std::sync::atomic::AtomicU8::new(InteractionMode::Agent as u8);
-        assert_eq!(
-            InteractionMode::from_u8(mode.load(std::sync::atomic::Ordering::Relaxed)),
-            InteractionMode::Agent,
-        );
-        let prev = mode.swap(
-            InteractionMode::Plan as u8,
-            std::sync::atomic::Ordering::Relaxed,
-        );
-        assert_eq!(prev, InteractionMode::Agent as u8);
-        assert_eq!(
-            InteractionMode::from_u8(mode.load(std::sync::atomic::Ordering::Relaxed)),
-            InteractionMode::Plan,
-        );
-    }
-}
+#[path = "guarded_tests.rs"]
+mod tests;

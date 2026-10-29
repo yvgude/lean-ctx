@@ -89,6 +89,12 @@ impl ServerHandler for LeanCtxServer {
         tracing::info!("MCP client connected: {:?}", name);
         *self.client_name.write().await = name.clone();
         *self.peer.write().await = Some(context.peer.clone());
+        // Attribute this connection's bus presence to its host, recorded
+        // before any registration below reads it. A shared server serves
+        // several clients from one process, so it names no single host.
+        if self.session_mode != crate::tools::SessionMode::Shared {
+            crate::core::client_capabilities::record_handshake(&name, &request.client_info.version);
+        }
         // Per-agent savings attribution: a personal server serves exactly one
         // client, so its ledger events can carry that client's identity. The
         // shared (multi-client) mode keeps the process-level fallback.
@@ -114,20 +120,43 @@ impl ServerHandler for LeanCtxServer {
             tracing::info!("Client supports MCP roots/list — will resolve on first tool call");
         }
 
-        let env_root = roots::root_from_env().or_else(roots::root_from_workspace_env);
+        let explicit_env_root = roots::root_from_env();
+        let workspace_selection = explicit_env_root
+            .is_none()
+            .then(roots::workspace_selection_from_env)
+            .flatten();
+        let env_root = explicit_env_root.or_else(|| {
+            workspace_selection
+                .as_ref()
+                .map(|selection| selection.chosen_root.clone())
+        });
         let derived_root = derive_project_root_from_cwd();
         let effective_root = roots::session_root(env_root, derived_root);
+        // AP04-G7: the first of several workspace folders stays the choice
+        // (#699); recording it lets `ctx_session status` and `/api/scope`
+        // name it and how to change it. Only when it is the session's root.
+        if self.session_mode != crate::tools::SessionMode::Shared
+            && !crate::core::workspace_authority::is_configured()
+            && let Some(selection) = workspace_selection
+                .filter(|selection| effective_root.as_ref() == Some(&selection.chosen_root))
+        {
+            crate::core::root_selection::record(&selection);
+        }
 
         let cwd_str = std::env::current_dir()
             .ok()
             .map(|p| p.to_string_lossy().to_string())
             .unwrap_or_default();
+        // A shared session keeps the root it was created for: the serving
+        // process's own env and working directory say nothing about the
+        // client, and every client of that session would move with it.
+        let process_roots_apply = self.session_mode != crate::tools::SessionMode::Shared;
         {
             let mut session = self.session.write().await;
-            if !cwd_str.is_empty() {
+            if process_roots_apply && !cwd_str.is_empty() {
                 session.shell_cwd = Some(cwd_str.clone());
             }
-            if let Some(ref root) = effective_root {
+            if let Some(root) = effective_root.as_ref().filter(|_| process_roots_apply) {
                 session.project_root = Some(root.clone());
                 tracing::info!("Project root set to: {root}");
                 // Cursor multi-root: register sibling workspace folders as extra
@@ -138,7 +167,7 @@ impl ServerHandler for LeanCtxServer {
                         session.extra_roots.push(other);
                     }
                 }
-            } else if let Some(ref root) = session.project_root {
+            } else if process_roots_apply && let Some(ref root) = session.project_root {
                 // A previously persisted session may carry a contaminated root
                 // (e.g. HOME from an older build or a client that reported HOME
                 // as its workspace). Drop it unless it is a real, safe project
@@ -166,6 +195,32 @@ impl ServerHandler for LeanCtxServer {
                     if !existing.contains(&r) {
                         session.extra_roots.push(r);
                     }
+                }
+            }
+            // A launcher-bound Workspace replaces every root found above
+            // (#2120): env/cwd roots, workspace folders and configured extra
+            // roots grant nothing; an unusable Workspace leaves no root.
+            match crate::core::workspace_authority::load_current() {
+                crate::core::workspace_authority::Authority::Legacy => {}
+                crate::core::workspace_authority::Authority::Workspace(snapshot) => {
+                    let primary = snapshot.primary.to_string_lossy().into_owned();
+                    tracing::info!(
+                        "Workspace {} rev {} bound: project root {primary}",
+                        snapshot.id,
+                        snapshot.revision
+                    );
+                    session.extra_roots = snapshot.additional_root_strings();
+                    session.shell_cwd = Some(primary.clone());
+                    session.project_root = Some(primary);
+                }
+                crate::core::workspace_authority::Authority::Unavailable(reason) => {
+                    tracing::error!(
+                        "{}",
+                        crate::core::workspace_authority::unavailable_reason(&reason)
+                    );
+                    session.extra_roots.clear();
+                    session.project_root = None;
+                    session.shell_cwd = None;
                 }
             }
             session.refresh_handoff_context();
@@ -197,13 +252,34 @@ impl ServerHandler for LeanCtxServer {
         // See `index_orchestrator::ensure_warm_for_tool`, driven from dispatch.
 
         let agent_name = name.clone();
-        let agent_root = effective_root.clone().unwrap_or_default();
+        // A shared session's clients register on its own root, not the
+        // serving process's (AP04-G5).
+        let agent_root = if process_roots_apply {
+            effective_root.clone().unwrap_or_default()
+        } else {
+            self.session
+                .read()
+                .await
+                .project_root
+                .clone()
+                .unwrap_or_default()
+        };
         let agent_id_handle = self.agent_id.clone();
         let presence_agent_id_handle = self.presence_agent_id.clone();
         let presence_role_handle = self.presence_role.clone();
         tokio::task::spawn_blocking(move || {
             if std::env::var("LEAN_CTX_HEADLESS").is_ok() {
                 return;
+            }
+
+            // The startup presence predates the handshake; name its host now
+            // rather than after the maintenance below (or never, without a root).
+            if let Err(error) =
+                crate::core::agents::AgentRegistry::record_transport_client_persistent(
+                    &crate::core::agents::TransportClient::current(),
+                )
+            {
+                tracing::warn!("lean-ctx: failed to attribute MCP presence to its host: {error}");
             }
 
             // Avoid startup stampedes when multiple agent sessions initialize at once.
@@ -242,33 +318,27 @@ impl ServerHandler for LeanCtxServer {
             drop(maintenance);
 
             if !agent_root.is_empty() {
-                let heuristic_role = match agent_name.to_lowercase().as_str() {
-                    n if n.contains("cursor") => Some("coder"),
-                    n if n.contains("claude") => Some("coder"),
-                    n if n.contains("codebuddy") => Some("coder"),
-                    n if n.contains("codex") => Some("coder"),
-                    n if n.contains("antigravity") || n.contains("gemini") => Some("coder"),
-                    n if n.contains("review") => Some("reviewer"),
-                    n if n.contains("test") => Some("debugger"),
-                    _ => None,
-                };
-                let env_role = std::env::var("LEAN_CTX_ROLE")
-                    .or_else(|_| std::env::var("LEAN_CTX_AGENT_ROLE"))
-                    .ok();
-                let effective_role = env_role.as_deref().or(heuristic_role).unwrap_or("coder");
+                let (effective_role, role_source) =
+                    resolve_session_role(&agent_name, crate::core::agents::declared_session_role());
 
-                let _ = crate::core::roles::set_active_role_with_source(effective_role, true);
+                // The active role is process-wide: a client of a shared server
+                // must not set it for every other client. Its own role is
+                // still remembered for its presence below.
+                if process_roots_apply {
+                    let _ = crate::core::roles::set_active_role_with_source(&effective_role, true);
+                }
                 // #1766: remember the resolved role so the fail-closed presence
                 // retry re-registers with it, not the `context-engine` placeholder.
                 if let Ok(mut guard) = presence_role_handle.try_write() {
-                    *guard = Some(effective_role.to_string());
+                    *guard = Some(effective_role.clone());
                 }
 
-                let registration = crate::core::agents::AgentRegistry::mutate_locked(|registry| {
-                    registry.cleanup_stale(24);
-                    registry.register("mcp", Some(effective_role), &agent_root, None)
-                })
-                .and_then(|(_, id)| id);
+                let registration = crate::core::agents::AgentRegistry::register_mcp_process_as(
+                    &agent_root,
+                    &effective_role,
+                    role_source,
+                    None,
+                );
                 let id = match registration {
                     Ok(id) => Some(id),
                     Err(error) => {
@@ -485,17 +555,12 @@ impl ServerHandler for LeanCtxServer {
                         *wf = None;
                         let _ = crate::core::workflow::clear_active();
                     } else if let Some(state) = run.spec.state(&run.current)
-                        && let Some(allowed) = &state.allowed_tools
+                        && state.allowed_tools.is_some()
                     {
-                        let mut allow: std::collections::HashSet<&str> =
-                            allowed.iter().map(std::string::String::as_str).collect();
-                        for passthrough in WORKFLOW_PASSTHROUGH_TOOLS {
-                            allow.insert(passthrough);
-                        }
                         return Ok(ListToolsResult {
                             tools: tools
                                 .into_iter()
-                                .filter(|t| allow.contains(t.name.as_ref()))
+                                .filter(|t| workflow_lists(&run, t.name.as_ref()))
                                 .collect(),
                             ..Default::default()
                         });
@@ -696,55 +761,52 @@ impl ServerHandler for LeanCtxServer {
 
         let loop_detector = self.loop_detector.clone();
         let ct = context.ct.clone();
+        // The host's own id of this call, if it names one: noted with the
+        // delivery so the proxy can tell which call these bytes answered.
+        let host_call_id = crate::server::call_identity::host_call_id(request.meta.as_ref());
 
         // #1781: scope the request's cancellation token for the whole dispatch
         // so a tool that waits on a child process can observe an abandoned call
         // instead of holding its blocking-pool slot until its own soft cap.
-        match AssertUnwindSafe(
-            crate::server::tool_trait::REQUEST_CT
-                .scope(ct.clone(), self.call_tool_guarded(request)),
-        )
+        let Ok(result) = AssertUnwindSafe(crate::server::tool_trait::REQUEST_CT.scope(
+            ct.clone(),
+            Box::pin(crate::server::call_identity::scoped(
+                host_call_id,
+                self.call_tool_guarded(request),
+            )),
+        ))
         .catch_unwind()
         .await
-        {
-            Ok(result) => {
-                // #1265: If the client cancelled this request while the tool was
-                // executing, drop the result instead of replying to a stale ID.
-                if ct.is_cancelled() {
-                    tracing::warn!(
-                        "tool '{tool_name_for_panic}' completed after client cancellation — dropping result"
-                    );
-                    return Err(ErrorData::internal_error(
-                        "request was cancelled by client",
-                        None,
-                    ));
-                }
-                result
-            }
-            Err(panic_payload) => {
-                let detail = if let Some(s) = panic_payload.downcast_ref::<&str>() {
-                    (*s).to_string()
-                } else if let Some(s) = panic_payload.downcast_ref::<String>() {
-                    s.clone()
-                } else {
-                    "unknown".to_string()
-                };
-                tracing::error!("call_tool panicked: {detail}");
+        else {
+            // A panic message can quote the content it failed on (a slice
+            // boundary inside a string, a parse error): the log line names
+            // the event only (AP10-R4).
+            tracing::error!("call_tool panicked (tool_panic)");
 
-                if let Ok(mut detector) =
-                    tokio::time::timeout(std::time::Duration::from_secs(1), loop_detector.write())
-                        .await
-                {
-                    detector.record_error_outcome(&tool_name_for_panic, &args_fp_for_panic);
-                }
-
-                Ok(CallToolResult::error(vec![ContentBlock::text(
-                    "ERROR: lean-ctx internal error. The MCP server is still running. \
-                     Please retry or use a different approach."
-                        .to_string(),
-                )]))
+            if let Ok(mut detector) =
+                tokio::time::timeout(std::time::Duration::from_secs(1), loop_detector.write()).await
+            {
+                detector.record_error_outcome(&tool_name_for_panic, &args_fp_for_panic);
             }
+
+            return Ok(CallToolResult::error(vec![ContentBlock::text(
+                "ERROR: lean-ctx internal error. The MCP server is still running. \
+                 Please retry or use a different approach."
+                    .to_string(),
+            )]));
+        };
+        // #1265: If the client cancelled this request while the tool was
+        // executing, drop the result instead of replying to a stale ID.
+        if ct.is_cancelled() {
+            tracing::warn!(
+                "tool '{tool_name_for_panic}' completed after client cancellation — dropping result"
+            );
+            return Err(ErrorData::internal_error(
+                "request was cancelled by client",
+                None,
+            ));
         }
+        result
     }
 
     async fn on_roots_list_changed(
@@ -768,9 +830,108 @@ fn startup_rule_maintenance_at_home(home: &std::path::Path) {
     let _ = crate::rules_inject::inject_all_rules(home);
 }
 
+/// Whether the tool listing shows `tool` under the active `run` whose current
+/// state gates tools: exactly when the call gate (`workflow::tool_gate`) lets
+/// it through. For a real run that is its allowed tools plus the
+/// pass-through tools, as before. For the stand-in of a withheld workflow the
+/// pass-through tools are NOT added — every call to them is refused — so the
+/// listing is the workflow control tool and the wrappers that reach it.
+fn workflow_lists(run: &crate::core::workflow::WorkflowRun, tool: &str) -> bool {
+    crate::core::workflow::tool_gate(run, tool, WORKFLOW_PASSTHROUGH_TOOLS)
+        == crate::core::workflow::ToolGate::Pass
+}
+
+/// The session role and its provenance: a role stated through the
+/// environment is declared; the client-name heuristic and the `coder`
+/// fallback are assumptions and are reported as such.
+fn resolve_session_role(
+    client_name: &str,
+    declared: Option<String>,
+) -> (String, crate::core::agents::RoleSource) {
+    if let Some(role) = declared {
+        return (role, crate::core::agents::RoleSource::Declared);
+    }
+    let heuristic_role = match client_name.to_lowercase().as_str() {
+        n if n.contains("cursor") => "coder",
+        n if n.contains("claude") => "coder",
+        n if n.contains("codebuddy") => "coder",
+        n if n.contains("codex") => "coder",
+        n if n.contains("antigravity") || n.contains("gemini") => "coder",
+        n if n.contains("review") => "reviewer",
+        n if n.contains("test") => "debugger",
+        _ => "coder",
+    };
+    (
+        heuristic_role.to_string(),
+        crate::core::agents::RoleSource::Assumed,
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_role_reports_whether_it_was_assumed() {
+        use crate::core::agents::RoleSource;
+        assert_eq!(
+            resolve_session_role("claude-code", None),
+            ("coder".to_string(), RoleSource::Assumed)
+        );
+        assert_eq!(
+            resolve_session_role("unknown-host", None),
+            ("coder".to_string(), RoleSource::Assumed)
+        );
+        assert_eq!(
+            resolve_session_role("code-review-bot", None),
+            ("reviewer".to_string(), RoleSource::Assumed)
+        );
+        assert_eq!(
+            resolve_session_role("claude-code", Some("reviewer".to_string())),
+            ("reviewer".to_string(), RoleSource::Declared)
+        );
+    }
+
+    /// The listing under a workflow is what the call gate lets through: the
+    /// stand-in for a withheld workflow lists no pass-through tool, a real
+    /// run lists its allowed tools and the pass-through tools as before.
+    #[test]
+    fn the_workflow_listing_matches_the_call_gate() {
+        use crate::core::context_admission::stored::lineage_support::{governed, project, scoped};
+        use crate::core::workflow::gate::tests::review;
+        use crate::core::workflow::{is_withheld_sentinel, load_active, save_active};
+        let _data = governed();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        let (_other_directory, other) = project();
+        scoped(&root, || save_active(&review())).expect("saved in its project");
+        let closed = scoped(&other, load_active)
+            .expect("load")
+            .expect("a withheld workflow is still a workflow");
+        assert!(is_withheld_sentinel(&closed));
+        let listed = |run: &crate::core::workflow::WorkflowRun| -> Vec<&'static str> {
+            WORKFLOW_PASSTHROUGH_TOOLS
+                .iter()
+                .chain(["ctx_call", "ctx_overview", "ctx_shell"].iter())
+                .copied()
+                .filter(|tool| workflow_lists(run, tool))
+                .collect()
+        };
+        assert_eq!(
+            listed(&closed),
+            ["ctx", "ctx_workflow", "ctx_call"],
+            "no pass-through tool is listed under the stand-in"
+        );
+        for refused in ["ctx_read", "ctx_search", "ctx_session", "ctx_ledger"] {
+            assert!(WORKFLOW_PASSTHROUGH_TOOLS.contains(&refused));
+            assert!(!workflow_lists(&closed, refused), "{refused}");
+        }
+
+        let real = scoped(&root, load_active).expect("load").expect("active");
+        let mut expected = WORKFLOW_PASSTHROUGH_TOOLS.to_vec();
+        expected.push("ctx_overview");
+        assert_eq!(listed(&real), expected, "a real run lists as before");
+    }
 
     #[test]
     fn initialize_instructions_respect_explicit_auto_inject_false() {

@@ -651,3 +651,81 @@ fn local_checkpoint_resume_behaviour_is_unchanged() {
         "continue transfer"
     );
 }
+
+/// `pack checkpoint-seal --session` exports the committed checkpoint whole or
+/// not at all (`SessionState::canonical_checkpoint_for_export`): a session
+/// without a bound finding is exported as before; with a finding bound to a
+/// source that is still admitted the committed checkpoint is exported
+/// unchanged; once that source is gone the export is refused with the fixed
+/// text and the stored session is left as it was.
+#[test]
+fn checkpoint_export_is_refused_while_a_finding_of_the_session_is_not_served() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let (transfer, directory, mut settings) = export_transfer(&SigningKey::from_bytes(&[43; 32]));
+    let root = std::fs::canonicalize(directory.path()).expect("canonical root");
+    settings["checkpoint_resume"] = json!({
+        "project_root":root,
+        "project_id":PROJECT_ID,"tenant_id":TENANT_ID,"workspace_id":WORKSPACE_ID
+    });
+    let resumed = call(
+        &request_args(
+            "context-checkpoint-resume",
+            directory.path(),
+            &json!({"schema_version":1,"artifact_digest":transfer.artifact_digest}),
+        ),
+        &settings,
+    )
+    .expect("local resume");
+    let id = resumed["session_id"]
+        .as_str()
+        .expect("session id")
+        .to_owned();
+    let root = root.to_str().expect("utf-8 root").to_owned();
+    let committed = || {
+        SessionState::load_by_id(&id)
+            .expect("stored session")
+            .canonical_checkpoint
+            .expect("canonical session")
+            .checkpoint
+            .clone()
+    };
+
+    // No bound finding: as before.
+    let (exported, project) =
+        SessionState::canonical_checkpoint_for_export(&id).expect("nothing to ask: exported");
+    assert_eq!(project, root);
+    assert_eq!(exported, committed());
+
+    // A project pack makes protection active; the finding is bound to its file.
+    let pack = crate::core::policy::load(
+        "name = \"checkpoint-export\"\nversion = \"1.0.0\"\ndescription = \"test\"\n",
+    )
+    .expect("empty pack");
+    let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(pack));
+    // Joined, not `format!`ed: on Windows the canonical root is a verbatim
+    // `\\?\` path, which rejects a `/` separator.
+    std::fs::write(Path::new(&root).join("pool.rs"), "pub fn lease() {}\n").expect("source");
+    let mut session = SessionState::load_by_id(&id).expect("stored session");
+    session.add_finding_for_file(Some("pool.rs"), Some(1), "the pool leaks one lease");
+    session.save().expect("the finding is committed");
+    let with_finding = committed();
+    assert_ne!(
+        with_finding, exported,
+        "the finding is part of the checkpoint"
+    );
+
+    let (exported, project) =
+        SessionState::canonical_checkpoint_for_export(&id).expect("source admitted: exported");
+    assert_eq!(project, root);
+    assert_eq!(exported, with_finding, "the committed checkpoint, whole");
+
+    std::fs::remove_file(Path::new(&root).join("pool.rs")).expect("delete");
+    let refusal = SessionState::canonical_checkpoint_for_export(&id)
+        .map(|_| ())
+        .expect_err("a finding's source is gone");
+    assert_eq!(
+        refusal,
+        "checkpoint export refused: a finding's source is no longer admitted"
+    );
+    assert_eq!(committed(), with_finding, "nothing was written");
+}

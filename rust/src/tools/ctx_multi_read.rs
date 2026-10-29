@@ -192,6 +192,10 @@ pub fn handle_with_task_fresh_result(
     } else {
         ctx_read::kernel_trailer(task)
     };
+    if trailer.is_some() {
+        // The supplement comes from sources that are not bound to this call.
+        crate::core::archive::authority::mark_unbound();
+    }
     MultiReadResult {
         text: match trailer {
             Some(trailer) => format!("{body}\n---\n{summary}\n\n{trailer}"),

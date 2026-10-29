@@ -81,6 +81,46 @@ pub(crate) fn is_proxy_reachable(port: u16) -> bool {
     TcpStream::connect_timeout(&addr, proxy_timeout()).is_ok()
 }
 
+/// True when the lean-ctx proxy itself answers `GET /health` on `port`. An
+/// open port alone proves nothing: a foreign process (or another user's
+/// proxy) listening there must never count as "proxy up".
+pub fn lean_ctx_proxy_responding(port: u16) -> bool {
+    use std::io::{Read, Write};
+    use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
+
+    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
+    let Ok(mut stream) = TcpStream::connect_timeout(&addr, proxy_timeout()) else {
+        return false;
+    };
+    let _ = stream.set_read_timeout(Some(std::time::Duration::from_secs(3)));
+    let req =
+        format!("GET /health HTTP/1.1\r\nHost: 127.0.0.1:{port}\r\nConnection: close\r\n\r\n");
+    if stream.write_all(req.as_bytes()).is_err() {
+        return false;
+    }
+    let mut buf = Vec::with_capacity(1024);
+    let _ = stream.take(8 * 1024).read_to_end(&mut buf);
+    is_lean_ctx_health_response(&String::from_utf8_lossy(&buf))
+}
+
+/// The `/health` answer of a lean-ctx proxy: HTTP 200 carrying the
+/// `"service":"lean-ctx-proxy"` marker its handler always emits.
+fn is_lean_ctx_health_response(response: &str) -> bool {
+    let status_ok = response
+        .lines()
+        .next()
+        .is_some_and(|line| line.starts_with("HTTP/1.") && line.split(' ').nth(1) == Some("200"));
+    status_ok && response.contains("\"service\":\"lean-ctx-proxy\"")
+}
+
+/// Single source of truth for "is the proxy up" across `doctor`, `status` and
+/// `gain`: the proxy must be enabled in config AND the configured endpoint must
+/// answer as a lean-ctx proxy.
+pub fn configured_proxy_live() -> bool {
+    crate::core::config::Config::load().proxy_enabled == Some(true)
+        && lean_ctx_proxy_responding(default_port())
+}
+
 pub fn default_port() -> u16 {
     if let Ok(val) = std::env::var("LEAN_CTX_PROXY_PORT")
         && let Ok(port) = val.parse::<u16>()

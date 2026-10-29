@@ -26,7 +26,12 @@ pub(crate) fn redact_text_if_enabled(input: &str) -> String {
     if !redaction_enabled_for_active_role() {
         return input.to_string();
     }
-    let (out, hits) = redact_counting(input, config_exclude_patterns().as_slice());
+    let (out, found) = redact_found(input, config_exclude_patterns().as_slice());
+    let hits = found.len();
+    // Engine metrics K21: fingerprints only, and only while sharing is on.
+    if hits > 0 {
+        crate::core::hive::metrics_v2::secrets::note(&found);
+    }
     crate::core::security_events::note(
         crate::core::security_events::SecurityKind::SecretRedacted,
         hits,
@@ -485,6 +490,49 @@ pub(crate) fn redact_text(input: &str) -> String {
     redact_text_with_excludes(input, &[])
 }
 
+thread_local! {
+    /// The public key a package signature was verified with, while its
+    /// document is being released on this thread.
+    static VERIFIED_SIGNER_KEY: std::cell::RefCell<Option<String>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Run `release` with `key` known as the Ed25519 PUBLIC key a package
+/// signature has just been verified with. Inside, the built-in "Generic long
+/// secret" rule — and only that rule — does not read the member
+/// `"signer_public_key":"<key>"` (a bundle) or `"public_key":"<key>"` (a
+/// package manifest's signature) as a secret: a public key is none, and the
+/// rule fires on it only because a 64-digit value follows a name ending in
+/// `key`. Every other rule, every configured pattern, every policy pack and
+/// the gateway still see the original text with the real key in it and
+/// decide as always. A `key` that is not 64 lowercase hex digits exempts
+/// nothing.
+pub(crate) fn with_verified_signer_key<T>(key: &str, release: impl FnOnce() -> T) -> T {
+    let well_formed = key.len() == 64
+        && key
+            .bytes()
+            .all(|byte| byte.is_ascii_digit() || (b'a'..=b'f').contains(&byte));
+    if !well_formed {
+        return release();
+    }
+    struct Restore(Option<String>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            VERIFIED_SIGNER_KEY.with(|slot| *slot.borrow_mut() = self.0.take());
+        }
+    }
+    let _restore = Restore(VERIFIED_SIGNER_KEY.with(|slot| slot.replace(Some(key.to_owned()))));
+    release()
+}
+
+/// Whether the generic rule's match is the verified signer key in its own
+/// member: `before` is the text up to the match, which starts at the `_` of
+/// `_key`.
+fn is_verified_signer_key(before: &str, value: &str) -> bool {
+    (before.ends_with("\"signer_public") || before.ends_with("\"public"))
+        && VERIFIED_SIGNER_KEY.with(|slot| slot.borrow().as_deref() == Some(value))
+}
+
 /// #718: `redact_text` with subtractive user patterns from
 /// `[secret_detection].exclude_patterns` — a match covered by any exclude
 /// regex is kept verbatim, so known-safe naming conventions can be carved out
@@ -493,15 +541,6 @@ pub(crate) fn redact_text_with_excludes(input: &str, excludes: &[regex::Regex]) 
     redact_counting(input, excludes).0
 }
 
-/// Scanner-side equivalent with the established `secret_detection` labels.
-pub(crate) fn redact_text_with_excludes_for_detection(
-    input: &str,
-    excludes: &[regex::Regex],
-) -> String {
-    redact_counting_with_labels(input, excludes, true).0
-}
-
-/// [`redact_text_with_excludes`] plus the number of secrets it replaced.
 /// Database URL with inline credentials: scheme (1), user (2, may be empty —
 /// `redis://:pw@host`), password (3), host (4). The password runs to the last
 /// `@` before the host, so an unencoded `@` in it cannot leak a tail. Shared
@@ -525,43 +564,62 @@ pub(crate) fn database_url_has_credential(caps: &regex::Captures) -> bool {
             .is_some_and(|password| !is_placeholder_value(password.as_str()))
 }
 
+/// [`redact_text_with_excludes`] plus the number of secrets it replaced.
+///
+/// One mask label per secret kind: the rule's own `label`, whoever asks. The
+/// gateway's scanner (`secret_detection::scan_and_redact`) and a project
+/// pack's built-in pass (`policy::content::evaluate_text`) both end here, so a
+/// value masked by one is spelled exactly as the other would spell it and a
+/// second pass over masked text changes nothing. (The scanner used to map the
+/// labels to its pattern names — `[REDACTED:aws_key]` next to
+/// `[REDACTED:AWS key]` — which made every order-of-masking comparison fail
+/// for a built-in secret.)
 fn redact_counting(input: &str, excludes: &[regex::Regex]) -> (String, usize) {
-    redact_counting_with_labels(input, excludes, false)
+    let (out, found) = redact_found(input, excludes);
+    (out, found.len())
 }
 
-fn redact_counting_with_labels(
-    input: &str,
-    excludes: &[regex::Regex],
-    detector_labels: bool,
-) -> (String, usize) {
+/// The redacted text and the label of each redacted span (never its text).
+fn redact_found(input: &str, excludes: &[regex::Regex]) -> (String, Vec<&'static str>) {
     let (normalized, boundaries) = normalize_for_secret_matching(input);
     let mut replacements = Vec::new();
+    // The label of each replacement, index for index.
+    let mut labels: Vec<&'static str> = Vec::new();
 
-    for caps in database_url_re().captures_iter(&normalized) {
-        let Some(whole) = caps.get(0) else {
-            continue;
-        };
-        let start = boundaries[whole.start()];
-        let end = boundaries[whole.end()];
-        let original = input.get(start..end).unwrap_or(whole.as_str());
-        if excluded(excludes, whole.as_str()) || excluded(excludes, original) {
-            continue;
+    // userinfo with a password in any other URL (`https://user:pw@host`): the
+    // tokens elsewhere in such a URL were masked, the password stayed (focus
+    // analysis 2026-10-15).
+    let url_re = static_regex!(
+        r"(?i)((?:https?|ftps?|sftp|ssh|amqps?|smtps?|ldaps?|wss?|git)://)([^:/@?#\s]+):([^@/?#\s]+)@([^/?#\s]+)"
+    );
+    for (re, label) in [
+        (database_url_re(), "Database credentials"),
+        (url_re, "URL credentials"),
+    ] {
+        for caps in re.captures_iter(&normalized) {
+            let Some(whole) = caps.get(0) else {
+                continue;
+            };
+            let start = boundaries[whole.start()];
+            let end = boundaries[whole.end()];
+            let original = input.get(start..end).unwrap_or(whole.as_str());
+            if excluded(excludes, whole.as_str()) || excluded(excludes, original) {
+                continue;
+            }
+            // A placeholder password or an already redacted URL is no
+            // credential (shared with the detector, see `database_url_re`).
+            if !database_url_has_credential(&caps) {
+                continue;
+            }
+            let scheme = caps
+                .get(1)
+                .map_or("", |m| original_span(input, &boundaries, m));
+            let host = caps
+                .get(4)
+                .map_or("", |m| original_span(input, &boundaries, m));
+            replacements.push((start, end, format!("{scheme}[REDACTED:{label}]@{host}")));
+            labels.push(label);
         }
-        if !database_url_has_credential(&caps) {
-            continue;
-        }
-        let scheme = caps
-            .get(1)
-            .map_or("", |m| original_span(input, &boundaries, m));
-        let host = caps
-            .get(4)
-            .map_or("", |m| original_span(input, &boundaries, m));
-        let label = if detector_labels {
-            "db_url"
-        } else {
-            "Database credentials"
-        };
-        replacements.push((start, end, format!("{scheme}[REDACTED:{label}]@{host}")));
     }
 
     for rule in redaction_rules() {
@@ -594,6 +652,13 @@ fn redact_counting_with_labels(
             {
                 continue;
             }
+            if rule.label == "Generic long secret"
+                && caps.get(2).is_some_and(|value| {
+                    is_verified_signer_key(&normalized[..whole.start()], value.as_str())
+                })
+            {
+                continue;
+            }
             // Overlapping matches: the wider span wins. Skipping a wider match (a whole
             // private-key block) because a narrower rule already hit inside it would
             // leak the rest of the block.
@@ -619,13 +684,10 @@ fn redact_counting_with_labels(
                 .fold(end, usize::max);
             for &i in overlapping.iter().rev() {
                 replacements.remove(i);
+                labels.remove(i);
             }
 
-            let label = if detector_labels {
-                detector_redaction_label(rule.label, caps.get(2).map(|value| value.as_str()))
-            } else {
-                rule.label
-            };
+            let label = rule.label;
             let replacement = caps.get(1).map_or_else(
                 || format!("[REDACTED:{label}]"),
                 |prefix| {
@@ -634,43 +696,27 @@ fn redact_counting_with_labels(
                 },
             );
             replacements.push((start, end, replacement));
+            labels.push(label);
         }
     }
 
-    replacements.sort_by_key(|(start, _, _)| *start);
-    let hits = replacements.len();
+    let mut spans: Vec<((usize, usize, String), &'static str)> =
+        replacements.into_iter().zip(labels).collect();
+    spans.sort_by_key(|((start, _, _), _)| *start);
+    let mut found = Vec::with_capacity(spans.len());
     let mut out = input.to_string();
-    for (start, end, replacement) in replacements.into_iter().rev() {
+    for ((start, end, replacement), label) in spans.into_iter().rev() {
+        found.push(label);
         out.replace_range(start..end, &replacement);
     }
-    (out, hits)
+    found.reverse();
+    (out, found)
 }
 
 fn original_span<'a>(input: &'a str, boundaries: &[usize], matched: regex::Match<'_>) -> &'a str {
     let start = boundaries.get(matched.start()).copied().unwrap_or_default();
     let end = boundaries.get(matched.end()).copied().unwrap_or(start);
     input.get(start..end).unwrap_or("")
-}
-
-fn detector_redaction_label(label: &str, value: Option<&str>) -> &'static str {
-    match label {
-        "Bearer token" | "Authorization header" => "authorization_header",
-        "URL-encoded secret" => "url_encoded_secret",
-        "AWS key" => "aws_key",
-        "Private key block" => "private_key",
-        "GitHub token" => "github_token",
-        "GitHub fine-grained token" => "github_fine_grained",
-        "GitLab token" => "gitlab_pat",
-        "Anthropic API key" => "anthropic_key",
-        "OpenAI API key" => "openai_key",
-        "JWT" => "jwt",
-        "Slack token" => "slack_token",
-        "Stripe key" => "stripe_key",
-        "npm token" => "npm_token",
-        "Generic long secret" if value.is_some_and(|v| v.len() >= 40) => "high_entropy_secret",
-        "API key param" | "Generic long secret" => "generic_api_key",
-        _ => "secret",
-    }
 }
 
 /// Whether the byte before `pos` in `text` is a quote (the value is a quoted literal).
@@ -754,6 +800,26 @@ pub(crate) fn redact_with_patterns(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A package manifest's verified signature key is kept in its own
+    /// member, as written or nested in an envelope; any other value there,
+    /// and any key outside the exemption, is still masked.
+    #[test]
+    fn a_verified_package_signer_key_is_not_masked() {
+        let key = "ab".repeat(32);
+        let plain = format!(r#"{{"signature":{{"public_key":"{key}"}}}}"#);
+        let nested = serde_json::to_string(&plain).expect("nested");
+        assert!(
+            !redact_text(&plain).contains(&key),
+            "masked without the exemption"
+        );
+        with_verified_signer_key(&key, || {
+            assert_eq!(redact_text(&plain), plain);
+            assert_eq!(redact_text(&nested), nested);
+            let other = plain.replace(&key, &"cd".repeat(32));
+            assert_ne!(redact_text(&other), other, "only the verified key");
+        });
+    }
 
     #[test]
     fn standalone_provider_keys_are_fully_masked_in_nested_values() {

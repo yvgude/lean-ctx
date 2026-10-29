@@ -42,14 +42,6 @@ async fn ctx_handoff_create_show_list_pull_clear() {
         .await
         .expect("remember");
 
-    let _ = engine
-        .call_tool_text(
-            "ctx_workflow",
-            Some(json!({"action":"start","name":"plan_code_test"})),
-        )
-        .await
-        .expect("workflow start");
-
     let created = engine
         .call_tool_text(
             "ctx_handoff",

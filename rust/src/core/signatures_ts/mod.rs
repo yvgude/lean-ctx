@@ -2,14 +2,13 @@ mod queries;
 
 mod ast_prune;
 mod extract;
-mod grammar_loader;
 mod handlers;
 mod helpers;
 mod query_cache;
 pub(crate) mod sfc;
 
 pub(crate) use ast_prune::ast_prune;
-pub(crate) use extract::extract_signatures_ts;
+pub(crate) use extract::{extract_signatures_ts, extract_spans_ts};
 
 #[cfg(test)]
 mod tests {
@@ -824,13 +823,22 @@ end
     fn every_supported_ext_has_a_compiling_query() {
         use tree_sitter::Query;
         // One representative extension per distinct language (canonical alias).
-        let langs: &[&str] = &[
+        let mut langs: Vec<&str> = vec![
             "rs", "ts", "js", "py", "go", "java", "c", "cpp", "rb", "cs", "kt", "swift", "php",
-            "sh", "dart", "scala", "ex", "zig", "gd", "lua", "luau", "ml", "mli", "hs", "jl",
-            "sol", "nix", "ps1",
+            "sh", "dart", "scala", "ex", "zig", "gd", "lua", "luau", "sol", "nix", "ps1",
         ];
+        // Long-tail grammars are opt-in (`grammars-long-tail`, focus 2026-10-15).
+        if cfg!(feature = "grammar-ocaml") {
+            langs.extend(["ml", "mli"]);
+        }
+        if cfg!(feature = "grammar-haskell") {
+            langs.push("hs");
+        }
+        if cfg!(feature = "grammar-julia") {
+            langs.push("jl");
+        }
         let mut failures = Vec::new();
-        for ext in langs {
+        for ext in &langs {
             match (
                 super::queries::get_language(ext),
                 super::queries::get_query(ext),
@@ -851,6 +859,7 @@ end
     }
 
     #[test]
+    #[cfg(feature = "grammar-ocaml")]
     fn test_ocaml_signatures() {
         let src = r#"
 let add x y = x + y
@@ -884,6 +893,7 @@ external identity : 'a -> 'a = "%identity"
     }
 
     #[test]
+    #[cfg(feature = "grammar-ocaml")]
     fn test_ocaml_interface_signatures() {
         let src = r"
 val connect : string -> int -> unit
@@ -902,6 +912,7 @@ end
     }
 
     #[test]
+    #[cfg(feature = "grammar-haskell")]
     fn test_haskell_signatures() {
         let src = r#"
 module Demo where
@@ -932,6 +943,7 @@ class Greet a where
     }
 
     #[test]
+    #[cfg(feature = "grammar-julia")]
     fn test_julia_signatures() {
         let src = r"
 function add(x, y)

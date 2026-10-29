@@ -507,4 +507,48 @@ mod tests {
             "second run must not rewrite"
         );
     }
+
+    /// The mod defers every lean-ctx tool outside `front_loaded_tools`, and
+    /// `alwaysLoad` cannot undo that. A routed tool left out (ctx_patch,
+    /// ctx_glob, ctx_tree in 3.11.4) sends the model back to native Edit/Glob,
+    /// which replace mode denies. Both copies of the default must cover every
+    /// core tool the injected rules route an intent to.
+    #[test]
+    fn front_loaded_defaults_cover_every_routed_core_tool() {
+        use crate::core::rules_canonical::{BULLETS, INTENT};
+
+        let manifest: serde_json::Value = serde_json::from_str(PLUGIN_JSON).unwrap();
+        let manifest_default: Vec<&str> = manifest["userConfig"]["front_loaded_tools"]["default"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|v| v.as_str().unwrap())
+            .collect();
+        let (_, list) = REGISTER_TS
+            .split_once("const DEFAULT_FRONT_LOADED_TOOLS = [")
+            .expect("register.ts declares DEFAULT_FRONT_LOADED_TOOLS");
+        let (list, _) = list.split_once("];").unwrap();
+        let register_default: Vec<&str> = list
+            .split(',')
+            .map(|s| s.trim().trim_matches('"'))
+            .filter(|s| !s.is_empty())
+            .collect();
+        assert_eq!(register_default, manifest_default);
+
+        let routed = format!("{BULLETS}\n{INTENT}");
+        for tool in crate::tool_defs::core_tool_names()
+            .iter()
+            .filter(|t| t.starts_with("ctx_"))
+            .filter(|t| {
+                routed
+                    .split(|c: char| !(c.is_ascii_alphanumeric() || c == '_'))
+                    .any(|word| word == **t)
+            })
+        {
+            assert!(
+                manifest_default.contains(tool),
+                "{tool} is routed by the rules but deferred by the mod"
+            );
+        }
+    }
 }

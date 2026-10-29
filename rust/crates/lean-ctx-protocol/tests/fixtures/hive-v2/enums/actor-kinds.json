@@ -1,0 +1,31 @@
+{
+  "name": "actor-kinds",
+  "values": [
+    {
+      "value": "worker",
+      "signer_class": "W",
+      "members": []
+    },
+    {
+      "value": "person",
+      "signer_class": "A",
+      "members": [
+        "user_id"
+      ]
+    },
+    {
+      "value": "server",
+      "signer_class": "A",
+      "members": []
+    },
+    {
+      "value": "legacy_import",
+      "signer_class": "A",
+      "members": [
+        "import_ref",
+        "instance_id?",
+        "user_id?"
+      ]
+    }
+  ]
+}

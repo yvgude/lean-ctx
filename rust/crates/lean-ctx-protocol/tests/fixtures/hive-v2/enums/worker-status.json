@@ -1,0 +1,27 @@
+{
+  "name": "worker-status",
+  "values": [
+    {
+      "value": "revoked"
+    },
+    {
+      "value": "stopped"
+    },
+    {
+      "value": "held"
+    },
+    {
+      "value": "working"
+    },
+    {
+      "value": "online"
+    },
+    {
+      "value": "idle"
+    },
+    {
+      "value": "offline"
+    }
+  ],
+  "order": "SPEC-WEB-UX §3.5 display order"
+}

@@ -1,0 +1,26 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "Enter the code from your authenticator app.",
+          "reason": "action_code_required"
+        }
+      },
+      "status": 403
+    }
+  ],
+  "method": "PUT",
+  "path": "/api/v1/swarms/9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02/pledge",
+  "request": {
+    "max_sessions": 1,
+    "mode": "interactive",
+    "tasks_per_day": 20,
+    "tokens_per_day": null,
+    "usd_cents_per_day": null,
+    "window": null
+  },
+  "response": null,
+  "route": "W42"
+}

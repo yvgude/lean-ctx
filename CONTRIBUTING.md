@@ -16,7 +16,7 @@ spec → plan → tasks → implement (impact-first) → verify → evidence
    then distill the approved approach into `specs/NNN-<slug>/plan.md`.
    Review before coding.
 3. **Tasks** — `specs/NNN-<slug>/tasks.md`: atomic, individually testable.
-4. **Implement** — impact-first: run `ctx_impact` (or `lean-ctx graph impact <file>`)
+4. **Implement** — impact-first: run `ctx_graph action=impact` (or `lean-ctx graph impact <file>`)
    before editing `rust/src/**` and verify the affected tests.
 5. **Verify** — `scripts/preflight.sh fast` + the affected tests.
 6. **Evidence** — cite the spec in commits (`refs specs/NNN-<slug>`), link issue #NNN.
@@ -206,8 +206,8 @@ Tip: open a ticket via the [New Compression Pattern](.github/ISSUE_TEMPLATE/comp
 ### Add or update an MCP tool
 
 - Core handler logic lives in `rust/src/tools/ctx_*.rs` — keep it pure and
-  deterministic (#498). See `ctx_explore.rs` for the citation-returning
-  exploration pattern (BM25 + static graph + AST, bounded turns, no session writes).
+  deterministic (#498). See `ctx_compose.rs` for the composed, bounded
+  retrieval pattern (ranked files, exact matches and inlined symbols in one call).
 - The MCP adapter (implements `McpTool`) lives in `rust/src/tools/registered/ctx_*.rs`:
   schema via `tool_def`, arg parsing, `ToolOutput`. Register it in
   `rust/src/server/registry.rs` (no hardcoded tool count to bump — the generated

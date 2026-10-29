@@ -1,0 +1,12 @@
+{
+  "body": {
+    "text": "Yes; the lock is released only after the export commit."
+  },
+  "client_msg_id": "01M5NKA2Z8B000000000000002",
+  "reply_to": "msg_00000000000000a1",
+  "schema": "leanctx.hive.bus/v2",
+  "thread_id": "msg_00000000000000a1",
+  "to": "#acme/payments",
+  "type": "answer",
+  "worker_id": "wkr_gawyravj36igdp3irdfo"
+}

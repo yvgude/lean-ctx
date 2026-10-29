@@ -1,0 +1,25 @@
+{
+  "revisions": [
+    {
+      "created_at": "2026-10-20T12:00:00Z",
+      "digest": "247bbdb7b6e115339ac1aba062d32d8958c94846581488e9ca2af38320647fcf",
+      "proposal": 12,
+      "revision": 4
+    },
+    {
+      "created_at": "2026-10-20T13:00:00Z",
+      "digest": "d7a522cb8f35efee7a83cbfba49f7e33fb0e02d925445897f4a0461b9a8413c3",
+      "proposal": 13,
+      "revision": 5,
+      "state": "rolled_back"
+    },
+    {
+      "created_at": "2026-10-20T14:00:00Z",
+      "digest": "247bbdb7b6e115339ac1aba062d32d8958c94846581488e9ca2af38320647fcf",
+      "revision": 6,
+      "rolls_back": 4
+    }
+  ],
+  "schema": "leanctx.hive.revision-list/v1",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

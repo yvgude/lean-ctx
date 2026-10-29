@@ -108,3 +108,45 @@ fn onboard_yes_leaves_doctor_fully_green() {
         "doctor must be fully green right after onboard --yes; output:\n{stdout}"
     );
 }
+
+/// Before `onboard`/`setup` ever ran, `doctor` is healthy-but-unconfigured:
+/// it must exit 0 (setup items are optional next steps, not errors) and honour
+/// `TERM=dumb` (no ANSI escapes).
+#[test]
+#[cfg_attr(
+    windows,
+    ignore = "HOME-override isolation is Unix-only (dirs::home_dir uses the Win32 API)"
+)]
+fn fresh_install_doctor_is_plain_and_exits_zero() {
+    let bin = env!("CARGO_BIN_EXE_lean-ctx");
+    let tmp = tempfile::tempdir().unwrap();
+    let home = tmp.path().join("home");
+    std::fs::create_dir_all(&home).unwrap();
+    let bin_dir = std::path::Path::new(bin).parent().unwrap();
+
+    let doctor = Command::new(bin)
+        .arg("doctor")
+        .current_dir(&home)
+        .env_clear()
+        .env("HOME", &home)
+        .env(
+            "PATH",
+            format!("{}:/usr/bin:/bin", bin_dir.to_string_lossy()),
+        )
+        .env("LEAN_CTX_CONFIG_DIR", home.join("cfg"))
+        .env("LEAN_CTX_DATA_DIR", home.join("data"))
+        .env("TERM", "dumb")
+        .env("LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD", "0")
+        .output()
+        .expect("doctor spawn");
+    let stdout = String::from_utf8_lossy(&doctor.stdout);
+
+    assert!(
+        !stdout.contains('\x1b'),
+        "TERM=dumb must disable ANSI:\n{stdout}"
+    );
+    assert!(
+        doctor.status.success(),
+        "a fresh, unconfigured install must not fail doctor:\n{stdout}"
+    );
+}

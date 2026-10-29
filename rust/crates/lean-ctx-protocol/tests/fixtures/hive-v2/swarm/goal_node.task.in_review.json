@@ -1,0 +1,19 @@
+{
+  "assignee": "wkr_76aa2uwmpczt3cqkhfed",
+  "attempts": 0,
+  "criterion_id": null,
+  "id": "g_ttttttttttttttttttttttttta",
+  "kind": "task",
+  "lock_until": null,
+  "node": "n_aaaaaaaaaaaaaaaaaaaaaadaai",
+  "parent": "g_sssssssssssssssssssssssssa",
+  "results": [
+    "n_aaaaaaaaaaaaaaaaaaaaaadaam"
+  ],
+  "review": {
+    "review_id": "rv_aaaaaaaaaaaaaaaaaaaaaadxam",
+    "state": "waiting_for_reviewer"
+  },
+  "state": "in_review",
+  "title": "Profile the checkout handler"
+}

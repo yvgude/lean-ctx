@@ -1,0 +1,69 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "purge_second_owner",
+          "message": "A second, different owner must approve."
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "That code is not right.",
+          "reason": "code_wrong"
+        }
+      },
+      "status": 403
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/vaults/payments/purges/prg_x/approve",
+  "request": {
+    "totp_code": "3f9a-07bc"
+  },
+  "response": {
+    "body": {
+      "purge": {
+        "acks": {
+          "m": 0,
+          "n": 0
+        },
+        "approvals": [
+          {
+            "at": "2026-10-24T08:05:00Z",
+            "handle": "yves"
+          }
+        ],
+        "backups_clear_at": null,
+        "created_at": "2026-10-24T08:00:10Z",
+        "expires_at": "2026-10-27T08:00:10Z",
+        "id": "prg_aaaaaaaaaaaaaaaaaaaaaaezcm",
+        "item_count": 1,
+        "keys_destroyed_at": null,
+        "legacy_replicas": 0,
+        "offline_pending": 0,
+        "reason": "leaked_secret",
+        "requested_by": {
+          "handle": "mara"
+        },
+        "second_approval_required": false,
+        "selector": {
+          "node_ids": [
+            "n_zcjqmmor453nyxqgshlgpogwdm"
+          ]
+        },
+        "state": "approved",
+        "vault": {
+          "name": "payments",
+          "ws": "acme"
+        }
+      }
+    },
+    "status": 200
+  },
+  "route": "W31"
+}

@@ -1,0 +1,807 @@
+{
+  "schema": "leanctx.hive.metrics-fields/v1",
+  "fields": [
+    {
+      "path": "schema",
+      "type": "string",
+      "purpose": "Names the wire format (leanctx.hive.engine-metrics/v2).",
+      "source": "constant",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "engine.engine_version",
+      "type": "string",
+      "purpose": "Which engine version produced the counts (support, comparability).",
+      "source": "build",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "engine.os",
+      "type": "enum",
+      "purpose": "Operating system family: macos, linux or windows.",
+      "source": "build",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "key_id",
+      "type": "key_id",
+      "purpose": "The enrolled instance key that signed the batch (K16).",
+      "source": "instance key",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "signature",
+      "type": "signature",
+      "purpose": "Ed25519 signature of the batch by the instance key (K16).",
+      "source": "instance key",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].hour",
+      "type": "hour",
+      "purpose": "The UTC hour the counts belong to.",
+      "source": "event timestamps",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].rev",
+      "type": "integer",
+      "purpose": "Revision of the hour; Hive keeps the highest (idempotency).",
+      "source": "engine buffer",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].vault",
+      "type": "hex32_or_null",
+      "purpose": "The Hive vault the work belongs to; null only for a Personal workspace.",
+      "source": "Hive project map",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].tokens.input",
+      "type": "count",
+      "purpose": "Baseline tokens without LeanCTX.",
+      "source": "savings ledger: baseline_tokens",
+      "label": "estimated",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].tokens.output",
+      "type": "count",
+      "purpose": "Tokens delivered to the agent.",
+      "source": "savings ledger: actual_tokens",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].tokens.saved",
+      "type": "count",
+      "purpose": "Tokens kept out.",
+      "source": "savings ledger: saved_tokens - bounce_adjustment",
+      "label": "estimated",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].savings.measured",
+      "type": "count",
+      "purpose": "Tokens kept out, measured by a local tokenizer (K7).",
+      "source": "savings ledger: evidence_class",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].savings.estimated",
+      "type": "count",
+      "purpose": "Tokens kept out, estimated (K7).",
+      "source": "savings ledger: evidence_class",
+      "label": "estimated",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].savings.estimated_low",
+      "type": "count",
+      "purpose": "Lower end of the estimate's range (K7).",
+      "source": "savings ledger: confidence",
+      "label": "estimated",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].savings.estimated_high",
+      "type": "count",
+      "purpose": "Upper end of the estimate's range (K7).",
+      "source": "savings ledger: confidence",
+      "label": "estimated",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].savings.evidenced",
+      "type": "count",
+      "purpose": "Part backed by a receipt or provider reconciliation (K7).",
+      "source": "savings ledger, receipts",
+      "label": "evidenced",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].savings.overhead",
+      "type": "count",
+      "purpose": "Tokens LeanCTX itself added, for net own savings (K8).",
+      "source": "context overhead per session",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].calls.tool_calls",
+      "type": "count",
+      "purpose": "Tool calls through LeanCTX.",
+      "source": "savings ledger events",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].calls.cache_reads",
+      "type": "count",
+      "purpose": "Re-reads that could hit the read cache.",
+      "source": "stats: cep.total_cache_reads",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].calls.cache_hits",
+      "type": "count",
+      "purpose": "Re-reads served from the read cache.",
+      "source": "stats: cep.total_cache_hits",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].read_modes",
+      "type": "object",
+      "purpose": "ctx_read calls per read mode (closed set of mode names).",
+      "source": "stats: cep.modes",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].tools[].tool",
+      "type": "enum",
+      "purpose": "LeanCTX tool or host tool class from a closed registry, else other.",
+      "source": "savings ledger: tool",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].tools[].calls",
+      "type": "count",
+      "purpose": "Calls of that tool.",
+      "source": "savings ledger",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].tools[].saved",
+      "type": "count",
+      "purpose": "Tokens that tool kept out.",
+      "source": "savings ledger",
+      "label": "estimated",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].compression.original",
+      "type": "count",
+      "purpose": "Tokens before compression.",
+      "source": "stats: cep.total_tokens_original",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].compression.compressed",
+      "type": "count",
+      "purpose": "Tokens after compression.",
+      "source": "stats: cep.total_tokens_compressed",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].ledger.reduction",
+      "type": "count",
+      "purpose": "Savings from shortening context.",
+      "source": "savings ledger kind",
+      "label": "estimated",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].ledger.cache_discount",
+      "type": "count",
+      "purpose": "The provider's cache discount (not LeanCTX's saving).",
+      "source": "savings ledger kind",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].ledger.correction",
+      "type": "count",
+      "purpose": "Corrections for content fetched again.",
+      "source": "savings ledger kind",
+      "label": "estimated",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].ledger.edit",
+      "type": "count",
+      "purpose": "Savings from edit tools.",
+      "source": "savings ledger kind",
+      "label": "estimated",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].ledger.other",
+      "type": "count",
+      "purpose": "Every other ledger entry.",
+      "source": "savings ledger kind",
+      "label": "estimated",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].guards.secrets_redacted",
+      "type": "count",
+      "purpose": "Secrets replaced before the model saw them.",
+      "source": "audit trail",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].guards.pii_redacted",
+      "type": "count",
+      "purpose": "PII values masked.",
+      "source": "audit trail",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].guards.injection_flags",
+      "type": "count",
+      "purpose": "Tool outputs flagged for prompt injection.",
+      "source": "audit trail",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].guards.content_withheld",
+      "type": "count",
+      "purpose": "Sources withheld.",
+      "source": "audit trail",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].guards.paths_blocked",
+      "type": "count",
+      "purpose": "Paths outside the project jail refused.",
+      "source": "audit trail",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].guards.shell_blocked",
+      "type": "count",
+      "purpose": "Shell commands refused.",
+      "source": "audit trail",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].guards.partial_inspections",
+      "type": "count",
+      "purpose": "Sources a detector did not fully inspect.",
+      "source": "audit trail",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].policy_blocks[].rule",
+      "type": "enum",
+      "purpose": "Policy member path or gateway rule id from a closed registry (K12).",
+      "source": "gateway decisions",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].policy_blocks[].blocked",
+      "type": "count",
+      "purpose": "Refusals by that rule while enforcing (shell allowlist, path jail, destination and egress policy, secret filters).",
+      "source": "gateway decisions",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].policy_blocks[].would_block",
+      "type": "count",
+      "purpose": "Refusals the same rule would make in monitor or warn mode; nothing was stopped.",
+      "source": "gateway decisions (monitor)",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].refetch[].filter",
+      "type": "enum",
+      "purpose": "Read mode or output class from a closed registry (K10).",
+      "source": "truncation pointers",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].refetch[].truncated",
+      "type": "count",
+      "purpose": "Outputs that filter shortened.",
+      "source": "truncation pointers",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].refetch[].refetched",
+      "type": "count",
+      "purpose": "Shortened outputs fetched back in full.",
+      "source": "ctx_expand of a pointer",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].unregulated[].kind",
+      "type": "enum",
+      "purpose": "program, host or mcp_server (K13): an item is regulated only by a rule enforcing at decision time; monitor mode does not regulate.",
+      "source": "the gateway's decision record: no enforcing rule matched",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].unregulated[].name",
+      "type": "enum",
+      "purpose": "Known program or host family from a closed registry, or an MCP server id named in the workspace's own signed policy; otherwise other. Never a hash.",
+      "source": "known-name tables",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].unregulated[].calls",
+      "type": "count",
+      "purpose": "Uses without a rule.",
+      "source": "the gateway's decision record: no enforcing rule matched",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].secret_hits[].detector",
+      "type": "enum",
+      "purpose": "Secret detector from a closed registry (K21); never the value or anything derived from it.",
+      "source": "redaction events",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].secret_hits[].count",
+      "type": "count",
+      "purpose": "Hits of that secret.",
+      "source": "redaction events",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].sessions.started",
+      "type": "count",
+      "purpose": "Agent sessions started.",
+      "source": "session store",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].hosts[].host",
+      "type": "enum",
+      "purpose": "Agent host family from a closed registry, else other.",
+      "source": "session store: client",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].hosts[].sessions",
+      "type": "count",
+      "purpose": "Sessions of that host.",
+      "source": "session store",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].hosts[].tool_calls",
+      "type": "count",
+      "purpose": "Tool calls of that host.",
+      "source": "session store",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].spend[].model",
+      "type": "enum",
+      "purpose": "The engine price-table key of the model, else other (never a fine-tuned or custom id).",
+      "source": "proxy usage meter, host logs",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].spend[].provider",
+      "type": "enum",
+      "purpose": "Provider from a closed registry, else other.",
+      "source": "proxy usage meter, host logs",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].spend[].requests",
+      "type": "count",
+      "purpose": "Model requests.",
+      "source": "proxy usage meter, host logs",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].spend[].input_tokens",
+      "type": "count",
+      "purpose": "Model input tokens.",
+      "source": "proxy usage meter, host logs",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].spend[].output_tokens",
+      "type": "count",
+      "purpose": "Model output tokens.",
+      "source": "proxy usage meter, host logs",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].spend[].cached_tokens",
+      "type": "count",
+      "purpose": "Input tokens served from the provider cache.",
+      "source": "proxy usage meter, host logs",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].spend[].usd_micros",
+      "type": "count",
+      "purpose": "Cost at list price; estimated, never an invoice.",
+      "source": "price table",
+      "label": "estimated",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].gauges.facts_current",
+      "type": "count",
+      "purpose": "Knowledge facts in the vault at the end of the hour.",
+      "source": "knowledge store",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].hive.knowledge_hits_referenced",
+      "type": "count",
+      "purpose": "Hive facts delivered in a session and then used in it (X4 M1).",
+      "source": "Hive delivery record",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].hive.first_context_sessions",
+      "type": "count",
+      "purpose": "Sessions that received Hive context in the hour (X4 M5).",
+      "source": "Hive delivery record",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].hive.first_context_ms_p50",
+      "type": "integer",
+      "purpose": "Median milliseconds from session start to the first Hive context (X4 M5).",
+      "source": "Hive delivery record",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].hive.task_usage[].number",
+      "type": "integer",
+      "purpose": "Hive task number (an integer id, never a title) a session held a claim on (X4 M2).",
+      "source": "task claims",
+      "label": null,
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].hive.task_usage[].input_tokens",
+      "type": "count",
+      "purpose": "Model input tokens while the claim was held.",
+      "source": "savings ledger",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].hive.task_usage[].output_tokens",
+      "type": "count",
+      "purpose": "Model output tokens while the claim was held.",
+      "source": "savings ledger",
+      "label": "measured",
+      "retention": "hourly_and_daily_until_deleted"
+    },
+    {
+      "path": "buckets[].slices[].hive.task_usage[].list_usd_micros",
+      "type": "count",
+      "purpose": "Cost at list price while the claim was held; estimated.",
+      "source": "price table",
+      "label": "estimated",
+      "retention": "hourly_and_daily_until_deleted"
+    }
+  ],
+  "metrics": [
+    {
+      "name": "tokens.input",
+      "label": "estimated",
+      "formula": "Tokens the agent would have received without LeanCTX (the baseline).",
+      "source": "savings ledger: baseline_tokens"
+    },
+    {
+      "name": "tokens.output",
+      "label": "measured",
+      "formula": "Tokens LeanCTX actually delivered to the agent.",
+      "source": "savings ledger: actual_tokens"
+    },
+    {
+      "name": "tokens.saved",
+      "label": "estimated",
+      "formula": "tokens.input − tokens.output, after bounce corrections.",
+      "source": "savings ledger: saved_tokens − bounce_adjustment"
+    },
+    {
+      "name": "savings.measured",
+      "label": "measured",
+      "formula": "Saved tokens whose evidence class is measured (counted by a local tokenizer).",
+      "source": "savings ledger: evidence_class = measured"
+    },
+    {
+      "name": "savings.estimated",
+      "label": "estimated",
+      "formula": "Saved tokens that rest on an estimate (approximated, statistical, declared or unclassified evidence).",
+      "source": "savings ledger: evidence_class ≠ measured"
+    },
+    {
+      "name": "savings.estimated_low",
+      "label": "estimated",
+      "formula": "Lower end of the range of savings.estimated.",
+      "source": "savings ledger: confidence"
+    },
+    {
+      "name": "savings.estimated_high",
+      "label": "estimated",
+      "formula": "Upper end of the range of savings.estimated.",
+      "source": "savings ledger: confidence"
+    },
+    {
+      "name": "savings.evidenced",
+      "label": "evidenced",
+      "formula": "The part of the savings backed by a gateway receipt or provider reconciliation.",
+      "source": "savings ledger: measurement_method = provider_reconciled, receipts"
+    },
+    {
+      "name": "savings.overhead",
+      "label": "measured",
+      "formula": "Tokens LeanCTX itself added (instructions, tool schemas, hints). Net own savings = savings.measured + savings.estimated − savings.overhead, and may be negative. The provider cache is not part of it (ledger.cache_discount).",
+      "source": "engine instruction and schema counters"
+    },
+    {
+      "name": "calls.tool_calls",
+      "label": "measured",
+      "formula": "Tool calls through LeanCTX.",
+      "source": "savings ledger events"
+    },
+    {
+      "name": "calls.cache_reads",
+      "label": "measured",
+      "formula": "Re-reads that could be served from the read cache.",
+      "source": "stats: cep.total_cache_reads"
+    },
+    {
+      "name": "calls.cache_hits",
+      "label": "measured",
+      "formula": "Re-reads served from the read cache. Cache-hit rate = cache_hits ÷ cache_reads.",
+      "source": "stats: cep.total_cache_hits"
+    },
+    {
+      "name": "compression.original",
+      "label": "measured",
+      "formula": "Tokens of tool output before compression.",
+      "source": "stats: cep.total_tokens_original"
+    },
+    {
+      "name": "compression.compressed",
+      "label": "measured",
+      "formula": "Tokens of tool output after compression. Compression = 1 − compressed ÷ original.",
+      "source": "stats: cep.total_tokens_compressed"
+    },
+    {
+      "name": "ledger.reduction",
+      "label": "estimated",
+      "formula": "Savings from shortening context.",
+      "source": "savings ledger kind: reduction"
+    },
+    {
+      "name": "ledger.cache_discount",
+      "label": "measured",
+      "formula": "The provider's cache discount the proxy observed; not LeanCTX's own saving.",
+      "source": "savings ledger kind: proxy cache"
+    },
+    {
+      "name": "ledger.correction",
+      "label": "estimated",
+      "formula": "Corrections for content the agent had to fetch again.",
+      "source": "savings ledger kind: bounce correction"
+    },
+    {
+      "name": "ledger.edit",
+      "label": "estimated",
+      "formula": "Savings from edit tools.",
+      "source": "savings ledger kind: edit"
+    },
+    {
+      "name": "ledger.other",
+      "label": "estimated",
+      "formula": "Every other ledger entry.",
+      "source": "savings ledger kind: other"
+    },
+    {
+      "name": "guards.secrets_redacted",
+      "label": "measured",
+      "formula": "Secrets replaced before the model saw them.",
+      "source": "audit trail: secret_redacted"
+    },
+    {
+      "name": "guards.pii_redacted",
+      "label": "measured",
+      "formula": "PII values masked by the gateway.",
+      "source": "audit trail: pii_redacted"
+    },
+    {
+      "name": "guards.injection_flags",
+      "label": "measured",
+      "formula": "Tool outputs flagged for prompt injection.",
+      "source": "audit trail: injection_flagged"
+    },
+    {
+      "name": "guards.content_withheld",
+      "label": "measured",
+      "formula": "Sources the gateway withheld.",
+      "source": "audit trail: content_withheld"
+    },
+    {
+      "name": "guards.paths_blocked",
+      "label": "measured",
+      "formula": "Paths outside the project jail that were refused.",
+      "source": "audit trail: path_blocked"
+    },
+    {
+      "name": "guards.shell_blocked",
+      "label": "measured",
+      "formula": "Shell commands the allowlist refused.",
+      "source": "audit trail: shell_blocked"
+    },
+    {
+      "name": "guards.partial_inspections",
+      "label": "measured",
+      "formula": "Sources delivered although a detector did not inspect all of them.",
+      "source": "audit trail: coverage_incomplete"
+    },
+    {
+      "name": "policy.blocked",
+      "label": "measured",
+      "formula": "Refusals by rules in force, per rule.",
+      "source": "gateway decisions"
+    },
+    {
+      "name": "policy.would_block",
+      "label": "measured",
+      "formula": "Refusals a rule in monitor mode would make, before it goes live.",
+      "source": "gateway decisions (monitor)"
+    },
+    {
+      "name": "refetch.truncated",
+      "label": "measured",
+      "formula": "Outputs shortened by a filter (read mode or compression pattern).",
+      "source": "truncation pointers"
+    },
+    {
+      "name": "refetch.refetched",
+      "label": "measured",
+      "formula": "Shortened outputs the agent fetched back in full. Re-fetch rate = refetched ÷ truncated.",
+      "source": "ctx_expand of a truncation pointer"
+    },
+    {
+      "name": "unregulated.calls",
+      "label": "measured",
+      "formula": "Calls no enforcing rule covers: programs a command ran, tool calls of a host family without an intercepting hook, and calls relayed to MCP servers.",
+      "source": "the gateway's decision record: no enforcing rule matched"
+    },
+    {
+      "name": "sessions.started",
+      "label": "measured",
+      "formula": "Agent sessions started.",
+      "source": "session store"
+    },
+    {
+      "name": "hosts.tool_calls",
+      "label": "measured",
+      "formula": "Tool calls per agent host.",
+      "source": "session store: client"
+    },
+    {
+      "name": "spend.requests",
+      "label": "measured",
+      "formula": "Model requests where the engine measures spend.",
+      "source": "proxy usage meter, host logs"
+    },
+    {
+      "name": "spend.input_tokens",
+      "label": "measured",
+      "formula": "Model input tokens.",
+      "source": "proxy usage meter, host logs"
+    },
+    {
+      "name": "spend.output_tokens",
+      "label": "measured",
+      "formula": "Model output tokens.",
+      "source": "proxy usage meter, host logs"
+    },
+    {
+      "name": "spend.cached_tokens",
+      "label": "measured",
+      "formula": "Model input tokens served from the provider cache.",
+      "source": "proxy usage meter, host logs"
+    },
+    {
+      "name": "spend.usd_micros",
+      "label": "estimated",
+      "formula": "Cost at list price (tokens × price table below, the fallback price for unknown models); estimated · list price, never an invoice.",
+      "source": "price table"
+    },
+    {
+      "name": "knowledge.facts_current",
+      "label": "measured",
+      "formula": "Knowledge facts in the vault at the end of the period (a level, not a sum).",
+      "source": "knowledge store"
+    },
+    {
+      "name": "engines.active",
+      "label": "derived",
+      "formula": "Engines that reported at least one hour in the period (Hive only).",
+      "source": "Hive"
+    }
+  ],
+  "never_sent": [
+    "file or document content",
+    "file paths or names",
+    "prompts",
+    "model output",
+    "secret values",
+    "command lines",
+    "search queries",
+    "free text",
+    "repository hashes",
+    "session ids"
+  ],
+  "sent_only_when": [
+    "the MCP server name is sent only when the workspace's policy names it"
+  ],
+  "retention": "Hourly detail and its daily rollup are kept without a time limit, until the customer deletes them (per engine or all) or the account is deleted. Exports (CSV, JSONL) are available at any time."
+}

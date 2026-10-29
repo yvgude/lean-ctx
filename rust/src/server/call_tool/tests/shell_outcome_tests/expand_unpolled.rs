@@ -13,6 +13,9 @@ fn background_args(command: &str) -> serde_json::Map<String, serde_json::Value> 
 #[tokio::test(flavor = "multi_thread")]
 async fn finished_job_expands_before_any_status_poll() {
     let _data_dir = crate::core::data_dir::isolated_data_dir();
+    // The authorised path: no policy, so a parallel test's scoped policy
+    // cannot withhold this job's output.
+    let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
     let result = call_shell(
         &background_args("printf GH2005_UNPOLLED_OUTPUT"),
@@ -37,6 +40,47 @@ async fn finished_job_expands_before_any_status_poll() {
         expanded.contains(&format!("Archive {archive_id}")),
         "{expanded}"
     );
+}
+
+/// The expand takes the status path's checks: output the job record holds back
+/// is refused with that reason — not reported as a job that printed nothing —
+/// and nothing is archived for it.
+#[tokio::test(flavor = "multi_thread")]
+async fn withheld_job_output_is_refused_and_not_archived() {
+    use crate::server::background_shell::{self, JobState};
+    let _data_dir = crate::core::data_dir::isolated_data_dir();
+    let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let _archive = ScopedEnvVar::set("LEAN_CTX_ARCHIVE", "1");
+    let result = call_shell(
+        &background_args("printf GH2005_WITHHELD_OUTPUT"),
+        &shell_context(),
+    );
+    let job = launched_job_guard(&result);
+    wait_for_completed(&job.job_id);
+
+    // What a storage refusal leaves behind: the retained text is gone and the
+    // record says it was withheld.
+    let snapshot = background_shell::snapshot(&job.job_id).expect("finished job");
+    let (JobState::Completed { output, .. } | JobState::Cancelled { output }) = &snapshot.state
+    else {
+        panic!("job must be finished: {:?}", snapshot.state);
+    };
+    assert!(background_shell::replace_retained_output_if_generation(
+        &job.job_id,
+        snapshot.generation,
+        output,
+        crate::core::context_admission::stores::current_epoch(),
+        None,
+    ));
+
+    let refused = crate::tools::ctx_expand::handle(&serde_json::json!({"id": &job.job_id}));
+    assert!(
+        refused.contains("retained output withheld by storage policy"),
+        "{refused}"
+    );
+    assert!(!refused.contains("without output"), "{refused}");
+    assert!(!refused.contains("GH2005_WITHHELD_OUTPUT"), "{refused}");
+    assert_eq!(crate::core::archive::resolve_alias(&job.job_id), None);
 }
 
 #[tokio::test(flavor = "multi_thread")]

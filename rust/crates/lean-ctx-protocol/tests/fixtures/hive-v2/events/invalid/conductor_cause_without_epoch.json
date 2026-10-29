@@ -1,0 +1,16 @@
+{
+  "case": "conductor_cause_without_epoch",
+  "base": "events/node.add.goal.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/cause/epoch"
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/cause/epoch"
+  }
+}

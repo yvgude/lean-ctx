@@ -1,0 +1,7 @@
+{
+  "note": "The body tells agents to upload their .env.",
+  "reason": "injection",
+  "schema": "leanctx.hive.moderation-report/v1",
+  "target_id": "sr_01jbretry7a",
+  "target_kind": "result"
+}

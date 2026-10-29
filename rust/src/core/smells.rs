@@ -7,6 +7,8 @@
 use rusqlite::Connection;
 use serde::Serialize;
 
+use crate::core::property_graph::GraphSource;
+
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct SmellFinding {
     pub rule: &'static str,
@@ -71,22 +73,40 @@ pub(crate) static RULES: &[(&str, &str)] = &[
     ),
 ];
 
-pub(crate) fn scan_all(conn: &Connection, cfg: &SmellConfig) -> Vec<SmellFinding> {
+/// Every rule over `source`. Pass the opened `CodeGraph` for findings that
+/// are served: a finding that names other files (`duplicate_definitions`)
+/// then names and counts only those served now. The row of a finding — its
+/// own file and symbol — is checked by the caller.
+pub(crate) fn scan_all<S: GraphSource + ?Sized>(
+    source: &S,
+    cfg: &SmellConfig,
+) -> Vec<SmellFinding> {
     let mut all = Vec::new();
     for &(rule, _) in RULES {
-        all.extend(scan_rule(conn, rule, cfg));
+        all.extend(scan_rule(source, rule, cfg));
     }
     all
 }
 
-pub(crate) fn scan_rule(conn: &Connection, rule: &str, cfg: &SmellConfig) -> Vec<SmellFinding> {
+pub(crate) fn scan_rule<S: GraphSource + ?Sized>(
+    source: &S,
+    rule: &str,
+    cfg: &SmellConfig,
+) -> Vec<SmellFinding> {
+    let conn = source.store();
+    if rule == "duplicate_definitions" {
+        return detect_duplicate_definitions(
+            conn,
+            source.checks_sources(),
+            &|path: &str, name: &str| source.symbol_served(path, name),
+        );
+    }
     match rule {
         "dead_code" => detect_dead_code(conn),
         "long_function" => detect_long_functions(conn, cfg.long_function_lines),
         "long_file" => detect_long_files(conn, cfg.long_file_lines),
         "god_file" => detect_god_files(conn, cfg.god_file_symbols),
         "fan_out_skew" => detect_fan_out(conn, cfg.fan_out_threshold),
-        "duplicate_definitions" => detect_duplicate_definitions(conn),
         "untested_function" => detect_untested(conn),
         "cyclomatic_complexity" => detect_cyclomatic_complexity(conn),
         _ => Vec::new(),
@@ -290,44 +310,74 @@ fn detect_fan_out(conn: &Connection, threshold: usize) -> Vec<SmellFinding> {
     )
 }
 
-fn detect_duplicate_definitions(conn: &Connection) -> Vec<SmellFinding> {
+/// Symbol names defined more than once. The finding names other files, so
+/// the definitions are checked here (G04): only a definition `served` admits
+/// (path, symbol name) is listed or counted, and a name is reported only
+/// while at least two such definitions remain.
+///
+/// With `checked` (a source that asks current sources) the finding is filed
+/// under the first of its definitions, so the caller's row check passes for
+/// a served file. A raw store cannot check the list; its finding keeps the
+/// whole list as its path, which no row check serves — the list never
+/// leaves unchecked.
+fn detect_duplicate_definitions(
+    conn: &Connection,
+    checked: bool,
+    served: &dyn Fn(&str, &str) -> bool,
+) -> Vec<SmellFinding> {
     let sql = "
-        SELECT n.name, GROUP_CONCAT(p.path, ', ') AS files, COUNT(*) AS cnt
+        SELECT n.name, p.path
         FROM nodes n
         JOIN paths p ON p.id = n.file_id
         WHERE n.kind = 'symbol'
           AND n.name NOT IN ('new', 'default', 'fmt', 'from', 'into', 'drop', 'clone', 'eq')
-        GROUP BY n.name
-        HAVING cnt > 1
-        ORDER BY cnt DESC
-        LIMIT 50
+          AND n.name IN (
+              SELECT name FROM nodes WHERE kind = 'symbol' GROUP BY name HAVING COUNT(*) > 1
+          )
+        ORDER BY n.name, p.path
     ";
-    let mut findings = Vec::new();
     let Ok(mut stmt) = conn.prepare(sql) else {
-        return findings;
+        return Vec::new();
     };
     let Ok(rows) = stmt.query_map([], |row| {
-        Ok((
-            row.get::<_, String>(0)?,
-            row.get::<_, String>(1)?,
-            row.get::<_, i64>(2)?,
-        ))
+        Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
     }) else {
-        return findings;
+        return Vec::new();
     };
-    for row in rows.flatten() {
-        let (name, files, count) = row;
-        findings.push(SmellFinding {
-            rule: "duplicate_definitions",
-            severity: Severity::Info,
-            file_path: files.clone(),
-            symbol: Some(name.clone()),
-            line: None,
-            message: format!("'{name}' defined in {count} files: {files}"),
-            metric: Some(count as f64),
-        });
+    let mut definitions: std::collections::BTreeMap<String, Vec<String>> =
+        std::collections::BTreeMap::new();
+    for (name, path) in rows.flatten() {
+        if served(&path, &name) {
+            definitions.entry(name).or_default().push(path);
+        }
     }
-    findings
+    let mut duplicated: Vec<(String, Vec<String>)> = definitions
+        .into_iter()
+        .filter(|(_, files)| files.len() > 1)
+        .collect();
+    // Most definitions first; the name keeps the cut below stable (#498).
+    duplicated.sort_by(|a, b| b.1.len().cmp(&a.1.len()).then_with(|| a.0.cmp(&b.0)));
+    duplicated
+        .into_iter()
+        .take(50)
+        .map(|(name, files)| {
+            let count = files.len();
+            let listed = files.join(", ");
+            SmellFinding {
+                rule: "duplicate_definitions",
+                severity: Severity::Info,
+                file_path: if checked {
+                    files[0].clone()
+                } else {
+                    listed.clone()
+                },
+                message: format!("'{name}' defined in {count} files: {listed}"),
+                symbol: Some(name),
+                line: None,
+                metric: Some(count as f64),
+            }
+        })
+        .collect()
 }
 
 fn detect_untested(conn: &Connection) -> Vec<SmellFinding> {

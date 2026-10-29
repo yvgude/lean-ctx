@@ -295,6 +295,33 @@ pub trait McpTool: Send + Sync {
     fn produces_machine_readable(&self, _args: Option<&Map<String, Value>>) -> bool {
         false
     }
+
+    /// Attestation that *this* invocation derives its output from the caller's
+    /// arguments and lean-ctx's own state only — it reads no project source,
+    /// provider or stored copy of one. Replay admission relies on it: an
+    /// output with no captured source set is replayed under protection only
+    /// when its tool attests this. The default is `false`: "no source was
+    /// observed" is not proof, an uninstrumented reader publishes none either.
+    /// Override only for a tool whose handler was read for exactly this.
+    fn attests_source_free(&self, _args: Option<&Map<String, Value>>) -> bool {
+        false
+    }
+
+    /// Declaration that *this* invocation reads every project source it
+    /// derives output from through the admitted readers
+    /// (`tools::ctx_read::read_file_*`), on the handler's own thread or on
+    /// workers started with `TaskSpine::spawn_thread` — so that each of them is
+    /// published into the call's source capture. Only then is a captured
+    /// source set the WHOLE set, and only then may it authorize reuse of the
+    /// result (idempotent replay, response cache, source-bound recovery copy).
+    ///
+    /// The default is `false`: a source set captured from a tool that does not
+    /// declare this may be partial (a raw `fs::read`, a thread without the
+    /// capture, a cached body served without a read) and counts as unknown.
+    /// Override only after reading every content path of the handler.
+    fn publishes_every_source(&self, _args: Option<&Map<String, Value>>) -> bool {
+        false
+    }
 }
 
 tokio::task_local! {

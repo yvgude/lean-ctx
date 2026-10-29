@@ -62,6 +62,7 @@ fn signed_bundle_doc() -> String {
         signature: None,
         graph_summary: None,
         marketplace: None,
+        redistributable: None,
     };
     let key = ed25519_dalek::SigningKey::from_bytes(&[9u8; 32]);
     super::super::signing::sign_package(&mut manifest, &content, &key);
@@ -552,6 +553,7 @@ fn kinded_manifest(kind: super::PackageKind, name: &str, version: &str) -> Packa
         signature: None,
         graph_summary: None,
         marketplace: None,
+        redistributable: None,
     }
 }
 
@@ -577,4 +579,55 @@ fn context_pack_with_addon_payload_fails() {
     let errs = validate_kind_coherence(&manifest, &addon_content(COHERENT_ADDON_TOML))
         .expect_err("must fail");
     assert!(errs[0].contains("requires kind=addon"), "{errs:?}");
+}
+
+/// The official conformance vectors (ctxpkg.org `/conformance/vectors`, plus
+/// the manifest-signature pair this engine produced for them) are verified
+/// the way every conforming reader verifies them: `valid-*` load, `invalid-*`
+/// are rejected (AP13 K-P2-12).
+#[test]
+fn official_conformance_vectors_verify_as_named() {
+    let dir =
+        std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures/ctxpkg-conformance");
+    let mut seen = 0;
+    for entry in std::fs::read_dir(&dir).unwrap() {
+        let path = entry.unwrap().path();
+        let name = path.file_name().unwrap().to_string_lossy().into_owned();
+        let report = verify_package_file(&path).unwrap();
+        assert_eq!(
+            report.valid(),
+            name.starts_with("valid-"),
+            "{name}: {:?}",
+            report.errors
+        );
+        if name == "valid-level2-manifest-signed.ctxpkg" {
+            assert_eq!(
+                report.signature_coverage,
+                Some(super::super::signing::SignatureCoverage::Manifest)
+            );
+        }
+        if name == "valid-level2-signed.ctxpkg" {
+            assert_eq!(
+                report.signature_coverage,
+                Some(super::super::signing::SignatureCoverage::IdentityOnly)
+            );
+        }
+        seen += 1;
+    }
+    assert!(seen >= 7, "vectors missing in {}", dir.display());
+}
+
+/// Regression (AP13 K-P2-10): uppercase signature hex verified although the
+/// spec, schema and reference verifier accept lowercase only.
+#[test]
+fn uppercase_signature_hex_is_refused() {
+    let doc = signed_bundle_doc();
+    let mut v: serde_json::Value = serde_json::from_str(&doc).unwrap();
+    let upper = v["manifest"]["signature"]["value"]
+        .as_str()
+        .unwrap()
+        .to_ascii_uppercase();
+    v["manifest"]["signature"]["value"] = upper.into();
+    let report = verify_package_text(&serde_json::to_string(&v).unwrap());
+    assert_eq!(report.signature, CheckOutcome::Fail);
 }

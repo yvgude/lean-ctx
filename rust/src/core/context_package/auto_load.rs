@@ -10,7 +10,7 @@ pub(crate) fn auto_load_packages(project_root: &str) -> Vec<String> {
         return Vec::new();
     };
 
-    let Ok(packages) = registry.auto_load_packages() else {
+    let Ok(packages) = registry.auto_load_packages(project_root) else {
         return Vec::new();
     };
 
@@ -31,7 +31,7 @@ pub(crate) fn auto_load_packages(project_root: &str) -> Vec<String> {
             continue;
         }
 
-        let Ok((manifest, content)) = registry.load_package(&entry.name, &entry.version) else {
+        let Ok(package) = registry.load_admitted(&entry.name, &entry.version) else {
             tracing::warn!(
                 "ctxpkg auto-load: failed to load {} v{}",
                 entry.name,
@@ -40,7 +40,7 @@ pub(crate) fn auto_load_packages(project_root: &str) -> Vec<String> {
             continue;
         };
 
-        match super::loader::load_package(&manifest, &content, project_root) {
+        match super::loader::load_admitted_package(&package, project_root) {
             Ok(report) => {
                 applied.insert(key);
                 let label = format!("{} v{}", entry.name, entry.version);

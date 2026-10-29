@@ -217,6 +217,11 @@ fn lexical_score(candidate: &Candidate, terms: &[String]) -> f64 {
 }
 
 /// Personalized PageRank restricted to readable candidates, keyed by index.
+///
+/// An edge counts only when BOTH ends are candidates that carry admitted
+/// content in this call. The graph store may know files the admitted reader
+/// withholds; an edge with a withheld, skipped or absent end contributes
+/// nothing, so the ranking is a function of the admitted candidates alone.
 fn structural_scores(
     input: &RankInput<'_>,
     readable: &[usize],
@@ -356,6 +361,7 @@ mod tests {
             path: path.to_string(),
             content: Some(body.to_string()),
             skipped: None,
+            refusal: None,
         }
     }
 
@@ -412,6 +418,18 @@ mod tests {
             changed: &changed,
         };
         assert_eq!(order(&input), ["src/billing.rs", "src/b.rs", "src/a.rs"]);
+
+        // The same graph when the admitted reader withheld the relevant file:
+        // its edge lifts nobody, the neighbour ranks like any other file.
+        let mut withheld = candidates.clone();
+        withheld[2].content = None;
+        withheld[2].skipped = Some("withheld");
+        withheld[2].refusal = Some("source content withheld by policy".to_string());
+        let input = RankInput {
+            candidates: &withheld,
+            ..input
+        };
+        assert_eq!(order(&input), ["src/a.rs", "src/b.rs"]);
     }
 
     #[test]
@@ -454,6 +472,7 @@ mod tests {
                 path: "logo.png".to_string(),
                 content: None,
                 skipped: Some("binary"),
+                refusal: None,
             },
             file("a.rs", ""),
         ];

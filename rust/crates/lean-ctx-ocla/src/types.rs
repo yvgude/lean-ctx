@@ -813,6 +813,10 @@ pub struct AgentMessageRequest {
     pub privacy: PrivacyLevel,
     pub priority: MessagePriority,
     pub ttl_hours: Option<u64>,
+    /// Optional idempotency key: a retry with the same key and request
+    /// returns the first message's id instead of posting it again.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub request_id: Option<String>,
 }
 
 impl AgentEnvelope {
@@ -970,8 +974,14 @@ mod tests {
     }
 
     #[test]
-    fn contract_has_exactly_fourteen_capability_kinds() {
+    fn contract_has_exactly_fourteen_discoverable_capabilities_and_no_model_router() {
         assert_eq!(OclaCapabilityKind::ALL.len(), 14);
+        // Retired: LeanCTX does not route models, so the kind is not part of the contract.
+        assert!(serde_json::from_str::<OclaCapabilityKind>("\"model_router\"").is_err());
+        for kind in OclaCapabilityKind::ALL {
+            let wire = serde_json::to_string(&kind).expect("capability kind serializes");
+            assert!(!wire.contains("rout"), "{wire}");
+        }
         let capability = OclaCapability::available(OclaCapabilityKind::AgentGateway);
         assert_eq!(capability.api_version, OCLA_API_VERSION);
         assert_eq!(capability.status, OclaCapabilityStatus::Available);

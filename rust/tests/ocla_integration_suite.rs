@@ -16,7 +16,6 @@ use lean_ctx::core::ocla::budget::{BudgetLedger, BudgetLimit, BudgetScope};
 use lean_ctx::core::ocla::capsule::CapsuleStore;
 use lean_ctx::core::ocla::health::{HealthStatus, check_system_health, seed_agent_registry};
 use lean_ctx::core::ocla::response_cache::{CachedResponse, ResponseCache, ResponseCacheKey};
-use lean_ctx::core::ocla::tracing::{SpanStatus, spans_for_trace, start_span};
 use lean_ctx::core::ocla::wire_api::ocla_router;
 use lean_ctx::core::savings_ledger;
 use serde_json::Value;
@@ -336,39 +335,8 @@ fn test_dlq_lifecycle() {
             .expect("dequeue integration dead letter")
             .is_some()
     );
-    {
-        let found = &queue.peek(&scope).expect("peek empty scope");
-        assert!(found.is_empty(), "{found:?}");
-    }
-}
-
-#[test]
-fn test_tracing_spans() {
-    let trace_id = format!(
-        "integration-trace-{}",
-        Utc::now().timestamp_nanos_opt().unwrap()
-    );
-    let parent = start_span(&trace_id, "integration.parent");
-    let child = start_span(&trace_id, "integration.child");
-    child.set_status(SpanStatus::Ok);
-    drop(child);
-    drop(parent);
-
-    let spans = spans_for_trace(&trace_id);
-    assert_eq!(spans.len(), 2);
-    assert!(spans.iter().all(|span| {
-        span.end_ns.expect("span end") >= span.start_ns && span.trace_id == trace_id
-    }));
-    let child = spans
-        .iter()
-        .find(|span| span.operation == "integration.child")
-        .expect("child span");
-    let parent = spans
-        .iter()
-        .find(|span| span.operation == "integration.parent")
-        .expect("parent span");
     assert_eq!(
-        child.parent_span_id.as_deref(),
-        Some(parent.span_id.as_str())
+        queue.peek(&scope).expect("peek empty scope"),
+        [] as [lean_ctx::core::a2a::dlq::DeadLetter; 0]
     );
 }

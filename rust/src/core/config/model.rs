@@ -46,10 +46,12 @@ pub struct Config {
     /// Privacy-safe default-on telemetry with explicit and environment opt-outs.
     #[serde(default)]
     pub telemetry: TelemetryConfig,
+    /// Legacy `[cloud]` opt-in, migrated on load; never written back.
+    #[serde(default, skip_serializing)]
+    pub cloud: LegacyCloudConfig,
+    /// LeanCTX Hive connector (`[hive]`).
     #[serde(default)]
-    pub cloud: CloudConfig,
-    #[serde(default)]
-    pub gain: GainConfig,
+    pub hive: crate::core::hive::HiveConfig,
     /// Model declaration for measured-vs-estimated cost reporting (MCP-only IDEs).
     #[serde(default)]
     pub cost: CostConfig,
@@ -251,7 +253,7 @@ pub struct Config {
     #[serde(default)]
     pub rules_injection: Option<String>,
     /// Mirror the host IDE's tool-permission rules onto lean-ctx's own MCP tools.
-    /// Values: "off" (default) or "on". When "on", lean-ctx reads the active
+    /// Values: "on" (default, GH #1428) or "off". When "on", lean-ctx reads the active
     /// IDE's permission config (v1: OpenCode) and applies the equivalent
     /// deny/ask/allow decision to the matching lean-ctx tool — so `ctx_shell`
     /// honors your `bash`/`rm *` rules instead of bypassing them.
@@ -272,9 +274,6 @@ pub struct Config {
     /// Override via LEAN_CTX_COMPRESSION env var.
     #[serde(default)]
     pub compression_level: CompressionLevel,
-    /// Science-driven cognitive features mode (#science).
-    #[serde(default)]
-    pub cognitive_mode: CognitiveMode,
     /// Global compression intensity 0.0 (lossless) – 1.0 (max), mapped onto the
     /// read modes / entropy / IB stages (see `core::aggressiveness`). `None`
     /// (default) keeps each mode's built-in default. Override via the
@@ -341,7 +340,11 @@ pub struct Config {
     /// / PROJECT MEMORY blocks directly into the MCP `initialize` instructions.
     /// #1540: this key never disables the archive/ephemeral firewall — only
     /// the `LEAN_CTX_MINIMAL` env escape hatch skips that safety net.
-    #[serde(default)]
+    /// `default_true`, not `default`: a field-level `#[serde(default)]` made
+    /// every config.toml without this key read `false` (bool's default), so
+    /// the documented default `true` only held for users with no config file
+    /// (focus analysis 2026-10-15).
+    #[serde(default = "default_true")]
     pub minimal_overhead: bool,
     /// Opt-in: substitute long identifiers with short α-codes (+ a `§MAP` table)
     /// in `aggressive` reads for projects with >50 source files. Off by default —
@@ -375,7 +378,7 @@ pub struct Config {
     #[serde(default = "serde_defaults::default_progressive_signatures_max")]
     pub progressive_signatures_max: u32,
     /// Opt-in: let the adaptive *learning* signals (predictor, bandit, heatmap,
-    /// adaptive policy, bounce/path memory) participate in `auto` mode
+    /// adaptive policy, in-session bounce rates) participate in `auto` mode
     /// resolution. Off by default (#683): the default cascade is a deterministic
     /// function of (file, task) — only capability guards and the size/task
     /// heuristic decide — which keeps output byte-stable for provider prompt
@@ -383,22 +386,12 @@ pub struct Config {
     /// Override via the LEAN_CTX_AUTO_MODE_LEARNING env var.
     #[serde(default)]
     pub auto_mode_learning: bool,
-    /// Team server URL for opt-in savings roll-up.
-    /// Set via `lean-ctx config set team_url https://...` or `[team] url` in config.toml.
-    /// Override via LEAN_CTX_TEAM_URL env var.
-    #[serde(default)]
-    pub team_url: Option<String>,
-    /// Bearer token for the team server (Authorization header on savings push /
-    /// pull). Set via `lean-ctx config set team_token <tok>` or `team_token` in
-    /// config.toml. Override via the LEAN_CTX_TEAM_TOKEN env var.
-    #[serde(default)]
-    pub team_token: Option<String>,
-    /// Opt-in: when true, the running daemon periodically pushes this machine's
-    /// signed savings batch to `team_url` so the team roll-up fills itself (no
-    /// manual `savings push` per dev). Off by default; requires `team_url` +
-    /// `team_token`. Set via `lean-ctx config set team_auto_push true`.
-    #[serde(default)]
-    pub team_auto_push: bool,
+    /// Team content sharing (strategy 2026-10-14, acceptance T07). When false,
+    /// nothing whose body is content leaves for the hosted Team service: no bus
+    /// post, work-graph write, knowledge entry or artifact publication. Presence,
+    /// leases and reads (metadata) keep working. On by default.
+    #[serde(default = "serde_defaults::default_true")]
+    pub team_share_content: bool,
     /// Enable human-readable activity journal (~/.lean-ctx/journal.md).
     #[serde(default)]
     pub journal_enabled: bool,
@@ -408,9 +401,6 @@ pub struct Config {
     /// Hybrid search weights (BM25/dense/candidates).
     #[serde(default)]
     pub search: crate::core::hybrid_search::HybridConfig,
-    /// Code-graph settings, including traversal (co-access) edges (#289).
-    #[serde(default)]
-    pub graph: GraphConfig,
     /// Index-time file filters (#735): include/exclude globs + gitignore
     /// handling, applied by every index builder via `core::index_filter`.
     #[serde(default)]
@@ -421,7 +411,8 @@ pub struct Config {
     /// AI session-summary settings (#292): periodic, semantically-recallable summaries.
     #[serde(default)]
     pub summaries: SummariesConfig,
-    /// Optional LLM enhancement (query expansion, contradiction explanation).
+    /// Optional local LLM for the background knowledge loop's observation
+    /// synthesis (`[autonomy] cognition_loop_enabled`, off by default).
     #[serde(default)]
     pub llm: crate::core::llm_enhance::LlmConfig,
     /// Semantic-embedding engine settings (which local ONNX model to use).
@@ -517,6 +508,16 @@ pub struct Config {
     /// Override via the `LEAN_CTX_READ_DEDUP` env var.
     #[serde(default)]
     pub read_dedup: ReadDedup,
+    /// Ask the user to approve a command the shell allowlist does not name,
+    /// when the MCP client supports elicitation (`ask`, default) or refuse
+    /// it without asking (`off`). Global only. Override via the
+    /// `LEAN_CTX_SHELL_APPROVAL` env var.
+    #[serde(default)]
+    pub shell_approval: ShellApproval,
+    /// Languages `ctx_execute` runs without asking (`python`, `javascript`,
+    /// …): what "Always allow" in its approval prompt writes. Global only.
+    #[serde(default)]
+    pub execute_allowed_languages: Vec<String>,
     /// Disable the daily version check against
     /// api.github.com/repos/yvgude/lean-ctx/releases/latest.
     /// Override via LEAN_CTX_NO_UPDATE_CHECK env var.
@@ -640,11 +641,6 @@ pub struct Config {
     /// that path unreachable for any file above ~16 KB.
     #[serde(default = "serde_defaults::default_turn_fresh_limit_verbatim")]
     pub turn_fresh_limit_verbatim: usize,
-    /// Maximum cumulative fresh tokens per session. 0 = unlimited.
-    /// Default: 200000. Progressive compression kicks in at 50/75/90%.
-    /// Override via LEAN_CTX_SESSION_TOKEN_LIMIT env var.
-    #[serde(default = "serde_defaults::default_session_token_limit")]
-    pub session_token_limit: usize,
     /// Explicit project root override. When set, lean-ctx uses this instead of auto-detection.
     /// This prevents accidental home-directory scans when running from $HOME.
     /// Override via LEAN_CTX_PROJECT_ROOT env var.
@@ -705,6 +701,13 @@ pub struct Config {
     /// On by default. Global-only: a project-local file cannot weaken it.
     #[serde(default)]
     pub context_gateway: crate::core::context_admission::ContextGatewayConfig,
+    /// Set by the loader when the global `config.toml` exists but could not be
+    /// read or parsed, so this snapshot holds built-in defaults instead of the
+    /// operator's settings. It travels with exactly this `Config` value: an
+    /// earlier failed snapshot stays marked after a later successful load.
+    /// Never read from or written to a file.
+    #[serde(skip)]
+    pub load_failure: Option<super::ConfigLoadFailure>,
     /// Accept A2A handoff bundles and context packages whose signature
     /// verifies but whose signer key is not anchored in `trusted-signers.toml`
     /// (GHSA-gvg8-285q-m62g). Off by default: anyone can mint a key, so an
@@ -735,11 +738,6 @@ pub struct Config {
     /// a LeanCTX Enterprise Gateway for economics tracking and model routing.
     #[serde(default)]
     pub enterprise: EnterpriseConfig,
-    /// Deprecated: auto-reroot is now always active when the jail root is
-    /// suspicious, None, or has no project marker. Kept for config-file
-    /// backward compatibility but no longer controls behavior.
-    #[serde(default = "default_true")]
-    pub allow_auto_reroot: bool,
     /// Verbatim binary path/expression for generated agent-hook commands
     /// (#708). Users who sync agent settings (`~/.claude/settings.json`, …)
     /// across machines with different usernames need an env-based form like

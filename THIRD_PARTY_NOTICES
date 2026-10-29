@@ -2,19 +2,19 @@
 Schema: leanctx.third-party-notices/v1
 Status: GENERATED AND APPROVED
 Content-Digest-Scope: SHA-256 of this file with the Content-Digest value zeroed
-Content-Digest: sha256:d8f42ea922efe53b27e9dff83d841860d4d9fd4a9fba5ccaf89ec18253ef9d7d
+Content-Digest: sha256:f76d44aea9141a66c36fa602403c5280e9365082c3c6015fe5b5636b890c033e
 Source inventory: rust/Cargo.lock + cargo metadata --locked --offline --all-features + SBOM.cdx.json + legal/third-party-assets.toml + packages/pi-lean-ctx/package-lock.json
 Generation command: cargo metadata --locked --offline --all-features --manifest-path rust/Cargo.toml --format-version 1
 Approval contract: legal/third-party-notices-approval.toml binds approved_content_sha256 to this file's exact SHA-256
-Cargo.lock SHA-256: 82a6fc6a46a03a37c27c28880d31338f511fddd965bb8eb4133ac5c9e7c1da6e
-Cargo metadata inventory SHA-256: 49b082bef7074a01e730787c4b3f77386ed8a43ebbf970b1ded34e860064c7e9
-SBOM.cdx.json SHA-256: 391a1618bcd0b8329fe81daf1d030abea2529abc68ff2570896822da30f97db8
-SBOM components: 541
-Asset manifest SHA-256: 6fc0069e6835f4d5793fb63236b9be0f05b95219e262029057786ebf3f6c4ec8
-npm package-lock.json SHA-256: 1f4451809926e44c5edc0651f117aa9aed436ac8efdb927ea5001a9fade4c883
+Cargo.lock SHA-256: c11dfc5b8166dc8eed9d1e678c95e6f59c0701a64f56c34355e3840ecf683231
+Cargo metadata inventory SHA-256: 2d8bd2c895ecc07dd98a4af25a32a1d1bdd72fc9d3dc7689005dc6e63d196345
+SBOM.cdx.json SHA-256: 894304fa553ce89c49ecae98bcc3c958e8fc5b2c54eb32fc5d56bdc825bb9e65
+SBOM components: 556
+Asset manifest SHA-256: d1687b3f8892a1ab8d5a2f35b643d3a79408b1aed4442820b7589b6855564d7c
+npm package-lock.json SHA-256: 35e87ec565ae4e71802703536ea2ea2bd6309fdf9d50e41203876084ab46306c
 Bundled MCP SDK: @modelcontextprotocol/sdk 1.32.1 (sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==)
-Cargo graph packages: 595
-Third-party Cargo packages: 585
+Cargo graph packages: 611
+Third-party Cargo packages: 603
 
 ## Cargo dependency graph
 ### adler2 2.0.1
@@ -153,14 +153,6 @@ Targets: anyhow[lib], build-script-build[custom-build], compiletest[test], test_
 Features: backtrace, default, std
 Dependencies: (none)
 
-### argon2 0.5.3
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/RustCrypto/password-hashes/tree/master/argon2
-SPDX-License-Identifier: MIT OR Apache-2.0
-Targets: argon2[lib], kat[test], phc_strings[test]
-Features: alloc, default, password-hash, rand, simple, std, zeroize
-Dependencies: base64ct, blake2, cpufeatures, password-hash
-
 ### arrayref 0.3.9
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/droundy/arrayref
@@ -241,6 +233,14 @@ Targets: axum_core[lib]
 Features: __private_docs, tracing
 Dependencies: bytes, futures-core, http, http-body, http-body-util, mime, pin-project-lite, sync_wrapper, tower-layer, tower-service, tracing
 
+### base16ct 1.0.0
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/formats
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: base16ct[lib], lib[test], mod[bench]
+Features: alloc
+Dependencies: (none)
+
 ### base64 0.22.1
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/marshallpierce/rust-base64
@@ -296,14 +296,6 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 Targets: bitflags[lib], custom_bits_type[example], custom_derive[example], fmt[example], macro_free[example], parse[bench], serde[example]
 Features: arbitrary, bytemuck, example_generated, serde, serde_core, std
 Dependencies: (none)
-
-### blake2 0.10.6
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/RustCrypto/hashes
-SPDX-License-Identifier: MIT OR Apache-2.0
-Targets: blake2[lib], mac[test], mod[bench], mod[test], persona[test]
-Features: default, reset, simd, simd_asm, simd_opt, size_opt, std
-Dependencies: digest
 
 ### blake3 1.8.6
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -472,6 +464,14 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 Targets: chrono[lib], dateutils[test], wasm[test], win_bindings[test]
 Features: __internal_bench, alloc, arbitrary, clock, core-error, default, defmt, iana-time-zone, js-sys, libc, now, oldtime, pure-rust-locales, rkyv, rkyv-16, rkyv-32, rkyv-64, rkyv-validation, serde, std, unstable-locales, wasm-bindgen, wasmbind, winapi, windows-link
 Dependencies: iana-time-zone, js-sys, num-traits, serde, wasm-bindgen, windows-link
+
+### chrono-tz 0.10.4
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/chronotope/chrono-tz
+SPDX-License-Identifier: MIT OR Apache-2.0
+Targets: build-script-build[custom-build], chrono_tz[lib], codegen[test], numberphile[test], tzfile[test]
+Features: arbitrary, case-insensitive, chrono-tz-build, default, filter-by-regex, serde, std
+Dependencies: chrono, phf
 
 ### ciborium 0.2.2
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -761,6 +761,14 @@ Targets: build-script-build[custom-build], crunchy[lib]
 Features: default, limit_1024, limit_128, limit_2048, limit_256, limit_512, limit_64, std
 Dependencies: (none)
 
+### crypto-bigint 0.7.10
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/crypto-bigint
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: boxed_monty[bench], boxed_monty_form[test], boxed_uint[bench], boxed_uint[test], const_monty[bench], const_monty_form[test], const_prime_monty_params[test], crypto_bigint[lib], fixed_monty_form[test], impl_modulus[test], int[bench], int[test], limb[bench], monty[bench], safegcd[test], serde[test], uint[bench], uint[test]
+Features: alloc, default, der, extra-sizes, getrandom, hybrid-array, rand_core, rlp, serde, subtle, zeroize
+Dependencies: cpubits, ctutils, getrandom, hybrid-array, num-traits, rand_core, subtle, zeroize
+
 ### crypto-common 0.1.7
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/RustCrypto/traits
@@ -775,15 +783,15 @@ Package source: https://github.com/RustCrypto/traits
 SPDX-License-Identifier: MIT OR Apache-2.0
 Targets: crypto_common[lib]
 Features: getrandom, rand_core, zeroize
-Dependencies: hybrid-array
+Dependencies: getrandom, hybrid-array, rand_core
 
-### ctutils 0.4.4
+### ctutils 0.4.6
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/RustCrypto/utils
 SPDX-License-Identifier: Apache-2.0 OR MIT
-Targets: ctutils[lib], proptests[test]
+Targets: ctutils[lib], primitives[test], proptests[test]
 Features: alloc, subtle
-Dependencies: cmov
+Dependencies: cmov, subtle
 
 ### curve25519-dalek 4.1.3
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -873,6 +881,14 @@ Targets: datetime[test], der[lib], derive[test], pem[test], set_of[test]
 Features: alloc, arbitrary, bytes, derive, flagset, oid, pem, real, std, time, zeroize
 Dependencies: const-oid, zeroize
 
+### der 0.8.3
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/formats
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: ber[test], datetime[test], der[lib], derive[test], derive_no_alloc[test], document[test], nesting[test], pem[test], set_of[test], value_ord[test]
+Features: alloc, arbitrary, ber, bytes, derive, flagset, heapless, oid, pem, real, std, time, zeroize
+Dependencies: const-oid, zeroize
+
 ### deranged 0.5.8
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/jhpratt/deranged
@@ -887,7 +903,7 @@ Package source: https://github.com/RustCrypto/traits
 SPDX-License-Identifier: MIT OR Apache-2.0
 Targets: digest[lib]
 Features: alloc, blobby, block-buffer, const-oid, core-api, default, dev, mac, oid, rand_core, std, subtle
-Dependencies: block-buffer, crypto-common, subtle
+Dependencies: block-buffer, crypto-common
 
 ### digest 0.11.3
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -953,6 +969,14 @@ Targets: aes[test], ecb[lib]
 Features: alloc, block-padding, default, std
 Dependencies: cipher
 
+### ecdsa 0.17.0
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/signatures
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: ecdsa[lib], lib[test]
+Features: algorithm, alloc, default, der, dev, digest, getrandom, pem, pkcs8, serde, sha2, spki, std
+Dependencies: der, digest, elliptic-curve, rfc6979, signature, spki, zeroize
+
 ### ed25519 2.2.3
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/RustCrypto/signatures/tree/master/ed25519
@@ -976,6 +1000,14 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 Targets: either[lib]
 Features: default, serde, std, use_std
 Dependencies: (none)
+
+### elliptic-curve 0.14.3
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/traits
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: elliptic_curve[lib], pkcs8[test], secret_key[test]
+Features: alloc, arithmetic, default, dev, digest, ecdh, ff, getrandom, group, pem, pkcs8, sec1, serde, std
+Dependencies: base16ct, crypto-bigint, crypto-common, digest, ff, group, hybrid-array, pkcs8, rand_core, sec1, subtle, zeroize
 
 ### email_address 0.2.9
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -1080,6 +1112,14 @@ SPDX-License-Identifier: Apache-2.0 OR MIT
 Targets: bench[bench], char[test], fastrand[lib], smoke[test]
 Features: alloc, default, getrandom, js, std
 Dependencies: (none)
+
+### ff 0.14.0
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/zkcrypto/ff
+SPDX-License-Identifier: MIT/Apache-2.0
+Targets: derive[test], ff[lib]
+Features: alloc, bits, bitvec, byteorder, default, derive, ff_derive, std
+Dependencies: rand_core, subtle
 
 ### fiat-crypto 0.2.9
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -1329,6 +1369,14 @@ Targets: bench[bench], globset[lib]
 Features: arbitrary, default, log, serde, serde1, simd-accel
 Dependencies: aho-corasick, bstr, log, regex-automata, regex-syntax
 
+### group 0.14.0
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/zkcrypto/group
+SPDX-License-Identifier: MIT/Apache-2.0
+Targets: group[lib]
+Features: alloc, default, memuse, rand, rand_xorshift, tests, wnaf-memuse
+Dependencies: ff, rand_core, subtle
+
 ### half 2.7.1
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/VoidStarKat/half-rs
@@ -1471,7 +1519,7 @@ Package source: https://github.com/RustCrypto/hybrid-array
 SPDX-License-Identifier: MIT OR Apache-2.0
 Targets: ctutils[test], hybrid_array[lib], mod[test], subtle[test]
 Features: alloc, arbitrary, bytemuck, ctutils, extra-sizes, serde, subtle, zerocopy, zeroize
-Dependencies: typenum
+Dependencies: subtle, typenum, zeroize
 
 ### hyper 1.11.0
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -2209,6 +2257,14 @@ Targets: outref[lib]
 Features: (none)
 Dependencies: (none)
 
+### p256 0.14.0
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/elliptic-curves
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: affine[test], ecdsa[bench], ecdsa[test], field[bench], p256[lib], pkcs8[test], point[bench], projective[test], scalar[bench], scalar[test]
+Features: alloc, arithmetic, default, digest, ecdh, ecdsa, ecdsa-core, getrandom, group-digest, hash2curve, oprf, pem, pkcs8, precomputed-tables, serde, serdect, sha2, sha256, std, test-vectors
+Dependencies: ecdsa, elliptic-curve, primefield, primeorder, sha2
+
 ### page_size 0.6.0
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/Elzair/page_size_rs
@@ -2232,14 +2288,6 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 Targets: build-script-build[custom-build], parking_lot_core[lib]
 Features: backtrace, deadlock_detection, nightly, petgraph
 Dependencies: cfg-if, libc, redox_syscall, smallvec, windows-link
-
-### password-hash 0.5.0
-Source: registry+https://github.com/rust-lang/crates.io-index
-Package source: https://github.com/RustCrypto/traits/tree/master/password-hash
-SPDX-License-Identifier: MIT OR Apache-2.0
-Targets: encoding[test], hashing[test], password_hash[lib], password_hash[test], test_vectors[test]
-Features: alloc, default, getrandom, rand_core, std
-Dependencies: base64ct, rand_core, subtle
 
 ### paste 1.0.15
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -2281,6 +2329,22 @@ Targets: percent_encoding[lib]
 Features: alloc, default, std
 Dependencies: (none)
 
+### phf 0.12.1
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/rust-phf/rust-phf
+SPDX-License-Identifier: MIT
+Targets: phf[lib]
+Features: default, macros, phf_macros, serde, std, uncased, unicase
+Dependencies: phf_shared
+
+### phf_shared 0.12.1
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/rust-phf/rust-phf
+SPDX-License-Identifier: MIT
+Targets: phf_shared[lib]
+Features: default, std, uncased, unicase
+Dependencies: siphasher
+
 ### pin-project-lite 0.2.17
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/taiki-e/pin-project-lite
@@ -2295,6 +2359,14 @@ Package source: https://github.com/RustCrypto/formats/tree/master/pkcs8
 SPDX-License-Identifier: Apache-2.0 OR MIT
 Targets: encrypted_private_key[test], pkcs8[lib], private_key[test], traits[test]
 Features: 3des, alloc, des-insecure, encryption, getrandom, pem, pkcs5, rand_core, sha1-insecure, std, subtle
+Dependencies: der, spki
+
+### pkcs8 0.11.0
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/formats
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: encrypted_private_key[test], pkcs8[lib], private_key[test], traits[test]
+Features: 3des, alloc, ctutils, des-insecure, encryption, getrandom, pem, pkcs5, sha1-insecure, std
 Dependencies: der, spki
 
 ### pkg-config 0.3.33
@@ -2408,6 +2480,22 @@ SPDX-License-Identifier: MIT OR Apache-2.0
 Targets: ppv_lite86[lib]
 Features: default, no_simd, simd, std
 Dependencies: zerocopy
+
+### primefield 0.14.0
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/elliptic-curves
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: primefield[lib]
+Features: (none)
+Dependencies: crypto-bigint, crypto-common, ff, rand_core, subtle, zeroize
+
+### primeorder 0.14.0
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/elliptic-curves
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: primeorder[lib]
+Features: alloc, basepoint-table, critical-section, dev, hash2curve, once_cell, serde, serdect, std
+Dependencies: elliptic-curve, once_cell, primefield, serdect, wnaf
 
 ### proc-macro2 1.0.107
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -2689,6 +2777,14 @@ Targets: reqwest[lib]
 Features: __native-tls, __native-tls-alpn, __rustls, __rustls-aws-lc-rs, __tls, blocking, brotli, charset, cookies, default, default-tls, deflate, form, gzip, hickory-dns, http2, http3, json, multipart, native-tls, native-tls-no-alpn, native-tls-vendored, native-tls-vendored-no-alpn, query, rustls, rustls-no-provider, socks, stream, system-proxy, zstd
 Dependencies: base64, bytes, cookie, cookie_store, futures-core, futures-util, http, http-body, http-body-util, hyper, hyper-rustls, hyper-util, js-sys, log, percent-encoding, pin-project-lite, quinn, rustls, rustls-pki-types, rustls-platform-verifier, serde, serde_json, sync_wrapper, tokio, tokio-rustls, tokio-util, tower, tower-http, tower-service, url, wasm-bindgen, wasm-bindgen-futures, wasm-streams, web-sys
 
+### rfc6979 0.6.0
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/signatures
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: rfc6979[lib], rfc6979[test]
+Features: (none)
+Dependencies: crypto-bigint, hmac
+
 ### ring 0.17.14
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/briansmith/ring
@@ -2865,6 +2961,14 @@ Targets: readme[example], scopeguard[lib]
 Features: default, use_std
 Dependencies: (none)
 
+### sec1 0.8.1
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/formats
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: private_key[test], sec1[lib], traits[test]
+Features: alloc, ctutils, default, der, pem, point, serde, std, subtle, zeroize
+Dependencies: base16ct, ctutils, der, hybrid-array, subtle, zeroize
+
 ### security-framework 2.11.1
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/kornelski/rust-security-framework
@@ -2969,6 +3073,14 @@ Targets: serde_urlencoded[lib], test_deserialize[test], test_serialize[test]
 Features: (none)
 Dependencies: form_urlencoded, itoa, ryu, serde
 
+### serdect 0.4.3
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/formats
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: cbor[test], messagepack[test], serde-json-core[test], serde_json[test], serdect[lib], toml[test]
+Features: alloc, default, derive, zeroize
+Dependencies: base16ct, serde
+
 ### serial_test 3.5.0
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/palfrey/serial_test/
@@ -3049,6 +3161,14 @@ Targets: derive[test], signature[lib]
 Features: alloc, derive, digest, rand_core, std
 Dependencies: rand_core
 
+### signature 3.0.0
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/traits
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: signature[lib]
+Features: alloc, digest, rand_core
+Dependencies: digest, rand_core
+
 ### simd-adler32 0.3.10
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/mcountryman/simd-adler32
@@ -3088,6 +3208,14 @@ SPDX-License-Identifier: Apache-2.0
 Targets: similar[lib]
 Features: bstr, bytes, default, hashbrown, inline, serde, std, text, unicode, unicode-segmentation, wasm32_web_time, web-time
 Dependencies: bstr
+
+### siphasher 1.0.4
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/jedisct1/rust-siphash
+SPDX-License-Identifier: MIT OR Apache-2.0
+Targets: siphasher[lib]
+Features: default, serde, serde_json, serde_no_std, serde_std, std
+Dependencies: (none)
 
 ### slab 0.4.12
 Source: registry+https://github.com/rust-lang/crates.io-index
@@ -3135,6 +3263,14 @@ Package source: https://github.com/RustCrypto/formats/tree/master/spki
 SPDX-License-Identifier: Apache-2.0 OR MIT
 Targets: spki[lib], spki[test], traits[test]
 Features: alloc, arbitrary, base64, fingerprint, pem, sha2, std
+Dependencies: base64ct, der
+
+### spki 0.8.1
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/formats
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: mod[bench], spki[lib], spki[test], traits[test]
+Features: alloc, arbitrary, base64, digest, fingerprint, pem, sha2, std
 Dependencies: base64ct, der
 
 ### sqlite-wasm-rs 0.5.5
@@ -4529,6 +4665,14 @@ Targets: build-script-build[custom-build], wit_bindgen[lib]
 Features: async, bitflags, default, macros, realloc, rustc-dep-of-std, std
 Dependencies: (none)
 
+### wnaf 0.14.1
+Source: registry+https://github.com/rust-lang/crates.io-index
+Package source: https://github.com/RustCrypto/elliptic-curves
+SPDX-License-Identifier: Apache-2.0 OR MIT
+Targets: wnaf[lib]
+Features: alloc, default
+Dependencies: ff, group, hybrid-array, primefield
+
 ### writeable 0.6.3
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/unicode-org/icu4x
@@ -4698,61 +4842,6 @@ Features: bindgen, cmake, debug, default, experimental, fat-lto, legacy, no_asm,
 Dependencies: cc, pkg-config
 
 ## Non-Cargo and vendored assets
-### dashboard-chartjs
-Path: rust/src/dashboard/static/vendor/chart.umd.min.js
-Digest: sha256:48444a82d4edcb5bec0f1965faacdde18d9c17db3063d042abada2f705c9f54a
-Version: 4.5.1
-Source: https://github.com/chartjs/Chart.js/releases/tag/v4.5.1
-SPDX-License-Identifier: MIT
-License text path: legal/third-party-assets.toml
-Evidence paths: rust/src/dashboard/mod.rs, rust/src/dashboard/static/vendor/chart.umd.min.js
-Copyright: Copyright 2025 Chart.js Contributors
-Modified: no
-
-### dashboard-d3
-Path: rust/src/dashboard/static/vendor/d3.min.js
-Digest: sha256:f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539
-Version: 7.9.0
-Source: https://github.com/d3/d3/releases/tag/v7.9.0
-SPDX-License-Identifier: ISC
-License text path: legal/third-party-assets.toml
-Evidence paths: rust/src/dashboard/mod.rs, rust/src/dashboard/static/vendor/d3.min.js
-Copyright: Copyright 2010-2023 Mike Bostock
-Modified: no
-
-### font-inter
-Path: rust/src/dashboard/static/fonts/inter-variable.woff2
-Digest: sha256:3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62
-Version: 4.1
-Source: https://github.com/rsms/inter/releases/tag/v4.1
-SPDX-License-Identifier: OFL-1.1
-License text path: legal/third-party-assets.toml
-Evidence paths: rust/src/dashboard/mod.rs, rust/src/dashboard/static/fonts/fonts.css
-Copyright: Copyright 2016 The Inter Project Authors
-Modified: no
-
-### font-jetbrains-mono
-Path: rust/src/dashboard/static/fonts/jetbrains-mono-variable.woff2
-Digest: sha256:18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e
-Version: 2.304
-Source: https://github.com/JetBrains/JetBrainsMono/releases/tag/v2.304
-SPDX-License-Identifier: OFL-1.1
-License text path: legal/third-party-assets.toml
-Evidence paths: rust/src/dashboard/mod.rs, rust/src/dashboard/static/fonts/fonts.css
-Copyright: Copyright 2020 The JetBrains Mono Project Authors
-Modified: no
-
-### font-space-grotesk
-Path: rust/src/dashboard/static/fonts/space-grotesk-variable.woff2
-Digest: sha256:0640890476fc1198ab4de571fb658de443c4d85b66466ec09534a8737ab1ce9d
-Version: 2.0.0
-Source: https://github.com/floriankarsten/space-grotesk/releases/tag/2.0.0
-SPDX-License-Identifier: OFL-1.1
-License text path: legal/third-party-assets.toml
-Evidence paths: rust/src/dashboard/mod.rs, rust/src/dashboard/static/fonts/fonts.css
-Copyright: Copyright 2019 The Space Grotesk Project Authors
-Modified: no
-
 ### mcp-sdk-bundle
 Path: packages/pi-lean-ctx/extensions/vendor/mcp-sdk.cjs
 Digest: sha256:c80e3574a7910c95a57d7d39ece30174a7c2dd7e923e030a3191666b331af77c
@@ -4995,25 +5084,8 @@ Source paths: rust/crates/vendor/rmcp, rust/crates/vendor/rmcp-macros
    See the License for the specific language governing permissions and
    limitations under the License.
 
-### ISC
-Source paths: rust/src/dashboard/static/vendor/d3.min.js
-
-ISC License
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
-SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
-OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
-CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-
 ### MIT
-Source paths: packages/pi-lean-ctx/extensions/vendor/mcp-sdk.cjs, packages/pi-lean-ctx/extensions/vendor/mcp-sdk.d.cts, rust/src/dashboard/static/vendor/chart.umd.min.js
+Source paths: packages/pi-lean-ctx/extensions/vendor/mcp-sdk.cjs, packages/pi-lean-ctx/extensions/vendor/mcp-sdk.d.cts
 
 MIT License
 
@@ -5034,88 +5106,3 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
-
-### OFL-1.1
-Source paths: rust/src/dashboard/static/fonts/inter-variable.woff2, rust/src/dashboard/static/fonts/jetbrains-mono-variable.woff2, rust/src/dashboard/static/fonts/space-grotesk-variable.woff2
-
-SIL OPEN FONT LICENSE
-
-Version 1.1 - 26 February 2007
-
-PREAMBLE
-
-The goals of the Open Font License (OFL) are to stimulate worldwide development
-of collaborative font projects, to support the font creation efforts of
-academic and linguistic communities, and to provide a free and open framework
-in which fonts may be shared and improved in partnership with others.
-The OFL allows the licensed fonts to be used, studied, modified and
-redistributed freely as long as they are not sold by themselves. The fonts,
-including any derivative works, can be bundled, embedded, redistributed and/or
-sold with any software provided that any reserved names are not used by
-derivative works. The fonts and derivatives, however, cannot be released under
-any other type of license.
-The requirement for fonts to remain under this license does not apply to any
-document created using the fonts or their derivatives.
-
-DEFINITIONS
-
-"Font Software" refers to the set of files released by the Copyright Holder(s)
-under this license and clearly marked as such. This may include source files,
-build scripts and documentation.
-
-"Reserved Font Name" refers to any names specified as such after the copyright
-statement(s).
-
-"Original Version" refers to the collection of Font Software components as
-distributed by the Copyright Holder(s).
-
-"Modified Version" refers to any derivative made by adding to, deleting, or
-substituting — in part or in whole — any of the components of the Original
-Version, by changing formats or by porting the Font Software to a new
-environment.
-
-"Author" refers to any designer, engineer, programmer, technical writer or
-other person who contributed to the Font Software.
-
-PERMISSION & CONDITIONS
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of the Font Software, to use, study, copy, merge, embed, modify, redistribute,
-and sell modified and unmodified copies of the Font Software, subject to the
-following conditions:
-
-1) Neither the Font Software nor any of its individual components, in Original
-or Modified Versions, may be sold by itself.
-2) Original or Modified Versions of the Font Software may be bundled,
-redistributed and/or sold with any software, provided that each copy contains
-the above copyright notice and this license. These can be included either as
-stand-alone text files, human-readable headers or in the appropriate
-machine-readable metadata fields within text or binary files as long as those
-fields can be easily viewed by the user.
-3) No Modified Version of the Font Software may use the Reserved Font Name(s)
-unless explicit written permission is granted by the corresponding Copyright
-Holder. This restriction only applies to the primary font name as presented to
-the users.
-4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font Software
-shall not be used to promote, endorse or advertise any Modified Version, except
-to acknowledge the contribution(s) of the Copyright Holder(s) and the Author(s)
-or with their explicit written permission.
-5) The Font Software, modified or unmodified, in part or in whole, must be
-distributed entirely under this license, and must not be distributed under any
-other license. The requirement for fonts to remain under this license does not
-apply to any document created using the Font Software.
-
-TERMINATION
-
-This license becomes null and void if any of the above conditions are not met.
-
-DISCLAIMER
-
-THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF COPYRIGHT, PATENT,
-TRADEMARK, OR OTHER RIGHT.
-IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR
-OTHER LIABILITY, INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR
-CONSEQUENTIAL DAMAGES WHATSOEVER, ARISING FROM, OUT OF THE USE OR INABILITY TO
-USE THE FONT SOFTWARE OR FROM OTHER DEALINGS IN THE FONT SOFTWARE.

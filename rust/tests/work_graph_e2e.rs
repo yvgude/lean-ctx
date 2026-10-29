@@ -51,6 +51,7 @@ fn receipt(
         cost_micros_consumed: cost_micros,
         execution_fence,
         claims,
+        usage_source: Default::default(),
     }
 }
 

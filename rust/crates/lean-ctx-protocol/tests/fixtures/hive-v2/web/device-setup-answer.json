@@ -1,0 +1,46 @@
+{
+  "route": "W98",
+  "method": "POST",
+  "path": "/api/v1/device/setup/answer",
+  "request": {
+    "user_code": "WDJB-MJHT",
+    "consent_id": "cns_abcdefgh234567ab",
+    "answer": "allow"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "state": "approved"
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "This approval is too old to answer here. In your terminal, run lean-ctx hive consent --web.",
+          "reason": "setup_window"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "No approval of this code in this browser."
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "This request was already answered."
+        }
+      }
+    }
+  ]
+}

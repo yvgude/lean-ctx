@@ -137,9 +137,21 @@ impl ContextCommand {
 pub(crate) fn execute(command: ContextCommand, args: &[String]) -> CommandOutput {
     // A library caller's task must not leak into daemon ingress or a new CLI task.
     TaskSpine::sync_scope(None, || {
-        match super::context_policy::prepare(command, args) {
+        // A protected command is acquired and published under ONE shared CLI
+        // tool run (`cli/common.rs`): `prepare` runs inside its request scope
+        // and source capture, and the publication finishes the same run —
+        // release point, then the lineage record of exactly the printed text.
+        let carrier = super::context_policy::Carrier::of(command, args);
+        let run = carrier.run();
+        let (prepared, capture) = run.acquire(|| super::context_policy::prepare(command, args));
+        match prepared {
             Ok(Some(prepared)) => {
-                return run_protected(command, Box::new(move || prepared.publish()));
+                return run_protected(
+                    command,
+                    Box::new(move || {
+                        prepared.publish_delivered(|printable| run.finish(printable, capture))
+                    }),
+                );
             }
             Ok(None) => {}
             Err(()) => {

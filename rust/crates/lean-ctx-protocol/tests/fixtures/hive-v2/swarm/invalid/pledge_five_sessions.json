@@ -1,0 +1,14 @@
+{
+  "case": "pledge_five_sessions",
+  "base": "routes/pledge.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/max_sessions",
+      "value": 5
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

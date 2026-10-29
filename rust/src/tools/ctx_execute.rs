@@ -2,6 +2,69 @@ use crate::core::sandbox::{self, SandboxResult};
 use crate::core::tokens::count_tokens;
 use crate::server::tool_trait::ShellOutcome;
 
+/// The grant key of an approval to run `language` code in `ctx_execute`. It
+/// cannot match a program a `ctx_shell` grant names (no `:` in those).
+pub(crate) fn approval_key(language: &str) -> String {
+    format!("ctx_execute:{language}")
+}
+
+/// The canonical languages among `languages` that run only with the user's
+/// approval (GHSA-rxv5-4c3x-g4q6): every runtime but shell, which follows the
+/// shell allowlist instead. None while `shell_security` is not `enforce`
+/// (nothing is refused then, as in `ctx_shell`) and none the user allowed
+/// for good in `execute_allowed_languages`. In first-seen order, deduplicated.
+pub(crate) fn languages_needing_approval<'a>(
+    languages: impl IntoIterator<Item = &'a str>,
+) -> Vec<&'static str> {
+    use crate::core::shell_allowlist::ShellSecurity;
+    if ShellSecurity::resolve() != ShellSecurity::Enforce {
+        return Vec::new();
+    }
+    let allowed = crate::core::config::Config::load().execute_allowed_languages;
+    let mut needed = Vec::new();
+    for language in languages {
+        let Some(canonical) = sandbox::canonical_language(language) else {
+            continue;
+        };
+        if canonical != "shell"
+            && !needed.contains(&canonical)
+            && !allowed
+                .iter()
+                .any(|a| sandbox::canonical_language(a) == Some(canonical))
+        {
+            needed.push(canonical);
+        }
+    }
+    needed
+}
+
+/// Refuses code in a language that needs approval and has none in this
+/// dispatch (`server::shell_approval`), before anything runs.
+pub(crate) fn refuse_unapproved<'a>(
+    languages: impl IntoIterator<Item = &'a str>,
+) -> Result<(), String> {
+    let grant = crate::server::shell_approval::current_grant();
+    let missing: Vec<&str> = languages_needing_approval(languages)
+        .into_iter()
+        .filter(|language| !grant.contains(&approval_key(language)))
+        .collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    let list = missing.join(", ");
+    let entries = missing
+        .iter()
+        .map(|l| format!("\"{l}\""))
+        .collect::<Vec<_>>()
+        .join(", ");
+    Err(format!(
+        "[BLOCKED] ctx_execute runs {list} code only after the user approves it, and it was \
+         not approved (the client cannot show approval prompts, approval is off, or another \
+         prompt is open). Ask the user; they can allow it for good with \
+         execute_allowed_languages = [{entries}] in the global lean-ctx config."
+    ))
+}
+
 /// Executes a code snippet in a sandboxed environment.
 /// Returns the formatted output plus the structured outcome so the MCP layer
 /// can set `isError`/`structuredContent` on failures (GitHub #389).
@@ -26,9 +89,12 @@ pub fn handle_in(
     timeout: Option<u64>,
     cwd: Option<&std::path::Path>,
 ) -> (String, ShellOutcome) {
-    if sandbox::is_shell_language(language)
-        && let Err(message) = crate::core::shell_allowlist::check_shell_allowlist(code)
-    {
+    let checked = if sandbox::is_shell_language(language) {
+        crate::core::shell_allowlist::check_shell_allowlist(code)
+    } else {
+        crate::core::shell_allowlist::refuse_redaction_marker(code)
+    };
+    if let Err(message) = checked {
         return (message.to_string(), ShellOutcome::Blocked);
     }
     let result = sandbox::execute_in(language, code, timeout, cwd);
@@ -152,9 +218,12 @@ fn summarize_file_content(content: &str, intent: Option<&str>) -> String {
 /// tasks succeeded), so one failing task marks the whole batch as failed.
 pub fn handle_batch(items: &[(String, String)]) -> (String, ShellOutcome) {
     for (index, (language, code)) in items.iter().enumerate() {
-        if sandbox::is_shell_language(language)
-            && let Err(message) = crate::core::shell_allowlist::check_shell_allowlist(code)
-        {
+        let checked = if sandbox::is_shell_language(language) {
+            crate::core::shell_allowlist::check_shell_allowlist(code)
+        } else {
+            crate::core::shell_allowlist::refuse_redaction_marker(code)
+        };
+        if let Err(message) = checked {
             return (
                 format!(
                     "batch item {} blocked by shell policy:\n{message}",
@@ -287,6 +356,27 @@ mod tests {
             result.contains("shell allowlist"),
             "unexpected result: {result}"
         );
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn every_language_but_shell_needs_an_approval_under_enforce() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "enforce");
+        assert_eq!(
+            languages_needing_approval(["py", "bash", "PYTHON", "node", "sh", "shell", "cobol"]),
+            ["python", "javascript"]
+        );
+        let refused = refuse_unapproved(["ts"]).unwrap_err();
+        assert!(refused.contains("typescript code"), "{refused}");
+        assert!(refuse_unapproved(["shell", "bash"]).is_ok());
+
+        crate::test_env::set_var("LEAN_CTX_SHELL_SECURITY", "warn");
+        assert!(
+            languages_needing_approval(["python"]).is_empty(),
+            "nothing is refused outside enforce, as in ctx_shell"
+        );
+        crate::test_env::remove_var("LEAN_CTX_SHELL_SECURITY");
     }
 
     #[test]

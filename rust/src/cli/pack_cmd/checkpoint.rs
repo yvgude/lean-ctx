@@ -60,8 +60,7 @@ pub(super) fn cmd_pack_checkpoint_seal(args: &[String]) {
         signing_key.as_ref(),
     )
     .unwrap_or_else(|error| fail(&format!("seal checkpoint package: {error}")));
-    println!(
-        "{}",
+    print_document(
         serde_json::to_string(&serde_json::json!({
             "schema_version": "leanctx.ctxpkg-checkpoint-seal/v1",
             "path": output,
@@ -71,7 +70,7 @@ pub(super) fn cmd_pack_checkpoint_seal(args: &[String]) {
             "content_hash": format!("sha256:{}", manifest.integrity.content_hash),
             "signature_state": if manifest.signature.is_some() { "signed_valid" } else { "unsigned" },
         }))
-        .expect("seal result serializes")
+        .expect("seal result serializes"),
     );
 }
 
@@ -89,9 +88,15 @@ fn checkpoint_from_session(id: &str, output: &Path) -> (CheckpointPackageContent
     } else {
         root.join(output)
     };
-    let (output, _) =
-        crate::core::io_boundary::jail_and_check_path("pack.checkpoint-seal", &candidate, root)
-            .unwrap_or_else(|error| fail(&error));
+    // The destination binding belongs to this unredacted export, not to the
+    // general tool jail: a `no-jail` build or `path_jail = false` must not let
+    // the package land outside the session's project root.
+    let (output, _) = crate::core::io_boundary::jail_and_check_export_path(
+        "pack.checkpoint-seal",
+        &candidate,
+        root,
+    )
+    .unwrap_or_else(|error| fail(&error));
     // The jail also admits lean-ctx's own data/state dirs and configured allow
     // paths; a session export belongs inside the session's project only.
     // Both sides go through the same canonicalizer, so Windows verbatim,
@@ -144,13 +149,17 @@ pub(super) fn cmd_pack_checkpoint_inspect(args: &[String]) {
     let (manifest, checkpoint) =
         crate::core::context_package::registry::read_checkpoint_bundle(Path::new(file))
             .unwrap_or_else(|error| fail(&format!("inspect checkpoint package: {error}")));
+    // `read_checkpoint_bundle` has verified the signature with this key.
+    let signer = manifest
+        .signature
+        .as_ref()
+        .map(|signature| signature.public_key.clone());
     let signature_state = if manifest.signature.is_some() {
         "signed_valid"
     } else {
         "unsigned"
     };
-    println!(
-        "{}",
+    print_released_document(
         serde_json::to_string(&serde_json::json!({
             "schema_version": "leanctx.ctxpkg-checkpoint-inspect/v1",
             "package": {
@@ -166,7 +175,8 @@ pub(super) fn cmd_pack_checkpoint_inspect(args: &[String]) {
             },
             "checkpoint": checkpoint,
         }))
-        .expect("inspect result serializes")
+        .expect("inspect result serializes"),
+        signer.as_deref(),
     );
 }
 
@@ -230,8 +240,7 @@ pub(super) fn cmd_pack_snapshot_v1_inspect(args: &[String]) {
     let mut hasher = Sha256::new();
     hasher.update(&raw);
     let artifact_digest = crate::core::agent_identity::hex_encode(&hasher.finalize());
-    println!(
-        "{}",
+    print_document(
         serde_json::to_string(&serde_json::json!({
             "schema_version": "leanctx.snapshot-v1-inspect/v1",
             "snapshot_id": snapshot.snapshot_id,
@@ -239,8 +248,30 @@ pub(super) fn cmd_pack_snapshot_v1_inspect(args: &[String]) {
             "signature_state": "signed_valid",
             "signer_public_key": snapshot.signature.as_ref().map(|signature| &signature.public_key),
         }))
-        .expect("SnapshotV1 inspect result serializes")
+        .expect("SnapshotV1 inspect result serializes"),
     );
+}
+
+/// Print a result document of this command. Seal results are identifiers,
+/// digests and the output path; inspect results carry the checkpoint or
+/// snapshot content of a package. All of them are released as documents —
+/// valid JSON with a masked value in place and the notice on stderr, or
+/// nothing on stdout when the document is withheld.
+fn print_document(document: String) {
+    print_released_document(document, None);
+}
+
+/// `signer`: the public key the package signature was verified with, when
+/// the document names it (`CliToolRun::verified_signer_key`).
+fn print_released_document(document: String, signer: Option<&str>) {
+    let root = crate::cli::common::detect_project_root(&[]);
+    match crate::cli::common::CliToolRun::new("ctx_pack", &root, None)
+        .verified_signer_key(signer)
+        .deliver_json(|| document)
+    {
+        Ok(document) => crate::cli::common::print_released(&document),
+        Err(reason) => crate::cli::common::exit_withheld(&reason),
+    }
 }
 
 fn flag(args: &[String], name: &str) -> Option<String> {

@@ -185,8 +185,14 @@ pub(super) fn observe(
 ) -> PolicyObservationV2 {
     // A delivery that is missing, unverified or beyond the index makes every
     // sum partial: a clean subset must never read as the whole task.
-    let complete = receipts.complete();
     let verified: Vec<_> = receipts.verified().collect();
+    // Legacy outbound receipts describe preparation before transport. Neither
+    // their `Delivered` label nor a response head proves model consumption or
+    // workload quality. Do not mix those estimates into host-read learning.
+    let complete = receipts.complete()
+        && verified
+            .iter()
+            .all(|receipt| receipt.destination.provider.as_str() == "mcp-host");
     // No verified delivery is not a measured zero: the gateway may have been
     // off or the task may have run outside an admitted task.
     let tokens = (complete && !verified.is_empty()).then(|| {

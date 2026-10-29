@@ -1,0 +1,19 @@
+{
+  "case": "person_without_user_id",
+  "base": "events/system.retract.person.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/actor",
+      "value": {
+        "kind": "person"
+      }
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/actor/user_id"
+  }
+}

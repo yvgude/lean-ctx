@@ -16,14 +16,8 @@ pub(crate) mod compression_safety;
 pub mod compressor;
 pub mod context_prefetch;
 pub(crate) mod datadog_push;
-#[allow(dead_code)]
-pub(crate) mod edit_snapshot;
 pub(crate) mod engine_artifact;
-#[allow(dead_code)]
 pub(crate) mod engine_interface;
-#[allow(dead_code)]
-pub(crate) mod engine_receipt_artifact;
-pub mod enterprise_handshake;
 pub mod entropy;
 pub mod etpao;
 pub mod eval_ab;
@@ -35,28 +29,21 @@ pub mod html_crush;
 #[allow(unused_imports)]
 pub mod ib;
 pub mod import;
-pub mod integration_proof;
+/// Simulated end-to-end self-test of the decision loop; a test, not product evidence.
+#[cfg(test)]
+pub(crate) mod integration_proof;
 pub(crate) mod intelligence_runtime;
-#[allow(dead_code)]
-pub(crate) mod invocation_admission;
 pub mod json_crush;
 pub(crate) mod markdown_compact;
 pub(crate) mod migration_lock;
 pub mod output_sanitizer;
-#[allow(dead_code)]
 pub mod policy;
 pub mod pop_pruning;
 pub mod preservation;
-pub mod pro_triggers;
 pub(crate) mod process_capture;
 pub mod process_guard;
 pub(crate) mod protect;
 pub mod rabin_karp;
-#[allow(dead_code)]
-pub(crate) mod read_provenance;
-pub mod read_reuse_operator;
-#[allow(dead_code)]
-pub(crate) mod receipt_document_adapter;
 pub mod relevance_tracker;
 pub mod rule_artifacts;
 pub(crate) mod rule_discovery;
@@ -66,10 +53,8 @@ pub(crate) mod rules_overhead;
 pub(crate) mod rules_sections;
 pub(crate) mod rules_validation;
 pub(crate) mod runtime_flags;
-pub mod search_group_operator;
 pub mod shared_context;
 pub mod solution_auto_capture;
-pub mod solution_commercial;
 pub mod solution_tracker;
 /// Backward-compatible re-export of the Solution Intelligence types that live in
 /// `core::knowledge`. Kept on purpose for library users (#1923).
@@ -77,9 +62,7 @@ pub mod solution_types;
 pub(crate) mod structured_read;
 pub mod tabular_crush;
 pub(crate) mod task_receipt_migration;
-pub mod verbosity;
 #[allow(unreachable_pub)]
-pub mod wasserstein;
 #[cfg(windows)]
 pub(crate) mod windows_file;
 #[cfg(windows)]
@@ -89,9 +72,9 @@ pub mod yaml_crush;
 // ---------------------------------------------------------------------------
 // Domain: Memory
 // ---------------------------------------------------------------------------
-pub mod anti_interrupt;
 pub mod episodic_memory;
 pub mod interrupt;
+pub(crate) mod legacy_adoption;
 pub mod memory_archive;
 pub(crate) mod memory_boundary;
 pub(crate) mod memory_capacity;
@@ -100,7 +83,6 @@ pub mod memory_guard;
 pub mod memory_lifecycle;
 pub mod memory_policy;
 pub(crate) mod memory_salience;
-pub mod memory_scheduler;
 pub mod procedural_memory;
 pub(crate) mod prospective_memory;
 
@@ -135,8 +117,6 @@ pub mod context_ir;
 // Accidental historical surface retained for source compatibility. Public
 // embedders should use `crate::engine::ContextEngine` or `lean-ctx-sdk`.
 pub mod context_checkpoint;
-#[allow(dead_code)]
-pub(crate) mod context_checkpoint_projection;
 #[doc(hidden)]
 pub mod context_kernel;
 pub mod context_ledger;
@@ -181,7 +161,6 @@ pub mod bm25_index;
 pub mod content_cache;
 pub mod content_chunk;
 pub(crate) mod context_packing;
-pub mod cooccurrence;
 pub mod dense_backend;
 pub mod embedding_index;
 pub(crate) mod embedding_quant;
@@ -196,7 +175,6 @@ pub mod search_reranking;
 pub mod semantic;
 pub mod semantic_cache;
 pub(crate) mod splade_retrieval;
-pub mod spreading_activation;
 
 // ---------------------------------------------------------------------------
 // Domain: Session & Handoff
@@ -243,9 +221,8 @@ pub(crate) mod agent_identity;
 pub(crate) mod agent_runtime_env;
 pub(crate) mod agents;
 pub(crate) mod autonomy;
-pub mod autonomy_drivers;
 pub mod canonical;
-pub(crate) mod wordlist;
+pub mod hive;
 
 // ---------------------------------------------------------------------------
 // Domain: Adaptive & Scoring
@@ -274,31 +251,18 @@ pub mod task_spine;
 // ---------------------------------------------------------------------------
 // Domain: Diagnostics & Quality
 // ---------------------------------------------------------------------------
-#[allow(dead_code)]
-pub(crate) mod agent_connector;
 pub(crate) mod benchmark;
 pub mod benchmark_compare;
-#[allow(dead_code)]
-pub(crate) mod benchmark_spec;
 pub(crate) mod benchmark_study;
-/// v4 billing-plane substrate: canonical plans, registry-backed entitlements,
-/// and usage metering derived from the signed savings ledger.
-pub mod billing;
-#[allow(dead_code)]
-pub(crate) mod calibrator;
 pub mod code_health;
-pub(crate) mod cognitive_gate;
 pub mod conformance;
 pub mod contracts;
-pub mod cost_per_outcome;
+#[cfg(feature = "tree-sitter")]
 pub(crate) mod cyclomatic;
-#[allow(dead_code)]
-pub(crate) mod local_runner;
 pub mod loop_detection;
 pub mod output_verification;
 pub mod quality;
 pub(crate) mod quality_lab;
-pub mod quality_scorecard;
 pub(crate) mod safety_needles;
 pub mod scorecard;
 pub mod setup_report;
@@ -320,11 +284,11 @@ pub(crate) mod atomic_fs;
 pub mod attribution;
 pub mod audit_trail;
 pub(crate) mod binary_detect;
+pub mod binary_identity;
 pub mod bounce_tracker;
 pub(crate) mod budget;
 pub mod budgets;
 pub mod cache;
-pub(crate) mod cache_telemetry;
 pub mod capabilities;
 pub mod capsule_transport;
 pub mod causal_attribution;
@@ -341,24 +305,21 @@ pub mod context_capsule;
 pub(crate) mod contextops;
 pub(crate) mod conversation;
 pub mod crash_log;
+pub mod crypto_provider;
+pub(crate) mod dashboard_pro;
 pub(crate) mod data_consolidate;
 pub mod data_dir;
 pub(crate) mod debug_log;
-#[allow(unused)]
-pub(crate) mod delivered_ranges;
 pub mod diagnostics_store;
-pub mod echo_ratio;
 pub mod editor_signal;
 pub(crate) mod egress;
 pub mod error;
 pub mod events;
 pub(crate) mod eviction_orchestrator;
 pub(crate) mod evidence;
-pub mod evidence_ledger;
 pub mod extension_registry;
 pub mod extractors;
 pub mod feedback;
-pub(crate) mod fep_prefetch;
 pub(crate) mod file_lock;
 pub(crate) mod filters;
 pub mod gain;
@@ -371,26 +332,22 @@ pub mod gotcha_tracker;
 pub mod handle;
 pub mod hasher;
 pub mod heatmap;
-pub mod hebbian_cache;
 pub mod hnsw;
 pub mod home;
 pub mod homeostasis;
 pub mod host_coverage;
 pub(crate) mod immune_detector;
-pub mod live_evidence_ledger;
 pub mod mcp_catalog;
 pub mod metering;
 pub mod ocla;
 pub mod ocla_bus;
 pub(crate) mod quality_benchmark;
-pub(crate) mod qubo_select;
 pub mod work_graph;
-pub(crate) mod work_graph_executor;
+pub mod work_graph_delegation;
 pub mod work_graph_store;
 
 pub(crate) mod agent_registry;
-pub mod compliance;
-pub mod compliance_report;
+pub mod compliance_evidence;
 pub mod edit_metering;
 pub(crate) mod edit_quality;
 pub(crate) mod efficacy;
@@ -403,7 +360,6 @@ pub(crate) mod http_client;
 pub mod ide_permissions;
 pub mod import_resolver;
 pub mod index_admission;
-pub mod index_bundle;
 pub(crate) mod index_filter;
 pub(crate) mod index_namespace;
 pub mod index_orchestrator;
@@ -423,7 +379,6 @@ pub mod io_boundary;
 pub mod io_health;
 pub mod journal;
 pub mod jsonc;
-pub(crate) mod knowledge_vault;
 pub mod language_capabilities;
 #[cfg(target_os = "macos")]
 pub(crate) mod launchd;
@@ -457,6 +412,7 @@ pub mod product_capabilities;
 pub(crate) mod profile_suggest;
 pub mod profiles;
 pub(crate) mod project_hash;
+pub(crate) mod project_link;
 /// Supervised execution channel for protected sessions (macOS refuses nested
 /// Seatbelt profiles, so command children are started by the launcher's
 /// wrapper, outside the MCP sandbox).
@@ -474,14 +430,13 @@ pub(crate) mod recovery_verify;
 pub(crate) mod redaction;
 pub mod reference_docs;
 pub mod roles;
+pub(crate) mod root_selection;
 pub(crate) mod route_extractor;
-pub mod saliency;
 pub mod sandbox;
 #[cfg(target_os = "linux")]
 pub(crate) mod sandbox_landlock;
 pub(crate) mod sandbox_seatbelt;
 pub(crate) mod sanitize;
-pub(crate) mod savings_autopush;
 pub mod savings_footer;
 pub mod savings_ledger;
 pub mod savings_tracker;
@@ -489,6 +444,7 @@ pub mod scent_field;
 pub(crate) mod search_delta;
 pub mod search_index;
 pub mod secret_detection;
+pub(crate) mod secure_fs;
 pub mod security_events;
 pub mod security_posture;
 pub mod sensitivity;
@@ -516,12 +472,11 @@ pub mod telemetry_failure;
 pub mod telemetry_features;
 pub(crate) mod telemetry_ledger;
 pub mod telemetry_notices;
+pub mod telemetry_send;
 pub mod telemetry_v2;
 pub mod terse;
 pub(crate) mod text_decode;
 pub mod theme;
-pub mod threshold_learning;
-pub mod tokenizer_translation_driver;
 pub mod tokens;
 pub(crate) mod tool_health;
 pub(crate) mod tool_lifecycle;
@@ -573,4 +528,5 @@ pub(crate) mod signatures_ts;
 pub mod storage_maintenance;
 pub(crate) mod structured_compact;
 pub(crate) mod type_ref_edges;
+pub mod workspace_authority;
 pub(crate) mod workspace_trust;

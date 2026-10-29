@@ -15,12 +15,12 @@ use sha2::{Digest, Sha256};
 
 pub use lean_ctx_ocla::ReceiptSignerAdmissionV1;
 
+use super::receipt_inputs::join_receipt_document_inputs;
 use super::{
     ExecutionEvent, ExecutionLedgerError, ExecutionLedgerStore, PublishedCanonicalReceipt, Result,
     publish_canonical_receipt,
 };
 use crate::core::engine_interface::read_verified_engine_receipt;
-use crate::core::receipt_document_adapter::join_receipt_document_inputs;
 
 /// Authoritative terminal observations supplied by the host that owns the task outcome.
 #[derive(Debug, Clone)]

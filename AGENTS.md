@@ -2,6 +2,14 @@
 
 LeanCTX Engine selects context, applies supported access and content controls, and records observable context operations; compression is one capability within that path.
 
+## Shared Context Gateway delivery skill
+
+For LeanCTX implementation, integration, release, or repository migration,
+load `skills/leanctx-gateway-delivery/SKILL.md`.
+Codex and Claude discover the same canonical content through the
+`.agents/skills/leanctx-gateway-delivery` and
+`.claude/skills/leanctx-gateway-delivery` links.
+
 ## Mandatory Routing Decision (Direct or Swarm)
 
 For every substantive task in this repository, load and follow
@@ -107,6 +115,14 @@ briefing (default `minimal_overhead = true`: initialize instructions stay
 byte-stable for provider prompt caching, #498). With `minimal_overhead = false`
 it is additionally injected at session start via the `ACTIVE SESSION` LITM block.
 
+Continuity is per agent: the briefing (last task, recent decisions), session
+findings in `ctx_knowledge search` and every other session-continuity read come
+only from the calling agent's own session, or from what an explicit handoff
+brought into it — never from the project's latest saved session, which may
+belong to another agent. A new agent starts with project knowledge only; after
+a restart, resume your own session with `ctx_session` with `{"action":"load","session_id":"<your session id>"}`.
+Project knowledge (`ctx_knowledge`) stays shared by all agents of the project.
+
 ### Active Documentation (Agent Responsibility)
 
 After completing a significant task (implementation, bugfix, refactoring):
@@ -175,6 +191,11 @@ LEAN_CTX_DISABLED=1 sed -i '' 's/old/new/g' <file>        # edit without hooks
 - Zero clippy warnings, all tests pass
 - Security: PathJail, Shell Allowlist, bounded_lock, no hardcoded secrets
 - No mock data, no placeholders, no stubs
+- No feature creep: a new tool, module, default or background job needs its
+  Select/Control/Prove role, demonstrated demand and a deciding measurement;
+  learned or adaptive methods need an A/B result against a simple heuristic.
+  Models follow the Embedded Intelligence Principle. Details:
+  `skills/leanctx-gateway-delivery/SKILL.md` → "Add capability only with evidence".
 
 ## Test Policy (single source of truth)
 
@@ -247,3 +268,7 @@ OUTPUT STYLE: concise
 - 1-sentence explanations max, then code/action
 - No repeating what the user said
 <!-- /lean-ctx-compression -->
+
+## LeanCTX Context Gateway product-scope, source-security and IP guard — REQUIRED FOR ALL AGENTS
+
+Before **any** LeanCTX code, docs, connectors, SDK, EE, CI, packaging, refactor or release work, read `.agents/skills/leanctx-ip-governance/SKILL.md` and its **PRODUCT_SCOPE**, **CONNECTOR_AND_DECISION_SECURITY**, IP/licensing and release references. The product is the **Context Gateway for AI Systems** (Select → Control → Prove), not a general model router, agent orchestration framework or Thinkery OS; team coordination context (presence, leases, workspace bus, shared work graph) is in scope, agent execution and scheduling are not. New features must serve authorized source→ContextDecision→ContextBundle/Receipt, with current ACL/freshness/revocation checks; out-of-scope proposals require founder approval. Classify every affected file by product scope AND source rights. Preserve existing Apache functionality unless a separately approved reversible deprecation plan exists. New proprietary EE remains private; no public push, bulk deletion, history rewriting, relicense, CLA change or IP transfer claim without documented owner/legal/release authority. Respect stronger repository rules, preserve other agents' worktrees, record evidence and test security/compatibility. No public release credentials in agent workspaces.

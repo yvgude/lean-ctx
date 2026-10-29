@@ -1,0 +1,32 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/swarms/9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02/invites",
+  "request": null,
+  "response": {
+    "body": {
+      "items": [
+        {
+          "answered_at": null,
+          "created_at": 1792750000000,
+          "expires_at": 1793959600000,
+          "handle": "mara",
+          "id": "inv_01JC0SW4RM1NV1TE00000000A1",
+          "invited_by": "yves",
+          "state": "open"
+        },
+        {
+          "answered_at": 1792760000000,
+          "created_at": 1792750000000,
+          "expires_at": 1793959600000,
+          "handle": "ada",
+          "id": "inv_01JC0SW4RM1NV1TE00000000A2",
+          "invited_by": "yves",
+          "state": "declined"
+        }
+      ]
+    },
+    "status": 200
+  },
+  "route": "W66"
+}

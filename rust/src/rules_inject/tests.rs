@@ -562,28 +562,6 @@ fn match_agent_name_no_false_positives() {
     assert!(!match_agent_name("unknown_agent", "Cursor"));
 }
 
-#[test]
-fn rules_targets_follow_agent_selection() {
-    let mut cfg = crate::core::config::Config::default();
-    assert!(
-        rules_target_selected(&cfg, None, "Cursor"),
-        "no selection = all"
-    );
-
-    cfg.setup.agents = Some(vec!["vscode".to_string(), "antigravity".to_string()]);
-    let names = ["VS Code", "Antigravity IDE"];
-    assert!(rules_target_selected(&cfg, Some(&names), "VS Code"));
-    assert!(rules_target_selected(&cfg, Some(&names), "Antigravity"));
-    assert!(!rules_target_selected(&cfg, Some(&names), "Cursor"));
-    assert!(!rules_target_selected(&cfg, Some(&names), "Gemini CLI"));
-
-    cfg.setup.agents = Some(vec![" ".to_string()]);
-    assert!(
-        !rules_target_selected(&cfg, Some(&[]), "Cursor"),
-        "a blank entry must not match every target"
-    );
-}
-
 // ── InjectResult ─────────────────────────────────────────────
 
 #[test]
@@ -824,5 +802,55 @@ fn missing_mcp_config_suppresses_freshness_self_heal() {
     assert!(
         freshness.is_none(),
         "freshness must not request an auto-heal for a target inject_all_rules will skip because MCP is not configured, got: {freshness:?}"
+    );
+}
+
+/// The setup agent selection filters rules by agent key: a rules target
+/// without a key would silently never be written.
+#[test]
+fn every_rules_target_maps_to_a_selectable_agent_key() {
+    use crate::core::config::RulesInjection;
+    let home = tempfile::tempdir().unwrap();
+    let known = crate::setup::agent_selection::known_agent_keys(
+        &crate::core::editor_registry::build_targets(home.path()),
+    );
+    for injection in [RulesInjection::Shared, RulesInjection::Dedicated] {
+        for target in build_rules_targets(home.path(), injection) {
+            let key = rules_agent_key(target.name)
+                .unwrap_or_else(|| panic!("rules target '{}' has no agent key", target.name));
+            assert!(
+                known.contains(key),
+                "rules target '{}' maps to '{key}', which --agents does not accept",
+                target.name
+            );
+        }
+    }
+}
+
+#[test]
+fn rules_selection_filter_skips_unselected_tools() {
+    let _env = crate::core::data_dir::isolated_data_dir();
+    crate::test_env::remove_var("LEAN_CTX_RULES_INJECTION");
+    let home = tempfile::tempdir().unwrap();
+    std::fs::create_dir_all(home.path().join(".cursor")).unwrap();
+    std::fs::create_dir_all(home.path().join(".codeium/windsurf")).unwrap();
+
+    let only_cursor: Vec<String> = planned_rules_files(home.path(), &|k| k == "cursor")
+        .into_iter()
+        .map(|(name, _)| name)
+        .collect();
+    assert!(
+        only_cursor.contains(&"Cursor".to_string()),
+        "{only_cursor:?}"
+    );
+    assert!(
+        !only_cursor.contains(&"Windsurf".to_string()),
+        "{only_cursor:?}"
+    );
+
+    let result = inject_rules_where(home.path(), &|_| false);
+    assert!(
+        result.injected.is_empty() && result.updated.is_empty() && result.already.is_empty(),
+        "an empty selection writes no rules: {result:?}"
     );
 }

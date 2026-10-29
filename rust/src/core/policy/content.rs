@@ -5,7 +5,8 @@
 //! snapshot must reject a rewrite instead of publishing a stale content digest.
 
 use super::runtime::ActivePolicy;
-use crate::core::input_filters::{self, FilterOutcome};
+use crate::core::input_filters::{self, FilterAction, FilterConfig, FilterOutcome};
+use crate::core::session::EngineSessionId;
 
 /// A protected output must be inspectable as one bounded unit. Larger inputs
 /// are withheld rather than partially scanned and returned as if safe.
@@ -28,8 +29,86 @@ fn withheld(reason: &str) -> FilterOutcome {
 /// only sanitized text plus content-free rule/count metadata.
 #[must_use]
 pub fn evaluate_text(text: &str, active: &ActivePolicy) -> FilterOutcome {
+    evaluate_text_with_filters(text, active, &active.filters)
+}
+
+fn evaluate_text_with_filters(
+    text: &str,
+    active: &ActivePolicy,
+    filters: &FilterConfig,
+) -> FilterOutcome {
+    let mut outcome = evaluate_pack_rules(text, active, filters);
+    if outcome.blocked {
+        return outcome;
+    }
+    // Active protection cannot be disabled by the compression/raw escape hatch
+    // or by the user's optional local-secret-redaction setting.
+    outcome.text = crate::core::redaction::redact_text(&outcome.text);
+    if outcome.text.len() > MAX_PROTECTED_CONTENT_BYTES {
+        return withheld("content-size-limit");
+    }
+    // Filtering took time: nothing is handed back as permitted under a
+    // policy whose signed horizon passed meanwhile.
+    if !active.within_horizon() {
+        return withheld(EXPIRED);
+    }
+    outcome
+}
+
+/// Reason for content withheld because the policy's signed horizon passed.
+const EXPIRED: &str = "expired-content-policy";
+
+/// What the release point may do with one finished text under the pack.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum ReleaseCheck {
+    /// The pack leaves the text exactly as it is.
+    Unchanged,
+    /// No rule of the pack blocks or rewrites the text; only the built-in
+    /// secret mask is outstanding, and the masked text is one the pack then
+    /// leaves exactly as it is.
+    BuiltinSecretOnly,
+    /// A rule of the pack blocks the text or would rewrite it.
+    Refused,
+}
+
+/// Tell a text that only needs the built-in secret mask from one a rule of the
+/// pack itself objects to. The first may be masked and delivered where the
+/// position allows a rewrite; the second is never rewritten at the release
+/// point (a finished result the pack would change is stale).
+pub(crate) fn release_check(text: &str, active: &ActivePolicy) -> ReleaseCheck {
+    let own = evaluate_pack_rules(text, active, &active.filters);
+    if own.blocked || own.text != text {
+        return ReleaseCheck::Refused;
+    }
+    let masked = crate::core::redaction::redact_text(text);
+    if masked == text {
+        // The pack's rules ran above; the release itself is decided now.
+        return if active.within_horizon() {
+            ReleaseCheck::Unchanged
+        } else {
+            ReleaseCheck::Refused
+        };
+    }
+    // Like with like: the masked text, evaluated in full, must be a fixed
+    // point — no rule of the pack fires on it and a second mask changes
+    // nothing. Otherwise the result cannot be released in a settled form.
+    let settled = evaluate_text(&masked, active);
+    if settled.blocked || settled.text != masked {
+        return ReleaseCheck::Refused;
+    }
+    ReleaseCheck::BuiltinSecretOnly
+}
+
+/// The pack's own rules: blocking detectors on the original text, then the
+/// pack's filters and `[redaction]` entries. Without the built-in secret mask.
+fn evaluate_pack_rules(text: &str, active: &ActivePolicy, filters: &FilterConfig) -> FilterOutcome {
     if !active.content_valid {
         return withheld("invalid-content-policy");
+    }
+    // Before any rule is consulted: a policy past its signed horizon decides
+    // nothing, however it was obtained and however long it was kept.
+    if !active.within_horizon() {
+        return withheld(EXPIRED);
     }
     if text.len() > MAX_PROTECTED_CONTENT_BYTES {
         return withheld("content-size-limit");
@@ -37,7 +116,11 @@ pub fn evaluate_text(text: &str, active: &ActivePolicy) -> FilterOutcome {
     if text.contains('\0') {
         return withheld("uninspectable-content");
     }
-    if active.redaction.len() + active.blocked_patterns.len() > MAX_REDACTION_RULES
+    if active.redaction.len() + active.blocked_patterns.len()
+        > MAX_REDACTION_RULES
+            + active
+                .hive_rules
+                .min(crate::core::hive::policy::HIVE_MAX_RULES)
         || active
             .redaction
             .iter()
@@ -61,7 +144,7 @@ pub fn evaluate_text(text: &str, active: &ActivePolicy) -> FilterOutcome {
             };
         }
     }
-    let mut outcome = input_filters::apply(text, &active.filters);
+    let mut outcome = input_filters::apply(text, filters);
     if outcome.blocked {
         return outcome;
     }
@@ -90,11 +173,8 @@ pub fn evaluate_text(text: &str, active: &ActivePolicy) -> FilterOutcome {
             outcome.audit.push((format!("redaction:{label}"), hits));
         }
     }
-    // Active protection cannot be disabled by the compression/raw escape hatch
-    // or by the user's optional local-secret-redaction setting.
-    outcome.text = crate::core::redaction::redact_text(&outcome.text);
-    if outcome.text.len() > MAX_PROTECTED_CONTENT_BYTES {
-        return withheld("content-size-limit");
+    if !active.within_horizon() {
+        return withheld(EXPIRED);
     }
     outcome
 }
@@ -106,6 +186,38 @@ pub fn protect_active(text: &str) -> Result<std::borrow::Cow<'_, str>, &'static 
         return Ok(std::borrow::Cow::Borrowed(text));
     };
     let outcome = evaluate_text(text, &active);
+    if outcome.blocked {
+        Err("content withheld by policy")
+    } else {
+        Ok(std::borrow::Cow::Owned(outcome.text))
+    }
+}
+
+/// Protect a validated Engine identity with project rules while skipping only
+/// the project PII detector, which can mistake the legacy timestamp format for
+/// a payment card. Explicit block/redaction rules remain active.
+pub(crate) fn protect_active_engine_identity(
+    id: EngineSessionId<'_>,
+) -> Result<std::borrow::Cow<'_, str>, &'static str> {
+    let text = id.as_str();
+    let Some(active) = super::runtime::active() else {
+        return Ok(std::borrow::Cow::Borrowed(text));
+    };
+    protect_engine_identity_with_active(id, &active)
+}
+
+pub(crate) fn protect_engine_identity_with_active<'a>(
+    id: EngineSessionId<'a>,
+    active: &ActivePolicy,
+) -> Result<std::borrow::Cow<'a, str>, &'static str> {
+    let text = id.as_str();
+    let filters = FilterConfig::new(
+        FilterAction::Off,
+        active.filters.classification,
+        active.filters.injection,
+        &active.resolved.filters.blocked_labels,
+    );
+    let outcome = evaluate_text_with_filters(text, active, &filters);
     if outcome.blocked {
         Err("content withheld by policy")
     } else {
@@ -213,6 +325,40 @@ mod tests {
         assert_eq!(evaluate_text(text, &policy("")).text, text);
         let stricter = policy("[redaction]\ncustomer = 'K-[0-9]{6}'");
         assert_eq!(evaluate_text(text, &stricter).text, "[REDACTED:customer]");
+    }
+
+    #[test]
+    fn engine_identity_skips_only_generic_pii_and_still_honors_project_blocks() {
+        let id_text = "20261004-123406-123456p43210s0";
+        let id = crate::core::session::parse_engine_session_id(id_text).expect("legacy ID");
+        let pii_policy = policy("[filters]\npii = 'redact'");
+        // The standard Luhn-valid test number in groups of four, assembled at
+        // run time so the source carries no card-shaped literal.
+        let group = "1".repeat(4);
+        let card = format!("4{} {group} {group} {group}", "1".repeat(3));
+        let generic = evaluate_text(&format!("paid with {card}"), &pii_policy);
+        assert!(
+            !generic.blocked && !generic.text.contains(card.as_str()),
+            "free text stays under the PII detector"
+        );
+        // Changed expectation: this asserted that the id itself is masked in
+        // free text. Since the 3.11 detector rule (`pii::card_layout_plausible`:
+        // a separated digit run is a card only in an issuer layout) its
+        // `YYYYmmdd-HHMMSS` run is no card, and the id is delivered as written.
+        assert_eq!(evaluate_text(id_text, &pii_policy).text.as_str(), id_text);
+        assert_eq!(
+            protect_engine_identity_with_active(id, &pii_policy)
+                .expect("typed identity remains intact")
+                .as_ref(),
+            id_text
+        );
+
+        let blocked_policy =
+            policy("[filters]\npii = 'redact'\n[filters.blocked_patterns]\nlegacy_id = '123406'");
+        assert!(
+            protect_engine_identity_with_active(id, &blocked_policy).is_err(),
+            "project blocked_patterns must still reject typed IDs"
+        );
     }
 
     #[test]

@@ -8,21 +8,12 @@ members = [
   "crates/lean-ctx-protocol",
   "crates/leanctx-native-storage",
   "crates/lean-ctx-embed",
-  # Grammar-addon cdylibs (#690, Phase 1c) — one crate per long-tail
-  # tree-sitter grammar, built per-platform by grammar-addons.yml and
-  # dlopen'd at runtime by core::signatures_ts::grammar_loader. Add a new
-  # `crates/grammar-addons/<lang>` member (mirroring lua/) plus a matrix
-  # entry in the workflow when tiering another grammar out (scope item 1).
-  "crates/grammar-addons/lua",
-  # Standalone manual-verification harness the grammar-addon design proved
-  # out against (Phase 0 spike, #693) — not part of the release pipeline.
-  "experiments/grammar-dlopen-spike/host",
 ]
 default-members = ["."]
 
 [package]
 name = "lean-ctx"
-version = "3.11.4"
+version = "3.12.0"
 edition = "2024"
 autobins = false
 description = "LeanCTX Engine: the open-source runtime for the Context Gateway for AI Systems. CLI, MCP server, and supported proxy integrations."
@@ -161,20 +152,23 @@ tree-sitter = [
   "dep:tree-sitter-gdscript",
   "dep:tree-sitter-lua",
   "dep:tree-sitter-luau",
-  "dep:tree-sitter-ocaml",
-  "dep:tree-sitter-haskell",
-  "dep:tree-sitter-julia",
   "dep:tree-sitter-solidity",
   "dep:tree-sitter-nix",
   "dep:tree-sitter-powershell",
-  "dep:tree-sitter-language",
-  "dep:libloading",
 ]
+# Long-tail grammars with the largest parse tables (focus analysis
+# 2026-10-15: OCaml 6.5, Julia 6.2, Haskell 3.7 MB of grammar archive).
+# Opt-in since focus decision 2 (2026-10-15); without them these languages
+# fall back to the regex signature extractors (docs/migration/focus-2026-10.md).
+grammars-long-tail = ["grammar-ocaml", "grammar-haskell", "grammar-julia"]
+grammar-ocaml = ["tree-sitter", "dep:tree-sitter-ocaml"]
+grammar-haskell = ["tree-sitter", "dep:tree-sitter-haskell"]
+grammar-julia = ["tree-sitter", "dep:tree-sitter-julia"]
 wasm = ["dep:wasmi"]
 
 [dependencies]
-lean-ctx-ocla = { path = "crates/lean-ctx-ocla", version = "3.0.0" }
-lean-ctx-protocol = { path = "crates/lean-ctx-protocol", version = "0.3.0" }
+lean-ctx-ocla = { path = "crates/lean-ctx-ocla", version = "4.0.0" }
+lean-ctx-protocol = { path = "crates/lean-ctx-protocol", version = "0.4.0" }
 rmcp = { version = "2", features = [
   "server",
   "client",
@@ -185,6 +179,9 @@ rmcp = { version = "2", features = [
   # OAuth 2.1 for HTTP MCP servers that require a browser login (#1391):
   # discovery, dynamic client registration, PKCE, code exchange, refresh.
   "auth",
+  # Form elicitation: ctx_shell asks the user to approve a command the shell
+  # allowlist does not name (server/shell_approval.rs).
+  "elicitation",
 ] }
 # Header types for the gateway's downstream HTTP MCP client (already in the tree via rmcp/reqwest).
 http = "1.4"
@@ -221,6 +218,9 @@ futures = "0.3"
 tokio-util = { version = "0.7", features = ["codec"] }
 dirs = "6.0"
 chrono = { version = "0.4", features = ["serde"] }
+# Swarm pledge windows are evaluated in their own IANA zone (SPEC-ENGINE §3.14.1).
+chrono-tz = "0.10"
+iana-time-zone = "0.1"
 toml = "1.1"
 toml_edit = "0.25"
 similar = "3.1"
@@ -265,10 +265,7 @@ tree-sitter-julia = { version = "0.23", optional = true }
 tree-sitter-solidity = { version = "1.2", optional = true }
 tree-sitter-nix = { version = "0.3", optional = true }
 tree-sitter-powershell = { version = "0.26", optional = true }
-# Grammar-addon loader (#690, Phase 1b): dlopen a per-platform grammar cdylib
-# and reconstruct a tree_sitter::Language from its exported LanguageFn, same
-# as the Phase 0 spike (experiments/grammar-dlopen-spike).
-tree-sitter-language = { version = "0.1", optional = true }
+# Native library loading for the ONNX runtime (features `onnx`, `embeddings`).
 libloading = { version = "0.8", optional = true }
 # Exact pin: `ort` 2.0 is still in its release-candidate phase (no stable 2.0.0
 # yet; rc.12 is the upstream-recommended production build). RCs can carry breaking
@@ -318,10 +315,14 @@ hmac = "0.13"
 sha2 = "0.11"
 hkdf = "0.13"
 chacha20poly1305 = "0.10"
+# Code anchors name paths in NFC (C0 1.9 CodeAnchorV1); already in the lockfile.
+unicode-normalization = "0.1"
 glob = "0.3"
 urlencoding = "2.1"
 rpassword = "7.5"
 ed25519-dalek = { version = "2.2", features = ["rand_core"] }
+# X25519 for sealed repo key wrapping (already in the tree via ed25519-dalek).
+curve25519-dalek = "4.1"
 zeroize = "1"
 getrandom = "0.4"
 uuid = { version = "1", features = ["v4"] }
@@ -335,6 +336,8 @@ reqwest = { version = "0.13", default-features = false, features = [
 bytecount = "0.6"
 libc = "0.2"
 blake3 = "1.8"
+# Consent presence proofs of the macOS helper (Secure Enclave P-256, SPEC-ENGINE §3.8.4).
+p256 = { version = "0.14", default-features = false, features = ["ecdsa", "pkcs8", "std"] }
 rayon = "1.12"
 moka = { version = "0.12", features = ["sync"] }
 postcard = { version = "1.1", features = ["use-std"] }
@@ -348,7 +351,6 @@ yaml_serde = "0.10.4"
 semver = "1.0.28"
 dashmap = "6.2.1"
 async-trait = "0.1.91"
-argon2 = "0.5.3"
 
 [lints.rust]
 unreachable_pub = "warn"
@@ -367,6 +369,9 @@ module_name_repetitions = "allow"
 must_use_candidate = "allow"
 return_self_not_must_use = "allow"
 similar_names = "allow"
+# `assert!(x.is_empty())` is the idiom of this codebase (clippy 1.99+ lint;
+# older clippy reports it as unknown, which `-D warnings` does not fail on).
+assert_is_empty = "allow"
 unreadable_literal = "allow"
 
 # --- Documentation: covered by separate doc-coverage tooling ---
@@ -433,14 +438,10 @@ split-debuginfo = "unpacked"
 opt-level = 1
 
 # Hot, rarely rebuilt dependencies at full optimisation in dev/test builds: in
-# debug they cost whole seconds per call (Argon2id 64 MiB key derivation,
-# SHA-256 of the ~400 MB test binary, o200k tokenizer load), and many of those
+# debug they cost whole seconds per call (SHA-256 of the ~400 MB test binary,
+# o200k tokenizer load), and many of those
 # calls run under the global test env lock. Semantics are unchanged; our own
 # crate stays at the low opt-level above for fast, debuggable builds.
-[profile.dev.package.argon2]
-opt-level = 3
-[profile.dev.package.blake2]
-opt-level = 3
 [profile.dev.package.blake3]
 opt-level = 3
 [profile.dev.package.sha2]
@@ -476,7 +477,7 @@ incremental = true
 strip = false
 
 [target.'cfg(windows)'.dependencies]
-leanctx-native-storage = { path = "crates/leanctx-native-storage", version = "=0.1.0" }
+leanctx-native-storage = { path = "crates/leanctx-native-storage", version = "=0.1.1" }
 windows-sys = { version = "0.61", features = [
   "Win32_Foundation",
   "Win32_Globalization",

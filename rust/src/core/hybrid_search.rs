@@ -12,6 +12,7 @@
 use std::collections::HashMap;
 
 use super::bm25_index::{BM25Index, ChunkKind, SearchResult};
+#[cfg(feature = "embeddings")]
 use super::hnsw::FlatEmbeddings;
 
 #[cfg(feature = "embeddings")]
@@ -163,7 +164,36 @@ pub fn hybrid_search(
     config: &HybridConfig,
     graph_file_ranks: Option<&HashMap<String, usize>>,
 ) -> Vec<HybridResult> {
-    let bm25_results = index.search(query, config.bm25_candidates);
+    // Pack and role pinned for the whole search — both candidate lists and
+    // every gate decision; a change while it ran returns nothing.
+    super::bm25_index::source_gate::pinned(index.source_root.as_deref(), || {
+        hybrid_search_pinned(
+            query,
+            index,
+            engine,
+            chunk_embeddings,
+            top_k,
+            config,
+            graph_file_ranks,
+        )
+    })
+    .unwrap_or_default()
+}
+
+#[cfg(feature = "embeddings")]
+fn hybrid_search_pinned(
+    query: &str,
+    index: &BM25Index,
+    engine: Option<&EmbeddingEngine>,
+    chunk_embeddings: Option<&FlatEmbeddings>,
+    top_k: usize,
+    config: &HybridConfig,
+    graph_file_ranks: Option<&HashMap<String, usize>>,
+) -> Vec<HybridResult> {
+    // One serve-time source gate for both candidate lists (G04): a chunk of
+    // a withdrawn source enters neither ranking, so it cannot shift the fusion.
+    let mut gate = index.source_gate();
+    let bm25_results = index.search_gated(query, config.bm25_candidates, &mut gate);
 
     let dense_results = match (engine, chunk_embeddings) {
         (Some(eng), Some(embeddings)) => dense_search(
@@ -172,6 +202,7 @@ pub fn hybrid_search(
             &index.chunks,
             embeddings,
             config.dense_candidates,
+            &mut gate,
         ),
         _ => Vec::new(),
     };
@@ -232,6 +263,7 @@ fn dense_search(
     chunks: &[super::bm25_index::CodeChunk],
     embeddings: &FlatEmbeddings,
     top_k: usize,
+    gate: &mut Option<super::bm25_index::source_gate::SourceGate>,
 ) -> Vec<DenseSearchResult> {
     let Ok(query_embedding) = engine.embed_query(query) else {
         return Vec::new();
@@ -239,12 +271,22 @@ fn dense_search(
 
     // Threshold-gated ANN: exact SIMD brute force for small corpora, cached
     // HNSW (sub-linear) once the corpus is large enough to amortize graph build.
-    let scored = super::ann_cache::topk(embeddings, &query_embedding, top_k);
+    // A gated search fetches a bounded surplus and cuts after the gate: a
+    // chunk of a withdrawn source neither occupies a slot nor moves the cut.
+    let fetch = if gate.is_some() {
+        super::bm25_index::source_gate::overfetch(top_k)
+    } else {
+        top_k
+    };
+    let scored = super::ann_cache::topk(embeddings, &query_embedding, fetch);
 
     scored
         .into_iter()
         .filter_map(|(idx, sim)| {
             let chunk = chunks.get(idx)?;
+            if !super::bm25_index::source_gate::chunk_served(gate, chunk) {
+                return None;
+            }
             let snippet = chunk.content.lines().take(5).collect::<Vec<_>>().join("\n");
             Some(DenseSearchResult {
                 chunk_idx: idx,
@@ -257,6 +299,7 @@ fn dense_search(
                 snippet,
             })
         })
+        .take(top_k)
         .collect()
 }
 

@@ -250,7 +250,8 @@ mod unix {
     ) -> Result<Zeroizing<String>, String> {
         let (mut read, write) =
             UnixStream::pair().map_err(|_| "cannot create credential channel")?;
-        let mut child = Command::new(&launch.glab)
+        let mut reader = Command::new(&launch.glab);
+        reader
             .args([
                 "config",
                 "get",
@@ -268,9 +269,24 @@ mod unix {
             .stdin(Stdio::null())
             .stdout(Stdio::from(std::os::fd::OwnedFd::from(write)))
             .stderr(Stdio::null())
-            .process_group(0)
-            .spawn()
-            .map_err(|_| "cannot start selected glab credential reader")?;
+            .process_group(0);
+        // Q13: the reader leads its own process group and has a guard on it,
+        // which ends the group when this read is over or this process is
+        // gone. The reader's program is executed only once the guard is
+        // ready; a reader that cannot get a guard never started. `None` for
+        // the guard: this process is not the `lean-ctx` binary. The guard
+        // holds neither end of the credential channel (both are close-on-exec)
+        // and writes nothing to disk.
+        let (mut child, guard) = match crate::shell::containment::start_guarded_child(&mut reader) {
+            Ok(started) => started,
+            Err(crate::shell::containment::Refusal::NotStarted(_)) => {
+                return Err("cannot start selected glab credential reader".into());
+            }
+            Err(_) => return Err("cannot contain selected glab credential reader".into()),
+        };
+        // The command holds the reader's end of the channel; with it open the
+        // end of the reader's output could not be seen.
+        drop(reader);
         let end = Instant::now() + DEADLINE;
         let result = read_bounded(&mut read, 16 * 1024);
         let status = loop {
@@ -293,6 +309,9 @@ mod unix {
             }
         }
         let _ = child.wait();
+        if let Some(guard) = guard {
+            let _ = guard.finish();
+        }
         if !status.is_some_and(|status| status.success()) {
             return Err("selected glab credential could not be read".into());
         }
@@ -584,6 +603,124 @@ mod unix {
             write.write_all(b"too long").unwrap();
             drop(write);
             assert!(read_bounded(&mut read, 2).is_err());
+        }
+        /// Q13: the credential reader runs with a process guard, and what it
+        /// starts in its group does not outlive the read. The stand-in `glab`
+        /// lives in a temp dir, touches no network and prints a fixed value
+        /// that is not shaped like a credential.
+        #[test]
+        fn the_credential_reader_leaves_nothing_behind() {
+            crate::shell::containment::tests::run_external_fixture(
+                module_path!(),
+                "credential_reader_fixture",
+            );
+        }
+
+        /// Body of the test above; runs in a fixture process group of its own
+        /// that is ended when this returns or an assertion fails. The
+        /// reader's background process is in the reader's group, not the
+        /// fixture's: if a regression leaves it, it expires by itself (20 s).
+        #[test]
+        #[ignore = "fixture body of the_credential_reader_leaves_nothing_behind"]
+        fn credential_reader_fixture() {
+            use std::os::unix::fs::PermissionsExt as _;
+            let fixture = crate::shell::containment::tests::external_fixture();
+            let directory = tempfile::tempdir().unwrap();
+            let glab = directory.path().join("glab");
+            let left = directory.path().join("left.pid");
+            std::fs::write(
+                &glab,
+                format!(
+                    "#!/bin/sh\n/bin/sleep 20 >/dev/null 2>&1 &\necho $! > '{}'\necho not-a-credential\n",
+                    left.display()
+                ),
+            )
+            .unwrap();
+            std::fs::set_permissions(&glab, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let launch = Launch {
+                source: Selection {
+                    host: "gitlab.example.test".into(),
+                    project: 1,
+                    namespace: "group".into(),
+                },
+                glab,
+                config_dir: directory.path().to_path_buf(),
+            };
+            let value = credential(&launch, directory.path()).unwrap();
+            assert_eq!(value.as_str(), "not-a-credential");
+            let pid: libc::pid_t = std::fs::read_to_string(&left)
+                .unwrap()
+                .trim()
+                .parse()
+                .unwrap();
+            let deadline = Instant::now() + Duration::from_secs(5);
+            // SAFETY: signal 0 only probes for existence.
+            while unsafe { libc::kill(pid, 0) } == 0 {
+                assert!(
+                    Instant::now() < deadline,
+                    "the reader's background process outlived the read"
+                );
+                std::thread::sleep(Duration::from_millis(20));
+            }
+            // The temp dir is removed here; the group kill that follows
+            // would skip its destructor.
+            drop(directory);
+            fixture.complete();
+        }
+
+        /// Q13: the credential reader is not executed before its guard is
+        /// ready. A caller killed in between leaves nothing running, and the
+        /// reader's program never ran.
+        #[test]
+        fn the_credential_reader_never_runs_before_its_guard_is_ready() {
+            crate::shell::containment::tests::run_external_fixture(
+                module_path!(),
+                "credential_caller_killed_fixture",
+            );
+        }
+
+        /// Body of the test above: the stand-in below is killed between "the
+        /// reader's process exists" and "attach its guard".
+        #[test]
+        #[ignore = "fixture body of the_credential_reader_never_runs_before_its_guard_is_ready"]
+        fn credential_caller_killed_fixture() {
+            let fixture = crate::shell::containment::tests::external_fixture();
+            crate::shell::containment::tests::caller_killed_before_its_guard(
+                module_path!(),
+                "credential_caller_standin",
+            );
+            fixture.complete();
+        }
+
+        /// Stands in for a launcher in the middle of the credential read. Its
+        /// `glab` lives beside the mark, touches no network, and would leave
+        /// the mark and keep running.
+        #[test]
+        #[ignore = "stand-in caller of credential_caller_killed_fixture"]
+        fn credential_caller_standin() {
+            use std::os::unix::fs::PermissionsExt as _;
+            let marker = crate::shell::containment::tests::caller_standin_marker();
+            let directory = marker.parent().unwrap();
+            let glab = directory.join("glab");
+            std::fs::write(
+                &glab,
+                format!(
+                    "#!/bin/sh\necho ran > '{}'\n/bin/sleep 60\n",
+                    marker.display()
+                ),
+            )
+            .unwrap();
+            std::fs::set_permissions(&glab, std::fs::Permissions::from_mode(0o700)).unwrap();
+            let launch = Launch {
+                source: Selection {
+                    host: "gitlab.example.test".into(),
+                    project: 1,
+                    namespace: "group".into(),
+                },
+                glab,
+                config_dir: directory.to_path_buf(),
+            };
+            let _ = credential(&launch, directory);
         }
         #[test]
         fn standard_streams_and_closed_descriptors_are_rejected() {

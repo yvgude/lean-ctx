@@ -298,6 +298,73 @@ fn identify_client(lower: &str) -> String {
     id.to_string()
 }
 
+/// The host label for presence and dashboards. Unlike the capability class,
+/// it must not claim more than the handshake proves: VS Code's built-in MCP
+/// client announces itself as "Visual Studio Code" for every chat participant
+/// and extension that uses it, so only a name that mentions Copilot/GitHub is
+/// labelled `vscode-copilot`; the generic name is `vscode`.
+pub(crate) fn presence_host_id(client_name: &str) -> String {
+    let hint = std::env::var("LEAN_CTX_CLIENT_HINT").ok();
+    presence_host_id_with_hint(client_name, hint.as_deref())
+}
+
+fn presence_host_id_with_hint(client_name: &str, hint: Option<&str>) -> String {
+    let effective = match hint {
+        Some(h) if !h.trim().is_empty() => h.trim().to_lowercase(),
+        _ => client_name.to_lowercase(),
+    };
+    let id = identify_client(&effective);
+    if id == "vscode-copilot" && !effective.contains("copilot") && !effective.contains("github") {
+        "vscode".to_string()
+    } else {
+        id
+    }
+}
+
+/// The MCP `clientInfo` this process received, for presence attribution.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ClientHandshake {
+    pub host: String,
+    pub name: String,
+    pub version: Option<String>,
+}
+
+/// `clientInfo` strings are peer-controlled: bound them and drop control
+/// characters before they reach the shared registry or the dashboard.
+const HANDSHAKE_FIELD_MAX_CHARS: usize = 128;
+
+fn sanitize_handshake_field(value: &str) -> Option<String> {
+    let cleaned: String = value
+        .chars()
+        .filter(|c| !c.is_control())
+        .take(HANDSHAKE_FIELD_MAX_CHARS)
+        .collect();
+    let trimmed = cleaned.trim();
+    (!trimmed.is_empty()).then(|| trimmed.to_string())
+}
+
+static HANDSHAKE: OnceLock<Mutex<Option<ClientHandshake>>> = OnceLock::new();
+
+/// Records the `initialize` handshake of this process and returns it.
+pub(crate) fn record_handshake(name: &str, version: &str) -> ClientHandshake {
+    let handshake = ClientHandshake {
+        host: presence_host_id(name),
+        name: sanitize_handshake_field(name).unwrap_or_else(|| "unknown".to_string()),
+        version: sanitize_handshake_field(version),
+    };
+    if let Ok(mut slot) = HANDSHAKE.get_or_init(|| Mutex::new(None)).lock() {
+        *slot = Some(handshake.clone());
+    }
+    handshake
+}
+
+/// The last `initialize` handshake this process recorded, if any.
+pub(crate) fn handshake() -> Option<ClientHandshake> {
+    HANDSHAKE
+        .get()
+        .and_then(|slot| slot.lock().ok().and_then(|guard| guard.clone()))
+}
+
 /// Whether any process recorded an MCP handshake within `max_age_secs`,
 /// recognised or not. Separates "no MCP client" (CLI and shell hooks only)
 /// from "a client LeanCTX does not recognise" for telemetry.
@@ -549,6 +616,57 @@ mod tests {
             ClientMcpCapabilities::detect_with_hint("claude-code", None).client_id,
             "claude-code"
         );
+    }
+
+    #[test]
+    fn presence_host_does_not_claim_copilot_for_generic_vscode() {
+        for (name, host) in [
+            ("Visual Studio Code", "vscode"),
+            ("Visual Studio Code - Insiders", "vscode"),
+            ("vscode", "vscode"),
+            ("GitHub Copilot", "vscode-copilot"),
+            ("github-copilot-cli", "copilot-cli"),
+            ("claude-code", "claude-code"),
+            ("codex-mcp-client", "codex"),
+            ("cursor-vscode", "cursor"),
+            ("gemini-cli-mcp-client", "gemini-cli"),
+            ("windsurf-client", "windsurf"),
+            ("Cline", "cline"),
+            ("Roo Code", "roo-code"),
+            ("opencode", "opencode"),
+            ("random-editor", "unknown"),
+        ] {
+            assert_eq!(presence_host_id_with_hint(name, None), host, "{name}");
+        }
+        // The capability class is unchanged: VS Code keeps Copilot parity.
+        assert_eq!(
+            ClientMcpCapabilities::detect_with_hint("Visual Studio Code", None).client_id,
+            "vscode-copilot"
+        );
+        assert_eq!(
+            presence_host_id_with_hint("Visual Studio Code", Some("vscode-copilot")),
+            "vscode-copilot"
+        );
+    }
+
+    #[test]
+    fn handshake_fields_are_bounded_and_stripped_of_control_characters() {
+        assert_eq!(
+            sanitize_handshake_field("  claude-code\n\u{1b}[31m  ").as_deref(),
+            Some("claude-code[31m")
+        );
+        assert_eq!(sanitize_handshake_field(" \t "), None);
+        let long = "x".repeat(4 * HANDSHAKE_FIELD_MAX_CHARS);
+        assert_eq!(
+            sanitize_handshake_field(&long).map(|value| value.chars().count()),
+            Some(HANDSHAKE_FIELD_MAX_CHARS)
+        );
+
+        let recorded = record_handshake("Visual Studio Code", "1.105.0");
+        assert_eq!(recorded.host, "vscode");
+        assert_eq!(recorded.name, "Visual Studio Code");
+        assert_eq!(recorded.version.as_deref(), Some("1.105.0"));
+        assert!(handshake().is_some());
     }
 
     #[test]

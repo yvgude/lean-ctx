@@ -687,13 +687,12 @@ impl McpTool for CtxComposeTool {
                     content_blocks: None,
                 })
             })
-            // The reason is a fixed policy phrase (no path, no content); it
-            // tells the agent and the failure telemetry which check failed.
             .unwrap_or_else(|reason| {
+                // The reason is a fixed, content-free policy-runtime string;
+                // naming it separates a real policy change from a stale view.
                 Err(ErrorData::internal_error(
                     format!(
-                        "Context output withheld: source authority changed or could not be \
-                         verified ({reason})"
+                        "Context output withheld: source authority changed or could not be verified ({reason})"
                     ),
                     None,
                 ))

@@ -1,0 +1,31 @@
+{
+  "revision": 4,
+  "schema": "leanctx.hive.fact-state-report/v1",
+  "states": [
+    {
+      "contradicted_by": [
+        "hive.screening-first"
+      ],
+      "fact": "hive.never-blocks",
+      "reasons": [
+        "contradiction"
+      ],
+      "since": "2026-10-21T09:00:00Z",
+      "state": "contradicted"
+    },
+    {
+      "fact": "hive.outbox-order",
+      "moved_to": {
+        "digest": "sha256:6869c3fea0619de5444550d1f7a0f31b01f79ea56eafcb78fbe15102fd4975be",
+        "lang": "rust",
+        "path": "rust/src/core/hive/outbox/queue.rs",
+        "symbol": "hive::outbox::queue::enqueue"
+      },
+      "reasons": [
+        "anchor_moved"
+      ],
+      "since": "2026-10-21T09:00:00Z",
+      "state": "to_verify"
+    }
+  ]
+}

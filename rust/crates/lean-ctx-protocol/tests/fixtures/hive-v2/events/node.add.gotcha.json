@@ -1,0 +1,57 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqam",
+  "body": {
+    "avoid": "Charge at least 50 cents in sandbox tests.",
+    "body_nonce": "03030303030303030303030303030303",
+    "evidence": "observed",
+    "statement": "The sandbox card processor rejects amounts below 50 cents with a 500 error.",
+    "tags": [
+      "payments",
+      "sandbox"
+    ],
+    "trigger": "Integration tests that charge tiny amounts"
+  },
+  "body_commit": "6df48ebaab6dd06d6caf1c011f8e4d95e998db67156e7bb72465dccf7479ffa7",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 2,
+  "event_id": "01M5NKA4XR005000000000W003",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800003000
+  },
+  "key_id": "47983724220c8521",
+  "node_type": "gotcha",
+  "op": "node.add",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800003350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 3,
+  "signature": "d6137558a0f64b3a50ca508c7166bbd443f0398b57718e9754a4bcc0d5f48cdc8a0586b1b22ea2d73c27a36689411e01403c4b5dfbf74f808ba72aefd05f4405",
+  "target": "n_ni4efcql5cttozq2pxust6len4",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

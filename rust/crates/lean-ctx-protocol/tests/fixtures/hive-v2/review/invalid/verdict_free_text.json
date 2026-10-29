@@ -1,0 +1,14 @@
+{
+  "case": "verdict_free_text",
+  "base": "routes/review_reveal.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/verdict/comment",
+      "value": "looks fine"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

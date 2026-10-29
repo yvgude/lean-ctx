@@ -16,6 +16,8 @@ const PUBLISHABLE_ARCHETYPES: &[KnowledgeArchetype] = &[
 ];
 
 const MIN_PUBLISH_CONFIDENCE: f32 = 0.8;
+/// Bounded, so a stuck holder cannot hang a tool call.
+const BRIDGE_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BridgeEntry {
@@ -74,6 +76,28 @@ impl KnowledgeBridge {
         crate::config_io::write_atomic(&path, &json)
     }
 
+    /// One read-modify-write of a project's bridge under its cross-process
+    /// lock: loaded inside the lock, saved before it is released. Parallel
+    /// publishers therefore never drop each other's entries.
+    pub fn mutate_locked<T>(
+        project_hash: &str,
+        mutate: impl FnOnce(&mut Self) -> T,
+    ) -> Result<T, String> {
+        let path = Self::path(project_hash)?;
+        let dir = path
+            .parent()
+            .ok_or_else(|| "invalid bridge path".to_string())?;
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        let _lock = crate::core::agents::FileLock::acquire_with_timeout(
+            &dir.join("bridge.lock"),
+            BRIDGE_LOCK_WAIT,
+        )?;
+        let mut bridge = Self::load_or_create(project_hash);
+        let output = mutate(&mut bridge);
+        bridge.save()?;
+        Ok(output)
+    }
+
     /// Publish eligible facts from an agent's knowledge store.
     /// Only publishes facts with sufficient confidence, a publishable archetype,
     /// and that haven't already been published by this agent.
@@ -127,6 +151,9 @@ impl KnowledgeBridge {
     pub fn entry_to_fact(entry: &BridgeEntry) -> KnowledgeFact {
         let now = Utc::now();
         KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::source_view::imported_origin(&entry.origin),
             category: entry.fact_category.clone(),
             key: entry.fact_key.clone(),
@@ -150,6 +177,8 @@ impl KnowledgeBridge {
             archetype: entry.archetype.clone(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         }
     }
 
@@ -219,6 +248,9 @@ pub mod tests {
         archetype: KnowledgeArchetype,
     ) -> KnowledgeFact {
         KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: cat.into(),
             key: key.into(),
@@ -242,6 +274,8 @@ pub mod tests {
             archetype,
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         }
     }
 
@@ -313,6 +347,44 @@ pub mod tests {
         assert_eq!(fact.imported_from, Some("bridge:agent-1".into()));
         assert!(fact.confidence < 0.9);
         assert_eq!(fact.archetype, KnowledgeArchetype::Architecture);
+    }
+
+    /// AP07-G3: publish loaded and saved the bridge without a lock, so
+    /// parallel publishers dropped each other's entries.
+    #[test]
+    fn parallel_publishers_keep_every_entry() {
+        use std::sync::{Arc, Barrier};
+        const AGENTS: usize = 8;
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let barrier = Arc::new(Barrier::new(AGENTS));
+        let publishers: Vec<_> = (0..AGENTS)
+            .map(|index| {
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    let facts = vec![make_fact(
+                        "arch",
+                        &format!("component-{index}"),
+                        "shared",
+                        0.9,
+                        KnowledgeArchetype::Architecture,
+                    )];
+                    barrier.wait();
+                    KnowledgeBridge::mutate_locked("bridge-hash", |bridge| {
+                        bridge.publish(&format!("agent-{index}"), &facts)
+                    })
+                })
+            })
+            .collect();
+        for publisher in publishers {
+            assert_eq!(publisher.join().unwrap(), Ok(1));
+        }
+        assert_eq!(
+            KnowledgeBridge::load("bridge-hash")
+                .unwrap()
+                .shared_facts
+                .len(),
+            AGENTS
+        );
     }
 
     #[test]

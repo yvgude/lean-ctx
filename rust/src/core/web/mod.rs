@@ -114,15 +114,44 @@ pub struct ReadResult {
     pub final_url: String,
 }
 
+/// Admission of extracted source text: returns the text that may be used, or
+/// a content-free reason why none of it may. See [`read_url_admitted`].
+pub type AdmitText<'a> = &'a dyn Fn(&str) -> Result<String, String>;
+
 /// Fetch and distill a URL into citation-backed context.
+///
+/// No admission is applied to the extracted text; an agent-facing caller
+/// uses [`read_url_admitted`].
 pub fn read_url(opts: &ReadOptions) -> Result<ReadResult, String> {
+    read_url_admitted(opts, &|text| Ok(text.to_string()))
+}
+
+/// [`read_url`] with admission BEFORE distillation.
+///
+/// `admit` is applied to the extracted source text — the page's Markdown, a
+/// PDF's text, a transcript — before any mode renders, ranks or summarizes
+/// it, and to every other piece of page content that reaches the result (the
+/// rendered link list, the title in the citation footer). Facts, quotes,
+/// summaries and plain text are therefore derived only from admitted text: a
+/// marking on the page cannot be dropped by the distillation before it is
+/// seen, and a masked value cannot reappear in a derived line. A refusal ends
+/// the read with `admit`'s reason; nothing of the page is returned. The token
+/// count of the raw payload stays a number only.
+pub fn read_url_admitted(opts: &ReadOptions, admit: AdmitText<'_>) -> Result<ReadResult, String> {
     // Rewrite known page URLs (e.g. GitHub blob → raw) to their clean-content
     // equivalent before fetching, so the agent gets the file instead of chrome.
     let rewritten = rewrite::rewrite_url(opts.url);
     let url = rewritten.as_deref().unwrap_or(opts.url);
 
     if let Some(id) = youtube::video_id(url) {
-        return read_youtube(&id, opts);
+        let transcript = youtube::fetch_transcript(&id, opts.timeout_secs)?;
+        return distil_transcript(
+            &transcript.full_text,
+            transcript.title,
+            transcript.source_url,
+            opts,
+            admit,
+        );
     }
 
     let effective = ReadOptions {
@@ -133,10 +162,18 @@ pub fn read_url(opts: &ReadOptions) -> Result<ReadResult, String> {
         max_items: opts.max_items,
         timeout_secs: opts.timeout_secs,
     };
-    read_web(&effective)
+    read_web(&effective, admit)
 }
 
-fn read_web(opts: &ReadOptions) -> Result<ReadResult, String> {
+/// What extraction produced from one fetched document, before any admission.
+struct Extracted {
+    title: Option<String>,
+    markdown: String,
+    links: Vec<html_to_text::Link>,
+    original_tokens: usize,
+}
+
+fn read_web(opts: &ReadOptions, admit: AdmitText<'_>) -> Result<ReadResult, String> {
     let doc = fetch::fetch(opts.url, fetch::DEFAULT_MAX_BYTES, opts.timeout_secs)?;
     if doc.status >= 400 {
         return Err(format!("HTTP {} from {}", doc.status, doc.final_url));
@@ -171,27 +208,70 @@ fn read_web(opts: &ReadOptions) -> Result<ReadResult, String> {
         }
     };
 
+    distil_page(
+        Extracted {
+            title,
+            markdown,
+            links,
+            original_tokens,
+        },
+        doc.final_url,
+        opts,
+        admit,
+    )
+}
+
+/// A title is page content too. One that is not admitted is left out of the
+/// citation; the body's own admission has already decided about the page.
+fn admitted_title(title: Option<String>, admit: AdmitText<'_>) -> Option<String> {
+    title.and_then(|title| admit(&title).ok())
+}
+
+/// Admit an extracted page, then distil it. Everything a mode renders is
+/// derived from the admitted Markdown; the link list, which extraction took
+/// from the raw document, is admitted as rendered.
+fn distil_page(
+    extracted: Extracted,
+    final_url: String,
+    opts: &ReadOptions,
+    admit: AdmitText<'_>,
+) -> Result<ReadResult, String> {
+    let markdown = admit(&extracted.markdown)?;
+
     let effective = match opts.mode {
         ReadMode::Auto => ReadMode::Markdown,
         other => other,
     };
 
-    let body = render_mode(effective, &markdown, &links, &doc.final_url, opts);
+    let body = render_mode(effective, &markdown, &extracted.links, &final_url, opts);
+    let body = if effective == ReadMode::Links {
+        admit(&body)?
+    } else {
+        body
+    };
     let body = apply_persona_compressor(body, effective);
     let trimmed = enforce_budget(&body, opts.max_tokens);
-    let citation = Citation::new(&doc.final_url, title);
+    let citation = Citation::new(&final_url, admitted_title(extracted.title, admit));
 
     Ok(ReadResult {
         content: format!("{trimmed}{}", citation.footer()),
         mode: effective,
-        original_tokens,
-        final_url: doc.final_url,
+        original_tokens: extracted.original_tokens,
+        final_url,
     })
 }
 
-fn read_youtube(video_id: &str, opts: &ReadOptions) -> Result<ReadResult, String> {
-    let transcript = youtube::fetch_transcript(video_id, opts.timeout_secs)?;
-    let original_tokens = crate::core::tokens::count_tokens(&transcript.full_text);
+/// Admit a transcript, then distil it: facts, quotes and the summary are
+/// derived from the admitted text only.
+fn distil_transcript(
+    full_text: &str,
+    title: Option<String>,
+    source_url: String,
+    opts: &ReadOptions,
+    admit: AdmitText<'_>,
+) -> Result<ReadResult, String> {
+    let original_tokens = crate::core::tokens::count_tokens(full_text);
+    let full_text = admit(full_text)?;
 
     let effective = match opts.mode {
         ReadMode::Auto => ReadMode::Transcript,
@@ -200,30 +280,26 @@ fn read_youtube(video_id: &str, opts: &ReadOptions) -> Result<ReadResult, String
 
     let body = match effective {
         ReadMode::Facts => render_facts(&claims_from(
-            distill::facts_scored(&transcript.full_text, opts.query, opts.max_items),
-            &transcript.source_url,
+            distill::facts_scored(&full_text, opts.query, opts.max_items),
+            &source_url,
         )),
         ReadMode::Quotes => render_quotes(&claims_from(
-            distill::quotes_scored(&transcript.full_text, opts.query, opts.max_items),
-            &transcript.source_url,
+            distill::quotes_scored(&full_text, opts.query, opts.max_items),
+            &source_url,
         )),
         ReadMode::Links => "Links are not available for video transcripts.".to_string(),
-        _ => distill::summarize_prose(
-            &transcript.full_text,
-            opts.max_tokens.saturating_mul(4),
-            opts.query,
-        ),
+        _ => distill::summarize_prose(&full_text, opts.max_tokens.saturating_mul(4), opts.query),
     };
 
     let body = apply_persona_compressor(body, effective);
     let trimmed = enforce_budget(&body, opts.max_tokens);
-    let citation = Citation::new(&transcript.source_url, transcript.title);
+    let citation = Citation::new(&source_url, admitted_title(title, admit));
 
     Ok(ReadResult {
         content: format!("{trimmed}{}", citation.footer()),
         mode: effective,
         original_tokens,
-        final_url: transcript.source_url,
+        final_url: source_url,
     })
 }
 
@@ -349,7 +425,16 @@ fn apply_persona_compressor(body: String, mode: ReadMode) -> String {
     compressor.compress(&body, None)
 }
 
+/// The budgeted body; a cut names the archived original (K25).
 fn enforce_budget(content: &str, max_tokens: usize) -> String {
+    let cut = cut_to_budget(content, max_tokens);
+    if cut == content {
+        return cut;
+    }
+    crate::core::recovery::with_original_pointer("ctx_url_read", "budget", content, cut)
+}
+
+fn cut_to_budget(content: &str, max_tokens: usize) -> String {
     let tokens = crate::core::tokens::count_tokens(content);
     if tokens <= max_tokens {
         return content.to_string();
@@ -424,6 +509,125 @@ fn is_textual(content_type: &str) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    fn page(markdown: &str) -> Extracted {
+        Extracted {
+            title: Some("Launch plan".to_string()),
+            markdown: markdown.to_string(),
+            links: vec![html_to_text::Link {
+                text: "internal roadmap".into(),
+                href: "https://intra.example/roadmap".into(),
+            }],
+            original_tokens: 100,
+        }
+    }
+
+    fn options(mode: ReadMode) -> ReadOptions<'static> {
+        ReadOptions {
+            mode,
+            ..ReadOptions::new("https://docs.example/page")
+        }
+    }
+
+    const ALL_MODES: [ReadMode; 7] = [
+        ReadMode::Auto,
+        ReadMode::Markdown,
+        ReadMode::Text,
+        ReadMode::Links,
+        ReadMode::Facts,
+        ReadMode::Quotes,
+        ReadMode::Transcript,
+    ];
+
+    /// G01: distillation used to run on the raw extracted text, so a mode
+    /// that drops lines (facts, quotes, summary, links) could drop the very
+    /// marking an admission after it would have needed. Admission now runs
+    /// first, in every mode, on pages and on transcripts.
+    #[test]
+    fn a_refused_source_yields_nothing_in_any_mode() {
+        let refuse = |text: &str| -> Result<String, String> {
+            if text.contains("CONFIDENTIAL") {
+                Err("source content withheld by policy".to_string())
+            } else {
+                Ok(text.to_string())
+            }
+        };
+        let source = "CONFIDENTIAL\n\nThe launch moves to 14 March 2027. Revenue grew 40% in Q3.";
+        for mode in ALL_MODES {
+            let Err(reason) = distil_page(
+                page(source),
+                "https://docs.example/page".to_string(),
+                &options(mode),
+                &refuse,
+            ) else {
+                panic!("mode {} delivered a refused page", mode.label());
+            };
+            assert_eq!(reason, "source content withheld by policy");
+            let Err(reason) = distil_transcript(
+                source,
+                None,
+                "https://youtu.be/x".to_string(),
+                &options(mode),
+                &refuse,
+            ) else {
+                panic!("mode {} delivered a refused transcript", mode.label());
+            };
+            assert_eq!(reason, "source content withheld by policy");
+        }
+    }
+
+    /// Every derived part comes from the admitted text: a value admission
+    /// masks appears in no mode's output, the link list and the title are
+    /// admitted too, and an identity admission changes nothing.
+    #[test]
+    fn distilled_parts_derive_only_from_admitted_text() {
+        let mask = |text: &str| -> Result<String, String> {
+            if text == "Launch plan" {
+                return Err("withheld".to_string());
+            }
+            Ok(text
+                .replace("ORBITAL-7", "[masked]")
+                .replace("intra.example", "[masked]"))
+        };
+        let identity = |text: &str| -> Result<String, String> { Ok(text.to_string()) };
+        let source = "Project ORBITAL-7 ships on 14 March 2027. Revenue grew 40% in Q3 2026.";
+        for mode in ALL_MODES {
+            let masked = distil_page(
+                page(source),
+                "https://docs.example/page".to_string(),
+                &options(mode),
+                &mask,
+            )
+            .unwrap();
+            assert!(!masked.content.contains("ORBITAL-7"), "{}", mode.label());
+            assert!(
+                !masked.content.contains("intra.example"),
+                "{}",
+                mode.label()
+            );
+            assert!(!masked.content.contains("Launch plan"), "{}", mode.label());
+            assert_eq!(masked.original_tokens, 100);
+
+            let masked = distil_transcript(
+                source,
+                Some("Launch plan".to_string()),
+                "https://youtu.be/x".to_string(),
+                &options(mode),
+                &mask,
+            )
+            .unwrap();
+            assert!(!masked.content.contains("ORBITAL-7"), "{}", mode.label());
+            assert!(!masked.content.contains("Launch plan"), "{}", mode.label());
+        }
+        let plain = distil_page(
+            page(source),
+            "https://docs.example/page".to_string(),
+            &options(ReadMode::Markdown),
+            &identity,
+        )
+        .unwrap();
+        assert!(plain.content.starts_with(source), "{}", plain.content);
+    }
 
     #[test]
     fn read_mode_parsing_is_lenient() {

@@ -167,6 +167,7 @@ impl ProviderRegistry {
                     .map(std::string::ToString::to_string)
                     .collect(),
                 cache_ttl_secs: p.cache_ttl_secs(),
+                connector: p.descriptor(),
             })
             .collect();
 
@@ -207,6 +208,62 @@ pub struct ProviderInfo {
     pub requires_auth: bool,
     pub actions: Vec<String>,
     pub cache_ttl_secs: u64,
+    pub connector: super::provider_trait::ConnectorDescriptor,
+}
+
+/// The connector capability matrix (doc 17) as published in
+/// `docs/contracts/connector-capability-matrix-v1.md`: one row per connector
+/// kind, rendered from the connectors' own declarations.
+pub fn capability_matrix_markdown() -> String {
+    use super::provider_trait::{CapabilityLevel, ConnectorDescriptor};
+    let level = |l: CapabilityLevel| match l {
+        CapabilityLevel::Supported => "yes",
+        CapabilityLevel::Partial => "partial",
+        CapabilityLevel::Unsupported => "no",
+    };
+    let rows: [(&str, ConnectorDescriptor); 7] = [
+        (
+            "GitLab (project configured)",
+            super::gitlab::descriptor(true),
+        ),
+        ("GitLab (no project)", super::gitlab::descriptor(false)),
+        ("GitHub", super::github::descriptor()),
+        ("Jira", super::jira::descriptor()),
+        ("MCP bridge", super::mcp_bridge::descriptor()),
+        (
+            "Config provider (GET resources)",
+            super::config_provider::descriptor(false),
+        ),
+        (
+            "Other providers (default)",
+            ConnectorDescriptor::list_only("token or none"),
+        ),
+    ];
+    let mut out = String::from(
+        "| Connector | search | list | get | delta | revalidate ACL | revalidate revision | delete event | shared reuse |\n\
+         |---|---|---|---|---|---|---|---|---|\n",
+    );
+    for (name, d) in &rows {
+        out.push_str(&format!(
+            "| {name} | {} | {} | {} | {} | {} | {} | {} | {} |\n",
+            level(d.search),
+            level(d.list),
+            level(d.get),
+            level(d.delta),
+            level(d.revalidate_acl),
+            level(d.revalidate_revision),
+            level(d.delete_event),
+            if d.allows_shared_reuse() { "yes" } else { "no" },
+        ));
+    }
+    out.push('\n');
+    for (name, d) in &rows {
+        out.push_str(&format!(
+            "- **{name}** — principal: {}; content: {}; writes: {}; on failure: {}. {}\n",
+            d.principal_binding, d.content_trust, d.write_surface, d.failure_policy, d.notes
+        ));
+    }
+    out
 }
 
 // ---------------------------------------------------------------------------
@@ -281,10 +338,53 @@ pub fn global_registry() -> &'static ProviderRegistry {
     &GLOBAL_REGISTRY
 }
 
+/// A built-in provider constructed from the current configuration, for
+/// re-authorizing an item it produced. Never a registry entry: a provider
+/// registered later under the same id must not answer for a stored origin.
+/// Only providers that implement `reacquire_item` are named here.
+pub(crate) fn builtin_for_reuse(id: &str) -> Option<Arc<dyn ContextProvider>> {
+    match id {
+        "gitlab" => Some(Arc::new(super::gitlab::GitLabProvider::new())),
+        "github" => Some(Arc::new(super::github::GitHubProvider::new())),
+        "jira" => Some(Arc::new(super::jira::JiraProvider::new())),
+        _ => None,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::core::providers::{ProviderItem, ProviderResult};
+
+    #[test]
+    fn the_published_capability_matrix_is_the_connectors_own_declaration() {
+        const BEGIN: &str = "<!-- connector-capability-matrix:begin -->\n";
+        const END: &str = "<!-- connector-capability-matrix:end -->";
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../docs/contracts/provider-framework-contract-v1.md");
+        // A Windows checkout may hold the document with CRLF line endings.
+        let doc = std::fs::read_to_string(&path)
+            .unwrap()
+            .replace("\r\n", "\n");
+        let start = doc.find(BEGIN).unwrap() + BEGIN.len();
+        let end = doc.find(END).unwrap();
+        let rendered = capability_matrix_markdown();
+        if std::env::var_os("LEAN_CTX_UPDATE_GOLDEN").is_some() {
+            std::fs::write(&path, format!("{}{rendered}{}", &doc[..start], &doc[end..])).unwrap();
+            return;
+        }
+        assert_eq!(
+            &doc[start..end],
+            rendered,
+            "regenerate with LEAN_CTX_UPDATE_GOLDEN=1"
+        );
+        // Shared reuse is never claimed without a current ACL re-check.
+        assert!(rendered.contains("| MCP bridge | no | yes | yes | no | no | no | no | no |"));
+        assert!(
+            rendered
+                .contains("| GitLab (no project) | partial | yes | yes | no | no | no | no | no |")
+        );
+    }
 
     #[test]
     fn result_to_chunks_preserves_provider_id() {

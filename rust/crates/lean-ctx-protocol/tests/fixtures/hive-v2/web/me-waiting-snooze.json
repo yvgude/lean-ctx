@@ -1,0 +1,21 @@
+{
+  "route": "W2",
+  "method": "POST",
+  "path": "/api/v1/me/waiting/wt_aaaaaaaaaaaaaaaaaaaaaaaaaa/snooze",
+  "request": null,
+  "response": {
+    "status": 204,
+    "body": null
+  },
+  "errors": [
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "This item cannot be snoozed."
+        }
+      }
+    }
+  ]
+}

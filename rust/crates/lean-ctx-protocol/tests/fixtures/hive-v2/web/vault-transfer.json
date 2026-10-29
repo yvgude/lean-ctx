@@ -1,0 +1,132 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "human_session_required",
+          "message": "only a person signed in on the web may do this"
+        }
+      },
+      "status": 403
+    },
+    {
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "Confirm it is you before moving this vault."
+        }
+      },
+      "status": 403
+    },
+    {
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "You are not an owner of that workspace.",
+          "reason": "role"
+        }
+      },
+      "status": 403
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "This vault still holds content from Hive 1.x; it moves once that content is converted.",
+          "reason": "legacy_content"
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "The vault is already in that workspace.",
+          "reason": "same_org"
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "slug_taken",
+          "message": "That workspace already has a vault with this name."
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "This vault is already being transferred.",
+          "reason": "transfer_running"
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "rate_limited",
+          "message": "Too many requests.",
+          "retry_after_s": 3600
+        }
+      },
+      "status": 429
+    },
+    {
+      "body": {
+        "error": {
+          "code": "plan_required",
+          "feature": "repos",
+          "limit": 3,
+          "message": "More than 3 repos: included in Personal, Team and Enterprise.",
+          "plan_needed": "personal",
+          "used": 3
+        }
+      },
+      "status": 402
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/vaults/payments/transfer",
+  "request": {
+    "target_org": "acme-labs"
+  },
+  "response": {
+    "body": {
+      "vault": {
+        "counts": {
+          "nodes": 0,
+          "open_reviews": 0,
+          "workers": 0
+        },
+        "description": "How refunds, retries and payouts work.",
+        "followers": 0,
+        "forge": {
+          "host": "gitlab.pounce.ch",
+          "repo": "acme/payments",
+          "state": "unverified"
+        },
+        "frozen": false,
+        "license": "CC-BY-4.0",
+        "name": "payments",
+        "presence_public": false,
+        "sealed": false,
+        "sealed_conversion": "none",
+        "sealed_grants": "confirm",
+        "stars": 0,
+        "title": "Payments",
+        "viewer": {
+          "role": "owner"
+        },
+        "visibility": "public"
+      }
+    },
+    "status": 200
+  },
+  "route": "W11"
+}

@@ -1,0 +1,28 @@
+{
+  "also": [],
+  "command_digests": [
+    "b3fd3eb9eb726da6ec7d607676e34ef9911178e8dc3c89fd55c555c8a75737be"
+  ],
+  "created_at": 1792800002350,
+  "events": [
+    "01M5NKA3YG006000000000W002"
+  ],
+  "id": "rv_sssssssssssssssssssssssssa",
+  "independence": "owner_self",
+  "item_digest": "76747fc3113073b18d24d25fb561f26ba9b5dc3bbd568a040ba40f600c351f4b",
+  "node_ids": [
+    "n_aaaaaaaaaaaaaaaaaaaaaacmai"
+  ],
+  "place": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03",
+  "required_weight": 2,
+  "sla_due_at": 1792886400000,
+  "state": "needs_person",
+  "trigger": "procedure_with_commands",
+  "verdicts": [],
+  "weight_accept": 0,
+  "weight_reject": 0,
+  "writer": {
+    "owner_hash": "3c9a5e7b1d2f4a60",
+    "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+  }
+}

@@ -90,6 +90,9 @@ pub(super) fn materialize_handoff_bundle(
         knowledge: KnowledgeExcerpt::default(),
         curated_refs: Vec::new(),
         active_overlays: Vec::new(),
+        merged_from: Vec::new(),
+        request_id: None,
+        request_digest: None,
     };
     ledger.content_md5 = crate::core::handoff_ledger::compute_content_md5_for_ledger(&ledger);
     let bundle = HandoffTransferBundleV1 {

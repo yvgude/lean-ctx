@@ -95,7 +95,6 @@ fn categorize(name: &str) -> Category {
         // --- cache: regenerable models, embeddings, learned patterns ---
         "semantic_cache"
         | "models"
-        | "autonomy_drivers_v1.json"
         | "context_ir_v1.json"
         | "thresholds_learned.json"
         | "litm_calibration.json"
@@ -105,7 +104,9 @@ fn categorize(name: &str) -> Category {
         | ".first_run_wow_done" => Category::Cache,
 
         // --- runtime: ephemeral, left in place ---
-        "daemon.pid" | "daemon.sock" | "daemon-stderr.log" => Category::Runtime,
+        "daemon.pid" | "daemon.sock" | "daemon-stderr.log" | "dashboard.launch.json" => {
+            Category::Runtime
+        }
         n if n.starts_with(".graph-idx-") => Category::Runtime,
 
         _ => Category::Data,

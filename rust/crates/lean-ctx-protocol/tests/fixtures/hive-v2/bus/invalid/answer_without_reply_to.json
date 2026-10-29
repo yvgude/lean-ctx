@@ -1,0 +1,13 @@
+{
+  "case": "answer_without_reply_to",
+  "base": "bus/publish.answer.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/reply_to"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

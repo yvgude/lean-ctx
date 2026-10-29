@@ -1,0 +1,14 @@
+{
+  "case": "keyset_min_image_version",
+  "base": "routes/keyset.v3.response.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/min_image_version",
+      "value": "3.12.0"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

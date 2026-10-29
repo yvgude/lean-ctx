@@ -1,0 +1,5 @@
+{
+  "schema": "leanctx.hive.device-setup-result/v1",
+  "state": "shared",
+  "vault": "acme/payments"
+}

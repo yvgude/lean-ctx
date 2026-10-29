@@ -46,28 +46,39 @@ pub(super) fn fresh_index(
     // The scope narrows the walk itself, so the file budget counts only the
     // sources the caller asked about.
     let in_scope = |relative: &str| filter.matches(relative);
-    BM25Index::build_from_admitted_sources(&root, filter.subdir(), &in_scope, |relative| {
-        if !filter.matches(relative) {
-            return Ok(None);
-        }
-        // Reserve a full per-source allowance. Otherwise an ordinary source
-        // larger than the final remainder could be silently omitted as though
-        // it were individually uninspectable, yielding a partial ranked corpus.
-        if remaining < 2 * 1024 * 1024 {
-            return Err("source byte budget exceeded; narrow the search scope".into());
-        }
-        let initial = remaining.min(2 * 1024 * 1024);
-        let mut allowance = initial;
-        let content = crate::tools::ctx_read::read_file_for_tool_rooted_budgeted(
-            &root.join(relative).to_string_lossy(),
-            &root.to_string_lossy(),
-            tool,
-            &mut allowance,
-        );
-        remaining = remaining.saturating_sub(initial.saturating_sub(allowance));
-        // Denied, unreadable and non-text sources contribute neither documents
-        // nor term frequencies, snippets or names to the retrieval view.
-        Ok(content.ok())
+    let built =
+        BM25Index::build_from_admitted_sources(&root, filter.subdir(), &in_scope, |relative| {
+            if !filter.matches(relative) {
+                return Ok(None);
+            }
+            // Reserve a full per-source allowance. Otherwise an ordinary source
+            // larger than the final remainder could be silently omitted as though
+            // it were individually uninspectable, yielding a partial ranked corpus.
+            if remaining < 2 * 1024 * 1024 {
+                return Err("source byte budget exceeded; narrow the search scope".into());
+            }
+            let initial = remaining.min(2 * 1024 * 1024);
+            let mut allowance = initial;
+            let content = crate::tools::ctx_read::read_file_for_tool_rooted_budgeted(
+                &root.join(relative).to_string_lossy(),
+                &root.to_string_lossy(),
+                tool,
+                &mut allowance,
+            );
+            remaining = remaining.saturating_sub(initial.saturating_sub(allowance));
+            // Denied, unreadable and non-text sources contribute neither documents
+            // nor term frequencies, snippets or names to the retrieval view.
+            Ok(content.ok())
+        })?;
+    // Provider items and other external chunks are no files the walk above
+    // reads: they join an unscoped view from the persisted index, each only
+    // when its source serves it to this caller now (`source_gate`).
+    if filter.is_active() {
+        return Ok(built);
+    }
+    Ok(match BM25Index::load(&root) {
+        Some(stored) => built.with_served_external_from(&stored, &root),
+        None => built,
     })
 }
 
@@ -127,6 +138,24 @@ mod tests {
     }
 
     #[test]
+    fn filtered_retrieval_keeps_source_filtering_before_ranking() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _policy = TestPolicyOverride::set(None);
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path();
+        std::fs::write(root.join("keep.rs"), "fn keep_canary_91() {}\n").unwrap();
+        std::fs::write(root.join("skip.rs"), "fn skip_canary_92() {}\n").unwrap();
+        let filter = super::super::SearchFilter::new(None, Some("keep.rs")).unwrap();
+        let index = with_project_source_view(&root.to_string_lossy(), || {
+            fresh_index(root, &filter, "ctx_search")
+        })
+        .unwrap()
+        .unwrap();
+        assert!(!index.search("keep_canary_91", 10).is_empty());
+        assert!(index.search("skip_canary_92", 10).is_empty());
+    }
+
+    #[test]
     fn redacted_values_cannot_influence_matching_or_corpus_statistics() {
         let _env = crate::core::data_dir::test_env_lock();
         let _policy =
@@ -147,6 +176,72 @@ mod tests {
                 .iter()
                 .all(|chunk| !chunk.content.contains("ZQX7319"))
         );
+    }
+
+    /// K02/K10: a provider item in the persisted index joins the search view
+    /// while its source still returns it to this caller, and once the source
+    /// refuses it, it adds nothing — no hit, no document, no term statistic.
+    /// Before, the view held local files only and provider items were never
+    /// searchable at all.
+    #[test]
+    fn a_provider_item_joins_the_view_only_while_its_source_serves_it() {
+        use crate::core::providers::config_provider::{ConfigProvider, schema::ProviderConfig};
+        use crate::core::providers::hardened_http::redirect_tests::Server;
+        use crate::core::providers::provenance::BoundResult;
+        use crate::core::providers::provider_trait::ProviderParams;
+
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _policy = TestPolicyOverride::set(Some(policy("")));
+        let temp = tempfile::tempdir().unwrap();
+        let root = temp.path().canonicalize().unwrap();
+        std::fs::write(root.join("lib.rs"), "fn local_source() {}\n").unwrap();
+        // Project-local providers load only for a trusted workspace.
+        crate::core::workspace_trust::trust(&root).unwrap();
+        let configs = root.join(".lean-ctx/providers");
+        std::fs::create_dir_all(&configs).unwrap();
+        let server = Server::new(
+            200,
+            None,
+            r#"[{"id":"1","title":"Zirconwhale outage","body":"zirconwhale login fails"}]"#,
+        );
+        let config_text = format!(
+            "id='view-fixture'\nname='Fixture'\nbase_url='{}'\n[auth]\ntype='none'\n\
+             [resources.issues]\nmethod='GET'\npath='/items'\n\
+             [resources.issues.response.mapping]\nid='id'\ntitle='title'\nbody='body'\n",
+            server.url
+        );
+        std::fs::write(configs.join("fixture.toml"), &config_text).unwrap();
+        let config: ProviderConfig = toml::from_str(&config_text).unwrap();
+        let provider = ConfigProvider::from_config(config).unwrap();
+        let acquired =
+            BoundResult::execute(&provider, "issues", &ProviderParams::default()).unwrap();
+        crate::core::consolidation::apply_artifacts_to_stores(
+            &crate::core::consolidation::consolidate(&acquired.chunks(&acquired.result)),
+            &root.to_string_lossy(),
+            &crate::core::consolidation::PrunePrior::default(),
+        );
+
+        let served = view(&root);
+        assert!(
+            !served.search("zirconwhale", 10).is_empty(),
+            "served to a reader"
+        );
+        server.respond(403, "denied");
+        let refused = view(&root);
+        assert!(refused.search("zirconwhale", 10).is_empty());
+        assert!(
+            !refused
+                .doc_freqs
+                .keys()
+                .any(|term| term.contains("zirconwhale"))
+        );
+        assert!(
+            refused
+                .chunks
+                .iter()
+                .all(|chunk| !chunk.file_path.contains("://"))
+        );
+        assert!(!refused.search("local_source", 10).is_empty());
     }
 
     #[test]

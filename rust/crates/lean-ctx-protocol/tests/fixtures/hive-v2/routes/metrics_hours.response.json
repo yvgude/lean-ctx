@@ -1,0 +1,20 @@
+{
+  "schema": "leanctx.hive.engine-metrics-ack/v2",
+  "accepted": 2,
+  "unchanged": 0,
+  "refused": [
+    {
+      "hour": "2026-10-26T16:00:00Z",
+      "vault": "8b1e0d2c4f6a8e0b2d4f6a8c0e2b4d6f",
+      "reason": "policy_denied",
+      "level": "vault"
+    }
+  ],
+  "sharing": {
+    "state": "on",
+    "plan_default": "on",
+    "policy": null,
+    "confirmed_at": null,
+    "since": "2026-10-02T07:00:00Z"
+  }
+}

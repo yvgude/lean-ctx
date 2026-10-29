@@ -1,0 +1,13 @@
+{
+  "case": "veto_without_ref",
+  "base": "bus/control.veto.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/ref"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

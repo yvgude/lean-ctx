@@ -1224,6 +1224,8 @@ fn sample_provider(id: &str, base_url: &str) -> crate::core::config::ProviderEnt
         base_url: base_url.to_string(),
         api_key_env: Some("XAI_API_KEY".into()),
         aws_region: None,
+        account_ref: None,
+        region: None,
         enabled: Some(true),
         local: None,
     }
@@ -1451,4 +1453,38 @@ fn commandcode_omitted_note_mentions_cmd_login() {
         COMMANDCODE_OMITTED_NOTE.contains("cmd login"),
         "binary is cmd, not commandcode: {COMMANDCODE_OMITTED_NOTE}"
     );
+}
+
+#[test]
+fn proxy_liveness_ignores_a_foreign_process_on_the_port() {
+    use std::io::{Read, Write};
+    // A foreign HTTP server on the proxy port answers 200 "ok"; only the
+    // lean-ctx proxy's own /health marker may count as "proxy up".
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
+    let port = listener.local_addr().expect("addr").port();
+    let server = std::thread::spawn(move || {
+        let bodies = [
+            r#"{"status":"ok"}"#,
+            r#"{"pid":1,"service":"lean-ctx-proxy","status":"ok"}"#,
+        ];
+        for body in bodies {
+            let (mut stream, _) = listener.accept().expect("accept");
+            let mut req = [0u8; 512];
+            let _ = stream.read(&mut req);
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: {}\r\n\r\n{body}",
+                body.len()
+            );
+            let _ = stream.write_all(resp.as_bytes());
+        }
+    });
+    assert!(
+        !lean_ctx_proxy_responding(port),
+        "foreign 200 must not count"
+    );
+    assert!(
+        lean_ctx_proxy_responding(port),
+        "lean-ctx /health must count"
+    );
+    server.join().expect("server thread");
 }

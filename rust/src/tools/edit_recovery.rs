@@ -128,7 +128,13 @@ pub(crate) fn cross_file_hint(target: &Path, old_str: &str) -> String {
         if too_big {
             continue;
         }
-        if let Ok(content) = std::fs::read_to_string(path)
+        // The hint names files that contain the caller's needle, so it is a
+        // model-visible derivation of their content. Each candidate is read
+        // through the read path (G01): inside a request scope that is the
+        // admitted text, and a source that is withheld is never a hit — the
+        // hint cannot confirm what a withheld file contains. Nothing read
+        // here is written anywhere.
+        if let Ok(content) = crate::tools::ctx_read::read_file_lossy(&path.to_string_lossy())
             && content.contains(needle)
         {
             hits.push(path.to_path_buf());
@@ -261,6 +267,35 @@ mod tests {
             !hint.contains("a.rs"),
             "must not point back at target: {hint}"
         );
+    }
+
+    /// G01: the hint scanned sibling files with `fs::read_to_string` and named
+    /// every file containing the caller's line — also a file the request may
+    /// not read, which made the hint an oracle for its content.
+    #[test]
+    fn cross_file_hint_never_confirms_the_content_of_a_withheld_file() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let policy = crate::core::policy::load(
+            "name = \"edit-recovery-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )
+        .unwrap();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path();
+        repo(root);
+        let target = root.join("a.rs");
+        let needle = "pub fn the_distinctive_function() {}";
+        fs::write(&target, "fn unrelated_in_a() {}\n").unwrap();
+        fs::write(root.join("open.rs"), format!("{needle}\n")).unwrap();
+        fs::write(root.join("plan.rs"), format!("CONFIDENTIAL\n{needle}\n")).unwrap();
+
+        let hint =
+            crate::tools::admitted_sources::as_agent_acquisition(&root.to_string_lossy(), || {
+                cross_file_hint(&target, needle)
+            });
+        assert!(hint.contains("open.rs"), "got: {hint}");
+        assert!(!hint.contains("plan.rs"), "got: {hint}");
     }
 
     #[test]

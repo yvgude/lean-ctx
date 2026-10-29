@@ -13,6 +13,7 @@ use rusqlite::Connection;
 use serde::Serialize;
 
 use crate::core::graph_provider::GraphProvider;
+use crate::core::property_graph::GraphSource;
 
 pub mod graph;
 pub mod hardening;
@@ -83,8 +84,15 @@ pub fn detect_communities(conn: &Connection) -> CommunityResult {
 
 /// Detect communities on the PropertyGraph with ids kept stable across rebuilds
 /// (remapped to, and persisted alongside, the project's previous assignment).
-pub fn detect_communities_stable(conn: &Connection, project_root: &str) -> CommunityResult {
-    let graph = AdjGraph::from_property_graph(conn);
+///
+/// Pass the opened `CodeGraph` for a result that is served: the partition and
+/// every number in the result are then computed over the files served now
+/// (`AdjGraph::from_property_graph`). A bare connection reads the raw store.
+pub fn detect_communities_stable<S: GraphSource + ?Sized>(
+    source: &S,
+    project_root: &str,
+) -> CommunityResult {
+    let graph = AdjGraph::from_property_graph(source);
     detect_stable(&graph, project_root)
 }
 
@@ -99,7 +107,13 @@ fn detect_stable(graph: &AdjGraph, project_root: &str) -> CommunityResult {
     if graph.node_count() == 0 {
         return CommunityResult::empty();
     }
-    let previous = stable_ids::load_previous(project_root);
+    // The persisted assignment is itself derived from the sources of an
+    // earlier run. Only the entries of files in today's graph are used; it is
+    // rewritten below from today's graph, so a withdrawn file leaves it.
+    let previous = stable_ids::load_previous(project_root).map(|mut previous| {
+        previous.retain(|file, _| graph.node_to_idx.contains_key(file));
+        previous
+    });
     let (assignment, result) = analyze(graph, previous.as_ref());
     stable_ids::save_assignment(project_root, &graph.node_ids, &assignment);
     result

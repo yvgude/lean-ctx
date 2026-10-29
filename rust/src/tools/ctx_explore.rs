@@ -20,9 +20,8 @@
 //! ## Determinism (#498)
 //! The output is a pure function of (repo content, query, options). Only
 //! side-effect-free paths are used: the BM25 index and the **static** graph.
-//! It never writes session state and never records Hebbian co-access
-//! (`cooccurrence::record_access`) — those adaptive signals would make call N+1
-//! differ from call N and are deliberately excluded from the byte-stable block.
+//! It never writes session state — an adaptive signal would make call N+1
+//! differ from call N.
 
 use std::collections::{BTreeMap, BTreeSet, HashSet};
 use std::path::Path;

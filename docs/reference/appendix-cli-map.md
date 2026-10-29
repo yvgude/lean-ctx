@@ -10,8 +10,8 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 
 | Command | Purpose |
 |---------|---------|
-| `onboard` | Golden path: connect detected AI tools (asks which on a terminal); `--agents <list>`, `--dry-run` |
-| `setup` | Guided wizard (full control); flags: `--non-interactive`, `--yes`, `--fix`, `--json`, `--skip-rules`, `--no-auto-approve`, `--agents <list\|all\|none>`, `--dry-run` |
+| `onboard` | Zero-prompt golden path: connect all detected AI tools |
+| `setup` | Guided wizard (full control); flags: `--non-interactive`, `--yes`, `--fix`, `--json`, `--skip-rules`, `--no-auto-approve` |
 | `install` | Alias for `setup`; `install --repair` = non-interactive refresh |
 | `bootstrap` | Non-interactive setup + fix (CI/scripts); `--json` |
 | `init --global` | Install shell aliases/hook only |
@@ -33,7 +33,7 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 | `find <pattern> [path]` | Find files (compressed) |
 | `ls [path]` | Compressed directory map; `--depth`, `-a` |
 | `deps [path]` | Show project dependencies |
-| `gain` | Token-savings dashboard; `--live`, `--graph`, `--daily`, `--json`, `--wrapped`, `--svg`, `--share`, `--copy`, `--open`, `--publish`, `--leaderboard`, `--unpublish`, `--cost`, `--tasks`, `--agents`, `--heatmap` |
+| `gain` | Token-savings dashboard; `--live`, `--graph`, `--daily`, `--json`, `--wrapped`, `--svg`, `--share`, `--copy`, `--open`, `--cost`, `--tasks`, `--agents`, `--heatmap` |
 | `savings [--period day\|week\|month\|all] [--format table\|json\|markdown]` | Cost-intelligence report: token reduction, estimated versus actual cost, CPAO, and top savings sources; example: `lean-ctx savings --period month --format markdown` |
 | `value-report [--format table\|markdown\|json] [--last N]` | Outcome report for recent assessed tasks, including acceptance and CPAO; example: `lean-ctx value-report --format markdown --last 20` |
 | `value [--session <id>\|--all] [--json]` | What lean-ctx did in a session (tokens kept out of context, security events), recomputed from the signed savings ledger and audit trail (chain integrity checked; token counts are local, not provider-billed); exits 1 when a chain is broken |
@@ -44,7 +44,7 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 | `shadow [--latest\|--list\|--force]` | Inspect or generate local baseline-versus-treatment recommendations; example: `lean-ctx shadow --latest` |
 | `token-report` (`report-tokens`) | Token + memory report; `--json` |
 | `learning` | Adaptive-learning state: `status`, `export [file]`, `import <file\|->` — share learned thresholds + LITM calibration with your team (secret-free, idempotent merge) |
-| `introspect` | Cognition v2 activity: `cognition` (which science subsystems are wired/active, `--json`), `qubo` (experimental QUBO-vs-greedy selection benchmark) |
+| `introspect` | Cognition v2 activity: `cognition` (which science subsystems are wired/active, `--json`) |
 | `discover` | Find uncompressed commands in shell history; `--card` (shareable "before" SVG) |
 | `ghost` | Ghost-token report (hidden waste); `--json` |
 | `cheatsheet` (`cheat`) | Workflow cheat sheet |
@@ -56,7 +56,8 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 |---------|---------|
 | `session` | Tasks/findings/decisions + adoption stats: `task`, `finding`, `decision`, `save`, `load`, `status`, `reset` |
 | `sessions` (`session-store`) | Manage saved CCP snapshots: `list`, `show`, `delete`, `cleanup`, `doctor` |
-| `knowledge` | Project knowledge: `remember`, `recall`, `search`, `export`, `import`, `remove`, `consolidate [--all]`, `status`, `health`, `lifecycle` |
+| `knowledge` | Project knowledge: `remember`, `recall`, `search`, `export`, `export-agents-md [--write]` (conventions, procedures, decisions, gotchas, dead ends and experiences as a marked `AGENTS.md` section), `import`, `remove`, `consolidate [--all]`, `status`, `health`, `lifecycle` |
+| `import` | Facts from coding-session histories (`claude-code`, `codex`, `cursor`, `opencode`, `--all`) and from the project itself: `docs [<file\|dir>…]` (AGENTS.md, CLAUDE.md, .cursorrules, .cursor/rules, docs/) and `git [--limit N]` (reverts, fixes, decisions); `--dry-run` |
 | `overview [task]` | Project overview (task-contextualized) |
 | `compress` | Context-compression checkpoint; `--signatures` |
 | `control` | Context field manipulation: exclude/pin/priority |
@@ -84,21 +85,20 @@ Every CLI command lean-ctx exposes, grouped by purpose. Source of truth:
 | `proxy` | API proxy: `start`, `stop`, `status`, `enable`, `disable`, `cleanup` |
 | `daemon` | IPC daemon: `start`, `stop`, `status`, `enable`, `disable` |
 | `provider` | External provider OAuth (Jira): `auth`, `logout`, `list` |
-| `team` | Team server (feature-gated): `serve`, `token create`, `sync` |
+| `team` | Hosted Team service (account API): `status`, `presence [list\|heartbeat\|leave]`, `lease [list\|acquire\|renew\|release]`, `bus [post\|read]`, `graph [list\|read\|put]`, `knowledge [list\|add]`, owner seats `create`, `show`, `member [list\|revoke]`, `invite [list\|create\|revoke]`, `join` (invite code from `LEAN_CTX_TEAM_INVITE_CODE` or stdin), `claim` (token from `LEAN_CTX_TEAM_MEMBERSHIP_TOKEN` or stdin), `leave`, `delete`; `--organization <uuid>`, `--json`. Team members' text is admitted and released by the context gateway before it is shown; what you send is admitted for egress first |
 | `plugin` (`plugins`) | `list`, `enable`, `disable`, `info`, `init`, `hooks` |
 | `rules` | ContextOps governance: `sync`, `diff`, `lint`, `status`, `init` |
 | `pack` | Context Package Manager + PR pack (`create`, `install`, `export`, `import`, `pr`, …) |
 | `compact [path]` | Compress agent transcripts |
 | `learn` | Learned gotchas; `--apply` → AGENTS.md |
 | `gotchas` (`bugs`) | Bug memory: `list`, `clear`, `export`, `stats` |
-| `buddy` (`pet`) | Token Guardian companion |
 | `safety-levels` (`safety`) | Compression safety-level table |
 
 ## Lifecycle
 
 | Command | Purpose |
 |---------|---------|
-| `update` (`--self-update`, `upgrade`) | Verified self-update; `--check`, `--dry-run`, `--pin <version>`, `--unpin`, `--status`, `--rollback`, `--skip-rules`, `--schedule [off\|status\|notify\|<h>h]` |
+| `update` (`--self-update`, `upgrade`) | Verified self-update; `--check`, `--pin <version>`, `--unpin`, `--status`, `--rollback`, `--skip-rules`, `--schedule [off\|status\|notify\|<h>h]` |
 | `stop` | Stop ALL lean-ctx processes (LaunchAgent-safe) |
 | `restart` | Restart daemon (apply config.toml) |
 | `dev-install` | Build release + atomic install + restart (dev) |

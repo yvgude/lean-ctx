@@ -1,0 +1,29 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "rate_limited",
+          "message": "Too many verification attempts; try again later.",
+          "retry_after_s": 120
+        }
+      },
+      "status": 429
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/vaults/payments/forge/verify",
+  "request": {
+    "host": "gitlab.pounce.ch",
+    "method": "token",
+    "repo": "acme/payments"
+  },
+  "response": {
+    "body": {
+      "state": "unverified",
+      "token": "823199d9a26b179bc45b7cf9a89df43b"
+    },
+    "status": 200
+  },
+  "route": "W27"
+}

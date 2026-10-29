@@ -15,7 +15,7 @@ impl McpTool for CtxControlTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_control",
-            "Fine-tune context — exclude, include, pin, unpin, set_view, set_priority, mark_outdated, reset, list, history.\n\
+            "Fine-tune context — exclude, include, pin, unpin, evict, set_view, set_priority, mark_outdated, reset, list, history.\n\
             Overlay-based, reversible, scoped to call/session/project.\n\
             WORKFLOW: after ctx_compose, exclude low-relevance files.\n\
             ANTIPATTERN: not for initial context building — use ctx_compose/ctx_read first.",
@@ -24,9 +24,10 @@ impl McpTool for CtxControlTool {
                 "properties": {
                     "action": {
                         "type": "string",
-                        "description": "exclude|include|pin|unpin|set_view|set_priority|mark_outdated|reset|list|history"
+                        "description": "exclude|include|pin|unpin|evict|set_view|set_priority|mark_outdated|reset|list|history"
                     },
-                    "target": { "type": "string", "description": "@F1 handle (ctx_compile reference) or file path or item ID" },
+                    "target": { "type": "string", "description": "@F1 handle, file path or item ID" },
+                    "targets": { "type": "string", "description": "evict: comma-separated file paths" },
                     "value": { "type": "string", "description": "New content, view name, or priority" },
                     "scope": { "type": "string", "description": "call (this turn only), session (rest of this session), project (persists)" },
                     "reason": { "type": "string", "description": "Reason for the action" }
@@ -62,12 +63,12 @@ impl McpTool for CtxControlTool {
                     "[control unavailable — ledger busy, retry]".to_string(),
                 ));
             };
-            let r = crate::tools::ctx_control::handle(Some(args), &mut ledger, &mut overlays);
+            let r = control(args, &mut ledger, &mut overlays, &root);
             ledger.save();
             r
         } else {
             let mut ledger = crate::core::context_ledger::ContextLedger::load();
-            let r = crate::tools::ctx_control::handle(Some(args), &mut ledger, &mut overlays);
+            let r = control(args, &mut ledger, &mut overlays, &root);
             ledger.save();
             r
         };
@@ -75,4 +76,23 @@ impl McpTool for CtxControlTool {
 
         Ok(ToolOutput::simple(result))
     }
+}
+
+/// `evict` needs the project root to resolve partial paths; every other
+/// action is the shared overlay handler (CLI and dashboard use it too).
+fn control(
+    args: &Map<String, Value>,
+    ledger: &mut crate::core::context_ledger::ContextLedger,
+    overlays: &mut crate::core::context_overlay::OverlayStore,
+    root: &str,
+) -> String {
+    if args.get("action").and_then(Value::as_str) == Some("evict") {
+        let targets = args
+            .get("targets")
+            .or_else(|| args.get("target"))
+            .and_then(Value::as_str)
+            .unwrap_or_default();
+        return crate::tools::ctx_control::evict(targets, ledger, overlays, root);
+    }
+    crate::tools::ctx_control::handle(Some(args), ledger, overlays)
 }

@@ -19,7 +19,7 @@ pub use runtime::record_shell_outcome;
 
 use chrono::{DateTime, Utc};
 use detect::command_base;
-use model::{DECAY_ARCHIVE_THRESHOLD, MAX_GOTCHAS, MAX_PENDING, MAX_SESSION_LOGS, gotcha_id};
+use model::{DECAY_ARCHIVE_THRESHOLD, MAX_PENDING, MAX_SESSION_LOGS, gotcha_id};
 
 impl GotchaStore {
     // -- Detection ----------------------------------------------------------
@@ -155,13 +155,13 @@ impl GotchaStore {
             existing.merge_with(&new);
         } else {
             self.gotchas.push(new);
-            if self.gotchas.len() > MAX_GOTCHAS {
+            if self.gotchas.len() > self.capacity {
                 self.gotchas.sort_by(|a, b| {
                     b.confidence
                         .partial_cmp(&a.confidence)
                         .unwrap_or(std::cmp::Ordering::Equal)
                 });
-                self.gotchas.truncate(MAX_GOTCHAS);
+                self.gotchas.truncate(self.capacity);
             }
         }
     }
@@ -250,15 +250,18 @@ impl GotchaStore {
             if days_since < 1.0 {
                 continue;
             }
-            let base_rate = gotcha.source.decay_rate();
+            let base_rate = gotcha
+                .decay_rate_override
+                .unwrap_or_else(|| gotcha.source.decay_rate());
             let occurrence_factor = 1.0 / (1.0 + gotcha.occurrences as f32 * 0.1);
             let decay = base_rate * occurrence_factor * (days_since / 7.0);
             gotcha.confidence = (gotcha.confidence - decay).max(0.0);
         }
 
         let before = self.gotchas.len();
-        self.gotchas
-            .retain(|g| g.confidence >= DECAY_ARCHIVE_THRESHOLD);
+        self.gotchas.retain(|g| {
+            g.confidence >= DECAY_ARCHIVE_THRESHOLD && g.expires_at.is_none_or(|at| at > now)
+        });
         decayed += (before - self.gotchas.len()) as u64;
 
         self.stats.gotchas_decayed += decayed;
@@ -682,6 +685,68 @@ mod tests {
 
         store.apply_decay();
         assert!(store.gotchas.is_empty());
+    }
+
+    /// The contract's per-gotcha `expires_at` and `decay_rate_override` were
+    /// stored but never applied before 2026-10-16.
+    #[test]
+    fn decay_honours_expiry_and_rate_override() {
+        let gotcha = |trigger: &str| {
+            let mut g = Gotcha::new(
+                GotchaCategory::Build,
+                GotchaSeverity::Warning,
+                trigger,
+                "fix",
+                GotchaSource::AutoDetected {
+                    command: "test".into(),
+                    exit_code: 1,
+                },
+                "s1",
+            );
+            g.last_seen = Utc::now() - chrono::Duration::days(14);
+            g.confidence = 0.5;
+            g
+        };
+        let mut store = GotchaStore::new("testhash");
+        let mut expired = gotcha("expired");
+        expired.expires_at = Some(Utc::now() - chrono::Duration::minutes(1));
+        let mut frozen = gotcha("frozen");
+        frozen.decay_rate_override = Some(0.0);
+        store.gotchas.extend([expired, frozen, gotcha("default")]);
+
+        store.apply_decay();
+
+        let left: Vec<(&str, f32)> = store
+            .gotchas
+            .iter()
+            .map(|g| (g.trigger.as_str(), g.confidence))
+            .collect();
+        assert_eq!(left.len(), 2, "{left:?}");
+        assert_eq!(left[0], ("frozen", 0.5));
+        assert!(left[1].0 == "default" && left[1].1 < 0.5);
+    }
+
+    #[test]
+    fn store_keeps_at_most_its_capacity_dropping_lowest_confidence() {
+        let mut store = GotchaStore::new("testhash");
+        store.capacity = 2;
+        for (i, confidence) in [0.9_f32, 0.3, 0.6].into_iter().enumerate() {
+            let mut g = Gotcha::new(
+                GotchaCategory::Build,
+                GotchaSeverity::Warning,
+                &format!("error {i}"),
+                "fix",
+                GotchaSource::AutoDetected {
+                    command: "test".into(),
+                    exit_code: 1,
+                },
+                "s1",
+            );
+            g.confidence = confidence;
+            store.add_or_merge(g);
+        }
+        let kept: Vec<f32> = store.gotchas.iter().map(|g| g.confidence).collect();
+        assert_eq!(kept, vec![0.9, 0.6]);
     }
 
     #[test]

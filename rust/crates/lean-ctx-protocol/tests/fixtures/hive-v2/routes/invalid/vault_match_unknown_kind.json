@@ -1,0 +1,14 @@
+{
+  "base": "routes/vault_match.request.json",
+  "case": "vault_match_unknown_kind",
+  "expect": {
+    "layer": "schema"
+  },
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/candidates/2/kind",
+      "value": "path"
+    }
+  ]
+}

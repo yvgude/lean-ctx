@@ -136,6 +136,158 @@ pub(super) fn format_background_state(
     }
 }
 
+pub(super) fn format_background_snapshot(
+    id: &str,
+    is_cancel: bool,
+    snapshot: Option<crate::server::background_shell::JobSnapshot>,
+) -> (String, ShellOutcome) {
+    let Some(snapshot) = snapshot else {
+        return format_background_state(id, is_cancel, None);
+    };
+    let (is_cancelled, exit_code) = match &snapshot.state {
+        JobState::Running { .. } => {
+            return if is_cancel {
+                format_background_state(
+                    id,
+                    true,
+                    Some(JobState::Running {
+                        output: String::new(),
+                    }),
+                )
+            } else {
+                (
+                    format!("[background:{id} running]"),
+                    ShellOutcome::Background(BackgroundShellOutcome {
+                        state: BackgroundJobState::Running,
+                        exit_code: None,
+                        job_id: id.to_string(),
+                        archive_id: None,
+                        archive_truncated: None,
+                        captured_chars: None,
+                        archived_chars: None,
+                        summary: "running".to_string(),
+                        is_error: false,
+                        display: Some(BackgroundDisplay {
+                            header: format!("[background:{id} running]"),
+                            footer: None,
+                        }),
+                    }),
+                )
+            };
+        }
+        JobState::Completed { exit_code, .. } => (false, *exit_code),
+        JobState::Cancelled { .. } => (true, snapshot.actual_exit_code),
+    };
+    let expected = match &snapshot.state {
+        JobState::Completed { output, .. } | JobState::Cancelled { output } => output.as_str(),
+        JobState::Running { .. } => unreachable!(),
+    };
+    let retained = if snapshot.output_withheld {
+        let _ = crate::server::background_shell::replace_retained_output_if_generation(
+            id,
+            snapshot.generation,
+            expected,
+            crate::core::context_admission::stores::StoreAdmission::current().epoch(),
+            None,
+        );
+        None
+    } else {
+        reauthorize_retained_output(id, &snapshot, expected)
+    };
+    let withheld = retained.is_none();
+    let output = retained
+        .map(|admission| admission.rendered())
+        .unwrap_or_else(|| {
+            "[lean-ctx gateway: retained output withheld by storage policy]".to_string()
+        });
+    let state = if is_cancelled {
+        JobState::Cancelled { output }
+    } else {
+        JobState::Completed { output, exit_code }
+    };
+    let (text, mut outcome) = if is_cancelled {
+        format_cancelled_snapshot(id, is_cancel, state, exit_code)
+    } else {
+        format_background_state(id, is_cancel, Some(state))
+    };
+    if withheld && let ShellOutcome::Background(background) = &mut outcome {
+        background.summary = "output withheld by storage policy".to_string();
+    }
+    // Q13: a finished job's fixed notice is the first line of the header.
+    // The header is put in front of the reply after the text has been
+    // archived, filtered and shortened, so nothing of that reaches the line,
+    // and it is not in the text, so it is shown once.
+    if let Some(notice) = snapshot.notice
+        && let ShellOutcome::Background(background) = &mut outcome
+        && let Some(display) = &mut background.display
+    {
+        display.header =
+            crate::server::execute::with_notice(Some(notice), std::mem::take(&mut display.header));
+    }
+    (text, outcome)
+}
+
+pub(crate) fn reauthorize_retained_output(
+    id: &str,
+    snapshot: &crate::server::background_shell::JobSnapshot,
+    expected: &str,
+) -> Option<crate::core::context_admission::ToolOutputAdmission> {
+    let store = crate::core::context_admission::stores::StoreAdmission::current();
+    let retained = store
+        .admit_shell_output(expected, snapshot.completeness)
+        .filter(|_| store.is_current());
+    let delivery = retained
+        .as_ref()
+        .map(|text| crate::core::context_admission::admit_tool_output(text, snapshot.completeness));
+    let replacement = delivery
+        .as_ref()
+        .and_then(|admission| admission.text.as_deref())
+        .and_then(|text| store.admit_shell_output(text, snapshot.completeness))
+        .filter(|_| store.is_current());
+    let current = store.is_current();
+    let replacement = if current { replacement } else { None };
+    let replaced = crate::server::background_shell::replace_retained_output_if_generation(
+        id,
+        snapshot.generation,
+        expected,
+        store.epoch(),
+        replacement.as_deref(),
+    );
+    if replaced {
+        delivery.filter(|admission| !admission.withheld())
+    } else {
+        None
+    }
+}
+
+fn format_cancelled_snapshot(
+    id: &str,
+    is_cancel: bool,
+    state: JobState,
+    exit_code: i32,
+) -> (String, ShellOutcome) {
+    let output = match state {
+        JobState::Cancelled { output } => output,
+        _ => String::new(),
+    };
+    let (text, mut outcome) = format_background_state(
+        id,
+        is_cancel,
+        Some(JobState::Completed { output, exit_code }),
+    );
+    if let ShellOutcome::Background(background) = &mut outcome {
+        background.state = BackgroundJobState::Cancelled;
+        background.exit_code = Some(exit_code);
+        background.is_error = false;
+        background.summary = "cancelled".to_string();
+        background.display = Some(BackgroundDisplay {
+            header: format!("[background:{id} cancelled, exit {exit_code}]"),
+            footer: Some(format!("[cancelled: {id}, exit {exit_code}]")),
+        });
+    }
+    (text, outcome)
+}
+
 fn summarize_background_output(output: &str) -> String {
     let chars = output.chars().count();
     let lines = output.lines().count();

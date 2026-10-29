@@ -1,0 +1,14 @@
+{
+  "case": "unknown_frame",
+  "base": "bus/frame.ping.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/t",
+      "value": "bus.message"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

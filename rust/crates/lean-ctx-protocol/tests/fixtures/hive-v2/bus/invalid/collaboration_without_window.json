@@ -1,0 +1,13 @@
+{
+  "case": "collaboration_without_window",
+  "base": "bus/message.finding.collaboration.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/window"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

@@ -34,11 +34,26 @@ pub(crate) fn cmd_repomap(args: &[String]) {
     }
 
     let ranked = repomap::rank_symbols(&graph, &[], &[]);
+    // The map is the `ctx_repomap` tool result on stdout: it runs through the
+    // shared CLI tool run. Whether the text is recorded as a delivery follows
+    // from the tool's own declaration (an index reader declares no complete
+    // source set today, so nothing is recorded). `--json` wraps the ranking
+    // into a document, which is released without breaking it.
+    let run = repomap_run(&project_root);
     if json {
-        println!("{}", to_json(&ranked, max_files));
+        match run.deliver_json(|| to_json(&ranked, max_files)) {
+            Ok(document) => super::common::print_released(&document),
+            Err(reason) => super::common::exit_withheld(&reason),
+        }
     } else {
-        println!("{}", repomap::fit_to_budget(&ranked, max_tokens));
+        super::common::print_released(
+            &run.deliver_text(|| repomap::fit_to_budget(&ranked, max_tokens)),
+        );
     }
+}
+
+fn repomap_run(project_root: &str) -> super::common::CliToolRun<'_> {
+    super::common::CliToolRun::new("ctx_repomap", project_root, None)
 }
 
 /// Aggregates ranked symbols into per-file entries: file rank is the highest
@@ -193,5 +208,33 @@ mod tests {
             .collect();
         assert_eq!(flag_value(&a, "--limit").as_deref(), Some("5"));
         assert_eq!(flag_value(&a, "--max-tokens").as_deref(), Some("999"));
+    }
+
+    use crate::cli::common::carrier_tests_support::{
+        AWS_KEY, acquire_source, governed, lineage, project, source_file,
+    };
+
+    /// The map went to stdout without request scope or release point. It is
+    /// now one tool run: released, and — `ctx_repomap` declares no complete
+    /// source set — never registered as a delivery. `--json` stays a document.
+    #[test]
+    fn the_repo_map_is_released_and_registers_nothing() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        governed();
+        let (_project, root) = project();
+        let path = source_file(&root, "lib.rs", "pub fn mapped() {}\n");
+        let map = "lib.rs\n  fn mapped";
+        let printed = super::repomap_run(&root).deliver_text(|| {
+            acquire_source(&root, &path);
+            map.to_string()
+        });
+        assert_eq!(printed, map, "an admitted map keeps its bytes");
+        assert_eq!(lineage(&root, &printed), None);
+        let leaked = super::repomap_run(&root).deliver_text(|| format!("deploy.env {AWS_KEY}"));
+        assert!(!leaked.contains(AWS_KEY), "{leaked}");
+
+        let document = super::repomap_run(&root).deliver_json(|| super::to_json(&[], 10));
+        assert_eq!(document.as_deref(), Ok("[]"));
     }
 }

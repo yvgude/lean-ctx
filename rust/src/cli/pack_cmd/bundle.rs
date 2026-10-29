@@ -5,6 +5,7 @@
 
 use std::path::{Path, PathBuf};
 
+use crate::cli::common::{CliToolRun, Printable};
 use crate::core::context_bundle::{
     self, BundleOptions, DEFAULT_KNOWLEDGE_CATEGORIES, Unit, parse_limit,
 };
@@ -208,7 +209,7 @@ fn parse(args: &[String]) -> Result<Args, String> {
     }
     if !out.security_check && !force {
         return Err(
-            "--no-security-check can put secrets into the bundle; add --force to confirm".into(),
+            "--no-security-check skips the bundle's own secret scan; add --force to confirm".into(),
         );
     }
     if out.knowledge_auto && out.knowledge.is_none() {
@@ -277,22 +278,67 @@ pub(super) fn cmd_pack_bundle(raw: &[String]) {
     opts.knowledge_auto = args.knowledge_auto;
     opts.security_check = args.security_check;
 
-    let bundle = match context_bundle::build(&opts) {
+    // One CLI tool run (`CliToolRun`): the build reads its sources inside the
+    // request scope and the source capture, and the text that leaves — the
+    // XML, or the report for `--emit plain` — passes the release point. A
+    // bundle is a mixed output (tree, summary, task and knowledge text around
+    // the files), so it is never recorded as a delivery of its sources.
+    //
+    // The destination is decided BEFORE the release: the run prepares its
+    // receipt for the channel the text really leaves on (stdout, the file,
+    // the clipboard) and for exactly the bytes that channel gets. A second
+    // destination gets a run of its own (`deliver`).
+    let root_text = opts.root.to_string_lossy().into_owned();
+    let destination = Destination::first(&args);
+    let run = destination.run(&root_text);
+    let (built, released) = run.run_checked(|| match context_bundle::build(&opts) {
+        Ok(bundle) => {
+            let text = match args.emit {
+                Emit::Plain => bundle.report(),
+                Emit::Xml | Emit::Both => bundle.xml.clone(),
+            };
+            let printable = Printable {
+                text: destination.text(&text),
+                source_only: false,
+                failed: !bundle.fits(),
+            };
+            (Ok(bundle), Some(printable))
+        }
+        Err(err) => (Err(err), None),
+    });
+    let bundle = match built {
         Ok(bundle) => bundle,
         Err(err) => {
             eprintln!("lean-ctx pack: {err}");
             std::process::exit(1);
         }
     };
+    let (released, refused) = released.unwrap_or_default();
+    // A refused release is a notice, not a bundle or a report: it goes to
+    // stderr, and nothing is written to stdout, a file or the clipboard.
+    if refused {
+        crate::cli::common::exit_withheld(&released);
+    }
 
-    let report = bundle.report();
     match args.emit {
-        Emit::Plain => print!("{report}"),
+        Emit::Plain => crate::cli::common::print_released(&released),
         Emit::Xml | Emit::Both => {
+            // The report shown NEXT to the bundle (stderr) names files, gives
+            // reasons and quotes the task: it leaves through the release
+            // point too, as human-facing output prepared for stderr. Only
+            // what is written is released: the whole report for `both`, and
+            // otherwise just the confirmation lines `deliver` writes.
+            let report = bundle.report();
             if args.emit == Emit::Both {
-                eprint!("{report}");
+                eprint_human(&root_text, &report);
             }
-            deliver(&args, &bundle.xml, &report);
+            let headline = report.lines().next().unwrap_or_default();
+            let again = Again {
+                root: &root_text,
+                xml: &bundle.xml,
+                failed: !bundle.fits(),
+            };
+            deliver(&args, &opts.root, released, &again, headline);
         }
     }
     if args.stats {
@@ -312,29 +358,171 @@ pub(super) fn cmd_pack_bundle(raw: &[String]) {
     }
 }
 
-/// Writes the XML to the file, the clipboard, or stdout. Destinations other
-/// than stdout get a one-line confirmation on stderr.
-fn deliver(args: &Args, xml: &str, report: &str) {
-    let headline = report.lines().next().unwrap_or_default();
-    if let Some(output) = &args.output {
-        if let Err(err) = std::fs::write(output, xml) {
-            eprintln!("lean-ctx pack: cannot write {output}: {err}");
-            std::process::exit(1);
+fn cannot_write(output: &str, err: &str) -> ! {
+    eprintln!("lean-ctx pack: cannot write {output}: {err}");
+    std::process::exit(1)
+}
+
+/// Write one text of this command (the allocation report, a confirmation
+/// line) to stderr: released and redacted like every CLI tool text, as
+/// human-facing output (`CliToolRun::human_facing` — no lineage record),
+/// prepared for stderr and written right after by the one observed stderr
+/// writer, so its receipt binds exactly the bytes that leave (G08). `text`
+/// is taken without its final newline; the writer adds it. When the release
+/// point refuses the text, its content-free notice is written in its place.
+fn eprint_human(root: &str, text: &str) {
+    let run = CliToolRun::new("ctx_pack", root, None)
+        .human_facing()
+        .to_stderr();
+    let ((), released) = run.run(|| {
+        let printable = Printable {
+            text: text.strip_suffix('\n').unwrap_or(text).to_string(),
+            source_only: false,
+            failed: false,
+        };
+        ((), Some(printable))
+    });
+    crate::cli::common::eprint_released(&released.unwrap_or_default(), None);
+}
+
+/// Where a bundle text leaves. A run prepares its receipt for ONE of them.
+#[derive(Clone, Copy)]
+enum Destination {
+    Stdout,
+    File,
+    Clipboard,
+}
+
+impl Destination {
+    /// The destination the command writes first — the one the build's own
+    /// run is prepared for: `--emit plain` prints its report; otherwise the
+    /// file comes before the clipboard, and stdout is used when neither was
+    /// asked for. The order is the order `deliver` writes in.
+    fn first(args: &Args) -> Self {
+        if args.emit == Emit::Plain {
+            Self::Stdout
+        } else if args.output.is_some() {
+            Self::File
+        } else if args.copy {
+            Self::Clipboard
+        } else {
+            Self::Stdout
         }
-        eprintln!("{headline} → {output}");
+    }
+
+    /// A `ctx_pack` run prepared for this destination.
+    fn run(self, root: &str) -> CliToolRun<'_> {
+        let run = CliToolRun::new("ctx_pack", root, None);
+        match self {
+            Self::Stdout => run,
+            Self::File => run.to_file(),
+            Self::Clipboard => run.to_clipboard(),
+        }
+    }
+
+    /// `text` as this destination's run takes it. The stdout writer adds the
+    /// final newline itself, so stdout takes the text without it; a file and
+    /// the clipboard get exactly the released text, so they take it WITH its
+    /// one final newline — the document that was always written there.
+    fn text(self, text: &str) -> String {
+        let body = text.strip_suffix('\n').unwrap_or(text);
+        match self {
+            Self::Stdout => body.to_string(),
+            Self::File | Self::Clipboard => format!("{body}\n"),
+        }
+    }
+}
+
+/// What a further delivery of the same bundle needs: a run has one channel,
+/// so every destination after the first releases the bundle again in a run
+/// of its own, prepared for that destination.
+struct Again<'a> {
+    root: &'a str,
+    xml: &'a str,
+    failed: bool,
+}
+
+impl Again<'_> {
+    /// The bundle released for `destination`. Nothing is read again: the
+    /// text is the one the build produced. A refusal ends the command like
+    /// the refusal of the first release does.
+    fn released_for(&self, destination: Destination) -> String {
+        let run = destination.run(self.root);
+        let ((), released) = run.run_checked(|| {
+            let printable = Printable {
+                text: destination.text(self.xml),
+                source_only: false,
+                failed: self.failed,
+            };
+            ((), Some(printable))
+        });
+        let (released, refused) = released.unwrap_or_default();
+        if refused {
+            crate::cli::common::exit_withheld(&released);
+        }
+        released
+    }
+}
+
+/// Hands the RELEASED bundle to the file, the clipboard, or stdout.
+/// `released` is the text of the build's own run, prepared for the first
+/// destination written here (`Destination::first`); every further
+/// destination — the clipboard after a file, stdout after a failed copy —
+/// is prepared by a run of its own right before it is written (`again`), so
+/// each hand-over is observed on the channel it was prepared for (G08).
+/// Destinations other than stdout get a one-line confirmation on stderr,
+/// headed by `headline` (the first line of the allocation report); each
+/// confirmation line is released as the line that is written.
+///
+/// - file: only inside the project root — the export rule
+///   (`context_bundle::export::destination`); confirmed after the write
+///   succeeded;
+/// - clipboard: a human-facing local output of the released text. No rule of
+///   its own exists for clipboard writes; it gets what stdout would get.
+///   Confirmed after the hand-off succeeded; a failed copy confirms nothing;
+/// - stdout: the text of a stdout-prepared run, printed unchanged.
+fn deliver(args: &Args, root: &Path, released: String, again: &Again<'_>, headline: &str) {
+    let root_text = again.root;
+    let mut first = Some(released);
+    let mut text_for = |destination: Destination| {
+        first
+            .take()
+            .unwrap_or_else(|| again.released_for(destination))
+    };
+    if let Some(output) = &args.output {
+        let candidate = PathBuf::from(output);
+        let candidate = if candidate.is_absolute() {
+            candidate
+        } else {
+            std::env::current_dir().unwrap_or_default().join(candidate)
+        };
+        let path = match context_bundle::export::destination("ctx_pack", root, &candidate) {
+            Ok(path) => path,
+            Err(err) => cannot_write(output, &err),
+        };
+        let document = text_for(Destination::File);
+        if let Err(err) = std::fs::write(path, &document) {
+            cannot_write(output, &err.to_string());
+        }
+        crate::cli::common::confirm_written_to_file(document.as_bytes());
+        eprint_human(root_text, &format!("{headline} → {output}"));
     }
     if args.copy {
-        if crate::core::share::copy_to_clipboard(xml) {
-            eprintln!("{headline} → clipboard");
+        let document = text_for(Destination::Clipboard);
+        if crate::core::share::copy_to_clipboard(&document) {
+            crate::cli::common::confirm_copied_to_clipboard(&document);
+            eprint_human(root_text, &format!("{headline} → clipboard"));
         } else {
+            // The clipboard run's receipt stays unconfirmed: nothing left on
+            // that channel. The fallback is a stdout delivery of its own.
             eprintln!("lean-ctx pack: no clipboard tool found; printing instead");
             if args.output.is_none() {
-                print!("{xml}");
+                crate::cli::common::print_released(&text_for(Destination::Stdout));
             }
         }
     }
     if args.output.is_none() && !args.copy {
-        print!("{xml}");
+        crate::cli::common::print_released(&text_for(Destination::Stdout));
     }
 }
 

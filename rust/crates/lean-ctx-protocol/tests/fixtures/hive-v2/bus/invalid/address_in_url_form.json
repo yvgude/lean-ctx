@@ -1,0 +1,14 @@
+{
+  "case": "address_in_url_form",
+  "base": "bus/publish.question.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/to",
+      "value": "v/acme/payments"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

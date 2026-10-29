@@ -1,0 +1,11 @@
+{
+  "hive_origin": "https://hive.example.test",
+  "org_ids": [
+    "org_acme"
+  ],
+  "requested_at": "2026-10-21T08:00:00Z",
+  "root_ed25519_pub": "IBLLkMpg6OXY2vZuInLSIz4EhtVX6MZhQe2JIBd9frc=",
+  "schema": "leanctx.hive.root-cert-request/v1",
+  "signature": "1A1zlmTZ7NlOT7L6dsEyKeWHA8y5re+8nmhMVMleOT4i0XcwGy+lPQCcFzAJl/fi1B7Xzwpl2aKwfejDmNdzAA==",
+  "subject": "Example Gov Office"
+}

@@ -56,11 +56,12 @@ fn target_annotations(
 
     let owned: Vec<CallEdge> = edges.iter().map(|e| (*e).clone()).collect();
     let structural = resolve_edge_callee_targets(inputs, &owned);
-    let verdicts = match crate::core::property_graph::CodeGraph::open(project_root) {
-        Ok(store) => {
+    let store = crate::core::property_graph::CodeGraph::open(project_root).ok();
+    let verdicts = match &store {
+        Some(store) => {
             let mode = crate::core::config::SemanticMode::for_project(project_root);
             escalate_calls(
-                &store,
+                store,
                 project_root,
                 inputs,
                 &owned,
@@ -71,19 +72,34 @@ fn target_annotations(
             )
             .verdicts
         }
-        Err(_) => vec![None; owned.len()],
+        None => vec![None; owned.len()],
     };
+    // A target file is named only while the graph serves it now (G04); a
+    // call into a withdrawn file gets no annotation, like an unknown callee.
+    let served = |file: &str| store.as_ref().is_none_or(|store| store.serves_file(file));
     structural
         .iter()
         .zip(verdicts)
-        .map(|(target, verdict)| match (verdict, target) {
-            (Some(SemanticVerdict::Verified { file, .. }), _) => format!("  ⇒ {file} [verified]"),
-            (Some(SemanticVerdict::NotInProject), _) => "  ⇒ external [verified]".to_string(),
-            (None, StructuralTarget::Resolved { file, via }) => {
-                format!("  ⇒ {file} [{}]", EvidenceGrade::from_scope(*via).as_str())
+        .map(|(target, verdict)| {
+            let named = match (&verdict, target) {
+                (Some(SemanticVerdict::Verified { file, .. }), _)
+                | (None, StructuralTarget::Resolved { file, .. }) => Some(file.as_str()),
+                _ => None,
+            };
+            if named.is_some_and(|file| !served(file)) {
+                return String::new();
             }
-            (None, StructuralTarget::Ambiguous) => "  ⇒ ? [ambiguous]".to_string(),
-            (None, StructuralTarget::Unknown) => String::new(),
+            match (verdict, target) {
+                (Some(SemanticVerdict::Verified { file, .. }), _) => {
+                    format!("  ⇒ {file} [verified]")
+                }
+                (Some(SemanticVerdict::NotInProject), _) => "  ⇒ external [verified]".to_string(),
+                (None, StructuralTarget::Resolved { file, via }) => {
+                    format!("  ⇒ {file} [{}]", EvidenceGrade::from_scope(*via).as_str())
+                }
+                (None, StructuralTarget::Ambiguous) => "  ⇒ ? [ambiguous]".to_string(),
+                (None, StructuralTarget::Unknown) => String::new(),
+            }
         })
         .collect()
 }

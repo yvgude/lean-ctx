@@ -1,0 +1,49 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/workers?status=working",
+  "request": null,
+  "response": {
+    "body": {
+      "items": [
+        {
+          "budget": {
+            "tasks_cap": 20,
+            "tasks_used": 3,
+            "tokens_used": 182000,
+            "usage_source": "cli_summary",
+            "usd_cents_cap": 500,
+            "usd_cents_used": 41
+          },
+          "capabilities": [
+            "ctx_read",
+            "ctx_search",
+            "ctx_shell"
+          ],
+          "card_visibility": "workspace",
+          "engine": {
+            "id": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+            "label": "yves-mac"
+          },
+          "history": {
+            "done": 12,
+            "median_minutes": 18,
+            "reverted": 1
+          },
+          "host_app": "claude-code",
+          "id": "wkr_vk4oelpv5lzjmev44hun",
+          "model": "claude-opus-5-5",
+          "model_source": "self_reported",
+          "name": "yves-mac · Claude Code · backend",
+          "now": "Profiling the checkout handler",
+          "owner_handle": "yves",
+          "role": "backend",
+          "status": "working"
+        }
+      ],
+      "next_cursor": null
+    },
+    "status": 200
+  },
+  "route": "W33"
+}

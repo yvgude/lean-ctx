@@ -1,0 +1,17 @@
+{
+  "name": "consent-channels",
+  "values": [
+    {
+      "value": "os_presence"
+    },
+    {
+      "value": "tty_only"
+    },
+    {
+      "value": "cockpit"
+    },
+    {
+      "value": "web"
+    }
+  ]
+}

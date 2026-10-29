@@ -69,7 +69,9 @@ impl ParityReport {
 /// shared [`GraphProvider`] facade, against the same index served as
 /// graph_index. Pure in-memory — no disk, no rescan.
 pub(crate) fn compare(index: &ProjectIndex) -> anyhow::Result<ParityReport> {
-    let pg = CodeGraph::open_in_memory()?;
+    // Both sides are read through the facade: the in-memory copy gets the
+    // gate of the project the index belongs to, like the index side (G04).
+    let pg = CodeGraph::open_in_memory()?.gated_for(&index.project_root);
     populate_from_project_index(&pg, index)?;
     let pgp = GraphProvider::PropertyGraph(pg);
     let gip = GraphProvider::GraphIndex(index.clone());
@@ -228,7 +230,7 @@ mod tests {
         }
     }
 
-    fn index_with(edges: Vec<IndexEdge>) -> ProjectIndex {
+    fn index_with(edges: Vec<IndexEdge>) -> (ProjectIndex, tempfile::TempDir) {
         let mut idx = ProjectIndex::new("/t");
         for f in ["a.rs", "b.rs", "c.rs"] {
             idx.files.insert(f.to_string(), fe(f));
@@ -238,12 +240,15 @@ mod tests {
         idx.symbols.insert(k1, s1);
         idx.symbols.insert(k2, s2);
         idx.edges = edges;
-        idx
+        idx.on_disk(&[])
     }
 
     #[test]
     fn import_only_index_is_lossless() {
-        let idx = index_with(vec![
+        // The index side is gated by the process-wide protection state;
+        // pin Community mode (see property_graph::sync facade parity).
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (idx, _files) = index_with(vec![
             edge("a.rs", "b.rs", "import"),
             edge("a.rs", "c.rs", "import"),
         ]);
@@ -258,9 +263,12 @@ mod tests {
 
     #[test]
     fn reexport_and_sibling_are_lossless_with_enrichment() {
+        // The index side is gated by the process-wide protection state;
+        // pin Community mode (see property_graph::sync facade parity).
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         // GI's import-only dependencies() ignores reexport/sibling; PG exposes
         // them as structural edges. That is *more*, never less — still lossless.
-        let idx = index_with(vec![
+        let (idx, _files) = index_with(vec![
             edge("a.rs", "b.rs", "import"),
             edge("a.rs", "c.rs", "reexport"),
             edge("b.rs", "c.rs", "sibling"),
@@ -284,6 +292,9 @@ mod tests {
 
     #[test]
     fn trait_impl_symbol_name_with_colons_roundtrips() {
+        // The index side is gated by the process-wide protection state;
+        // pin Community mode (see property_graph::sync facade parity).
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         // Trait-impl symbol names contain `::` (e.g. `std::fmt::Display for T`).
         // The symbol key is `file::name`, so the PG lookup must split on the
         // FIRST `::`, not the last — `rsplitn` put the `::`-tail of the name on
@@ -292,6 +303,7 @@ mod tests {
         idx.files.insert("a.rs".to_string(), fe("a.rs"));
         let (k, s) = sym("a.rs", "std::fmt::Display for ProfileSource", 10, 20);
         idx.symbols.insert(k, s);
+        let (idx, _files) = idx.on_disk(&[]);
         let r = compare(&idx).unwrap();
         assert_eq!(
             r.symbols_matched, r.symbols_checked,

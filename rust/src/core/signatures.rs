@@ -655,6 +655,10 @@ fn extract_go_signatures(content: &str) -> Vec<Signature> {
     sigs
 }
 
+/// Normalise a parameter list to `name:Type` pairs. Types stay verbatim: the
+/// plain notation is read by agents without a legend, so `i32` vs `u64` or
+/// `&str` vs `String` must survive. The TDD renderer abbreviates on its own
+/// (`tdd_params` → `compact_type`).
 pub(crate) fn compact_params(params: &str) -> String {
     if params.trim().is_empty() {
         return String::new();
@@ -664,15 +668,7 @@ pub(crate) fn compact_params(params: &str) -> String {
         .map(|p| {
             let p = p.trim();
             if let Some((name, ty)) = p.split_once(':') {
-                let name = name.trim();
-                let ty = ty.trim();
-                let short = match ty {
-                    "string" | "String" | "&str" | "str" => ":s",
-                    "number" | "i32" | "i64" | "u32" | "u64" | "usize" | "f32" | "f64" => ":n",
-                    "boolean" | "bool" => ":b",
-                    _ => return format!("{name}:{ty}"),
-                };
-                format!("{name}{short}")
+                format!("{}:{}", name.trim(), ty.trim())
             } else {
                 p.to_string()
             }
@@ -875,6 +871,9 @@ mod tests {
         sig.kind = "const";
         sig.return_type = "u32".to_string();
         assert_eq!(sig.to_compact(), "const run:u32");
+        // Extracted parameter types stay exact (`a:i32`, not the lossy `a:n`).
+        let extracted = extract_signatures("fn f0(a: i32, s: &str) -> i32 {\n}\n", "rs");
+        assert_eq!(extracted[0].to_compact(), "fn f0(a:i32, s:&str) → i32");
     }
 
     #[test]

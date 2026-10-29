@@ -16,7 +16,16 @@ pub(super) struct PreparedRead {
 }
 
 impl PreparedRead {
-    pub(super) fn publish(self) -> CommandOutput {
+    /// Publish the prepared read. `deliver` finishes the shared CLI tool run
+    /// the acquisition started under (`CliToolRun::finish`: release point,
+    /// lineage record of the returned text); what it returns is printed, and
+    /// nothing else is. For an admitted read that text is the prepared
+    /// output, byte for byte. The output — rendering plus the code-security
+    /// note — is derived from the one source only.
+    pub(super) fn publish(
+        self,
+        deliver: impl FnOnce(crate::cli::common::Printable) -> String,
+    ) -> CommandOutput {
         if self.authority.verify().is_err() {
             eprintln!("Context output withheld because its authority changed.");
             return CommandOutput::local(1, None);
@@ -24,7 +33,8 @@ impl PreparedRead {
         if let Some(warning) = self.warning {
             eprintln!("{warning}");
         }
-        println!("{}", self.output);
+        let released = deliver(crate::cli::common::Printable::tool_text(self.output));
+        crate::cli::common::print_released(&released);
         CommandOutput::protected(0, Some(self.recording), self.authority)
     }
 }

@@ -3,83 +3,20 @@ use subtle::ConstantTimeEq;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpListener;
 
-const DEFAULT_PORT: u16 = 3333;
+pub(crate) const DEFAULT_PORT: u16 = 3333;
 const DEFAULT_HOST: &str = "127.0.0.1";
-const COCKPIT_INDEX_HTML: &str = include_str!("static/index.html");
-const COCKPIT_STYLE_CSS: &str = include_str!("static/style.css");
-const COCKPIT_LIB_API_JS: &str = include_str!("static/lib/api.js");
-const COCKPIT_LIB_FORMAT_JS: &str = include_str!("static/lib/format.js");
-const COCKPIT_LIB_ROUTER_JS: &str = include_str!("static/lib/router.js");
-const COCKPIT_LIB_CHARTS_JS: &str = include_str!("static/lib/charts.js");
-const COCKPIT_LIB_SHARED_JS: &str = include_str!("static/lib/shared.js");
-const COCKPIT_LIB_DOCTOR_JS: &str = include_str!("static/lib/doctor.js");
-const COCKPIT_COMPONENT_NAV_JS: &str = include_str!("static/components/cockpit-nav.js");
-const COCKPIT_COMPONENT_CONTEXT_JS: &str = include_str!("static/components/cockpit-context.js");
-const COCKPIT_COMPONENT_OVERVIEW_JS: &str = include_str!("static/components/cockpit-overview.js");
-const COCKPIT_COMPONENT_LIVE_JS: &str = include_str!("static/components/cockpit-live.js");
-const COCKPIT_COMPONENT_VALUE_GATE_JS: &str =
-    include_str!("static/components/cockpit-value-gate.js");
-const COCKPIT_COMPONENT_KNOWLEDGE_JS: &str = include_str!("static/components/cockpit-knowledge.js");
-const COCKPIT_COMPONENT_AGENTS_JS: &str = include_str!("static/components/cockpit-agents.js");
-const COCKPIT_COMPONENT_MEMORY_JS: &str = include_str!("static/components/cockpit-memory.js");
-const COCKPIT_COMPONENT_SEARCH_JS: &str = include_str!("static/components/cockpit-search.js");
-const COCKPIT_COMPONENT_COMPRESSION_JS: &str =
-    include_str!("static/components/cockpit-compression.js");
-const COCKPIT_COMPONENT_TOUR_JS: &str = include_str!("static/components/cockpit-tour.js");
-const COCKPIT_COMPONENT_PARTNER_PROMO_JS: &str =
-    include_str!("static/components/cockpit-partner-promo.js");
-const COCKPIT_COMPONENT_GRAPH_JS: &str = include_str!("static/components/cockpit-graph.js");
-const COCKPIT_COMPONENT_ARCHITECTURE_JS: &str =
-    include_str!("static/components/cockpit-architecture.js");
-const COCKPIT_COMPONENT_EXPLORER_JS: &str = include_str!("static/components/cockpit-explorer.js");
-const COCKPIT_COMPONENT_HEALTH_JS: &str = include_str!("static/components/cockpit-health.js");
-const COCKPIT_COMPONENT_PROVENANCE_JS: &str =
-    include_str!("static/components/cockpit-provenance.js");
-const COCKPIT_COMPONENT_REMAINING_JS: &str = include_str!("static/components/cockpit-remaining.js");
-const COCKPIT_COMPONENT_COMMANDER_JS: &str = include_str!("static/components/cockpit-commander.js");
-const COCKPIT_COMPONENT_PALETTE_JS: &str = include_str!("static/components/cockpit-palette.js");
-const COCKPIT_COMPONENT_ROI_JS: &str = include_str!("static/components/cockpit-roi.js");
-const COCKPIT_COMPONENT_REPLAY_JS: &str = include_str!("static/components/cockpit-replay.js");
-const COCKPIT_COMPONENT_LEADERBOARD_JS: &str =
-    include_str!("static/components/cockpit-leaderboard.js");
-const COCKPIT_COMPONENT_AREA_TABS_JS: &str = include_str!("static/components/cockpit-area-tabs.js");
-const COCKPIT_COMPONENT_PROTECTION_JS: &str =
-    include_str!("static/components/cockpit-protection.js");
-const COCKPIT_COMPONENT_FEEDBACK_JS: &str = include_str!("static/components/cockpit-feedback.js");
-const COCKPIT_COMPONENT_SETTINGS_JS: &str = include_str!("static/components/cockpit-settings.js");
-const COCKPIT_COMPONENT_TELEMETRY_JS: &str = include_str!("static/components/cockpit-telemetry.js");
-const COCKPIT_COMPONENT_ADOPTION_JS: &str = include_str!("static/components/cockpit-adoption.js");
-const COCKPIT_COMPONENT_SOLUTION_JS: &str = include_str!("static/components/cockpit-solution.js");
 
-// Vendored third-party libraries — embedded so the dashboard works fully offline
-// (no external CDN). Served as text via the standard route pipeline.
-const COCKPIT_VENDOR_CHART_JS: &str = include_str!("static/vendor/chart.umd.min.js");
-const COCKPIT_VENDOR_D3_JS: &str = include_str!("static/vendor/d3.min.js");
-const COCKPIT_FONTS_CSS: &str = include_str!("static/fonts/fonts.css");
-const COCKPIT_FAVICON_SVG: &str = include_str!("static/favicon.svg");
-
-// Self-hosted variable fonts (binary woff2). Served via a dedicated binary
-// branch in `handle_request` so the bytes are never corrupted by the
-// String-based route pipeline.
-const FONT_INTER_WOFF2: &[u8] = include_bytes!("static/fonts/inter-variable.woff2");
-const FONT_JETBRAINS_WOFF2: &[u8] = include_bytes!("static/fonts/jetbrains-mono-variable.woff2");
-const FONT_SPACE_GROTESK_WOFF2: &[u8] = include_bytes!("static/fonts/space-grotesk-variable.woff2");
-
-/// Maps a request path to an embedded binary font asset.
-fn match_font_asset(path: &str) -> Option<&'static [u8]> {
-    match path {
-        "/static/fonts/inter-variable.woff2" => Some(FONT_INTER_WOFF2),
-        "/static/fonts/jetbrains-mono-variable.woff2" => Some(FONT_JETBRAINS_WOFF2),
-        "/static/fonts/space-grotesk-variable.woff2" => Some(FONT_SPACE_GROTESK_WOFF2),
-        _ => None,
-    }
-}
-
-pub mod api;
 pub mod base_path;
+pub(crate) mod cockpit;
+pub(crate) mod display_snapshots;
+pub(crate) mod launch;
+pub(crate) mod project_binding;
 pub mod routes;
 pub(crate) mod vscode_open;
 
+/// Start the dashboard server — the single local entry point that hosts the
+/// Cockpit — or open the one already running. `view` is the Cockpit view to
+/// open (a hash route such as `savings`); `None` opens its start page.
 pub async fn start(
     port: Option<u16>,
     host: Option<String>,
@@ -87,6 +24,7 @@ pub async fn start(
     auth_token: Option<String>,
     open_mode: Option<String>,
     auth_enabled: Option<bool>,
+    view: Option<String>,
 ) {
     // Live model prices (#1179): the measured-spend card prices with the
     // cached provider list — loaded from disk, kept fresh in the background.
@@ -94,12 +32,8 @@ pub async fn start(
 
     // How to reveal the URL once the server is up: --open= flag > env > browser.
     let open = resolve_open_mode(open_mode.as_deref());
-    let port = port.unwrap_or_else(|| {
-        std::env::var("LEAN_CTX_PORT")
-            .ok()
-            .and_then(|p| p.parse().ok())
-            .unwrap_or(DEFAULT_PORT)
-    });
+    let requested_port = port.or_else(requested_port_from_env);
+    let mut port = requested_port.unwrap_or(DEFAULT_PORT);
 
     let host = host.unwrap_or_else(|| {
         std::env::var("LEAN_CTX_HOST")
@@ -116,7 +50,6 @@ pub async fn start(
             .unwrap_or_default(),
     );
 
-    let addr = format!("{host}:{port}");
     let is_local = host == "127.0.0.1" || host == "localhost" || host == "::1";
 
     // Whether the dashboard requires a Bearer token. Precedence:
@@ -127,38 +60,91 @@ pub async fn start(
     // `no_auth_request_ok`.
     let auth_required = resolve_auth_enabled(auth_enabled);
 
-    // Host values accepted in no-auth mode (anti-DNS-rebinding allowlist). Built
-    // once and shared with every connection.
-    let allowed_hosts = Arc::new(build_allowed_hosts(&host, port));
-
     // Resolve any *requested* fixed token (flag > LEAN_CTX_HTTP_TOKEN) up-front;
     // `None` means "generate a random one". Done before the already-running check
     // so we can warn when the requested token won't match a live instance (#377).
     let (requested_token, token_src) = resolve_requested_token(auth_token.as_deref());
 
-    // Avoid accidental multiple dashboard instances (common source of "it hangs").
-    // Only safe to auto-detect for local dashboards without auth.
-    if is_local && dashboard_responding(&host, port) {
-        println!("\n  lean-ctx dashboard already running → http://{host}:{port}{base_path}");
-        if let Some(req) = requested_token.as_deref()
-            && load_saved_token().as_deref() != Some(req)
-        {
-            eprintln!(
-                "  \x1b[33m⚠\x1b[0m The running instance uses a different token — your {token_src} \
-                     will be rejected. Stop it (Ctrl+C) and restart to apply the new token."
-            );
+    // Avoid accidental multiple dashboard instances (common source of "it
+    // hangs"): reuse this data dir's healthy instance, replace its hung or
+    // outdated background one, and move past a port someone else holds.
+    if is_local {
+        match launch::plan_now(requested_port) {
+            (
+                launch::Plan::Reuse {
+                    port,
+                    other_version,
+                },
+                record,
+            ) => {
+                let base = record
+                    .filter(|r| r.port == port)
+                    .map_or_else(|| base_path.to_string(), |r| r.base_path);
+                println!("\n  LeanCTX Cockpit already running → http://{host}:{port}{base}");
+                if let Some(version) = other_version {
+                    eprintln!(
+                        "  \x1b[33m⚠\x1b[0m The running server is version {version} (this is {}). \
+                         Restart it to update: stop it, then run lean-ctx cockpit again.",
+                        env!("CARGO_PKG_VERSION")
+                    );
+                }
+                if let Some(req) = requested_token.as_deref()
+                    && load_saved_token().as_deref() != Some(req)
+                {
+                    eprintln!(
+                        "  \x1b[33m⚠\x1b[0m The running instance uses a different token — your {token_src} \
+                         will be rejected. Stop it (Ctrl+C) and restart to apply the new token."
+                    );
+                }
+                println!(
+                    "  Tip: use Ctrl+C in its terminal (or lean-ctx cockpit stop) to stop it.\n"
+                );
+                open_dashboard_url(
+                    &launch_url(port, &base, load_saved_token().as_deref(), view.as_deref()),
+                    open,
+                );
+                return;
+            }
+            (launch::Plan::Replace { port: taken, .. }, Some(record)) => {
+                println!(
+                    "  Restarting this data dir's background Cockpit server (PID {}).",
+                    record.pid
+                );
+                if !launch::stop_instance(&record) {
+                    eprintln!(
+                        "  Could not stop the previous Cockpit server (PID {}); stop it, then retry.",
+                        record.pid
+                    );
+                    std::process::exit(1);
+                }
+                port = taken;
+            }
+            (launch::Plan::Replace { port: taken, .. }, None) => port = taken,
+            (
+                launch::Plan::Start {
+                    port: free,
+                    skipped,
+                },
+                _,
+            ) => {
+                if let Some(skipped) = skipped {
+                    println!(
+                        "  Port {skipped} is taken (another program or LeanCTX data dir) — using {free}."
+                    );
+                }
+                port = free;
+            }
+            (launch::Plan::PortTaken { port, by }, _) => {
+                eprintln!("{}", launch::port_taken_message(port, &by));
+                std::process::exit(1);
+            }
         }
-        println!("  Tip: use Ctrl+C in the existing terminal to stop it.\n");
-        if let Some(t) = load_saved_token() {
-            open_dashboard_url(
-                &format!("http://localhost:{port}{base_path}/?token={t}"),
-                open,
-            );
-        } else {
-            open_dashboard_url(&format!("http://localhost:{port}{base_path}/"), open);
-        }
-        return;
     }
+    let addr = format!("{host}:{port}");
+
+    // Host values accepted in no-auth mode (anti-DNS-rebinding allowlist). Built
+    // once and shared with every connection.
+    let allowed_hosts = Arc::new(build_allowed_hosts(&host, port));
 
     // Auth defaults on (even on loopback) to prevent cross-origin reads of /api/*
     // from a malicious website (CORS is not a reliable boundary for localhost
@@ -191,10 +177,15 @@ pub async fn start(
     let listener = match TcpListener::bind(&addr).await {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("Failed to bind to {addr}: {e}");
+            eprintln!(
+                "Failed to bind to {addr}: {e} — choose another port: lean-ctx cockpit --port <N>"
+            );
             std::process::exit(1);
         }
     };
+    // Who serves this data dir's Cockpit now (no secret in it).
+    let record = launch::LaunchRecord::of_this_process(&host, port, &base_path);
+    launch::write_record(&record);
 
     if let Some(t) = token.as_ref() {
         save_token(t);
@@ -248,30 +239,34 @@ pub async fn start(
     );
 
     if host == "0.0.0.0" {
-        println!("\n  lean-ctx dashboard → http://0.0.0.0:{port} (all interfaces)");
+        println!("\n  LeanCTX Cockpit → http://0.0.0.0:{port} (all interfaces)");
         println!("  Local access:  http://localhost:{port}");
     } else {
-        println!("\n  lean-ctx dashboard → http://{host}:{port}");
+        println!("\n  LeanCTX Cockpit → http://{host}:{port}");
     }
     println!("  Stats file: {stats_path}");
     println!("  Press Ctrl+C to stop");
     println!(
-        "  \x1b[2mLocal dashboard: context observations and evidence remain on this machine.\x1b[0m\n"
+        "  \x1b[2mLocal Cockpit: context observations and evidence remain on this machine.\x1b[0m\n"
     );
 
+    // The slow reads are computed once now, so the first visit is instant.
+    warm_display_snapshots(token.clone());
+
     if is_local {
-        if let Some(t) = token.as_ref() {
-            open_dashboard_url(
-                &format!("http://localhost:{port}{base_path}/?token={t}"),
-                open,
-            );
-        } else {
-            open_dashboard_url(&format!("http://localhost:{port}{base_path}/"), open);
-        }
+        open_dashboard_url(
+            &launch_url(
+                port,
+                &base_path,
+                token.as_deref().map(String::as_str),
+                view.as_deref(),
+            ),
+            open,
+        );
     }
     if crate::shell::is_container() && is_local {
         println!("  Tip (Docker): bind 0.0.0.0 + publish port:");
-        println!("    lean-ctx dashboard --host=0.0.0.0 --port={port}");
+        println!("    lean-ctx cockpit --host=0.0.0.0 --port={port}");
         println!("    docker run ... -p {port}:{port} ...");
         println!();
     }
@@ -282,14 +277,101 @@ pub async fn start(
         );
     }
 
+    // The Cockpit is started on first use for this dashboard's port, token
+    // and project, and stopped with the dashboard.
+    let project_root = routes::helpers::dashboard_project_binding()
+        .0
+        .map(std::path::PathBuf::from)
+        .unwrap_or_default();
+    let cockpit = cockpit::runtime_resolver(port, token.as_deref().cloned(), project_root);
     loop {
-        if let Ok((stream, _)) = listener.accept().await {
-            let token_ref = token.clone();
-            let base_ref = base_path.clone();
-            let allowed_ref = allowed_hosts.clone();
-            tokio::spawn(handle_request(stream, token_ref, base_ref, allowed_ref));
+        tokio::select! {
+            accepted = listener.accept() => {
+                if let Ok((stream, _)) = accepted {
+                    let token_ref = token.clone();
+                    let base_ref = base_path.clone();
+                    let allowed_ref = allowed_hosts.clone();
+                    tokio::spawn(handle_request_with(
+                        stream,
+                        token_ref,
+                        base_ref,
+                        allowed_ref,
+                        cockpit.clone(),
+                    ));
+                }
+            }
+            _ = tokio::signal::ctrl_c() => {
+                let _ = tokio::task::spawn_blocking(cockpit::retire).await;
+                launch::remove_record_of(record.pid);
+                std::process::exit(130);
+            }
+            () = terminate_requested() => {
+                let _ = tokio::task::spawn_blocking(cockpit::retire).await;
+                launch::remove_record_of(record.pid);
+                std::process::exit(0);
+            }
         }
     }
+}
+
+/// `--port`/`LEAN_CTX_PORT` when given: a port the user chose, which a start
+/// never swaps silently for another one.
+fn requested_port_from_env() -> Option<u16> {
+    std::env::var("LEAN_CTX_PORT")
+        .ok()
+        .and_then(|p| p.trim().parse().ok())
+}
+
+/// Resolves when the process is asked to terminate (`lean-ctx cockpit stop`
+/// sends SIGTERM to the recorded PID). Never resolves where there is no
+/// such signal.
+async fn terminate_requested() {
+    #[cfg(unix)]
+    {
+        use tokio::signal::unix::{SignalKind, signal};
+        if let Ok(mut term) = signal(SignalKind::terminate()) {
+            term.recv().await;
+            return;
+        }
+    }
+    std::future::pending::<()>().await;
+}
+
+/// The browser URL that opens the Cockpit: the token travels in the query
+/// (the Cockpit stores it and removes it from the address bar), the view as
+/// the hash route the Cockpit navigates to.
+pub(crate) fn launch_url(
+    port: u16,
+    base_path: &str,
+    token: Option<&str>,
+    view: Option<&str>,
+) -> String {
+    let mut url = format!("http://localhost:{port}{base_path}/");
+    if let Some(token) = token.filter(|t| !t.is_empty()) {
+        url.push_str("?token=");
+        url.push_str(token);
+    }
+    if let Some(view) = view.filter(|v| !v.is_empty()) {
+        url.push('#');
+        url.push_str(view);
+    }
+    url
+}
+
+/// Compute the persisted display snapshots of the dashboard's own project
+/// in the background at server start.
+fn warm_display_snapshots(token: Option<Arc<String>>) {
+    std::thread::spawn(move || {
+        let partition = project_binding::partition_of(None);
+        let store = display_snapshots::DisplaySnapshots::global();
+        for route in display_snapshots::DisplaySnapshots::warmed_routes() {
+            let token = token.clone();
+            let compute: display_snapshots::Compute = Arc::new(move || {
+                routes::route_response(route, "", None, token.as_ref(), true, "GET", "")
+            });
+            store.warm(route, &partition, compute);
+        }
+    });
 }
 
 /// Name of the env var that pins the dashboard Bearer token (#377).
@@ -508,7 +590,7 @@ fn save_token(token: &str) {
     }
 }
 
-fn load_saved_token() -> Option<String> {
+pub(crate) fn load_saved_token() -> Option<String> {
     let dir = crate::core::paths::state_dir().ok()?;
     let path = dir.join("dashboard.token");
     std::fs::read_to_string(path)
@@ -549,7 +631,7 @@ fn hex_lower(bytes: &[u8]) -> String {
 
 /// How `lean-ctx dashboard` reveals the URL after the server is up (#424).
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
-enum DashboardOpen {
+pub(crate) enum DashboardOpen {
     /// Launch the system default browser (historical default).
     Browser,
     /// Don't auto-launch anything — just print the URL. For users who run the
@@ -563,7 +645,7 @@ enum DashboardOpen {
 
 /// Resolve the open mode from (in precedence order) the `--open=` flag, the
 /// `LEAN_CTX_DASHBOARD_OPEN` env var, else the `browser` default.
-fn resolve_open_mode(flag: Option<&str>) -> DashboardOpen {
+pub(crate) fn resolve_open_mode(flag: Option<&str>) -> DashboardOpen {
     let raw = flag
         .map(str::to_string)
         .or_else(|| std::env::var("LEAN_CTX_DASHBOARD_OPEN").ok())
@@ -576,7 +658,7 @@ fn resolve_open_mode(flag: Option<&str>) -> DashboardOpen {
 }
 
 /// Reveal `url` to the user according to `mode`.
-fn open_dashboard_url(url: &str, mode: DashboardOpen) {
+pub(crate) fn open_dashboard_url(url: &str, mode: DashboardOpen) {
     match mode {
         DashboardOpen::Browser => open_browser(url),
         DashboardOpen::None => {}
@@ -586,7 +668,7 @@ fn open_dashboard_url(url: &str, mode: DashboardOpen) {
             // dashboard as a real editor tab — no URL copy/paste. Keep the
             // Simple Browser path as the no-extension fallback.
             println!(
-                "  \x1b[2mNative tab: run ⇧⌘P → \"lean-ctx: Open Web Dashboard\" (needs the lean-ctx VS Code extension)\x1b[0m"
+                "  \x1b[2mNative tab: run ⇧⌘P → \"lean-ctx: Open Cockpit\" (needs the lean-ctx VS Code extension)\x1b[0m"
             );
             println!(
                 "  \x1b[2mNo extension? ⇧⌘P → \"Simple Browser: Show\" → paste the URL above\x1b[0m"
@@ -625,48 +707,13 @@ fn open_browser(url: &str) {
 /// a false conflict (#644). The body check is what tells our dashboard apart from
 /// an unrelated service that merely answers 200 on the same port.
 pub(crate) fn dashboard_responding(host: &str, port: u16) -> bool {
-    use std::io::{Read, Write};
-    use std::net::TcpStream;
-    use std::time::Duration;
-
-    let addr = format!("{host}:{port}");
-    let Ok(mut s) = TcpStream::connect_timeout(
-        &addr
-            .parse()
-            .unwrap_or_else(|_| std::net::SocketAddr::from(([127, 0, 0, 1], port))),
-        Duration::from_millis(150),
-    ) else {
-        return false;
-    };
-    let _ = s.set_read_timeout(Some(Duration::from_millis(150)));
-    let _ = s.set_write_timeout(Some(Duration::from_millis(150)));
-
-    let auth_header = load_saved_token()
-        .map(|t| format!("Authorization: Bearer {t}\r\n"))
-        .unwrap_or_default();
-    let req = format!(
-        "GET /api/version HTTP/1.1\r\nHost: localhost\r\n{auth_header}Connection: close\r\n\r\n"
-    );
-    if s.write_all(req.as_bytes()).is_err() {
-        return false;
-    }
-
-    // Read until the peer closes (Connection: close) so the JSON body — not just
-    // the status line — is captured, bounded so a rogue peer can't stream forever.
-    // Field markers mirror `version_check::version_info_json`.
-    let mut resp = Vec::new();
-    let mut buf = [0u8; 1024];
-    while resp.len() < 8 * 1024 {
-        match s.read(&mut buf) {
-            Ok(0) | Err(_) => break,
-            Ok(n) => resp.extend_from_slice(&buf[..n]),
-        }
-    }
-    let resp = String::from_utf8_lossy(&resp);
-    (resp.starts_with("HTTP/1.1 200") || resp.starts_with("HTTP/1.0 200"))
-        && resp.contains(r#""current":"#)
-        && resp.contains(r#""latest":"#)
-        && resp.contains(r#""update_available":"#)
+    // Field markers mirror `version_check::version_info_json`; see
+    // `launch::classify_response`. `localhost` and IPv6 hosts now probe the
+    // address they name instead of falling back to 127.0.0.1.
+    matches!(
+        launch::probe(host, port, load_saved_token().as_deref()),
+        launch::Health::Healthy { .. }
+    )
 }
 
 const MAX_HTTP_MESSAGE: usize = 2 * 1024 * 1024;
@@ -779,11 +826,44 @@ async fn read_http_message(stream: &mut tokio::net::TcpStream) -> Option<Vec<u8>
     }
 }
 
+#[cfg(test)]
 async fn handle_request(
+    stream: tokio::net::TcpStream,
+    token: Option<Arc<String>>,
+    base_path: Arc<String>,
+    allowed_hosts: Arc<Vec<String>>,
+) {
+    handle_request_with(
+        stream,
+        token,
+        base_path,
+        allowed_hosts,
+        Arc::new(|| Err(cockpit::CockpitUnavailable::NotInstalled)),
+    )
+    .await;
+}
+
+/// Write a complete response with a JSON error body.
+async fn write_json_error(stream: &mut tokio::net::TcpStream, status: &str, body: &str) {
+    let response = format!(
+        "HTTP/1.1 {status}\r\n\
+         Content-Type: application/json\r\n\
+         Content-Length: {}\r\n\
+         Cache-Control: no-store\r\n\
+         Connection: close\r\n\
+         \r\n\
+         {body}",
+        body.len()
+    );
+    let _ = stream.write_all(response.as_bytes()).await;
+}
+
+async fn handle_request_with(
     mut stream: tokio::net::TcpStream,
     token: Option<Arc<String>>,
     base_path: Arc<String>,
     allowed_hosts: Arc<Vec<String>>,
+    cockpit: cockpit::CockpitResolver,
 ) {
     let is_loopback = stream.peer_addr().is_ok_and(|a| a.ip().is_loopback());
 
@@ -830,24 +910,6 @@ async fn handle_request(
     // (fonts, auth, routing) works on root-relative paths whether or not the
     // proxy already stripped it (#355).
     let path = base_path::strip(&path, base_path.as_str()).to_string();
-
-    // Binary font assets are public (like CSS/JS) and bypass the String-based
-    // route pipeline so their bytes stay intact.
-    if let Some(bytes) = match_font_asset(&path) {
-        let header = format!(
-            "HTTP/1.1 200 OK\r\n\
-             Content-Type: font/woff2\r\n\
-             Content-Length: {}\r\n\
-             Cache-Control: public, max-age=31536000, immutable\r\n\
-             X-Content-Type-Options: nosniff\r\n\
-             Connection: close\r\n\
-             \r\n",
-            bytes.len()
-        );
-        let _ = stream.write_all(header.as_bytes()).await;
-        let _ = stream.write_all(bytes).await;
-        return;
-    }
 
     let is_api = path.starts_with("/api/");
     let requires_auth = is_api || path == "/metrics";
@@ -916,6 +978,117 @@ async fn handle_request(
         return;
     }
 
+    // The Cockpit answers `/`, its static assets and `/api/gateway/*`; the
+    // engine every other `/api/*` route and `/metrics`. A request that came
+    // from the Cockpit itself is never sent back to it.
+    if cockpit::serves(&path) && header_line_value(&header_text, cockpit::COCKPIT_HEADER).is_none()
+    {
+        let resolve = cockpit.clone();
+        let target = tokio::task::spawn_blocking(move || resolve())
+            .await
+            .unwrap_or(Err(cockpit::CockpitUnavailable::StartFailed));
+        let is_read = method.eq_ignore_ascii_case("GET") || method.eq_ignore_ascii_case("HEAD");
+        match target {
+            Ok(target) if is_api || is_read => {
+                let forwarded = if query_str.is_empty() {
+                    path.clone()
+                } else {
+                    format!("{path}?{query_str}")
+                };
+                let body = &buf[body_start..body_start + content_len];
+                match cockpit::forward(&target, &method, &forwarded, &header_text, body).await {
+                    Some(response) => {
+                        let _ = stream.write_all(&response).await;
+                    }
+                    None => {
+                        write_json_error(
+                            &mut stream,
+                            "502 Bad Gateway",
+                            r#"{"error":"cockpit unavailable"}"#,
+                        )
+                        .await;
+                    }
+                }
+                return;
+            }
+            Ok(_) => {
+                write_json_error(
+                    &mut stream,
+                    "405 Method Not Allowed",
+                    r#"{"error":"method not allowed"}"#,
+                )
+                .await;
+                return;
+            }
+            // Without a Cockpit the engine keeps answering `/api/gateway/*`.
+            Err(_) if is_api => {}
+            Err(reason) => {
+                let (status, content_type, body) = match path.as_str() {
+                    // A source build is complete as it is: it has no Cockpit.
+                    "/" | "/index.html" | "/cockpit" | "/cockpit/" => (
+                        if reason == cockpit::CockpitUnavailable::SourceBuild {
+                            "200 OK"
+                        } else {
+                            "503 Service Unavailable"
+                        },
+                        "text/html; charset=utf-8",
+                        cockpit::unavailable_page(reason),
+                    ),
+                    "/favicon.ico" => ("204 No Content", "text/plain", String::new()),
+                    _ => ("404 Not Found", "text/plain", "Not Found".to_string()),
+                };
+                let response = format!(
+                    "HTTP/1.1 {status}\r\n\
+                     Content-Type: {content_type}\r\n\
+                     Content-Length: {}\r\n\
+                     Cache-Control: no-store\r\n\
+                     X-Content-Type-Options: nosniff\r\n\
+                     X-Frame-Options: DENY\r\n\
+                     Referrer-Policy: no-referrer\r\n\
+                     Content-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'; frame-ancestors 'none'\r\n\
+                     Connection: close\r\n\
+                     \r\n\
+                     {body}",
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                return;
+            }
+        }
+    }
+
+    // `X-LeanCTX-Project`: a read for a named project. A path that names no
+    // project this dashboard may show is refused without saying why.
+    let route = project_binding::canonical_route(&path).to_string();
+    let project = match header_line_value(&header_text, cockpit::PROJECT_HEADER)
+        .map(str::trim)
+        .filter(|p| !p.is_empty())
+    {
+        None => None,
+        Some(requested) => {
+            let requested = requested.to_string();
+            let authorised = tokio::task::spawn_blocking(move || {
+                project_binding::authorise(&requested, &project_binding::project_pool())
+            })
+            .await
+            .ok()
+            .flatten();
+            if authorised.is_none() {
+                write_json_error(&mut stream, "403 Forbidden", r#"{"error":"forbidden"}"#).await;
+                return;
+            }
+            authorised
+        }
+    };
+    let project = project.filter(|_| project_binding::is_project_read(&route, &method));
+    // Display snapshots answer plain reads only; a query string selects a
+    // different answer than the snapshot holds.
+    let snapshot_read = method.eq_ignore_ascii_case("GET")
+        && display_snapshots::is_display_route(&route)
+        && query_str
+            .split('&')
+            .all(|pair| pair.is_empty() || pair.starts_with("token="));
+
     // Route handlers are synchronous and a few (graph/index builds) do seconds
     // of disk work. Running them inline on an async worker thread lets one slow
     // endpoint starve the small worker pool, so a trivial GET like
@@ -924,27 +1097,44 @@ async fn handle_request(
     // light endpoints promptly. `spawn_blocking` also captures panics (returns
     // a `JoinError`), so the previous `catch_unwind` is no longer needed.
     let route_started = std::time::Instant::now();
-    let route_label = path.clone();
+    let route_label = route.clone();
     let compute = tokio::task::spawn_blocking(move || {
-        routes::route_response(
-            &path,
-            &query_str,
-            query_token.as_ref(),
-            token.as_ref(),
-            is_loopback,
-            &method,
-            &body_str,
-        )
+        let run: display_snapshots::Compute = {
+            let project = project.clone();
+            let route = route.clone();
+            Arc::new(move || {
+                project_binding::in_request_project(project.as_deref(), || {
+                    routes::route_response(
+                        &route,
+                        &query_str,
+                        query_token.as_ref(),
+                        token.as_ref(),
+                        is_loopback,
+                        &method,
+                        &body_str,
+                    )
+                })
+            })
+        };
+        if snapshot_read {
+            let partition = project_binding::partition_of(project.as_deref());
+            display_snapshots::DisplaySnapshots::global().serve(&route, &partition, &run)
+        } else {
+            (run(), None)
+        }
     })
     .await;
-    let (status, content_type, mut body) = match compute {
+    let ((status, content_type, mut body), observation) = match compute {
         Ok(v) => v,
         // The blocking task panicked or was cancelled — surface a 500 rather
         // than dropping the connection.
         Err(_) => (
-            "500 Internal Server Error",
-            "application/json",
-            r#"{"error":"dashboard route panicked"}"#.to_string(),
+            (
+                "500 Internal Server Error",
+                "application/json",
+                r#"{"error":"dashboard route panicked"}"#.to_string(),
+            ),
+            None,
         ),
     };
     // Observability: a slow light endpoint is exactly the #431 symptom, so make
@@ -958,8 +1148,9 @@ async fn handle_request(
         );
     }
 
-    // Under a reverse-proxy subpath, rewrite root-absolute asset/API URLs in the
-    // served HTML/CSS/JS so the browser requests them under the prefix (#355).
+    // Under a reverse-proxy subpath, rewrite root-absolute asset/API URLs in
+    // any HTML/CSS/JS the engine serves so the browser requests them under
+    // the prefix (#355).
     if !base_path.is_empty()
         && (content_type.contains("text/html")
             || content_type.contains("text/css")
@@ -977,6 +1168,11 @@ async fn handle_request(
     } else {
         ""
     };
+    // Display data says when it was observed and whether it is a snapshot.
+    let snapshot_headers = observation
+        .as_ref()
+        .map(display_snapshots::Observation::headers)
+        .unwrap_or_default();
 
     let nonce = {
         let mut nb = [0u8; 16];
@@ -1006,6 +1202,7 @@ async fn handle_request(
          Content-Type: {content_type}\r\n\
          Content-Length: {}\r\n\
          {cache_header}\
+         {snapshot_headers}\
          {security_headers}\
          Connection: close\r\n\
          \r\n\

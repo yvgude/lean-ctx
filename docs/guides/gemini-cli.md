@@ -111,7 +111,7 @@ When using Gemini's thinking mode with lean-ctx:
 
 ```
 # Provide a structural view for this task
-ctx_overview("analyze the authentication flow for security vulnerabilities")
+ctx_compose("analyze the authentication flow for security vulnerabilities")
 
 # Use map mode to give Gemini structural understanding
 ctx_read("src/auth/mod.rs", "map")
@@ -151,21 +151,21 @@ ctx_read("src/api/middleware.rs", "map")
 # Deep dive into specific changes
 ctx_read("src/api/handler.rs", "full")
 
-# Review with ctx_review
-ctx_review("src/api/handler.rs")
+# Which files depend on the changes? (the review itself stays with Gemini)
+ctx_graph(action="diff", since="HEAD~5")
 ```
 
 ### Feature Development
 
 ```
 # Start with project orientation
-ctx_overview("add rate limiting to API endpoints")
+ctx_compose("add rate limiting to API endpoints")
 
 # Understand the codebase structure
 ctx_tree("src/api/", 3)
 
 # Find existing patterns
-ctx_semantic_search("how are API endpoints defined?")
+ctx_search(action="semantic", query="how are API endpoints defined?")
 ctx_search("rate.*limit", "src/")
 
 # Check what needs to change
@@ -182,7 +182,7 @@ ctx_knowledge(action="remember", category="decision", content="Using token bucke
 ctx_search("unwrap\\(\\)", "src/")
 
 # Trace call paths
-ctx_callgraph("src/api/handler.rs", "handle_request")
+ctx_callgraph(action="callers", symbol="handle_request", file="src/api/handler.rs")
 
 # Check error handling
 ctx_read("src/error.rs", "signatures")
@@ -199,7 +199,7 @@ Gemini CLI also reads `GEMINI.md` in the project root. You can add project-speci
 
 ## lean-ctx project rules
 - Always use `map` mode for files in `vendor/`
-- Use `ctx_overview` at the start of every task
+- Use `ctx_compose` at the start of every task
 ```
 
 ### .lean-ctx.toml

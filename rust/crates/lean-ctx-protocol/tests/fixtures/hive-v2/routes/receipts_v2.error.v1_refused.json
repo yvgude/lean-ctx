@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_request",
+    "message": "receipts v1 documents are not accepted; send leanctx.hive.receipts/v2",
+    "field": "schema",
+    "reason": "receipts_v1_retired"
+  }
+}

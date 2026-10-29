@@ -1,0 +1,21 @@
+{
+  "body": {
+    "references": [
+      {
+        "kind": "task",
+        "number": 9
+      }
+    ],
+    "text": "The outbox ordering task is yours from here."
+  },
+  "client_msg_id": "01JBMSGD1",
+  "from": "claude-3e",
+  "network": {
+    "channel": "org:org_acme/vault:3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42/general",
+    "kind": "org"
+  },
+  "t": "message",
+  "to": "codex-85",
+  "to_instance": "inst_01jb8z9",
+  "type": "handoff"
+}

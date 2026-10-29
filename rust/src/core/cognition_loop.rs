@@ -124,8 +124,9 @@ pub(crate) fn run_cognition_loop(project_root: &str, max_steps: u8) -> Cognition
         }
 
         if can_run(8) {
-            if let Ok(lifecycle) = knowledge.run_memory_lifecycle(&policy) {
-                report.facts_archived = lifecycle.archived_count as u32;
+            match knowledge.run_memory_lifecycle(&policy) {
+                Ok(lifecycle) => report.facts_archived = lifecycle.archived_count as u32,
+                Err(error) => tracing::warn!("knowledge lifecycle failed: {error}"),
             }
             // Step 8b (#3): complementary-learning-systems consolidation lifts the
             // confidence of related, frequently-retrieved facts.
@@ -160,7 +161,8 @@ pub(crate) fn run_cognition_loop(project_root: &str, max_steps: u8) -> Cognition
 
 /// Step 1: Promote recent session decisions/findings into project knowledge.
 ///
-/// Loads the session for the *requested* project root (not cwd, #2362) and reuses
+/// Uses the caller's own session in the *requested* project root (not cwd,
+/// #2362; never another agent's, I07/S03) and reuses
 /// the canonical session-import core ([`crate::core::consolidation_engine::import_session_into`])
 /// so budgets, fact keys and confidences match every other consolidation driver.
 /// Runs inside the cognition loop's existing knowledge lock, so it imports
@@ -170,8 +172,10 @@ fn step_seed_promote(
     knowledge: &mut ProjectKnowledge,
     policy: &MemoryPolicy,
 ) -> u32 {
-    let Some(session) =
-        crate::core::session::SessionState::load_latest_for_project_root(project_root)
+    // Only the caller's own session (I07/S03). A background run has no
+    // caller and promotes nothing session-private: the project's latest saved
+    // session may be another agent's.
+    let Some(session) = crate::core::session::caller::with_for_project(project_root, Clone::clone)
     else {
         return 0;
     };
@@ -486,6 +490,7 @@ fn step_synthesize_observations(
         ));
     }
 
+    let root = knowledge.project_root.clone();
     let mut count = 0u32;
     for (entity, mut members) in clusters {
         if members.len() < min_cluster {
@@ -504,15 +509,52 @@ fn step_synthesize_observations(
         let summary = crate::core::llm_enhance::enhance_observation(&entity, &summary);
         // An observation never out-confidences its own evidence: mean, capped.
         let mean = members.iter().map(|m| m.2).sum::<f32>() / members.len() as f32;
-        knowledge.remember(
-            "observation",
-            &entity,
-            &summary,
-            crate::core::knowledge::COGNITION_SYNTHESIS_SOURCE,
-            mean.min(0.9),
-            policy,
+        // The observation is a new text merged from its members: it is bound
+        // to their joined sources when every member has a binding that holds
+        // now, is originless when one has none, and is not written when a
+        // bound member is not served now (`store_derived`).
+        let keys: Vec<String> = members
+            .iter()
+            .map(|(category, value, _)| {
+                knowledge
+                    .facts
+                    .iter()
+                    .find(|f| f.is_current() && &f.category == category && &f.value == value)
+                    .map_or_else(String::new, |f| f.key.clone())
+            })
+            .collect();
+        let origins: Vec<_> = members
+            .iter()
+            .zip(&keys)
+            .map(|((category, value, _), key)| {
+                let item = crate::core::archive::bindings::Item::KnowledgeFact {
+                    project: &root,
+                    category,
+                    key,
+                };
+                (item, value.as_str())
+            })
+            .collect();
+        let stored = crate::core::consolidation_engine::store_derived(
+            knowledge,
+            &origins,
+            Some(&root),
+            ["observation", &entity, &summary],
+            false,
+            |knowledge| {
+                knowledge.remember(
+                    "observation",
+                    &entity,
+                    &summary,
+                    crate::core::knowledge::COGNITION_SYNTHESIS_SOURCE,
+                    mean.min(0.9),
+                    policy,
+                );
+            },
         );
-        count += 1;
+        if stored {
+            count += 1;
+        }
     }
 
     if count > 0 {
@@ -581,6 +623,9 @@ mod tests {
         confidence: f32,
     ) -> crate::core::knowledge::KnowledgeFact {
         crate::core::knowledge::KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: category.to_string(),
             key: key.to_string(),
@@ -604,6 +649,8 @@ mod tests {
             archetype: KnowledgeArchetype::default(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         }
     }
 
@@ -1000,7 +1047,8 @@ mod tests {
         );
 
         let policy = MemoryPolicy::default();
-        let mut k = ProjectKnowledge::new("/tmp/test-synthesis");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         // Three facts anchored to the same file → one entity cluster.
         k.remember(
             "finding",
@@ -1055,7 +1103,8 @@ mod tests {
     #[test]
     fn synthesis_excludes_synthesized_observations_from_input() {
         let policy = MemoryPolicy::default();
-        let mut k = ProjectKnowledge::new("/tmp/test-no-recursion");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         // A pre-existing synthesized observation must never be re-summarized.
         k.remember(
             "observation",
@@ -1128,5 +1177,101 @@ mod tests {
         );
 
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    /// Step 9 merges the values of several facts into one new text. That
+    /// text is originless while one member is, is bound to the joined sources
+    /// once every member is bound, and is not written again when a bound
+    /// member is no longer served.
+    #[test]
+    fn a_synthesized_observation_is_bound_only_when_every_member_is() {
+        use crate::core::archive::bindings::{self, Item};
+        use crate::core::archive::delivered::LineageRefusal;
+        use crate::core::context_admission::stored::lineage_support::{
+            deliver, governed, project, reusable, scoped,
+        };
+        let _data = governed();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        std::fs::write(format!("{root}/auth.rs"), "pub fn route() {}\n").expect("source");
+        std::fs::write(format!("{root}/limits.rs"), "pub fn limit() {}\n").expect("source");
+        let policy = MemoryPolicy::default();
+        let mut knowledge = ProjectKnowledge::new(&root);
+        scoped(&root, || {
+            knowledge.remember(
+                "finding",
+                "src/api.rs:1",
+                "no auth on route",
+                "s1",
+                0.8,
+                &policy,
+            );
+            knowledge.remember(
+                "finding",
+                "src/api.rs:2",
+                "missing rate limit",
+                "s1",
+                0.8,
+                &policy,
+            );
+        });
+        let bind = |key: &str, value: &str, file: &str| {
+            let item = Item::KnowledgeFact {
+                project: &root,
+                category: "finding",
+                key,
+            };
+            let sources =
+                bindings::sources_at(&root, &[file], "ctx_knowledge").expect("readable source");
+            assert!(bindings::bind(&item, value, &root, sources));
+        };
+        // Run the step, then deliver the observation the way a recall does.
+        let observation = |knowledge: &mut ProjectKnowledge| {
+            let made = scoped(&root, || {
+                step_synthesize_observations(knowledge, &policy, 2)
+            });
+            let fact = knowledge
+                .facts
+                .iter()
+                .find(|f| f.is_current() && f.is_synthesized_observation())
+                .cloned()
+                .expect("an observation");
+            let (reply, recorded) = deliver(&root, || {
+                let item = Item::KnowledgeFact {
+                    project: &root,
+                    category: &fact.category,
+                    key: &fact.key,
+                };
+                match bindings::serve(&item, &fact.value, Some(&root)) {
+                    Ok(()) => fact.value.clone(),
+                    Err(withheld) => withheld.notice(),
+                }
+            });
+            (made, reply, recorded)
+        };
+
+        bind("src/api.rs:1", "no auth on route", "auth.rs");
+        let (made, reply, recorded) = observation(&mut knowledge);
+        assert_eq!(made, 1);
+        assert!(reply.contains("no auth on route"), "{reply}");
+        assert!(reply.contains("missing rate limit"), "{reply}");
+        assert_eq!(recorded, 0, "one member without a binding: originless");
+        assert_eq!(reusable(&root, &reply), Err(LineageRefusal::Unknown));
+
+        bind("src/api.rs:2", "missing rate limit", "limits.rs");
+        let (made, reply, recorded) = observation(&mut knowledge);
+        assert_eq!(made, 1);
+        assert_eq!(recorded, 1, "every member bound: the joined sources");
+        assert_eq!(reusable(&root, &reply), Ok(()));
+
+        std::fs::remove_file(format!("{root}/limits.rs")).expect("delete");
+        assert_eq!(
+            reusable(&root, &reply),
+            Err(LineageRefusal::SourceNoLongerAdmitted)
+        );
+        let (made, withheld, recorded) = observation(&mut knowledge);
+        assert_eq!(made, 0, "a member that is not served derives nothing");
+        assert!(!withheld.contains("missing rate limit"), "{withheld}");
+        assert_eq!(recorded, 0);
     }
 }

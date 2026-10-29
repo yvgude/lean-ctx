@@ -1,0 +1,2161 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/bus.schema.json",
+  "title": "Bus v2: messages, controls, WebSocket frames (SPEC-CONTRACT-SERVER §3.19, RESOLUTIONS R4, R8, R52)",
+  "$defs": {
+    "address": {
+      "type": "string",
+      "pattern": "^(#[a-z0-9_-]{1,64}/[a-z0-9-]{2,40}|~[a-z0-9-]{3,40}|@wkr_[a-z2-7]{20})$",
+      "description": "display/body form only; never in a URL path (R15, R33)"
+    },
+    "ulid": {
+      "$ref": "common.schema.json#/$defs/event_id"
+    },
+    "type": {
+      "enum": [
+        "question",
+        "offer",
+        "handoff",
+        "finding",
+        "answer",
+        "need",
+        "claim",
+        "progress",
+        "result"
+      ]
+    },
+    "thread_status": {
+      "enum": [
+        "open",
+        "answered",
+        "became_task",
+        "closed",
+        "taken",
+        "withdrawn",
+        "offered",
+        "accepted",
+        "rejected",
+        "vetoed",
+        "expired",
+        "claimed",
+        "active",
+        "released"
+      ]
+    },
+    "ref": {
+      "type": "object",
+      "required": [
+        "kind",
+        "ref"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "enum": [
+            "node",
+            "msg",
+            "file",
+            "commit",
+            "url",
+            "test"
+          ]
+        },
+        "ref": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 500
+        }
+      }
+    },
+    "text4000": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 4000
+    },
+    "resource": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 200
+    },
+    "lease_id": {
+      "type": "string",
+      "pattern": "^bl_[a-z0-9]{1,40}$"
+    },
+    "body_question": {
+      "type": "object",
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/text4000"
+        },
+        "to_worker": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "deadline": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    },
+    "body_offer": {
+      "type": "object",
+      "required": [
+        "what",
+        "capability",
+        "eta_minutes"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "what": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "capability": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "eta_minutes": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10080
+        },
+        "withdraw": {
+          "type": "boolean"
+        }
+      }
+    },
+    "body_handoff": {
+      "type": "object",
+      "required": [
+        "to_worker",
+        "resource"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "to_worker": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "resource": {
+          "$ref": "#/$defs/resource"
+        },
+        "note": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "lease_id": {
+          "$ref": "#/$defs/lease_id"
+        },
+        "from_worker": {
+          "$ref": "common.schema.json#/$defs/worker_id",
+          "description": "server-set (= sender)"
+        }
+      }
+    },
+    "body_finding": {
+      "type": "object",
+      "required": [
+        "statement",
+        "evidence"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "statement": {
+          "type": "string",
+          "minLength": 24,
+          "maxLength": 300
+        },
+        "evidence": {
+          "$ref": "common.schema.json#/$defs/evidence"
+        },
+        "became_node": {
+          "$ref": "common.schema.json#/$defs/node_id",
+          "description": "server-set"
+        }
+      }
+    },
+    "body_answer": {
+      "type": "object",
+      "required": [
+        "text"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "$ref": "#/$defs/text4000"
+        },
+        "accept": {
+          "type": "boolean"
+        }
+      }
+    },
+    "body_need": {
+      "type": "object",
+      "required": [
+        "text",
+        "capabilities"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "text": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "capabilities": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64
+          }
+        },
+        "budget_hint": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "tasks": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 50
+            },
+            "usd_cents": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 50000
+            }
+          }
+        },
+        "expires_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "routed_to": {
+          "$ref": "common.schema.json#/$defs/u32",
+          "description": "server-set"
+        }
+      }
+    },
+    "body_claim": {
+      "type": "object",
+      "required": [
+        "resource",
+        "lease_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "resource": {
+          "$ref": "#/$defs/resource"
+        },
+        "lease_id": {
+          "$ref": "#/$defs/lease_id"
+        },
+        "expires_at": {
+          "$ref": "common.schema.json#/$defs/ms",
+          "description": "server-set (= lease expiry)"
+        }
+      }
+    },
+    "body_progress": {
+      "type": "object",
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": [
+            "percentage"
+          ]
+        },
+        {
+          "required": [
+            "step"
+          ]
+        }
+      ],
+      "properties": {
+        "percentage": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100
+        },
+        "step": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "usage": {
+          "$ref": "common.schema.json#/$defs/usage"
+        },
+        "goal": {
+          "$ref": "common.schema.json#/$defs/goal_id"
+        }
+      }
+    },
+    "body_result": {
+      "type": "object",
+      "required": [
+        "summary",
+        "artefacts"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 1000
+        },
+        "artefacts": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "common.schema.json#/$defs/artefact"
+          }
+        },
+        "goal": {
+          "$ref": "common.schema.json#/$defs/goal_id"
+        },
+        "review_state": {
+          "enum": [
+            "unconfirmed",
+            "accepted",
+            "rejected"
+          ],
+          "description": "server-set"
+        },
+        "review_id": {
+          "$ref": "common.schema.json#/$defs/review_id",
+          "description": "server-set"
+        }
+      }
+    },
+    "body_sealed": {
+      "type": "object",
+      "required": [
+        "sealed"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "sealed": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]+$",
+          "maxLength": 87382,
+          "description": "base64url(nonce ‖ ct), ≤ 64 KiB"
+        }
+      }
+    },
+    "publish_fields": {
+      "type": "object",
+      "required": [
+        "schema",
+        "client_msg_id",
+        "to",
+        "type",
+        "body"
+      ],
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.bus/v2"
+        },
+        "client_msg_id": {
+          "$ref": "#/$defs/ulid"
+        },
+        "to": {
+          "$ref": "#/$defs/address"
+        },
+        "type": {
+          "$ref": "#/$defs/type"
+        },
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "thread_id": {
+          "$ref": "common.schema.json#/$defs/msg_id"
+        },
+        "reply_to": {
+          "$ref": "common.schema.json#/$defs/msg_id"
+        },
+        "refs": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "#/$defs/ref"
+          }
+        },
+        "body": {
+          "type": "object"
+        },
+        "ck_wrapped": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{96}$"
+        },
+        "epoch": {
+          "$ref": "common.schema.json#/$defs/u32"
+        },
+        "about": {
+          "enum": [
+            "collaboration"
+          ],
+          "description": "finding messages only: what the finding is about; collaboration findings may carry counts"
+        },
+        "counts": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "plaintext counts of a collaboration finding (R128, V16.1), stored by the server in a typed table (collab_findings, numbers only): exactly these keys, each optional, non-negative integers; never on sealed places",
+          "properties": {
+            "registration_renewed": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "wait_timeout": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "merge_conflict": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "claim_refused": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "claim_expired": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "gate_reruns": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "agent_seconds": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "idle_seconds": {
+              "$ref": "common.schema.json#/$defs/u32"
+            }
+          }
+        },
+        "window": {
+          "type": "object",
+          "required": [
+            "from_ms",
+            "to_ms"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "from_ms": {
+              "$ref": "common.schema.json#/$defs/ms"
+            },
+            "to_ms": {
+              "$ref": "common.schema.json#/$defs/ms"
+            }
+          }
+        }
+      },
+      "allOf": [
+        {
+          "$comment": "Sealed places: body {sealed} with ck_wrapped + epoch (R52); plain places: body per type, no key material.",
+          "if": {
+            "properties": {
+              "body": {
+                "required": [
+                  "sealed"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "ck_wrapped",
+              "epoch"
+            ],
+            "properties": {
+              "body": {
+                "$ref": "#/$defs/body_sealed"
+              }
+            }
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "ck_wrapped"
+                  ]
+                },
+                {
+                  "required": [
+                    "epoch"
+                  ]
+                }
+              ]
+            },
+            "allOf": [
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "question"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/body_question"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "offer"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/body_offer"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "handoff"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/body_handoff"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "finding"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/body_finding"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "answer"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/body_answer"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "need"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/body_need"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "claim"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/body_claim"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "progress"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/body_progress"
+                    }
+                  }
+                }
+              },
+              {
+                "if": {
+                  "properties": {
+                    "type": {
+                      "const": "result"
+                    }
+                  }
+                },
+                "then": {
+                  "properties": {
+                    "body": {
+                      "$ref": "#/$defs/body_result"
+                    }
+                  }
+                }
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": {
+                "const": "answer"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "reply_to"
+            ]
+          }
+        },
+        {
+          "$comment": "finding refs: 1–10, except collaboration findings (may be empty, R128)",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "finding"
+              }
+            },
+            "not": {
+              "required": [
+                "about"
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "refs"
+            ],
+            "properties": {
+              "refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "$comment": "about only on findings; about = collaboration requires counts and window",
+          "if": {
+            "required": [
+              "about"
+            ]
+          },
+          "then": {
+            "required": [
+              "counts",
+              "window"
+            ],
+            "properties": {
+              "type": {
+                "const": "finding"
+              }
+            }
+          }
+        },
+        {
+          "$comment": "counts and window only with about = collaboration, never with a sealed body",
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "counts"
+                ]
+              },
+              {
+                "required": [
+                  "window"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "about"
+            ],
+            "properties": {
+              "about": {
+                "const": "collaboration"
+              },
+              "body": {
+                "not": {
+                  "required": [
+                    "sealed"
+                  ]
+                }
+              }
+            }
+          }
+        },
+        {
+          "$comment": "finding refs: 1–10, except collaboration findings (may be empty, R128)",
+          "if": {
+            "properties": {
+              "type": {
+                "const": "finding"
+              }
+            },
+            "not": {
+              "required": [
+                "about"
+              ]
+            }
+          },
+          "then": {
+            "required": [
+              "refs"
+            ],
+            "properties": {
+              "refs": {
+                "minItems": 1
+              }
+            }
+          }
+        },
+        {
+          "$comment": "about only on findings; about = collaboration requires counts and window",
+          "if": {
+            "required": [
+              "about"
+            ]
+          },
+          "then": {
+            "required": [
+              "counts",
+              "window"
+            ],
+            "properties": {
+              "type": {
+                "const": "finding"
+              }
+            }
+          }
+        },
+        {
+          "$comment": "counts and window only with about = collaboration, never with a sealed body",
+          "if": {
+            "anyOf": [
+              {
+                "required": [
+                  "counts"
+                ]
+              },
+              {
+                "required": [
+                  "window"
+                ]
+              }
+            ]
+          },
+          "then": {
+            "required": [
+              "about"
+            ],
+            "properties": {
+              "about": {
+                "const": "collaboration"
+              },
+              "body": {
+                "not": {
+                  "required": [
+                    "sealed"
+                  ]
+                }
+              }
+            }
+          }
+        }
+      ]
+    },
+    "publish": {
+      "description": "E17 body and place.publish frame body (engine → server); worker_id required from engines",
+      "allOf": [
+        {
+          "$ref": "#/$defs/publish_fields"
+        }
+      ],
+      "required": [
+        "worker_id"
+      ],
+      "unevaluatedProperties": false
+    },
+    "sender": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "worker_id",
+            "name",
+            "owner_handle",
+            "host_app"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "worker"
+            },
+            "worker_id": {
+              "$ref": "common.schema.json#/$defs/worker_id"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "owner_handle": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,38}$"
+            },
+            "host_app": {
+              "$ref": "worker.schema.json#/$defs/host_app"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "handle"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "person"
+            },
+            "handle": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,38}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false,
+          "description": "Hive itself (actor.kind = server): e.g. the need posted when a swarm question passes its deadline (§3.19.2)",
+          "properties": {
+            "kind": {
+              "const": "system"
+            }
+          }
+        }
+      ]
+    },
+    "message_fields": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/publish_fields"
+        }
+      ],
+      "required": [
+        "id",
+        "seq",
+        "thread_id",
+        "sender",
+        "provenance",
+        "received_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/msg_id"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sender": {
+          "$ref": "#/$defs/sender"
+        },
+        "provenance": {
+          "$ref": "common.schema.json#/$defs/provenance"
+        },
+        "received_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "thread_status": {
+          "$ref": "#/$defs/thread_status"
+        },
+        "legacy_retention_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "legacy_delete_at": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/ms"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "sender": {
+            "properties": {
+              "kind": {
+                "const": "worker"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "worker_id"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "worker_id"
+          ]
+        }
+      }
+    },
+    "message": {
+      "description": "Stored message as delivered (message.deliver, E16)",
+      "allOf": [
+        {
+          "$ref": "#/$defs/message_fields"
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "control": {
+      "description": "Hive-signed Control (purpose control, domain leanctx.hive.control.v1\\n, over the Control without signature; R8)",
+      "type": "object",
+      "required": [
+        "id",
+        "place",
+        "target",
+        "action",
+        "reason",
+        "issued_by",
+        "created_at",
+        "key_id",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "pattern": "^ctl_[a-z2-7]{26}$"
+        },
+        "place": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        },
+        "target": {
+          "enum": [
+            "worker",
+            "bus"
+          ]
+        },
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "ref": {
+          "type": "object",
+          "required": [
+            "kind",
+            "id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "enum": [
+                "handoff",
+                "claim",
+                "lease"
+              ]
+            },
+            "id": {
+              "type": "string",
+              "pattern": "^(msg_[0-9a-f]{16}|cl_[a-z2-7]{26}|bl_[a-z0-9]{1,40})$"
+            }
+          }
+        },
+        "action": {
+          "enum": [
+            "hold",
+            "stop",
+            "resume",
+            "veto"
+          ]
+        },
+        "reason": {
+          "type": "string",
+          "minLength": 2,
+          "maxLength": 500
+        },
+        "issued_by": {
+          "type": "object",
+          "required": [
+            "kind",
+            "user_id"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "person"
+            },
+            "user_id": {
+              "$ref": "common.schema.json#/$defs/uuid"
+            },
+            "label": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64,
+              "description": "display only (the issuer's handle or name for the web); never used for authorisation"
+            }
+          }
+        },
+        "created_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "lifted_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        },
+        "signature": {
+          "$ref": "common.schema.json#/$defs/signature"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "target": {
+                "const": "worker"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "worker_id"
+            ]
+          },
+          "else": {
+            "not": {
+              "required": [
+                "worker_id"
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "veto"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "ref"
+            ]
+          }
+        }
+      ]
+    },
+    "presence_state": {
+      "enum": [
+        "active",
+        "idle",
+        "held"
+      ]
+    },
+    "lease": {
+      "type": "object",
+      "required": [
+        "lease_id",
+        "place",
+        "resource",
+        "worker_id",
+        "fencing_token",
+        "expires_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "lease_id": {
+          "$ref": "#/$defs/lease_id"
+        },
+        "place": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        },
+        "resource": {
+          "$ref": "#/$defs/resource"
+        },
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "fencing_token": {
+          "$ref": "common.schema.json#/$defs/u64"
+        },
+        "expires_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    },
+    "frame": {
+      "description": "One WebSocket text frame: members of the frame body plus the discriminator t (flat, as in C0 1.x).",
+      "type": "object",
+      "required": [
+        "t"
+      ],
+      "properties": {
+        "t": {
+          "enum": [
+            "hello",
+            "hello.ack",
+            "place.publish",
+            "message.stored",
+            "message.deliver",
+            "presence.update",
+            "control",
+            "place.denied",
+            "resync",
+            "lease.granted",
+            "lease.renewed",
+            "lease.released",
+            "lease.expired",
+            "log.advanced",
+            "trust.advanced",
+            "need.match",
+            "swarm.event",
+            "consent.answered",
+            "error",
+            "ping",
+            "pong"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "hello"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_hello"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "hello.ack"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_hello_ack"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "place.publish"
+              }
+            }
+          },
+          "then": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/publish_fields"
+              }
+            ],
+            "required": [
+              "worker_id"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "message.stored"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_message_stored"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "message.deliver"
+              }
+            }
+          },
+          "then": {
+            "allOf": [
+              {
+                "$ref": "#/$defs/message_fields"
+              }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "presence.update"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_presence_update"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "control"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_control"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "place.denied"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_place_denied"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "resync"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_resync"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "enum": [
+                  "lease.granted",
+                  "lease.renewed",
+                  "lease.released",
+                  "lease.expired"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_lease"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "log.advanced"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_log_advanced"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "trust.advanced"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_trust_advanced"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "need.match"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_need_match"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "swarm.event"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_swarm_event"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "consent.answered"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_consent_answered"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "const": "error"
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_error"
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "t": {
+                "enum": [
+                  "ping",
+                  "pong"
+                ]
+              }
+            }
+          },
+          "then": {
+            "$ref": "#/$defs/f_ping"
+          }
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "f_hello": {
+      "required": [
+        "protocol",
+        "subscribe",
+        "cursors",
+        "presence"
+      ],
+      "properties": {
+        "protocol": {
+          "const": "2.0"
+        },
+        "subscribe": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/address"
+          }
+        },
+        "cursors": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "#/$defs/address"
+          },
+          "additionalProperties": {
+            "$ref": "common.schema.json#/$defs/u64"
+          }
+        },
+        "presence": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "worker_id",
+              "role",
+              "state"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "worker_id": {
+                "$ref": "common.schema.json#/$defs/worker_id"
+              },
+              "role": {
+                "$ref": "worker.schema.json#/$defs/role"
+              },
+              "state": {
+                "$ref": "#/$defs/presence_state"
+              }
+            }
+          }
+        }
+      }
+    },
+    "f_hello_ack": {
+      "required": [
+        "server_time",
+        "subscribed",
+        "denied",
+        "epochs"
+      ],
+      "properties": {
+        "server_time": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "subscribed": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/address"
+          }
+        },
+        "denied": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "address",
+              "code"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "address": {
+                "$ref": "#/$defs/address"
+              },
+              "code": {
+                "enum": [
+                  "not_member",
+                  "instance_revoked",
+                  "place_deleted",
+                  "not_found"
+                ]
+              }
+            }
+          }
+        },
+        "epochs": {
+          "type": "object",
+          "propertyNames": {
+            "$ref": "common.schema.json#/$defs/place_ref"
+          },
+          "additionalProperties": {
+            "$ref": "common.schema.json#/$defs/u64"
+          }
+        }
+      }
+    },
+    "f_message_stored": {
+      "required": [
+        "client_msg_id",
+        "id",
+        "seq",
+        "thread_id"
+      ],
+      "properties": {
+        "client_msg_id": {
+          "$ref": "#/$defs/ulid"
+        },
+        "id": {
+          "$ref": "common.schema.json#/$defs/msg_id"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "thread_id": {
+          "$ref": "common.schema.json#/$defs/msg_id"
+        }
+      }
+    },
+    "f_presence_update": {
+      "required": [
+        "address",
+        "worker_id",
+        "role",
+        "state",
+        "at"
+      ],
+      "properties": {
+        "address": {
+          "$ref": "#/$defs/address"
+        },
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "role": {
+          "$ref": "worker.schema.json#/$defs/role"
+        },
+        "state": {
+          "$ref": "#/$defs/presence_state"
+        },
+        "at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    },
+    "f_control": {
+      "required": [
+        "state",
+        "control"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "issued",
+            "lifted"
+          ]
+        },
+        "control": {
+          "$ref": "#/$defs/control"
+        }
+      },
+      "if": {
+        "properties": {
+          "state": {
+            "const": "lifted"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "control": {
+            "required": [
+              "lifted_at"
+            ]
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "control": {
+            "not": {
+              "required": [
+                "lifted_at"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "f_place_denied": {
+      "required": [
+        "place",
+        "code"
+      ],
+      "properties": {
+        "place": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        },
+        "code": {
+          "enum": [
+            "not_member",
+            "instance_revoked",
+            "place_deleted"
+          ]
+        }
+      }
+    },
+    "f_resync": {
+      "required": [
+        "place"
+      ],
+      "properties": {
+        "place": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        }
+      }
+    },
+    "f_lease": {
+      "required": [
+        "lease"
+      ],
+      "properties": {
+        "lease": {
+          "$ref": "#/$defs/lease"
+        }
+      }
+    },
+    "f_log_advanced": {
+      "required": [
+        "place",
+        "seq",
+        "priority"
+      ],
+      "properties": {
+        "place": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "priority": {
+          "enum": [
+            "normal",
+            "purge"
+          ]
+        }
+      }
+    },
+    "f_trust_advanced": {
+      "required": [
+        "place",
+        "trust_rev"
+      ],
+      "properties": {
+        "place": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        },
+        "trust_rev": {
+          "$ref": "common.schema.json#/$defs/u64"
+        }
+      }
+    },
+    "f_need_match": {
+      "required": [
+        "address",
+        "message_id",
+        "capabilities"
+      ],
+      "properties": {
+        "address": {
+          "$ref": "#/$defs/address"
+        },
+        "message_id": {
+          "$ref": "common.schema.json#/$defs/msg_id"
+        },
+        "capabilities": {
+          "$ref": "#/$defs/body_need/properties/capabilities"
+        }
+      }
+    },
+    "f_swarm_event": {
+      "required": [
+        "swarm",
+        "kind"
+      ],
+      "properties": {
+        "swarm": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "kind": {
+          "enum": [
+            "goal_changed",
+            "claim_expired",
+            "conductor_changed",
+            "state_changed"
+          ]
+        },
+        "goal": {
+          "$ref": "common.schema.json#/$defs/goal_id"
+        },
+        "epoch": {
+          "$ref": "common.schema.json#/$defs/u64"
+        },
+        "state": {
+          "enum": [
+            "open",
+            "running",
+            "paused",
+            "done",
+            "archived"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "enum": [
+                  "goal_changed",
+                  "claim_expired"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "goal"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "conductor_changed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "epoch"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "state_changed"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "state"
+            ]
+          }
+        }
+      ]
+    },
+    "f_consent_answered": {
+      "required": [
+        "consent_id"
+      ],
+      "properties": {
+        "consent_id": {
+          "$ref": "common.schema.json#/$defs/consent_id"
+        }
+      }
+    },
+    "f_error": {
+      "description": "error frame; a quota_exceeded refusal names the quota like the HTTP body (API.md §8.1): resource, limit, used, reset_at (RFC 3339, when the month resets or a cooling-down slot frees; null otherwise) and, for a monthly resource, retry_after_s",
+      "required": [
+        "code"
+      ],
+      "properties": {
+        "client_msg_id": {
+          "$ref": "#/$defs/ulid"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "field": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "resource": {
+          "enum": [
+            "registered_engines",
+            "connected_engines",
+            "private_vaults",
+            "storage_bytes",
+            "transfer_bytes",
+            "bus_messages"
+          ]
+        },
+        "limit": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "used": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "reset_at": {
+          "anyOf": [
+            {
+              "type": "string",
+              "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\\.[0-9]{1,3})?Z$"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retry_after_s": {
+          "type": "integer",
+          "minimum": 1
+        }
+      },
+      "if": {
+        "properties": {
+          "code": {
+            "const": "quota_exceeded"
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "then": {
+        "required": [
+          "resource",
+          "limit",
+          "used",
+          "reset_at"
+        ]
+      },
+      "else": {
+        "not": {
+          "anyOf": [
+            {
+              "required": [
+                "resource"
+              ]
+            },
+            {
+              "required": [
+                "limit"
+              ]
+            },
+            {
+              "required": [
+                "used"
+              ]
+            },
+            {
+              "required": [
+                "reset_at"
+              ]
+            }
+          ]
+        }
+      }
+    },
+    "f_ping": {
+      "properties": {}
+    },
+    "publish_response": {
+      "description": "E17 201 body",
+      "type": "object",
+      "required": [
+        "id",
+        "seq",
+        "thread_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/msg_id"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "thread_id": {
+          "$ref": "common.schema.json#/$defs/msg_id"
+        }
+      }
+    },
+    "history_response": {
+      "description": "E16; a message whose key is gone is returned purged without body (R52)",
+      "type": "object",
+      "required": [
+        "items",
+        "next_before"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 50,
+          "items": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/message"
+              },
+              {
+                "$ref": "#/$defs/purged_message"
+              }
+            ]
+          }
+        },
+        "next_before": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "purged_message": {
+      "type": "object",
+      "required": [
+        "id",
+        "seq",
+        "thread_id",
+        "type",
+        "purged"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/msg_id"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "thread_id": {
+          "$ref": "common.schema.json#/$defs/msg_id"
+        },
+        "type": {
+          "$ref": "#/$defs/type"
+        },
+        "received_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "purged": {
+          "const": true
+        }
+      }
+    },
+    "poll_response": {
+      "description": "E15 GET /v1/bus/poll: v2 frames as a JSON list",
+      "type": "object",
+      "required": [
+        "frames",
+        "cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "frames": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/frame"
+          }
+        },
+        "cursor": {
+          "type": "string",
+          "pattern": "^c2[A-Za-z0-9_.:-]*$"
+        }
+      }
+    },
+    "sender_web": {
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "worker_id",
+            "name",
+            "owner_handle",
+            "host_app"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "worker"
+            },
+            "worker_id": {
+              "$ref": "common.schema.json#/$defs/worker_id"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 64
+            },
+            "owner_handle": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,38}$"
+            },
+            "host_app": {
+              "$ref": "worker.schema.json#/$defs/host_app"
+            },
+            "place_role": {
+              "enum": [
+                "owner",
+                "maintainer",
+                null
+              ],
+              "description": "web only (W36, R87): the worker account's role in the place"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind",
+            "handle"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "person"
+            },
+            "handle": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9-]{0,38}$"
+            }
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "kind"
+          ],
+          "additionalProperties": false,
+          "description": "Hive itself (actor.kind = server): e.g. the need posted when a swarm question passes its deadline (§3.19.2)",
+          "properties": {
+            "kind": {
+              "const": "system"
+            }
+          }
+        }
+      ],
+      "description": "W36 sender: the C0 sender, worker senders with the optional web-only place_role"
+    },
+    "message_web_fields": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/publish_fields"
+        }
+      ],
+      "required": [
+        "id",
+        "seq",
+        "thread_id",
+        "sender",
+        "provenance",
+        "received_at"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/msg_id"
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sender": {
+          "$ref": "#/$defs/sender_web"
+        },
+        "provenance": {
+          "$ref": "common.schema.json#/$defs/provenance"
+        },
+        "received_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "thread_status": {
+          "$ref": "#/$defs/thread_status"
+        },
+        "legacy_retention_days": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 30
+        },
+        "legacy_delete_at": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/ms"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "sender": {
+            "properties": {
+              "kind": {
+                "const": "worker"
+              }
+            }
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "worker_id"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "worker_id"
+          ]
+        }
+      }
+    },
+    "message_web": {
+      "description": "W36 message (web): the C0 message with sender_web",
+      "allOf": [
+        {
+          "$ref": "#/$defs/message_web_fields"
+        }
+      ],
+      "unevaluatedProperties": false
+    }
+  }
+}

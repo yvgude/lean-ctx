@@ -258,6 +258,37 @@ fn dangerous_flags_git_quoted_path() {
     assert!(r.is_ok(), "git -C with quoted path should be allowed");
 }
 
+/// `lean-ctx` is on the default allowlist, and its hidden session starter
+/// executes the program that follows it. A shell line must not reach any
+/// hidden mode, however it is spelled; ordinary subcommands still pass.
+#[test]
+fn lean_ctx_hidden_modes_are_not_reachable_from_a_shell_line() {
+    let list = allow(&["lean-ctx", "echo"]);
+    for blocked in [
+        "lean-ctx __session-starter -- curl example.invalid",
+        "lean-ctx __session-starter --ack -- sh -c 'id'",
+        "lean-ctx __group-guard --group 1",
+        "lean-ctx __spawn-helper",
+        r#"lean-ctx "__session-starter" -- id"#,
+        "/usr/local/bin/lean-ctx __session-starter -- id",
+        "echo ok && lean-ctx __session-starter -- id",
+        "{ echo ok; lean-ctx __spawn-helper; }",
+        // GH #2002 expands a function body like a top-level line.
+        "f() { lean-ctx __spawn-helper; }; f",
+    ] {
+        let result = check_all_segments(blocked, &list);
+        assert!(result.is_err(), "must be blocked: {blocked}: {result:?}");
+    }
+    for allowed in [
+        "lean-ctx read src/main.rs",
+        "lean-ctx -c 'echo ok'",
+        "lean-ctx doctor",
+    ] {
+        let result = check_all_segments(allowed, &list);
+        assert!(result.is_ok(), "must stay allowed: {allowed}: {result:?}");
+    }
+}
+
 // --- Compound commands: for/while/if loops + subshells (#462) ---
 //
 // Restricted mode must accept legitimate compound commands when every *leaf*

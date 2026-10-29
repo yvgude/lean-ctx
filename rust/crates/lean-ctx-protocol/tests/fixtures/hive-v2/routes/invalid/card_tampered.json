@@ -1,0 +1,14 @@
+{
+  "case": "card_tampered",
+  "base": "routes/instance_card.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/consent_channel",
+      "value": "tty_only"
+    }
+  ],
+  "expect": {
+    "layer": "signature"
+  }
+}

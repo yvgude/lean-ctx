@@ -3,6 +3,7 @@ use crate::core::gotcha_tracker::{self, GotchaStore, learn};
 use crate::core::causal_attribution::{self, Outcome, OutcomeSignal};
 use serde_json::Value;
 use std::collections::HashMap;
+use std::fmt::Write as _;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum FailurePatternType {
@@ -254,23 +255,23 @@ pub(crate) fn cmd_learn(args: &[String]) {
                     );
                 } else {
                     let corrections = generate_corrections(&patterns);
-                    let project_root = std::env::current_dir()
-                        .map_err(|error| error.to_string())
-                        .and_then(|path| {
-                            path.into_os_string()
-                                .into_string()
-                                .map_err(|_| "non-UTF-8 project path".to_owned())
-                        });
-                    match project_root.and_then(|root| store_corrections(&root, &corrections)) {
-                        Ok(()) => println!(
-                            "Stored {} correction(s) as SharedContext facts.",
-                            corrections.len()
-                        ),
+                    let mut report = String::new();
+                    match super::common::require_project_root()
+                        .and_then(|root| store_corrections(&root, &corrections))
+                    {
+                        Ok(()) => {
+                            let _ = writeln!(
+                                report,
+                                "Stored {} correction(s) as SharedContext facts.",
+                                corrections.len()
+                            );
+                        }
                         Err(error) => eprintln!("Failed to store corrections: {error}"),
                     }
                     for correction in corrections {
-                        println!("- {}", correction.action);
+                        let _ = writeln!(report, "- {}", correction.action);
                     }
+                    print_released(&super::common::detect_project_root(&[]), report);
                 }
             }
             Err(error) => eprintln!("Failed to load outcome data: {error}"),
@@ -304,10 +305,11 @@ pub(crate) fn cmd_learn(args: &[String]) {
         return;
     }
 
-    println!("=== Learned Gotchas ({} total) ===\n", learnings.len());
+    let mut report = format!("=== Learned Gotchas ({} total) ===\n\n", learnings.len());
     for l in &learnings {
-        println!("  {l}");
+        let _ = writeln!(report, "  {l}");
     }
+    print_released(&project_root, report);
 
     if apply {
         println!();
@@ -351,10 +353,28 @@ fn cmd_learn_mine(dir: Option<&str>) {
         return;
     }
     let mined = gotcha_tracker::mining::mine_jsonl_dir(&path);
-    println!(
-        "{}",
-        gotcha_tracker::mining::format_mining_report(&mined, 2)
-    );
+    let mut report = gotcha_tracker::mining::format_mining_report(&mined, 2);
+    report.push('\n');
+    print_released(&super::common::detect_project_root(&[]), report);
+}
+
+/// Print a report of this command (learnings, corrections, a mining report).
+/// The text is distilled from error logs and transcripts for the person at
+/// the terminal: it is released — a value the gateway masks is masked — and
+/// never recorded as a delivery of project sources. `report` ends with its
+/// own newline: it is released without that final `\n`, which the one
+/// observed writer adds back, so the bytes on stdout are unchanged and the
+/// hand-over is observed (G08). A report without a final newline (an empty
+/// one) is printed as before.
+fn print_released(project_root: &str, report: String) {
+    let run = super::common::CliToolRun::new("ctx_knowledge", project_root, None).human_facing();
+    match report.strip_suffix('\n') {
+        Some(body) => {
+            let body = body.to_owned();
+            super::common::print_released(&run.deliver_text(|| body));
+        }
+        None => print!("{}", run.deliver_text(|| report)),
+    }
 }
 
 #[cfg(test)]

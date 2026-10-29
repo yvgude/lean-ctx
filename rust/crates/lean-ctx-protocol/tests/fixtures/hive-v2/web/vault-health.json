@@ -1,0 +1,52 @@
+{
+  "route": "W24",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/vaults/payments/health",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "sealed": false,
+      "active_nodes": 13,
+      "knowledge_states": {
+        "verified": 11,
+        "provisional": 2,
+        "outdated": 0,
+        "conflicting": 0,
+        "rejected": 1,
+        "to_verify": 0
+      },
+      "evidenced_pct": 61.53,
+      "stale_pct": 0,
+      "contradicted_pct": 0,
+      "unconfirmed_pct": 7.69,
+      "trust": {
+        "high": 6,
+        "normal": 5,
+        "low": 1,
+        "unconfirmed": 1
+      },
+      "review_sla": {
+        "median_s": 5400,
+        "p90_s": 14400,
+        "overdue": 0
+      },
+      "blocked_reviews": 0,
+      "capture_gate": {
+        "engines": 2,
+        "considered": 140,
+        "captured": 31,
+        "rejected": {
+          "too_short": 60,
+          "duplicate": 49
+        }
+      },
+      "replicas": {
+        "count": 2,
+        "last_sync": "2026-10-24T08:30:00Z",
+        "oldest_sync": "2026-10-23T18:00:00Z"
+      }
+    }
+  },
+  "errors": []
+}

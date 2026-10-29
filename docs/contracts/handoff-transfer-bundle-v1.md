@@ -53,8 +53,46 @@ Top-level Felder:
 
 Tool:
 
-- `ctx_handoff action=export format=json|summary write=true|false path=<optional> privacy=redacted|full`
+- `ctx_handoff action=export format=json|summary write=true|false path=<optional> privacy=redacted|full ledger=<optional>`
+  (`ledger`: ein gespeichertes Ledger exportieren, etwa ein zusammengeführtes — es wird vorher wie bei `show` freigegeben)
 - `ctx_handoff action=import path=<bundle.json> apply_workflow=true|false apply_session=true|false apply_knowledge=true|false`
+
+## Idempotentes `create` (`request_id`)
+
+`ctx_handoff action=create request_id=<1–128 Bytes>` ist pro Agent und Projekt
+idempotent: ein gespeichertes Ledger mit gleichem Schlüssel und gleicher Anfrage
+(kuratierte Pfade in Reihenfolge) wird erneut ausgeliefert, statt ein zweites zu
+schreiben; derselbe Schlüssel mit anderen Pfaden wird abgelehnt
+(`idempotency conflict`). `request_id` und `request_digest` (optional) stehen im
+Ledger und sind vom `content_md5` abgedeckt; Ledger ohne Schlüssel bleiben
+unverändert. Ohne Projekt ist kein Schlüssel zulässig.
+
+## Zusammengeführte Ledger (`ctx_handoff action=merge`)
+
+`ctx_handoff action=merge ledgers=[<ledger.json>, …]` (2–8 Ledger eines Projekts)
+schreibt einen neuen `HandoffLedgerV1`, den ein weiterer Agent mit `pull` übernimmt:
+
+- Jedes Eingabe-Ledger wird wie bei `show`/`pull` als Ganzes neu freigegeben;
+  ein zurückgehaltenes Ledger verweigert den Merge (typisiert, ohne Inhalt).
+- Das Ergebnis ist eine Teilmenge der Eingaben, Byte für Byte: Duplikate fallen
+  zusammen, die Obergrenzen von `create` gelten, nichts wird umgeschrieben.
+- Ein Fakten-Schlüssel mit verschiedenen Werten behält alle Werte und wird gemeldet.
+- Ein Teil gilt als gebunden, wenn er in einem Eingabe-Ledger gebunden war; die
+  Quellen aller Eingaben werden neu gelesen und bilden die Herkunft des Ergebnisses.
+- Deterministisch: gleiche Eingabemenge → gleiche Bytes und gleiche Datei, in jeder
+  Reihenfolge. `merged_from` (optional, nur bei zusammengeführten Ledgern) nennt die
+  Inhalts-Digests der Eingaben und ist vom `content_md5` des Ergebnisses abgedeckt.
+  Binaries ohne dieses Feld lesen ein zusammengeführtes Ledger, berechnen seinen
+  Digest aber ohne `merged_from` (abweichend); sie erzeugen selbst keine.
+- Ein kuratierter Auszug bleibt nur, wenn seine Datei neu gebunden wird; Auszüge
+  ohne Quelle fallen weg und werden gezählt.
+
+Im Team: `export ledger=<merged.json> write=true` schreibt ein signiertes Bundle ins
+Projekt, `lean-ctx team artifact publish --content-file <bundle.json> …` teilt es über
+den Team-Hub (Team-Abo der Organisation, serverseitig geprüft); der Empfänger holt es
+mit `lean-ctx team artifact use` und übernimmt es mit `ctx_handoff action=import`. Dafür
+gibt es keinen eigenen Speicher: Bundle, Signatur und Team-Artefakt sind die
+vorhandenen Bausteine.
 
 ## Relevanter Code
 

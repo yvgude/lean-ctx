@@ -37,12 +37,6 @@ impl LeanCtxServer {
         };
         let client_name = self.client_name.read().await.clone();
         let task_id = envelope.as_ref().map(|envelope| envelope.task_id.as_str());
-        let mut explicit_intent: Option<(
-            crate::core::intent_protocol::IntentRecord,
-            Option<String>,
-            String,
-        )> = None;
-
         let session_save_due = {
             let empty_args = serde_json::Map::new();
             let args_map = args.unwrap_or(&empty_args);
@@ -63,41 +57,14 @@ impl LeanCtxServer {
                 args_map,
                 session.project_root.as_deref(),
             ) {
-                let is_explicit =
-                    intent.source == crate::core::intent_protocol::IntentSource::Explicit;
-                let root = session.project_root.clone();
-                let sid = session.id.clone();
-                session.record_intent(intent.clone());
-                if is_explicit {
-                    explicit_intent = Some((intent, root, sid));
-                }
+                session.record_intent(intent);
             }
             session.should_save()
         };
 
-        if crate::core::cognitive_gate::full_science_enabled() {
-            let empty_args = serde_json::Map::new();
-            let args_map = args.unwrap_or(&empty_args);
-            crate::core::verbosity::record_tool_call(name, action, args_map, output_token_count);
-        }
-
-        // F2: Predictive prefetch — after ctx_read, warm the cache with predicted
-        // next files based on the session's file-access trajectory.
-        if crate::core::cognitive_gate::full_science_enabled() && name == "ctx_read" {
-            tokio::task::spawn_blocking(move || {
-                let session = crate::core::session::SessionState::load_latest().unwrap_or_default();
-                let predictions = session.prefetch_predictions(3);
-                if !predictions.is_empty() {
-                    crate::core::context_prefetch::warm_predictions::<
-                        std::sync::RwLock<crate::core::session::SessionState>,
-                    >(&predictions, None);
-                }
-            });
-        }
-
         if session_save_due {
             let ir_clone = self.context_ir.clone();
-            let session = self.session.clone();
+            let session = self.session.instance();
             tokio::spawn(async move {
                 crate::core::session::SessionState::save_shared_logged(session).await;
                 tokio::task::spawn_blocking(move || {
@@ -113,14 +80,6 @@ impl LeanCtxServer {
             });
         }
 
-        if let Some((intent, root, session_id)) = explicit_intent {
-            let _ = crate::core::intent_protocol::apply_side_effects(
-                &intent,
-                root.as_deref(),
-                &session_id,
-            );
-        }
-
         if self.autonomy.is_enabled() {
             let (calls, project_root) = {
                 let session = self.session.read().await;
@@ -131,11 +90,18 @@ impl LeanCtxServer {
                 && crate::core::autonomy::should_auto_consolidate(&self.autonomy, calls)
             {
                 let root_clone = root.clone();
+                // Imports this server's own session, never the project's
+                // latest saved one (I07/S03).
+                let own = self.session.instance();
                 tokio::task::spawn_blocking(move || {
-                    let _ = crate::core::consolidation_engine::consolidate_latest(
-                        &root_clone,
-                        crate::core::consolidation_engine::ConsolidationBudgets::default(),
-                    );
+                    crate::core::session::caller::scope(Some(own), || {
+                        crate::core::policy::runtime::in_project(root_clone.clone(), || {
+                            crate::core::consolidation_engine::consolidate_latest(
+                                &root_clone,
+                                crate::core::consolidation_engine::ConsolidationBudgets::default(),
+                            )
+                        })
+                    })
                 });
             }
         }

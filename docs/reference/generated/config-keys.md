@@ -12,12 +12,11 @@ Top-level configuration keys
 
 - `a2a_accept_untrusted_signers` (bool, default `false`) — Accept A2A handoff bundles and context packages (/v1/a2a/handoff, /a2a/deliver) signed by a key that is not pinned in trusted-signers.toml. Off by default: such signatures prove integrity, not who sent them, so they are rejected with 403 untrusted_signer. Global-only
 - `agent_token_budget` (usize, default `0`) — Default per-agent token budget. 0 = unlimited
-- `allow_auto_reroot` (bool, default `false` — env `LEAN_CTX_ALLOW_REROOT`) — Allow automatic project-root re-rooting when absolute paths outside the jail are seen
 - `allow_ide_config_dirs` (bool, default `null` — env `LEAN_CTX_ALLOW_IDE_DIRS`) — Allow jailed ctx_* tools to read home-level IDE config dirs (registry-derived; covers all editors). Off by default — exposes other agents' sessions/credentials
 - `allow_paths` (string[], default `[]` — env `LEAN_CTX_ALLOW_PATH`) — Additional paths allowed by PathJail (absolute)
 - `allow_symlink_roots` (string[], default `[]` — env `LEAN_CTX_ALLOW_SYMLINK_ROOTS`) — Trusted roots OUTSIDE $HOME lean-ctx may follow when an agent config is symlinked there (#596). Empty = strict $HOME-only
 - `auto_capture` (bool, default `true`) — Automatic knowledge capture from tool findings
-- `auto_mode_learning` (bool, default `false` — env `LEAN_CTX_AUTO_MODE_LEARNING`) — Opt-in: let adaptive learning signals (predictor, bandit, heatmap, adaptive policy, bounce/path memory) influence `auto` mode. Off by default for a deterministic, I/O-light cascade (capability guards + size/task heuristic only) that keeps output byte-stable for prompt caching. Override via LEAN_CTX_AUTO_MODE_LEARNING
+- `auto_mode_learning` (bool, default `false` — env `LEAN_CTX_AUTO_MODE_LEARNING`) — Opt-in: let adaptive learning signals (predictor, bandit, heatmap, adaptive policy, in-session bounce rates) influence `auto` mode. Per-path bounce memory always applies. Off by default for a deterministic, I/O-light cascade (capability guards + size/task heuristic only) that keeps output byte-stable for prompt caching. Override via LEAN_CTX_AUTO_MODE_LEARNING
 - `behavior_nudges` (String, default `auto`) — In-band behavior hints (heavy full/raw reads, search→read→search chains): auto (default, one hint per pattern per session) or off. Detections are always counted for `tools health`.
 - `bm25_max_cache_mb` (u64, default `128` — env `LEAN_CTX_BM25_MAX_CACHE_MB`) — Maximum BM25 cache file size in MB
 - `bm25_max_files` (u64, default `5000`) — Maximum files in the BM25 corpus (the semantic index chunks the same corpus). 0 = unlimited
@@ -38,8 +37,9 @@ Top-level configuration keys
 - `default_tool_categories` (string[], default `[]`) — Tool categories active by default. `core` is the default; `session` enables experimental local collaboration tools only when explicitly listed. Override via LCTX_DEFAULT_CATEGORIES
 - `delta_explicit` (boolean, default `false`) — Legacy delta preference (opt-in); concrete per-call full/lines requests remain fresh and exact. Use mode=auto or mode=diff for reduced re-reads. Override via LCTX_DELTA_EXPLICIT=1
 - `disabled_tools` (string[], default `[]`) — Tools to exclude from the MCP tool list
-- `enable_wakeup_ctx` (bool, default `true`) — Append wakeup briefing (facts, session summary) to ctx_overview output. Set false to reduce context bloat when calling ctx_overview frequently.
+- `enable_wakeup_ctx` (bool, default `true`) — Append wakeup briefing (facts, session summary) to the session-start overview. Set false to reduce context bloat.
 - `excluded_commands` (string[], default `[]`) — Commands to exclude from shell hook interception
+- `execute_allowed_languages` (array, default `[]`) — Languages ctx_execute runs without asking (python, javascript, ...). Written when you answer its approval prompt with always allow; shell code follows the shell allowlist instead. Global only
 - `extra_ignore_patterns` (string[], default `[]`) — Extra glob patterns to ignore in graph/overview/preload
 - `extra_roots` (string[], default `[]` — env `LEAN_CTX_EXTRA_ROOTS`) — Extra project roots for multi-root workspaces (auto-added to PathJail allow-list)
 - `graph_index_max_files` (u64, default `15000`) — Maximum files in graph index. 0 = unlimited (default). Set >0 to cap for constrained systems
@@ -93,6 +93,7 @@ Top-level configuration keys
 - `shell_allowlist` (array, default `[]` — env `LEAN_CTX_SHELL_ALLOWLIST`) — Optional shell command allowlist. When non-empty, only listed binaries are permitted
 - `shell_allowlist_extra` (array, default `[]`) — Commands merged on top of shell_allowlist without replacing the defaults. Managed via `lean-ctx allow <cmd>`
 - `shell_allowlist_subcommand_scoping` (bool, default `true`) — Scope a multi-word shell_allowlist entry to the exact subcommand/prefix it names (GH #1419). Default true; set false to fall back to base-binary-only matching.
+- `shell_approval` (enum: ask | off, default `ask` — env `LEAN_CTX_SHELL_APPROVAL`) — Whether ctx_shell may ask you to approve a command the shell allowlist does not name. ask (default): when the MCP client supports elicitation, a command refused only for unlisted programs is put to you (allow once, for this session, always, or deny); hard blocks (eval, inline interpreter code, dangerous flags) are never asked about. off: refuse without asking. Global only
 - `shell_heavy_timeout_secs` (u64?, default `null` — env `LEAN_CTX_SHELL_HEAVY_TIMEOUT_SECS`) — Shell command timeout (seconds) for heavy commands (cargo build/test, make, docker build, git commit/push). null = built-in 10-minute ceiling
 - `shell_hook_disabled` (bool, default `false` — env `LEAN_CTX_NO_HOOK`) — Disable shell hook injection
 - `shell_hook_mode` (enum: auto | rewrite | deny, default `auto` — env `LEAN_CTX_SHELL_HOOK_MODE`) — How the PreToolUse shell hook treats native Bash/Shell calls (#1278). rewrite: rewrite known read/search/list commands, unknown commands pass through raw. deny: block native shell outright so every command goes through ctx_shell (fail-opens: lean-ctx disabled, MCP daemon dead, explicit shadow-only surface). auto (default): currently rewrite
@@ -103,9 +104,7 @@ Top-level configuration keys
 - `slow_command_threshold_ms` (u64, default `5000`) — Commands taking longer than this (ms) are recorded in the slow log. Set to 0 to disable
 - `structure_first` (bool, default `false` — env `LEAN_CTX_STRUCTURE_FIRST`) — Opt-in: bias `auto` toward structure-first reads (map) for medium code files on a cold read. Off by default — for phase-isolated harnesses with no warm-session cache payback. Override via LEAN_CTX_STRUCTURE_FIRST
 - `symbol_map_auto` (bool, default `false`) — Opt-in: α-code identifier substitution in aggressive reads (>50-file projects). Off by default — abbreviated symbols hinder editing/refactoring
-- `team_auto_push` (bool, default `false`) — Research-only organization roll-up switch. Off by default and inactive in the public local Runtime.
-- `team_token` (string?, default `null`) — Research-only organization roll-up credential. Inactive in the public local Runtime.
-- `team_url` (string?, default `null`) — Research-only organization roll-up URL. Inactive in the public local Runtime.
+- `team_share_content` (bool, default `true`) — Team content sharing. false: no bus post, work-graph write, knowledge entry or artifact publication leaves for the hosted Team service; presence, leases and reads continue.
 - `tee_mode` (enum: never | failures | highcompression | always, default `highcompression`) — Controls when shell output is tee'd to disk for later retrieval
 - `terse_agent` (enum: off | lite | full | ultra, default `off` — env `LEAN_CTX_TERSE_AGENT`) — Controls agent output verbosity via instructions injection
 - `theme` (string, default `default`) — Dashboard color theme
@@ -142,33 +141,21 @@ Settings for the zero-loss compression archive (large tool outputs saved to disk
 Controls autonomous background behaviors (preload, dedup, consolidation)
 
 - `auto_consolidate` (bool, default `true`) — Auto-consolidate knowledge periodically
-- `auto_dedup` (bool, default `true`) — Auto-deduplicate repeated reads
-- `auto_preload` (bool, default `true`) — Auto-preload related files on first read
-- `auto_related` (bool, default `true`) — Auto-load graph-related files
-- `cognition_loop_enabled` (bool, default `true` — env `LEAN_CTX_COGNITION_LOOP_ENABLED`) — Enable the background cognition loop (periodic knowledge consolidation)
+- `cognition_loop_enabled` (bool, default `false` — env `LEAN_CTX_COGNITION_LOOP_ENABLED`) — Enable the background cognition loop (periodic knowledge consolidation)
 - `cognition_loop_interval_secs` (u64, default `3600` — env `LEAN_CTX_COGNITION_LOOP_INTERVAL_SECS`) — Seconds between cognition loop iterations
 - `cognition_loop_max_steps` (u8, default `9` — env `LEAN_CTX_COGNITION_LOOP_MAX_STEPS`) — Maximum steps per cognition loop iteration (>= 9 enables observation synthesis)
 - `cognition_synthesis_min_cluster` (usize, default `3` — env `LEAN_CTX_COGNITION_SYNTHESIS_MIN_CLUSTER`) — Minimum facts per entity before observation synthesis writes a summary (needs cognition_loop_max_steps >= 9)
 - `consolidate_cooldown_secs` (u64, default `120`) — Minimum seconds between consolidation runs
 - `consolidate_every_calls` (u32, default `25`) — Consolidate knowledge every N tool calls
-- `dedup_threshold` (usize, default `8`) — Number of repeated reads before dedup triggers
 - `enabled` (bool, default `true`) — Enable autonomous background behaviors
-- `silent_preload` (bool, default `true`) — Suppress preload notifications in output
 
 ## `[boundary_policy]`
 
 Cross-project boundary and access control policies
 
-- `audit_cross_access` (bool, default `true`) — Log audit events when cross-project access occurs
 - `cross_project_import` (bool, default `false`) — Allow importing knowledge from other projects
 - `cross_project_search` (bool, default `false`) — Allow searching across project boundaries
 - `universal_gotchas_enabled` (bool, default `true`) — Load universal (cross-project) gotchas
-
-## `[cloud]`
-
-Research-only hosted settings. They are inactive in the public local Runtime.
-
-- `auto_sync` (bool, default `false`) — Research-only hosted synchronization setting. Inactive in the public local Runtime; use only with an explicit development evaluation flag.
 
 ## `[context]`
 
@@ -184,14 +171,16 @@ Fixed-context budget accounting (#964)
 
 Context Gateway admission: built-in detectors, on by default, global-only
 
+- `allowed_destinations` (array, default `[]`) — Optional target allow-list using DestinationV1 fields; provider/locality are required, and configured account_ref/region must be bound by trusted route metadata
 - `classification` (enum: off | warn | redact | block, default `warn`) — Action for explicit markings such as CONFIDENTIAL (redact = withhold)
+- `destination_constraints` (array, default `[]`) — Hard final-egress placement constraints: local_only and organization_private; independent of content scanning
 - `detector_timeout_ms` (u64, default `2000`) — Per-detector time budget; a detector that runs out reports timed_out, never clean
 - `enabled` (bool, default `true` — env `LEAN_CTX_CONTEXT_GATEWAY`) — Run context admission on every governed source before caching or compression
 - `hud` (enum: auto | in_band | status_line, default `auto`) — Where redaction counts appear: auto keeps them out of the model's context when the Claude Code status line shows lean-ctx
 - `injection` (enum: off | warn | redact | block, default `warn`) — Action for prompt-injection heuristic (OWASP LLM01)
 - `max_inspected_bytes` (usize, default `8388608`) — Bytes each detector inspects per object; beyond it coverage is partial (withheld in governed/sovereign mode)
 - `mode` (enum: developer | governed | sovereign, default `developer`) — Governed and sovereign treat unclassified content as internal, never public
-- `pii` (enum: off | warn | redact | block, default `redact`) — Action for checksum-validated PII: AHV, IBAN, payment cards
+- `pii` (enum: off | warn | redact | block, default `redact`) — Action for checksum-validated PII: payment cards
 - `secrets` (enum: off | warn | redact | block, default `redact`) — Action for credentials and keys (patterns from [secret_detection])
 
 ## `[cost]`
@@ -203,7 +192,7 @@ Model declaration for measured-vs-estimated cost reporting
 
 ## `[cross_agent]`
 
-Cross-agent memory sharing and semantic retrieval (Atlas adaptation)
+Cross-agent memory sharing and semantic retrieval (Hive adaptation)
 
 - `auto_extract` (bool, default `true`) — Auto-extract decisions from completed sessions
 - `cross_agent_sync` (bool, default `true`) — Share knowledge facts across agent sessions
@@ -227,22 +216,12 @@ MCP decision-loop runtime settings
 
 ## `[embedding]`
 
-Semantic-embedding engine settings (model selection for ctx_semantic_search)
+Semantic-embedding engine settings (model selection for ctx_search action=semantic)
 
 - `auto_download` (bool, default `null` — env `LEAN_CTX_EMBEDDINGS_AUTO_DOWNLOAD`) — Download the embedding model in the background on first semantic need (default: allowed). Set false for air-gapped machines; semantic features then stay off until a model is provided manually.
 - `deterministic` (bool, default `null` — env `LEAN_CTX_EMBEDDING_DETERMINISTIC`) — Pin embedding inference to a single CPU thread with no GPU provider so vectors are bit-identical across machines (default: off, multi-threaded GPU-capable path). Extractive prose ranking is already deterministic via score quantization; enable this only for cross-machine reproducibility, at a throughput cost.
 - `dimensions` (integer, default `null`) — Declared embedding width for hf: custom models (fallback only — the real width is probed from the ONNX graph at load time). Built-in models ignore this key.
-- `model` (string, default `minilm` — env `LEAN_CTX_EMBEDDING_MODEL`) — Local embedding model for ctx_semantic_search. Unset: minilm where ONNX Runtime is installed, potion-code otherwise. One of: minilm (all-MiniLM-L6-v2, 384d), potion-code (potion-code-16M, 256d static model2vec, pure Rust — no ONNX Runtime, indexes thousands of chunks per second), nomic (768d) — or any HuggingFace repo with an ONNX export via hf:org/repo[@revision] (e.g. hf:jinaai/jina-embeddings-v2-base-code for code). Switching models re-indexes once on the next search.
-
-## `[gain]`
-
-Research-only hosted publication settings (inactive by default)
-
-- `auto_publish` (bool, default `false`) — Research-only hosted publication setting. Off by default and inactive unless LEAN_CTX_EXPERIMENTAL_PUBLICATION=1 is set for a local development evaluation.
-- `auto_publish_interval_hours` (u64, default `24`) — Minimum hours between development-evaluation publishes (throttle; default 24)
-- `display_name` (string?, default `null`) — Optional development-evaluation display name for a hosted publication experiment
-- `last_auto_publish` (string?, default `null`) — Timestamp of the last development-evaluation publish (written for throttling — not meant to be edited)
-- `leaderboard` (bool, default `false`) — Research-only public-ranking setting. Off by default and inactive in the public local Runtime.
+- `model` (string, default `minilm` — env `LEAN_CTX_EMBEDDING_MODEL`) — Local embedding model for ctx_search action=semantic. Unset: minilm where ONNX Runtime is installed, potion-code otherwise. One of: minilm (all-MiniLM-L6-v2, 384d), potion-code (potion-code-16M, 256d static model2vec, pure Rust — no ONNX Runtime, indexes thousands of chunks per second), nomic (768d) — or any HuggingFace repo with an ONNX export via hf:org/repo[@revision] (e.g. hf:jinaai/jina-embeddings-v2-base-code for code). Switching models re-indexes once on the next search.
 
 ## `[gateway]`
 
@@ -277,11 +256,24 @@ Research-only organization gateway registry (array of tables: `[[gateway_server.
 - `id` (string, default `""`) — Registry id; becomes the governed route `/mcp/{id}` on the proxy port (lowercase alnum/-/_)
 - `url` (string, default `""`) — Upstream Streamable-HTTP endpoint (HTTPS; loopback HTTP ok; plain HTTP needs [proxy] allow_insecure_http_upstream)
 
-## `[graph]`
+## `[hive]`
 
-Code-graph settings, including traversal (co-access) edges learned from sessions
+LeanCTX Hive: workspace knowledge, policies and the shared agent bus.
 
-- `traversal_edges` (bool, default `true`) — Learn co-access edges from real sessions (files surfaced together), surface them as decaying `co_access` graph edges, and boost recall by them. Set false for a purely static AST-only graph.
+- `auto_capture` (bool, default `true`) — Run the capture gate on session learnings and share what passes (renamed from auto_draft).
+- `bus` (string: auto | off, default `auto`) — Relay the agent bus through Hive (auto) or keep it local (off).
+- `enabled` (bool, default `null`) — Pause all Hive traffic with false; unset means on while this machine is connected.
+- `metrics_upload` (bool, default `true`) — Send hourly engine metrics to Hive (counts only, including full re-fetches and unregulated program names; never content).
+- `pull_interval_minutes` (integer, default `5`) — Minutes between Hive sync passes (1-60; values outside are clamped).
+- `receipts_upload` (bool, default `true`) — Upload context receipts to Hive.
+- `root_key` (string, default `null`) — Root public key (base64 Ed25519) of a self-hosted Hive.
+- `runtime_consent` (bool, default `false`) — You agreed to install the proprietary Intelligence runtime your plan licenses (set by `hive connect` or `hive runtime install`).
+- `sealed_grants` (string: confirm | auto, default `confirm`) — Sealed vaults: grant the vault key to a newly approved instance only after you confirmed its fingerprint (confirm), or to every instance Hive lists (auto).
+- `url` (string, default `https://hive.leanctx.com`) — Hive origin (https; a self-hosted Hive may use any https URL).
+- `vault_labels` (bool, default `true`) — Send checkout folder names as vault labels.
+- `worker.max_tasks_per_day` (integer, default `null`) — Worker mode: at most this many claimed tasks per day on this machine; only tightens the opt-in budget set on the web.
+- `worker.max_tokens_per_day` (integer, default `null`) — Worker mode: stop claiming once the day's results reported this many tokens; only tightens the opt-in budget.
+- `worker.max_usd_micros_per_day` (integer, default `null`) — Worker mode: stop claiming once the day's results reported this cost (USD millionths); only tightens the opt-in budget.
 
 ## `[ide_paths]`
 
@@ -311,6 +303,7 @@ Global-only optional runtime consent and independent staging pins; project overr
 - `manifest_sha256` (string, default `""`) — Independently selected manifest digest
 - `root` (string, default `""`) — Absolute private installation root
 - `staging` (bool, default `false`) — Staging-only delivery; not production release approval
+- `team_artifact_projects` (array, default `[]`) — Projects that read shared team artifacts: tables of root (absolute), organization_id, project_id and repository_id. Empty: no project uses an artifact
 - `trust_key_hex` (string, default `""`) — Independently provisioned Ed25519 public key, lowercase hex
 
 ## `[llm]`
@@ -331,7 +324,7 @@ Loop detection settings for preventing repeated identical tool calls
 - `normal_threshold` (u32, default `2`) — Repetitions before reducing output
 - `reduced_threshold` (u32, default `4`) — Repetitions before further reducing output
 - `search_group_limit` (u32, default `10`) — Maximum unique searches within a loop window
-- `tool_total_limits` (table, default `{"ctx_read":100,"ctx_search":80,"ctx_semantic_search":60,"ctx_shell":50}`) — Per-tool total call limits within a session. Keys are tool names, values are max calls
+- `tool_total_limits` (table, default `{"ctx_read":100,"ctx_search":80,"ctx_shell":50}`) — Per-tool total call limits within a session. Keys are tool names, values are max calls
 - `window_secs` (u64, default `300`) — Time window in seconds for loop detection
 
 ## `[lsp]`
@@ -361,9 +354,7 @@ Episodic memory budgets (session episodes)
 
 Gotcha memory settings (project-specific warnings and pitfalls)
 
-- `default_decay_rate` (f32, default `0.03`) — Default decay rate for gotcha importance
-- `max_gotchas_per_project` (usize, default `100`) — Maximum gotchas stored per project
-- `retrieval_budget_per_room` (usize, default `10`) — Maximum gotchas retrieved per room per query
+- `max_gotchas_per_project` (usize, default `100`) — Maximum gotchas kept per project (lowest confidence dropped first)
 
 ## `[memory.knowledge]`
 
@@ -467,6 +458,7 @@ Proxy upstream configuration for API routing
 - `meter_openai_usage` (bool, default `true`) — Inject stream_options.include_usage into streamed OpenAI Chat Completions so the final chunk reports real token usage for the measured spend meter. Default true
 - `openai_upstream` (string?, default `null`) — Custom upstream URL for OpenAI API proxy
 - `output_holdout` (f64, default `0.0` — env `LEAN_CTX_PROXY_OUTPUT_HOLDOUT`) — Fraction 0.0-1.0 of conversations placed in the output-savings control arm (#895). 0 (default) = no holdout (every conversation is output-shaped). When > 0, a deterministic cohort = blake3(system + first user message) puts ~this fraction in a control arm that skips output-shaping (effort control + verbosity steer) but is still metered, yielding an honest measured output-token reduction (lean-ctx output-savings). The cohort is a pure function of conversation identity, so a conversation keeps one arm across all turns - cache-safe
+- `project_root` (string, default `null` — env `LEAN_CTX_PROXY_PROJECT_ROOT`) — Absolute project root the proxy acts for: its admissions apply that project's policy pack, and sources of provider-sealed items and recovery copies are re-admitted for it. Operator-set only — no request header, tag or body field selects it. Verified at every use (exists, canonical, not a broad or unsafe root, equal to LEAN_CTX_REQUIRED_POLICY_ROOT when that is set; a mismatch refuses every request). Unset: no configured project — under a policy pack, governed or sovereign mode, sealed provider items with sources and recovery copies then need a launch-pinned root with a verified pack
 - `prose_ranker` (enum: auto | extractive | truncate, default `auto` — env `LEAN_CTX_PROXY_PROSE_RANKER`) — How the proxy squeezes prose it must shrink (#895). auto (default) and extractive use embedding-based extractive ranking — keeping the most central sentences instead of just the prefix — when the local embedding engine is available, else fall back to truncation; truncate keeps the original deterministic FIFO squeeze and never loads the engine. Wire rewrites are memoized per content so the engine's cold→warm transition never changes an already-emitted frozen-region rewrite (cache-safe, #448/#498)
 - `verbosity_steer` (bool, default `true` — env `LEAN_CTX_PROXY_VERBOSITY_STEER`) — Opt-in cache-safe wire verbosity steer (#895). When true, the proxy appends a single constant 'be concise' instruction to the last user turn of each request - output-shaping for raw API clients that do not load lean-ctx rules. The suffix is constant and appended strictly after the last cache_control breakpoint (a new trailing text block, never modifying a cache-anchored block), so the provider prompt-cache prefix stays byte-stable. Under an output_holdout the control arm skips it so its effect is measured. Default false
 
@@ -479,7 +471,7 @@ Opt-in per-role prose compression for the proxy's frozen request region (#710). 
 
 ## `[search]`
 
-Hybrid search weights for ctx_semantic_search (BM25 + dense vector + SPLADE + graph proximity)
+Hybrid search weights for ctx_search action=semantic (BM25 + dense vector + SPLADE + graph proximity)
 
 - `bm25_candidates` (usize, default `75`) — Number of BM25 candidates to retrieve before fusion
 - `bm25_weight` (f64, default `1.0`) — BM25 lexical search weight in RRF fusion
@@ -509,7 +501,7 @@ Per-item sensitivity model with a uniform policy floor (#212)
 
 Controls what lean-ctx injects during setup and updates. Fresh installs default to non-invasive (rules/skills off, MCP on).
 
-- `agents` (string[], default `null`) — AI tools setup/onboard/update may configure (agent keys like claude, cursor, codex). Unset = every detected tool. Set with: lean-ctx setup --agents claude,cursor (--agents all resets)
+- `agents` (string[], default `null`) — AI tools (agent keys, e.g. claude,cursor) that setup, onboard and updates may configure. null=no choice yet: setup offers every detected tool, updates refresh only already-connected ones. Set by the `lean-ctx setup` selection or --agents
 - `auto_inject_rules` (bool?, default `null`) — Inject agent rule files during setup/update. null=auto (inject if already present), true=always, false=never
 - `auto_inject_skills` (bool?, default `null`) — Install SKILL.md files during setup/update. null=auto (install if rules present), true=always, false=never
 - `auto_update_mcp` (bool, default `true`) — Register lean-ctx MCP server in editor configs during setup/update
@@ -536,29 +528,6 @@ Solution Intelligence guidance and decision tracking
 - `platform_hints` (bool, default `true`) — Include platform-native solution hints
 - `track_decisions` (bool, default `true`) — Track solution decisions for efficiency guidance
 - `track_loc` (bool, default `true`) — Track lines of code changed for solution-efficiency guidance
-
-## `[solution.commercial]`
-
-Commercial solution features (require enterprise license)
-
-- `cross_project_patterns` (bool, default `false`) — Enable cross-project pattern analysis (commercial)
-- `fingerprints_enabled` (bool, default `false`) — Enable solution fingerprint prediction (commercial)
-
-## `[solution.commercial.adaptive]`
-
-Adaptive intensity ML settings (commercial)
-
-- `enabled` (bool, default `false`) — Enable adaptive intensity ML model (commercial)
-- `learning_rate` (f64, default `0.1`) — Learning rate for adaptive intensity model
-- `min_observations` (u64, default `20`) — Minimum observations before adaptive recommendations
-
-## `[solution.commercial.team_policy]`
-
-Team-wide solution policy (commercial)
-
-- `enabled` (bool, default `false`) — Enable team-wide solution policy enforcement (commercial)
-- `min_intensity` (enum: off | minimal | balanced | aggressive, default `balanced`) — Minimum solution intensity enforced for team members
-- `require_decision_logging` (bool, default `false`) — Require decision logging for all team members
 
 ## `[summaries]`
 

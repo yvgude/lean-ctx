@@ -105,7 +105,15 @@ pub(crate) fn build_bundle_v1(
         project_root: session.project_root.clone(),
         shell_cwd: session.shell_cwd.clone(),
         task: session.task.clone(),
-        findings: session.findings.clone(),
+        // Only findings that may be delivered now leave in a bundle
+        // (`SessionState::finding_served`): a finding bound to a source that
+        // no longer admits is left out.
+        findings: session
+            .findings
+            .iter()
+            .filter(|finding| session.finding_served(finding))
+            .cloned()
+            .collect(),
         decisions: session.decisions.clone(),
         files_touched: session.files_touched.clone(),
         test_results: session.test_results.clone(),
@@ -465,5 +473,61 @@ mod tests {
         assert_eq!(report.files_touched, 1);
         assert_eq!(report.stale_files, 1);
         assert!(target.files_touched[0].stale);
+    }
+
+    fn with_two_findings(root: &str) -> SessionState {
+        std::fs::write(format!("{root}/pool.rs"), "pub fn lease() {}\n").expect("source");
+        let mut session = SessionState::new();
+        session.project_root = Some(root.to_owned());
+        session.add_finding_for_file(Some("pool.rs"), Some(1), "the pool leaks one lease");
+        session.add_finding_for_file(None, None, "noted without a file");
+        session
+    }
+
+    fn exported(session: &SessionState) -> Vec<String> {
+        build_bundle_v1(session, BundlePrivacyV1::Redacted)
+            .session
+            .findings
+            .into_iter()
+            .map(|finding| finding.summary)
+            .collect()
+    }
+
+    /// A bundle carries a finding bound to a source while the source admits
+    /// and leaves it out once the source is deleted; the finding without a
+    /// file is exported either way.
+    #[test]
+    fn a_finding_whose_source_is_gone_is_not_exported() {
+        use crate::core::context_admission::stored::lineage_support::{governed, project, scoped};
+        let _data = governed();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        let session = with_two_findings(&root);
+
+        assert_eq!(
+            scoped(&root, || exported(&session)),
+            ["the pool leaks one lease", "noted without a file"]
+        );
+        std::fs::remove_file(format!("{root}/pool.rs")).expect("delete");
+        assert_eq!(
+            scoped(&root, || exported(&session)),
+            ["noted without a file"]
+        );
+        assert_eq!(session.findings.len(), 2, "the session keeps both");
+    }
+
+    /// Developer mode: every finding is exported as before.
+    #[test]
+    fn findings_are_exported_as_before_in_developer_mode() {
+        use crate::core::context_admission::stored::lineage_support::project;
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        let session = with_two_findings(&root);
+        std::fs::remove_file(format!("{root}/pool.rs")).expect("delete");
+        assert_eq!(
+            exported(&session),
+            ["the pool leaks one lease", "noted without a file"]
+        );
     }
 }

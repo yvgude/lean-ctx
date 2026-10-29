@@ -3,8 +3,8 @@ use std::sync::atomic::Ordering;
 use std::time::Instant;
 
 use super::entry::{
-    CacheEntry, CacheStats, HEBBIAN_ACTIVE_SET, HEBBIAN_PROTECT_WEIGHT, SharedBlock, StoreResult,
-    apply_hebbian_bonus, eviction_scores_rrf, max_cache_tokens, normalize_key,
+    CacheEntry, CacheStats, SharedBlock, StoreResult, eviction_scores_rrf, max_cache_tokens,
+    normalize_key,
 };
 use super::validation::{compute_md5, is_cache_entry_stale_verified};
 use crate::core::tokens::count_tokens;
@@ -39,10 +39,6 @@ pub struct SessionCache {
     next_ref: usize,
     stats: CacheStats,
     shared_blocks: Vec<SharedBlock>,
-    /// Hebbian co-access matrix (#3): tracks which files are read together so
-    /// eviction can protect co-accessed clusters. Updated on `store`, consulted
-    /// during eviction.
-    co_access: crate::core::hebbian_cache::CoAccessMatrix,
 }
 
 impl Default for SessionCache {
@@ -60,70 +56,7 @@ impl SessionCache {
             next_ref: 1,
             shared_blocks: Vec::new(),
             stats: CacheStats::default(),
-            co_access: crate::core::hebbian_cache::CoAccessMatrix::new(),
         }
-    }
-
-    /// Record that `path` was accessed, strengthening its Hebbian association
-    /// with other files read in the same burst window (#3). Called on every
-    /// `store`; co-access boundaries are flushed via `flush_co_access`.
-    pub fn record_co_access(&mut self, path: &str) {
-        let key = normalize_key(path);
-        self.co_access
-            .record_access(crate::core::hebbian_cache::path_hash(&key));
-    }
-
-    /// Close the current co-access burst so its associations are committed.
-    /// Call at the end of a logical tool call (post-dispatch).
-    pub fn flush_co_access(&mut self) {
-        self.co_access.end_burst();
-    }
-
-    /// Widen the co-access burst window. Test-only: lets a test keep several
-    /// `store()` calls in one burst without depending on them landing inside
-    /// the real-time 500ms window (a scheduling-jitter flake under parallel
-    /// test execution).
-    #[cfg(test)]
-    pub fn set_co_access_burst_window(&mut self, window: std::time::Duration) {
-        self.co_access.set_burst_window(window);
-    }
-
-    /// Per-entry Hebbian eviction bonus (#3): each cached entry that is
-    /// co-accessed with the recently-active working set earns a positive bonus
-    /// that is added to its RRF score, so clustered files survive eviction
-    /// together. Deterministic (no sampling); ticks the activation registry when
-    /// any association actually influences the decision.
-    pub(crate) fn hebbian_eviction_bonus(&self) -> HashMap<String, f64> {
-        use crate::core::hebbian_cache::path_hash;
-        if self.entries.is_empty() {
-            return HashMap::new();
-        }
-        let mut by_recency: Vec<(&String, Instant)> = self
-            .entries
-            .iter()
-            .map(|(k, e)| (k, e.last_access()))
-            .collect();
-        by_recency.sort_by_key(|(_, t)| std::cmp::Reverse(*t));
-        let active: Vec<u64> = by_recency
-            .iter()
-            .take(HEBBIAN_ACTIVE_SET)
-            .map(|(k, _)| path_hash(k))
-            .collect();
-
-        let mut out = HashMap::new();
-        for k in self.entries.keys() {
-            let h = path_hash(k);
-            // Exclude self so an entry never "protects itself".
-            let peers: Vec<u64> = active.iter().copied().filter(|&a| a != h).collect();
-            let strength = self.co_access.association_strength(h, &peers);
-            if strength > 0.0 {
-                out.insert(k.clone(), f64::from(strength) * HEBBIAN_PROTECT_WEIGHT);
-            }
-        }
-        if !out.is_empty() {
-            crate::core::introspect::tick("hebbian_cache");
-        }
-        out
     }
 
     /// Returns or assigns a short file reference label (F1, F2, ...) for the given path.
@@ -178,29 +111,69 @@ impl SessionCache {
     /// gateway under the *current* policy, with the entry's path (G5, recovery
     /// is re-authorized). `Some(Err(reason))` is content-free: the gateway
     /// withholds the content.
+    ///
+    /// A cached copy is never its own source (G04):
+    /// - an entry that came from a file is served only while that file still
+    ///   exists and is readable. A source that was deleted, moved or made
+    ///   unreadable yields a typed refusal, not the last-known copy;
+    /// - an entry that never had a file behind it (a provider result, a
+    ///   virtual key) has no source to re-check. It follows the originless
+    ///   rule: withheld while protection is active in any layer, served
+    ///   re-admitted in Community developer mode;
+    /// - the cached copy itself is served only when its original may be kept
+    ///   in a derived store under the current policy (not restricted).
     pub fn current_full_content(&self, path: &str) -> Option<Result<(String, usize), String>> {
+        use crate::core::context_admission::carrier::Withheld;
         let entry = self.entries.get(&normalize_key(path))?;
-        let (text, tokens) =
-            if is_cache_entry_stale_verified(&entry.path, entry.stored_mtime, &entry.hash)
-                && let Ok(fresh) = crate::core::io_boundary::read_file_lossy(&entry.path)
-            {
-                // Cache is behind disk → serve the current bytes. If the file is now
-                // unreadable (deleted/permission), fall through to the cached copy:
-                // last-known content beats nothing, and that fall-through is not the
-                // staleness bug (it only fires when there is no current content).
-                (fresh, None)
+        let refused = |withheld: Withheld| Some(Err(withheld.message("cached content")));
+        // A cached copy outlives the Workspace revision it was read under:
+        // its path must still be inside the request's Workspace (#2120).
+        if crate::core::workspace_authority::is_configured()
+            && crate::core::workspace_authority::confine(&entry.path, "", false).is_err()
+        {
+            return refused(Withheld::source_unavailable());
+        }
+        let stale = is_cache_entry_stale_verified(&entry.path, entry.stored_mtime, &entry.hash);
+        let (text, tokens) = if entry.stored_mtime.is_some() {
+            if !std::path::Path::new(&entry.path).is_file() {
+                return refused(Withheld::source_unavailable());
+            }
+            if stale {
+                // Cache is behind disk → serve the current bytes, or nothing.
+                match crate::core::io_boundary::read_file_lossy(&entry.path) {
+                    Ok(fresh) => (fresh, None),
+                    Err(_) => return refused(Withheld::source_unavailable()),
+                }
             } else {
                 (entry.content()?, Some(entry.original_tokens))
-            };
+            }
+        } else {
+            if crate::core::context_admission::stored::source_authority_required() {
+                return refused(Withheld::no_source_authority());
+            }
+            (entry.content()?, Some(entry.original_tokens))
+        };
+        let cached_copy = tokens.is_some();
         Some(
-            crate::core::context_admission::admit_source(&text, &entry.path, false)
-                .map(|admitted| {
-                    let tokens = tokens
-                        .filter(|_| admitted == text)
-                        .unwrap_or_else(|| count_tokens(&admitted));
-                    (admitted, tokens)
-                })
-                .map_err(|error| error.to_string()),
+            crate::core::context_admission::admit_source_with_storage(
+                &text,
+                &entry.path,
+                false,
+                crate::core::context_admission::OutputCompleteness::complete(),
+            )
+            .map_err(|error| error.to_string())
+            .and_then(|admission| {
+                if cached_copy && !admission.storable {
+                    return Err(
+                        Withheld::new(&["store.restricted_content"]).message("cached content")
+                    );
+                }
+                let admitted = admission.text;
+                let tokens = tokens
+                    .filter(|_| admitted == text)
+                    .unwrap_or_else(|| count_tokens(&admitted));
+                Ok((admitted, tokens))
+            }),
         )
     }
 
@@ -239,10 +212,6 @@ impl SessionCache {
     /// Stores file content in the cache; returns a hit if content hash matches.
     pub fn store(&mut self, path: &str, content: &str) -> StoreResult {
         let key = normalize_key(path);
-        // #3: feed the Hebbian co-access matrix on every read so eviction can
-        // later protect files that are habitually read together.
-        self.co_access
-            .record_access(crate::core::hebbian_cache::path_hash(&key));
         let hash = compute_md5(content);
         let line_count = content.lines().count();
         let original_tokens = count_tokens(content);
@@ -346,12 +315,10 @@ impl SessionCache {
         let now = Instant::now();
         let all: Vec<(&String, &CacheEntry)> = self.entries.iter().collect();
         let mut scores = eviction_scores_rrf(&all, now);
-        apply_hebbian_bonus(&mut scores, &self.hebbian_eviction_bonus());
         // Sort ascending: lowest RRF score = least valuable = evict first
         scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut freed = 0usize;
-        let mut redelivered = 0u64;
         let target = (current + incoming_tokens).saturating_sub(max_tokens);
 
         for (path, _score) in &scores {
@@ -360,13 +327,9 @@ impl SessionCache {
             }
             if let Some(entry) = self.entries.remove(path) {
                 freed += entry.original_tokens;
-                if entry.full_content_delivered {
-                    redelivered += 1;
-                }
                 self.file_refs.remove(path);
             }
         }
-        crate::core::cache_telemetry::record_eviction(redelivered);
     }
 
     /// Returns all cached entries as (path, entry) pairs.
@@ -532,16 +495,6 @@ impl SessionCache {
             .filter(|mode| !mode.is_empty())
     }
 
-    /// Counts entries that have full content delivered — i.e. those that would
-    /// serve a cheap `[unchanged]` stub and therefore force a full re-delivery
-    /// if dropped. Used by re-delivery telemetry at clear/eviction sites.
-    pub fn count_full_delivered(&self) -> usize {
-        self.entries
-            .values()
-            .filter(|e| e.full_content_delivered)
-            .count()
-    }
-
     /// Removes all compressed output variants (map, signatures, etc.) from every entry,
     /// keeping the full zstd-compressed content intact. Returns the number of entries trimmed.
     pub fn trim_compressed_outputs(&mut self) -> usize {
@@ -564,18 +517,10 @@ impl SessionCache {
             .map(|(k, _)| k.clone())
             .collect();
         let count = to_remove.len();
-        let mut redelivered = 0u64;
         for key in &to_remove {
-            if self
-                .entries
-                .remove(key)
-                .is_some_and(|e| e.full_content_delivered)
-            {
-                redelivered += 1;
-            }
+            self.entries.remove(key);
             self.file_refs.remove(key);
         }
-        crate::core::cache_telemetry::record_eviction(redelivered);
         count
     }
 
@@ -588,11 +533,9 @@ impl SessionCache {
         let now = Instant::now();
         let all: Vec<(&String, &CacheEntry)> = self.entries.iter().collect();
         let mut scores = eviction_scores_rrf(&all, now);
-        apply_hebbian_bonus(&mut scores, &self.hebbian_eviction_bonus());
         scores.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap_or(std::cmp::Ordering::Equal));
 
         let mut freed = 0usize;
-        let mut redelivered = 0u64;
         let target_free = current.saturating_sub(target_tokens);
         for (path, _score) in &scores {
             if freed >= target_free {
@@ -600,13 +543,9 @@ impl SessionCache {
             }
             if let Some(entry) = self.entries.remove(path) {
                 freed += entry.original_tokens;
-                if entry.full_content_delivered {
-                    redelivered += 1;
-                }
                 self.file_refs.remove(path);
             }
         }
-        crate::core::cache_telemetry::record_eviction(redelivered);
     }
 
     /// Estimates the approximate heap memory usage in bytes.

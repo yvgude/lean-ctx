@@ -92,6 +92,18 @@
       {
         "blob": "9698c59bbf61ff6742c4d9762ea1f452139c01c5",
         "reason": "Self-signed loopback TLS test key (certificate CN=localhost, SAN localhost and 127.0.0.1, reviewed 2026-10-17). Read only by HTTPS loopback integration tests; it authenticates nothing outside the test process."
+      },
+      {
+        "blob": "f58e1101e2d8d1a50881b44ebaabbe249ef4497a",
+        "reason": "Test fixture in rust/src/core/pgvector_store.rs at 98acaea9dc (mod tests, psql_command_is_noninteractive_and_config_debug_omits_connection, reviewed 2026-10-21): a made-up postgres URL on the reserved db.example domain whose password the test proves never reaches psql argv or debug output. It authenticates nothing."
+      },
+      {
+        "blob": "8ba30a1753e7bc3f8be5179754a3d03bcfb66012",
+        "reason": "Test fixture in rust/src/core/providers/connection.rs at 296484c4fb (mod tests, database_password_is_masked_in_every_reported_field, reviewed 2026-10-21): a made-up postgres URL on the reserved db.example domain whose password the test proves is masked in every reported field. It authenticates nothing."
+      },
+      {
+        "blob": "48b9248255b559a70e6f5377768ddc2907f1e18a",
+        "reason": "Test fixtures in rust/src/core/providers/connection.rs at 8e74b3551f (mod tests, database_password_is_masked_in_every_reported_field and psql_argv_never_carries_the_database_address, reviewed 2026-10-21): made-up postgres URLs on the reserved db.example domain whose passwords the tests prove are masked and kept out of psql argv. They authenticate nothing."
       }
     ]
   },
@@ -115,17 +127,17 @@
     "scripts/history-policy-gate.py": "d018605b96d155293854985a1627da3bfc18e2721a7640b5530c9889ecfdb899",
     "tests/security/test_history_policy_gate.py": "3aac0ee607d6968a9a0e755e2020be2a0fdfb2f44760cb91dba6fbc1aabb2f29",
     "tests/security/test_security_check_workflow.py": "2d0c9b9a6ceb61c97379290d549bbdcf7812ce17db9794b5d1b067e2202c2844",
-    "rust/src/proxy/anthropic.rs": "02be2417f1eaab0730b4328fee90c91179c46f8ed4c0c2ae2f4737d2331537b7",
-    "rust/src/proxy/anthropic_tests.rs": "49faf7d68246dc93ec9aa1e2db97d77f3db8d9b5d22ba5e05f609e7886f0f47d",
+    "rust/src/proxy/anthropic.rs": "cb869c2f335e24796a9eb84c541ea7b23dd970ed17c620e6a738d40c31c4f121",
+    "rust/src/proxy/anthropic_tests.rs": "9547c3027c881f78e2344fdf7fba7d582637d34595371c3b112a8596c276eaf4",
     "rust/crates/lean-ctx-protocol/src/credential_redaction.rs": "6e522741b965a4ab8bb858e4fb765f4f6ca7d5aa18dd14533490874341313cb1",
     "rust/crates/lean-ctx-protocol/src/context_checkpoint.rs": "698433cd958541d830f5dde38598625dc323d28d5724c072cb4532c322d8c102",
     "rust/crates/lean-ctx-protocol/src/context_checkpoint/tests_core.rs": "2aa83f250907035c82ea5ae56078d0077d539a5799b51b4ab2139940ea7630d0",
-    "rust/src/core/execution_ledger/host/checkpoint_transfer/content.rs": "77f233aa8f4e55925d1c98e791af08cc15972e66b6861bc6d36cb77bb395d241",
-    "rust/src/proxy/openai_responses_ws.rs": "968b11785cc3fb3229b2dbd0c7e8339654f9b15e9af0c8a2cbe8215c35bea284"
+    "rust/src/core/execution_ledger/host/checkpoint_transfer/content.rs": "acdad2ead10c69a550772230f1281c2618d21e22594e1f66af178fd7abcb75d4",
+    "rust/src/proxy/openai_responses_ws.rs": "7525266531c1bb0cebc8f114aa8e761eb29557097af982f983c418032da73cd9"
   },
   "baseline": {
     "commit": "b37ee3be11f2525cd785348d3e43ccdbb590fe94",
     "report": "security/evidence/full-history-baseline-v1.json",
-    "report_sha256": "4f546a030aae03594532b704cb7a226e4c1905c36f2ba208dfe863dca5a209f4"
+    "report_sha256": "9a5b5578ced4944fc6dca380ff9d40a51b0397e80285965255d724fbc6b30783"
   }
 }

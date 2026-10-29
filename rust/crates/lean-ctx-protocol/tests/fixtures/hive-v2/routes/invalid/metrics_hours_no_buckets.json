@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_no_buckets",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets",
+      "value": []
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "empty batch"
+}

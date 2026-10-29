@@ -1,0 +1,19 @@
+{
+  "case": "tag_uppercase",
+  "base": "events/node.add.gotcha.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/body/tags",
+      "value": [
+        "Payments"
+      ]
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/body/tags/0"
+  }
+}

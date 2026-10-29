@@ -180,6 +180,37 @@ fn version_manager_shim_owns(launcher: &std::path::Path, target: &std::path::Pat
     })
 }
 
+/// Whether `dir` is a directory cargo builds a profile into. Cargo names it
+/// after the profile and puts it wherever `CARGO_TARGET_DIR`, `--target-dir`
+/// or `--target` say, so it is recognised by what cargo writes into it: its
+/// build lock, or the fingerprint and dependency directories.
+fn is_cargo_profile_dir(dir: &std::path::Path) -> bool {
+    dir.join(".cargo-lock").is_file()
+        || (dir.join(".fingerprint").is_dir() && dir.join("deps").is_dir())
+}
+
+/// Whether `path` is an artifact in a cargo output directory on this disk:
+/// directly in a profile directory (`<profile>/lean-ctx`) or in its
+/// `deps`/`examples` (test and example binaries).
+///
+/// The one structural answer for every caller that must tell a developer's
+/// build from an installation (uninstall, dev-install, the path baked into
+/// generated artifacts). It reads the disk, so it says "no" for a path that
+/// does not exist; callers keep their name-based check next to it. A wrong
+/// "yes" needs cargo's own bookkeeping files next to an installed binary.
+pub(crate) fn in_cargo_output_dir(path: &std::path::Path) -> bool {
+    let Some(dir) = path.parent() else {
+        return false;
+    };
+    if is_cargo_profile_dir(dir) {
+        return true;
+    }
+    matches!(
+        dir.file_name().and_then(|name| name.to_str()),
+        Some("deps" | "examples")
+    ) && dir.parent().is_some_and(is_cargo_profile_dir)
+}
+
 /// Decide which `lean-ctx` path to bake into generated artifacts (autostart
 /// plists, daemon spawn, MCP server command, agent/shell hooks, update
 /// scheduler). The chosen path must be the *exact build the user is running*, so
@@ -203,12 +234,15 @@ fn version_manager_shim_owns(launcher: &std::path::Path, target: &std::path::Pat
 /// different builds at once.
 fn choose_binary_path(current_exe: Option<&str>, which_raw: Option<&str>) -> String {
     // `target/{debug,release}` plus a relocated `[build] target-dir` whose name
-    // ends in `target` (e.g. a machine-wide `~/.cargo/shared-target`).
+    // ends in `target` (e.g. a machine-wide `~/.cargo/shared-target`), by
+    // name; any other cargo output directory (`--target <triple>`, a named
+    // profile, a target dir of another name) by what cargo wrote into it.
     let is_build_artifact = |p: &str| {
         p.split(['/', '\\'])
             .collect::<Vec<_>>()
             .windows(2)
             .any(|w| w[0].ends_with("target") && matches!(w[1], "debug" | "release"))
+            || in_cargo_output_dir(std::path::Path::new(p))
     };
 
     // 1. Prefer the running binary when it lives in a stable install location.

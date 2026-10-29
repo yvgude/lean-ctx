@@ -9,6 +9,7 @@ use serde_json::Value;
 use super::ProxyState;
 use super::compress_shared::{self, ToolKind};
 use super::forward;
+use super::sticky_tools::{self, Shape};
 use super::tool_kind::{self, ToolResultKind};
 use super::{cache_safety, prose};
 use crate::core::config::{HistoryMode, ProseRole};
@@ -138,11 +139,26 @@ pub async fn ws_handler(
     super::openai_responses_ws::upgrade(state, ws, &headers)
 }
 
+/// One pass over a Responses request, as on the Messages path: the unit in
+/// which a block that leaves with a recovery stub and the conversation it
+/// belongs to are brought together (`sticky_tools`).
 pub(super) fn compress_request_body(
     parsed: Value,
     original_size: usize,
 ) -> (Vec<u8>, usize, usize) {
+    sticky_tools::in_pass(|| compress_in_pass(parsed, original_size))
+}
+
+fn compress_in_pass(parsed: Value, original_size: usize) -> (Vec<u8>, usize, usize) {
     let mut doc = parsed;
+    // Under protection a block leaves shortened only with a stub that names
+    // the Engine's expand tool as the host listed it in this request's own
+    // `tools[].name`. Whether the request lists it and lets its model call
+    // it is settled before any block is touched; if not, blocks stay whole.
+    // The proxy adds no tool, so a request that continues a history the
+    // provider holds (`previous_response_id`) is judged like any other: by
+    // its own list.
+    sticky_tools::begin(Shape::Responses, &doc);
     let cfg = crate::core::config::Config::load();
     // #1905: the input-compression control arm forwards the body uncompressed.
     let compression_control = super::holdout::in_compression_control();
@@ -200,6 +216,10 @@ pub(super) fn compress_request_body(
     {
         let out = serde_json::to_vec(&doc).unwrap_or_default();
         return (out, original_size, original_size);
+    }
+    // K26: large tool descriptions leave shortened (see the Messages path).
+    if live_compress {
+        modified |= super::tool_descriptions::shorten(&mut doc);
     }
     let mut prose_segments: u64 = 0;
     if let Some(a) = system_aggr {
@@ -277,9 +297,10 @@ pub(super) fn prune_responses_input(doc: &mut Value) -> bool {
         if compress_shared::classify_tool_kind(item) != ToolKind::ToolResult {
             continue;
         }
-        let tool_name = item
-            .get("call_id")
-            .and_then(|v| v.as_str())
+        let call_id = item.get("call_id").and_then(|v| v.as_str());
+        // One tool-result block of the call with this id (`sticky_tools::block`).
+        let _block = sticky_tools::block(call_id);
+        let tool_name = call_id
             .and_then(|id| tool_names.get(id))
             .map(String::as_str);
         let kind = compress_shared::tool_result_kind(tool_name);
@@ -322,9 +343,10 @@ pub(super) fn compress_responses_input(doc: &mut Value) -> bool {
             if compress_shared::classify_tool_kind(item) != ToolKind::ToolResult {
                 continue;
             }
-            let name = item
-                .get("call_id")
-                .and_then(|v| v.as_str())
+            let call_id = item.get("call_id").and_then(|v| v.as_str());
+            // One tool-result block of the call with this id (`sticky_tools::block`).
+            let _block = sticky_tools::block(call_id);
+            let name = call_id
                 .and_then(|id| tool_names.get(id))
                 .map(String::as_str);
             // #481: per-tool exclusion (Serena default) — skip live compression
@@ -507,9 +529,6 @@ mod tests {
             chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(
             ),
             mcp_servers: Arc::new(Vec::new()),
-            web_app_tracker: Arc::new(std::sync::Mutex::new(
-                crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
-            )),
         }
     }
 
@@ -566,6 +585,7 @@ mod tests {
     #[tokio::test]
     async fn handler_sends_a_subscription_token_to_the_chatgpt_backend() {
         let _iso = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let (sink, seen) = spawn_sink().await;
         // Stock OpenAI upstream — the condition under test. It is never
         // contacted, because the request is moved to the ChatGPT sink.
@@ -591,6 +611,7 @@ mod tests {
     #[tokio::test]
     async fn handler_leaves_a_configured_gateway_on_the_platform_path() {
         let _iso = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let (sink, seen) = spawn_sink().await;
         // The same JWT, but the operator configured this upstream explicitly.
         // It may well accept a JWT, so the path must be left exactly as sent.
@@ -649,6 +670,7 @@ mod tests {
     #[test]
     fn shell_json_envelope_text_is_compressed() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, Some("Bash"));
         let envelope = serde_json::to_string(&serde_json::json!({
@@ -677,6 +699,7 @@ mod tests {
     #[test]
     fn shell_json_envelope_non_text_field_is_compressed() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, Some("Bash"));
         // Big shell output in a non-"text" field: the Shell/Search all-strings
@@ -729,6 +752,7 @@ mod tests {
         // tee path depends on the data dir; serialize env access so a parallel
         // test never swaps LEAN_CTX_DATA_DIR between the two compressions (#498).
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, None);
         assert!(
@@ -759,6 +783,7 @@ mod tests {
         // tee path depends on the data dir; serialize env access so a parallel
         // test never swaps LEAN_CTX_DATA_DIR between the two compressions (#498).
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, None);
 
@@ -828,6 +853,7 @@ mod tests {
     #[test]
     fn chatgpt_responses_eval_fixture_keeps_exact_payloads_and_pairing() {
         let _iso = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         crate::core::config::Config::update_global(|c| {
             c.proxy.role_aggressiveness.user = Some(0.8);
             c.proxy.proxy_mode = Some("cache".into());
@@ -1070,6 +1096,7 @@ mod tests {
         // #498: the same request must compress to byte-identical output so the
         // provider's prompt cache (and our regression diffs) stay stable.
         let _iso = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let mk = || serde_json::json!({"model": "gpt-5", "input": responses_read_turns(14)});
         let (a, b) = (mk(), mk());
         let (la, lb) = (
@@ -1087,6 +1114,7 @@ mod tests {
         // turn, every item before an already-passed boundary must stay
         // byte-identical, or OpenAI's automatic prompt cache stops hitting.
         let _iso = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let mut prev: Vec<String> = Vec::new();
         let mut prev_boundary = 0;
         for pairs in 1..=20 {

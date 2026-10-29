@@ -21,6 +21,52 @@ pub fn format_created(path: &Path, ledger: &HandoffLedgerV1) -> String {
     )
 }
 
+/// The reply of `ctx_handoff merge`: digests and counts only, in a fixed
+/// order, so the same merge always answers with the same text (#498).
+pub(crate) fn format_merged(outcome: &crate::core::handoff_ledger::MergeOutcome) -> String {
+    let ledger = &outcome.ledger;
+    let dropped = &outcome.dropped;
+    let lines = [
+        "ctx_handoff merge".to_string(),
+        format!(" path: {}", outcome.path.display()),
+        format!(" blake3: {}", ledger.content_md5),
+        format!(" inputs: {}", ledger.merged_from.join(", ")),
+        format!(
+            " findings: {} (beyond bound: {})",
+            ledger.session.findings.len(),
+            dropped.findings
+        ),
+        format!(
+            " knowledge_facts: {} (beyond bound: {})",
+            ledger.knowledge.facts.len(),
+            dropped.facts
+        ),
+        format!(
+            " curated_refs: {} (beyond bound: {}, without source: {})",
+            ledger.curated_refs.len(),
+            dropped.curated_refs,
+            dropped.unbound_curated
+        ),
+        format!(
+            " decisions: {}, next_steps: {}",
+            ledger.session.decisions.len(),
+            ledger.session.next_steps.len()
+        ),
+        format!(" distinct_tasks: {}", outcome.distinct_tasks),
+        // Counts only: which keys conflict is ledger text, served by `show`.
+        format!(
+            " fact_conflicts: {} keys, {} values kept",
+            outcome.conflicts.len(),
+            outcome
+                .conflicts
+                .iter()
+                .map(|conflict| conflict.values)
+                .sum::<usize>()
+        ),
+    ];
+    lines.join("\n")
+}
+
 pub fn format_list(items: &[std::path::PathBuf]) -> String {
     if items.is_empty() {
         return "No handoff ledgers found.".to_string();
@@ -62,11 +108,14 @@ pub fn format_imported(
     schema_version: u32,
     imported_knowledge: u32,
     contradictions: u32,
+    skipped_withheld: usize,
     warning: Option<&str>,
     signature_line: &str,
 ) -> String {
+    // `skipped_withheld`: texts of the bundle that store admission did not
+    // let in. A count only — which text, and why, is not reported.
     let mut out = format!(
-        "ctx_handoff import\n path: {path}\n schema_version: {schema_version}\n imported_knowledge: {imported_knowledge}\n contradictions: {contradictions}",
+        "ctx_handoff import\n path: {path}\n schema_version: {schema_version}\n imported_knowledge: {imported_knowledge}\n contradictions: {contradictions}\n skipped_withheld: {skipped_withheld}",
         path = path.display(),
     );
     if !signature_line.is_empty() {

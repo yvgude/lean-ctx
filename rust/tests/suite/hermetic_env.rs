@@ -88,6 +88,9 @@ impl Drop for SandboxDaemon<'_> {
 
 #[test]
 fn constructor_isolates_the_process_before_tests_run() {
+    // Tests that point the process at another dir hold this lock while they
+    // do and restore the variables before they release it.
+    let _env = lean_ctx::core::data_dir::test_env_lock();
     let dir = std::env::var_os("LEAN_CTX_DATA_DIR").expect("LEAN_CTX_DATA_DIR is set");
     if SANDBOXED.load(std::sync::atomic::Ordering::Relaxed) {
         assert_eq!(std::path::PathBuf::from(dir), sandbox_dir());

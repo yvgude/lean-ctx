@@ -1,0 +1,5 @@
+{
+  "duration_ms": 600000,
+  "fencing_token": 9,
+  "schema": "leanctx.hive.bus-lease-renew-request/v1"
+}

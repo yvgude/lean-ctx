@@ -130,7 +130,8 @@ impl ProjectServers {
     }
 
     /// The server for `root`, or why `root` may not be served: it must be an
-    /// existing directory and not a broad root (home, `/`).
+    /// existing directory, not a broad root (home, `/`), and inside the
+    /// Workspace when one confines this machine (#2120).
     async fn for_root(
         &self,
         root: &str,
@@ -148,6 +149,9 @@ impl ProjectServers {
             || crate::core::pathutil::is_broad_or_unsafe_root(&root)
         {
             return Err("project root is not a project");
+        }
+        if !crate::core::workspace_authority::root_authorized(&root) {
+            return Err("project root is outside the workspace");
         }
         if std::path::Path::new(default_root)
             .canonicalize()
@@ -346,7 +350,20 @@ async fn v1_index_ensure(Json(body): Json<IndexEnsureBody>) -> impl IntoResponse
         return (StatusCode::BAD_REQUEST, "root is required\n");
     }
     let root = body.root;
-    let extra = body.extra_roots;
+    // Under a Workspace this daemon indexes only its roots (#2120).
+    if !crate::core::workspace_authority::root_authorized(std::path::Path::new(&root)) {
+        return (
+            StatusCode::FORBIDDEN,
+            "root is outside this server's Workspace\n",
+        );
+    }
+    let extra: Vec<String> = body
+        .extra_roots
+        .into_iter()
+        .filter(|extra| {
+            crate::core::workspace_authority::root_authorized(std::path::Path::new(extra))
+        })
+        .collect();
     tokio::task::spawn_blocking(move || {
         crate::core::index_orchestrator::ensure_all_background(&root);
         if !extra.is_empty() {
@@ -489,8 +506,10 @@ async fn v1_tool_call(
     .await
     {
         Ok(Ok(v)) => (StatusCode::OK, Json(serde_json::json!({ "result": v }))).into_response(),
-        Ok(Err(e)) => {
-            tracing::warn!("tool call error: {e}");
+        Ok(Err(_)) => {
+            // The error carries the tool's message, which can echo content
+            // the release point withheld from the reply (AP10-R4).
+            tracing::warn!("tool call error (tool_error)");
             json_error(
                 StatusCode::BAD_REQUEST,
                 "tool_error",
@@ -1152,8 +1171,6 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
     // so a loosened boundary is never silent (GH security audit, finding 3).
     crate::core::pathjail::warn_if_relaxed();
 
-    crate::core::savings_autopush::spawn_if_enabled();
-
     // Pre-warm the project indices in the background for this long-lived HTTP
     // server. The stdio path deliberately stays lazy — short-lived respawns must
     // not each pay a full graph + BM25 scan (#453) — but `serve` is a single,
@@ -1163,7 +1180,10 @@ pub async fn serve(cfg: HttpServerConfig) -> Result<()> {
     // The build is deduped per root and idle CPU settles flat once it completes
     // (the memory guard backs off), so #453 idle hygiene is preserved.
     let warm_root = cfg.project_root.to_string_lossy().to_string();
-    if !warm_root.is_empty() {
+    // Under a Workspace only one of its roots is warmed (#2120).
+    if !warm_root.is_empty()
+        && crate::core::workspace_authority::root_authorized(std::path::Path::new(&warm_root))
+    {
         crate::core::index_orchestrator::ensure_all_background(&warm_root);
     }
 
@@ -1227,8 +1247,12 @@ pub async fn serve_ipc(cfg: HttpServerConfig, addr: crate::ipc::DaemonAddr) -> R
     let receipt_authority = crate::server::native_receipts::load_configured_host_authority()
         .map_err(anyhow::Error::msg)?;
 
-    crate::core::savings_autopush::spawn_if_enabled();
-    crate::cloud_sync::spawn_daemon_telemetry();
+    crate::core::telemetry_send::spawn_daemon_telemetry();
+    crate::core::context_admission::receipt_store::retention::maintain_at_startup();
+    // One Hive scheduler per machine (the daemon is the singleton).
+    crate::core::hive::scheduler::spawn(crate::core::config::Config::load().hive.clone());
+    // One Hive bus relay per machine, beside the scheduler.
+    crate::core::hive::bus::spawn(crate::core::config::Config::load().hive.clone());
 
     match addr {
         #[cfg(unix)]

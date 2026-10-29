@@ -16,7 +16,14 @@ use crate::core::engine_interface::{
     execute_transport_context_view, recover_transport_source,
 };
 
+mod delivery;
 mod host;
+mod presenter;
+
+use delivery::{
+    EngineCall, deliver_engine_document, exit_unless_delivered, named_project_root, operation_word,
+    scope_root,
+};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum EngineOperation {
@@ -25,6 +32,8 @@ enum EngineOperation {
     ContextMaterializeSources,
     ContextView,
     EgressAdmit,
+    EgressPrepare,
+    EgressReport,
     Recover,
     ContextLineage,
     ContextPolicyEvidence,
@@ -139,50 +148,55 @@ struct EngineWireResponseV1 {
     recovery: EngineWireRecoveryV1,
 }
 
-pub(crate) fn cmd_engine(args: &[String]) {
-    if args.first().map(String::as_str) == Some("runtime") {
-        match crate::core::intelligence_runtime::run(&args[1..]) {
-            Ok(output) => println!("{output}"),
-            Err(error) => {
-                eprintln!("engine runtime: {error}");
-                std::process::exit(2);
-            }
-        }
-        return;
+/// The call of `lean-ctx engine <operation> …`. A host operation learns its
+/// project from what it will execute — its arguments, the working directory
+/// it selects, or the operator settings on `stdin` — so `stdin` is read once
+/// here and the same bytes are handed to the operation.
+fn engine_call<'a>(args: &'a [String], stdin: &mut impl Read) -> EngineCall<'a, EngineCliError> {
+    if host::is_host_operation(args) {
+        let input = host::read_input(args, stdin);
+        return EngineCall {
+            project_root: host::project_root(args, &input),
+            run: Box::new(move || host::run(args, &mut input.as_slice())),
+        };
     }
+    EngineCall {
+        project_root: named_project_root(args).map(scope_root),
+        run: Box::new(move || run_engine(args)),
+    }
+}
+
+pub(crate) fn cmd_engine(args: &[String]) {
     if args.first().map(String::as_str) == Some("tool-session") {
         super::agent_tools_cmd::cmd_agent_tools(&args[1..]);
         return;
     }
-    match run_engine(args) {
-        Ok(output) => println!("{output}"),
-        Err(error) => {
-            eprintln!("engine: {}", error.code());
-            std::process::exit(2);
-        }
+    let operation = operation_word(args);
+    if args.first().map(String::as_str) == Some("runtime") {
+        let call = EngineCall {
+            project_root: named_project_root(args).map(scope_root),
+            run: Box::new(|| crate::core::intelligence_runtime::run(&args[1..])),
+        };
+        let delivered = deliver_engine_document(operation, call, &mut std::io::stdout());
+        exit_unless_delivered("engine runtime", delivered, |error| error.to_string());
+        return;
     }
+    // The stdin lock ends with this statement: an operation that reads its
+    // request from stdin itself (`--json-file -`) takes it again.
+    let call = engine_call(args, &mut std::io::stdin().lock());
+    let delivered = deliver_engine_document(operation, call, &mut std::io::stdout());
+    exit_unless_delivered("engine", delivered, |error| error.code().to_owned());
 }
 
 fn run_engine(args: &[String]) -> Result<String, EngineCliError> {
+    if host::is_host_operation(args) {
+        return host::run(args, &mut std::io::stdin().lock());
+    }
     if matches!(
         args.first().map(String::as_str),
-        Some(
-            "context-view-receipt"
-                | "context-sources-receipt"
-                | "context-sources-receipt-v2"
-                | "context-outcome"
-                | "context-outcome-receipt"
-                | "context-checkpoint"
-                | "context-checkpoint-resume"
-                | "context-checkpoint-package"
-                | "context-checkpoint-import"
-                | "context-checkpoint-continue"
-                | "context-checkpoint-sources"
-                | "context-personal-sync"
-                | "signer-info"
-        )
+        Some(presenter::MATERIALIZE_V2 | presenter::REVOKE | presenter::USE)
     ) {
-        return host::run(args, &mut std::io::stdin().lock());
+        return presenter::run(args);
     }
     let cli = parse_cli_args(args)?;
     if matches!(
@@ -207,7 +221,52 @@ fn run_engine(args: &[String]) -> Result<String, EngineCliError> {
                 lean_ctx_protocol::MAX_ENGINE_EGRESS_REQUEST_BYTES,
             )?)?;
         request.validate().map_err(|_| EngineCliError::Request)?;
-        let response = egress_admit(&request);
+        let project_root = crate::core::engine_interface::bind_transport_root(&cli.project_root)
+            .map_err(EngineCliError::Engine)?;
+        let response = crate::core::policy::runtime::with_explicit_project_source_view(
+            &project_root,
+            |authority| {
+                let fingerprint = authority.fingerprint_bytes();
+                egress_admit(&request, Some(&fingerprint), Some(authority))
+            },
+        )
+        .map_err(|_| EngineCliError::Host("project_policy_changed"))?;
+        return serde_json::to_string(&response).map_err(|_| EngineCliError::Host("internal"));
+    }
+    if cli.operation == EngineOperation::EgressPrepare {
+        let request: lean_ctx_protocol::EngineEgressAdmissionRequestV1 =
+            decode_request(&read_plan_request(
+                &cli.json_file,
+                lean_ctx_protocol::MAX_ENGINE_EGRESS_REQUEST_BYTES,
+            )?)?;
+        request.validate().map_err(|_| EngineCliError::Request)?;
+        let project_root = crate::core::engine_interface::bind_transport_root(&cli.project_root)
+            .map_err(EngineCliError::Engine)?;
+        let response = crate::core::policy::runtime::with_explicit_project_source_view(
+            &project_root,
+            |authority| {
+                let fingerprint = authority.fingerprint_bytes();
+                egress_prepare(&request, Some(&fingerprint), Some(authority))
+            },
+        )
+        .map_err(|_| EngineCliError::Host("project_policy_changed"))?;
+        response
+            .validate()
+            .map_err(|_| EngineCliError::Host("internal"))?;
+        return serde_json::to_string(&response).map_err(|_| EngineCliError::Host("internal"));
+    }
+    if cli.operation == EngineOperation::EgressReport {
+        let request: lean_ctx_protocol::EngineEgressHostReportRequestV1 =
+            decode_request(&read_plan_request(
+                &cli.json_file,
+                lean_ctx_protocol::MAX_ENGINE_EGRESS_REPORT_BYTES,
+            )?)?;
+        request.validate().map_err(|_| EngineCliError::Request)?;
+        let response = crate::core::context_admission::egress::record_host_observation(&request)
+            .map_err(|_| EngineCliError::Host("egress_observation_unavailable"))?;
+        response
+            .validate()
+            .map_err(|_| EngineCliError::Host("egress_observation_unavailable"))?;
         return serde_json::to_string(&response).map_err(|_| EngineCliError::Host("internal"));
     }
     if cli.operation == EngineOperation::ContextMaterializeSources {
@@ -260,6 +319,8 @@ fn run_engine(args: &[String]) -> Result<String, EngineCliError> {
         | EngineOperation::ContextPlanSources
         | EngineOperation::ContextMaterializeSources
         | EngineOperation::EgressAdmit
+        | EngineOperation::EgressPrepare
+        | EngineOperation::EgressReport
         | EngineOperation::ContextLineage
         | EngineOperation::ContextPolicyEvidence => {
             return Err(EngineCliError::Request);
@@ -369,10 +430,48 @@ fn context_store_read(
 /// admission the lean-ctx proxy applies before a request leaves this machine.
 fn egress_admit(
     request: &lean_ctx_protocol::EngineEgressAdmissionRequestV1,
+    project_fingerprint: Option<&[u8]>,
+    project_authority: Option<&crate::core::policy::runtime::PublicationAuthority>,
 ) -> lean_ctx_protocol::EngineEgressAdmissionResponseV1 {
+    egress_prepare_as(
+        "egress-admit",
+        request,
+        project_fingerprint,
+        project_authority,
+    )
+    .decision
+}
+
+/// Opt-in preparation API: unlike the frozen V1 `egress-admit` wire shape,
+/// this response carries the content-addressed link needed by `egress-report`.
+fn egress_prepare(
+    request: &lean_ctx_protocol::EngineEgressAdmissionRequestV1,
+    project_fingerprint: Option<&[u8]>,
+    project_authority: Option<&crate::core::policy::runtime::PublicationAuthority>,
+) -> lean_ctx_protocol::EngineEgressPrepareResponseV2 {
+    egress_prepare_as(
+        "egress-prepare",
+        request,
+        project_fingerprint,
+        project_authority,
+    )
+}
+
+/// The preparation both operations share. The host dispatches the request
+/// itself, so its decision receipt is a host-egress receipt of `operation`,
+/// indexed under the project the request was admitted for — the project the
+/// explicit source view bound (`with_explicit_project_source_view`). Without
+/// a bound project the receipt keeps the proxy's index, as before.
+fn egress_prepare_as(
+    operation: &str,
+    request: &lean_ctx_protocol::EngineEgressAdmissionRequestV1,
+    project_fingerprint: Option<&[u8]>,
+    project_authority: Option<&crate::core::policy::runtime::PublicationAuthority>,
+) -> lean_ctx_protocol::EngineEgressPrepareResponseV2 {
     use crate::core::context_admission::egress::{self, EgressBody, EgressTarget};
     use lean_ctx_protocol::{
-        ENGINE_EGRESS_SCHEMA_VERSION, EgressDispositionV1, EngineEgressAdmissionResponseV1,
+        ENGINE_EGRESS_PREPARE_SCHEMA_VERSION, ENGINE_EGRESS_SCHEMA_VERSION, EgressDispositionV1,
+        EngineEgressAdmissionResponseV1, EngineEgressPrepareResponseV2,
     };
 
     let target = EgressTarget {
@@ -383,7 +482,37 @@ fn egress_admit(
             .and_then(serde_json::Value::as_str),
         upstream_base: &request.upstream_base,
     };
-    let outcome = egress::admit_request(&request.body, &target);
+    let outcome = project_fingerprint.map_or_else(
+        || egress::admit_request(&request.body, &target),
+        |fingerprint| egress::admit_request_for_project(&request.body, &target, fingerprint),
+    );
+    let policy_epoch_current = || {
+        let source_policy = project_authority
+            .map(crate::core::policy::runtime::PublicationAuthority::verify)
+            .transpose()
+            .is_ok();
+        let gateway_policy = match project_fingerprint {
+            Some(fingerprint) => outcome.policy_epoch_current_for_project(fingerprint),
+            None => true,
+        };
+        source_policy && gateway_policy
+    };
+    let changed_policy = || EngineEgressPrepareResponseV2 {
+        schema_version: ENGINE_EGRESS_PREPARE_SCHEMA_VERSION,
+        decision: EngineEgressAdmissionResponseV1 {
+            schema_version: ENGINE_EGRESS_SCHEMA_VERSION,
+            disposition: EgressDispositionV1::Refused,
+            body: None,
+            refusal: Some("policy_changed".to_owned()),
+            classification: outcome.classification,
+            receipt: None,
+        },
+        prepared_body: None,
+        admission_receipt_digest: None,
+    };
+    if !policy_epoch_current() {
+        return changed_policy();
+    }
     let original = serde_json::to_vec(&request.body).unwrap_or_default();
     let (disposition, body, refusal) = match &outcome.body {
         EgressBody::Unchanged => (
@@ -399,14 +528,59 @@ fn egress_admit(
     let forwarded = body
         .as_ref()
         .map(|body| serde_json::to_vec(body).unwrap_or_default());
-    let receipt = egress::finish(&outcome, forwarded.as_deref(), original.len(), None);
-    EngineEgressAdmissionResponseV1 {
-        schema_version: ENGINE_EGRESS_SCHEMA_VERSION,
-        disposition,
-        body,
-        refusal,
-        classification: outcome.classification,
-        receipt,
+    let project = crate::core::policy::runtime::REQUEST_PROJECT
+        .try_with(|slot| slot.borrow().clone())
+        .ok()
+        .flatten()
+        .map(|root| root.to_string_lossy().into_owned());
+    let caller = match project.as_deref() {
+        Some(project_root) => egress::EgressCaller::Host {
+            project_root,
+            operation,
+        },
+        None => egress::EgressCaller::Proxy,
+    };
+    let finished =
+        egress::finish_admission_for(&outcome, forwarded.as_deref(), original.len(), None, caller);
+    let evidence = match finished {
+        Ok(evidence) => evidence,
+        Err(reason) => {
+            return EngineEgressPrepareResponseV2 {
+                schema_version: ENGINE_EGRESS_PREPARE_SCHEMA_VERSION,
+                decision: EngineEgressAdmissionResponseV1 {
+                    schema_version: ENGINE_EGRESS_SCHEMA_VERSION,
+                    disposition: EgressDispositionV1::Refused,
+                    body: None,
+                    refusal: Some(reason.to_owned()),
+                    classification: outcome.classification,
+                    receipt: None,
+                },
+                prepared_body: None,
+                admission_receipt_digest: None,
+            };
+        }
+    };
+    if !policy_epoch_current() {
+        return changed_policy();
+    }
+    let (receipt, admission_receipt_digest) = evidence.map_or((None, None), |evidence| {
+        (evidence.decision_receipt, evidence.admission_digest)
+    });
+    let prepared_body = forwarded.map(|bytes| {
+        String::from_utf8(bytes).expect("JSON serialization always emits valid UTF-8")
+    });
+    EngineEgressPrepareResponseV2 {
+        schema_version: ENGINE_EGRESS_PREPARE_SCHEMA_VERSION,
+        decision: EngineEgressAdmissionResponseV1 {
+            schema_version: ENGINE_EGRESS_SCHEMA_VERSION,
+            disposition,
+            body,
+            refusal,
+            classification: outcome.classification,
+            receipt,
+        },
+        prepared_body,
+        admission_receipt_digest,
     }
 }
 
@@ -417,6 +591,8 @@ fn parse_cli_args(args: &[String]) -> Result<EngineCliArgs, EngineCliError> {
         Some("context-materialize-sources") => EngineOperation::ContextMaterializeSources,
         Some("context-view") => EngineOperation::ContextView,
         Some("egress-admit") => EngineOperation::EgressAdmit,
+        Some("egress-prepare") => EngineOperation::EgressPrepare,
+        Some("egress-report") => EngineOperation::EgressReport,
         Some("recover") => EngineOperation::Recover,
         Some("context-lineage") => EngineOperation::ContextLineage,
         Some("context-policy-evidence") => EngineOperation::ContextPolicyEvidence,
@@ -561,7 +737,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn egress_admit_masks_a_credential_and_reports_classification_and_receipt() {
+    fn legacy_egress_admit_wire_stays_v1_while_prepare_exposes_report_link() {
         let _data = crate::core::data_dir::isolated_data_dir();
         let key = concat!("AK", "IAIOSFODNN7EXAMPLE");
         let request = lean_ctx_protocol::EngineEgressAdmissionRequestV1 {
@@ -573,7 +749,20 @@ mod tests {
                 "messages": [{"role": "user", "content": format!("deploy with {key} today")}]
             }),
         };
-        let response = egress_admit(&request);
+        let legacy = egress_admit(&request, None, None);
+        legacy.validate().expect("a consistent legacy response");
+        let legacy_json = serde_json::to_value(&legacy).expect("legacy JSON");
+        assert!(legacy_json.get("admission_receipt_digest").is_none());
+
+        let prepared = egress_prepare(&request, None, None);
+        prepared
+            .validate()
+            .expect("a consistent preparation response");
+        let admission_digest = prepared
+            .admission_receipt_digest
+            .clone()
+            .expect("the prepared bytes have a durable admission digest");
+        let response = prepared.decision;
         response.validate().expect("a consistent response");
         assert_eq!(
             response.disposition,
@@ -585,6 +774,283 @@ mod tests {
         assert!(response.classification.is_some());
         let receipt = response.receipt.expect("a receipt");
         assert!(receipt.security.redactions >= 1);
+
+        let report = lean_ctx_protocol::EngineEgressHostReportRequestV1 {
+            schema_version: lean_ctx_protocol::ENGINE_EGRESS_SCHEMA_VERSION,
+            admission_receipt_digest: admission_digest,
+            attempt: 1,
+            transport: lean_ctx_protocol::context_gateway::EgressTransportV1::Http,
+            result: lean_ctx_protocol::context_gateway::EgressTransportResultV1::ResponseObserved,
+            http_status: Some(503),
+            failure: None,
+        };
+        report.validate().expect("bounded host report");
+        let stored = crate::core::context_admission::egress::record_host_observation(&report)
+            .expect("the report names a stored prepared admission");
+        stored
+            .validate()
+            .expect("the Engine labels it HostReported");
+        assert_eq!(
+            stored.observation.observer,
+            lean_ctx_protocol::context_gateway::EgressTransportObserverV1::HostReported
+        );
+    }
+
+    #[test]
+    fn egress_admit_refuses_body_when_mandatory_receipt_store_fails() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let config = crate::core::paths::config_dir_read_only().expect("config directory");
+        std::fs::create_dir_all(&config).expect("config directory");
+        std::fs::write(
+            config.join("config.toml"),
+            "[context_gateway]\nmode = \"governed\"\n",
+        )
+        .expect("governed config");
+        let data = crate::core::data_dir::lean_ctx_data_dir().expect("data directory");
+        std::fs::create_dir_all(&data).expect("data directory");
+        std::fs::write(data.join("gateway"), b"blocked test store").expect("store obstruction");
+        let request = lean_ctx_protocol::EngineEgressAdmissionRequestV1 {
+            schema_version: lean_ctx_protocol::ENGINE_EGRESS_SCHEMA_VERSION,
+            provider: "openai".into(),
+            upstream_base: "http://127.0.0.1:11434".into(),
+            body: serde_json::json!({"model":"m","messages":[{"role":"user","content":"hello"}]}),
+        };
+        let response = egress_admit(&request, None, None);
+        response.validate().expect("consistent refusal");
+        assert_eq!(
+            response.disposition,
+            lean_ctx_protocol::EgressDispositionV1::Refused
+        );
+        assert!(response.body.is_none());
+        assert!(response.receipt.is_none());
+        assert_eq!(
+            response.refusal.as_deref(),
+            Some(crate::core::context_admission::egress::RECEIPT_UNAVAILABLE)
+        );
+    }
+
+    #[test]
+    fn egress_admit_refuses_dispatch_when_lifecycle_store_fails_in_governed_mode() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let config = crate::core::paths::config_dir_read_only().expect("config directory");
+        std::fs::create_dir_all(&config).expect("config directory");
+        std::fs::write(
+            config.join("config.toml"),
+            "[context_gateway]\nmode = \"governed\"\n",
+        )
+        .expect("governed config");
+        let data = crate::core::data_dir::lean_ctx_data_dir().expect("data directory");
+        std::fs::create_dir_all(data.join("gateway")).expect("legacy receipt store");
+        std::fs::write(data.join("gateway/egress"), b"blocked lifecycle store")
+            .expect("lifecycle store obstruction");
+        let request = lean_ctx_protocol::EngineEgressAdmissionRequestV1 {
+            schema_version: lean_ctx_protocol::ENGINE_EGRESS_SCHEMA_VERSION,
+            provider: "openai".into(),
+            upstream_base: "http://127.0.0.1:11434".into(),
+            body: serde_json::json!({
+                "model":"m",
+                "messages":[{"role":"user","content":"hello"}]
+            }),
+        };
+        let response = egress_admit(&request, None, None);
+        response.validate().expect("consistent refusal");
+        assert_eq!(
+            response.disposition,
+            lean_ctx_protocol::EgressDispositionV1::Refused
+        );
+        assert!(response.body.is_none());
+        assert!(
+            serde_json::to_value(&response)
+                .expect("legacy refusal JSON")
+                .get("admission_receipt_digest")
+                .is_none()
+        );
+        assert_eq!(
+            response.refusal.as_deref(),
+            Some(crate::core::context_admission::egress::RECEIPT_UNAVAILABLE)
+        );
+    }
+
+    #[test]
+    #[serial_test::serial(cache_telemetry)]
+    fn cli_restricted_remote_refusal_returns_a_persisted_linked_withheld_receipt() {
+        use lean_ctx_protocol::context_gateway::{
+            ClassificationV1, DeliveryOutcomeV1, EgressAdmissionOutcomeV1,
+        };
+        use lean_ctx_protocol::{
+            EgressDispositionV1, EngineEgressAdmissionRequestV1, EngineEgressAdmissionResponseV1,
+            EngineEgressPrepareResponseV2,
+        };
+
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let config = crate::core::paths::config_dir_read_only().expect("config directory");
+        std::fs::create_dir_all(&config).expect("config directory");
+        std::fs::write(
+            config.join("config.toml"),
+            "[context_gateway]\nmode = \"governed\"\n",
+        )
+        .expect("governed config");
+
+        let project = tempfile::tempdir().expect("project root");
+        let cases = [
+            (
+                "restricted",
+                serde_json::json!({
+                    "model": "m",
+                    "messages": [{
+                        "role": "user",
+                        "content": "Classification: Secret\nprivate deployment plan"
+                    }]
+                }),
+                DeliveryOutcomeV1::Withheld,
+                false,
+            ),
+            // A restricted block next to admitted content is withheld in
+            // place and the request goes (no lockout, 26.10.): see
+            // `egress_tests::a_restricted_block_in_the_history_is_withheld_in_place…`.
+        ];
+
+        for (name, body, expected_decision_outcome, has_admitted_source) in cases {
+            let request = EngineEgressAdmissionRequestV1 {
+                schema_version: lean_ctx_protocol::ENGINE_EGRESS_SCHEMA_VERSION,
+                provider: "anthropic".into(),
+                upstream_base: "https://api.anthropic.com".into(),
+                body,
+            };
+            let request_file = project.path().join(format!("{name}.json"));
+            std::fs::write(
+                &request_file,
+                serde_json::to_vec(&request).expect("request JSON"),
+            )
+            .expect("request file");
+
+            for operation in ["egress-admit", "egress-prepare"] {
+                let args = vec![
+                    operation.to_owned(),
+                    "--project-root".to_owned(),
+                    project.path().to_string_lossy().into_owned(),
+                    "--json-file".to_owned(),
+                    request_file.to_string_lossy().into_owned(),
+                ];
+                let wire: serde_json::Value =
+                    serde_json::from_str(&run_engine(&args).expect("CLI response"))
+                        .expect("response JSON");
+                let (decision, returned_admission_digest) = if operation == "egress-admit" {
+                    assert!(wire.get("admission_receipt_digest").is_none());
+                    (
+                        serde_json::from_value::<EngineEgressAdmissionResponseV1>(wire.clone())
+                            .expect("legacy V1 response"),
+                        None,
+                    )
+                } else {
+                    let prepared: EngineEgressPrepareResponseV2 =
+                        serde_json::from_value(wire.clone()).expect("prepare V2 response");
+                    prepared.validate().expect("consistent prepared refusal");
+                    assert!(prepared.prepared_body.is_none());
+                    (prepared.decision, prepared.admission_receipt_digest)
+                };
+
+                decision.validate().expect("consistent egress refusal");
+                assert_eq!(decision.disposition, EgressDispositionV1::Refused);
+                assert!(decision.body.is_none());
+                assert_eq!(decision.classification, Some(ClassificationV1::Restricted));
+                let refusal = decision.refusal.as_deref().expect("refusal reason");
+                assert!(
+                    refusal.contains("destination.remote_restricted"),
+                    "{refusal}"
+                );
+                assert!(!refusal.contains("deployment plan"), "{refusal}");
+                let receipt = decision
+                    .receipt
+                    .as_ref()
+                    .expect("persisted decision receipt");
+                assert_eq!(receipt.outcome, expected_decision_outcome);
+                assert_eq!(receipt.sources.permitted > 0, has_admitted_source);
+                assert!(receipt.final_context.is_none());
+                assert!(receipt.decisions.iter().any(|entry| {
+                    entry
+                        .reason_codes
+                        .iter()
+                        .any(|reason| reason.as_str() == "destination.remote_restricted")
+                }));
+                if operation == "egress-prepare" {
+                    assert!(returned_admission_digest.is_some());
+                }
+
+                let decision_digest = receipt.canonical_digest().expect("decision digest");
+                let lifecycle = crate::core::context_admission::egress::load_egress_for_decision(
+                    &decision_digest,
+                )
+                .expect("load persisted lifecycle")
+                .expect("decision lifecycle link");
+                let admission = lifecycle.admission.expect("linked admission receipt");
+                assert_eq!(
+                    admission.admission.decision_receipt_digest.as_ref(),
+                    Some(&decision_digest)
+                );
+                assert_eq!(
+                    admission.admission.outcome,
+                    EgressAdmissionOutcomeV1::Withheld
+                );
+                assert!(admission.admission.prepared_bytes_digest.is_none());
+                if let Some(returned_digest) = returned_admission_digest {
+                    assert_eq!(returned_digest, admission.digest);
+                }
+            }
+        }
+    }
+
+    #[test]
+    #[serial_test::serial(cache_telemetry)]
+    fn cli_egress_operations_apply_explicit_project_policy_and_keep_v1_shape() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let config = crate::core::paths::config_dir_read_only().expect("config directory");
+        std::fs::create_dir_all(&config).expect("config directory");
+        std::fs::write(
+            config.join("config.toml"),
+            "[context_gateway]\nmode = \"developer\"\n",
+        )
+        .expect("gateway config");
+
+        let project = tempfile::tempdir().expect("project root");
+        let policy = project.path().join(".lean-ctx");
+        std::fs::create_dir_all(&policy).expect("project policy directory");
+        std::fs::write(
+            policy.join("policy.toml"),
+            "name = \"cli-egress-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n[filters.blocked_patterns]\ncustomer = 'K-482193'\n",
+        )
+        .expect("project policy");
+        let request_file = project.path().join("request.json");
+        std::fs::write(
+            &request_file,
+            r#"{"schema_version":1,"provider":"openai","upstream_base":"https://api.openai.com","body":{"model":"m","messages":[{"role":"user","content":"Contact K-482193"}]}}"#,
+        )
+        .expect("egress request");
+
+        for operation in ["egress-admit", "egress-prepare"] {
+            let args = vec![
+                operation.to_owned(),
+                "--project-root".to_owned(),
+                project.path().to_string_lossy().into_owned(),
+                "--json-file".to_owned(),
+                request_file.to_string_lossy().into_owned(),
+            ];
+            let response: serde_json::Value =
+                serde_json::from_str(&run_engine(&args).expect("egress response"))
+                    .expect("egress JSON");
+            let decision = if operation == "egress-prepare" {
+                &response["decision"]
+            } else {
+                assert!(response.get("admission_receipt_digest").is_none());
+                &response
+            };
+            assert_eq!(decision["disposition"], "refused", "{response}");
+            assert!(decision["body"].is_null(), "{response}");
+            assert!(
+                !response.to_string().contains("K-482193"),
+                "the refusal must not echo blocked content: {response}"
+            );
+        }
     }
 
     #[test]
@@ -692,5 +1158,232 @@ mod tests {
             )
             .is_err()
         );
+        let report = parse_cli_args(&[
+            "egress-report".into(),
+            "--project-root".into(),
+            "/tmp/project".into(),
+            "--json-file".into(),
+            "-".into(),
+        ])
+        .expect("host report operation");
+        assert_eq!(report.operation, EngineOperation::EgressReport);
+        let prepare = parse_cli_args(&[
+            "egress-prepare".into(),
+            "--project-root".into(),
+            "/tmp/project".into(),
+            "--json-file".into(),
+            "-".into(),
+        ])
+        .expect("opt-in preparation operation");
+        assert_eq!(prepare.operation, EngineOperation::EgressPrepare);
+    }
+
+    fn gateway_mode(mode: &str) {
+        let config = crate::core::paths::config_dir_read_only().expect("config directory");
+        std::fs::create_dir_all(&config).expect("config directory");
+        std::fs::write(
+            config.join("config.toml"),
+            format!("[context_gateway]\nmode = \"{mode}\"\n"),
+        )
+        .expect("gateway config");
+    }
+
+    /// G08: an Engine-interface document is ONE receipted delivery of the
+    /// project its operation works on. The receipt binds exactly the bytes
+    /// written and is sealed before the write; the hand-over is recorded
+    /// only after the write succeeded; without the mandatory receipt nothing
+    /// is written.
+    #[test]
+    fn an_engine_document_is_receipted_for_its_project_or_not_written() {
+        use super::delivery::DeliveryFailure;
+        use crate::core::context_admission::receipt_store::{self, observed, roots, trace};
+        use std::io::Write;
+        struct Closed;
+        impl Write for Closed {
+            fn write(&mut self, _: &[u8]) -> std::io::Result<usize> {
+                Err(std::io::ErrorKind::BrokenPipe.into())
+            }
+            fn flush(&mut self) -> std::io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        gateway_mode("governed");
+        let project = tempfile::tempdir().expect("project");
+        let root = project.path().canonicalize().expect("canonical root");
+        let key = root.to_string_lossy().into_owned();
+        let call = |source: &'static str| EngineCall::<EngineCliError> {
+            project_root: Some(root.clone()),
+            run: Box::new(move || {
+                crate::core::context_admission::admit_context_source(source)
+                    .map(|admitted| serde_json::json!({ "view": admitted.text }).to_string())
+                    .map_err(|_| EngineCliError::Host("source_withheld"))
+            }),
+        };
+
+        let mut out = Vec::new();
+        deliver_engine_document("context-view", call("pub fn engine_body() {}\n"), &mut out)
+            .expect("delivered");
+        assert!(out.ends_with(b"}\n") && String::from_utf8_lossy(&out).contains("engine_body"));
+        let found = receipt_store::by_output(&key, &receipt_store::output_digest(&out));
+        assert_eq!(
+            found.len(),
+            1,
+            "one receipt binds exactly the written bytes"
+        );
+        let written = found[0]
+            .1
+            .as_ref()
+            .expect("a verified receipt")
+            .digest
+            .clone();
+        let listed = receipt_store::latest(&key, 8);
+        assert_eq!(listed.len(), 1, "indexed under the operation's project");
+        assert_eq!(listed[0].0, written.hex());
+        assert!(receipt_store::latest(roots::ENGINE_KEY, 8).is_empty());
+        let trace::StoredTrace::Bound { sidecar, .. } = trace::load(&written) else {
+            panic!("a mandatory receipt has its sidecar");
+        };
+        assert_eq!(sidecar.transport, trace::Transport::EngineInterface);
+        assert_eq!(sidecar.release_prepared.channel, trace::Channel::Stdout);
+        assert!(matches!(
+            observed::load(&written),
+            observed::StoredObservation::Bound {
+                observed: observed::Observed::HandedOver { .. },
+                ..
+            }
+        ));
+
+        // Sealed, then the write fails: the receipt stays, nothing is observed.
+        let unwritten = call("pub fn unwritten_body() {}\n");
+        let failed = deliver_engine_document("context-view", unwritten, &mut Closed);
+        assert!(matches!(failed, Err(DeliveryFailure::Write(_))));
+        let listed = receipt_store::latest(&key, 8);
+        assert_eq!(listed.len(), 2, "the receipt was sealed before the write");
+        let sealed = listed[0].1.as_ref().expect("a verified receipt");
+        assert_eq!(
+            observed::load(&sealed.digest),
+            observed::StoredObservation::Absent
+        );
+
+        // A document whose sources pass the document admission of the
+        // checkpoint operations: the receipt of the invocation carries those
+        // decisions with their field references, not `no_source_decision`.
+        #[cfg(unix)]
+        {
+            let checkpoint = EngineCall::<EngineCliError> {
+                project_root: Some(root.clone()),
+                run: Box::new(|| {
+                    let document = serde_json::json!({ "findings": ["The lexer drops commas"] });
+                    crate::core::execution_ledger::host::admit_foreign_document_narrative(
+                        "checkpoint:",
+                        &document,
+                        "context-checkpoint-import",
+                    )
+                    .map(|()| document.to_string())
+                    .map_err(|_| EngineCliError::Host("host_checkpoint_import_rejected"))
+                }),
+            };
+            deliver_engine_document(
+                "context-checkpoint-import",
+                checkpoint,
+                &mut Vec::<u8>::new(),
+            )
+            .expect("delivered");
+            let listed = receipt_store::latest(&key, 8);
+            let newest = listed[0].1.as_ref().expect("a verified receipt");
+            let trace::StoredTrace::Bound { sidecar, .. } = trace::load(&newest.digest) else {
+                panic!("a mandatory receipt has its sidecar");
+            };
+            assert!(!sidecar.unsourced, "the document's sources were decided on");
+            assert!(
+                sidecar.objects.iter().any(|object| matches!(
+                    &object.source,
+                    Some(trace::SourceRef::Id(reference)) if reference.starts_with("checkpoint:")
+                )),
+                "decisions carry the document's field references"
+            );
+        }
+
+        // The store cannot persist: a regular file where its directory would be.
+        let gateway = crate::core::data_dir::lean_ctx_data_dir()
+            .expect("data directory")
+            .join("gateway");
+        std::fs::remove_dir_all(&gateway).expect("the store of the first calls");
+        std::fs::write(&gateway, b"not a directory").expect("blocked store");
+        let mut out = Vec::new();
+        let withheld = call("pub fn withheld_body() {}\n");
+        let refused = deliver_engine_document("context-view", withheld, &mut out);
+        assert!(matches!(refused, Err(DeliveryFailure::ReceiptNotPersisted)));
+        assert!(out.is_empty(), "no receipt, no byte");
+    }
+
+    /// G08: a host operation's project is learned from what it executes —
+    /// here the operator settings on stdin, read once — before its capture
+    /// is opened, so a protection that exists ONLY as that project's policy
+    /// pack makes its receipt mandatory and the receipt is the project's.
+    #[test]
+    fn a_host_operation_is_scoped_to_the_project_its_settings_name() {
+        use crate::core::context_admission::receipt_store::{self, roots, trace};
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _live = crate::core::policy::runtime::lock_test_override();
+        gateway_mode("developer");
+        let project = tempfile::tempdir().expect("project");
+        let root = project.path().canonicalize().expect("canonical root");
+        std::fs::create_dir_all(root.join(".lean-ctx")).expect("policy directory");
+        std::fs::write(
+            root.join(".lean-ctx/policy.toml"),
+            "name = \"host-scope-pack\"\nversion = \"1.0.0\"\ndescription = \"test\"\n",
+        )
+        .expect("project policy");
+        let settings = serde_json::json!({
+            "schema_version": 1,
+            "signing_key_hex": "skipped by the scope step",
+            "checkpoint_resume": {
+                "project_root": project.path(), "project_id": "p",
+                "tenant_id": "t", "workspace_id": "w",
+            },
+        })
+        .to_string();
+        let args = [
+            "context-checkpoint-resume",
+            "--json",
+            "request.json",
+            "--host-stdin",
+        ]
+        .map(String::from);
+
+        let input = host::read_input(&args, &mut settings.as_bytes());
+        assert_eq!(
+            input.as_slice(),
+            settings.as_bytes(),
+            "read once, handed on"
+        );
+        assert!(host::read_input(&args[..3], &mut settings.as_bytes()).is_empty());
+        let scoped = host::project_root(&args, &input);
+        assert_eq!(scoped.as_deref(), Some(root.as_path()));
+        let keyed = ["signer-info", "--key-stdin"].map(String::from);
+        assert_eq!(
+            host::project_root(&keyed, &input),
+            None,
+            "works on no project"
+        );
+
+        let call = EngineCall::<EngineCliError> {
+            project_root: scoped,
+            run: Box::new(|| Ok(r#"{"schema_version":1}"#.to_owned())),
+        };
+        deliver_engine_document("context-checkpoint-resume", call, &mut Vec::<u8>::new())
+            .expect("delivered");
+        let listed = receipt_store::latest(&root.to_string_lossy(), 8);
+        assert_eq!(listed.len(), 1, "mandatory through the pack alone");
+        let stored = listed[0].1.as_ref().expect("a verified receipt");
+        let trace::StoredTrace::Bound { sidecar, .. } = trace::load(&stored.digest) else {
+            panic!("a mandatory receipt has its sidecar");
+        };
+        assert_eq!(sidecar.pack_name.as_deref(), Some("host-scope-pack"));
+        assert!(receipt_store::latest(roots::ENGINE_KEY, 8).is_empty());
     }
 }

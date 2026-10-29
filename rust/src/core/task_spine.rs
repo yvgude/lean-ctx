@@ -214,7 +214,12 @@ impl TaskSpine {
         let source_view = crate::core::policy::runtime::inherited_source_view();
         // Admissions made by the worker belong to the call that spawned it.
         let admissions = crate::core::context_admission::capture::current();
+        // So do the sources it reads: without the call's source capture a
+        // worker's reads would be missing from the lineage of the result.
+        let sources = crate::core::archive::authority::current_capture();
         std::thread::spawn(move || {
+            let operation =
+                move || crate::core::archive::authority::CAPTURE.sync_scope(sources, operation);
             crate::core::context_admission::capture::ADMISSIONS.sync_scope(admissions, || {
                 match project {
                     Some(project) => crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
@@ -267,8 +272,8 @@ mod tests {
         use crate::core::policy::runtime::{self, REQUEST_PROJECT};
         use std::fs;
 
-        let _override_guard = runtime::lock_test_override();
         let _data = crate::core::data_dir::isolated_data_dir();
+        let _override_guard = runtime::lock_test_override();
         let root = tempfile::tempdir().expect("create project");
         let policy_dir = root.path().join(".lean-ctx");
         fs::create_dir_all(&policy_dir).expect("create policy directory");

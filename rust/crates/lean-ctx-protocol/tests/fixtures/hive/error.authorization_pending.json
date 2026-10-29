@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "authorization_pending",
+    "message": "Waiting for approval in the browser."
+  }
+}

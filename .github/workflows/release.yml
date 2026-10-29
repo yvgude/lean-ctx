@@ -48,7 +48,6 @@ jobs:
             assets/ocla/capability-manifests/leanctx/context-optimization-v1.json \
             assets/ocla/capability-manifests/leanctx/passthrough-v1.json \
             assets/ocla/capability-manifests/example/word-count-optimizer-v1.json \
-            assets/ocla/capability-manifests/rtk/rtk-shell-v1.json \
             assets/kits/code-review/kit.toml; do
             grep -Fx "$asset" "$RUNNER_TEMP/package-files.txt"
           done
@@ -184,14 +183,6 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Check out certified Agent Tools SDK
-        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
-        with:
-          repository: Thinkery-AG/leanctx-sdk
-          ref: f786f7d8b29448f707e71394e3cb76ecd678cb97
-          path: sdk-agent-tools
-          persist-credentials: false
-
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@29eef336d9b2848a0b548edc03f92a220660cdb8 # stable
         with:
@@ -212,6 +203,8 @@ jobs:
           LEANCTX_PRODUCTION_RUNTIME_CHANNEL_URL: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_URL }}
           LEANCTX_PRODUCTION_RUNTIME_CHANNEL_SIGNATURE_URL: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_SIGNATURE_URL }}
           LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX }}
+          LEANCTX_PRODUCTION_COCKPIT_CHANNEL_URL: ${{ vars.LEANCTX_PRODUCTION_COCKPIT_CHANNEL_URL }}
+          LEANCTX_PRODUCTION_COCKPIT_CHANNEL_SIGNATURE_URL: ${{ vars.LEANCTX_PRODUCTION_COCKPIT_CHANNEL_SIGNATURE_URL }}
         run: |
           python - <<'PY'
           import os, re
@@ -221,13 +214,25 @@ jobs:
               "LEANCTX_PRODUCTION_RUNTIME_CHANNEL_SIGNATURE_URL",
               "LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX",
           )
+          cockpit = (
+              "LEANCTX_PRODUCTION_COCKPIT_CHANNEL_URL",
+              "LEANCTX_PRODUCTION_COCKPIT_CHANNEL_SIGNATURE_URL",
+          )
           values = [os.environ.get(name, "") for name in names]
+          cockpit_values = [os.environ.get(name, "") for name in cockpit]
           if not any(values):
+              if any(cockpit_values):
+                  raise SystemExit("The production Cockpit channel requires the production runtime channel")
               print("Community build: no production runtime channel configured")
               raise SystemExit(0)
           if not all(values):
               raise SystemExit("Production runtime channel requires all three repository variables")
-          for value in values[:2]:
+          if any(cockpit_values) and not all(cockpit_values):
+              raise SystemExit("Production Cockpit channel requires both repository variables")
+          if all(cockpit_values):
+              names += cockpit
+              values += cockpit_values
+          for value in values[:2] + values[3:]:
               if len(value) > 2048 or any(not 33 <= ord(c) < 127 or c in '@?#\\"' for c in value):
                   raise SystemExit("Invalid production runtime channel URL")
               url = urlsplit(value)
@@ -344,6 +349,15 @@ jobs:
             cargo build --release --locked --target ${{ matrix.target }} "${feature_args[@]}"
           fi
 
+      # Focus plan item 15: a measured artifact may not outgrow its recorded
+      # ceiling (product/binary-budget.json); unmeasured ones are reported only.
+      - name: Binary size budget
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          python3 scripts/check-binary-budget.py "${{ matrix.artifact || matrix.target }}" \
+            "rust/target/${{ matrix.target }}/release/lean-ctx"
+
       - name: Sign Windows engine
         if: runner.os == 'Windows'
         uses: ./.github/actions/windows-signing
@@ -419,10 +433,19 @@ jobs:
           "$wheel_python" -m pip install --quiet 'twine==7.0.0'
           "$wheel_python" -m twine check --strict "$wheel"
           test "$("$wheel_engine" --version | awk '{print $2}')" = "${GITHUB_REF_NAME#v}"
-          PYTHONPATH=sdk-agent-tools/src "$wheel_python" \
-            sdk-agent-tools/scripts/verify_agent_context_e2e.py \
+          # The Engine's own Agent Tools gate: every checkout, SDK or not.
+          "$wheel_python" scripts/verify-engine-agent-tools.py \
             --engine "$wheel_engine" \
             --expected-engine-version "${GITHUB_REF_NAME#v}"
+          # The colocated SDK against the same binary, where the checkout
+          # carries one (check-sdk-engine-coupling.py refuses a product
+          # checkout without it before any build leg starts).
+          if [[ -d sdk ]]; then
+            PYTHONPATH=sdk/src "$wheel_python" \
+              sdk/scripts/verify_agent_context_e2e.py \
+              --engine "$wheel_engine" \
+              --expected-engine-version "${GITHUB_REF_NAME#v}"
+          fi
       - name: Install and inspect packaged artifact (Unix)
         if: runner.os != 'Windows'
         shell: bash
@@ -682,12 +705,121 @@ jobs:
             echo "BODY_EOF"
           } >> "$GITHUB_OUTPUT"
 
-      - name: Create GitHub Release
+      # Created as a DRAFT: the private Cockpit release workflow attaches the
+      # signed Cockpit bundles to it, and `publish-release` publishes only once
+      # `cockpit-assets` has verified them.
+      - name: Create GitHub Release (draft)
         uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65 # v2
         with:
           body: ${{ steps.notes.outputs.body }}
           files: ${{ steps.assets.outputs.files }}
           fail_on_unmatched_files: true
+          draft: true
+
+  cockpit-assets:
+    # Every official install (install.sh/ps1, npm, Homebrew, AUR) ships the
+    # LeanCTX Cockpit from this release. Its bundles are built and signed from
+    # private sources by cockpit-release.yml in the private release repository
+    # (repository variable LEANCTX_COCKPIT_RELEASE_REPOSITORY), which uploads
+    # them to this draft. The release is not published without them.
+    name: Release gates (Cockpit bundles)
+    needs: release
+    runs-on: ubuntu-latest
+    timeout-minutes: 240
+    permissions:
+      contents: write # read the draft release's assets
+    env:
+      GH_TOKEN: ${{ github.token }}
+      COCKPIT_REPOSITORY: ${{ vars.LEANCTX_COCKPIT_RELEASE_REPOSITORY }}
+      ROOT_KEY_HEX: ${{ vars.LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX }}
+      TARGETS: >-
+        aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-gnu
+        x86_64-unknown-linux-gnu aarch64-unknown-linux-musl x86_64-unknown-linux-musl
+        x86_64-pc-windows-msvc
+    steps:
+      - name: Wait for the Cockpit bundles on the draft
+        run: |
+          set -euo pipefail
+          [[ "$COCKPIT_REPOSITORY" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] \
+            || { echo "::error::Set the repository variable LEANCTX_COCKPIT_RELEASE_REPOSITORY"; exit 1; }
+          echo "::notice::Run cockpit-release.yml in ${COCKPIT_REPOSITORY} with tag=${GITHUB_REF_NAME} to attach the Cockpit bundles."
+          expected=(COCKPIT_SHA256SUMS COCKPIT_SHA256SUMS.sig COCKPIT_SHA256SUMS.pem)
+          for target in $TARGETS; do expected+=("lean-ctx-cockpit-${target}.tar.gz"); done
+          deadline=$(( $(date +%s) + 220 * 60 ))
+          while :; do
+            names="$(gh release view "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --json assets --jq '.assets[].name')"
+            missing=0
+            for name in "${expected[@]}"; do grep -Fxq "$name" <<<"$names" || missing=$((missing + 1)); done
+            [[ $missing -eq 0 ]] && break
+            if [[ $(date +%s) -ge $deadline ]]; then
+              echo "::error::${missing} Cockpit asset(s) still missing on the draft"; exit 1
+            fi
+            sleep 60
+          done
+
+      - name: Download the Cockpit bundles
+        run: |
+          set -euo pipefail
+          mkdir cockpit
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --dir cockpit \
+            --pattern 'COCKPIT_SHA256SUMS*' --pattern 'lean-ctx-cockpit-*.tar.gz'
+
+      - uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3
+      - name: Verify COCKPIT_SHA256SUMS signature and bundle checksums
+        working-directory: cockpit
+        run: |
+          set -euo pipefail
+          cosign verify-blob \
+            --signature COCKPIT_SHA256SUMS.sig --certificate COCKPIT_SHA256SUMS.pem \
+            --certificate-identity-regexp "^https://github\\.com/${COCKPIT_REPOSITORY}/\\.github/workflows/cockpit-release\\.yml@" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            COCKPIT_SHA256SUMS
+          test "$(wc -l < COCKPIT_SHA256SUMS)" -eq 7
+          for target in $TARGETS; do
+            grep -Eq "^[0-9a-f]{64}  lean-ctx-cockpit-${target}\.tar\.gz$" COCKPIT_SHA256SUMS
+          done
+          sha256sum --check --strict COCKPIT_SHA256SUMS
+
+      - name: Verify bundle layout and the root-signed channel catalog
+        working-directory: cockpit
+        run: |
+          set -euo pipefail
+          [[ "$ROOT_KEY_HEX" =~ ^[0-9a-f]{64}$ ]] \
+            || { echo "::error::LEANCTX_PRODUCTION_RUNTIME_CHANNEL_ROOT_KEY_HEX is required for the Cockpit"; exit 1; }
+          printf '%s' "302a300506032b6570032100${ROOT_KEY_HEX}" | xxd -r -p > root.der
+          openssl pkey -pubin -inform DER -in root.der -out root.pem
+          for target in $TARGETS; do
+            listing="$(tar -tzf "lean-ctx-cockpit-${target}.tar.gz" | LC_ALL=C sort | tr '\n' ' ')"
+            test "$listing" = "lean-ctx-cockpit/ lean-ctx-cockpit/archive.tar.gz lean-ctx-cockpit/channel.json lean-ctx-cockpit/channel.sig lean-ctx-cockpit/manifest.json lean-ctx-cockpit/manifest.sig "
+            mkdir "x-${target}"
+            tar -xzf "lean-ctx-cockpit-${target}.tar.gz" -C "x-${target}"
+            bundle="x-${target}/lean-ctx-cockpit"
+            { printf 'leanctx-runtime-channel-v2\0'; cat "$bundle/channel.json"; } > signed-catalog
+            openssl pkeyutl -verify -rawin -pubin -inkey root.pem -in signed-catalog -sigfile "$bundle/channel.sig"
+            python3 -I - "$bundle" "$target" <<'PY'
+          import hashlib, json, pathlib, sys
+          bundle, target = pathlib.Path(sys.argv[1]), sys.argv[2]
+          catalog = json.loads((bundle / "channel.json").read_bytes())
+          assert catalog["schema"] == "leanctx.runtime-channel/v2" and catalog["channel"] == "production"
+          release = {r["target"]: r for r in catalog["releases"]}[target]
+          assert release["manifest_sha256"] == hashlib.sha256((bundle / "manifest.json").read_bytes()).hexdigest()
+          manifest = json.loads((bundle / "manifest.json").read_bytes())
+          assert manifest["artifact_sha256"] == hashlib.sha256((bundle / "archive.tar.gz").read_bytes()).hexdigest()
+          assert manifest["license"] == "LicenseRef-Proprietary"
+          PY
+          done
+
+  publish-release:
+    name: Publish GitHub Release
+    needs: [release, cockpit-assets]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Publish the verified draft
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release edit "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" --draft=false --latest
 
   jetbrains-plugin:
     # Build the JetBrains/IntelliJ plugin and attach it to the GitHub Release as a
@@ -698,7 +830,7 @@ jobs:
     # so the asset must be produced from inside this release pipeline. `-Pversion`
     # mirrors the tag so the plugin version never drifts from the engine release.
     name: Attach JetBrains Plugin
-    needs: release
+    needs: publish-release
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -741,7 +873,7 @@ jobs:
 
   publish-crates:
     name: Publish to crates.io
-    needs: release
+    needs: publish-release
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4 # v4
@@ -799,7 +931,7 @@ jobs:
 
   publish-npm:
     name: Publish to npm
-    needs: release
+    needs: publish-release
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -847,7 +979,7 @@ jobs:
 
   publish-python-engine:
     name: Publish Python Engine wheels (${{ matrix.project }})
-    needs: release
+    needs: publish-release
     runs-on: ubuntu-latest
     strategy:
       fail-fast: false
@@ -897,7 +1029,7 @@ jobs:
 
   update-homebrew:
     name: Update Homebrew
-    needs: release
+    needs: publish-release
     runs-on: ubuntu-latest
     steps:
       - name: Download checksums and extract platform hashes
@@ -923,6 +1055,15 @@ jobs:
           echo "x86_64_darwin_sha=${X86_64_DARWIN}" >> "$GITHUB_OUTPUT"
           echo "aarch64_linux_sha=${AARCH64_LINUX_GNU}" >> "$GITHUB_OUTPUT"
           echo "x86_64_linux_sha=${X86_64_LINUX_GNU}" >> "$GITHUB_OUTPUT"
+
+          # The Cockpit bundles were verified (cosign + checksums) by cockpit-assets.
+          gh release download "${GITHUB_REF_NAME}" \
+            --repo yvgude/lean-ctx --pattern "COCKPIT_SHA256SUMS" --dir .
+          for target in aarch64-apple-darwin x86_64-apple-darwin aarch64-unknown-linux-gnu x86_64-unknown-linux-gnu; do
+            sha=$(awk -v f="lean-ctx-cockpit-${target}.tar.gz" '$2 == f { print $1 }' COCKPIT_SHA256SUMS)
+            [[ "$sha" =~ ^[0-9a-f]{64}$ ]] || { echo "::error::no Cockpit checksum for ${target}"; exit 1; }
+            echo "cockpit_${target//-/_}_sha=${sha}" >> "$GITHUB_OUTPUT"
+          done
         env:
           GH_TOKEN: ${{ github.token }}
 
@@ -936,6 +1077,11 @@ jobs:
           X86_64_DARWIN_SHA="${{ steps.checksums.outputs.x86_64_darwin_sha }}"
           AARCH64_LINUX_SHA="${{ steps.checksums.outputs.aarch64_linux_sha }}"
           X86_64_LINUX_SHA="${{ steps.checksums.outputs.x86_64_linux_sha }}"
+          COCKPIT_AARCH64_DARWIN_SHA="${{ steps.checksums.outputs.cockpit_aarch64_apple_darwin_sha }}"
+          COCKPIT_X86_64_DARWIN_SHA="${{ steps.checksums.outputs.cockpit_x86_64_apple_darwin_sha }}"
+          COCKPIT_AARCH64_LINUX_SHA="${{ steps.checksums.outputs.cockpit_aarch64_unknown_linux_gnu_sha }}"
+          COCKPIT_X86_64_LINUX_SHA="${{ steps.checksums.outputs.cockpit_x86_64_unknown_linux_gnu_sha }}"
+          RELEASE_URL="https://github.com/yvgude/lean-ctx/releases/download/v${VERSION}"
 
           KEY_DIR="${RUNNER_TEMP}/homebrew-ssh"
           install -d -m 700 "${KEY_DIR}"
@@ -952,7 +1098,9 @@ jobs:
             desc "Local engine for the LeanCTX Context Gateway for AI Systems"
             homepage "https://leanctx.com"
             version "${VERSION}"
-            license "Apache-2.0"
+            # Engine: Apache-2.0. Bundled LeanCTX Cockpit binary: LeanCTX Cockpit
+            # EULA (LicenseRef-LeanCTX-Cockpit-EULA), which SPDX cannot express.
+            license all_of: ["Apache-2.0", :cannot_represent]
 
             # Semantic search (ctx_semantic_search / embeddings) loads
             # libonnxruntime at runtime; the engine resolves it from the
@@ -962,30 +1110,65 @@ jobs:
 
             on_macos do
               if Hardware::CPU.arm?
-                url "https://github.com/yvgude/lean-ctx/releases/download/v${VERSION}/lean-ctx-aarch64-apple-darwin.tar.gz"
+                url "${RELEASE_URL}/lean-ctx-aarch64-apple-darwin.tar.gz"
                 sha256 "${AARCH64_DARWIN_SHA}"
+
+                resource "cockpit" do
+                  url "${RELEASE_URL}/lean-ctx-cockpit-aarch64-apple-darwin.tar.gz"
+                  sha256 "${COCKPIT_AARCH64_DARWIN_SHA}"
+                end
               else
-                url "https://github.com/yvgude/lean-ctx/releases/download/v${VERSION}/lean-ctx-x86_64-apple-darwin.tar.gz"
+                url "${RELEASE_URL}/lean-ctx-x86_64-apple-darwin.tar.gz"
                 sha256 "${X86_64_DARWIN_SHA}"
+
+                resource "cockpit" do
+                  url "${RELEASE_URL}/lean-ctx-cockpit-x86_64-apple-darwin.tar.gz"
+                  sha256 "${COCKPIT_X86_64_DARWIN_SHA}"
+                end
               end
             end
 
             on_linux do
               if Hardware::CPU.arm?
-                url "https://github.com/yvgude/lean-ctx/releases/download/v${VERSION}/lean-ctx-aarch64-unknown-linux-gnu.tar.gz"
+                url "${RELEASE_URL}/lean-ctx-aarch64-unknown-linux-gnu.tar.gz"
                 sha256 "${AARCH64_LINUX_SHA}"
+
+                resource "cockpit" do
+                  url "${RELEASE_URL}/lean-ctx-cockpit-aarch64-unknown-linux-gnu.tar.gz"
+                  sha256 "${COCKPIT_AARCH64_LINUX_SHA}"
+                end
               else
-                url "https://github.com/yvgude/lean-ctx/releases/download/v${VERSION}/lean-ctx-x86_64-unknown-linux-gnu.tar.gz"
+                url "${RELEASE_URL}/lean-ctx-x86_64-unknown-linux-gnu.tar.gz"
                 sha256 "${X86_64_LINUX_SHA}"
+
+                resource "cockpit" do
+                  url "${RELEASE_URL}/lean-ctx-cockpit-x86_64-unknown-linux-gnu.tar.gz"
+                  sha256 "${COCKPIT_X86_64_LINUX_SHA}"
+                end
               end
             end
 
             def install
               bin.install "lean-ctx"
+              # The signed Cockpit bundle; lean-ctx verifies and imports it from
+              # share/lean-ctx/cockpit on the first \`lean-ctx cockpit\`.
+              resource("cockpit").stage do
+                (share/"lean-ctx/cockpit").install "channel.json", "channel.sig",
+                                                   "archive.tar.gz", "manifest.json", "manifest.sig"
+              end
+            end
+
+            def caveats
+              <<~TEXT
+                The lean-ctx engine is licensed under Apache-2.0.
+                The bundled LeanCTX Cockpit (lean-ctx cockpit) is free to use, including
+                commercially, under the LeanCTX Cockpit EULA; it is not open source.
+              TEXT
             end
 
             test do
               assert_match "lean-ctx ${VERSION}", shell_output("#{bin}/lean-ctx --version")
+              assert_path_exists share/"lean-ctx/cockpit/manifest.json"
             end
           end
           EOF
@@ -998,7 +1181,7 @@ jobs:
           git push
   announce-twitter:
     name: Announce on Twitter
-    needs: [release, publish-crates, publish-npm, publish-python-engine, update-homebrew]
+    needs: [publish-release, publish-crates, publish-npm, publish-python-engine, update-homebrew]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4 # v4
@@ -1021,7 +1204,7 @@ jobs:
 
   announce-discord:
     name: Announce on Discord
-    needs: [release, publish-crates, publish-npm, publish-python-engine, update-homebrew]
+    needs: [publish-release, publish-crates, publish-npm, publish-python-engine, update-homebrew]
     runs-on: ubuntu-latest
     steps:
       - name: Notify Discord via n8n webhook

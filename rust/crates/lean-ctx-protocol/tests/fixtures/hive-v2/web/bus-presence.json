@@ -1,0 +1,18 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/buses/s/acme/checkout-latency/presence",
+  "request": null,
+  "response": {
+    "body": [
+      {
+        "at": "2026-10-24T08:31:00Z",
+        "role": "general",
+        "state": "active",
+        "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+      }
+    ],
+    "status": 200
+  },
+  "route": "W36"
+}

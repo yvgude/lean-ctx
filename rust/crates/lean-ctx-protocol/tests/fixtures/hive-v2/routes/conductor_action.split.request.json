@@ -1,0 +1,24 @@
+{
+  "action": "split",
+  "children": [
+    {
+      "acceptance": [
+        "Flame graph attached"
+      ],
+      "kind": "task",
+      "text": "Flame graph of POST /checkout under the staging profile.",
+      "title": "Profile the checkout handler"
+    },
+    {
+      "acceptance": [
+        "p95 drop measured"
+      ],
+      "kind": "task",
+      "text": "Turn on resumption in the checkout HTTP client.",
+      "title": "Enable TLS session resumption"
+    }
+  ],
+  "epoch": 3,
+  "parent": "g_sssssssssssssssssssssssssa",
+  "worker_id": "wkr_cxdouocvevdhm22vpdrh"
+}

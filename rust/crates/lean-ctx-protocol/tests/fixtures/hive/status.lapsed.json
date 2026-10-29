@@ -1,0 +1,22 @@
+{
+  "available": true,
+  "bus_controls_inactive": "lease_lapsed",
+  "connected": false,
+  "drafts": {
+    "queued": 0,
+    "refused": 0
+  },
+  "filter_packs": [],
+  "instance": {
+    "id": "inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+    "label": "studio-mac"
+  },
+  "last_seen": "2026-10-20T12:00:00Z",
+  "org": {
+    "name": "Acme AG"
+  },
+  "policy": null,
+  "policy_refusal": null,
+  "url": "https://hive.leanctx.com",
+  "web_url": "https://hive.leanctx.com"
+}

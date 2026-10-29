@@ -6,9 +6,6 @@ use super::routes::helpers::{detect_project_root_for_dashboard, normalize_dashbo
 use super::*;
 use tempfile::tempdir;
 
-#[cfg(unix)]
-mod control_lifecycle;
-
 #[tokio::test]
 async fn work_graph_control_enforces_http_auth_and_csrf() {
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -75,6 +72,34 @@ fn dashboard_project_root_honors_general_env_override() {
     crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
 }
 
+/// AP04-G8: without an explicit binding and outside a project, the dashboard
+/// is unbound; it never adopts the project whose session was saved last.
+#[test]
+fn dashboard_without_a_binding_does_not_show_the_last_active_project() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let project = tempdir().expect("tempdir");
+    std::fs::create_dir(project.path().join(".git")).expect("git dir");
+    let mut session = crate::core::session::SessionState::new();
+    session.project_root = Some(project.path().to_string_lossy().to_string());
+    session.save().expect("save session");
+    let old = std::env::var_os("LEAN_CTX_PROJECT_ROOT");
+    crate::test_env::remove_var("LEAN_CTX_DASHBOARD_PROJECT");
+    crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
+
+    let binding = super::routes::helpers::dashboard_project_binding_in(None);
+    if let Some(old) = old {
+        crate::test_env::set_var("LEAN_CTX_PROJECT_ROOT", old);
+    }
+
+    assert_eq!(
+        binding,
+        (
+            None,
+            super::routes::helpers::DashboardProjectSource::Unbound
+        )
+    );
+}
+
 #[test]
 fn dashboard_project_root_ignores_broken_ancestor_gitfile() {
     let _env_lock = crate::core::data_dir::test_env_lock();
@@ -93,24 +118,38 @@ fn dashboard_project_root_ignores_broken_ancestor_gitfile() {
     assert_eq!(detected, root_s);
 }
 
+/// AP04 review I5: the dashboard binds a folder exactly as an MCP session
+/// would — an explicit root as given, never promoted to the enclosing
+/// checkout, and a start folder with its own project marker as itself.
 #[test]
-fn dashboard_project_root_honors_resolvable_ancestor_gitfile() {
-    let _env_lock = crate::core::data_dir::test_env_lock();
+fn dashboard_binds_a_folder_as_an_mcp_session_would() {
+    let _data = crate::core::data_dir::isolated_data_dir();
     let td = tempdir().expect("tempdir");
     let checkout = td.path().join("checkout");
-    let root = checkout.join("nested");
-    std::fs::create_dir_all(&root).expect("mkdir checkout");
+    let nested = checkout.join("nested");
+    std::fs::create_dir_all(&nested).expect("mkdir checkout");
     std::fs::create_dir(td.path().join("git-data")).expect("mkdir gitdir");
     std::fs::write(checkout.join(".git"), "gitdir: ../git-data\n").expect("write gitfile");
-    let root_s = root.to_string_lossy().to_string();
-    let checkout_s = checkout.to_string_lossy().to_string();
+    std::fs::write(nested.join("Cargo.toml"), "[package]\n").expect("marker");
+    let nested_s = nested.to_string_lossy().to_string();
+    let _flag = crate::test_env::VarGuard::set("LEAN_CTX_DASHBOARD_PROJECT", "");
+    let helpers =
+        |cwd: Option<&std::path::Path>| super::routes::helpers::dashboard_project_binding_in(cwd);
 
-    crate::test_env::remove_var("LEAN_CTX_DASHBOARD_PROJECT");
-    crate::test_env::set_var("LEAN_CTX_PROJECT_ROOT", &root_s);
-    let detected = detect_project_root_for_dashboard();
-    crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
+    let pinned = {
+        let _pin = crate::test_env::VarGuard::set("LEAN_CTX_PROJECT_ROOT", &nested_s);
+        helpers(None)
+    };
+    let _pin = crate::test_env::VarGuard::set("LEAN_CTX_PROJECT_ROOT", "");
+    let started = helpers(Some(&nested));
 
-    assert_eq!(detected, checkout_s);
+    use super::routes::helpers::DashboardProjectSource::{Cwd, Env};
+    assert_eq!(pinned, (Some(nested_s), Env));
+    assert_eq!(
+        started,
+        (crate::server::derive_project_root_from(&nested), Cwd)
+    );
+    assert_ne!(started.0, Some(checkout.to_string_lossy().to_string()));
 }
 
 #[test]
@@ -419,31 +458,11 @@ fn api_profile_returns_json() {
 }
 
 #[test]
-fn api_billing_badge_returns_cosmetic_shape() {
-    let (status, ct, body) =
-        routes::route_response("/api/billing-badge", "", None, None, false, "GET", "");
-    assert_eq!(status, "200 OK");
-    assert_eq!(ct, "application/json");
-    let v: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
-    assert!(v.get("plan").and_then(|p| p.as_str()).is_some());
-    assert!(
-        v.get("supporter")
-            .and_then(serde_json::Value::as_bool)
-            .is_some()
-    );
-    assert!(
-        matches!(
-            v.get("source").and_then(|s| s.as_str()),
-            Some("live" | "cached" | "expired" | "none")
-        ),
-        "unexpected source: {body}"
-    );
-}
-
-#[test]
 fn api_episodes_returns_json() {
-    let (_status, _ct, body) =
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let (status, _ct, body) =
         routes::route_response("/api/episodes", "", None, None, false, "GET", "");
+    assert_eq!(status, "200 OK", "{body}");
     let v: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
     assert!(v.get("project_hash").is_some());
     assert!(v.get("stats").is_some());
@@ -452,8 +471,10 @@ fn api_episodes_returns_json() {
 
 #[test]
 fn api_procedures_returns_json() {
-    let (_status, _ct, body) =
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let (status, _ct, body) =
         routes::route_response("/api/procedures", "", None, None, false, "GET", "");
+    assert_eq!(status, "200 OK", "{body}");
     let v: serde_json::Value = serde_json::from_str(&body).expect("valid JSON");
     assert!(v.get("project_hash").is_some());
     assert!(v.get("procedures").and_then(|a| a.as_array()).is_some());
@@ -738,109 +759,341 @@ fn no_auth_allows_null_origin() {
     assert!(no_auth_request_ok(req, &allowed_loopback()));
 }
 
-#[test]
-fn topbar_uses_explicit_editor_presence_not_transport_alias() {
-    let function = COCKPIT_INDEX_HTML
-        .split_once("function applyAgentsToTop")
-        .expect("agent badge function")
-        .1
-        .split_once("function hasMeaningfulSession")
-        .expect("next dashboard function")
-        .0;
-
-    assert!(function.contains("logical_session_presence_available"));
-    assert!(function.contains("logical_session_count"));
-    assert!(!function.contains("total_active"));
-    assert!(function.contains("Sessions \\u2014"));
+/// One request through the dashboard server with `cockpit` as the Cockpit.
+async fn exchange(
+    cockpit: super::cockpit::CockpitResolver,
+    token: Option<&str>,
+    request: String,
+) -> Vec<u8> {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let address = listener.local_addr().unwrap();
+    let token = token.map(|t| Arc::new(t.to_string()));
+    let server = tokio::spawn(async move {
+        let (stream, _) = listener.accept().await.unwrap();
+        handle_request_with(
+            stream,
+            token,
+            Arc::new(String::new()),
+            Arc::new(allowed_loopback()),
+            cockpit,
+        )
+        .await;
+    });
+    let response = tokio::time::timeout(std::time::Duration::from_secs(30), async {
+        let mut client = tokio::net::TcpStream::connect(address).await.unwrap();
+        client.write_all(request.as_bytes()).await.unwrap();
+        let mut response = Vec::new();
+        client.read_to_end(&mut response).await.unwrap();
+        response
+    })
+    .await
+    .expect("bounded HTTP response");
+    server.await.unwrap();
+    response
 }
 
-#[test]
-fn pulse_refresh_targets_only_the_active_view() {
-    let coordinator = COCKPIT_INDEX_HTML
-        .split_once("function refreshActiveView()")
-        .expect("targeted refresh helper")
-        .1
-        .split_once("if (window.LctxRouter && window.LctxRouter.init)")
-        .expect("router initialization")
-        .0;
-
-    assert!(coordinator.contains("router.navigateTo(router.getActiveViewId())"));
-    assert_eq!(coordinator.matches("refreshActiveView();").count(), 3);
-    assert!(coordinator.contains("hasPendingUpdate"));
-    assert!(!coordinator.contains("CustomEvent('lctx:refresh')"));
+fn split_response(raw: &[u8]) -> (String, Vec<u8>) {
+    let end = raw
+        .windows(4)
+        .position(|w| w == b"\r\n\r\n")
+        .expect("header end");
+    (
+        String::from_utf8_lossy(&raw[..end]).into_owned(),
+        raw[end + 4..].to_vec(),
+    )
 }
 
-#[test]
-fn partner_promo_is_accessible_versioned_and_served() {
-    let (status, content_type, source) = super::routes::route_response(
-        "/static/components/cockpit-partner-promo.js",
-        "",
-        None,
-        None,
-        true,
-        "GET",
-        "",
-    );
+/// The dashboard is the single entry point: after its own token check it
+/// hands the Cockpit's assets to the Cockpit byte for byte, with the Cockpit
+/// secret and the project header, and never the dashboard credential.
+#[tokio::test]
+async fn the_cockpit_is_served_through_the_dashboard_after_its_token_check() {
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+    let font: Vec<u8> = (0u8..=255).rev().cycle().take(3000).collect();
+    let cockpit = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let port = cockpit.local_addr().unwrap().port();
+    let served = font.clone();
+    let fake_cockpit = tokio::spawn(async move {
+        let (mut stream, _) = cockpit.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut buf = [0u8; 4096];
+        while !request.windows(4).any(|w| w == b"\r\n\r\n") {
+            let n = stream.read(&mut buf).await.unwrap();
+            request.extend_from_slice(&buf[..n]);
+        }
+        let mut response =
+            b"HTTP/1.1 200 OK\r\nContent-Type: font/woff2\r\nTransfer-Encoding: chunked\r\n\r\n"
+                .to_vec();
+        response.extend_from_slice(format!("{:x}\r\n", served.len()).as_bytes());
+        response.extend_from_slice(&served);
+        response.extend_from_slice(b"\r\n0\r\n\r\n");
+        stream.write_all(&response).await.unwrap();
+        String::from_utf8(request).unwrap()
+    });
+    let resolved = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+    let counter = resolved.clone();
+    let resolver: super::cockpit::CockpitResolver = Arc::new(move || {
+        counter.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+        Ok(super::cockpit::CockpitTarget {
+            port,
+            token: "cockpit-secret".into(),
+        })
+    });
 
-    assert_eq!(status, "200 OK");
-    assert_eq!(content_type, "application/javascript; charset=utf-8");
-    assert!(COCKPIT_INDEX_HTML.contains("/static/components/cockpit-partner-promo.js"));
-    // Campaign v2 (#feedback): the key is versioned so a new invitation reaches
-    // people who dismissed the previous one. Pinning the literal is deliberate —
-    // shipping a campaign without bumping it would silently reach nobody.
-    assert!(source.contains("leanctx_feedback_survey_v2"));
-    assert!(
-        !source.contains("leanctx_partner_sdk_promo_v1"),
-        "the previous campaign key must not linger — it would suppress v2"
-    );
-    assert!(source.contains("aria-modal=\"true\""));
-    assert!(source.contains("aria-labelledby=\"partnerPromoTitle\""));
-    assert!(source.contains("event.key === 'Escape'"));
-    assert!(source.contains("event.key !== 'Tab'"));
-    assert!(source.contains("setBackgroundInert(overlay)"));
-    assert!(source.contains("document.addEventListener('focusin', keepFocusInDialog, true)"));
-    assert!(source.contains("new MutationObserver"));
-    assert!(source.contains("close(false)"));
-    assert!(source.contains("cancelAnimationFrame(openFrame)"));
-    assert!(source.contains("document.getElementById(OVERLAY_ID) !== overlay"));
-    assert!(source.contains("opens in a new tab"));
-    assert!(source.contains("target=\"_blank\" rel=\"noopener noreferrer\""));
-    assert!(source.contains("Thinkery-AG/leanctx-sdk#readme"));
-    // The design-partner solicitation is gone on purpose: it asked the reader
-    // for a commitment before asking them anything, and it occupied the one
-    // modal available. Asserting its absence keeps it from drifting back in.
-    assert!(
-        !source.contains("mailto:"),
-        "campaign v2 asks a question; it does not solicit"
-    );
-    assert!(
-        !source.to_lowercase().contains("design partner"),
-        "the v1 solicitation must stay out"
-    );
+    // The Cockpit's API needs the dashboard token; without it the Cockpit
+    // is never asked.
+    let refused = exchange(
+        resolver.clone(),
+        Some("dash-token"),
+        "GET /api/gateway/receipts HTTP/1.1\r\nHost: localhost\r\n\r\n".into(),
+    )
+    .await;
+    assert!(refused.starts_with(b"HTTP/1.1 401"));
+    assert_eq!(resolved.load(std::sync::atomic::Ordering::SeqCst), 0);
 
-    // What v2 does instead: three free-text questions plus one grouping choice.
-    for question in ["use_case", "likes_most", "wishes"] {
-        assert!(source.contains(question), "missing question: {question}");
+    let raw = exchange(
+        resolver,
+        Some("dash-token"),
+        "GET /assets/fonts/inter.woff2?token=dash-token HTTP/1.1\r\nHost: localhost\r\n\
+         Authorization: Bearer dash-token\r\nX-LeanCTX-Project: /work/alpha\r\n\r\n"
+            .into(),
+    )
+    .await;
+    let (head, body) = split_response(&raw);
+    assert!(head.starts_with("HTTP/1.1 200 OK"), "{head}");
+    assert!(head.contains("Content-Type: font/woff2"));
+    assert_eq!(body, font, "binary body passed through unchanged");
+
+    let forwarded = fake_cockpit.await.unwrap();
+    assert!(forwarded.starts_with("GET /assets/fonts/inter.woff2 HTTP/1.1\r\n"));
+    assert!(forwarded.contains("X-LeanCTX-Cockpit: cockpit-secret\r\n"));
+    assert!(forwarded.contains("X-LeanCTX-Project: /work/alpha\r\n"));
+    assert!(!forwarded.contains("dash-token"), "{forwarded}");
+}
+
+/// Without the Cockpit, `/` explains what it is, why it is not shown and
+/// how to get it; the engine's own `/api/gateway/*` keeps answering.
+#[tokio::test]
+async fn without_the_cockpit_the_start_page_says_how_to_install_it() {
+    use super::cockpit::CockpitUnavailable;
+    for reason in [
+        CockpitUnavailable::NotInstalled,
+        CockpitUnavailable::Disabled,
+        CockpitUnavailable::StartFailed,
+    ] {
+        let resolver: super::cockpit::CockpitResolver = Arc::new(move || Err(reason));
+        let raw = exchange(
+            resolver,
+            Some("dash-token"),
+            "GET / HTTP/1.1\r\nHost: localhost\r\n\r\n".into(),
+        )
+        .await;
+        let (head, body) = split_response(&raw);
+        let body = String::from_utf8(body).unwrap();
+        assert!(head.starts_with("HTTP/1.1 503"), "{head}");
+        assert!(head.contains("text/html"));
+        assert!(body.contains("Select · Control · Prove"));
+        assert!(body.contains(reason.message()), "{reason:?}");
+        assert!(body.contains(super::cockpit::INSTALL_COMMAND));
+        assert!(body.contains("lean-ctx gain"));
+        assert!(!body.contains("dash-token"));
     }
-    for frequency in ["daily", "weekly", "occasionally"] {
-        assert!(source.contains(frequency), "missing frequency: {frequency}");
+
+    let resolver: super::cockpit::CockpitResolver =
+        Arc::new(|| Err(CockpitUnavailable::NotInstalled));
+    let raw = exchange(
+        resolver,
+        Some("dash-token"),
+        "GET /api/gateway/unknown HTTP/1.1\r\nHost: localhost\r\n\
+         Authorization: Bearer dash-token\r\n\r\n"
+            .into(),
+    )
+    .await;
+    let (head, _) = split_response(&raw);
+    assert!(head.starts_with("HTTP/1.1 404"), "engine answers: {head}");
+}
+
+/// `X-LeanCTX-Project` binds one read to one pool project: concurrent reads
+/// for two projects each see only their own, and a foreign path is refused
+/// without a hint.
+#[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+async fn concurrent_reads_for_two_projects_never_cross() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let projects = tempdir().expect("tempdir");
+    let mut roots = Vec::new();
+    for name in ["alpha", "beta"] {
+        let root = projects.path().join(name);
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        let root = root.to_string_lossy().into_owned();
+        let mut session = crate::core::session::SessionState::new();
+        session.project_root = Some(root.clone());
+        session.save().expect("save session");
+        roots.push(root);
     }
-    assert!(source.contains("/api/feedback"));
+    let foreign = projects.path().join("foreign");
+    std::fs::create_dir_all(foreign.join(".git")).unwrap();
 
-    // The destination is named before the button that reaches it, not after.
-    let notice = source
-        .find("Sending transmits")
-        .expect("the transmission notice must be present");
-    let button = source
-        .find("Send feedback")
-        .expect("the send button must be present");
+    let request = |project: &str| {
+        format!(
+            "GET /api/scope HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer dash-token\r\n\
+             X-LeanCTX-Project: {project}\r\n\r\n"
+        )
+    };
+    let mut reads = Vec::new();
+    for round in 0..6 {
+        let root = roots[round % 2].clone();
+        let request = request(&root);
+        reads.push(tokio::spawn(async move {
+            let raw = exchange(
+                Arc::new(|| Err(super::cockpit::CockpitUnavailable::NotInstalled)),
+                Some("dash-token"),
+                request,
+            )
+            .await;
+            (root, raw)
+        }));
+    }
+    for read in reads {
+        let (root, raw) = read.await.unwrap();
+        let (head, body) = split_response(&raw);
+        assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+        let scope: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        assert_eq!(scope["workspace_root"], root.as_str());
+        assert_eq!(scope["binding_source"], "request");
+        assert_eq!(
+            scope["partition_id"],
+            crate::core::project_hash::hash_project_root(&root)
+        );
+    }
+
+    let foreign = foreign.to_string_lossy().into_owned();
+    let raw = exchange(
+        Arc::new(|| Err(super::cockpit::CockpitUnavailable::NotInstalled)),
+        Some("dash-token"),
+        request(&foreign),
+    )
+    .await;
+    let (head, body) = split_response(&raw);
+    assert!(head.starts_with("HTTP/1.1 403"), "{head}");
+    assert_eq!(body, br#"{"error":"forbidden"}"#);
+}
+
+/// The ledger figures of a read that names its project count that project's
+/// folders (here a worktree of it) and never another project's; without a
+/// project they count every project.
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn ledger_figures_follow_the_requested_project() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let projects = tempdir().expect("tempdir");
+    let base = crate::core::pathutil::safe_canonicalize_or_self(projects.path());
+    let alpha = base.join("alpha");
+    let beta = base.join("beta");
+    let worktree = base.join("alpha-wt");
+    std::fs::create_dir_all(alpha.join(".git/worktrees/wt")).unwrap();
+    std::fs::create_dir_all(beta.join(".git")).unwrap();
+    std::fs::create_dir_all(&worktree).unwrap();
+    std::fs::write(
+        worktree.join(".git"),
+        format!("gitdir: {}\n", alpha.join(".git/worktrees/wt").display()),
+    )
+    .unwrap();
+    let ledger = crate::core::savings_ledger::store::default_path().expect("ledger path");
+    for (folder, saved) in [(&alpha, 700u64), (&worktree, 50), (&beta, 300)] {
+        let folder = folder.to_string_lossy().into_owned();
+        let mut session = crate::core::session::SessionState::new();
+        session.project_root = Some(folder.clone());
+        session.save().expect("save session");
+        let event: crate::core::savings_ledger::SavingsEvent =
+            serde_json::from_value(serde_json::json!({
+                "ts": "2026-10-20T10:00:00+00:00", "tool": "ctx_read", "mechanism": "compression",
+                "model_id": "m", "tokenizer": "o200k_base", "baseline_tokens": saved + 100,
+                "actual_tokens": 100, "saved_tokens": saved, "bounce_adjustment": 0,
+                "unit_price_per_m_usd": 3.0, "saved_usd": 0.0,
+                "repo_hash": crate::core::savings_ledger::hash_folder(&folder),
+                "agent_id": "a", "prev_hash": "", "entry_hash": "", "version": "3.12.0",
+            }))
+            .unwrap();
+        crate::core::savings_ledger::store::append(&ledger, event).unwrap();
+    }
+
+    let saved = |project: Option<String>| async move {
+        let header = project.map_or_else(String::new, |p| format!("X-LeanCTX-Project: {p}\r\n"));
+        let raw = exchange(
+            Arc::new(|| Err(super::cockpit::CockpitUnavailable::NotInstalled)),
+            Some("dash-token"),
+            format!(
+                "GET /api/value HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer dash-token\r\n{header}\r\n"
+            ),
+        )
+        .await;
+        let (head, body) = split_response(&raw);
+        assert!(head.starts_with("HTTP/1.1 200"), "{head}");
+        let proof: serde_json::Value = serde_json::from_slice(&body).unwrap();
+        proof["tokens_saved"].as_u64().unwrap()
+    };
+    assert_eq!(saved(Some(alpha.to_string_lossy().into_owned())).await, 750);
+    assert_eq!(saved(Some(beta.to_string_lossy().into_owned())).await, 300);
+    assert_eq!(saved(None).await, 1_050);
+
+    // Spend and usage counters split the same way: a project reads its share,
+    // the device view the total with the split per project.
+    use crate::core::savings_ledger::project_scope::project_key_of;
+    let alpha_key = project_key_of(&alpha).expect("alpha is a project");
+    let turn = |key: &str, input| crate::proxy::usage::RealUsage {
+        model: "claude-sonnet-4.5".into(),
+        input_tokens: input,
+        output_tokens: 10,
+        wire: Some(Box::new(crate::proxy::usage::WireContext {
+            project_key: Some(key.to_string()),
+            ..Default::default()
+        })),
+        ..Default::default()
+    };
+    crate::proxy::usage_meter::record(&turn(&alpha_key, 4_000));
+    crate::proxy::usage_meter::record(&turn(&project_key_of(&beta).unwrap(), 1_000));
+    for (folder, calls) in [(&worktree, 3), (&beta, 1)] {
+        crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(folder.clone())),
+            || {
+                for _ in 0..calls {
+                    crate::core::stats::record("ctx_read", 100, 40);
+                }
+            },
+        );
+    }
+    let read = |path: &'static str, project: Option<String>| async move {
+        let header = project.map_or_else(String::new, |p| format!("X-LeanCTX-Project: {p}\r\n"));
+        let raw = exchange(
+            Arc::new(|| Err(super::cockpit::CockpitUnavailable::NotInstalled)),
+            Some("dash-token"),
+            format!(
+                "GET {path} HTTP/1.1\r\nHost: localhost\r\nAuthorization: Bearer dash-token\r\n{header}\r\n"
+            ),
+        )
+        .await;
+        let (head, body) = split_response(&raw);
+        assert!(head.starts_with("HTTP/1.1 200"), "{path}: {head}");
+        serde_json::from_slice::<serde_json::Value>(&body).unwrap()
+    };
+    let alpha_text = alpha.to_string_lossy().into_owned();
+    let spend = read("/api/spend", Some(alpha_text.clone())).await;
+    assert_eq!(spend["per_model"][0]["input_tokens"], 4_000);
+    assert!(spend.get("by_project").is_none());
+    let device = read("/api/spend", None).await;
+    let names: Vec<&str> = device["by_project"]["projects"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .filter_map(|row| row["project"].as_str())
+        .collect();
     assert!(
-        notice < button,
-        "the notice must precede the button that sends"
+        names.contains(&"alpha") && names.contains(&"beta"),
+        "{names:?}"
     );
-
-    let rewritten = super::base_path::rewrite_asset_urls(COCKPIT_INDEX_HTML, "/dashboard");
-    assert!(rewritten.contains("src=\"/dashboard/static/components/cockpit-partner-promo.js\""));
-    assert!(super::COCKPIT_STYLE_CSS.contains("max-height:calc(100dvh - 48px)"));
-    assert!(super::COCKPIT_STYLE_CSS.contains("env(safe-area-inset-bottom)"));
+    let stats = read("/api/stats", Some(alpha_text)).await;
+    assert_eq!(
+        stats["total_commands"], 3,
+        "the worktree's calls count for alpha"
+    );
 }

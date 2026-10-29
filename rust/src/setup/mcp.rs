@@ -697,22 +697,7 @@ pub fn disable_agent_mcp(agent: &str, overwrite_invalid: bool) -> Result<(), Str
 #[cfg(test)]
 mod qodercli_tests {
     use super::*;
-
-    struct CurrentDirGuard(std::path::PathBuf);
-
-    impl CurrentDirGuard {
-        fn set(path: &std::path::Path) -> Self {
-            let previous = std::env::current_dir().expect("current dir");
-            std::env::set_current_dir(path).expect("set current dir");
-            Self(previous)
-        }
-    }
-
-    impl Drop for CurrentDirGuard {
-        fn drop(&mut self) {
-            let _ = std::env::set_current_dir(&self.0);
-        }
-    }
+    use crate::test_env::CurrentDirGuard;
 
     #[test]
     fn kiro_mcp_configuration_respects_rule_steering_policy() {
@@ -727,7 +712,7 @@ mod qodercli_tests {
         let _home_guard = crate::setup::EnvVarGuard::set("HOME", home.to_string_lossy().as_ref());
         let _profile_guard =
             crate::setup::EnvVarGuard::set("USERPROFILE", home.to_string_lossy().as_ref());
-        let _cwd_guard = CurrentDirGuard::set(&project);
+        let _cwd_guard = CurrentDirGuard::enter(&project);
 
         configure_agent_mcp_with_rule_steering("kiro", false).unwrap();
 

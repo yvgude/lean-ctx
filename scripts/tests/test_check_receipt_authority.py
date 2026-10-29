@@ -22,18 +22,10 @@ class ReceiptAuthorityTest(unittest.TestCase):
         for relative in GATE.LEGACY_CONSTRUCTORS:
             path = root / relative
             path.parent.mkdir(parents=True, exist_ok=True)
-            marker = (
-                GATE.LEGACY_MARKER
-                if relative == "src/core/context_kernel/receipt_builder.rs"
-                else ""
-            )
-            path.write_text(marker, encoding="utf-8")
-        connector = root / "src/core/agent_connector/receipt.rs"
-        connector.parent.mkdir(parents=True, exist_ok=True)
-        connector.write_text("record_canonical_provider_receipt();", encoding="utf-8")
+            path.write_text("", encoding="utf-8")
         return directory, root
 
-    def test_accepts_canonical_writer_and_isolated_legacy_definitions(self) -> None:
+    def test_accepts_isolated_legacy_definitions(self) -> None:
         directory, root = self.fixture()
         with directory:
             self.assertEqual(GATE.validate(root), [])
@@ -58,20 +50,6 @@ class ReceiptAuthorityTest(unittest.TestCase):
             path = root / "src/caller.rs"
             path.write_text('arm_to_receipt(&arm, "run", "plan");', encoding="utf-8")
             self.assertIn("legacy arm_to_receipt", GATE.validate(root)[0])
-
-    def test_rejects_missing_canonical_writer(self) -> None:
-        directory, root = self.fixture()
-        with directory:
-            (root / "src/core/agent_connector/receipt.rs").write_text("", encoding="utf-8")
-            self.assertIn("canonical writer call is missing", GATE.validate(root)[0])
-
-    def test_rejects_missing_legacy_marker(self) -> None:
-        directory, root = self.fixture()
-        with directory:
-            (root / "src/core/context_kernel/receipt_builder.rs").write_text(
-                "", encoding="utf-8"
-            )
-            self.assertIn("legacy compatibility marker", GATE.validate(root)[0])
 
 
 if __name__ == "__main__":

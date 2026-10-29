@@ -233,8 +233,9 @@ mod tests {
         let path = dir.path().join("tasks.json");
         persist(&path, task);
         let lock_timeout = format!(
-            "lock {} timed out after 750ms",
-            path.with_extension("lock").display()
+            "lock {} timed out after {}ms",
+            path.with_extension("lock").display(),
+            crate::core::agents::ACQUIRE_TIMEOUT.as_millis()
         );
         let operation = || {
             // Like concurrent_mutations_do_not_lose_tasks, test durable

@@ -1,0 +1,99 @@
+{
+  "cases": [
+    {
+      "canonical": "{\"bound_repo\":\"gitlab.acme.example/acme/payments\",\"link_digest\":\"7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a\",\"remote_seen\":\"gitlab.acme.example/acme/payments\",\"target_vault\":null,\"vault\":\"acme/payments\"}",
+      "kind": "link_vault",
+      "subject": {
+        "bound_repo": "gitlab.acme.example/acme/payments",
+        "link_digest": "7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+        "remote_seen": "gitlab.acme.example/acme/payments",
+        "target_vault": null,
+        "vault": "acme/payments"
+      },
+      "subject_digest": "d8270aab608ff3a69d627953aa9cedaafc6c0cb931b07855dfda7b7440abede4"
+    },
+    {
+      "canonical": "{\"vault\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"worker_id\":\"wkr_vk4oelpv5lzjmev44hun\"}",
+      "kind": "public_presence",
+      "subject": {
+        "vault": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+        "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+      },
+      "subject_digest": "656c8c979a1a22234e63a76c678adb495ed7ee422e47bf72f0ea109fd53c3a84"
+    },
+    {
+      "canonical": "{\"cli\":\"codex\",\"pledge_digest\":\"8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b\",\"swarm\":\"9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02\"}",
+      "kind": "swarm_join",
+      "subject": {
+        "cli": "codex",
+        "pledge_digest": "8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b",
+        "swarm": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02"
+      },
+      "subject_digest": "21d0308aa20949aff0ac0eeb20b96c7babb16b2d6e83edf6dfcf12baf9558bd7"
+    },
+    {
+      "canonical": "{\"after_digest\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\",\"before_digest\":\"8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b\",\"swarm\":\"9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02\"}",
+      "kind": "pledge_change",
+      "subject": {
+        "after_digest": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c",
+        "before_digest": "8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b8b",
+        "swarm": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02"
+      },
+      "subject_digest": "6dd0c75c2ed37766960f766985596a907b8f9c6764b8882193e00a7d0734a49e"
+    },
+    {
+      "canonical": "{\"cli\":\"codex\",\"pledge_digest\":\"9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c\",\"swarm\":\"9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02\",\"usd_cents_per_day\":500}",
+      "kind": "unattended_start",
+      "subject": {
+        "cli": "codex",
+        "pledge_digest": "9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c9c",
+        "swarm": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+        "usd_cents_per_day": 500
+      },
+      "subject_digest": "7a61c04b724bf78f137b0ad8a85aae9a33a7ba136c749ea146266faa0ffb9959"
+    },
+    {
+      "canonical": "{\"command_digests\":[\"6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f\"],\"item_digest\":\"5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e\",\"item_id\":\"rv_pppppppppppppppppppppppppa\"}",
+      "kind": "procedure_confirm",
+      "subject": {
+        "command_digests": [
+          "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f"
+        ],
+        "item_digest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+        "item_id": "rv_pppppppppppppppppppppppppa"
+      },
+      "subject_digest": "453d83bb1900960e3e7b870ac1912faf8f03b95d408b14f0e55972cb5084263e"
+    },
+    {
+      "canonical": "{\"cli\":\"claude-code\",\"place\":\"vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"reviewer_usd_cents_per_day\":1000,\"source\":\"owner\"}",
+      "kind": "reviewer_enable",
+      "subject": {
+        "cli": "claude-code",
+        "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+        "reviewer_usd_cents_per_day": 1000,
+        "source": "owner"
+      },
+      "subject_digest": "388956890aa7662cd53da0798e78b85d6d5c762f9f22d91c52eefc77b7529186"
+    },
+    {
+      "canonical": "{\"cli\":\"codex\",\"vendor\":\"openai\"}",
+      "kind": "api_key_set",
+      "subject": {
+        "cli": "codex",
+        "vendor": "openai"
+      },
+      "subject_digest": "3431de781bafc3630f59699e1bf22d4c628ee9412f9e200ff64dc64c449d626f"
+    },
+    {
+      "canonical": "{\"engine_fingerprint\":\"47983724220c8521\",\"requester\":\"mara\",\"vault\":\"c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03\"}",
+      "kind": "sealed_grant",
+      "subject": {
+        "engine_fingerprint": "47983724220c8521",
+        "requester": "mara",
+        "vault": "c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03"
+      },
+      "subject_digest": "0f57da031b6f95c74a892908fd58a1c93033bd15072cdf3150a8561007ddd2f2"
+    }
+  ],
+  "rule": "subject_digest = hex(blake3(canonical_json(subject))); one case per 3.12.0 kind (R107); USD amounts in integer cents"
+}

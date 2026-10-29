@@ -14,6 +14,7 @@
 //! [`scorers::score_task`]. Results become a paired [`report::AbReport`], which a
 //! [`artifact::SignedAbReportV1`] turns into a portable, verifiable attestation.
 
+pub mod arm_study;
 pub mod artifact;
 pub mod conditions;
 pub mod footprint;
@@ -21,6 +22,7 @@ pub mod frontier;
 pub mod judge;
 pub mod model;
 pub mod report;
+pub(crate) mod safe_paths;
 pub mod scorers;
 pub mod speed;
 pub(crate) mod strategy_evaluations;
@@ -31,7 +33,7 @@ use anyhow::{Context, Result};
 
 use conditions::{Condition, DEFAULT_BUDGET_TOKENS, assemble};
 use model::{ModelRequest, ModelRunner};
-use report::{AbReport, PairRecord, ReportConfig};
+use report::{AbReport, PairRecord, ReportConfig, TaskProviderExchange};
 use scorers::score_task;
 use suite::EvalSuite;
 
@@ -85,6 +87,7 @@ pub fn run_ab(
 ) -> Result<AbReport> {
     suite.validate().context("validating eval suite")?;
     let mut records = Vec::with_capacity(suite.tasks.len());
+    let mut provider_exchanges = Vec::new();
     for task in &suite.tasks {
         let workspace = task.resolve_workspace_path(&suite.dir)?;
 
@@ -121,15 +124,26 @@ pub fn run_ab(
             baseline_answer_digest: base_resp.digest(),
             lean_ctx_answer_digest: lean_resp.digest(),
         });
+        // What the runner saw of the two exchanges, kept beside the record instead
+        // of being dropped with the response. Nothing for a runner that saw none.
+        if base_resp.exchange.is_some() || lean_resp.exchange.is_some() {
+            provider_exchanges.push(TaskProviderExchange {
+                task_id: task.id.clone(),
+                baseline: base_resp.exchange,
+                lean_ctx: lean_resp.exchange,
+            });
+        }
     }
 
-    Ok(AbReport::build(
+    let mut report = AbReport::build(
         suite_name,
         cfg.budget_tokens,
         runner.fingerprint().clone(),
         records,
         cfg.report,
-    ))
+    );
+    report.provider_exchanges = provider_exchanges;
+    Ok(report)
 }
 
 #[cfg(test)]

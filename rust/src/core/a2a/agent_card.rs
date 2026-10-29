@@ -207,7 +207,7 @@ fn default_tool_list() -> Vec<String> {
         "ctx_tree",
         "ctx_session",
         "ctx_knowledge",
-        "ctx_semantic_search",
+        "ctx_compose",
         "ctx_graph",
         "ctx_pack",
     ])

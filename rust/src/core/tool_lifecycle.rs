@@ -22,26 +22,8 @@ use std::sync::atomic::{AtomicU32, Ordering};
 /// How many recently-touched files form the "working set" a new read is
 /// associated with for traversal (co-access) edges (#289). Small, so the signal
 /// stays local to what the agent is actively juggling.
-const TRAVERSAL_WINDOW: usize = 6;
-
 const PERIODIC_FLUSH_INTERVAL: u32 = 50;
 static TOOL_CALL_COUNT: AtomicU32 = AtomicU32::new(0);
-
-/// Recent distinct file paths (excluding `current`), most-recent first, capped
-/// to the traversal window — the working set a new read co-occurs with.
-pub(crate) fn recent_working_set(session: &SessionState, current: &str) -> Vec<String> {
-    let mut out: Vec<String> = Vec::new();
-    for f in session.files_touched.iter().rev() {
-        if f.path == current || out.contains(&f.path) {
-            continue;
-        }
-        out.push(f.path.clone());
-        if out.len() >= TRAVERSAL_WINDOW {
-            break;
-        }
-    }
-    out
-}
 
 /// Whether `root` is a usable project root for repo-relative normalization.
 pub(crate) fn usable_root(root: Option<&str>) -> Option<&str> {
@@ -144,18 +126,18 @@ pub(crate) fn record_file_read_accounting(
     // identical anyway.
     crate::core::savings_ledger::record_read_event(original_tokens, saved, None, None);
 
-    // Project root the learning sinks below are scoped to. Defaults to "." (the
-    // MCP path's `project_root_snapshot` fallback) so a rootless read still
-    // trains a global model rather than being dropped.
-    let mut learning_root = String::from(".");
+    if is_cache_hit {
+        crate::core::telemetry::global_metrics().record_cache(true);
+    }
 
-    if let Some(mut session) = SessionState::load_latest() {
+    // Session accounting goes into the caller's own session only. A CLI or
+    // hook process has none and writes none: the project's latest saved
+    // session may be another agent's (I07/S03).
+    let session_root = crate::core::session::caller::with_mut(|session| {
         session.touch_file(path, None, mode, original_tokens);
         if is_cache_hit {
             session.record_cache_hit();
-            crate::core::telemetry::global_metrics().record_cache(true);
         }
-
         if session.active_structured_intent.is_none() && session.files_touched.len() >= 2 {
             let touched: Vec<String> = session
                 .files_touched
@@ -167,24 +149,18 @@ pub(crate) fn record_file_read_accounting(
                 session.active_structured_intent = Some(inferred);
             }
         }
+        session.project_root.clone()
+    })
+    .flatten();
 
-        let project_root = session.project_root.clone();
-        if let Some(root) = usable_root(project_root.as_deref()) {
-            learning_root = root.to_string();
-        }
-        let calls = session.stats.total_tool_calls;
-
-        // Traversal edges: associate this read with the recent working set so the
-        // graph learns the files this task actually touches together (#289).
-        let working_set = recent_working_set(&session, path);
-
-        let _ = session.save();
-
-        if let Some(root) = usable_root(project_root.as_deref()) {
-            crate::core::cooccurrence::record_focus_access(root, path, &working_set);
-        }
-        maybe_consolidate(project_root.as_deref(), calls);
-    }
+    // Project root the learning sinks below are scoped to: the caller's
+    // project, else the read file's own project. Defaults to "." (the MCP
+    // path's `project_root_snapshot` fallback) so a rootless read still
+    // trains a global model rather than being dropped.
+    let learning_root = usable_root(session_root.as_deref())
+        .map(str::to_string)
+        .or_else(|| crate::core::protocol::detect_project_root(path))
+        .unwrap_or_else(|| String::from("."));
 
     // Only real files belong in the context ledger (GL #512): directory
     // overviews and synthetic paths would show up as "files" in the pressure
@@ -278,8 +254,7 @@ fn read_observation(
 ) -> crate::core::ocla::Outcome {
     let context = crate::core::ocla::OclaRequestContext {
         request_id: format!("cli-read:{path}:{resolved_mode}"),
-        session_id: SessionState::load_latest()
-            .map_or_else(|| "cli-read".to_string(), |session| session.id),
+        session_id: caller_session_id().unwrap_or_else(|| "cli-read".to_string()),
         agent_id: "lean-ctx".to_string(),
         content_ref: format!("file:{path}"),
         tenant_id: None,
@@ -426,14 +401,7 @@ pub(crate) fn record_search_accounting(
         "cli_grep",
     );
 
-    if let Some(mut session) = SessionState::load_latest() {
-        session.record_command();
-        let project_root = session.project_root.clone();
-        let calls = session.stats.total_tool_calls;
-        let _ = session.save();
-
-        maybe_consolidate(project_root.as_deref(), calls);
-    }
+    crate::core::session::caller::with_mut(SessionState::record_command);
 }
 
 /// Record a tree/ls operation with full Context OS side effects.
@@ -453,10 +421,7 @@ pub(crate) fn record_tree(original_tokens: usize, output_tokens: usize) {
         );
     }
 
-    if let Some(mut session) = SessionState::load_latest() {
-        session.record_command();
-        let _ = session.save();
-    }
+    crate::core::session::caller::with_mut(SessionState::record_command);
 }
 
 /// Record a shell command with full Context OS side effects.
@@ -506,16 +471,7 @@ pub(crate) fn record_shell_command_named(
         ledger.record_shell(&label, original_tokens, output_tokens);
         ledger.save();
     }
-    if let Some(mut session) = SessionState::load_latest() {
-        session.record_command();
-        let project_root = session.project_root.clone();
-        let calls = session.stats.total_tool_calls;
-        let _ = session.save();
-
-        if original_tokens > 0 {
-            maybe_consolidate(project_root.as_deref(), calls);
-        }
-    }
+    crate::core::session::caller::with_mut(SessionState::record_command);
 }
 
 /// Increment the tool-call counter and flush buffered telemetry every
@@ -552,7 +508,6 @@ pub(crate) fn flush_all() {
     crate::core::edit_metering::flush();
     crate::core::mode_predictor::ModePredictor::flush();
     crate::core::feedback::FeedbackStore::flush();
-    crate::core::threshold_learning::flush();
     crate::core::litm_calibration::flush();
 }
 
@@ -567,16 +522,9 @@ pub(crate) fn flush_all_at_exit() {
     flush_all();
 }
 
-fn maybe_consolidate(project_root: Option<&str>, calls: u32) {
-    let Some(root) = project_root else { return };
-    let autonomy = crate::core::autonomy::AutonomyState::new();
-    if crate::core::autonomy::should_auto_consolidate(&autonomy, calls) {
-        let root = root.to_string();
-        let _ = crate::core::consolidation_engine::consolidate_latest(
-            &root,
-            crate::core::consolidation_engine::ConsolidationBudgets::default(),
-        );
-    }
+/// The caller's own session id, if this runs inside an agent's request.
+fn caller_session_id() -> Option<String> {
+    crate::core::session::caller::with(|session| session.id.clone())
 }
 
 /// Project an aggressive-mode compression event into the OCLA CompressionProvider.
@@ -591,9 +539,7 @@ fn project_ocla_compression(path: &str, source_tokens: u64, output_tokens: u64) 
     let request = CompressionRequest {
         context: OclaRequestContext {
             request_id: format!("cli-read-{}", path.len()),
-            session_id: SessionState::load_latest()
-                .map(|s| s.id)
-                .unwrap_or_default(),
+            session_id: caller_session_id().unwrap_or_default(),
             agent_id: String::new(),
             content_ref: source_ref.clone(),
             tenant_id: None,
@@ -618,8 +564,7 @@ fn project_ocla_savings(path: &str, original_tokens: u64, output_tokens: u64) {
 
     let context = OclaRequestContext {
         request_id: format!("cli-read-{}", path.len()),
-        session_id: SessionState::load_latest()
-            .map_or_else(|| "cli-read".to_string(), |session| session.id),
+        session_id: caller_session_id().unwrap_or_else(|| "cli-read".to_string()),
         agent_id: "lean-ctx".to_string(),
         content_ref: format!("file:{path}"),
         tenant_id: None,

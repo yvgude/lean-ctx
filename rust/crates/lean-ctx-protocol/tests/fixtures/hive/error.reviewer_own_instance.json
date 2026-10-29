@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "A confirmation from the instance that wrote the proposal does not count; confirm from your other machine.",
+    "number": 12,
+    "reason": "reviewer_not_independent"
+  }
+}

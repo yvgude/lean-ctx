@@ -1,0 +1,59 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqai",
+  "body": {
+    "alternatives": [
+      "Redis Redlock",
+      "A dedicated lock table"
+    ],
+    "body_nonce": "02020202020202020202020202020202",
+    "chosen": "Postgres advisory locks",
+    "deferred": false,
+    "evidence": "stated",
+    "rationale": "One fewer moving part; the ledger already lives in Postgres.",
+    "statement": "Use Postgres advisory locks for the nightly ledger close instead of Redis.",
+    "status": "active"
+  },
+  "body_commit": "7234ba0f309446a2998dbabf70f1bddb84aaf19f0d98a8272092a0e99174a082",
+  "capture": {
+    "evidence": "stated",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 1,
+  "event_id": "01M5NKA3YG005000000000W002",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800002000
+  },
+  "key_id": "47983724220c8521",
+  "node_type": "decision",
+  "op": "node.add",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800002350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 2,
+  "signature": "1403594bd61efec68f2f65f5a1f7cfa8b6267054c605f4d008be7154d4c6534c3d8cd02de566598a6a0f82bd148144767cce1cdfead44dc8dfd278eeee8cdf0c",
+  "target": "n_rpesdfdzbnjufd7zdvw6myufgz",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

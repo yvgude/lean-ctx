@@ -5,7 +5,7 @@
 //! sidecar directory; `leanctx-verify v2` remains the independent authority
 //! for proof eligibility.
 
-use std::collections::{BTreeMap, BTreeSet};
+use std::collections::BTreeSet;
 use std::fmt::Write as _;
 use std::fs;
 use std::path::{Component, Path};
@@ -261,7 +261,7 @@ pub(crate) fn assemble_customer_proof_v2(
         }
     });
     let unsigned = unsigned_document(&document)?;
-    let bundle_digest = sha256_digest(&canonical_json(&unsigned));
+    let bundle_digest = sha256_digest(&crate::core::canonical::canonical_json_bytes(&unsigned));
     let root = document
         .as_object_mut()
         .ok_or_else(|| "assembled proof must be an object".to_string())?;
@@ -287,7 +287,7 @@ pub(crate) fn assemble_customer_proof_v2(
             STANDARD.encode(
                 signer
                     .signing_key
-                    .sign(&canonical_json(&unsigned))
+                    .sign(&crate::core::canonical::canonical_json_bytes(&unsigned))
                     .to_bytes(),
             ),
         ),
@@ -295,7 +295,7 @@ pub(crate) fn assemble_customer_proof_v2(
     Ok(AssembledCustomerProofV2 {
         bundle_id: format!("id:{bundle_digest}"),
         bundle_digest,
-        canonical_json: canonical_json(&document),
+        canonical_json: crate::core::canonical::canonical_json_bytes(&document),
         artifacts,
     })
 }
@@ -469,25 +469,6 @@ fn unsigned_document(document: &Value) -> Result<Value, String> {
     signing.remove("signed_digest");
     signing.remove("signature");
     Ok(unsigned)
-}
-
-fn canonical_json(value: &Value) -> Vec<u8> {
-    serde_json::to_vec(&sort_json(value.clone())).expect("JSON values always serialize")
-}
-
-fn sort_json(value: Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(values.into_iter().map(sort_json).collect()),
-        Value::Object(values) => Value::Object(
-            values
-                .into_iter()
-                .map(|(key, value)| (key, sort_json(value)))
-                .collect::<BTreeMap<_, _>>()
-                .into_iter()
-                .collect(),
-        ),
-        scalar => scalar,
-    }
 }
 
 fn sha256_digest(bytes: &[u8]) -> String {

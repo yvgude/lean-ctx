@@ -27,7 +27,19 @@ fn main() {
     }
     let registry = ProductCapabilityRegistry::parse(&source)
         .unwrap_or_else(|error| panic!("invalid {}: {error}", source_path.display()));
-    fs::write(&package_mirror, &source)
+    // A mirror that already declares itself the public projection (owner
+    // decision E2) stays one: writing the canonical bytes there would put the
+    // withheld strategy fields back into the path the public export carries.
+    let mirror_is_projection = fs::read_to_string(&package_mirror).is_ok_and(|current| {
+        ProductCapabilityRegistry::parse(&current).is_ok_and(|r| r.is_public_projection())
+    });
+    let mirror = if mirror_is_projection {
+        public_projection(&source)
+            .unwrap_or_else(|error| panic!("cannot project {}: {error}", source_path.display()))
+    } else {
+        source.clone()
+    };
+    fs::write(&package_mirror, &mirror)
         .unwrap_or_else(|error| panic!("failed to write {}: {error}", package_mirror.display()));
     fs::write(&output, registry.render_markdown())
         .unwrap_or_else(|error| panic!("failed to write {}: {error}", output.display()));

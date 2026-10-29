@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "The reveal does not match the commitment.",
+    "reason": "commit_mismatch"
+  }
+}

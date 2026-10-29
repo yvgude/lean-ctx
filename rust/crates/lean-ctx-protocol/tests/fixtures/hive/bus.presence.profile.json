@@ -1,0 +1,13 @@
+{
+  "agent_id": "claude-3e",
+  "profile": {
+    "display_name": "Claude (contracts)",
+    "model": "claude-opus-5-5",
+    "roles": [
+      "contracts",
+      "review"
+    ]
+  },
+  "state": "active",
+  "t": "presence"
+}

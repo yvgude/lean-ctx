@@ -1,0 +1,9 @@
+{
+  "instance_id": "8e3c0d5f-2b4e-4f60-9b8c-1d2e3f4a5b6c",
+  "key_id": "41dad53017a5f8de",
+  "org_id": "4b6d8f0a-2c4e-4f6a-8b0c-2e4f6a8c0e1a",
+  "reason": "web_revoke",
+  "revoked_at": 1792800500000,
+  "schema": "leanctx.hive.revocation.v1",
+  "signature": "fb97d67e9eafddd7c0e722e1b2c471972f19efc1088cc7556c06ca4bff701cbfe90c7d5ca7aaaa9dc9c4f07910dc455f22ccc44516b284eab829b78b3c6bf10d"
+}

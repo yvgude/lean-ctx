@@ -34,7 +34,7 @@ the requests routed through it.
 |---|---|
 | Select | Retrieval/ranking, Tree-sitter views, configured LSP backends, graph, task budgets, compression and reuse; `rust/src/tools/`, `rust/src/core/`, `rust/src/lsp/` |
 | Control | Configured PathJail/roles, shell policy, secret redaction and policy-driven content filters; `core/pathjail.rs`, `core/io_boundary.rs`, `core/policy/`, `core/input_filters/` |
-| Prove | Source references, operation receipts, local measurements, provider observations where visible and offline verification; `core/engine_receipt_artifact.rs`, `core/gain/`, `rust/crates/lean-ctx-protocol/` |
+| Prove | Source references, operation receipts, local measurements, provider observations where visible and offline verification; `core/engine_interface.rs`, `core/execution_ledger/`, `core/gain/`, `rust/crates/lean-ctx-protocol/` |
 | Integrate | CLI, MCP, supported hooks/proxy and versioned Engine interfaces; standalone [LeanCTX SDK](https://github.com/Thinkery-AG/leanctx-sdk) |
 
 The technical lifecycle **Select → Shape → Reuse → Recover** is implemented

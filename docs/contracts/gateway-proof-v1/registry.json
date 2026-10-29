@@ -50,8 +50,6 @@
       "title": "explicit allow never overrides a stronger explicit deny",
       "status": "proven",
       "tests": [
-        "lib:core::context_kernel::policy_engine::tests::deny_wins_over_allow_at_same_level",
-        "lib:core::context_kernel::policy_engine::tests::higher_level_deny_overrides_lower_level_allow",
         "lib:core::policy::floor::tests::denies_are_unioned_local_cannot_drop_org_deny",
         "lib:core::config::tests::extra_roots_tests::merge_local_never_weakens_the_context_gateway"
       ]

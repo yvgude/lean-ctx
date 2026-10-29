@@ -22,7 +22,7 @@ const HANDSHAKE_DEADLINE: Duration = Duration::from_secs(30);
 
 /// A pty pair with echo disabled — otherwise the master reads back every byte
 /// the test writes and the response is buried in its own request.
-fn openpty_pair() -> (OwnedFd, OwnedFd) {
+pub(super) fn openpty_pair() -> (OwnedFd, OwnedFd) {
     let mut master: libc::c_int = -1;
     let mut slave: libc::c_int = -1;
     let mut termios: libc::termios = unsafe { std::mem::zeroed() };

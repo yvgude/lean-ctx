@@ -226,42 +226,6 @@ pub(crate) struct CanonicalSession {
     project_root: String,
 }
 
-/// Opaque canonical checkpoint identity retained as personal history only.
-#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
-#[serde(deny_unknown_fields)]
-pub(crate) struct PersonalCheckpointLineageV1 {
-    pub(crate) checkpoint_id: String,
-    pub(crate) parent_checkpoint_id: Option<String>,
-    pub(crate) parent_device_id: Option<String>,
-    pub(crate) parent_branch_id: Option<String>,
-    pub(crate) branch_id: String,
-    pub(crate) device_id: String,
-    pub(crate) device_sequence: u64,
-}
-
-impl PersonalCheckpointLineageV1 {
-    pub(crate) fn validate(&self) -> anyhow::Result<()> {
-        let valid = |value: &str| {
-            !value.is_empty()
-                && value.len() <= 256
-                && value.chars().all(|character| !character.is_control())
-        };
-        anyhow::ensure!(
-            valid(&self.checkpoint_id)
-                && valid(&self.branch_id)
-                && valid(&self.device_id)
-                && self.device_sequence > 0
-                && self.parent_checkpoint_id.as_deref().is_none_or(valid)
-                && self.parent_device_id.as_deref().is_none_or(valid)
-                && self.parent_branch_id.as_deref().is_none_or(valid)
-                && (self.parent_checkpoint_id.is_some() == self.parent_device_id.is_some())
-                && (self.parent_checkpoint_id.is_some() == self.parent_branch_id.is_some()),
-            "invalid historical checkpoint identity"
-        );
-        Ok(())
-    }
-}
-
 #[derive(Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 struct StoredSession {
@@ -291,29 +255,6 @@ impl CanonicalSession {
     ) -> Result<Self> {
         let checkpoint = CanonicalCheckpoint::V3(verified.checkpoint().clone());
         Self::admitted_checkpoint(checkpoint, source_artifact_digest, project_root)
-    }
-
-    /// Keep structural identity as user history without verifying or adopting it.
-    pub(crate) fn historical_personal_lineage(&self) -> PersonalCheckpointLineageV1 {
-        let identity = self.checkpoint.identity();
-        PersonalCheckpointLineageV1 {
-            checkpoint_id: identity.checkpoint_id.as_str().to_owned(),
-            parent_checkpoint_id: identity
-                .parent_checkpoint_id
-                .as_ref()
-                .map(|value| value.as_str().to_owned()),
-            parent_device_id: identity
-                .parent_device_id
-                .as_ref()
-                .map(|value| value.as_str().to_owned()),
-            parent_branch_id: identity
-                .parent_branch_id
-                .as_ref()
-                .map(|value| value.as_str().to_owned()),
-            branch_id: identity.branch_id.as_str().to_owned(),
-            device_id: identity.device_id.as_str().to_owned(),
-            device_sequence: identity.device_sequence,
-        }
     }
 
     fn admitted_checkpoint(
@@ -476,10 +417,31 @@ impl SessionState {
     pub(crate) fn canonical_checkpoint_for_export(
         id: &str,
     ) -> Result<(CanonicalCheckpoint, String), String> {
+        const NO_CHECKPOINT: &str =
+            "session has no canonical checkpoint; use the legacy export path";
         let session = Self::load_by_id(id).ok_or("canonical session cannot be loaded")?;
-        let binding = session
+        let root = session
             .canonical_checkpoint
-            .ok_or("session has no canonical checkpoint; use the legacy export path")?;
+            .as_ref()
+            .ok_or(NO_CHECKPOINT)?
+            .project_root
+            .clone();
+        // The committed checkpoint is exported whole or not at all: leaving a
+        // finding out would change its identity. A finding bound to a source
+        // that no longer admits therefore refuses the export.
+        let every_finding_served =
+            crate::tools::admitted_sources::as_agent_acquisition(&root, || {
+                session
+                    .findings
+                    .iter()
+                    .all(|finding| session.finding_served(finding))
+            });
+        if !every_finding_served {
+            return Err(
+                "checkpoint export refused: a finding's source is no longer admitted".to_string(),
+            );
+        }
+        let binding = session.canonical_checkpoint.ok_or(NO_CHECKPOINT)?;
         Ok((binding.checkpoint, binding.project_root))
     }
 

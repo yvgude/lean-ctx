@@ -1,0 +1,30 @@
+{
+  "name": "purge-reasons",
+  "values": [
+    {
+      "value": "leaked_secret",
+      "requested_by": "maintainer+",
+      "route": "W31"
+    },
+    {
+      "value": "gdpr_erasure",
+      "requested_by": "owner",
+      "route": "W31",
+      "request_ref": true
+    },
+    {
+      "value": "retention_schedule",
+      "requested_by": "system",
+      "route": "schedule job"
+    },
+    {
+      "value": "illegal_content",
+      "requested_by": "moderator",
+      "route": "W56"
+    }
+  ],
+  "shred_only": [
+    "vault_deleted",
+    "sealed_conversion"
+  ]
+}

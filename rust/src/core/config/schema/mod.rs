@@ -137,6 +137,7 @@ impl ConfigSchema {
         sections_core::build(&mut sections);
         sections_features::build(&mut sections);
         sections_advanced::build(&mut sections);
+        sections.insert("hive".into(), crate::core::hive::config::schema_section());
         sections.insert("intelligence_runtime".into(), SectionSchema {
             description: "Global-only optional runtime consent and independent staging pins; project overrides never apply".into(),
             keys: [
@@ -151,6 +152,7 @@ impl ConfigSchema {
                 ("channel_root_key_hex", key("string", serde_json::json!(""), "Independently provisioned catalog root; never learned from a download")),
                 ("license_configuration", key("string", serde_json::json!(""), "Explicit user-global path to private license configuration; saved after installed device provisioning")),
                 ("context_policy_apply", key("bool", serde_json::json!(false), "Apply the promoted read-strategy policy in planning instead of recording it in shadow; security and explicit choices still win")),
+                ("team_artifact_projects", key("array", serde_json::json!([]), "Projects that read shared team artifacts: tables of root (absolute), organization_id, project_id and repository_id. Empty: no project uses an artifact")),
             ].into_iter().map(|(name, value)| (name.into(), value)).collect(),
         });
 
@@ -167,7 +169,7 @@ impl ConfigSchema {
             return self.sections.get("root")?.keys.get(key);
         }
         // Try progressively longer section prefixes so that dotted sections
-        // like `memory.lifecycle` or `solution.commercial.team_policy` resolve
+        // like `memory.lifecycle` or `proxy.role_aggressiveness` resolve
         // correctly: `memory.lifecycle.stale_days` → section=`memory.lifecycle`,
         // field=`stale_days`.
         for (i, _) in key.rmatch_indices('.') {
@@ -346,12 +348,6 @@ mod tests {
             "memory.lifecycle.stale_days",
             "memory.knowledge.max_facts",
             "memory.episodic.max_episodes",
-            "solution.commercial.fingerprints_enabled",
-            "solution.commercial.cross_project_patterns",
-            "solution.commercial.adaptive.enabled",
-            "solution.commercial.adaptive.learning_rate",
-            "solution.commercial.team_policy.enabled",
-            "solution.commercial.team_policy.min_intensity",
             "proxy.role_aggressiveness.system",
         ] {
             assert!(

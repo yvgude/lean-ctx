@@ -4,10 +4,13 @@
 use std::path::Path;
 
 use crate::core::bm25_index::BM25Index;
+#[cfg(feature = "embeddings")]
 use crate::core::embedding_index::EmbeddingIndex;
 #[cfg(feature = "embeddings")]
 use crate::core::embeddings::EmbeddingEngine;
+#[cfg(feature = "embeddings")]
 use crate::core::hnsw::FlatEmbeddings;
+#[cfg(feature = "embeddings")]
 use crate::core::hybrid_search::{HybridConfig, format_hybrid_results};
 
 #[allow(clippy::wildcard_imports)]
@@ -303,6 +306,7 @@ pub(crate) fn dense_search_mode(
     }
     #[cfg(not(feature = "embeddings"))]
     {
+        let _ = (query, root, index, top_k, compact, filter);
         "ERR: embeddings feature not enabled".to_string()
     }
 }

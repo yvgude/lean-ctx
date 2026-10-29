@@ -1,0 +1,19 @@
+{
+  "case": "receipts_v2_recovery_ref",
+  "base": "routes/receipts_v2.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/receipts/0/document/observation/failure",
+      "value": {
+        "code": "source_unavailable",
+        "retryable_by_host": false,
+        "recovery_ref": "recovery:src/main.rs"
+      }
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a recovery reference (M3)"
+}

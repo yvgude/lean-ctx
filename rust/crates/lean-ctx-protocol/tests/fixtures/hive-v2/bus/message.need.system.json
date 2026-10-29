@@ -1,0 +1,23 @@
+{
+  "schema": "leanctx.hive.bus/v2",
+  "client_msg_id": "01M5NKA2Z8B000000000000013",
+  "to": "~checkout-latency",
+  "type": "need",
+  "reply_to": "msg_00000000000000b4",
+  "body": {
+    "text": "Is the TLS session cache shared between checkout pods?",
+    "capabilities": [
+      "general"
+    ],
+    "expires_at": 1792886413000,
+    "routed_to": 2
+  },
+  "id": "msg_00000000000000b3",
+  "seq": 13,
+  "thread_id": "msg_00000000000000b4",
+  "sender": {
+    "kind": "system"
+  },
+  "provenance": "workspace",
+  "received_at": 1792800013000
+}

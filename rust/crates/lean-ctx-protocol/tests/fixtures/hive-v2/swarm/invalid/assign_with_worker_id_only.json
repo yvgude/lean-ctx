@@ -1,0 +1,13 @@
+{
+  "case": "assign_with_worker_id_only",
+  "base": "routes/conductor_action.assign.request.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/assignee"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

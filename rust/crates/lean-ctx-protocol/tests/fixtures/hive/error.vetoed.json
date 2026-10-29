@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "forbidden_right",
+    "message": "A moderator holds this question.",
+    "reason": "vetoed"
+  }
+}

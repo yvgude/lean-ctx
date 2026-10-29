@@ -23,9 +23,8 @@ use super::builtin::{
     outcome_tracker::BuiltinOutcomeTracker, response_optimizer::BuiltinResponseOptimizer,
     savings_ledger::BuiltinSavingsLedger, usage_sink::BuiltinUsageSink,
 };
-use super::capability_fabric::{normalize_manifest, service_manifest};
+use super::capability_fabric::service_manifest;
 use super::catalogue::{CatalogueEntry, TechnicalCatalogue};
-use super::policy_constraints::PolicyConstraints;
 use super::traits::{
     AgentGateway, CompressionProvider, ConfigTuner, ConnectorScheduler, DeliveryRegistry,
     EfficiencyAnalyzer, ExperimentRunner, IntentClassifier, MetricsExporter, ObservationHook,
@@ -163,21 +162,6 @@ impl OclaRegistry {
             .sort_by(|a, b| (&a.capability_id, &a.version).cmp(&(&b.capability_id, &b.version)));
         Ok(catalogue)
     }
-
-    /// Policy-admitted, available capabilities only; descriptors never authorize dispatch.
-    pub fn discover(
-        &self,
-        constraints: &PolicyConstraints,
-    ) -> super::OclaResult<Vec<CapabilityManifestV1>> {
-        let manifests = self
-            .technical_catalogue()?
-            .capabilities
-            .into_iter()
-            .filter(|entry| entry.available)
-            .map(|entry| entry.manifest)
-            .collect::<Vec<_>>();
-        Ok(discover_compatible(&manifests, constraints))
-    }
 }
 
 #[cfg(test)]
@@ -199,38 +183,10 @@ impl Drop for TestRegistryGuard {
     }
 }
 
-/// Discover capabilities compatible with the given policy constraints.
-pub fn discover_compatible(
-    registered: &[CapabilityManifestV1],
-    constraints: &PolicyConstraints,
-) -> Vec<CapabilityManifestV1> {
-    let mut contracts = std::collections::BTreeMap::new();
-    for manifest in registered {
-        let key = (
-            manifest.capability_id.as_str().to_owned(),
-            manifest.version.clone(),
-        );
-        let normalized = normalize_manifest(manifest.clone()).ok();
-        contracts
-            .entry(key)
-            .and_modify(|existing| {
-                // Resolve identity before policy filtering: an inadmissible or invalid
-                // duplicate cannot hide a conflicting contract for an admitted key.
-                if *existing != normalized {
-                    *existing = None;
-                }
-            })
-            .or_insert(normalized);
-    }
-    contracts
-        .into_values()
-        .flatten()
-        .filter(|manifest| constraints.permits_manifest(manifest).is_ok())
-        .collect()
-}
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::core::ocla::capability_fabric::normalize_manifest;
     use crate::core::ocla::traits::{
         EfficiencyAnalyzer, ObservationHook, OclaService, OutcomeTracker, SavingsLedger, UsageSink,
     };
@@ -267,15 +223,8 @@ mod tests {
         let catalogue = registry.technical_catalogue().unwrap();
         assert_eq!(catalogue.capabilities.len(), 15);
         assert!(catalogue.capabilities.iter().all(|entry| entry.available));
-        assert!(catalogue.models.is_empty(), "{:?}", catalogue.models);
-        assert!(catalogue.providers.is_empty(), "{:?}", catalogue.providers);
-        assert_eq!(
-            registry
-                .discover(&PolicyConstraints::default())
-                .unwrap()
-                .len(),
-            15
-        );
+        assert!(catalogue.models.is_empty());
+        assert!(catalogue.providers.is_empty());
     }
 
     struct UndeclaredObservation;
@@ -327,7 +276,6 @@ mod tests {
             registry.technical_catalogue(),
             Err(OclaError::Unavailable(OclaCapabilityKind::ObservationHook))
         ));
-        assert!(registry.discover(&PolicyConstraints::default()).is_err());
     }
 
     #[test]
@@ -342,7 +290,6 @@ mod tests {
             registry.technical_catalogue(),
             Err(OclaError::InvalidRequest(_))
         ));
-        assert!(registry.discover(&PolicyConstraints::default()).is_err());
     }
 
     struct BrokenManifestObservation;
@@ -389,18 +336,14 @@ mod tests {
     }
 
     #[test]
-    fn failed_required_adapters_prevent_builtin_catalogue_and_discovery() {
+    fn failed_required_adapters_prevent_builtin_catalogue() {
         let mut registry = OclaRegistry::with_builtins();
         registry.adapters = AdapterRegistry::with_required_adapters([
             Arc::new(super::super::adapters::PassthroughAdapter::new()),
             Arc::new(super::super::adapters::PassthroughAdapter::new()),
         ]);
         assert!(registry.technical_catalogue().is_err());
-        assert!(registry.discover(&PolicyConstraints::default()).is_err());
-        {
-            let found = &registry.adapters.list_available();
-            assert!(found.is_empty(), "{found:?}");
-        }
+        assert!(registry.adapters.list_available().is_empty());
     }
 
     struct SpyEfficiency(Arc<AtomicUsize>);

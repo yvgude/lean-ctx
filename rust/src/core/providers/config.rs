@@ -1,5 +1,3 @@
-use std::env;
-
 #[derive(Clone)]
 pub struct GitLabConfig {
     pub host: String,
@@ -23,18 +21,18 @@ impl GitLabConfig {
     }
 
     pub fn from_env() -> Result<Self, String> {
-        let token = env::var("LEAN_CTX_GITLAB_TOKEN")
-            .or_else(|_| env::var("GITLAB_TOKEN"))
-            .or_else(|_| env::var("CI_JOB_TOKEN"))
+        let token = super::credentials::var("LEAN_CTX_GITLAB_TOKEN")
+            .or_else(|_| super::credentials::var("GITLAB_TOKEN"))
+            .or_else(|_| super::credentials::var("CI_JOB_TOKEN"))
             .map_err(|_| {
                 "No GitLab token found. Set GITLAB_TOKEN or LEAN_CTX_GITLAB_TOKEN.".to_string()
             })?;
 
-        let host = env::var("GITLAB_HOST")
-            .or_else(|_| env::var("CI_SERVER_HOST"))
+        let host = super::credentials::var("GITLAB_HOST")
+            .or_else(|_| super::credentials::var("CI_SERVER_HOST"))
             .unwrap_or_else(|_| "gitlab.com".to_string());
 
-        let project_path = env::var("CI_PROJECT_PATH")
+        let project_path = super::credentials::var("CI_PROJECT_PATH")
             .ok()
             .or_else(|| detect_project_from_git_remote(&host));
 
@@ -46,6 +44,11 @@ impl GitLabConfig {
     }
 
     pub fn api_url(&self, endpoint: &str) -> String {
+        // Loopback API fixtures speak plain HTTP; production is HTTPS only.
+        #[cfg(test)]
+        if let Some(fixture) = self.host.strip_prefix("http://127.0.0.1:") {
+            return format!("http://127.0.0.1:{fixture}/api/v4{endpoint}");
+        }
         format!("https://{}/api/v4{}", self.host, endpoint)
     }
 }

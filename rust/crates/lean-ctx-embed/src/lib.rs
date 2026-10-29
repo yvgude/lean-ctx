@@ -8,7 +8,7 @@
 //!
 //! The centrepiece is [`Engine`]: it owns a **shared session cache** and
 //! dispatches the *real* registered tools (`ctx_read`, `ctx_search`,
-//! `ctx_symbol`, …) the same way the MCP server does. Because the cache is
+//! `ctx_outline`, …) the same way the MCP server does. Because the cache is
 //! shared across calls, a read → re-read of the same file collapses to a delta
 //! in-process — the property Lean-md depends on.
 //!

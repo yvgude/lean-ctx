@@ -1,0 +1,9 @@
+{
+  "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+  "engine_version": "3.12.0",
+  "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+  "instance_label": "studio-mac",
+  "instance_public_key": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+  "os": "macos",
+  "schema": "leanctx.hive.device-token-request/v1"
+}

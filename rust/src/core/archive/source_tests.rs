@@ -187,17 +187,19 @@ fn bound_discovery_does_not_limit_legacy_community_archives() {
     };
     let _policy = TestPolicyOverride::set(None);
     let mut legacy = Vec::new();
-    for n in 0..140 {
-        legacy.push(
-            store(
-                "ctx_shell",
-                "legacy",
-                &format!("legacymarker payload {n}"),
-                None,
-            )
-            .unwrap(),
-        );
-    }
+    scope(root.path(), || {
+        for n in 0..140 {
+            legacy.push(
+                store(
+                    "ctx_shell",
+                    "legacy",
+                    &format!("legacymarker payload {n}"),
+                    None,
+                )
+                .unwrap(),
+            );
+        }
+    });
     // Simulate the obsolete candidate's derived FTS rows, even if its metadata
     // subsequently disappears. Search must remove their ranking/snippet input.
     let db = rusqlite::Connection::open(archive_base_dir().join("index.db")).unwrap();
@@ -207,18 +209,21 @@ fn bound_discovery_does_not_limit_legacy_community_archives() {
     )
     .unwrap();
     db.execute("INSERT INTO archive_fts (archive_id,tool,command,content) VALUES (?1,'ctx_execute','private path','boundmarker payload')", [&id]).unwrap();
-    scope(other.path(), || {
+    // Even attributed to this project, the obsolete row is never served.
+    db.execute(
+        "INSERT INTO archive_project (archive_id, project) VALUES (?1, ?2)",
+        rusqlite::params![
+            id,
+            crate::core::project_hash::hash_project_root(&root.path().to_string_lossy())
+        ],
+    )
+    .unwrap();
+    scope(root.path(), || {
         let entries = list_entries(None);
-        assert_eq!(entries.len(), 140);
-        assert!(!entries.iter().any(|entry| entry.id == id));
+        assert_eq!(entries.len(), 141);
         let found = crate::core::archive_fts::search("legacymarker", 200);
         assert_eq!(found.len(), 140);
         assert!(found.iter().any(|entry| entry.archive_id == legacy[0]));
-        assert!(crate::core::archive_fts::search("boundmarker", 200).is_empty());
-        assert_eq!(crate::core::archive_fts::entry_count(), 140);
-    });
-    scope(root.path(), || {
-        assert_eq!(list_entries(None).len(), 141);
         assert_eq!(crate::core::archive_fts::entry_count(), 141);
         let mixed = crate::core::archive_fts::search("payload", 2);
         assert_eq!(mixed.len(), 2);
@@ -228,6 +233,15 @@ fn bound_discovery_does_not_limit_legacy_community_archives() {
             crate::core::archive_fts::search("boundmarker", 200).len(),
             1
         );
+    });
+    // Community archives belong to the project that stored them (AP05-G4).
+    scope(other.path(), || {
+        let entries = list_entries(None);
+        assert!(!entries.iter().any(|entry| entry.id == id));
+        assert!(entries.is_empty());
+        assert!(crate::core::archive_fts::search("legacymarker", 200).is_empty());
+        assert!(crate::core::archive_fts::search("boundmarker", 200).is_empty());
+        assert_eq!(crate::core::archive_fts::entry_count(), 0);
     });
     assert_eq!(
         db.query_row(
@@ -239,12 +253,12 @@ fn bound_discovery_does_not_limit_legacy_community_archives() {
         0
     );
     db.execute_batch("BEGIN IMMEDIATE").unwrap();
-    scope(other.path(), || {
+    scope(root.path(), || {
         assert_eq!(
             crate::core::archive_fts::search("legacymarker", 200).len(),
             140
         );
-        assert_eq!(crate::core::archive_fts::entry_count(), 140);
+        assert_eq!(crate::core::archive_fts::entry_count(), 141);
     });
     db.execute_batch("ROLLBACK").unwrap();
     assert!(content_path(&id).exists());
@@ -363,6 +377,153 @@ fn source_checks_share_the_original_byte_budget() {
         assert_eq!(remaining, 0);
         assert!(!authority.admitted_budgeted(&mut remaining));
     });
+}
+
+fn governed_without_pack() -> crate::core::data_dir::IsolatedDataDir {
+    let data = crate::core::data_dir::isolated_data_dir();
+    let dir = crate::core::paths::config_dir_read_only().unwrap();
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(
+        dir.join("config.toml"),
+        "[context_gateway]\nmode = \"governed\"\n",
+    )
+    .unwrap();
+    data
+}
+
+fn source_authority(root: &std::path::Path, path: &std::path::Path) -> authority::ArchiveAuthority {
+    let mut remaining = crate::core::limits::max_read_bytes();
+    let read = crate::tools::ctx_read::read_file_for_tool_rooted_with_path(
+        path.to_str().unwrap(),
+        root.to_str().unwrap(),
+        "ctx_read",
+        &mut remaining,
+    )
+    .unwrap();
+    authority::ArchiveAuthority::file(root, &read.canonical_path, "ctx_read", &read.content)
+        .expect("governed mode binds sources without a policy pack")
+}
+
+/// No project pack, global gateway governed. A neutral excerpt of A and B (no
+/// marking, no secret pattern) is stored as a source-bound recovery copy and
+/// as a reference. After A is classified, revoked by a rule, or deleted, EVERY
+/// copy is withheld — archive retrieval, the content lookup, the listing, the
+/// reference — although the stored text never changes and B stays allowed.
+/// Each retrieval reads the store from disk again, as a new process would.
+///
+/// Before: without a pack no authority was captured at all, and a result of
+/// two sources was authorized by whichever source was captured last.
+#[test]
+fn every_copy_of_a_two_source_excerpt_is_withheld_when_one_source_loses_its_rights() {
+    let _data = governed_without_pack();
+    let community = TestPolicyOverride::set(None);
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().canonicalize().unwrap();
+    let (path_a, path_b) = (root.join("a.md"), root.join("b.md"));
+    // `CONFIDENTIAL` as a banner classifies A as confidential: storable.
+    let original_a = "CONFIDENTIAL\nalpha is exported\n";
+    std::fs::write(&path_a, original_a).unwrap();
+    std::fs::write(&path_b, "beta is exported\n").unwrap();
+    let excerpt = "alpha and beta are exported";
+    let only_b = "beta is exported, nothing else";
+
+    // The reference store never parks behind its lock; other tests share it.
+    let reference = |text: &str, authority: &authority::ArchiveAuthority| {
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
+        loop {
+            let stored =
+                crate::server::reference_store::store_with_authority(text, Some(authority));
+            if stored.is_some() || std::time::Instant::now() >= deadline {
+                return stored.expect("reference stored");
+            }
+            std::thread::sleep(std::time::Duration::from_millis(1));
+        }
+    };
+    let (both_id, b_id, both_ref, b_ref) = scope(&root, || {
+        let mut both = source_authority(&root, &path_a);
+        both.join(source_authority(&root, &path_b));
+        let b = source_authority(&root, &path_b);
+        (
+            store_recovery_copy("ctx_read", "excerpt", excerpt, &both).expect("stored"),
+            store_recovery_copy("ctx_read", "b", only_b, &b).expect("stored"),
+            reference(excerpt, &both),
+            reference(only_b, &b),
+        )
+    });
+    assert!(
+        store("ctx_read", "originless", "no source known", None).is_none(),
+        "content without a known source keeps no recovery copy under protection"
+    );
+    assert_eq!(
+        bound_recovery_id(excerpt).as_deref(),
+        Some(both_id.as_str())
+    );
+
+    let served = |expected: bool, case: &str| {
+        scope(&root, || {
+            assert_eq!(retrieve(&both_id).is_some(), expected, "{case}: archive");
+            assert_eq!(
+                bound_recovery_id(excerpt)
+                    .and_then(|id| retrieve_checked(&id).ok())
+                    .is_some(),
+                expected,
+                "{case}: content lookup"
+            );
+            assert_eq!(
+                list_entries(None).iter().any(|entry| entry.id == both_id),
+                expected,
+                "{case}: listing"
+            );
+            assert_eq!(
+                crate::server::reference_store::resolve(&both_ref).is_some(),
+                expected,
+                "{case}: reference"
+            );
+            // B alone stays readable through its own single-source copies.
+            assert_eq!(
+                retrieve(&b_id).as_deref(),
+                Some(only_b),
+                "{case}: B archive"
+            );
+            assert_eq!(
+                crate::server::reference_store::resolve(&b_ref).as_deref(),
+                Some(only_b),
+                "{case}: B reference"
+            );
+        });
+    };
+    served(true, "authorized");
+    scope(&root, || {
+        assert_eq!(
+            retrieve(&both_id).as_deref(),
+            Some(excerpt),
+            "byte-identical"
+        );
+    });
+
+    // A is reclassified after the write.
+    std::fs::write(&path_a, format!("*** TOP SECRET ***\n{original_a}")).unwrap();
+    served(false, "A classified");
+    std::fs::write(&path_a, original_a).unwrap();
+    served(true, "A restored");
+
+    // A is revoked by a rule: a pack that blocks its label is activated.
+    drop(community);
+    {
+        let _pack = policy();
+        served(false, "A revoked by rule");
+    }
+    let _community = TestPolicyOverride::set(None);
+    served(true, "rule removed");
+
+    // A is deleted.
+    std::fs::remove_file(&path_a).unwrap();
+    served(false, "A deleted");
+    let refusal = scope(&root, || retrieve_checked(&both_id)).expect_err("withheld");
+    assert!(
+        matches!(refusal, ArchiveResolveError::Refused(reason) if !reason.contains("alpha")),
+        "typed, content-free refusal"
+    );
 }
 
 #[test]

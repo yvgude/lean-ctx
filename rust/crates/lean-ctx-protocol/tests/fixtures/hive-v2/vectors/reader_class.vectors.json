@@ -1,0 +1,61 @@
+{
+  "cases": [
+    {
+      "fixture": "events/node.add.fact.json",
+      "reader": "member",
+      "reader_instance": "instance_b",
+      "result": "delivered"
+    },
+    {
+      "fixture": "events/node.add.procedure.json",
+      "reader": "member",
+      "reader_instance": "instance_b",
+      "result": "withheld"
+    },
+    {
+      "fixture": "events/node.add.procedure.json",
+      "reader": "member",
+      "reader_instance": "instance_a",
+      "result": "delivered"
+    },
+    {
+      "fixture": "events/node.add.procedure.json",
+      "holds_item": true,
+      "reader": "reviewer",
+      "reader_instance": "instance_b",
+      "result": "delivered"
+    },
+    {
+      "fixture": "events/node.add.result.json",
+      "reader": "participant",
+      "reader_instance": "instance_b",
+      "result": "withheld"
+    },
+    {
+      "fixture": "events/node.add.result.json",
+      "reader": "participant",
+      "reader_instance": "instance_a",
+      "result": "delivered"
+    },
+    {
+      "fixture": "events/node.add.fact.swarm.json",
+      "reader": "participant",
+      "reader_instance": "instance_b",
+      "result": "delivered"
+    },
+    {
+      "fixture": "events/node.add.fact.json",
+      "reader": "outside",
+      "reader_instance": "instance_b",
+      "result": "not_served"
+    }
+  ],
+  "rules": {
+    "author": "the authoring instance always gets its own events",
+    "member": "engine of the owning workspace: everything except events that are not confirmed and wait for a review item (withheld stub {seq})",
+    "outside": "engine outside the owning workspace: nothing (403 public_read_web_only for public vaults, 404 otherwise)",
+    "participant": "swarm participant: confirmed swarm events of its scope plus its own results",
+    "reviewer": "reviewer worker: additionally the events of the items it holds (E31)",
+    "source": "SPEC-CONTRACT-SERVER §3.14.4, RESOLUTIONS R108, R109"
+  }
+}

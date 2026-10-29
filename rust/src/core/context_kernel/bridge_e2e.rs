@@ -14,7 +14,6 @@ mod tests {
     }
     use super::super::accounting_fix;
     use super::super::coverage_class::CoverageClass;
-    use super::super::hotpath_wiring;
     use super::super::identity::CallerRole;
     use super::super::proxy_bridge::{self, ProxyRequestData};
     use super::super::tool_surface;
@@ -102,18 +101,6 @@ mod tests {
 
         assert!(accounting.phantom_savings_pct > 0.0);
         assert!(accounting_fix::format_proxy_accounting(&accounting).contains("phantom"));
-    }
-
-    #[test]
-    fn mcp_integration_respects_coverage() {
-        let _guard = isolated();
-        let managed = hotpath_wiring::integrate_for_mcp("q", "/tmp", &[], 1_000, 300);
-        let unmanaged_headers = vec![("x-coverage-class".to_owned(), "unmanaged".to_owned())];
-        let unmanaged =
-            hotpath_wiring::integrate_for_mcp("q", "/tmp", &unmanaged_headers, 1_000, 300);
-
-        assert_eq!(managed.accounting.original_tokens, 1_000);
-        assert_eq!(unmanaged.budget_used, 0);
     }
 
     #[test]

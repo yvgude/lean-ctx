@@ -60,27 +60,9 @@ pub fn hash_fast(s: &str) -> String {
     }
 }
 
-pub fn canonicalize_json(v: &Value) -> Value {
-    match v {
-        Value::Object(map) => {
-            let mut keys: Vec<&String> = map.keys().collect();
-            keys.sort();
-            let mut out = serde_json::Map::new();
-            for k in keys {
-                if let Some(val) = map.get(k) {
-                    out.insert(k.clone(), canonicalize_json(val));
-                }
-            }
-            Value::Object(out)
-        }
-        Value::Array(arr) => Value::Array(arr.iter().map(canonicalize_json).collect()),
-        other => other.clone(),
-    }
-}
-
 pub fn canonical_args_string(args: Option<&serde_json::Map<String, Value>>) -> String {
     let v = args.map_or(Value::Null, |m| Value::Object(m.clone()));
-    let canon = canonicalize_json(&v);
+    let canon = crate::core::canonical::canonical_value(&v);
     serde_json::to_string(&canon).unwrap_or_default()
 }
 

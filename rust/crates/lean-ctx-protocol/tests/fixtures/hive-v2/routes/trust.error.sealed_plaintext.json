@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "sealed_plaintext",
+    "message": "Hive cannot read this sealed vault; your engine computes trust locally."
+  }
+}

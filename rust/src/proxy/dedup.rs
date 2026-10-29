@@ -7,6 +7,12 @@
 //! requests: the model is stateless, so a reference to content it saw in an
 //! earlier request points at nothing. References use the earlier result's
 //! tool-call id; outputs without one are never referenced.
+//!
+//! Under protection (`compress::protected()`) only the exact
+//! reference is written: the identical block stays in place before it, so
+//! nothing is shortened. A line delta is a shortening without a recovery
+//! copy; the near duplicate stays whole and is counted with
+//! `recovery.dedup_without_copy`.
 
 use std::collections::{HashMap, VecDeque};
 
@@ -36,9 +42,10 @@ struct Canonical {
 /// Replace repeated, non-recent tool outputs in `messages` with references to
 /// an earlier, verbatim tool result in the same slice.
 ///
-/// Pure function of `messages`: equal input yields equal output. A block's
-/// rewrite depends only on the blocks before it and on whether it is among the
-/// newest tool outputs, which always stay verbatim.
+/// Pure function of `messages` and of whether protection holds: equal input
+/// yields equal output. A block's rewrite depends only on the blocks before it
+/// and on whether it is among the newest tool outputs, which always stay
+/// verbatim.
 pub fn dedup_tool_outputs(messages: &mut [Value]) -> DedupStats {
     let chunk_count: usize = messages.iter().map(tool_output_count).sum();
     let mut stats = DedupStats {
@@ -48,6 +55,9 @@ pub fn dedup_tool_outputs(messages: &mut [Value]) -> DedupStats {
     let mut by_hash: HashMap<blake3::Hash, String> = HashMap::new();
     let mut window: VecDeque<Canonical> = VecDeque::with_capacity(DELTA_WINDOW);
     let mut chunk_index = 0;
+    // Read once, and only when a delta is first possible: a request without
+    // a near duplicate never asks.
+    let mut protection: Option<bool> = None;
 
     for message in messages.iter_mut() {
         visit_tool_outputs(message, &mut |id, content| {
@@ -68,10 +78,20 @@ pub fn dedup_tool_outputs(messages: &mut [Value]) -> DedupStats {
                     return;
                 }
                 if let Some(stub) = best_delta_stub(&window, content) {
-                    stats.delta_deduped += 1;
-                    stats.tokens_saved += estimate_tokens(content) - estimate_tokens(&stub);
-                    *content = stub;
-                    return;
+                    if *protection.get_or_insert_with(super::compress::protected) {
+                        // A delta is not the block: under protection it would
+                        // be a shortening without a recovery copy. The block
+                        // stays whole (and referenceable, below).
+                        super::compress::note_kept_whole(
+                            content,
+                            super::compress::DEDUP_WITHOUT_COPY,
+                        );
+                    } else {
+                        stats.delta_deduped += 1;
+                        stats.tokens_saved += estimate_tokens(content) - estimate_tokens(&stub);
+                        *content = stub;
+                        return;
+                    }
                 }
             }
 
@@ -255,6 +275,9 @@ mod tests {
     // binary's date). The delta must carry the changed line verbatim.
     #[test]
     fn near_duplicate_keeps_the_changed_lines_verbatim() {
+        // The delta is written outside protection only: pin the mode.
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let before = ls_output("Oct  1 09:00");
         let after = ls_output("Oct  2 18:53");
         let mut messages = vec![

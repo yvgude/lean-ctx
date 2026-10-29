@@ -9,6 +9,9 @@ use serde::{Deserialize, Serialize};
 
 use super::record::SummaryRecord;
 
+/// Recording runs off the hot path; a bounded wait still never hangs a call.
+const STORE_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(5);
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct SummaryStore {
     pub project_hash: String,
@@ -41,20 +44,42 @@ impl SummaryStore {
         let Some(path) = Self::store_path(&hash) else {
             return Self::new(&hash);
         };
-        std::fs::read_to_string(&path)
-            .ok()
-            .and_then(|c| serde_json::from_str::<SummaryStore>(&c).ok())
-            .unwrap_or_else(|| Self::new(&hash))
+        Self::load_at(&path, &hash)
     }
 
-    pub(crate) fn save(&self) -> Result<(), String> {
-        let path = Self::store_path(&self.project_hash)
-            .ok_or_else(|| "cannot resolve data dir".to_string())?;
-        if let Some(parent) = path.parent() {
-            std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-        }
-        let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
-        std::fs::write(&path, json).map_err(|e| e.to_string())
+    fn load_at(path: &std::path::Path, hash: &str) -> Self {
+        std::fs::read_to_string(path)
+            .ok()
+            .and_then(|c| serde_json::from_str::<SummaryStore>(&c).ok())
+            .unwrap_or_else(|| Self::new(hash))
+    }
+
+    /// One read-modify-write of a project's store under its cross-process
+    /// lock: the store is loaded inside the lock, and saved (atomically,
+    /// synced) only when `mutate` returns `Some`. Parallel recorders and
+    /// package imports therefore never drop each other's summaries.
+    pub(crate) fn mutate_locked<T>(
+        project_root: &str,
+        mutate: impl FnOnce(&mut Self) -> Option<T>,
+    ) -> Result<Option<T>, String> {
+        let hash = crate::core::project_hash::hash_project_root(project_root);
+        let path = Self::store_path(&hash).ok_or_else(|| "cannot resolve data dir".to_string())?;
+        let dir = path
+            .parent()
+            .ok_or_else(|| "invalid summary store path".to_string())?;
+        std::fs::create_dir_all(dir).map_err(|e| e.to_string())?;
+        let _lock = crate::core::agents::FileLock::acquire_with_timeout(
+            &dir.join(format!("{hash}.lock")),
+            STORE_LOCK_WAIT,
+        )?;
+        let mut store = Self::load_at(&path, &hash);
+        let Some(output) = mutate(&mut store) else {
+            return Ok(None);
+        };
+        let json = serde_json::to_string_pretty(&store).map_err(|e| e.to_string())?;
+        crate::core::atomic_fs::try_atomic_write(&path, json.as_bytes(), None)
+            .map_err(|e| format!("persist summaries: {e}"))?;
+        Ok(Some(output))
     }
 
     /// Next sequence number (1-based), monotonic across the store's lifetime.

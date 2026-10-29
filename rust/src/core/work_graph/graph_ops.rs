@@ -3,11 +3,12 @@
 use super::{
     BTreeMap, BTreeSet, BoundedWorkGraph, BudgetAllocation, ChainBudget, ChildExecutionReceipt,
     ChildOutcome, FusedResults, MAX_DEPTH, MAX_FAN_OUT, MAX_GRAPH_NODES, MAX_LOCAL_CONCURRENCY,
-    MAX_PATH_CLAIMS, MeasuredExecutionSpend, NodeStatus, ResultConflict, StopReason,
-    TeamValueReport, WorkAttribution, WorkGraphError, WorkNode, WorkNodeBudget, cascade_budget,
-    execution_fence, validate_budget, validate_cascade, validate_identifier,
-    validate_measured_spend, validate_path_claim, validate_receipt,
+    MAX_PATH_CLAIMS, NodeStatus, ResultConflict, StopReason, TeamValueReport, WorkAttribution,
+    WorkGraphError, WorkNode, WorkNodeBudget, cascade_budget, execution_fence, validate_budget,
+    validate_cascade, validate_identifier, validate_path_claim, validate_receipt,
 };
+#[cfg(test)]
+use super::{MeasuredExecutionSpend, validate_measured_spend};
 
 impl BoundedWorkGraph {
     #[must_use]
@@ -642,6 +643,7 @@ impl BoundedWorkGraph {
         node.status = NodeStatus::Completed;
         node.outcome_ref = Some(outcome_ref);
         node.lease_expires_epoch_ms = None;
+        self.end_incarnation(node_id);
         Ok(())
     }
 
@@ -726,6 +728,7 @@ impl BoundedWorkGraph {
         };
         node.outcome_ref = Some(receipt.outcome_ref.clone());
         node.lease_expires_epoch_ms = None;
+        self.end_incarnation(&node_id);
         self.chain_budgets
             .get_mut(&chain_id)
             .expect("chain budget initialized")
@@ -743,6 +746,10 @@ impl BoundedWorkGraph {
     /// The node remains unsettled so its full reservation can never become
     /// reusable headroom. Actual spend is retained separately for waste
     /// attribution, including the amount above the allocation.
+    ///
+    /// Only the removed executor wrote such records; stores written by earlier
+    /// releases keep them, so tests build the same state through this path.
+    #[cfg(test)]
     pub fn record_failed_execution_spend(
         &mut self,
         spend: MeasuredExecutionSpend,

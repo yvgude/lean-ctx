@@ -14,7 +14,6 @@ use lean_ctx::core::ocla::wire::{
     encode_agent_envelope, encode_envelope,
 };
 use lean_ctx::core::ocla::wire_api::{ocla_router, ocla_router_with_dlq};
-use lean_ctx::core::ocla::wire_stream::{StreamFrame, decode_frame, encode_frame};
 use serde_json::Value;
 use tower::ServiceExt;
 
@@ -423,23 +422,4 @@ fn legacy_v1_fixture_decodes_without_schema_migration() {
     );
     assert_eq!(decoded.context.request_id, "legacy-request-001");
     assert_eq!(decoded.idempotency_key, "legacy-request-001:output");
-}
-
-#[test]
-fn streaming_frames_roundtrip_in_order() {
-    let frames = [
-        StreamFrame::Data(Box::new(canonical_envelope())),
-        StreamFrame::Heartbeat,
-        StreamFrame::Cancel,
-        StreamFrame::Done,
-    ];
-    let encoded: Vec<String> = frames
-        .iter()
-        .map(|frame| encode_frame(frame).expect("encode stream frame"))
-        .collect();
-    let decoded: Vec<StreamFrame> = encoded
-        .iter()
-        .map(|line| decode_frame(line).expect("decode stream frame"))
-        .collect();
-    assert_eq!(decoded, frames);
 }

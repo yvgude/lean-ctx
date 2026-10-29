@@ -17,8 +17,10 @@ pub mod provenance;
 mod proxy;
 mod read_dedup;
 pub(crate) mod read_redirect;
+pub mod renamed;
 mod render;
 mod response_shaping;
+pub mod retired;
 pub mod risk;
 pub mod schema;
 mod sections;
@@ -26,6 +28,7 @@ mod semantic;
 mod serde_defaults;
 pub mod setter;
 mod shell_activation;
+mod shell_approval;
 pub mod solution;
 mod value_display;
 
@@ -52,10 +55,11 @@ pub use sections::*;
 pub(crate) use defaults_allowlist::{cloud_infra_commands, default_shell_allowlist};
 pub use enterprise::EnterpriseConfig;
 pub use enums::{
-    CognitiveMode, CompressionLevel, Effort, OutputDensity, PermissionInheritance, RecoveryHints,
+    CompressionLevel, Effort, OutputDensity, PermissionInheritance, RecoveryHints,
     ResponseVerbosity, RulesInjection, RulesScope, SessionDegrade, TeeMode, TerseAgent,
 };
 pub use intelligence::IntelligenceRuntimeConfig;
+pub use loader::ConfigLoadFailure;
 pub use loader::last_config_parse_error;
 pub use loader::local_sensitive_overrides;
 pub(crate) use loader::strip_sensitive_overrides;
@@ -65,19 +69,17 @@ pub use memory::{
 pub use provenance::{ConfigProvenance, EnvOverride};
 pub use proxy::{
     BaselineConfig, DEFAULT_LOCAL_SHADOW_RATE_PER_MTOK, HistoryMode, PipelineConfig, ProseRanker,
-    ProseRole, ProviderEntry, ProxyConfig, ProxyMode, ProxyProvider, ReasoningBudgetConfig,
-    ResolvedProvider, RoleAggressiveness, RoutingRules, UpstreamDrift, Upstreams, WireShape,
-    diagnose_drift, env_upstream_override, is_local_proxy_url, normalize_url, normalize_url_opt,
+    ProseRole, ProviderEntry, ProxyConfig, ProxyMode, ProxyProvider, ResolvedProvider,
+    RoleAggressiveness, RoutingRules, UpstreamDrift, Upstreams, WireShape, diagnose_drift,
+    env_upstream_override, is_local_proxy_url, normalize_url, normalize_url_opt,
     parse_route_target,
 };
 pub use read_dedup::ReadDedup;
 pub use read_redirect::ReadRedirect;
-pub use response_shaping::{
-    CodeRepetitionConfig, ConfirmationConfig, NarrationConfig, PreambleConfig,
-    ResponseShapingConfig,
-};
+pub use response_shaping::ResponseShapingConfig;
 pub use semantic::SemanticMode;
 pub use shell_activation::ShellActivation;
+pub use shell_approval::ShellApproval;
 pub use value_display::{StatuslineStyle, ValueDisplayConfig, ValueDisplayMode};
 
 #[cfg(test)]

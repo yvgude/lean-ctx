@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "consent_required",
+    "message": "Approve unattended work on your engine first.",
+    "kind": "unattended_start"
+  }
+}

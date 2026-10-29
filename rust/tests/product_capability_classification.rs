@@ -2,17 +2,20 @@
 
 use std::collections::BTreeSet;
 
-use lean_ctx::core::billing::{Plan, entitlement_allows};
 use lean_ctx::core::ocla::OclaCapabilityKind;
 use lean_ctx::core::product_capabilities::{
-    EXPERIMENT_EXECUTOR_CAPABILITY_ID, ProductCapabilityRegistry, REGISTRY_SOURCE,
+    EXPERIMENT_EXECUTOR_CAPABILITY_ID, Plan, ProductCapabilityRegistry, REGISTRY_SOURCE,
     ocla_product_capability_id, registry,
 };
 use lean_ctx::core::server_capabilities::{
     COMMUNITY_ALWAYS_ON_FEATURES, COMMUNITY_OPTIONAL_FEATURES, capabilities_value,
 };
 
-const REQUIRED_ORCHESTRATION_IDS: [&str; 20] = [
+fn entitlement_allows(plan: Plan, id: &str) -> bool {
+    registry().allows(plan, id)
+}
+
+const REQUIRED_ORCHESTRATION_IDS: [&str; 19] = [
     "trust.ocla_event_bus",
     "trust.a2a_contracts",
     "trust.manual_handoff",
@@ -22,7 +25,6 @@ const REQUIRED_ORCHESTRATION_IDS: [&str; 20] = [
     "pro.agent_knowledge.local",
     "pro.agent_leases.local",
     "pro.work_graph.local",
-    "pro.result_fusion",
     "pro.execution_attribution",
     "team.agent_bus.workspace",
     "team.work_graph.shared",
@@ -38,8 +40,19 @@ const REQUIRED_ORCHESTRATION_IDS: [&str; 20] = [
 #[test]
 fn registry_is_valid_unique_and_covers_required_orchestration() {
     let repository_source = include_str!("../../product/capabilities.toml");
+    // The package mirror is the public projection of the registry (owner
+    // decision E2, `scripts/project-capabilities.py`), not a byte copy.
+    let expected = if ProductCapabilityRegistry::parse(REGISTRY_SOURCE)
+        .expect("valid registry")
+        .is_public_projection()
+    {
+        lean_ctx::core::product_capabilities::public_projection(repository_source)
+            .expect("registry projects")
+    } else {
+        repository_source.to_string()
+    };
     assert_eq!(
-        REGISTRY_SOURCE, repository_source,
+        REGISTRY_SOURCE, expected,
         "package-local capability registry mirror drifted from product SSOT"
     );
     let parsed = ProductCapabilityRegistry::parse(REGISTRY_SOURCE).expect("valid registry");
@@ -85,13 +98,16 @@ fn every_server_feature_is_classified_exactly_once() {
             .minimum_plan(),
         Plan::Community
     );
-    assert_eq!(
-        registry()
-            .find("pro.runtime.adaptive_routing")
-            .expect("adaptive routing classified")
-            .minimum_plan(),
-        Plan::Community
-    );
+    for retired in [
+        "pro.runtime.adaptive_routing",
+        "pro.ocla.model_router",
+        "pro.result_fusion",
+    ] {
+        assert!(registry().find(retired).is_none());
+        for plan in Plan::all() {
+            assert!(!entitlement_allows(*plan, retired));
+        }
+    }
 }
 
 #[test]
@@ -155,5 +171,9 @@ fn community_availability_is_independent_of_account_environment() {
 fn generated_product_matrix_is_current() {
     let committed = include_str!("../../docs/reference/generated/product-capabilities.md")
         .replace("\r\n", "\n");
-    assert_eq!(registry().render_markdown(), committed);
+    // Rendered from `product/capabilities.toml`, as the generator does: the
+    // canonical registry here, its projection in the public export.
+    let source = ProductCapabilityRegistry::parse(include_str!("../../product/capabilities.toml"))
+        .expect("valid registry");
+    assert_eq!(source.render_markdown(), committed);
 }

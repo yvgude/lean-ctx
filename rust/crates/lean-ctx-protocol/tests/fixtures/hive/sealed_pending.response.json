@@ -1,0 +1,24 @@
+{
+  "epoch_required": 2,
+  "kid": "hive-2026-10",
+  "recipients": [
+    {
+      "approved_at": "2026-10-20T12:00:00Z",
+      "approved_by": {
+        "id": "usr_01jb8ze",
+        "name": "Repo Maintainer"
+      },
+      "instance_id": "inst_01jb8z9",
+      "instance_kx_public_key": "WFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFhYWFg=",
+      "kx_fingerprint": "9b95-5f93-4018-bab8-05a2",
+      "label": "build-box",
+      "owner": {
+        "id": "usr_01jb8zd",
+        "name": "Ada Muster"
+      }
+    }
+  ],
+  "schema": "leanctx.hive.sealed-pending/v1",
+  "signature": "DE2VZmANnAUydQYhzIOX7+w9yoSTK09vghCaOw+mez+psWDXwW7aRWxL2lQyD+9/ESB2PDPDEppJt6gxA00WCA==",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

@@ -1,0 +1,14 @@
+{
+  "case": "bare_server",
+  "base": "link/lean-ctx-hive.self_hosted.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/vault",
+      "value": "acme/payments@hive"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

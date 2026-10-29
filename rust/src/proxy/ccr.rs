@@ -24,6 +24,7 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+#[cfg(feature = "http-server")]
 use serde_json::Value;
 
 /// Opening delimiter of an in-band retrieval marker: `<lc_expand:HASH>` (#493).
@@ -137,6 +138,20 @@ pub(crate) fn persist_html(content: &str) -> Option<String> {
     persist_with(content, "html")
 }
 
+/// Persist the full definition of a tool whose description the proxy shortened
+/// (K26) under the `tool_` prefix. Returns the basename, like
+/// [`persist_conversation`]: it resolves through `ctx_expand` and keeps a
+/// machine-specific path out of the provider prompt, so the shortened tool
+/// list is the same bytes on every machine and turn.
+#[cfg(feature = "http-server")]
+pub(crate) fn persist_tool_definition(content: &str) -> Option<String> {
+    let path = persist_with_min(content, "tool", 1)?;
+    Path::new(&path)
+        .file_name()
+        .and_then(|name| name.to_str())
+        .map(str::to_owned)
+}
+
 fn persist_with(content: &str, prefix: &str) -> Option<String> {
     persist_with_min(content, prefix, MIN_TEE_BYTES)
 }
@@ -179,7 +194,7 @@ fn is_hex(s: &str, len: usize) -> bool {
 /// Every prefix [`persist_with_min`] writes. The resolver is driven by the same
 /// table, so a new producer can never mint a handle `ctx_expand` rejects
 /// (#1911: `html_` was persisted but unresolvable).
-const TEE_PREFIXES: &[&str] = &["proxy", "conv", "json", "tbl", "yaml", "html"];
+const TEE_PREFIXES: &[&str] = &["proxy", "conv", "json", "tbl", "yaml", "html", "tool"];
 
 /// Canonical `{prefix}_{16hex}.log` name for a prefixed ([`TEE_PREFIXES`]) or
 /// bare-hash id, or `None`. A bare 16-hex id defaults to the `proxy_` store
@@ -374,6 +389,7 @@ pub(crate) fn read_tee(id: &str) -> Option<String> {
 
 /// Recover the verbatim original for a 16-hex CCR `hash` from the local tee
 /// store, or `None` when the hash is malformed or the file is gone (past TTL).
+#[cfg(feature = "http-server")]
 fn recover(hash: &str) -> Option<String> {
     if hash.len() != 16 || !hash.bytes().all(|b| b.is_ascii_hexdigit()) {
         return None;
@@ -407,6 +423,7 @@ pub(crate) fn litellm_hash(content: &str) -> String {
 /// LiteLLM's own regex (24 lowercase hex — uppercase or any other length is
 /// rejected, never coerced) so only a string the guardrail could actually have
 /// captured resolves; the first 16 chars are the `proxy_` tee content-address.
+#[cfg(feature = "http-server")]
 pub(crate) fn retrieve_litellm(hash: &str) -> Option<String> {
     if hash.len() != LITELLM_HASH_LEN
         || !hash
@@ -430,6 +447,7 @@ pub(crate) fn retrieve_litellm(hash: &str) -> Option<String> {
 /// on the recent assistant turn the model echoed the marker into, which no proxy
 /// compressor rewrites, and the proxy has no global `<lc_safe>` strip — wrapping
 /// would instead leak the markers to the provider.
+#[cfg(feature = "http-server")]
 fn splice_str(s: &str) -> Option<String> {
     if !s.contains(EXPAND_OPEN) {
         return None;
@@ -470,6 +488,7 @@ fn splice_str(s: &str) -> Option<String> {
 /// is left **byte-identical** (the function never allocates a replacement), so a
 /// marker-less turn never perturbs the provider prompt-cache prefix — the splice
 /// only ever changes the bytes the model explicitly asked to expand.
+#[cfg(feature = "http-server")]
 pub(crate) fn splice_inband_in_place(value: &mut Value) -> bool {
     match value {
         Value::String(s) => {
@@ -506,9 +525,52 @@ mod tests {
         format!("{seed}\n").repeat(40)
     }
 
+    fn write_gateway_mode(mode: &str) {
+        let config = crate::core::paths::config_dir_read_only().expect("config directory");
+        std::fs::create_dir_all(&config).expect("config directory");
+        std::fs::write(
+            config.join("config.toml"),
+            format!("[context_gateway]\nmode = \"{mode}\"\n"),
+        )
+        .expect("gateway config");
+    }
+
+    /// A stored tee log has no source authority. Governed mode protects
+    /// without any policy pack: the log written in developer mode is then
+    /// neither handed back nor is a new one written, and the refusal says
+    /// nothing about the content. Developer mode keeps its recovery.
+    #[test]
+    fn governed_mode_without_a_pack_neither_serves_nor_writes_an_originless_tee() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        write_gateway_mode("developer");
+        let content = big("deploy log line with the marker tee-governed-regression");
+        let handle = persist(&content).expect("developer mode keeps a recovery copy");
+        let path = Path::new(&handle);
+        assert!(
+            read_tee_detailed(path)
+                .expect("developer mode serves it")
+                .contains("tee-governed-regression")
+        );
+
+        write_gateway_mode("governed");
+        let refusal = read_tee_detailed(path).expect_err("governed mode must not serve it");
+        assert!(refusal.contains("no source authority"), "{refusal}");
+        assert!(!refusal.contains("tee-governed-regression"));
+        assert!(read_tee(&handle).is_none());
+        assert!(
+            persist(&big("another originless log line")).is_none(),
+            "governed mode writes no originless copy"
+        );
+
+        write_gateway_mode("developer");
+        assert!(read_tee_detailed(path).is_ok(), "developer mode unchanged");
+    }
+
     #[test]
     fn handle_is_content_addressed_and_deterministic() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let content = big("file body line");
         let a = persist(&content).expect("persisted");
         let b = persist(&content).expect("persisted again");
@@ -525,6 +587,7 @@ mod tests {
     #[test]
     fn persisted_original_is_recoverable() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let content = big("recoverable verbatim line");
         let handle = persist(&content).expect("persisted");
         let on_disk = std::fs::read_to_string(&handle).expect("tee file readable");
@@ -547,6 +610,7 @@ mod tests {
     #[allow(clippy::case_sensitive_file_extension_comparisons)]
     fn conversation_handle_is_compact_and_deterministic() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let a = persist_conversation("{\"role\":\"user\",\"content\":\"hello\"}")
             .expect("conversation handle");
         let b = persist_conversation("{\"role\":\"user\",\"content\":\"hello\"}")
@@ -558,6 +622,7 @@ mod tests {
     #[test]
     fn conversation_handle_resolves_short_messages() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let handle = persist_conversation("short conversation message").expect("handle");
         assert!(resolve_tee(&handle).is_some());
     }
@@ -565,6 +630,7 @@ mod tests {
     #[test]
     fn conversation_original_is_recoverable() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let original = "{\"role\":\"tool\",\"content\":\"recover me\"}";
         let handle = persist_conversation(original).expect("handle");
         let path = resolve_tee(&handle).expect("resolved handle");
@@ -574,6 +640,7 @@ mod tests {
     #[test]
     fn resolve_tee_accepts_every_stub_form() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let content = big("resolvable tee body");
         let handle = persist(&content).expect("persisted");
         let hash = crate::core::hasher::hash_short(&content);
@@ -600,6 +667,7 @@ mod tests {
     #[test]
     fn persist_html_handle_resolves_in_every_form() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let content = big("<p>html crush original</p>");
         let handle = persist_html(&content).expect("html persisted");
         let hash = crate::core::hasher::hash_short(&content);
@@ -648,6 +716,7 @@ mod tests {
     #[test]
     fn persist_json_is_distinct_prefix_and_resolvable() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let content = big("json crusher original");
         let proxy = persist(&content).expect("proxy persisted");
         let json = persist_json(&content).expect("json persisted");
@@ -681,6 +750,7 @@ mod tests {
     #[test]
     fn persist_tabular_is_distinct_prefix_and_resolvable() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let content = big("tabular crusher original");
         let json = persist_json(&content).expect("json persisted");
         let tbl = persist_tabular(&content).expect("tbl persisted");
@@ -712,6 +782,7 @@ mod tests {
     #[test]
     fn persist_yaml_is_distinct_prefix_and_resolvable() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let content = big("yaml crusher original");
         let tbl = persist_tabular(&content).expect("tbl persisted");
         let yaml = persist_yaml(&content).expect("yaml persisted");
@@ -743,6 +814,7 @@ mod tests {
     #[test]
     fn resolve_tee_resolves_shell_tee_with_underscored_slug() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         // A real shell command whose slug contains underscores: the hash is the
         // last `_`-segment (8 hex), never the first — the parsing trap. The full
         // verbatim output the shell already teed is now surgically retrievable.
@@ -799,6 +871,7 @@ mod tests {
     #[test]
     fn retrieve_litellm_resolves_persisted_content() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let content = big("litellm retrievable original");
         persist(&content).expect("persisted");
         let recovered =
@@ -809,6 +882,7 @@ mod tests {
     #[test]
     fn retrieve_litellm_is_shape_locked_to_the_guardrail_regex() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let content = big("shape locked body");
         persist(&content).expect("persisted");
         let hash = litellm_hash(&content);
@@ -838,6 +912,7 @@ mod tests {
     #[test]
     fn inband_marker_is_derived_from_handle() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let content = big("inband marker body");
         let handle = persist(&content).expect("persisted");
         let hash = crate::core::hasher::hash_short(&content);
@@ -851,6 +926,7 @@ mod tests {
     #[test]
     fn splice_replaces_marker_with_verbatim_original() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let content = big("the historical verbatim line");
         let handle = persist(&content).expect("persisted");
         let marker = inband_marker(&handle).expect("marker");
@@ -904,6 +980,7 @@ mod tests {
     #[test]
     fn splice_recurses_and_handles_multiple_markers() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let a = big("first recovered body");
         let b = big("second recovered body");
         let ma = inband_marker(&persist(&a).unwrap()).unwrap();

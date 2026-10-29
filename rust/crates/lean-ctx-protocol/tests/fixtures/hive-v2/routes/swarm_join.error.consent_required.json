@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "consent_required",
+    "message": "Approve joining this swarm on your engine first.",
+    "kind": "swarm_join"
+  }
+}

@@ -9,8 +9,6 @@ engine: lean-ctx
 # Native tools this engine injects into the Hermes agent tool list.
 provides_tools:
   - ctx_search
-  - ctx_semantic_search
   - ctx_read
   - ctx_expand
   - ctx_knowledge
-  - ctx_summary

@@ -2,7 +2,7 @@
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://lean-ctx.dev/contracts/routing-decision-v1.schema.json",
   "title": "OCLA Routing Decision V1",
-  "description": "Records a model routing decision made by the ModelRouter (DIM 3). Emitted for observability, audit, and future OCLA bus integration.",
+  "description": "Retired. Historical record of a model routing decision. LeanCTX does not route models and does not emit this record; the schema is kept only to read old artifacts.",
   "type": "object",
   "required": [
     "schema_version",

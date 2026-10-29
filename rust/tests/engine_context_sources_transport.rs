@@ -94,6 +94,16 @@ fn source(id: &str, kind: &str, content: &str) -> Value {
         "classification":"Internal","permission":"permitted"}, "content":content})
 }
 
+fn gateway_config(root: &Path, contents: &str) {
+    let _ = client(root);
+    std::fs::write(root.join("config/config.toml"), contents).unwrap();
+}
+
+fn project_policy(root: &Path, contents: &str) {
+    std::fs::create_dir_all(root.join(".lean-ctx")).unwrap();
+    std::fs::write(root.join(".lean-ctx/policy.toml"), contents).unwrap();
+}
+
 fn request() -> Value {
     json!({"planning":{"schema_version":1,"transport_version":1,"engine_interface_version":"1.0.0",
         "task_id":"external-sources","query":"invoice ledger", "budget_tokens":512,"max_candidates":64},
@@ -185,7 +195,7 @@ fn retained_source_materialization_replays_identity_but_never_authorization() {
             invalid.to_string().as_bytes(),
         );
         assert_eq!(denied.status.code(), Some(2));
-        assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
+        assert_eq!(denied.stdout, [] as [u8; 0]);
         assert!(String::from_utf8_lossy(&denied.stderr).contains(error));
     }
     assert!(!root.join("data/execution").exists());
@@ -222,7 +232,7 @@ fn retained_source_expiry_wins_over_the_original_epoch_and_binding() {
         replay.to_string().as_bytes(),
     );
     assert_eq!(denied.status.code(), Some(2));
-    assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
+    assert_eq!(denied.stdout, [] as [u8; 0]);
     assert!(String::from_utf8_lossy(&denied.stderr).contains("source_plan_changed"));
     assert!(!root.join("data/execution").exists());
     assert!(!root.join("request.json").exists());
@@ -277,19 +287,19 @@ fn materialization_rejects_changed_source_authority_and_kernel_policy() {
         });
         let denied = materialize(&root, &changed, planned.binding_digest.as_str());
         assert_eq!(denied.status.code(), Some(2));
-        assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
+        assert_eq!(denied.stdout, [] as [u8; 0]);
         assert!(String::from_utf8_lossy(&denied.stderr).contains("source_plan_changed"));
     }
     let mut changed = input.clone();
     changed["sources"][0]["content"] = json!("unbound payload");
     let denied = materialize(&root, &changed, planned.binding_digest.as_str());
     assert_eq!(denied.status.code(), Some(2));
-    assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
+    assert_eq!(denied.stdout, [] as [u8; 0]);
     std::fs::write(root.join("config/kernel-policy.toml"),
         "max_sensitivity = 'internal'\nblocked_sources = ['source-issue']\nbudget_cap_tokens = 512\n").unwrap();
     let denied = materialize(&root, &input, planned.binding_digest.as_str());
     assert_eq!(denied.status.code(), Some(2));
-    assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
+    assert_eq!(denied.stdout, [] as [u8; 0]);
     assert!(String::from_utf8_lossy(&denied.stderr).contains("source_plan_changed"));
     assert!(!root.join("data/execution").exists());
 }
@@ -305,16 +315,19 @@ fn materialization_counts_framing_and_reuses_project_redaction() {
     assert_eq!(planned.source_bindings.len(), 1);
     let denied = materialize(&root, &input, planned.binding_digest.as_str());
     assert_eq!(denied.status.code(), Some(2));
-    assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
+    assert_eq!(denied.stdout, [] as [u8; 0]);
     assert!(
         String::from_utf8_lossy(&denied.stderr).contains("source_materialization_budget_exceeded")
     );
 
     input["planning"]["budget_tokens"] = json!(512);
+    input["planning"]["query"] = json!("invoice");
+    project_policy(
+        &root,
+        "name = 'materialization-guard'\nversion = '1.0.0'\ndescription = 'Bounded source delivery fixture'\n[redaction]\nsource_marker = 'ledger'\n",
+    );
     let planned = response(&invoke_stdin(&root, input.to_string().as_bytes()));
-    std::fs::create_dir_all(root.join(".lean-ctx")).unwrap();
-    std::fs::write(root.join(".lean-ctx/policy.toml"),
-        "name = 'materialization-guard'\nversion = '1.0.0'\ndescription = 'Bounded source delivery fixture'\n[redaction]\nsource_marker = 'invoice ledger'\n").unwrap();
+    assert_eq!(planned.source_bindings.len(), 1);
     let redacted = materialize(&root, &input, planned.binding_digest.as_str());
     assert!(
         redacted.status.success(),
@@ -324,19 +337,211 @@ fn materialization_counts_framing_and_reuses_project_redaction() {
     let result: EngineContextSourceMaterializationResponseV1 =
         serde_json::from_slice(&redacted.stdout).unwrap();
     result.validate().unwrap();
-    assert!(!result.content.contains("invoice ledger"));
+    assert!(!result.content.contains("ledger"));
     for restriction in ["allow_tools = []", "max_context_tokens = 1"] {
         std::fs::write(root.join(".lean-ctx/policy.toml"), format!(
             "name = 'materialization-denial'\nversion = '1.0.0'\ndescription = 'Explicit project restriction'\n[context]\n{restriction}\n"
         )).unwrap();
         let denied = materialize(&root, &input, planned.binding_digest.as_str());
         assert_eq!(denied.status.code(), Some(2));
-        assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
+        assert_eq!(denied.stdout, [] as [u8; 0]);
     }
     std::fs::write(root.join(".lean-ctx/policy.toml"), "malformed policy!").unwrap();
     let denied = materialize(&root, &input, planned.binding_digest.as_str());
     assert_eq!(denied.status.code(), Some(2));
-    assert!(denied.stdout.is_empty(), "{:?}", denied.stdout);
+    assert_eq!(denied.stdout, [] as [u8; 0]);
+}
+
+#[test]
+fn source_gateway_redaction_keeps_original_digest_and_materializes_only_admitted_text() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(directory.path()).unwrap();
+    let key = concat!("AK", "IAIOSFODNN7EXAMPLE");
+    let content = format!("invoice ledger {key}");
+    let mut input = request();
+    input["sources"] = json!([source("credential", "filesystem", &content)]);
+    input["sources"][0]["descriptor"]["classification"] = json!("Public");
+    gateway_config(
+        &root,
+        "[context_gateway]\nsecrets = 'redact'\npii = 'off'\ninjection = 'off'\nclassification = 'warn'\n",
+    );
+
+    let original_digest = content_digest(&content);
+    let planned = response(&invoke_stdin(&root, input.to_string().as_bytes()));
+    assert_eq!(planned.source_bindings.len(), 1);
+    assert_eq!(
+        planned.source_bindings[0].content_digest.as_str(),
+        original_digest
+    );
+    let admission = planned
+        .result
+        .plan
+        .extensions
+        .get("source_admission_v1")
+        .expect("admission identity");
+    assert_eq!(admission["schema_version"], 1);
+    assert_eq!(
+        admission["sources"][0]["original_digest"].as_str(),
+        Some(original_digest.as_str())
+    );
+    assert_ne!(
+        admission["sources"][0]["admitted_digest"].as_str(),
+        Some(original_digest.as_str())
+    );
+    assert!(
+        admission["sources"][0]["effective_classification"]
+            .as_str()
+            .is_some()
+    );
+    assert!(!serde_json::to_string(&planned).unwrap().contains(&content));
+    assert_eq!(
+        planned.source_bindings[0].content_digest.as_str(),
+        content_digest(&content)
+    );
+
+    let output = materialize(&root, &input, planned.binding_digest.as_str());
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+    let materialized: EngineContextSourceMaterializationResponseV1 =
+        serde_json::from_slice(&output.stdout).unwrap();
+    materialized.validate().unwrap();
+    assert!(materialized.content.contains("invoice ledger"));
+    assert!(!materialized.content.contains(key));
+    assert_eq!(
+        materialized.plan.source_bindings[0].content_digest.as_str(),
+        original_digest
+    );
+    assert_eq!(
+        materialized.materialized_digest.as_str(),
+        content_digest(&materialized.content)
+    );
+}
+
+#[test]
+fn detected_restricted_classification_cannot_be_laundered_by_a_public_descriptor() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(directory.path()).unwrap();
+    let content = "*** TOP SECRET *** invoice ledger plans";
+    let mut input = request();
+    input["sources"] = json!([source("marked", "filesystem", content)]);
+    input["sources"][0]["descriptor"]["classification"] = json!("Public");
+    gateway_config(
+        &root,
+        "[context_gateway]\nsecrets = 'off'\npii = 'off'\ninjection = 'off'\nclassification = 'warn'\n",
+    );
+    std::fs::write(
+        root.join("config/kernel-policy.toml"),
+        "max_sensitivity = 'internal'\nblocked_sources = []\n",
+    )
+    .unwrap();
+
+    let planned = response(&invoke_stdin(&root, input.to_string().as_bytes()));
+    assert_eq!(
+        planned.source_bindings,
+        [] as [lean_ctx_protocol::EngineContextSourceDescriptorV1; 0]
+    );
+    assert_eq!(
+        planned.result.plan.selections,
+        [] as [lean_ctx_protocol::ContextSelectionV1; 0]
+    );
+}
+
+#[test]
+fn a_gateway_block_after_planning_invalidates_the_binding_without_body_leakage() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(directory.path()).unwrap();
+    let key = concat!("AK", "IAIOSFODNN7EXAMPLE");
+    let content = format!("invoice ledger {key}");
+    let mut input = request();
+    input["sources"] = json!([source("credential", "filesystem", &content)]);
+    input["sources"][0]["descriptor"]["classification"] = json!("Public");
+    gateway_config(&root, "[context_gateway]\nsecrets = 'redact'\n");
+
+    let planned = response(&invoke_stdin(&root, input.to_string().as_bytes()));
+    assert_eq!(planned.source_bindings.len(), 1);
+    gateway_config(&root, "[context_gateway]\nsecrets = 'block'\n");
+
+    let denied = materialize(&root, &input, planned.binding_digest.as_str());
+    assert_eq!(denied.status.code(), Some(2));
+    assert_eq!(denied.stdout, [] as [u8; 0]);
+    let stderr = String::from_utf8_lossy(&denied.stderr);
+    assert!(stderr.contains("source_plan_changed"), "{stderr}");
+    assert!(!stderr.contains(key), "{stderr}");
+    assert!(!stderr.contains(&content), "{stderr}");
+}
+
+#[test]
+fn project_redaction_tightened_after_planning_invalidates_a_changed_source_plan() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(directory.path()).unwrap();
+    let mut input = request();
+    input["sources"] = json!([source("short", "filesystem", "invoice ledger")]);
+    input["planning"]["query"] = json!("invoice ledger");
+    let planned = response(&invoke_stdin(&root, input.to_string().as_bytes()));
+    assert_eq!(planned.source_bindings.len(), 1);
+
+    project_policy(
+        &root,
+        "name = 'materialization-tightened'\nversion = '1.0.0'\ndescription = 'Invalidate a plan whose admitted candidate changed'\n[redaction]\nsource_marker = 'invoice ledger'\n",
+    );
+    let denied = materialize(&root, &input, planned.binding_digest.as_str());
+    assert_eq!(denied.status.code(), Some(2));
+    assert_eq!(denied.stdout, [] as [u8; 0]);
+    assert!(String::from_utf8_lossy(&denied.stderr).contains("source_plan_changed"));
+}
+
+#[test]
+fn same_token_count_project_redaction_change_invalidates_the_source_binding() {
+    let directory = tempfile::tempdir().unwrap();
+    let root = std::fs::canonicalize(directory.path()).unwrap();
+    let content = "invoice alpha bravo ledger";
+    let mut input = request();
+    input["sources"] = json!([source("stable", "filesystem", content)]);
+    input["planning"]["query"] = json!("invoice ledger");
+    project_policy(
+        &root,
+        "name = 'admission-alpha'\nversion = '1.0.0'\ndescription = 'Redact the first marker'\n[redaction]\nsource_marker = 'alpha'\n",
+    );
+
+    let first_plan = response(&invoke_stdin(&root, input.to_string().as_bytes()));
+    assert_eq!(first_plan.source_bindings.len(), 1);
+    let first_output = materialize(&root, &input, first_plan.binding_digest.as_str());
+    assert!(
+        first_output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&first_output.stderr)
+    );
+    let first: EngineContextSourceMaterializationResponseV1 =
+        serde_json::from_slice(&first_output.stdout).unwrap();
+
+    project_policy(
+        &root,
+        "name = 'admission-bravo'\nversion = '1.0.0'\ndescription = 'Redact the second marker'\n[redaction]\nsource_marker = 'bravo'\n",
+    );
+    let second_plan = response(&invoke_stdin(&root, input.to_string().as_bytes()));
+    assert_eq!(second_plan.source_bindings, first_plan.source_bindings);
+    assert_ne!(second_plan.binding_digest, first_plan.binding_digest);
+    let second_output = materialize(&root, &input, second_plan.binding_digest.as_str());
+    assert!(
+        second_output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&second_output.stderr)
+    );
+    let second: EngineContextSourceMaterializationResponseV1 =
+        serde_json::from_slice(&second_output.stdout).unwrap();
+    assert_ne!(first.content, second.content);
+    assert_eq!(
+        lean_ctx::core::tokens::count_tokens(&first.content),
+        lean_ctx::core::tokens::count_tokens(&second.content)
+    );
+
+    let stale = materialize(&root, &input, first_plan.binding_digest.as_str());
+    assert_eq!(stale.status.code(), Some(2));
+    assert_eq!(stale.stdout, [] as [u8; 0]);
+    assert!(String::from_utf8_lossy(&stale.stderr).contains("source_plan_changed"));
 }
 
 #[test]
@@ -354,7 +559,7 @@ fn bounded_stdin_plans_without_a_request_file_and_rejects_invalid_input() {
     for malformed in [vec![0xff], vec![b' '; 1024 * 1024 + 1], b"{}{}".to_vec()] {
         let rejected = invoke_stdin(&root, &malformed);
         assert_eq!(rejected.status.code(), Some(2));
-        assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
+        assert_eq!(rejected.stdout, [] as [u8; 0]);
     }
 }
 
@@ -394,15 +599,13 @@ fn explicit_sources_use_kernel_policy_and_digest_bound_metadata_without_persiste
     let mut empty = input.clone();
     empty["sources"] = json!([]);
     let cleared = response(&invoke(&root, &empty.to_string()));
-    assert!(
-        cleared.source_bindings.is_empty(),
-        "{:?}",
-        cleared.source_bindings
+    assert_eq!(
+        cleared.source_bindings,
+        [] as [lean_ctx_protocol::EngineContextSourceDescriptorV1; 0]
     );
-    assert!(
-        cleared.result.plan.selections.is_empty(),
-        "{:?}",
-        cleared.result.plan.selections
+    assert_eq!(
+        cleared.result.plan.selections,
+        [] as [lean_ctx_protocol::ContextSelectionV1; 0]
     );
     assert!(!root.join(".lean-ctx").exists());
     assert!(!root.join("data/engine-interface").exists());
@@ -446,10 +649,10 @@ fn missing_permissions_classification_expiry_and_retention_fail_closed() {
         for source in input["sources"].as_array_mut().unwrap() {
             source["descriptor"][field] = value.clone();
         }
-        {
-            let found = &response(&invoke(&root, &input.to_string())).source_bindings;
-            assert!(found.is_empty(), "{found:?}");
-        }
+        assert_eq!(
+            response(&invoke(&root, &input.to_string())).source_bindings,
+            [] as [lean_ctx_protocol::EngineContextSourceDescriptorV1; 0]
+        );
     }
     let mut input = request();
     for source in input["sources"].as_array_mut().unwrap() {
@@ -458,19 +661,19 @@ fn missing_permissions_classification_expiry_and_retention_fail_closed() {
             .unwrap()
             .remove("permission");
     }
-    {
-        let found = &response(&invoke(&root, &input.to_string())).source_bindings;
-        assert!(found.is_empty(), "{found:?}");
-    }
+    assert_eq!(
+        response(&invoke(&root, &input.to_string())).source_bindings,
+        [] as [lean_ctx_protocol::EngineContextSourceDescriptorV1; 0]
+    );
     std::fs::write(
         root.join("config/kernel-policy.toml"),
         "max_sensitivity = 'internal'\nblocked_sources = []\nretention_days = 7\n",
     )
     .unwrap();
-    {
-        let found = &response(&invoke(&root, &request().to_string())).source_bindings;
-        assert!(found.is_empty(), "{found:?}");
-    }
+    assert_eq!(
+        response(&invoke(&root, &request().to_string())).source_bindings,
+        [] as [lean_ctx_protocol::EngineContextSourceDescriptorV1; 0]
+    );
 }
 
 #[test]
@@ -603,7 +806,7 @@ fn invalid_source_manifests_and_versions_are_rejected_without_output() {
     for input in invalid {
         let output = invoke(&root, &input);
         assert_eq!(output.status.code(), Some(2));
-        assert!(output.stdout.is_empty(), "{:?}", output.stdout);
+        assert_eq!(output.stdout, [] as [u8; 0]);
         assert!(!String::from_utf8_lossy(&output.stderr).contains("payload-"));
     }
 }
@@ -628,6 +831,6 @@ fn oversized_source_lineage_fails_without_partial_response() {
     );
     let output = invoke(&root, &input.to_string());
     assert_eq!(output.status.code(), Some(2));
-    assert!(output.stdout.is_empty(), "{:?}", output.stdout);
+    assert_eq!(output.stdout, [] as [u8; 0]);
     assert!(String::from_utf8_lossy(&output.stderr).contains("source_lineage_too_large"));
 }

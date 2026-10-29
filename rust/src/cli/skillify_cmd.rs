@@ -24,8 +24,9 @@ pub(crate) fn cmd_skillify(args: &[String]) {
         .nth(1)
         .map(String::as_str);
 
-    let out = ctx_skillify::handle(&project_root, action, slug);
-    println!("{out}");
+    let out = super::common::CliToolRun::new("ctx_skillify", &project_root, None)
+        .deliver_text(|| ctx_skillify::handle(&project_root, action, slug));
+    super::common::print_released(&out);
 }
 
 fn print_help() {

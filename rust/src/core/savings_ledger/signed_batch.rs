@@ -169,6 +169,24 @@ impl SignedSavingsBatchV1 {
         batch
     }
 
+    /// Builds an unsigned batch over one project's events (period `project`).
+    /// Its head and tail are the project's first and last events; the chain
+    /// check still covers the whole ledger. The security tally stays out: the
+    /// audit trail's verified tally is device-wide.
+    pub fn build_for_project(agent_id: &str, scope: &super::ProjectScope) -> Self {
+        let events: Vec<super::SavingsEvent> = super::all_events()
+            .into_iter()
+            .filter(|ev| scope.holds_event(ev))
+            .collect();
+        Self::from_parts(
+            agent_id,
+            "project",
+            &events_head_tail(&events),
+            super::verify().valid,
+            &super::summary_for(Some(scope)),
+        )
+    }
+
     /// Attaches a security tally bound to this batch's chain head. It is signed
     /// together with the batch by [`Self::sign_with_key`].
     pub fn attach_security(&mut self, counts: SecurityCounts, evidence: Evidence) {

@@ -96,33 +96,22 @@ impl LeanCtxServer {
     }
 
     pub(super) async fn guard_workflow(&self, name: &str) -> Option<CallToolResult> {
-        if name != "ctx_workflow" {
-            let active = self.workflow.read().await.clone();
-            if let Some(run) = active {
-                if run.current == "done" || is_workflow_stale(&run) {
-                    let mut wf = self.workflow.write().await;
-                    *wf = None;
-                    let _ = crate::core::workflow::clear_active();
-                } else if !WORKFLOW_PASSTHROUGH_TOOLS.contains(&name)
-                    && let Some(state) = run.spec.state(&run.current)
-                    && let Some(allowed) = &state.allowed_tools
-                {
-                    let allowed_ok = allowed.iter().any(|t| t == name);
-                    if !allowed_ok {
-                        let mut shown = allowed.clone();
-                        shown.sort();
-                        shown.truncate(30);
-                        return Some(CallToolResult::success(vec![ContentBlock::text(format!(
-                            "Tool '{name}' blocked by workflow '{}' (state: {}). Allowed: {}. Use ctx_workflow(action=\"stop\") to exit.",
-                            run.spec.name,
-                            run.current,
-                            shown.join(", ")
-                        ))]));
-                    }
-                }
+        use crate::core::workflow::ToolGate;
+        // The decision is `core::workflow::tool_gate`, shared with the
+        // `ctx_call` gate in `server/dispatch/mod.rs`.
+        let run = self.workflow.read().await.clone()?;
+        match crate::core::workflow::tool_gate(&run, name, WORKFLOW_PASSTHROUGH_TOOLS) {
+            ToolGate::Pass => None,
+            ToolGate::Expired => {
+                let mut wf = self.workflow.write().await;
+                *wf = None;
+                let _ = crate::core::workflow::clear_active();
+                None
+            }
+            ToolGate::Refuse(reason) => {
+                Some(CallToolResult::success(vec![ContentBlock::text(reason)]))
             }
         }
-        None
     }
 
     /// Resolve project root from MCP client roots (once per session).
@@ -134,6 +123,16 @@ impl LeanCtxServer {
     #[expect(deprecated)]
     pub(super) async fn resolve_roots_once(&self) {
         use std::sync::atomic::Ordering;
+        // A launcher-bound Workspace is the only root authority (#2120): the
+        // client is not asked for roots, the session follows the snapshot.
+        match crate::core::workspace_authority::current() {
+            crate::core::workspace_authority::Authority::Legacy => {}
+            crate::core::workspace_authority::Authority::Workspace(snapshot) => {
+                drop(self.bind_workspace_roots(&snapshot).await);
+                return;
+            }
+            crate::core::workspace_authority::Authority::Unavailable(_) => return,
+        }
         if !self.has_client_roots.load(Ordering::Relaxed) {
             return;
         }
@@ -193,20 +192,52 @@ impl LeanCtxServer {
         };
 
         let uris: Vec<String> = list_result.roots.iter().map(|r| r.uri.clone()).collect();
-        let validated_paths = roots::valid_dir_paths_from_uris(&uris);
-        let Some(new_root) = roots::best_root_from_uris(&uris) else {
-            return;
+        drop(self.adopt_client_roots(&uris).await);
+        // Indices warm lazily on first use of a tool that needs them (#152) —
+        // the dispatch path for this very call handles it via
+        // `index_orchestrator::ensure_warm_for_tool`, so no eager scan here.
+    }
+
+    /// Adopt the roots a client reported. A different project gets its own
+    /// session instance (see [`Self::switch_session_root`]) and the
+    /// previous instance stays with the calls already bound to it (AP04-G1).
+    /// A shared (HTTP daemon) session is fixed to the root it was created
+    /// for and takes no client's roots: one client's roots must neither move
+    /// nor widen the session every other client works in (AP04-G5).
+    ///
+    /// Returns the detached session saves; callers may drop them.
+    pub(crate) async fn adopt_client_roots(
+        &self,
+        uris: &[String],
+    ) -> Vec<tokio::task::JoinHandle<()>> {
+        if crate::core::workspace_authority::is_configured() {
+            tracing::warn!(
+                "MCP roots: ignored — this server is bound to a launcher Workspace ({})",
+                crate::core::workspace_authority::ENV_FILE
+            );
+            return Vec::new();
+        }
+        let validated_paths = roots::valid_dir_paths_from_uris(uris);
+        let Some(selection) = roots::root_selection_from_uris(uris) else {
+            return Vec::new();
         };
+        let new_root = selection.chosen_root.clone();
         // Defense-in-depth: never adopt a broad/unsafe root (HOME, `/`, agent
         // sandbox dirs) even if the client reports it — it would pollute the
         // session and resolve relative paths against the wrong tree.
         if crate::core::pathutil::is_broad_or_unsafe_root(std::path::Path::new(&new_root)) {
             tracing::warn!("MCP roots: ignoring unsafe project root {new_root}");
-            return;
+            return Vec::new();
         }
-
-        let mut session = self.session.write().await;
-        let old_root = session.project_root.clone();
+        if self.session_mode == crate::tools::SessionMode::Shared {
+            tracing::warn!(
+                "MCP roots: shared session keeps its own root; ignoring client roots ({new_root})"
+            );
+            return Vec::new();
+        }
+        // AP04-G7: the choice among several roots is kept (#699) and recorded
+        // so it can be named (`ctx_session status`, `/api/scope`).
+        crate::core::root_selection::record(&selection);
 
         let other_roots: Vec<String> = validated_paths
             .iter()
@@ -214,47 +245,260 @@ impl LeanCtxServer {
             .cloned()
             .collect();
         if !other_roots.is_empty() {
-            session.extra_roots = other_roots;
-            tracing::info!(
-                "MCP roots: {} extra root(s) registered",
-                session.extra_roots.len()
-            );
+            tracing::info!("MCP roots: {} extra root(s) registered", other_roots.len());
         }
+        let live = self.session.live();
+        if live.read().await.project_root.as_deref() == Some(&new_root) {
+            let mut session = live.write().await;
+            if !other_roots.is_empty() {
+                session.extra_roots = other_roots;
+            }
+            // Under the guard `prepare_save` only detaches a copy; see
+            // `switch_session_root` (#1783).
+            let prepared = session.prepare_save().ok();
+            drop(session);
+            return publish_saves([prepared]);
+        }
+        self.switch_session_root(
+            &live,
+            SessionSwitch {
+                new_root: &new_root,
+                extra_roots: other_roots,
+                shell_cwd: None,
+                rebind_request: false,
+            },
+        )
+        .await
+        .unwrap_or_default()
+    }
 
-        // Everything below serializes under the guard and writes outside it.
+    /// Keep the live session inside the Workspace snapshot (#2120): its root
+    /// stays where it is while a granting root contains it, else moves to the
+    /// primary root; its extra roots are exactly the snapshot's other roots,
+    /// so a detached root leaves the session on the next call.
+    pub(crate) async fn bind_workspace_roots(
+        &self,
+        snapshot: &crate::core::workspace_authority::Snapshot,
+    ) -> Vec<tokio::task::JoinHandle<()>> {
+        let live = self.session.live();
+        let current = live.read().await.project_root.clone();
+        let root = snapshot.project_root_for(current.as_deref().unwrap_or(""));
+        let extra_roots: Vec<String> = snapshot
+            .granting_roots()
+            .map(|(path, _)| path.to_string_lossy().into_owned())
+            .filter(|path| *path != root)
+            .collect();
+        if current.as_deref() == Some(root.as_str()) {
+            let mut session = live.write().await;
+            if session.extra_roots != extra_roots {
+                session.extra_roots = extra_roots;
+            }
+            return Vec::new();
+        }
+        self.switch_session_root(
+            &live,
+            SessionSwitch {
+                new_root: &root,
+                extra_roots,
+                shell_cwd: None,
+                rebind_request: false,
+            },
+        )
+        .await
+        .unwrap_or_default()
+    }
+
+    /// Install a session for `new_root` in place of `current` — the session
+    /// this server itself left that project with, or a fresh one; a rootless
+    /// session is carried over — and save both. The one way a session changes
+    /// project: client roots and a re-root after path resolution both come
+    /// here (AP04-G1/G6). `None`: `current` is no longer live, another switch
+    /// won.
+    ///
+    /// Never the project's latest saved session: that is whichever agent
+    /// saved last — taking it over handed one agent's private task, findings
+    /// and decisions to another and let both write one session file (AP01
+    /// §1/§3, ABNAHME I07/C06). A server starts with its own fresh session
+    /// (`new_with_startup`); resuming a saved one is the explicit
+    /// `ctx_session load`.
+    pub(crate) async fn switch_session_root(
+        &self,
+        current: &crate::core::session::SharedSession,
+        switch: SessionSwitch<'_>,
+    ) -> Option<Vec<tokio::task::JoinHandle<()>>> {
+        let SessionSwitch {
+            new_root,
+            extra_roots,
+            shell_cwd,
+            rebind_request,
+        } = switch;
+        // The new project's own configuration (and trust) decides its
+        // configured extra roots, never the project being left.
+        // Under a Workspace the snapshot alone names the roots (#2120).
+        let configured_extra = if crate::core::workspace_authority::is_configured() {
+            Vec::new()
+        } else {
+            crate::core::policy::runtime::in_project(new_root, || {
+                crate::core::config::Config::load().extra_roots
+            })
+        };
+        let own = self.session.own_session_id(new_root).and_then(|id| {
+            crate::core::session::SessionState::load_by_id_for_project_root(&id, new_root)
+                .ok()
+                .flatten()
+        });
+        // Under the guard `prepare_save` only detaches a copy of the session:
+        // no file, configuration or policy input is read, so a slow or
+        // unavailable policy refresh cannot hold this lock. Storage admission,
+        // the authority re-check and the write all happen in `write_to_disk`
+        // on the blocking pool, after the guard is dropped.
         // This runs before the handler watchdog on every call once the probe
         // re-arms, and `call_tool_guarded` needs `session.read()` for each tool;
         // tokio's RwLock is write-preferring, so blocking file I/O held here
         // would park every later call behind it with nothing able to cancel it
         // (#1783).
-        let prepared = if old_root.as_deref() == Some(&new_root) {
-            session.prepare_save().ok()
-        } else {
-            tracing::info!(
-                "MCP roots: switching project root from {:?} to {new_root}",
-                old_root
-            );
-            if let Some(existing) =
-                crate::core::session::SessionState::load_latest_for_project_root(&new_root)
-            {
-                *session = existing;
-                session.extra_roots = validated_paths
-                    .iter()
-                    .filter(|p| p.as_str() != new_root)
-                    .cloned()
-                    .collect();
-            }
-            session.project_root = Some(new_root);
-            session.prepare_save().ok()
-        };
-        drop(session);
-        if let Some(prepared) = prepared {
-            drop(tokio::task::spawn_blocking(move || {
-                let _ = prepared.write_to_disk();
-            }));
+        let mut session = current.write().await;
+        let old_root = session.project_root.clone();
+        tracing::info!("session: switching project root from {old_root:?} to {new_root}");
+        if let Some(old_root) = old_root.as_deref() {
+            self.session.remember_own(old_root, &session.id);
         }
-        // Indices warm lazily on first use of a tool that needs them (#152) —
-        // the dispatch path for this very call handles it via
-        // `index_orchestrator::ensure_warm_for_tool`, so no eager scan here.
+        let carried = old_root.is_none().then(|| session.clone());
+        let mut next = own.or(carried).unwrap_or_default();
+        next.extra_roots = extra_roots;
+        for configured in configured_extra {
+            if !next.extra_roots.contains(&configured) {
+                next.extra_roots.push(configured);
+            }
+        }
+        next.project_root = Some(new_root.to_owned());
+        if shell_cwd.is_some() {
+            next.shell_cwd = shell_cwd;
+        }
+        // The new project's first save is admitted under it, not the project left.
+        let next_save =
+            crate::core::policy::runtime::in_project(new_root, || next.prepare_save().ok());
+        let old_save = old_root
+            .is_some()
+            .then(|| session.prepare_save().ok())
+            .flatten();
+        let next = std::sync::Arc::new(tokio::sync::RwLock::new(next));
+        if !self.session.replace_if_live(current, next.clone()) {
+            return None;
+        }
+        if rebind_request {
+            // The calling request continues in the new project, consistently.
+            self.session.rebind(next);
+            crate::core::policy::runtime::bind_request_project(Some(new_root));
+        }
+        drop(session);
+        Some(publish_saves([old_save, next_save]))
+    }
+}
+
+/// What [`LeanCtxServer::switch_session_root`] installs.
+pub(crate) struct SessionSwitch<'a> {
+    pub(crate) new_root: &'a str,
+    pub(crate) extra_roots: Vec<String>,
+    /// `None` keeps the shell directory of the session taken over.
+    pub(crate) shell_cwd: Option<String>,
+    /// Whether the calling request moves to the new session (a re-root it
+    /// caused itself) or stays bound to the old one (a host's root change).
+    pub(crate) rebind_request: bool,
+}
+
+fn publish_saves(
+    saves: impl IntoIterator<Item = Option<crate::core::session::PreparedSave>>,
+) -> Vec<tokio::task::JoinHandle<()>> {
+    saves
+        .into_iter()
+        .flatten()
+        .map(|prepared| {
+            tokio::task::spawn_blocking(move || {
+                // A refused or failed save publishes nothing and is never
+                // acknowledged, so the live session keeps its pending
+                // changes for the next batch save.
+                if let Err(error) = prepared.publish() {
+                    tracing::debug!("session save not published: {error}");
+                }
+            })
+        })
+        .collect()
+}
+
+#[cfg(test)]
+mod workflow_gate_tests {
+    use crate::core::context_admission::stored::lineage_support::{governed, project, scoped};
+    use crate::core::policy::runtime::TestPolicyOverride;
+    use crate::core::workflow::gate::tests::{review, workflow_file};
+    use crate::core::workflow::{is_withheld_sentinel, load_active, save_active};
+    use rmcp::model::CallToolResult;
+
+    fn text(result: &CallToolResult) -> String {
+        result
+            .content
+            .first()
+            .and_then(|block| block.as_text())
+            .map(|block| block.text.clone())
+            .unwrap_or_default()
+    }
+
+    /// The direct gate under the stand-in for a withheld workflow: closed for
+    /// pass-through tools and write actions alike, not opened by its age, the
+    /// stored workflow untouched. Control: a real run still expires and still
+    /// lets its pass-through tools pass.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_direct_gate_keeps_a_withheld_workflow_closed() {
+        let _data = governed();
+        let _community = TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        let (_other_directory, other) = project();
+        scoped(&root, || save_active(&review())).expect("saved in its project");
+        let stored = std::fs::read(workflow_file()).expect("stored workflow");
+
+        // The server loads the workflow outside its project: closed.
+        let server = crate::tools::LeanCtxServer::new_with_project_root(Some(&other));
+        let mut closed = scoped(&other, load_active)
+            .expect("load")
+            .expect("a withheld workflow is still a workflow");
+        assert!(is_withheld_sentinel(&closed));
+        closed.updated_at = chrono::Utc::now() - chrono::Duration::minutes(45);
+        *server.workflow.write().await = Some(closed);
+
+        for tool in ["ctx_read", "ctx_session", "ctx_ledger"] {
+            let refused = server
+                .guard_workflow(tool)
+                .await
+                .unwrap_or_else(|| panic!("{tool} must be refused"));
+            let reason = text(&refused);
+            assert!(
+                reason.contains("withheld by the context gateway"),
+                "{reason}"
+            );
+            assert!(!reason.contains("review"), "{reason}");
+        }
+        assert!(server.guard_workflow("ctx_workflow").await.is_none());
+        let still = server.workflow.read().await.clone().expect("not cleared");
+        assert!(is_withheld_sentinel(&still));
+        assert_eq!(
+            std::fs::read(workflow_file()).expect("kept"),
+            stored,
+            "the withheld workflow is byte-identical on disk"
+        );
+
+        // Control: a real run passes its pass-through tools, refuses others,
+        // and is cleared once it is stale.
+        let mut real = review();
+        *server.workflow.write().await = Some(real.clone());
+        assert!(server.guard_workflow("ctx_read").await.is_none());
+        assert!(server.guard_workflow("ctx_session").await.is_none());
+        assert!(server.guard_workflow("ctx_shell").await.is_some());
+        real.updated_at = chrono::Utc::now() - chrono::Duration::minutes(31);
+        *server.workflow.write().await = Some(real);
+        assert!(server.guard_workflow("ctx_shell").await.is_none());
+        assert!(
+            server.workflow.read().await.is_none(),
+            "a stale run is cleared"
+        );
     }
 }

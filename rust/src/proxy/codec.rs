@@ -4,7 +4,7 @@ use std::io::{Read, Write};
 
 pub(super) fn decode_zstd_bounded(data: &[u8], max_bytes: usize) -> Result<Vec<u8>, StatusCode> {
     let decoder = zstd::Decoder::new(data).map_err(|e| {
-        tracing::warn!("lean-ctx proxy: invalid zstd request body: {e}");
+        tracing::warn!("lean-ctx proxy: invalid zstd request body: {}", e.kind());
         StatusCode::BAD_REQUEST
     })?;
     read_bounded(decoder, max_bytes).inspect_err(|e| {
@@ -14,7 +14,7 @@ pub(super) fn decode_zstd_bounded(data: &[u8], max_bytes: usize) -> Result<Vec<u
 
 pub(super) fn encode_zstd(data: &[u8]) -> Result<Vec<u8>, StatusCode> {
     zstd::encode_all(data, 3).map_err(|e| {
-        tracing::error!("lean-ctx proxy: zstd request encode failed: {e}");
+        tracing::error!("lean-ctx proxy: zstd request encode failed: {}", e.kind());
         StatusCode::INTERNAL_SERVER_ERROR
     })
 }
@@ -28,11 +28,11 @@ pub(super) fn decode_gzip_bounded(data: &[u8], max_bytes: usize) -> Result<Vec<u
 pub(super) fn encode_gzip(data: &[u8]) -> Result<Vec<u8>, StatusCode> {
     let mut encoder = GzEncoder::new(Vec::new(), Compression::default());
     encoder.write_all(data).map_err(|e| {
-        tracing::error!("lean-ctx proxy: gzip request encode failed: {e}");
+        tracing::error!("lean-ctx proxy: gzip request encode failed: {}", e.kind());
         StatusCode::INTERNAL_SERVER_ERROR
     })?;
     encoder.finish().map_err(|e| {
-        tracing::error!("lean-ctx proxy: gzip request encode failed: {e}");
+        tracing::error!("lean-ctx proxy: gzip request encode failed: {}", e.kind());
         StatusCode::INTERNAL_SERVER_ERROR
     })
 }

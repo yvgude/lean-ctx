@@ -1,0 +1,67 @@
+{
+  "job": {
+    "job_id": "cj_0b4f9a7e3c2d4e1f8a6b5c4d3e2f1a09",
+    "workspace": "org_6f1c0d2a9b8e4f7a8c3d2e1f0a9b8c7d",
+    "vault_id": "3f9a1c7e5b2d4a6f8e0c1b3d5f7a9c2e",
+    "type": "tests",
+    "state": "cancelled",
+    "reason": "cancelled",
+    "inputs": {
+      "version": 1,
+      "bundles": [
+        {
+          "name": "src.tar",
+          "digest": "sha256:2ce1e554cfe6aeb8b11eadac899a29f4e751bc7eb7b8501ad4f1e2a5f7d77ae2",
+          "size_bytes": 4194304
+        },
+        {
+          "name": "config.tar",
+          "digest": "sha256:0dc019357355aa9364c817b78c9252b8c140d187a3ec437de53838a2d139842a",
+          "size_bytes": 10240
+        }
+      ]
+    },
+    "image": "rust-1.99",
+    "command": {
+      "argv": [
+        "sh",
+        "-c",
+        "tar -xf /work/in/src.tar -C /tmp && cd /tmp/app && cargo test --offline > /work/out/tests.txt"
+      ],
+      "workdir": ""
+    },
+    "resources": {
+      "cpu": 2,
+      "memory_mb": 4096,
+      "disk_mb": 8192
+    },
+    "max_runtime_s": 600,
+    "network_allowlist": [],
+    "budget": {
+      "credits": 20
+    },
+    "result_format": "junit_xml",
+    "client_ref": "ci:app:9f01cf32a3",
+    "submitted_by": {
+      "instance_id": "inst_a1b2c3d4e5f60718293a4b5c6d7e8f90",
+      "user_id": "5b0e6c1d-7a2f-4c8e-9d3b-1a6f2e4c8b07"
+    },
+    "cost": {
+      "credits_reserved": 20,
+      "credits_spent": 0,
+      "credits_refunded": 20,
+      "wall_seconds": null,
+      "rate": {
+        "credits_per_cpu_minute": 1
+      }
+    },
+    "created_ms": 1792483200000,
+    "started_ms": null,
+    "finished_ms": 1792483204000,
+    "queue_deadline_ms": 1792486800000,
+    "run_deadline_ms": null,
+    "cancel_requested": true,
+    "artifacts_expire_ms": null,
+    "result_available": false
+  }
+}

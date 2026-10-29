@@ -8,14 +8,11 @@ pub fn plan_mode_tools() -> &'static [&'static str] {
         "ctx_read",
         "ctx_search",
         "ctx_tree",
-        "ctx_overview",
-        "ctx_plan",
         "ctx_metrics",
         "ctx_compress",
         "ctx_session",
         "ctx_knowledge",
         "ctx_graph",
-        "ctx_retrieve",
         "ctx_provider",
     ]
 }
@@ -328,12 +325,11 @@ mod tests {
         assert!(tools.contains(&"ctx_read"));
         assert!(tools.contains(&"ctx_search"));
         assert!(tools.contains(&"ctx_tree"));
-        assert!(tools.contains(&"ctx_overview"));
-        assert!(tools.contains(&"ctx_plan"));
+        assert!(tools.contains(&"ctx_graph"));
 
         assert!(!tools.contains(&"ctx_edit"));
         assert!(!tools.contains(&"ctx_shell"));
-        assert!(!tools.contains(&"ctx_compile"));
+        assert!(!tools.contains(&"ctx_execute"));
     }
 
     #[test]

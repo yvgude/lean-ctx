@@ -220,7 +220,7 @@ mod tests {
                 .expect("feature classified");
             assert_eq!(
                 capability.minimum_plan(),
-                crate::core::billing::Plan::Community
+                crate::core::product_capabilities::Plan::Community
             );
             assert!(!capability.account_required);
         }

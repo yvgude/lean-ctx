@@ -22,7 +22,6 @@ pub fn handle_export(
     let mut out = String::new();
     let mut written: Option<String> = None;
     let mut written_ir: Option<String> = None;
-    let mut written_autonomy: Option<String> = None;
     let mut written_architecture_json: Option<String> = None;
     let mut written_architecture_html: Option<String> = None;
     if write {
@@ -30,7 +29,6 @@ pub fn handle_export(
         let ts = chrono::Utc::now().format("%Y-%m-%d_%H%M%S").to_string();
         let default_proof_name = format!("context-proof-v1_{ts}.json");
         let ir_name = format!("context-ir-v1_{ts}.json");
-        let autonomy_name = format!("autonomy-drivers-v1_{ts}.json");
         let architecture_json_name = format!("architecture-overview-v1_{ts}.json");
         let architecture_html_name = format!("architecture-overview-v1_{ts}.html");
         let proof_name = filename.unwrap_or(default_proof_name.as_str());
@@ -40,33 +38,6 @@ pub fn handle_export(
 
         let ir_path = write_project_context_ir(root, &ir, Some(&ir_name))?;
         written_ir = Some(ir_path.to_string_lossy().to_string());
-
-        {
-            let ts = chrono::Utc::now();
-            let mut ledger = crate::core::evidence_ledger::EvidenceLedgerV1::load();
-            let _ = ledger.record_artifact_file("proof:context-proof-v1", path.as_path(), ts);
-            let _ = ledger.record_artifact_file("proof:context-ir-v1", ir_path.as_path(), ts);
-            let _ = ledger.save();
-        }
-
-        let autonomy = crate::core::autonomy_drivers::AutonomyDriversV1::load();
-        let autonomy_path = crate::core::autonomy_drivers::write_project_autonomy_drivers_v1(
-            root,
-            &autonomy,
-            Some(&autonomy_name),
-        )?;
-        written_autonomy = Some(autonomy_path.to_string_lossy().to_string());
-
-        {
-            let ts = chrono::Utc::now();
-            let mut ledger = crate::core::evidence_ledger::EvidenceLedgerV1::load();
-            let _ = ledger.record_artifact_file(
-                "proof:autonomy-drivers-v1",
-                autonomy_path.as_path(),
-                ts,
-            );
-            let _ = ledger.save();
-        }
 
         // Architecture overview proof artifacts (JSON + HTML).
         // Prefer fresh graph when possible (CI/proof reproducibility).
@@ -105,20 +76,6 @@ pub fn handle_export(
             let html_redacted = crate::core::redaction::redact_text(&html);
             crate::config_io::write_atomic(&html_path, &html_redacted)?;
             written_architecture_html = Some(html_path.to_string_lossy().to_string());
-
-            let ts = chrono::Utc::now();
-            let mut ledger = crate::core::evidence_ledger::EvidenceLedgerV1::load();
-            let _ = ledger.record_artifact_file(
-                "proof:architecture-overview-v1",
-                json_path.as_path(),
-                ts,
-            );
-            let _ = ledger.record_artifact_file(
-                "proof:architecture-overview-v1-html",
-                html_path.as_path(),
-                ts,
-            );
-            let _ = ledger.save();
         }
     }
 
@@ -130,9 +87,6 @@ pub fn handle_export(
             }
             if let Some(p) = written_ir {
                 out.push_str(&format!("context_ir_path: {p}\n"));
-            }
-            if let Some(p) = written_autonomy {
-                out.push_str(&format!("autonomy_drivers_path: {p}\n"));
             }
             if let Some(p) = written_architecture_json {
                 out.push_str(&format!("architecture_overview_json_path: {p}\n"));
@@ -160,9 +114,6 @@ pub fn handle_export(
             if let Some(p) = &written_ir {
                 out.push_str(&format!("[context_ir_path: {p}]\n\n"));
             }
-            if let Some(p) = &written_autonomy {
-                out.push_str(&format!("[autonomy_drivers_path: {p}]\n\n"));
-            }
             if let Some(p) = &written_architecture_json {
                 out.push_str(&format!("[architecture_overview_json_path: {p}]\n\n"));
             }
@@ -177,9 +128,6 @@ pub fn handle_export(
             }
             if let Some(p) = &written_ir {
                 out.push_str(&format!("[context_ir_path: {p}]\n\n"));
-            }
-            if let Some(p) = &written_autonomy {
-                out.push_str(&format!("[autonomy_drivers_path: {p}]\n\n"));
             }
             if let Some(p) = &written_architecture_json {
                 out.push_str(&format!("[architecture_overview_json_path: {p}]\n\n"));

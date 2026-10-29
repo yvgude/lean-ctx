@@ -1,0 +1,14 @@
+{
+  "case": "revocation_web_with_since",
+  "base": "routes/revocation.web_revoke.response.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/compromised_since",
+      "value": 1792796400000
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

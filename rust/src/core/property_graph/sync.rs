@@ -262,11 +262,19 @@ mod tests {
 
     #[test]
     fn facade_parity_property_graph_equals_graph_index() {
+        // The in-memory graph is ungated, while the index backend asks the
+        // process-wide protection state (`source_authority_required`: the
+        // runtime policy override and the environment's config) per call.
+        // Another test holding `TestPolicyOverride::set(Some(..))` turned
+        // protection on mid-test and the index served fewer files. Pin
+        // Community mode; the guard also holds the test environment lock.
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let pg = CodeGraph::open_in_memory().unwrap();
         let idx = fixture_index();
         populate_from_project_index(&pg, &idx).unwrap();
 
-        let gi = GraphProvider::GraphIndex(fixture_index());
+        let (on_disk, _files) = fixture_index().on_disk(&[]);
+        let gi = GraphProvider::GraphIndex(on_disk);
         let pgp = GraphProvider::PropertyGraph(pg);
 
         assert_eq!(pgp.file_count(), gi.file_count());

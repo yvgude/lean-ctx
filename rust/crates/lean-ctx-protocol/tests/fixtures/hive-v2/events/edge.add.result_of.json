@@ -1,0 +1,51 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqaq",
+  "body": {
+    "body_nonce": "18181818181818181818181818181818",
+    "from": "n_aaaaaaaaaaaaaaaaaaaaaadaam",
+    "kind": "result_of",
+    "to": "n_aaaaaaaaaaaaaaaaaaaaaadaai"
+  },
+  "body_commit": "6308098ce6341acf3997509555cf6e2dbe5417f0099155ca795c9b2fb6d197fe",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 4,
+  "event_id": "01M5NKA6W8005G00000000W005",
+  "hlc": {
+    "counter": 0,
+    "node": "0e9c7f2455744dc1",
+    "wall_ms": 1792800005000
+  },
+  "key_id": "a81b399e9440c8ad",
+  "op": "edge.add",
+  "place": {
+    "id": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+    "kind": "swarm"
+  },
+  "provenance": "workspace",
+  "provenance_claim": "workspace",
+  "received_at": 1792800005350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 5,
+  "signature": "2064168009c0535ba6febae1c26b7bc4282a00b6f951516d7add004e74145de8b37d5e5a1b9cfaab5b0c8bc11cb84714cc644d2c3031ce289843e046d7ece80f",
+  "target": "e_aaaaaaaaaaaaaaaaaaaaaacqaq",
+  "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+}

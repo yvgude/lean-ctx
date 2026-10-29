@@ -150,7 +150,7 @@ pub fn render_chunked(clusters: &[FactCluster<'_>]) -> String {
             .iter()
             .map(|f| {
                 let key = crate::core::sanitize::neutralize_metadata(&f.key);
-                let val = crate::core::sanitize::neutralize_metadata(&f.value);
+                let val = f.as_delivered(crate::core::sanitize::neutralize_metadata(&f.value));
                 if f.category == c.topic {
                     format!("{key}={val}")
                 } else {

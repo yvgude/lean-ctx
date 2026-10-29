@@ -1,0 +1,68 @@
+{
+  "canonical_json": {
+    "input": {
+      "a": null,
+      "b": [
+        1,
+        {
+          "c": true,
+          "d": "ü\n"
+        }
+      ]
+    },
+    "output": "{\"a\":null,\"b\":[1,{\"c\":true,\"d\":\"ü\\n\"}]}"
+  },
+  "keys": {
+    "instance_ed25519_pub": "dyyKRCt9sG4WbPvBzLy83m8+unak6Y7z/8UZUCI31u8=",
+    "instance_seed_hex": "4949494949494949494949494949494949494949494949494949494949494949",
+    "org_salt_hex": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+    "policy_signer_seed_hex": "4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f4f",
+    "repo_key_hex": "4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b4b",
+    "root_ed25519_pub": "IBLLkMpg6OXY2vZuInLSIz4EhtVX6MZhQe2JIBd9frc=",
+    "root_seed_hex": "5252525252525252525252525252525252525252525252525252525252525252",
+    "signing_ed25519_pub": "+AzM3OSuHAeuIIoq35mjEK5CB+Awb6AjYRCwaCe7uNA=",
+    "signing_kid": "hive-2026-10",
+    "signing_seed_hex": "5353535353535353535353535353535353535353535353535353535353535353"
+  },
+  "note": "Test-only keys; never valid outside fixtures and the fake Hive service.",
+  "org_policy": {
+    "pack_toml": "name = \"acme-floor\"\nversion = \"1.0.0\"\ndescription = \"ACME org floor\"\n\n[context]\ndeny_tools = [\"ctx_url_read\"]\n",
+    "public_key": "AOPFa5GrCgFxdLlmRer5KDZs264eh_0hv4ZmHYbz5-8",
+    "signature": "oBOOpfPaEHXi10o8zkd39sNyEWCA7_xGei_4Zzzv5PoM8BMivC2S6h7GsVzKk0fYOErZMmshnD2ZMggOwkkQAg",
+    "signing_input": "leanctx.org-policy.v2\n{\"schema\":\"leanctx.org-policy/v2\",\"organization_id\":\"org_acme\",\"key_id\":\"key:ed25519-b5012793a0020228e9affe7e7ba5dd18\",\"policy_version\":1,\"issued_at\":\"2026-10-20T12:00:00Z\",\"not_before\":\"2026-10-20T12:00:00Z\",\"not_after\":\"2026-11-20T12:00:00Z\",\"grace_seconds\":604800,\"pack_digest\":\"sha256:ee77530a49b960a08875c07048fad762e4f147491ca3acef4c0f5db591dee610\"}",
+    "statement_json": "{\"schema\":\"leanctx.org-policy/v2\",\"organization_id\":\"org_acme\",\"key_id\":\"key:ed25519-b5012793a0020228e9affe7e7ba5dd18\",\"policy_version\":1,\"issued_at\":\"2026-10-20T12:00:00Z\",\"not_before\":\"2026-10-20T12:00:00Z\",\"not_after\":\"2026-11-20T12:00:00Z\",\"grace_seconds\":604800,\"pack_digest\":\"sha256:ee77530a49b960a08875c07048fad762e4f147491ca3acef4c0f5db591dee610\"}"
+  },
+  "org_policy_required_packs": {
+    "pack_toml": "name = \"acme-floor\"\nversion = \"1.0.0\"\ndescription = \"ACME org floor\"\n\n[context]\ndeny_tools = [\"ctx_url_read\"]\n",
+    "public_key": "AOPFa5GrCgFxdLlmRer5KDZs264eh_0hv4ZmHYbz5-8",
+    "signature": "r-6T7zMUQCaT2J8EWE7b0oHhsoGzVnKg7vqgbq8vQMRKk-28TnTEc0Ipbb6adHCohgCe1rM_UCR17UgHt2brBQ",
+    "signing_input": "leanctx.org-policy.v2\n{\"schema\":\"leanctx.org-policy/v2\",\"organization_id\":\"org_acme\",\"key_id\":\"key:ed25519-b5012793a0020228e9affe7e7ba5dd18\",\"policy_version\":2,\"issued_at\":\"2026-10-20T12:00:00Z\",\"not_before\":\"2026-10-20T12:00:00Z\",\"not_after\":\"2026-11-20T12:00:00Z\",\"grace_seconds\":604800,\"pack_digest\":\"sha256:ee77530a49b960a08875c07048fad762e4f147491ca3acef4c0f5db591dee610\",\"required_filter_packs\":[{\"pack_id\":\"ch-identifiers\",\"version\":3,\"sha256\":\"bbabcca8272c217781a8a883f8c9bed2d16b16846f95a9c6b7e1110170a415d0\"}]}",
+    "statement_json": "{\"schema\":\"leanctx.org-policy/v2\",\"organization_id\":\"org_acme\",\"key_id\":\"key:ed25519-b5012793a0020228e9affe7e7ba5dd18\",\"policy_version\":2,\"issued_at\":\"2026-10-20T12:00:00Z\",\"not_before\":\"2026-10-20T12:00:00Z\",\"not_after\":\"2026-11-20T12:00:00Z\",\"grace_seconds\":604800,\"pack_digest\":\"sha256:ee77530a49b960a08875c07048fad762e4f147491ca3acef4c0f5db591dee610\",\"required_filter_packs\":[{\"pack_id\":\"ch-identifiers\",\"version\":3,\"sha256\":\"bbabcca8272c217781a8a883f8c9bed2d16b16846f95a9c6b7e1110170a415d0\"}]}"
+  },
+  "receipt_digest": "sha256:89462ab11ab3c497313280a8e3a2f9e9b798611b4eb402bdf845caf251e52cbd",
+  "repo_identity": {
+    "identity_digest": "09d59089077323f5d937145bee0e87aff7555044d3fe16af8ca3d15143823742",
+    "repo_identity": "git:github.com/acme/payments",
+    "stable_identity": "ff1d854832776e57e94d62775690bb7c657da75d6f90b11ac91e69fa5ae24240"
+  },
+  "sealed_aad": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42|3|1|ctxpkg.research-context.v1",
+  "sealed_wrap": {
+    "aad": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42|1|inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+    "ephemeral_scalar_hex": "4545454545454545454545454545454545454545454545454545454545454545",
+    "recipient_kx_fingerprint": "0900-aa64-ef2c-c7d2-a3bf",
+    "recipient_kx_public_b64": "dlOqcuYIb82s9fi/xuC9kxnaJm/zqUCLhMDRdxivkU8=",
+    "recipient_kx_seed_hex": "5959595959595959595959595959595959595959595959595959595959595959",
+    "wrapped_key": {
+      "alg": "x25519-hkdf-sha256-xchacha20poly1305",
+      "ciphertext": "BQsp6ddzJylXhb/I5QTqVpd4iQEMkX/JO/H8cBkY99Lm1ugTKgurZKDAMZPtIQZe",
+      "ephemeral_pub": "MoaJTNKEWm22oo+/BndgX4DlpiOFv04Qp5CuX942c2s=",
+      "nonce": "Tk5OTk5OTk5OTk5OTk5OTk5OTk5OTk5O"
+    }
+  },
+  "token_assertion": {
+    "iat": 1792497600,
+    "input": "leanctx.hive.token.v1\ninst_01jb8z3k4m5n6p7q8r9s0t1v2w\n1792497600\nn-3q9X2kLp7Vb0ZsW1",
+    "instance_id": "inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+    "nonce": "n-3q9X2kLp7Vb0ZsW1"
+  }
+}

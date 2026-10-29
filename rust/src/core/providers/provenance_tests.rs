@@ -173,3 +173,56 @@ fn source_view_nested_checks_share_the_same_budget_and_next_operation_is_fresh()
     assert!(reserve_reuse_check().is_err());
     with_reuse_deadline(|| reserve_reuse_check().unwrap());
 }
+
+/// Doc 19: a provider re-check answers in the source-validity vocabulary —
+/// the same item again is valid, an edited one stale, one that left the result
+/// deleted, an access refusal revoked, a hanging source unavailable — and the
+/// reason code says which, never the bare "not reusable" it was before.
+#[test]
+fn a_provider_recheck_names_the_source_validity() {
+    let role = crate::core::roles::load_role("coder").unwrap();
+    crate::core::roles::with_test_active_role(role, || {
+        use lean_ctx_protocol::context_lineage::SourceValidityV1 as V;
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let root = tempfile::tempdir().unwrap();
+        let project = root.path().to_str().unwrap();
+        // Project-local providers load only for a trusted workspace.
+        crate::core::workspace_trust::trust(root.path()).unwrap();
+        let configs = root.path().join(".lean-ctx/providers");
+        std::fs::create_dir_all(&configs).unwrap();
+        let item = |title: &str, id: &str| {
+            serde_json::json!([{"id": id, "title": title, "body": "Investigate src/auth.rs"}])
+                .to_string()
+        };
+        let server = Server::new(200, None, &item("Validity canary", "1"));
+        let config_text = format!(
+            "id='validity-fixture'\nname='Fixture'\nbase_url='{}'\n[auth]\ntype='none'\n[resources.issues]\nmethod='GET'\npath='/items'\n[resources.issues.response.mapping]\nid='id'\ntitle='title'\nbody='body'\n",
+            server.url
+        );
+        std::fs::write(configs.join("fixture.toml"), &config_text).unwrap();
+        let config: ProviderConfig = toml::from_str(&config_text).unwrap();
+        let provider = ConfigProvider::from_config(config).unwrap();
+        let acquired =
+            BoundResult::execute(&provider, "issues", &ProviderParams::default()).unwrap();
+        let origin = acquired.chunks(&acquired.result)[0]
+            .origin
+            .clone()
+            .expect("acquired chunk carries its origin");
+        let recheck = || {
+            crate::core::policy::runtime::with_project_source_view(project, || {
+                with_reuse_deadline(|| origin.current_chunks(project).map(|_| ()))
+            })
+            .expect("source view")
+            .map_err(|refusal| refusal.validity)
+        };
+        assert_eq!(recheck(), Ok(()), "the same item: valid");
+        server.respond(200, &item("Validity canary, edited", "1"));
+        assert_eq!(recheck(), Err(V::Stale));
+        server.respond(200, &item("Another item", "2"));
+        assert_eq!(recheck(), Err(V::Deleted));
+        server.respond(403, "denied");
+        assert_eq!(recheck(), Err(V::Revoked));
+        server.respond(200, &item("Validity canary", "1"));
+        assert_eq!(recheck(), Ok(()), "access restored: valid again");
+    });
+}

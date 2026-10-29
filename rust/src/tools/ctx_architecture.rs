@@ -92,8 +92,14 @@ fn load_graph_data(graph: &CodeGraph) -> Result<GraphData, String> {
         })
         .map_err(|e| format!("{e}"))?;
 
+    // Rows are filtered here, before any aggregation (G04): an import edge
+    // counts only while both of its files are served now, a file only while
+    // it is. A withdrawn file adds neither a name nor a count to any action.
     for row in rows {
         let (src, tgt) = row.map_err(|e| format!("{e}"))?;
+        if !(graph.serves_file(&src) && graph.serves_file(&tgt)) {
+            continue;
+        }
         all_files.insert(src.clone());
         all_files.insert(tgt.clone());
         forward.entry(src.clone()).or_default().push(tgt.clone());
@@ -111,7 +117,9 @@ fn load_graph_data(graph: &CodeGraph) -> Result<GraphData, String> {
         .query_map([], |row| row.get::<_, String>(0))
         .map_err(|e| format!("{e}"))?;
     for f in file_rows.flatten() {
-        all_files.insert(f);
+        if graph.serves_file(&f) {
+            all_files.insert(f);
+        }
     }
 
     for deps in forward.values_mut() {
@@ -384,7 +392,13 @@ fn handle_communities(root: &str, fmt: OutputFormat) -> String {
         Err(e) => return e,
     };
 
-    let result = crate::core::community::detect_communities_stable(graph.connection(), root);
+    let mut result = crate::core::community::detect_communities_stable(&graph, root);
+    // Only files that are served now are named or counted (G04); a community
+    // left without one is not listed.
+    for community in &mut result.communities {
+        community.files.retain(|file| graph.serves_file(file));
+    }
+    result.communities.retain(|c| !c.files.is_empty());
 
     match fmt {
         OutputFormat::Json => {
@@ -678,7 +692,7 @@ fn handle_hotspots(root: &str, fmt: OutputFormat) -> String {
     };
     let pagerank = crate::core::pagerank::compute(&pr_input, 0.85, 30);
     let cfg = crate::core::smells::SmellConfig::default();
-    let findings = crate::core::smells::scan_all(graph.connection(), &cfg);
+    let findings = crate::core::smells::scan_all(&graph, &cfg);
 
     let mut smell_count: HashMap<String, usize> = HashMap::new();
     for f in &findings {
@@ -772,9 +786,11 @@ fn handle_health(root: &str, fmt: OutputFormat) -> String {
         Err(e) => return e,
     };
 
-    let communities = crate::core::community::detect_communities_stable(graph.connection(), root);
+    let communities = crate::core::community::detect_communities_stable(&graph, root);
     let cfg = crate::core::smells::SmellConfig::default();
-    let findings = crate::core::smells::scan_all(graph.connection(), &cfg);
+    let mut findings = crate::core::smells::scan_all(&graph, &cfg);
+    // Counted over the same served files as the rest of the report (G04).
+    findings.retain(|f| graph.serves_file(&f.file_path));
     let summary = crate::core::smells::summarize(&findings);
     let cycles = find_cycles(&data);
     let layers = compute_layers(&data);

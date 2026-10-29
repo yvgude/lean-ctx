@@ -34,7 +34,7 @@ pub(crate) fn shell_timeout(command: &str) -> std::time::Duration {
 /// Hard ceiling for a per-call `timeout_ms` override: generous enough for any
 /// legitimate build/release job, low enough that a typo'd value cannot wedge
 /// the executor for days.
-const MAX_CALL_TIMEOUT_MS: u64 = 3_600_000; // 1 hour
+pub(crate) const MAX_CALL_TIMEOUT_MS: u64 = 3_600_000; // 1 hour
 
 /// [`shell_timeout`] with an optional per-call override (ctx_shell's
 /// `timeout_ms` arg). Precedence: operator env pin (`LEAN_CTX_SHELL_TIMEOUT_MS`)

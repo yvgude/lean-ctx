@@ -40,6 +40,34 @@ pub(crate) struct SkillsPackPlan {
     pub total_bytes: usize,
 }
 
+/// Whether `bytes` may enter a pack. A skills pack is a signed, portable,
+/// persisted artefact whose documents are hashed as they are, so a file is
+/// packed with its ORIGINAL bytes or not at all (E3):
+///
+/// - text must be admitted for a derived store under the current policy AND
+///   come back unchanged — a file that is withheld, restricted, or that the
+///   gateway would mask refuses the whole pack (nothing masked is ever packed
+///   in place of the original, and nothing unmasked that should be masked);
+/// - bytes that are not text cannot be inspected: the mode's rule for
+///   uninspectable content decides (delivered in developer mode, refused in
+///   governed and sovereign mode).
+///
+/// The refusal names the file and the content-free reason.
+///
+/// The decision itself is `admission::unchanged_bytes` — the one rule for
+/// "original bytes or nothing", shared with the admission of a package at
+/// install and load.
+fn packable(rel: &str, bytes: &[u8]) -> Result<(), String> {
+    use super::admission::Refusal;
+    super::admission::unchanged_bytes(bytes).map_err(|refusal| match refusal {
+        Refusal::Masked => format!(
+            "`{rel}` carries content the context gateway masks; it cannot be packed unchanged"
+        ),
+        Refusal::Withheld(withheld) => format!("`{rel}`: {}", withheld.message("file content")),
+        Refusal::Unverifiable => format!("`{rel}` cannot be inspected to the end"),
+    })
+}
+
 /// Build and sign a `kind=skills` pack from a directory.
 ///
 /// Collects every regular file under `dir` (hidden files/dirs and VCS
@@ -86,6 +114,7 @@ pub(crate) fn build_skills_pack(
             ));
         }
         total += bytes.len();
+        packable(rel, &bytes)?;
         files.push(DocumentBlob::from_plaintext(rel, &bytes)?);
     }
     if total > MAX_DOCUMENTS_TOTAL_BYTES {
@@ -138,6 +167,7 @@ pub(crate) fn build_skills_pack(
         signature: None,
         graph_summary: None,
         marketplace: None,
+        redistributable: None,
     };
     manifest.validate().map_err(|errs| errs.join("; "))?;
     verify::validate_kind_coherence(&manifest, &content).map_err(|errs| errs.join("; "))?;
@@ -422,28 +452,81 @@ mod tests {
         assert!(verify::validate_document_path("skills/ok.md").is_ok());
     }
 
-    /// Redaction-on-load (GH #727 acceptance): a secret inside a skill body
-    /// goes through the same redaction plane as every other text before it
-    /// reaches tool output.
+    /// Original bytes or no pack (GH #727 acceptance, E3). A skill body with
+    /// a secret used to be signed into the pack and was redacted when it was
+    /// read; now the file the gateway would mask refuses the whole pack — the
+    /// refusal names the file and nothing of its content — and a clean body
+    /// is packed byte-identically.
     #[test]
     fn skill_bodies_pass_through_redaction() {
+        const SECRET: &str = "sk-proj-abcdefghijklmnopqrstuvwxyz012345";
+        const CLEAN: &str = "# Review checklist\n- tests\n";
         let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let dir = scratch("redact");
+        write(&dir, "skills/review.md", CLEAN);
+        let plan = build_skills_pack(&dir, "@t/r", "1.0.0", "d", None, vec![]).expect("plan");
+        let files = &plan.content.documents.as_ref().unwrap().files;
+        assert_eq!(files.len(), 1);
+        assert_eq!(files[0].path, "skills/review.md");
+        assert_eq!(
+            files[0].decode_verified().unwrap(),
+            CLEAN.as_bytes(),
+            "a clean skill body is packed with its original bytes"
+        );
+
         write(
             &dir,
             "skills/creds.md",
-            "api key: sk-proj-abcdefghijklmnopqrstuvwxyz012345 do not share\n",
+            &format!("api key: {SECRET} do not share\n"),
         );
-        let plan = build_skills_pack(&dir, "@t/r", "1.0.0", "d", None, vec![]).expect("plan");
-        let blob = &plan.content.documents.as_ref().unwrap().files[0];
-        let plain = String::from_utf8(blob.decode_verified().unwrap()).unwrap();
-
-        let redacted = crate::core::redaction::redact_text(&plain);
-        assert!(
-            !redacted.contains("sk-proj-abcdefghijklmnopqrstuvwxyz012345"),
-            "secret must not survive redaction: {redacted}"
+        let refused = build_skills_pack(&dir, "@t/r", "1.0.0", "d", None, vec![])
+            .expect_err("a body the gateway masks is never packed");
+        assert_eq!(
+            refused,
+            "`skills/creds.md` carries content the context gateway masks; \
+             it cannot be packed unchanged"
         );
+        assert!(!refused.contains(SECRET), "{refused}");
+        assert!(!refused.contains("do not share"), "{refused}");
 
         std::fs::remove_dir_all(&dir).ok();
+    }
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::packable;
+
+    const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+
+    /// E3: a skills pack took every file of the directory as it was — a file
+    /// the gateway masks or the project policy blocks was signed into a
+    /// portable artefact. Such a file now refuses the pack; a clean file is
+    /// packed with its original bytes.
+    #[test]
+    fn only_files_that_are_admitted_unchanged_are_packable() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        {
+            let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+            assert_eq!(
+                packable("SKILL.md", b"# Review\n\nRead the diff first.\n"),
+                Ok(())
+            );
+            assert_eq!(packable("empty.md", b""), Ok(()));
+            let keyed = format!("export AWS_ACCESS_KEY_ID={AWS_KEY}\n");
+            let refused = packable("setup.sh", keyed.as_bytes()).expect_err("masked content");
+            assert!(refused.starts_with("`setup.sh`"), "{refused}");
+            assert!(!refused.contains(AWS_KEY), "{refused}");
+        }
+        let policy = crate::core::policy::load(
+            "name = \"skills-pack-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )
+        .unwrap();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+        let refused =
+            packable("plan.md", b"CONFIDENTIAL\nroadmap-marker\n").expect_err("blocked content");
+        assert!(!refused.contains("roadmap-marker"), "{refused}");
     }
 }

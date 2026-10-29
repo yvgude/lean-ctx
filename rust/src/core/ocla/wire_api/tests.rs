@@ -184,7 +184,7 @@ async fn health_endpoint_returns_full_report() {
     assert_eq!(
         body["components"].as_array().expect("components").len(),
         super::super::types::OclaCapabilityKind::ALL.len()
-            + 6
+            + 5
             + super::super::registry::OclaRegistry::global()
                 .adapters
                 .len()

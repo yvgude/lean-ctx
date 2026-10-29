@@ -185,6 +185,11 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         if cache.is_full_delivered(ctx.path) {
             return resolved("full", "cache_hit");
         }
+        // A learned force-full outranks reusing the cached compressed view —
+        // that view is exactly what keeps bouncing.
+        if crate::core::path_mode_memory::should_force_full(ctx.path) {
+            return resolved("full", "path_bounce_memory");
+        }
         // Reuse the last compressed mode so the dispatcher can serve its cached
         // output rather than re-running the predictor and compression pipeline.
         if let Some(prev_mode) = cache.last_mode(ctx.path)
@@ -192,6 +197,13 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
         {
             return resolved(&prev_mode, "cache_hit_compressed");
         }
+    } else if crate::core::path_mode_memory::should_force_full(ctx.path) {
+        // Per-path long-term memory (#496): a file whose compressed reads
+        // mostly bounced will bounce again — compression is a proven net loss
+        // for it. Unlike the opt-in learning loop below this applies always:
+        // it only ever widens a read to `full`, and it costs one in-memory
+        // lookup (the store is loaded once per process).
+        return resolved("full", "path_bounce_memory");
     }
 
     if ctx.token_count <= 200 {
@@ -242,7 +254,7 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
     }
 
     // Adaptive learning signals (predictor, bandit, heatmap, adaptive policy,
-    // bounce/path memory) are opt-in (#683). Off by default, the capability
+    // in-session bounce rates) are opt-in (#683). Off by default, the capability
     // guards above plus the deterministic heuristic below make `auto` a pure
     // function of (file, task) — byte-stable for provider prompt caching (#498)
     // and free of the per-read disk I/O these stores incur.
@@ -262,16 +274,6 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
     // #1911: no edit-penalty skip here — skipping cognitive fell through to a
     // *lossier* `map`/`signatures`; a risky `cognitive` is escalated to `full`
     // by the quality-loop check in `resolve` instead.
-    if crate::core::cognitive_gate::basic_science_enabled() && is_code(ext) && ctx.token_count > 500
-    {
-        if ctx.token_count > 8000 {
-            return resolved("cognitive", "science_cognitive_large");
-        }
-        if ctx.token_count > 2000 {
-            return resolved("cognitive", "science_cognitive_medium");
-        }
-        return resolved("cognitive", "science_cognitive_small");
-    }
 
     // Progressive disclosure (#1309): large files default to compact overviews.
     // File line count drives the tier; falls back to token-based approximation.
@@ -306,7 +308,7 @@ fn resolve_inner(ctx: &AutoModeContext) -> ResolvedMode {
     resolved(&heuristic, source)
 }
 
-/// The opt-in adaptive block (#683): bounce/path memory plus the predictor /
+/// The opt-in adaptive block (#683): in-session bounce rates plus the predictor /
 // OSS: adaptive read-mode selection. Not related to commercial
 // Adaptive Intensity (Solution Intelligence Section 8).
 /// bandit / heatmap / adaptive-policy learning loop. Returns `Some` when a
@@ -320,12 +322,8 @@ fn resolve_adaptive(ctx: &AutoModeContext) -> Option<ResolvedMode> {
         return Some(resolved("full", "bounce_tracker"));
     }
 
-    // Per-path long-term memory (#496): a file that historically bounced in
-    // the majority of its reads will bounce again — compression is a proven
-    // net loss for it, across process restarts.
-    if crate::core::path_mode_memory::should_force_full(ctx.path) {
-        return Some(resolved("full", "path_bounce_memory"));
-    }
+    // Per-path long-term memory (#496) is not consulted here: `resolve_inner`
+    // applies it unconditionally, ahead of this opt-in block.
 
     let sig = FileSignature::from_path(ctx.path, ctx.token_count);
     let predictor = ModePredictor::new();
@@ -457,9 +455,7 @@ fn intent_recommended_mode(task: Option<&str>) -> Option<String> {
     if classification.confidence < 0.4 {
         return None;
     }
-    let route = crate::core::intent_engine::route_intent(task_desc, &classification);
-    let mode =
-        crate::core::intent_router::read_mode_for_tier(route.model_tier, classification.task_type);
+    let mode = crate::core::intent_router::read_mode_for_task(classification.task_type);
     if mode == "auto" {
         return None;
     }
@@ -850,6 +846,51 @@ mod tests {
     }
 
     #[test]
+    fn learned_path_force_full_applies_without_auto_mode_learning() {
+        // `auto_mode_learning` is off by default; the per-path bounce memory
+        // must still widen a repeatedly bouncing file to `full`, cold or warm.
+        assert!(!crate::core::config::Config::default().auto_mode_learning);
+        // The path memory may flush to the cache dir: keep it out of the real one.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let file = dir.path().join("learned-bouncy.rs");
+        let body = "fn placeholder() { let _ = 1; }\n".repeat(900);
+        std::fs::write(&file, &body).unwrap();
+        let path = file.to_str().unwrap();
+        let norm = crate::core::pathutil::normalize_tool_path(path);
+        crate::core::path_mode_memory::record_bounce(&norm);
+        crate::core::path_mode_memory::record_bounce(&norm);
+
+        let cold = resolve(&AutoModeContext {
+            path,
+            token_count: 7000,
+            line_count: None,
+            task: None,
+            cache: None,
+        });
+        assert_eq!(
+            (cold.mode.as_str(), cold.source),
+            ("full", "path_bounce_memory")
+        );
+
+        let mut cache = SessionCache::new();
+        cache.store(path, &body);
+        cache.get_mut(path).unwrap().last_mode = "map".to_string();
+        let warm = resolve(&AutoModeContext {
+            path,
+            token_count: 7000,
+            line_count: None,
+            task: None,
+            cache: Some(&cache),
+        });
+        assert_eq!(
+            (warm.mode.as_str(), warm.source),
+            ("full", "path_bounce_memory"),
+            "learned force-full outranks reusing the bouncing compressed view"
+        );
+    }
+
+    #[test]
     fn intent_explore_returns_map() {
         let ctx = AutoModeContext {
             path: "large.rs",
@@ -1094,12 +1135,9 @@ mod tests {
         };
         let a = resolve(&ctx);
         let b = resolve(&ctx);
-        assert!(a.mode == "map" || a.mode == "cognitive", "got: {}", a.mode);
-        assert!(
-            a.source == "structure_first" || a.source.starts_with("science_"),
-            "source: {}",
-            a.source
-        );
+        // structure_first is opt-in (focus 2026-10-15):
+        // the default lands on the size heuristic, never a learning source.
+        assert_eq!((a.mode.as_str(), a.source), ("signatures", "heuristic"));
         assert_eq!((a.mode, a.source), (b.mode, b.source));
 
         crate::test_env::remove_var("LEAN_CTX_PROGRESSIVE_DISCLOSURE");

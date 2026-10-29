@@ -8,6 +8,9 @@ pub enum Capability {
     FsWrite,
     FsDelete,
     NetOutbound,
+    /// Only the organization's linked Hive (its connection, lease and
+    /// opt-in decide what goes out), never another host.
+    HiveNet,
     ExecSandbox,
     ExecUnrestricted,
     KnowledgeRead,
@@ -24,6 +27,7 @@ impl Capability {
             Self::FsWrite => "fs:write",
             Self::FsDelete => "fs:delete",
             Self::NetOutbound => "net:outbound",
+            Self::HiveNet => "x-hive:net",
             Self::ExecSandbox => "exec:sandbox",
             Self::ExecUnrestricted => "exec:unrestricted",
             Self::KnowledgeRead => "knowledge:read",
@@ -50,19 +54,38 @@ pub fn required_capabilities(tool_name: &str) -> &'static [Capability] {
         // is not a cross-project data flow. AgentManage keeps it (like
         // ctx_handoff) out of read-only roles (reviewer/ci/minimal).
         "ctx_handoff" | "ctx_share" => &[Capability::KnowledgeRead, Capability::AgentManage],
-        "ctx_agent" | "ctx_task" | "ctx_work_graph" => &[Capability::AgentManage],
+        "ctx_agent" | "ctx_work_graph" => &[Capability::AgentManage],
+        "ctx_tasks" => &[Capability::AgentManage, Capability::HiveNet],
+        // Task Compute reads the checkout into a bundle and spends the
+        // workspace's prepaid credit: never from a read-only role.
+        "ctx_compute" => &[
+            Capability::FsRead,
+            Capability::AgentManage,
+            Capability::HiveNet,
+        ],
         "ctx_session" | "ctx" => &[],
         _ => &[Capability::FsRead],
     }
 }
 
 pub fn role_capabilities(role_name: &str) -> HashSet<Capability> {
+    let mut caps = granted_capabilities(role_name);
+    // The Hive release switch (3.12.1): off, no role holds or advertises
+    // the Hive capability, as the Hive tools are withheld.
+    if !crate::core::hive::available_locally() {
+        caps.remove(&Capability::HiveNet);
+    }
+    caps
+}
+
+fn granted_capabilities(role_name: &str) -> HashSet<Capability> {
     match role_name {
         "admin" => HashSet::from([
             Capability::FsRead,
             Capability::FsWrite,
             Capability::FsDelete,
             Capability::NetOutbound,
+            Capability::HiveNet,
             Capability::ExecSandbox,
             Capability::ExecUnrestricted,
             Capability::KnowledgeRead,
@@ -91,6 +114,7 @@ fn capabilities_from_role(role_name: &str) -> HashSet<Capability> {
             Capability::KnowledgeRead,
             Capability::KnowledgeWrite,
             Capability::AgentManage,
+            Capability::HiveNet,
         ]);
     };
 
@@ -113,12 +137,15 @@ fn capabilities_from_role(role_name: &str) -> HashSet<Capability> {
         caps.insert(Capability::KnowledgeRead);
         caps.insert(Capability::KnowledgeWrite);
     }
-    if has_tool("ctx_agent")
-        || has_tool("ctx_task")
-        || has_tool("ctx_handoff")
-        || has_tool("ctx_work_graph")
+    if has_tool("ctx_agent") || has_tool("ctx_handoff") || has_tool("ctx_work_graph") {
+        caps.insert(Capability::AgentManage);
+    }
+    // Hive tasks reach the organization's linked Hive only; the
+    // connection, its lease and the opt-in decide what goes out (C0 1.9 §4).
+    if crate::core::hive::available_locally() && (has_tool("ctx_tasks") || has_tool("ctx_compute"))
     {
         caps.insert(Capability::AgentManage);
+        caps.insert(Capability::HiveNet);
     }
     if role.io.allow_cross_project_search {
         caps.insert(Capability::CrossProject);
@@ -191,6 +218,43 @@ mod tests {
     fn developer_can_edit() {
         let result = check_capabilities("developer", "ctx_edit");
         assert!(result.allowed);
+    }
+
+    /// With the Hive release switch off, no role holds the Hive capability.
+    #[test]
+    fn no_role_holds_hive_net_while_hive_is_withheld() {
+        if crate::core::hive::available_locally() {
+            return;
+        }
+        for role in ["admin", "coder", "unknown_role", "reviewer", "minimal"] {
+            assert!(!role_capabilities(role).contains(&Capability::HiveNet));
+        }
+        assert!(!check_capabilities("admin", "ctx_tasks").allowed);
+    }
+
+    /// ctx_tasks works out of the box for the default role (and any role
+    /// that allows it), never for the read-only ones — once the Hive
+    /// switch is on (here: the test preview).
+    #[test]
+    fn tasks_work_for_the_default_role_only_where_allowed() {
+        if crate::test_env::run_in_own_process(
+            "core::capabilities::tests::tasks_work_for_the_default_role_only_where_allowed",
+            &[(crate::core::hive::PREVIEW_ENV, "1")],
+        ) {
+            return;
+        }
+        assert!(check_capabilities("coder", "ctx_tasks").allowed);
+        assert!(check_capabilities("unknown_role", "ctx_tasks").allowed);
+        for read_only in ["reviewer", "ci", "minimal"] {
+            assert!(!check_capabilities(read_only, "ctx_tasks").allowed);
+            assert!(!check_capabilities(read_only, "ctx_compute").allowed);
+        }
+        assert!(check_capabilities("coder", "ctx_compute").allowed);
+        // Hive only: no role but admin reaches other hosts.
+        for role in ["coder", "unknown_role", "reviewer", "minimal"] {
+            assert!(!role_capabilities(role).contains(&Capability::NetOutbound));
+        }
+        assert_eq!(Capability::HiveNet.display_name(), "x-hive:net");
     }
 
     #[test]

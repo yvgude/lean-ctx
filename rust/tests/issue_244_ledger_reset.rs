@@ -155,8 +155,8 @@ mod actionable_hints {
 
         if let Some(hint) = result.eviction_hint {
             assert!(
-                hint.contains("ctx_ledger"),
-                "hint should reference ctx_ledger tool: {hint}"
+                hint.contains("ctx_control"),
+                "hint should reference ctx_control tool: {hint}"
             );
             assert!(
                 hint.contains("evict"),

@@ -22,9 +22,7 @@ pub fn cmd_session_action(args: &[String]) {
                 }
             }
             let mut session = load_or_create_session();
-            let out =
-                ctx_session::handle(&mut session, &[], "task", Some(desc), None, default_opts());
-            require_session_save(&mut session);
+            let out = run_admitted_cli_action(&mut session, "task", desc);
             println!("{out}");
         }
         Some("finding") => {
@@ -41,15 +39,7 @@ pub fn cmd_session_action(args: &[String]) {
                 }
             }
             let mut session = load_or_create_session();
-            let out = ctx_session::handle(
-                &mut session,
-                &[],
-                "finding",
-                Some(summary),
-                None,
-                default_opts(),
-            );
-            require_session_save(&mut session);
+            let out = run_admitted_cli_action(&mut session, "finding", summary);
             println!("{out}");
         }
         Some("save") => {
@@ -88,8 +78,10 @@ pub fn cmd_session_action(args: &[String]) {
             }
             let mut session = SessionState::new();
             stamp_current_project_root(&mut session);
-            let out = ctx_session::handle(&mut session, &[], "load", None, id, default_opts());
-            println!("{out}");
+            let out = released_session_text(&session_root(&session), || {
+                ctx_session::handle(&mut session, &[], "load", None, id, default_opts())
+            });
+            super::common::print_released(&out);
         }
         Some("status") => {
             #[cfg(unix)]
@@ -104,8 +96,10 @@ pub fn cmd_session_action(args: &[String]) {
                 }
             }
             let mut session = load_or_create_session();
-            let out = ctx_session::handle(&mut session, &[], "status", None, None, default_opts());
-            println!("{out}");
+            let out = released_session_text(&session_root(&session), || {
+                ctx_session::handle(&mut session, &[], "status", None, None, default_opts())
+            });
+            super::common::print_released(&out);
         }
         Some("decision") => {
             let desc = args.get(1).map_or("(no description)", String::as_str);
@@ -121,24 +115,8 @@ pub fn cmd_session_action(args: &[String]) {
                 }
             }
             let mut session = load_or_create_session();
-            let out = ctx_session::handle(
-                &mut session,
-                &[],
-                "decision",
-                Some(desc),
-                None,
-                default_opts(),
-            );
-            require_session_save(&mut session);
+            let out = run_admitted_cli_action(&mut session, "decision", desc);
             println!("{out}");
-        }
-        Some("dismiss-pro") => {
-            crate::core::pro_triggers::suppress(30);
-            println!("Pro messages dismissed for 30 days.");
-        }
-        Some("show-pro") => {
-            crate::core::pro_triggers::clear_suppression();
-            println!("Pro messages restored.");
         }
         Some("reset" | "new") => {
             #[cfg(unix)]
@@ -153,8 +131,10 @@ pub fn cmd_session_action(args: &[String]) {
                 }
             }
             let mut session = load_or_create_session();
-            let out = ctx_session::handle(&mut session, &[], "reset", None, None, default_opts());
-            println!("{out}");
+            let out = released_session_text(&session_root(&session), || {
+                ctx_session::handle(&mut session, &[], "reset", None, None, default_opts())
+            });
+            super::common::print_released(&out);
         }
         None => {
             cmd_session_legacy();
@@ -167,11 +147,63 @@ pub fn cmd_session_action(args: &[String]) {
     }
 }
 
+fn run_admitted_cli_action(session: &mut SessionState, action: &str, value: &str) -> String {
+    let prepared = ctx_session::prepare_admitted_action(
+        session,
+        &[],
+        action,
+        Some(value),
+        None,
+        default_opts(),
+    )
+    .unwrap_or_else(|_| {
+        eprintln!("Session content withheld by current project or content policy.");
+        std::process::exit(1);
+    });
+    if !prepared.store_admission.is_current() {
+        eprintln!("Session policy changed during content admission; retry the operation.");
+        std::process::exit(1);
+    }
+    let completed_task = prepared.completed_task;
+    *session = prepared.candidate;
+    if !prepared.store_admission.is_current() {
+        eprintln!("Session policy changed before persistence; retry the operation.");
+        std::process::exit(1);
+    }
+    require_session_save(session);
+
+    let mut output = prepared.output;
+    if let Some(note) =
+        ctx_session::record_completed_task_after_commit(session, completed_task, &[], None)
+    {
+        output.push_str(&note);
+    }
+    crate::core::session::admission::admit_tool_value(session, &output)
+        .unwrap_or_else(|_| "[lean-ctx gateway: session content withheld]".into())
+}
+
 fn require_session_save(session: &mut SessionState) {
     if let Err(error) = session.save() {
         eprintln!("Session was not saved: {error}");
         std::process::exit(1);
     }
+}
+
+/// The project a session's text is released for: the session's own root.
+/// Empty when it names none — the tool run then binds no project.
+fn session_root(session: &SessionState) -> String {
+    session.project_root.clone().unwrap_or_default()
+}
+
+/// Stored session text (tasks, findings, decisions, file notes) printed by a
+/// local `session` sub-command goes through the shared CLI tool run: request
+/// scope, the MCP release point, output redaction. It is a status view for
+/// the person at the terminal, not a tool-result carrier, so no lineage is
+/// recorded for it.
+fn released_session_text(project_root: &str, render: impl FnOnce() -> String) -> String {
+    super::common::CliToolRun::new("ctx_session", project_root, None)
+        .human_facing()
+        .deliver_text(render)
 }
 
 fn load_or_create_session() -> SessionState {
@@ -216,8 +248,6 @@ Usage:
   lean-ctx session finding <summary>    Record a finding
   lean-ctx session decision <summary>   Record a decision
   lean-ctx session save                 Save current session
-  lean-ctx session dismiss-pro          Hide Pro conversion messages
-  lean-ctx session show-pro             Restore Pro conversion messages
   lean-ctx session load [session-id]    Load a session (latest if no ID)
   lean-ctx session status               Show session status
   lean-ctx session reset|new            Reset session
@@ -345,17 +375,29 @@ pub fn cmd_sessions(args: &[String]) {
         }
         "show" => {
             let id = args.get(1);
-            // Explicit, cross-project UX: show the current project's session if
-            // present, else fall back to the global latest pointer so `show`
-            // works from any directory. (load_latest itself stays project-scoped
-            // to avoid leaking knowledge into a new project's context.)
+            // An explicit id shows that session; without one only the current
+            // project's latest — never whichever project was active last
+            // (AP04-G8).
             let session = if let Some(id) = id {
                 SessionState::load_by_id(id)
             } else {
-                SessionState::load_latest().or_else(SessionState::load_global_latest_pointer)
+                SessionState::load_latest()
             };
             match session {
-                Some(s) => println!("{}", s.format_compact()),
+                Some(s) => {
+                    if id.is_none() {
+                        // A person's inspection view, labelled: the latest
+                        // saved session may belong to any agent (I07/S03).
+                        println!(
+                            "Latest saved session of this project ({}) — may belong to another agent:",
+                            s.id
+                        );
+                    }
+                    super::common::print_released(&released_session_text(
+                        &session_root(&s),
+                        || s.format_compact(),
+                    ));
+                }
                 None => println!("Session not found."),
             }
         }

@@ -3,10 +3,12 @@
 //! Built-in candidate providers for the context control kernel.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{Arc, OnceLock};
 
 use crate::core::bm25_index::{BM25Index, SearchResult};
 
+use crate::core::context_admission::stores::StoreAdmission;
 use crate::core::context_field::{ContextItemId, ContextState, Provenance, ViewCosts};
 use crate::core::context_ledger::{ContextLedger, LedgerEntry};
 use crate::core::episodic_memory::{EpisodicStore, Outcome};
@@ -54,9 +56,13 @@ impl CandidateProvider for KnowledgeProvider {
             return Vec::new();
         };
         let (facts, _) = knowledge.recall_for_output(&ctx.query, ctx.max_candidates);
+        // A candidate carries the fact's value: only facts that may be
+        // delivered now (`ProjectKnowledge::delivery_filter`).
+        let deliverable = knowledge.delivery_filter();
 
         facts
             .into_iter()
+            .filter(|fact| deliverable(fact))
             .map(|fact| {
                 let mut metadata = HashMap::new();
                 metadata.insert("category".to_string(), fact.category.clone());
@@ -85,16 +91,22 @@ impl CandidateProvider for KnowledgeProvider {
     }
 }
 
-/// Supplies the latest session's findings, decisions, and modified files.
+/// Supplies the caller's own session findings, decisions, and modified files
+/// — never the project's latest saved session, which may be another agent's
+/// (I07/S03). Without a caller session (CLI, background) it supplies nothing.
 pub(crate) struct SessionProvider {
     project_root: String,
+    /// Captured at construction, inside the request: candidates may be
+    /// gathered on another thread.
+    caller: Option<crate::core::session::SharedSession>,
 }
 
 impl SessionProvider {
-    /// Creates a provider scoped to `project_root`.
+    /// Creates a provider scoped to `project_root` and the calling session.
     pub(crate) fn new(project_root: impl Into<String>) -> Self {
         Self {
             project_root: project_root.into(),
+            caller: crate::core::session::caller::current(),
         }
     }
 }
@@ -105,12 +117,33 @@ impl CandidateProvider for SessionProvider {
     }
 
     fn candidates(&self, ctx: &RetrievalContext) -> Vec<ContextObjectV1> {
-        let Some(session) = SessionState::load_latest_for_project_root(&self.project_root) else {
-            return Vec::new();
-        };
+        let caller = self.caller.clone();
+        crate::core::session::caller::scope(caller, || {
+            crate::core::session::caller::with_for_project(&self.project_root, |session| {
+                Self::of_session(session, ctx.max_candidates)
+            })
+        })
+        .unwrap_or_default()
+    }
+
+    fn side_effect_policy(&self) -> SideEffectPolicy {
+        SideEffectPolicy::ReadOnly
+    }
+}
+
+impl SessionProvider {
+    /// The candidates of one session: its findings, decisions and modified
+    /// files, newest first, at most `max_candidates`.
+    fn of_session(session: &SessionState, max_candidates: usize) -> Vec<ContextObjectV1> {
         let mut candidates = Vec::new();
 
-        for finding in &session.findings {
+        // A candidate carries the finding's summary: only findings that may
+        // be delivered now (`SessionState::finding_served`).
+        for finding in session
+            .findings
+            .iter()
+            .filter(|finding| session.finding_served(finding))
+        {
             let mut metadata = HashMap::new();
             if let Some(file) = &finding.file {
                 metadata.insert("file".to_string(), file.clone());
@@ -209,13 +242,9 @@ impl CandidateProvider for SessionProvider {
         });
         candidates
             .into_iter()
-            .take(ctx.max_candidates)
+            .take(max_candidates)
             .map(|(_, candidate)| candidate)
             .collect()
-    }
-
-    fn side_effect_policy(&self) -> SideEffectPolicy {
-        SideEffectPolicy::ReadOnly
     }
 }
 
@@ -240,35 +269,41 @@ impl CandidateProvider for EpisodicProvider {
 
     fn candidates(&self, ctx: &RetrievalContext) -> Vec<ContextObjectV1> {
         let project_hash = crate::core::project_hash::hash_project_root(&self.project_root);
-        let Some(store) = EpisodicStore::load(&project_hash) else {
-            return Vec::new();
-        };
-
-        store
-            .search(&ctx.query)
-            .into_iter()
-            .filter(|episode| episode_belongs_to(episode, &self.project_root))
-            .take(ctx.max_candidates)
-            .map(|episode| {
-                let mut metadata = HashMap::new();
-                metadata.insert("session_id".to_string(), episode.session_id.clone());
-                metadata.insert("outcome".to_string(), episode.outcome.label().to_string());
-                context_object(
-                    ContextItemId::from_memory(&episode.id),
-                    ContextObjectKind::Episode,
-                    EPISODIC_PROVIDER,
-                    episode.id.clone(),
-                    episode.task_description.clone(),
-                    Some(episode.summary.clone()),
-                    freshness(episode.timestamp.to_rfc3339(), false),
-                    outcome_confidence(&episode.outcome),
-                    count_tokens(&episode.summary),
-                    ViewCosts::from_full_tokens(count_tokens(&episode.summary)),
-                    Provenance::default(),
-                    metadata,
-                )
-            })
-            .collect()
+        with_project_store_admission(&self.project_root, |admission| {
+            let Ok(store) = EpisodicStore::load_admitted_for_project(
+                &project_hash,
+                Path::new(&self.project_root),
+                admission,
+            ) else {
+                return Vec::new();
+            };
+            store
+                .search(&ctx.query)
+                .into_iter()
+                .filter(|episode| episode_belongs_to(episode, &self.project_root))
+                .take(ctx.max_candidates)
+                .map(|episode| {
+                    let mut metadata = HashMap::new();
+                    metadata.insert("session_id".to_string(), episode.session_id.clone());
+                    metadata.insert("outcome".to_string(), episode.outcome.label().to_string());
+                    context_object(
+                        ContextItemId::from_memory(&episode.id),
+                        ContextObjectKind::Episode,
+                        EPISODIC_PROVIDER,
+                        episode.id.clone(),
+                        episode.task_description.clone(),
+                        Some(episode.summary.clone()),
+                        freshness(episode.timestamp.to_rfc3339(), false),
+                        outcome_confidence(&episode.outcome),
+                        count_tokens(&episode.summary),
+                        ViewCosts::from_full_tokens(count_tokens(&episode.summary)),
+                        Provenance::default(),
+                        metadata,
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
     }
 
     fn side_effect_policy(&self) -> SideEffectPolicy {
@@ -280,15 +315,55 @@ impl CandidateProvider for EpisodicProvider {
 /// several projects, so an episode recorded under one root may be about
 /// another entirely. Such an episode is history from a different codebase;
 /// it is kept only when it names no files or at least one under `root`.
+///
+/// Rooted paths are compared in canonical form on both sides, like the
+/// admitted loader does: a project reached through a symlink is the same
+/// project. A root or a path that cannot be resolved does not belong.
 fn episode_belongs_to(episode: &crate::core::episodic_memory::Episode, root: &str) -> bool {
-    let root = std::path::Path::new(root);
-    episode.affected_files.is_empty()
-        || episode.affected_files.iter().any(|file| {
-            let file = std::path::Path::new(file);
-            // `has_root`, not `is_absolute`: on Windows `/home/u/x` has no
-            // drive and is not absolute, yet it is no project-relative path.
-            !file.has_root() || file.starts_with(root)
-        })
+    if episode.affected_files.is_empty() {
+        return true;
+    }
+    let resolve = crate::core::pathutil::canonicalize_secure;
+    // Resolved once, and only when a rooted path asks for it.
+    let canonical_root = std::cell::OnceCell::new();
+    episode.affected_files.iter().any(|file| {
+        let file = Path::new(file);
+        // `has_root`, not `is_absolute`: on Windows `/home/u/x` has no
+        // drive and is not absolute, yet it is no project-relative path.
+        if !file.has_root() {
+            return true;
+        }
+        let Some(project) = canonical_root
+            .get_or_init(|| resolve(Path::new(root)).ok())
+            .as_deref()
+        else {
+            return false;
+        };
+        canonical_scope_path(file).is_some_and(|resolved| resolved.starts_with(project))
+    })
+}
+
+/// Canonical form of `path` for the project-scope comparison. A file that is
+/// gone is resolved through its nearest existing ancestor; a `..` component,
+/// a dangling link or an unreadable ancestor resolves to nothing.
+fn canonical_scope_path(path: &Path) -> Option<std::path::PathBuf> {
+    if path
+        .components()
+        .any(|component| matches!(component, std::path::Component::ParentDir))
+    {
+        return None;
+    }
+    for ancestor in path.ancestors() {
+        match std::fs::symlink_metadata(ancestor) {
+            Ok(_) => {
+                let resolved = crate::core::pathutil::canonicalize_secure(ancestor).ok()?;
+                return Some(resolved.join(path.strip_prefix(ancestor).ok()?));
+            }
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+            Err(_) => return None,
+        }
+    }
+    None
 }
 
 /// Supplies task-matched procedures from persistent procedural memory.
@@ -312,44 +387,61 @@ impl CandidateProvider for ProceduralProvider {
 
     fn candidates(&self, ctx: &RetrievalContext) -> Vec<ContextObjectV1> {
         let project_hash = crate::core::project_hash::hash_project_root(&self.project_root);
-        let Some(store) = ProceduralStore::load(&project_hash) else {
-            return Vec::new();
-        };
-        let task = ctx.task.as_deref().unwrap_or(&ctx.query);
-
-        store
-            .suggest(task)
-            .into_iter()
-            .take(ctx.max_candidates)
-            .map(|procedure| {
-                let content = format_procedure_steps(procedure);
-                let mut metadata = HashMap::new();
-                metadata.insert("description".to_string(), procedure.description.clone());
-                metadata.insert(
-                    "activation_keywords".to_string(),
-                    procedure.activation_keywords.join(","),
-                );
-                context_object(
-                    ContextItemId::from_memory(&procedure.id),
-                    ContextObjectKind::Procedure,
-                    PROCEDURAL_PROVIDER,
-                    procedure.id.clone(),
-                    procedure.name.clone(),
-                    Some(content),
-                    freshness(procedure.created_at.to_rfc3339(), false),
-                    procedure.confidence,
-                    procedure.steps.len() * 30,
-                    ViewCosts::from_full_tokens(procedure.steps.len() * 30),
-                    Provenance::default(),
-                    metadata,
-                )
-            })
-            .collect()
+        with_project_store_admission(&self.project_root, |admission| {
+            let Ok(store) = ProceduralStore::load_admitted(&project_hash, admission) else {
+                return Vec::new();
+            };
+            let task = ctx.task.as_deref().unwrap_or(&ctx.query);
+            store
+                .suggest(task)
+                .into_iter()
+                .take(ctx.max_candidates)
+                .map(|procedure| {
+                    let content = format_procedure_steps(procedure);
+                    let mut metadata = HashMap::new();
+                    metadata.insert("description".to_string(), procedure.description.clone());
+                    metadata.insert(
+                        "activation_keywords".to_string(),
+                        procedure.activation_keywords.join(","),
+                    );
+                    context_object(
+                        ContextItemId::from_memory(&procedure.id),
+                        ContextObjectKind::Procedure,
+                        PROCEDURAL_PROVIDER,
+                        procedure.id.clone(),
+                        procedure.name.clone(),
+                        Some(content),
+                        freshness(procedure.created_at.to_rfc3339(), false),
+                        procedure.confidence,
+                        procedure.steps.len() * 30,
+                        ViewCosts::from_full_tokens(procedure.steps.len() * 30),
+                        Provenance::default(),
+                        metadata,
+                    )
+                })
+                .collect()
+        })
+        .unwrap_or_default()
     }
 
     fn side_effect_policy(&self) -> SideEffectPolicy {
         SideEffectPolicy::ReadOnly
     }
+}
+
+/// Admit memory under the caller's project policy and one current Gateway
+/// snapshot. A provider for another project cannot borrow a request's policy.
+fn with_project_store_admission<T>(
+    project_root: &str,
+    operation: impl FnOnce(&StoreAdmission) -> T,
+) -> Option<T> {
+    crate::core::policy::runtime::with_explicit_project_source_view(Path::new(project_root), |_| {
+        let admission = StoreAdmission::current();
+        let value = operation(&admission);
+        admission.is_current().then_some(value)
+    })
+    .ok()
+    .flatten()
 }
 
 /// Supplies previously delivered ledger items as high-confidence candidates.
@@ -579,9 +671,14 @@ impl CandidateProvider for GraphProvider {
             &seeds,
             ctx.max_candidates,
             |seed| {
+                // Serve-time source gate: a neighbour whose file is withdrawn is
+                // no candidate.
                 graph
                     .related_files(seed, GRAPH_NEIGHBOURS_PER_SEED)
                     .unwrap_or_default()
+                    .into_iter()
+                    .filter(|(path, _)| graph.serves_file(path))
+                    .collect()
             },
             // An estimate from the file size; planning reads no content.
             |path| {
@@ -951,6 +1048,237 @@ mod tests {
         assert!(provider.candidates(&retrieval_context()).is_empty());
     }
 
+    #[test]
+    fn episodic_and_procedural_candidates_are_project_and_gateway_admitted() {
+        use crate::core::episodic_memory::Episode;
+        use crate::core::memory_policy::EpisodicPolicy;
+        use crate::core::procedural_memory::ProcedureStep;
+        use chrono::Utc;
+
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let root = tempfile::tempdir().expect("project root");
+        let policy_dir = root.path().join(".lean-ctx");
+        std::fs::create_dir_all(&policy_dir).expect("policy directory");
+        std::fs::write(
+            policy_dir.join("policy.toml"),
+            "name = \"memory-admission-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n[redaction]\ncustomer = 'SECRET-[0-9]+'\n",
+        )
+        .expect("redaction policy");
+        let root = root.path().to_string_lossy().into_owned();
+        let hash = crate::core::project_hash::hash_project_root(&root);
+
+        let mut episodes = EpisodicStore::new(&hash);
+        episodes.record_episode(
+            Episode {
+                id: "episode-1".into(),
+                session_id: "session-1".into(),
+                timestamp: Utc::now(),
+                task_description: "fixture SECRET-123".into(),
+                actions: Vec::new(),
+                outcome: Outcome::Unknown,
+                affected_files: Vec::new(),
+                summary: "summary SECRET-123".into(),
+                duration_secs: 0,
+                tokens_used: 0,
+                agent_id: None,
+            },
+            &EpisodicPolicy::default(),
+        );
+        let foreign = tempfile::tempdir().expect("foreign project root");
+        let mut mixed = episodes.episodes[0].clone();
+        mixed.id = "episode-mixed".into();
+        mixed.task_description = "fixture from mixed roots".into();
+        mixed.summary = "foreign project summary".into();
+        mixed.affected_files = vec![
+            Path::new(&root)
+                .join("src/local.rs")
+                .to_string_lossy()
+                .into_owned(),
+            foreign
+                .path()
+                .join("secret.rs")
+                .to_string_lossy()
+                .into_owned(),
+        ];
+        episodes.episodes.push(mixed);
+        episodes.save().expect("save raw episode fixture");
+
+        let mut procedures = ProceduralStore::new(&hash);
+        procedures.procedures.push(Procedure {
+            id: "procedure-1".into(),
+            name: "fixture workflow".into(),
+            description: "uses SECRET-123".into(),
+            steps: vec![ProcedureStep {
+                tool: "ctx_read".into(),
+                description: "inspect SECRET-123".into(),
+                optional: false,
+            }],
+            activation_keywords: vec!["fixture".into()],
+            confidence: 0.8,
+            times_used: 1,
+            times_succeeded: 1,
+            last_used: Utc::now(),
+            project_specific: true,
+            created_at: Utc::now(),
+        });
+        procedures.save().expect("save raw procedure fixture");
+
+        let mut ctx = retrieval_context();
+        ctx.query = "fixture".into();
+        ctx.task = Some("fixture".into());
+        ctx.project_root = root.clone();
+        let episodes = EpisodicProvider::new(&root).candidates(&ctx);
+        let procedures = ProceduralProvider::new(&root).candidates(&ctx);
+        assert_eq!(episodes.len(), 1);
+        assert_eq!(procedures.len(), 1);
+        assert_eq!(
+            EpisodicStore::load(&hash).unwrap().episodes.len(),
+            2,
+            "retrieval scoping must not rewrite persisted history"
+        );
+        for candidate in episodes.iter().chain(&procedures) {
+            assert!(!candidate.title.contains("SECRET-123"));
+            assert!(
+                !candidate
+                    .content
+                    .as_deref()
+                    .unwrap_or_default()
+                    .contains("SECRET-123")
+            );
+            assert!(
+                candidate
+                    .metadata
+                    .values()
+                    .all(|value| !value.contains("SECRET-123"))
+            );
+        }
+        assert!(episodes[0].title.contains("[REDACTED:customer]"));
+        assert!(procedures[0].title.contains("fixture workflow"));
+        assert!(procedures[0].metadata["description"].contains("[REDACTED:customer]"));
+
+        let other = tempfile::tempdir().expect("other project root");
+        let mismatch = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(other.path().to_path_buf())),
+            || EpisodicProvider::new(&root).candidates(&ctx),
+        );
+        assert!(
+            mismatch.is_empty(),
+            "a foreign request scope must fail closed"
+        );
+    }
+
+    fn with_two_findings(root: &str) -> SessionState {
+        std::fs::write(format!("{root}/pool.rs"), "pub fn lease() {}\n").expect("source");
+        let mut session = SessionState::new();
+        session.project_root = Some(root.to_owned());
+        session.add_finding_for_file(Some("pool.rs"), Some(1), "the pool leaks one lease");
+        session.add_finding_for_file(None, None, "noted without a file");
+        session
+    }
+
+    /// The summaries the session provider offers as candidates, sorted.
+    fn offered(session: &SessionState) -> Vec<String> {
+        let mut contents: Vec<String> = SessionProvider::of_session(session, 10)
+            .into_iter()
+            .filter_map(|candidate| candidate.content)
+            .collect();
+        contents.sort();
+        contents
+    }
+
+    /// A finding bound to a source is a candidate while the source admits and
+    /// is not offered once the source is deleted; the finding without a file
+    /// is offered either way.
+    #[test]
+    fn a_finding_whose_source_is_gone_is_not_a_candidate() {
+        use crate::core::context_admission::stored::lineage_support::{governed, project, scoped};
+        let _data = governed();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        let session = with_two_findings(&root);
+
+        assert_eq!(
+            scoped(&root, || offered(&session)),
+            ["noted without a file", "the pool leaks one lease"]
+        );
+        std::fs::remove_file(format!("{root}/pool.rs")).expect("delete");
+        assert_eq!(
+            scoped(&root, || offered(&session)),
+            ["noted without a file"]
+        );
+    }
+
+    /// Developer mode: every finding is a candidate as before.
+    #[test]
+    fn findings_are_candidates_as_before_in_developer_mode() {
+        use crate::core::context_admission::stored::lineage_support::project;
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        let session = with_two_findings(&root);
+        std::fs::remove_file(format!("{root}/pool.rs")).expect("delete");
+        assert_eq!(
+            offered(&session),
+            ["noted without a file", "the pool leaks one lease"]
+        );
+    }
+
+    /// The knowledge provider offers a fact bound to a source while the
+    /// source admits and not once it is deleted; a fact without a binding is
+    /// offered either way.
+    #[test]
+    fn a_fact_whose_source_is_gone_is_not_a_candidate() {
+        use crate::core::archive::bindings::{self, Item};
+        use crate::core::context_admission::stored::lineage_support::{governed, project, scoped};
+        let _data = governed();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        std::fs::write(format!("{root}/auth.rs"), "pub fn verify_rs256() {}\n").expect("source");
+        let bound = "Tokens are verified with RS256 in the auth module";
+        let typed = "Deployments are promoted by the release captain on Fridays";
+        for (key, value) in [("token-check", bound), ("release-duty", typed)] {
+            let reply = crate::tools::ctx_knowledge::handle(
+                &root,
+                "remember",
+                Some("architecture"),
+                Some(key),
+                Some(value),
+                None,
+                "session-1",
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            assert!(reply.starts_with("Remembered"), "{reply}");
+        }
+        let item = Item::KnowledgeFact {
+            project: &root,
+            category: "architecture",
+            key: "token-check",
+        };
+        let sources =
+            bindings::sources_at(&root, &["auth.rs"], "ctx_knowledge").expect("readable source");
+        assert!(bindings::bind(&item, bound, &root, sources));
+
+        let mut ctx = retrieval_context();
+        ctx.query = "tokens deployments".into();
+        ctx.project_root.clone_from(&root);
+        let offered = || {
+            let candidates = scoped(&root, || KnowledgeProvider::new(&root).candidates(&ctx));
+            let mut contents: Vec<String> = candidates
+                .into_iter()
+                .filter_map(|candidate| candidate.content)
+                .collect();
+            contents.sort();
+            contents
+        };
+        assert_eq!(offered(), [typed, bound]);
+        std::fs::remove_file(format!("{root}/auth.rs")).expect("delete");
+        assert_eq!(offered(), [typed]);
+    }
+
     /// #1993: reading files under one project surfaced an episode whose files
     /// all lay in another project.
     #[test]
@@ -969,21 +1297,91 @@ mod tests {
             tokens_used: 0,
             agent_id: None,
         };
-        let root = "/home/u/htdocs/evcc";
+        // The comparison is canonical, so the root has to exist; the files
+        // named by an episode need not (they may be gone since).
+        let htdocs = tempfile::tempdir().expect("htdocs");
+        let at = |relative: &str| htdocs.path().join(relative).to_string_lossy().into_owned();
+        std::fs::create_dir(htdocs.path().join("evcc")).expect("project root");
+        let root = at("evcc");
+        let root = root.as_str();
         assert!(!episode_belongs_to(
-            &episode(&["/home/u/htdocs/edifact/a.go", "/home/u/htdocs/edifact/b.go"]),
+            &episode(&[at("edifact/a.go").as_str(), at("edifact/b.go").as_str()]),
             root
         ));
         // A sibling whose name merely starts with the root's is still foreign.
         assert!(!episode_belongs_to(
-            &episode(&["/home/u/htdocs/evcc-old/a.go"]),
+            &episode(&[at("evcc-old/a.go").as_str()]),
             root
         ));
         assert!(episode_belongs_to(
-            &episode(&["/home/u/htdocs/edifact/a.go", "/home/u/htdocs/evcc/c.go"]),
+            &episode(&[at("edifact/a.go").as_str(), at("evcc/c.go").as_str()]),
             root
         ));
         assert!(episode_belongs_to(&episode(&["src/main.rs"]), root));
         assert!(episode_belongs_to(&episode(&[]), root));
+        // Fail closed: a root that cannot be resolved owns no rooted path.
+        assert!(!episode_belongs_to(
+            &episode(&[at("missing-root/c.go").as_str()]),
+            &at("missing-root")
+        ));
+    }
+
+    /// The store's loader compares canonical paths; this scope rule must not
+    /// drop an episode of the project only because the project root or the
+    /// recorded file is spelled through a symlink.
+    #[cfg(unix)]
+    #[test]
+    fn a_symlinked_project_root_keeps_its_own_episodes_only() {
+        use crate::core::episodic_memory::{Episode, Outcome};
+        let episode = |file: &Path| Episode {
+            id: "e".to_string(),
+            session_id: "s".to_string(),
+            timestamp: chrono::Utc::now(),
+            task_description: String::new(),
+            actions: Vec::new(),
+            outcome: Outcome::Unknown,
+            affected_files: vec![file.to_string_lossy().into_owned()],
+            summary: String::new(),
+            duration_secs: 0,
+            tokens_used: 0,
+            agent_id: None,
+        };
+        let base = tempfile::tempdir().expect("base");
+        let real = base.path().join("real");
+        let other = base.path().join("other");
+        let link = base.path().join("link");
+        std::fs::create_dir_all(real.join("src")).expect("project");
+        std::fs::create_dir(&other).expect("other project");
+        std::fs::write(real.join("src/a.rs"), "a").expect("project file");
+        std::fs::write(other.join("b.rs"), "b").expect("foreign file");
+        std::os::unix::fs::symlink(&real, &link).expect("symlinked root");
+        let canonical_real = std::fs::canonicalize(&real).expect("canonical project");
+        let linked_root = link.to_string_lossy().into_owned();
+        let real_root = real.to_string_lossy().into_owned();
+
+        // Root through the link, file recorded canonically — and the reverse.
+        assert!(episode_belongs_to(
+            &episode(&canonical_real.join("src/a.rs")),
+            &linked_root
+        ));
+        assert!(episode_belongs_to(
+            &episode(&link.join("src/a.rs")),
+            &real_root
+        ));
+        // A file of the project that is gone since still names the project.
+        assert!(episode_belongs_to(
+            &episode(&link.join("src/gone.rs")),
+            &real_root
+        ));
+        assert!(!episode_belongs_to(
+            &episode(&other.join("b.rs")),
+            &linked_root
+        ));
+        // A link inside the project that leads out of it is not the project.
+        std::os::unix::fs::symlink(&other, real.join("out")).expect("escaping link");
+        assert!(!episode_belongs_to(
+            &episode(&real.join("out/b.rs")),
+            &linked_root
+        ));
     }
 }

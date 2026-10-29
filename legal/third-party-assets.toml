@@ -4,29 +4,13 @@ authority = "THIRD_PARTY_NOTICES"
 
 [inputs]
 cargo_lock = "rust/Cargo.lock"
-cargo_lock_sha256 = "82a6fc6a46a03a37c27c28880d31338f511fddd965bb8eb4133ac5c9e7c1da6e"
+cargo_lock_sha256 = "c11dfc5b8166dc8eed9d1e678c95e6f59c0701a64f56c34355e3840ecf683231"
 sbom = "SBOM.cdx.json"
-sbom_sha256 = "391a1618bcd0b8329fe81daf1d030abea2529abc68ff2570896822da30f97db8"
+sbom_sha256 = "894304fa553ce89c49ecae98bcc3c958e8fc5b2c54eb32fc5d56bdc825bb9e65"
 npm_lock = "packages/pi-lean-ctx/package-lock.json"
-npm_lock_sha256 = "1f4451809926e44c5edc0651f117aa9aed436ac8efdb927ea5001a9fade4c883"
+npm_lock_sha256 = "35e87ec565ae4e71802703536ea2ea2bd6309fdf9d50e41203876084ab46306c"
 
 [license_texts]
-isc = """
-ISC License
-
-Permission to use, copy, modify, and/or distribute this software for any
-purpose with or without fee is hereby granted, provided that the above
-copyright notice and this permission notice appear in all copies.
-
-THE SOFTWARE IS PROVIDED "AS IS" AND THE AUTHOR DISCLAIMS ALL WARRANTIES
-WITH REGARD TO THIS SOFTWARE INCLUDING ALL IMPLIED WARRANTIES OF
-MERCHANTABILITY AND FITNESS. IN NO EVENT SHALL THE AUTHOR BE LIABLE FOR ANY
-SPECIAL, DIRECT, INDIRECT, OR CONSEQUENTIAL DAMAGES OR ANY DAMAGES
-WHATSOEVER RESULTING FROM LOSS OF USE, DATA OR PROFITS, WHETHER IN AN ACTION
-OF CONTRACT, NEGLIGENCE OR OTHER TORTIOUS ACTION, ARISING OUT OF OR IN
-CONNECTION WITH THE USE OR PERFORMANCE OF THIS SOFTWARE.
-"""
-
 mit = """
 MIT License
 
@@ -48,170 +32,6 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 """
-
-ofl_1_1 = """
-SIL OPEN FONT LICENSE
-
-Version 1.1 - 26 February 2007
-
-PREAMBLE
-
-The goals of the Open Font License (OFL) are to stimulate worldwide development
-of collaborative font projects, to support the font creation efforts of
-academic and linguistic communities, and to provide a free and open framework
-in which fonts may be shared and improved in partnership with others.
-The OFL allows the licensed fonts to be used, studied, modified and
-redistributed freely as long as they are not sold by themselves. The fonts,
-including any derivative works, can be bundled, embedded, redistributed and/or
-sold with any software provided that any reserved names are not used by
-derivative works. The fonts and derivatives, however, cannot be released under
-any other type of license.
-The requirement for fonts to remain under this license does not apply to any
-document created using the fonts or their derivatives.
-
-DEFINITIONS
-
-"Font Software" refers to the set of files released by the Copyright Holder(s)
-under this license and clearly marked as such. This may include source files,
-build scripts and documentation.
-
-"Reserved Font Name" refers to any names specified as such after the copyright
-statement(s).
-
-"Original Version" refers to the collection of Font Software components as
-distributed by the Copyright Holder(s).
-
-"Modified Version" refers to any derivative made by adding to, deleting, or
-substituting — in part or in whole — any of the components of the Original
-Version, by changing formats or by porting the Font Software to a new
-environment.
-
-"Author" refers to any designer, engineer, programmer, technical writer or
-other person who contributed to the Font Software.
-
-PERMISSION & CONDITIONS
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of the Font Software, to use, study, copy, merge, embed, modify, redistribute,
-and sell modified and unmodified copies of the Font Software, subject to the
-following conditions:
-
-1) Neither the Font Software nor any of its individual components, in Original
-or Modified Versions, may be sold by itself.
-2) Original or Modified Versions of the Font Software may be bundled,
-redistributed and/or sold with any software, provided that each copy contains
-the above copyright notice and this license. These can be included either as
-stand-alone text files, human-readable headers or in the appropriate
-machine-readable metadata fields within text or binary files as long as those
-fields can be easily viewed by the user.
-3) No Modified Version of the Font Software may use the Reserved Font Name(s)
-unless explicit written permission is granted by the corresponding Copyright
-Holder. This restriction only applies to the primary font name as presented to
-the users.
-4) The name(s) of the Copyright Holder(s) or the Author(s) of the Font Software
-shall not be used to promote, endorse or advertise any Modified Version, except
-to acknowledge the contribution(s) of the Copyright Holder(s) and the Author(s)
-or with their explicit written permission.
-5) The Font Software, modified or unmodified, in part or in whole, must be
-distributed entirely under this license, and must not be distributed under any
-other license. The requirement for fonts to remain under this license does not
-apply to any document created using the Font Software.
-
-TERMINATION
-
-This license becomes null and void if any of the above conditions are not met.
-
-DISCLAIMER
-
-THE FONT SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS
-OR IMPLIED, INCLUDING BUT NOT LIMITED TO ANY WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT OF COPYRIGHT, PATENT,
-TRADEMARK, OR OTHER RIGHT.
-IN NO EVENT SHALL THE COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR
-OTHER LIABILITY, INCLUDING ANY GENERAL, SPECIAL, INDIRECT, INCIDENTAL, OR
-CONSEQUENTIAL DAMAGES WHATSOEVER, ARISING FROM, OUT OF THE USE OR INABILITY TO
-USE THE FONT SOFTWARE OR FROM OTHER DEALINGS IN THE FONT SOFTWARE.
-"""
-
-[[assets]]
-id = "dashboard-d3"
-path = "rust/src/dashboard/static/vendor/d3.min.js"
-sha256 = "f2094bbf6141b359722c4fe454eb6c4b0f0e42cc10cc7af921fc158fceb86539"
-version = "7.9.0"
-source = "https://github.com/d3/d3/releases/tag/v7.9.0"
-spdx = "ISC"
-license_text_path = "legal/third-party-assets.toml"
-license_text_key = "license_texts.isc"
-copyright = "Copyright 2010-2023 Mike Bostock"
-modified = false
-evidence_paths = [
-  "rust/src/dashboard/static/vendor/d3.min.js",
-  "rust/src/dashboard/mod.rs",
-]
-
-[[assets]]
-id = "dashboard-chartjs"
-path = "rust/src/dashboard/static/vendor/chart.umd.min.js"
-sha256 = "48444a82d4edcb5bec0f1965faacdde18d9c17db3063d042abada2f705c9f54a"
-version = "4.5.1"
-source = "https://github.com/chartjs/Chart.js/releases/tag/v4.5.1"
-spdx = "MIT"
-license_text_path = "legal/third-party-assets.toml"
-license_text_key = "license_texts.mit"
-copyright = "Copyright 2025 Chart.js Contributors"
-modified = false
-evidence_paths = [
-  "rust/src/dashboard/static/vendor/chart.umd.min.js",
-  "rust/src/dashboard/mod.rs",
-]
-
-[[assets]]
-id = "font-inter"
-path = "rust/src/dashboard/static/fonts/inter-variable.woff2"
-sha256 = "3100e775e8616cd2611beecfa23a4263d7037586789b43f035236a2e6fbd4c62"
-version = "4.1"
-source = "https://github.com/rsms/inter/releases/tag/v4.1"
-spdx = "OFL-1.1"
-license_text_path = "legal/third-party-assets.toml"
-license_text_key = "license_texts.ofl_1_1"
-copyright = "Copyright 2016 The Inter Project Authors"
-modified = false
-evidence_paths = [
-  "rust/src/dashboard/static/fonts/fonts.css",
-  "rust/src/dashboard/mod.rs",
-]
-
-[[assets]]
-id = "font-jetbrains-mono"
-path = "rust/src/dashboard/static/fonts/jetbrains-mono-variable.woff2"
-sha256 = "18be452724bfdc236c074ca94a249a7f41a86752c7d04ab258ce9ed5651f6a7e"
-version = "2.304"
-source = "https://github.com/JetBrains/JetBrainsMono/releases/tag/v2.304"
-spdx = "OFL-1.1"
-license_text_path = "legal/third-party-assets.toml"
-license_text_key = "license_texts.ofl_1_1"
-copyright = "Copyright 2020 The JetBrains Mono Project Authors"
-modified = false
-evidence_paths = [
-  "rust/src/dashboard/static/fonts/fonts.css",
-  "rust/src/dashboard/mod.rs",
-]
-
-[[assets]]
-id = "font-space-grotesk"
-path = "rust/src/dashboard/static/fonts/space-grotesk-variable.woff2"
-sha256 = "0640890476fc1198ab4de571fb658de443c4d85b66466ec09534a8737ab1ce9d"
-version = "2.0.0"
-source = "https://github.com/floriankarsten/space-grotesk/releases/tag/2.0.0"
-spdx = "OFL-1.1"
-license_text_path = "legal/third-party-assets.toml"
-license_text_key = "license_texts.ofl_1_1"
-copyright = "Copyright 2019 The Space Grotesk Project Authors"
-modified = false
-evidence_paths = [
-  "rust/src/dashboard/static/fonts/fonts.css",
-  "rust/src/dashboard/mod.rs",
-]
 
 [[assets]]
 id = "vendored-rmcp"

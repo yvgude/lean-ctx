@@ -1,0 +1,26 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "human_session_required",
+          "message": "only a person signed in on the web may do this"
+        }
+      },
+      "status": 403
+    }
+  ],
+  "method": "PUT",
+  "path": "/api/v1/swarms/9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02/pledge",
+  "request": {
+    "max_sessions": 1,
+    "mode": "unattended",
+    "tasks_per_day": 5,
+    "tokens_per_day": null,
+    "totp_code": "123456",
+    "usd_cents_per_day": 500,
+    "window": null
+  },
+  "response": null,
+  "route": "W42"
+}

@@ -67,6 +67,11 @@ pub fn set_many_by_key(
         .map_err(|e| crate::core::error::ConfigError::Save {
             source: Box::new(e),
         })?;
+    // K2 review 3 (NEW-2): a Hive off switch stops local recording at
+    // once, not at the scheduler's next tick (or the next restart).
+    if updates.iter().any(|(key, _)| key.starts_with("hive.")) {
+        crate::core::hive::receipts::apply_off_switches(&cfg.hive);
+    }
     Ok(cfg)
 }
 

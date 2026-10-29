@@ -1,12 +1,8 @@
-use chrono::{DateTime, Duration, Utc};
+use chrono::{DateTime, Utc};
 use lean_ctx_protocol::knowledge::{ClassificationLevel, KnowledgeObjectV1};
 
 use super::ranking::sort_fact_for_output;
 use super::types::{KnowledgeFact, ProjectKnowledge};
-use crate::core::cognitive_gate::full_science_enabled;
-use crate::core::memory_scheduler::{initial_state, retrievability};
-
-const DEFAULT_ELAPSED_DAYS: f64 = 7.0;
 
 /// Filters understood by portable Knowledge Hub stores.
 #[derive(Debug, Clone, Default)]
@@ -74,23 +70,6 @@ impl KnowledgeQuery {
             object_tags.is_some_and(|tags| tags.iter().any(|value| value.as_str() == Some(tag)))
         })
     }
-}
-
-fn fact_elapsed_days(fact: &KnowledgeFact, now: DateTime<Utc>) -> f64 {
-    match fact.last_retrieved {
-        Some(ts) => ((now - ts).num_seconds() as f64 / 86_400.0).max(0.0),
-        None => DEFAULT_ELAPSED_DAYS,
-    }
-}
-
-fn fsrs_boosted_relevance(fact: &KnowledgeFact, relevance: f32, now: DateTime<Utc>) -> f32 {
-    let elapsed_days = fact_elapsed_days(fact, now);
-    let elapsed_secs = (elapsed_days * 86_400.0).round() as i64;
-    let mut state = initial_state(fact.key.clone(), 3);
-    state.last_review = now - Duration::seconds(elapsed_secs);
-    let ret = retrievability(&state, now).clamp(0.0, 1.0);
-    let multiplier = (1.5_f64 - ret).max(0.1_f64) as f32;
-    relevance * multiplier
 }
 
 /// Words that frame a task rather than name its subject: function words and
@@ -239,14 +218,6 @@ impl ProjectKnowledge {
             })
             .collect();
 
-        if full_science_enabled() {
-            let now = Utc::now();
-            results = results
-                .into_iter()
-                .map(|(f, relevance)| (f, fsrs_boosted_relevance(f, relevance, now)))
-                .collect();
-        }
-
         results.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
         results.into_iter().map(|(f, _)| f).collect()
     }
@@ -379,13 +350,6 @@ impl ProjectKnowledge {
             })
             .collect();
 
-        let now = Utc::now();
-        if full_science_enabled() {
-            for s in &mut scored {
-                s.relevance = fsrs_boosted_relevance(&self.facts[s.idx], s.relevance, now);
-            }
-        }
-
         scored.sort_by(|a, b| {
             b.relevance
                 .partial_cmp(&a.relevance)
@@ -396,6 +360,7 @@ impl ProjectKnowledge {
         let total = scored.len();
         scored.truncate(limit);
 
+        let now = Utc::now();
         let mut out: Vec<KnowledgeFact> = Vec::new();
         for s in scored {
             if let Some(f) = self.facts.get_mut(s.idx) {

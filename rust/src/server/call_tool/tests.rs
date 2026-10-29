@@ -967,6 +967,10 @@ mod shell_outcome_tests {
         assert!(!archived.contains("END PRIVATE KEY"));
         assert!(!archived.contains("MES1609_FAKE_KEY_BODY_0123456789"));
         assert!(archived.contains("[REDACTED:Private key block]"));
+        assert!(
+            archived.contains("MES1609_SAFE_OUTPUT"),
+            "safe text outside the detected key block should remain available"
+        );
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1052,6 +1056,43 @@ mod shell_outcome_tests {
                 .count(),
             1
         );
+    }
+
+    /// AP05-G2: the shared-context hint decorated every tool result with the
+    /// newest facts of one installation-wide store, whatever the project.
+    #[tokio::test(flavor = "multi_thread")]
+    async fn shared_context_hint_carries_only_the_request_projects_facts() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let own = tempfile::tempdir().unwrap();
+        let foreign = tempfile::tempdir().unwrap();
+        for (dir, fact) in [(&own, "own-hint-marker"), (&foreign, "foreign-hint-marker")] {
+            crate::core::shared_context::SharedContext::for_project(dir.path().to_str().unwrap())
+                .unwrap()
+                .put(fact, "codex", "fact")
+                .unwrap();
+        }
+        let root = own.path().to_string_lossy().into_owned();
+        let server = crate::tools::LeanCtxServer::new_with_project_root(Some(&root));
+        let mut args = serde_json::Map::new();
+        args.insert("path".to_string(), serde_json::json!(root));
+        let result = crate::server::call_tool::dispatch_and_post_process(
+            &server,
+            "ctx_tree",
+            Some(&args),
+            false,
+            crate::core::config::Config::load_arc(),
+            false,
+            None,
+            None,
+            "ap05_hint".to_string(),
+            None,
+        )
+        .await
+        .expect("tree pipeline");
+        let text = text_of(&result);
+        assert!(text.contains("own-hint-marker"), "{text}");
+        assert!(!text.contains("foreign-hint-marker"), "{text}");
     }
 
     #[tokio::test(flavor = "multi_thread")]
@@ -1179,10 +1220,10 @@ mod shell_outcome_tests {
     #[cfg(not(windows))]
     fn scoped_policy_overrides_serialize_parallel_mutation() {
         // The deliberately active global overrides below must not leak into
-        // other tests that hold isolated data/config state but use live
-        // policy. Each override now holds `test_env_lock` itself (lock order
-        // env → override), so this thread must not hold it: the override
-        // threads below would wait on it forever.
+        // other tests that hold isolated data/config state but use live policy.
+        // Each override takes the environment lock itself, on its own thread
+        // and for its whole lifetime; this thread holds none while it waits,
+        // or the first child would wait for the lock its parent keeps.
         let (first_ready_tx, first_ready_rx) = std::sync::mpsc::channel();
         let (release_first_tx, release_first_rx) = std::sync::mpsc::channel();
         let first = std::thread::spawn(move || {
@@ -1190,12 +1231,11 @@ mod shell_outcome_tests {
             first_ready_tx.send(()).expect("signal first override");
             release_first_rx.recv().expect("release first override");
         });
-        // Liveness waits, not timing assertions: an override first takes
-        // `test_env_lock`, which other tests may hold for a while on a busy
-        // many-core runner.
-        let acquire = std::time::Duration::from_mins(2);
+        // Taking the override means taking the process-wide environment lock,
+        // which any other test may hold for as long as it runs: this wait has
+        // no bound of its own and is no oracle. A sender that died is an error.
         first_ready_rx
-            .recv_timeout(acquire)
+            .recv()
             .expect("first override must become active");
 
         let (second_started_tx, second_started_rx) = std::sync::mpsc::channel();
@@ -1207,9 +1247,13 @@ mod shell_outcome_tests {
             second_acquired_tx.send(()).expect("signal second override");
             release_second_rx.recv().expect("release second override");
         });
+        // Controlled readiness: the second thread only has to start, which
+        // waits for no lock.
         second_started_rx
             .recv_timeout(std::time::Duration::from_secs(1))
             .expect("second thread must start");
+        // The oracle: while the first override is provably held, the second
+        // must not be acquired.
         let overlapped = second_acquired_rx
             .recv_timeout(std::time::Duration::from_millis(500))
             .is_ok();
@@ -1217,8 +1261,10 @@ mod shell_outcome_tests {
         release_first_tx.send(()).expect("release first thread");
         first.join().expect("first policy thread");
         if !overlapped {
+            // A lock wait again: other tests may be queued for the same
+            // environment lock ahead of the second thread.
             second_acquired_rx
-                .recv_timeout(acquire)
+                .recv()
                 .expect("second override must acquire after first drops");
         }
         release_second_tx.send(()).expect("release second thread");
@@ -1438,19 +1484,27 @@ mod shell_outcome_tests {
             .duration_since(std::time::UNIX_EPOCH)
             .unwrap()
             .as_nanos();
-        // Letters, not digits: a digit run can pass the Luhn check, and the
-        // gateway's card detector would then redact it before the policy rule
-        // sees the whole marker.
+        // Unique per run, and letters only: as dash-separated digits the value
+        // sometimes passed the card checksum, and the PII detector masked it
+        // before the policy rule under test could match.
         let nonce_text = nonce
             .to_string()
-            .chars()
-            .map(|digit| {
-                let value = digit.to_digit(10).unwrap_or(0);
-                char::from_digit(value + 10, 36).unwrap_or('x').to_string()
-            })
+            .bytes()
+            .map(|digit| char::from(b"qwrtypsdfg"[usize::from(digit - b'0')]).to_string())
             .collect::<Vec<_>>()
             .join("-");
         let secret = format!("cobalt badger egress marker {nonce_text} private note");
+        assert!(
+            !secret.bytes().any(|byte| byte.is_ascii_digit()),
+            "no card, AHV or phone shape without a digit: {secret}"
+        );
+        let (unmasked, pii_hits) = crate::core::input_filters::pii::redact_checksummed(&secret);
+        assert!(pii_hits.is_empty() && unmasked == secret, "{unmasked}");
+        assert_eq!(
+            crate::core::redaction::redact_text(&secret),
+            secret,
+            "no built-in secret shape either"
+        );
         std::fs::write(root.path().join("probe.txt"), &secret).unwrap();
         let _policy = ScopedPolicy::redacting("cq06_runtime_probe", &regex::escape(&secret));
 
@@ -1573,7 +1627,33 @@ mod shell_outcome_tests {
         assert!(resources.contains("policy_guard::redact_model_text"));
         assert!(file_resource.contains("resources::text_resource(&content, uri)"));
         assert!(prompts.contains("policy_guard::redact_model_text"));
-        assert!(cli_call.contains("policy_guard::redact_model_text(&output.text)"));
+        // `lean-ctx call` has no outbound step of its own: the handler runs
+        // inside the shared CLI tool run, and that helper is the one place
+        // in `cli/` where the release point and the output redaction are
+        // applied — once, in `released`.
+        let cli_common = include_str!("../../cli/common.rs");
+        let cli_production = |source: &'static str| {
+            source
+                .split("#[cfg(test)]")
+                .next()
+                .expect("a production part")
+        };
+        assert!(cli_production(cli_call).contains("super::common::CliToolRun::new("));
+        assert!(!cli_production(cli_call).contains("redact_model_text"));
+        assert!(!cli_production(cli_call).contains("release_result"));
+        let cli_helper = cli_production(cli_common);
+        assert_eq!(
+            cli_helper.matches("policy_guard::release_result(").count(),
+            1,
+            "the CLI helper has one release point"
+        );
+        assert_eq!(
+            cli_helper
+                .matches("crate::server::policy_guard::redact_model_text(&released_text)")
+                .count(),
+            1,
+            "the CLI helper redacts the released text in one place"
+        );
         assert!(cli_agent_tools.contains("policy_guard::redact_model_text(&output.text)"));
         assert!(embed_engine.contains("policy_guard::redact_model_text(&out.text)"));
 
@@ -1702,5 +1782,723 @@ mod response_cache_tests {
         );
 
         assert!(cached_call_result(&cache, &key).is_none());
+    }
+}
+
+mod request_binding_tests {
+    use crate::tools::LeanCtxServer;
+
+    fn git_projects() -> (tempfile::TempDir, tempfile::TempDir) {
+        let projects = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        for project in [&projects.0, &projects.1] {
+            std::fs::create_dir(project.path().join(".git")).unwrap();
+        }
+        projects
+    }
+
+    fn uri(project: &tempfile::TempDir) -> String {
+        format!("file://{}", project.path().display())
+    }
+
+    async fn adopt(server: &LeanCtxServer, uris: &[String]) {
+        for save in server.adopt_client_roots(uris).await {
+            save.await.unwrap();
+        }
+    }
+
+    /// AP04-G1: a call bound to project A that writes after the host switched
+    /// its roots to project B writes into A's session; B's starts without it.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_late_write_stays_with_the_project_its_call_started_in() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let (first, second) = git_projects();
+        let server = LeanCtxServer::new_with_project_root(Some(&first.path().to_string_lossy()));
+        let first_root = server.session.read().await.project_root.clone();
+
+        server
+            .session
+            .scope(async {
+                server.session.pin();
+                adopt(&server, &[uri(&second)]).await;
+                let mut bound = server.session.write().await;
+                bound.record_manual_evidence("ap04:late", None);
+                assert_eq!(bound.project_root, first_root);
+            })
+            .await;
+
+        let live = server.session.read().await;
+        assert_eq!(
+            live.project_root,
+            crate::server::roots::uri_to_path(&uri(&second))
+        );
+        assert!(live.evidence.iter().all(|e| e.key != "ap04:late"));
+    }
+
+    /// AP04 review S1: the late write of a call whose session was replaced
+    /// while it ran is saved to that session's project when the call ends,
+    /// not left to a batch save that only the live session gets.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_late_write_to_a_replaced_session_is_saved_when_the_call_ends() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let (first, second) = git_projects();
+        let server = LeanCtxServer::new_with_project_root(Some(&first.path().to_string_lossy()));
+        let first_root = server.session.read().await.project_root.clone().unwrap();
+
+        server
+            .session
+            .scope(async {
+                server.session.pin();
+                adopt(&server, &[uri(&second)]).await;
+                let mut bound = server.session.write().await;
+                bound.last_flush = Some(std::time::Instant::now());
+                bound.record_manual_evidence("ap04:late", None);
+            })
+            .await;
+
+        let saved = crate::core::session::SessionState::load_latest_for_project_root(&first_root)
+            .expect("the first project's session is saved");
+        assert!(saved.evidence.iter().any(|e| e.key == "ap04:late"));
+    }
+
+    /// AP04 review S2: on a switch to project B, project A's local
+    /// configuration does not decide B's configured extra roots.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_root_switch_does_not_carry_the_previous_projects_configured_roots() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let (first, second) = git_projects();
+        let extra = tempfile::tempdir().unwrap();
+        let extra_root = extra.path().to_string_lossy().to_string();
+        std::fs::write(
+            first.path().join(".lean-ctx.toml"),
+            format!("extra_roots = [{extra_root:?}]\n"),
+        )
+        .unwrap();
+        let _trust = crate::test_env::VarGuard::set("LEAN_CTX_TRUST_WORKSPACE", "1");
+        let server = LeanCtxServer::new_with_project_root(Some(&first.path().to_string_lossy()));
+
+        crate::core::policy::runtime::REQUEST_PROJECT
+            .scope(
+                std::cell::RefCell::new(Some(first.path().to_path_buf())),
+                adopt(&server, &[uri(&second)]),
+            )
+            .await;
+
+        let live = server.session.read().await;
+        assert_eq!(
+            live.project_root,
+            crate::server::roots::uri_to_path(&uri(&second))
+        );
+        assert!(!live.extra_roots.contains(&extra_root));
+    }
+
+    /// AP04-G5: one client's roots do not move a shared (HTTP daemon) session
+    /// that every other client of that root works in.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn client_roots_do_not_move_a_shared_session() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let (shared, other) = git_projects();
+        let server = LeanCtxServer::new_shared_with_context(
+            &shared.path().to_string_lossy(),
+            "ap04-g5",
+            "ap04-g5",
+        );
+        let root = server.session.read().await.project_root.clone();
+        assert!(root.is_some());
+
+        adopt(&server, &[uri(&other)]).await;
+
+        assert_eq!(server.session.read().await.project_root, root);
+    }
+
+    /// AP04 review B1: a root one client of a shared session declares is not
+    /// added to the session — and so not writable — for its other clients.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn one_clients_extra_root_is_not_shared_with_the_other_clients() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let (shared, private) = git_projects();
+        let client = |name: &str| {
+            LeanCtxServer::new_shared_with_context(&shared.path().to_string_lossy(), name, "b1")
+        };
+        let (x, y) = (client("ap04-b1"), client("ap04-b1"));
+
+        adopt(&x, &[uri(&shared), uri(&private)]).await;
+
+        let private_root = crate::server::roots::uri_to_path(&uri(&private)).unwrap();
+        assert!(!y.session.read().await.extra_roots.contains(&private_root));
+    }
+
+    /// H02: Claude and Codex connected at the same time, each over its own
+    /// MCP connection and in its own project, as real hosts do (identity in
+    /// `initialize`, project in `roots/list`). Each binds its own project and
+    /// task, and the session status it reads — its diagnosis — names its own
+    /// root and task and nothing of the other host's.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+    #[allow(deprecated)] // MCP roots (SEP-2577) is what these hosts still send
+    async fn claude_and_codex_at_once_each_see_only_their_own_project_and_task() {
+        use rmcp::ServiceExt;
+        use rmcp::model::{
+            CallToolRequestParams, ClientCapabilities, ClientInfo, Implementation, ListRootsResult,
+            Root,
+        };
+
+        struct Host {
+            name: &'static str,
+            root: String,
+        }
+        impl rmcp::ClientHandler for Host {
+            fn get_info(&self) -> ClientInfo {
+                ClientInfo::new(
+                    ClientCapabilities::builder().enable_roots().build(),
+                    Implementation::new(self.name, "1.0.0"),
+                )
+            }
+            fn list_roots(
+                &self,
+                _context: rmcp::service::RequestContext<rmcp::RoleClient>,
+            ) -> impl std::future::Future<Output = Result<ListRootsResult, rmcp::ErrorData>> + Send + '_
+            {
+                std::future::ready(Ok(ListRootsResult::new(vec![Root::new(self.root.clone())])))
+            }
+        }
+
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let (claude_project, codex_project) = git_projects();
+        let connect = |name: &'static str, project: &tempfile::TempDir| {
+            let root = uri(project);
+            async move {
+                let server = LeanCtxServer::new();
+                let (server_io, client_io) = tokio::io::duplex(1 << 16);
+                let served = server.clone();
+                tokio::spawn(async move {
+                    if let Ok(running) = served.serve(server_io).await {
+                        let _ = running.waiting().await;
+                    }
+                });
+                let client = Host { name, root }.serve(client_io).await.expect("connect");
+                (server, client)
+            }
+        };
+        async fn session(
+            client: &rmcp::service::RunningService<rmcp::RoleClient, Host>,
+            arguments: serde_json::Value,
+        ) -> String {
+            let request = CallToolRequestParams::new("ctx_session")
+                .with_arguments(arguments.as_object().cloned().unwrap_or_default());
+            let result = client.call_tool(request).await.expect("ctx_session");
+            result
+                .content
+                .iter()
+                .filter_map(|block| block.as_text().map(|text| text.text.clone()))
+                .collect()
+        }
+        async fn run(
+            client: &rmcp::service::RunningService<rmcp::RoleClient, Host>,
+            host: &str,
+        ) -> String {
+            let task = format!("{host} owns this task");
+            session(client, serde_json::json!({"action": "task", "value": task})).await;
+            session(client, serde_json::json!({"action": "status"})).await
+        }
+        let (claude, codex) = tokio::join!(
+            connect("claude-code", &claude_project),
+            connect("codex-mcp-client", &codex_project)
+        );
+        // Both hosts work at the same time.
+        let (claude_status, codex_status) =
+            tokio::join!(run(&claude.1, "claude"), run(&codex.1, "codex"));
+
+        let name_of = |project: &tempfile::TempDir| {
+            project
+                .path()
+                .file_name()
+                .unwrap()
+                .to_string_lossy()
+                .into_owned()
+        };
+        for (server, status, own, other, host, foreign) in [
+            (
+                &claude.0,
+                &claude_status,
+                &claude_project,
+                &codex_project,
+                "claude",
+                "codex",
+            ),
+            (
+                &codex.0,
+                &codex_status,
+                &codex_project,
+                &claude_project,
+                "codex",
+                "claude",
+            ),
+        ] {
+            let bound = server.session.read().await;
+            assert_eq!(
+                bound.project_root,
+                crate::server::roots::uri_to_path(&uri(own)),
+                "{host} is bound to its own project"
+            );
+            assert_eq!(
+                bound.task.as_ref().map(|task| task.description.as_str()),
+                Some(format!("{host} owns this task").as_str())
+            );
+            drop(bound);
+            assert!(server.client_name.read().await.starts_with(host));
+            assert!(
+                status.contains(&format!("Task: {host} owns this task")),
+                "{status}"
+            );
+            assert!(
+                status.contains(&name_of(own)),
+                "{host} sees its root: {status}"
+            );
+            assert!(!status.contains(&name_of(other)), "{status}");
+            assert!(!status.contains(&format!("{foreign} owns")), "{status}");
+        }
+        let _ = claude.1.cancel().await;
+        let _ = codex.1.cancel().await;
+    }
+
+    fn save_session_of_another_agent(project: &tempfile::TempDir, task: &str) -> String {
+        let mut session = crate::core::session::SessionState::new();
+        session.project_root = crate::server::roots::uri_to_path(&uri(project));
+        session.task = Some(crate::core::session::TaskInfo {
+            description: task.to_owned(),
+            intent: None,
+            progress_pct: None,
+        });
+        session.save().expect("saved session");
+        session.id
+    }
+
+    /// I07/C06: a server restarted while two projects have saved sessions
+    /// takes up neither when its host reports roots: each is another
+    /// agent's private state, and the project's latest saved session is no
+    /// shortcut. A server going back to a project gets its OWN session there.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_root_switch_takes_up_no_other_agents_saved_session() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let (first, second) = git_projects();
+        let saved = [
+            save_session_of_another_agent(&first, "c06-first-private-task"),
+            save_session_of_another_agent(&second, "c06-second-private-task"),
+        ];
+        let server = LeanCtxServer::new_with_startup(
+            None,
+            None,
+            crate::tools::SessionMode::Personal,
+            "default",
+            "default",
+        );
+        assert_eq!(server.session.read().await.project_root, None);
+
+        let live = |server: &LeanCtxServer| {
+            let session = server.session.live();
+            let session = session.try_read().expect("no call holds the session");
+            assert!(session.task.is_none(), "took over {:?}", session.task);
+            assert!(!saved.contains(&session.id));
+            session.id.clone()
+        };
+        adopt(&server, &[uri(&second)]).await;
+        let own_in_second = live(&server);
+        server
+            .session
+            .write()
+            .await
+            .record_manual_evidence("c06:own-second", None);
+        adopt(&server, &[uri(&first)]).await;
+        live(&server);
+        // Another agent saves the second project's session again meanwhile.
+        save_session_of_another_agent(&second, "c06-second-newer-task");
+        adopt(&server, &[uri(&second)]).await;
+        assert_eq!(live(&server), own_in_second);
+        let back = server.session.read().await;
+        assert!(back.evidence.iter().any(|e| e.key == "c06:own-second"));
+    }
+
+    /// C06: two hosts work live, each in its own project, and save. One host
+    /// restarts: its new server re-adopting its root binds that project with
+    /// a session of its own — not the project's latest saved session (its
+    /// predecessor's) and nothing of the other project. The other host
+    /// reconnects (its roots are sent again) and keeps its own session.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_restarted_host_and_a_reconnecting_one_keep_their_own_project_bindings() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let (first, second) = git_projects();
+        let host = |project: &tempfile::TempDir| {
+            LeanCtxServer::new_with_project_root(Some(&project.path().to_string_lossy()))
+        };
+        let (a, b) = (host(&first), host(&second));
+        for (server, task) in [(&a, "c06-a-live-task"), (&b, "c06-b-live-task")] {
+            let mut session = server.session.write().await;
+            session.set_task(task, None);
+            session.record_manual_evidence(task, None);
+            session.save().expect("saved live session");
+        }
+        let a_saved = a.session.read().await.id.clone();
+        let b_before = b.session.read().await.id.clone();
+        drop(a);
+
+        let restarted = LeanCtxServer::new_with_startup(
+            None,
+            None,
+            crate::tools::SessionMode::Personal,
+            "default",
+            "default",
+        );
+        adopt(&restarted, &[uri(&first)]).await;
+        adopt(&b, &[uri(&second)]).await;
+
+        let fresh = restarted.session.read().await;
+        assert_eq!(
+            fresh.project_root,
+            crate::server::roots::uri_to_path(&uri(&first))
+        );
+        assert_ne!(fresh.id, a_saved, "took up the latest saved session");
+        assert_ne!(fresh.id, b_before);
+        assert!(fresh.task.is_none(), "took over {:?}", fresh.task);
+        assert!(fresh.evidence.iter().all(|e| !e.key.starts_with("c06-")));
+        let kept = b.session.read().await;
+        assert_eq!(kept.id, b_before, "the reconnect replaced the session");
+        assert_eq!(
+            kept.project_root,
+            crate::server::roots::uri_to_path(&uri(&second))
+        );
+        assert!(kept.evidence.iter().any(|e| e.key == "c06-b-live-task"));
+        assert!(kept.evidence.iter().all(|e| e.key != "c06-a-live-task"));
+    }
+
+    /// C06: a call cancelled after its host switched projects leaves nothing
+    /// in the session of the project switched to; the session it was bound
+    /// to was saved, under its own project, at the switch.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_cancelled_call_leaves_nothing_in_the_project_switched_to() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let (first, second) = git_projects();
+        let server = LeanCtxServer::new_with_project_root(Some(&first.path().to_string_lossy()));
+        let first_root = server.session.read().await.project_root.clone().unwrap();
+        server
+            .session
+            .write()
+            .await
+            .record_manual_evidence("c06:before-switch", None);
+        let (wrote, written) = tokio::sync::oneshot::channel();
+        let call = server.session.scope(async {
+            server.session.pin();
+            adopt(&server, &[uri(&second)]).await;
+            server
+                .session
+                .write()
+                .await
+                .record_manual_evidence("c06:cancelled", None);
+            let _ = wrote.send(());
+            std::future::pending::<()>().await;
+        });
+        tokio::select! {
+            () = call => unreachable!("the call only ends by cancellation"),
+            _ = written => {}
+        }
+
+        let live = server.session.read().await;
+        assert_eq!(
+            live.project_root,
+            crate::server::roots::uri_to_path(&uri(&second))
+        );
+        assert!(live.evidence.iter().all(|e| !e.key.starts_with("c06:")));
+        let saved = crate::core::session::SessionState::load_latest_for_project_root(&first_root)
+            .expect("the first project's session was saved at the switch");
+        assert_eq!(saved.project_root.as_deref(), Some(first_root.as_str()));
+        assert!(saved.evidence.iter().any(|e| e.key == "c06:before-switch"));
+    }
+
+    async fn call_text(server: &LeanCtxServer, tool: &str, args: &serde_json::Value) -> String {
+        let result = crate::server::call_tool::dispatch_and_post_process(
+            server,
+            tool,
+            args.as_object(),
+            false,
+            crate::core::config::Config::load_arc(),
+            false,
+            None,
+            None,
+            format!("{tool}:{args}"),
+            None,
+        )
+        .await;
+        match result {
+            Ok(result) => result
+                .content
+                .iter()
+                .filter_map(|content| content.as_text().map(|t| t.text.clone()))
+                .collect(),
+            Err(error) => error.message.to_string(),
+        }
+    }
+
+    /// I08: one canary in a project's source (read into the content cache,
+    /// indexed, in the call graph), its knowledge, knowledge archive and
+    /// shared memory. Tool calls and the dashboard inspector bound to another
+    /// project answer exactly as they answer for a term that exists nowhere:
+    /// no title, snippet, count or hint of the canary.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn one_canary_in_every_store_of_a_project_is_invisible_from_another() {
+        const CANARY: &str = "zqcanaryeight";
+        const ABSENT: &str = "zqnowhereeight";
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (first, second) = git_projects();
+        let owner = LeanCtxServer::new_with_project_root(Some(&first.path().to_string_lossy()));
+        let first_root = owner.session.read().await.project_root.clone().unwrap();
+        let source = std::path::Path::new(&first_root).join(format!("{CANARY}_vault.rs"));
+        std::fs::write(
+            &source,
+            format!("pub fn {CANARY}_vault() -> u8 {{ {CANARY}_seal() }}\nfn {CANARY}_seal() -> u8 {{ 8 }}\n"),
+        )
+        .unwrap();
+        let read = call_text(&owner, "ctx_read", &serde_json::json!({"path": source})).await;
+        assert!(read.contains(CANARY), "{read}");
+        let indexed = call_text(
+            &owner,
+            "ctx_search",
+            &serde_json::json!({"action": "semantic", "query": CANARY}),
+        )
+        .await;
+        assert!(indexed.contains(CANARY), "{indexed}");
+        let graph =
+            crate::core::call_graph::CallGraph::build(&crate::core::call_graph::CallGraphInputs {
+                project_root: first_root.clone(),
+                file_paths: vec![format!("{CANARY}_vault.rs")],
+                ..Default::default()
+            });
+        graph.save().unwrap();
+        let fact = format!("{CANARY} keys live in the vault");
+        call_text(
+            &owner,
+            "ctx_knowledge",
+            &serde_json::json!({"action": "remember", "category": "decision", "key": CANARY, "value": fact}),
+        )
+        .await;
+        crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(std::path::PathBuf::from(&first_root))),
+            || {
+                let knowledge = crate::core::knowledge::ProjectKnowledge::load(&first_root)
+                    .expect("the canary fact was stored");
+                let stored: Vec<_> = knowledge
+                    .facts
+                    .into_iter()
+                    .filter(|f| f.key == CANARY)
+                    .collect();
+                assert_eq!(stored.len(), 1);
+                crate::core::memory_lifecycle::archive_facts(&stored).unwrap();
+            },
+        );
+        crate::core::shared_context::SharedContext::for_project(&first_root)
+            .and_then(|store| store.put(format!("{CANARY} shared note"), "a1", "fact"))
+            .unwrap();
+
+        let other = LeanCtxServer::new_with_project_root(Some(&second.path().to_string_lossy()));
+        let second_root = other.session.read().await.project_root.clone().unwrap();
+        let probes = |term: &str| {
+            [
+                (
+                    "ctx_knowledge",
+                    serde_json::json!({"action": "recall", "query": term}),
+                ),
+                (
+                    "ctx_knowledge",
+                    serde_json::json!({"action": "search", "query": term}),
+                ),
+                ("ctx_search", serde_json::json!({"pattern": term})),
+                (
+                    "ctx_search",
+                    serde_json::json!({"action": "semantic", "query": term}),
+                ),
+                (
+                    "ctx_memory",
+                    serde_json::json!({"action": "get", "query": term}),
+                ),
+                (
+                    "ctx_callgraph",
+                    serde_json::json!({"action": "callers", "symbol": format!("{term}_seal")}),
+                ),
+            ]
+        };
+        for ((tool, canary_args), (_, absent_args)) in
+            probes(CANARY).into_iter().zip(probes(ABSENT))
+        {
+            // A one-time setup tip may trail whichever call comes first; it
+            // is session state, not project content.
+            let untipped = |text: String| match text.find("\n\n--- tip:") {
+                Some(at) => text[..at].to_string(),
+                None => text,
+            };
+            let seen = untipped(call_text(&other, tool, &canary_args).await);
+            let baseline = untipped(call_text(&other, tool, &absent_args).await);
+            // An answer may echo the caller's own query term; whether it
+            // leaks is decided against a term no project has ever held.
+            assert_eq!(
+                seen.replace(CANARY, "TERM"),
+                baseline.replace(ABSENT, "TERM"),
+                "{tool} answers differently for a foreign canary"
+            );
+        }
+        // The content cache holds the first project's file: a read of it
+        // from the other project is refused, not served from the cache.
+        // `no-jail` turns the path jail off on purpose, so only with it on.
+        #[cfg(not(feature = "no-jail"))]
+        {
+            let foreign_read =
+                call_text(&other, "ctx_read", &serde_json::json!({"path": source})).await;
+            assert!(
+                !foreign_read.contains(&format!("{CANARY}_seal")),
+                "{foreign_read}"
+            );
+        }
+
+        let _bound = crate::test_env::VarGuard::set("LEAN_CTX_DASHBOARD_PROJECT", &second_root);
+        for route in [
+            "/api/knowledge",
+            "/api/knowledge-relations",
+            "/api/memory",
+            "/api/search",
+            "/api/search-index",
+            "/api/symbols",
+            "/api/call-graph",
+            "/api/graph",
+            "/api/session",
+            "/api/intent",
+            "/api/procedures",
+            "/api/gotchas",
+        ] {
+            let body_for = |term: &str| {
+                let query = format!("q={term}");
+                crate::dashboard::routes::route_response(route, &query, None, None, true, "GET", "")
+                    .2
+            };
+            // The bound project's own session remembers the last semantic
+            // query it ran — the absent term, probed last (I07: the query
+            // lands in the caller's own session). That is its own state, not
+            // the first project's.
+            let own_last_query = format!("\"last_semantic_query\":\"{ABSENT}\"");
+            let (seen, baseline) = (
+                body_for(CANARY).replace(&own_last_query, ""),
+                body_for(ABSENT).replace(&own_last_query, ""),
+            );
+            // The bound project's own session lists its own queries and a
+            // route may echo the query; anything from the first project
+            // would make the canary appear more often than the absent term.
+            assert_eq!(
+                seen.matches(CANARY).count(),
+                baseline.matches(ABSENT).count(),
+                "{route}: {seen}"
+            );
+        }
+    }
+
+    /// I04: a host that authorises two roots without asking for an
+    /// aggregation gets answers from the active project only — knowledge,
+    /// cross-session search, text search and the index search.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn two_authorised_roots_answer_from_the_active_project_only() {
+        use crate::server::call_tool::dispatch_and_post_process;
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (first, second) = git_projects();
+        let server = LeanCtxServer::new_with_project_root(Some(&first.path().to_string_lossy()));
+        adopt(&server, &[uri(&first), uri(&second)]).await;
+        let active = server.session.read().await.project_root.clone().unwrap();
+        let roots = [first.path(), second.path()].map(|p| {
+            crate::server::roots::uri_to_path(&format!("file://{}", p.display())).unwrap()
+        });
+        assert!(roots.contains(&active));
+        assert_eq!(server.session.read().await.extra_roots.len(), 1);
+        let policy = crate::core::memory_policy::MemoryPolicy::default();
+        for (index, root) in roots.iter().enumerate() {
+            // Query term and project mark are separate tokens, so the
+            // index search matches the term and the mark names the project.
+            let marker = format!("widgetcanary zqmark{index}");
+            std::fs::write(
+                std::path::Path::new(root).join("notes.md"),
+                format!("{marker} lives here\n"),
+            )
+            .unwrap();
+            crate::core::knowledge::ProjectKnowledge::mutate_locked(root, |k| {
+                k.remember("decision", "widget", &marker, "i04", 0.9, &policy);
+            })
+            .unwrap();
+            let mut session = crate::core::session::SessionState::new();
+            session.project_root = Some(root.clone());
+            session.add_finding(None, None, &format!("{marker} finding"));
+            session.save().unwrap();
+        }
+        let own = format!("zqmark{}", roots.iter().position(|r| *r == active).unwrap());
+        let foreign = format!("zqmark{}", roots.iter().position(|r| *r != active).unwrap());
+
+        for (tool, args) in [
+            (
+                "ctx_knowledge",
+                serde_json::json!({"action": "recall", "query": "widget"}),
+            ),
+            (
+                "ctx_knowledge",
+                serde_json::json!({"action": "search", "query": "widgetcanary"}),
+            ),
+            ("ctx_search", serde_json::json!({"pattern": "widgetcanary"})),
+            (
+                "ctx_search",
+                serde_json::json!({"action": "semantic", "query": "widgetcanary"}),
+            ),
+        ] {
+            let result = dispatch_and_post_process(
+                &server,
+                tool,
+                args.as_object(),
+                false,
+                crate::core::config::Config::load_arc(),
+                false,
+                None,
+                None,
+                "i04".to_string(),
+                None,
+            )
+            .await
+            .expect("tool pipeline");
+            let text: String = result
+                .content
+                .iter()
+                .filter_map(|content| content.as_text().map(|t| t.text.clone()))
+                .collect();
+            assert!(text.contains(&own), "{tool} {args}: {text}");
+            if tool == "ctx_search" && args.get("action").is_none() {
+                // Text search spans the roots of a multi-root workspace the
+                // host authorised, each hit under its own root's header and
+                // never merged into another root's block.
+                let mut root_of_block = None;
+                for line in text.lines() {
+                    if let Some(header) = line.strip_prefix("── ") {
+                        root_of_block = Some(header.trim_end_matches(" ──").to_string());
+                    }
+                    for (index, root) in roots.iter().enumerate() {
+                        if line.contains(&format!("zqmark{index}")) {
+                            // Without a header the answer covers the active
+                            // project alone (the path jail keeps it there).
+                            let Some(block) = root_of_block.as_deref() else {
+                                assert!(!line.contains(&foreign), "{text}");
+                                continue;
+                            };
+                            assert!(
+                                std::path::Path::new(block) == std::path::Path::new(root)
+                                    || std::fs::canonicalize(block).ok()
+                                        == std::fs::canonicalize(root).ok(),
+                                "hit of {root} listed under {block:?}: {text}"
+                            );
+                        }
+                    }
+                }
+            } else {
+                assert!(!text.contains(&foreign), "{tool} {args}: {text}");
+            }
+        }
     }
 }

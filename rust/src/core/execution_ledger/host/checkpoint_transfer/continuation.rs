@@ -93,21 +93,35 @@ fn conflict() -> Value {
         "active_context_selected":false, "source_ledger_adopted":false})
 }
 
+/// The text of `session` that a continuation returns as `context`: the
+/// project policy first, then, in every mode, the Context Gateway's
+/// admission of this rendering, recorded in the call's capture. The text is
+/// produced HERE and bound by nothing, so what is returned is the ADMITTED
+/// text: masked where the gateway masks, withheld (a refusal) where it
+/// withholds. Its parts come from a foreign package whose sources were each
+/// admitted, bound, before (`content::admit`).
+fn released_context(session: &SessionState) -> Result<String> {
+    let text = session.format_compact();
+    let protected = policy::content::protect_active(&text)
+        .map_err(|_| anyhow::anyhow!("copied context withheld"))?
+        .into_owned();
+    super::admit_fresh_text("continuation:context", protected)
+        .map_err(|_| anyhow::anyhow!("copied context withheld"))
+}
+
 fn output(
     session: &SessionState,
     grant: &CheckpointContinueAdmission,
     reused: bool,
 ) -> Result<Value> {
     grant.validate(&grant.package_digest)?;
-    let text = session.format_compact();
-    let protected = policy::content::protect_active(&text)
-        .map_err(|_| anyhow::anyhow!("copied context withheld"))?;
+    let context = released_context(session)?;
     Ok(
         json!({"schema_version":"leanctx.checkpoint-continuation/v1", "continued":true,
         "conflict":false, "session_id":session.id, "reused":reused,
         "canonical_session_adopted":true, "active_context_selected":true,
         "source_ledger_adopted":false, "source_rights_transferred":false,
-        "content_authority":"historical_personal_copy", "context":protected.as_ref()}),
+        "content_authority":"historical_personal_copy", "context":context}),
     )
 }
 
@@ -120,7 +134,7 @@ pub(super) fn publish(
     let package_digest = super::request_digest(package)?;
     grant.validate(&package_digest)?;
     policy::runtime::with_project_source_view(root, || -> Result<Value> {
-        super::content::admit(package, std::path::Path::new(root))?;
+        super::content::admit(package, std::path::Path::new(root), super::FOREIGN_PACKAGE)?;
         let expected = SessionState::project_head(root).map_err(anyhow::Error::msg)?;
         if let Some((id, _)) = expected.as_ref() {
             let current = SessionState::load_by_id_for_project_root(id, root)
@@ -174,7 +188,10 @@ pub(super) fn publish(
             timestamp: session.started_at,
         });
         grant.validate(&package_digest)?;
-        super::content::admit(package, std::path::Path::new(root))?;
+        super::content::admit(package, std::path::Path::new(root), super::FOREIGN_PACKAGE)?;
+        // The text this call will return is decided on BEFORE the session
+        // store is touched: a withheld context stores nothing.
+        released_context(&session)?;
         if !session
             .save_new_if_project_head(expected.as_ref())
             .map_err(anyhow::Error::msg)?

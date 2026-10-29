@@ -45,6 +45,21 @@ pub(crate) fn capture_roots(
     session_extra_roots: &[String],
     cfg: &crate::core::config::Config,
 ) -> Vec<String> {
+    // Under a Workspace (#2120) capture goes only to its read-write roots;
+    // configured allow entries and extra roots grant nothing.
+    match crate::core::workspace_authority::current() {
+        crate::core::workspace_authority::Authority::Legacy => {}
+        crate::core::workspace_authority::Authority::Workspace(snapshot) => {
+            return snapshot
+                .granting_roots()
+                .filter(|(_, access)| {
+                    *access == crate::core::workspace_authority::Access::ReadWrite
+                })
+                .map(|(root, _)| root.to_string_lossy().into_owned())
+                .collect();
+        }
+        crate::core::workspace_authority::Authority::Unavailable(_) => return Vec::new(),
+    }
     std::iter::once(project_root.to_string())
         .chain(session_extra_roots.iter().cloned())
         .chain(cfg.allow_paths.iter().cloned())

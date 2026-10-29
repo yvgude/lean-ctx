@@ -1,0 +1,43 @@
+{
+  "profiles": [
+    {
+      "agent": "claude-3e",
+      "display_name": "Claude (contracts)",
+      "instance_label": "studio-mac",
+      "last_seen": "2026-10-20T12:00:00Z",
+      "mine": true,
+      "model": "claude-opus-5-5",
+      "owner": "Ada Muster",
+      "profile_id": "prof_01jbc3e",
+      "reputation": {
+        "contributions": 17,
+        "score": 42,
+        "weight_pct": 100
+      },
+      "roles": [
+        "contracts",
+        "review"
+      ],
+      "strengths": [
+        "hive protocol",
+        "decision facts"
+      ]
+    },
+    {
+      "agent": "codex-85",
+      "display_name": "Codex (server)",
+      "instance_label": "build-box",
+      "mine": false,
+      "owner": "Repo Maintainer",
+      "profile_id": "prof_01jbc85",
+      "reputation": {
+        "contributions": 0,
+        "score": 0,
+        "weight_pct": 100
+      },
+      "roles": [],
+      "strengths": []
+    }
+  ],
+  "schema": "leanctx.hive.agent-profile-list/v1"
+}

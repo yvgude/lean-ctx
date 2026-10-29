@@ -101,9 +101,6 @@ pub(in crate::server) async fn record_ledger(
             {
                 tracing::debug!("deferred elicitation hint: {hint}");
             }
-            if let Some(hint) = &gate_result.prefetch_hint {
-                tracing::debug!("deferred FEP prefetch hint: {hint}");
-            }
             if gate_result.resource_changed
                 && let Some(peer) = server.peer.read().await.as_ref()
             {

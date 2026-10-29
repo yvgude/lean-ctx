@@ -22,8 +22,13 @@ fn apply_dedup(cache: &mut SessionCache) -> String {
     }
 
     let mut block_occurrences: HashMap<String, Vec<(String, usize)>> = HashMap::new();
-    for (path, entry) in &entries {
-        let Some(full_content) = entry.content() else {
+    for (path, _) in &entries {
+        // Shared blocks are derived from, and registered with, the content
+        // the cache's current-rights accessor releases NOW (G04) — never the
+        // raw entry.
+        let Some(full_content) =
+            crate::tools::admitted_sources::released_cache_content(cache, path)
+        else {
             continue;
         };
         let lines: Vec<&str> = full_content.lines().collect();
@@ -89,10 +94,18 @@ fn analyze(cache: &SessionCache) -> String {
     let mut import_patterns: HashMap<String, Vec<String>> = HashMap::new();
     let mut boilerplate_blocks: HashMap<String, Vec<String>> = HashMap::new();
 
-    for (path, entry) in &entries {
-        let Some(full_content) = entry.content() else {
-            continue;
-        };
+    // Every entry is taken once, as the cache's current-rights accessor
+    // releases it NOW (G04); the analysis below quotes import lines and block
+    // previews, so it must not see a raw entry.
+    let released: Vec<(String, String)> = entries
+        .iter()
+        .filter_map(|(path, _)| {
+            let content = crate::tools::admitted_sources::released_cache_content(cache, path)?;
+            Some(((*path).clone(), content))
+        })
+        .collect();
+
+    for (path, full_content) in &released {
         let lines: Vec<&str> = full_content.lines().collect();
 
         let imports: Vec<&str> = lines
@@ -193,11 +206,7 @@ fn analyze(cache: &SessionCache) -> String {
     }
 
     // TF-IDF cosine similarity analysis for semantic duplicates
-    let file_pairs: Vec<(String, String)> = entries
-        .iter()
-        .filter_map(|(path, entry)| Some(((*path).clone(), entry.content()?)))
-        .collect();
-    let semantic_dups = codebook::find_semantic_duplicates(&file_pairs, 0.75);
+    let semantic_dups = codebook::find_semantic_duplicates(&released, 0.75);
     if !semantic_dups.is_empty() {
         result.push(format!(
             "\nSemantic duplicates (TF-IDF cosine > 0.75, {} pairs):",
@@ -237,4 +246,40 @@ fn analyze(cache: &SessionCache) -> String {
     }
 
     result.join("\n")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// G04: the analysis quoted import lines and block previews straight from
+    /// raw cache entries — also of a source that no longer exists. It now
+    /// sees only what the cache's current-rights accessor releases.
+    #[test]
+    fn analysis_quotes_only_released_cache_entries() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let project = tempfile::tempdir().unwrap();
+        let source = "use widget_core::PlanMarker;\nfn body() {}\n";
+        let mut cache = SessionCache::new();
+        let mut paths = Vec::new();
+        for name in ["a.rs", "b.rs"] {
+            let path = project.path().join(name);
+            std::fs::write(&path, source).unwrap();
+            let path = path.to_string_lossy().into_owned();
+            cache.store(&path, source);
+            paths.push(path);
+        }
+
+        let out = handle(&cache);
+        assert!(out.contains("use widget_core::PlanMarker;"), "{out}");
+
+        std::fs::remove_file(&paths[1]).unwrap();
+        let out = handle(&cache);
+        assert!(!out.contains("widget_core::PlanMarker"), "{out}");
+        assert_eq!(
+            handle_action(&mut cache, "apply"),
+            "Applied cross-file dedup: 0 shared blocks registered (~0 tokens saveable)"
+        );
+    }
 }

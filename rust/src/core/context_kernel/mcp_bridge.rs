@@ -219,12 +219,12 @@ pub mod tests {
         process_mcp_context, record_mcp_call, reset_mcp_state,
     };
     use crate::core::context_kernel::coverage_class::CoverageClass;
+    use crate::core::context_kernel::kernel_config::KERNEL_TEST_LOCK;
     use crate::core::context_kernel::types::ReceiptOutcome;
 
-    /// The kernel-wide test lock: every test module that resets the
-    /// process-wide MCP state takes it, so resets never race.
+    // The kernel's one lock: the e2e modules reset this MCP state under it.
     fn test_guard() -> MutexGuard<'static, ()> {
-        crate::core::context_kernel::kernel_config::KERNEL_TEST_LOCK
+        KERNEL_TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner)
     }

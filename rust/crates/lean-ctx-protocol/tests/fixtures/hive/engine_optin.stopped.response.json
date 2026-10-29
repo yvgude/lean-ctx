@@ -1,0 +1,21 @@
+{
+  "active": false,
+  "daily_budget": {
+    "tasks": 5
+  },
+  "networks": [],
+  "optin_id": "opt_01jbq7k3",
+  "schema": "leanctx.hive.engine-optin/v1",
+  "stopped_at": "2026-10-20T12:00:00Z",
+  "topics": [],
+  "updated_at": "2026-10-20T12:00:00Z",
+  "used_today": {
+    "day": "2026-10-20",
+    "tasks": 2,
+    "tokens": 310400,
+    "usd_micros": 1870000
+  },
+  "vaults": [
+    "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+  ]
+}

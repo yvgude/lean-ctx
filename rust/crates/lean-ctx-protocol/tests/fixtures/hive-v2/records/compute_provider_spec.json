@@ -1,0 +1,48 @@
+{
+  "job_id": "cj_0b4f9a7e3c2d4e1f8a6b5c4d3e2f1a09",
+  "image_ref": "registry.leanctx.com/compute/rust@sha256:4a5b6c7d8e9f0a1b2c3d4e5f60718293a4b5c6d7e8f90a1b2c3d4e5f6071829a",
+  "argv": [
+    "sh",
+    "-c",
+    "tar -xf /work/in/src.tar -C /tmp && cd /tmp/app && cargo test --offline > /work/out/tests.txt"
+  ],
+  "workdir": "/work",
+  "inputs": [
+    {
+      "name": "src.tar",
+      "digest": "sha256:2ce1e554cfe6aeb8b11eadac899a29f4e751bc7eb7b8501ad4f1e2a5f7d77ae2",
+      "size_bytes": 4194304
+    },
+    {
+      "name": "config.tar",
+      "digest": "sha256:0dc019357355aa9364c817b78c9252b8c140d187a3ec437de53838a2d139842a",
+      "size_bytes": 10240
+    }
+  ],
+  "resources": {
+    "cpu": 2,
+    "memory_mb": 4096,
+    "disk_mb": 8192
+  },
+  "max_runtime_s": 600,
+  "network": {
+    "mode": "none",
+    "hosts": []
+  },
+  "env": {
+    "HOME": "/nonexistent",
+    "LEANCTX_JOB_ID": "cj_0b4f9a7e3c2d4e1f8a6b5c4d3e2f1a09",
+    "LEANCTX_JOB_TYPE": "tests"
+  },
+  "mounts": [
+    {
+      "target": "/work/in",
+      "read_only": true
+    },
+    {
+      "target": "/work/out",
+      "read_only": false
+    }
+  ],
+  "user": "65534:65534"
+}

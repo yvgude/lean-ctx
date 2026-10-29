@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "Revision 5 is quarantined; release or roll it back first.",
+    "reason": "quarantine_blocked"
+  }
+}

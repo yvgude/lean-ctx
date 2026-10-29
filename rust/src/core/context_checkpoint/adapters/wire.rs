@@ -13,7 +13,7 @@ use super::{
 use chrono::{DateTime, Utc};
 use lean_ctx_protocol::UtcTimestamp;
 use serde::{Serialize, de::DeserializeOwned};
-use serde_json::{Map, Value};
+use serde_json::Value;
 use std::collections::BTreeSet;
 
 pub(super) fn validate_carrier_envelope(
@@ -133,24 +133,8 @@ pub(super) fn source_identity(
 pub(super) fn canonicalize_json_value(
     value: &Value,
 ) -> Result<Vec<u8>, ContextCheckpointLegacyErrorV1> {
-    let value = canonicalize_value(value.clone());
-    serde_json::to_vec(&value).map_err(|_| ContextCheckpointLegacyErrorV1::LegacyOwnerRejected)
-}
-
-pub(super) fn canonicalize_value(value: Value) -> Value {
-    match value {
-        Value::Array(values) => Value::Array(values.into_iter().map(canonicalize_value).collect()),
-        Value::Object(object) => {
-            let mut entries: Vec<_> = object.into_iter().collect();
-            entries.sort_by(|left, right| left.0.cmp(&right.0));
-            let mut sorted = Map::new();
-            for (key, value) in entries {
-                sorted.insert(key, canonicalize_value(value));
-            }
-            Value::Object(sorted)
-        }
-        value => value,
-    }
+    serde_json::to_vec(&crate::core::canonical::canonical_value(value))
+        .map_err(|_| ContextCheckpointLegacyErrorV1::LegacyOwnerRejected)
 }
 
 pub(super) fn parse_canonical_json(json: &str) -> Result<Value, ContextCheckpointLegacyErrorV1> {
@@ -313,7 +297,9 @@ where
             field: ContextCheckpointLegacyFieldV1::Payload,
         }
     })?;
-    if canonicalize_value(round_trip) != canonicalize_value(value.clone()) {
+    if crate::core::canonical::canonical_value(&round_trip)
+        != crate::core::canonical::canonical_value(value)
+    {
         return Err(ContextCheckpointLegacyErrorV1::InvalidLegacyPayload {
             field: ContextCheckpointLegacyFieldV1::Payload,
         });

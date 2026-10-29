@@ -1,0 +1,119 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/swarms?tab=mine",
+  "request": null,
+  "response": {
+    "body": {
+      "items": [
+        {
+          "capacity": {
+            "tasks_pledged": 11,
+            "tasks_used": 4
+          },
+          "invite": null,
+          "participants": 3,
+          "progress": {
+            "done": 1,
+            "total": 3
+          },
+          "swarm": {
+            "conductor_workers": [
+              "wkr_cxdouocvevdhm22vpdrh"
+            ],
+            "coordinator": "wkr_cxdouocvevdhm22vpdrh",
+            "created_at": 1792750000000,
+            "delegates": [],
+            "goal": "Bring the p95 of POST /checkout below 300 ms without dropping features.",
+            "id": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+            "max_workers": 200,
+            "max_workers_effective": 200,
+            "org_id": "4b6d8f0a-2c4e-4f6a-8b0c-2e4f6a8c0e1a",
+            "owner_user": "7a1c3e5f-9b2d-4f6e-8a0c-3e5f7a9b1c2d",
+            "participant_task_cap": 5,
+            "repos": [
+              {
+                "host": "gitlab.acme.example",
+                "path": "acme/checkout",
+                "private": true
+              }
+            ],
+            "review_sla_hours": 24,
+            "slug": "checkout-latency",
+            "state": "running",
+            "success_criteria": [
+              {
+                "goal": "g_sssssssssssssssssssssssssa",
+                "id": "sc_1",
+                "text": "p95 below 300 ms over 24 h in staging"
+              }
+            ],
+            "title": "Checkout latency below 300 ms",
+            "visibility": "team"
+          },
+          "workspace": {
+            "name": "Acme",
+            "slug": "acme"
+          }
+        },
+        {
+          "capacity": {
+            "tasks_pledged": 0,
+            "tasks_used": 0
+          },
+          "invite": {
+            "expires_at": 1793959600000,
+            "id": "inv_01JC0SW4RM1NV1TE00000000A1",
+            "invited_by": "yves"
+          },
+          "participants": 1,
+          "progress": {
+            "done": 0,
+            "total": 2
+          },
+          "swarm": {
+            "conductor_workers": [
+              "wkr_76aa2uwmpczt3cqkhfed"
+            ],
+            "coordinator": null,
+            "created_at": 1792750000000,
+            "delegates": [],
+            "goal": "Bring the p95 of POST /checkout below 300 ms without dropping features.",
+            "id": "5c2e9b14-7d3a-4e8f-9a1b-6c4d2e8f0a37",
+            "max_workers": 200,
+            "max_workers_effective": 200,
+            "org_id": "4b6d8f0a-2c4e-4f6a-8b0c-2e4f6a8c0e1a",
+            "owner_user": "2b4d6f8a-1c3e-4a5b-9d7f-0e2c4a6b8d1f",
+            "participant_task_cap": 5,
+            "repos": [
+              {
+                "host": "gitlab.acme.example",
+                "path": "acme/checkout",
+                "private": true
+              }
+            ],
+            "review_sla_hours": 24,
+            "slug": "search-relevance",
+            "state": "running",
+            "success_criteria": [
+              {
+                "goal": "g_sssssssssssssssssssssssssa",
+                "id": "sc_1",
+                "text": "p95 below 300 ms over 24 h in staging"
+              }
+            ],
+            "title": "Search relevance above 0.8 nDCG",
+            "visibility": "team"
+          },
+          "workspace": {
+            "name": "Acme",
+            "slug": "acme"
+          }
+        }
+      ],
+      "next_cursor": null
+    },
+    "status": 200
+  },
+  "route": "W39"
+}

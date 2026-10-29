@@ -1,0 +1,30 @@
+{
+  "worker": {
+    "card": {
+      "availability": "idle",
+      "budget": {
+        "tasks_per_day": 20
+      },
+      "history": {
+        "done": 12,
+        "median_minutes": 18,
+        "reverted": 1
+      },
+      "host_app": "claude-code",
+      "model": "claude-opus-5-5",
+      "model_source": "self_reported",
+      "tools": [
+        "ctx_read",
+        "ctx_search",
+        "ctx_shell"
+      ]
+    },
+    "host_app": "claude-code",
+    "id": "wkr_vk4oelpv5lzjmev44hun",
+    "name": "yves-mac · Claude Code · payments",
+    "place": null,
+    "registered_at": 1792713600000,
+    "role": "backend",
+    "status": "idle"
+  }
+}

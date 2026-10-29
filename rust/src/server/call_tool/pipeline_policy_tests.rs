@@ -424,3 +424,147 @@ async fn archive_binding_is_used_only_for_its_file_output_class() {
         )
         .await;
 }
+
+/// The recovery copy of a declared reader, through the real post-process
+/// path (no policy pack, gateway governed): `ctx_read` declares its source
+/// set, the admitted reader publishes it, and the pipeline binds the archive
+/// copy to it. The id resolves while the source is unchanged and is refused
+/// once the source is deleted or reclassified. Before the declaration the
+/// pipeline bound only `ctx_execute file`; a `ctx_read` copy was refused at
+/// store time under protection.
+#[tokio::test]
+async fn recovery_copy_of_a_declared_read_is_refused_once_its_source_loses_its_rights() {
+    use crate::core::{archive, policy::runtime};
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = TestPolicyOverride::set(None);
+    let config_dir = crate::core::paths::config_dir_read_only().expect("isolated config dir");
+    std::fs::create_dir_all(&config_dir).expect("config dir");
+    // A reply names the recovery copy of a file read only under a profile
+    // that asks for the archive hint (`output_hints.archive_hint`, off in
+    // every built-in profile; a read is never firewalled into a digest that
+    // would name it). The test's profile is the default one with that hint.
+    std::fs::write(
+        config_dir.join("config.toml"),
+        "profile = \"recovery-hint\"\n\n\
+         [context_gateway]\nmode = \"governed\"\nclassification = \"block\"\n",
+    )
+    .expect("config");
+    let profiles = crate::core::data_dir::lean_ctx_data_dir()
+        .expect("isolated data dir")
+        .join("profiles");
+    std::fs::create_dir_all(&profiles).expect("profiles dir");
+    std::fs::write(
+        profiles.join("recovery-hint.toml"),
+        "[profile]\ninherits = \"coder\"\n\n[output_hints]\narchive_hint = true\n",
+    )
+    .expect("profile");
+    assert!(
+        crate::core::profiles::active_profile()
+            .output_hints
+            .archive_hint(),
+        "the test's profile is the active one"
+    );
+    let directory = tempfile::tempdir().expect("project");
+    let root = directory.path().canonicalize().expect("canonical root");
+    let server = LeanCtxServer::new_with_project_root(root.to_str());
+    assert!(
+        tool_declaration(
+            &server,
+            "ctx_read",
+            serde_json::json!({"path": "x.rs", "mode": "full"}).as_object(),
+        )
+        .publishes_every_source,
+        "the test server carries the registry and ctx_read declares its source set"
+    );
+    runtime::REQUEST_PROJECT
+        .scope(std::cell::RefCell::new(Some(root.clone())), async {
+            for scenario in ["deleted", "reclassified"] {
+                let path = root.join(format!("{scenario}.rs"));
+                let source = format!("pub fn recovery_{scenario}_fixture() {{}}\n").repeat(4000);
+                std::fs::write(&path, &source).expect("source");
+                let path_text = path.to_str().expect("utf-8 path");
+                let (admitted, authority) = archive::authority::capture(async {
+                    crate::tools::ctx_read::read_file_for_tool_rooted(
+                        path_text,
+                        root.to_str().expect("utf-8 root"),
+                        "ctx_read",
+                    )
+                })
+                .await;
+                let admitted = admitted.expect("admitted read");
+                let authority = authority.expect("the admitted reader published its source");
+                assert!(!authority.is_incomplete(), "{scenario}");
+
+                let known: std::collections::HashSet<String> = archive::list_entries(None)
+                    .into_iter()
+                    .map(|entry| entry.id)
+                    .collect();
+                let args = serde_json::json!({"path": path_text, "mode": "full"});
+                let processed = reversible_post_process(
+                    &server,
+                    "ctx_read",
+                    args.as_object(),
+                    true,
+                    crate::core::config::Config::load_arc(),
+                    false,
+                    None,
+                    None,
+                    None,
+                    McpPrimitive::Raw(McpRawOutput {
+                        archive_authority: Some(Box::new(authority)),
+                        result_text: admitted,
+                        tool_error: false,
+                        tool_saved_tokens: 0,
+                        shell_outcome: None,
+                        content_blocks: None,
+                        tool_start: std::time::Instant::now(),
+                    }),
+                )
+                .await
+                .expect("post-processing succeeds");
+                assert_ne!(processed.result.is_error, Some(true), "{scenario}");
+                let stored: Vec<String> = archive::list_entries(None)
+                    .into_iter()
+                    .map(|entry| entry.id)
+                    .filter(|id| !known.contains(id))
+                    .collect();
+                assert_eq!(
+                    stored.len(),
+                    1,
+                    "{scenario}: one source-bound recovery copy"
+                );
+                let id = &stored[0];
+                let reply = serde_json::to_string(&processed.result).unwrap();
+                assert!(
+                    reply.contains(id.as_str()),
+                    "{scenario}: the reply names its recovery copy {id}: {} bytes, ends {:?}",
+                    reply.len(),
+                    reply
+                        .chars()
+                        .skip(reply.chars().count().saturating_sub(600))
+                        .collect::<String>()
+                );
+                let marker = format!("recovery_{scenario}_fixture");
+                assert!(
+                    archive::retrieve_checked(id).is_ok_and(|text| text.contains(&marker)),
+                    "{scenario}: resolves while the source is unchanged"
+                );
+
+                if scenario == "deleted" {
+                    std::fs::remove_file(&path).expect("delete the source");
+                } else {
+                    std::fs::write(&path, format!("*** TOP SECRET ***\n{source}"))
+                        .expect("reclassify the source");
+                }
+                assert!(
+                    matches!(
+                        archive::retrieve_checked(id),
+                        Err(archive::ArchiveResolveError::Refused(_))
+                    ),
+                    "{scenario}: the recovery copy is refused, got {:?}",
+                    archive::retrieve_checked(id).map(|text| text.len())
+                );
+            }
+        })
+        .await;
+}

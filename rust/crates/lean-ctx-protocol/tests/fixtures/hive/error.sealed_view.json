@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "A sealed vault has no server-side view; derive it on the engine.",
+    "reason": "sealed"
+  }
+}

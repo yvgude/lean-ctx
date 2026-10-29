@@ -11,19 +11,47 @@ repository. Two ways it can be defeated are checked here:
 2. A path in the internal section of `.gitignore` is missing from `.github-ignore`.
    `.gitignore` only stops `git add`; a forced add or an older commit still
    publishes the file, and nothing else would notice.
+3. Paid detection content in a public path: model files, the names of the
+   commercial detection runtime, or a built-in policy pack that is not on the
+   community list. Domain filters (legal, health, finance, company-specific)
+   and model packs are commercial; the public tree keeps the deterministic
+   floor and a neutral, license-gated seam only.
 
 Usage: check-private-paths.py [repo-root]
 """
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
-from typing import Iterable, List
+from typing import Callable, Iterable, List, Optional
 
 # `.gitignore` sections whose entries must never be published, by header line.
 INTERNAL_GITIGNORE_SECTIONS = ("Internal strategy docs (confidential)",)
+
+MODEL_ARTIFACT_SUFFIXES = (".onnx", ".safetensors", ".gguf", ".pt", ".pth", ".ckpt")
+MODEL_ARTIFACT_NAMES = ("tokenizer.json", "tokenizer_config.json")
+# Model families, sources and methods of the commercial detection runtime.
+PAID_DETECTION_TERMS = re.compile(
+    r"(?i)\b(?:gliner|deberta|quantize_dynamic|span_extraction)\b"
+    r"|(?i:protectai|urchade|knowledgator)/"
+)
+# Evaluation corpus name; case-sensitive so ordinary words do not match.
+PAID_DETECTION_CORPUS = re.compile(r"\bMAPA\b")
+TEXT_SUFFIXES = (".rs", ".toml", ".md", ".json", ".py", ".ts", ".tsx", ".js", ".yml", ".yaml", ".txt", ".sh")
+POLICY_BUILTIN_DIR = "rust/src/core/policy/builtin/"
+COMMUNITY_POLICY_PACKS = {"baseline", "strict-redaction", "open-source"}
+# Compliance-framework mappings and their per-control assessment are Enterprise
+# (the licensed runtime, ee/intelligence). The engine keeps only the facts it
+# sends, the signed report format and its verification (core/compliance_evidence).
+PAID_PUBLIC_PREFIXES = ("rust/data/compliance/", "rust/src/core/compliance_report/")
+PAID_PUBLIC_FILES = {"rust/src/core/compliance.rs", "rust/src/cli/compliance_cmd.rs"}
+# Control ids of the framework mappings (EU AI Act, ISO 42001, SOC 2).
+PAID_COMPLIANCE_CONTROLS = re.compile(r"\b(?:AIA-[0-9]|ISO-A\.[0-9]|SOC2-C{1,2}[0-9])")
+# Files that name the terms in order to forbid them.
+PAID_TERM_EXEMPT = {"scripts/check-private-paths.py", "tests/security/test_private_paths.py"}
 
 
 def _entries(lines: Iterable[str]) -> List[str]:
@@ -80,6 +108,62 @@ def find_violations(github_ignore: str, gitignore: str, tracked: Iterable[str]) 
     return findings
 
 
+def paid_detection_findings(
+    public: Iterable[str], read_text: Callable[[str], Optional[str]]
+) -> List[str]:
+    """Public paths that carry commercial detection content."""
+    findings = []
+    for path in sorted(public):
+        name = path.rsplit("/", 1)[-1]
+        if name.endswith(MODEL_ARTIFACT_SUFFIXES) or name in MODEL_ARTIFACT_NAMES:
+            findings.append(f"[paid] {path} is a model file; model packs ship signed and private")
+            continue
+        if path.startswith(POLICY_BUILTIN_DIR) and name.endswith(".toml"):
+            pack = name[: -len(".toml")]
+            if pack not in COMMUNITY_POLICY_PACKS:
+                findings.append(
+                    f"[paid] {path} is a built-in policy pack outside the community floor; "
+                    "domain and compliance packs are commercial "
+                    "(community keeps baseline, strict-redaction, open-source)"
+                )
+        if path.startswith(PAID_PUBLIC_PREFIXES) or path in PAID_PUBLIC_FILES:
+            findings.append(
+                f"[paid] {path} is compliance-framework content; it belongs to LeanCTX Enterprise"
+            )
+            continue
+        if path in PAID_TERM_EXEMPT or not name.endswith(TEXT_SUFFIXES):
+            continue
+        text = read_text(path)
+        if text is None:
+            continue
+        for number, line in enumerate(text.splitlines(), 1):
+            match = PAID_DETECTION_TERMS.search(line) or PAID_DETECTION_CORPUS.search(line)
+            if match:
+                findings.append(
+                    f"[paid] {path}:{number} names the commercial detection runtime "
+                    f"({match.group(0)!r})"
+                )
+                break
+            control = PAID_COMPLIANCE_CONTROLS.search(line)
+            if control:
+                findings.append(
+                    f"[paid] {path}:{number} carries a compliance-framework mapping "
+                    f"({control.group(0)!r}); mappings belong to the Enterprise runtime"
+                )
+                break
+    return findings
+
+
+def _read_text(root: Path) -> Callable[[str], Optional[str]]:
+    def read(path: str) -> Optional[str]:
+        try:
+            return (root / path).read_text(encoding="utf-8")
+        except (OSError, UnicodeDecodeError):
+            return None
+
+    return read
+
+
 def main(argv: List[str]) -> int:
     root = Path(argv[1] if len(argv) > 1 else Path(__file__).resolve().parents[1])
     try:
@@ -93,11 +177,18 @@ def main(argv: List[str]) -> int:
     except (OSError, subprocess.CalledProcessError) as error:
         print(f"check-private-paths: cannot read repository state: {error}", file=sys.stderr)
         return 2
-    findings = find_violations(github_ignore, gitignore, [t for t in tracked if t])
+    tracked = [t for t in tracked if t]
+    findings = find_violations(github_ignore, gitignore, tracked)
+    denied = denied_paths(github_ignore)
+    public = [t for t in tracked if not _covered(t, denied)]
+    findings += paid_detection_findings(public, _read_text(root))
     for finding in findings:
         print(finding)
     if findings:
-        print("Private paths must not be tracked in the public repository. See .github-ignore.")
+        print(
+            "Private paths and paid detection content must not be tracked in the public "
+            "repository. See .github-ignore."
+        )
         return 1
     print("check-private-paths: ok")
     return 0

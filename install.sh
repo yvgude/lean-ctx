@@ -15,6 +15,34 @@
 #
 # Uninstall one-liner:
 #   curl -fsSL https://leanctx.com/install.sh | sh -s -- --uninstall
+#
+# Integrity (download mode): the archive is checked against the release's
+# SHA256SUMS and the install aborts (fail closed) when SHA256SUMS cannot be
+# downloaded, has no entry for the archive, no sha256sum/shasum tool exists, or
+# the digest differs. This script does NOT verify the Sigstore/cosign signature
+# of SHA256SUMS itself; to do that, download SHA256SUMS, SHA256SUMS.sig and
+# SHA256SUMS.pem from the release and run:
+#   cosign verify-blob --signature SHA256SUMS.sig --certificate SHA256SUMS.pem \
+#     --certificate-identity "https://github.com/yvgude/lean-ctx/.github/workflows/release.yml@refs/tags/<TAG>" \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com SHA256SUMS
+# (`lean-ctx update` verifies that signature itself.)
+#
+# Cockpit (download mode): the free LeanCTX Cockpit web UI ships with every
+# release as lean-ctx-cockpit-<target>.tar.gz. After the engine is installed,
+# the script checks it against the release's COCKPIT_SHA256SUMS (fail closed:
+# no matching entry or a different digest means the Cockpit is not installed)
+# and hands it to `lean-ctx cockpit install --from`, which verifies its
+# signatures offline. A Cockpit problem never fails the engine install. Skip it
+# with LEAN_CTX_NO_COCKPIT=1. The Cockpit binary is licensed under the LeanCTX
+# Cockpit EULA (free to use, including commercially); the engine is Apache-2.0.
+#
+# Onboarding: after installing, the script runs `lean-ctx onboard`, which
+# writes lean-ctx entries into the config of detected AI tools (MCP server,
+# hooks, rules) and adds the lean-ctx shell hook to your shell rc file. On a
+# terminal it first asks which detected tools to connect; LEAN_CTX_AGENTS=
+# claude,cursor picks them up front (or `none`). Preview without changes:
+# `lean-ctx onboard --dry-run`. Skip it with LEAN_CTX_NO_ONBOARD=1; undo it
+# with `lean-ctx uninstall`.
 
 set -eu
 
@@ -82,12 +110,16 @@ finish() {
   fi
 
   echo ""
-  echo "Running onboard (connecting your AI tools)..."
-  if [ -n "${LEAN_CTX_AGENTS:-}" ]; then
-    "$INSTALL_DIR/lean-ctx" onboard --agents "$LEAN_CTX_AGENTS" 2>&1 || true
-  elif ( : </dev/tty ) 2>/dev/null; then
-    # `curl | sh` feeds the script on stdin; read the agent choice from the
-    # terminal instead. Without one (CI, agents) onboard connects every tool.
+  echo "Running 'lean-ctx onboard' (connecting your AI tools). It will change:"
+  echo "  - MCP server entries, hooks and rules in the config of the AI tools you pick"
+  echo "    (e.g. Claude Code, Cursor, Codex, VS Code, Windsurf)"
+  echo "  - the lean-ctx shell hook in your shell rc file"
+  echo "  Pick tools: LEAN_CTX_AGENTS=claude,cursor (or all)   Preview: lean-ctx onboard --dry-run"
+  echo "  Skip next time: LEAN_CTX_NO_ONBOARD=1   Undo: lean-ctx uninstall"
+  # `curl ... | sh` feeds the script on stdin; hand onboard the terminal so it
+  # can ask which tools to connect. Without one it configures no new tool
+  # unless LEAN_CTX_AGENTS names them (or is `all`).
+  if [ -z "${LEAN_CTX_AGENTS:-}" ] && (: </dev/tty) 2>/dev/null; then
     "$INSTALL_DIR/lean-ctx" onboard </dev/tty 2>&1 || true
   else
     "$INSTALL_DIR/lean-ctx" onboard 2>&1 || true
@@ -104,11 +136,9 @@ finish() {
   echo ""
   echo "  lean-ctx doctor        # verify installation"
   echo "  lean-ctx inspect       # inspect recorded context operations and evidence"
-  echo "  lean-ctx gain          # usage estimates and calculated cost"
+  echo "  lean-ctx cockpit       # Savings · Spend · Proof (localhost:3333)"
   echo ""
   echo "Full control: lean-ctx setup  (interactive wizard)"
-  echo "Preview:      lean-ctx setup --dry-run  (writes nothing)"
-  echo "Pick tools:   curl ... | LEAN_CTX_AGENTS=claude,cursor sh"
   echo "Skip auto-onboard: curl ... | LEAN_CTX_NO_ONBOARD=1 sh"
 }
 
@@ -193,8 +223,58 @@ stop_running_instance() {
   fi
 }
 
+sha256_of() {
+  if command -v sha256sum >/dev/null 2>&1; then
+    sha256sum "$1" | cut -d' ' -f1
+  elif command -v shasum >/dev/null 2>&1; then
+    shasum -a 256 "$1" | cut -d' ' -f1
+  fi
+}
+
+# Install the release's Cockpit bundle for $1 (target) from release $2 (tag)
+# into the engine at $3. Every failure is reported in one line and returns 0:
+# the engine install has already succeeded and stays successful.
+install_cockpit() {
+  cockpit_target="$1"
+  cockpit_tag="$2"
+  engine="$3"
+  if [ "${LEAN_CTX_NO_COCKPIT:-}" = "1" ]; then
+    echo "Cockpit: skipped (LEAN_CTX_NO_COCKPIT=1)."
+    return 0
+  fi
+  cockpit_dir="$tmpdir/cockpit"
+  cockpit_asset="lean-ctx-cockpit-${cockpit_target}.tar.gz"
+  cockpit_base="https://github.com/${REPO}/releases/download/${cockpit_tag}"
+  mkdir -p "$cockpit_dir/extract" || return 0
+  echo "Downloading Cockpit..."
+  if ! curl -fsSL "$cockpit_base/$cockpit_asset" -o "$cockpit_dir/$cockpit_asset" 2>/dev/null \
+    || ! curl -fsSL "$cockpit_base/COCKPIT_SHA256SUMS" -o "$cockpit_dir/COCKPIT_SHA256SUMS" 2>/dev/null; then
+    echo "Cockpit: not installed (download failed); the engine works without it. Retry later: lean-ctx cockpit"
+    return 0
+  fi
+  cockpit_expected="$(awk -v f="$cockpit_asset" '$2 == f || $2 == "*" f { print $1; exit }' "$cockpit_dir/COCKPIT_SHA256SUMS")"
+  cockpit_actual="$(sha256_of "$cockpit_dir/$cockpit_asset")"
+  if [ -z "$cockpit_expected" ] || [ "$cockpit_actual" != "$cockpit_expected" ]; then
+    echo "Cockpit: not installed (checksum missing or mismatched — refusing an unverified Cockpit)." >&2
+    return 0
+  fi
+  if ! tar -xzf "$cockpit_dir/$cockpit_asset" -C "$cockpit_dir/extract" 2>/dev/null \
+    || [ ! -f "$cockpit_dir/extract/lean-ctx-cockpit/manifest.json" ]; then
+    echo "Cockpit: not installed (the bundle could not be unpacked)."
+    return 0
+  fi
+  if cockpit_error="$("$engine" cockpit install --from "$cockpit_dir/extract/lean-ctx-cockpit" 2>&1 >/dev/null)"; then
+    echo "Cockpit: installed and verified — open it with: lean-ctx cockpit"
+  else
+    cockpit_error="$(printf '%s\n' "$cockpit_error" | head -1)"
+    echo "Cockpit: not installed (${cockpit_error:-verification failed}); the engine works without it."
+  fi
+  return 0
+}
+
 install_download() {
   target="$(detect_target)"
+  cockpit_target="$target"
   case "$INSTALL_FLAVOR" in
     cuda|gpu)
       if [ "$target" != "x86_64-unknown-linux-gnu" ]; then
@@ -238,6 +318,7 @@ install_download() {
     exit 1
   fi
 
+  # Fail closed: an install that cannot be verified is not performed.
   echo "Downloading checksums..."
   if ! curl -fsSL "$sums_url" -o "$tmpdir/SHA256SUMS"; then
     echo "Error: could not download SHA256SUMS for ${latest}; refusing to install an unverified binary." >&2
@@ -270,6 +351,8 @@ install_download() {
   tmp_bin=""
 
   echo "  Installed: $INSTALL_DIR/lean-ctx"
+
+  install_cockpit "$cockpit_target" "$latest" "$INSTALL_DIR/lean-ctx"
 
   finish
 }
@@ -337,13 +420,30 @@ install_from_source() {
   finish
 }
 
+# Remove $1 (file, symlink or directory), or with --dry-run only say so.
+uninstall_remove() {
+  if [ -e "$1" ] || [ -L "$1" ]; then
+    if [ "$uninstall_dry_run" = "1" ]; then
+      echo "  Would remove $1"
+    else
+      rm -rf "$1" 2>/dev/null && echo "  Removed $1" || echo "  Could not remove $1"
+    fi
+  fi
+}
+
 uninstall() {
   echo "Mode: uninstall"
   echo ""
+  uninstall_dry_run=0
+  for arg in "$@"; do
+    [ "$arg" = "--dry-run" ] && uninstall_dry_run=1
+  done
+  ours="$INSTALL_DIR/lean-ctx"
 
-  # The binary's own `uninstall` does the thorough cleanup — stops every process, then
-  # removes hooks, MCP configs, rules, autostart (LaunchAgent/systemd), data, and the
-  # binary itself. Prefer it; forward any extra flags (e.g. --keep-config, --dry-run).
+  # The binary's own `uninstall` does the thorough cleanup — stops this user's
+  # lean-ctx processes, then removes hooks, MCP configs, rules, autostart
+  # (LaunchAgent/systemd), data, and the binary itself. Prefer it; forward any
+  # extra flags (e.g. --keep-config, --dry-run).
   if command -v lean-ctx >/dev/null 2>&1; then
     lean-ctx uninstall "$@" || true
   else
@@ -351,30 +451,49 @@ uninstall() {
     if [ "$(uname -s)" = "Darwin" ]; then
       for label in com.leanctx.proxy com.leanctx.daemon; do
         plist="$HOME/Library/LaunchAgents/$label.plist"
-        [ -f "$plist" ] && launchctl unload "$plist" 2>/dev/null || true
-        rm -f "$plist" 2>/dev/null || true
+        if [ -f "$plist" ] && [ "$uninstall_dry_run" != "1" ]; then
+          launchctl unload "$plist" 2>/dev/null || true
+        fi
+        uninstall_remove "$plist"
       done
     else
       for svc in lean-ctx-proxy lean-ctx-daemon; do
-        systemctl --user disable --now "$svc" 2>/dev/null || true
-        rm -f "$HOME/.config/systemd/user/$svc.service" 2>/dev/null || true
+        if [ "$uninstall_dry_run" != "1" ]; then
+          systemctl --user disable --now "$svc" 2>/dev/null || true
+        fi
+        uninstall_remove "$HOME/.config/systemd/user/$svc.service"
       done
-      systemctl --user daemon-reload 2>/dev/null || true
+      [ "$uninstall_dry_run" = "1" ] || systemctl --user daemon-reload 2>/dev/null || true
     fi
-    rm -rf "$HOME/.lean-ctx" "$HOME/.config/lean-ctx" 2>/dev/null || true
-    echo "  Removed autostart + data dir."
+    # Config, data (the Cockpit package included) and state, legacy and XDG.
+    for dir in "$HOME/.lean-ctx" "${XDG_CONFIG_HOME:-$HOME/.config}/lean-ctx" \
+      "${XDG_DATA_HOME:-$HOME/.local/share}/lean-ctx" "${XDG_STATE_HOME:-$HOME/.local/state}/lean-ctx"; do
+      uninstall_remove "$dir"
+    done
     echo "  (Reinstall the binary and run 'lean-ctx uninstall' for full editor-config cleanup.)"
   fi
 
-  # Belt-and-suspenders: ensure the binary + PATH symlinks install.sh created are gone,
-  # even if the self-delete failed or the binary was never on PATH.
-  for b in "$INSTALL_DIR/lean-ctx" "/usr/local/bin/lean-ctx"; do
-    if [ -e "$b" ] || [ -L "$b" ]; then
-      rm -f "$b" 2>/dev/null && echo "  Removed $b" || true
+  # Belt-and-suspenders: the binary this script installs, even if the self-delete
+  # failed or it was never on PATH. /usr/local/bin/lean-ctx goes only when it is
+  # ours — a symlink to it or the same file; otherwise it belongs to another
+  # install (e.g. Homebrew on Intel) and stays.
+  # (LEAN_CTX_SYSTEM_BIN only points tests at a sandbox copy of that path.)
+  system_bin="${LEAN_CTX_SYSTEM_BIN:-/usr/local/bin/lean-ctx}"
+  if [ "$system_bin" != "$ours" ] && { [ -e "$system_bin" ] || [ -L "$system_bin" ]; }; then
+    if { [ -L "$system_bin" ] && [ "$(readlink "$system_bin")" = "$ours" ]; } \
+      || { [ -f "$ours" ] && cmp -s "$system_bin" "$ours"; }; then
+      uninstall_remove "$system_bin"
+    else
+      echo "  Kept $system_bin (not installed by this script)"
     fi
-  done
+  fi
+  uninstall_remove "$ours"
 
   echo ""
+  if [ "$uninstall_dry_run" = "1" ]; then
+    echo "Dry run: nothing was removed."
+    return 0
+  fi
   echo "lean-ctx uninstalled. Restart your shell to drop stale aliases."
   echo "Verify with: command -v lean-ctx   # should print nothing"
 }
@@ -410,9 +529,9 @@ case "${1:-}" in
     echo "Environment:"
     echo "  LEAN_CTX_INSTALL_DIR  Custom install directory (default: ~/.local/bin)"
     echo "  LEAN_CTX_INSTALL_FLAVOR  Binary flavor: cpu or cuda (default: cpu)"
-    echo "  LEAN_CTX_AGENTS       AI tools to connect, e.g. claude,cursor (default: ask on a"
-    echo "                        terminal, otherwise every detected tool)"
-    echo "  LEAN_CTX_NO_ONBOARD=1 Install the binary only; connect tools later"
+    echo "  LEAN_CTX_NO_ONBOARD=1    Install only; skip 'lean-ctx onboard' (no tool configs changed)"
+    echo "  LEAN_CTX_AGENTS=a,b      Connect only these AI tools (e.g. claude,cursor; or none, or all)"
+    echo "  LEAN_CTX_NO_PATH_FIX=1   Do not append the install dir to your shell rc file"
     ;;
   "")
     if [ -d "$RUST_DIR" ]; then

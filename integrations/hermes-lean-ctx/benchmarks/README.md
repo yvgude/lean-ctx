@@ -23,8 +23,7 @@ For each engine's `compress()` over the same input window:
 `verbatim_recall` only credits facts that remain **literally in the returned
 window**. It deliberately does **not** credit lean-ctx's recoverability: facts
 that get summarized out are still retrievable on demand via the injected recall
-tools (`ctx_search`, `ctx_semantic_search`, `ctx_expand`, `ctx_read`,
-`ctx_knowledge`) and are offloaded into durable session memory.
+tools (`ctx_search`, `ctx_expand`, `ctx_read`, `ctx_knowledge`) and are offloaded into durable session memory.
 
 So a lower verbatim-recall with high token-savings is *expected and fair* for a
 faithful-but-recoverable engine — the metric is intentionally conservative

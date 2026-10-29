@@ -66,9 +66,24 @@ impl RecentEdits {
 /// Entry point called from `observe.rs` after `edit_health::maybe_emit`.
 /// Detects native edit tool payloads and triggers solution capture + LOC metering.
 pub fn maybe_capture(input: &str) {
+    let admission = super::admission::admit_payload(input);
+    maybe_capture_admitted(input, admission.derivable(input));
+}
+
+/// [`maybe_capture`] with the payload's admission already decided.
+///
+/// `input` is the original payload and feeds only content-free facts: LOC
+/// metering, edit de-duplication and provenance hashes. `admitted` is the
+/// payload text-bearing derivations may read — solution decisions and the
+/// findings built from them see nothing else. `None` (the original was
+/// withheld) derives no decision at all.
+pub(super) fn maybe_capture_admitted(input: &str, admitted: Option<&str>) {
     let Ok(v) = serde_json::from_str::<Value>(input) else {
         return;
     };
+    let admitted_args = admitted
+        .and_then(|payload| serde_json::from_str::<Value>(payload).ok())
+        .and_then(|payload| payload::resolve_tool_args(&payload));
 
     let Some(tool) = payload::resolve_tool_name(&v) else {
         return;
@@ -114,10 +129,41 @@ pub fn maybe_capture(input: &str) {
     let provenance_config = crate::core::config::Config::load().provenance;
     let capture_provenance = provenance_config.enabled && provenance_config.capture_native_edits;
 
+    let call = NativeEdit {
+        event: &v,
+        args: &args,
+        admitted_args: admitted_args.as_ref(),
+        tool: &tool,
+        root: &root,
+        capture_provenance,
+    };
     if is_edit {
-        handle_edit_tool(&v, &args, &tool, &root, capture_provenance);
+        handle_edit_tool(&call);
     } else if is_write_tool(&tool) {
-        handle_write_tool(&v, &args, &tool, &root, capture_provenance);
+        handle_write_tool(&call);
+    }
+}
+
+/// One native edit or write call as the hook saw it.
+struct NativeEdit<'a> {
+    event: &'a Value,
+    /// Original tool arguments: content-free metrics only.
+    args: &'a Value,
+    /// Admitted tool arguments: the only input of text-bearing derivations.
+    admitted_args: Option<&'a Value>,
+    tool: &'a str,
+    root: &'a str,
+    capture_provenance: bool,
+}
+
+/// Derive solution decisions from the ADMITTED form of one edit. A withheld
+/// payload has none; a redacted payload yields decisions from redacted text.
+fn capture_admitted_decisions(call: &NativeEdit<'_>, old: &str, new: &str) {
+    let Some(args) = call.admitted_args else {
+        return;
+    };
+    if let Some((_, path)) = payload::resolve_path_field(Some(args), payload::READ_PATH_FIELDS) {
+        crate::core::solution_auto_capture::capture_edit_decisions(call.root, &path, old, new);
     }
 }
 
@@ -181,7 +227,9 @@ fn collect_strings<'a>(value: &'a Value, out: &mut Vec<&'a str>) {
 }
 
 /// Handle StrReplace-style edits that carry old_string + new_string.
-fn handle_edit_tool(v: &Value, args: &Value, tool: &str, root: &str, capture_provenance: bool) {
+fn handle_edit_tool(call: &NativeEdit<'_>) {
+    let (v, args, tool, root) = (call.event, call.args, call.tool, call.root);
+    let capture_provenance = call.capture_provenance;
     let Some((_field, path)) = payload::resolve_path_field(Some(args), payload::READ_PATH_FIELDS)
     else {
         return;
@@ -192,8 +240,10 @@ fn handle_edit_tool(v: &Value, args: &Value, tool: &str, root: &str, capture_pro
     if edits.is_empty() {
         return;
     }
+    // Same structure as `edits`: admission rewrites strings, never the shape.
+    let admitted_edits = call.admitted_args.map(collect_edits).unwrap_or_default();
 
-    for edit in &edits {
+    for (index, edit) in edits.iter().enumerate() {
         let hash = compute_edit_hash(&path, &edit.old, &edit.new);
 
         let mut dedup = RECENT_EDITS
@@ -205,10 +255,10 @@ fn handle_edit_tool(v: &Value, args: &Value, tool: &str, root: &str, capture_pro
         dedup.insert(hash);
         drop(dedup);
 
-        // Solution decision heuristics
-        crate::core::solution_auto_capture::capture_edit_decisions(
-            root, &path, &edit.old, &edit.new,
-        );
+        // Solution decision heuristics: text-bearing, admitted form only.
+        if let Some(admitted) = admitted_edits.get(index) {
+            capture_admitted_decisions(call, &admitted.old, &admitted.new);
+        }
 
         // LOC metering
         let old_lines = edit.old.lines().count() as u64;
@@ -232,14 +282,19 @@ fn handle_edit_tool(v: &Value, args: &Value, tool: &str, root: &str, capture_pro
     }
 }
 
-/// Handle Write/create tools — no old_string, so LOC-only from new_content.
-fn handle_write_tool(v: &Value, args: &Value, tool: &str, root: &str, capture_provenance: bool) {
-    let content = args
-        .get("contents")
+/// The file body a Write/create tool carries, under any of its field names.
+fn written_content(args: &Value) -> Option<&str> {
+    args.get("contents")
         .or_else(|| args.get("content"))
         .or_else(|| args.get("file_text"))
         .and_then(Value::as_str)
-        .unwrap_or("");
+}
+
+/// Handle Write/create tools — no old_string, so LOC-only from new_content.
+fn handle_write_tool(call: &NativeEdit<'_>) {
+    let (v, args, tool, root) = (call.event, call.args, call.tool, call.root);
+    let capture_provenance = call.capture_provenance;
+    let content = written_content(args).unwrap_or("");
 
     if content.is_empty() {
         return;
@@ -248,10 +303,8 @@ fn handle_write_tool(v: &Value, args: &Value, tool: &str, root: &str, capture_pr
     let lines = content.lines().count() as u64;
     if lines > 0 {
         crate::core::edit_metering::record_loc_change(None, lines, 0);
-        if let Some((_, ref fp)) =
-            payload::resolve_path_field(Some(args), payload::READ_PATH_FIELDS)
-        {
-            crate::core::solution_auto_capture::capture_edit_decisions(root, fp, "", content);
+        if let Some(admitted) = call.admitted_args.and_then(written_content) {
+            capture_admitted_decisions(call, "", admitted);
         }
         if let Some((_, file_path)) =
             payload::resolve_path_field(Some(args), payload::READ_PATH_FIELDS)

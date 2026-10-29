@@ -1,0 +1,14 @@
+{
+  "case": "item_unknown_trigger",
+  "base": "review/item.procedure.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/trigger",
+      "value": "foreign_or_public_event"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

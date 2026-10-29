@@ -1,0 +1,285 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/vault.schema.json",
+  "title": "Project to vault mapping (Hive v5, CHECKLIST 2.1.2): POST /v1/vaults/match, read only; the vault it answers is the C0 1.x VaultV1 of POST /v1/vaults/resolve",
+  "$defs": {
+    "id": {
+      "description": "lean-ctx-protocol validate_id: 1-128 of [A-Za-z0-9._:-], first alphanumeric",
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$"
+    },
+    "vault_ref": {
+      "type": "object",
+      "required": [
+        "ns",
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "ns": {
+          "$ref": "#/$defs/id"
+        },
+        "name": {
+          "$ref": "#/$defs/id"
+        }
+      }
+    },
+    "candidate_kind": {
+      "description": "exact: every identity v2 part the checkout has; legacy: the v1 identity of engines before v5; history: the root commit alone (forks share it, so only a suggestion)",
+      "enum": [
+        "exact",
+        "legacy",
+        "history"
+      ]
+    },
+    "candidate": {
+      "type": "object",
+      "required": [
+        "kind",
+        "digest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "$ref": "#/$defs/candidate_kind"
+        },
+        "digest": {
+          "description": "hex(HMAC-SHA256(org salt, stable identity)), vectors/identity_v2.vectors.json",
+          "$ref": "common.schema.json#/$defs/hex64"
+        }
+      }
+    },
+    "match_request": {
+      "description": "Every kind at most once; the server also refuses two candidates with the same digest (400 invalid_request field: candidates)",
+      "type": "object",
+      "required": [
+        "schema",
+        "org_salt_id",
+        "candidates"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.vault-match-request/v1"
+        },
+        "org_salt_id": {
+          "$ref": "#/$defs/id"
+        },
+        "candidates": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 3,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/candidate"
+          },
+          "allOf": [
+            {
+              "contains": {
+                "properties": {
+                  "kind": {
+                    "const": "exact"
+                  }
+                }
+              },
+              "minContains": 0,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "properties": {
+                  "kind": {
+                    "const": "legacy"
+                  }
+                }
+              },
+              "minContains": 0,
+              "maxContains": 1
+            },
+            {
+              "contains": {
+                "properties": {
+                  "kind": {
+                    "const": "history"
+                  }
+                }
+              },
+              "minContains": 0,
+              "maxContains": 1
+            }
+          ]
+        }
+      }
+    },
+    "vault": {
+      "description": "C0 1.x VaultV1 as POST /v1/vaults/resolve answers it, with the R90 conversion fields",
+      "type": "object",
+      "required": [
+        "schema",
+        "vault_id",
+        "vault",
+        "sealed",
+        "sealed_conversion"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.vault/v1"
+        },
+        "vault_id": {
+          "$ref": "common.schema.json#/$defs/hex32"
+        },
+        "vault": {
+          "$ref": "#/$defs/vault_ref"
+        },
+        "sealed": {
+          "type": "boolean"
+        },
+        "key_epoch": {
+          "$ref": "common.schema.json#/$defs/u32"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "auto_merge": {
+          "type": "object",
+          "required": [
+            "confirmations",
+            "counts"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "confirmations": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "counts": {
+              "enum": [
+                "independent_owners",
+                "distinct_sessions"
+              ]
+            }
+          }
+        },
+        "code_graph": {
+          "const": "full"
+        },
+        "sealed_conversion": {
+          "enum": [
+            "none",
+            "pending",
+            "done"
+          ]
+        },
+        "conversion_source": {
+          "enum": [
+            "legacy",
+            "v2_plain"
+          ]
+        },
+        "conversion_from_seq": {
+          "$ref": "common.schema.json#/$defs/u64"
+        }
+      },
+      "if": {
+        "properties": {
+          "sealed": {
+            "const": true
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "key_epoch"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "key_epoch"
+          ]
+        }
+      }
+    },
+    "match_response": {
+      "oneOf": [
+        {
+          "description": "an exact or legacy hit on a vault the instance's owner may read: the engine maps it without asking; a legacy hit also bound the exact digest",
+          "type": "object",
+          "required": [
+            "schema",
+            "match",
+            "matched",
+            "vault"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "schema": {
+              "const": "leanctx.hive.vault-match/v1"
+            },
+            "match": {
+              "const": "bound"
+            },
+            "matched": {
+              "enum": [
+                "exact",
+                "legacy"
+              ]
+            },
+            "vault": {
+              "$ref": "#/$defs/vault"
+            }
+          }
+        },
+        {
+          "description": "a history hit (moved or renamed remote) that the instance may bind: the person confirms, then the engine calls resolve with the exact digest and vault {ns, name}; nothing is bound",
+          "type": "object",
+          "required": [
+            "schema",
+            "match",
+            "matched",
+            "suggestion"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "schema": {
+              "const": "leanctx.hive.vault-match/v1"
+            },
+            "match": {
+              "const": "suggested"
+            },
+            "matched": {
+              "const": "history"
+            },
+            "suggestion": {
+              "$ref": "#/$defs/vault_ref"
+            }
+          }
+        },
+        {
+          "description": "no hit the instance may see (unknown and not permitted answer alike); can_create: the instance may create a vault after the person's consent (resolve with the exact digest)",
+          "type": "object",
+          "required": [
+            "schema",
+            "match",
+            "can_create"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "schema": {
+              "const": "leanctx.hive.vault-match/v1"
+            },
+            "match": {
+              "const": "none"
+            },
+            "can_create": {
+              "type": "boolean"
+            }
+          }
+        }
+      ]
+    }
+  }
+}

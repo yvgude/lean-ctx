@@ -176,8 +176,8 @@ contracts.
 | content on demand | explicit short-lived request for named content chunks | Require prior policy, data-class match, item/byte/token/TTL limits, audit, and local refusal path. |
 | typed plan | expiring ordered source selection/reuse proposal | Project to the canonical ContextPlan wire form; Decision Spine revalidates it. |
 | multi-agent identity reference | reference to the agent/task responsible for the exchange | Replace VIA-local ownership claims with canonical durable/presence/task references. |
-| invocation context binding | signed linkage among task, plan, admission, capability, policy, and source refs | Keep as evidence binding; align with protocol Decision/Execution Receipt refs. |
-| invocation evidence manifest | digests and receipt references proving the inputs to an invocation | Keep as specialized evidence referenced by the canonical receipt chain. |
+| invocation context binding | signed linkage among task, plan, admission, capability, policy, and source refs | Withdrawn 2026-10-16: never produced or consumed. |
+| invocation evidence manifest | digests and receipt references proving the inputs to an invocation | Withdrawn 2026-10-16: never produced or consumed. |
 
 No VIA frame may contain an arbitrary JSON patch for a provider request. No
 frame grants authority to rewrite prompts, tools, headers, credentials, model,
@@ -317,8 +317,6 @@ or govern the remote executor.
 ### Stage 4: observation and evidence convergence
 
 - project VIA events into the typed Decision Spine observation envelope;
-- reference invocation context binding/evidence manifests from
-  `ExecutionReceiptV1`;
 - keep transport success distinct from outcome acceptance;
 - feed learning only after canonical outcome evaluation.
 

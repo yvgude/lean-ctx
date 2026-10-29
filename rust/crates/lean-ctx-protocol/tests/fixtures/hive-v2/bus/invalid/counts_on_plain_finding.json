@@ -1,0 +1,16 @@
+{
+  "case": "counts_on_plain_finding",
+  "base": "bus/message.finding.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/counts",
+      "value": {
+        "gate_reruns": 1
+      }
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

@@ -67,10 +67,6 @@ async fn rejected_edits_are_mcp_errors_and_preserve_files() {
             "ctx_edit",
             json!({"path":path,"old_string":"absent","new_string":"replacement"}),
         ),
-        (
-            "ctx_refactor",
-            json!({"path":path,"action":"replace_symbol_body","name":"absent","new_text":"replacement"}),
-        ),
         // Deterministic I/O failure independent of root privileges: a file
         // cannot be used as the parent of a new file.
         (
@@ -191,8 +187,17 @@ async fn failed_edit_keeps_recovery_cache_sensitivity_and_loop_accounting() {
     std::fs::write(&path, &content).unwrap();
     for action in [FloorAction::Drop, FloorAction::Redact] {
         let server = crate::tools::LeanCtxServer::new_with_project_root(Some(root));
-        // Resolve macOS /var aliases the same way as the dispatch path.
-        let canonical = path.canonicalize().unwrap().to_string_lossy().into_owned();
+        // The one-time setup tip depends on the host's configuration and would
+        // trail the reply; this test is about the edit failure, not the tip.
+        server
+            .rules_tip_shown
+            .store(true, std::sync::atomic::Ordering::Relaxed);
+        // Resolve macOS /var aliases the same way as the dispatch path (and,
+        // as it does, without the Windows verbatim `\\?\` prefix).
+        let canonical = crate::core::pathutil::safe_canonicalize(&path)
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
         {
             let mut cache = server.cache.write().await;
             cache.store(&canonical, "stale");
@@ -227,15 +232,41 @@ async fn failed_edit_keeps_recovery_cache_sensitivity_and_loop_accounting() {
             std::sync::Arc::new(config),
         )
         .await;
-        assert_eq!(result.is_error, Some(true), "{}", text(&result));
-        assert!(!text(&result).contains(secret), "{}", text(&result));
-        if action == FloorAction::Drop {
-            assert!(text(&result).contains("content withheld"));
-        }
-        assert_eq!(
-            server.cache.read().await.get(&canonical).unwrap().content(),
-            Some(content.clone())
+        let reply = text(&result);
+        assert_eq!(result.is_error, Some(true), "{reply}");
+        // Sensitivity. A failed edit quotes the file only as the admitted
+        // reader returns it (`ctx_edit::implementation`), never its original
+        // bytes: with either floor action the reply is the failure itself,
+        // and neither the key nor the line that carries it is in it.
+        assert!(!reply.contains(secret), "{reply}");
+        assert!(!reply.contains("AWS key AK"), "{reply}");
+        assert!(
+            reply.starts_with(&format!("ERROR: old_string not found in {canonical}.")),
+            "{reply}"
         );
+        assert!(reply.contains("\nSearched for: absent"), "{reply}");
+        // The recovery quote (the last read was not a full one) is the
+        // admitted reading: the line with the key masked.
+        let admitted = content.replace(secret, "[REDACTED:AWS key]");
+        assert!(
+            reply.contains("[auto-escalation] Last read used mode=\"signatures\"")
+                && reply.trim_end().ends_with(admitted.trim_end()),
+            "{reply}"
+        );
+        // Recovery cache. The failure never stores the original bytes of a
+        // file with a masked value: the cache holds the admitted reading, the
+        // text the reply quoted, and so not the key.
+        let cached = server
+            .cache
+            .read()
+            .await
+            .get(&canonical)
+            .and_then(crate::core::cache::CacheEntry::content);
+        assert!(
+            cached.as_deref().is_some_and(|kept| !kept.contains(secret)),
+            "{cached:?}"
+        );
+        assert_eq!(cached.as_deref(), Some(admitted.as_str()), "{reply}");
         assert_eq!(
             server.loop_detector.read().await.stats(),
             vec![("ctx_edit:edit-outcome".into(), 2)]

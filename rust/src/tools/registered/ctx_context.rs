@@ -16,7 +16,7 @@ impl McpTool for CtxContextTool {
         tool_def(
             "ctx_context",
             "Session context overview — cached files, seen files, session state, CRP mode.\n\
-            WORKFLOW: track context budget periodically — use before ctx_compress/ctx_compile.\n\
+            WORKFLOW: track context budget periodically — use before ctx_compress or ctx_control(action=\"evict\").\n\
             ANTIPATTERN: not for reading file content — use ctx_read or ctx_compose.",
             json!({
                 "type": "object",

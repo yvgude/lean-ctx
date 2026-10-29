@@ -1,0 +1,55 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqae",
+  "body": {
+    "ct": "MgZ4fsl5NMUk3z6Gdm61xEgP9X61zNHKKI9xcTsqD0ST8qD3y-sTVE39op0x4a7BPE2Ls5LvMYTiOYFHpLkjQj14z0vw6IHIE-3dycipldbhlo822ahK-CwT384KyiaTOapqiEYs6FuoLd5MUEa9wqAmBDOMidbb1lwlwP0E_h1fOpFjVys6ypS23zNiYyjIsUKZ8tqMyD9-xbkL6ahcSWVMrNUWP5veYbE8T6QO2Wh2zY40kunlhp6D_xkOhg",
+    "nonce": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
+  },
+  "body_commit": "b9708b0e19aefc0f4776e089b0706acd5c2d03e36a248e7562561c6641eb1aca",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 0,
+  "ck_wrapped": "DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMnvlB0Rz3ablDvZlQq-5IZ31xQdR5vDGkn_flja2gwPdhQI77UJNJgXZoLX26TXiR",
+  "epoch": 1,
+  "event_id": "01M5NKA2Z8006000000000W001",
+  "flags": {
+    "commands": false
+  },
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800001000
+  },
+  "key_id": "47983724220c8521",
+  "node_type": "fact",
+  "op": "node.add",
+  "place": {
+    "id": "c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800001350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 1,
+  "signature": "4489705bf11830d11b5fbddcbbcf48fab91f055bc9582ad04758d7b9e160df37930cd3ef9596abe1e5524158df005d3b3faa948299cf1daeece050f55d2bbc00",
+  "target": "n_4mndss76mipfgf6fk2wsnkmnd5",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

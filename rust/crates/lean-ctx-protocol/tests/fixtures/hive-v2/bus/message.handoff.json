@@ -1,0 +1,27 @@
+{
+  "body": {
+    "from_worker": "wkr_vk4oelpv5lzjmev44hun",
+    "lease_id": "bl_01jb8zc",
+    "note": "Taking a break; the lease and the half-done migration are yours.",
+    "resource": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01/ledger-close",
+    "to_worker": "wkr_gawyravj36igdp3irdfo"
+  },
+  "client_msg_id": "01M5NKA2Z8B000000000000004",
+  "id": "msg_00000000000000a4",
+  "provenance": "workspace",
+  "received_at": 1792800004000,
+  "schema": "leanctx.hive.bus/v2",
+  "sender": {
+    "host_app": "claude-code",
+    "kind": "worker",
+    "name": "yves-mac · Claude Code · backend",
+    "owner_handle": "yves",
+    "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+  },
+  "seq": 4,
+  "thread_id": "msg_00000000000000a4",
+  "thread_status": "offered",
+  "to": "#acme/payments",
+  "type": "handoff",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

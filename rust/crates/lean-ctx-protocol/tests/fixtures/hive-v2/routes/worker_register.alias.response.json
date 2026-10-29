@@ -1,0 +1,25 @@
+{
+  "alias_key_id": "a81b399e9440c8ad",
+  "worker": {
+    "card": {
+      "availability": "idle",
+      "budget": {},
+      "history": {
+        "done": 0,
+        "median_minutes": null,
+        "reverted": 0
+      },
+      "host_app": "codex",
+      "model": "unknown",
+      "model_source": "unknown",
+      "tools": []
+    },
+    "host_app": "codex",
+    "id": "wkr_76aa2uwmpczt3cqkhfed",
+    "name": "Codex · general",
+    "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+    "registered_at": 1792796400000,
+    "role": "general",
+    "status": "idle"
+  }
+}

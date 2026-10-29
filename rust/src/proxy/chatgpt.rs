@@ -5,7 +5,9 @@ use axum::{
     response::Response,
 };
 
+use super::admitted::{self, AdmittedBody};
 use super::{ProxyState, forward, openai_responses};
+use crate::core::context_admission::egress::{EgressTarget, TrustedDestinationBinding};
 
 /// Codex subscription model turns hit ChatGPT's Responses-compatible rail:
 /// `/backend-api/codex/responses`. Forward through the same compressor/metering
@@ -60,12 +62,19 @@ fn chatgpt_responses_ws_fallback_response() -> Response {
         .expect("static response is valid")
 }
 
+/// Provider label of the ChatGPT backend rail in receipts and refusals.
+pub(super) const BACKEND_PROVIDER: &str = "ChatGPT";
+
 /// ChatGPT backend calls outside the model rail are not model JSON and must not be
-/// compressed or cost-metered. They are credential-preserving passthroughs.
+/// compressed or cost-metered. They are credential-preserving passthroughs —
+/// of headers. Their bodies are context leaving this machine like any other:
+/// each one is admitted by the gateway, bound to the configured ChatGPT
+/// upstream in its receipt, and refused with the typed reason when it may not
+/// leave. An admitted body is forwarded byte for byte.
 ///
 /// A WebSocket upgrade (Codex Desktop remote-control pairing, #597) is tunnelled
-/// verbatim to chatgpt.com by [`super::chatgpt_ws`]; plain HTTP/SSE falls through
-/// to the reqwest forward below.
+/// to chatgpt.com by [`super::chatgpt_ws`], frame by admitted frame; plain
+/// HTTP/SSE falls through to the forward below.
 pub async fn backend_api_handler(
     State(state): State<ProxyState>,
     req: Request<Body>,
@@ -85,21 +94,79 @@ pub async fn backend_api_handler(
         .map_or("/backend-api", axum::http::uri::PathAndQuery::as_str);
     let url = format!("{upstream}{path}");
 
-    let mut upstream_req = state.client.request(parts.method.clone(), &url);
-    for (key, value) in &parts.headers {
-        if is_backend_passthrough_request_header(key) {
-            upstream_req = upstream_req.header(key.clone(), value.clone());
-        }
+    // The destination is the configured upstream; no caller header selects it.
+    let target = EgressTarget {
+        provider: BACKEND_PROVIDER,
+        model: None,
+        upstream_base: &upstream,
+    };
+    // The path, query and relayed header values leave as surely as the body
+    // (AP10-C2).
+    if let Err(refusal) = admitted::admit_request_target(
+        path,
+        parts
+            .headers
+            .iter()
+            .filter(|(key, _)| is_backend_passthrough_request_header(key)),
+        &target,
+        TrustedDestinationBinding::default(),
+        forward::sealed_principal(&parts).as_deref(),
+    )
+    .await
+    {
+        return Ok(refusal.response(BACKEND_PROVIDER));
     }
+    let admission = admitted::admit_passthrough(
+        &parts,
+        &body_bytes,
+        forward::max_body_bytes(),
+        &target,
+        TrustedDestinationBinding::default(),
+    );
+    // The relayed header set is bound with the body; the relay rule itself
+    // (everything but hop-by-hop and this proxy's own namespace) is kept.
+    let head = admitted::RequestHead::new(
+        parts.method.clone(),
+        parts
+            .headers
+            .iter()
+            .filter(|(key, _)| is_backend_passthrough_request_header(key))
+            .map(|(key, value)| (key.clone(), value.clone())),
+    );
+    let admitted_body = match admission {
+        Ok((outcome, bytes)) => {
+            AdmittedBody::bind(
+                outcome,
+                bytes,
+                &upstream,
+                &url,
+                head,
+                body_bytes.len(),
+                None,
+            )
+            .await
+        }
+        Err(refusal) => Err(refusal),
+    };
+    let admitted_body = match admitted_body {
+        Ok(admitted_body) => admitted_body,
+        Err(refusal) => return Ok(refusal.response(BACKEND_PROVIDER)),
+    };
 
-    let response = upstream_req
-        .body(body_bytes.to_vec())
-        .send()
-        .await
-        .map_err(|e| {
-            tracing::error!("lean-ctx proxy: ChatGPT backend upstream error: {e}");
-            StatusCode::BAD_GATEWAY
-        })?;
+    let attempt = admitted_body
+        .send(&state.client, 1, |request| request)
+        .await;
+    let attempt = match attempt {
+        Ok(attempt) => attempt,
+        Err(refusal) => return Ok(refusal.response(BACKEND_PROVIDER)),
+    };
+    let response = attempt.response.map_err(|e| {
+        tracing::error!(
+            "lean-ctx proxy: ChatGPT backend upstream error: {}",
+            admitted::transport_failure(&e)
+        );
+        StatusCode::BAD_GATEWAY
+    })?;
 
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
     let headers = response.headers().clone();
@@ -134,21 +201,29 @@ pub async fn backend_api_handler(
 
 fn is_backend_passthrough_request_header(name: &HeaderName) -> bool {
     let lower = name.as_str().to_ascii_lowercase();
-    !matches!(
-        lower.as_str(),
-        "host"
-            | "connection"
-            | "content-length"
-            | "transfer-encoding"
-            | "upgrade"
-            | "keep-alive"
-            | "proxy-authenticate"
-            | "proxy-authorization"
-            | "te"
-            | "trailer"
-            | "accept-encoding"
-    )
+    // `x-leanctx-*` is this proxy's own namespace (project path, agent and
+    // session ids, the presenter capability). This relay passes everything it
+    // does not name, so the whole prefix is named: a header added to the
+    // namespace later is never relayed either.
+    !lower.starts_with(LEANCTX_INTERNAL_HEADER_PREFIX)
+        && !matches!(
+            lower.as_str(),
+            "host"
+                | "connection"
+                | "content-length"
+                | "transfer-encoding"
+                | "upgrade"
+                | "keep-alive"
+                | "proxy-authenticate"
+                | "proxy-authorization"
+                | "te"
+                | "trailer"
+                | "accept-encoding"
+        )
 }
+
+/// Prefix of the headers that are addressed to this proxy and never leave it.
+pub(super) const LEANCTX_INTERNAL_HEADER_PREFIX: &str = "x-leanctx-";
 
 fn is_backend_passthrough_response_header(name: &HeaderName) -> bool {
     let lower = name.as_str().to_ascii_lowercase();
@@ -195,9 +270,6 @@ mod tests {
             chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(
             ),
             mcp_servers: Arc::new(Vec::new()),
-            web_app_tracker: Arc::new(std::sync::Mutex::new(
-                crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
-            )),
         }
     }
 
@@ -251,8 +323,78 @@ mod tests {
         (format!("http://{addr}"), rx)
     }
 
+    /// The backend rail passes headers through, not unexamined content: a
+    /// protected value in the body — also in a member called `name` — is
+    /// masked before the body reaches the upstream.
+    #[tokio::test]
+    async fn backend_api_body_is_admitted_before_it_is_forwarded() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let key = concat!("AK", "IAIOSFODNN7EXAMPLE");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let upstream = format!("http://{}", listener.local_addr().unwrap());
+        let server = tokio::spawn(async move {
+            let (mut socket, _) = listener.accept().await.unwrap();
+            let mut request = Vec::new();
+            let mut chunk = [0_u8; 1024];
+            let (header_end, length) = loop {
+                let read = socket.read(&mut chunk).await.unwrap();
+                assert!(read > 0, "upstream closed before the request headers");
+                request.extend_from_slice(&chunk[..read]);
+                if let Some(end) = request.windows(4).position(|w| w == b"\r\n\r\n") {
+                    let head = String::from_utf8_lossy(&request[..end]).to_ascii_lowercase();
+                    let length = head
+                        .lines()
+                        .find_map(|line| line.strip_prefix("content-length:"))
+                        .map_or(0, |value| value.trim().parse::<usize>().unwrap());
+                    break (end + 4, length);
+                }
+            };
+            while request.len() < header_end + length {
+                let read = socket.read(&mut chunk).await.unwrap();
+                assert!(read > 0, "upstream closed before the request body");
+                request.extend_from_slice(&chunk[..read]);
+            }
+            socket
+                .write_all(
+                    b"HTTP/1.1 200 OK\r\ncontent-type: application/json\r\ncontent-length: 2\r\nconnection: close\r\n\r\n{}",
+                )
+                .await
+                .unwrap();
+            String::from_utf8_lossy(&request[header_end..]).into_owned()
+        });
+        let body = serde_json::json!({
+            "note": format!("deploy with {key} today"),
+            "name": key,
+        });
+        let req = Request::builder()
+            .method("POST")
+            .uri("/backend-api/wham/tasks")
+            .header("content-type", "application/json")
+            .body(Body::from(body.to_string()))
+            .unwrap();
+
+        let response = tokio::time::timeout(
+            Duration::from_secs(5),
+            backend_api_handler(State(proxy_state(upstream)), req),
+        )
+        .await
+        .expect("bounded backend request")
+        .expect("backend request should succeed");
+        assert_eq!(response.status(), StatusCode::OK);
+
+        let received = server.await.unwrap();
+        assert!(
+            !received.contains(key),
+            "the upstream received the raw value: {received}"
+        );
+        assert!(received.contains("deploy with"), "{received}");
+    }
+
     #[tokio::test]
     async fn backend_api_streams_mcp_sse_and_preserves_session_headers() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let (upstream, seen_request) = spawn_streaming_upstream().await;
         let state = proxy_state(upstream);
         let req = Request::builder()
@@ -265,6 +407,8 @@ mod tests {
             .header("X-OpenAI-Internal-Codex-Residency", "us")
             .header("Originator", "codex_cli_rs")
             .header("Accept", "application/json, text/event-stream")
+            // The proxy's own namespace, under a name no list knows.
+            .header("X-LeanCTX-Later-Id", "internal")
             .body(Body::empty())
             .unwrap();
 
@@ -294,5 +438,9 @@ mod tests {
         assert!(request.contains("x-openai-product-sku: codex"));
         assert!(request.contains("x-openai-internal-codex-residency: us"));
         assert!(request.contains("originator: codex_cli_rs"));
+        assert!(
+            !request.contains(LEANCTX_INTERNAL_HEADER_PREFIX),
+            "no x-leanctx-* header is relayed"
+        );
     }
 }

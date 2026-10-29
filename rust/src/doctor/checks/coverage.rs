@@ -25,6 +25,67 @@ pub(crate) fn configured_host_coverage(home: &std::path::Path) -> Vec<HostCovera
     coverage
 }
 
+/// Shadow-mode state as it is actually in effect on this machine: `shadow_mode`
+/// in config is only a permission, the behaviour needs lean-ctx hooks installed
+/// in a host. `deny` hosts run Replace (native Read/Grep/Glob denied); `steer`
+/// hosts run Hybrid (hooks reroute native calls, nothing is denied).
+#[derive(Debug, Default, PartialEq, Eq)]
+pub(crate) struct ShadowHosts {
+    pub deny: Vec<String>,
+    pub steer: Vec<String>,
+}
+
+pub(crate) fn shadow_hosts(home: &std::path::Path) -> ShadowHosts {
+    let mut hosts = ShadowHosts::default();
+    let mut seen = std::collections::BTreeSet::new();
+    for target in crate::core::editor_registry::build_targets(home) {
+        let key = target.agent_key;
+        if !seen.insert(key.clone()) {
+            continue;
+        }
+        match crate::hooks::installed_hook_mode(&key, home) {
+            Some(crate::hooks::HookMode::Replace) => hosts.deny.push(key),
+            Some(crate::hooks::HookMode::Hybrid) => hosts.steer.push(key),
+            Some(crate::hooks::HookMode::Mcp) | None => {}
+        }
+    }
+    hosts
+}
+
+/// Short state word plus plain-text detail for the shadow-mode line. Never
+/// claims "active" unless at least one host really has lean-ctx hooks.
+pub(crate) fn shadow_status(shadow_mode: bool, hosts: &ShadowHosts) -> (&'static str, String) {
+    if !shadow_mode {
+        return (
+            "disabled",
+            "(explicitly disabled via config; native tools are never denied)".to_string(),
+        );
+    }
+    if !hosts.deny.is_empty() {
+        let mut detail = format!(
+            "(Read/Grep/Glob denied → ctx_* mandatory for: {})",
+            hosts.deny.join(", ")
+        );
+        if !hosts.steer.is_empty() {
+            detail.push_str(&format!("; steering only: {}", hosts.steer.join(", ")));
+        }
+        return ("active", detail);
+    }
+    if !hosts.steer.is_empty() {
+        return (
+            "steering",
+            format!(
+                "(hooks route native calls to ctx_*, nothing denied: {})",
+                hosts.steer.join(", ")
+            ),
+        );
+    }
+    (
+        "not active",
+        "(no host has lean-ctx hooks yet — run: lean-ctx setup)".to_string(),
+    )
+}
+
 pub(crate) fn gateway_coverage_outcome() -> Outcome {
     let Some(home) = dirs::home_dir() else {
         return Outcome {
@@ -92,5 +153,21 @@ mod tests {
         assert!(enforced < partial, "strongest level first");
         assert!(line.contains("not_observable: zed"));
         assert!(line.contains("lean-ctx proxy enable"));
+    }
+
+    #[test]
+    fn shadow_mode_is_never_active_without_a_hooked_host() {
+        // Fresh install: shadow_mode defaults to true, but no host has hooks —
+        // doctor/status must not claim native tools are denied.
+        let (state, detail) = shadow_status(true, &ShadowHosts::default());
+        assert_eq!(state, "not active");
+        assert!(!detail.contains("denied →"), "{detail}");
+        let hooked = ShadowHosts {
+            deny: vec!["claude".into()],
+            steer: Vec::new(),
+        };
+        let (state, detail) = shadow_status(true, &hooked);
+        assert_eq!(state, "active");
+        assert!(detail.contains("claude"), "{detail}");
     }
 }

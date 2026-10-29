@@ -1,11 +1,8 @@
-use crate::{
-    core, doctor, heatmap, hook_handlers, report, setup, shell, status, token_report, uninstall,
-};
+use crate::{core, doctor, heatmap, hook_handlers, report, shell, status, token_report, uninstall};
 
 pub mod analytics;
-pub(crate) mod benchmark_run;
-pub(crate) mod calibrate;
 mod cmd_help;
+mod cockpit_hint;
 mod evidence;
 pub(crate) mod evidence_cost;
 pub(crate) mod evidence_realworld;
@@ -13,9 +10,11 @@ pub(crate) mod evidence_report;
 pub(crate) mod evidence_workflow;
 mod help;
 mod lifecycle;
+#[cfg(unix)]
+mod mcp_instances;
 mod network;
-pub(crate) mod pair;
 mod server;
+mod setup_cmd;
 pub(crate) mod suggest;
 pub mod verify;
 
@@ -29,8 +28,21 @@ use lifecycle::*;
 use network::*;
 #[allow(clippy::wildcard_imports)]
 use server::*;
+use setup_cmd::{handle_bootstrap, handle_install, handle_onboard, handle_setup};
 
 pub fn run() {
+    // Q13: the group guard and the session starter are minimal modes of this
+    // binary. They are decided on the raw arguments, before anything else of
+    // the start-up runs, and never return into the normal dispatch.
+    #[cfg(unix)]
+    if let Some(code) = shell::containment::dispatch_hidden_mode() {
+        std::process::exit(code);
+    }
+    // Windows has no starter process: an Engine asked for session containment
+    // joins a kill-on-close job of its own and then runs on as the Engine.
+    #[cfg(windows)]
+    shell::process_tree::contain_requested_session();
+
     let mut args: Vec<String> = std::env::args().collect();
 
     // On Linux, if the binary was replaced while running, systemd may write
@@ -83,28 +95,43 @@ pub fn run() {
             print!("{usage}");
             return;
         }
+        if let Some(notice) = cmd_help::removed_notice(&args[1]) {
+            eprintln!("{notice}");
+            std::process::exit(2);
+        }
+        if let Some(notice) = cmd_help::deprecation_notice(&args[1]) {
+            eprintln!("{notice}");
+        }
 
         match args[1].as_str() {
             "-c" | "exec" => handle_exec(&args, &rest),
             "-t" | "--track" => handle_track(&args),
-            "badge" => {
-                crate::cli::badge_cmd::cmd_badge(&rest);
-                return;
-            }
             "shell" | "--shell" => {
                 shell::interactive();
                 return;
             }
             "gain" => {
-                cmd_gain(&rest);
+                // On a terminal the Cockpit shows these views; the text
+                // report stays for scripts, agents and `--terminal`.
+                if let cockpit_hint::Handled::Text(hint) =
+                    cockpit_hint::redirect(cockpit_hint::gain_route(&rest), &rest)
+                {
+                    cmd_gain(&rest);
+                    cockpit_hint::print_hint(hint.as_deref());
+                }
                 return;
             }
             "spend" => {
                 cmd_spend(&rest);
+                cockpit_hint::print_footer("spend", &rest);
                 return;
             }
             "savings" => {
                 cmd_savings(&rest);
+                // Only the report table; the ledger subcommands stay quiet.
+                if rest.first().is_none_or(|arg| arg.starts_with("--")) {
+                    cockpit_hint::print_footer("savings", &rest);
+                }
                 return;
             }
             "learning" => {
@@ -136,24 +163,21 @@ pub fn run() {
                 }
                 return;
             }
-            "billing" => {
-                cmd_billing(&rest);
-                return;
-            }
             "finops" => {
                 cmd_finops(&rest);
                 return;
             }
             "roi" => {
-                // Local ROI is individual + free. The team roll-up lives on its own
-                // surface (`savings team` / the web account), not under `roi`.
+                // Local ROI is individual + free; team views live in LeanCTX Hive.
                 super::cmd_roi(&rest);
+                cockpit_hint::print_footer("report", &rest);
                 return;
             }
             "output-savings" | "output_savings" => {
                 // #895 Track B: measured (A/B holdout) or estimated output-token
                 // reduction. Local + free, like `roi`.
                 super::cmd_output_savings(&rest);
+                cockpit_hint::print_footer("savings", &rest);
                 return;
             }
             "value-report" | "value_report" => {
@@ -195,6 +219,7 @@ pub fn run() {
                 if code != 0 {
                     std::process::exit(code);
                 }
+                cockpit_hint::print_footer("savings", &rest);
                 return;
             }
             "pack" => {
@@ -203,9 +228,18 @@ pub fn run() {
             }
             "migrate" => {
                 let Some(source) = rest.first() else {
-                    eprintln!("Usage: lean-ctx migrate <headroom|config|task-receipt> [source]");
+                    eprintln!(
+                        "Usage: lean-ctx migrate <headroom|config|task-receipt|legacy-context> [source]"
+                    );
                     std::process::exit(2);
                 };
+                if source == "legacy-context" {
+                    if let Err(error) = crate::cli::migrate_legacy::run(&rest[1..]) {
+                        eprintln!("Migration failed: {error}");
+                        std::process::exit(1);
+                    }
+                    return;
+                }
                 let migrate_args = crate::cli::migrate_cmd::MigrateArgs {
                     source: source.clone(),
                     input: rest
@@ -268,6 +302,7 @@ pub fn run() {
             }
             "value" => {
                 crate::cli::cmd_value(&rest);
+                cockpit_hint::print_footer("activity", &rest);
                 return;
             }
             "prompt-segment" => {
@@ -289,6 +324,10 @@ pub fn run() {
             }
             "inspect" => {
                 crate::cli::cmd_inspect(&rest);
+                return;
+            }
+            "gateway" => {
+                crate::cli::gateway_cmd::cmd_gateway(&rest);
                 return;
             }
             "snapshot" => {
@@ -317,8 +356,8 @@ pub fn run() {
                 }
                 return;
             }
-            "visualize" => {
-                super::cmd_visualize(&rest);
+            "compliance" => {
+                crate::cli::compliance_evidence_cmd::cmd_compliance(&rest);
                 return;
             }
             "audit" => {
@@ -327,10 +366,6 @@ pub fn run() {
                     Some("determinism") => crate::cli::audit_report::cmd_determinism(&rest[1..]),
                     _ => println!("{}", crate::cli::audit_report::generate_report()),
                 }
-                return;
-            }
-            "compliance" => {
-                crate::cli::cmd_compliance(&rest);
                 return;
             }
             "agent" => {
@@ -362,18 +397,11 @@ pub fn run() {
             }
             "cep" => {
                 println!("{}", core::stats::format_cep_report());
+                cockpit_hint::print_footer("savings", &rest);
                 return;
             }
-            "demo" => {
-                super::cmd_demo(&rest);
-                return;
-            }
-            "dashboard" => {
+            "cockpit" | "dashboard" => {
                 cmd_dashboard(&rest);
-                return;
-            }
-            "team" => {
-                cmd_team(&rest);
                 return;
             }
             "provider" => {
@@ -437,10 +465,6 @@ pub fn run() {
                 }
                 return;
             }
-            "cognitive" => {
-                crate::cli::cognitive::run();
-                return;
-            }
             "read" => {
                 let success = super::cmd_read(&rest);
                 if !success {
@@ -494,6 +518,7 @@ pub fn run() {
             }
             "heatmap" => {
                 heatmap::cmd_heatmap(&rest);
+                cockpit_hint::print_footer("context?detail=heatmap", &rest);
                 return;
             }
             "graph" => {
@@ -561,7 +586,17 @@ pub fn run() {
                 return;
             }
             "wrapped" => {
-                eprintln!("'lean-ctx wrapped' has been removed. Use: lean-ctx gain --wrapped");
+                // On a terminal the recap opens in the Cockpit.
+                let hint = match cockpit_hint::redirect(Some(VIEW_REPORT), &rest) {
+                    cockpit_hint::Handled::Opened => return,
+                    cockpit_hint::Handled::Text(hint) => hint,
+                };
+                eprintln!(
+                    "'lean-ctx wrapped' has been removed. The recap is in the Cockpit: \
+                     lean-ctx cockpit \u{2192} #report\n\
+                     Exports stay in the terminal: lean-ctx gain --wrapped | --svg | --share"
+                );
+                cockpit_hint::print_hint(hint.as_deref());
                 std::process::exit(1);
             }
             "sessions" | "session-store" => {
@@ -587,27 +622,6 @@ pub fn run() {
                     super::cmd_benchmark_real(&rest);
                 } else {
                     super::cmd_benchmark(&rest);
-                }
-                return;
-            }
-            "benchmark-run" | "bench-run" => {
-                let code = benchmark_run::cmd_benchmark_run(&rest);
-                if code != 0 {
-                    std::process::exit(code);
-                }
-                return;
-            }
-            "calibrate" => {
-                let code = calibrate::cmd_calibrate(&rest);
-                if code != 0 {
-                    std::process::exit(code);
-                }
-                return;
-            }
-            "pair" => {
-                let code = pair::cmd_pair(&rest);
-                if code != 0 {
-                    std::process::exit(code);
                 }
                 return;
             }
@@ -646,6 +660,14 @@ pub fn run() {
                 super::cmd_allow_path(&rest);
                 return;
             }
+            "project" => {
+                super::project_cmd::cmd_project(&rest);
+                return;
+            }
+            "workspace" => {
+                super::workspace_cmd::cmd_workspace(&rest);
+                return;
+            }
             "security" => {
                 super::cmd_security(&rest);
                 return;
@@ -680,10 +702,6 @@ pub fn run() {
             }
             "theme" => {
                 super::cmd_theme(&rest);
-                return;
-            }
-            "enterprise" => {
-                super::cmd_enterprise(&rest);
                 return;
             }
             "tee" => {
@@ -762,6 +780,7 @@ pub fn run() {
             }
             "doctor" => {
                 let code = doctor::run_cli(&rest);
+                cockpit_hint::print_footer("diagnosis", &rest);
                 if code != 0 {
                     std::process::exit(code);
                 }
@@ -792,15 +811,11 @@ pub fn run() {
                 return;
             }
             "gotchas" | "bugs" => {
-                super::cloud::cmd_gotchas(&rest);
+                super::gotchas_cmd::cmd_gotchas(&rest);
                 return;
             }
             "learn" => {
                 super::cmd_learn(&rest);
-                return;
-            }
-            "buddy" | "pet" => {
-                super::cloud::cmd_buddy(&rest);
                 return;
             }
             "hook" => {
@@ -911,36 +926,16 @@ pub fn run() {
                 super::cmd_cheatsheet();
                 return;
             }
-            "login" => {
-                super::cloud::cmd_login(&rest);
-                return;
-            }
-            "register" => {
-                super::cloud::cmd_register(&rest);
-                return;
-            }
-            "forgot-password" => {
-                super::cloud::cmd_forgot_password(&rest);
-                return;
-            }
-            "sync" => {
-                super::cloud::cmd_sync(&rest);
-                return;
-            }
-            "contribute" => {
-                super::cloud::cmd_contribute();
-                return;
-            }
             "telemetry" => {
                 super::telemetry_cmd::cmd_telemetry(&rest);
                 return;
             }
-            "cloud" => {
-                super::cloud::cmd_cloud(&rest);
+            "hive" => {
+                super::hive_cmd::cmd_hive(&rest);
                 return;
             }
             "upgrade" => {
-                super::cloud::cmd_upgrade(&rest);
+                super::gotchas_cmd::cmd_upgrade(&rest);
                 return;
             }
             "--version" | "-V" => {
@@ -998,7 +993,15 @@ pub fn run() {
         eprint!("{}", quickstart_text());
     }
 
-    if let Err(e) = run_mcp_server() {
+    let served = run_mcp_server();
+    // Q13: the server ends in order — its client closed the connection. The
+    // spawn helper is told, so it ends nothing: a shell command still running
+    // is left as it always was at a normal stop. Every other end of this
+    // process (a kill, a crash, the parent watchdog) closes the helper's
+    // socket without this message, and the helper then ends what it holds.
+    #[cfg(unix)]
+    shell::containment::shutdown_spawn_helper();
+    if let Err(e) = served {
         tracing::error!("lean-ctx: {e}");
         std::process::exit(1);
     }
@@ -1032,47 +1035,25 @@ fn handle_editor_session(args: &[String]) {
     }
 }
 
-/// Help for `lean-ctx setup`. Printed for `--help`/`-h` and unknown flags so
-/// asking about setup can never accidentally *run* setup (#476 class, #658).
-fn print_setup_help() {
-    println!("Usage: lean-ctx setup [options]");
-    println!();
-    println!("Guided setup: shell hook, agent hooks/rules, MCP registrations.");
-    println!("Protected Codex: setup codex-protected --project <DIR> [--policy-pack <NAME>]");
-    println!(
-        "  Checks a separate protected session; add --start to launch. See subcommand --help."
-    );
-    println!(
-        "Optional proprietary runtime: setup runtime <configure|status|sync-configured|rollback-configured|activate-configured|activate-personal|renew-configured|deactivate>. Installation/activation requires --accept-proprietary; rollback-configured restores the retained production version. Staging-only operator commands additionally require --staging.\nSharing (requires --accept-proprietary): share-identity; share-invite --recipient ACCOUNT_UUID --output ABSOLUTE_PRIVATE_FILE [--context-id UUID --revision N --expires-at RFC3339]; share-publish --project ABSOLUTE_DIRECTORY --invitation ABSOLUTE_PRIVATE_FILE; share-continue --project ABSOLUTE_DIRECTORY --invitation ABSOLUTE_PRIVATE_FILE [--expected-head SHA256]. Omit expected-head only for an empty destination. Transfer invitation files confidentially to their named recipient."
-    );
-    println!("Interactive by default; runs non-interactively without a TTY.");
-    println!();
-    println!("Options:");
-    println!("  --non-interactive   No prompts; apply defaults");
-    println!("  --yes, -y           Assume yes for all prompts");
-    println!("  --fix               Repair an existing installation");
-    println!("  --json              Machine-readable report (implies non-interactive)");
-    println!("  --no-auto-approve   Skip auto-approve configuration");
-    println!("  --skip-rules        Do not write agent rules files");
-    println!("  --agents LIST       Only configure these AI tools, e.g. claude,cursor");
-    println!("                      (all = every detected tool, none = no tool).");
-    println!("                      Saved as setup.agents; `update` honors it.");
-    println!("  --dry-run           Show what setup would configure; write nothing");
-    println!("  --help, -h          Show this help (never runs setup)");
-    println!();
-    println!("See also: lean-ctx onboard (one-command setup), lean-ctx doctor");
-}
-
 /// Long-lived server entry points keep Rust's default ignored SIGPIPE: they
 /// must survive peers closing sockets/pipes early. Bare `lean-ctx` counts as
 /// a server because MCP clients spawn the binary without a subcommand.
+/// `gain --web` / `gain --live` open a Cockpit view and start its server
+/// when none runs.
 fn is_server_mode(args: &[String]) -> bool {
     args.len() == 1
         || args.get(1).is_some_and(|a| {
             matches!(
                 a.as_str(),
-                "mcp" | "daemon" | "proxy" | "serve" | "watch" | "dashboard" | "gateway"
-            )
+                "mcp"
+                    | "daemon"
+                    | "proxy"
+                    | "serve"
+                    | "watch"
+                    | "cockpit"
+                    | "dashboard"
+                    | "gateway"
+            ) || (a == "gain" && args[2..].iter().any(|f| f == "--web" || f == "--live"))
         })
 }
 
@@ -1247,145 +1228,6 @@ pub(super) fn external_lifecycle_guard(
     core::execution_lifecycle::LifecycleGuard::new(lifecycle, context)
 }
 
-fn handle_setup(rest: &[String]) {
-    if rest.first().map(String::as_str) == Some("codex-protected") {
-        let code = super::cmd_setup_codex_protected(&rest[1..]);
-        if code != 0 {
-            std::process::exit(code);
-        }
-        return;
-    }
-    // Safety (#476 class): `--help`/`-h` — or any unknown flag — must NEVER
-    // fall through to a real setup run that mutates shell + agent configs.
-    if rest.iter().any(|a| a == "--help" || a == "-h") {
-        print_setup_help();
-        return;
-    }
-    if rest == ["runtime", "configure"] || rest == ["runtime", "configure", "--staging"] {
-        if !setup::configure_runtime() {
-            std::process::exit(2);
-        }
-        return;
-    }
-    if rest.first().map(String::as_str) == Some("runtime") {
-        crate::cli::cmd_engine(rest);
-        return;
-    }
-    const KNOWN: &[&str] = &[
-        "--non-interactive",
-        "--yes",
-        "-y",
-        "--fix",
-        "--json",
-        "--no-auto-approve",
-        "--skip-rules",
-        "--no-agent-aliases",
-        "--dry-run",
-    ];
-    if let Some(unknown) = setup::strip_agents_flag(rest)
-        .into_iter()
-        .find(|a| !KNOWN.contains(&a.as_str()))
-    {
-        eprintln!("setup: unknown flag or argument '{unknown}'\n");
-        print_setup_help();
-        std::process::exit(2);
-    }
-    let non_interactive = rest.iter().any(|a| a == "--non-interactive");
-    let yes = rest.iter().any(|a| a == "--yes" || a == "-y");
-    let fix = rest.iter().any(|a| a == "--fix");
-    let json = rest.iter().any(|a| a == "--json");
-    let no_auto_approve = rest.iter().any(|a| a == "--no-auto-approve");
-    let skip_rules = rest.iter().any(|a| a == "--skip-rules");
-    let no_agent_aliases = rest.iter().any(|a| a == "--no-agent-aliases");
-    let dry_run = rest.iter().any(|a| a == "--dry-run");
-    let agents = setup::resolve_agents_flag_or_exit("setup", rest);
-
-    if dry_run {
-        setup::run_dry_run_or_exit(agents, skip_rules, json);
-        return;
-    }
-    if let Some(setup::RequestedAgents(selection)) = agents.clone() {
-        setup::persist_agents_or_exit(selection, json);
-    }
-
-    if no_agent_aliases {
-        let _ = crate::core::config::setter::set_by_key("skip_agent_aliases", "true");
-    }
-
-    if non_interactive || fix || json || yes {
-        let opts = setup::SetupOptions {
-            non_interactive,
-            yes,
-            fix,
-            json,
-            no_auto_approve,
-            skip_rules,
-            ..Default::default()
-        };
-        run_setup_options(opts, json);
-    } else {
-        setup::run_setup_wizard(agents.is_none());
-    }
-}
-
-fn handle_onboard(rest: &[String]) {
-    if rest.iter().any(|a| a == "--help" || a == "-h") {
-        println!("Usage: lean-ctx onboard [--agents LIST] [--dry-run] [--no-agent-aliases]");
-        println!("Connect your AI tools with one command: detects installed");
-        println!("agents, installs hooks/rules/MCP registrations, verifies.");
-        println!("On a terminal it first asks which detected tools to connect;");
-        println!("without one (CI, agents) it connects every detected tool.");
-        println!();
-        println!("  --agents LIST       Only these tools, e.g. claude,cursor (all / none);");
-        println!("                      saved as setup.agents and honored by `update`");
-        println!("  --dry-run           Show what would be configured; write nothing");
-        println!("  --no-agent-aliases  Do not install claude/codex/gemini shell aliases");
-        println!();
-        println!("Fine-grained control: lean-ctx setup --help");
-        return;
-    }
-    let agents = setup::resolve_agents_flag_or_exit("onboard", rest);
-    if rest.iter().any(|a| a == "--dry-run") {
-        setup::run_dry_run_or_exit(agents, false, false);
-        return;
-    }
-    if let Some(setup::RequestedAgents(selection)) = agents.clone() {
-        setup::persist_agents_or_exit(selection, false);
-    }
-    if rest.iter().any(|a| a == "--no-agent-aliases") {
-        let _ = crate::core::config::setter::set_by_key("skip_agent_aliases", "true");
-    }
-    setup::run_onboard(agents.is_none());
-}
-
-fn handle_install(rest: &[String]) {
-    // Plain `lean-ctx install` is a natural thing to type after installing the
-    // binary; keep it as guided setup unless repair mode was explicitly asked.
-    let repair = rest.iter().any(|a| a == "--repair" || a == "--fix");
-    let json = rest.iter().any(|a| a == "--json");
-    if !repair {
-        setup::run_setup();
-        return;
-    }
-    run_repair_setup(json);
-}
-
-fn handle_bootstrap(rest: &[String]) {
-    let json = rest.iter().any(|a| a == "--json");
-    run_repair_setup(json);
-}
-
-fn run_repair_setup(json: bool) {
-    let opts = setup::SetupOptions {
-        non_interactive: true,
-        yes: true,
-        fix: true,
-        json,
-        ..Default::default()
-    };
-    run_setup_options(opts, json);
-}
-
 fn handle_raw(args: &[String], rest: &[String]) -> ! {
     if rest.is_empty() {
         eprintln!("Usage: lean-ctx raw \"command\"");
@@ -1403,26 +1245,6 @@ fn handle_raw(args: &[String], rest: &[String]) -> ! {
     core::runtime_flags::enable_raw();
     let code = shell::exec(&command);
     std::process::exit(code);
-}
-
-fn run_setup_options(opts: setup::SetupOptions, json: bool) {
-    match setup::run_setup_with_options(opts) {
-        Ok(report) => {
-            if json {
-                println!(
-                    "{}",
-                    serde_json::to_string_pretty(&report).unwrap_or_else(|_| "{}".to_string())
-                );
-            }
-            if !report.success {
-                std::process::exit(1);
-            }
-        }
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(1);
-        }
-    }
 }
 
 /// Restore the default SIGPIPE disposition for short-lived CLI invocations.

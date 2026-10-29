@@ -8,7 +8,7 @@ use crate::server::tool_trait::{
 };
 use crate::tool_defs::tool_def;
 
-use super::ctx_shell_background::{format_background_state, redact_shell_output_secrets};
+use super::ctx_shell_background::{format_background_snapshot, redact_shell_output_secrets};
 
 pub struct CtxShellTool;
 
@@ -42,7 +42,7 @@ impl McpTool for CtxShellTool {
                     "cwd": { "type": "string", "description": "Working dir (persists across calls)" },
                     "timeout_ms": { "type": "integer", "description": "Job lifetime in ms (max 3600000) — NOT the inline wait. A command still running at the ~110s foreground cap detaches to a pollable shell_* job and keeps running up to timeout_ms. Overridden by LEAN_CTX_SHELL_TIMEOUT_MS." },
                     "env": { "type": "object", "description": "Extra env vars", "additionalProperties": { "type": "string" } },
-                    "run_in_background": { "type": "boolean", "description": "Detach immediately and return a job id. The command keeps timeout_ms; poll or cancel with background_action and job_id." },
+                    "run_in_background": { "type": "boolean", "description": "Detach immediately and return a job id. The command keeps timeout_ms (default here: the 1 h ceiling); poll or cancel with background_action and job_id." },
                     "background_action": { "type": "string", "enum": ["status", "cancel"], "description": "Inspect or cancel a background ctx_shell job; terminal status may include archiveId. Evicted/expired jobs return a structured lookup error." },
                     "job_id": { "type": "string", "description": "Job id returned by run_in_background." }
                 }
@@ -69,8 +69,8 @@ impl McpTool for CtxShellTool {
             })?;
             let is_cancel = action == "cancel";
             let state = match action.as_str() {
-                "status" => crate::server::background_shell::status(&id),
-                "cancel" => crate::server::background_shell::cancel(&id),
+                "status" => crate::server::background_shell::snapshot(&id),
+                "cancel" => crate::server::background_shell::cancel_snapshot(&id),
                 _ => {
                     return Err(ErrorData::invalid_params(
                         "background_action must be status or cancel",
@@ -78,7 +78,7 @@ impl McpTool for CtxShellTool {
                     ));
                 }
             };
-            let (text, outcome) = format_background_state(&id, is_cancel, state);
+            let (text, outcome) = format_background_snapshot(&id, is_cancel, state);
             return Ok(ToolOutput {
                 shell_outcome: Some(outcome),
                 content_blocks: None,
@@ -156,7 +156,10 @@ impl McpTool for CtxShellTool {
             });
         }
 
-        if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(&command) {
+        if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist_granted(
+            &command,
+            &crate::server::shell_approval::current_grant(),
+        ) {
             return Ok(ToolOutput {
                 shell_outcome: Some(ShellOutcome::Blocked),
                 content_blocks: None,
@@ -236,17 +239,31 @@ impl McpTool for CtxShellTool {
                             });
                         }
                     };
-                    let (raw_output, exit_code) = crate::server::execute::execute_command_with_env(
+                    let execution = crate::server::execute::execute_command_with_env_captured(
                         &cmd_clone, &cwd_clone, &extra_env, timeout_ms,
                     );
-                    let output = redact_shell_output_secrets(&raw_output);
+                    let admission = crate::core::context_admission::admit_tool_output(
+                        &execution.output,
+                        execution.completeness,
+                    );
+                    let output = redact_shell_output_secrets(&admission.rendered());
                     // Keep failure reporting consistent on this degraded path:
                     // same [exit:N] footer and the same structured outcome (#389).
-                    let exit_suffix = crate::shell::exit_status::exit_footer(exit_code);
+                    let exit_suffix = crate::shell::exit_status::exit_footer(execution.exit_code);
+                    let final_text = format!("{output}{exit_suffix}");
+                    let final_admission = crate::core::context_admission::admit_tool_output(
+                        &final_text,
+                        execution.completeness,
+                    );
                     return Ok(ToolOutput {
-                        shell_outcome: Some(ShellOutcome::Exit(exit_code)),
+                        shell_outcome: Some(ShellOutcome::Exit(execution.exit_code)),
                         content_blocks: None,
-                        ..ToolOutput::simple(format!("{output}{exit_suffix}"))
+                        // Q13: the call's notice goes in front last, after
+                        // admission; nothing above has seen it.
+                        ..ToolOutput::simple(crate::server::execute::with_notice(
+                            execution.notice,
+                            final_admission.rendered(),
+                        ))
                     });
                 };
                 // #707: a jail-accepted explicit `cwd` param is the client
@@ -307,9 +324,19 @@ impl McpTool for CtxShellTool {
             let inline = get_bool(args, "inline").unwrap_or(false);
 
             let auto_background = should_auto_background(&cmd_clone, timeout_ms);
-            if get_bool(args, "run_in_background").unwrap_or(false) || auto_background {
+            let detached = get_bool(args, "run_in_background").unwrap_or(false);
+            if detached || auto_background {
+                // A job the agent detached on purpose is long work: without a
+                // stated lifetime it gets the ceiling, not the 2/10-minute
+                // foreground default (25.10.: a release install was killed
+                // after 10 of its ~35 minutes and nothing was installed).
+                let lifetime = if detached {
+                    timeout_ms.or(Some(crate::shell::exec::MAX_CALL_TIMEOUT_MS))
+                } else {
+                    timeout_ms
+                };
                 let job_id = crate::server::background_shell::start(
-                    cmd_clone, cwd_clone, extra_env, timeout_ms,
+                    cmd_clone, cwd_clone, extra_env, lifetime,
                 );
                 let mode = if auto_background {
                     "auto-background"
@@ -368,8 +395,8 @@ impl McpTool for CtxShellTool {
                     );
                 }
             };
-            let (raw_output, exit_code) =
-                match crate::server::background_shell::run_foreground_or_detach(
+            let (process_output, exit_code, completeness, retained_withheld, containment_notice) =
+                match crate::server::background_shell::run_foreground_or_detach_captured(
                     cmd_clone.clone(),
                     cwd_clone.clone(),
                     extra_env.clone(),
@@ -378,11 +405,16 @@ impl McpTool for CtxShellTool {
                     Some(&on_tick),
                     ctx.cancel.as_ref(),
                 ) {
-                    crate::server::background_shell::ForegroundResult::Finished {
+                    crate::server::background_shell::CapturedForegroundResult::Finished {
                         output,
                         exit_code,
-                    } => (output, exit_code),
-                    crate::server::background_shell::ForegroundResult::Detached { job_id } => {
+                        completeness,
+                        retained_withheld,
+                        notice,
+                    } => (output, exit_code, completeness, retained_withheld, notice),
+                    crate::server::background_shell::CapturedForegroundResult::Detached {
+                        job_id,
+                    } => {
                         return Ok(ToolOutput {
                             shell_outcome: Some(ShellOutcome::Background(BackgroundShellOutcome {
                                 state: BackgroundJobState::Running,
@@ -408,15 +440,40 @@ impl McpTool for CtxShellTool {
                     }
                 };
 
-            // Structured diagnostics (#499) — same hook as the CLI path.
-            crate::core::diagnostics_store::record_from_shell(&cmd_clone, &raw_output, exit_code);
-
-            let output = redact_shell_output_secrets(&raw_output);
+            let display_input = if retained_withheld {
+                "[lean-ctx gateway: retained output withheld by storage policy]".to_string()
+            } else {
+                process_output.clone()
+            };
+            let admission =
+                crate::core::context_admission::admit_tool_output(&display_input, completeness);
+            let output = redact_shell_output_secrets(&admission.rendered());
             let output = if raw {
                 crate::server::walk_hint::strip_walk_hint(&output).to_string()
             } else {
                 output
             };
+
+            // Persistent diagnostics and derived stores require a separate,
+            // pathless storage decision under one current policy epoch.
+            let store = crate::core::context_admission::stores::StoreAdmission::current();
+            let stored_command = store.admit_shell_command(&cmd_clone);
+            let stored_output = (!retained_withheld)
+                .then(|| store.admit_shell_output(&process_output, completeness))
+                .flatten();
+            let storage_allowed = !retained_withheld
+                && store.is_current()
+                && stored_command.is_some()
+                && stored_output.is_some();
+            let command_for_store = stored_command.as_deref().unwrap_or_default();
+            let output_for_store = stored_output.as_deref().unwrap_or_default();
+            if storage_allowed {
+                crate::core::diagnostics_store::record_from_shell(
+                    command_for_store,
+                    output_for_store,
+                    exit_code,
+                );
+            }
 
             let (result_out, original, saved, tee_hint) = if raw || inline {
                 let tokens = crate::core::tokens::count_tokens(&output);
@@ -433,15 +490,16 @@ impl McpTool for CtxShellTool {
                 // Shared tee policy (#811): identical decision to the CLI path —
                 // `Failures` keys off the real exit code, not a substring match.
                 let timeout_notice_only = is_timeout_notice_only(&output, exit_code);
-                let tee_hint = if crate::shell::tee_policy::should_tee(
-                    &cfg.tee_mode,
-                    exit_code,
-                    output.trim().is_empty() || timeout_notice_only,
-                    crate::shell::tee_policy::output_was_elided(&output, &result),
-                    original,
-                    sent,
-                ) {
-                    crate::shell::save_tee(&cmd_clone, &output)
+                let tee_hint = if storage_allowed
+                    && crate::shell::tee_policy::should_tee(
+                        &cfg.tee_mode,
+                        exit_code,
+                        output.trim().is_empty() || timeout_notice_only,
+                        crate::shell::tee_policy::output_was_elided(&output, &result),
+                        original,
+                        sent,
+                    ) {
+                    crate::shell::save_tee(command_for_store, output_for_store)
                         .map(|p| {
                             if crate::cli::enforce_protected_store_path(std::path::Path::new(&p)).is_err() {
                                 format!("\n[full output: ctx_expand(id=\"{p}\", search=\"…\"|head=N|json_path=\"…\")]")
@@ -493,9 +551,14 @@ impl McpTool for CtxShellTool {
             } else {
                 final_out
             };
+            let final_admission =
+                crate::core::context_admission::admit_tool_output(&final_out, completeness);
+            let final_out = final_admission.rendered();
 
             Ok(ToolOutput {
-                text: final_out,
+                // Q13: the call's notice goes in front last — after admission,
+                // compression and the hints above, none of which has seen it.
+                text: crate::server::execute::with_notice(containment_notice, final_out),
                 original_tokens: original,
                 saved_tokens: saved,
                 mode,
@@ -535,7 +598,17 @@ fn resolve_effective_cwd(
     explicit_cwd: Option<&str>,
 ) -> Result<(String, Option<String>), ErrorData> {
     match session {
-        Some(session) => Ok(session.effective_cwd_checked(explicit_cwd)),
+        // A rejected directory fails here, before the write guard, the run,
+        // a background job or the cache key see a substituted one.
+        Some(session) => session
+            .execution_cwd(explicit_cwd)
+            .map(|cwd| (cwd, None))
+            .map_err(|reason| {
+                ErrorData::invalid_params(
+                    format!("working directory rejected, command not run: {reason}"),
+                    None,
+                )
+            }),
         None => Err(ErrorData::internal_error(
             "session lock timeout — cannot validate working directory",
             None,
@@ -1052,12 +1125,22 @@ fn handle_interpreter_heredoc_reroute(
     let reroute_note = format!(
         "\n[ctx_shell: interpreter heredoc auto-rerouted to ctx_execute(language=\"{language}\")]"
     );
-    let exec_text = crate::core::redaction::redact_text_if_enabled(&exec_text);
+    let exec_completeness = crate::core::context_admission::OutputCompleteness {
+        reader_incomplete: true,
+        ..crate::core::context_admission::OutputCompleteness::complete()
+    };
+    let exec_admission =
+        crate::core::context_admission::admit_tool_output(&exec_text, exec_completeness);
+    let exec_text = crate::core::redaction::redact_text_if_enabled(&exec_admission.rendered());
 
     let Some(rest_cmd) = remainder else {
+        let final_text = format!("{exec_text}{reroute_note}");
+        let final_admission =
+            crate::core::context_admission::admit_tool_output(&final_text, exec_completeness);
+        let text = final_admission.rendered();
         return Ok(ToolOutput {
-            text: format!("{exec_text}{reroute_note}"),
-            original_tokens: crate::core::tokens::count_tokens(&exec_text),
+            original_tokens: crate::core::tokens::count_tokens(&text),
+            text,
             saved_tokens: 0,
             mode: Some("heredoc-reroute".to_string()),
             path: None,
@@ -1067,7 +1150,10 @@ fn handle_interpreter_heredoc_reroute(
         });
     };
 
-    if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist(&rest_cmd) {
+    if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist_granted(
+        &rest_cmd,
+        &crate::server::shell_approval::current_grant(),
+    ) {
         let blocked =
             format!("{exec_text}{reroute_note}\n\n[remainder blocked by shell allowlist]\n{msg}");
         return Ok(ToolOutput {
@@ -1093,13 +1179,18 @@ fn handle_interpreter_heredoc_reroute(
         }
     };
 
-    let (shell_raw, shell_exit) = crate::server::execute::execute_command_with_env(
+    let shell_execution = crate::server::execute::execute_command_with_env_captured(
         &rest_cmd,
         &effective_cwd,
         &extra_env,
         timeout_ms,
     );
-    let shell_output = redact_shell_output_secrets(&shell_raw);
+    let shell_exit = shell_execution.exit_code;
+    let shell_admission = crate::core::context_admission::admit_tool_output(
+        &shell_execution.output,
+        shell_execution.completeness,
+    );
+    let shell_output = redact_shell_output_secrets(&shell_admission.rendered());
     let arg_raw = get_bool(args, "raw").unwrap_or(false);
     let arg_bypass = get_bool(args, "bypass").unwrap_or(false);
     let env_disabled = std::env::var("LEAN_CTX_DISABLED").is_ok();
@@ -1117,9 +1208,18 @@ fn handle_interpreter_heredoc_reroute(
     let combined = format!(
         "{exec_text}{reroute_note}\n\n[heredoc remainder via ctx_shell]\n{shell_text}{exit_suffix}"
     );
-    let token_count = crate::core::tokens::count_tokens(&combined);
+    let mut completeness = shell_execution.completeness;
+    // ctx_execute currently exposes no raw-byte capture flags for the heredoc
+    // half, so the combined output cannot claim full inspection coverage.
+    completeness.reader_incomplete = true;
+    let final_admission =
+        crate::core::context_admission::admit_tool_output(&combined, completeness);
+    // Q13: the shell half's notice goes in front last, after admission.
+    let text =
+        crate::server::execute::with_notice(shell_execution.notice, final_admission.rendered());
+    let token_count = crate::core::tokens::count_tokens(&text);
     Ok(ToolOutput {
-        text: combined,
+        text,
         original_tokens: token_count,
         saved_tokens: 0,
         mode: Some("heredoc-reroute".to_string()),

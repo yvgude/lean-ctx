@@ -1,0 +1,18 @@
+{
+  "case": "set_missing_target",
+  "description": "field.set on a node that does not exist",
+  "base": "events/field.set.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/target",
+      "value": "n_zzzzzzzzzzzzzzzzzzzzzzzzza"
+    }
+  ],
+  "resign_with": "instance_a",
+  "expect": {
+    "layer": "target_state",
+    "code": "invalid_event",
+    "reason": "target_state"
+  }
+}

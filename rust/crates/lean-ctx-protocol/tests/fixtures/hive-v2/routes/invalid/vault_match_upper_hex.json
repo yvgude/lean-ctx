@@ -1,0 +1,14 @@
+{
+  "base": "routes/vault_match.request.json",
+  "case": "vault_match_upper_hex",
+  "expect": {
+    "layer": "schema"
+  },
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/candidates/0/digest",
+      "value": "FE7C4812CCDD0AD5D64EF964242D992B52AAA0AB5C79C718705126CF7E6DA73C"
+    }
+  ]
+}

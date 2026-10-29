@@ -1,0 +1,17 @@
+{
+  "case": "plain_with_ck_wrapped",
+  "base": "events/node.add.fact.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/ck_wrapped",
+      "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/ck_wrapped"
+  }
+}

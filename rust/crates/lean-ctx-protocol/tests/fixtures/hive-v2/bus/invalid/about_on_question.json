@@ -1,0 +1,14 @@
+{
+  "case": "about_on_question",
+  "base": "bus/message.question.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/about",
+      "value": "collaboration"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

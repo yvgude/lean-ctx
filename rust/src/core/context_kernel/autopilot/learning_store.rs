@@ -534,14 +534,23 @@ mod tests {
         let mut first = open(&path, &task);
         let mut second = open(&path, &task);
         let barrier = std::sync::Barrier::new(2);
-        let run = |store: &mut AdaptiveLearningStore| {
-            let admitted = fixture.validated_for(&task).unwrap();
-            barrier.wait();
-            store.observe_protocol_outcome(&handoff, &admitted).unwrap()
-        };
+        // Validated here, once for each connection: the fixture owns this
+        // thread's isolated environment and is not shared with the two below.
+        let admitted_first = fixture.validated_for(&task).unwrap();
+        let admitted_second = fixture.validated_for(&task).unwrap();
         let results = std::thread::scope(|scope| {
-            let a = scope.spawn(|| run(&mut first));
-            let b = scope.spawn(|| run(&mut second));
+            let a = scope.spawn(|| {
+                barrier.wait();
+                first
+                    .observe_protocol_outcome(&handoff, &admitted_first)
+                    .unwrap()
+            });
+            let b = scope.spawn(|| {
+                barrier.wait();
+                second
+                    .observe_protocol_outcome(&handoff, &admitted_second)
+                    .unwrap()
+            });
             [a.join().unwrap(), b.join().unwrap()]
         });
         assert_eq!(results.into_iter().filter(|changed| *changed).count(), 1);

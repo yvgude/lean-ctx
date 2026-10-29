@@ -2,20 +2,32 @@ use std::path::{Path, PathBuf};
 
 use md5::{Digest, Md5};
 
+/// The local index directory of `project_root`: one per checkout. Two
+/// clones or worktrees of one repository, or two repositories with the same
+/// package name, share a [`namespace_hash`] but never a directory.
+///
+/// Releases before 3.11.5 named the directory by the namespace alone, so such
+/// projects shared one index. Those directories are not reused: each project
+/// rebuilds its index once in its own partition.
 pub(crate) fn vectors_dir(project_root: &Path) -> PathBuf {
-    let hash = namespace_hash(project_root);
+    let partition = partition_hash(project_root);
     let legacy = legacy_vectors_hash(project_root);
 
     if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
         let old_dir = data_dir.join("vectors").join(&legacy);
-        let new_dir = data_dir.join("vectors").join(&hash);
-        migrate_dir_if_needed(&old_dir, &new_dir);
+        let new_dir = data_dir.join("vectors").join(&partition);
+        migrate_dir_if_needed(&old_dir, &new_dir, project_root);
+        let namespace_dir = data_dir.join("vectors").join(namespace_hash(project_root));
+        adopt_namespace_index(&namespace_dir, &new_dir, project_root);
         return new_dir;
     }
 
-    PathBuf::from(".").join("vectors").join(hash)
+    PathBuf::from(".").join("vectors").join(partition)
 }
 
+/// The project-portable namespace (repository identity, optionally the
+/// branch). It names a hosted index bundle so a restore on another device
+/// finds its project; it never names a local directory.
 pub(crate) fn namespace_hash(project_root: &Path) -> String {
     let seed = namespace_seed(project_root);
     let mut hasher = Md5::new();
@@ -62,17 +74,39 @@ fn git_branch(project_root: &Path) -> Option<String> {
     if s.is_empty() { None } else { Some(s) }
 }
 
+/// [`namespace_hash`] bound to this checkout's path
+/// (`project_hash::hash_project_root`).
+fn partition_hash(project_root: &Path) -> String {
+    // Canonical, like the namespace: `/var/…` and `/private/var/…` (or a
+    // symlinked checkout) are one checkout and one directory.
+    let root_s = crate::core::graph_index::normalize_project_root(&project_root.to_string_lossy());
+    let seed = format!(
+        "partition:{}|{}",
+        crate::core::project_hash::hash_project_root(&root_s),
+        namespace_seed(project_root)
+    );
+    let mut hasher = Md5::new();
+    hasher.update(seed.as_bytes());
+    crate::core::agent_identity::hex_encode(&hasher.finalize())
+}
+
 fn legacy_vectors_hash(project_root: &Path) -> String {
     let mut hasher = Md5::new();
     hasher.update(project_root.to_string_lossy().as_bytes());
     crate::core::agent_identity::hex_encode(&hasher.finalize())
 }
 
-fn migrate_dir_if_needed(old_dir: &Path, new_dir: &Path) {
+fn migrate_dir_if_needed(old_dir: &Path, new_dir: &Path, project_root: &Path) {
     if old_dir == new_dir {
         return;
     }
     if !old_dir.exists() || new_dir.exists() {
+        return;
+    }
+    // The stored root is the authority: never adopt another project's index.
+    if std::fs::read_to_string(old_dir.join("project_root.txt"))
+        .is_ok_and(|stored| stored.trim() != project_root.to_string_lossy())
+    {
         return;
     }
     if !verify_index_ownership(old_dir) {
@@ -83,6 +117,39 @@ fn migrate_dir_if_needed(old_dir: &Path, new_dir: &Path) {
     }
     if let Err(e) = copy_dir_contents(old_dir, new_dir) {
         tracing::error!("lean-ctx: index migration failed: {e}");
+    }
+}
+
+/// Copy the local index files a release before 3.11.5 kept in the shared
+/// namespace directory, but only when that directory's recorded root is
+/// exactly this checkout's: then the index was built from this checkout and
+/// need not be rebuilt. `hosted-v2/` and every other subdirectory stay.
+fn adopt_namespace_index(namespace_dir: &Path, new_dir: &Path, project_root: &Path) {
+    if namespace_dir == new_dir || new_dir.exists() {
+        return;
+    }
+    let Ok(stored) = std::fs::read_to_string(namespace_dir.join("project_root.txt")) else {
+        return;
+    };
+    let canonical = |path: &Path| crate::core::pathutil::safe_canonicalize_bounded(path, 2000);
+    if canonical(Path::new(stored.trim())) != canonical(project_root)
+        || !verify_index_ownership(namespace_dir)
+    {
+        return;
+    }
+    let Ok(entries) = std::fs::read_dir(namespace_dir) else {
+        return;
+    };
+    if std::fs::create_dir_all(new_dir).is_err() {
+        return;
+    }
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if entry.file_type().is_ok_and(|kind| kind.is_file())
+            && let Err(error) = std::fs::copy(&path, new_dir.join(entry.file_name()))
+        {
+            tracing::warn!("lean-ctx: index adoption failed for {path:?}: {error}");
+        }
     }
 }
 
@@ -126,7 +193,7 @@ mod tests {
 
     #[test]
     fn namespace_hash_is_stable_across_clones_with_same_git_remote() {
-        let _env = crate::core::data_dir::test_env_lock();
+        let _data = crate::core::data_dir::isolated_data_dir();
         let a = tempfile::tempdir().unwrap();
         let b = tempfile::tempdir().unwrap();
 
@@ -147,6 +214,8 @@ mod tests {
         let ha = namespace_hash(a.path());
         let hb = namespace_hash(b.path());
         assert_eq!(ha, hb);
+        // AP05-G8: the two clones shared one index directory.
+        assert_ne!(vectors_dir(a.path()), vectors_dir(b.path()));
     }
 
     #[test]

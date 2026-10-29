@@ -1,0 +1,317 @@
+{
+  "route": "W105",
+  "method": "GET",
+  "path": "/api/v1/me/overview",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "slug": "acme",
+          "name": "Acme",
+          "kind": "team",
+          "role": "owner",
+          "instances": {
+            "items": [
+              {
+                "id": "3e7cbd85-6f41-4a0d-8c93-5db18eaf0234",
+                "label": "ada-mbp",
+                "owner": {
+                  "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
+                  "name": "Ada"
+                },
+                "engine_version": "3.12.0",
+                "os": "macos",
+                "enrolled_at": "2026-10-20T07:00:00Z",
+                "last_seen_at": "2026-10-26T06:58:00Z",
+                "connected": true,
+                "pending": false,
+                "revoked_at": null,
+                "lease": {
+                  "expires_at": "2026-10-27T06:58:00Z",
+                  "grace_until": "2026-10-28T06:58:00Z"
+                },
+                "slot_free_at": null
+              },
+              {
+                "id": "4f8dce96-7052-4b1e-9da4-6ec29fb01345",
+                "label": "ada-old-laptop",
+                "owner": {
+                  "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
+                  "name": "Ada"
+                },
+                "engine_version": "3.12.0",
+                "os": "macos",
+                "enrolled_at": "2026-10-20T07:00:00Z",
+                "last_seen_at": "2026-10-23T18:10:00Z",
+                "connected": false,
+                "pending": false,
+                "revoked_at": "2026-10-24T09:00:00Z",
+                "lease": null,
+                "slot_free_at": "2026-10-31T09:00:00Z"
+              },
+              {
+                "id": "5a9edfa7-8163-4c2f-8eb5-7fd3a0c12456",
+                "label": "ada-broken-phone",
+                "owner": {
+                  "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
+                  "name": "Ada"
+                },
+                "engine_version": "3.12.0",
+                "os": "macos",
+                "enrolled_at": "2026-10-20T07:00:00Z",
+                "last_seen_at": "2026-10-21T12:00:00Z",
+                "connected": false,
+                "pending": false,
+                "revoked_at": "2026-10-25T16:20:00Z",
+                "lease": null,
+                "slot_free_at": null
+              }
+            ],
+            "next_cursor": null,
+            "limit": 3,
+            "used": 1
+          },
+          "enforcement": {
+            "items": [
+              {
+                "instance_id": "inst_5f0e1d2c3b4a59687766554433221100",
+                "label": "ada-laptop",
+                "state": "acked",
+                "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                "conflict": null,
+                "acked": {
+                  "version": 3,
+                  "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                  "unenforced": [
+                    "context.max_context_tokens"
+                  ],
+                  "acked_at": "2026-10-25T21:15:02Z"
+                },
+                "refused": null,
+                "last_seen_at": "2026-10-25T21:15:00Z"
+              },
+              {
+                "instance_id": "inst_8899aabbccddeeff0011223344556677",
+                "label": "bob-mbp",
+                "state": "refused",
+                "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                "conflict": null,
+                "acked": {
+                  "version": 2,
+                  "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+                  "unenforced": [],
+                  "acked_at": "2026-10-24T18:02:11Z"
+                },
+                "refused": {
+                  "version": 3,
+                  "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                  "reason_code": "key_unavailable",
+                  "detail": "effective policy: no valid policy key for this key_id",
+                  "refused_at": "2026-10-25T21:14:40Z"
+                },
+                "last_seen_at": "2026-10-25T21:14:40Z"
+              },
+              {
+                "instance_id": "inst_00112233445566778899aabbccddeeff",
+                "label": "ci-runner",
+                "state": "unreachable",
+                "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+                "conflict": null,
+                "acked": null,
+                "refused": null,
+                "last_seen_at": "2026-10-20T08:00:00Z"
+              }
+            ],
+            "next_cursor": null
+          },
+          "cockpit": {
+            "series": []
+          },
+          "pilot_metrics": {
+            "activation": {
+              "first_engine_at": "2026-10-12T08:06:40Z",
+              "first_engine_s": 400,
+              "second_engine_at": "2026-10-13T09:30:00Z",
+              "second_engine_s": 91800,
+              "workspace_created_at": "2026-10-12T08:00:00Z"
+            },
+            "from": "2026-10-19T00:00:00Z",
+            "policy": {
+              "acked": 4,
+              "current_share": 0.8,
+              "engines": 5,
+              "outdated": 0,
+              "refused": 0,
+              "unreachable": 1
+            },
+            "sync": {
+              "active": 3,
+              "active_share": 0.75,
+              "days": 7,
+              "vaults": 4
+            },
+            "to": "2026-11-02T00:00:00Z",
+            "usage": {
+              "engines_registered": 5,
+              "months": [
+                {
+                  "bus_messages": 0,
+                  "complete": true,
+                  "engines_active": 0,
+                  "month": "2026-09",
+                  "transfer_bytes": 0,
+                  "transfer_per_engine_bytes": null
+                },
+                {
+                  "bus_messages": 18400,
+                  "complete": false,
+                  "engines_active": 4,
+                  "month": "2026-10",
+                  "transfer_bytes": 2147483648,
+                  "transfer_per_engine_bytes": 536870912
+                }
+              ],
+              "storage_bytes": 734003200,
+              "vaults": [
+                {
+                  "bytes": 524288000,
+                  "name": "payments"
+                },
+                {
+                  "bytes": 209715200,
+                  "name": "web"
+                }
+              ]
+            },
+            "weeks": [
+              {
+                "coordination": {
+                  "cancelled": 0,
+                  "claims": 0,
+                  "done": 0,
+                  "failed": 0,
+                  "lapsed": 0,
+                  "refused_held": 0,
+                  "refused_role": 0,
+                  "released": 0,
+                  "time_to_first_claim_p50_s": null
+                },
+                "delivery": {
+                  "engines": 1,
+                  "nodes": 12,
+                  "pairs": 12
+                },
+                "from": "2026-10-19T00:00:00Z",
+                "policy_admin": {
+                  "loosenings": 0,
+                  "removals": 0,
+                  "saves": 2
+                },
+                "reuse": {
+                  "engines": 0,
+                  "nodes": 0,
+                  "pairs": 0,
+                  "verified_knowledge_pairs": 0
+                },
+                "reuse_not_current": {
+                  "conflicting": 0,
+                  "outdated": 0,
+                  "pairs": 0,
+                  "rejected": 0
+                },
+                "to": "2026-10-26T00:00:00Z",
+                "week": "2026-W43"
+              },
+              {
+                "coordination": {
+                  "cancelled": 0,
+                  "claims": 6,
+                  "done": 4,
+                  "failed": 1,
+                  "lapsed": 1,
+                  "refused_held": 2,
+                  "refused_role": 0,
+                  "released": 1,
+                  "time_to_first_claim_p50_s": 420
+                },
+                "delivery": {
+                  "engines": 1,
+                  "nodes": 3,
+                  "pairs": 3
+                },
+                "from": "2026-10-26T00:00:00Z",
+                "policy_admin": {
+                  "loosenings": 1,
+                  "removals": 0,
+                  "saves": 1
+                },
+                "reuse": {
+                  "engines": 1,
+                  "nodes": 2,
+                  "pairs": 2,
+                  "verified_knowledge_pairs": 2
+                },
+                "reuse_not_current": {
+                  "conflicting": 0,
+                  "outdated": 1,
+                  "pairs": 1,
+                  "rejected": 0
+                },
+                "to": "2026-11-02T00:00:00Z",
+                "week": "2026-W44"
+              }
+            ]
+          },
+          "billing": {
+            "plan": "team",
+            "status": "active"
+          }
+        },
+        {
+          "slug": "ada",
+          "name": "Ada Lovelace",
+          "kind": "personal",
+          "role": "owner",
+          "instances": {
+            "error": {
+              "code": "rate_limited",
+              "status": 429
+            }
+          },
+          "enforcement": {
+            "items": [],
+            "next_cursor": null
+          },
+          "cockpit": {
+            "series": []
+          },
+          "pilot_metrics": null,
+          "billing": null
+        }
+      ]
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "the overview needs a signed-in session"
+        }
+      }
+    },
+    {
+      "status": 429,
+      "body": {
+        "error": {
+          "code": "rate_limited",
+          "message": "Too many attempts. Try again in 40 seconds.",
+          "retry_after_s": 40
+        }
+      }
+    }
+  ]
+}

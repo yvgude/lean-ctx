@@ -402,15 +402,6 @@ impl CacheEntry {
 
 const RRF_K: f64 = 60.0;
 
-/// Hebbian protection added to an entry's RRF eviction score per unit of
-/// association strength with the currently-active working set (#3). Files that
-/// are read together resist eviction together ("fire together, wire together").
-/// Deterministic: a fixed multiplier, no sampling.
-pub(super) const HEBBIAN_PROTECT_WEIGHT: f64 = 0.05;
-/// Size of the "active working set" (most-recently-accessed entries) against
-/// which Hebbian association is measured during eviction.
-pub(super) const HEBBIAN_ACTIVE_SET: usize = 8;
-
 /// Compute Reciprocal Rank Fusion eviction scores for a batch of cache entries.
 /// Each signal (recency, frequency, size) produces an independent ranking.
 /// The final score is the sum of `1/(k + rank)` across all signals.
@@ -472,19 +463,6 @@ pub fn eviction_scores_rrf(entries: &[(&String, &CacheEntry)], now: Instant) -> 
             ((*path).clone(), score)
         })
         .collect()
-}
-
-/// Add the Hebbian co-access bonus (#3) to RRF eviction scores in place. A
-/// higher score means "keep longer", so co-accessed entries are protected.
-pub(super) fn apply_hebbian_bonus(scores: &mut [(String, f64)], bonus: &HashMap<String, f64>) {
-    if bonus.is_empty() {
-        return;
-    }
-    for s in scores.iter_mut() {
-        if let Some(b) = bonus.get(&s.0) {
-            s.1 += *b;
-        }
-    }
 }
 
 /// Aggregated cache statistics: hits, reads, and token savings.

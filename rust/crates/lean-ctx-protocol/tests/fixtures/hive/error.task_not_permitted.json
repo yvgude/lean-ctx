@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "forbidden_right",
+    "message": "This agent may not work on this task.",
+    "number": 7,
+    "reason": "not_permitted"
+  }
+}

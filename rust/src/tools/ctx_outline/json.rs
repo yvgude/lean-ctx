@@ -40,6 +40,16 @@ struct DirJson<'a> {
     root: &'a str,
     truncated: bool,
     files: Vec<FileJson<'a>>,
+    /// Sources withheld by a path rule, the project policy or the gateway.
+    /// Absent when none was withheld, so an unaffected listing keeps its
+    /// bytes (#498); a count, never a path.
+    #[serde(skip_serializing_if = "is_zero")]
+    withheld: usize,
+}
+
+#[allow(clippy::trivially_copy_pass_by_ref)] // serde passes the field by reference
+fn is_zero(count: &usize) -> bool {
+    *count == 0
 }
 
 pub(super) fn file_json(path: &str, ext: &str, backend: SigBackend, sigs: &[&Signature]) -> String {
@@ -47,7 +57,12 @@ pub(super) fn file_json(path: &str, ext: &str, backend: SigBackend, sigs: &[&Sig
     serde_json::to_string_pretty(&fj).unwrap_or_else(|_| "{}".to_string())
 }
 
-pub(super) fn dir_json(root: &str, files: &[FileSymbols], truncated: bool) -> String {
+pub(super) fn dir_json(
+    root: &str,
+    files: &[FileSymbols],
+    truncated: bool,
+    withheld: usize,
+) -> String {
     let files_json: Vec<FileJson> = files
         .iter()
         .map(|f| build_file_json(&f.rel, &f.ext, f.backend, f.sigs.iter()))
@@ -57,6 +72,7 @@ pub(super) fn dir_json(root: &str, files: &[FileSymbols], truncated: bool) -> St
         root,
         truncated,
         files: files_json,
+        withheld,
     };
     serde_json::to_string_pretty(&dj).unwrap_or_else(|_| "{}".to_string())
 }

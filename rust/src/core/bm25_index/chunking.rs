@@ -32,6 +32,37 @@ pub(crate) fn split_camel_case_tokens(tokens: &[String]) -> Vec<String> {
     let mut result = Vec::new();
     for token in tokens {
         result.push(token.clone());
+        split_camel_word(token, &mut result);
+    }
+    result
+}
+
+/// The terms a chunk is indexed under: its tokens and, for a `snake_case`
+/// identifier, also its words (`admit_source_typed` → admit, source, typed),
+/// so a query in words finds the identifier, as camelCase parts already did.
+/// Only the index side splits: a query for `settle_canary` stays that one
+/// identifier and does not match `settle_ledger` by its first word.
+pub(crate) fn index_terms(text: &str) -> Vec<String> {
+    let mut terms = tokenize(text);
+    let mut words = Vec::new();
+    for term in &terms {
+        let parts: Vec<&str> = term.split('_').filter(|part| !part.is_empty()).collect();
+        if parts.len() > 1 {
+            for part in parts {
+                if part.len() >= 2 {
+                    words.push(part.to_owned());
+                }
+                split_camel_word(part, &mut words);
+            }
+        }
+    }
+    terms.extend(words);
+    terms
+}
+
+/// The camelCase parts of one word (`ContextGateway` → Context, Gateway).
+fn split_camel_word(token: &str, result: &mut Vec<String>) {
+    {
         let mut start = 0;
         let chars: Vec<char> = token.chars().collect();
         for i in 1..chars.len() {
@@ -50,7 +81,6 @@ pub(crate) fn split_camel_case_tokens(tokens: &[String]) -> Vec<String> {
             }
         }
     }
-    result
 }
 
 /// Whether `content` is a bundled/minified payload rather than human-authored
@@ -695,6 +725,31 @@ pub(crate) fn enrich_for_bm25(chunk: &CodeChunk) -> String {
 #[cfg(test)]
 mod chunking_shape_tests {
     use super::looks_minified;
+
+    /// A query in words finds a snake_case identifier: the index holds its
+    /// words as terms of their own, as the parts of a camelCase name already
+    /// were; a query for the identifier itself is not split.
+    #[test]
+    fn snake_case_identifiers_are_split_into_their_words() {
+        let terms = super::index_terms("fn admit_source_typed(ctx: ContextGateway)");
+        for word in [
+            "admit_source_typed",
+            "admit",
+            "source",
+            "typed",
+            "Context",
+            "Gateway",
+        ] {
+            assert!(terms.iter().any(|term| term == word), "{word}: {terms:?}");
+        }
+        // A query stays the identifier it names.
+        let query = super::tokenize("settle_canary");
+        assert!(
+            !query
+                .iter()
+                .any(|token| token == "settle" || token == "canary")
+        );
+    }
 
     #[test]
     fn minified_bundles_are_recognised_without_a_glob() {

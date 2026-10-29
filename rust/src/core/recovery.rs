@@ -60,7 +60,7 @@ pub(crate) fn read_footer(file_path: &str) -> Option<String> {
         // The header line is the SSOT [`COMPACT_VIEW_HEADER`] (also in `tdd_schema`);
         // the ladder now leads with the native path before the MCP shortcuts.
         RecoveryHints::Full => Some(format!(
-            "{COMPACT_VIEW_HEADER}\n  full: read \"{file_path}\" directly (no MCP)  ·  ctx_read(\"{file_path}\", mode=\"full\")  ·  exact bytes: ctx_read(\"{file_path}\", raw=true)  ·  recover: ctx_retrieve(\"{file_path}\")"
+            "{COMPACT_VIEW_HEADER}\n  full: read \"{file_path}\" directly (no MCP)  ·  ctx_read(\"{file_path}\", mode=\"full\")  ·  exact bytes: ctx_read(\"{file_path}\", raw=true)"
         )),
     }
 }
@@ -86,9 +86,67 @@ pub(crate) fn handle_clause(id: &str, on_disk_path: Option<&str>) -> String {
     }
 }
 
+/// The pointer a truncation carries to the bytes it cut (K25). The id is the
+/// content-addressed archive id, so the line is a pure function of the
+/// original text and stays byte-stable across repeated calls (#498).
+#[must_use]
+pub(crate) fn original_pointer(id: &str) -> String {
+    format!("[Original available via ctx_expand id={id}]")
+}
+
+/// Archive the full `original` of a truncated view and return its
+/// [`original_pointer`]. `None` when the archive may not hold it: archive off,
+/// or protection active and the text has no source authority — the archive
+/// itself refuses then, and the truncation keeps its existing notice. The
+/// `LEAN_CTX_MINIMAL` escape hatch stores nothing either (#1540).
+#[must_use]
+pub(crate) fn archive_original(tool: &str, label: &str, original: &str) -> Option<String> {
+    if Config::minimal_escape_hatch() {
+        return None;
+    }
+    let to_store = crate::core::redaction::redact_text_if_enabled(original);
+    crate::core::archive::store(tool, label, &to_store, None).map(|id| original_pointer(&id))
+}
+
+/// `truncated` followed by the pointer to `original`, when it can be archived.
+#[must_use]
+pub(crate) fn with_original_pointer(
+    tool: &str,
+    label: &str,
+    original: &str,
+    truncated: String,
+) -> String {
+    match archive_original(tool, label, original) {
+        Some(pointer) => format!("{truncated}\n{pointer}"),
+        None => truncated,
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// K25 / #498: the same original always yields the same pointer, and the
+    /// pointer resolves to the original through `ctx_expand`'s store.
+    #[test]
+    fn original_pointer_is_content_addressed_and_resolves() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let original = "line\n".repeat(400);
+        let first = archive_original("ctx_test", "label", &original).expect("archived");
+        let second = archive_original("ctx_test", "label", &original).expect("archived");
+        assert_eq!(first, second, "byte-stable pointer");
+        let id = first
+            .strip_prefix("[Original available via ctx_expand id=")
+            .and_then(|rest| rest.strip_suffix(']'))
+            .expect("pointer grammar");
+        assert_eq!(
+            crate::core::archive::retrieve(id).as_deref(),
+            Some(original.as_str())
+        );
+        let other = archive_original("ctx_test", "label", "different").expect("archived");
+        assert_ne!(first, other);
+    }
 
     #[cfg(target_os = "macos")]
     #[test]
@@ -135,7 +193,7 @@ mod tests {
 
         crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "full");
         let full = read_footer("src/x.rs").expect("full emits a footer");
-        assert!(full.contains("raw=true") && full.contains("ctx_retrieve"));
+        assert!(full.contains("raw=true") && !full.contains("ctx_retrieve"));
         assert!(
             full.find("read \"src/x.rs\" directly").unwrap() < full.find("raw=true").unwrap(),
             "full ladder still leads with the native path"

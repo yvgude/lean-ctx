@@ -153,8 +153,8 @@ it needs with `ctx_expand` — by line range or full-text search across the arch
 **Under the hood** (`rust/src/core/firewall.rs`):
 - Scope is deliberately narrow: `ctx_shell`, `ctx_execute`, `ctx_search`,
   `ctx_tree`. **Explicit file reads are never firewalled** —
-  `is_protected_read()` makes `ctx_read` / `ctx_multi_read` / `ctx_smart_read`
-  the single source of truth for "a read always returns content the agent can
+  `is_protected_read()` makes `ctx_read` (including its `paths=[…]` batch and
+  `mode="auto"`) the single source of truth for "a read always returns content the agent can
   edit against," honoured by both the firewall and the `reference_results` path.
 - The digest is built without an LLM (head/tail or char-bounded excerpt for single
   giant lines) so it is reproducible and cheap.
@@ -338,11 +338,11 @@ and sensitivity floor all change together:
 coding                              → Power profile · identity · lines · auto · floor=public
 research                           → Standard profile · markdown · paragraph · map · floor=public
 support · data-analysis            → Standard profile · prose/identity · floor=internal
-lead-gen (alias: sales)            → Custom 6-tool surface · prose · paragraph · floor=confidential
-        tools: ctx_read · ctx_search · ctx_url_read · ctx_knowledge · ctx_semantic_search · ctx_session
+lead-gen (alias: sales)            → Custom 5-tool surface · prose · paragraph · floor=confidential
+        tools: ctx_read · ctx_search · ctx_url_read · ctx_knowledge · ctx_session
 ```
 
-The lead-gen surface is genuinely **narrowed** to those six prospecting tools — the
+The lead-gen surface is genuinely **narrowed** to those five prospecting tools — the
 refactor/code tools are gone — while `coding` keeps the full Power surface.
 
 Not one of the built-ins? Ship a declarative persona file and select it — no fork:
@@ -351,7 +351,7 @@ Not one of the built-ins? Ship a declarative persona file and select it — no f
 # <personas_dir>/compliance.toml  (default <OS-config-dir>/lean-ctx/personas; override via LEAN_CTX_PERSONAS_DIR)
 name = "compliance"
 tool_profile = "custom"
-tools = ["ctx_read", "ctx_search", "ctx_semantic_search", "ctx_knowledge"]
+tools = ["ctx_read", "ctx_search", "ctx_knowledge"]
 default_read_mode = "map"
 compressor = "prose"
 chunker = "paragraph"
@@ -386,7 +386,7 @@ picks the right reader per file — no per-format flags:
 
 ```python
 client.call_tool_text("ctx_index", {"action": "build", "project_root": "./reports"})
-hits = client.call_tool_text("ctx_semantic_search", {"query": "Q3 churn drivers"})
+hits = client.call_tool_text("ctx_search", {"action": "semantic", "query": "Q3 churn drivers"})
 ```
 
 | Format | What the extractor does |
@@ -493,16 +493,20 @@ lean-ctx billing plans               # free · supporter · pro · team · busin
 lean-ctx billing usage --json        # metered from the signed ledger, read-only
 ```
 
-2. **Team coordination, with real RBAC.** Issue role-scoped tokens and serve a
-   shared, audited team endpoint:
+2. **Team coordination, with real RBAC.** The owner provisions the team of a Team
+   plan and invites members with a role; a member joins with the invite code:
 
 ```bash
-lean-ctx team token create --config team.json --id alice --role viewer   # viewer·member·admin·owner
-lean-ctx team serve --config team.json
+lean-ctx team create                              # owner: the team this plan includes
+lean-ctx team invite create --role viewer         # admin · member · viewer; the code is shown once
+LEAN_CTX_TEAM_INVITE_CODE=… lean-ctx team join    # invited account: redeem and bind in one step
+lean-ctx team status                              # memberships and what the team is served
 ```
 
-   A `viewer` may search but is denied mutations/audit (`403 scope_denied`); an
-   `admin` has the full scope set — every decision written to an audit log.
+   A `viewer` reads but cannot write (typed refusal); membership changes are
+   written to the team's audit events. `lean-ctx team` is the client of the
+   hosted Team service; this binary has no team-server command (`team serve`
+   and `team token` do not exist in it).
 
 3. **Prove the value** with a reproducible, signed ROI artifact:
 

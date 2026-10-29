@@ -119,7 +119,7 @@ with fresh anchors (retry once). Codex's own `apply_patch` stays fine; `ctx_edit
 power-profile fallback.
 
 ## Proactive (use without being asked)
-- `ctx_overview(task)` at session start
+- `ctx_compose(task)` at session start
 - `ctx_compress` when context grows large
 
 ## Session Documentation
@@ -179,7 +179,7 @@ Background agents can lose context between steps. lean-ctx prevents this:
 
 ```
 # Background agent step 1: Research
-ctx_overview("migrate database from SQLite to PostgreSQL")
+ctx_compose("migrate database from SQLite to PostgreSQL")
 ctx_search("sqlite", "src/")
 ctx_knowledge(action="remember", category="discovery", content="15 files reference SQLite directly")
 
@@ -188,7 +188,7 @@ ctx_knowledge(action="recall", query="SQLite references")  # Returns the discove
 ctx_session(action="task", value="SQLite to PostgreSQL migration [25%]")
 
 # Background agent step 3: Implement
-ctx_read("src/db/connection.rs", "full")  # Cached from step 1's overview
+ctx_read("src/db/connection.rs", "full")  # Cached from step 1's compose
 ```
 
 ### Task Tracking
@@ -310,26 +310,25 @@ ctx_pack("load", "auth-refactor")
 # Get PR context
 ctx_shell("git diff main...HEAD --stat")
 
-# Review changes
-ctx_review("src/api/handler.rs")
+# Which files do the changes affect?
+ctx_graph(action="diff", since="main")
 
-# Check for code smells
-ctx_smells("src/api/handler.rs")
+# Read the changed code; the review itself and linting stay with Codex
+ctx_read("src/api/handler.rs", "full")
 ```
 
 ### Multi-Step Refactoring
 
 ```
 # Step 1: Analyze
-ctx_overview("rename UserService to AccountService across the codebase")
-ctx_refactor("references", "src/services/user.rs", "UserService")
+ctx_compose("rename UserService to AccountService across the codebase")
+ctx_search("UserService", "src/")
 
 # Step 2: Plan
-ctx_impact("src/services/user.rs")
+ctx_graph(action="impact", path="src/services/user.rs")
 ctx_knowledge(action="remember", category="decision", content="Renaming UserService to AccountService — 12 files affected")
 
-# Step 3: Execute
-ctx_refactor("rename", "src/services/user.rs", "UserService", "AccountService")
+# Step 3: Execute — Codex applies the rename with its own edit tools
 ```
 
 ## Troubleshooting

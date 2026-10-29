@@ -170,6 +170,18 @@ impl Target {
     }
 
     pub(crate) fn read_file(path: &Path) -> Option<String> {
+        Self::read_file_limited(path, Some(content::MAX_PROTECTED_CONTENT_BYTES))
+    }
+
+    /// [`Self::read_file`] without the protected-content size cap, for a
+    /// durable store that grows without limit (the knowledge store: owner
+    /// decision 24.10., no knowledge limits). A store over the cap used to be
+    /// unreadable here, which refused every later write to it.
+    pub(crate) fn read_store_file(path: &Path) -> Option<String> {
+        Self::read_file_limited(path, None)
+    }
+
+    fn read_file_limited(path: &Path, limit: Option<usize>) -> Option<String> {
         use std::io::Read;
         if !regular_or_absent(path) {
             return None;
@@ -177,7 +189,7 @@ impl Target {
         let mut options = std::fs::OpenOptions::new();
         options.read(true);
         no_follow(&mut options);
-        let file = options.open(path).ok()?;
+        let mut file = options.open(path).ok()?;
         let metadata = file.metadata().ok()?;
         if !metadata.is_file() {
             return None;
@@ -190,11 +202,16 @@ impl Target {
             }
         }
         let mut text = String::new();
-        file.take(content::MAX_PROTECTED_CONTENT_BYTES as u64 + 1)
-            .read_to_string(&mut text)
-            .ok()?;
-        if text.len() > content::MAX_PROTECTED_CONTENT_BYTES {
-            return None;
+        match limit {
+            Some(limit) => {
+                file.take(limit as u64 + 1).read_to_string(&mut text).ok()?;
+                if text.len() > limit {
+                    return None;
+                }
+            }
+            None => {
+                file.read_to_string(&mut text).ok()?;
+            }
         }
         Some(text)
     }

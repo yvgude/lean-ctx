@@ -1,8 +1,7 @@
 use super::builtins::{builtin_coder, builtin_profile, builtin_profiles};
 use super::types::{
-    BudgetConfig, CapabilitiesConfig, CapabilityBinding, CompressionConfig, ConstraintsConfig,
-    LayoutConfig, OutputHints, PipelineConfig, Profile, ProfileAutonomy, ProfileMeta, ReadConfig,
-    RoutingConfig, TranslationConfig,
+    CompressionConfig, OutputHints, Profile, ProfileAutonomy, ProfileMeta, ReadConfig,
+    RoutingConfig,
 };
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -79,7 +78,27 @@ fn load_profile_from_disk(name: &str) -> Option<Profile> {
 
 fn try_load_toml(path: &Path) -> Option<Profile> {
     let content = std::fs::read_to_string(path).ok()?;
-    toml::from_str(&content).ok()
+    let table: toml::Table = toml::from_str(&content).ok()?;
+    warn_retired_autonomy_keys(path, &table);
+    table.try_into().ok()
+}
+
+/// A profile `[autonomy]` key retired with its driver is ignored on load;
+/// name it instead of dropping it silently.
+fn warn_retired_autonomy_keys(path: &Path, table: &toml::Table) {
+    let Some(autonomy) = table.get("autonomy").and_then(toml::Value::as_table) else {
+        return;
+    };
+    for key in autonomy.keys() {
+        let dotted = format!("autonomy.{key}");
+        if let Some(retired) = crate::core::config::retired::retired_key(&dotted) {
+            tracing::warn!(
+                "profile {}: `{dotted}` is retired and has no effect ({})",
+                path.display(),
+                retired.note
+            );
+        }
+    }
 }
 
 /// Merges parent into child: child values take precedence,
@@ -90,35 +109,9 @@ fn try_load_toml(path: &Path) -> Option<Profile> {
 pub(super) fn merge_profiles(parent: Profile, child: Profile) -> Profile {
     let read = ReadConfig {
         default_mode: child.read.default_mode.or(parent.read.default_mode),
-        max_tokens_per_file: child
-            .read
-            .max_tokens_per_file
-            .or(parent.read.max_tokens_per_file),
-        prefer_cache: child.read.prefer_cache.or(parent.read.prefer_cache),
     };
     let compression = CompressionConfig {
         crp_mode: child.compression.crp_mode.or(parent.compression.crp_mode),
-        output_density: child
-            .compression
-            .output_density
-            .or(parent.compression.output_density),
-        entropy_threshold: child
-            .compression
-            .entropy_threshold
-            .or(parent.compression.entropy_threshold),
-        terse_mode: child
-            .compression
-            .terse_mode
-            .or(parent.compression.terse_mode),
-        adaptive: child.compression.adaptive.or(parent.compression.adaptive),
-    };
-    let translation = TranslationConfig {
-        enabled: child.translation.enabled.or(parent.translation.enabled),
-        ruleset: child.translation.ruleset.or(parent.translation.ruleset),
-    };
-    let layout = LayoutConfig {
-        enabled: child.layout.enabled.or(parent.layout.enabled),
-        min_lines: child.layout.min_lines.or(parent.layout.min_lines),
     };
     let memory = crate::core::memory_policy::MemoryPolicyOverrides {
         knowledge: crate::core::memory_policy::KnowledgePolicyOverrides {
@@ -226,69 +219,7 @@ pub(super) fn merge_profiles(parent: Profile, child: Profile) -> Profile {
             .check_structure
             .or(parent.verification.check_structure),
     };
-    let budget = BudgetConfig {
-        max_context_tokens: child
-            .budget
-            .max_context_tokens
-            .or(parent.budget.max_context_tokens),
-        max_shell_invocations: child
-            .budget
-            .max_shell_invocations
-            .or(parent.budget.max_shell_invocations),
-        max_cost_usd: child.budget.max_cost_usd.or(parent.budget.max_cost_usd),
-    };
-    let constraints = ConstraintsConfig {
-        quality_floor: child
-            .constraints
-            .quality_floor
-            .or(parent.constraints.quality_floor),
-        max_cost_usd: child
-            .constraints
-            .max_cost_usd
-            .or(parent.constraints.max_cost_usd),
-        max_latency_ms: child
-            .constraints
-            .max_latency_ms
-            .or(parent.constraints.max_latency_ms),
-        max_context_tokens: child
-            .constraints
-            .max_context_tokens
-            .or(parent.constraints.max_context_tokens),
-        require_verification: child
-            .constraints
-            .require_verification
-            .or(parent.constraints.require_verification),
-    };
-    let capabilities = CapabilitiesConfig {
-        code_context: merge_capability_binding(
-            parent.capabilities.code_context,
-            child.capabilities.code_context,
-        ),
-        shell_output: merge_capability_binding(
-            parent.capabilities.shell_output,
-            child.capabilities.shell_output,
-        ),
-        knowledge: merge_capability_binding(
-            parent.capabilities.knowledge,
-            child.capabilities.knowledge,
-        ),
-        routing: merge_capability_binding(parent.capabilities.routing, child.capabilities.routing),
-        compression: merge_capability_binding(
-            parent.capabilities.compression,
-            child.capabilities.compression,
-        ),
-    };
-    let pipeline = PipelineConfig {
-        intent: child.pipeline.intent.or(parent.pipeline.intent),
-        relevance: child.pipeline.relevance.or(parent.pipeline.relevance),
-        compression: child.pipeline.compression.or(parent.pipeline.compression),
-        translation: child.pipeline.translation.or(parent.pipeline.translation),
-    };
     let routing = RoutingConfig {
-        max_model_tier: child
-            .routing
-            .max_model_tier
-            .or(parent.routing.max_model_tier),
         degrade_under_pressure: child
             .routing
             .degrade_under_pressure
@@ -296,37 +227,6 @@ pub(super) fn merge_profiles(parent: Profile, child: Profile) -> Profile {
     };
     let autonomy = ProfileAutonomy {
         enabled: child.autonomy.enabled.or(parent.autonomy.enabled),
-        auto_preload: child.autonomy.auto_preload.or(parent.autonomy.auto_preload),
-        auto_dedup: child.autonomy.auto_dedup.or(parent.autonomy.auto_dedup),
-        auto_related: child.autonomy.auto_related.or(parent.autonomy.auto_related),
-        silent_preload: child
-            .autonomy
-            .silent_preload
-            .or(parent.autonomy.silent_preload),
-        auto_prefetch: child
-            .autonomy
-            .auto_prefetch
-            .or(parent.autonomy.auto_prefetch),
-        auto_response: child
-            .autonomy
-            .auto_response
-            .or(parent.autonomy.auto_response),
-        dedup_threshold: child
-            .autonomy
-            .dedup_threshold
-            .or(parent.autonomy.dedup_threshold),
-        prefetch_max_files: child
-            .autonomy
-            .prefetch_max_files
-            .or(parent.autonomy.prefetch_max_files),
-        prefetch_budget_tokens: child
-            .autonomy
-            .prefetch_budget_tokens
-            .or(parent.autonomy.prefetch_budget_tokens),
-        response_min_tokens: child
-            .autonomy
-            .response_min_tokens
-            .or(parent.autonomy.response_min_tokens),
         checkpoint_interval: child
             .autonomy
             .checkpoint_interval
@@ -390,33 +290,11 @@ pub(super) fn merge_profiles(parent: Profile, child: Profile) -> Profile {
         },
         read,
         compression,
-        translation,
-        layout,
         memory,
         verification,
-        budget,
-        constraints,
-        capabilities,
-        pipeline,
         routing,
         autonomy,
         output_hints,
-    }
-}
-
-fn merge_capability_binding(
-    parent: Option<CapabilityBinding>,
-    child: Option<CapabilityBinding>,
-) -> Option<CapabilityBinding> {
-    match (parent, child) {
-        (Some(parent), Some(child)) => Some(CapabilityBinding {
-            provider: child.provider.or(parent.provider),
-            strategy: child.strategy.or(parent.strategy),
-            version: child.version.or(parent.version),
-        }),
-        (Some(parent), None) => Some(parent),
-        (None, Some(child)) => Some(child),
-        (None, None) => None,
     }
 }
 

@@ -2,21 +2,27 @@
 
 mod agent_control;
 mod agents;
+mod analysis_bridge;
 mod context;
+mod decisions;
 mod doctor;
 mod feedback;
+mod gateway_connect;
+mod gateway_receipts;
+mod gateway_stages;
 mod graph;
 pub(crate) mod health;
 pub mod helpers;
+mod hive_workspace;
 mod kernel;
 mod knowledge;
-mod leaderboard;
 mod learning;
 mod memory;
 mod provenance;
 pub(crate) mod response_cache;
 mod risk;
 mod roi;
+mod scope;
 mod settings;
 mod signals;
 mod snapshots;
@@ -30,152 +36,15 @@ mod usage_breakdown;
 
 use std::sync::Arc;
 
-fn match_component_path(path: &str) -> Option<String> {
-    let content = match path {
-        "/static/components/cockpit-nav.js" => super::COCKPIT_COMPONENT_NAV_JS,
-        "/static/components/cockpit-context.js" => super::COCKPIT_COMPONENT_CONTEXT_JS,
-        "/static/components/cockpit-overview.js" => super::COCKPIT_COMPONENT_OVERVIEW_JS,
-        "/static/components/cockpit-live.js" => super::COCKPIT_COMPONENT_LIVE_JS,
-        "/static/components/cockpit-value-gate.js" => super::COCKPIT_COMPONENT_VALUE_GATE_JS,
-        "/static/components/cockpit-knowledge.js" => super::COCKPIT_COMPONENT_KNOWLEDGE_JS,
-        "/static/components/cockpit-agents.js" => super::COCKPIT_COMPONENT_AGENTS_JS,
-        "/static/components/cockpit-memory.js" => super::COCKPIT_COMPONENT_MEMORY_JS,
-        "/static/components/cockpit-search.js" => super::COCKPIT_COMPONENT_SEARCH_JS,
-        "/static/components/cockpit-compression.js" => super::COCKPIT_COMPONENT_COMPRESSION_JS,
-        "/static/components/cockpit-tour.js" => super::COCKPIT_COMPONENT_TOUR_JS,
-        "/static/components/cockpit-partner-promo.js" => super::COCKPIT_COMPONENT_PARTNER_PROMO_JS,
-        "/static/components/cockpit-graph.js" => super::COCKPIT_COMPONENT_GRAPH_JS,
-        "/static/components/cockpit-architecture.js" => super::COCKPIT_COMPONENT_ARCHITECTURE_JS,
-        "/static/components/cockpit-explorer.js" => super::COCKPIT_COMPONENT_EXPLORER_JS,
-        "/static/components/cockpit-health.js" => super::COCKPIT_COMPONENT_HEALTH_JS,
-        "/static/components/cockpit-provenance.js" => super::COCKPIT_COMPONENT_PROVENANCE_JS,
-        "/static/components/cockpit-remaining.js" => super::COCKPIT_COMPONENT_REMAINING_JS,
-        "/static/components/cockpit-commander.js" => super::COCKPIT_COMPONENT_COMMANDER_JS,
-        "/static/components/cockpit-palette.js" => super::COCKPIT_COMPONENT_PALETTE_JS,
-        "/static/components/cockpit-roi.js" => super::COCKPIT_COMPONENT_ROI_JS,
-        "/static/components/cockpit-replay.js" => super::COCKPIT_COMPONENT_REPLAY_JS,
-        "/static/components/cockpit-feedback.js" => super::COCKPIT_COMPONENT_FEEDBACK_JS,
-        "/static/components/cockpit-leaderboard.js" => super::COCKPIT_COMPONENT_LEADERBOARD_JS,
-        "/static/components/cockpit-area-tabs.js" => super::COCKPIT_COMPONENT_AREA_TABS_JS,
-        "/static/components/cockpit-protection.js" => super::COCKPIT_COMPONENT_PROTECTION_JS,
-        "/static/components/cockpit-settings.js" => super::COCKPIT_COMPONENT_SETTINGS_JS,
-        "/static/components/cockpit-telemetry.js" => super::COCKPIT_COMPONENT_TELEMETRY_JS,
-        "/static/components/cockpit-adoption.js" => super::COCKPIT_COMPONENT_ADOPTION_JS,
-        "/static/components/cockpit-solution.js" => super::COCKPIT_COMPONENT_SOLUTION_JS,
-        _ => return None,
-    };
-    Some(content.to_string())
-}
-
 pub fn route_response(
     path: &str,
     query_str: &str,
-    query_token: Option<&String>,
+    _query_token: Option<&String>,
     token: Option<&Arc<String>>,
     _is_loopback: bool,
     method: &str,
     body: &str,
 ) -> (&'static str, &'static str, String) {
-    if path == "/" || path == "/index.html" || path == "/cockpit" || path == "/cockpit/" {
-        let mut html = super::COCKPIT_INDEX_HTML.to_string();
-        if let Some(t) = token {
-            let expected = t.as_str();
-            let valid_query = query_token
-                .as_ref()
-                .is_some_and(|q| super::constant_time_eq(q.as_bytes(), expected.as_bytes()));
-            if valid_query {
-                let script = format!(
-                    "<script>window.__LEAN_CTX_TOKEN__=\"{expected}\";try{{if(location.search.includes('token=')){{history.replaceState(null,'',location.pathname+location.hash);}}}}catch(e){{}}</script>"
-                );
-                html = html.replacen("<head>", &format!("<head>{script}"), 1);
-            }
-        }
-        return ("200 OK", "text/html; charset=utf-8", html);
-    }
-    if path == "/static/style.css" {
-        return (
-            "200 OK",
-            "text/css; charset=utf-8",
-            super::COCKPIT_STYLE_CSS.to_string(),
-        );
-    }
-    if path == "/static/lib/api.js" {
-        return (
-            "200 OK",
-            "application/javascript; charset=utf-8",
-            super::COCKPIT_LIB_API_JS.to_string(),
-        );
-    }
-    if path == "/static/lib/format.js" {
-        return (
-            "200 OK",
-            "application/javascript; charset=utf-8",
-            super::COCKPIT_LIB_FORMAT_JS.to_string(),
-        );
-    }
-    if path == "/static/lib/router.js" {
-        return (
-            "200 OK",
-            "application/javascript; charset=utf-8",
-            super::COCKPIT_LIB_ROUTER_JS.to_string(),
-        );
-    }
-    if path == "/static/lib/charts.js" {
-        return (
-            "200 OK",
-            "application/javascript; charset=utf-8",
-            super::COCKPIT_LIB_CHARTS_JS.to_string(),
-        );
-    }
-    if path == "/static/lib/shared.js" {
-        return (
-            "200 OK",
-            "application/javascript; charset=utf-8",
-            super::COCKPIT_LIB_SHARED_JS.to_string(),
-        );
-    }
-    if path == "/static/lib/doctor.js" {
-        return (
-            "200 OK",
-            "application/javascript; charset=utf-8",
-            super::COCKPIT_LIB_DOCTOR_JS.to_string(),
-        );
-    }
-    if let Some(content) = match_component_path(path) {
-        return ("200 OK", "application/javascript; charset=utf-8", content);
-    }
-    if path == "/static/fonts/fonts.css" {
-        return (
-            "200 OK",
-            "text/css; charset=utf-8",
-            super::COCKPIT_FONTS_CSS.to_string(),
-        );
-    }
-    if path == "/static/vendor/chart.umd.min.js" {
-        return (
-            "200 OK",
-            "application/javascript; charset=utf-8",
-            super::COCKPIT_VENDOR_CHART_JS.to_string(),
-        );
-    }
-    if path == "/static/vendor/d3.min.js" {
-        return (
-            "200 OK",
-            "application/javascript; charset=utf-8",
-            super::COCKPIT_VENDOR_D3_JS.to_string(),
-        );
-    }
-    if path == "/favicon.svg" {
-        return (
-            "200 OK",
-            "image/svg+xml; charset=utf-8",
-            super::COCKPIT_FAVICON_SVG.to_string(),
-        );
-    }
-    if path == "/favicon.ico" {
-        return ("204 No Content", "text/plain", String::new());
-    }
-
     // The HTTP boundary already verified the bearer and CSRF headers. Unlike
     // passive dashboard views, execution control is unavailable in no-auth mode.
     if path == "/api/agents/work-graph" {
@@ -189,14 +58,18 @@ pub fn route_response(
         return agent_control::handle(method, body);
     }
 
+    if path == analysis_bridge::INPUTS || path == analysis_bridge::APPLY {
+        return analysis_bridge::handle(path, token.is_some(), method, body);
+    }
+
     // Response cache: return cached response for expensive read-only routes.
+    let cache_key = response_cache::key(path);
     if response_cache::is_cacheable(path, method) {
-        if let Some(cached) = response_cache::get(path) {
+        if let Some(cached) = response_cache::get(&cache_key) {
             return cached;
         }
     }
     let response = stats::handle(path, query_str, method, body)
-        .or_else(|| super::api::value_gate::handle(path, method))
         .or_else(|| signals::handle(path, query_str, method, body))
         .or_else(|| context::handle(path, query_str, method, body))
         .or_else(|| risk::handle(path, query_str, method, body))
@@ -212,9 +85,14 @@ pub fn route_response(
         .or_else(|| kernel::handle(path, query_str, method, body))
         .or_else(|| doctor::handle(path, query_str, method, body))
         .or_else(|| feedback::handle(path, query_str, method, body))
-        .or_else(|| leaderboard::handle(path, query_str, method, body))
         .or_else(|| health::handle(path, query_str, method, body))
-        .or_else(|| provenance::handle(path, query_str, method, body));
+        .or_else(|| scope::handle(path, query_str, method, body))
+        .or_else(|| provenance::handle(path, query_str, method, body))
+        .or_else(|| gateway_receipts::handle(path, query_str, method, body))
+        .or_else(|| gateway_connect::handle(path, query_str, method, body))
+        .or_else(|| gateway_stages::handle(path, query_str, method, body))
+        .or_else(|| hive_workspace::handle(path, query_str, method, body))
+        .or_else(|| decisions::handle(path, query_str, method, body));
     #[cfg(feature = "enterprise")]
     let response = response.or_else(|| usage_breakdown::handle(path, query_str, method, body));
     let result = response
@@ -225,7 +103,7 @@ pub fn route_response(
 
     // Store in cache for subsequent requests within the TTL window.
     if response_cache::is_cacheable(path, method) && result.0 == "200 OK" {
-        response_cache::put(path, result.1, &result.2);
+        response_cache::put(&cache_key, result.1, &result.2);
     }
     result
 }

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "policy_denied",
+    "message": "the policy rule Share engine metrics is off for this engine",
+    "field": "sharing.share_engine_metrics",
+    "reason": "workspace"
+  }
+}

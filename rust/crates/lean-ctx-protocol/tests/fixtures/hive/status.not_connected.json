@@ -1,0 +1,16 @@
+{
+  "available": true,
+  "connected": false,
+  "drafts": {
+    "queued": 0,
+    "refused": 0
+  },
+  "filter_packs": [],
+  "instance": null,
+  "last_seen": null,
+  "org": null,
+  "policy": null,
+  "policy_refusal": null,
+  "url": "https://hive.leanctx.com",
+  "web_url": "https://hive.leanctx.com"
+}

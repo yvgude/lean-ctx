@@ -28,8 +28,8 @@ impl Default for PostgresProvider {
 
 impl PostgresProvider {
     pub fn new() -> Self {
-        let available =
-            std::env::var("DATABASE_URL").is_ok() || std::env::var("PGDATABASE").is_ok();
+        let available = super::credentials::var("DATABASE_URL").is_ok()
+            || super::credentials::var("PGDATABASE").is_ok();
         Self { available }
     }
 }
@@ -112,12 +112,7 @@ fn list_tables(params: &ProviderParams) -> Result<ProviderResult, String> {
          LIMIT {column_limit};",
     );
 
-    let mut cmd = std::process::Command::new("psql");
-
-    if let Ok(url) = std::env::var("DATABASE_URL") {
-        cmd.arg(&url);
-    }
-
+    let mut cmd = psql_command()?;
     cmd.args([
         "-X",
         "-w",
@@ -134,6 +129,85 @@ fn list_tables(params: &ProviderParams) -> Result<ProviderResult, String> {
     .stdin(std::process::Stdio::null());
     let stdout = run_psql(&mut cmd, QUERY_TIMEOUT)?;
     parse_tables(&stdout, schema, limit, column_limit)
+}
+
+/// A `psql` command connected through `DATABASE_URL` (environment or store).
+/// The address is handed over only as `PG*` variables of the child, never as
+/// an argument: argv is visible to every user in the process list.
+pub(in crate::core) fn psql_command() -> Result<std::process::Command, String> {
+    match super::credentials::var("DATABASE_URL") {
+        Ok(url) => psql_command_for(&url),
+        Err(_) => Ok(std::process::Command::new("psql")),
+    }
+}
+
+/// A `psql` command connected to `url` through `PG*` variables only.
+pub(in crate::core) fn psql_command_for(url: &str) -> Result<std::process::Command, String> {
+    let mut command = std::process::Command::new("psql");
+    command.envs(connection_env(url)?);
+    Ok(command)
+}
+
+/// `postgres[ql]://[user[:password]@][host[:port][,…]][/dbname][?sslmode=…]`
+/// as libpq environment variables. Errors never quote the address.
+fn connection_env(url: &str) -> Result<Vec<(&'static str, String)>, String> {
+    let decode = |part: &str| {
+        urlencoding::decode(part)
+            .map(std::borrow::Cow::into_owned)
+            .map_err(|_| "DATABASE_URL has an invalid percent-encoding".to_string())
+    };
+    let rest = url
+        .trim()
+        .strip_prefix("postgresql://")
+        .or_else(|| url.trim().strip_prefix("postgres://"))
+        .ok_or_else(|| "DATABASE_URL must start with postgres:// or postgresql://".to_string())?;
+    let (rest, query) = rest.split_once('?').unwrap_or((rest, ""));
+    let (authority, dbname) = rest.split_once('/').unwrap_or((rest, ""));
+    let (userinfo, hosts) = authority
+        .rsplit_once('@')
+        .map_or((None, authority), |(u, h)| (Some(u), h));
+
+    let mut env = Vec::new();
+    if let Some(userinfo) = userinfo {
+        let (user, password) = userinfo
+            .split_once(':')
+            .map_or((userinfo, None), |(u, p)| (u, Some(p)));
+        if !user.is_empty() {
+            env.push(("PGUSER", decode(user)?));
+        }
+        if let Some(password) = password.filter(|p| !p.is_empty()) {
+            env.push(("PGPASSWORD", decode(password)?));
+        }
+    }
+    if !hosts.is_empty() {
+        let (mut names, mut ports) = (Vec::new(), Vec::new());
+        for host in hosts.split(',') {
+            // `[::1]:5432` keeps its brackets out of PGHOST.
+            let (name, port) = if let Some(v6) = host.strip_prefix('[') {
+                let (name, tail) = v6
+                    .split_once(']')
+                    .ok_or_else(|| "DATABASE_URL has an unclosed [host]".to_string())?;
+                (name, tail.strip_prefix(':').unwrap_or(""))
+            } else {
+                host.rsplit_once(':').unwrap_or((host, ""))
+            };
+            names.push(decode(name)?);
+            ports.push(port.to_string());
+        }
+        env.push(("PGHOST", names.join(",")));
+        if ports.iter().any(|p| !p.is_empty()) {
+            env.push(("PGPORT", ports.join(",")));
+        }
+    }
+    if !dbname.is_empty() {
+        env.push(("PGDATABASE", decode(dbname)?));
+    }
+    for (key, value) in query.split('&').filter_map(|pair| pair.split_once('=')) {
+        if key == "sslmode" {
+            env.push(("PGSSLMODE", decode(value)?));
+        }
+    }
+    Ok(env)
 }
 
 /// Shared bounded execution for catalog introspection and the pgvector backend.

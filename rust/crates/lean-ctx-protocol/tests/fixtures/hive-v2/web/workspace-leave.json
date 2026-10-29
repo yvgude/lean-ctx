@@ -1,0 +1,32 @@
+{
+  "route": "W7l",
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/leave",
+  "request": null,
+  "response": {
+    "status": 204,
+    "body": null
+  },
+  "errors": [
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "an org needs at least one owner",
+          "state": "last_owner"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "a personal org has no other members",
+          "state": "personal_org"
+        }
+      }
+    }
+  ]
+}

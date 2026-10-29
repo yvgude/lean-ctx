@@ -1,5 +1,7 @@
 //! List provenance checkpoints for the current workspace.
 
+use std::fmt::Write as _;
+
 use crate::core::provenance::{CheckpointLinkState, ProvenanceTracker};
 
 #[derive(Default)]
@@ -24,10 +26,10 @@ pub(crate) fn cmd_checkpoints(args: &[String]) {
         }
     };
 
-    let project_root = match std::env::current_dir() {
-        Ok(path) => path,
+    let project_root = match super::common::require_project_root() {
+        Ok(root) => std::path::PathBuf::from(root),
         Err(error) => {
-            eprintln!("checkpoints: cannot determine workspace: {error}");
+            eprintln!("checkpoints: {error}");
             return;
         }
     };
@@ -56,14 +58,15 @@ pub(crate) fn cmd_checkpoints(args: &[String]) {
         return;
     }
 
-    println!(
-        "{:<18}  {:<18}  {:<12}  {:<10}  {:>5}  {:>9}  OBSERVED",
+    let mut table = format!(
+        "{:<18}  {:<18}  {:<12}  {:<10}  {:>5}  {:>9}  OBSERVED\n",
         "CHECKPOINT", "SESSION", "COMMIT", "STATE", "FILES", "DELTA"
     );
-    println!("{}", "-".repeat(104));
+    let _ = writeln!(table, "{}", "-".repeat(104));
     for checkpoint in checkpoints {
         let delta = format!("+{}/-{}", checkpoint.insertions, checkpoint.deletions);
-        println!(
+        let _ = writeln!(
+            table,
             "{:<18}  {:<18}  {:<12}  {:<10}  {:>5}  {:>9}  {}",
             shorten(&checkpoint.id, 18),
             shorten(&checkpoint.session_id, 18),
@@ -74,6 +77,19 @@ pub(crate) fn cmd_checkpoints(args: &[String]) {
             checkpoint.observed_at.format("%Y-%m-%d %H:%M:%SZ"),
         );
     }
+    // Every row ends with `\n`: the table is released without its final
+    // newline, which the one observed writer adds back (G08).
+    let table = table.strip_suffix('\n').unwrap_or(&table).to_owned();
+    super::common::print_released(&released_table(&project_root.to_string_lossy(), table));
+}
+
+/// The checkpoint table lists identifiers, commit hashes and counters — a
+/// table for the person at the terminal: released, never recorded as a
+/// delivery.
+fn released_table(project_root: &str, table: String) -> String {
+    super::common::CliToolRun::new("ctx_checkpoint", project_root, None)
+        .human_facing()
+        .deliver_text(|| table)
 }
 
 fn parse_options(args: &[String]) -> Result<CheckpointOptions, String> {
@@ -123,4 +139,25 @@ fn shorten(value: &str, width: usize) -> String {
 
 fn print_help() {
     println!("Usage: lean-ctx checkpoints [--session <id>] [--commit <sha>] [--orphaned]");
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::cli::common::carrier_tests_support::{AWS_KEY, governed, lineage, project};
+
+    /// The checkpoint table is identifiers and counters for the terminal:
+    /// released, never registered as a delivery.
+    #[test]
+    fn the_checkpoint_table_is_human_facing() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        governed();
+        let (_project, root) = project();
+        let table = "CHECKPOINT  SESSION  COMMIT\ncp-1        s-1      0123abcd\n";
+        let printed = super::released_table(&root, table.to_string());
+        assert_eq!(printed, table, "the table keeps its bytes");
+        assert_eq!(lineage(&root, &printed), None);
+        let leaked = super::released_table(&root, format!("cp-1 {AWS_KEY}\n"));
+        assert!(!leaked.contains(AWS_KEY), "{leaked}");
+    }
 }

@@ -1,0 +1,18 @@
+{
+  "filter_packs": [
+    {
+      "envelope": {
+        "kid": "hive-2026-10",
+        "signature": "k47hph+9T1Nise+dwnsD+TIQbvLuHp6+Ue85zElLOZnXHCNSA3sYy416WewK7injb4Fve7M7loUmRxIap/P7Bg==",
+        "statement_b64": "eyJwYWNrX2lkIjoiY2gtaWRlbnRpZmllcnMiLCJwYXR0ZXJucyI6W3siYWN0aW9uIjoicmVkYWN0IiwiaWQiOiJhaHYiLCJraW5kIjoicmVnZXgiLCJsYWJlbCI6ImFodi1udW1iZXIiLCJwYXR0ZXJuIjoiNzU2XFwuXFxkezR9XFwuXFxkezR9XFwuXFxkezJ9In0seyJhY3Rpb24iOiJibG9jayIsImlkIjoiaWJhbi1jaCIsImtpbmQiOiJyZWdleCIsInBhdHRlcm4iOiJDSFxcZHsyfSg/OiA/WzAtOUEtWl17NH0pezR9ID9bMC05QS1aXSJ9XSwic2NoZW1hIjoibGVhbmN0eC5maWx0ZXItcGFjay92MSIsInRpdGxlIjoiU3dpc3MgaWRlbnRpZmllcnMiLCJ2ZXJzaW9uIjozfQ=="
+      },
+      "pack_id": "ch-identifiers",
+      "sha256": "bbabcca8272c217781a8a883f8c9bed2d16b16846f95a9c6b7e1110170a415d0",
+      "version": 3
+    }
+  ],
+  "org_policy": null,
+  "policy_version": 0,
+  "schema": "leanctx.hive.policy-bundle/v1",
+  "unpin": null
+}

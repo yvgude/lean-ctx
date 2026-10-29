@@ -728,7 +728,7 @@ fn a_corrupt_config_refuses_collection_and_sending() {
     record_sync_result(true).expect("refused recording is a no-op");
     assert!(!one_shot_path().expect("sidecar path").exists());
     assert_eq!(
-        crate::cloud_sync::send_telemetry(SendTrigger::Exit),
+        crate::core::telemetry_send::send_telemetry(SendTrigger::Exit),
         None,
         "a corrupt config must never become default-on"
     );

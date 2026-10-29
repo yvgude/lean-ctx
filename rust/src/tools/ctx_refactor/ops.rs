@@ -208,7 +208,7 @@ pub(super) fn handle_rename_refactor(action: &str, args: &Value, project_root: &
     {
         return e;
     }
-    let content = match std::fs::read_to_string(&abs_path) {
+    let content = match super::read_original_if_admitted(&abs_path) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: FILE_NOT_FOUND: {abs_path}: {e}"),
     };
@@ -399,7 +399,7 @@ pub(super) fn handle_safe_delete_refactor(
     {
         return e;
     }
-    let content = match std::fs::read_to_string(&abs_path) {
+    let content = match super::read_original_if_admitted(&abs_path) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: FILE_NOT_FOUND: {abs_path}: {e}"),
     };
@@ -484,8 +484,8 @@ pub(super) fn resolve_move_target(
                     .map_err(|e| {
                         format!("INVALID_TARGET: target_parent file blocked by jail: {e}")
                     })?;
-            let content =
-                std::fs::read_to_string(&abs).map_err(|e| format!("FILE_NOT_FOUND: {abs}: {e}"))?;
+            let content = super::read_original_if_admitted(&abs)
+                .map_err(|e| format!("FILE_NOT_FOUND: {abs}: {e}"))?;
             let end_col = content
                 .lines()
                 .nth(r.end_line.saturating_sub(1))
@@ -642,7 +642,7 @@ pub(super) fn handle_move_refactor(action: &str, args: &Value, project_root: &st
             return e;
         }
     }
-    let content = match std::fs::read_to_string(&abs_path) {
+    let content = match super::read_original_if_admitted(&abs_path) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: FILE_NOT_FOUND: {abs_path}: {e}"),
     };
@@ -802,7 +802,7 @@ pub(super) fn handle_inline_refactor(action: &str, args: &Value, project_root: &
     {
         return e;
     }
-    let content = match std::fs::read_to_string(&abs_path) {
+    let content = match super::read_original_if_admitted(&abs_path) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: FILE_NOT_FOUND: {abs_path}: {e}"),
     };
@@ -871,8 +871,8 @@ pub(super) fn resolve_reformat_scope(
             let abs =
                 crate::core::path_resolve::resolve_tool_path(Some(project_root), None, &r.rel_path)
                     .map_err(|e| format!("INVALID_TARGET: path blocked by jail: {e}"))?;
-            let content =
-                std::fs::read_to_string(&abs).map_err(|e| format!("FILE_NOT_FOUND: {abs}: {e}"))?;
+            let content = super::read_original_if_admitted(&abs)
+                .map_err(|e| format!("FILE_NOT_FOUND: {abs}: {e}"))?;
             let end_col = content
                 .lines()
                 .nth(r.end_line.saturating_sub(1))
@@ -898,7 +898,7 @@ pub(super) fn resolve_reformat_scope(
                         );
                     }
                     let end = args.get("end_line").and_then(Value::as_u64).unwrap_or(l);
-                    let content = std::fs::read_to_string(&abs)
+                    let content = super::read_original_if_admitted(&abs)
                         .map_err(|e| format!("FILE_NOT_FOUND: {abs}: {e}"))?;
                     let end_col = content
                         .lines()

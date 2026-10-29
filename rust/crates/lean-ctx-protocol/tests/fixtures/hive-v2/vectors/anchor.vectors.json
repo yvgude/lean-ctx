@@ -1,0 +1,106 @@
+{
+  "digest": [
+    {
+      "content": "",
+      "digest": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+    },
+    {
+      "content": "fn backoff(attempt: u32) -> Duration {\n    full_jitter(64, attempt)\n}\n",
+      "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f"
+    },
+    {
+      "content": "ü\r\n",
+      "digest": "992ec2a46da99aa00c19af2df453d0e3328a348e1011e55fe12d17b1a8e24463"
+    }
+  ],
+  "ref": [
+    {
+      "input": "file:services/payments/retry.rs",
+      "output": {
+        "kind": "file",
+        "path": "services/payments/retry.rs",
+        "valid": true
+      }
+    },
+    {
+      "input": "sym:services/payments/retry.rs::backoff",
+      "output": {
+        "kind": "sym",
+        "path": "services/payments/retry.rs",
+        "symbol": "backoff",
+        "valid": true
+      }
+    },
+    {
+      "input": "sym:src/lib.rs::Client::send",
+      "output": {
+        "kind": "sym",
+        "path": "src/lib.rs",
+        "symbol": "Client::send",
+        "valid": true
+      }
+    },
+    {
+      "input": "file:/etc/passwd",
+      "output": {
+        "valid": false
+      }
+    },
+    {
+      "input": "file:../secrets.env",
+      "output": {
+        "valid": false
+      }
+    },
+    {
+      "input": "file:a/../../b",
+      "output": {
+        "valid": false
+      }
+    },
+    {
+      "input": "file:C:\\x.rs",
+      "output": {
+        "valid": false
+      }
+    },
+    {
+      "input": "file:has space.rs",
+      "output": {
+        "valid": false
+      }
+    },
+    {
+      "input": "sym:src/lib.rs::",
+      "output": {
+        "valid": false
+      }
+    },
+    {
+      "input": "sym:src/lib.rs",
+      "output": {
+        "valid": false
+      }
+    },
+    {
+      "input": "url:https://example.test",
+      "output": {
+        "valid": false
+      }
+    },
+    {
+      "input": "file:src/..hidden/ok.rs",
+      "output": {
+        "kind": "file",
+        "path": "src/..hidden/ok.rs",
+        "valid": true
+      }
+    }
+  ],
+  "rules": {
+    "digest": "hex(sha256(anchored content bytes)); file: the whole file, sym: the symbol's source span as the engine's anchor extractor returns it",
+    "re_anchor": "field.set {field: anchors, value: [anchors], verified_at} (no new event kind)",
+    "ref": "file:<path> | sym:<path>::<symbol>; path relative, no leading /, no .. segment, no whitespace, backslash or colon; symbol 1–200 non-whitespace",
+    "required": "fact: every applies_to entry starting file: or sym: needs an anchor with the same ref; anchors also allowed on gotcha and procedure"
+  }
+}

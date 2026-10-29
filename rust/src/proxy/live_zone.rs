@@ -5,7 +5,6 @@
 //! be rewritten.
 
 use serde_json::{Value, json};
-use std::sync::{Mutex, OnceLock};
 
 use crate::core::tokens::{TokenizerFamily, count_tokens_for};
 
@@ -30,93 +29,12 @@ pub struct LiveZoneStats {
     pub savings_pct: f64,
 }
 
-/// An agent-selected provider-cache prefix. This state is intentionally kept
-/// in memory only: cache markers are valid for the current proxy process.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ExplicitFreeze {
-    pub frozen_at_turn: usize,
-    pub snapshot_hash: String,
-    pub frozen_tokens_estimate: u64,
-}
-
-static EXPLICIT_FREEZE: OnceLock<Mutex<Option<ExplicitFreeze>>> = OnceLock::new();
-static LATEST_CONTEXT: OnceLock<Mutex<Vec<Value>>> = OnceLock::new();
-
-fn explicit_freeze_state() -> &'static Mutex<Option<ExplicitFreeze>> {
-    EXPLICIT_FREEZE.get_or_init(|| Mutex::new(None))
-}
-
-fn latest_context_state() -> &'static Mutex<Vec<Value>> {
-    LATEST_CONTEXT.get_or_init(|| Mutex::new(Vec::new()))
-}
-
-/// Records the latest provider message prefix for the agent-facing live-zone
-/// tool. The data disappears with the proxy process.
-pub fn record_context(messages: &[Value]) {
-    *latest_context_state()
-        .lock()
-        .expect("live-zone context lock poisoned") = messages.to_vec();
-}
-
-pub fn latest_context() -> Vec<Value> {
-    latest_context_state()
-        .lock()
-        .expect("live-zone context lock poisoned")
-        .clone()
-}
-
-pub fn explicit_freeze() -> Option<ExplicitFreeze> {
-    explicit_freeze_state()
-        .lock()
-        .expect("live-zone freeze lock poisoned")
-        .clone()
-}
-
-pub fn set_explicit_freeze(freeze: ExplicitFreeze) {
-    *explicit_freeze_state()
-        .lock()
-        .expect("live-zone freeze lock poisoned") = Some(freeze);
-}
-
-pub fn clear_explicit_freeze() -> Option<ExplicitFreeze> {
-    explicit_freeze_state()
-        .lock()
-        .expect("live-zone freeze lock poisoned")
-        .take()
-}
-
-pub fn snapshot_hash(messages: &[Value], turns: usize) -> String {
-    let prefix = &messages[..turns.min(messages.len())];
-    let encoded = serde_json::to_vec(prefix).expect("messages must serialize");
-    blake3::hash(&encoded).to_hex().to_string()
-}
-
-pub fn estimate_context_tokens(messages: &[Value]) -> u64 {
-    serde_json::to_string(messages)
-        .map(|serialized| (serialized.len() as u64).div_ceil(4))
-        .unwrap_or_default()
-}
-
 /// Locate the prefix already eligible for provider cache reuse.
 ///
 /// An Anthropic cache marker freezes every preceding turn.  Absent a marker, retain the
 /// preceding conversation and expose only the final three messages for mutation. System
 /// messages are always frozen, so a system message that appears later advances the boundary.
 pub fn detect_live_zone(messages: &[Value]) -> LiveZoneSplit {
-    record_context(messages);
-    if let Some(freeze) = explicit_freeze() {
-        let boundary = freeze.frozen_at_turn.min(messages.len());
-        if snapshot_hash(messages, boundary) == freeze.snapshot_hash {
-            let frozen_messages = messages[..boundary].to_vec();
-            let live_messages = messages[boundary..].to_vec();
-            return LiveZoneSplit {
-                frozen_messages,
-                live_messages,
-                boundary_turn: boundary,
-                frozen_tokens_estimate: freeze.frozen_tokens_estimate,
-            };
-        }
-    }
     let marked_boundary = messages
         .iter()
         .enumerate()
@@ -357,6 +275,8 @@ mod tests {
 
     #[test]
     fn live_messages_are_compressed() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let mut messages = vec![
             json!({"role": "user", "content": "old"}),
             json!({"role": "assistant", "content": "cached"}),

@@ -916,6 +916,7 @@ fn collect_named_imports(node: Node, src: &str) -> Vec<String> {
     names
 }
 
+#[cfg(feature = "tree-sitter")]
 fn unquote(s: &str) -> String {
     s.trim_matches(|c| c == '\'' || c == '"' || c == '`')
         .to_string()

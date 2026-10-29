@@ -7,6 +7,10 @@ use serde_json::Value;
 
 use super::{AppState, RequestConcurrencyLease};
 
+#[path = "handoff_files.rs"]
+mod handoff_files;
+use handoff_files::{evict_oldest_files, persist_handoff_file};
+
 const MAX_HANDOFF_PAYLOAD_BYTES: usize = 1_000_000;
 const MAX_HANDOFF_FILES: usize = 50;
 pub(super) const MAX_REMOTE_ENVELOPE_AGE_SECONDS: i64 = 300;
@@ -419,7 +423,7 @@ async fn relay_a2a_deliver(
                     .await
                 {
                     Ok(Some(body)) => task_response_bytes(body),
-                    Ok(None) => missing_replayed_task_response(),
+                    Ok(None) => completed_without_retained_response(),
                     Err(error) => relay_replay_error(&error),
                 };
             }
@@ -529,7 +533,12 @@ async fn relay_a2a_deliver(
             }
         };
         match transport.deliver_to(&next.peer_id, &forwarded).await {
-            Ok(receipt) => forwarded_delivery_response(receipt, &forwarded.content_type),
+            // The downstream's bytes are admitted under this server's project,
+            // the one the authenticated origin request was scoped to.
+            Ok(receipt) => crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+                std::cell::RefCell::new(Some(std::path::PathBuf::from(&state.project_root))),
+                || forwarded_delivery_response(receipt, &forwarded.content_type),
+            ),
             Err(error) => {
                 tracing::warn!(error = %error, "downstream relay delivery failed");
                 // The downstream may have committed before the connection failed.
@@ -551,6 +560,23 @@ async fn relay_a2a_deliver(
         }
     };
     if !response.status().is_success() {
+        if response
+            .extensions()
+            .get::<TaskResponseWithheld>()
+            .is_some()
+        {
+            // The downstream answered; only its answer is not released.
+            // Complete the delivery without a body: a duplicate is told so
+            // and nothing is forwarded a second time.
+            if let Err(error) = state
+                .remote_replays
+                .complete_relay(&replay_id, &generation)
+                .await
+            {
+                tracing::error!("relay replay completion failed: {error}");
+            }
+            return response;
+        }
         if record.final_recipient != local_recipient
             && envelope.content_type == crate::core::a2a_transport::TransportContentType::A2ATask
         {
@@ -712,16 +738,67 @@ fn forwarded_delivery_response(
             )
                 .into_response();
         };
-        return (
-            StatusCode::OK,
-            [(header::CONTENT_TYPE, "application/json")],
-            raw,
-        )
-            .into_response();
+        // Peer bytes are a carrier like any other: they pass the same carrier
+        // admission as bridged tool output (current mode, project policy,
+        // classification, secret rules) under the request project the caller
+        // put in scope, before they reach the origin. Only unchanged bytes are
+        // forwarded: a transcript the gateway would redact is refused, not
+        // altered — a redacted signed transcript fails at the origin anyway
+        // and would look like a fault of the peer. Both refusals carry reason
+        // codes only.
+        return match crate::core::context_admission::carrier::admit_carrier_text(&raw) {
+            Ok(admitted) if admitted.text == raw => task_response_bytes(raw),
+            Ok(_) => {
+                withheld_task_response(&crate::core::context_admission::carrier::Withheld::new(&[
+                    TASK_RESPONSE_REDACTION_REQUIRED,
+                ]))
+            }
+            Err(withheld) => withheld_task_response(&withheld),
+        };
     }
     (
         StatusCode::OK,
         Json(serde_json::json!({"status": "forwarded", "delivery_id": receipt.envelope_id})),
+    )
+        .into_response()
+}
+
+/// Reason code of a forwarded task response that the gateway would deliver
+/// only in redacted form. Distinct from the codes of a withheld response.
+const TASK_RESPONSE_REDACTION_REQUIRED: &str = "relay.task_response_redaction_required";
+
+/// Marks the refusal of a forwarded task response: the downstream has taken
+/// the delivery, so it is completed (never forwarded again), without a body.
+#[derive(Debug, Clone, Copy)]
+struct TaskResponseWithheld;
+
+/// Typed, content-free refusal of a forwarded task response.
+fn withheld_task_response(
+    withheld: &crate::core::context_admission::carrier::Withheld,
+) -> axum::response::Response {
+    let mut response = (
+        StatusCode::BAD_GATEWAY,
+        Json(serde_json::json!({
+            "error": "task_response_withheld",
+            "reason_codes": withheld.codes(),
+        })),
+    )
+        .into_response();
+    response.extensions_mut().insert(TaskResponseWithheld);
+    response
+}
+
+/// A duplicate of a delivery that completed, whose response was not retained
+/// (withheld, not an acknowledgement, or completed before responses were
+/// kept). Not "unavailable": retrying cannot produce it, and the delivery is
+/// not executed again.
+fn completed_without_retained_response() -> axum::response::Response {
+    (
+        StatusCode::GONE,
+        Json(serde_json::json!({
+            "error": "task_response_not_retained",
+            "status": "completed",
+        })),
     )
         .into_response()
 }
@@ -838,6 +915,17 @@ fn accept_remote_task(
                 Json(serde_json::json!({"error": "idempotency_key_conflict"})),
             ))
         }
+        // The store refuses a descriptor whose text the context gateway
+        // withholds with `PermissionDenied` and a content-free message; that
+        // is the sender's content, not a storage failure. A denial by the
+        // operating system carries an OS code and stays a storage failure.
+        Err(error) if task_text_withheld(&error) => {
+            tracing::warn!("a2a task rejected: {error}");
+            Err((
+                StatusCode::UNPROCESSABLE_ENTITY,
+                Json(serde_json::json!({"error": "task_text_withheld"})),
+            ))
+        }
         Err(error) => {
             tracing::error!("a2a task persistence failed: {error}");
             Err((
@@ -848,11 +936,69 @@ fn accept_remote_task(
     }
 }
 
+/// Whether `TaskStore::materialize_remote_task` failed because the task text
+/// was refused by the context gateway (typed, content-free), as opposed to a
+/// file-system denial.
+fn task_text_withheld(error: &std::io::Error) -> bool {
+    error.kind() == std::io::ErrorKind::PermissionDenied && error.raw_os_error().is_none()
+}
+
+/// Environment variable holding the shared HMAC secret for `/v1/a2a/handoff`.
+///
+/// It is the same key a sender passes to `lean-ctx pack send --secret <key>`:
+/// the envelope signature is the transport HMAC over the canonical envelope
+/// (`TransportEnvelopeV1::sign`). An empty or whitespace-only value counts as
+/// not configured.
+pub(super) const HANDOFF_SECRET_ENV: &str = "LEAN_CTX_HANDOFF_SECRET";
+
+fn configured_handoff_secret() -> Option<String> {
+    std::env::var(HANDOFF_SECRET_ENV)
+        .ok()
+        .filter(|secret| !secret.trim().is_empty())
+}
+
+/// Signature gate of `/v1/a2a/handoff`, applied before any payload handling.
+///
+/// - Secret configured (`LEAN_CTX_HANDOFF_SECRET`): the envelope must carry a
+///   signature that verifies under it; unsigned or invalid → `401`.
+/// - No secret, signed envelope: the signature cannot be checked, so the
+///   envelope is refused (`401`, fail closed) instead of being treated as
+///   authenticated.
+/// - No secret, unsigned envelope: accepted as before (local, unauthenticated
+///   handoff route; loopback-only unless a bearer token guards the server).
+fn verify_handoff_envelope(
+    body: &Value,
+    secret: Option<&str>,
+) -> Result<(), (StatusCode, Json<Value>)> {
+    let unauthorized = |error: &str| {
+        (
+            StatusCode::UNAUTHORIZED,
+            Json(serde_json::json!({ "error": error })),
+        )
+    };
+    let Ok(envelope) = crate::core::a2a_transport::parse_envelope(&body.to_string()) else {
+        return Err((
+            StatusCode::BAD_REQUEST,
+            Json(serde_json::json!({"error": "invalid_envelope"})),
+        ));
+    };
+    match (secret, envelope.signature.is_some()) {
+        (Some(secret), _) if envelope.verify_signature(secret.as_bytes()) => Ok(()),
+        (Some(_), false) => Err(unauthorized("signature_required")),
+        (Some(_), true) => Err(unauthorized("invalid_signature")),
+        (None, true) => Err(unauthorized("handoff_secret_not_configured")),
+        (None, false) => Ok(()),
+    }
+}
+
 pub(super) async fn v1_a2a_handoff(
     State(state): State<AppState>,
     Extension(permit): Extension<RequestConcurrencyLease>,
     Json(body): Json<Value>,
 ) -> impl IntoResponse {
+    if let Err(rejected) = verify_handoff_envelope(&body, configured_handoff_secret().as_deref()) {
+        return rejected;
+    }
     a2a_handoff_offloaded(state, body, None, None, permit)
         .await
         .unwrap_or_else(|_| handoff_worker_unavailable())
@@ -1209,27 +1355,43 @@ fn a2a_handoff_inner(
         "sender": envelope.sender.agent_id,
         "payload_size": envelope.payload_json.len(),
     });
-    let event_result = match delivery_id {
-        Some(id) => rt
+    // A handoff addressed to one agent is directed: only that agent sees the
+    // event, live and on replay. Unaddressed handoffs stay broadcast.
+    let target_agents = envelope
+        .recipient
+        .as_deref()
+        .filter(|recipient| !recipient.is_empty())
+        .map(|recipient| vec![recipient.to_string()]);
+    let kind = crate::core::context_os::ContextEventKindV1::SessionMutated;
+    let actor = Some(envelope.sender.agent_id.as_str());
+    let event_result = match (delivery_id, target_agents) {
+        (Some(id), target_agents) => rt
             .bus
             .append_delivery_once(
                 &state.project_root,
                 "a2a",
-                &crate::core::context_os::ContextEventKindV1::SessionMutated,
-                Some(&envelope.sender.agent_id),
+                &kind,
+                actor,
                 event_payload,
                 id,
+                target_agents,
             )
             .map(|_| ()),
-        None => rt
+        (None, Some(target_agents)) => rt
             .bus
-            .append(
+            .append_directed(
                 &state.project_root,
                 "a2a",
-                &crate::core::context_os::ContextEventKindV1::SessionMutated,
-                Some(&envelope.sender.agent_id),
+                &kind,
+                actor,
                 event_payload,
+                target_agents,
             )
+            .map(|_| ())
+            .ok_or_else(|| "context bus append failed".to_string()),
+        (None, None) => rt
+            .bus
+            .append(&state.project_root, "a2a", &kind, actor, event_payload)
             .map(|_| ())
             .ok_or_else(|| "context bus append failed".to_string()),
     };
@@ -1241,86 +1403,6 @@ fn a2a_handoff_inner(
         );
     }
     response
-}
-
-fn persist_handoff_file(
-    path: &std::path::Path,
-    bytes: &[u8],
-    delivery_id: Option<&str>,
-) -> Result<(), String> {
-    match std::fs::symlink_metadata(path) {
-        Ok(metadata) => {
-            if metadata.file_type().is_symlink() || !metadata.is_file() {
-                return Err("handoff destination must be a regular file".to_string());
-            }
-            if delivery_id.is_some() {
-                return match std::fs::read(path) {
-                    Ok(existing) if existing == bytes => Ok(()),
-                    Ok(_) => Err("handoff destination content mismatch".to_string()),
-                    Err(error) => Err(error.to_string()),
-                };
-            }
-        }
-        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-        Err(error) => return Err(error.to_string()),
-    }
-
-    let temporary = path.with_extension(format!(
-        "{}.tmp",
-        path.extension()
-            .and_then(|value| value.to_str())
-            .unwrap_or("handoff")
-    ));
-    if std::fs::symlink_metadata(&temporary).is_ok() {
-        return Err("handoff temporary path already exists".to_string());
-    }
-    let mut options = std::fs::OpenOptions::new();
-    options.create_new(true).write(true);
-    #[cfg(unix)]
-    std::os::unix::fs::OpenOptionsExt::custom_flags(&mut options, libc::O_NOFOLLOW);
-    let mut file = options
-        .open(&temporary)
-        .map_err(|error| error.to_string())?;
-    use std::io::Write as _;
-    if let Err(error) = file
-        .write_all(bytes)
-        .and_then(|()| file.sync_all())
-        .and_then(|()| std::fs::rename(&temporary, path))
-    {
-        let _ = std::fs::remove_file(&temporary);
-        return Err(error.to_string());
-    }
-    #[cfg(unix)]
-    std::fs::File::open(path.parent().ok_or("handoff path has no parent")?)
-        .and_then(|directory| directory.sync_all())
-        .map_err(|error| error.to_string())?;
-    Ok(())
-}
-
-pub(super) fn evict_oldest_files(dir: &std::path::Path, max_files: usize) {
-    let Ok(entries) = std::fs::read_dir(dir) else {
-        return;
-    };
-    let mut files: Vec<(std::time::SystemTime, std::path::PathBuf)> = entries
-        .filter_map(|e| {
-            let e = e.ok()?;
-            let meta = e.metadata().ok()?;
-            if meta.is_file() {
-                Some((meta.modified().unwrap_or(std::time::UNIX_EPOCH), e.path()))
-            } else {
-                None
-            }
-        })
-        .collect();
-
-    if files.len() < max_files {
-        return;
-    }
-    files.sort_by_key(|(mtime, _)| *mtime);
-    let to_remove = files.len().saturating_sub(max_files.saturating_sub(1));
-    for (_, path) in files.into_iter().take(to_remove) {
-        let _ = std::fs::remove_file(path);
-    }
 }
 
 /// `GET /v1/cache/stats` — live cross-agent cache and delivery metrics.

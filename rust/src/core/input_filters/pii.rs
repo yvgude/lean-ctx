@@ -2,10 +2,10 @@
 //!
 //! Each detector pairs a regex with a *validator* so structurally-valid noise
 //! (a random 16-digit order number, a phone number that looks card-shaped) is
-//! not flagged. Cards use the Luhn checksum, IBANs the ISO-7064 mod-97 check,
-//! and Swiss AHV/AVS numbers the EAN-13 check digit. The result is a low
-//! false-positive surface suitable for redacting content before it reaches the
-//! model.
+//! not flagged. Cards use the Luhn checksum plus layout and issuer checks. The
+//! result is a low false-positive surface suitable for redacting content
+//! before it reaches the model. Country- and industry-specific identifiers
+//! (AHV, IBAN, SSN …) come as Hive filter packs, not from this module.
 //!
 //! Privacy: callers receive only `(class, count)` pairs — never the matched
 //! value — so audit logs can record *that* PII was present without leaking it.
@@ -18,33 +18,35 @@ use regex::{Captures, Regex};
 /// markers and privacy-preserving audit records.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum PiiKind {
-    ChAhv,
-    Iban,
     Card,
     Email,
     Phone,
-    Ssn,
 }
 
 impl PiiKind {
     const fn as_str(self) -> &'static str {
         match self {
-            Self::ChAhv => "ch_ahv",
-            Self::Iban => "iban",
             Self::Card => "card",
             Self::Email => "email",
             Self::Phone => "phone",
-            Self::Ssn => "ssn",
         }
     }
 
-    /// True for classes a checksum validates (AHV, IBAN, card). Only these
-    /// run by default without a policy pack: their false-positive rate is
-    /// low enough to rewrite content no one asked to filter.
+    /// True for classes a checksum validates (card). Only these run by
+    /// default without a policy pack: their false-positive rate is low
+    /// enough to rewrite content no one asked to filter.
     const fn is_checksummed(self) -> bool {
-        matches!(self, Self::ChAhv | Self::Iban | Self::Card)
+        matches!(self, Self::Card)
     }
 }
+
+/// The classes the built-in detector finds, in rule order — what a policy
+/// pack's `[filters] pii` screens for.
+pub const DETECTOR_NAMES: [&str; 3] = ["card", "email", "phone"];
+
+/// The classes screened in every source without a policy pack (the gateway's
+/// `pii` setting): only the checksum-validated ones.
+pub const SOURCE_DETECTOR_NAMES: [&str; 1] = ["card"];
 
 /// One PII detector: a labelled regex plus a checksum/shape validator. A match
 /// is only counted/redacted when `validate` accepts the exact matched text.
@@ -58,23 +60,6 @@ fn rules() -> &'static [PiiRule] {
     static RULES: OnceLock<Vec<PiiRule>> = OnceLock::new();
     RULES.get_or_init(|| {
         vec![
-            // Swiss AHV/AVS social-security number (EAN-13, prefixed 756).
-            PiiRule {
-                kind: PiiKind::ChAhv,
-                // ASCII word boundaries throughout: a Unicode `\b` keeps the
-                // regex engine off its DFA and cost ~15x the scan time, while
-                // the identifiers here are ASCII anyway.
-                re: Regex::new(r"(?-u:\b)756[.\s]?\d{4}[.\s]?\d{4}[.\s]?\d{2}(?-u:\b)")
-                    .expect("valid AHV regex"),
-                validate: ahv_valid,
-            },
-            // IBAN — run before the card rule so its digits aren't re-matched.
-            PiiRule {
-                kind: PiiKind::Iban,
-                re: Regex::new(r"(?-u:\b)[A-Z]{2}\d{2}(?:[ ]?[A-Z0-9]){11,30}(?-u:\b)")
-                    .expect("valid IBAN regex"),
-                validate: iban_valid,
-            },
             // Payment card (13–19 digits, contiguous or in card groupings), Luhn.
             PiiRule {
                 kind: PiiKind::Card,
@@ -86,12 +71,6 @@ fn rules() -> &'static [PiiRule] {
                 kind: PiiKind::Email,
                 re: Regex::new(r"(?-u:\b)[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?-u:\b)")
                     .expect("valid email regex"),
-                validate: |_| true,
-            },
-            // US Social Security number.
-            PiiRule {
-                kind: PiiKind::Ssn,
-                re: Regex::new(r"\d{3}-\d{2}-\d{4}").expect("valid SSN regex"),
                 validate: |_| true,
             },
             // Phone candidates: explicit E.164 or commonly formatted local
@@ -117,7 +96,7 @@ pub fn redact(text: &str) -> (String, Vec<(&'static str, usize)>) {
     redact_where(text, |_| true)
 }
 
-/// [`redact`] restricted to checksum-validated classes (AHV, IBAN, card).
+/// [`redact`] restricted to checksum-validated classes (card).
 #[must_use]
 pub fn redact_checksummed(text: &str) -> (String, Vec<(&'static str, usize)>) {
     // One pass over the exact union of the checksummed rules: when it finds
@@ -132,8 +111,9 @@ pub fn redact_checksummed(text: &str) -> (String, Vec<(&'static str, usize)>) {
 /// `text`, i.e. how many masked values a delivered excerpt carries.
 #[must_use]
 pub(crate) fn checksummed_marker_count(text: &str) -> usize {
-    [PiiKind::ChAhv, PiiKind::Iban, PiiKind::Card]
+    [PiiKind::Card]
         .into_iter()
+        .filter(|kind| kind.is_checksummed())
         .map(|kind| {
             text.matches(&format!("[REDACTED:{}]", kind.as_str()))
                 .count()
@@ -267,7 +247,7 @@ fn is_pseudo_version_stamp(digits: &str) -> bool {
 fn overlaps_checksum_identifier(text: &str, phone: &regex::Match<'_>) -> bool {
     rules()
         .iter()
-        .filter(|rule| matches!(rule.kind, PiiKind::ChAhv | PiiKind::Iban | PiiKind::Card))
+        .filter(|rule| rule.kind == PiiKind::Card)
         .any(|rule| {
             rule.re.find_iter(text).any(|identifier| {
                 phone.start() < identifier.end() && identifier.start() < phone.end()
@@ -307,8 +287,8 @@ fn phone_label_near(text: &str, matched: &regex::Match<'_>) -> bool {
 /// decisions). Empty = no PII detected.
 #[must_use]
 pub fn detect(text: &str) -> Vec<(&'static str, usize)> {
-    // Apply the same priority as redaction so a card, AHV, or SSN is not also
-    // reported as a phone number.
+    // Apply the same priority as redaction so a card is not also reported as
+    // a phone number.
     redact(text).1
 }
 
@@ -341,10 +321,6 @@ pub(crate) fn card_layout_plausible(s: &str) -> bool {
     }
 }
 
-fn card_valid(s: &str) -> bool {
-    card_layout_plausible(s) && luhn_valid(s)
-}
-
 /// Luhn checksum for payment cards (13–19 digits).
 fn luhn_valid(s: &str) -> bool {
     let d = digits(s);
@@ -367,46 +343,61 @@ fn luhn_valid(s: &str) -> bool {
     sum.is_multiple_of(10)
 }
 
-/// EAN-13 check digit for a Swiss AHV number (must start 756, 13 digits).
-fn ahv_valid(s: &str) -> bool {
-    let d = digits(s);
-    if d.len() != 13 || d[0] != 7 || d[1] != 5 || d[2] != 6 {
-        return false;
-    }
-    let mut sum = 0u32;
-    for (i, &digit) in d[..12].iter().enumerate() {
-        sum += if i.is_multiple_of(2) {
-            digit
-        } else {
-            digit * 3
-        };
-    }
-    let check = (10 - (sum % 10)) % 10;
-    check == d[12]
+/// A payment-card candidate: Luhn-valid and not a compact timestamp.
+///
+/// One in ten 14-digit numbers passes Luhn, and `YYYYMMDDhhmmss` is how files
+/// and records are commonly named — lean-ctx's own handoff ledgers among them
+/// (`<timestamp>-<md5>.json`). Such a path was redacted as a card number in
+/// about every tenth second, and the gateway then withheld the tool reply
+/// that carried it.
+///
+/// The exclusion is deliberately narrow, because it applies to all content:
+/// exactly 14 contiguous digits that are a REAL calendar date and time
+/// (`chrono` validates days per month and leap years) in the years 1970–2099.
+/// Basis for "no card is lost", as far as the published scheme ranges go
+/// (not machine-checked here): the 14-digit card numbers in use are Diners
+/// Club's (prefixes 300–305, 36, 38–39), i.e. they start with 3; a number
+/// starting with 19 or 20 belongs to no 14-digit range. Anything that is not
+/// a valid timestamp — `20260231…`, 31 February — stays a card candidate.
+///
+/// Both rules apply (merge of the 3.11 line): a separated run must have a
+/// card layout ([`card_layout_plausible`]), and a contiguous one must not be
+/// a compact timestamp. Each rule only removes candidates.
+fn card_valid(s: &str) -> bool {
+    card_layout_plausible(s)
+        && luhn_valid(s)
+        && !is_compact_timestamp(s)
+        && issuer_range_plausible(s)
 }
 
-/// ISO-7064 mod-97 check for an IBAN.
-fn iban_valid(s: &str) -> bool {
-    let compact: String = s
-        .chars()
-        .filter(char::is_ascii_alphanumeric)
-        .collect::<String>()
-        .to_ascii_uppercase();
-    if compact.len() < 15 || compact.len() > 34 {
+/// Whether the digit count and leading digit fit a published card range.
+///
+/// Unix time in milliseconds is 13 digits starting with 1 until 2033 and in
+/// microseconds 16 digits; one in ten passes Luhn, so every JSON answer
+/// carrying such a stamp (`updated_at_epoch_ms`) was withheld at random.
+/// Narrow on purpose, like [`is_compact_timestamp`]: the only 13-digit cards
+/// are Visa's (leading 4), and the only scheme with a leading 1 is UATP,
+/// whose numbers have 15 digits. Every other length and prefix stays a
+/// candidate.
+fn issuer_range_plausible(s: &str) -> bool {
+    let d = digits(s);
+    match (d.len(), d.first()) {
+        (_, Some(1)) => d.len() == 15,
+        (13, first) => first == Some(&4),
+        _ => true,
+    }
+}
+
+/// `YYYYMMDDhhmmss` without any separator, as a real date and time between
+/// 1970 and 2099.
+fn is_compact_timestamp(s: &str) -> bool {
+    if s.len() != 14 || !s.bytes().all(|byte| byte.is_ascii_digit()) {
         return false;
     }
-    let (head, tail) = compact.split_at(4);
-    let mut remainder = 0u32;
-    for c in tail.chars().chain(head.chars()) {
-        if let Some(dval) = c.to_digit(10) {
-            remainder = (remainder * 10 + dval) % 97;
-        } else {
-            // Letter → two-digit value (A=10 … Z=35).
-            let v = (c as u32) - ('A' as u32) + 10;
-            remainder = (remainder * 100 + v) % 97;
-        }
-    }
-    remainder == 1
+    chrono::NaiveDateTime::parse_from_str(s, "%Y%m%d%H%M%S").is_ok_and(|stamp| {
+        use chrono::Datelike as _;
+        (1970..=2099).contains(&stamp.year())
+    })
 }
 
 #[cfg(test)]
@@ -414,28 +405,93 @@ mod tests {
     use super::*;
 
     #[test]
-    fn redacts_valid_ch_ahv() {
-        // 756.9217.0769.85 is a valid EAN-13 AHV test number.
-        let (out, counts) = redact("AHV 756.9217.0769.85 on file");
-        assert!(out.contains("[REDACTED:ch_ahv]"), "{out}");
-        assert_eq!(counts, vec![("ch_ahv", 1)]);
-    }
-
-    #[test]
-    fn ignores_ahv_with_bad_checksum() {
-        let (out, counts) = redact("756.9217.0769.86 is not valid");
-        assert!(
-            out.contains("756.9217.0769.86"),
-            "must not redact invalid AHV"
-        );
-        assert!(counts.is_empty(), "{counts:?}");
-    }
-
-    #[test]
     fn redacts_valid_card_via_luhn() {
         // 4111 1111 1111 1111 is the canonical Luhn-valid Visa test number.
         let (out, _) = redact("card 4111 1111 1111 1111 expires");
         assert!(out.contains("[REDACTED:card]"), "{out}");
+    }
+
+    /// Unix time in milliseconds passes Luhn one time in ten; a JSON answer
+    /// carrying `updated_at_epoch_ms` was withheld at random.
+    #[test]
+    fn a_luhn_valid_epoch_millisecond_stamp_is_not_a_card() {
+        let mut checked = 0;
+        for offset in 0..200_u64 {
+            let stamp = (1_791_877_109_000 + offset).to_string();
+            if !luhn_valid(&stamp) {
+                continue;
+            }
+            checked += 1;
+            let text = format!("{{\"updated_at_epoch_ms\":{stamp}}}");
+            let (out, counts) = redact_checksummed(&text);
+            assert_eq!(out, text, "epoch stamp redacted as a card");
+            assert!(counts.is_empty());
+        }
+        assert!(checked >= 10, "the loop must cover Luhn-valid stamps");
+        // Controls: a 13-digit Visa number and a 15-digit UATP number stay cards.
+        let visa13 = ["4222", "2222", "22222"].concat();
+        let uatp15 = ["1354", "1234", "5678", "911"].concat();
+        for card in [visa13, uatp15] {
+            assert!(luhn_valid(&card), "{card} must be Luhn-valid");
+            let (out, _) = redact_checksummed(&format!("paid with {card} today"));
+            assert!(!out.contains(&card), "{card} not redacted: {out}");
+        }
+    }
+
+    /// A compact timestamp that happens to pass Luhn is not a card: the
+    /// handoff ledger's own file name (`<timestamp>-<md5>.json`) was redacted
+    /// in about every tenth second, and the gateway withheld the reply.
+    #[test]
+    fn a_luhn_valid_compact_timestamp_is_not_a_card() {
+        let mut checked = 0;
+        for second in 0..60 {
+            let stamp = format!("202610060452{second:02}");
+            if !luhn_valid(&stamp) {
+                continue;
+            }
+            checked += 1;
+            let text =
+                format!(" path: /data/handoffs/{stamp}-9e107d9d372bb6826bd81d3542a419d6.json");
+            let (out, counts) = redact_checksummed(&text);
+            assert_eq!(out, text, "timestamp redacted as a card");
+            assert!(counts.is_empty());
+        }
+        assert!(
+            checked >= 3,
+            "the loop must cover Luhn-valid stamps: {checked}"
+        );
+        // Controls: real card numbers are still redacted, also next to a
+        // timestamp.
+        for card in ["30569309025904", "4111 1111 1111 1111"] {
+            let (out, _) = redact_checksummed(&format!("20261006045200 paid with {card}"));
+            assert!(out.contains("[REDACTED:card]"), "{card}: {out}");
+        }
+        // Not a real date: 31 February passes every field range and Luhn,
+        // and stays a card candidate. So does the same shape with
+        // milliseconds appended (17 digits), which is not excluded.
+        let impossible = "20260231045200";
+        assert!(luhn_valid(impossible), "the control must be Luhn-valid");
+        assert!(!is_compact_timestamp(impossible), "31 February");
+        let (out, _) = redact_checksummed(&format!("ref {impossible} end"));
+        assert!(out.contains("[REDACTED:card]"), "{out}");
+        assert!(
+            !is_compact_timestamp("20260229000000"),
+            "2026 has no 29 Feb"
+        );
+        assert!(
+            is_compact_timestamp("20280229000000"),
+            "2028 is a leap year"
+        );
+        assert!(!is_compact_timestamp("20261306045200"), "month 13");
+        assert!(!is_compact_timestamp("20261006246000"), "hour 24");
+        assert!(!is_compact_timestamp("19691231235959"), "before 1970");
+        assert!(!is_compact_timestamp("21000101000000"), "after 2099");
+        assert!(!is_compact_timestamp("20261006045200123"), "17 digits");
+        assert!(!is_compact_timestamp("2026-10-06 04:52"), "separators");
+        assert!(
+            !is_compact_timestamp("30569309025904"),
+            "a card, not a year"
+        );
     }
 
     #[test]
@@ -493,7 +549,6 @@ mod tests {
             format!("pay with {dashed} today"),
             format!("card: {contiguous}."),
             format!("card-{dashed} on file"),
-            format!("({stamp}) as a bare number"),
             // Between dashes but not a 14-digit timestamp: still a card.
             format!("txn-{contiguous}-ok"),
             format!("v1.2.3-0.{contiguous}-abcdef"),
@@ -502,6 +557,12 @@ mod tests {
             assert!(out.contains("[REDACTED:card]"), "{text}: {out}");
             assert_eq!(counts, vec![("card", 1)], "{text}");
         }
+
+        // The 3.12 rule is wider than #2135's version-token exemption: a
+        // plausible yyyymmddhhmmss stamp is never a card, bare ones included
+        // (`is_compact_timestamp`).
+        let bare = format!("({stamp}) as a bare number");
+        assert_eq!(redact_checksummed(&bare).0, bare);
     }
 
     #[test]
@@ -513,17 +574,15 @@ mod tests {
     }
 
     #[test]
-    fn redacts_valid_iban() {
-        // GB82 WEST 1234 5698 7654 32 is a valid mod-97 IBAN.
-        let (out, _) = redact("pay to GB82 WEST 1234 5698 7654 32 today");
-        assert!(out.contains("[REDACTED:iban]"), "{out}");
-    }
-
-    #[test]
-    fn ignores_invalid_iban() {
-        let (out, counts) = redact("ref GB00WEST12345698765432 here");
-        assert!(out.contains("GB00WEST12345698765432"));
-        assert!(counts.is_empty(), "{counts:?}");
+    fn detector_names_are_the_rules_in_order() {
+        let names: Vec<&str> = rules().iter().map(|rule| rule.kind.as_str()).collect();
+        assert_eq!(names, DETECTOR_NAMES);
+        let checksummed: Vec<&str> = rules()
+            .iter()
+            .filter(|rule| rule.kind.is_checksummed())
+            .map(|rule| rule.kind.as_str())
+            .collect();
+        assert_eq!(checksummed, SOURCE_DETECTOR_NAMES);
     }
 
     #[test]
@@ -578,19 +637,11 @@ mod tests {
     }
 
     #[test]
-    fn redacts_us_ssn() {
-        let (out, counts) = redact("SSN 123-45-6789");
-        assert_eq!(out, "SSN [REDACTED:ssn]");
-        assert_eq!(counts, vec![("ssn", 1)]);
-    }
-
-    #[test]
     fn detect_counts_match_redact() {
         let text = "jane@example.com, +14155552671, 123-45-6789, and 4111 1111 1111 1111";
         let counts = detect(text);
         assert!(counts.iter().any(|(c, _)| *c == "email"));
         assert!(counts.iter().any(|(c, _)| *c == "phone"));
-        assert!(counts.iter().any(|(c, _)| *c == "ssn"));
         assert!(counts.iter().any(|(c, _)| *c == "card"));
     }
 

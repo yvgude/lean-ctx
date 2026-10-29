@@ -1,5 +1,6 @@
 use serde::{Deserialize, Serialize};
 use std::fs;
+#[cfg(feature = "http-server")]
 use std::io::{BufRead, BufReader};
 
 use crate::core::data_dir::lean_ctx_data_dir;
@@ -18,7 +19,6 @@ pub enum FactPrivacy {
 pub struct BoundaryPolicy {
     pub cross_project_search: bool,
     pub cross_project_import: bool,
-    pub audit_cross_access: bool,
     /// Controls whether universal (cross-project) gotchas are loaded.
     /// When false, only project-scoped gotchas are used.
     pub universal_gotchas_enabled: bool,
@@ -29,7 +29,6 @@ impl Default for BoundaryPolicy {
         Self {
             cross_project_search: false,
             cross_project_import: false,
-            audit_cross_access: true,
             universal_gotchas_enabled: true,
         }
     }
@@ -121,6 +120,7 @@ pub(crate) fn record_audit_event(event: &CrossProjectAuditEvent) {
     }
 }
 
+#[cfg(feature = "http-server")]
 pub(crate) fn load_audit_events(limit: usize) -> Vec<CrossProjectAuditEvent> {
     let path = match lean_ctx_data_dir() {
         Ok(d) => d.join("audit").join("cross-project.jsonl"),

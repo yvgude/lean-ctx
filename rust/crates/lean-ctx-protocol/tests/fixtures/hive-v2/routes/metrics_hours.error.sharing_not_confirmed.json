@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "sharing_not_confirmed",
+    "message": "confirm once that this workspace shares engine metrics (lean-ctx hive metrics confirm)"
+  }
+}

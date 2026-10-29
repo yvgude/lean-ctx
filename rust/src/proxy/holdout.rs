@@ -112,6 +112,7 @@ pub fn compression_holdout_arm(doc: &Value) -> Option<Arm> {
     (fraction > 0.0).then(|| compression_arm(&conversation_key(doc), fraction))
 }
 
+#[cfg(feature = "http-server")]
 thread_local! {
     static COMPRESSION_CONTROL: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
 }
@@ -120,12 +121,15 @@ thread_local! {
 /// (#1905) until the guard drops. The forward path decides the arm once, on the
 /// pristine body, and every compression stage it calls synchronously reads it
 /// through [`in_compression_control`] — one decision, so no stage can disagree.
+#[cfg(feature = "http-server")]
 pub(crate) struct CompressionControlScope(bool);
 
+#[cfg(feature = "http-server")]
 pub(crate) fn enter_compression_control(control: bool) -> CompressionControlScope {
     CompressionControlScope(COMPRESSION_CONTROL.replace(control))
 }
 
+#[cfg(feature = "http-server")]
 impl Drop for CompressionControlScope {
     fn drop(&mut self) {
         COMPRESSION_CONTROL.set(self.0);
@@ -135,6 +139,7 @@ impl Drop for CompressionControlScope {
 /// Whether the request being compressed on this thread is in the
 /// input-compression control arm, i.e. must be forwarded uncompressed.
 #[must_use]
+#[cfg(feature = "http-server")]
 pub(crate) fn in_compression_control() -> bool {
     COMPRESSION_CONTROL.get()
 }

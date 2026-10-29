@@ -1,0 +1,23 @@
+{
+  "proposals": [
+    {
+      "base_revision": 3,
+      "created_at": "2026-10-20T12:00:00Z",
+      "mine": true,
+      "number": 12,
+      "state": "draft",
+      "summary": "Session learnings: draft rebasing"
+    },
+    {
+      "base_revision": 2,
+      "created_at": "2026-10-19T09:00:00Z",
+      "merged_revision": 3,
+      "mine": false,
+      "number": 11,
+      "state": "merged",
+      "summary": "Screening decision"
+    }
+  ],
+  "schema": "leanctx.hive.proposal-list/v1",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

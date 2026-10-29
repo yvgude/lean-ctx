@@ -1,0 +1,57 @@
+{
+  "route": "W29",
+  "method": "PUT",
+  "path": "/api/v1/orgs/acme/vaults/payments/retention",
+  "request": {
+    "rows": [
+      {
+        "subject": "node:episode",
+        "keep": 365
+      },
+      {
+        "subject": "bus_messages",
+        "keep": 90
+      },
+      {
+        "subject": "node:fact",
+        "keep": "forever"
+      }
+    ]
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "effective_at": "2026-10-31T08:00:00Z"
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "retention_not_allowed",
+          "message": "Retention schedules are for government workspaces."
+        }
+      }
+    },
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "invalid_body",
+          "message": "Each subject once; keep is \"forever\" or 30 to 3650 days.",
+          "field": "rows"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "Confirm with your authenticator app."
+        }
+      }
+    }
+  ]
+}

@@ -336,8 +336,11 @@ mod tests {
     #[test]
     fn legacy_save_load_stays_authoritative_without_journal_sidecar() {
         let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
         let mut session = fixture();
         session.id = "compat".into();
+        session.project_root = Some(project.path().to_string_lossy().into_owned());
+        session.shell_cwd = session.project_root.clone();
         session.prepare_save().unwrap().write_to_disk().unwrap();
 
         let expected_journal = session.attach_session_journal_v1();

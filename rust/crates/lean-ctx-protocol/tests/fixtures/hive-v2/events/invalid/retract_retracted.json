@@ -1,0 +1,23 @@
+{
+  "case": "retract_retracted",
+  "description": "retract of an already retracted node",
+  "base": "events/retract.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/seq",
+      "value": 19
+    },
+    {
+      "op": "replace",
+      "path": "/target",
+      "value": "n_rpesdfdzbnjufd7zdvw6myufgz"
+    }
+  ],
+  "resign_with": "instance_a",
+  "expect": {
+    "layer": "target_state",
+    "code": "invalid_event",
+    "reason": "target_state"
+  }
+}

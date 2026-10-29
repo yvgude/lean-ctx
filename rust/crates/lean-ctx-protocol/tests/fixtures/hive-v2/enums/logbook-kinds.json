@@ -1,0 +1,106 @@
+{
+  "name": "logbook-kinds",
+  "values": [
+    {
+      "value": "knowledge.added",
+      "generated_in_3_12_0": true,
+      "counts": [
+        "facts",
+        "relations"
+      ]
+    },
+    {
+      "value": "knowledge.retracted",
+      "generated_in_3_12_0": true,
+      "counts": [
+        "n"
+      ]
+    },
+    {
+      "value": "knowledge.restored",
+      "generated_in_3_12_0": true,
+      "counts": [
+        "n"
+      ]
+    },
+    {
+      "value": "knowledge.reverted",
+      "generated_in_3_12_0": true,
+      "counts": [
+        "events"
+      ]
+    },
+    {
+      "value": "review.done",
+      "generated_in_3_12_0": true,
+      "counts": [
+        "n",
+        "accepted",
+        "rejected"
+      ]
+    },
+    {
+      "value": "bus.thread",
+      "generated_in_3_12_0": true,
+      "counts": []
+    },
+    {
+      "value": "swarm.progress",
+      "generated_in_3_12_0": true,
+      "counts": [
+        "done",
+        "total"
+      ]
+    },
+    {
+      "value": "swarm.joined",
+      "generated_in_3_12_0": true,
+      "counts": [
+        "tasks_per_day"
+      ]
+    },
+    {
+      "value": "purge.done",
+      "generated_in_3_12_0": true,
+      "counts": [
+        "n"
+      ]
+    },
+    {
+      "value": "vault.transferred",
+      "generated_in_3_12_0": true,
+      "counts": []
+    },
+    {
+      "value": "retention.scheduled",
+      "generated_in_3_12_0": true,
+      "counts": []
+    },
+    {
+      "value": "worker.joined",
+      "generated_in_3_12_0": true,
+      "counts": []
+    },
+    {
+      "value": "engine.connected",
+      "generated_in_3_12_0": true,
+      "counts": []
+    },
+    {
+      "value": "engine.revoked",
+      "generated_in_3_12_0": true,
+      "counts": []
+    },
+    {
+      "value": "vault.visibility",
+      "generated_in_3_12_0": true,
+      "counts": []
+    },
+    {
+      "value": "vault.released",
+      "generated_in_3_12_0": false,
+      "counts": []
+    }
+  ],
+  "counts_rule": "W3 LogEntry.counts carries exactly these keys for its kind (integers ≥ 0); kinds whose SPEC-WEB-UX §3.3 template has no number carry {}"
+}

@@ -133,8 +133,21 @@ fn config_schema_outcome() -> (Outcome, String) {
 
     // A dotted path is fine when itself or any ancestor table is a known key
     // (some sections hold free-form sub-tables, e.g. per-tool maps).
+    let retired: Vec<(&String, &'static crate::core::config::retired::RetiredKey)> = used
+        .iter()
+        .filter_map(|path| crate::core::config::retired::retired_key(path).map(|key| (path, key)))
+        .collect();
+    // A renamed key still applies (and moves on the next migration): a hint,
+    // never a failure.
+    let renamed = crate::core::config::renamed::hints(&used);
+    let mut renamed_lines = String::new();
+    for hint in &renamed {
+        renamed_lines.push_str(&format!("\n      {DIM}• renamed: {hint}{RST}"));
+    }
     let unknown: Vec<&String> = used
         .iter()
+        .filter(|path| crate::core::config::retired::retired_key(path).is_none())
+        .filter(|path| crate::core::config::renamed::renamed_key(path).is_none())
         .filter(|path| {
             let mut candidate = (*path).clone();
             loop {
@@ -149,22 +162,23 @@ fn config_schema_outcome() -> (Outcome, String) {
         })
         .collect();
 
-    if unknown.is_empty() {
+    if unknown.is_empty() && retired.is_empty() {
         (
             Outcome {
                 ok: true,
                 line: format!(
-                    "{BOLD}Config schema{RST}  {GREEN}all {} keys recognized{RST}  {DIM}({}){RST}",
+                    "{BOLD}Config schema{RST}  {GREEN}all {} keys recognized{RST}  {DIM}({}){RST}{renamed_lines}",
                     used.len(),
                     path.display()
                 ),
             },
-            format!("{} keys, all known", used.len()),
+            format!("{} keys, all known; renamed: {renamed:?}", used.len()),
         )
     } else {
         let mut line = format!(
-            "{BOLD}Config schema{RST}  {YELLOW}{} unknown key(s) in {}{RST}",
+            "{BOLD}Config schema{RST}  {YELLOW}{} unknown, {} retired key(s) in {}{RST}",
             unknown.len(),
+            retired.len(),
             path.display()
         );
         for key in &unknown {
@@ -172,9 +186,19 @@ fn config_schema_outcome() -> (Outcome, String) {
                 "\n      {YELLOW}•{RST} {key} {DIM}— typo or removed key; check `lean-ctx config schema`{RST}"
             ));
         }
+        for (key, entry) in &retired {
+            line.push_str(&format!(
+                "\n      {YELLOW}•{RST} {key} {DIM}— retired, no effect ({}); removed automatically from a writable config{RST}",
+                entry.note
+            ));
+        }
+        line.push_str(&renamed_lines);
+        let retired_paths: Vec<&String> = retired.iter().map(|(key, _)| *key).collect();
         (
             Outcome { ok: false, line },
-            format!("unknown keys: {unknown:?}"),
+            format!(
+                "unknown keys: {unknown:?}; retired keys: {retired_paths:?}; renamed: {renamed:?}"
+            ),
         )
     }
 }
@@ -305,7 +329,7 @@ pub(super) fn run_migrate_check(json: bool) -> i32 {
 
     println!("\n{BOLD}lean-ctx migration readiness (0.x → 1.0){RST}\n");
     for outcome in &report.outcomes {
-        super::common::print_check(outcome);
+        super::common::print_check(outcome, true);
     }
     println!();
     if ready {
@@ -328,9 +352,6 @@ mod tests {
         assert!(keys.iter().any(|k| !k.contains('.')), "root keys exist");
         // Free-form sections register as a prefix...
         assert!(keys.contains("ide_paths"));
-        // ...and runtime-written keys are schema-documented (regression: GL #396
-        // migrate-check flagged gain.last_auto_publish on a real machine).
-        assert!(keys.contains("gain.last_auto_publish"));
     }
 
     #[test]

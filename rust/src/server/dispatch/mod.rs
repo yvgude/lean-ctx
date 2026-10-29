@@ -63,6 +63,12 @@ impl LeanCtxServer {
             }
         };
 
+        // Hive tools follow the Hive release switch: off, every path (direct, ctx_call, ctx)
+        // answers one line before any rate or capability gate.
+        if let Some(line) = crate::server::dynamic_tools::withheld_hive_tool_refusal(name, args) {
+            return Ok((line.to_owned(), 0, None, None));
+        }
+
         let agent_id = self
             .agent_id
             .read()
@@ -79,6 +85,11 @@ impl LeanCtxServer {
 
         if name.starts_with("ctx_") {
             crate::server::tool_visibility::mark_auto_ctx_tool_used();
+        }
+        // K13: a tool call of a host family no enforcing hook regulates.
+        if crate::core::hive::metrics_v2::signals::recording() {
+            let client = self.client_name.read().await.clone();
+            crate::core::hive::metrics_v2::signals::host_call(&client);
         }
         // Background semantic passes yield to tool calls in flight.
         let _activity = crate::core::graph_enricher::ToolActivity::begin();
@@ -110,29 +121,23 @@ impl LeanCtxServer {
                     return refuse(msg);
                 }
 
-                if !super::WORKFLOW_PASSTHROUGH_TOOLS.contains(&inner.as_str()) {
-                    let active = self.workflow.read().await.clone();
-                    if let Some(run) = active {
-                        if run.current == "done" || super::is_workflow_stale(&run) {
+                // The decision is `core::workflow::tool_gate`, shared with the
+                // direct gate (`call_tool/policy.rs::guard_workflow`).
+                let active = self.workflow.read().await.clone();
+                if let Some(run) = active {
+                    use crate::core::workflow::ToolGate;
+                    match crate::core::workflow::tool_gate(
+                        &run,
+                        &inner,
+                        super::WORKFLOW_PASSTHROUGH_TOOLS,
+                    ) {
+                        ToolGate::Pass => {}
+                        ToolGate::Expired => {
                             let mut wf = self.workflow.write().await;
                             *wf = None;
                             let _ = crate::core::workflow::clear_active();
-                        } else if let Some(state) = run.spec.state(&run.current)
-                            && let Some(allowed) = &state.allowed_tools
-                        {
-                            let ok = allowed.iter().any(|t| t == &inner);
-                            if !ok {
-                                let mut shown = allowed.clone();
-                                shown.sort();
-                                shown.truncate(30);
-                                return refuse(format!(
-                                    "Tool '{inner}' blocked by workflow '{}' (state: {}). Allowed: {}. Use ctx_workflow(action=\"stop\") to exit.",
-                                    run.spec.name,
-                                    run.current,
-                                    shown.join(", ")
-                                ));
-                            }
                         }
+                        ToolGate::Refuse(reason) => return refuse(reason),
                     }
                 }
 
@@ -177,6 +182,30 @@ impl LeanCtxServer {
             ));
         }
 
+        // Hive tools follow the Hive release switch: off, they never run.
+        if crate::server::dynamic_tools::is_withheld_hive_tool(name) {
+            return Ok((
+                crate::core::hive::TOOL_NOT_AVAILABLE.to_owned(),
+                0,
+                None,
+                None,
+            ));
+        }
+
+        // Hive claims belong to the calling agent's session (C8): a shared
+        // server serves several clients under one process and agent
+        // identity, so it cannot bind a claim to its caller.
+        if name == "ctx_tasks" && self.session_mode == crate::tools::SessionMode::Shared {
+            return Ok((
+                "[unavailable] ctx_tasks works only in a personal MCP session: a shared \
+                 server cannot bind a Hive claim to the client that calls it."
+                    .to_owned(),
+                0,
+                None,
+                None,
+            ));
+        }
+
         if let Some(tool) = self.registry.as_ref().and_then(|r| r.get_arc(name)) {
             let empty = serde_json::Map::new();
             let args_map = args.unwrap_or(&empty);
@@ -190,10 +219,20 @@ impl LeanCtxServer {
             // Lazy, demand-driven index warming (#152): only tools that actually
             // need a prebuilt index trigger a (background, once-per-root) scan.
             // The first heavy pre-warm also warms any configured extra roots once.
-            if !project_root.is_empty()
+            let authority = crate::core::workspace_authority::current();
+            // Under a Workspace only its own roots are indexed (#2120); an
+            // unusable one grants no root, so nothing is.
+            let may_index = crate::core::workspace_authority::root_authorized(
+                std::path::Path::new(&project_root),
+            );
+            if may_index
+                && !project_root.is_empty()
                 && crate::core::index_orchestrator::ensure_warm_for_tool(&project_root, name)
             {
-                let extra_roots = self.session.read().await.extra_roots.clone();
+                let extra_roots = match authority.snapshot() {
+                    Some(snapshot) => snapshot.additional_root_strings(),
+                    None => self.session.read().await.extra_roots.clone(),
+                };
                 if !extra_roots.is_empty() {
                     let primary = project_root.clone();
                     std::thread::spawn(move || {
@@ -245,14 +284,35 @@ impl LeanCtxServer {
             }
 
             let crp_mode = crate::tools::CrpMode::effective();
-            let extra_roots = self.session.read().await.extra_roots.clone();
-            // The home jail scope opens other projects for reading only; the
-            // session's own roots stay writable (pathjail_scope). Re-read the
-            // root: path resolution above may have re-rooted the session.
-            let bound_root = self.session.read().await.project_root.clone();
-            for root in bound_root.iter().chain(extra_roots.iter()) {
-                crate::core::pathjail_scope::register_session_root(root);
-            }
+            // One snapshot after path resolution, which may have corrected a
+            // stale root: the handler's root and its writable roots agree
+            // (AP04-G6). The home jail scope opens other projects for reading
+            // only; these roots stay writable for this call (pathjail_scope).
+            let (project_root, extra_roots) = {
+                let session = self.session.read().await;
+                (
+                    session.project_root.clone().unwrap_or_default(),
+                    session.extra_roots.clone(),
+                )
+            };
+            // Under a Workspace the call's roots are the snapshot's (#2120),
+            // whatever the session carries; everything that derives roots from
+            // the context (admitted sources, write roots, shell capture)
+            // follows.
+            let (project_root, extra_roots) = match authority.snapshot() {
+                Some(snapshot) => {
+                    let root = snapshot.project_root_for(&project_root);
+                    let extra = snapshot
+                        .granting_roots()
+                        .map(|(path, _)| path.to_string_lossy().into_owned())
+                        .filter(|path| *path != root)
+                        .collect();
+                    (root, extra)
+                }
+                // An unusable Workspace leaves the call without any root.
+                None if authority.is_active() => (String::new(), Vec::new()),
+                None => (project_root, extra_roots),
+            };
             let ctx = crate::server::tool_trait::ToolContext {
                 project_root,
                 extra_roots,
@@ -260,7 +320,7 @@ impl LeanCtxServer {
                 resolved_paths,
                 crp_mode,
                 cache: Some(self.cache.clone()),
-                session: Some(self.session.clone()),
+                session: Some(self.session.instance()),
                 tool_calls: Some(self.tool_calls.clone()),
                 agent_id: Some(self.agent_id.clone()),
                 workflow: Some(self.workflow.clone()),
@@ -306,11 +366,17 @@ impl LeanCtxServer {
             let file_output = name == "ctx_execute"
                 && args_map.get("action").and_then(Value::as_str) == Some("file")
                 && matches!(output.shell_outcome, Some(ShellOutcome::Exit(0)));
-            let output_origin = observed_origin.filter(|_| file_output);
-            if let Some(origin) = &output_origin {
-                // Preserve the outer archive pipeline's existing observed origin.
+            // Hand every observed source — and an incomplete observation as
+            // such — to the outer pipeline capture: it decides, from the
+            // tool's own declaration, whether the set may authorize reuse
+            // (replay, response cache, source-bound archive). Nested handlers
+            // join the same outer set.
+            if let Some(origin) = &observed_origin {
                 origin.clone().publish();
             }
+            // The reference store below keeps its narrower rule: only the
+            // admitted file handler's output is bound there.
+            let output_origin = observed_origin.filter(|_| file_output);
             let handler_ms = handler_started.elapsed().as_millis() as u64;
 
             // Image/binary content blocks bypass all text processing.
@@ -429,25 +495,39 @@ impl LeanCtxServer {
                 sanitized_tool_text(name, raw_text)
             };
 
-            // Context immune system: scan for prompt-injection patterns in tool output.
-            let injection_signals = crate::core::output_sanitizer::detect_injection(&final_text);
+            // Context immune system: scan for prompt-injection patterns in tool output,
+            // read as the kind of content its source file is (code, logs, prose).
+            let output_kind = crate::core::output_sanitizer::ContentKind::of(
+                &final_text,
+                output.path.as_deref().map(std::path::Path::new),
+            );
+            let injection_signals =
+                crate::core::output_sanitizer::detect_injection_as(&final_text, output_kind);
             // Sources the gateway already flagged are counted by their receipt.
             let gateway_flagged = crate::core::context_admission::capture::current()
                 .is_some_and(|admissions| admissions.flagged_injection());
             if !injection_signals.is_empty() && !gateway_flagged {
                 tracing::warn!(
                     tool = name,
-                    signals = injection_signals.len(),
+                    lines = injection_signals.len(),
                     "prompt-injection patterns detected in tool output"
                 );
                 // Flagged, not neutralized: the output still reaches the agent.
-                let mut flagged = crate::core::security_events::SecurityCounts::default();
-                flagged.add(
-                    crate::core::security_events::SecurityKind::InjectionFlagged,
-                    injection_signals.len() as u64,
-                );
-                crate::core::security_events::record(name, &agent_id, &flagged);
-                self.publish_value_snapshot().await;
+                // One flag per output object, recorded once per process.
+                let flag = crate::core::security_events::InjectionFlag {
+                    object_sha256: {
+                        use sha2::Digest as _;
+                        crate::core::agent_identity::hex_encode(&sha2::Sha256::digest(
+                            final_text.as_bytes(),
+                        ))
+                    },
+                    patterns: crate::core::output_sanitizer::InjectionCategory::mask(
+                        &injection_signals,
+                    ),
+                };
+                if crate::core::security_events::record_injections(name, &agent_id, &[flag]) > 0 {
+                    self.publish_value_snapshot().await;
+                }
             }
 
             let reference_enabled = std::env::var("LEAN_CTX_REFERENCE_RESULTS").map_or_else(
@@ -496,12 +576,26 @@ impl LeanCtxServer {
             return Ok((final_text, saved, output.shell_outcome, None));
         }
 
-        // Unknown tool (#712): suggest the closest registered name so a typo
-        // (`ctx_raed`) costs the agent a hint instead of a blind retry.
+        // A removed tool names its successor; an unknown one (#712) gets the
+        // closest registered name so a typo (`ctx_raed`) costs a hint, not a
+        // blind retry.
+        if let Some(message) = crate::server::dynamic_tools::removed_tool_message(name) {
+            return Err(ErrorData::new(
+                rmcp::model::ErrorCode::METHOD_NOT_FOUND,
+                message,
+                None,
+            ));
+        }
         let suggestion = self
             .registry
             .as_ref()
-            .and_then(|r| crate::core::levenshtein::closest(name, r.names()))
+            .and_then(|r| {
+                let names = r
+                    .names()
+                    .into_iter()
+                    .filter(|n| !crate::server::dynamic_tools::is_withheld_hive_tool(n));
+                crate::core::levenshtein::closest(name, names)
+            })
             .map(|s| format!(" — did you mean '{s}'?"))
             .unwrap_or_default();
         Err(ErrorData::new(
@@ -528,6 +622,7 @@ impl LeanCtxServer {
         args_map: &serde_json::Map<String, Value>,
         ctx: ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
+        let watchdog = Self::handler_watchdog_for(name, args_map);
         let args_owned = args_map.clone();
         let tool_name = name.to_string();
         let agent_id = self
@@ -543,6 +638,18 @@ impl LeanCtxServer {
         let receipt_capture = crate::server::native_receipts::current_capture();
         let archive_capture = crate::core::archive::authority::current_capture();
         let admissions = crate::core::context_admission::capture::current();
+        // The presenter capability the host showed for this call: without it
+        // the handler would act as the process's own presenter.
+        let presenter = crate::core::archive::presented::request_presenter();
+        // The caller's own session for session-continuity reads and writes in
+        // the handler (I07): never the project's latest saved session.
+        let caller = ctx.session.clone();
+        let workspace = crate::core::workspace_authority::current();
+        // The user's approval of this ctx_shell call (server::shell_approval).
+        let shell_grant = crate::server::shell_approval::current_grant();
+        let write_roots: Vec<String> = std::iter::once(ctx.project_root.clone())
+            .chain(ctx.extra_roots.iter().cloned())
+            .collect();
         let policy_project = crate::core::policy::runtime::REQUEST_PROJECT
             .try_with(|slot| slot.borrow().clone())
             .ok()
@@ -564,7 +671,30 @@ impl LeanCtxServer {
                                             .sync_scope(handoff, || {
                                                 crate::core::context_admission::capture::ADMISSIONS
                                                     .sync_scope(admissions, || {
-                                                        tool.handle(&args_owned, &ctx)
+                                                        crate::core::archive::presented::with_presenter(
+                                                            presenter,
+                                                            || {
+                                                                crate::core::pathjail_scope::with_request_write_roots(
+                                                                    &write_roots,
+                                                                    || {
+                                                                        crate::core::session::caller::scope(
+                                                                            caller.clone(),
+                                                                            || {
+                                                                                crate::core::workspace_authority::sync_scope(
+                                                                                    workspace.clone(),
+                                                                                    || {
+                                                                                        crate::server::shell_approval::SHELL_GRANT
+                                                                                            .sync_scope(shell_grant.clone(), || {
+                                                                                                tool.handle(&args_owned, &ctx)
+                                                                                            })
+                                                                                    },
+                                                                                )
+                                                                            },
+                                                                        )
+                                                                    },
+                                                                )
+                                                            },
+                                                        )
                                                     })
                                             })
                                     },
@@ -581,7 +711,22 @@ impl LeanCtxServer {
             crate::core::security_events::record(&tool_name, &agent_id, &tally);
             result
         });
-        Self::watchdog_join(name, join, Self::handler_watchdog(name)).await
+        Self::watchdog_join(name, join, watchdog).await
+    }
+
+    /// [`Self::handler_watchdog`], except that `ctx_agent action=wait` may
+    /// block for its own `timeout_secs` (it bounds itself) plus a margin.
+    fn handler_watchdog_for(name: &str, args: &serde_json::Map<String, Value>) -> Option<Duration> {
+        let base = Self::handler_watchdog(name)?;
+        if name == "ctx_agent" && args.get("action").and_then(Value::as_str) == Some("wait") {
+            let secs = args
+                .get("timeout_secs")
+                .and_then(Value::as_u64)
+                .unwrap_or(crate::tools::ctx_agent::WAIT_DEFAULT_SECS)
+                .min(crate::tools::ctx_agent::WAIT_MAX_SECS);
+            return Some(base.max(Duration::from_secs(secs + 30)));
+        }
+        Some(base)
     }
 
     /// Await a blocking handler's join handle, enforcing an optional watchdog.
@@ -854,10 +999,6 @@ mod tests {
             fixture,
             "ctx_read must never lose file bytes to the flood filter"
         );
-        assert_eq!(
-            sanitized_tool_text("ctx_multi_read", fixture.clone()),
-            fixture
-        );
 
         // Non-read tools keep the #257 degenerate-output cleanup.
         let cleaned = sanitized_tool_text("ctx_shell", fixture);
@@ -907,6 +1048,29 @@ mod tests {
             LeanCtxServer::handler_watchdog("ctx_execute").is_none(),
             "ctx_execute must not be watchdog-bounded"
         );
+    }
+
+    #[test]
+    fn ctx_agent_wait_outlives_the_default_watchdog_by_its_own_timeout() {
+        let args = |v: Value| v.as_object().cloned().unwrap();
+        if std::env::var_os("LEAN_CTX_TOOL_TIMEOUT_SECS").is_some() {
+            return;
+        }
+        let wait = LeanCtxServer::handler_watchdog_for(
+            "ctx_agent",
+            &args(serde_json::json!({"action": "wait", "timeout_secs": 900})),
+        );
+        assert_eq!(wait, Some(Duration::from_secs(930)));
+        let default_wait = LeanCtxServer::handler_watchdog_for(
+            "ctx_agent",
+            &args(serde_json::json!({"action": "wait"})),
+        );
+        assert_eq!(default_wait, Some(Duration::from_secs(630)));
+        let read = LeanCtxServer::handler_watchdog_for(
+            "ctx_agent",
+            &args(serde_json::json!({"action": "read"})),
+        );
+        assert_eq!(read, Some(Duration::from_secs(DEFAULT_TOOL_TIMEOUT_SECS)));
     }
 
     #[test]
@@ -982,6 +1146,145 @@ mod tests {
     /// #712: a typo'd tool name must return a "did you mean" hint from the
     /// live registry instead of a bare unknown-tool error; a name nowhere
     /// near any registered tool must stay suggestion-free.
+    /// C8: a shared server never runs ctx_tasks for its clients.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn a_shared_server_refuses_hive_tasks() {
+        if crate::test_env::run_in_own_process(
+            "server::dispatch::tests::a_shared_server_refuses_hive_tasks",
+            &[(crate::core::hive::PREVIEW_ENV, "1")],
+        ) {
+            return;
+        }
+        let mut server = crate::tools::create_server();
+        server.session_mode = crate::tools::SessionMode::Shared;
+        let mut args = serde_json::Map::new();
+        args.insert("action".into(), Value::String("list".into()));
+        let (text, ..) = server
+            .dispatch_tool("ctx_tasks", Some(&args), false)
+            .await
+            .unwrap();
+        assert!(text.contains("only in a personal MCP session"), "{text}");
+    }
+
+    /// Owner 28.10.: while the Hive switch is off, ctx_tasks and ctx_compute
+    /// are in no tool list and every call path answers one fixed line.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn hive_tools_are_withheld_while_the_switch_is_off() {
+        if crate::core::hive::available_locally() {
+            return;
+        }
+        // The guarded calls persist receipts: alone, in a store of its own, so
+        // the suite's shared store under load cannot withhold the answer.
+        let store = tempfile::tempdir().unwrap();
+        let store = store.path().to_str().unwrap();
+        if crate::test_env::run_in_own_process(
+            "server::dispatch::tests::hive_tools_are_withheld_while_the_switch_is_off",
+            &[
+                ("LEAN_CTX_DATA_DIR", store),
+                ("LEAN_CTX_CONFIG_DIR", store),
+                ("LEAN_CTX_STATE_DIR", store),
+                ("LEAN_CTX_CACHE_DIR", store),
+            ],
+        ) {
+            return;
+        }
+        use crate::core::tool_profiles::ToolProfile;
+        use crate::server::dynamic_tools::HIVE_TOOLS;
+        let registry = crate::server::registry::build_registry();
+        let mut surfaces = vec![registry.tool_defs(), registry.active_tool_defs()];
+        for profile in [
+            ToolProfile::Minimal,
+            ToolProfile::Standard,
+            ToolProfile::Power,
+        ] {
+            surfaces.push(registry.profile_tool_defs(&profile));
+        }
+        for defs in &surfaces {
+            for def in defs {
+                assert!(!HIVE_TOOLS.contains(&def.name.as_ref()), "{}", def.name);
+            }
+        }
+        for name in HIVE_TOOLS {
+            assert!(
+                !crate::server::tool_visibility::is_tool_visible(
+                    name,
+                    &ToolProfile::Power,
+                    &[],
+                    crate::server::tool_visibility::ClientQuirks::default(),
+                    true,
+                ),
+                "{name}"
+            );
+            // The answer may echo the query ("No tools found matching '…'"); no listed entry
+            // may be the withheld tool.
+            let found = crate::tool_defs::discover_tools(name);
+            assert!(
+                !found
+                    .lines()
+                    .any(|l| l.trim_start().starts_with(&format!("{name} —"))),
+                "{found}"
+            );
+        }
+
+        let server = crate::tools::create_server();
+        let line = crate::core::hive::TOOL_NOT_AVAILABLE;
+        for name in HIVE_TOOLS {
+            let mut args = serde_json::Map::new();
+            args.insert("action".into(), Value::String("list".into()));
+            let (direct, ..) = server
+                .dispatch_tool(name, Some(&args), false)
+                .await
+                .unwrap();
+            assert_eq!(direct, line);
+
+            let mut wrapped = serde_json::Map::new();
+            wrapped.insert("name".into(), Value::String((*name).into()));
+            wrapped.insert("arguments".into(), Value::Object(args.clone()));
+            let (via_call, ..) = server
+                .dispatch_tool("ctx_call", Some(&wrapped), false)
+                .await
+                .unwrap();
+            assert_eq!(via_call, line);
+
+            for (outer, outer_args) in [
+                (*name, args.clone()),
+                ("ctx_call", wrapped.clone()),
+                ("ctx", {
+                    let mut meta = args.clone();
+                    meta.insert("tool".into(), Value::String((*name).into()));
+                    meta
+                }),
+            ] {
+                let request =
+                    rmcp::model::CallToolRequestParams::new(outer).with_arguments(outer_args);
+                let result = server.call_tool_guarded(request).await.unwrap();
+                assert_eq!(result.is_error, Some(true), "{outer}");
+                let text: Vec<_> = result
+                    .content
+                    .iter()
+                    .filter_map(|block| block.as_text())
+                    .map(|block| block.text.as_str())
+                    .collect();
+                assert_eq!(text, [line], "{outer}");
+            }
+        }
+    }
+
+    /// With the test preview the Hive tools are advertised as before.
+    #[test]
+    fn hive_tools_return_with_the_preview() {
+        if crate::test_env::run_in_own_process(
+            "server::dispatch::tests::hive_tools_return_with_the_preview",
+            &[(crate::core::hive::PREVIEW_ENV, "1")],
+        ) {
+            return;
+        }
+        let defs = crate::server::registry::build_registry().tool_defs();
+        for name in crate::server::dynamic_tools::HIVE_TOOLS {
+            assert!(defs.iter().any(|def| def.name.as_ref() == *name), "{name}");
+        }
+    }
+
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
     async fn unknown_tool_suggests_closest_registered_name() {
         let server = crate::tools::create_server();
@@ -998,6 +1301,18 @@ mod tests {
         assert!(
             err.message.contains("did you mean 'ctx_read'"),
             "missing suggestion: {}",
+            err.message
+        );
+
+        // A removed tool names its successor instead of a near-miss guess.
+        let err = server
+            .dispatch_tool("ctx_overview", None, false)
+            .await
+            .expect_err("removed tool must error");
+        assert!(
+            err.message
+                .starts_with("ctx_overview was removed; use ctx_compose instead"),
+            "unexpected message: {}",
             err.message
         );
 
@@ -1085,5 +1400,94 @@ mod tests {
             typo.contains("unknown key 'args'"),
             "the #658 misspelling hint must survive: {typo}"
         );
+    }
+}
+
+#[cfg(test)]
+mod workflow_gate_tests {
+    use crate::core::context_admission::stored::lineage_support::{governed, project, scoped};
+    use crate::core::policy::runtime::TestPolicyOverride;
+    use crate::core::workflow::gate::tests::{review, workflow_file};
+    use crate::core::workflow::{is_withheld_sentinel, load_active, save_active};
+    use serde_json::{Map, Value, json};
+
+    fn call(inner: &str, arguments: &Value) -> Map<String, Value> {
+        let mut args = Map::new();
+        args.insert("name".into(), Value::String(inner.into()));
+        args.insert("arguments".into(), arguments.clone());
+        args
+    }
+
+    /// The `ctx_call` gate under the stand-in for a withheld workflow: the
+    /// same closed decision as the direct gate — pass-through tools and write
+    /// actions refused, the control tool working, no expiry, the stored
+    /// workflow untouched — and the real workflow back once it may be read.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn the_ctx_call_gate_keeps_a_withheld_workflow_closed() {
+        let _data = governed();
+        let _community = TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        let (_other_directory, other) = project();
+        scoped(&root, || save_active(&review())).expect("saved in its project");
+        let stored = std::fs::read(workflow_file()).expect("stored workflow");
+
+        let server = crate::tools::LeanCtxServer::new_with_project_root(Some(&other));
+        let mut closed = scoped(&other, load_active)
+            .expect("load")
+            .expect("a withheld workflow is still a workflow");
+        assert!(is_withheld_sentinel(&closed));
+        closed.updated_at = chrono::Utc::now() - chrono::Duration::minutes(45);
+        *server.workflow.write().await = Some(closed);
+
+        for (inner, arguments) in [
+            ("ctx_read", json!({ "path": "Cargo.toml" })),
+            (
+                "ctx_session",
+                json!({ "action": "finding", "value": "noted" }),
+            ),
+            (
+                "ctx_session",
+                json!({ "action": "decision", "value": "decided" }),
+            ),
+        ] {
+            let (reply, ..) = server
+                .dispatch_tool("ctx_call", Some(&call(inner, &arguments)), false)
+                .await
+                .expect("a refusal is a reply");
+            assert!(
+                reply.contains("withheld by the context gateway"),
+                "{inner}: {reply}"
+            );
+            assert!(!reply.contains("review"), "{reply}");
+        }
+        assert!(
+            server
+                .workflow
+                .read()
+                .await
+                .as_ref()
+                .is_some_and(is_withheld_sentinel),
+            "not cleared by its age"
+        );
+
+        assert_eq!(
+            std::fs::read(workflow_file()).expect("kept"),
+            stored,
+            "the withheld workflow is byte-identical on disk"
+        );
+
+        // The authority holds again: the real workflow loads, no stand-in.
+        let real = scoped(&root, load_active).expect("load").expect("active");
+        assert!(!is_withheld_sentinel(&real));
+        *server.workflow.write().await = Some(real);
+        let (reply, ..) = server
+            .dispatch_tool(
+                "ctx_call",
+                Some(&call("ctx_shell", &json!({ "command": "true" }))),
+                false,
+            )
+            .await
+            .expect("a refusal is a reply");
+        assert!(reply.contains("blocked by workflow 'review'"), "{reply}");
     }
 }

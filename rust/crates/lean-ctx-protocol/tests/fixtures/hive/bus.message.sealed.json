@@ -1,0 +1,17 @@
+{
+  "client_msg_id": "01JBMSGS1",
+  "from": "claude-3e",
+  "network": {
+    "channel": "org:org_acme/vault:3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42/general",
+    "kind": "org"
+  },
+  "sealed": {
+    "alg": "xchacha20poly1305",
+    "ciphertext": "DOZVCon8uZdGQi9HeyMw/zIpCGIQtQPsfrGYzY7rF3PRKNed7nnk2xfADrN5KAZESAzXMFEkjdS8NHvlFuzqEAgXMIgzIOiZ4R31kkDSvHvktahc8Gjw3U9cqxc6N9/p4OGpopV7GSbwp7Tjf8kMO7vnipht",
+    "content_schema": "leanctx.hive.sealed-message/v1",
+    "epoch": 1,
+    "nonce": "cnJycnJycnJycnJycnJycnJycnJycnJy"
+  },
+  "t": "message",
+  "type": "finding"
+}

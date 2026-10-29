@@ -1,0 +1,14 @@
+{
+  "case": "statement_tampered",
+  "base": "consent/statement.allow.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/answer",
+      "value": "deny"
+    }
+  ],
+  "expect": {
+    "layer": "signature"
+  }
+}

@@ -17,7 +17,10 @@
         "ctx_read",
         "ctx_search",
         "ctx_shell",
+        "ctx_glob",
+        "ctx_tree",
         "ctx_compose",
+        "ctx_patch",
         "ctx_callgraph",
         "ctx_session"
       ]

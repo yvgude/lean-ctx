@@ -7,9 +7,11 @@ use chrono::{DateTime, Duration, Utc};
 use ed25519_dalek::SigningKey;
 use serde::{Deserialize, Serialize};
 
+#[cfg(feature = "http-server")]
+use super::task::TaskAuthorityExpectationV1;
 use super::task::{
-    TASK_STATUS_VERSION, TaskAuthorityConfigV1, TaskAuthorityExpectationV1,
-    TaskControlDescriptorV1, TaskPeerTrustV1, TaskStatusV1,
+    TASK_STATUS_VERSION, TaskAuthorityConfigV1, TaskControlDescriptorV1, TaskPeerTrustV1,
+    TaskStatusV1,
 };
 
 const DOMAIN: &[u8] = b"leanctx.a2a.task.status.response.sig.v1\0";
@@ -22,12 +24,14 @@ pub struct InvalidTaskResponse;
 
 /// Request-scoped signer admitted by the receiver's configured task policy.
 /// Loading never creates a key; an immutable policy snapshot governs the request.
+#[cfg(feature = "http-server")]
 pub(crate) struct AdmittedStatusSigner<'a> {
     request: &'a TaskControlDescriptorV1,
     peer: &'a TaskPeerTrustV1,
     key: SigningKey,
 }
 
+#[cfg(feature = "http-server")]
 impl<'a> AdmittedStatusSigner<'a> {
     pub(crate) fn existing(
         request: &'a TaskControlDescriptorV1,

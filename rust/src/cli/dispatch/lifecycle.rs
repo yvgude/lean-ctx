@@ -330,10 +330,26 @@ pub(super) fn cmd_codesign_setup() {
         Ok(SetupOutcome::Created) => {
             eprintln!("  ✓ Signing identity created and trusted.");
             // Re-sign the installed binary now so this grant applies immediately.
-            if let Ok(exe) = std::env::current_exe()
-                && sign_binary(&exe) == crate::core::codesign::SignKind::Stable
-            {
-                eprintln!("  ✓ Re-signed {} with the stable identity.", exe.display());
+            let resigned = std::env::current_exe()
+                .ok()
+                .map(|exe| (sign_binary(&exe), exe));
+            match resigned {
+                Some((Ok(crate::core::codesign::SignKind::Stable), exe)) => {
+                    eprintln!("  ✓ Re-signed {} with the stable identity.", exe.display());
+                }
+                Some((Err(stopped), exe)) => {
+                    // Not a success: say so, with the fixed text only.
+                    eprintln!(
+                        "  ✗ Re-signing {} did not finish: {stopped}.",
+                        exe.display()
+                    );
+                    eprintln!(
+                        "  The identity is set up, but this binary was not re-signed with\n  \
+                         it. Re-run `lean-ctx dev-install` (or update) to sign it."
+                    );
+                    std::process::exit(1);
+                }
+                Some((Ok(crate::core::codesign::SignKind::AdHoc), _)) | None => {}
             }
             eprintln!(
                 "\n  Done. `dev-install` and self-updates now reuse this identity.\n  \
@@ -389,6 +405,16 @@ fn atomic_install_binary(src: &std::path::Path, dst: &std::path::Path) -> Result
             .map_err(|e| format!("chmod failed: {e}"))?;
     }
 
+    // #356: sign the staged copy, before anything happens to `dst`. Preferring
+    // the persistent identity gives TCC a stable anchor; otherwise the ad-hoc
+    // fallback is attempted. Which path was taken is not consulted here.
+    // When signing stops because a signing tool could not be confirmed ended,
+    // that tool may still be writing the staged file: `dst` is left exactly
+    // as it is, the staged file is left where it is — not removed and not
+    // installed — and the error is reported.
+    #[cfg(target_os = "macos")]
+    crate::core::codesign::sign_binary(&staged).map_err(|stopped| stopped.to_string())?;
+
     #[cfg(target_os = "macos")]
     let _ = std::fs::remove_file(dst);
 
@@ -406,13 +432,6 @@ fn atomic_install_binary(src: &std::path::Path, dst: &std::path::Path) -> Result
             ""
         };
         return Err(format!("atomic rename failed: {e}{hint}"));
-    }
-
-    // #356: prefer the persistent identity (stable cdhash anchor → TCC grant
-    // survives updates); ad-hoc fallback keeps the binary launchable regardless.
-    #[cfg(target_os = "macos")]
-    {
-        let _ = crate::core::codesign::sign_binary(dst);
     }
 
     Ok(())
@@ -557,12 +576,15 @@ pub(super) fn resolve_install_path(build_dir: &std::path::Path) -> std::path::Pa
 /// A running binary inside the build output is never the install target:
 /// dev-install would copy the fresh build onto itself. Besides the literal
 /// `target` component, the resolved build dir covers a relocated
-/// `[build] target-dir` (e.g. a machine-wide `~/.cargo/shared-target`).
+/// `[build] target-dir` (e.g. a machine-wide `~/.cargo/shared-target`), and
+/// the structural check covers the output directory of any other project.
 fn is_build_artifact(exe: &std::path::Path, build_dir: &std::path::Path) -> bool {
     let build_dir = build_dir
         .canonicalize()
         .unwrap_or_else(|_| build_dir.to_path_buf());
-    exe.starts_with(&build_dir) || exe.components().any(|c| c.as_os_str() == "target")
+    exe.starts_with(&build_dir)
+        || exe.components().any(|c| c.as_os_str() == "target")
+        || crate::core::portable_binary::in_cargo_output_dir(exe)
 }
 
 /// Returns true if a symlink target points into a Homebrew Cellar / linuxbrew
@@ -788,6 +810,18 @@ mod target_dir_tests {
         let _env = crate::core::data_dir::test_env_lock();
         let build_dir = resolve_cargo_target_dir(Path::new(env!("CARGO_MANIFEST_DIR")));
         let exe = std::env::current_exe().unwrap().canonicalize().unwrap();
+        // The claim itself, not via `is_build_artifact`: that function also
+        // accepts a `target` path component and any cargo output directory,
+        // so alone it would pass with a wrongly resolved build dir.
+        let resolved = build_dir
+            .canonicalize()
+            .unwrap_or_else(|_| build_dir.clone());
+        assert!(
+            exe.starts_with(&resolved),
+            "{} not under the resolved target dir {}",
+            exe.display(),
+            resolved.display()
+        );
         assert!(
             super::is_build_artifact(&exe, &build_dir),
             "{} not under {}",
@@ -873,6 +907,60 @@ mod windows_swap_tests {
         // it first, then prove the old binary survived untouched.
         drop(holder);
         assert_eq!(fs::read(&dst).unwrap(), b"old-binary");
+    }
+}
+
+/// The staged copy is signed before the installed binary is touched. Signing
+/// runs against stand-in tools these tests own: they show the order and what
+/// happens to the two files, not a macOS signature.
+#[cfg(all(test, target_os = "macos"))]
+mod signing_swap_tests {
+    use super::atomic_install_binary;
+    use crate::core::codesign::test_scope;
+    use std::fs;
+
+    #[test]
+    fn the_installed_binary_is_what_signing_left_in_the_staged_copy() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = tempfile::tempdir().unwrap();
+        // A stand-in that marks the file it is asked to sign.
+        let _signing = test_scope::marking(tools.path());
+        let (src, dst) = (dir.path().join("built"), dir.path().join("lean-ctx"));
+        fs::write(&src, b"new-binary").unwrap();
+        fs::write(&dst, b"old-binary").unwrap();
+
+        atomic_install_binary(&src, &dst).unwrap();
+        // Signed while staged, then moved into place: the mark is in the
+        // installed bytes, the source is untouched, nothing staged is left.
+        assert_eq!(fs::read(&dst).unwrap(), b"new-binary+signed");
+        assert_eq!(fs::read(&src).unwrap(), b"new-binary");
+        assert!(!dst.with_extension("new").exists());
+        // The stand-in was asked to sign the staged path, never the target.
+        let signed = fs::read_to_string(tools.path().join("signed-paths")).unwrap();
+        assert_eq!(
+            signed.lines().collect::<Vec<_>>(),
+            [dst.with_extension("new").to_str().unwrap()]
+        );
+    }
+
+    #[test]
+    fn a_stopped_signing_leaves_the_installed_binary_exactly_as_it_was() {
+        let dir = tempfile::tempdir().unwrap();
+        let tools = tempfile::tempdir().unwrap();
+        let _signing = test_scope::unconfirmable(tools.path());
+        let (src, dst) = (dir.path().join("built"), dir.path().join("lean-ctx"));
+        fs::write(&src, b"new-binary").unwrap();
+        fs::write(&dst, b"old-binary").unwrap();
+
+        let error = atomic_install_binary(&src, &dst).unwrap_err();
+        assert_eq!(
+            error,
+            "code signing stopped: a signing tool could not be confirmed ended"
+        );
+        // Not removed, not replaced; the staged copy was neither installed
+        // nor cleaned away under a tool that may still hold it.
+        assert_eq!(fs::read(&dst).unwrap(), b"old-binary");
+        assert_eq!(fs::read(dst.with_extension("new")).unwrap(), b"new-binary");
     }
 }
 

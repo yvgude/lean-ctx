@@ -1,0 +1,21 @@
+{
+  "created_at": 1792800020000,
+  "epoch": 0,
+  "id_salt": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+  "key_id": "7bc9f7e9dc1a0621",
+  "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+  "rev": 1,
+  "schema": "leanctx.hive.snapshot/v1",
+  "segments": [
+    {
+      "count": 18,
+      "envelope_root": "59270ae59c6c1f6e98e474d6221eafda45c79d75c60d9f7685a3038288ea287b",
+      "n": 0,
+      "seq_from": 1,
+      "seq_to": 18
+    }
+  ],
+  "seq": 18,
+  "server_time": 1792800020500,
+  "signature": "40f1a312deecf2560884e10dea5ae09e04aaade69fa73113efa9ea7b107e5a16dc628422fb740198cca6d05682087c7a7713cb3061f3e299f2b1385874b0450d"
+}

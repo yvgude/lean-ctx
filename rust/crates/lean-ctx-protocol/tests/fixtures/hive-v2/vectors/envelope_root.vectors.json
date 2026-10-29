@@ -1,0 +1,72 @@
+{
+  "fixtures": [
+    {
+      "envelope_root": "59270ae59c6c1f6e98e474d6221eafda45c79d75c60d9f7685a3038288ea287b",
+      "leaves": [
+        "f37f0c27126ba84f02762454418a6b8a0b5d9cb3526268b2b14e0c09ec60364b",
+        "aed842d619aa4048a5fb83d8e67f8453beb56a6722ddc32e7016a6327a3d5d4e",
+        "9ed8ddef94e67b420a703ce06f8d93b676a37c9b7adb48b8e05fb82442634a06",
+        "3fc7197f86285c5ed407002b33e8f691133044d8fd6b53cbaf39e56ab94fbb0f",
+        "ebb3d072ac1775d492eb7770d5acdfa9252b3e19f1a9fc44d3e21d68908509dc",
+        "b9da0384c10ec2aa81c264bf0c86dc03ce7c38c5c9550558ed788387f3a1274c",
+        "c905f4908739a9a38b1ef93da4775a4fdbcd13077d71d9ef80ca77757d0b2bef",
+        "146c3f29b6e069bc7ed7381db47dca5cde2dcfffa2623ca735d3a04d13645696",
+        "c4ccf1140da43261ddc5d5b92adff89dc65579c4d998233087a76b666ac11fa7",
+        "7ebd88644afcac508904b1d9b9f1166a0e87f7ec5cc165b6c40cebc5ec98344f",
+        "70e43fd5d367f15ede29f9edf2a4240235929def1f9ce379761c3b9c488a8535",
+        "07076c7763850c356d637af469437007007a9b65e984cd1fc2e48fc86aec1cfe",
+        "dc76304f9d60ca459b252187043154baf4571ff22b254001a0a1c17e5a24b488",
+        "278eb4c0a25311fa5caa42ebec45c73992783b95c57a2f9cc96df486b9304e01",
+        "cad916818fcf3a0ed4e5255ac655c00964f78f5dce625e2951046f149a105ec8",
+        "c175b614450f73b40ef7ed2e80c46f32af3523db40f46e1154a76aefc040a219",
+        "7131099a2bcdfd4192f2edfa0710a458082bd1c885260a95c20d2b97c538c080",
+        "295e5e326b87925a326756a153841bd69ea91a1acdf6f3674d92d600a07cfa85"
+      ],
+      "note": "seq 4 withheld (unconfirmed procedure), seq 5 purged: both keep their leaf",
+      "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+      "seq_from": 1,
+      "seq_to": 18
+    },
+    {
+      "envelope_root": "90d81a5f99746aa0fd131e6083608cc132171908bbbb2e23ff18a029b6fd3dd2",
+      "leaves": [
+        "90d81a5f99746aa0fd131e6083608cc132171908bbbb2e23ff18a029b6fd3dd2"
+      ],
+      "place": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03",
+      "seq_from": 1,
+      "seq_to": 1
+    }
+  ],
+  "rules": {
+    "inner": "blake3(0x01 ‖ left ‖ right); an odd last node is promoted unchanged",
+    "leaf": "blake3(0x00 ‖ canonical_json(signed envelope)): the signed members plus signature, never server fields, body or ck_wrapped; a withheld or converted record contributes its leaf",
+    "synthetic": "leaf i = blake3(0x00 ‖ canonical_json({\"i\": i})) for i = 0..leaves"
+  },
+  "synthetic": [
+    {
+      "envelope_root": "79c50c3db46d3b3f1b664b72631063759a6135b58289626c23817a6f6aeae6d0",
+      "first_leaf": "79c50c3db46d3b3f1b664b72631063759a6135b58289626c23817a6f6aeae6d0",
+      "leaves": 1
+    },
+    {
+      "envelope_root": "77aa576d422c7d2d2ea35c5f239f1c60b9ac5e36e53687d97751140338578168",
+      "first_leaf": "79c50c3db46d3b3f1b664b72631063759a6135b58289626c23817a6f6aeae6d0",
+      "leaves": 2
+    },
+    {
+      "envelope_root": "ace3d8bcce8bae401d5c072702ac5827392f31268b7c5175a3d8ca461afbaad1",
+      "first_leaf": "79c50c3db46d3b3f1b664b72631063759a6135b58289626c23817a6f6aeae6d0",
+      "leaves": 3
+    },
+    {
+      "envelope_root": "7e4bbfb050816d6e3302c11d84b83ffaeff6fc02cb64c6d888388423224a3df4",
+      "first_leaf": "79c50c3db46d3b3f1b664b72631063759a6135b58289626c23817a6f6aeae6d0",
+      "leaves": 7
+    },
+    {
+      "envelope_root": "1b74d25642e39cc8f815c3319adca4c996810bacc52db403cf57ce366696107d",
+      "first_leaf": "79c50c3db46d3b3f1b664b72631063759a6135b58289626c23817a6f6aeae6d0",
+      "leaves": 60000
+    }
+  ]
+}

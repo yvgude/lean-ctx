@@ -498,26 +498,25 @@ impl EmbeddingsPolicy {
     }
 }
 
-use std::collections::HashMap;
-
+/// Gotcha store bounds (`[memory.gotcha]`).
+///
+/// Decay follows each gotcha's provenance (promoted, agent-reported,
+/// correlated, auto-detected), so the former `default_decay_rate`,
+/// `category_decay_overrides`, `retrieval_budget_per_room` and
+/// `auto_expire_days` keys were never applied; they are retired
+/// (`config::retired`) and ignored when an older config loads.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct GotchaPolicy {
+    /// Most gotchas kept per project; the lowest-confidence ones are dropped
+    /// first. Env: `LEAN_CTX_GOTCHA_MAX_PER_PROJECT`.
     pub max_gotchas_per_project: usize,
-    pub retrieval_budget_per_room: usize,
-    pub default_decay_rate: f32,
-    pub category_decay_overrides: HashMap<String, f32>,
-    pub auto_expire_days: Option<i64>,
 }
 
 impl Default for GotchaPolicy {
     fn default() -> Self {
         Self {
             max_gotchas_per_project: 100,
-            retrieval_budget_per_room: 10,
-            default_decay_rate: 0.03,
-            category_decay_overrides: HashMap::new(),
-            auto_expire_days: None,
         }
     }
 }
@@ -529,31 +528,13 @@ impl GotchaPolicy {
         {
             self.max_gotchas_per_project = n;
         }
-        if let Ok(v) = std::env::var("LEAN_CTX_GOTCHA_RETRIEVAL_BUDGET")
-            && let Ok(n) = v.parse()
-        {
-            self.retrieval_budget_per_room = n;
-        }
     }
 
     fn validate(&self) -> Result<(), String> {
         if self.max_gotchas_per_project == 0 {
             return Err("memory.gotcha.max_gotchas_per_project must be > 0".to_string());
         }
-        if self.retrieval_budget_per_room == 0 {
-            return Err("memory.gotcha.retrieval_budget_per_room must be > 0".to_string());
-        }
-        if !(0.0..=1.0).contains(&self.default_decay_rate) {
-            return Err("memory.gotcha.default_decay_rate must be 0.0-1.0".to_string());
-        }
         Ok(())
-    }
-
-    pub fn effective_decay_rate(&self, category: &str) -> f32 {
-        self.category_decay_overrides
-            .get(category)
-            .copied()
-            .unwrap_or(self.default_decay_rate)
     }
 }
 

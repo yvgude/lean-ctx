@@ -1,0 +1,87 @@
+{
+  "route": "W69",
+  "method": "GET",
+  "path": "/api/v1/companies/acme-group/billing",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "plan": "enterprise",
+      "status": "active",
+      "seats": 20,
+      "seats_used": 3,
+      "contract_ref": "C-2026-017",
+      "usage": {
+        "quotas": {
+          "registered_engines": {
+            "limit": 100,
+            "used": 4,
+            "reset_at": null
+          },
+          "connected_engines": {
+            "limit": 60,
+            "used": 2,
+            "reset_at": null
+          },
+          "private_vaults": {
+            "limit": 100,
+            "used": 5,
+            "reset_at": null
+          },
+          "storage_bytes": {
+            "limit": 429496729600,
+            "used": 1073741824,
+            "reset_at": null
+          },
+          "transfer_bytes": {
+            "limit": 1717986918400,
+            "used": 5368709120,
+            "reset_at": "2026-11-01T00:00:00Z"
+          },
+          "bus_messages": {
+            "limit": 8000000,
+            "used": 12000,
+            "reset_at": "2026-11-01T00:00:00Z"
+          }
+        },
+        "notices": [],
+        "suggest_team": false
+      },
+      "teams": [
+        {
+          "slug": "acme-platform",
+          "name": "Acme Platform",
+          "members": 2,
+          "connected_engines": 1,
+          "private_vaults": 3,
+          "storage_bytes": 805306368,
+          "transfer_bytes": 4294967296,
+          "bus_messages": 9000
+        },
+        {
+          "slug": "acme-research",
+          "name": "Acme Research",
+          "members": 1,
+          "connected_engines": 1,
+          "private_vaults": 2,
+          "storage_bytes": 268435456,
+          "transfer_bytes": 1073741824,
+          "bus_messages": 3000
+        }
+      ],
+      "contact": true
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "this needs the company admin role",
+          "required_role": "admin"
+        }
+      }
+    }
+  ]
+}

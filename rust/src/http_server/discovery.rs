@@ -25,12 +25,7 @@ fn mcp_server_card_value() -> Value {
         ),
         (
             "intelligence",
-            &[
-                "ctx_knowledge",
-                "ctx_semantic_search",
-                "ctx_graph",
-                "ctx_overview",
-            ][..],
+            &["ctx_knowledge", "ctx_compose", "ctx_graph"][..],
             200,
         ),
     ]

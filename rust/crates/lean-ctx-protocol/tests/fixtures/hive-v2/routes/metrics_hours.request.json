@@ -1,0 +1,358 @@
+{
+  "buckets": [
+    {
+      "hour": "2026-10-26T16:00:00Z",
+      "rev": 2,
+      "slices": [
+        {
+          "calls": {
+            "cache_hits": 48,
+            "cache_reads": 61,
+            "tool_calls": 214
+          },
+          "compression": {
+            "compressed": 31800,
+            "original": 120400
+          },
+          "gauges": {
+            "facts_current": 412
+          },
+          "guards": {
+            "content_withheld": 0,
+            "injection_flags": 1,
+            "partial_inspections": 0,
+            "paths_blocked": 3,
+            "pii_redacted": 0,
+            "secrets_redacted": 2,
+            "shell_blocked": 1
+          },
+          "hive": {
+            "first_context_ms_p50": 840,
+            "first_context_sessions": 2,
+            "knowledge_hits_referenced": 6,
+            "task_usage": [
+              {
+                "input_tokens": 92000,
+                "list_usd_micros": 367500,
+                "number": 17,
+                "output_tokens": 6100
+              }
+            ]
+          },
+          "hosts": [
+            {
+              "host": "claude-code",
+              "sessions": 2,
+              "tool_calls": 171
+            },
+            {
+              "host": "cursor",
+              "sessions": 1,
+              "tool_calls": 43
+            }
+          ],
+          "ledger": {
+            "cache_discount": 12250,
+            "correction": 0,
+            "edit": 0,
+            "other": 0,
+            "reduction": 128900
+          },
+          "policy_blocks": [
+            {
+              "blocked": 3,
+              "rule": "security.excluded_paths",
+              "would_block": 0
+            },
+            {
+              "blocked": 1,
+              "rule": "context.denied_tools",
+              "would_block": 0
+            },
+            {
+              "blocked": 0,
+              "rule": "context.max_writes_per_min",
+              "would_block": 2
+            },
+            {
+              "blocked": 2,
+              "rule": "gateway.path_jail",
+              "would_block": 1
+            },
+            {
+              "blocked": 1,
+              "rule": "gateway.egress",
+              "would_block": 0
+            },
+            {
+              "blocked": 0,
+              "rule": "gateway.destination",
+              "would_block": 1
+            }
+          ],
+          "read_modes": {
+            "auto": 40,
+            "diff": 4,
+            "full": 9,
+            "map": 31,
+            "signatures": 22
+          },
+          "refetch": [
+            {
+              "filter": "map",
+              "refetched": 4,
+              "truncated": 31
+            },
+            {
+              "filter": "shell_output",
+              "refetched": 1,
+              "truncated": 9
+            }
+          ],
+          "savings": {
+            "estimated": 22750,
+            "estimated_high": 29600,
+            "estimated_low": 15900,
+            "evidenced": 61200,
+            "measured": 118400,
+            "overhead": 3100
+          },
+          "secret_hits": [
+            {
+              "count": 2,
+              "detector": "aws_access_key"
+            }
+          ],
+          "sessions": {
+            "started": 3
+          },
+          "spend": [
+            {
+              "cached_tokens": 301000,
+              "input_tokens": 412000,
+              "model": "claude-sonnet-4.5",
+              "output_tokens": 28100,
+              "provider": "anthropic",
+              "requests": 37,
+              "usd_micros": 1834500
+            }
+          ],
+          "tokens": {
+            "input": 182400,
+            "output": 41250,
+            "saved": 141150
+          },
+          "tools": [
+            {
+              "calls": 106,
+              "saved": 98200,
+              "tool": "ctx_read"
+            },
+            {
+              "calls": 54,
+              "saved": 27100,
+              "tool": "ctx_search"
+            },
+            {
+              "calls": 41,
+              "saved": 15850,
+              "tool": "ctx_shell"
+            },
+            {
+              "calls": 13,
+              "saved": 0,
+              "tool": "other"
+            }
+          ],
+          "unregulated": [
+            {
+              "calls": 6,
+              "kind": "program",
+              "name": "terraform"
+            },
+            {
+              "calls": 14,
+              "kind": "mcp_server",
+              "name": "github"
+            },
+            {
+              "calls": 40,
+              "kind": "host",
+              "name": "cursor"
+            },
+            {
+              "calls": 3,
+              "kind": "host",
+              "name": "other"
+            },
+            {
+              "calls": 2,
+              "kind": "mcp_server",
+              "name": "other"
+            },
+            {
+              "calls": 1,
+              "kind": "program",
+              "name": "other"
+            }
+          ],
+          "vault": "3f9a1c7e5b2d4a6f8e0c1b3d5f7a9c2e"
+        },
+        {
+          "calls": {
+            "cache_hits": 2,
+            "cache_reads": 4,
+            "tool_calls": 31
+          },
+          "compression": {
+            "compressed": 5200,
+            "original": 14000
+          },
+          "guards": {
+            "content_withheld": 0,
+            "injection_flags": 0,
+            "partial_inspections": 0,
+            "paths_blocked": 0,
+            "pii_redacted": 0,
+            "secrets_redacted": 0,
+            "shell_blocked": 0
+          },
+          "hosts": [
+            {
+              "host": "claude-code",
+              "sessions": 1,
+              "tool_calls": 31
+            }
+          ],
+          "ledger": {
+            "cache_discount": 0,
+            "correction": 0,
+            "edit": 0,
+            "other": 0,
+            "reduction": 12900
+          },
+          "policy_blocks": [],
+          "read_modes": {
+            "auto": 12,
+            "map": 3
+          },
+          "refetch": [],
+          "savings": {
+            "estimated": 0,
+            "estimated_high": 0,
+            "estimated_low": 0,
+            "evidenced": 0,
+            "measured": 12900,
+            "overhead": 400
+          },
+          "secret_hits": [],
+          "sessions": {
+            "started": 1
+          },
+          "spend": [],
+          "tokens": {
+            "input": 22000,
+            "output": 9100,
+            "saved": 12900
+          },
+          "tools": [
+            {
+              "calls": 15,
+              "saved": 9900,
+              "tool": "ctx_read"
+            },
+            {
+              "calls": 16,
+              "saved": 3000,
+              "tool": "ctx_search"
+            }
+          ],
+          "unregulated": [],
+          "vault": "8b1e0d2c4f6a8e0b2d4f6a8c0e2b4d6f"
+        }
+      ]
+    },
+    {
+      "hour": "2026-10-26T17:00:00Z",
+      "rev": 1,
+      "slices": [
+        {
+          "calls": {
+            "cache_hits": 2,
+            "cache_reads": 2,
+            "tool_calls": 12
+          },
+          "compression": {
+            "compressed": 1900,
+            "original": 6000
+          },
+          "gauges": {
+            "facts_current": 413
+          },
+          "guards": {
+            "content_withheld": 0,
+            "injection_flags": 0,
+            "partial_inspections": 0,
+            "paths_blocked": 0,
+            "pii_redacted": 0,
+            "secrets_redacted": 0,
+            "shell_blocked": 0
+          },
+          "hosts": [
+            {
+              "host": "claude-code",
+              "sessions": 0,
+              "tool_calls": 12
+            }
+          ],
+          "ledger": {
+            "cache_discount": 0,
+            "correction": 0,
+            "edit": 0,
+            "other": 0,
+            "reduction": 5800
+          },
+          "policy_blocks": [],
+          "read_modes": {
+            "auto": 7
+          },
+          "refetch": [],
+          "savings": {
+            "estimated": 0,
+            "estimated_high": 0,
+            "estimated_low": 0,
+            "evidenced": 2100,
+            "measured": 5800,
+            "overhead": 900
+          },
+          "secret_hits": [],
+          "sessions": {
+            "started": 0
+          },
+          "spend": [],
+          "tokens": {
+            "input": 9100,
+            "output": 3300,
+            "saved": 5800
+          },
+          "tools": [
+            {
+              "calls": 12,
+              "saved": 5800,
+              "tool": "ctx_read"
+            }
+          ],
+          "unregulated": [],
+          "vault": "3f9a1c7e5b2d4a6f8e0c1b3d5f7a9c2e"
+        }
+      ]
+    }
+  ],
+  "engine": {
+    "engine_version": "3.12.0",
+    "os": "macos"
+  },
+  "key_id": "47983724220c8521",
+  "schema": "leanctx.hive.engine-metrics/v2",
+  "signature": "63328f403af107bc2699d686d04cd03223337015df92b3f1530af16e1977fa4ed5426f91bb4262460033fa0d65a6a06633a0f07ee82fbbb317bf96b8151c800c"
+}

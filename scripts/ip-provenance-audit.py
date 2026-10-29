@@ -305,6 +305,95 @@ def git(root: Path, *args: str) -> bytes:
     return result.stdout
 
 
+def resolve_commit(root: Path, ref: str) -> str:
+    """Resolve a user-supplied ref once, then audit only its immutable commit."""
+    if not safe_ref(ref):
+        raise AuditError("invalid git ref")
+    resolved = decode_git(git(root, "rev-parse", "--verify", "--end-of-options", f"{ref}^{{commit}}")).strip()
+    if not re.fullmatch(r"(?:[0-9a-f]{40}|[0-9a-f]{64})", resolved):
+        raise AuditError("git ref did not resolve to an immutable commit")
+    return resolved
+
+
+class AuditTree:
+    """Read one immutable Git tree, or preserve the existing worktree mode."""
+
+    def __init__(self, root: Path, commit: str | None = None) -> None:
+        self.root = root
+        self.commit = commit
+        self._entries: dict[str, tuple[str, str, str, int | None]] | None = None
+
+    def _load_entries(self) -> dict[str, tuple[str, str, str, int | None]]:
+        if self.commit is None:
+            raise AuditError("immutable tree is unavailable")
+        if self._entries is None:
+            if not safe_ref(self.commit):
+                raise AuditError("unsafe git object reference")
+            raw = git(self.root, "ls-tree", "-r", "-l", "--full-tree", "-z", self.commit)
+            entries: dict[str, tuple[str, str, str, int | None]] = {}
+            for field in (item for item in raw.split(b"\0") if item):
+                metadata, separator, raw_path = field.partition(b"\t")
+                parts = metadata.split()
+                path = decode_git(raw_path)
+                if not separator or len(parts) != 4 or not safe_relpath(path):
+                    raise AuditError("unsafe tracked path")
+                mode, kind, oid, raw_size = (decode_git(part) for part in parts)
+                if raw_size == "-":
+                    size = None
+                elif raw_size.isdecimal():
+                    size = int(raw_size)
+                else:
+                    raise AuditError("unsafe tracked file size")
+                entries[path] = (mode, kind, oid, size)
+                if len(entries) > MAX_TRACKED_FILES:
+                    raise AuditError("tracked file count exceeds configured limit")
+            self._entries = entries
+        return self._entries
+
+    def paths(self, max_files: int) -> list[str]:
+        entries = self._load_entries()
+        if len(entries) > max_files:
+            raise AuditError("tracked file count exceeds configured limit")
+        return sorted(entries)
+
+    def _entry(self, path: str) -> tuple[str, str, str, int | None]:
+        if not safe_relpath(path):
+            raise AuditError("unsafe git object reference")
+        entry = self._load_entries().get(path)
+        if entry is None:
+            raise AuditError("file is missing from audited commit")
+        return entry
+
+    def is_gitlink(self, path: str) -> bool:
+        mode, kind, _oid, _size = self._entry(path)
+        return mode == "160000" and kind == "commit"
+
+    def read_bytes(self, path: str, limit: int) -> bytes:
+        if self.commit is None:
+            target = relative_target(self.root, path)
+            if not target.is_file():
+                raise AuditError("file is missing")
+            return read_bounded(target, limit)
+
+        mode, kind, oid, size = self._entry(path)
+        if mode == "120000":
+            raise AuditError("tracked symlink is not allowed")
+        if kind != "blob" or mode not in {"100644", "100755"}:
+            raise AuditError("audited path is not a regular file")
+        if size is None:
+            raise AuditError("audited blob size is unavailable")
+        if size > limit:
+            raise AuditError("file exceeds configured size limit")
+        raw = git(self.root, "cat-file", "blob", oid)
+        if len(raw) != size:
+            raise AuditError("git blob size does not match audited tree")
+        return raw
+
+
+def repo_root(root: Path | AuditTree) -> Path:
+    return root.root if isinstance(root, AuditTree) else root
+
+
 def decode_git(raw: bytes) -> str:
     try:
         return raw.decode("utf-8")
@@ -312,10 +401,10 @@ def decode_git(raw: bytes) -> str:
         raise AuditError("git path is not valid UTF-8") from exc
 
 
-def git_blob(root: Path, ref: str, path: str) -> bytes:
+def git_blob(root: Path | AuditTree, ref: str, path: str) -> bytes:
     if not safe_ref(ref) or not safe_relpath(path):
         raise AuditError("unsafe git object reference")
-    return git(root, "show", f"{ref}:{path}")
+    return git(repo_root(root), "show", f"{ref}:{path}")
 
 
 EXPORT_MANIFEST_PATH = "legal/provenance-manifest.json"
@@ -474,7 +563,11 @@ def load_export_manifest(root: Path) -> dict[str, Any]:
     return manifest
 
 
-def enumerate_paths(root: Path, ref: str | None, max_files: int) -> list[str]:
+def enumerate_paths(root: Path | AuditTree, ref: str | None, max_files: int) -> list[str]:
+    if isinstance(root, AuditTree):
+        if root.commit is None or ref != root.commit:
+            raise AuditError("audited tree reference changed")
+        return root.paths(max_files)
     if ref is None:
         raw = git(root, "ls-files", "-co", "--exclude-standard", "-z")
     else:
@@ -594,7 +687,12 @@ def relative_target(root: Path, path: str) -> Path:
     return target
 
 
-def is_gitlink(root: Path, path: str) -> bool:
+def is_gitlink(root: Path | AuditTree, path: str) -> bool:
+    if isinstance(root, AuditTree):
+        try:
+            return root.is_gitlink(path)
+        except AuditError:
+            return False
     try:
         record = decode_git(git(root, "ls-files", "-s", "--", path))
     except AuditError:
@@ -602,10 +700,14 @@ def is_gitlink(root: Path, path: str) -> bool:
     return record.startswith("160000 ")
 
 
-def validate_matrix(root: Path, matrix_path: Path) -> tuple[dict[str, Any], list[str]]:
+def validate_matrix(root: Path | AuditTree, matrix_path: Path) -> tuple[dict[str, Any], list[str]]:
     errors: list[str] = []
     try:
-        matrix_raw = read_bounded(matrix_path, MAX_MATRIX_BYTES)
+        if isinstance(root, AuditTree):
+            matrix_rel = matrix_path.relative_to(root.root).as_posix()
+            matrix_raw = root.read_bytes(matrix_rel, MAX_MATRIX_BYTES)
+        else:
+            matrix_raw = read_bounded(matrix_path, MAX_MATRIX_BYTES)
         data = load_toml(matrix_raw)
     except (AuditError, UnicodeDecodeError, ValueError):
         return {}, ["LICENSE_MATRIX.toml: invalid TOML or unreadable matrix"]
@@ -671,8 +773,13 @@ def validate_matrix(root: Path, matrix_path: Path) -> tuple[dict[str, Any], list
             errors.append(f"license {name}: unsafe license text path")
         else:
             try:
-                text_target = relative_target(root, text_path)
-                if not text_target.is_file() and not (
+                if isinstance(root, AuditTree):
+                    _license_raw, problem = target_bytes(root, text_path, MAX_FILE_BYTES)
+                    exists = problem is None
+                else:
+                    text_target = relative_target(root, text_path)
+                    exists = text_target.is_file()
+                if not exists and not (
                     name == "free_runtime" and text_path.endswith("-DRAFT.txt")
                 ):
                     errors.append(f"license {name}: missing license text")
@@ -818,8 +925,10 @@ def validate_matrix(root: Path, matrix_path: Path) -> tuple[dict[str, Any], list
     return data, sorted(set(errors))
 
 
-def target_bytes(root: Path, path: str, limit: int) -> tuple[bytes | None, str | None]:
+def target_bytes(root: Path | AuditTree, path: str, limit: int) -> tuple[bytes | None, str | None]:
     try:
+        if isinstance(root, AuditTree):
+            return root.read_bytes(path, limit), None
         target = relative_target(root, path)
         if not target.is_file():
             return None, "file is missing"
@@ -828,7 +937,7 @@ def target_bytes(root: Path, path: str, limit: int) -> tuple[bytes | None, str |
         return None, str(exc)
 
 
-def validate_sbom(root: Path, path: str) -> str | None:
+def validate_sbom(root: Path | AuditTree, path: str) -> str | None:
     raw, problem = target_bytes(root, path, MAX_FILE_BYTES)
     if problem:
         return f"{path}: {problem}"
@@ -883,7 +992,7 @@ def validate_sbom(root: Path, path: str) -> str | None:
     return f"{path}: expected CycloneDX or SPDX SBOM"
 
 
-def _validate_legal_approval(root: Path, artifacts: dict[str, bytes], errors: list[str]) -> None:
+def _validate_legal_approval(root: Path | AuditTree, artifacts: dict[str, bytes], errors: list[str]) -> None:
     """Validate a recorded external decision; the checker never grants approval."""
     raw, problem = target_bytes(root, LEGAL_APPROVAL_PATH, MAX_MATRIX_BYTES)
     if problem:
@@ -945,7 +1054,7 @@ def _validate_legal_approval(root: Path, artifacts: dict[str, bytes], errors: li
         errors.append("legal approval: incomplete artifact inventory")
 
 
-def validate_legal_files(root: Path, strict: bool, warnings: list[str], errors: list[str]) -> None:
+def validate_legal_files(root: Path | AuditTree, strict: bool, warnings: list[str], errors: list[str]) -> None:
     artifacts: dict[str, bytes] = {}
     operative = []
     for path in LEGAL_DRAFT_PATHS:
@@ -982,7 +1091,7 @@ def validate_legal_files(root: Path, strict: bool, warnings: list[str], errors: 
 
 
 def _validate_notice_approval(
-    root: Path,
+    root: Path | AuditTree,
     notice_raw: bytes,
     errors: list[str],
 ) -> None:
@@ -1022,7 +1131,24 @@ def _validate_notice_approval(
         errors.append("THIRD_PARTY_NOTICES: approval evidence contains an unresolved legal marker")
 
 
-def validate_notice_generation(root: Path, errors: list[str]) -> None:
+def validate_notice_generation(
+    root: Path | AuditTree,
+    errors: list[str],
+    warnings: list[str] | None = None,
+    strict: bool = False,
+) -> None:
+    if isinstance(root, AuditTree):
+        script, problem = target_bytes(root, "scripts/generate-third-party-notices.py", MAX_FILE_BYTES)
+        if problem or not script:
+            errors.append("THIRD_PARTY_NOTICES: generator script is missing from audited commit")
+        else:
+            message = "THIRD_PARTY_NOTICES: generator execution skipped for immutable ref audit"
+            if strict or warnings is None:
+                errors.append(message)
+            else:
+                warnings.append(message)
+        return
+
     script = root / "scripts" / "generate-third-party-notices.py"
     if script.is_symlink() or not script.is_file():
         errors.append("THIRD_PARTY_NOTICES: generator script is missing")
@@ -1042,7 +1168,7 @@ def validate_notice_generation(root: Path, errors: list[str]) -> None:
         errors.append("THIRD_PARTY_NOTICES: generator --check failed")
 
 
-def validate_notice(root: Path, strict: bool, warnings: list[str], errors: list[str]) -> str | None:
+def validate_notice(root: Path | AuditTree, strict: bool, warnings: list[str], errors: list[str]) -> str | None:
     raw, problem = target_bytes(root, "THIRD_PARTY_NOTICES", MAX_FILE_BYTES)
     if problem:
         errors.append(f"THIRD_PARTY_NOTICES: {problem}")
@@ -1062,7 +1188,8 @@ def validate_notice(root: Path, strict: bool, warnings: list[str], errors: list[
     ):
         if marker not in text:
             errors.append(f"THIRD_PARTY_NOTICES: missing {marker[:-1]}")
-    if str(root) in text or f"file:///{root.as_posix().lstrip('/')}" in text:
+    repository = repo_root(root)
+    if str(repository) in text or f"file:///{repository.as_posix().lstrip('/')}" in text:
         errors.append("THIRD_PARTY_NOTICES: contains absolute worktree path")
     digest_matches = NOTICE_DIGEST_RE.findall(text)
     if len(digest_matches) != 1:
@@ -1093,7 +1220,7 @@ def validate_notice(root: Path, strict: bool, warnings: list[str], errors: list[
 
 
 def validate_paths(
-    root: Path,
+    root: Path | AuditTree,
     paths: list[str],
     matrix: dict[str, Any],
     rules: list[dict[str, Any]],
@@ -1117,11 +1244,15 @@ def validate_paths(
         if klass == "generated":
             generated_count += 1
         try:
-            target = relative_target(root, path)
-            if target.is_dir() and is_gitlink(root, path):
-                raw = b""
+            if isinstance(root, AuditTree):
+                limit = int(matrix["limits"]["max_file_bytes"])
+                raw = b"" if is_gitlink(root, path) else root.read_bytes(path, limit)
             else:
-                raw = read_bounded(target, int(matrix["limits"]["max_file_bytes"]))
+                target = relative_target(root, path)
+                if target.is_dir() and is_gitlink(root, path):
+                    raw = b""
+                else:
+                    raw = read_bounded(target, int(matrix["limits"]["max_file_bytes"]))
         except (AuditError, KeyError, TypeError, ValueError) as exc:
             errors.append(f"{path}: {str(exc)}")
             continue
@@ -1184,7 +1315,7 @@ def validate_paths(
 
 
 def validate_artifacts(
-    root: Path,
+    root: Path | AuditTree,
     matrix: dict[str, Any],
     ref: str,
     strict: bool,
@@ -1192,7 +1323,7 @@ def validate_artifacts(
     warnings: list[str],
     history: "GitHistory | ManifestHistory | None" = None,
 ) -> None:
-    history = history or GitHistory(root)
+    history = history or GitHistory(repo_root(root))
     required = matrix.get("required_artifacts", {})
     for path in required.get("paths", []):
         raw, problem = target_bytes(root, path, MAX_FILE_BYTES)
@@ -1297,15 +1428,27 @@ def run_audit(root: Path, ref: str | None, strict: bool, export: bool = False) -
             errors.append("repository root is not the git worktree root")
     except AuditError as exc:
         errors.append(str(exc))
+
+    commit = None
+    if ref is not None and not errors:
+        try:
+            commit = resolve_commit(root, ref)
+        except AuditError:
+            errors.append("git ref cannot be resolved to a commit in this repository")
+    output_ref = commit or ref
+    source: Path | AuditTree = AuditTree(root, commit) if commit is not None else root
+    if ref is not None and commit is None:
+        return make_report(output_ref, strict, [], [], errors, warnings)
+
     matrix_path = root / "LICENSE_MATRIX.toml"
-    matrix, matrix_errors = validate_matrix(root, matrix_path)
+    matrix, matrix_errors = validate_matrix(source, matrix_path)
     errors.extend(matrix_errors)
     if not matrix:
-        return make_report(ref, strict, [], [], errors, warnings)
+        return make_report(output_ref, strict, [], [], errors, warnings)
     try:
         paths = enumerate_paths(
-            root,
-            ref,
+            source,
+            commit,
             min(int(matrix["limits"]["max_tracked_files"]), MAX_TRACKED_FILES),
         )
     except (AuditError, KeyError, TypeError, ValueError) as exc:
@@ -1321,33 +1464,51 @@ def run_audit(root: Path, ref: str | None, strict: bool, export: bool = False) -
         errors.append("pre-v4 Apache cut is not readable")
         cut_paths = set()
     rows, vendor_count, generated_count = validate_paths(
-        root, paths, matrix, rules, cut_paths, errors
+        source, paths, matrix, rules, cut_paths, errors
     )
-    validate_artifacts(root, matrix, ref or "WORKTREE", strict, errors, warnings, history)
+    validate_artifacts(source, matrix, output_ref or "WORKTREE", strict, errors, warnings, history)
     if not export:
-        check_export_manifest(root, matrix, errors)
-    notice_status = validate_notice(root, strict, warnings, errors)
-    validate_notice_generation(root, errors)
+        check_export_manifest(source, matrix, errors)
+    notice_status = validate_notice(source, strict, warnings, errors)
+    validate_notice_generation(source, errors, warnings, strict)
     if matrix.get("distribution", "mixed-source") == "mixed-source":
-        validate_legal_files(root, strict, warnings, errors)
+        validate_legal_files(source, strict, warnings, errors)
     if vendor_count and notice_status != "GENERATED AND APPROVED":
         message = "third-party paths require exact-digest legal approval of generated notices"
         (errors if strict else warnings).append(message)
     if generated_count and not any(row["class"] == "generated" for row in rows):
         errors.append("generated paths lack provenance")
-    return make_report(ref, strict, paths, rows, errors, warnings)
+    return make_report(output_ref, strict, paths, rows, errors, warnings)
 
 
-def check_export_manifest(root: Path, matrix: dict[str, Any], errors: list[str]) -> None:
+def check_export_manifest(
+    root: Path | AuditTree, matrix: dict[str, Any], errors: list[str]
+) -> None:
     """Where history exists, the committed manifest must be exactly what the
-    history derives: an export can then trust it without the history."""
-    path = root / EXPORT_MANIFEST_PATH
-    if not path.exists():
-        errors.append(f"{EXPORT_MANIFEST_PATH}: missing (run --write-export-manifest)")
-        return
+    history derives: an export can then trust it without the history.
+
+    An exact-ref audit reads the manifest from the audited commit, like every
+    other audited file, never from the worktree."""
+    committed: bytes | None = None
+    if isinstance(root, AuditTree):
+        try:
+            if EXPORT_MANIFEST_PATH not in root.paths(MAX_TRACKED_FILES):
+                errors.append(f"{EXPORT_MANIFEST_PATH}: missing (run --write-export-manifest)")
+                return
+            committed = root.read_bytes(EXPORT_MANIFEST_PATH, MAX_FILE_BYTES)
+        except AuditError as exc:
+            errors.append(f"{EXPORT_MANIFEST_PATH}: {exc}")
+            return
+    else:
+        path = root / EXPORT_MANIFEST_PATH
+        if not path.exists():
+            errors.append(f"{EXPORT_MANIFEST_PATH}: missing (run --write-export-manifest)")
+            return
     try:
-        expected = render_export_manifest(build_export_manifest(root, matrix))
-        actual = read_bounded(path, MAX_FILE_BYTES).decode("utf-8")
+        expected = render_export_manifest(build_export_manifest(repo_root(root), matrix))
+        if committed is None:
+            committed = read_bounded(path, MAX_FILE_BYTES)
+        actual = committed.decode("utf-8")
     except (AuditError, UnicodeDecodeError) as exc:
         errors.append(f"{EXPORT_MANIFEST_PATH}: cannot be re-derived from history ({exc})")
         return

@@ -1,0 +1,10 @@
+{
+  "acceptance": "A fact anchored on retry::budget states the budget and why",
+  "origin": {
+    "kind": "agent"
+  },
+  "role": "backend",
+  "schema": "leanctx.hive.task-propose/v1",
+  "session_ref": "ses_01jb8z6",
+  "title": "Explain the retry budget"
+}

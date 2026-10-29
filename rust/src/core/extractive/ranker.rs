@@ -16,13 +16,17 @@
 //! are always kept first. The returned indices are sorted, so the caller emits
 //! kept segments in their ORIGINAL order. Deterministic by construction.
 
+#[cfg(feature = "embeddings")]
 use super::segment::Segment;
+#[cfg(feature = "embeddings")]
 use crate::core::embeddings::cosine_similarity;
+#[cfg(feature = "embeddings")]
 use crate::core::surprise::ScoringCtx;
 
 /// Cosine at or above which two segments are treated as semantic duplicates and
 /// the later (lower-ranked) one is dropped. Matches the redundancy threshold the
 /// entropy read path already uses (`core::surprise`).
+#[cfg(feature = "embeddings")]
 const REDUNDANCY_COSINE: f64 = 0.92;
 
 /// Which signal drives segment scoring.
@@ -39,12 +43,14 @@ pub(crate) enum RankMode {
 /// able to reorder two near-equal scores, or the output would not be
 /// byte-stable (#498). `1e-4` is finer than any meaningful cosine gap yet coarse
 /// enough to absorb residual FP noise from batched inference.
+#[cfg(feature = "embeddings")]
 fn quantize(score: f32) -> i64 {
     (f64::from(score) * 10_000.0).round() as i64
 }
 
 /// Mean cosine of each embedding to every OTHER embedding (degree centrality).
 /// `O(n²·d)`; the caller caps `n` (see [`super::MAX_SEGMENTS`]).
+#[cfg(feature = "embeddings")]
 pub(super) fn centrality_scores(embs: &[Vec<f32>]) -> Vec<f32> {
     let n = embs.len();
     if n <= 1 {
@@ -64,11 +70,13 @@ pub(super) fn centrality_scores(embs: &[Vec<f32>]) -> Vec<f32> {
 }
 
 /// Cosine of each embedding to the query anchor.
+#[cfg(feature = "embeddings")]
 pub(super) fn query_scores(embs: &[Vec<f32>], anchor: &[f32]) -> Vec<f32> {
     embs.iter().map(|e| cosine_similarity(e, anchor)).collect()
 }
 
 /// Per-segment char cost, including the one separator char it adds on re-emit.
+#[cfg(feature = "embeddings")]
 fn cost_of(seg: &Segment) -> usize {
     seg.text.len() + 1
 }
@@ -77,6 +85,7 @@ fn cost_of(seg: &Segment) -> usize {
 /// redundancy gate. Returns indices sorted ascending (original order).
 ///
 /// `embs[i]` MUST align with `segs[i]`. Protected segments are always kept.
+#[cfg(feature = "embeddings")]
 pub(super) fn select(
     segs: &[Segment],
     embs: &[Vec<f32>],

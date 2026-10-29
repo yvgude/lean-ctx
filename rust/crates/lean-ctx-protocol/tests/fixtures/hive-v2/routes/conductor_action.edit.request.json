@@ -1,0 +1,10 @@
+{
+  "acceptance": [
+    "Flame graph attached",
+    "Top three hot spots named"
+  ],
+  "action": "edit",
+  "epoch": 3,
+  "goal": "g_ttttttttttttttttttttttttta",
+  "worker_id": "wkr_cxdouocvevdhm22vpdrh"
+}

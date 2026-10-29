@@ -463,29 +463,12 @@ mod setup_config_tests {
         let toml_str = toml::to_string_pretty(&original).unwrap();
         let parsed: Config = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.setup.auto_inject_rules, Some(true));
+        assert_eq!(
+            parsed.setup.agents,
+            Some(vec!["claude".to_string(), "cursor".to_string()])
+        );
         assert_eq!(parsed.setup.auto_inject_skills, Some(false));
         assert!(parsed.setup.auto_update_mcp);
-        assert_eq!(
-            parsed.setup.agents.as_deref(),
-            Some(&["claude".to_string(), "cursor".to_string()][..])
-        );
-    }
-
-    #[test]
-    fn agent_selection_defaults_to_all_and_is_not_serialized() {
-        let cfg: Config = toml::from_str("").unwrap();
-        assert!(cfg.setup.agents.is_none());
-        assert!(cfg.setup.allows_agent("cursor", "Cursor"));
-        let table: toml::Table =
-            toml::from_str(&toml::to_string_pretty(&Config::default()).unwrap()).unwrap();
-        assert!(
-            table["setup"].get("agents").is_none(),
-            "unset selection must not be written: {:?}",
-            table["setup"]
-        );
-
-        let cfg: Config = toml::from_str("[setup]\nagents = []\n").unwrap();
-        assert!(!cfg.setup.allows_agent("cursor", "Cursor"));
     }
 
     #[test]
@@ -519,5 +502,28 @@ mod setup_config_tests {
         );
         let parsed: Config = toml::from_str(&toml_str).unwrap();
         assert_eq!(parsed.tool_profile.as_deref(), Some("standard"));
+    }
+
+    /// A config.toml that does not name a key must mean that key's documented
+    /// default. A field-level `#[serde(default)]` silently turned `true`
+    /// defaults into `false` for everyone with a config file
+    /// (`minimal_overhead`, focus analysis 2026-10-15).
+    #[test]
+    fn absent_root_bool_keys_keep_their_documented_default() {
+        let defaults = toml::Value::try_from(Config::default()).unwrap();
+        let parsed: Config = toml::from_str("bm25_max_files = 0\n").unwrap();
+        let parsed = toml::Value::try_from(parsed).unwrap();
+        let mut drift = Vec::new();
+        for (key, value) in defaults.as_table().unwrap() {
+            if let toml::Value::Boolean(expected) = value
+                && parsed.get(key).and_then(toml::Value::as_bool) != Some(*expected)
+            {
+                drift.push(key.clone());
+            }
+        }
+        assert!(
+            drift.is_empty(),
+            "absent keys read differently from Config::default(): {drift:?}"
+        );
     }
 }

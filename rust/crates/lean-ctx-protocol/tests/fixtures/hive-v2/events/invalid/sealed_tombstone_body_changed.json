@@ -1,0 +1,16 @@
+{
+  "case": "sealed_tombstone_body_changed",
+  "base": "events/purge.sealed.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/body/reason",
+      "value": "gdpr_erasure"
+    }
+  ],
+  "expect": {
+    "layer": "body_commit",
+    "code": "sig_invalid",
+    "reason": "body_commit"
+  }
+}

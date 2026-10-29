@@ -103,7 +103,6 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 | Settlement Evidence | `docs/contracts/settlement-evidence-v2.md` | 2 | stable |
 | A2A | `docs/contracts/a2a-contract-v1.md` | 1 | stable |
 | Attention Layout Driver | `docs/contracts/attention-layout-driver-v1.md` | 1 | stable |
-| Autonomy Drivers | `docs/contracts/autonomy-drivers-v1.md` | 1 | stable |
 | Conformance | `docs/contracts/conformance-v1.md` | 1 | stable |
 | OCLA Verifier Conformance | `docs/contracts/ocla-verifier-conformance-v1.md` | 1 | stable |
 | Extension Trust | `docs/contracts/extension-trust-v1.md` | 1 | stable |
@@ -111,13 +110,10 @@ Status of every contract document (SSOT: `rust/src/core/contracts.rs::contract_d
 | Gotchas/Reminders | `docs/contracts/gotchas-reminders-contract-v1.md` | 1 | stable |
 | Graph Reproducibility | `docs/contracts/graph-reproducibility-contract-v1.md` | 1 | stable |
 | Handoff Transfer Bundle | `docs/contracts/handoff-transfer-bundle-v1.md` | 1 | stable |
-| Intent Route | `docs/contracts/intent-route-v1.md` | 1 | stable |
 | Knowledge Policy | `docs/contracts/knowledge-policy-contract-v1.md` | 1 | stable |
 | Memory Boundary | `docs/contracts/memory-boundary-contract-v1.md` | 1 | stable |
 | Persona Spec | `docs/contracts/persona-spec-v1.md` | 1 | stable |
 | Provider Framework | `docs/contracts/provider-framework-contract-v1.md` | 1 | stable |
-| Tokenizer Translation Driver | `docs/contracts/tokenizer-translation-driver-v1.md` | 1 | stable |
-| Workflow Evidence Ledger | `docs/contracts/workflow-evidence-ledger-v1.md` | 1 | stable |
 | Wrapped Permalink | `docs/contracts/wrapped-permalink-v1.md` | 1 | stable |
 | Context Candidate Admission | `docs/contracts/context-candidate-admission-v1.md` | 1 | experimental |
 | Multi-Agent Efficiency Benchmark | `docs/contracts/multi-agent-efficiency-benchmark-v1.md` | 1 | experimental |
@@ -151,10 +147,6 @@ The OpenAPI document (`GET /v1/openapi.json`) is part of the frozen surface: `ru
 leanctx.contract.mcp_manifest.schema_version=1
 leanctx.contract.context_proof_v1.schema_version=1
 leanctx.contract.context_ir_v1.schema_version=1
-leanctx.contract.intent_route_v1.schema_version=1
-leanctx.contract.workflow_evidence_ledger_v1.schema_version=1
-leanctx.contract.autonomy_drivers_v1.schema_version=1
-leanctx.contract.tokenizer_translation_driver_v1.schema_version=1
 leanctx.contract.attention_layout_driver_v1.schema_version=1
 leanctx.contract.verification_observability_v1.schema_version=1
 leanctx.contract.handoff_ledger_v1.schema_version=1
@@ -213,30 +205,6 @@ A git-anchored, signed, point-in-time record of the context-layer state — line
 
 Govern how the runtime processes and records context.
 
-### Workflow Evidence Ledger v1
-
-- **Doc**: `docs/contracts/workflow-evidence-ledger-v1.md`
-- **Runtime source**: `rust/src/core/evidence_ledger.rs`
-- **Surface**: `ctx_workflow` evidence-gated transitions + automatic tool receipts
-
-### Autonomy Drivers v1
-
-- **Doc**: `docs/contracts/autonomy-drivers-v1.md`
-- **Runtime source**: `rust/src/core/autonomy_drivers.rs` + `rust/src/tools/autonomy.rs`
-- **Surface**: Deterministic driver planner + bounded driver reports; proof export via `ctx_proof`
-
-### Intent Route v1 (Orchestration Routing)
-
-- **Doc**: `docs/contracts/intent-route-v1.md`
-- **Runtime source**: `rust/src/core/intent_router.rs`
-- **Surface**: `ctx_intent` with `format=json` returns `IntentRouteV1`
-
-### Tokenizer-aware Translation Driver v1
-
-- **Doc**: `docs/contracts/tokenizer-translation-driver-v1.md`
-- **Runtime source**: `rust/src/core/tokenizer_translation_driver.rs`
-- **Surface**: Deterministic ruleset selection (model_key -> ruleset) + bounded translation
-
 ### Attention-aware Layout Driver v1
 
 - **Doc**: `docs/contracts/attention-layout-driver-v1.md`
@@ -270,7 +238,7 @@ Define how context persists, transfers between agents, and crosses boundaries.
 
 - **Doc**: `docs/contracts/a2a-contract-v1.md`
 - **Runtime source**: `rust/src/core/agents.rs` + `rust/src/core/a2a/*`
-- **Surface**: `ctx_agent`, `ctx_task`, rate limiting, cost attribution
+- **Surface**: `ctx_agent`, the `/a2a` task endpoint, rate limiting, cost attribution
 
 ### Handoff Transfer Bundle v1
 
@@ -355,5 +323,5 @@ Define how LeanCTX communicates with the outside world.
 | CodeBuddy | MCP (stdio) + Shell Hook | MCP manifest v1 + tool schemas + shell patterns | `lean-ctx init --agent codebuddy` |
 | GitHub Copilot | MCP (stdio) + Shell Hook | MCP manifest v1 + tool schemas | `lean-ctx init --agent copilot` |
 | Remote agents | HTTP | HTTP MCP v2 + typed errors | `lean-ctx serve` |
-| Teams | HTTP | Team Server v1 + audit log | `lean-ctx team serve` |
+| Teams | HTTP | Team Server v1 + audit log | no server command in this binary (`lean-ctx team` is the hosted Team client) |
 | Future plugins | In-process / Subprocess | Provider v1 + CompressionPattern v1 + LcpTool v1 | `~/.config/lean-ctx/plugins/` |

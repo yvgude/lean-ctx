@@ -77,14 +77,36 @@ impl HostReceiptAuthority {
             crate::core::secret_detection::detect_secrets(&request.checkpoint_json).is_empty(),
             "checkpoint contains credential-shaped material"
         );
+        // G08: the caller's checkpoint is not bound yet — digest and signature
+        // are computed below, by this host. So its sources are admitted by
+        // the Context Gateway FIRST, in every mode, and what is verified,
+        // digested, signed, stored and returned is the ADMITTED checkpoint:
+        // a value the gateway masks is masked in it, one it withholds
+        // refuses the request. Unchanged sources leave the caller's canonical
+        // bytes exactly as they were. A masked checkpoint is re-encoded by
+        // its own type; a mask its text type cannot carry is a refusal. The
+        // answer says so (`gateway_redacted`), next to the checkpoint it
+        // returns and the digest of that checkpoint.
+        let mut admitted: serde_json::Value = serde_json::from_str(&request.checkpoint_json)?;
+        let redacted = super::checkpoint_transfer::admit_fresh_checkpoint(&mut admitted)?;
+        let checkpoint_json = if redacted {
+            let canonical = match request.schema_version {
+                3 => serde_json::from_value::<ContextCheckpointV3>(admitted)?.canonical_bytes()?,
+                1 => serde_json::from_value::<ContextCheckpointV1>(admitted)?.canonical_bytes()?,
+                _ => serde_json::from_value::<ContextCheckpointV2>(admitted)?.canonical_bytes()?,
+            };
+            String::from_utf8(canonical)?
+        } else {
+            request.checkpoint_json.clone()
+        };
+        let checkpoint_json = checkpoint_json.as_bytes();
         self.with_checkpoint_lineage(
             &request.receipt_digests,
             |task, plan, receipts, outcomes| {
                 let (checkpoint, checkpoint_digest, payload, envelope_version, result_version) =
                     if request.schema_version == 3 {
-                        let checkpoint = ContextCheckpointV3::from_canonical_bytes(
-                            request.checkpoint_json.as_bytes(),
-                        )?;
+                        let checkpoint =
+                            ContextCheckpointV3::from_canonical_bytes(checkpoint_json)?;
                         let verified =
                             verify_checkpoint_v3(checkpoint, task, Some(plan), receipts, outcomes)?;
                         (
@@ -96,16 +118,14 @@ impl HostReceiptAuthority {
                         )
                     } else {
                         let verified = if request.schema_version == 1 {
-                            let checkpoint = ContextCheckpointV1::from_canonical_bytes(
-                                request.checkpoint_json.as_bytes(),
-                            )?;
+                            let checkpoint =
+                                ContextCheckpointV1::from_canonical_bytes(checkpoint_json)?;
                             build_checkpoint_v2(&checkpoint, task, Some(plan), receipts, outcomes)?
                         } else {
                             // Reauthorize exact continued V2 against this host's artifacts;
                             // never demote it or treat a package signature as admission.
-                            let checkpoint = ContextCheckpointV2::from_canonical_bytes(
-                                request.checkpoint_json.as_bytes(),
-                            )?;
+                            let checkpoint =
+                                ContextCheckpointV2::from_canonical_bytes(checkpoint_json)?;
                             verify_checkpoint_v2(checkpoint, task, Some(plan), receipts, outcomes)?
                         };
                         (
@@ -139,9 +159,15 @@ impl HostReceiptAuthority {
                     )
                     .map_err(anyhow::Error::msg)?,
                 );
-                Ok(serde_json::json!({"schema_version":result_version,
+                let mut result = serde_json::json!({"schema_version":result_version,
                 "artifact_digest":hash,"checkpoint_digest":checkpoint_digest,
-                "artifact":envelope,"session_adopted":false}))
+                "artifact":envelope,"session_adopted":false});
+                if redacted {
+                    // Only then: an unchanged checkpoint keeps the answer's
+                    // shape byte for byte.
+                    result["gateway_redacted"] = serde_json::Value::Bool(true);
+                }
+                Ok(result)
             },
         )
     }

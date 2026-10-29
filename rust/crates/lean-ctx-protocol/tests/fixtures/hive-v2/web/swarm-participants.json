@@ -1,0 +1,30 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/swarms/9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02/participants",
+  "request": null,
+  "response": {
+    "body": {
+      "items": [
+        {
+          "handle": "yves",
+          "host_app": "claude",
+          "invited": false,
+          "mode": "interactive",
+          "place_role": "owner",
+          "tasks_30d": 12
+        },
+        {
+          "handle": "mara",
+          "host_app": "codex",
+          "invited": true,
+          "mode": "unattended",
+          "place_role": "writer",
+          "tasks_30d": 4
+        }
+      ]
+    },
+    "status": 200
+  },
+  "route": "W39"
+}

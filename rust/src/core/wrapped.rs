@@ -416,12 +416,6 @@ pub fn format_tokens(tokens: u64) -> String {
     }
 }
 
-/// Domain-separated proof signed when recovering control of an existing card.
-/// Both client and cloud server must use these exact bytes.
-pub fn edit_token_recovery_message(card_id: &str, nonce: &str) -> String {
-    format!("lean-ctx:wrapped-edit-token-recovery:v1\ncard_id:{card_id}\nnonce:{nonce}")
-}
-
 /// Estimate the user's percentile rank among lean-ctx users based on tokens saved.
 /// Uses a rough distribution model derived from community metrics data.
 /// Returns None if insufficient data (< 1000 tokens saved).
@@ -482,14 +476,6 @@ pub mod tests {
             security: None,
             speed: None,
         }
-    }
-
-    #[test]
-    fn edit_token_recovery_proof_is_domain_separated_and_stable() {
-        assert_eq!(
-            edit_token_recovery_message("card-1", "nonce-1"),
-            "lean-ctx:wrapped-edit-token-recovery:v1\ncard_id:card-1\nnonce:nonce-1"
-        );
     }
 
     fn is_box_line(l: &str) -> bool {

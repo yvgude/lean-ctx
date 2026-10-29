@@ -21,30 +21,8 @@ fn server_dispatch_src() -> String {
 }
 
 // ---------------------------------------------------------------------------
-// C1 — Dashboard: token not leaked without valid ?token= query
+// C1 — Dashboard: API auth is never bypassed
 // ---------------------------------------------------------------------------
-#[test]
-fn dashboard_route_response_omits_token_without_valid_query() {
-    let src = include_str!("../../src/dashboard/routes/mod.rs");
-
-    assert!(
-        src.contains("is_some_and(|q| super::constant_time_eq(q.as_bytes(), expected.as_bytes()))"),
-        "C1: dashboard must use constant_time_eq via is_some_and for query token validation"
-    );
-    assert!(
-        src.contains("if valid_query"),
-        "C1: token embedding gated on valid_query (no loopback bypass)"
-    );
-    assert!(
-        !src.contains("if valid_query || is_loopback"),
-        "C1: loopback must NOT bypass token validation — removed for security"
-    );
-    assert!(
-        src.contains("_is_loopback: bool"),
-        "C1: route_response signature accepts _is_loopback (unused, kept for API compat)"
-    );
-}
-
 #[test]
 fn dashboard_api_auth_never_bypassed_for_loopback() {
     let src = include_str!("../../src/dashboard/mod.rs");
@@ -69,9 +47,16 @@ fn dashboard_check_auth_uses_constant_time_eq() {
 
 #[test]
 fn dashboard_probe_sends_bearer_token() {
+    // The probe lives in dashboard/launch.rs since 3.12; `dashboard_responding`
+    // hands it the saved token.
     let src = include_str!("../../src/dashboard/mod.rs");
     assert!(
-        src.contains("Authorization: Bearer {t}"),
+        src.contains("launch::probe(host, port, load_saved_token().as_deref())"),
+        "C1: dashboard_responding must probe with the saved token"
+    );
+    let probe = include_str!("../../src/dashboard/launch.rs");
+    assert!(
+        probe.contains("Authorization: Bearer {t}"),
         "C1: dashboard_responding probe must send saved Bearer token"
     );
 }

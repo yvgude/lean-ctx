@@ -6,10 +6,6 @@ use std::collections::BTreeMap;
 pub const MCP_MANIFEST_SCHEMA_VERSION: u32 = 1;
 pub const CONTEXT_PROOF_V1_SCHEMA_VERSION: u32 = 1;
 pub const CONTEXT_IR_V1_SCHEMA_VERSION: u32 = 1;
-pub const INTENT_ROUTE_V1_SCHEMA_VERSION: u32 = 1;
-pub const WORKFLOW_EVIDENCE_LEDGER_V1_SCHEMA_VERSION: u32 = 1;
-pub const AUTONOMY_DRIVERS_V1_SCHEMA_VERSION: u32 = 1;
-pub const TOKENIZER_TRANSLATION_DRIVER_V1_SCHEMA_VERSION: u32 = 1;
 pub const ATTENTION_LAYOUT_DRIVER_V1_SCHEMA_VERSION: u32 = 1;
 pub const VERIFICATION_OBSERVABILITY_V1_SCHEMA_VERSION: u32 = 1;
 pub const HANDOFF_LEDGER_V1_SCHEMA_VERSION: u32 = 1;
@@ -106,6 +102,14 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Frozen,
         ),
+        // v2 = binding for 3.12 (LeanCTX Hive): paid rights only through
+        // Hive, plan checks only in core/hive; v1 stays the record.
+        doc(
+            "local-free-invariant-v2",
+            "local-free-invariant-v2.md",
+            2,
+            Stable,
+        ),
         doc(
             "oss-plane-separation",
             "oss-plane-separation-v1.md",
@@ -151,7 +155,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Stable,
         ),
-        doc("autonomy-drivers", "autonomy-drivers-v1.md", 1, Stable),
         doc("conformance", "conformance-v1.md", 1, Stable),
         doc(
             "context-plan-projection-digest",
@@ -215,7 +218,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Stable,
         ),
-        doc("intent-route", "intent-route-v1.md", 1, Stable),
         doc(
             "knowledge-policy",
             "knowledge-policy-contract-v1.md",
@@ -232,18 +234,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc(
             "provider-framework",
             "provider-framework-contract-v1.md",
-            1,
-            Stable,
-        ),
-        doc(
-            "tokenizer-translation-driver",
-            "tokenizer-translation-driver-v1.md",
-            1,
-            Stable,
-        ),
-        doc(
-            "workflow-evidence-ledger",
-            "workflow-evidence-ledger-v1.md",
             1,
             Stable,
         ),
@@ -319,8 +309,6 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         doc("quality-loop", "quality-loop-v1.md", 1, Experimental),
         // Edit metering (GL #1144): anchored-vs-str_replace efficiency channel.
         doc("edit-metering", "edit-metering-v1.md", 1, Experimental),
-        // Hosted ctxpkg registry (GL #406): fresh server surface.
-        doc("ctxpkg-registry", "ctxpkg-registry-v1.md", 1, Experimental),
         // Context Time Machine (GL #1022/#1023): git-anchored, signed temporal
         // snapshot format — fresh surface, evolving additively until stable.
         doc(
@@ -356,20 +344,10 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             1,
             Stable,
         ),
-        // P2 protocol artifacts: strict canonical surfaces with exact Rust and
-        // schema conformance tests; hashes are pinned in frozen-hashes.json.
-        doc(
-            "invocation-context-binding",
-            "invocation-context-binding-v1.md",
-            1,
-            Frozen,
-        ),
-        doc(
-            "invocation-evidence-manifest",
-            "invocation-evidence-manifest-v1.md",
-            1,
-            Frozen,
-        ),
+        // P2 protocol artifact: a strict canonical surface with exact Rust and
+        // schema conformance tests; its hash is pinned in frozen-hashes.json.
+        // (`invocation-context-binding-v1` and `invocation-evidence-manifest-v1`
+        // were withdrawn on 2026-10-16: nothing ever produced or consumed them.)
         doc("receipt-document", "receipt-document-v1.md", 1, Frozen),
         doc(
             "native-engine-context-proof",
@@ -380,6 +358,28 @@ pub fn contract_docs() -> Vec<ContractDoc> {
         // ── Experimental: Context Gateway, unreleased ──────────────────────
         // Canonical decision vocabulary (`lean_ctx_protocol::context_gateway`).
         doc("context-gateway", "context-gateway-v1.md", 1, Experimental),
+        // v2: keyed receipt objects, additive to v1.
+        doc(
+            "context-gateway-v2",
+            "context-gateway-v2.md",
+            2,
+            Experimental,
+        ),
+        // Egress lifecycle of the proxy (admission → bind → dispatch →
+        // observation) and the Team context-outcome report: written with the
+        // Context Gateway work, unreleased, not yet consumed externally.
+        doc(
+            "egress-lifecycle",
+            "egress-lifecycle-v1.md",
+            1,
+            Experimental,
+        ),
+        doc(
+            "team-context-outcome",
+            "team-context-outcome-v1.md",
+            1,
+            Experimental,
+        ),
         // ── Experimental: v4 Engine interface, unreleased ───────────────────
         // Additive local operator surfaces that ship with the v4 Engine. They
         // may still change before the release that publishes them; promote to
@@ -394,6 +394,13 @@ pub fn contract_docs() -> Vec<ContractDoc> {
             "engine-context-sources",
             "engine-context-sources-v1.md",
             1,
+            Experimental,
+        ),
+        // Presenter capability: additive to v1, first Engine release 3.11.0.
+        doc(
+            "engine-context-sources-v2",
+            "engine-context-sources-v2.md",
+            2,
             Experimental,
         ),
         doc("engine-outcome", "engine-outcome-v1.md", 1, Experimental),
@@ -452,22 +459,6 @@ pub fn versions_kv() -> BTreeMap<&'static str, u32> {
         (
             "leanctx.contract.context_ir_v1.schema_version",
             CONTEXT_IR_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.intent_route_v1.schema_version",
-            INTENT_ROUTE_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.workflow_evidence_ledger_v1.schema_version",
-            WORKFLOW_EVIDENCE_LEDGER_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.autonomy_drivers_v1.schema_version",
-            AUTONOMY_DRIVERS_V1_SCHEMA_VERSION,
-        ),
-        (
-            "leanctx.contract.tokenizer_translation_driver_v1.schema_version",
-            TOKENIZER_TRANSLATION_DRIVER_V1_SCHEMA_VERSION,
         ),
         (
             "leanctx.contract.attention_layout_driver_v1.schema_version",

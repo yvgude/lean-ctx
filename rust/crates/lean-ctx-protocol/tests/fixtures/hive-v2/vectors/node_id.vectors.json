@@ -1,0 +1,148 @@
+{
+  "claim": [
+    {
+      "dk_hex": "9e2adc83e25c9e6e09ec0fc96f96abf8512d3725444f7adb9b01646e2151fe8b",
+      "node_id": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+      "node_type": "fact",
+      "norm": "payment retries back off exponentially with full jitter capped at 64 seconds",
+      "pk_id_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "statement": "Payment retries back off exponentially with full jitter, capped at 64 seconds."
+    },
+    {
+      "dk_hex": "94c8a93ea424d058e6a3742943355e74974b327f701486c198cb380f531457b5",
+      "node_id": "n_stekspveetifrzvdoquugnk6os",
+      "node_type": "fact",
+      "norm": "payment retries backoff exponentially with full jitter capped at 64 seconds",
+      "pk_id_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "statement": "payment retries back-off exponentially with full jitter capped at 64 seconds"
+    },
+    {
+      "dk_hex": "9e2adc83e25c9e6e09ec0fc96f96abf8512d3725444f7adb9b01646e2151fe8b",
+      "node_id": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+      "node_type": "fact",
+      "norm": "payment retries back off exponentially with full jitter capped at 64 seconds",
+      "pk_id_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "statement": "PAYMENT   retries back off exponentially with full jitter capped at 64 seconds!"
+    },
+    {
+      "dk_hex": "f33ca0cc4d189c481d34946b032c560a44a8d81223f6168fd6177e10ea6fe177",
+      "node_id": "n_6m6kbtcndcoeqhjusrvqglcwbj",
+      "node_type": "gotcha",
+      "norm": "payment retries back off exponentially with full jitter capped at 64 seconds",
+      "pk_id_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "statement": "Payment retries back off exponentially with full jitter, capped at 64 seconds."
+    },
+    {
+      "dk_hex": "c2d389d20a27de8d274ba908faa7ab4a5d14a3c0a0f66d57f17f686c06c8ece8",
+      "node_id": "n_yljytuqke7pi2j2lveepvj5ljj",
+      "node_type": "fact",
+      "norm": "payment retries back off exponentially with full jitter capped at 64 seconds",
+      "pk_id_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "statement": "Payment retries back off exponentially with full jitter, capped at 64 seconds."
+    }
+  ],
+  "event_id": [
+    {
+      "event_id": "01M5NKA2Z8000000000000M001",
+      "random_hex": "000000000000000a0001",
+      "wall_ms": 1792800001000
+    },
+    {
+      "event_id": "00000000000000000000000000",
+      "random_hex": "00000000000000000000",
+      "wall_ms": 0
+    },
+    {
+      "event_id": "7ZZZZZZZZZZZZZZZZZZZZZZZZZ",
+      "random_hex": "ffffffffffffffffffff",
+      "wall_ms": 281474976710655
+    }
+  ],
+  "legacy_conversion": [
+    {
+      "case": "d: \"conv\" over the same remaining bytes as case a gives another id",
+      "event_id": "W9QWJS7J89GCTW39R689QHA0GF",
+      "input_hex": "636f6e76000000000000000130314a425a3844334b344d354e36503751385239533054315632",
+      "item_key": "01JBZ8D3K4M5N6P7Q8R9S0T1V2",
+      "pk_id_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
+      "revision": 1
+    },
+    {
+      "event_id": "0QMZ80X6BRXTHM0HTG491BWTEF",
+      "input_hex": "636f6e760000000000000007666163743a7061796d656e74732d7265747279",
+      "item_key": "fact:payments-retry",
+      "pk_id_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
+      "revision": 7
+    }
+  ],
+  "random": [
+    {
+      "bytes_hex": "00000000000000000000000000004004",
+      "id": "n_aaaaaaaaaaaaaaaaaaaaaacaaq",
+      "prefix": "n"
+    },
+    {
+      "bytes_hex": "ffffffffffffffffffffffffffffffff",
+      "id": "e_77777777777777777777777774",
+      "prefix": "e"
+    },
+    {
+      "bytes_hex": "0123456789abcdef0123456789abcdef",
+      "id": "rv_aerukz4jvpg66ajdivtytk6n54",
+      "prefix": "rv"
+    }
+  ],
+  "rules": {
+    "base32lower": "RFC 4648 alphabet a-z2-7, MSB first, no padding",
+    "claim": "node_type ∈ fact|decision|gotcha|finding: dk = blake3_keyed(pk_id, node_type ‖ 0x00 ‖ norm(statement)); node_id = \"n_\" + base32lower(dk)[..26]",
+    "event_id": "ULID layout: 48-bit hlc.wall_ms ‖ 80 random bits as one 128-bit big-endian number, Crockford base32 upper, 26 chars",
+    "legacy_conversion": "event_id = first 26 chars of Crockford-upper base32 of blake3_keyed(pk_id, \"conv\" ‖ revision_be8 ‖ item_key UTF-8)",
+    "random": "other node types and every edge: prefix + \"_\" + base32lower(16 random bytes) (26 chars); likewise rv_, prg_, b_, g_, cl_, plg_",
+    "seal_conversion": "event_id = first 26 chars of Crockford-upper base32 (RFC 4648 bit order, not the ULID layout) of blake3_keyed(pk_id, \"seal\" ‖ seq_be8 ‖ original_event_id ASCII) (§3.11 step 3b, R90)"
+  },
+  "seal_conversion": [
+    {
+      "case": "a: seq 1",
+      "event_id": "4DTGQ5ADM0RYMYPJZK544J6S9K",
+      "input_hex": "7365616c000000000000000130314a425a3844334b344d354e36503751385239533054315632",
+      "original_event_id": "01JBZ8D3K4M5N6P7Q8R9S0T1V2",
+      "pk_id_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
+      "seq": 1
+    },
+    {
+      "case": "b: seq 4294967297, all 8 bytes significant",
+      "event_id": "B8T0F8NRZN2DNDGR7D0WJR527W",
+      "input_hex": "7365616c000000010000000130314a425a3844334b344d354e36503751385239533054315632",
+      "original_event_id": "01JBZ8D3K4M5N6P7Q8R9S0T1V2",
+      "pk_id_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
+      "seq": 4294967297
+    },
+    {
+      "case": "c: same original_event_id at seq 2 gives another id than a",
+      "event_id": "EVRDQKD8D6KAQ8QCYRK39B5NMW",
+      "input_hex": "7365616c000000000000000230314a425a3844334b344d354e36503751385239533054315632",
+      "original_event_id": "01JBZ8D3K4M5N6P7Q8R9S0T1V2",
+      "pk_id_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
+      "seq": 2
+    },
+    {
+      "case": "d: \"conv\" over the same remaining bytes as case a gives another id (domain separation from R59)",
+      "domain": "conv",
+      "event_id": "W9QWJS7J89GCTW39R689QHA0GF",
+      "input_hex": "636f6e76000000000000000130314a425a3844334b344d354e36503751385239533054315632",
+      "original_event_id": "01JBZ8D3K4M5N6P7Q8R9S0T1V2",
+      "pk_id_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
+      "seq": 1
+    }
+  ],
+  "sealed_pk_id": [
+    {
+      "pk_id_hex": "2ecd00816d667153da3e0e855b777579fa73f26088bd66ab9729ae000c4da45e",
+      "place_secret_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c"
+    },
+    {
+      "pk_id_hex": "48125add028d806a79f96a7a26410e65f3bdab212d3c7e9f3891b0056b03ca82",
+      "place_secret_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+    }
+  ]
+}

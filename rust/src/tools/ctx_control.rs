@@ -132,6 +132,7 @@ pub fn handle(
              \x20 pin <target>        — keep file in full mode (immune to eviction)\n\
              \x20 unpin <target>      — remove pin, allow compression\n\
              \x20 exclude <target>    — restrict to signatures only\n\
+             \x20 evict <targets>     — drop files from the context ledger (comma-separated)\n\
              \x20 include <target>    — restore normal access\n\
              \x20 set_view <target>   — force a specific read mode (value: full|map|signatures|...)\n\
              \x20 set_priority <target> — set Phi priority (value: 0.0-1.0)\n\
@@ -151,6 +152,64 @@ pub fn handle(
             }
         }
     }
+}
+
+/// Evicts ledger entries under context pressure (#715): resolves each
+/// comma-separated target against the ledger's canonical paths, removes it and
+/// adds a session-scoped exclude overlay so the file does not re-accumulate.
+pub fn evict(
+    targets: &str,
+    ledger: &mut ContextLedger,
+    overlays: &mut OverlayStore,
+    project_root: &str,
+) -> String {
+    let targets: Vec<&str> = targets
+        .split(',')
+        .map(str::trim)
+        .filter(|t| !t.is_empty())
+        .collect();
+    if targets.is_empty() {
+        return "[ctx_control] evict needs targets (comma-separated paths).".to_string();
+    }
+    let root = if project_root.is_empty() {
+        "."
+    } else {
+        project_root
+    };
+    let outcomes = ledger.evict_paths_resolved(&targets, Some(root));
+    let removed = outcomes.iter().filter(|o| o.resolved.is_some()).count();
+    for resolved in outcomes.iter().filter_map(|o| o.resolved.as_ref()) {
+        overlays.add(ContextOverlay::new(
+            ContextItemId::from_file(resolved),
+            OverlayOp::Exclude {
+                reason: "evicted under context pressure".into(),
+            },
+            OverlayScope::Session,
+            String::new(),
+            OverlayAuthor::Policy("ctx_control_evict".into()),
+        ));
+    }
+    let pressure = ledger.pressure();
+    let mut lines = vec![format!(
+        "Evicted {removed}/{} target(s). Pressure now: {:.0}%. Files excluded from re-accumulation until session reset.",
+        targets.len(),
+        pressure.utilization * 100.0,
+    )];
+    for outcome in &outcomes {
+        match (&outcome.resolved, outcome.ambiguous.is_empty()) {
+            (Some(resolved), _) if resolved != &outcome.target => {
+                lines.push(format!("  {} → {resolved}", outcome.target));
+            }
+            (Some(_), _) => {}
+            (None, false) => lines.push(format!(
+                "  {} is ambiguous ({}) — use a longer suffix",
+                outcome.target,
+                outcome.ambiguous.join(", ")
+            )),
+            (None, true) => lines.push(format!("  {} not in ledger", outcome.target)),
+        }
+    }
+    lines.join("\n")
 }
 
 fn resolve_target(target: &str, ledger: &ContextLedger) -> ContextItemId {

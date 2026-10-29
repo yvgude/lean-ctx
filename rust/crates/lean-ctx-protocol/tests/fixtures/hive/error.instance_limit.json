@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "instance_limit",
+    "limit": 25,
+    "message": "All 25 instance seats of this organization are in use.",
+    "used": 25
+  }
+}

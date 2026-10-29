@@ -1,0 +1,42 @@
+{
+  "available": true,
+  "bus_controls": [
+    {
+      "action": "hold",
+      "issued_by": "admin@acme",
+      "reason": "Owner review of the contract.",
+      "since": "2026-10-20T12:00:00Z",
+      "target_agent": "claude-3e",
+      "target_ref": null
+    }
+  ],
+  "connected": true,
+  "drafts": {
+    "queued": 2,
+    "refused": 0
+  },
+  "filter_packs": [
+    {
+      "pack_id": "ch-identifiers",
+      "version": 3
+    }
+  ],
+  "instance": {
+    "id": "inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+    "label": "studio-mac"
+  },
+  "last_seen": "2026-10-20T12:00:00Z",
+  "org": {
+    "name": "Acme AG"
+  },
+  "policy": {
+    "enforced": false,
+    "not_after": "2026-11-20T12:00:00Z",
+    "state": "required",
+    "verified_at": "2026-10-20T12:00:00Z",
+    "version": 1
+  },
+  "policy_refusal": null,
+  "url": "https://hive.leanctx.com",
+  "web_url": "https://hive.leanctx.com"
+}

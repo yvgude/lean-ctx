@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::io::Read;
+use std::path::PathBuf;
 
 use ed25519_dalek::{Signature, VerifyingKey};
 use serde::{Deserialize, Serialize};
@@ -11,6 +12,9 @@ use serde::{Deserialize, Serialize};
 use super::{InstallError, Result, is_digest, sha256};
 
 pub(super) const MAX_ARCHIVE: usize = 128 * 1024 * 1024;
+/// Every package kind has these seven members; the executable member is
+/// `leanctx-intelligence` for a Cockpit package too, so one producer builds
+/// and signs both. The kind is the signed description's `engine_id`.
 const MEMBERS: [&str; 7] = [
     "Cargo.lock",
     "LICENSE.md",
@@ -20,6 +24,245 @@ const MEMBERS: [&str; 7] = [
     "leanctx-intelligence",
     "runtime-description.json",
 ];
+/// Format v4 is v3 plus a signed list of companion files: the model set for
+/// semantic detectors. The companions travel beside the archive, never in
+/// it, so every format keeps exactly the seven members above. A v4 package
+/// installed without its companions is valid and offers no semantic detectors.
+const V4: &str = "leanctx.private-runtime-artifact/v4";
+pub(super) const SEMANTIC_DESCRIPTOR: &str = "semantic-models.json";
+pub(super) const MAX_SEMANTIC_DESCRIPTOR: usize = 65_536;
+/// One sequence classifier and one token classifier at most, as the runtime
+/// admits.
+const SEMANTIC_MODELS: usize = 2;
+// Hard bounds, fitted to the reviewed artefacts this backend admits (largest
+// model 738,563,188 bytes, tokenizer 8,648,886 bytes, license 10,172 bytes).
+// There is no arbitrary-size path: another model needs its own reviewed bound.
+const MAX_MODEL_BYTES: u64 = 768 * 1024 * 1024;
+const MAX_TOKENIZER_BYTES: u64 = 16 * 1024 * 1024;
+const MAX_LICENSE_BYTES: u64 = 64 * 1024;
+const SEMANTIC_CAPABILITY: &str = "pro.runtime.semantic_detectors";
+
+/// One companion file as the signed manifest states it.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SemanticCompanion {
+    pub(crate) name: String,
+    pub(crate) sha256: String,
+    pub(crate) bytes: u64,
+}
+
+/// The signed companion list of a v4 manifest: the descriptor, then per model
+/// its model, tokenizer and licence file, in that order.
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct SemanticCompanions {
+    pub(crate) descriptor: SemanticCompanion,
+    pub(crate) files: Vec<SemanticCompanion>,
+}
+
+impl SemanticCompanions {
+    /// Fixed names in fixed order, lowercase digests, lengths within the bounds.
+    fn valid(&self) -> bool {
+        let bounded = |file: &SemanticCompanion, name: &str, limit: u64| {
+            file.name == name && is_digest(&file.sha256, 64) && (1..=limit).contains(&file.bytes)
+        };
+        bounded(
+            &self.descriptor,
+            SEMANTIC_DESCRIPTOR,
+            MAX_SEMANTIC_DESCRIPTOR as u64,
+        ) && self.files.len().is_multiple_of(3)
+            && (1..=SEMANTIC_MODELS).contains(&(self.files.len() / 3))
+            && self
+                .files
+                .as_chunks::<3>()
+                .0
+                .iter()
+                .enumerate()
+                .all(|(index, model)| {
+                    bounded(
+                        &model[0],
+                        &format!("semantic-model-{index}.onnx"),
+                        MAX_MODEL_BYTES,
+                    ) && bounded(
+                        &model[1],
+                        &format!("semantic-tokenizer-{index}.json"),
+                        MAX_TOKENIZER_BYTES,
+                    ) && bounded(
+                        &model[2],
+                        &format!("semantic-license-{index}.txt"),
+                        MAX_LICENSE_BYTES,
+                    )
+                })
+    }
+
+    /// The descriptor, then every file: the whole installed set.
+    pub(super) fn all(&self) -> impl Iterator<Item = &SemanticCompanion> {
+        std::iter::once(&self.descriptor).chain(&self.files)
+    }
+}
+
+/// Whether the companions of a v4 package are in the store. The store fills
+/// this in when it authenticates the selected package; it is an observation
+/// of the installation, not part of the signed package.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SemanticInstallation {
+    /// Installed without companions: semantic detectors are not offered.
+    NotPresent,
+    /// A companion directory exists and is not the signed set.
+    Rejected,
+    /// The set is installed; `coverage` says which of `secret`, `pii`,
+    /// `prompt_injection` (in that order) its descriptor examines.
+    Installed {
+        directory: PathBuf,
+        coverage: [bool; 3],
+    },
+}
+
+/// The model set of a v4 package: what was signed and what is installed.
+pub(crate) struct SemanticPackage {
+    pub(crate) companions: SemanticCompanions,
+    pub(crate) installation: SemanticInstallation,
+}
+
+/// What the host reads of the descriptor: which files belong to the set and
+/// their digests. Everything else in it is the runtime's own contract.
+#[derive(Deserialize)]
+struct SemanticDescriptor {
+    models: Vec<SemanticModel>,
+}
+
+#[derive(Deserialize)]
+struct SemanticModel {
+    provenance: SemanticProvenance,
+    model: SemanticFile,
+    tokenizer: SemanticFile,
+    /// Per output index: `none` or the category that index stands for.
+    labels: Vec<String>,
+}
+
+const SEMANTIC_CATEGORIES: [&str; 3] = ["secret", "pii", "prompt_injection"];
+
+fn coverage_of(set: &SemanticDescriptor) -> [bool; 3] {
+    SEMANTIC_CATEGORIES.map(|category| {
+        set.models
+            .iter()
+            .any(|model| model.labels.iter().any(|label| label == category))
+    })
+}
+
+/// Which of `secret`, `pii`, `prompt_injection` (in that order) the installed
+/// model set examines; `None` for a package without an installed set.
+pub(super) fn semantic_coverage(package: &VerifiedPackage) -> Option<[bool; 3]> {
+    match &package.semantic.as_ref()?.installation {
+        SemanticInstallation::Installed { coverage, .. } => Some(*coverage),
+        SemanticInstallation::NotPresent | SemanticInstallation::Rejected => None,
+    }
+}
+
+/// The categories the installed model set examines, by their contract names.
+pub(super) fn semantic_categories(package: &VerifiedPackage) -> Vec<&'static str> {
+    semantic_coverage(package).map_or_else(Vec::new, |coverage| {
+        SEMANTIC_CATEGORIES
+            .into_iter()
+            .zip(coverage)
+            .filter_map(|(category, examined)| examined.then_some(category))
+            .collect()
+    })
+}
+
+/// The semantic detector contract versions the description declares, in the
+/// order it declares them.
+pub(super) fn semantic_versions(description: &serde_json::Value) -> Vec<String> {
+    description["capabilities"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter(|capability| capability["id"] == SEMANTIC_CAPABILITY)
+        .filter_map(|capability| capability["version"].as_str().map(str::to_owned))
+        .collect()
+}
+
+/// The description as a start without the model set reports it: a runtime
+/// declares semantic detectors only while its set is present and verifies.
+pub(super) fn without_semantic(description: &serde_json::Value) -> serde_json::Value {
+    let mut description = description.clone();
+    if let Some(capabilities) = description
+        .get_mut("capabilities")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        capabilities.retain(|capability| capability["id"] != SEMANTIC_CAPABILITY);
+    }
+    description
+}
+
+/// Whether the description declares semantic detectors in `version`.
+fn declares_semantic(description: &serde_json::Value, version: &str) -> bool {
+    description["capabilities"]
+        .as_array()
+        .is_some_and(|capabilities| {
+            capabilities.iter().any(|capability| {
+                capability["id"] == SEMANTIC_CAPABILITY && capability["version"] == version
+            })
+        })
+}
+
+#[derive(Deserialize)]
+struct SemanticProvenance {
+    license_file: SemanticFile,
+}
+
+#[derive(Deserialize)]
+struct SemanticFile {
+    file: String,
+    sha256: String,
+    bytes: u64,
+}
+
+/// Bind a descriptor to the signed companion list and to the description. It
+/// is the listed descriptor; it names exactly the listed files, in order,
+/// with the listed lengths and digests; and the description declares 1.1.0
+/// (answers name the examined categories) for this set and 1.0.0 exactly when
+/// the set examines all three. Returns which of `secret`, `pii`,
+/// `prompt_injection` (in that order) the set examines.
+pub(super) fn bind_descriptor(
+    companions: &SemanticCompanions,
+    descriptor: &[u8],
+    description: &serde_json::Value,
+) -> Result<[bool; 3]> {
+    if u64::try_from(descriptor.len()).ok() != Some(companions.descriptor.bytes)
+        || sha256(descriptor) != companions.descriptor.sha256
+    {
+        return Err(InstallError::Archive);
+    }
+    let set: SemanticDescriptor =
+        serde_json::from_slice(descriptor).map_err(|_| InstallError::Archive)?;
+    let coverage = coverage_of(&set);
+    let named = set.models.iter().flat_map(|model| {
+        [
+            &model.model,
+            &model.tokenizer,
+            &model.provenance.license_file,
+        ]
+    });
+    if set.models.len() * 3 != companions.files.len()
+        || !named.zip(&companions.files).all(|(file, listed)| {
+            file.file == listed.name && file.sha256 == listed.sha256 && file.bytes == listed.bytes
+        })
+        || !coverage.contains(&true)
+        || !declares_semantic(description, "1.1.0")
+        || declares_semantic(description, "1.0.0") != coverage.iter().all(|examined| *examined)
+    {
+        return Err(InstallError::Archive);
+    }
+    Ok(coverage)
+}
+
+/// A companion list is an object; an explicit null is not one.
+fn listed<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> std::result::Result<Option<SemanticCompanions>, D::Error> {
+    SemanticCompanions::deserialize(deserializer).map(Some)
+}
 
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -35,6 +278,9 @@ pub(super) struct Manifest {
     // Explicit null is allowed only by v3; omission must never imply bootstrap.
     #[serde(deserialize_with = "Deserialize::deserialize")]
     rollback_artifact: Option<String>,
+    // The signed companion list: present in v4, and in no earlier format.
+    #[serde(default, deserialize_with = "listed")]
+    semantic_models: Option<SemanticCompanions>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
@@ -55,6 +301,9 @@ pub(crate) struct VerifiedPackage {
     pub receipt: PackageReceipt,
     pub binary: Vec<u8>,
     pub description: serde_json::Value,
+    /// The signed companion list of a v4 package and whether the store holds
+    /// those companions; `None` for every earlier format.
+    pub semantic: Option<SemanticPackage>,
 }
 
 /// Artifact verification is not a license grant, installation authority or release approval.
@@ -71,6 +320,10 @@ pub(super) fn verify_manifest(
         return Err(InstallError::Manifest);
     }
     let parsed: Manifest = serde_json::from_slice(manifest).map_err(|_| InstallError::Manifest)?;
+    // The companion list belongs to v4 alone; earlier formats never knew the field.
+    if parsed.semantic_models.is_some() != (parsed.schema == V4) {
+        return Err(InstallError::Manifest);
+    }
     // Parse only to select the fixed signature domain; no parsed field becomes
     // trusted until the original, unmodified bytes verify in that domain.
     let domain = match (parsed.schema.as_str(), parsed.license.as_str()) {
@@ -80,8 +333,12 @@ pub(super) fn verify_manifest(
         ("leanctx.private-runtime-artifact/v2", "LicenseRef-Proprietary") => {
             b"leanctx-release-manifest-v2\0".as_slice()
         }
-        ("leanctx.private-runtime-artifact/v3", "LicenseRef-Proprietary") => {
-            b"leanctx-release-manifest-v3\0".as_slice()
+        (
+            "leanctx.private-runtime-artifact/v3",
+            "LicenseRef-LeanCTX-Staging-Only" | "LicenseRef-Proprietary",
+        ) => b"leanctx-release-manifest-v3\0".as_slice(),
+        (V4, "LicenseRef-LeanCTX-Staging-Only" | "LicenseRef-Proprietary") => {
+            b"leanctx-release-manifest-v4\0".as_slice()
         }
         _ => return Err(InstallError::Manifest),
     };
@@ -93,10 +350,16 @@ pub(super) fn verify_manifest(
         || !is_digest(&manifest.commit, 40)
         || match &manifest.rollback_artifact {
             Some(digest) => !is_digest(digest, 64),
-            None => manifest.schema != "leanctx.private-runtime-artifact/v3",
+            None => {
+                manifest.schema != "leanctx.private-runtime-artifact/v3" && manifest.schema != V4
+            }
         }
         || !is_digest(&manifest.lockfile_sha256, 64)
         || !is_digest(&manifest.artifact_sha256, 64)
+        || manifest
+            .semantic_models
+            .as_ref()
+            .is_some_and(|companions| !companions.valid())
     {
         return Err(InstallError::Manifest);
     }
@@ -117,6 +380,14 @@ pub(super) fn verify_signature(
         .map_err(|_| InstallError::Signature)
 }
 
+/// The capability a Cockpit package declares, alone and at this version.
+pub(crate) const COCKPIT_CAPABILITY: &str = "free.cockpit.ui";
+/// The start contract a Cockpit package declares as its `protocol_version`:
+/// one JSON line on stdin, `{"listening":<port>}` as the first stdout line,
+/// exit on stdin EOF.
+pub(crate) const COCKPIT_START_PROTOCOL: &str = "leanctx.cockpit-start/v1";
+
+/// An Intelligence Runtime package; every Pro consumer authenticates this way.
 pub(crate) fn verify(
     archive: &[u8],
     manifest: &[u8],
@@ -124,11 +395,35 @@ pub(crate) fn verify(
     selected_manifest: &str,
     independent_key: &[u8; 32],
 ) -> Result<VerifiedPackage> {
+    verify_kind(
+        super::RuntimeKind::Intelligence,
+        archive,
+        manifest,
+        signature,
+        selected_manifest,
+        independent_key,
+    )
+}
+
+/// A package of exactly `kind`. Manifest, signature, archive and provenance
+/// checks are the same for every kind; the kind decides the description it
+/// must declare and whether it is licence-bound. Intelligence packages are
+/// licence-bound outside staging; a Cockpit package never is, and declares so.
+pub(crate) fn verify_kind(
+    kind: super::RuntimeKind,
+    archive: &[u8],
+    manifest: &[u8],
+    signature: &[u8],
+    selected_manifest: &str,
+    independent_key: &[u8; 32],
+) -> Result<VerifiedPackage> {
+    let cockpit = kind == super::RuntimeKind::Cockpit;
     if archive.len() > MAX_ARCHIVE {
         return Err(InstallError::Size);
     }
     let manifest = verify_manifest(manifest, signature, selected_manifest, independent_key)?;
-    if manifest.artifact_sha256 != sha256(archive) {
+    if manifest.artifact_sha256 != sha256(archive) || cockpit && manifest.semantic_models.is_some()
+    {
         return Err(InstallError::Manifest);
     }
     let mut files = unpack(archive)?;
@@ -141,12 +436,19 @@ pub(crate) fn verify(
     let version = description["engine_version"]
         .as_str()
         .ok_or(InstallError::Archive)?;
+    let contract = if cockpit {
+        description["protocol_version"] == COCKPIT_START_PROTOCOL
+            && description["capabilities"]
+                == serde_json::json!([{"id": COCKPIT_CAPABILITY, "version": "1.0.0"}])
+    } else {
+        description["protocol_version"]
+            == lean_ctx_protocol::runtime_exchange::RUNTIME_EXCHANGE_VERSION
+            && description["frame_version"] == "LCTXIR02"
+    };
     if lean_ctx_protocol::SemanticVersion::new(version).is_err()
         || description["schema_version"] != 1
-        || description["engine_id"] != "leanctx-intelligence"
-        || description["protocol_version"]
-            != lean_ctx_protocol::runtime_exchange::RUNTIME_EXCHANGE_VERSION
-        || description["frame_version"] != "LCTXIR02"
+        || description["engine_id"] != kind.engine_id()
+        || !contract
         || description["account_required"] != false
         || !description["entitlement_required"].is_boolean()
         || description["receipt_authority"] != "public_host"
@@ -163,8 +465,18 @@ pub(crate) fn verify(
     if provenance["source_revision"] != manifest.commit || provenance["release_approved"] != false {
         return Err(InstallError::Archive);
     }
-    let staging_only = manifest.schema == "leanctx.private-runtime-artifact/v1";
-    if !staging_only
+    // verify_manifest admits this exact staging license only with v1 or v3.
+    let staging_only = manifest.license == "LicenseRef-LeanCTX-Staging-Only";
+    // The Cockpit is free for everyone: staging or not, it states that it
+    // needs no entitlement, and nothing else may carry that statement.
+    if cockpit
+        && (description["entitlement_required"] != false
+            || provenance["entitlement_required"] != false)
+    {
+        return Err(InstallError::Archive);
+    }
+    if !cockpit
+        && !staging_only
         && (description["entitlement_required"] != true
             || provenance["entitlement_required"] != true
             || description["license_issuer_fingerprint"]
@@ -178,6 +490,15 @@ pub(crate) fn verify(
         .remove("leanctx-intelligence")
         .ok_or(InstallError::Archive)?;
     verify_native_header(&binary)?;
+    // A v4 package was built with its model set, so its description declares
+    // what that set serves. Whether the set is installed is the store's to say.
+    if manifest.semantic_models.is_some() && !declares_semantic(&description, "1.1.0") {
+        return Err(InstallError::Archive);
+    }
+    let semantic = manifest.semantic_models.map(|companions| SemanticPackage {
+        companions,
+        installation: SemanticInstallation::NotPresent,
+    });
     Ok(VerifiedPackage {
         receipt: PackageReceipt {
             manifest_sha256: selected_manifest.to_owned(),
@@ -191,6 +512,7 @@ pub(crate) fn verify(
         },
         binary,
         description,
+        semantic,
     })
 }
 
@@ -230,7 +552,7 @@ fn unpack(bytes: &[u8]) -> Result<BTreeMap<String, Vec<u8>>> {
         }
         files.insert(name, contents);
     }
-    if files.len() != MEMBERS.len() {
+    if files.len() != 7 {
         return Err(InstallError::Archive);
     }
     Ok(files)

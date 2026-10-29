@@ -1,0 +1,14 @@
+{
+  "case": "collaboration_count_string",
+  "base": "bus/message.finding.collaboration.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/counts/gate_reruns",
+      "value": "3"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

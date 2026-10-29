@@ -221,7 +221,6 @@ impl Persona {
                 "ctx_search",
                 "ctx_url_read",
                 "ctx_knowledge",
-                "ctx_semantic_search",
                 "ctx_session",
             ])),
             default_read_mode: "map".to_string(),

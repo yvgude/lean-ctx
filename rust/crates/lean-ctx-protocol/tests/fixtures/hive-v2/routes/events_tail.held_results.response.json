@@ -1,0 +1,23 @@
+{
+  "epoch": 0,
+  "events": [],
+  "head_seq": 19,
+  "held_results": [
+    {
+      "event_id": "01M5NKABRG005000000000W00A",
+      "review_id": "rv_hhhhhhhhhhhhhhhhhhhhhhhhha",
+      "seq": 19,
+      "status": "accepted"
+    },
+    {
+      "event_id": "01M5NKACQR005000000000W00B",
+      "review_id": "rv_iiiiiiiiiiiiiiiiiiiiiiiiia",
+      "status": "rejected"
+    }
+  ],
+  "next_since": 18,
+  "released": [],
+  "server_time": 1792800041000,
+  "trust_rev": 4,
+  "withheld": []
+}

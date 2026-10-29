@@ -1,0 +1,60 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "review_item_changed",
+          "message": "The item changed since you opened it."
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "no_reviewer_available",
+          "message": "No other independent reviewer is available."
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "review_independence",
+          "message": "You cannot decide items your own workers wrote."
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "Enter the code from your authenticator app.",
+          "reason": "action_code_required"
+        }
+      },
+      "status": 403
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/reviews/rv_aaaaaaaaaaaaaaaaaaaaaadxaq/decision",
+  "request": {
+    "command_digests": [
+      "7eebe61a9cb4e8846e4385ac47de89ee5885b5872f7e4874f7bc9e58be2d3e7c"
+    ],
+    "decision": "accept",
+    "item_digest": "ee8ebef8190836e50eb76f8899693eedeef5d4357c391402ffed8021d8678eca",
+    "reason_code": "correct",
+    "totp_code": "123456"
+  },
+  "response": {
+    "body": {
+      "decision": "accept",
+      "state": "decided"
+    },
+    "status": 200
+  },
+  "route": "W48"
+}

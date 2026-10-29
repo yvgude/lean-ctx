@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "A confirmation from the author's own instance does not count.",
+    "number": 12,
+    "reason": "reviewer_not_independent"
+  }
+}

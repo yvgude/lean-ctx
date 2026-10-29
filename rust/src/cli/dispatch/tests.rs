@@ -11,11 +11,23 @@ fn args_of(parts: &[&str]) -> Vec<String> {
 
 #[test]
 fn server_modes_keep_ignored_sigpipe() {
-    for mode in ["mcp", "daemon", "proxy", "serve", "watch", "dashboard"] {
+    for mode in [
+        "mcp",
+        "daemon",
+        "proxy",
+        "serve",
+        "watch",
+        "cockpit",
+        "dashboard",
+    ] {
         assert!(
             is_server_mode(&args_of(&["lean-ctx", mode])),
             "{mode} must count as server mode"
         );
+    }
+    // `gain --web` / `gain --live` start the Cockpit server when none runs.
+    for view in ["--web", "--live"] {
+        assert!(is_server_mode(&args_of(&["lean-ctx", "gain", view])));
     }
     // Bare invocation = MCP server spawned by a client.
     assert!(is_server_mode(&args_of(&["lean-ctx"])));

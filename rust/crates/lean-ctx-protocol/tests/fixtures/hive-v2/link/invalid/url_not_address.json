@@ -1,0 +1,14 @@
+{
+  "case": "url_not_address",
+  "base": "link/lean-ctx-hive.hosted.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/vault",
+      "value": "https://hive.acme.example/acme/payments"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

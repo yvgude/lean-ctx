@@ -23,12 +23,13 @@ pub(crate) fn proxy_health_outcome() -> Outcome {
             let supported = crate::proxy_autostart::is_supported();
 
             if reachable {
-                // Up now — verify the HTTP/auth layer regardless of autostart state.
-                if !proxy_auth_probe(port) {
+                // Something listens — it only counts when it answers as the
+                // lean-ctx proxy (same probe as `gain`/`status`).
+                if !crate::proxy_setup::lean_ctx_proxy_responding(port) {
                     return Outcome {
                         ok: false,
                         line: format!(
-                            "{BOLD}Proxy{RST}  {YELLOW}running on port {port} but auth probe failed{RST}  {YELLOW}fix: lean-ctx proxy restart{RST}"
+                            "{BOLD}Proxy{RST}  {RED}port {port} is answered by another process, not the lean-ctx proxy{RST}  {DIM}fix: lean-ctx proxy restart (or set proxy_port){RST}"
                         ),
                     };
                 }

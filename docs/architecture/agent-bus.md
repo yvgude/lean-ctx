@@ -147,7 +147,6 @@ pro.agent_handoff.automatic
 pro.agent_knowledge.local
 pro.agent_leases.local
 pro.work_graph.local
-pro.result_fusion
 pro.execution_attribution
 
 team.agent_bus.workspace

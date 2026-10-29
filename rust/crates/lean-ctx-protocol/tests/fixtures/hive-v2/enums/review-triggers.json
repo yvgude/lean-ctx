@@ -1,0 +1,30 @@
+{
+  "name": "review-triggers",
+  "values": [
+    {
+      "value": "swarm_result",
+      "order": 1
+    },
+    {
+      "value": "procedure_with_commands",
+      "order": 2
+    },
+    {
+      "value": "security_or_policy_knowledge",
+      "order": 3
+    },
+    {
+      "value": "large_retraction",
+      "order": 4
+    },
+    {
+      "value": "low_trust",
+      "order": 5
+    }
+  ],
+  "rule": "first matching trigger in this order opens the item; later matches go to also[]",
+  "after_3_12_0": [
+    "foreign_or_public_event",
+    "stranger_contribution"
+  ]
+}

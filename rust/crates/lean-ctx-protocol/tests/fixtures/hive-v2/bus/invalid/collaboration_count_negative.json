@@ -1,0 +1,14 @@
+{
+  "case": "collaboration_count_negative",
+  "base": "bus/message.finding.collaboration.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/counts/idle_seconds",
+      "value": -1
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

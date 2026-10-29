@@ -132,7 +132,7 @@ Retries retain the logical task identity but receive attempt-level identity.
 | `core/ocla/**` and `lean-ctx-ocla` | capability catalogue, invocation fabric, executor adapters, and conformance | KEEP; OCLA executes capabilities selected by the Spine. |
 | `lean-ctx-protocol::ControlPlaneContract` | replaceable strategy provider for model/context resource suggestions | KEEP as a strategy interface below hard policy; its decision is converted into plan fields and a DecisionRecord reference. |
 | `core/work_graph.rs` | bounded delegation DAG, fan-out/depth limits, budget cascade, stop propagation | KEEP as the graph executor below one admitted root plan. |
-| `core/agent_connector/**` | local child-process execution adapter | KEEP as sole agent-process connector; return attempt result and receipt evidence. |
+| `core/agent_connector/**` | local child-process execution adapter | REMOVED (2026-10): the host launches agents; `core/work_graph_delegation.rs` binds a host-launched child to its node ([`work-graph-host-start.md`](work-graph-host-start.md)). |
 | `core/a2a/**` and `core/a2a_transport.rs` | interoperable remote message/task transport and reliability policy | KEEP as transport/projection; A2A Task is not canonical task identity or scheduler authority. |
 | `tools/ctx_agent.rs` and `core/agents/**` | current local research presence, messaging, diary, and handoff surface | CONSOLIDATE into the paid Local/Workspace Agent Bus after identity, tenancy, durability, and retention gates. |
 | `core/scent_field.rs` | decaying Need/Have/Claim/Done/Friction hints | KEEP as advisory coordination only; never authorization or durable task truth. |
@@ -458,3 +458,40 @@ together and the reviewer confirms:
 - OCP/upstream drift and VIA are resolved without silent forks;
 - every duplicate has an additive migration, deletion, or archive path;
 - Phase 2 implementation is constrained by these decisions.
+
+## Context decision lineage (2026-10-14, doc 19)
+
+**Decision.** There is one authority for *what context may be delivered*: the
+gateway admission (`core::context_admission`), which emits
+`lean_ctx_protocol::context_gateway::ContextDecisionReceiptV1`. Every route —
+MCP, CLI, hooks, proxy, tool session, engine interface, host egress — calls it;
+no other component decides allow, redact, transform or deny for content.
+
+The other decision records answer different questions and never restate a
+content disposition:
+
+| Record | Question it answers | Linked by |
+|---|---|---|
+| `EnginePolicyAdmissionV1` (`Admitted` / `Rejected`) | may this engine invocation run at all | invocation id → `ReceiptDocumentV1.lineage` |
+| `DecisionRecordV1` (`_meta.context_decision_ref`) | which plan/strategy the planner chose | task, plan, decision id |
+| `ContextPlanProjectionV1` | which candidates a plan selected, excluded, deferred | `context_plan_id`, source refs |
+| `TeamArtifactAuthorizationV1` | may this member use this artifact revision now | binding + request nonce |
+| `ContextDecisionReceiptV1` | what of the content was delivered, changed or withheld, and why | canonical digest |
+
+`lean_ctx_protocol::context_lineage::ContextDecisionLineageV1` joins them for
+one request without replacing any: the request (principal, purpose, sources,
+route, destination), the candidates with one validity state each
+(`valid`, `revalidate_required`, `stale`, `revoked`, `deleted`, `unavailable`,
+`unsupported`), the receipt's decisions projected onto five outcomes (`allow`,
+`deny`, `redact`, `transform`, `unavailable`), and the strongest delivery state
+the evidence supports (`prepared`, `handed_off`, `observed_model_egress`,
+`rejected`, `partial`). Validation enforces: only a `valid` candidate is
+materialized; `observed_model_egress` only on an egress route with a recorded
+transport observation; every non-allow outcome names a reason.
+
+`lean-ctx inspect --json` and the dashboard show the lineage of each stored
+receipt, derived from the stored records. The V1 wire types are unchanged; the
+lineage is additive and references them by digest. Existing staleness
+vocabularies (`store.*`, `lineage.*`, `recovery.*`, team artifact validity)
+map onto the one validity enum (`SourceValidityV1::from_reason_code`, team
+`From` impl); they are adapters, not new authorities.

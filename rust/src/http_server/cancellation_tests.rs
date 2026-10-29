@@ -202,14 +202,14 @@ async fn outer_rest_timeout_preserves_mcp_execution() {
                 super::handlers::REMOTE_REPLAY_RETENTION_SECONDS,
             )),
             concurrency: Arc::new(tokio::sync::Semaphore::new(1)),
-            local_ipc: false,
-            project_servers: crate::http_server::ProjectServers::for_tests(),
             rate: Arc::new(RateLimiter::new(10, 10)),
             project_root: root_str,
             // Room for a slow windows-latest pre-dispatch path: the test checks
             // ordering (504 while the tool is blocked), not latency.
             timeout: StdDuration::from_secs(15),
             server,
+            local_ipc: false,
+            project_servers: crate::http_server::ProjectServers::for_tests(),
         });
     let request = Request::builder()
         .method("POST")

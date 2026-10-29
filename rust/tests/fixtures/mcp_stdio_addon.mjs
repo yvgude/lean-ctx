@@ -16,8 +16,8 @@ import { createInterface } from 'node:readline';
 
 const rl = createInterface({ input: process.stdin });
 const send = (msg) => process.stdout.write(JSON.stringify(msg) + '\n');
-const textResult = (id, text) =>
-  send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }], isError: false } });
+const textResult = (id, text, isError = false) =>
+  send({ jsonrpc: '2.0', id, result: { content: [{ type: 'text', text }], isError } });
 
 const TOOLS = [
   { name: 'echo', description: 'Echo back the provided text',
@@ -35,7 +35,7 @@ const TOOLS = [
 function callTool(id, name, args) {
   switch (name) {
     case 'echo':
-      return textResult(id, 'echo:' + (args.text ?? ''));
+      return textResult(id, 'echo:' + (args.text ?? ''), args.error === true);
     case 'compress_text':
       return textResult(id, 'compressed:' + (args.text ?? ''));
     case 'pack_codebase':

@@ -158,48 +158,15 @@ pub fn format_gain_hero_themed(t: &Theme) -> String {
     ));
     out.push(String::new());
 
-    // Weekly nudge: after 7 days of data, if user hasn't published, show a prominent card
-    if store.daily.len() >= 7 && !crate::cli::wrapped_publish::has_published() {
-        let week_saved: u64 = store
-            .daily
-            .iter()
-            .rev()
-            .take(7)
-            .map(|d| d.input_tokens.saturating_sub(d.output_tokens))
-            .sum();
-        if week_saved > 0 {
-            let accent = t.accent.fg();
-            let nw = 42;
-            let nside = t.box_side();
-            // Pad to visual width: the token count is variable-length and the
-            // labels carry ANSI colour, so hardcoded spacing skews the border.
-            let nudge_line = |content: &str| -> String {
-                format!("  {nside}{}{nside}", theme::pad_right(content, nw))
-            };
-            out.push(format!("  {}", t.box_top(nw)));
-            out.push(nudge_line(&format!(" {accent}{bold}Your first week!{rst}")));
-            out.push(nudge_line(&format!(
-                " You saved {c1}{bold}{}{rst} tokens this week.",
-                crate::core::wrapped::format_tokens(week_saved),
-            )));
-            out.push(nudge_line(&format!(
-                " Share your card? {sec}lean-ctx gain --wrapped{rst}",
-                sec = t.secondary.fg(),
-            )));
-            out.push(format!("  {}", t.box_bottom(nw)));
-            out.push(String::new());
-        }
-    }
-
     let sec = t.secondary.fg();
+    out.push(format!(
+        "  {sec}lean-ctx cockpit{rst}         {dim}Savings · Spend · Proof (localhost:3333){rst}"
+    ));
     out.push(format!(
         "  {sec}lean-ctx gain --deep{rst}     {dim}Full breakdown{rst}"
     ));
     out.push(format!(
         "  {sec}lean-ctx gain --wrapped{rst}  {dim}Shareable card{rst}"
-    ));
-    out.push(format!(
-        "  {sec}lean-ctx watch{rst}           {dim}Live observatory{rst}"
     ));
     out.push(String::new());
 
@@ -291,7 +258,7 @@ fn render_gain_dashboard_for_store(
             format!(
                 "\n{dim}⚠ {} savings events (~{} tokens) ARE in the ledger but not in stats.json —{rst}\
                  \n{dim}  the MCP server likely writes to a different data dir than this CLI.{rst}\
-                 \n{dim}  Inspect: lean-ctx savings   ·   Diagnose: lean-ctx doctor{rst}",
+                 \n{dim}  Inspect: lean-ctx savings   ·   Diagnose: lean-ctx doctor (Cockpit → #diagnosis){rst}",
                 ledger.total_events,
                 crate::core::wrapped::format_tokens(ledger.saved_tokens),
             )
@@ -304,7 +271,7 @@ fn render_gain_dashboard_for_store(
              \n\n  Next:\
              \n    1. Make sure your AI tool is connected:  {cmd}lean-ctx doctor{rst}\
              \n    2. Fully restart your AI tool so it reconnects to lean-ctx.\
-             \n    3. Ask it to read a file or run a command — then check back here.\
+             \n    3. Ask it to read a file or run a command — then check back here or in {cmd}lean-ctx cockpit{rst}.\
              \n\n  {dim}Tip: track a shell command yourself with {rst}{cmd}lean-ctx -c \"git status\"{rst}\
              \n\n  {dim}Stats path: {data_dir}{rst}{mcp_hint}{split_hint}{ledger_hint}",
             cmd = t.secondary.fg(),
@@ -703,7 +670,9 @@ fn append_gain_footer(out: &mut Vec<String>, t: &Theme, store: &StatsStore) {
                 task_str.to_string()
             };
             ctx_items.push(format!(
-                "   Session: {bold}{task_disp}{rst}  {m}files={} findings={} terse={}{rst}",
+                // A person's terminal view of the latest saved session,
+                // labelled as such: it may belong to any agent (I07/S03).
+                "   Latest session: {bold}{task_disp}{rst}  {m}files={} findings={} terse={}{rst}",
                 session.files_touched.len(),
                 session.findings.len(),
                 if session.terse_mode { "on" } else { "off" },
@@ -889,8 +858,8 @@ fn build_tips(store: &StatsStore) -> Vec<String> {
         tips.push("Run lean-ctx gain --graph for a 30-day sparkline chart.".into());
     }
 
-    tips.push("Run ctx_overview(task) at session start for a task-aware project map.".into());
-    tips.push("Run lean-ctx dashboard for a live web UI with all your stats.".into());
+    tips.push("Run ctx_compose(task=…) at session start for a task-ranked project map.".into());
+    tips.push("Run lean-ctx cockpit for Savings · Spend · Proof in the browser.".into());
 
     let cfg = crate::core::config::Config::load();
     if cfg.theme == "default" {
@@ -913,38 +882,6 @@ fn build_tips(store: &StatsStore) -> Vec<String> {
     );
 
     tips
-}
-
-/// Runs the live-updating gain dashboard (1s refresh loop, Ctrl+C to exit).
-pub fn gain_live() {
-    use std::io::Write;
-
-    let interval = std::time::Duration::from_secs(1);
-    let mut line_count = 0usize;
-    let dim = theme::dim();
-    let rst = theme::rst();
-
-    tracing::info!("Live mode (1s refresh) · Ctrl+C to exit");
-
-    loop {
-        if line_count > 0 {
-            print!("\x1B[{line_count}A\x1B[J");
-        }
-
-        let tick = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .ok()
-            .map(|d| d.as_millis() as u64);
-        let output = format_gain_themed_at(&active_theme(), tick);
-        let footer = format!("\n  {dim}▸ Live · updates every 1s · Ctrl+C to exit{rst}\n");
-        let full = format!("{output}{footer}");
-        line_count = full.lines().count();
-
-        print!("{full}");
-        let _ = std::io::stdout().flush();
-
-        std::thread::sleep(interval);
-    }
 }
 
 #[cfg(test)]

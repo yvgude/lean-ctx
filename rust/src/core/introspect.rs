@@ -41,11 +41,6 @@ pub const SUBSYSTEMS: &[Subsystem] = &[
         science: "Ebbinghaus forgetting + spacing effect",
     },
     Subsystem {
-        key: "hebbian_cache",
-        label: "Hebbian eviction",
-        science: "co-activation (cells that fire together)",
-    },
-    Subsystem {
         key: "memory_consolidation",
         label: "Memory consolidation",
         science: "complementary learning systems",
@@ -71,24 +66,14 @@ pub const SUBSYSTEMS: &[Subsystem] = &[
         science: "sharp-wave-ripple replay",
     },
     Subsystem {
-        key: "fep_prefetch",
-        label: "FEP prefetch",
-        science: "active inference / free energy",
-    },
-    Subsystem {
         key: "immune_detector",
-        label: "Immune detector",
-        science: "artificial immune system",
+        label: "Context-poisoning screen (Control)",
+        science: "self/non-self screening of provider data",
     },
     Subsystem {
         key: "observation_synthesis",
         label: "Observation synthesis",
         science: "entity-summary memory (Hindsight)",
-    },
-    Subsystem {
-        key: "qubo_select",
-        label: "QUBO selection (spike)",
-        science: "quantum-inspired optimization",
     },
 ];
 
@@ -292,17 +277,20 @@ pub mod tests {
         let dir = tempfile::tempdir().unwrap();
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.path());
 
-        tick("hebbian_cache");
+        tick("replay_consolidation");
         flush();
         let disk = read_disk();
-        assert!(disk.get("hebbian_cache").is_some_and(|a| a.count >= 1));
+        assert!(
+            disk.get("replay_consolidation")
+                .is_some_and(|a| a.count >= 1)
+        );
 
         // A second flush of new ticks must add, not clobber.
-        tick("hebbian_cache");
+        tick("replay_consolidation");
         flush();
         let disk2 = read_disk();
         assert!(
-            disk2.get("hebbian_cache").unwrap().count >= 2,
+            disk2.get("replay_consolidation").unwrap().count >= 2,
             "deltas should accumulate across flushes"
         );
     }

@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Decision lineage of one task: what was planned, what reached the model,
+//! Decision lineage of one task: what was planned, returned or prepared,
 //! what it cost and which outcome followed — joined by `TaskId` from the
 //! execution ledger and the Context Gateway's Decision Receipts.
 //!
@@ -37,11 +37,24 @@ pub(crate) struct LineageDeliveryV1 {
     pub error: Option<&'static str>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub summary: Option<DeliverySummaryV1>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub egress: Option<EgressLineageV1>,
+}
+
+/// Independent evidence about dispatch, never inferred from admission or billing.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct EgressLineageV1 {
+    pub admission: Option<lean_ctx_protocol::context_gateway::EgressAdmissionReceiptV1>,
+    pub observations: Vec<lean_ctx_protocol::context_gateway::EgressTransportObservationV1>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub error: Option<&'static str>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize)]
 pub(crate) struct DeliverySummaryV1 {
     pub outcome: String,
+    /// Existing count fields describe this boundary, never inferred model usage.
+    pub delivery_semantics: &'static str,
     pub destination: String,
     pub policy_digest: Option<String>,
     pub inspected: u32,
@@ -284,6 +297,7 @@ fn delivery((hex, loaded): &(String, Result<StoredReceipt, LoadError>)) -> Linea
             verified: true,
             error: None,
             summary: Some(summarize(&stored.receipt)),
+            egress: None,
         },
         Err(error) => LineageDeliveryV1 {
             digest: format!("sha256:{hex}"),
@@ -294,6 +308,7 @@ fn delivery((hex, loaded): &(String, Result<StoredReceipt, LoadError>)) -> Linea
                 LoadError::Tampered => "tampered",
             }),
             summary: None,
+            egress: None,
         },
     }
 }
@@ -301,8 +316,20 @@ fn delivery((hex, loaded): &(String, Result<StoredReceipt, LoadError>)) -> Linea
 fn summarize(receipt: &ContextDecisionReceiptV1) -> DeliverySummaryV1 {
     let name = |value: serde_json::Value| value.as_str().map(str::to_owned).unwrap_or_default();
     let destination = &receipt.destination;
+    let is_egress = destination.provider.as_str() != "mcp-host";
     DeliverySummaryV1 {
-        outcome: name(serde_json::to_value(receipt.outcome).unwrap_or_default()),
+        outcome: if is_egress
+            && receipt.outcome == lean_ctx_protocol::context_gateway::DeliveryOutcomeV1::Delivered
+        {
+            "prepared".to_owned()
+        } else {
+            name(serde_json::to_value(receipt.outcome).unwrap_or_default())
+        },
+        delivery_semantics: if is_egress {
+            "prepared_for_dispatch"
+        } else {
+            "returned_to_host"
+        },
         destination: destination.model.as_ref().map_or_else(
             || destination.provider.as_str().to_owned(),
             |model| format!("{} / {}", destination.provider.as_str(), model.as_str()),
@@ -376,6 +403,54 @@ pub(crate) fn load(scope: &str, task_id: &str) -> TaskLineageV1 {
     let receipts = crate::core::context_admission::receipt_store::for_task(scope, task_id);
     let mut lineage = build(task_id, events, checked, &receipts);
     lineage.scope = Some(scope.to_owned());
+    for delivery in &mut lineage.deliveries {
+        if !delivery.verified {
+            continue;
+        }
+        let evidence = lean_ctx_protocol::Sha256Digest::new(delivery.digest.clone())
+            .map_err(|_| "invalid decision receipt digest")
+            .and_then(|digest| {
+                crate::core::context_admission::egress::load_egress_for_decision(&digest)
+            });
+        delivery.egress = match evidence {
+            Ok(None) => None,
+            Ok(Some(view)) => Some(EgressLineageV1 {
+                admission: view.admission.map(|stored| stored.admission),
+                observations: view
+                    .observations
+                    .into_iter()
+                    .map(|stored| stored.observation)
+                    .collect(),
+                error: None,
+            }),
+            Err(error) => Some(EgressLineageV1 {
+                admission: None,
+                observations: Vec::new(),
+                error: Some(error),
+            }),
+        };
+    }
+    if lineage
+        .deliveries
+        .iter()
+        .filter_map(|delivery| delivery.egress.as_ref())
+        .any(|egress| egress.error.is_some() || egress.admission.is_none())
+    {
+        lineage.gaps.push("egress_admission_unverified");
+    }
+    if lineage
+        .deliveries
+        .iter()
+        .filter_map(|delivery| delivery.egress.as_ref())
+        .any(|egress| {
+            egress.admission.as_ref().is_some_and(|admission| {
+                admission.outcome
+                    == lean_ctx_protocol::context_gateway::EgressAdmissionOutcomeV1::Prepared
+            }) && egress.observations.is_empty()
+        })
+    {
+        lineage.gaps.push("no_transport_observation");
+    }
     lineage
 }
 

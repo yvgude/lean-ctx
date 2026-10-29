@@ -21,6 +21,137 @@ pub fn handle(
     session_id: Option<&str>,
     opts: SessionToolOptions<'_>,
 ) -> String {
+    match prepare_admitted_action(session, tool_calls, action, value, session_id, opts) {
+        Err(_) => "ERROR: session action withheld by current project or content policy.".into(),
+        Ok(prepared) => {
+            if !prepared.store_admission.is_current() {
+                return "ERROR: session policy changed; retry the operation.".into();
+            }
+            let PreparedSessionAction {
+                candidate,
+                mut output,
+                completed_task,
+                ..
+            } = prepared;
+            *session = candidate;
+            if let Some(note) = record_completed_task_after_commit(
+                session,
+                completed_task,
+                tool_calls,
+                opts.agent_id,
+            ) {
+                output.push_str(&note);
+            }
+            crate::core::session::admission::admit_tool_value(session, &output).unwrap_or_else(
+                |error| {
+                    // Two different refusals. The gateway withheld the reply's
+                    // content: its notice (`[lean-ctx …]`). Or no policy scope
+                    // could be established for this session at all (no usable
+                    // project root): that is a failed action, reported in the
+                    // tool's own `ERROR:` form like every other scope denial —
+                    // never the action's unadmitted output.
+                    if error.starts_with("[lean-ctx") {
+                        "[lean-ctx gateway: session content withheld]".into()
+                    } else {
+                        "ERROR: session action withheld by current project or content policy."
+                            .into()
+                    }
+                },
+            )
+        }
+    }
+}
+
+pub(crate) struct PreparedSessionAction {
+    pub(crate) candidate: SessionState,
+    pub(crate) output: String,
+    pub(crate) completed_task: bool,
+    pub(crate) store_admission: crate::core::context_admission::stores::StoreAdmission,
+}
+
+/// Prepare content-bearing actions from a detached snapshot. Callers with a
+/// live session lock commit candidate only after checking snapshot identity.
+pub(crate) fn prepare_admitted_action(
+    session: &SessionState,
+    tool_calls: &[(String, u64)],
+    action: &str,
+    value: Option<&str>,
+    session_id: Option<&str>,
+    opts: SessionToolOptions<'_>,
+) -> Result<PreparedSessionAction, String> {
+    let store_admission = crate::core::context_admission::stores::StoreAdmission::current();
+    let mut candidate = session.clone();
+    let (output, completed_task) = match action {
+        "task" | "finding" | "decision" => {
+            let fallback = match action {
+                "finding" => "(no summary)",
+                _ => "(no description)",
+            };
+            let admitted = crate::core::session::admission::admit_storable_session_text(
+                session,
+                value.unwrap_or(fallback),
+            )?;
+            let completed = action == "task" && task_is_complete(&admitted);
+            let output = match action {
+                "task" => handle_task(&mut candidate, tool_calls, Some(&admitted), opts),
+                "finding" => handle_finding(&mut candidate, Some(&admitted)),
+                _ => handle_decision(&mut candidate, Some(&admitted)),
+            };
+            (output, completed)
+        }
+        "list" => (handle_scoped_list(session)?, false),
+        "restore" => (handle_scoped_restore(session, session_id)?, false),
+        "episodes" => (
+            handle_episodes_scoped(session, tool_calls, value, opts)?,
+            false,
+        ),
+        "procedures" => (handle_procedures_scoped(session, value)?, false),
+        _ => (
+            handle_legacy(&mut candidate, tool_calls, action, value, session_id, opts),
+            false,
+        ),
+    };
+    if !store_admission.is_current() {
+        return Err("session admission policy changed; retry".into());
+    }
+    Ok(PreparedSessionAction {
+        candidate,
+        output,
+        completed_task,
+        store_admission,
+    })
+}
+
+/// Run completion learning only after the caller commits or saves the updated
+/// session. Storage failures never roll back the successful session update.
+pub(crate) fn record_completed_task_after_commit(
+    session: &SessionState,
+    completed_task: bool,
+    tool_calls: &[(String, u64)],
+    agent_id: Option<&str>,
+) -> Option<String> {
+    if !completed_task {
+        return None;
+    }
+    auto_record_episode(session, tool_calls, agent_id)
+        .ok()
+        .flatten()
+        .map(|id| format!("\nEpisode auto-recorded: {id}"))
+}
+
+fn task_is_complete(description: &str) -> bool {
+    let lower = description.to_lowercase();
+    description.contains("[100%]") || lower.contains("[done]") || lower.contains("[complete]")
+}
+
+fn handle_legacy(
+    session: &mut SessionState,
+    tool_calls: &[(String, u64)],
+    action: &str,
+    value: Option<&str>,
+    session_id: Option<&str>,
+    opts: SessionToolOptions<'_>,
+) -> String {
     if action == "handoff" {
         return handle_handoff(session);
     }
@@ -35,11 +166,11 @@ pub fn handle(
         "finding" => handle_finding(session, value),
         "decision" => handle_decision(session, value),
         "reset" => handle_reset(session),
-        "list" => handle_list(),
+        "list" => handle_list(session),
         "cleanup" => handle_cleanup(),
         "configure" => handle_configure(session, opts),
         "snapshot" => handle_snapshot(session),
-        "restore" => handle_restore(session_id),
+        "restore" => handle_restore(session, session_id),
         "resume" => handle_resume(session),
         "profile" => handle_profile(value),
         "role" => handle_role(value),
@@ -59,12 +190,10 @@ pub fn handle(
 pub fn handle_without_session(
     action: &str,
     value: Option<&str>,
-    session_id: Option<&str>,
+    _session_id: Option<&str>,
 ) -> Option<String> {
     match action {
-        "list" => Some(handle_list()),
         "cleanup" => Some(handle_cleanup()),
-        "restore" => Some(handle_restore(session_id)),
         "profile" => Some(handle_profile(value)),
         "role" => Some(handle_role(value)),
         "diff" => Some(handle_diff(value)),
@@ -74,19 +203,25 @@ pub fn handle_without_session(
     }
 }
 
-/// Handle session reads under a shared lock. These actions never mutate the
-/// session and therefore must not queue behind a pending writer.
+/// Handle session reads after rechecking all recalled content under the
+/// current project and Gateway policies.
 pub fn handle_read_only(session: &SessionState, action: &str) -> Option<String> {
-    match action {
-        "status" | "show" => Some(handle_status(session)),
-        "handoff" => Some(handle_handoff(session)),
-        _ => None,
-    }
+    let Ok(projected) = crate::core::session::admission::for_delivery(session) else {
+        return Some("[lean-ctx gateway: session content withheld]".into());
+    };
+    let text = match action {
+        "status" | "show" => handle_status(&projected),
+        "handoff" => handle_handoff(&projected),
+        _ => return None,
+    };
+    Some(
+        crate::core::session::admission::admit_tool_value(&projected, &text)
+            .unwrap_or_else(|_| "[lean-ctx gateway: session content withheld]".into()),
+    )
 }
 
-/// Run a read-only action after the caller has cloned the live session and
-/// released its lock. These actions can touch disk (archive lookup/export), so
-/// retaining a read guard would otherwise block every pending session writer.
+/// Run snapshot/export work after the caller cloned live state and released its
+/// lock. Persisted projections are admitted before they reach an archive writer.
 pub fn handle_snapshot_read_action(
     session: &SessionState,
     action: &str,
@@ -94,23 +229,87 @@ pub fn handle_snapshot_read_action(
     opts: SessionToolOptions<'_>,
 ) -> Option<String> {
     match action {
-        "export" => Some(handle_export(session, value, opts)),
-        "resume" => Some(session.build_resume_block()),
-        "snapshot" => Some(session.save_compaction_snapshot().map_or_else(
-            |error| format!("Snapshot failed: {error}"),
-            |snapshot| {
-                format!(
-                    "Compaction snapshot saved ({} bytes).\n{snapshot}",
-                    snapshot.len()
-                )
-            },
-        )),
+        "export" => {
+            let Ok(projected) = crate::core::session::admission::for_storage(session) else {
+                return Some("ERROR: session export withheld by current policy.".into());
+            };
+            let output = handle_export(&projected, value, opts);
+            // The default export is structural JSON from the already-admitted
+            // typed projection; masking that serialization would corrupt it.
+            let structural_json =
+                opts.format
+                    .unwrap_or(if opts.write { "summary" } else { "json" })
+                    != "summary";
+            Some(if structural_json {
+                output
+            } else {
+                crate::core::session::admission::admit_tool_value(&projected, &output)
+                    .unwrap_or_else(|_| "ERROR: session export withheld by current policy.".into())
+            })
+        }
+        "resume" => {
+            let Ok(projected) = crate::core::session::admission::for_delivery(session) else {
+                return Some("[lean-ctx gateway: session content withheld]".into());
+            };
+            let output = projected.build_resume_block();
+            Some(
+                crate::core::session::admission::admit_tool_value(&projected, &output)
+                    .unwrap_or_else(|_| "[lean-ctx gateway: session content withheld]".into()),
+            )
+        }
+        "snapshot" => {
+            let Ok(projected) = crate::core::session::admission::for_storage(session) else {
+                return Some("ERROR: session snapshot withheld by current policy.".into());
+            };
+            let output = projected.save_compaction_snapshot().map_or_else(
+                |error| format!("Snapshot failed: {error}"),
+                |snapshot| {
+                    format!(
+                        "Compaction snapshot saved ({} bytes).\n{snapshot}",
+                        snapshot.len()
+                    )
+                },
+            );
+            Some(
+                crate::core::session::admission::admit_tool_value(&projected, &output)
+                    .unwrap_or_else(|_| {
+                        "ERROR: session snapshot withheld by current policy.".into()
+                    }),
+            )
+        }
         _ => None,
     }
 }
 
+/// The session summary as a delivery: findings publish their sources or mark
+/// the call's capture, and any other session text marks it incomplete
+/// (`SessionState::format_compact_delivered`).
+///
+/// When the session's root was chosen among several workspace roots, a line
+/// names the choice, the other roots and how to change it (AP04-G7).
 fn handle_status(session: &SessionState) -> String {
-    session.format_compact()
+    let summary = session.format_compact_delivered();
+    // Under a launcher Workspace its binding is the root line (#2120).
+    match crate::core::workspace_authority::current() {
+        crate::core::workspace_authority::Authority::Legacy => {}
+        crate::core::workspace_authority::Authority::Workspace(snapshot) => {
+            return format!("{summary}\n{}", snapshot.status_line());
+        }
+        crate::core::workspace_authority::Authority::Unavailable(reason) => {
+            return format!(
+                "{summary}\n{}",
+                crate::core::workspace_authority::unavailable_reason(&reason)
+            );
+        }
+    }
+    match session
+        .project_root
+        .as_deref()
+        .and_then(crate::core::root_selection::recorded_for)
+    {
+        Some(selection) => format!("{summary}\n{}", selection.notice()),
+        None => summary,
+    }
 }
 
 fn handle_handoff(session: &SessionState) -> String {
@@ -134,68 +333,76 @@ fn handle_handoff(session: &SessionState) -> String {
 }
 
 fn handle_load(session: &mut SessionState, session_id: Option<&str>) -> String {
+    match prepare_load(session, session_id) {
+        Ok((loaded, output)) => {
+            *session = loaded;
+            output
+        }
+        Err(error) => error,
+    }
+}
+
+/// Load and admit a detached candidate. The caller may commit it only after
+/// confirming that the live session identity and version still match.
+pub(crate) fn prepare_load(
+    session: &SessionState,
+    session_id: Option<&str>,
+) -> Result<(SessionState, String), String> {
     const SCOPE_DENIED: &str = "ERROR: session load denied: scoped session unavailable or mismatched; live session unchanged.";
 
-    let Some(receiving_root) = session.strict_project_root() else {
-        return SCOPE_DENIED.to_string();
-    };
+    let receiving_root = session.strict_project_root().ok_or(SCOPE_DENIED)?;
+    // Without an id: the caller's own saved session — never the project's
+    // latest, which may be another agent's (I07/S03). Another session is
+    // loaded only by naming it, e.g. the id a handoff gave.
+    let id = session_id.unwrap_or(session.id.as_str());
+    let loaded =
+        SessionState::load_by_id_for_project_root(id, &receiving_root).map_err(|_| SCOPE_DENIED)?;
 
-    let loaded = if let Some(id) = session_id {
-        SessionState::load_by_id_for_project_root(id, &receiving_root)
-    } else {
-        match SessionState::load_latest_for_project_root(&receiving_root) {
-            Some(selected) => {
-                SessionState::load_by_id_for_project_root(&selected.id, &receiving_root)
-            }
-            None => Ok(None),
-        }
+    let Some(mut loaded) = loaded else {
+        return Err(SCOPE_DENIED.into());
     };
+    if loaded.strict_project_root().as_deref() != Some(receiving_root.as_str()) {
+        return Err(SCOPE_DENIED.into());
+    }
 
-    let Ok(loaded) = loaded else {
-        return SCOPE_DENIED.to_string();
-    };
-
-    let Some(mut prev) = loaded else {
-        return SCOPE_DENIED.to_string();
-    };
-
-    // These fields come from the live MCP roots/shell and must not be replaced
-    // by persisted state, even after the loaded session passes scope matching.
-    prev.extra_roots.clone_from(&session.extra_roots);
-    prev.shell_cwd.clone_from(&session.shell_cwd);
-    let summary = prev.format_compact();
-    *session = prev;
-    format!("Session loaded.\n{summary}")
+    // These fields come from live MCP roots/shell and must not be replaced by
+    // persisted state. Validate root scope before this policy lookup.
+    loaded.extra_roots.clone_from(&session.extra_roots);
+    loaded.shell_cwd.clone_from(&session.shell_cwd);
+    let admitted = crate::core::session::admission::for_storage(&loaded)
+        .map_err(|_| "ERROR: session load withheld by current policy; live session unchanged.")?;
+    let summary = handle_status(&admitted);
+    let output = crate::core::session::admission::admit_tool_value(
+        &admitted,
+        &format!("Session loaded.\n{summary}"),
+    )
+    .map_err(|_| "ERROR: session load withheld by current policy; live session unchanged.")?;
+    Ok((admitted, output))
 }
 
 fn handle_save(session: &mut SessionState) -> String {
-    save_session(session).unwrap_or_else(|error| format!("Save failed: {error}"))
+    let result = save_session(session);
+    if result.is_ok()
+        && let Some(root) = session.project_root.as_deref()
+    {
+        // Queue learnings for Hive, debounced per project (local only).
+        crate::core::hive::knowledge::draft::on_session_event(
+            root,
+            &session.id,
+            crate::core::hive::knowledge::draft::Trigger::Save,
+        );
+    }
+    result.unwrap_or_else(|error| format!("Save failed: {error}"))
 }
 
 pub(crate) fn save_session(session: &mut SessionState) -> Result<String, String> {
     match session.save() {
-        Ok(()) => {
-            let mut out = format!("Session {} saved (v{}).", session.id, session.version);
-            let messages = conversion_messages_for_session(session);
-            if !messages.is_empty() {
-                out.push_str("\n\nPro tip:");
-                for message in messages {
-                    out.push_str(&format!("\n  {}", message.message));
-                }
-                out.push_str("\n  Dismiss: lean-ctx session dismiss-pro");
-            }
-            Ok(out)
-        }
+        Ok(()) => Ok(format!(
+            "Session {} saved (v{}).",
+            session.id, session.version
+        )),
         Err(error) => Err(error),
     }
-}
-
-fn conversion_messages_for_session(
-    session: &SessionState,
-) -> Vec<crate::core::pro_triggers::ProNudge> {
-    crate::core::pro_triggers::evaluate_triggers(&crate::core::pro_triggers::local_usage_signals(
-        session,
-    ))
 }
 
 fn handle_export(
@@ -394,32 +601,14 @@ stale_files: {}\n",
 
 fn handle_task(
     session: &mut SessionState,
-    tool_calls: &[(String, u64)],
+    _tool_calls: &[(String, u64)],
     value: Option<&str>,
-    opts: SessionToolOptions<'_>,
+    _opts: SessionToolOptions<'_>,
 ) -> String {
     {
         let desc = value.unwrap_or("(no description)");
         session.set_task(desc, None);
-        // Auto-record an episode when the task is marked complete.
-        // Without this, Episodes only fill via an explicit
-        // `action=episodes value=record` call that nobody makes (#477).
-        let lower = desc.to_lowercase();
-        let completed =
-            desc.contains("[100%]") || lower.contains("[done]") || lower.contains("[complete]");
-        let mut note = String::new();
-        if completed {
-            match auto_record_episode(session, tool_calls, opts.agent_id) {
-                Ok(Some(id)) => {
-                    note = format!("\nEpisode auto-recorded: {id}");
-                }
-                Ok(None) => {} // same task already recorded — skip duplicate
-                Err(e) => {
-                    note = format!("\n(episode auto-record skipped: {e})");
-                }
-            }
-        }
-        format!("Task set: {desc}{note}")
+        format!("Task set: {desc}")
     }
 }
 
@@ -427,7 +616,7 @@ fn handle_finding(session: &mut SessionState, value: Option<&str>) -> String {
     {
         let summary = value.unwrap_or("(no summary)");
         let (file, line, text) = parse_finding_value(summary);
-        session.add_finding(file.as_deref(), line, text);
+        session.add_finding_for_file(file.as_deref(), line, text);
         format!("Finding added: {summary}")
     }
 }
@@ -441,48 +630,77 @@ fn handle_decision(session: &mut SessionState, value: Option<&str>) -> String {
 }
 
 fn handle_reset(session: &mut SessionState) -> String {
-    {
-        if let Err(error) = session.save() {
-            return format!("Reset refused: current session was not saved: {error}");
-        }
-        let old_id = session.id.clone();
-        *session = SessionState::new();
-        // Clear the persistent context ledger so pressure resets to 0%
-        let mut ledger = crate::core::context_ledger::ContextLedger::load();
-        ledger.reset();
-        ledger.save();
-        if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
-            let radar_path = data_dir.join("context_radar.jsonl");
-            let prev = data_dir.join("context_radar.prev.jsonl");
-            let _ = std::fs::rename(&radar_path, &prev);
-        }
-        format!(
-            "Session reset. Previous: {old_id}. New: {}. Ledger cleared (0% pressure).",
-            session.id
-        )
+    if let Err(error) = session.save() {
+        return format!("Reset refused: current session was not saved: {error}");
     }
+    reset_after_save(session)
 }
 
-fn handle_list() -> String {
-    {
-        let sessions = SessionState::list_sessions();
-        if sessions.is_empty() {
-            return "No sessions found.".to_string();
+pub(crate) fn reset_after_save(session: &mut SessionState) -> String {
+    let old_id = session.id.clone();
+    *session = SessionState::new();
+    // Clear the persistent context ledger so pressure resets to 0%
+    let mut ledger = crate::core::context_ledger::ContextLedger::load();
+    ledger.reset();
+    ledger.save();
+    if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
+        let radar_path = data_dir.join("context_radar.jsonl");
+        let prev = data_dir.join("context_radar.prev.jsonl");
+        let _ = std::fs::rename(&radar_path, &prev);
+    }
+    format!(
+        "Session reset. Previous: {old_id}. New: {}. Ledger cleared (0% pressure).",
+        session.id
+    )
+}
+
+fn handle_list(session: &SessionState) -> String {
+    handle_scoped_list(session).unwrap_or_else(|_| {
+        "ERROR: session list withheld by project scope or content policy.".into()
+    })
+}
+
+fn handle_scoped_list(session: &SessionState) -> Result<String, String> {
+    let text = crate::core::session::admission::with_store_admission(session, |admission| {
+        let root = session
+            .strict_project_root()
+            .ok_or_else(|| "session project scope unavailable".to_string())?;
+        let mut rows = Vec::new();
+        for summary in SessionState::list_sessions() {
+            let Ok(Some(owner)) = SessionState::load_by_id_for_project_root(&summary.id, &root)
+            else {
+                continue;
+            };
+            let task = owner
+                .task
+                .as_ref()
+                .map(|task| task.description.as_str())
+                .unwrap_or("(no task)");
+            let Some(admitted_task) =
+                crate::core::session::admission::admit_store_text(admission, task)
+            else {
+                continue;
+            };
+            rows.push((summary, admitted_task));
         }
-        let mut lines = vec![format!("Sessions ({}):", sessions.len())];
-        for s in sessions.iter().take(10) {
-            let task = s.task.as_deref().unwrap_or("(no task)");
+        if rows.is_empty() {
+            return Ok("No sessions found.".into());
+        }
+        let count = rows.len();
+        let mut lines = vec![format!("Sessions ({count}):")];
+        for (summary, task) in rows.iter().take(10) {
             let task_short: String = task.chars().take(40).collect();
             lines.push(format!(
                 "  {} v{} | {} calls | {} tok | {}",
-                s.id, s.version, s.tool_calls, s.tokens_saved, task_short
+                summary.id, summary.version, summary.tool_calls, summary.tokens_saved, task_short
             ));
         }
-        if sessions.len() > 10 {
-            lines.push(format!("  ... +{} more", sessions.len() - 10));
+        if count > 10 {
+            lines.push(format!("  ... +{} more", count - 10));
         }
-        lines.join("\n")
-    }
+        Ok(lines.join("\n"))
+    })?;
+    crate::core::session::admission::admit_tool_value(session, &text)
 }
 
 fn handle_cleanup() -> String {
@@ -514,18 +732,32 @@ fn handle_snapshot(session: &mut SessionState) -> String {
     }
 }
 
-fn handle_restore(session_id: Option<&str>) -> String {
-    {
-        let snapshot = if let Some(id) = session_id {
-            SessionState::load_compaction_snapshot(id)
-        } else {
-            SessionState::load_latest_snapshot()
-        };
-        match snapshot {
-            Some(s) => format!("Session restored from compaction snapshot:\n{s}"),
-            None => "No compaction snapshot found. Session continues fresh.".to_string(),
-        }
-    }
+fn handle_restore(session: &SessionState, session_id: Option<&str>) -> String {
+    handle_scoped_restore(session, session_id).unwrap_or_else(|_| {
+        "ERROR: session restore withheld by project scope or content policy.".into()
+    })
+}
+
+fn handle_scoped_restore(
+    session: &SessionState,
+    session_id: Option<&str>,
+) -> Result<String, String> {
+    let root = session
+        .strict_project_root()
+        .ok_or_else(|| "session project scope unavailable".to_string())?;
+    // Without an id: the caller's own snapshot, never the project's latest
+    // session's (I07/S03).
+    let id = session_id.unwrap_or(session.id.as_str());
+    let owner = SessionState::load_by_id_for_project_root(id, &root)
+        .map_err(|_| "session project scope mismatch".to_string())?;
+    let Some(owner) = owner else {
+        return Ok("No compaction snapshot found. Session continues fresh.".into());
+    };
+    let Some(snapshot) = SessionState::load_compaction_snapshot(&owner.id) else {
+        return Ok("No compaction snapshot found. Session continues fresh.".into());
+    };
+    let output = format!("Session restored from compaction snapshot:\n{snapshot}");
+    crate::core::session::admission::admit_tool_value(session, &output)
 }
 
 fn handle_resume(session: &mut SessionState) -> String {
@@ -539,11 +771,9 @@ fn handle_profile(value: Option<&str>) -> String {
             if let Ok(p) = profiles::set_active_profile(name) {
                 format!(
                     "Profile switched to '{name}'.\n\
-                         Read mode: {}, Budget: {} tokens, CRP: {}, Density: {}",
+                         Read mode: {}, CRP: {}",
                     p.read.default_mode_effective(),
-                    p.budget.max_context_tokens_effective(),
                     p.compression.crp_mode_effective(),
-                    p.compression.output_density_effective(),
                 )
             } else {
                 let available: Vec<String> = profiles::list_profiles()
@@ -561,12 +791,10 @@ fn handle_profile(value: Option<&str>) -> String {
             let list = profiles::list_profiles();
             let mut out = format!(
                 "Active profile: {name}\n\
-                     Read: {}, Budget: {} tok, CRP: {}, Density: {}\n\n\
+                     Read: {}, CRP: {}\n\n\
                      Available profiles:",
                 p.read.default_mode_effective(),
-                p.budget.max_context_tokens_effective(),
                 p.compression.crp_mode_effective(),
-                p.compression.output_density_effective(),
             );
             for info in &list {
                 let marker = if info.name == name { " *" } else { "  " };
@@ -647,10 +875,24 @@ fn handle_diff(value: Option<&str>) -> String {
         let id_b = parts[1];
         let format = parts.get(2).copied().unwrap_or("summary");
 
-        let sess_a = SessionState::load_by_id(id_a);
-        let sess_b = SessionState::load_by_id(id_b);
+        // Only sessions of the request's own project are compared; a foreign
+        // session reads as absent rather than confirming it exists (AP04-G8).
+        let Some(project) = crate::core::policy::runtime::REQUEST_PROJECT
+            .try_with(|slot| slot.borrow().clone())
+            .ok()
+            .flatten()
+        else {
+            return "ERROR: project_unresolved — session diff needs the request's project."
+                .to_string();
+        };
+        let project = project.to_string_lossy();
+        let load = |id: &str| {
+            SessionState::load_by_id_for_project_root(id, &project)
+                .ok()
+                .flatten()
+        };
 
-        match (sess_a, sess_b) {
+        match (load(id_a), load(id_b)) {
             (Some(a), Some(b)) => {
                 let d = crate::core::session_diff::diff_sessions(&a, &b);
                 match format {
@@ -698,234 +940,313 @@ fn handle_episodes(
     value: Option<&str>,
     opts: SessionToolOptions<'_>,
 ) -> String {
-    {
-        let project_root = session.project_root.clone().unwrap_or_else(|| {
-            std::env::current_dir().map_or_else(
-                |_| "unknown".to_string(),
-                |p| p.to_string_lossy().to_string(),
-            )
-        });
-        let policy = match crate::core::config::Config::load().memory_policy_effective() {
-            Ok(p) => p,
-            Err(e) => {
-                let path = crate::core::config::Config::path().map_or_else(
-                    || "~/.lean-ctx/config.toml".to_string(),
-                    |p| p.display().to_string(),
-                );
-                return format!("Error: invalid memory policy: {e}\nFix: edit {path}");
-            }
-        };
-        let hash = crate::core::project_hash::hash_project_root(&project_root);
-        match value {
-            Some("record") => {
-                let id = match crate::core::episodic_memory::record_session_episode(
-                    &hash,
-                    session,
-                    tool_calls,
-                    opts.agent_id,
-                    &policy.episodic,
-                    false,
-                ) {
-                    Ok(Some(id)) => id,
-                    Ok(None) => return "Episode already recorded.".to_string(),
-                    Err(e) => return format!("Episode record failed: {e}"),
-                };
-                crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-                    category: "episodic".to_string(),
-                    key: id.clone(),
-                    action: "record".to_string(),
-                });
-                // Auto-learning (GL #478): every new episode re-runs workflow
-                // detection, so Procedures fill themselves over time.
-                let learned = crate::core::procedural_memory::auto_detect_from_episodes(
-                    &hash,
-                    &policy.procedural,
-                );
-                match learned {
-                    Some(n) if n > 0 => {
-                        format!(
-                            "Episode recorded: {id} (procedures auto-updated: {n} known workflows)"
-                        )
+    handle_episodes_scoped(session, tool_calls, value, opts).unwrap_or_else(|_| {
+        "ERROR: episodic operation withheld by project scope or content policy.".into()
+    })
+}
+
+fn handle_episodes_scoped(
+    session: &SessionState,
+    tool_calls: &[(String, u64)],
+    value: Option<&str>,
+    opts: SessionToolOptions<'_>,
+) -> Result<String, String> {
+    let (_, hash) = trusted_memory_scope(session)?;
+    let policy = crate::core::config::Config::load()
+        .memory_policy_effective()
+        .map_err(|error| format!("invalid memory policy: {error}"))?;
+
+    match value {
+        Some("record") => {
+            let id = crate::core::episodic_memory::record_session_episode(
+                &hash,
+                session,
+                tool_calls,
+                opts.agent_id,
+                &policy.episodic,
+                false,
+            )?
+            .ok_or_else(|| "episode not recorded".to_string())?;
+            crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
+                category: "episodic".to_string(),
+                key: id.clone(),
+                action: "record".to_string(),
+            });
+            let learned = auto_detect_admitted_procedures(session, &hash, &policy.procedural).ok();
+            let output = match learned {
+                Some(count) if count > 0 => format!(
+                    "Episode recorded: {id} (procedures auto-updated: {count} known workflows)"
+                ),
+                _ => format!("Episode recorded: {id}"),
+            };
+            crate::core::session::admission::admit_tool_value(session, &output)
+        }
+        Some(v) if v.starts_with("search ") => {
+            let query = v.trim_start_matches("search ").trim();
+            let query =
+                crate::core::session::admission::admit_storable_session_text(session, query)?;
+            let output =
+                crate::core::session::admission::with_store_admission(session, |admission| {
+                    let store = crate::core::episodic_memory::EpisodicStore::load_admitted(
+                        &hash, admission,
+                    )?;
+                    let hits = store.search(&query);
+                    if hits.is_empty() {
+                        return Ok("No episodes matched.".to_string());
                     }
-                    _ => format!("Episode recorded: {id}"),
-                }
+                    let mut out = format!("Episodes matched ({}):", hits.len());
+                    for episode in hits.into_iter().take(10) {
+                        let task: String = episode.task_description.chars().take(50).collect();
+                        out.push_str(&format!(
+                            "\n  {} | {} | {} | {}",
+                            episode.id,
+                            episode.timestamp,
+                            episode.outcome.label(),
+                            task
+                        ));
+                    }
+                    Ok(out)
+                })?;
+            crate::core::session::admission::admit_tool_value(session, &output)
+        }
+        Some(v) if v.starts_with("file ") => {
+            let file = v.trim_start_matches("file ").trim();
+            let file = crate::core::session::admission::admit_storable_session_text(session, file)?;
+            let output =
+                crate::core::session::admission::with_store_admission(session, |admission| {
+                    let store = crate::core::episodic_memory::EpisodicStore::load_admitted(
+                        &hash, admission,
+                    )?;
+                    let hits = store.by_file(&file);
+                    let mut out = format!("Episodes for file match '{file}' ({}):", hits.len());
+                    for episode in hits.into_iter().take(10) {
+                        let task: String = episode.task_description.chars().take(50).collect();
+                        out.push_str(&format!(
+                            "\n  {} | {} | {} | {}",
+                            episode.id,
+                            episode.timestamp,
+                            episode.outcome.label(),
+                            task
+                        ));
+                    }
+                    Ok(out)
+                })?;
+            crate::core::session::admission::admit_tool_value(session, &output)
+        }
+        Some(v) if v.starts_with("outcome ") => {
+            let label = v.trim_start_matches("outcome ").trim();
+            if !matches!(label, "success" | "failure" | "partial" | "unknown") {
+                return Err("unsupported episode outcome".into());
             }
-            Some(v) if v.starts_with("search ") => {
-                let q = v.trim_start_matches("search ").trim();
-                let store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
-                let hits = store.search(q);
-                if hits.is_empty() {
-                    return "No episodes matched.".to_string();
-                }
-                let mut out = format!("Episodes matched ({}):", hits.len());
-                for ep in hits.into_iter().take(10) {
-                    let task: String = ep.task_description.chars().take(50).collect();
-                    out.push_str(&format!(
-                        "\n  {} | {} | {} | {}",
-                        ep.id,
-                        ep.timestamp,
-                        ep.outcome.label(),
-                        task
-                    ));
-                }
-                out
-            }
-            Some(v) if v.starts_with("file ") => {
-                let f = v.trim_start_matches("file ").trim();
-                let store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
-                let hits = store.by_file(f);
-                let mut out = format!("Episodes for file match '{f}' ({}):", hits.len());
-                for ep in hits.into_iter().take(10) {
-                    let task: String = ep.task_description.chars().take(50).collect();
-                    out.push_str(&format!(
-                        "\n  {} | {} | {} | {}",
-                        ep.id,
-                        ep.timestamp,
-                        ep.outcome.label(),
-                        task
-                    ));
-                }
-                out
-            }
-            Some(v) if v.starts_with("outcome ") => {
-                let label = v.trim_start_matches("outcome ").trim();
-                let store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
-                let hits = store.by_outcome(label);
-                let mut out = format!("Episodes outcome '{label}' ({}):", hits.len());
-                for ep in hits.into_iter().take(10) {
-                    let task: String = ep.task_description.chars().take(50).collect();
-                    out.push_str(&format!("\n  {} | {} | {}", ep.id, ep.timestamp, task));
-                }
-                out
-            }
-            _ => {
-                let store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
-                let stats = store.stats();
-                let recent = store.recent(10);
-                let mut out = format!(
-                    "Episodic memory: {} episodes, success_rate={:.0}%, tokens_total={}\n\nRecent:",
-                    stats.total_episodes,
-                    stats.success_rate * 100.0,
-                    stats.total_tokens
-                );
-                for ep in recent {
-                    let task: String = ep.task_description.chars().take(60).collect();
-                    out.push_str(&format!(
-                        "\n  {} | {} | {} | {}",
-                        ep.id,
-                        ep.timestamp,
-                        ep.outcome.label(),
-                        task
-                    ));
-                }
-                out.push_str("\n\nActions: ctx_session action=episodes value=record|\"search <q>\"|\"file <path>\"|\"outcome success|failure|partial|unknown\"");
-                out
-            }
+            let output =
+                crate::core::session::admission::with_store_admission(session, |admission| {
+                    let store = crate::core::episodic_memory::EpisodicStore::load_admitted(
+                        &hash, admission,
+                    )?;
+                    let hits = store.by_outcome(label);
+                    let mut out = format!("Episodes outcome '{label}' ({}):", hits.len());
+                    for episode in hits.into_iter().take(10) {
+                        let task: String = episode.task_description.chars().take(50).collect();
+                        out.push_str(&format!(
+                            "\n  {} | {} | {}",
+                            episode.id, episode.timestamp, task
+                        ));
+                    }
+                    Ok(out)
+                })?;
+            crate::core::session::admission::admit_tool_value(session, &output)
+        }
+        _ => {
+            let output = crate::core::session::admission::with_store_admission(
+                session,
+                |admission| {
+                    let store = crate::core::episodic_memory::EpisodicStore::load_admitted(
+                        &hash, admission,
+                    )?;
+                    let stats = store.stats();
+                    let recent = store.recent(10);
+                    let mut out = format!(
+                        "Episodic memory: {} episodes, success_rate={:.0}%, tokens_total={}\n\nRecent:",
+                        stats.total_episodes,
+                        stats.success_rate * 100.0,
+                        stats.total_tokens
+                    );
+                    for episode in recent {
+                        let task: String = episode.task_description.chars().take(60).collect();
+                        out.push_str(&format!(
+                            "\n  {} | {} | {} | {}",
+                            episode.id,
+                            episode.timestamp,
+                            episode.outcome.label(),
+                            task
+                        ));
+                    }
+                    out.push_str("\n\nActions: ctx_session action=episodes value=record|\"search <q>\"|\"file <path>\"|\"outcome success|failure|partial|unknown\"");
+                    Ok(out)
+                },
+            )?;
+            crate::core::session::admission::admit_tool_value(session, &output)
         }
     }
 }
 
-fn handle_procedures(session: &mut SessionState, value: Option<&str>) -> String {
-    {
-        let project_root = session.project_root.clone().unwrap_or_else(|| {
-            std::env::current_dir().map_or_else(
-                |_| "unknown".to_string(),
-                |p| p.to_string_lossy().to_string(),
-            )
-        });
-        let policy = match crate::core::config::Config::load().memory_policy_effective() {
-            Ok(p) => p,
-            Err(e) => {
-                let path = crate::core::config::Config::path().map_or_else(
-                    || "~/.lean-ctx/config.toml".to_string(),
-                    |p| p.display().to_string(),
-                );
-                return format!("Error: invalid memory policy: {e}\nFix: edit {path}");
-            }
-        };
-        let hash = crate::core::project_hash::hash_project_root(&project_root);
-        let episodes = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
-        let mut procs = crate::core::procedural_memory::ProceduralStore::load_or_create(&hash);
+fn trusted_memory_scope(session: &SessionState) -> Result<(String, String), String> {
+    let root = session
+        .strict_project_root()
+        .ok_or_else(|| "session project scope unavailable".to_string())?;
+    let hash = crate::core::project_hash::hash_project_root(&root);
+    Ok((root, hash))
+}
 
-        match value {
-            Some("detect") => {
-                procs.detect_patterns(&episodes.episodes, &policy.procedural);
-                if let Err(e) = procs.save() {
-                    return format!("Procedure detect failed: {e}");
-                }
-                crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-                    category: "procedural".to_string(),
-                    key: hash.clone(),
-                    action: "detect".to_string(),
-                });
-                format!(
-                    "Procedures updated. Total procedures: {} (episodes: {}).",
-                    procs.procedures.len(),
-                    episodes.episodes.len()
-                )
+fn auto_detect_admitted_procedures(
+    session: &SessionState,
+    project_hash: &str,
+    policy: &crate::core::memory_policy::ProceduralPolicy,
+) -> Result<usize, String> {
+    crate::core::session::admission::with_store_admission(session, |admission| {
+        let episodes =
+            crate::core::episodic_memory::EpisodicStore::load_admitted(project_hash, admission)?;
+        if episodes.episodes.is_empty() {
+            return Ok(0);
+        }
+        let (procedures, before) =
+            crate::core::procedural_memory::ProceduralStore::mutate_locked_admitted_with_authority(
+                project_hash,
+                admission,
+                |procedures, authority| {
+                    let before = procedures.procedures.len();
+                    procedures.detect_patterns_admitted(
+                        &episodes.episodes,
+                        policy,
+                        admission,
+                        authority,
+                    )?;
+                    Ok(before)
+                },
+            )?;
+        let learned = procedures.procedures.len().saturating_sub(before);
+        if learned > 0 {
+            crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
+                category: "procedural".to_string(),
+                key: format!("{learned} new"),
+                action: "auto_learn".to_string(),
+            });
+        }
+        Ok(learned)
+    })
+}
+
+fn handle_procedures(session: &mut SessionState, value: Option<&str>) -> String {
+    handle_procedures_scoped(session, value).unwrap_or_else(|_| {
+        "ERROR: procedural operation withheld by project scope or content policy.".into()
+    })
+}
+
+fn handle_procedures_scoped(session: &SessionState, value: Option<&str>) -> Result<String, String> {
+    let (_, hash) = trusted_memory_scope(session)?;
+    let policy = crate::core::config::Config::load()
+        .memory_policy_effective()
+        .map_err(|error| format!("invalid memory policy: {error}"))?;
+
+    if value == Some("detect") {
+        let (procedure_count, episode_count) =
+            crate::core::session::admission::with_store_admission(session, |admission| {
+                let episodes =
+                    crate::core::episodic_memory::EpisodicStore::load_admitted(&hash, admission)?;
+                let (procedures, ()) =
+                    crate::core::procedural_memory::ProceduralStore::mutate_locked_admitted_with_authority(
+                        &hash,
+                        admission,
+                        |procedures, authority| {
+                            procedures.detect_patterns_admitted(
+                                &episodes.episodes,
+                                &policy.procedural,
+                                admission,
+                                authority,
+                            )
+                        },
+                    )?;
+                Ok((procedures.procedures.len(), episodes.episodes.len()))
+            })?;
+        crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
+            category: "procedural".to_string(),
+            key: hash,
+            action: "detect".to_string(),
+        });
+        let output = format!(
+            "Procedures updated. Total procedures: {procedure_count} (episodes: {episode_count})."
+        );
+        return crate::core::session::admission::admit_tool_value(session, &output);
+    }
+
+    if let Some(value) = value.filter(|value| value.starts_with("suggest ")) {
+        let task = value.trim_start_matches("suggest ").trim();
+        let task = crate::core::session::admission::admit_storable_session_text(session, task)?;
+        let output = crate::core::session::admission::with_store_admission(session, |admission| {
+            let procedures =
+                crate::core::procedural_memory::ProceduralStore::load_admitted(&hash, admission)?;
+            let hits = procedures.suggest(&task);
+            if hits.is_empty() {
+                return Ok("No procedures matched.".to_string());
             }
-            Some(v) if v.starts_with("suggest ") => {
-                let task = v.trim_start_matches("suggest ").trim();
-                let hits = procs.suggest(task);
-                if hits.is_empty() {
-                    return "No procedures matched.".to_string();
-                }
-                let mut out = format!("Procedures suggested ({}):", hits.len());
-                for p in hits.into_iter().take(10) {
+            let mut out = format!("Procedures suggested ({}):", hits.len());
+            for procedure in hits.into_iter().take(10) {
+                out.push_str(&format!(
+                    "\n  {} | conf={:.0}% | success={:.0}% | steps={}",
+                    procedure.name,
+                    procedure.confidence * 100.0,
+                    procedure.success_rate() * 100.0,
+                    procedure.steps.len()
+                ));
+            }
+            Ok(out)
+        })?;
+        return crate::core::session::admission::admit_tool_value(session, &output);
+    }
+
+    let output = crate::core::session::admission::with_store_admission(session, |admission| {
+        let projected = crate::core::session::admission::for_storage(session)?;
+        let episodes =
+            crate::core::episodic_memory::EpisodicStore::load_admitted(&hash, admission)?;
+        let procedures =
+            crate::core::procedural_memory::ProceduralStore::load_admitted(&hash, admission)?;
+        let task = projected
+            .task
+            .as_ref()
+            .map(|task| task.description.clone())
+            .unwrap_or_default();
+        let suggestions = if task.is_empty() {
+            Vec::new()
+        } else {
+            procedures.suggest(&task)
+        };
+        let mut out = format!(
+            "Procedural memory: {} procedures (episodes: {})",
+            procedures.procedures.len(),
+            episodes.episodes.len()
+        );
+        if !task.is_empty() {
+            out.push_str(&format!(
+                "\nTask: {}",
+                task.chars().take(80).collect::<String>()
+            ));
+            if !suggestions.is_empty() {
+                out.push_str("\n\nSuggested:");
+                for procedure in suggestions.into_iter().take(5) {
                     out.push_str(&format!(
                         "\n  {} | conf={:.0}% | success={:.0}% | steps={}",
-                        p.name,
-                        p.confidence * 100.0,
-                        p.success_rate() * 100.0,
-                        p.steps.len()
+                        procedure.name,
+                        procedure.confidence * 100.0,
+                        procedure.success_rate() * 100.0,
+                        procedure.steps.len()
                     ));
                 }
-                out
-            }
-            _ => {
-                let task = session
-                    .task
-                    .as_ref()
-                    .map(|t| t.description.clone())
-                    .unwrap_or_default();
-                let suggestions = if task.is_empty() {
-                    Vec::new()
-                } else {
-                    procs.suggest(&task)
-                };
-
-                let mut out = format!(
-                    "Procedural memory: {} procedures (episodes: {})",
-                    procs.procedures.len(),
-                    episodes.episodes.len()
-                );
-
-                if !task.is_empty() {
-                    out.push_str(&format!(
-                        "\nTask: {}",
-                        task.chars().take(80).collect::<String>()
-                    ));
-                    if !suggestions.is_empty() {
-                        out.push_str("\n\nSuggested:");
-                        for p in suggestions.into_iter().take(5) {
-                            out.push_str(&format!(
-                                "\n  {} | conf={:.0}% | success={:.0}% | steps={}",
-                                p.name,
-                                p.confidence * 100.0,
-                                p.success_rate() * 100.0,
-                                p.steps.len()
-                            ));
-                        }
-                    }
-                }
-
-                out.push_str(
-                    "\n\nActions: ctx_session action=procedures value=detect|\"suggest <task>\"",
-                );
-                out
             }
         }
-    }
+        out.push_str("\n\nActions: ctx_session action=procedures value=detect|\"suggest <task>\"");
+        Ok(out)
+    })?;
+    crate::core::session::admission::admit_tool_value(session, &output)
 }
 
 fn handle_unknown(action: &str) -> String {
@@ -934,25 +1255,16 @@ fn handle_unknown(action: &str) -> String {
     )
 }
 
-/// Records an episode from the current session when a task completes.
-///
-/// Returns `Ok(Some(id))` on record, `Ok(None)` when the latest episode
-/// already covers the same task (duplicate guard), `Err` on policy/IO issues.
+/// Records an episode only after a completed task has been committed.
 fn auto_record_episode(
     session: &SessionState,
     tool_calls: &[(String, u64)],
     agent_id: Option<&str>,
 ) -> Result<Option<String>, String> {
-    let project_root = session.project_root.clone().unwrap_or_else(|| {
-        std::env::current_dir().map_or_else(
-            |_| "unknown".to_string(),
-            |p| p.to_string_lossy().to_string(),
-        )
-    });
+    let (_, hash) = trusted_memory_scope(session)?;
     let policy = crate::core::config::Config::load()
         .memory_policy_effective()
-        .map_err(|e| format!("invalid memory policy: {e}"))?;
-    let hash = crate::core::project_hash::hash_project_root(&project_root);
+        .map_err(|error| format!("invalid memory policy: {error}"))?;
     let Some(id) = crate::core::episodic_memory::record_session_episode(
         &hash,
         session,
@@ -969,24 +1281,7 @@ fn auto_record_episode(
         key: id.clone(),
         action: "auto_record".to_string(),
     });
-
-    // Each new episode is a chance to learn a procedure: mine the episode
-    // history for repeated tool sequences. Best-effort — pattern detection
-    // must never fail the task update itself (#478).
-    let store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
-    let episodes: Vec<crate::core::episodic_memory::Episode> =
-        store.recent(50).into_iter().cloned().collect();
-    let mut procs = crate::core::procedural_memory::ProceduralStore::load_or_create(&hash);
-    let before = procs.procedures.len();
-    procs.detect_patterns(&episodes, &policy.procedural);
-    if procs.procedures.len() > before && procs.save().is_ok() {
-        crate::core::events::emit(crate::core::events::EventKind::KnowledgeUpdate {
-            category: "procedural".to_string(),
-            key: format!("{} new", procs.procedures.len() - before),
-            action: "auto_learn".to_string(),
-        });
-    }
-
+    let _ = auto_detect_admitted_procedures(session, &hash, &policy.procedural);
     Ok(Some(id))
 }
 
@@ -1016,56 +1311,4 @@ fn parse_finding_value(value: &str) -> (Option<String>, Option<u32>, &str) {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::parse_finding_value;
-
-    #[test]
-    fn finding_with_em_dash_and_file_line() {
-        let (file, line, text) =
-            parse_finding_value("auth.rs:42 \u{2014} missing token validation");
-        assert_eq!(file.as_deref(), Some("auth.rs"));
-        assert_eq!(line, Some(42));
-        assert_eq!(text, "missing token validation");
-    }
-
-    #[test]
-    fn finding_with_ascii_dash_and_file_line() {
-        let (file, line, text) = parse_finding_value("auth.rs:42 - missing token validation");
-        assert_eq!(file.as_deref(), Some("auth.rs"));
-        assert_eq!(line, Some(42));
-        assert_eq!(text, "missing token validation");
-    }
-
-    #[test]
-    fn finding_with_em_dash_no_line() {
-        let (file, line, text) = parse_finding_value("auth module \u{2014} needs refactoring");
-        assert_eq!(file.as_deref(), Some("auth module"));
-        assert_eq!(line, None);
-        assert_eq!(text, "needs refactoring");
-    }
-
-    #[test]
-    fn finding_plain_text() {
-        let (file, line, text) = parse_finding_value("plain text finding");
-        assert_eq!(file, None);
-        assert_eq!(line, None);
-        assert_eq!(text, "plain text finding");
-    }
-
-    #[test]
-    fn finding_cyrillic_with_em_dash_issue_272() {
-        let value = "ruff: pyproject.toml dev-group \u{2014} >=0.15.14,<0.16.0 (был 0.14.x)";
-        let (file, line, text) = parse_finding_value(value);
-        assert_eq!(file.as_deref(), Some("ruff: pyproject.toml dev-group"));
-        assert_eq!(line, None);
-        assert_eq!(text, ">=0.15.14,<0.16.0 (был 0.14.x)");
-    }
-
-    #[test]
-    fn finding_em_dash_at_start() {
-        let (file, line, text) = parse_finding_value("src/main.rs:1 \u{2014} entry point");
-        assert_eq!(file.as_deref(), Some("src/main.rs"));
-        assert_eq!(line, Some(1));
-        assert_eq!(text, "entry point");
-    }
-}
+mod tests;

@@ -1,0 +1,47 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/vaults/payments/purges/prg_x",
+  "request": null,
+  "response": {
+    "body": {
+      "purge": {
+        "acks": {
+          "m": 2,
+          "n": 1
+        },
+        "approvals": [
+          {
+            "at": "2026-10-24T08:05:00Z",
+            "handle": "yves"
+          }
+        ],
+        "backups_clear_at": "2026-11-01T08:05:30Z",
+        "created_at": "2026-10-24T08:00:10Z",
+        "expires_at": "2026-10-27T08:00:10Z",
+        "id": "prg_aaaaaaaaaaaaaaaaaaaaaaezcm",
+        "item_count": 1,
+        "keys_destroyed_at": "2026-10-24T08:05:30Z",
+        "legacy_replicas": 0,
+        "offline_pending": 1,
+        "reason": "leaked_secret",
+        "requested_by": {
+          "handle": "mara"
+        },
+        "second_approval_required": false,
+        "selector": {
+          "node_ids": [
+            "n_zcjqmmor453nyxqgshlgpogwdm"
+          ]
+        },
+        "state": "propagating",
+        "vault": {
+          "name": "payments",
+          "ws": "acme"
+        }
+      }
+    },
+    "status": 200
+  },
+  "route": "W32"
+}

@@ -48,6 +48,10 @@ fn panic_payload(info: &std::panic::PanicHookInfo<'_>) -> String {
 fn write_entry_to(dir: &Path, location: &str, thread: &str, payload: &str) -> Option<PathBuf> {
     let path = dir.join("crash.log");
     rotate_if_oversized(&path);
+    // A panic message can quote the value it failed on (a parsed header, a
+    // config line, a request fragment): it gets the same redaction as every
+    // other log line before it reaches disk.
+    let payload = crate::core::redaction::redact_text(payload);
 
     let backtrace = std::backtrace::Backtrace::force_capture();
     let entry = format!(
@@ -134,10 +138,11 @@ pub fn install_panic_hook() {
              \x20 Disable temporarily: lean-ctx-off\n\
              \x20 Full uninstall:      lean-ctx uninstall\n",
         );
-        if let Some(m) = info.payload().downcast_ref::<&str>() {
-            let _ = std::fmt::Write::write_fmt(&mut msg, format_args!("  Details: {m}\n"));
-        } else if let Some(m) = info.payload().downcast_ref::<String>() {
-            let _ = std::fmt::Write::write_fmt(&mut msg, format_args!("  Details: {m}\n"));
+        if !payload.is_empty() {
+            // stderr of a daemon or LaunchAgent is often a file: redacted too.
+            let details = std::panic::catch_unwind(|| crate::core::redaction::redact_text(payload))
+                .unwrap_or_default();
+            let _ = std::fmt::Write::write_fmt(&mut msg, format_args!("  Details: {details}\n"));
         }
         if let Some(loc) = info.location() {
             let _ = std::fmt::Write::write_fmt(
@@ -198,6 +203,24 @@ mod tests {
         assert!(content.contains("payload: boom"));
         assert!(content.contains("backtrace:"));
         assert!(content.contains(env!("CARGO_PKG_VERSION")));
+    }
+
+    /// E07: the payload was written raw, so a panic quoting a credential put
+    /// it in `logs/crash.log`; it is redacted like every other log line.
+    #[test]
+    fn a_credential_in_the_panic_payload_never_reaches_the_crash_log() {
+        let tmp = tempfile::tempdir().unwrap();
+        let key = concat!("AK", "IAIOSFODNN7EXAMPLE");
+        let path = write_entry_to(
+            tmp.path(),
+            "a.rs:1:1",
+            "t",
+            &format!("invalid header: aws_access_key_id={key}"),
+        )
+        .unwrap();
+        let content = std::fs::read_to_string(&path).unwrap();
+        assert!(content.contains("payload: invalid header"), "{content}");
+        assert!(!content.contains(key), "{content}");
     }
 
     #[test]

@@ -1,0 +1,29 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/swarms/9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02/tree?parent=g_rrrrrrrrrrrrrrrrrrrrrrrrra",
+  "request": null,
+  "response": {
+    "body": {
+      "next_cursor": null,
+      "nodes": [
+        {
+          "assignee": "wkr_76aa2uwmpczt3cqkhfed",
+          "attempts": 0,
+          "criterion_id": null,
+          "id": "g_ttttttttttttttttttttttttta",
+          "kind": "task",
+          "lock_until": 1792800600000,
+          "node": "n_aaaaaaaaaaaaaaaaaaaaaadaai",
+          "parent": "g_sssssssssssssssssssssssssa",
+          "results": [],
+          "review": null,
+          "state": "claimed",
+          "title": "Profile the checkout handler"
+        }
+      ]
+    },
+    "status": 200
+  },
+  "route": "W39"
+}

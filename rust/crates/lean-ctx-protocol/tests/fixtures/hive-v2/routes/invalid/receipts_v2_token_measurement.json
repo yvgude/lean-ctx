@@ -1,0 +1,15 @@
+{
+  "case": "receipts_v2_token_measurement",
+  "base": "routes/receipts_v2.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/receipts/0/document/observation/measurements/0/name",
+      "value": "skprojabcdefghijklmnopqrstuvwxyz"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a token-like measurement name"
+}

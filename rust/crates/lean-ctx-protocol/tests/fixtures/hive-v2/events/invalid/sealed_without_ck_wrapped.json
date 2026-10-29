@@ -1,0 +1,16 @@
+{
+  "case": "sealed_without_ck_wrapped",
+  "base": "events/node.add.sealed.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/ck_wrapped"
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/ck_wrapped"
+  }
+}

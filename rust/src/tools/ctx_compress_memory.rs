@@ -20,6 +20,20 @@ pub fn handle(path: &str) -> String {
         return format!("ERROR: {e}");
     }
 
+    // Admission gate (G01). This tool rewrites a file from its ORIGINAL bytes
+    // and reports token counts only, so nothing admitted or redacted is ever
+    // written: the backup receives the original, the file receives the
+    // compaction of the original. What admission decides is whether the
+    // request may derive from this source at all — a source the read path
+    // withholds for the running request is neither compacted nor copied to a
+    // backup. (Outside a request scope the read path is a plain local read,
+    // as for every other reader.)
+    if let Err(error) = crate::tools::ctx_read::read_file_lossy(path)
+        && error.kind() == std::io::ErrorKind::PermissionDenied
+    {
+        return format!("ERROR: Cannot read {path}: {error}");
+    }
+
     let content = match std::fs::read_to_string(path) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: Cannot read {path}: {e}"),
@@ -325,5 +339,42 @@ mod tests {
             !ro.join("CLAUDE.original.md").exists(),
             "no backup may be written into a read-only root"
         );
+    }
+
+    /// G01: a memory file the request may not read was compacted in place and
+    /// copied to a `*.original.md` backup. It is now left untouched; a file
+    /// the request may read is compacted from its original bytes as before.
+    #[test]
+    fn a_withheld_memory_file_is_neither_compacted_nor_backed_up() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let dir = tempfile::tempdir().unwrap();
+        let root = dir.path().to_string_lossy().into_owned();
+        let in_request = |path: &std::path::Path| {
+            crate::tools::admitted_sources::as_agent_acquisition(&root, || {
+                handle(path.to_string_lossy().as_ref())
+            })
+        };
+        let open = dir.path().join("NOTES.md");
+        std::fs::write(&open, "# Title\n\n\n\nJust some prose here.\n").unwrap();
+        {
+            let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+            let out = in_request(&open);
+            assert!(out.starts_with("Compressed NOTES.md: "), "{out}");
+            assert!(dir.path().join("NOTES.original.md").exists());
+        }
+        let policy = crate::core::policy::load(
+            "name = \"ctx-compress-memory-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )
+        .unwrap();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+        let plan = dir.path().join("PLAN.md");
+        let original = "CONFIDENTIAL\n\n\n\nroadmap-marker for the launch\n";
+        std::fs::write(&plan, original).unwrap();
+        let out = in_request(&plan);
+        assert!(out.starts_with("ERROR: Cannot read "), "{out}");
+        assert!(!out.contains("roadmap-marker"), "{out}");
+        assert_eq!(std::fs::read_to_string(&plan).unwrap(), original);
+        assert!(!dir.path().join("PLAN.original.md").exists());
     }
 }

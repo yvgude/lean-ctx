@@ -1,0 +1,14 @@
+{
+  "name": "evidence",
+  "values": [
+    {
+      "value": "observed"
+    },
+    {
+      "value": "stated"
+    },
+    {
+      "value": "imported"
+    }
+  ]
+}

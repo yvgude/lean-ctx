@@ -23,8 +23,12 @@ pub(crate) fn cmd_verify(args: &[String]) {
 
     crate::core::output_verification::run_self_check();
 
-    match crate::tools::ctx_verify::handle_stats(format.as_deref()) {
-        Ok(out) => println!("{out}"),
+    let project_root = super::common::detect_project_root(args);
+    match super::common::CliToolRun::new("ctx_verify", &project_root, None)
+        .human_facing()
+        .deliver(|| crate::tools::ctx_verify::handle_stats(format.as_deref()))
+    {
+        Ok(out) => super::common::print_released(&out),
         Err(e) => {
             eprintln!("ERROR: {e}");
             eprintln!(

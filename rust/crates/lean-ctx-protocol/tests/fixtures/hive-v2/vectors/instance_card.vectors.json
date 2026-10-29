@@ -1,0 +1,50 @@
+{
+  "cases": [
+    {
+      "fixture": "routes/instance_card.request.json",
+      "key_id": "47983724220c8521",
+      "signature": "f0226af602129f7b951beaefe18e8e50c57dcfda014e6e3ce6917d808449d748ea38afc43b22cf7d6b6683f0d41779447eff73ea18a92717068986defb5b5b0e",
+      "signing_input": "leanctx.hive.instance_card.v1\n{\"consent_channel\":\"os_presence\",\"engine_version\":\"3.12.0\",\"key_id\":\"47983724220c8521\"}"
+    },
+    {
+      "fixture": "routes/instance_card.clear.request.json",
+      "key_id": "47983724220c8521",
+      "signature": "0f4d0612a17214e875dd37397e5b3a19b6e593d0b6241241ae261ab138e961fde377544e407139c9c47e286674dc727ec7b2dcea90bcd7f21972fabe3cca610a",
+      "signing_input": "leanctx.hive.instance_card.v1\n{\"consent_channel\":\"tty_only\",\"engine_version\":\"3.12.0\",\"key_id\":\"47983724220c8521\",\"presence_key\":null}"
+    },
+    {
+      "fixture": "routes/worker_register.request.json",
+      "key_id": "47983724220c8521",
+      "signature": "e54befa775e14beaec4a7806918530e54036ddbe5d8ada0c0e545d83f765c725deacd4ef060c1d909aba161c9305aae73def1b1d314a10767c6e1ba9c064cd03",
+      "signing_input": "leanctx.hive.worker.v1\n{\"card\":{\"availability\":\"online\",\"budget\":{\"tasks_per_day\":20},\"host_app\":\"claude-code\",\"model\":\"claude-opus-5-5\",\"model_source\":\"self_reported\",\"tools\":[\"ctx_read\",\"ctx_search\",\"ctx_shell\"]},\"host_app\":\"claude-code\",\"key_id\":\"47983724220c8521\",\"name\":\"yves-mac · Claude Code · backend\",\"role\":\"backend\",\"worker_id\":\"wkr_vk4oelpv5lzjmev44hun\"}"
+    },
+    {
+      "fixture": "routes/worker_register.alias.request.json",
+      "key_id": "47983724220c8521",
+      "signature": "91f43e4aaeff2c042bab679ef8af752ab5e7d0d5e6c9b944f74bc76d50fa84d51d14476b7b3a5976278d4d5fbe385d913be3ccc888cac03829cb0f031b3ddb0e",
+      "signing_input": "leanctx.hive.worker.v1\n{\"alias_pubkey\":\"1HZQs--lIIolw9omhGSgaKzks52xjpJnHmaS6-c5y2I\",\"card\":{\"availability\":\"idle\",\"budget\":{},\"host_app\":\"codex\",\"model\":\"unknown\",\"model_source\":\"unknown\",\"tools\":[]},\"hlc_node\":\"0e9c7f2455744dc1\",\"host_app\":\"codex\",\"key_id\":\"47983724220c8521\",\"name\":\"Codex · general\",\"place\":\"swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02\",\"role\":\"general\",\"worker_id\":\"wkr_76aa2uwmpczt3cqkhfed\"}"
+    }
+  ],
+  "presence_bind": [
+    {
+      "alg": "ed25519",
+      "card_bind_signature": "S2yOOxlYoTMF1Hn7zYdIlIzgoRKCbbq4ovrNF9hB7_w-WdAVCGFHgRRlyheA8oZRhfK4wBd9eh4R2NZmzwMnDA",
+      "instance": "instance_a",
+      "key": "presence_a",
+      "signing_input": "leanctx.hive.presence_bind.v1\n{\"alg\":\"ed25519\",\"instance_id\":\"6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b\",\"key_id\":\"ef1bd9c792ccc768\",\"public_key\":\"PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs\"}",
+      "statement": {
+        "alg": "ed25519",
+        "instance_id": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+        "key_id": "ef1bd9c792ccc768",
+        "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs"
+      }
+    }
+  ],
+  "rules": {
+    "card_domain": "leanctx.hive.instance_card.v1\n",
+    "card_signing_input": "card_domain ‖ canonical_json(request body without signature), instance key",
+    "presence_bind": "\"leanctx.hive.presence_bind.v1\\n\" ‖ canonical_json({instance_id, key_id, alg, public_key}); public_key base64url (raw 32 bytes for ed25519, SPKI DER for P-256/RSA); key_id = hex(sha256(public_key bytes))[..16]",
+    "worker_domain": "leanctx.hive.worker.v1\n",
+    "worker_signing_input": "worker_domain ‖ canonical_json(E10 body without signature), instance key (also for alias registrations)"
+  }
+}

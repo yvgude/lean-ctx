@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_request",
+    "field": "candidates",
+    "message": "candidates: 1-3 entries, kinds unique, digests distinct 64 lowercase hex"
+  }
+}

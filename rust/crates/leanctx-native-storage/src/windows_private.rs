@@ -370,12 +370,34 @@ impl Directory {
 
     /// Publishes bytes by handle-relative rename after syncing the private temp.
     pub fn atomic_write(&self, name: &str, bytes: &[u8], replace: bool) -> io::Result<()> {
+        self.atomic_write_if(name, bytes, replace, || true)
+    }
+
+    /// [`Self::atomic_write`] with one last admission by the caller: `admit`
+    /// is asked exactly once, after the private temp was written and synced
+    /// and immediately before the rename. `false` publishes nothing — the
+    /// destination is neither created nor replaced, the temp is removed, and
+    /// the call ends with `TimedOut`. Nothing here undoes a rename that
+    /// happened: what `admit` allowed is published.
+    pub fn atomic_write_if(
+        &self,
+        name: &str,
+        bytes: &[u8],
+        replace: bool,
+        admit: impl FnOnce() -> bool,
+    ) -> io::Result<()> {
         let final_name = validate_name(name)?;
         let mut temp = self.create_temp_file()?;
         let result = (|| {
             let file = temp.file.as_mut().ok_or_else(invalid_data)?;
             file.write_all(bytes)?;
             file.sync_all()?;
+            if !admit() {
+                return Err(io::Error::new(
+                    io::ErrorKind::TimedOut,
+                    "publication was not admitted",
+                ));
+            }
             rename_relative(file, self.handle(), &final_name, replace)?;
             temp.file.take();
             self.sync()

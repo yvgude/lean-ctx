@@ -17,7 +17,6 @@
 //! proven in the cloud repo and is deliberately absent here
 //! (`oss-plane-separation-v1`).
 
-use lean_ctx::core::billing::metering::metered_usage;
 use lean_ctx::core::finops_export::{self, DateRange};
 use lean_ctx::core::savings_ledger::{self, SignedSavingsBatchV1, signed_batch};
 use lean_ctx::core::tokens::count_tokens;
@@ -128,23 +127,6 @@ fn outcome_pricing_golden_path_has_verified_source_integrity() {
     assert!(
         !tampered.verify().signature_valid,
         "tampering with the totals invalidates the signature"
-    );
-
-    // ── 4. Frozen v1 source-integrity predicate ───────────────────────────────
-    let usage = metered_usage(AGENT_ID);
-    assert!(
-        usage.source_integrity_verified(),
-        "usage source integrity verifies: {}",
-        usage.headline()
-    );
-    // Compatibility remains exact, but this legacy alias is not v2 settlement
-    // eligibility or invoice authority.
-    assert_eq!(usage.is_billable(), usage.source_integrity_verified());
-    assert!(usage.signed && usage.chain_valid);
-    assert_eq!(
-        usage.net_saved_tokens,
-        summary.net_saved_tokens(),
-        "the v1 usage quantity is exactly the verified, signed savings"
     );
 
     // ── 5. FOCUS FinOps export — savings as a Credit row ──────────────────────

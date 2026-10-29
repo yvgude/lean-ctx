@@ -110,7 +110,7 @@ pub fn format_cep_report() -> String {
             return format!(
                 "{dim}No per-session CEP snapshot yet, but lean-ctx is active \
                  ({cmds} commands, {proxy_turns} proxy turns).{rst}\n\
-                 Run `lean-ctx gain` for token savings and net-of-injection bill impact.",
+                 Open `lean-ctx cockpit` (or run `lean-ctx gain`) for token savings and net-of-injection bill impact.",
                 cmds = store.total_commands,
             );
         }

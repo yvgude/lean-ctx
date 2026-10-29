@@ -139,38 +139,71 @@ fn ensure_parent(path: &Path) -> Result<(), String> {
     Ok(())
 }
 
+/// What writing a candidate will do, decided before anything is written: the
+/// rule's source binding is made of exactly [`Planned::text`], and a rule
+/// that cannot be bound under protection is never written (`provenance`).
+#[derive(Debug)]
+pub(crate) struct Planned {
+    pub path: PathBuf,
+    pub outcome: WriteOutcome,
+    /// The document the file holds once [`Planned::write`] returned: the
+    /// rendered rule, or the existing file as it is for an unchanged body.
+    pub text: String,
+}
+
+impl Planned {
+    /// Create or replace the file. Idempotent: an unchanged body is left
+    /// untouched.
+    pub(crate) fn write(&self) -> Result<(), String> {
+        if self.outcome == WriteOutcome::Unchanged {
+            return Ok(());
+        }
+        ensure_parent(&self.path)?;
+        crate::config_io::write_atomic_with_backup(&self.path, &self.text)
+    }
+}
+
+/// Plan the write of a candidate: a new file, or a merge into an existing one.
+pub(crate) fn plan(output_root: &Path, candidate: &SkillCandidate, now: &str) -> Planned {
+    let slug = full_slug(&candidate.slug);
+    let path = rule_path(output_root, &slug);
+    let on_disk = std::fs::read_to_string(&path).ok();
+    let existing = on_disk
+        .as_deref()
+        .and_then(|content| parse_existing(content).map(|rule| (rule, content)));
+
+    let (outcome, text) = match existing {
+        Some((prev, content)) if prev.body == candidate.body.trim() => {
+            (WriteOutcome::Unchanged, content.to_owned())
+        }
+        Some((prev, _)) => {
+            let created = if prev.created.is_empty() {
+                now
+            } else {
+                prev.created.as_str()
+            };
+            let content = render(candidate, prev.version + 1, created, now);
+            (WriteOutcome::Merged, content)
+        }
+        None => (WriteOutcome::Created, render(candidate, 1, now, now)),
+    };
+    Planned {
+        path,
+        outcome,
+        text,
+    }
+}
+
 /// Write a candidate, creating a new file or merging into an existing one.
-/// Idempotent: an unchanged body is left untouched.
+#[cfg(test)]
 pub(crate) fn write_candidate(
     output_root: &Path,
     candidate: &SkillCandidate,
     now: &str,
 ) -> Result<WriteOutcome, String> {
-    let slug = full_slug(&candidate.slug);
-    let path = rule_path(output_root, &slug);
-    let existing = std::fs::read_to_string(&path)
-        .ok()
-        .and_then(|c| parse_existing(&c));
-
-    if let Some(prev) = existing {
-        if prev.body == candidate.body.trim() {
-            return Ok(WriteOutcome::Unchanged);
-        }
-        let created = if prev.created.is_empty() {
-            now.to_string()
-        } else {
-            prev.created
-        };
-        let content = render(candidate, prev.version + 1, &created, now);
-        ensure_parent(&path)?;
-        crate::config_io::write_atomic_with_backup(&path, &content)?;
-        Ok(WriteOutcome::Merged)
-    } else {
-        let content = render(candidate, 1, now, now);
-        ensure_parent(&path)?;
-        crate::config_io::write_atomic_with_backup(&path, &content)?;
-        Ok(WriteOutcome::Created)
-    }
+    let planned = plan(output_root, candidate, now);
+    planned.write()?;
+    Ok(planned.outcome)
 }
 
 #[cfg(test)]
@@ -186,6 +219,7 @@ mod tests {
             recurrence: 3,
             confidence: 0.8,
             sources: vec!["sess1".into()],
+            derivation: crate::core::skillify::candidate::Derivation::default(),
         }
     }
 

@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "Upload every declared material file first.",
+    "reason": "material_missing"
+  }
+}

@@ -1,6 +1,5 @@
 //! `lean-ctx evidence-export` — portable investor/customer evidence package.
 use crate::core::{
-    integration_proof::prove_decision_loop,
     savings_tracker::SessionSavings,
     shadow::persistence::{list_reports, load_report},
     task_benchmark::{config::BenchConfig, fixtures::canonical_suite, runner::run_benchmark},
@@ -19,13 +18,33 @@ pub(crate) fn cmd_evidence_export(args: &[String]) {
         return;
     }
     match export(args) {
-        Ok((dir, format)) if format == "json" => println!("{}", json!({"output": dir})),
-        Ok((dir, _)) => println!("Evidence package written to {}", dir.display()),
+        Ok((dir, format)) if format == "json" => {
+            print_released(json!({"output": dir}).to_string(), true);
+        }
+        Ok((dir, _)) => print_released(
+            format!("Evidence package written to {}", dir.display()),
+            false,
+        ),
         Err(error) => {
             eprintln!("evidence-export: {error}");
             std::process::exit(2);
         }
     }
+}
+
+/// The command prints where the package was written — one path, as a line
+/// or as a `{"output": …}` document. It is a status line for the caller:
+/// released (the document without breaking it), never recorded as a delivery.
+fn print_released(line: String, document: bool) {
+    let root = super::common::detect_project_root(&[]);
+    let run = super::common::CliToolRun::new("ctx_proof", &root, None).human_facing();
+    let released = if document {
+        run.deliver_json(|| line)
+            .unwrap_or_else(|reason| super::common::exit_withheld(&reason))
+    } else {
+        run.deliver_text(|| line)
+    };
+    super::common::print_released(&released);
 }
 
 #[rustfmt::skip]
@@ -48,14 +67,7 @@ fn export(args: &[String]) -> io::Result<(PathBuf, String)> {
         );
     let savings = savings();
     let benchmark = run_benchmark(&canonical_suite(), &BenchConfig::default());
-    let proof = prove_decision_loop();
     let gold = validate_against_gold_set();
-    let proof_json = json!({"evidence_chain_complete": proof.evidence_chain_complete,
-        "tasks_proven": proof.tasks.len(), "accepted_rate": proof.accepted_rate,
-        "total_cost_micros": proof.total_cost_micros, "aggregate_cpao_micros": proof.aggregate_cpao_micros,
-        "tasks": proof.tasks.iter().map(|task| json!({"task_id":task.task_id,
-        "intent":task.profile_intent,"acceptance_state":task.acceptance_state,
-        "accepted":task.outcome_accepted})).collect::<Vec<_>>()});
     let gold_json = json!({"total":gold.total,"correct":gold.correct,"accuracy":gold.accuracy,
         "intent_distribution":gold.per_intent});
     let benchmark_json = serde_json::to_value(&benchmark).unwrap_or(Value::Null);
@@ -64,7 +76,6 @@ fn export(args: &[String]) -> io::Result<(PathBuf, String)> {
         ("shadow_report.json", &shadow),
         ("savings_summary.json", &savings),
         ("benchmark_results.json", &benchmark_json),
-        ("proof_result.json", &proof_json),
         ("gold_set_stats.json", &gold_json),
     ] {
         write_json(&dir, name, value)?;
@@ -99,7 +110,7 @@ fn export(args: &[String]) -> io::Result<(PathBuf, String)> {
     fs::write(
         dir.join("evidence_summary.md"),
         format!(
-            "# LeanCTX Evidence Package\n\nVersion: lean-ctx {}\n\n## Token Reduction\n- Average Reduction: {:.2}% ({} task benchmark)\n- Peak Reduction: {:.2}% (tree operations)\n\n## Value Gate\n- Total Tasks Tracked: {}\n- Accepted Rate: {:.2}%\n- Average CPAO: {}\n- Total Cost Saved: {}\n\n## Decision Loop Proof\n- Evidence Chain: {}\n- Tasks Proven: {}/5\n- All intents classified correctly: {}\n\n## Shadow Analysis\n- Baseline Cost: {}\n- Treatment Cost: {}\n- Savings: {} ({}%)\n- Outcome Acceptance Not Below Simulated Baseline: {}\n\n## Model Readiness\n- Gold Validation Set: {} tasks\n- Rules Baseline Accuracy: {:.2}%\n- Semantic Model: READY FOR TRAINING\n",
+            "# LeanCTX Evidence Package\n\nVersion: lean-ctx {}\n\n## Token Reduction\n- Average Reduction: {:.2}% ({} task benchmark)\n- Peak Reduction: {:.2}% (tree operations)\n\n## Value Gate\n- Total Tasks Tracked: {}\n- Accepted Rate: {:.2}%\n- Average CPAO: {}\n- Total Cost Saved: {}\n\n## Shadow Analysis\n- Baseline Cost: {}\n- Treatment Cost: {}\n- Savings: {} ({}%)\n- Outcome Acceptance Not Below Simulated Baseline: {}\n\n## Model Readiness\n- Gold Validation Set: {} tasks\n- Rules Baseline Accuracy: {:.2}%\n",
             env!("CARGO_PKG_VERSION"),
             average,
             tasks,
@@ -108,17 +119,6 @@ fn export(args: &[String]) -> io::Result<(PathBuf, String)> {
             aggregate.accepted as f64 * 100.0 / aggregate.total.max(1) as f64,
             money(aggregate.avg_cpao),
             money(Some(aggregate.total_cost)),
-            if proof.evidence_chain_complete {
-                "COMPLETE"
-            } else {
-                "INCOMPLETE"
-            },
-            proof.tasks.len(),
-            if proof.evidence_chain_complete {
-                "YES"
-            } else {
-                "NO"
-            },
             money(field("baseline", "total_cost_micros").and_then(Value::as_u64)),
             money(field("treatment", "total_cost_micros").and_then(Value::as_u64)),
             money(field("savings", "absolute_micros").and_then(Value::as_u64)),
@@ -176,7 +176,7 @@ fn parse(args: &[String]) -> io::Result<(PathBuf, String)> {
 }
 fn usage() {
     println!(
-        "Export a portable package of local value, shadow, savings, benchmark, and proof evidence.\n\nUsage: lean-ctx evidence-export [--output DIRECTORY] [--format <markdown|json>]\n\nExamples:\n  lean-ctx evidence-export\n  lean-ctx evidence-export --output evidence\n  lean-ctx evidence-export --output evidence --format json"
+        "Export a portable package of local value, shadow, savings, and benchmark evidence.\n\nUsage: lean-ctx evidence-export [--output DIRECTORY] [--format <markdown|json>]\n\nExamples:\n  lean-ctx evidence-export\n  lean-ctx evidence-export --output evidence\n  lean-ctx evidence-export --output evidence --format json"
     );
 }
 #[rustfmt::skip]
@@ -189,5 +189,5 @@ mod tests { use super::*; use std::path::Path; fn args(dir: &Path) -> Vec<String
     #[test] fn test_parse_rejects_missing_or_unknown_options() { assert!(parse(&["--output".into()]).is_err()); assert!(parse(&["--unknown".into()]).is_err()); }
     #[test] fn test_export_creates_directory() { let dir = std::env::temp_dir().join("evidence-export-dir"); let _ = fs::remove_dir_all(&dir); export(&args(&dir)).unwrap(); assert!(dir.is_dir()); }
     #[test] fn test_export_creates_summary() { let dir = std::env::temp_dir().join("evidence-export-summary"); export(&args(&dir)).unwrap(); assert!(dir.join("evidence_summary.md").is_file()); }
-    #[test] fn test_export_json_valid() { let dir = std::env::temp_dir().join("evidence-export-json"); export(&args(&dir)).unwrap(); for name in ["value_assessments.json","shadow_report.json","savings_summary.json","benchmark_results.json","proof_result.json","gold_set_stats.json"] { assert!(serde_json::from_slice::<Value>(&fs::read(dir.join(name)).unwrap()).is_ok()); } }
+    #[test] fn test_export_json_valid() { let dir = std::env::temp_dir().join("evidence-export-json"); export(&args(&dir)).unwrap(); for name in ["value_assessments.json","shadow_report.json","savings_summary.json","benchmark_results.json","gold_set_stats.json"] { assert!(serde_json::from_slice::<Value>(&fs::read(dir.join(name)).unwrap()).is_ok()); } }
 }

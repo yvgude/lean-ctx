@@ -1,15 +1,12 @@
+//! The session wake-up briefing and one-shot efficiency hints. The read-path drivers (session-start preload,
+//! related hints, silent import preload, prefetch, auto-dedup) were retired on
+//! 2026-10-17: an A/B on the retrieval corpus returned byte-identical responses
+//! and equal R@5/MRR with them off, while the session start cost 2-14 s more.
+
 use std::sync::atomic::Ordering;
 
 pub use crate::core::autonomy::{AutonomyState, SearchHistory, should_auto_consolidate};
-use crate::core::autonomy_drivers::{
-    AutonomyDriverDecisionV1, AutonomyDriverEventV1, AutonomyDriverKindV1, AutonomyPhaseV1,
-    AutonomyVerdictV1,
-};
-use crate::core::cache::SessionCache;
-use crate::core::graph_provider::GraphProvider;
-use crate::core::protocol;
 use crate::core::tokens::count_tokens;
-use crate::tools::CrpMode;
 
 fn profile_autonomy() -> crate::core::profiles::ProfileAutonomy {
     crate::core::profiles::active_profile().autonomy
@@ -19,337 +16,72 @@ fn autonomy_enabled_effective(state: &AutonomyState) -> bool {
     state.is_enabled() && profile_autonomy().enabled_effective()
 }
 
-fn record_event(
-    phase: AutonomyPhaseV1,
-    tool: &str,
-    action: Option<&str>,
-    decisions: Vec<AutonomyDriverDecisionV1>,
-) {
-    let admitted = decisions
-        .iter()
-        .filter(|decision| decision.verdict == AutonomyVerdictV1::Run)
-        .count() as u64;
-    let denied = decisions
-        .iter()
-        .filter(|decision| decision.verdict == AutonomyVerdictV1::Skip)
-        .count() as u64;
-    if (admitted > 0 || denied > 0)
-        && let Err(error) =
-            crate::core::telemetry_aggregate::record_autopilot_decisions(admitted, denied)
-    {
-        tracing::debug!("telemetry autopilot aggregate unavailable: {error}");
-    }
-    let mut store = crate::core::autonomy_drivers::AutonomyDriversV1::load();
-    let ev = AutonomyDriverEventV1 {
-        seq: 0,
-        created_at: chrono::Utc::now().to_rfc3339(),
-        phase,
-        role: crate::core::roles::active_role_name(),
-        profile: crate::core::profiles::active_profile_name(),
-        tool: tool.to_string(),
-        action: action.map(std::string::ToString::to_string),
-        decisions,
-    };
-    store.record(ev);
-    let _ = store.save();
-}
-
-/// Auto-preloads project context on the first tool call of a session.
-pub fn session_lifecycle_pre_hook(
+/// The wake-up briefing (last task, recent decisions, project facts, active
+/// peers) for the first tool call of a session, as `--- AUTO CONTEXT ---`.
+///
+/// It used to be appended to a full project overview, which on any real
+/// project exceeded the injection cap, so the briefing was built (2-14 s) and
+/// dropped. Only the briefing is built now, without the graph, and its facts
+/// are fitted to the cap: on 932 real knowledge stores the facts block alone
+/// exceeded it for 19 % (p50 319, p90 715 tokens).
+pub fn session_wakeup_briefing(
     state: &AutonomyState,
     tool_name: &str,
-    cache: &mut SessionCache,
     task: Option<&str>,
     project_root: Option<&str>,
-    crp_mode: CrpMode,
 ) -> Option<String> {
-    // Legacy overview/preload records do not carry the original sources needed
-    // to reauthorize derived filenames, graph edges or memory under a policy.
-    // Keep the one-shot latch available; explicit admitted tools remain useful.
-    if crate::core::policy::runtime::is_active() {
+    // Memory text carries no original-source authority under a policy.
+    if crate::core::policy::runtime::is_active() || !autonomy_enabled_effective(state) {
         return None;
     }
-    if !autonomy_enabled_effective(state) {
+    // ctx_preload renders the briefing itself; it keeps the slot for the next call.
+    if tool_name == "ctx_preload" {
         return None;
     }
-
-    if tool_name == "ctx_overview" || tool_name == "ctx_preload" {
-        return None;
-    }
-
-    let prof = profile_autonomy();
-    let root = match project_root {
-        Some(r) if !r.is_empty() && r != "." => r.to_string(),
-        _ => return None,
-    };
-
-    // Keep the session eligible for a later retry: do not claim initialization
-    // while the guardian is asking opportunistic work to back off.
-    if crate::core::memory_guard::is_under_pressure() {
-        return None;
-    }
-
+    let root = project_root.filter(|r| !r.is_empty() && *r != ".")?;
     if state
-        .session_initialized
+        .session_briefed
         .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
         .is_err()
     {
         return None;
     }
-
-    let mut decisions = Vec::new();
-
-    if !state.config.auto_preload || !prof.auto_preload_effective() {
-        decisions.push(AutonomyDriverDecisionV1 {
-            driver: AutonomyDriverKindV1::Preload,
-            verdict: AutonomyVerdictV1::Skip,
-            reason_code: "disabled".to_string(),
-            reason: "auto_preload disabled by config/profile".to_string(),
-            detail: None,
-        });
-        record_event(AutonomyPhaseV1::PreCall, tool_name, None, decisions);
-        return None;
-    }
-
-    let chosen_tool = if task.is_some() {
-        "ctx_preload"
+    // Context packages marked auto-load were applied by the retired
+    // session-start overview; they still apply once, on the first call.
+    let loaded = crate::core::context_package::auto_load_packages(root);
+    let packages = (!loaded.is_empty())
+        .then(|| format!("CONTEXT PACKAGES AUTO-LOADED: {}", loaded.join(", ")));
+    // Hive tasks (H2): the claims this machine holds here, then open tasks.
+    let tasks = crate::core::hive::tasks::briefing(std::path::Path::new(root));
+    let frame = |briefing: &str| format!("{AUTO_CONTEXT_OPEN}\n{briefing}\n{AUTO_CONTEXT_CLOSE}");
+    let briefing = if crate::core::config::Config::load().enable_wakeup_ctx {
+        let reserved = count_tokens(&frame(&format!(
+            "{}\n{}",
+            packages.as_deref().unwrap_or(""),
+            tasks.as_deref().unwrap_or("")
+        )));
+        let budget = AUTO_CONTEXT_MAX_TOKENS.saturating_sub(reserved);
+        crate::tools::ctx_overview::build_wakeup_briefing_within(root, task, budget)
     } else {
-        "ctx_overview"
+        String::new()
     };
-    // Automatic context is opportunistic: a cold graph must never put the
-    // triggering interactive tool call on the synchronous graph-build path.
-    // `open_best_effort` starts the lazy build and returns None until ready;
-    // keep the one-shot latch open so a later tool call can retry.
-    if crate::core::graph_provider::open_best_effort(&root).is_none() {
-        state.session_initialized.store(false, Ordering::SeqCst);
-        return None;
-    }
-
-    let (result, usable) = if let Some(task_desc) = task {
-        crate::tools::ctx_preload::handle(cache, task_desc, Some(&root), crp_mode)
-    } else {
-        let cache_readonly = &*cache;
-        crate::tools::ctx_overview::handle(cache_readonly, None, Some(&root), crp_mode)
-    };
-
-    let empty = !usable || result.trim().is_empty();
-    decisions.push(AutonomyDriverDecisionV1 {
-        driver: AutonomyDriverKindV1::Preload,
-        verdict: AutonomyVerdictV1::Run,
-        reason_code: "session_start".to_string(),
-        reason: "first tool call in session".to_string(),
-        detail: Some(format!("tool={chosen_tool} empty={empty}")),
-    });
-    record_event(AutonomyPhaseV1::PreCall, tool_name, None, decisions);
-
-    if empty {
-        if let Err(error) = crate::core::telemetry_aggregate::record_autopilot_fallback() {
-            tracing::debug!("telemetry autopilot fallback aggregate unavailable: {error}");
-        }
-        return None;
-    }
-
-    Some(format!(
-        "--- AUTO CONTEXT ---\n{result}\n--- END AUTO CONTEXT ---"
-    ))
+    let body = [
+        packages.unwrap_or_default(),
+        tasks.unwrap_or_default(),
+        briefing,
+    ]
+    .into_iter()
+    .filter(|part| !part.trim().is_empty())
+    .collect::<Vec<_>>()
+    .join("\n");
+    (!body.is_empty()).then(|| frame(&body))
 }
 
-/// Appends related-file hints and silently preloads imports after a file read.
-pub fn enrich_after_read(
-    state: &AutonomyState,
-    cache: &mut SessionCache,
-    file_path: &str,
-    project_root: Option<&str>,
-    task: Option<&str>,
-    crp_mode: CrpMode,
-    minimal_overhead: bool,
-) -> EnrichResult {
-    let mut result = EnrichResult::default();
-
-    if !autonomy_enabled_effective(state) {
-        return result;
-    }
-
-    let prof = profile_autonomy();
-    let root = match project_root {
-        Some(r) if !r.is_empty() && r != "." => r.to_string(),
-        _ => return result,
-    };
-
-    let Some(open) = crate::core::graph_provider::open_or_build(&root) else {
-        return result;
-    };
-    let provider = &open.provider;
-    if provider.file_count() == 0 {
-        return result;
-    }
-
-    if state.config.auto_related && prof.auto_related_effective() {
-        result.related_hint = build_related_hints(cache, file_path, provider);
-    }
-
-    if state.config.silent_preload && prof.silent_preload_effective() {
-        silent_preload_imports(cache, file_path, provider, &root);
-    }
-
-    if !minimal_overhead && prof.auto_prefetch_effective() {
-        let mut decisions = Vec::new();
-        let changed = vec![file_path.to_string()];
-        let out = crate::tools::ctx_prefetch::handle(
-            cache,
-            &root,
-            task,
-            Some(&changed),
-            prof.prefetch_budget_tokens_effective(),
-            Some(prof.prefetch_max_files_effective()),
-            crp_mode,
-        );
-        let summary = out.lines().next().unwrap_or("").trim().to_string();
-        decisions.push(AutonomyDriverDecisionV1 {
-            driver: AutonomyDriverKindV1::Prefetch,
-            verdict: AutonomyVerdictV1::Run,
-            reason_code: "after_read".to_string(),
-            reason: "bounded prefetch after ctx_read".to_string(),
-            detail: if summary.is_empty() {
-                None
-            } else {
-                Some(summary)
-            },
-        });
-        record_event(AutonomyPhaseV1::PostRead, "ctx_read", None, decisions);
-    }
-
-    result
-}
-
-/// Output from post-read enrichment: optional related-file hints.
-#[derive(Default)]
-pub struct EnrichResult {
-    pub related_hint: Option<String>,
-}
-
-fn build_related_hints(
-    cache: &SessionCache,
-    file_path: &str,
-    provider: &GraphProvider,
-) -> Option<String> {
-    let mut related: Vec<String> = Vec::new();
-    for path in provider
-        .dependencies(file_path)
-        .into_iter()
-        .chain(provider.dependents(file_path))
-    {
-        if related.len() >= 3 {
-            break;
-        }
-        if cache.get(&path).is_none() && !related.contains(&path) {
-            related.push(path);
-        }
-    }
-
-    if related.is_empty() {
-        return None;
-    }
-
-    let hints: Vec<String> = related.iter().map(|p| protocol::shorten_path(p)).collect();
-
-    Some(format!("[related: {}]", hints.join(", ")))
-}
-
-fn silent_preload_imports(
-    cache: &mut SessionCache,
-    file_path: &str,
-    provider: &GraphProvider,
-    project_root: &str,
-) {
-    let imports: Vec<String> = provider
-        .dependencies(file_path)
-        .into_iter()
-        .take(2)
-        .collect();
-
-    let jail_root = std::path::Path::new(project_root);
-    for path in imports {
-        let candidate = std::path::Path::new(&path);
-        let candidate = if candidate.is_absolute() {
-            candidate.to_path_buf()
-        } else {
-            jail_root.join(&path)
-        };
-        let Ok((jailed, warning)) = crate::core::io_boundary::jail_and_check_path(
-            "autonomy:silent_preload",
-            &candidate,
-            jail_root,
-        ) else {
-            continue;
-        };
-        if warning.is_some() {
-            continue;
-        }
-        let jailed_s = jailed.to_string_lossy().to_string();
-        if cache.get(&jailed_s).is_some() {
-            continue;
-        }
-        // Don't hydrate cloud placeholders during automatic import preload (#363).
-        if crate::core::cloud_files::is_cloud_placeholder(&jailed) {
-            continue;
-        }
-
-        if let Ok(content) = std::fs::read_to_string(&jailed) {
-            let tokens = count_tokens(&content);
-            if tokens < 5000 {
-                cache.store(&jailed_s, &content);
-            }
-        }
-    }
-}
-
-/// Runs cache deduplication once the entry count exceeds the configured threshold.
-pub fn maybe_auto_dedup(state: &AutonomyState, cache: &mut SessionCache, trigger_tool: &str) {
-    if !autonomy_enabled_effective(state) {
-        return;
-    }
-
-    let prof = profile_autonomy();
-    if !state.config.auto_dedup || !prof.auto_dedup_effective() {
-        return;
-    }
-
-    if state
-        .dedup_applied
-        .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-        .is_err()
-    {
-        return;
-    }
-
-    let entries = cache.get_all_entries();
-    let threshold = state
-        .config
-        .dedup_threshold
-        .max(prof.dedup_threshold_effective())
-        .max(1);
-    if entries.len() < threshold {
-        state.dedup_applied.store(false, Ordering::SeqCst);
-        return;
-    }
-
-    let mut decisions = Vec::new();
-    let out = crate::tools::ctx_dedup::handle_action(cache, "apply");
-    let summary = out.lines().next().unwrap_or("").trim().to_string();
-    decisions.push(AutonomyDriverDecisionV1 {
-        driver: AutonomyDriverKindV1::Dedup,
-        verdict: AutonomyVerdictV1::Run,
-        reason_code: "threshold_reached".to_string(),
-        reason: format!("cache entries >= {threshold}"),
-        detail: if summary.is_empty() {
-            None
-        } else {
-            Some(summary)
-        },
-    });
-    record_event(AutonomyPhaseV1::PostRead, trigger_tool, None, decisions);
-}
+/// The largest `--- AUTO CONTEXT ---` block a reply carries; larger blocks are
+/// dropped, so the briefing is fitted to it.
+pub const AUTO_CONTEXT_MAX_TOKENS: usize = 400;
+const AUTO_CONTEXT_OPEN: &str = "--- AUTO CONTEXT ---";
+const AUTO_CONTEXT_CLOSE: &str = "--- END AUTO CONTEXT ---";
 
 fn take_large_output_hint_once(state: &AutonomyState, key: &str) -> bool {
     if !autonomy_enabled_effective(state) {
@@ -456,127 +188,9 @@ pub fn shell_efficiency_hint(
     None
 }
 
-fn looks_like_json(text: &str) -> bool {
-    let t = text.trim();
-    if !(t.starts_with('{') || t.starts_with('[')) {
-        return false;
-    }
-    serde_json::from_str::<serde_json::Value>(t).is_ok()
-}
-
-/// Applies `ctx_response` automatically for large outputs (guarded + bounded).
-/// Never runs on JSON outputs to avoid breaking machine-readable responses.
-pub fn maybe_auto_response(
-    state: &AutonomyState,
-    tool_name: &str,
-    action: Option<&str>,
-    output: &str,
-    crp_mode: CrpMode,
-    minimal_overhead: bool,
-) -> String {
-    if minimal_overhead || !autonomy_enabled_effective(state) {
-        return output.to_string();
-    }
-
-    let prof = profile_autonomy();
-    if !prof.auto_response_effective() {
-        return output.to_string();
-    }
-    if tool_name == "ctx_response" {
-        return output.to_string();
-    }
-
-    let input_tokens = count_tokens(output);
-    if input_tokens < prof.response_min_tokens_effective() {
-        return output.to_string();
-    }
-    if looks_like_json(output) {
-        record_event(
-            AutonomyPhaseV1::PostCall,
-            tool_name,
-            action,
-            vec![AutonomyDriverDecisionV1 {
-                driver: AutonomyDriverKindV1::Response,
-                verdict: AutonomyVerdictV1::Skip,
-                reason_code: "json_output".to_string(),
-                reason: "skip response shaping for JSON outputs".to_string(),
-                detail: None,
-            }],
-        );
-        return output.to_string();
-    }
-
-    let start = std::time::Instant::now();
-    let compressed = crate::tools::ctx_response::handle(output, crp_mode);
-    let duration = start.elapsed();
-    let output_tokens = count_tokens(&compressed);
-
-    let fallback = compressed == output;
-    let (reason_code, reason) = if fallback {
-        (
-            "no_savings".to_string(),
-            "ctx_response made no changes".to_string(),
-        )
-    } else {
-        (
-            "output_large".to_string(),
-            "response shaping applied".to_string(),
-        )
-    };
-
-    record_event(
-        AutonomyPhaseV1::PostCall,
-        tool_name,
-        action,
-        vec![AutonomyDriverDecisionV1 {
-            driver: AutonomyDriverKindV1::Response,
-            verdict: AutonomyVerdictV1::Run,
-            reason_code,
-            reason,
-            detail: Some(format!(
-                "tokens {}→{} in {:.1}ms",
-                input_tokens,
-                output_tokens,
-                duration.as_micros() as f64 / 1000.0
-            )),
-        }],
-    );
-    if fallback && let Err(error) = crate::core::telemetry_aggregate::record_autopilot_fallback() {
-        tracing::debug!("telemetry autopilot fallback aggregate unavailable: {error}");
-    }
-
-    compressed
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    #[test]
-    fn autonomy_state_starts_uninitialized() {
-        let state = AutonomyState::new();
-        assert!(!state.session_initialized.load(Ordering::SeqCst));
-        assert!(!state.dedup_applied.load(Ordering::SeqCst));
-    }
-
-    #[test]
-    fn session_initialized_fires_once() {
-        let state = AutonomyState::new();
-        let first = state.session_initialized.compare_exchange(
-            false,
-            true,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        );
-        assert!(first.is_ok());
-        let second = state.session_initialized.compare_exchange(
-            false,
-            true,
-            Ordering::SeqCst,
-            Ordering::SeqCst,
-        );
-        assert!(second.is_err());
-    }
 
     #[test]
     fn shell_hint_for_grep() {
@@ -584,6 +198,8 @@ mod tests {
         let hint = shell_efficiency_hint(&state, "grep -rn foo .", 100, 95);
         assert!(hint.is_some());
         assert!(hint.unwrap().contains("ctx_search"));
+        let hint = shell_efficiency_hint(&state, "cat src/main.rs", 100, 95);
+        assert!(hint.is_some_and(|h| h.contains("ctx_read")));
     }
 
     #[test]

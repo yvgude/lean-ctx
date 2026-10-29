@@ -1,0 +1,11 @@
+{
+  "lease": {
+    "expires_at": 1792800600000,
+    "fencing_token": 9,
+    "lease_id": "bl_01jb8zc",
+    "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "resource": "ledger-close",
+    "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+  },
+  "t": "lease.expired"
+}

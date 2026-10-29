@@ -322,6 +322,8 @@ pub fn escalate_calls(
     // interactive call must not queue for the write lock, and lookups are
     // keyed by the caller's content hash anyway.
     let deps = dependency_revision(project_root);
+    // One storage-admission snapshot for every answer this run keeps.
+    let admission = crate::core::context_admission::stores::StoreAdmission::current();
     let started = Instant::now();
     // Per language: identity of the live backend (a cheap registry peek,
     // remembered unless the backend was busy) and whether the backend is
@@ -380,7 +382,7 @@ pub fn escalate_calls(
         match resolve_definition(project_root, &edge.caller_file, (line, col), access, inputs) {
             Ok(answer) => {
                 if let Some(record) = to_cache(&answer.resolution, &answer.backend, &context) {
-                    let _ = graph.semantic_store(site, hash, &record);
+                    let _ = graph.semantic_store(site, hash, &record, &admission);
                 }
                 live_identity.insert(ext, LiveIdentity::Known(answer.backend.clone()));
                 (out.verdicts[i], out.unsettled[i]) = match answer.resolution {

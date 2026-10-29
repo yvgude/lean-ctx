@@ -13,7 +13,7 @@
 //! These complement the existing mechanisms:
 //! - `verbosity.rs` — wire-level "be concise" steer (reduces verbosity ~33%)
 //! - `output_savings.rs` — A/B measurement of output reduction
-//! - `effort_routing.rs` — thinking budget control
+//! - `effort.rs` — the operator's constant reasoning-effort level
 //!
 //! **Opt-in only** (`proxy.response_cache = true`). Off by default.
 //!

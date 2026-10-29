@@ -1,0 +1,29 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/me/swarm-invites",
+  "request": null,
+  "response": {
+    "body": {
+      "items": [
+        {
+          "created_at": 1792750000000,
+          "expires_at": 1793959600000,
+          "id": "inv_01JC0SW4RM1NV1TE00000000A1",
+          "invited_by": "yves",
+          "swarm": {
+            "id": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+            "slug": "checkout-latency",
+            "title": "Checkout latency below 300 ms"
+          },
+          "workspace": {
+            "name": "Acme",
+            "slug": "acme"
+          }
+        }
+      ]
+    },
+    "status": 200
+  },
+  "route": "W66"
+}

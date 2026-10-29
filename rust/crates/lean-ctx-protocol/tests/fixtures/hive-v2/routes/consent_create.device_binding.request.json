@@ -1,0 +1,14 @@
+{
+  "binding": "device",
+  "consent_id": "cns_abcdefgh234567ac",
+  "expires_at": 1792886400000,
+  "kind": "link_vault",
+  "subject": {
+    "bound_repo": "gitlab.acme.example/acme/payments",
+    "link_digest": "7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a7a",
+    "remote_seen": "gitlab.acme.example/acme/payments",
+    "target_vault": null,
+    "vault": "acme/payments"
+  },
+  "subject_digest": "d8270aab608ff3a69d627953aa9cedaafc6c0cb931b07855dfda7b7440abede4"
+}

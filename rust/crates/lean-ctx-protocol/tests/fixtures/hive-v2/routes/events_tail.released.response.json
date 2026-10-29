@@ -1,0 +1,82 @@
+{
+  "epoch": 0,
+  "events": [],
+  "head_seq": 18,
+  "held_results": [],
+  "next_since": 18,
+  "released": [
+    {
+      "actor": {
+        "kind": "worker"
+      },
+      "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqaq",
+      "body": {
+        "body_nonce": "04040404040404040404040404040404",
+        "commands": [
+          {
+            "cmd": "make deploy SECRETS=webhook",
+            "cwd_hint": "services/payments",
+            "shell": "sh"
+          }
+        ],
+        "evidence": "observed",
+        "preconditions": [
+          "Maintainer role in the provider dashboard"
+        ],
+        "steps": [
+          "Create the new secret in the provider dashboard.",
+          "Deploy with both secrets accepted for one hour.",
+          "Remove the old secret from the deployment."
+        ],
+        "title": "Rotate the webhook signing secret"
+      },
+      "body_commit": "b975ccdfb6f1cb55120409a87f86977421a1aee9b3b9d2f4ede407c016e7a09d",
+      "capture": {
+        "evidence": "observed",
+        "gate_version": 1,
+        "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+      },
+      "causal_base": 3,
+      "event_id": "01M5NKA5X0005000000000W004",
+      "flags": {
+        "commands": true
+      },
+      "hlc": {
+        "counter": 0,
+        "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+        "wall_ms": 1792800004000
+      },
+      "key_id": "47983724220c8521",
+      "node_type": "procedure",
+      "op": "node.add",
+      "place": {
+        "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+        "kind": "vault"
+      },
+      "provenance": "own",
+      "provenance_claim": "own",
+      "received_at": 1792800004350,
+      "review_id": "rv_aaaaaaaaaaaaaaaaaaaaaadxaq",
+      "review_state": "confirmed",
+      "reviewed_by": "maintainer",
+      "schema": "leanctx.hive.event/v2",
+      "screening": {
+        "counts": {
+          "forbidden": 0,
+          "local_path": 0,
+          "pii": 0,
+          "redaction": 0,
+          "secret": 0
+        },
+        "scanner_version": 1
+      },
+      "seq": 4,
+      "signature": "e664c51c9798fb28c2cb3885f9a9204969ac2105f8333638b2f5770ab6c2fb0a1a76563e00f406997d923f6078d798b29edf978894df844904cf1b7204e1e00a",
+      "target": "n_aaaaaaaaaaaaaaaaaaaaaacaaq",
+      "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+    }
+  ],
+  "server_time": 1792800040000,
+  "trust_rev": 4,
+  "withheld": []
+}

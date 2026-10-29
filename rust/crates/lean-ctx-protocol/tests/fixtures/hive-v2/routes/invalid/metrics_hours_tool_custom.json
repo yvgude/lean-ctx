@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_tool_custom",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets/0/slices/0/tools/0/tool",
+      "value": "acme_secret_project"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a tool outside the registry (K2 H3)"
+}

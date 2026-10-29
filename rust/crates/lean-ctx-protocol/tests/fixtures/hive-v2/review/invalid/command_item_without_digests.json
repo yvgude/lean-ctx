@@ -1,0 +1,14 @@
+{
+  "case": "command_item_without_digests",
+  "base": "review/item.procedure.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/command_digests",
+      "value": []
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

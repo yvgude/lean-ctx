@@ -1,0 +1,16 @@
+{
+  "case": "progress_without_progress",
+  "base": "bus/message.progress.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/body",
+      "value": {
+        "goal": "g_aaaaaaaaaaaaaaaaaaaaaaaaaq"
+      }
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

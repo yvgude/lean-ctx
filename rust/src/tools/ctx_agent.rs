@@ -1,14 +1,17 @@
-use std::fmt::Write as _;
-
 use crate::core::a2a::message::{MessagePriority, PrivacyLevel};
 use crate::core::a2a::task::TaskStore;
-use crate::core::agents::{AgentDiary, AgentRegistry, AgentStatus, DiaryEntryType};
-use crate::core::evidence_ledger::EvidenceLedgerV1;
+use crate::core::agents::{
+    AgentDiary, AgentRegistry, AgentStatus, DiaryEntryType, ScratchpadEntry,
+};
 use crate::core::ocla::capsule::global_capsule_store;
 use crate::core::ocla::registry::OclaRegistry;
 use crate::core::ocla::types::{
     AGENT_ENVELOPE_SCHEMA_VERSION, AgentEnvelope, AgentMessageRequest, OclaRequestContext,
 };
+
+#[path = "ctx_agent_control.rs"]
+mod control;
+use control::{control_status, lease_resource};
 
 fn presence_ttl_hours() -> u64 {
     crate::core::config::Config::load()
@@ -29,6 +32,7 @@ pub(crate) const ACTIONS: &[&str] = &[
     "list",
     "post",
     "read",
+    "wait",
     "status",
     "info",
     "handoff",
@@ -48,7 +52,275 @@ pub(crate) const ACTIONS: &[&str] = &[
     "lease_acquire",
     "lease_renew",
     "lease_release",
+    "send",
+    "reply",
+    "inbox",
 ];
+
+/// Arguments of the Hive message actions (`send`, `reply`, `inbox`).
+#[derive(Debug, Clone, Default)]
+pub struct MessageArgs {
+    pub message_type: Option<String>,
+    pub text: Option<String>,
+    pub to: Option<String>,
+    pub to_instance: Option<String>,
+    pub reply_to: Option<String>,
+    pub deadline_hours: Option<u64>,
+    pub swarm_id: Option<String>,
+    pub references: Vec<String>,
+}
+
+impl MessageArgs {
+    fn untyped(text: Option<&str>, category: Option<&str>, to: Option<&str>) -> Self {
+        Self {
+            message_type: category.map(str::to_string),
+            text: text.map(str::to_string),
+            to: to.map(str::to_string),
+            ..Self::default()
+        }
+    }
+}
+
+/// `send`: a typed message to the project's Hive channel (or a
+/// swarm). `reply`: answers a received message in its own network and
+/// thread (type defaults to `answer`). `inbox`: unread Hive messages and
+/// task events, every body wrapped as foreign data.
+pub fn handle_message(
+    action: &str,
+    args: &MessageArgs,
+    project_root: &str,
+    current_agent_id: Option<&str>,
+) -> String {
+    use crate::core::hive::bus::messages::{
+        InboxFilter, SendRequest, TYPES, inbox_for_root, send_from_root,
+    };
+    let Some(agent) = current_agent_id else {
+        return "Error: agent must be registered first (use action=register)".to_string();
+    };
+    if action == "inbox" {
+        let filter = InboxFilter {
+            message_type: args.message_type.as_deref(),
+        };
+        return inbox_for_root(project_root, agent, filter)
+            .unwrap_or_else(|e| format!("Error: {e}"));
+    }
+    let Some(text) = args.text.as_deref() else {
+        return format!("Error: message is required for {action}");
+    };
+    let reply_to = args.reply_to.as_deref();
+    if action == "reply" && reply_to.is_none() {
+        return "Error: reply_to (the gid of the message answered) is required".to_string();
+    }
+    let message_type = args
+        .message_type
+        .as_deref()
+        .or((action == "reply").then_some("answer"));
+    let request = SendRequest {
+        message_type,
+        text,
+        to: args.to.as_deref(),
+        to_instance: args.to_instance.as_deref(),
+        reply_to,
+        deadline_hours: args.deadline_hours,
+        swarm_id: args.swarm_id.as_deref(),
+        references: &args.references,
+    };
+    match send_from_root(project_root, agent, &request) {
+        Ok(id) => format!(
+            "Queued [{}] {id}; the Hive relay sends it (types: {TYPES})",
+            message_type.unwrap_or("?")
+        ),
+        Err(error) => format!("Error: {error}"),
+    }
+}
+
+/// `action=read` with a typed outcome: `Ok` is the reply, `Err` is the text
+/// of a failed read — the same text [`handle`] answers. `read` is the one
+/// action of this tool that declares every source
+/// (`CtxAgentTool::publishes_every_source`), so its failure must reach the
+/// registered tool as a failure and never as a reply that could be recorded
+/// as a delivery of the sources captured before it failed.
+pub fn handle_read(
+    message: Option<&str>,
+    current_agent_id: Option<&str>,
+    project_root: &str,
+) -> Result<String, String> {
+    // Same admission as `handle`: unadmitted caller text refuses the call.
+    if let Some(text) = message
+        && let Err(withheld) = crate::core::context_admission::carrier::admit_for_store(text)
+    {
+        return Err(format!("Error: {}", withheld.message("agent message")));
+    }
+    read_messages(current_agent_id, project_root)
+}
+
+/// The unread messages of `current_agent_id` in `project_root`.
+fn read_messages(current_agent_id: Option<&str>, project_root: &str) -> Result<String, String> {
+    let Some(agent_id) = current_agent_id else {
+        return Err("Error: agent must be registered first (use action=register)".to_string());
+    };
+    read_messages_as(agent_id, project_root, true)
+}
+
+/// The line `read`/`wait` print once after an expired registration was renewed.
+fn renewed_line(agent_id: &str) -> String {
+    format!(
+        "Note: the registration of {agent_id} had expired and was renewed; retry a claim refused meanwhile.\n"
+    )
+}
+
+/// One `read` answers at most this much message text (at least one
+/// message); the rest stays unread and the answer says how many. Hosts
+/// archive or cut longer tool answers, and the cut messages were lost.
+pub(crate) const READ_PAGE_BYTES: usize = 6_000;
+
+/// One unread message as `read` shows it.
+fn render_message(m: &ScratchpadEntry, project_root: &str) -> String {
+    let age = (chrono::Utc::now() - m.timestamp).num_minutes();
+    // A new delivery: re-authorized under the current policy. One from
+    // another instance carries its sender and kind inside the fence.
+    if crate::core::hive::bus::relay::is_inbound(m) {
+        return format!(
+            "  [hive] ({age}m ago):\n{}\n",
+            m.served_message(Some(project_root))
+        );
+    }
+    format!(
+        "  [{}] from {} ({}m ago): {}\n",
+        m.category,
+        m.from_agent,
+        age,
+        m.served_message(Some(project_root))
+    )
+}
+
+/// The unread messages of `agent_id`, oldest first and at most
+/// [`READ_PAGE_BYTES`] per call; only the ones shown are marked read.
+/// `own_process`: the call comes from the agent's own session, which renews
+/// its lease (and revives an expired one); `lean-ctx agent wait` reads for
+/// it from another process.
+pub(crate) fn read_messages_as(
+    agent_id: &str,
+    project_root: &str,
+    own_process: bool,
+) -> Result<String, String> {
+    let (shown, left) = match AgentRegistry::mutate_locked(|registry| {
+        if own_process {
+            registry.renew_worker(agent_id)?;
+        }
+        registry.read_unread_page(agent_id, project_root, READ_PAGE_BYTES, |m| {
+            render_message(m, project_root)
+        })
+    }) {
+        Ok((_, Ok(page))) => page,
+        Ok((_, Err(error))) => {
+            tracing::warn!("lean-ctx: message read rejected: {error}");
+            return Err(format!("Error: {error}"));
+        }
+        Err(e) => {
+            tracing::warn!(
+                "lean-ctx: failed to persist agent registry (messages may reappear): {e}"
+            );
+            return Err("Error: failed to read messages".to_string());
+        }
+    };
+
+    let mut renewed = if crate::core::agents::take_renewed(agent_id) {
+        renewed_line(agent_id)
+    } else {
+        String::new()
+    };
+    // An MCP server older than the installed binary misses its fixes.
+    if own_process && let Some(note) = crate::core::binary_identity::replaced_note() {
+        renewed.insert_str(0, &note);
+    }
+    // Typed Hive messages wait in their own inbox (I1); point at it.
+    let hive = crate::core::hive::bus::messages::waiting_hint(project_root, agent_id)
+        .map(|hint| format!("{hint}\n"))
+        .unwrap_or_default();
+    if shown.is_empty() {
+        return Ok(format!("{renewed}{hive}No new messages."));
+    }
+
+    let mut out = format!("{renewed}{hive}New messages ({}):\n", shown.len());
+    for line in &shown {
+        out.push_str(line);
+    }
+    if left > 0 {
+        out.push_str(&format!(
+            "{left} more unread (still unread): read again for the next ones.\n"
+        ));
+    }
+    Ok(out)
+}
+
+/// `wait` without `timeout_secs`, and its ceiling.
+pub(crate) const WAIT_DEFAULT_SECS: u64 = 600;
+pub(crate) const WAIT_MAX_SECS: u64 = 1800;
+
+/// The stable reply of a `wait` that saw no message.
+pub(crate) fn wait_timeout_line(secs: u64) -> String {
+    format!("No new messages within {secs}s.")
+}
+
+/// `action=wait`: block until a message for `agent_id` (to it or broadcast,
+/// not its own) is waiting in `project_root`, then answer exactly like
+/// `read`; `Ok(None)` after `timeout_secs` (default 600, at most 1800).
+/// `own_process` as in [`read_messages_as`]: the agent's own session keeps
+/// its lease alive while it waits.
+pub(crate) fn wait_messages(
+    agent_id: &str,
+    project_root: &str,
+    timeout_secs: Option<u64>,
+    own_process: bool,
+) -> Result<Option<String>, String> {
+    let secs = timeout_secs.unwrap_or(WAIT_DEFAULT_SECS).min(WAIT_MAX_SECS);
+    if own_process {
+        // Fail fast on an unknown or finished agent instead of waiting.
+        AgentRegistry::renew_worker_persistent(agent_id).map_err(|e| format!("Error: {e}"))?;
+    }
+    let arrived = AgentRegistry::wait_for_unread(
+        agent_id,
+        project_root,
+        std::time::Duration::from_secs(secs),
+        || {
+            if own_process && let Err(e) = AgentRegistry::renew_worker_persistent(agent_id) {
+                tracing::debug!("lean-ctx: wait keepalive for {agent_id}: {e}");
+            }
+        },
+    );
+    if arrived {
+        return read_messages_as(agent_id, project_root, own_process).map(Some);
+    }
+    crate::core::agents::friction::record_for(
+        crate::core::agents::friction::WAIT_TIMEOUT,
+        Some(agent_id),
+        Some(project_root),
+    );
+    Ok(None)
+}
+
+/// The text of `wait` for the MCP tool: the messages, or the timeout line
+/// (after the renewal note, when there is one).
+pub fn handle_wait(
+    current_agent_id: Option<&str>,
+    project_root: &str,
+    timeout_secs: Option<u64>,
+) -> Result<String, String> {
+    let Some(agent_id) = current_agent_id else {
+        return Err("Error: agent must be registered first (use action=register)".to_string());
+    };
+    let secs = timeout_secs.unwrap_or(WAIT_DEFAULT_SECS).min(WAIT_MAX_SECS);
+    Ok(
+        match wait_messages(agent_id, project_root, timeout_secs, true)? {
+            Some(text) => text,
+            None if crate::core::agents::take_renewed(agent_id) => {
+                format!("{}{}", renewed_line(agent_id), wait_timeout_line(secs))
+            }
+            None => wait_timeout_line(secs),
+        },
+    )
+}
 
 #[allow(clippy::too_many_arguments)]
 pub fn handle(
@@ -68,7 +340,20 @@ pub fn handle(
     format: Option<&str>,
     write: bool,
     filename: Option<&str>,
+    request_id: Option<&str>,
 ) -> String {
+    // The caller's text is admitted once, before any action stores, routes,
+    // derives from or echoes it (post, handoff, status, diary, knowledge,
+    // brief). Unadmitted input is never echoed back: a refusal names the typed
+    // reason only. Allowed text is unchanged byte for byte.
+    let admitted_message = match message
+        .map(crate::core::context_admission::carrier::admit_for_store)
+        .transpose()
+    {
+        Ok(admitted) => admitted,
+        Err(withheld) => return format!("Error: {}", withheld.message("agent message")),
+    };
+    let message = admitted_message.as_deref();
     match action {
         "register" => {
             let atype = agent_type.unwrap_or("unknown");
@@ -78,10 +363,20 @@ pub fn handle(
             })
             .and_then(|(_, agent_id)| agent_id)
             {
-                Ok(agent_id) => format!(
-                    "Agent registered: {agent_id} (type: {atype}, role: {})",
-                    role.unwrap_or("none")
-                ),
+                Ok(agent_id) => {
+                    // The relay announces the agent (and its role) now, not
+                    // on its next tick: a claim right after register finds it.
+                    crate::core::hive::bus::presence::request_announce();
+                    // The note goes last: callers take the id from the
+                    // text after the first ':'.
+                    format!(
+                        "Agent registered: {agent_id} (type: {atype}, role: {}){}",
+                        role.unwrap_or("none"),
+                        crate::core::binary_identity::replaced_note()
+                            .map(|note| format!("\n{}", note.trim_end()))
+                            .unwrap_or_default()
+                    )
+                }
                 Err(e) => format!("Registration failed: {e}"),
             }
         }
@@ -102,21 +397,24 @@ pub fn handle(
                 return "No active agents for this project.".to_string();
             }
 
-            let mut out = format!("Active agents ({}):\n", agents.len());
-            for a in agents {
-                let role_str = a.role.as_deref().unwrap_or("-");
-                let status_msg = a
-                    .status_message
-                    .as_deref()
-                    .map(|m| format!(" — {m}"))
-                    .unwrap_or_default();
-                let age = (chrono::Utc::now() - a.last_active).num_minutes();
-                out.push_str(&format!(
-                    "  {} [{}] role={} status={}{} (last active: {}m ago, pid: {})\n",
-                    a.agent_id, a.agent_type, role_str, a.status, status_msg, age, a.pid
-                ));
-            }
-            out
+            // V5.3: sessions are listed under the durable worker they attach
+            // to; without an enrolled instance workers have no `wkr_` id.
+            let store = crate::core::hive::HiveStore::open().ok();
+            let instance = store
+                .as_ref()
+                .and_then(|s| s.instance().ok().flatten())
+                .map(|record| record.instance_id);
+            let book = match (&store, &instance) {
+                (Some(store), Some(id)) => {
+                    crate::core::hive::workers::attach::list(store, id).unwrap_or_default()
+                }
+                _ => Vec::new(),
+            };
+            crate::core::hive::workers::roster::render(
+                &agents,
+                instance.as_deref().map(|id| (id, book.as_slice())),
+                chrono::Utc::now(),
+            )
         }
 
         "post" => {
@@ -140,6 +438,7 @@ pub fn handle(
                 privacy: msg_privacy,
                 priority: msg_priority,
                 ttl_hours,
+                request_id: request_id.map(str::to_string),
             };
             match OclaRegistry::global().agent_gateway.route_message(&request) {
                 Ok(msg_id) => {
@@ -150,43 +449,38 @@ pub fn handle(
             }
         }
 
-        "read" => {
-            let Some(agent_id) = current_agent_id else {
-                return "Error: agent must be registered first (use action=register)".to_string();
-            };
-            let messages = match AgentRegistry::mutate_locked(|registry| {
-                registry.update_heartbeat(agent_id)?;
-                registry
-                    .read_unread_scoped(agent_id, project_root)
-                    .map(|messages| messages.into_iter().cloned().collect::<Vec<_>>())
-            }) {
-                Ok((_, Ok(messages))) => messages,
-                Ok((_, Err(error))) => {
-                    tracing::warn!("lean-ctx: message read rejected: {error}");
-                    return format!("Error: {error}");
-                }
-                Err(e) => {
-                    tracing::warn!(
-                        "lean-ctx: failed to persist agent registry (messages may reappear): {e}"
-                    );
-                    return "Error: failed to read messages".to_string();
-                }
-            };
+        // The text of either outcome, for callers of this untyped entry
+        // point; the registered tool takes the typed one (`handle_read`).
+        "read" => match read_messages(current_agent_id, project_root) {
+            Ok(text) | Err(text) => text,
+        },
 
-            if messages.is_empty() {
-                return "No new messages.".to_string();
-            }
+        // This entry point has no `timeout_secs`: the default applies; the
+        // registered tool passes it (`handle_wait`).
+        "wait" => match handle_wait(current_agent_id, project_root, None) {
+            Ok(text) | Err(text) => text,
+        },
 
-            let mut out = format!("New messages ({}):\n", messages.len());
-            for m in &messages {
-                let age = (chrono::Utc::now() - m.timestamp).num_minutes();
-                out.push_str(&format!(
-                    "  [{}] from {} ({}m ago): {}\n",
-                    m.category, m.from_agent, age, m.message
-                ));
-            }
-            out
-        }
+        // Hive agent messages (I1). This entry point has no `type`/`reply_to`
+        // arguments: `category` carries the type; the registered tool passes all.
+        "send" => handle_message(
+            "send",
+            &MessageArgs::untyped(message, category, to_agent),
+            project_root,
+            current_agent_id,
+        ),
+        "reply" => handle_message(
+            "reply",
+            &MessageArgs::untyped(message, category, to_agent),
+            project_root,
+            current_agent_id,
+        ),
+        "inbox" => handle_message(
+            "inbox",
+            &MessageArgs::untyped(message, category, to_agent),
+            project_root,
+            current_agent_id,
+        ),
 
         "status" => {
             let Some(agent_id) = current_agent_id else {
@@ -240,14 +534,31 @@ pub fn handle(
             let Some(target) = to_agent else {
                 return "Error: to_agent is required for handoff".to_string();
             };
+            // Hive bus control (C5b): a vetoed handoff is refused.
+            if let Some(refusal) = crate::core::hive::bus::control::veto_refusal(
+                Some(from),
+                &[&format!("handoff:{from}:{target}")],
+            ) {
+                return format!("Handoff rejected: {refusal}");
+            }
             let summary = message.unwrap_or("(no summary provided)");
             let scratchpad_ttl = scratchpad_default_ttl_hours();
+            // C5c: a target Hive reports on another machine gets an offer
+            // through Hive; the sender finishes only on its ack.
+            let remote = match crate::core::hive::bus::handoff::remote_target(
+                std::path::Path::new(project_root),
+                target,
+            ) {
+                Ok(remote) => remote,
+                Err(ambiguous) => return format!("Handoff rejected: {ambiguous}"),
+            };
+            let waiting = format!("handing off to {target} (awaiting the Hive ack)");
 
-            if let Err(error) = AgentRegistry::mutate_locked(|registry| {
+            let entry_id = match AgentRegistry::mutate_locked(|registry| {
                 // The handoff message must be persisted before the sender is
                 // marked Finished. A bound presence that finishes first can no
                 // longer post, so the delivery would be silently dropped.
-                registry.post_message_scoped(
+                let entry_id = registry.post_message_scoped(
                     Some(project_root),
                     from,
                     Some(target),
@@ -257,13 +568,28 @@ pub fn handle(
                     MessagePriority::Normal,
                     Some(scratchpad_ttl),
                 )?;
-                registry.set_status(from, AgentStatus::Finished, Some("handed off"))?;
-                Ok(())
+                if remote.is_some() {
+                    registry.set_status(from, AgentStatus::Idle, Some(&waiting))?;
+                } else {
+                    registry.set_status(from, AgentStatus::Finished, Some("handed off"))?;
+                }
+                Ok(entry_id)
             })
             .and_then(|(_, result)| result)
             {
-                return format!("Handoff rejected: {error}");
-            }
+                Ok(entry_id) => entry_id,
+                Err(error) => return format!("Handoff rejected: {error}"),
+            };
+            let offered = remote.map(|r| {
+                crate::core::hive::bus::handoff::offer(
+                    &r.data_dir,
+                    &r.org_id,
+                    &r.vault_id,
+                    from,
+                    target,
+                    &entry_id,
+                )
+            });
 
             // Route through OCLA AgentGateway for cross-process visibility.
             let handoff_message = format!("HANDOFF: {summary}");
@@ -292,14 +618,27 @@ pub fn handle(
 
             // Stigmergy (#540): mark the handed-off work as Done in the field
             // so other agents see it arithmetically, without reading messages.
-            crate::core::scent_field::deposit(
+            crate::core::scent_field::deposit_for(
+                project_root,
                 from,
                 crate::core::scent_field::ScentKind::Done,
                 summary,
                 1.0,
             );
 
-            format!("Handoff complete: {from} → {target}\nSummary: {summary}")
+            match offered {
+                Some(Ok(handoff_id)) => format!(
+                    "Handoff offered (hive): {from} → {target} handoff_id={handoff_id}; \
+                     {from} finishes when {target}'s machine acks\nSummary: {summary}"
+                ),
+                Some(Err(error)) => {
+                    let _ = AgentRegistry::mutate_locked(|registry| {
+                        registry.set_status(from, AgentStatus::Active, Some("handoff not sent"))
+                    });
+                    format!("Handoff rejected: the Hive offer could not be queued ({error})")
+                }
+                None => format!("Handoff complete: {from} → {target}\nSummary: {summary}"),
+            }
         }
 
         // Stigmergic claim (#540): atomically claim a target (file, task,
@@ -314,7 +653,7 @@ pub fn handle(
                 str::to_string,
             );
             let normalized = crate::core::pathutil::normalize_tool_path(target);
-            match crate::core::scent_field::claim(&agent, &normalized) {
+            match crate::core::scent_field::claim(project_root, &agent, &normalized) {
                 Ok(()) => {
                     format!("Claimed: {normalized} (by {agent}, decays in ~10m unless re-claimed)")
                 }
@@ -332,7 +671,7 @@ pub fn handle(
                 str::to_string,
             );
             let normalized = crate::core::pathutil::normalize_tool_path(target);
-            crate::core::scent_field::release(&agent, &normalized);
+            crate::core::scent_field::release(project_root, &agent, &normalized);
             format!("Released: {normalized}")
         }
 
@@ -350,6 +689,7 @@ pub fn handle(
             else {
                 return "No knowledge stored for this project yet — a briefing pack needs facts. Use ctx_knowledge(action=\"remember\") first.".to_string();
             };
+            // The pack builder leaves out facts that may not be delivered now.
             let pack =
                 crate::core::subagent_contract::build_briefing_pack(&knowledge, task, budget);
             match crate::core::subagent_contract::serialize_pack(&pack) {
@@ -428,7 +768,9 @@ pub fn handle(
                         !e.read_by.contains(&id.to_string())
                             && e.from_agent != id
                             && (e.to_agent.is_none() || e.to_agent.as_deref() == Some(id))
-                            && e.project_root.as_deref() == Some(project_root)
+                            && e.project_root.as_deref().is_some_and(|own| {
+                                crate::core::pathutil::same_project(own, project_root)
+                            })
                     })
                     .count()
             });
@@ -438,10 +780,12 @@ pub fn handle(
                 return "No active agents to sync with.".to_string();
             }
 
+            // Only this project's shares (`ctx_share` partitions by project).
             let shared_dir = crate::core::data_dir::lean_ctx_data_dir()
                 .unwrap_or_default()
                 .join("agents")
-                .join("shared");
+                .join("shared")
+                .join(crate::core::project_hash::hash_project_root(project_root));
 
             let shared_count = if shared_dir.exists() {
                 std::fs::read_dir(&shared_dir).map_or(0, std::iter::Iterator::count)
@@ -463,8 +807,8 @@ pub fn handle(
             out.push_str(&format!("  Shared contexts: {shared_count}\n"));
 
             // Stigmergy (#540): arithmetic field view — claims, stuck markers,
-            // hot files across all agents, no scratchpad reads needed.
-            let scents = crate::core::scent_field::sync_block();
+            // hot files across this project's agents, no scratchpad reads needed.
+            let scents = crate::core::scent_field::sync_block(project_root);
             if !scents.is_empty() {
                 out.push_str(&scents);
             }
@@ -606,7 +950,9 @@ pub fn handle(
                 .scratchpad
                 .iter()
                 .filter(|e| {
-                    e.project_root.as_deref() == Some(project_root)
+                    e.project_root
+                        .as_deref()
+                        .is_some_and(|own| crate::core::pathutil::same_project(own, project_root))
                         && (e.to_agent.is_none() || e.to_agent.as_deref() == Some(agent_id))
                 })
                 .take(200)
@@ -617,10 +963,12 @@ pub fn handle(
                     category: m.category.clone(),
                     privacy: privacy_label(&m.privacy).to_string(),
                     priority: priority_label(&m.priority).to_string(),
-                    message: maybe_redact(&m.message, should_redact),
+                    message: maybe_redact(&m.served_message(Some(project_root)), should_redact),
+                    // The admission binding is store-internal provenance.
                     metadata: m
                         .metadata
                         .iter()
+                        .filter(|(k, _)| k.as_str() != crate::core::agents::BINDING_METADATA_KEY)
                         .map(|(k, v)| (k.clone(), maybe_redact(v, should_redact)))
                         .collect(),
                     timestamp: m.timestamp.to_rfc3339(),
@@ -630,56 +978,68 @@ pub fn handle(
                 .collect();
             messages.sort_by(|a, b| a.timestamp.cmp(&b.timestamp).then_with(|| a.id.cmp(&b.id)));
 
-            let mut task_store = match TaskStore::load() {
-                Ok(store) => store,
+            // Prune and read under the store lock: a concurrent task mutation
+            // is either fully before or fully after this one, never lost.
+            // Export runs once per request, so it waits for a busy store
+            // instead of failing after the default lock timeout.
+            const EXPORT_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(10);
+            let tasks = TaskStore::default_path().and_then(|path| {
+                TaskStore::mutate_locked_within(&path, EXPORT_LOCK_WAIT, |task_store| {
+                    task_store.cleanup_old(72);
+                    Ok::<_, std::io::Error>(
+                        task_store
+                            .tasks_for_agent(agent_id)
+                            .into_iter()
+                            .take(200)
+                            .map(|t| ExportTaskV1 {
+                                id: t.id.clone(),
+                                from_agent: t.from_agent.clone(),
+                                to_agent: t.to_agent.clone(),
+                                state: t.state.to_string(),
+                                description: maybe_redact(&t.served_description(), should_redact),
+                                created_at: t.created_at.to_rfc3339(),
+                                updated_at: t.updated_at.to_rfc3339(),
+                                messages: t.messages.len(),
+                                artifacts: t.artifacts.len(),
+                                transitions: t.history.len(),
+                            })
+                            .collect::<Vec<ExportTaskV1>>(),
+                    )
+                })
+            });
+            let mut tasks = match tasks {
+                Ok(tasks) => tasks,
                 Err(error) => {
                     tracing::warn!("lean-ctx: failed to read task store: {error}");
                     return "Error: task storage unavailable".to_string();
                 }
             };
-            task_store.cleanup_old(72);
-            let mut tasks: Vec<ExportTaskV1> = task_store
-                .tasks_for_agent(agent_id)
-                .into_iter()
-                .take(200)
-                .map(|t| ExportTaskV1 {
-                    id: t.id.clone(),
-                    from_agent: t.from_agent.clone(),
-                    to_agent: t.to_agent.clone(),
-                    state: t.state.to_string(),
-                    description: maybe_redact(&t.description, should_redact),
-                    created_at: t.created_at.to_rfc3339(),
-                    updated_at: t.updated_at.to_rfc3339(),
-                    messages: t.messages.len(),
-                    artifacts: t.artifacts.len(),
-                    transitions: t.history.len(),
-                })
-                .collect();
             tasks.sort_by(|a, b| {
                 b.updated_at
                     .cmp(&a.updated_at)
                     .then_with(|| a.id.cmp(&b.id))
             });
 
-            let diary = AgentDiary::load(agent_id).map(|d| ExportDiaryV1 {
-                agent_id: d.agent_id,
-                agent_type: d.agent_type,
-                project_root: d.project_root,
-                updated_at: d.updated_at.to_rfc3339(),
-                entries: d
-                    .entries
-                    .iter()
-                    .rev()
-                    .take(25)
-                    .rev()
-                    .map(|e| ExportDiaryEntryV1 {
-                        entry_type: e.entry_type.to_string(),
-                        content: maybe_redact(&e.content, should_redact),
-                        context: e.context.as_deref().map(|c| maybe_redact(c, should_redact)),
-                        timestamp: e.timestamp.to_rfc3339(),
-                    })
-                    .collect(),
-            });
+            let diary =
+                AgentDiary::load_for_project(agent_id, project_root).map(|d| ExportDiaryV1 {
+                    agent_id: d.agent_id,
+                    agent_type: d.agent_type,
+                    project_root: d.project_root,
+                    updated_at: d.updated_at.to_rfc3339(),
+                    entries: d
+                        .entries
+                        .iter()
+                        .rev()
+                        .take(25)
+                        .rev()
+                        .map(|e| ExportDiaryEntryV1 {
+                            entry_type: e.entry_type.to_string(),
+                            content: maybe_redact(&e.content, should_redact),
+                            context: e.context.as_deref().map(|c| maybe_redact(c, should_redact)),
+                            timestamp: e.timestamp.to_rfc3339(),
+                        })
+                        .collect(),
+                });
 
             let payload = A2ASnapshotV1 {
                 schema_version: crate::core::contracts::A2A_SNAPSHOT_V1_SCHEMA_VERSION,
@@ -716,18 +1076,6 @@ pub fn handle(
                 let out_path = proofs_dir.join(name);
                 if let Err(e) = std::fs::write(&out_path, &json) {
                     return format!("Error: write snapshot: {e}");
-                }
-
-                let mut ledger = EvidenceLedgerV1::load();
-                if let Err(e) = ledger.record_artifact_file(
-                    "proof:a2a-snapshot-v1",
-                    &out_path,
-                    chrono::Utc::now(),
-                ) {
-                    return format!("Snapshot written but evidence ledger record failed: {e}");
-                }
-                if let Err(e) = ledger.save() {
-                    return format!("Snapshot written but evidence ledger save failed: {e}");
                 }
 
                 return format!(
@@ -781,7 +1129,7 @@ pub fn handle(
 
         "recall_diary" | "diary_recall" => {
             let Some(agent_id) = current_agent_id else {
-                let diaries = AgentDiary::list_all();
+                let diaries = AgentDiary::list_for_project(project_root);
                 if diaries.is_empty() {
                     return "No agent diaries found.".to_string();
                 }
@@ -792,14 +1140,14 @@ pub fn handle(
                 }
                 return out;
             };
-            match AgentDiary::load(agent_id) {
+            match AgentDiary::load_for_project(agent_id, project_root) {
                 Some(diary) => diary.format_summary(),
                 None => format!("No diary found for agent '{agent_id}'."),
             }
         }
 
         "diaries" => {
-            let diaries = AgentDiary::list_all();
+            let diaries = AgentDiary::list_for_project(project_root);
             if diaries.is_empty() {
                 return "No agent diaries found.".to_string();
             }
@@ -826,13 +1174,17 @@ pub fn handle(
             if facts.is_empty() {
                 return "Error: no valid key=value pairs found".to_string();
             }
-            let from = current_agent_id.unwrap_or("anonymous");
+            let Some(from) = current_agent_id else {
+                return "Error: agent must be registered first".to_string();
+            };
+            // Shared knowledge reaches only the agents of this project.
             match AgentRegistry::mutate_locked(|registry| {
                 registry.require_active_for_presence(from, "sharing knowledge")?;
-                registry.share_knowledge(from, cat, &facts);
-                Ok::<(), String>(())
-            }) {
-                Ok(_) => format!("Shared {} facts in category '{}'", facts.len(), cat),
+                registry.share_knowledge(project_root, from, cat, &facts)
+            })
+            .and_then(|(_, shared)| shared)
+            {
+                Ok(count) => format!("Shared {count} facts in category '{cat}' with this project"),
                 Err(e) => format!("Share failed: {e}"),
             }
         }
@@ -841,12 +1193,15 @@ pub fn handle(
             let Some(agent_id) = current_agent_id else {
                 return "Error: agent must be registered first".to_string();
             };
-            let facts = AgentRegistry::mutate_locked(|registry| {
+            let facts = match AgentRegistry::mutate_locked(|registry| {
                 registry.require_active_for_presence(agent_id, "receiving knowledge")?;
-                Ok(registry.receive_shared_knowledge(agent_id))
+                registry.receive_shared_knowledge(project_root, agent_id)
             })
             .and_then(|(_, facts)| facts)
-            .unwrap_or_default();
+            {
+                Ok(facts) => facts,
+                Err(e) => return format!("Receive failed: {e}"),
+            };
             if facts.is_empty() {
                 return "No new shared knowledge.".to_string();
             }
@@ -854,8 +1209,8 @@ pub fn handle(
             for f in &facts {
                 let age = (chrono::Utc::now() - f.timestamp).num_minutes();
                 out.push_str(&format!(
-                    "  [{}] {}={} (from {}, {}m ago)\n",
-                    f.category, f.key, f.value, f.from_agent, age
+                    "  [{}] {} (from {}, {}m ago)\n",
+                    f.category, f.text, f.from_agent, age
                 ));
             }
             out
@@ -921,7 +1276,16 @@ pub fn handle(
             {
                 return format!("Lease rejected: {error}");
             }
-            let (resource_kind, resource_ref) = lease_resource(target);
+            let (resource_kind, resource_ref) = match lease_resource(project_root, target) {
+                Ok(resource) => resource,
+                Err(error) => return format!("Lease rejected: {error}"),
+            };
+            // Hive bus control (C5b): a vetoed resource is refused.
+            if let Some(refusal) =
+                crate::core::hive::bus::control::veto_refusal(Some(agent_id), &[&resource_ref])
+            {
+                return format!("Lease rejected: {refusal}");
+            }
             let duration_ms = match _ttl_hours.unwrap_or(0) {
                 0 => 10 * 60 * 1_000,
                 1 => 60 * 60 * 1_000,
@@ -939,10 +1303,63 @@ pub fn handle(
                 duration_ms,
             };
             match crate::core::agent_lease::acquire_shared(request) {
-                Ok(crate::core::agent_lease::AgentLeaseAcquireV1::Granted(lease)) => format!(
-                    "Lease granted: {} resource={} owner={} expires_at_epoch_ms={}",
-                    lease.lease_ref, resource_ref, agent_id, lease.expires_at_epoch_ms
-                ),
+                Ok(crate::core::agent_lease::AgentLeaseAcquireV1::Granted(lease)) => {
+                    // C5c: across machines through Hive (bounded, see bus::leases).
+                    use crate::core::hive::bus::leases::{self, Outcome};
+                    let hive = leases::acquire(
+                        std::path::Path::new(project_root),
+                        agent_id,
+                        target,
+                        duration_ms,
+                        &lease.lease_ref,
+                    );
+                    let release_local = || {
+                        let _ = crate::core::agent_lease::release_shared(
+                            resource_kind,
+                            &resource_ref,
+                            agent_id,
+                            &lease.lease_ref,
+                        );
+                    };
+                    match hive {
+                        Outcome::Held {
+                            agent_id: holder,
+                            instance_id,
+                            expires_at,
+                        } => {
+                            release_local();
+                            format!(
+                                "Lease HELD (hive): resource={resource_ref} owner={holder} \
+                                 instance={instance_id} expires={expires_at}"
+                            )
+                        }
+                        Outcome::Vetoed => {
+                            release_local();
+                            "Lease rejected: a workspace veto bars this agent from it \
+                             until the veto is lifted"
+                                .to_string()
+                        }
+                        Outcome::Granted { ref expires_at, .. } => format!(
+                            "Lease granted: {} resource={} owner={} expires_at_epoch_ms={} {} hive_expires_at={expires_at}",
+                            lease.lease_ref,
+                            resource_ref,
+                            agent_id,
+                            lease.expires_at_epoch_ms,
+                            leases::scope_line(&hive)
+                        ),
+                        other => format!(
+                            "Lease granted: {} resource={} owner={} expires_at_epoch_ms={} {}",
+                            lease.lease_ref,
+                            resource_ref,
+                            agent_id,
+                            lease.expires_at_epoch_ms,
+                            leases::scope_line(&match other {
+                                Outcome::Superseded => Outcome::Local("Hive lost the lease".into()),
+                                other => other,
+                            })
+                        ),
+                    }
+                }
                 Ok(crate::core::agent_lease::AgentLeaseAcquireV1::HeldBy {
                     owner_agent_id,
                     lease_ref,
@@ -965,7 +1382,12 @@ pub fn handle(
             let Some(lease_ref) = category else {
                 return "Error: category (lease_ref from lease_acquire) is required".to_string();
             };
-            let (resource_kind, resource_ref) = lease_resource(target);
+            let (resource_kind, resource_ref) = match lease_resource(project_root, target) {
+                Ok(resource) => resource,
+                Err(error) => return format!("Release failed: {error}"),
+            };
+            // C5c: the Hive side is released by the relay (queued, no network here).
+            crate::core::hive::bus::leases::queue_release(lease_ref);
             match crate::core::agent_lease::release_shared(
                 resource_kind,
                 &resource_ref,
@@ -997,7 +1419,16 @@ pub fn handle(
             {
                 return format!("Lease renewal rejected: {error}");
             }
-            let (resource_kind, resource_ref) = lease_resource(target);
+            let (resource_kind, resource_ref) = match lease_resource(project_root, target) {
+                Ok(resource) => resource,
+                Err(error) => return format!("Lease renewal rejected: {error}"),
+            };
+            if let Some(refusal) = crate::core::hive::bus::control::veto_refusal(
+                Some(agent_id),
+                &[lease_ref, &resource_ref],
+            ) {
+                return format!("Lease renewal rejected: {refusal}");
+            }
             let duration_ms = match _ttl_hours.unwrap_or(0) {
                 0 => 10 * 60 * 1_000,
                 1 => 60 * 60 * 1_000,
@@ -1010,10 +1441,35 @@ pub fn handle(
                 lease_ref,
                 duration_ms,
             ) {
-                Ok(lease) => format!(
-                    "Lease renewed: {} resource={} owner={} expires_at_epoch_ms={}",
-                    lease.lease_ref, resource_ref, agent_id, lease.expires_at_epoch_ms
-                ),
+                Ok(lease) => {
+                    use crate::core::hive::bus::leases::{self, Outcome};
+                    match leases::renew(std::path::Path::new(project_root), lease_ref, duration_ms)
+                    {
+                        outcome @ (Outcome::Superseded | Outcome::Vetoed) => {
+                            let _ = crate::core::agent_lease::release_shared(
+                                resource_kind,
+                                &resource_ref,
+                                agent_id,
+                                lease_ref,
+                            );
+                            if outcome == Outcome::Vetoed {
+                                "Lease renewal rejected: a workspace veto ended it".to_string()
+                            } else {
+                                "Lease renewal rejected: Hive no longer holds it for you \
+                                 (expired on the service clock or superseded); acquire it again"
+                                    .to_string()
+                            }
+                        }
+                        hive => format!(
+                            "Lease renewed: {} resource={} owner={} expires_at_epoch_ms={} {}",
+                            lease.lease_ref,
+                            resource_ref,
+                            agent_id,
+                            lease.expires_at_epoch_ms,
+                            leases::scope_line(&hive)
+                        ),
+                    }
+                }
                 Err(e) => format!("Lease renewal rejected: {e}"),
             }
         }
@@ -1022,237 +1478,7 @@ pub fn handle(
     }
 }
 
-/// Convert a raw path/symbol target into an opaque lease resource.
-fn lease_resource(target: &str) -> (crate::core::agent_lease::AgentLeaseResourceKindV1, String) {
-    if let Some(symbol) = target.strip_prefix("symbol:") {
-        (
-            crate::core::agent_lease::AgentLeaseResourceKindV1::Symbol,
-            format!("symbolref:{}", blake3::hash(symbol.as_bytes()).to_hex()),
-        )
-    } else {
-        let normalized = crate::core::pathutil::normalize_tool_path(target);
-        let mut path_ref = String::from("path:");
-        for byte in normalized.bytes() {
-            if byte.is_ascii_alphanumeric() || matches!(byte, b'/' | b'.' | b'-' | b'_') {
-                path_ref.push(byte as char);
-            } else {
-                let _ = write!(path_ref, "%{byte:02X}");
-            }
-        }
-        // Keep the bounded opaque-reference contract for unusually long paths.
-        // Typical paths retain hierarchy so parent/child claims conflict; the
-        // hash fallback remains safe but intentionally cannot infer hierarchy.
-        if path_ref.len() > 256 {
-            path_ref = format!("pathref:{}", blake3::hash(normalized.as_bytes()).to_hex());
-        }
-        (
-            crate::core::agent_lease::AgentLeaseResourceKindV1::Path,
-            path_ref,
-        )
-    }
-}
-
-fn control_status(project_root: &str, current_agent_id: Option<&str>) -> String {
-    let registry = AgentRegistry::mutate_locked(|registry| {
-        registry.cleanup_stale(presence_ttl_hours());
-    })
-    .map(|(registry, ())| registry)
-    .unwrap_or_else(|_| AgentRegistry::load_or_create());
-
-    let scoped_agents = registry
-        .agents
-        .iter()
-        .filter(|agent| agent.project_root == project_root);
-    let mut presence = std::collections::BTreeMap::from([
-        ("active", 0usize),
-        ("idle", 0usize),
-        ("finished", 0usize),
-    ]);
-    for agent in scoped_agents {
-        let key = agent.status.to_string();
-        if let Some(count) = presence.get_mut(key.as_str()) {
-            *count += 1;
-        }
-    }
-
-    let pending_messages = current_agent_id.map_or(0, |agent_id| {
-        registry
-            .scratchpad
-            .iter()
-            .filter(|entry| {
-                !entry.read_by.iter().any(|reader| reader == agent_id)
-                    && entry.from_agent != agent_id
-                    && (entry.to_agent.is_none() || entry.to_agent.as_deref() == Some(agent_id))
-                    && entry.project_root.as_deref() == Some(project_root)
-            })
-            .count()
-    });
-
-    let mut graphs = Vec::new();
-    let mut queued_nodes = 0usize;
-    let mut active_nodes = 0usize;
-    let mut stale_nodes = 0usize;
-    match crate::core::work_graph_store::WorkGraphStore::load(project_root) {
-        Ok(store) => {
-            for graph_id in store.graph_ids().take(32) {
-                let Some(graph) = store.graph(graph_id) else {
-                    continue;
-                };
-                let observation = graph.observation();
-                let nodes = observation
-                    .get("nodes")
-                    .and_then(serde_json::Value::as_array)
-                    .cloned()
-                    .unwrap_or_default();
-                let mut counts = std::collections::BTreeMap::new();
-                for node in &nodes {
-                    let state = node
-                        .get("status")
-                        .and_then(serde_json::Value::as_str)
-                        .unwrap_or("unknown");
-                    *counts.entry(state.to_string()).or_insert(0usize) += 1;
-                }
-                queued_nodes += counts.get("pending").copied().unwrap_or(0);
-                active_nodes += counts.get("active").copied().unwrap_or(0);
-                stale_nodes += counts.get("stale").copied().unwrap_or(0);
-                graphs.push(serde_json::json!({
-                    "graph_id": graph_id,
-                    "revision": store.graph_revision(graph_id).ok(),
-                    "node_counts": counts,
-                }));
-            }
-        }
-        Err(error) => {
-            tracing::debug!("lean-ctx: control snapshot could not load Work Graph: {error}");
-        }
-    }
-
-    let next_action = if stale_nodes > 0 {
-        "reconcile stale Work Graph executions"
-    } else if queued_nodes > 0 {
-        "claim one pending Work Graph node"
-    } else if active_nodes > 0 {
-        "continue current work and renew leases"
-    } else {
-        "lead may enqueue the next independent task"
-    };
-
-    serde_json::to_string_pretty(&serde_json::json!({
-        "schema_version": 1,
-        "project_root": project_root,
-        "presence": presence,
-        "pending_messages": pending_messages,
-        "work_graphs": graphs,
-        "queued_nodes": queued_nodes,
-        "active_nodes": active_nodes,
-        "stale_nodes": stale_nodes,
-        "next_action": next_action,
-    }))
-    .unwrap_or_else(|_| "{\"error\":\"control snapshot serialization failed\"}".to_string())
-}
-
 #[cfg(test)]
-mod tests {
-    use super::handle;
-
-    #[test]
-    fn register_forwards_explicit_durable_identity_binding() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::core::agent_registry::register("durable-tool", "coder", "owner")
-            .expect("durable identity");
-        let result = handle(
-            "register",
-            Some("mcp"),
-            Some("context-engine"),
-            Some("durable-tool"),
-            "/project",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            false,
-            None,
-        );
-        assert!(
-            result.starts_with("Agent registered:"),
-            "unexpected: {result}"
-        );
-        let registry = crate::core::agents::AgentRegistry::load().expect("presence registry");
-        assert_eq!(
-            registry.agents[0].durable_identity_id.as_deref(),
-            Some("durable-tool")
-        );
-    }
-
-    #[test]
-    fn bound_handoff_posts_before_finishing_presence() {
-        let _iso = crate::core::data_dir::isolated_data_dir();
-        crate::core::agent_registry::register("durable-handoff", "coder", "owner")
-            .expect("durable identity");
-        let registered = handle(
-            "register",
-            Some("codex"),
-            Some("review"),
-            Some("durable-handoff"),
-            "/project",
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            None,
-            false,
-            None,
-        );
-        let agent_id = registered
-            .split_whitespace()
-            .nth(2)
-            .expect("registered agent id")
-            .to_string();
-
-        let result = handle(
-            "handoff",
-            None,
-            None,
-            None,
-            "/project",
-            Some(&agent_id),
-            Some("verified summary"),
-            None,
-            Some(&agent_id),
-            None,
-            None,
-            None,
-            None,
-            None,
-            false,
-            None,
-        );
-        assert!(
-            result.starts_with("Handoff complete:"),
-            "unexpected: {result}"
-        );
-
-        let registry = crate::core::agents::AgentRegistry::load().expect("presence registry");
-        let agent = registry
-            .agents
-            .iter()
-            .find(|agent| agent.agent_id == agent_id)
-            .expect("handed-off presence");
-        assert_eq!(agent.status, crate::core::agents::AgentStatus::Finished);
-        let message = registry.scratchpad.last().expect("handoff message");
-        assert_eq!(message.from_agent, agent_id);
-        assert_eq!(message.to_agent.as_deref(), Some(agent_id.as_str()));
-        assert_eq!(message.category, "handoff");
-        assert!(message.message.contains("verified summary"));
-    }
-}
+#[path = "ctx_agent_tests.rs"]
+mod tests;
 // SPDX-License-Identifier: Apache-2.0

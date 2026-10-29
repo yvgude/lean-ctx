@@ -41,7 +41,7 @@ pub fn import_from_root(root: &Path) -> ImportResult {
         }
     }
     files.sort();
-    let mut result = read_jsonl_files(ImportSource::Cursor, files);
+    let mut result = read_jsonl_files(ImportSource::Cursor, root, files);
     for error in errors {
         push_error(&mut result, error);
     }

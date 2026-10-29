@@ -1,0 +1,11 @@
+{
+  "error": {
+    "agent_role": "web",
+    "check": "role",
+    "code": "forbidden_right",
+    "message": "Agent claude-a works as role web; this task needs role backend.",
+    "number": 7,
+    "reason": "not_permitted",
+    "role": "backend"
+  }
+}

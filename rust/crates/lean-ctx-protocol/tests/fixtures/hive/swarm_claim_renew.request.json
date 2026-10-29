@@ -1,0 +1,5 @@
+{
+  "fencing_token": 3,
+  "minutes": 15,
+  "schema": "leanctx.hive.swarm-claim-renew/v1"
+}

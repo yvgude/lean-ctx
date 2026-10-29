@@ -520,6 +520,26 @@ fn relative_instruction_directories_are_recognised() {
     assert!(!is_instruction_file("myskills/notes.md"));
 }
 
+/// The remaining host conventions (Codex override, Copilot path
+/// instructions, Windsurf/Cline rule directories) are instruction documents
+/// too, so `auto` delivers them in full.
+#[test]
+fn host_specific_instruction_paths_are_detected() {
+    for path in [
+        "project/AGENTS.override.md",
+        "/repo/.github/instructions/rust.instructions.md",
+        "src/api.instructions.md",
+        "/repo/.windsurf/rules/style.md",
+        "/repo/.clinerules/house.md",
+        ".clinerules/house.md",
+    ] {
+        assert!(is_instruction_file(path), "{path} carries instructions");
+    }
+    for path in ["/repo/.github/workflows/ci.yml", "/repo/docs/skillset.md"] {
+        assert!(!is_instruction_file(path), "{path} is not an instruction");
+    }
+}
+
 #[test]
 fn instruction_files_force_full_only_for_compressing_modes() {
     let path = "docs/internal/skills/agent-orchestration.md";

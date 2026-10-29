@@ -6,11 +6,16 @@
 
 Source files referenced here:
 - `rust/src/cli/dispatch/analytics.rs` — `graph`, `smells`
+- `rust/src/cli/repomap_cmd.rs` — `repomap`
 - `rust/src/cli/index_cmd.rs` — `index`
 - `rust/src/cli/visualize_cmd.rs` — `visualize`
 - `rust/src/heatmap.rs` — `heatmap`
-- `rust/src/tools/registered/ctx_graph.rs`, `ctx_impact.rs`, `ctx_repomap.rs`,
-  `ctx_callgraph.rs`, `ctx_architecture.rs`, `ctx_smells.rs`, `ctx_refactor.rs`
+- `rust/src/tools/registered/ctx_graph.rs`, `ctx_callgraph.rs`, `ctx_patch.rs`
+
+> **3.11.5:** `ctx_impact`, `ctx_repomap`, `ctx_architecture`, `ctx_smells`,
+> `ctx_review` and `ctx_refactor` were removed as MCP tools. Their successors are
+> below; the full table is in
+> [docs/migration/focus-2026-10.md](../migration/focus-2026-10.md).
 
 ---
 
@@ -42,23 +47,27 @@ lean-ctx graph export-html --out graph.html
 ```
 
 `ctx_graph` (MCP) actions: `build`, `related`, `symbol`, `impact`, `context`,
-`diagram`, `status`, `enrich`. It's the unified entry point; the more focused
-tools below are specializations.
+`diagram`, `neighbors`, `path`, `explain`, `diff`, `status`, `enrich`. It's the
+one entry point for file-level structure; `ctx_callgraph` covers call edges.
 
 ---
 
-## 2. "What breaks if I change this?" — `ctx_impact` / `lean-ctx graph impact`
+## 2. "What breaks if I change this?" — `ctx_graph action=impact` / `lean-ctx graph impact`
 
-**Blast-radius analysis.** Given a file or symbol, it returns everything
-transitively affected.
+**Blast-radius analysis.** Given a file, it returns the files that depend on it,
+directly and transitively.
 
 ```bash
 lean-ctx graph impact src/auth/verify.rs
 ```
 
-`ctx_impact` (MCP, in the **standard** profile) actions: `analyze`, `diff`
-(impact of a working-tree diff), `chain` (the dependency chain), plus
-`build`/`update`/`status`. This is the tool to call before a risky refactor.
+```text
+ctx_graph action=impact path=src/auth/verify.rs   # dependents of a file
+ctx_graph action=path path=src/main.rs to=src/db.rs  # the dependency chain
+ctx_graph action=diff since=HEAD~1                 # impact of recent changes
+```
+
+This is the call to make before a risky refactor.
 
 ---
 
@@ -76,37 +85,33 @@ fan-in/fan-out. In the **standard** profile.
 
 ---
 
-## 4. "What matters most here?" — `ctx_repomap`
+## 4. "What matters most here?" — `lean-ctx repomap`
 
 **PageRank over the symbol graph.** Returns the most important symbols/files
-within a token budget — the fastest way for an AI to understand a new repo.
+within a token budget.
 
-```text
-ctx_repomap max_tokens=2000
-ctx_repomap focus_files=["src/auth.rs"]
+```bash
+lean-ctx repomap --max-tokens 2000
+lean-ctx repomap --json
 ```
 
-In the **standard** profile. There is no `repomap` CLI command — it's an MCP tool
-only. (CLI users get a similar view via `lean-ctx overview`.)
+Over MCP, `ctx_compose(task=…)` ranks files and symbols for a task, and
+`ctx_graph action=explain|related` describes a file's place in the graph.
 
 ---
 
-## 5. Architecture & health — `ctx_architecture`
+## 5. Architecture — `ctx_graph action=diagram` / `ctx_tree`
 
 ```text
-ctx_architecture action=overview        # layers, clusters at a glance
-ctx_architecture action=cycles          # dependency cycles
-ctx_architecture action=hotspots        # high-churn / high-coupling spots
-ctx_architecture action=health          # an overall score
-ctx_architecture action=entrypoints     # where execution starts
+ctx_graph action=diagram kind=deps      # dependency diagram (Mermaid)
+ctx_graph action=diagram kind=calls     # call diagram (Mermaid)
+ctx_graph action=explain path=src/auth.rs
+ctx_tree path=src depth=3               # the directory map
 ```
-
-Community detection and layering over the property graph. In the **standard**
-profile.
 
 ---
 
-## 6. Code smells — `lean-ctx smells` / `ctx_smells`
+## 6. Code smells — `lean-ctx smells`
 
 Eight rules over the graph (god objects, long functions, deep nesting, etc.).
 
@@ -117,23 +122,24 @@ lean-ctx smells rules            # what the 8 rules are
 lean-ctx smells file src/big.rs  # findings for one file
 ```
 
-`ctx_review` (MCP) goes further: an automated review combining impact, callers,
-test coverage, and smells (`review`, `diff-review`, `checklist`).
+There is no MCP smells or review tool any more: code review and linting belong
+to the host's own tooling.
 
 ---
 
-## 7. Refactoring — `ctx_refactor`
+## 7. Refactoring — `ctx_patch op=replace_symbol` / `ctx_callgraph`
 
-LSP-backed, so it's rename-safe across the project.
+Write refactorings are host execution: lean-ctx does not rename, move or inline
+symbols. Two pieces remain:
 
 ```text
-ctx_refactor action=rename path=src/auth.rs line=42 new_name=verify_jwt
-ctx_refactor action=references path=src/auth.rs line=42
-ctx_refactor action=definition path=src/main.rs line=10
+ctx_patch op=replace_symbol path=src/auth.rs name=verify_token new_text="…"  # replace one symbol's body
+ctx_callgraph action=callers symbol=verify_token                             # find the call sites
 ```
 
-In the **standard** profile. Requires the relevant language server; configure
-binaries under the `[lsp]` config map if auto-detection misses one.
+`replace_symbol` resolves the symbol by `name` (or `path`+`line`) and goes
+through a JetBrains IDE when one with the lean-ctx plugin is running. Run the
+rename itself with your editor or agent.
 
 ---
 
@@ -207,9 +213,8 @@ stripped.
 
 ## UX notes captured during this walkthrough
 
-- The graph is shared by `graph`, `impact`, `callgraph`, `repomap`,
-  `architecture`, and `smells` — but that's not obvious from the command names.
-  This journey leads with "one graph underneath everything" so the relationship
-  is clear.
-- `repomap` being MCP-only (no CLI) surprises CLI users; documented here with
-  `overview` as the CLI alternative.
+- The graph is shared by `graph`, `callgraph`, `repomap` and `smells` — but
+  that's not obvious from the command names. This journey leads with "one graph
+  underneath everything" so the relationship is clear.
+- `repomap` is CLI-only since 3.11.5; MCP clients use `ctx_compose` and
+  `ctx_graph`.

@@ -137,9 +137,33 @@ pub(crate) fn migrate_if_needed(old_hash: &str, new_hash: &str, project_root: &s
         return;
     }
 
-    if let Err(e) = copy_dir_contents(&old_dir, &new_dir) {
+    // Copied into a staging directory and renamed into place in one step: an
+    // interrupted copy must not leave a partial `new_dir`, which would stop
+    // every later attempt and lose the files not copied yet.
+    let staging = data_dir.join("migrations").join("knowledge-staging");
+    let migrated = std::fs::create_dir_all(&staging)
+        .and_then(|()| {
+            tempfile::Builder::new()
+                .prefix(new_hash)
+                .tempdir_in(&staging)
+        })
+        .map_err(|e| e.to_string())
+        .and_then(|staged| {
+            copy_dir_contents(&old_dir, staged.path())?;
+            std::fs::rename(staged.path(), &new_dir).map_err(|e| e.to_string())?;
+            let _ = staged.keep();
+            Ok(())
+        });
+    if let Err(e) = migrated {
         tracing::error!("lean-ctx: knowledge migration failed: {e}");
     }
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Test-only: the next copy on this thread fails after its first file.
+    static COPY_FAILS_AFTER_FIRST_FILE: std::cell::Cell<bool> =
+        const { std::cell::Cell::new(false) };
 }
 
 // ---------------------------------------------------------------------------
@@ -331,6 +355,10 @@ fn copy_dir_contents(src: &Path, dst: &Path) -> Result<(), String> {
             copy_dir_contents(&src_path, &dst_path)?;
         } else {
             std::fs::copy(&src_path, &dst_path).map_err(|e| e.to_string())?;
+            #[cfg(test)]
+            if COPY_FAILS_AFTER_FIRST_FILE.with(|armed| armed.replace(false)) {
+                return Err("injected crash during the copy".into());
+            }
         }
     }
     Ok(())
@@ -672,6 +700,41 @@ mod tests {
             old_dir.join("knowledge.json").exists(),
             "old dir must remain intact"
         );
+    }
+
+    /// M03: a copy interrupted after its first file left a partial new
+    /// partition, and `new_dir.exists()` then stopped every later attempt:
+    /// the files not copied yet were lost to the project.
+    #[test]
+    fn an_interrupted_migration_leaves_no_partial_partition_and_resumes() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let knowledge_base = crate::core::data_dir::lean_ctx_data_dir()
+            .unwrap()
+            .join("knowledge");
+        let (old_hash, new_hash) = ("aaaa000000000000", "bbbb111111111111");
+        let old_dir = knowledge_base.join(old_hash);
+        let new_dir = knowledge_base.join(new_hash);
+        fs::create_dir_all(&old_dir).unwrap();
+        fs::write(
+            old_dir.join("knowledge.json"),
+            r#"{"project_root":"/workspace"}"#,
+        )
+        .unwrap();
+        fs::write(old_dir.join("gotchas.json"), "{}").unwrap();
+
+        COPY_FAILS_AFTER_FIRST_FILE.with(|armed| armed.set(true));
+        migrate_if_needed(old_hash, new_hash, "/workspace");
+        assert!(!new_dir.exists(), "no partial partition is left behind");
+
+        migrate_if_needed(old_hash, new_hash, "/workspace");
+        let mut copied: Vec<_> = fs::read_dir(&new_dir)
+            .unwrap()
+            .map(|entry| entry.unwrap().file_name())
+            .collect();
+        copied.sort();
+        assert_eq!(copied, ["gotchas.json", "knowledge.json"]);
+        assert!(old_dir.join("knowledge.json").exists());
+        assert!(old_dir.join("gotchas.json").exists());
     }
 
     #[test]

@@ -75,6 +75,8 @@ pub fn handle(
 
     let mut total = 0usize;
     let mut prefetched: Vec<(String, String)> = Vec::new(); // (path, mode)
+    let mut withheld: Vec<String> = Vec::new();
+    let mut remaining = crate::core::limits::max_read_bytes().saturating_mul(max_files);
     let jail_root = Path::new(project_root);
     for p in &picked {
         let full = to_fs_path(project_root, p);
@@ -100,10 +102,30 @@ pub fn handle(
             continue;
         }
 
-        let Ok(content) = std::fs::read_to_string(&jailed) else {
+        // A prefetch exists to fill the session cache, a derived store: the
+        // candidate is acquired through the common rooted admitted reader
+        // (G01) and only a source whose ORIGINAL may be kept is prefetched.
+        // A withheld source is named; a restricted one is left to an explicit
+        // read, which delivers it without retaining it.
+        let acquired = crate::tools::admitted_sources::read(
+            &jailed_s,
+            project_root,
+            "ctx_prefetch",
+            &mut remaining,
+        );
+        if let crate::tools::admitted_sources::SourceRead::Withheld(reason) = &acquired {
+            withheld.push(crate::tools::admitted_sources::withheld_line(
+                &protocol::shorten_path(&jailed_s),
+                reason,
+            ));
+            let _ = cache.invalidate(&jailed_s);
+            continue;
+        }
+        let Some(content) = acquired.storable() else {
+            let _ = cache.invalidate(&jailed_s);
             continue;
         };
-        let tokens = crate::core::tokens::count_tokens(&content);
+        let tokens = crate::core::tokens::count_tokens(content);
         total = total.saturating_add(tokens);
 
         let mode = if crate::tools::ctx_read::is_instruction_file(&jailed_s) {
@@ -121,9 +143,13 @@ pub fn handle(
             "signatures"
         };
 
-        let _ = crate::tools::ctx_read::handle_with_task_resolved(
-            cache, &jailed_s, mode, crp_mode, task,
-        );
+        // The read path admits only inside a request scope; bind it so the
+        // cached copy is the admitted one for every caller.
+        let _ = crate::tools::admitted_sources::as_agent_acquisition(project_root, || {
+            crate::tools::ctx_read::handle_with_task_resolved(
+                cache, &jailed_s, mode, crp_mode, task,
+            )
+        });
         prefetched.push((jailed_s, mode.to_string()));
     }
 
@@ -140,6 +166,7 @@ pub fn handle(
         let short = protocol::shorten_path(p);
         lines.push(format!("  - [{r}] {short} mode={mode}"));
     }
+    lines.extend(withheld.into_iter().map(|line| format!("  - {line}")));
     lines.join("\n")
 }
 
@@ -197,4 +224,102 @@ fn to_fs_path(project_root: &str, rel_or_abs: &str) -> String {
         .join(rel_or_abs)
         .to_string_lossy()
         .to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+
+    fn fixture() -> (tempfile::TempDir, String) {
+        let project = tempfile::tempdir().unwrap();
+        let root = std::fs::canonicalize(project.path())
+            .unwrap()
+            .to_string_lossy()
+            .into_owned();
+        (project, root)
+    }
+
+    fn cached(cache: &SessionCache, root: &str, name: &str) -> Option<String> {
+        cache.get_full_content(&Path::new(root).join(name).to_string_lossy())
+    }
+
+    /// G01: the old prefetch read each candidate raw and handed it to the read
+    /// path outside any request scope — the session cache then held a key
+    /// that `ctx_read` masks, and a restricted source was retained.
+    #[test]
+    fn prefetch_caches_admitted_storable_sources_only() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_project, root) = fixture();
+        std::fs::write(Path::new(&root).join("clean.rs"), "pub fn clean() {}\n").unwrap();
+        std::fs::write(
+            Path::new(&root).join("keyed.rs"),
+            format!("pub fn connect() {{\n    let aws_key = \"{AWS_KEY}\";\n}}\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            Path::new(&root).join("marked.rs"),
+            "// TOP SECRET\npub fn plan() {}\n",
+        )
+        .unwrap();
+        let changed = vec![
+            "clean.rs".to_string(),
+            "keyed.rs".to_string(),
+            "marked.rs".to_string(),
+        ];
+        let mut cache = SessionCache::new();
+        let out = handle(
+            &mut cache,
+            &root,
+            None,
+            Some(&changed),
+            0,
+            None,
+            CrpMode::Off,
+        );
+        assert!(
+            out.contains("clean.rs") && out.contains("keyed.rs"),
+            "{out}"
+        );
+        assert!(!out.contains("marked.rs"), "{out}");
+        assert!(
+            cached(&cache, &root, "keyed.rs").is_none_or(|text| !text.contains(AWS_KEY)),
+            "the session cache holds a raw key"
+        );
+        assert!(cached(&cache, &root, "marked.rs").is_none());
+    }
+
+    #[test]
+    fn a_withheld_candidate_is_named_and_not_cached() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let policy = crate::core::policy::load(
+            "name = \"ctx-prefetch-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )
+        .unwrap();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+        let (_project, root) = fixture();
+        std::fs::write(
+            Path::new(&root).join("plan.rs"),
+            "CONFIDENTIAL\npub fn hidden_marker() {}\n",
+        )
+        .unwrap();
+        let changed = vec!["plan.rs".to_string()];
+        let mut cache = SessionCache::new();
+        let out = handle(
+            &mut cache,
+            &root,
+            None,
+            Some(&changed),
+            0,
+            None,
+            CrpMode::Off,
+        );
+        assert!(out.contains("prefetched 0 file(s)"), "{out}");
+        assert!(out.contains("[withheld] "), "{out}");
+        assert!(!out.contains("hidden_marker"), "{out}");
+        assert!(cached(&cache, &root, "plan.rs").is_none());
+    }
 }

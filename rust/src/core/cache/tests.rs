@@ -167,9 +167,12 @@ fn current_full_content_none_without_entry() {
 }
 
 #[test]
-fn current_full_content_falls_back_to_cache_when_file_unreadable() {
-    // Stale + now-unreadable (deleted/moved): there is no current content to
-    // serve, so the last-known cached copy is returned rather than nothing.
+fn current_full_content_withholds_the_cached_copy_when_its_source_is_gone() {
+    // G04: a cached copy is not its own source. Once the file is deleted or
+    // moved there is nothing left to authorize the copy, so it is withheld
+    // with a typed reason. (This test used to assert the opposite — "last-known
+    // content beats nothing" — which contradicts G04: a source that was
+    // removed must not keep being served from a derived copy.)
     // Canonicalize the temp dir up front so the cache key is stable after the
     // file is removed (macOS /var -> /private/var symlink).
     let dir = tempfile::tempdir().unwrap();
@@ -182,14 +185,12 @@ fn current_full_content_falls_back_to_cache_when_file_unreadable() {
     cache.store(&path, "ORIGINAL\n");
     std::fs::remove_file(&file).unwrap();
 
-    let (content, _) = cache
+    let refusal = cache
         .current_full_content(&path)
         .expect("cache entry")
-        .expect("admitted");
-    assert_eq!(
-        content, "ORIGINAL\n",
-        "unreadable file must fall back to last-known cached content"
-    );
+        .expect_err("a deleted source must not be served from the cache");
+    assert!(refusal.contains("store.source_unavailable"), "{refusal}");
+    assert!(!refusal.contains("ORIGINAL"), "the refusal is content-free");
 }
 
 #[test]
@@ -234,29 +235,6 @@ fn concurrent_cache_hits_are_lossless() {
     assert_eq!(cache.get_stats().cache_hits(), total * 2);
     assert_eq!(cache.get("/a.rs").unwrap().read_count(), 1 + total as u32);
     assert_eq!(cache.get("/b.rs").unwrap().read_count(), 1 + total as u32);
-}
-
-#[test]
-fn hebbian_eviction_bonus_is_wired() {
-    // #3: files read together build a Hebbian association via store()'s
-    // recording, and that association must feed the eviction bonus.
-    //
-    // Widen the burst window so the two store() calls below always land in
-    // one burst — independent of real time. Previously this test warmed up
-    // tiktoken and hoped the calls stayed inside the real 500ms window; that
-    // still flaked under parallel test execution when scheduling jitter
-    // delayed one store() past the window. An injected window removes the
-    // wall-clock dependency entirely.
-    let mut cache = SessionCache::new();
-    cache.set_co_access_burst_window(std::time::Duration::from_hours(1));
-    cache.store("/a.rs", "fn a() {}");
-    cache.store("/b.rs", "fn b() {}");
-    cache.flush_co_access(); // commit the burst → association (a,b) forms
-    let bonus = cache.hebbian_eviction_bonus();
-    assert!(
-        !bonus.is_empty(),
-        "co-accessed reads must yield a Hebbian eviction bonus (#3 wired)"
-    );
 }
 
 #[test]

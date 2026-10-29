@@ -1,0 +1,49 @@
+{
+  "cases": [
+    {
+      "canonical": "{\"domain\":\"leanctx.hive.review-commit/v1\",\"item_id\":\"rv_aaaaaaaaaaaaaaaaaaaaaaaaaa\",\"nonce\":\"00000000000000000000000000000000\",\"verdict_json\":{\"checked_refs\":[],\"confidence\":\"high\",\"item_id\":\"rv_aaaaaaaaaaaaaaaaaaaaaaaaaa\",\"reason_code\":\"correct\",\"verdict\":\"accept\"}}",
+      "commitment": "ac2b8ce66c15ca588f7233c55db6ed031d1c32dde84d39eada856983416eedc8",
+      "item_id": "rv_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "nonce": "00000000000000000000000000000000",
+      "verdict": {
+        "checked_refs": [],
+        "confidence": "high",
+        "item_id": "rv_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reason_code": "correct",
+        "verdict": "accept"
+      }
+    },
+    {
+      "canonical": "{\"domain\":\"leanctx.hive.review-commit/v1\",\"item_id\":\"rv_aaaaaaaaaaaaaaaaaaaaaaaaaa\",\"nonce\":\"01010101010101010101010101010101\",\"verdict_json\":{\"checked_refs\":[],\"confidence\":\"high\",\"item_id\":\"rv_aaaaaaaaaaaaaaaaaaaaaaaaaa\",\"reason_code\":\"correct\",\"verdict\":\"accept\"}}",
+      "commitment": "147d9eebf4c7a137c1037f37cd6250bcb32197e5206eefb9c629ead08892fa05",
+      "item_id": "rv_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "nonce": "01010101010101010101010101010101",
+      "verdict": {
+        "checked_refs": [],
+        "confidence": "high",
+        "item_id": "rv_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reason_code": "correct",
+        "verdict": "accept"
+      }
+    },
+    {
+      "canonical": "{\"domain\":\"leanctx.hive.review-commit/v1\",\"item_id\":\"rv_aaaaaaaaaaaaaaaaaaaaaaaaaa\",\"nonce\":\"00000000000000000000000000000000\",\"verdict_json\":{\"checked_refs\":[{\"kind\":\"file\",\"ref\":\"Makefile\"}],\"confidence\":\"medium\",\"item_id\":\"rv_aaaaaaaaaaaaaaaaaaaaaaaaaa\",\"reason_code\":\"unsafe_command\",\"verdict\":\"reject\"}}",
+      "commitment": "b30a27f62216260db63d0a0679d4d12e579bdbb240b3bda646b2c97c0e4c6fbb",
+      "item_id": "rv_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "nonce": "00000000000000000000000000000000",
+      "verdict": {
+        "checked_refs": [
+          {
+            "kind": "file",
+            "ref": "Makefile"
+          }
+        ],
+        "confidence": "medium",
+        "item_id": "rv_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+        "reason_code": "unsafe_command",
+        "verdict": "reject"
+      }
+    }
+  ],
+  "rule": "commitment = hex(sha256(canonical_json({domain: \"leanctx.hive.review-commit/v1\", item_id, nonce, verdict_json: <verdict object>}))); nonce 16 bytes hex; reveal = {verdict, nonce} (usage outside the commitment)"
+}

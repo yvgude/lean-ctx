@@ -148,8 +148,6 @@ impl PendingReadDelivery {
         }
         // Session updates (bounded lock — 10s timeout, read already succeeded)
         let mut ensured_root: Option<String> = None;
-        let mut traversal_working_set: Vec<String> = Vec::new();
-        let mut prefetch_paths: Vec<String> = Vec::new();
         let project_root_snapshot;
         {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
@@ -164,11 +162,6 @@ impl PendingReadDelivery {
             };
             if let Some(mut session) = session_guard {
                 session.touch_file(path, file_ref.as_deref(), &resolved_mode, original);
-                prefetch_paths = session.prefetch_predictions(3);
-                // Capture the recent working set (under the lock) so the
-                // background thread can record a traversal/co-access edge (#289).
-                traversal_working_set =
-                    crate::core::tool_lifecycle::recent_working_set(&session, path);
                 let file_summary = self.file_summary;
                 if !file_summary.is_empty() {
                     session.set_file_summary(path, &file_summary);
@@ -224,10 +217,6 @@ impl PendingReadDelivery {
             crate::core::index_orchestrator::ensure_all_background(root);
         }
 
-        if !prefetch_paths.is_empty() {
-            crate::core::context_prefetch::warm_predictions(&prefetch_paths, Some(&cache_lock));
-        }
-
         // Telemetry + learning are pure side-effects that never influence this
         // response, yet they did synchronous disk I/O on every read
         // (ModePredictor load+save). Push them off
@@ -279,17 +268,6 @@ impl PendingReadDelivery {
                         ledger::record_read_event(lbase, lsaved, None, None);
                     }
 
-                    // Traversal/co-access edge: this read fired together with the
-                    // recent working set captured under the session lock (#289).
-                    if let Some(root) =
-                        crate::core::tool_lifecycle::usable_root(Some(project_root_bg.as_str()))
-                    {
-                        crate::core::cooccurrence::record_focus_access(
-                            root,
-                            &path_bg,
-                            &traversal_working_set,
-                        );
-                    }
                     let sig =
                         crate::core::mode_predictor::FileSignature::from_path(&path_bg, original);
                     let density = if output_tokens > 0 {
@@ -348,8 +326,9 @@ mod tests {
         cache.store(path, old);
         let identity = CacheSourceIdentity::from_entry(cache.get(path).unwrap());
         std::fs::write(&file, new).unwrap();
-        let (first, _, _) = crate::tools::ctx_read::prepare_diff(&cache, path, "F1");
-        let (retry, _, baseline) = crate::tools::ctx_read::prepare_diff(&cache, path, "F1");
+        let (first, _, _) = crate::tools::ctx_read::prepare_diff(&cache, path, "F1").unwrap();
+        let (retry, _, baseline) =
+            crate::tools::ctx_read::prepare_diff(&cache, path, "F1").unwrap();
         assert!(first.contains("changed"));
         assert_eq!(first, retry);
         assert_eq!(cache.get(path).unwrap().content().as_deref(), Some(old));

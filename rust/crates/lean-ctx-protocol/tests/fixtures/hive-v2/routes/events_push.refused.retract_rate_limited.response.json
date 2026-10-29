@@ -1,0 +1,24 @@
+{
+  "epoch": 0,
+  "results": [
+    {
+      "event_id": "01M5NKAAS8005000000000W009",
+      "review_state": "confirmed",
+      "seq": 9,
+      "status": "accepted"
+    },
+    {
+      "code": "retract_rate_limited",
+      "event_id": "01M5NKABRG005000000000W00A",
+      "retry_after_s": 1260,
+      "status": "refused"
+    },
+    {
+      "event_id": "01M5NKA9T0005000000000W008",
+      "review_state": "confirmed",
+      "seq": 10,
+      "status": "accepted"
+    }
+  ],
+  "server_time": 1792800010500
+}

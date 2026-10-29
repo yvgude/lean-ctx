@@ -1,6 +1,6 @@
 # Appendix — JetBrains Plugin (Agent Reference)
 
-> Compact lookup tables for agents: every `ctx_refactor` action, its HTTP
+> Compact lookup tables for agents: every plugin action, its HTTP
 > endpoint, key parameters, backing — plus the user-facing IDE surfaces (Gain
 > Tool Window, editor-focus reporter, status-bar widget, Tools-menu actions).
 > Full description (curl, responses, guards, architecture, E2E):
@@ -13,10 +13,14 @@
 
 ## Coordinates & invocation
 
-- Invocation: `ctx_refactor action=<action> …` (MCP) or
-  `POST 127.0.0.1:<port><endpoint>` with header `X-LeanCtx-Token: <token>`,
-  body = JSON.
-- `ctx_refactor` layer: `line` **1-indexed**, `column` **0-indexed**.
+- Invocation: `POST 127.0.0.1:<port><endpoint>` with header
+  `X-LeanCtx-Token: <token>`, body = JSON. Since 3.11.5 (`ctx_refactor`
+  removed) the MCP entry points are `ctx_patch op="replace_symbol"`
+  (`replace_symbol_body`) and the semantic-evidence lookups behind
+  `ctx_callgraph` and the code graph (`references`, `definition`,
+  `implementations`, `type_hierarchy`); `ctx_outline` covers
+  `symbols_overview`. The other actions are HTTP/IDE-only.
+- Rust (MCP) layer: `line` **1-indexed**, `column` **0-indexed**.
   Wire layer: `line`/`character` **0-based**; `line` in `type_hierarchy` /
   `symbols_overview` / `inspections` responses is **1-based**.
 - Business-level negative case: HTTP 200 + `{"error":{"code","message"}}`.
@@ -46,11 +50,11 @@ Backing: **B** = JetBrains IDE (plugin via HTTP); **A** = rust-analyzer
 refactoring engine (`rename`/`move`/`safe_delete`/`inline`) is two-phase
 (`*Preview`→`*Apply`, `plan_hash`-protected) and has no headless path.
 
-> `find_symbol` (Serena) → `ctx_search action="symbol"` / `ctx_outline`, not `ctx_refactor`.
+> `find_symbol` (Serena) → `ctx_search action="symbol"` / `ctx_outline`.
 
 ## IDE UI surfaces (non-HTTP)
 
-These are user-facing IDE touchpoints, not part of the `ctx_refactor` HTTP
+These are user-facing IDE touchpoints, not part of the plugin's HTTP
 surface. See the Gain Tool Window (§4), Editor-Focus Reporter (§5) and IDE UI
 Integration (§6) sections of [Journey 19](19-jetbrains-plugin.md) for full
 detail.

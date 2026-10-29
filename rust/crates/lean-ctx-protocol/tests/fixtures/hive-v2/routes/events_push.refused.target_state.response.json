@@ -1,0 +1,24 @@
+{
+  "epoch": 0,
+  "results": [
+    {
+      "code": "invalid_event",
+      "event_id": "01M5NKAAS8005000000000W009",
+      "reason": "target_state",
+      "status": "refused"
+    },
+    {
+      "code": "invalid_event",
+      "event_id": "01M5NKACQR005000000000W00B",
+      "reason": "target_state",
+      "status": "refused"
+    },
+    {
+      "code": "invalid_event",
+      "event_id": "01M5NKA3YG005000000000W002",
+      "reason": "use_restore",
+      "status": "refused"
+    }
+  ],
+  "server_time": 1792800019500
+}

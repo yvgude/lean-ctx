@@ -25,11 +25,15 @@
 //! second pass sees only placeholders) and only ever fires when the client
 //! anchored nothing itself, so it never rewrites a client-cached prefix.
 
+#[cfg(feature = "http-server")]
 use std::sync::LazyLock;
 
+#[cfg(feature = "http-server")]
 use regex::Regex;
+#[cfg(feature = "http-server")]
 use serde_json::{Map, Value};
 
+#[cfg(feature = "http-server")]
 use crate::core::tokens::count_tokens;
 
 /// A type of text that makes an otherwise-stable provider cache prefix vary.
@@ -344,6 +348,7 @@ fn hash_matches(bytes: &[u8]) -> Vec<VolatileMatch> {
 /// git SHAs) rather than broad, so a stable identifier is never miscounted as
 /// volatile. Datetimes are matched alongside bare dates; the span merge below
 /// collapses the overlap so a full timestamp counts once.
+#[cfg(feature = "http-server")]
 static VOLATILE_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
     [
         // ISO-8601 datetime: date + time, optional seconds/fraction/zone.
@@ -362,6 +367,7 @@ static VOLATILE_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
 
 /// Result of scanning a system prompt for volatile, cache-busting fields.
 #[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+#[cfg(feature = "http-server")]
 pub(crate) struct VolatileScan {
     /// Number of distinct (overlap-merged) volatile spans found.
     pub fields: usize,
@@ -373,6 +379,7 @@ pub(crate) struct VolatileScan {
 /// matches (e.g. a datetime and the bare date inside it) so each counts once.
 /// Shared by the detector ([`scan_volatile`]) and the relocate
 /// ([`relocate_volatile`]) so both see exactly the same fields.
+#[cfg(feature = "http-server")]
 fn merged_spans(text: &str) -> Vec<(usize, usize)> {
     let mut spans: Vec<(usize, usize)> = Vec::new();
     for re in VOLATILE_PATTERNS.iter() {
@@ -393,6 +400,7 @@ fn merged_spans(text: &str) -> Vec<(usize, usize)> {
 }
 
 /// Deterministically scan `text` for volatile fields (measurement-only, #940).
+#[cfg(feature = "http-server")]
 pub(crate) fn scan_volatile(text: &str) -> VolatileScan {
     let merged = merged_spans(text);
     VolatileScan {
@@ -403,6 +411,7 @@ pub(crate) fn scan_volatile(text: &str) -> VolatileScan {
 
 /// The plain text of an Anthropic `system` field — a bare string, or every text
 /// block of a block array joined with newlines. `None` for any other shape.
+#[cfg(feature = "http-server")]
 pub(crate) fn system_text(system: &Value) -> Option<String> {
     match system {
         Value::String(s) => Some(s.clone()),
@@ -421,22 +430,26 @@ pub(crate) fn system_text(system: &Value) -> Option<String> {
 /// Anthropic ignores a cache breakpoint whose prefix is under its minimum
 /// cacheable size; relocating below it just churns bytes for no cache win, so the
 /// relocate is gated on the same floor as `cache_breakpoint` (#939).
+#[cfg(feature = "http-server")]
 const MIN_STABLE_TOKENS: usize = 1024;
 
 /// Constant header introducing the relocated tail block. Byte-constant so it
 /// never perturbs the prefix (#498).
+#[cfg(feature = "http-server")]
 const TAIL_HEADER: &str = "Volatile context (relocated to keep the prompt-cache prefix stable):";
 
 /// The constant placeholder that replaces the `n`-th relocated value in the
 /// stable block. Numbered by appearance so the model can map it to the tail and
 /// so the rewrite is deterministic; carries no volatile pattern, which is what
 /// makes [`relocate_volatile`] idempotent.
+#[cfg(feature = "http-server")]
 fn placeholder(n: usize) -> String {
     format!("[ctx#{n}]")
 }
 
 /// A system prompt split for cache alignment.
 #[derive(Debug, Clone, PartialEq, Eq)]
+#[cfg(feature = "http-server")]
 pub(crate) struct RelocateResult {
     /// System text with every volatile value replaced by a constant placeholder
     /// — byte-stable turn-to-turn, so it is the part that caches.
@@ -451,6 +464,7 @@ pub(crate) struct RelocateResult {
 /// Split `text` into a byte-stable `stable` part (volatile values → placeholders)
 /// and a `tail` that re-states those values. `None` when there is nothing
 /// volatile to move, so callers stay a strict no-op.
+#[cfg(feature = "http-server")]
 pub(crate) fn relocate_volatile(text: &str) -> Option<RelocateResult> {
     let spans = merged_spans(text);
     if spans.is_empty() {
@@ -482,6 +496,7 @@ pub(crate) fn relocate_volatile(text: &str) -> Option<RelocateResult> {
 }
 
 /// A plain `{"type":"text","text":…}` system block.
+#[cfg(feature = "http-server")]
 fn text_block(text: String) -> Map<String, Value> {
     let mut block = Map::new();
     block.insert("type".into(), Value::String("text".into()));
@@ -490,6 +505,7 @@ fn text_block(text: String) -> Map<String, Value> {
 }
 
 /// The stable block plus the ephemeral cache breakpoint that anchors the prefix.
+#[cfg(feature = "http-server")]
 fn stable_block(text: String) -> Value {
     let mut block = text_block(text);
     block.insert(
@@ -506,6 +522,7 @@ fn stable_block(text: String) -> Value {
 /// Handles a plain string or an array of pure text blocks that carry no
 /// `cache_control` of their own (the caller already guards anchored prefixes).
 /// Any other shape, or a stable part below [`MIN_STABLE_TOKENS`], is a no-op.
+#[cfg(feature = "http-server")]
 pub(crate) fn apply_anthropic_relocate(doc: &mut Value) -> usize {
     let Some(system) = doc.get_mut("system") else {
         return 0;

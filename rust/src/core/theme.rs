@@ -96,8 +96,11 @@ impl Default for Theme {
     }
 }
 
+/// Colour is off under `NO_COLOR`, `TERM=dumb`, or when stdout is not a TTY.
 pub fn no_color() -> bool {
-    std::env::var("NO_COLOR").is_ok() || !std::io::stdout().is_terminal()
+    std::env::var("NO_COLOR").is_ok()
+        || std::env::var("TERM").is_ok_and(|term| term == "dumb")
+        || !std::io::stdout().is_terminal()
 }
 
 pub const RST: &str = "\x1b[0m";

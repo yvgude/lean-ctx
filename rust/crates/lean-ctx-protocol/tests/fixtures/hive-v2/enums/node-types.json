@@ -1,0 +1,125 @@
+{
+  "name": "node-types",
+  "values": [
+    {
+      "value": "fact",
+      "places": [
+        "vault",
+        "swarm"
+      ],
+      "claim": true,
+      "mutable": [
+        "evidence",
+        "applies_to",
+        "sensitivity",
+        "anchors",
+        "anchor_state"
+      ],
+      "anchors": true
+    },
+    {
+      "value": "decision",
+      "places": [
+        "vault",
+        "swarm"
+      ],
+      "claim": true,
+      "mutable": [
+        "status",
+        "deferred",
+        "rationale",
+        "evidence"
+      ]
+    },
+    {
+      "value": "gotcha",
+      "places": [
+        "vault",
+        "swarm"
+      ],
+      "claim": true,
+      "mutable": [
+        "trigger",
+        "avoid",
+        "evidence",
+        "anchors",
+        "tags",
+        "anchor_state"
+      ],
+      "anchors": true
+    },
+    {
+      "value": "procedure",
+      "places": [
+        "vault",
+        "swarm"
+      ],
+      "claim": false,
+      "mutable": [
+        "steps",
+        "commands",
+        "preconditions",
+        "evidence",
+        "anchors",
+        "tags",
+        "anchor_state"
+      ],
+      "anchors": true
+    },
+    {
+      "value": "finding",
+      "places": [
+        "vault",
+        "swarm"
+      ],
+      "claim": true,
+      "mutable": [
+        "evidence"
+      ]
+    },
+    {
+      "value": "episode",
+      "places": [
+        "vault",
+        "swarm"
+      ],
+      "claim": false,
+      "mutable": [
+        "summary",
+        "outcome",
+        "outcome_note"
+      ]
+    },
+    {
+      "value": "reference",
+      "places": [
+        "vault",
+        "swarm"
+      ],
+      "claim": false,
+      "mutable": [
+        "anchor_state"
+      ]
+    },
+    {
+      "value": "goal",
+      "places": [
+        "swarm"
+      ],
+      "claim": false,
+      "mutable": [
+        "title",
+        "text",
+        "acceptance"
+      ]
+    },
+    {
+      "value": "result",
+      "places": [
+        "swarm"
+      ],
+      "claim": false,
+      "mutable": []
+    }
+  ]
+}

@@ -13,9 +13,9 @@ use crate::{
     },
     proxy::{
         adaptive_policy::select_policy,
+        compress::gate,
         dedup::dedup_tool_outputs,
         determinism_guard,
-        effort_routing::score_session_complexity,
         live_zone::{compress_live_only, detect_live_zone},
         pre_optimize::classify_task,
         prose_compress::{CompressionStrategy, ProseCompressor},
@@ -37,17 +37,9 @@ pub struct PipelineReport {
     pub total_tokens_before: u64,
     pub total_tokens_after: u64,
     pub total_savings_pct: f32,
-    pub(crate) effort_complexity: Option<u8>,
 }
 
 impl PipelineReport {
-    /// Applies the scored effort budget; returns whether the request changed.
-    pub(crate) fn apply_effort_budget(&self, request: &mut Value) -> bool {
-        self.effort_complexity.is_some_and(|complexity| {
-            crate::proxy::effort_routing::inject_effort_budget(request, complexity).1
-        })
-    }
-
     /// Tokens the in-request tool-output dedup stage saved (0 when reverted).
     pub(crate) fn dedup_tokens_saved(&self) -> usize {
         self.stages_run
@@ -80,7 +72,7 @@ impl PipelineReport {
     }
 
     fn headline_stage_names(&self) -> String {
-        ["live_zone", "dedup", "prose", "effort"]
+        ["live_zone", "dedup", "prose"]
             .into_iter()
             .filter(|name| {
                 self.stages_run
@@ -175,18 +167,9 @@ impl CompressionPipeline {
             dedup_started,
         ));
 
-        let effort_started = Instant::now();
-        // #1912: scored from the untouched opening turn so the injected budget
-        // (a cache-keyed top-level field) stays fixed for the whole session.
-        let effort_complexity = config
-            .enable_effort
-            .then(|| score_session_complexity(&original_messages));
-        stages_run.push(stage_report(
-            "effort",
-            config.enable_effort,
-            0,
-            effort_started,
-        ));
+        // No reasoning-budget stage: how hard a model reasons is set by the host
+        // or by the operator's constant `proxy.effort`, never derived from the
+        // prompt. The retired `pipeline.enable_effort` key is ignored.
 
         messages.append(&mut live_messages);
 
@@ -241,7 +224,6 @@ impl CompressionPipeline {
             total_tokens_before,
             total_tokens_after,
             total_savings_pct,
-            effort_complexity,
         }
     }
 }
@@ -308,8 +290,13 @@ fn compress_live_prose(
             continue;
         };
 
+        // Both steps drop text (lines an earlier turn carried in another
+        // spelling, near-duplicate and explanatory sentences): they are one
+        // change of the block and pass the shared gate once. Under
+        // protection the block changes only with a recovery copy bound to
+        // its lineage; a turn the host wrote has none and stays whole.
         match content {
-            Value::String(text) => compress_text(text, task_class),
+            Value::String(text) => gate::rewrite(text, |text| compress_text(text, task_class)),
             Value::Array(blocks) => {
                 for block in blocks {
                     let Some(block) = block.as_object_mut() else {
@@ -317,8 +304,10 @@ fn compress_live_prose(
                     };
                     if block.get("type").and_then(Value::as_str) == Some("text") {
                         if let Some(Value::String(text)) = block.get_mut("text") {
-                            remove_seen_instruction_lines(text, &mut seen_instruction_lines);
-                            compress_text(text, task_class);
+                            gate::rewrite(text, |text| {
+                                remove_seen_instruction_lines(text, &mut seen_instruction_lines);
+                                compress_text(text, task_class);
+                            });
                         }
                     }
                 }
@@ -394,7 +383,7 @@ fn insert_header(headers: &mut axum::http::HeaderMap, name: &str, value: &str) {
 mod tests {
     use serde_json::json;
 
-    use super::{CompressionPipeline, PipelineConfig};
+    use super::{CompressionPipeline, PipelineConfig, compress_live_prose};
 
     fn verbose_text() -> String {
         (0..200)
@@ -411,7 +400,9 @@ mod tests {
     fn pipeline_runs_all_stages_in_order() {
         let mut messages = vec![json!({"role": "user", "content": verbose_text()})];
 
-        let report = CompressionPipeline::run(&mut messages, &PipelineConfig::default());
+        // The prompt is never scored for a reasoning budget.
+        let config = PipelineConfig::default();
+        let report = CompressionPipeline::run(&mut messages, &config);
 
         assert_eq!(
             report
@@ -427,7 +418,6 @@ mod tests {
                 "prose",
                 "tool_results",
                 "dedup",
-                "effort",
                 "determinism_guard",
             ]
         );
@@ -550,5 +540,107 @@ mod tests {
                  upstream would receive a conversation the model cannot see"
             );
         }
+    }
+
+    fn write_config(text: &str) {
+        let config = crate::core::paths::config_dir_read_only().expect("config directory");
+        std::fs::create_dir_all(&config).expect("config directory");
+        std::fs::write(config.join("config.toml"), text).expect("gateway config");
+    }
+
+    /// [real registers and store] The prose stage (default on) removes lines
+    /// an earlier turn carried and near-duplicate sentences. Under protection
+    /// a turn changes only with a recovery copy bound to its lineage: text
+    /// the Engine delivered leaves shorter, with a stub that resolves to the
+    /// exact original; a turn the host wrote stays whole. Developer mode
+    /// removes the repeated lines as before.
+    #[test]
+    fn prose_stage_changes_a_turn_under_protection_only_with_a_recovery_copy() {
+        use crate::core::archive::delivered;
+        use crate::core::archive::presented::{PresentedBinding, record_presentation};
+        use crate::proxy::compress::{Reader, observing, resolve_recovery};
+        use crate::proxy::request_project::in_project;
+
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let directory = tempfile::tempdir().expect("project");
+        let root = directory.path().canonicalize().expect("canonical root");
+        write_config(&format!(
+            "[context_gateway]\nmode = \"governed\"\n\n[proxy]\nproject_root = '{}'\n",
+            root.display()
+        ));
+        let rules = (0..12).fold(String::new(), |mut rules, index| {
+            use std::fmt::Write as _;
+            let _ = writeln!(
+                rules,
+                "Always run check number {index} before merging into the main branch."
+            );
+            rules
+        });
+        let delivered_text = format!("{rules}Keep the failure output.\n");
+        in_project(&root, || {
+            let binding = PresentedBinding::admitted_now(
+                &root,
+                "object://caller/rules",
+                "source-one",
+                "sha256:7d1a54127b222502f5b79b5fb0803061152a44f92b37e23c6527baf665d4da9a",
+            )
+            .expect("the policy identity of the project resolves");
+            assert!(record_presentation(&binding));
+            assert!(delivered::record_lineage(
+                &delivered::digest(&delivered_text),
+                &delivered::Lineage::of_presented(vec![binding])
+            ));
+        });
+        let turns = || {
+            vec![
+                json!({"role": "user", "content": [{"type": "text", "text": rules}]}),
+                json!({"role": "assistant", "content": [
+                    {"type": "text", "text": delivered_text}
+                ]}),
+            ]
+        };
+        let text_of = |messages: &[serde_json::Value], index: usize| {
+            messages[index]["content"][0]["text"]
+                .as_str()
+                .expect("text block")
+                .to_owned()
+        };
+
+        let mut messages = turns();
+        let ((), kept) = observing(Reader::Model, || {
+            compress_live_prose(&mut messages, "coding_fix", None);
+        });
+        assert_eq!(text_of(&messages, 0), rules, "the host's turn stays whole");
+        let sent = text_of(&messages, 1);
+        assert!(sent.len() < delivered_text.len());
+        assert!(!sent.contains("Always run check number"), "{sent}");
+        assert!(sent.contains("Keep the failure output."), "{sent}");
+        let stub = sent.rsplit('\n').next().unwrap_or_default();
+        assert!(stub.starts_with("[lean-ctx recovery: "), "{sent}");
+        let id = stub
+            .split("ctx_expand(id=\"")
+            .nth(1)
+            .and_then(|rest| rest.split('"').next())
+            .expect("an id");
+        assert_eq!(resolve_recovery(id), Some(Ok(delivered_text.clone())));
+        assert!(
+            kept.counts()
+                .keys()
+                .all(|code| *code == "recovery.unknown_lineage"),
+            "nothing but the host's own turn can be counted: {:?}",
+            kept.counts()
+        );
+
+        write_config("");
+        let mut messages = turns();
+        let ((), kept) = observing(Reader::Model, || {
+            compress_live_prose(&mut messages, "coding_fix", None);
+        });
+        let sent = text_of(&messages, 1);
+        assert!(!sent.contains("Always run check number"), "{sent}");
+        assert!(sent.contains("Keep the failure output."), "{sent}");
+        assert!(!sent.contains("[lean-ctx recovery: "));
+        assert!(kept.is_empty());
     }
 }

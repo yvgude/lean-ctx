@@ -48,8 +48,6 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
         | "ctx_radar"
         | "ctx_heatmap"
         | "ctx_feedback"
-        | "ctx_intent"
-        | "ctx_response"
         | "ctx_discover"
         | "ctx_discover_tools"
         | "ctx_load_tools"
@@ -66,98 +64,150 @@ pub fn categorize_tool(name: &str) -> ToolCategory {
         // callers/impact to it), so it must be Core here too.
         // ctx_patch joined in #1008 (anchored editing is a core workflow).
         "ctx_read" | "ctx_search" | "ctx_shell" | "shell" | "ctx_tree" | "ctx_edit"
-        | "ctx_patch" | "ctx_session" | "ctx_checkpoint" | "ctx_knowledge" | "ctx_overview"
-        | "ctx_graph" | "ctx_callgraph" | "ctx_call" | "ctx_compress" | "ctx_cache"
-        | "ctx_retrieve" | "ctx_expand" => ToolCategory::Core,
+        | "ctx_patch" | "ctx_session" | "ctx_checkpoint" | "ctx_knowledge" | "ctx_graph"
+        | "ctx_callgraph" | "ctx_call" | "ctx_compress" | "ctx_expand" | "ctx_delta"
+        | "ctx_outline" | "ctx_context" => ToolCategory::Core,
 
-        // Merged tools (redirects in registry, treated as Core for backward compat)
-        "ctx_multi_read" | "ctx_smart_read" | "ctx_delta" | "ctx_outline" | "ctx_context" => {
-            ToolCategory::Core
-        }
+        // Arch: on-demand index maintenance
+        "ctx_index" => ToolCategory::Arch,
 
-        // Arch: on-demand architecture analysis
-        "ctx_architecture" | "ctx_impact" | "ctx_refactor" | "ctx_symbol" | "ctx_routes"
-        | "ctx_smells" | "ctx_quality" | "ctx_index" => ToolCategory::Arch,
-
-        // Debug/Verify: on-demand quality analysis
-        "ctx_benchmark" | "ctx_verify" | "ctx_analyze" | "ctx_profile" | "ctx_proof"
-        | "ctx_review" | "ctx_compare" => ToolCategory::Debug,
+        // Debug/Verify: on-demand verification
+        "ctx_verify" | "ctx_profile" | "ctx_proof" => ToolCategory::Debug,
 
         // Provider + URL/Git readers + the MCP gateway are Core: gateways to
         // external context (GitHub issues, Jira, Postgres, web pages, YouTube,
         // remote git repos, downstream MCP servers) — always available.
-        // ctx_semantic_search is a first-class retrieval tool (advertised in the
-        // lean core, #422) — keep it Core so the default category gate never hides
-        // it, the very reason agents stopped reaching for it.
-        "ctx_provider" | "ctx_url_read" | "ctx_git_read" | "ctx_tools" | "ctx_semantic_search" => {
-            ToolCategory::Core
-        }
+        "ctx_provider" | "ctx_url_read" | "ctx_git_read" | "ctx_tools" => ToolCategory::Core,
 
         // Memory: on-demand artifact retrieval
         "ctx_artifacts" => ToolCategory::Memory,
 
         // Batch: on-demand batch/PR/sandbox tools
-        "ctx_fill" | "ctx_execute" | "ctx_pack" | "ctx_plan" | "ctx_control" | "ctx_compile" => {
-            ToolCategory::Metrics
-        }
+        "ctx_execute" | "ctx_pack" | "ctx_control" => ToolCategory::Metrics,
 
         // Multi-agent: on-demand collaboration
-        "ctx_agent" | "ctx_share" | "ctx_task" | "ctx_handoff" | "ctx_workflow"
-        | "ctx_work_graph" => ToolCategory::Session,
+        "ctx_agent" | "ctx_share" | "ctx_handoff" | "ctx_work_graph" | "ctx_tasks"
+        | "ctx_compute" => ToolCategory::Session,
 
         _ => ToolCategory::Core,
     }
 }
 
-/// A deprecated tool that has been folded into a primary tool (#509 Phase 1).
-///
-/// The alias stays **registered and callable** (directly and via `ctx_call`) for
-/// one release so nothing breaks, but it is hidden from `tools/list` and warns on
-/// use, steering agents to the consolidated primary. Removal happens in Phase 2.
+/// A tool that was removed: folded into a primary tool (#509) or retired
+/// without a successor (focus release, 2026-10). Only the name survives, so a
+/// call from an older agent prompt or config gets the way forward instead of
+/// a bare "Unknown tool" (`docs/migration/focus-2026-10.md`).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub struct DeprecatedAlias {
-    /// The primary tool that supersedes this alias (e.g. `"ctx_read"`).
-    pub replacement: &'static str,
+pub struct RemovedTool {
+    /// The primary tool that covers this use case (e.g. `"ctx_read"`), or
+    /// `None` for a tool retired from the Context Gateway without a successor.
+    pub replacement: Option<&'static str>,
     /// One-line migration hint (e.g. how the primary covers this use case).
     pub hint: &'static str,
 }
 
-/// Single source of truth for read-cluster deprecations (#509). Returns the
-/// replacement + migration hint when `name` is a deprecated alias, else `None`.
-///
-/// Used by [`crate::server::tool_visibility::is_tool_visible`] to hide the alias
-/// from `tools/list`, and by the dispatch layer to prepend a one-line
-/// deprecation notice to the alias's output. Keeping both behaviours keyed off
-/// this one function guarantees "hidden" and "warned" can never drift apart.
-#[must_use]
-pub fn deprecated_alias(name: &str) -> Option<DeprecatedAlias> {
-    match name {
-        "ctx_smart_read" => Some(DeprecatedAlias {
-            replacement: "ctx_read",
-            hint: "ctx_read auto-selects the mode (omit `mode`, or pass mode=\"auto\")",
-        }),
-        "ctx_multi_read" => Some(DeprecatedAlias {
-            replacement: "ctx_read",
-            hint: "ctx_read now batch-reads via paths=[\"a.rs\",\"b.rs\"]",
-        }),
-        // #509 search consolidation: one ctx_search entry, `action` picks the
-        // engine. Aliases stay callable for one release so nothing breaks.
-        "ctx_semantic_search" => Some(DeprecatedAlias {
-            replacement: "ctx_search",
-            hint: "ctx_search with action=\"semantic\" (query=…); reindex/find_related are actions too",
-        }),
-        "ctx_symbol" => Some(DeprecatedAlias {
-            replacement: "ctx_search",
-            hint: "ctx_search with action=\"symbol\" (name=…, optional file/kind)",
-        }),
-        _ => None,
-    }
+const fn superseded(replacement: &'static str, hint: &'static str) -> Option<RemovedTool> {
+    Some(RemovedTool {
+        replacement: Some(replacement),
+        hint,
+    })
 }
 
-/// Whether `name` is a deprecated alias hidden from `tools/list` (#509).
+const fn retired(hint: &'static str) -> Option<RemovedTool> {
+    Some(RemovedTool {
+        replacement: None,
+        hint,
+    })
+}
+
+/// The successor and migration hint for a removed tool name, else `None`.
 #[must_use]
-pub fn is_deprecated_alias(name: &str) -> bool {
-    deprecated_alias(name).is_some()
+pub fn removed_tool(name: &str) -> Option<RemovedTool> {
+    match name {
+        "ctx_smart_read" => superseded(
+            "ctx_read",
+            "ctx_read auto-selects the mode (omit `mode`, or pass mode=\"auto\")",
+        ),
+        "ctx_multi_read" => superseded(
+            "ctx_read",
+            "ctx_read now batch-reads via paths=[\"a.rs\",\"b.rs\"]",
+        ),
+        // #509 search consolidation: one ctx_search entry, `action` picks the engine.
+        "ctx_semantic_search" => superseded(
+            "ctx_search",
+            "ctx_search with action=\"semantic\" (query=…); reindex/find_related are actions too",
+        ),
+        "ctx_symbol" => superseded(
+            "ctx_search",
+            "ctx_search with action=\"symbol\" (name=…, optional file/kind)",
+        ),
+        // Focus release 2026-10-15, Select: one task-ranked entry point.
+        "ctx_overview" | "ctx_summary" | "ctx_explore" => superseded(
+            "ctx_compose",
+            "ctx_compose(task=…) returns the ranked files, symbols and structure for a task",
+        ),
+        "ctx_plan" | "ctx_compile" | "ctx_fill" => superseded(
+            "ctx_compose",
+            "ctx_compose selects under the turn budget; read chosen files with ctx_read",
+        ),
+        // One code-graph tool beside ctx_callgraph.
+        "ctx_impact" => superseded(
+            "ctx_graph",
+            "ctx_graph action=\"impact\" (path=…), action=\"path\" for chains, action=\"diff\" for changes",
+        ),
+        "ctx_architecture" | "ctx_repomap" => superseded(
+            "ctx_graph",
+            "ctx_graph action=\"diagram\"|\"explain\"|\"related\"; ctx_tree for the directory map",
+        ),
+        "ctx_routes" => superseded(
+            "ctx_search",
+            "ctx_search for route definitions (pattern=…), ctx_graph action=\"related\" for handlers",
+        ),
+        "ctx_retrieve" => superseded(
+            "ctx_expand",
+            "ctx_expand id=… returns withheld or archived content",
+        ),
+        // Maintenance, not an agent decision: the CLI keeps it. (`ctx_index`
+        // stays public: it carries `ctx_search`'s former reindex action, #1624.)
+        "ctx_cache" => superseded(
+            "ctx_read",
+            "ctx_read fresh=true re-reads; maintenance runs via `lean-ctx cache prune|reset`",
+        ),
+        // Focus release 2026-10-15, retired: not part of Select · Control · Prove.
+        "ctx_smells" | "ctx_quality" | "ctx_optimize" | "ctx_review" => {
+            retired("code review and linting belong to the host's own tooling")
+        }
+        "ctx_quality_lab" | "ctx_benchmark" | "ctx_perf" | "ctx_cognitive" | "ctx_ledger"
+        | "ctx_live_zone" => retired(
+            "measurement and diagnostics live in `lean-ctx gain`, `lean-ctx doctor` and the dashboard",
+        ),
+        "ctx_refactor" => retired(
+            "write refactorings are host execution; ctx_callgraph keeps the LSP read side (references)",
+        ),
+        "ctx_analyze" | "ctx_compare" => retired(
+            "ctx_read mode=\"auto\" picks the mode; `lean-ctx compress diff <file>` previews compression",
+        ),
+        "ctx_crush" => {
+            retired("ctx_read and ctx_shell apply the JSON/CSV/YAML crushers automatically")
+        }
+        "ctx_response" => {
+            retired("LeanCTX shapes the context the model reads, not the model's own responses")
+        }
+        "ctx_skillify" | "ctx_rules" => retired(
+            "agent rule files are host configuration; use `lean-ctx rules status|diff` or `lean-ctx doctor`",
+        ),
+        "ctx_workflow" => retired(
+            "workflow execution belongs to the host; ctx_work_graph keeps the shared coordination state",
+        ),
+        // Retired 2026-10-17: no calls from any installation in 30 days.
+        "ctx_task" => retired(
+            "task assignment is host execution; ctx_work_graph keeps the shared coordination state",
+        ),
+        "ctx_intent" => retired(
+            "LeanCTX infers intent from the tool calls; ctx_compose(task=…) selects context for a task",
+        ),
+        _ => None,
+    }
 }
 
 /// Local collaboration substrate that remains callable for installed users but
@@ -166,13 +216,8 @@ pub fn is_deprecated_alias(name: &str) -> bool {
 /// LeanCTX is a Context SDK, not an agent coordination product. These tools
 /// support local development compatibility only; they do not imply a supported
 /// public agent bus, task scheduler, workflow engine, or A2A product.
-pub const LOCAL_COLLABORATION_COMPATIBILITY_TOOLS: &[&str] = &[
-    "ctx_agent",
-    "ctx_share",
-    "ctx_task",
-    "ctx_handoff",
-    "ctx_workflow",
-];
+pub const LOCAL_COLLABORATION_COMPATIBILITY_TOOLS: &[&str] =
+    &["ctx_agent", "ctx_share", "ctx_handoff"];
 
 /// Whether a registered tool is retained only for local compatibility and must
 /// never be advertised from a public tool-definition path.
@@ -200,29 +245,51 @@ pub fn targets_internal_host_tool(
         .is_ok_and(|(inner, _)| INTERNAL_HOST_TOOLS.contains(&inner.as_str()))
 }
 
-/// Whether a registered tool belongs on a public MCP tool surface.
-///
-/// Compatibility aliases, local collaboration substrate and internal host
-/// hooks remain directly callable, including through `ctx_call`; this gate only
-/// controls discovery.
+/// Hive MCP tools. They ship with the connector but follow its release switch
+/// (`core::hive::available_locally`, owner 28.10.): while it is off they are
+/// in no tool list and every call answers [`crate::core::hive::TOOL_NOT_AVAILABLE`].
+pub const HIVE_TOOLS: &[&str] = &["ctx_tasks", "ctx_compute"];
+
+/// Whether `name` is a Hive tool withheld by the release switch.
 #[must_use]
-pub fn is_publicly_advertised_tool(name: &str) -> bool {
-    !is_deprecated_alias(name)
-        && !is_local_collaboration_compatibility_tool(name)
-        && !INTERNAL_HOST_TOOLS.contains(&name)
+pub fn is_withheld_hive_tool(name: &str) -> bool {
+    HIVE_TOOLS.contains(&name) && !crate::core::hive::available_locally()
 }
 
-/// The one-line deprecation notice prepended to a deprecated alias's output.
-/// Stable per tool (no timestamps/counters) so provider-side prompt caching
-/// stays byte-stable (#498).
+/// The fixed answer for a call — direct, or through `ctx_call`/`ctx` — to a
+/// withheld Hive tool, else `None`. Stable text (#498).
 #[must_use]
-pub fn deprecation_notice(name: &str) -> Option<String> {
-    deprecated_alias(name).map(|d| {
-        format!(
-            "[DEPRECATED] {name} is superseded by {} — {}. This alias is hidden from \
-             tools/list and will be removed in a future release.",
-            d.replacement, d.hint
-        )
+pub fn withheld_hive_tool_refusal(
+    name: &str,
+    args: Option<&serde_json::Map<String, serde_json::Value>>,
+) -> Option<&'static str> {
+    crate::tools::registered::ctx_call::resolve(name, args)
+        .is_ok_and(|(inner, _)| is_withheld_hive_tool(&inner))
+        .then_some(crate::core::hive::TOOL_NOT_AVAILABLE)
+}
+
+/// Whether a registered tool belongs on a public MCP tool surface.
+///
+/// Local collaboration substrate and internal host hooks remain directly
+/// callable, including through `ctx_call`; this gate only controls discovery.
+/// Withheld Hive tools are neither advertised nor callable.
+#[must_use]
+pub fn is_publicly_advertised_tool(name: &str) -> bool {
+    !is_local_collaboration_compatibility_tool(name)
+        && !INTERNAL_HOST_TOOLS.contains(&name)
+        && !is_withheld_hive_tool(name)
+}
+
+/// The error text for a call to a removed tool. Stable per name (no
+/// timestamps/counters) so provider-side prompt caching stays byte-stable (#498).
+#[must_use]
+pub fn removed_tool_message(name: &str) -> Option<String> {
+    removed_tool(name).map(|r| match r.replacement {
+        Some(replacement) => format!(
+            "{name} was removed; use {replacement} instead — {}.",
+            r.hint
+        ),
+        None => format!("{name} was removed — {}.", r.hint),
     })
 }
 
@@ -232,38 +299,24 @@ pub fn is_readonly_tool(name: &str) -> bool {
         "ctx_read"
             | "ctx_search"
             | "ctx_tree"
-            | "ctx_overview"
-            | "ctx_plan"
             | "ctx_metrics"
             | "ctx_compress"
             | "ctx_session"
             | "ctx_knowledge"
             | "ctx_graph"
-            | "ctx_retrieve"
             | "ctx_provider"
-            | "ctx_multi_read"
-            | "ctx_smart_read"
             | "ctx_delta"
             | "ctx_outline"
             | "ctx_context"
             | "ctx_call"
             | "ctx_url_read"
             | "ctx_git_read"
-            | "ctx_architecture"
-            | "ctx_impact"
             | "ctx_callgraph"
-            | "ctx_symbol"
-            | "ctx_routes"
-            | "ctx_smells"
-            | "ctx_quality"
             | "ctx_index"
-            | "ctx_semantic_search"
-            | "ctx_explore"
             | "ctx_artifacts"
             | "ctx_cost"
             | "ctx_gain"
             | "ctx_heatmap"
-            | "ctx_compare"
     )
 }
 
@@ -401,37 +454,43 @@ mod tests {
         assert!(state.is_tool_active("ctx_read"));
         assert!(state.is_tool_active("ctx_search"));
         assert!(!state.is_tool_active("ctx_agent"));
-        assert!(!state.is_tool_active("ctx_task"));
-        assert!(!state.is_tool_active("ctx_workflow"));
     }
 
     #[test]
-    fn deprecated_alias_maps_read_cluster_to_ctx_read() {
-        // #509: only the folded read-cluster tools are deprecated; everything
-        // else (incl. the primary) returns None.
+    fn removed_tools_point_at_a_live_public_tool() {
         assert_eq!(
-            deprecated_alias("ctx_smart_read").unwrap().replacement,
-            "ctx_read"
+            removed_tool("ctx_multi_read").unwrap().replacement,
+            Some("ctx_read")
         );
-        assert_eq!(
-            deprecated_alias("ctx_multi_read").unwrap().replacement,
-            "ctx_read"
-        );
-        assert!(deprecated_alias("ctx_read").is_none());
-        assert!(deprecated_alias("ctx_search").is_none());
-        assert!(is_deprecated_alias("ctx_multi_read"));
-        assert!(!is_deprecated_alias("ctx_read"));
-
-        // #509 search consolidation: the folded search tools point at ctx_search.
-        assert_eq!(
-            deprecated_alias("ctx_semantic_search").unwrap().replacement,
-            "ctx_search"
-        );
-        assert_eq!(
-            deprecated_alias("ctx_symbol").unwrap().replacement,
-            "ctx_search"
-        );
-        assert!(is_deprecated_alias("ctx_symbol"));
+        assert!(removed_tool("ctx_read").is_none());
+        // No removed name may send agents to a tool that is gone or hidden.
+        let registry = crate::server::registry::build_registry();
+        let live = registry.names();
+        for name in [
+            "ctx_smart_read",
+            "ctx_multi_read",
+            "ctx_semantic_search",
+            "ctx_symbol",
+            "ctx_overview",
+            "ctx_summary",
+            "ctx_explore",
+            "ctx_plan",
+            "ctx_compile",
+            "ctx_fill",
+            "ctx_impact",
+            "ctx_architecture",
+            "ctx_repomap",
+            "ctx_routes",
+            "ctx_retrieve",
+            "ctx_cache",
+        ] {
+            let replacement = removed_tool(name).and_then(|r| r.replacement).unwrap();
+            assert!(!live.contains(&name), "{name} is still registered");
+            assert!(
+                live.contains(&replacement) && is_publicly_advertised_tool(replacement),
+                "{name} points at {replacement}, which is not a live public tool"
+            );
+        }
     }
 
     #[test]
@@ -466,22 +525,21 @@ mod tests {
     }
 
     #[test]
-    fn deprecation_notice_is_stable_and_names_replacement() {
-        // Stable text (no timestamps/counters) for cache-byte-stability (#498),
-        // and it must point at the primary so agents know where to go.
-        let notice = deprecation_notice("ctx_multi_read").unwrap();
-        assert!(notice.starts_with("[DEPRECATED] ctx_multi_read is superseded by ctx_read"));
-        assert!(notice.contains("paths="));
-        assert_eq!(notice, deprecation_notice("ctx_multi_read").unwrap());
-        assert!(deprecation_notice("ctx_read").is_none());
+    fn removed_tool_message_names_the_way_forward() {
+        let message = removed_tool_message("ctx_multi_read").unwrap();
+        assert!(message.starts_with("ctx_multi_read was removed; use ctx_read instead — "));
+        assert!(message.contains("paths="));
+        assert!(removed_tool_message("ctx_read").is_none());
+        let retired = removed_tool_message("ctx_smells").unwrap();
+        assert!(retired.starts_with("ctx_smells was removed — "));
     }
 
     #[test]
     fn dynamic_tools_filtered_when_list_changed() {
         let mut state = DynamicToolState::new();
         state.set_supports_list_changed(true);
-        assert!(!state.is_tool_active("ctx_benchmark"));
-        assert!(!state.is_tool_active("ctx_architecture"));
+        assert!(!state.is_tool_active("ctx_verify"));
+        assert!(!state.is_tool_active("ctx_index"));
         assert!(state.is_tool_active("ctx_read"));
     }
 
@@ -489,9 +547,9 @@ mod tests {
     fn load_category_enables_tools() {
         let mut state = DynamicToolState::new();
         state.set_supports_list_changed(true);
-        assert!(!state.is_tool_active("ctx_architecture"));
+        assert!(!state.is_tool_active("ctx_index"));
         state.load_category(ToolCategory::Arch);
-        assert!(state.is_tool_active("ctx_architecture"));
+        assert!(state.is_tool_active("ctx_index"));
     }
 
     #[test]
@@ -525,10 +583,10 @@ mod tests {
         let mut state = DynamicToolState::from_config(&cats);
         state.set_supports_list_changed(true);
         assert!(state.is_tool_active("ctx_read"));
-        assert!(state.is_tool_active("ctx_architecture"));
+        assert!(state.is_tool_active("ctx_index"));
         assert!(state.is_tool_active("ctx_artifacts"));
-        assert!(!state.is_tool_active("ctx_benchmark"));
-        assert!(!state.is_tool_active("ctx_fill"));
+        assert!(!state.is_tool_active("ctx_verify"));
+        assert!(!state.is_tool_active("ctx_pack"));
     }
 
     #[test]
@@ -536,8 +594,8 @@ mod tests {
         let mut state = DynamicToolState::from_config(&[]);
         state.set_supports_list_changed(true);
         assert!(state.is_tool_active("ctx_read"));
-        assert!(!state.is_tool_active("ctx_architecture"));
-        assert!(!state.is_tool_active("ctx_benchmark"));
+        assert!(!state.is_tool_active("ctx_index"));
+        assert!(!state.is_tool_active("ctx_verify"));
         assert!(!state.is_tool_active("ctx_artifacts"));
     }
 
@@ -556,11 +614,11 @@ mod tests {
         let mut state = DynamicToolState::from_config(&cats);
         state.set_supports_list_changed(true);
         assert!(state.is_tool_active("ctx_read"));
-        assert!(state.is_tool_active("ctx_architecture"));
-        assert!(state.is_tool_active("ctx_benchmark"));
-        assert!(state.is_tool_active("ctx_semantic_search"));
-        assert!(state.is_tool_active("ctx_fill"));
-        assert!(state.is_tool_active("ctx_workflow"));
+        assert!(state.is_tool_active("ctx_index"));
+        assert!(state.is_tool_active("ctx_verify"));
+        assert!(state.is_tool_active("ctx_provider"));
+        assert!(state.is_tool_active("ctx_pack"));
+        assert!(state.is_tool_active("ctx_work_graph"));
         assert!(!state.is_tool_active("ctx_metrics"));
     }
 
@@ -572,9 +630,9 @@ mod tests {
         let mut state = DynamicToolState::from_config(&cats);
         state.set_supports_list_changed(true);
         assert!(state.is_tool_active("ctx_read"));
-        assert!(state.is_tool_active("ctx_benchmark"));
-        assert!(!state.is_tool_active("ctx_architecture"));
-        assert!(!state.is_tool_active("ctx_workflow"));
+        assert!(state.is_tool_active("ctx_verify"));
+        assert!(!state.is_tool_active("ctx_index"));
+        assert!(!state.is_tool_active("ctx_work_graph"));
     }
 
     // --- from_config: invalid categories are silently ignored ---
@@ -589,7 +647,7 @@ mod tests {
         let mut state = DynamicToolState::from_config(&cats);
         state.set_supports_list_changed(true);
         assert!(state.is_tool_active("ctx_read"));
-        assert!(!state.is_tool_active("ctx_architecture"));
+        assert!(!state.is_tool_active("ctx_index"));
     }
 
     #[test]
@@ -598,7 +656,7 @@ mod tests {
         let mut state = DynamicToolState::from_config(&cats);
         state.set_supports_list_changed(true);
         assert!(state.is_tool_active("ctx_read"));
-        assert!(!state.is_tool_active("ctx_benchmark"));
+        assert!(!state.is_tool_active("ctx_verify"));
     }
 
     // --- from_config: duplicate categories are idempotent ---
@@ -608,7 +666,7 @@ mod tests {
         let cats = vec!["arch".to_string(), "arch".to_string(), "arch".to_string()];
         let mut state = DynamicToolState::from_config(&cats);
         state.set_supports_list_changed(true);
-        assert!(state.is_tool_active("ctx_architecture"));
+        assert!(state.is_tool_active("ctx_index"));
         let active = state.active_categories();
         let arch_count = active.iter().filter(|&&c| c == "arch").count();
         assert_eq!(arch_count, 1);
@@ -628,7 +686,7 @@ mod tests {
         let cats = vec!["architecture".to_string()];
         let mut state = DynamicToolState::from_config(&cats);
         state.set_supports_list_changed(true);
-        assert!(state.is_tool_active("ctx_architecture"));
+        assert!(state.is_tool_active("ctx_index"));
     }
 
     #[test]
@@ -636,7 +694,7 @@ mod tests {
         let cats = vec!["profiling".to_string()];
         let mut state = DynamicToolState::from_config(&cats);
         state.set_supports_list_changed(true);
-        assert!(state.is_tool_active("ctx_benchmark"));
+        assert!(state.is_tool_active("ctx_verify"));
     }
 
     #[test]
@@ -654,9 +712,9 @@ mod tests {
         let cats = vec!["core".to_string()];
         let mut state = DynamicToolState::from_config(&cats);
         state.set_supports_list_changed(true);
-        assert!(!state.is_tool_active("ctx_architecture"));
+        assert!(!state.is_tool_active("ctx_index"));
         state.load_category(ToolCategory::Arch);
-        assert!(state.is_tool_active("ctx_architecture"));
+        assert!(state.is_tool_active("ctx_index"));
     }
 
     #[test]
@@ -664,9 +722,9 @@ mod tests {
         let cats = vec!["core".to_string(), "arch".to_string()];
         let mut state = DynamicToolState::from_config(&cats);
         state.set_supports_list_changed(true);
-        assert!(state.is_tool_active("ctx_architecture"));
+        assert!(state.is_tool_active("ctx_index"));
         state.unload_category(ToolCategory::Arch);
-        assert!(!state.is_tool_active("ctx_architecture"));
+        assert!(!state.is_tool_active("ctx_index"));
     }
 
     #[test]
@@ -682,8 +740,8 @@ mod tests {
     fn from_config_without_list_changed_shows_all() {
         let cats = vec!["core".to_string()];
         let state = DynamicToolState::from_config(&cats);
-        assert!(state.is_tool_active("ctx_architecture"));
-        assert!(state.is_tool_active("ctx_benchmark"));
+        assert!(state.is_tool_active("ctx_index"));
+        assert!(state.is_tool_active("ctx_verify"));
         assert!(!state.is_tool_active("ctx_metrics"));
     }
 
@@ -710,11 +768,11 @@ mod tests {
         // #1008: anchored editing is a core workflow — an explicit Core entry so
         // the category gate can never hide the lazy-core editor.
         assert_eq!(categorize_tool("ctx_patch"), ToolCategory::Core);
-        assert_eq!(categorize_tool("ctx_benchmark"), ToolCategory::Debug);
-        assert_eq!(categorize_tool("ctx_semantic_search"), ToolCategory::Core);
+        assert_eq!(categorize_tool("ctx_verify"), ToolCategory::Debug);
+        assert_eq!(categorize_tool("ctx_provider"), ToolCategory::Core);
         assert_eq!(categorize_tool("ctx_artifacts"), ToolCategory::Memory);
         assert_eq!(categorize_tool("ctx_metrics"), ToolCategory::Internal);
-        assert_eq!(categorize_tool("ctx_workflow"), ToolCategory::Session);
+        assert_eq!(categorize_tool("ctx_work_graph"), ToolCategory::Session);
     }
 
     #[test]
@@ -722,14 +780,14 @@ mod tests {
         assert!(is_readonly_tool("ctx_read"));
         assert!(is_readonly_tool("ctx_search"));
         assert!(is_readonly_tool("ctx_tree"));
-        assert!(is_readonly_tool("ctx_overview"));
+        assert!(is_readonly_tool("ctx_graph"));
         assert!(is_readonly_tool("ctx_provider"));
 
         assert!(!is_readonly_tool("ctx_edit"));
         assert!(!is_readonly_tool("ctx_shell"));
-        assert!(!is_readonly_tool("ctx_compile"));
+        assert!(!is_readonly_tool("ctx_patch"));
         assert!(!is_readonly_tool("ctx_execute"));
-        assert!(!is_readonly_tool("ctx_cache"));
+        assert!(!is_readonly_tool("ctx_work_graph"));
     }
 
     #[test]

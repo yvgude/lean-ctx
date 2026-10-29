@@ -541,7 +541,7 @@ The **daemon** (`lean-ctx daemon`) is the local IPC service (Unix socket in
 ## 3. External context providers — `ctx_provider`
 
 **What it does:** Brings issues, PRs/MRs, pipelines, tickets, and DB schema into
-context so `ctx_semantic_search` and `ctx_knowledge` can find them.
+context so `ctx_search action="semantic"` and `ctx_knowledge` can find them.
 
 Supported: GitHub, GitLab, Jira, Postgres, and arbitrary MCP bridges.
 
@@ -609,17 +609,18 @@ For workflows where several AI agents collaborate:
 | `ctx_agent` | Register agents, post/read messages, `handoff`, `sync`, shared diaries |
 | `ctx_handoff` | Deterministic handoff bundles (Context Ledger Protocol) |
 | `ctx_share` | Push/pull cached file contexts between agents |
-| `ctx_task` | A2A task orchestration (create/update/cancel) |
 
 State lives under `agents/` (registry, diaries, shared knowledge) with per-agent
 identity keys in `keys/`. Handoff bundles are written to `handoffs/`.
 
 ---
 
-## 7. Governing rules — `lean-ctx rules` / `ctx_rules`
+## 7. Governing rules — `lean-ctx rules`
 
 Keeps the lean-ctx rule blocks in sync across every agent's rule file
-(`.cursor/rules`, `AGENTS.md`, `CLAUDE.md`, …).
+(`.cursor/rules`, `AGENTS.md`, `CLAUDE.md`, …). Rule files are host
+configuration, so this is CLI-only (the `ctx_rules` MCP tool was removed in
+3.11.5); `lean-ctx doctor` checks the rule injection too.
 
 ```bash
 lean-ctx rules status        # what's installed where
@@ -643,8 +644,8 @@ lean-ctx plugin init          # scaffold a new plugin
 lean-ctx plugin hooks         # show hook points
 ```
 
-Plugins live under `<config-dir>/lean-ctx/plugins/`. `ctx_plugins` exposes
-list/enable/disable/info/hooks to your AI.
+Plugins live under `<config-dir>/lean-ctx/plugins/` and are managed through
+this CLI; there is no MCP tool for them.
 
 ---
 

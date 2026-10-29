@@ -1,0 +1,14 @@
+{
+  "case": "card_cell_isolation",
+  "base": "routes/instance_card.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/cell_isolation",
+      "value": "full"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

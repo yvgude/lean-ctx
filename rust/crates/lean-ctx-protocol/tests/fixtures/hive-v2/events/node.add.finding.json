@@ -1,0 +1,52 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqau",
+  "body": {
+    "body_nonce": "05050505050505050505050505050505",
+    "evidence": "observed",
+    "statement": "Refund webhooks arrive before the charge webhook in about two percent of cases.",
+    "thread_ref": "msg_00000000000000a5"
+  },
+  "body_commit": "70babf18d78229b1e1d306f17a33d185bfe3b91d86bc681c47e1f5c16d25043e",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 4,
+  "event_id": "01M5NKA6W8005000000000W005",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800005000
+  },
+  "key_id": "47983724220c8521",
+  "node_type": "finding",
+  "op": "node.add",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800005350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 5,
+  "signature": "94167819cd51ffe65b5aff42b5969e217f696151c936d6f3fa28bb55a3da44b3e3cf99c5a0138bccc522f3e4cfafcab20248b22bbf85448bc14dacee566be508",
+  "target": "n_zcjqmmor453nyxqgshlgpogwdm",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

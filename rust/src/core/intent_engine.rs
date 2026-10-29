@@ -809,75 +809,34 @@ impl IntentDimension {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
-pub enum ModelTier {
-    Fast,
-    Standard,
-    Premium,
-}
-
-impl ModelTier {
-    pub fn as_str(&self) -> &'static str {
-        match self {
-            Self::Fast => "fast",
-            Self::Standard => "standard",
-            Self::Premium => "premium",
-        }
-    }
-}
-
 #[derive(Debug, Clone, serde::Serialize)]
 pub struct IntentRoute {
     pub dimension: IntentDimension,
-    pub model_tier: ModelTier,
     pub confidence: f64,
     pub reasoning: String,
 }
 
 pub fn route_intent(query: &str, classification: &TaskClassification) -> IntentRoute {
-    let (base_dimension, base_tier) = match classification.task_type {
-        TaskType::Explore | TaskType::Debug => (IntentDimension::What, ModelTier::Fast),
-        TaskType::Review | TaskType::FixBug | TaskType::Test => {
-            (IntentDimension::How, ModelTier::Standard)
-        }
+    let dimension = match classification.task_type {
+        TaskType::Explore | TaskType::Debug => IntentDimension::What,
+        TaskType::Review | TaskType::FixBug | TaskType::Test => IntentDimension::How,
         TaskType::Generate | TaskType::Refactor | TaskType::Deploy | TaskType::Config => {
-            (IntentDimension::Do, ModelTier::Premium)
+            IntentDimension::Do
         }
     };
-
     let complexity = classify_complexity(query, classification);
-    let tier = match complexity {
-        super::adaptive::TaskComplexity::Architectural => {
-            if base_tier == ModelTier::Fast {
-                ModelTier::Standard
-            } else {
-                ModelTier::Premium
-            }
-        }
-        _ => base_tier,
-    };
-
-    let tier = if classification.confidence < 0.5 {
-        ModelTier::Standard
-    } else {
-        tier
-    };
-
     let reasoning = format!(
-        "{}({}) + {}complexity -> {}",
+        "{}({}) + {}complexity",
         classification.task_type.as_str(),
-        base_dimension.as_str(),
+        dimension.as_str(),
         match complexity {
             super::adaptive::TaskComplexity::Mechanical => "low ",
             super::adaptive::TaskComplexity::Standard => "",
             super::adaptive::TaskComplexity::Architectural => "high ",
-        },
-        tier.as_str()
+        }
     );
-
     IntentRoute {
-        dimension: base_dimension,
-        model_tier: tier,
+        dimension,
         confidence: classification.confidence,
         reasoning,
     }
@@ -988,7 +947,6 @@ pub mod tests {
         };
         let route = route_intent("explore the codebase", &c);
         assert_eq!(route.dimension, IntentDimension::What);
-        assert_eq!(route.model_tier, ModelTier::Fast);
     }
 
     #[test]
@@ -1001,7 +959,6 @@ pub mod tests {
         };
         let route = route_intent("fix the null pointer bug in auth.rs", &c);
         assert_eq!(route.dimension, IntentDimension::How);
-        assert_eq!(route.model_tier, ModelTier::Standard);
     }
 
     #[test]
@@ -1014,11 +971,10 @@ pub mod tests {
         };
         let route = route_intent("generate a new module", &c);
         assert_eq!(route.dimension, IntentDimension::Do);
-        assert_eq!(route.model_tier, ModelTier::Premium);
     }
 
     #[test]
-    fn route_complex_upgrades_tier() {
+    fn route_complexity_describes_context_without_model_advice() {
         let c = TaskClassification {
             task_type: TaskType::FixBug,
             confidence: 0.8,
@@ -1026,11 +982,18 @@ pub mod tests {
             keywords: vec!["fix".into()],
         };
         let route = route_intent("fix auth across all files and update the migration", &c);
-        assert_eq!(route.model_tier, ModelTier::Premium);
+        assert_eq!(route.dimension, IntentDimension::How);
+        assert!(route.reasoning.contains("high complexity"));
+        assert!(
+            serde_json::to_value(&route)
+                .unwrap()
+                .get("model_tier")
+                .is_none()
+        );
     }
 
     #[test]
-    fn route_low_confidence_standard() {
+    fn route_low_confidence_preserves_classification() {
         let c = TaskClassification {
             task_type: TaskType::Explore,
             confidence: 0.3,
@@ -1038,7 +1001,8 @@ pub mod tests {
             keywords: vec![],
         };
         let route = route_intent("something vague", &c);
-        assert_eq!(route.model_tier, ModelTier::Standard);
+        assert_eq!(route.dimension, IntentDimension::What);
+        assert_eq!(route.confidence, c.confidence);
     }
 
     /// #591 acceptance: de/fr/es sentences per TaskType, ≥90% hit rate.

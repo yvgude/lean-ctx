@@ -1,0 +1,14 @@
+{
+  "case": "open_with_decision",
+  "base": "review/item.procedure.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/decision",
+      "value": "accept"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

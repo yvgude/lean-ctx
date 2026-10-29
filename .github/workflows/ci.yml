@@ -48,6 +48,27 @@ jobs:
         run: python3 scripts/check-no-internal-artifacts.py
       - name: Enforce the single SDK surface
         run: python3 scripts/check-sdk-surface.py
+      - name: Keep the community Engine independent of commercial sources
+        run: python3 scripts/check-source-layout.py --profile community
+      - name: Check the capability registry of the community Engine
+        run: python3 scripts/check-capabilities.py --profile community
+      - name: Validate the complete product checkout when present
+        shell: bash
+        run: |
+          if [[ -e ee || -e sdk ]]; then
+            python3 scripts/check-source-layout.py
+            python3 scripts/check-sdk-engine-coupling.py
+            python3 ee/intelligence/scripts/check_runtime_scope.py
+          fi
+          if [[ -e ee ]]; then
+            python3 scripts/check-capabilities.py
+            python3 scripts/sync-capabilities.py --check
+          fi
+      - name: Test source and SDK boundary guards
+        run: |
+          python3 tests/delivery/test_source_layout.py
+          python3 tests/delivery/test_sdk_surface.py
+          python3 tests/delivery/test_sdk_engine_coupling.py
       # GH #1676: 20 Python files ship in this repo, several of them the CI
       # gates in the steps above, and none of them were linted. A gate that
       # breaks only when someone needs it is the worst kind. Scoped to
@@ -123,7 +144,6 @@ jobs:
             assets/ocla/capability-manifests/leanctx/context-optimization-v1.json \
             assets/ocla/capability-manifests/leanctx/passthrough-v1.json \
             assets/ocla/capability-manifests/example/word-count-optimizer-v1.json \
-            assets/ocla/capability-manifests/rtk/rtk-shell-v1.json \
             assets/kits/code-review/kit.toml; do
             grep -Fx "$asset" "$RUNNER_TEMP/package-files.txt"
           done
@@ -155,7 +175,7 @@ jobs:
             part: integration
           - os: windows-latest
             part: all
-    runs-on: ${{ matrix.os == 'ubuntu-latest' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && vars.SELF_HOSTED_CI != 'off' && fromJSON('["self-hosted","pounce"]') || matrix.os }}
+    runs-on: ${{ matrix.os }}
     # Tests run with libtest's default thread parallelism. The old
     # `--test-threads=1` (env-race legacy, v3.3.5) serialized ~70 binaries that
     # now include heavy property/fuzz/benchmark suites (#291, #493, #551) and
@@ -194,7 +214,6 @@ jobs:
           cargo --version
           echo "$CARGO_HOME/bin" >> $GITHUB_PATH
       - uses: Swatinem/rust-cache@e18b497796c12c097a38f9edb9d0641fb99eee32 # v2
-        if: runner.environment == 'github-hosted'
         with:
           save-if: ${{ github.ref == 'refs/heads/main' }}
           workspaces: rust -> target
@@ -230,7 +249,7 @@ jobs:
         uses: ./.github/actions/windows-jemalloc
 
       - name: Free disk space
-        if: runner.os == 'Linux' && runner.environment == 'github-hosted'
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           # The target dir needs ~25-40 GB. Old runner images had ~14 GB free,
@@ -254,7 +273,7 @@ jobs:
       # crate, on code that had passed an hour earlier. Extra swap turns the
       # peak into a slowdown instead of a killed runner.
       - name: Add swap
-        if: runner.os == 'Linux' && runner.environment == 'github-hosted'
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           sudo swapoff -a || true
@@ -272,7 +291,7 @@ jobs:
       # Linux/ELF only, so macOS and the Windows-GNU target keep their default
       # linkers.
       - name: Install mold linker
-        if: runner.os == 'Linux' && runner.environment == 'github-hosted'
+        if: runner.os == 'Linux'
         shell: bash
         run: |
           # The runner image ships third-party apt lists (Google Chrome's
@@ -308,7 +327,7 @@ jobs:
               SELECT=(--bins --test '*' --examples)
             fi
             JEMALLOC_OVERRIDE="${{ steps.jemalloc.outputs.jemalloc-override }}" \
-            CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }} -C link-arg=-fuse-ld=lld" \
+            CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }}" \
             "$CARGO" test --target x86_64-pc-windows-gnu --all-features "${SELECT[@]}"
           elif [[ "${{ runner.os }}" == "Linux" ]]; then
             # `mold -run` redirects child linker invocations to mold without
@@ -451,6 +470,8 @@ jobs:
         run: node packages/lean-ctx-bin/postinstall.test.cjs
       - name: Test install paths containing `$`
         run: node packages/lean-ctx-bin/postinstall.dollar.test.cjs
+      - name: Test the bundled Cockpit install
+        run: node packages/lean-ctx-bin/postinstall.cockpit.test.cjs
       - name: Test fail-closed checksum verification
         run: node packages/lean-ctx-bin/postinstall.checksum.test.cjs
 
@@ -584,7 +605,7 @@ jobs:
     # (pedantic clippy, doctests, the engine-integration tests, example build).
     #
     # Deliberately NOT called an SDK: the LeanCTX SDK is thinkery-leanctx-sdk
-    # (Thinkery-AG/leanctx-sdk). See docs/reference/sdk-surface.md.
+    # (sdk/ in the product checkout). See docs/reference/sdk-surface.md.
     name: Embed facade (lean-ctx-embed)
     runs-on: ubuntu-latest
     steps:
@@ -651,7 +672,7 @@ jobs:
     # it held a pounce runner and pushed the next run's Test (ubuntu) into a
     # multi-hour queue, so it now runs nightly and on demand only.
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
-    runs-on: ${{ (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.user.login != 'dependabot[bot]')) && vars.SELF_HOSTED_CI != 'off' && fromJSON('["self-hosted","pounce"]') || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4 # v4
         with:

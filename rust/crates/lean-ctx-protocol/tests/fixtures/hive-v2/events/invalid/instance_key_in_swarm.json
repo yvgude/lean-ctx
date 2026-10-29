@@ -1,0 +1,11 @@
+{
+  "case": "instance_key_in_swarm",
+  "base": "events/node.add.result.json",
+  "patch": [],
+  "expect": {
+    "layer": "signature",
+    "code": "invalid_event",
+    "reason": "alias_key_required"
+  },
+  "resign_with": "instance_a"
+}

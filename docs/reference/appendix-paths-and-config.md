@@ -132,8 +132,28 @@ var always wins.
 
 Global at `<CONFIG_DIR>/config.toml` (`$XDG_CONFIG_HOME/lean-ctx/config.toml`,
 or the single dir for legacy/mixed installs — see §1); per-project override at
-`<repo>/.lean-ctx.toml` (merged, project wins). Manage with `lean-ctx config`
-(`set`, `schema`, `validate`, `show`).
+`<repo>/.lean-ctx.toml`. The project file speaks for its repository, never for
+the user or the machine:
+
+- **Project keys** (how lean-ctx treats this repo: compression, read/search
+  behaviour, memory and archive tuning, conversation and response shaping, code
+  health, timeouts; list in `rust/src/core/config/merge.rs` `PROJECT_KEYS`): the
+  project value wins wherever the file — or its selected `[profiles.*]` — sets it,
+  also back to the default.
+- **Trusted only** (shell allowlist, paths and roots incl. `write_allow_paths` and
+  `read_only_roots`, proxy upstreams, tool surface, rules, `read_redirect = "off"`):
+  applied only after `lean-ctx trust`.
+- **Tighten only** (autonomy opt-outs, archive, wakeup, gitignore respect): a project
+  may switch them towards caution, not away from it.
+- **Global** (consent, accounts, updates, hooks, theme, machine resources, the proxy
+  itself): never taken from a repository.
+
+A key the merge does not apply is named in the log ("key(s) not applied"). Manage with `lean-ctx config` (`set`, `schema`, `validate`, `show`).
+
+Keys retired on 2026-10-16 because they never had an effect are listed in
+`rust/src/core/config/retired.rs`. An older config that still sets them keeps
+loading; a writable global `config.toml` has them removed automatically, and
+`lean-ctx doctor` names any that remain.
 
 ### Sections
 
@@ -146,7 +166,7 @@ or the single dir for legacy/mixed installs — see §1); per-project override a
 | `[search]` | BM25/dense/splade weights + candidate counts |
 | `[autonomy]` | Auto preload/dedup/consolidate, cognition loop |
 | `[decision_loop]` | MCP decision loop plus optional lossy output triage (`enabled = true`, `max_filter_level = 0` by default) |
-| `[shadow]` | Counterfactual baseline comparisons: `enabled`, `report_interval`, `baseline_model` |
+| `[shadow]` | Counterfactual baseline comparisons: `enabled`, `report_interval` (`baseline_model` is deprecated and ignored) |
 | `[knowledge_routing]` | Add focused cross-source knowledge hints: `enabled`, `max_references` |
 | `[providers]` | GitHub/GitLab/Jira/Postgres + MCP bridges |
 | `[loop_detection]` | Per-tool call limits to prevent agent loops |
@@ -178,7 +198,6 @@ max_filter_level = 0
 [shadow]
 enabled = false
 report_interval = 10
-baseline_model = "gpt-4o"
 
 [knowledge_routing]
 enabled = true
@@ -192,7 +211,9 @@ max_references = 5
   bypasses this second-stage filter; explicit lossless modes on other tools do too.
 - `[shadow].enabled` records counterfactual comparisons; default `false`.
 - `[shadow].report_interval` creates a report after this many measurements; default `10`.
-- `[shadow].baseline_model` names the model used for baseline cost comparisons; default `"gpt-4o"`.
+- `[shadow].baseline_model` is deprecated and ignored since 3.11.0. Each task is compared with
+  the model the host chose for it, so only context changes count as savings; a different model's
+  price is never reported as a LeanCTX saving. The key still loads, so existing files keep working.
 - `[knowledge_routing].enabled` adds relevant cross-source knowledge hints; default `true`.
 - `[knowledge_routing].max_references` caps references per routed hint; default `5`.
 
@@ -301,7 +322,12 @@ Notes that save debugging time:
   silently falls back to defaults) and dead `allow_paths` entries (unset
   `$VAR`, missing directory), plus the effective jail state.
 - **Compile-time off-switch:** building with the `no-jail` cargo feature
-  removes the jail entirely (for trusted single-user builds).
+  removes the jail (for trusted single-user builds).
+- **Not covered by either off-switch:** the output path of
+  `checkpoint-seal --session … --output=…`. That command writes a signed,
+  unredacted session checkpoint package; its destination must lie under the
+  project root or an explicit allow root (`allow_paths`, `extra_roots`,
+  `LEAN_CTX_ALLOW_PATH`) in every build and with `path_jail = false` as well.
 - **Removed:** the `LEAN_CTX_NO_JAIL=1` env var (≤ 3.7.3). It was replaced by
   the `path_jail = false` config key and the `no-jail` compile feature; setting
   the old env var has no effect on current versions.

@@ -1,8 +1,5 @@
 use chrono::Utc;
-use std::sync::{LazyLock, Mutex};
 
-use crate::core::cognitive_gate::full_science_enabled;
-use crate::core::context_prefetch::FileTrajectory;
 use crate::core::intent_protocol::{IntentRecord, IntentSource};
 
 use super::paths::{extract_cd_target, generate_session_id};
@@ -18,9 +15,6 @@ pub(crate) const BATCH_SAVE_INTERVAL: u32 = 5;
 /// below the batch threshold — the dashboard reads session JSONs from disk,
 /// so a slow trickle of tool calls must still become visible promptly.
 pub(crate) const SESSION_FLUSH_INTERVAL: std::time::Duration = std::time::Duration::from_mins(1);
-
-static FILE_TRAJECTORY: LazyLock<Mutex<FileTrajectory>> =
-    LazyLock::new(|| Mutex::new(FileTrajectory::new(100)));
 
 /// `TaskInfo.intent` of a task `auto_infer_task` built from touched-file
 /// patterns. A label, never a stated task (#1590).
@@ -66,6 +60,29 @@ pub(super) fn describe_uncommitted_files<'a>(
 pub(crate) fn extract_session_facts(
     session: &SessionState,
 ) -> Vec<crate::core::knowledge::KnowledgeFact> {
+    session
+        .derived_facts()
+        .into_iter()
+        .map(|(fact, _)| fact)
+        .collect()
+}
+
+impl SessionState {
+    /// [`extract_session_facts`], each fact with the finding it is built from
+    /// when it is built from exactly one: the `auto:blocker` facts. A store
+    /// that keeps such a fact carries the finding's source binding over to it
+    /// (`consolidation_engine::import_session_into`). A decision and a
+    /// touched-file record have no source binding to carry: `None`.
+    pub(crate) fn derived_facts(
+        &self,
+    ) -> Vec<(crate::core::knowledge::KnowledgeFact, Option<&Finding>)> {
+        derive_session_facts(self)
+    }
+}
+
+fn derive_session_facts(
+    session: &SessionState,
+) -> Vec<(crate::core::knowledge::KnowledgeFact, Option<&Finding>)> {
     let mut facts = Vec::new();
 
     facts.extend(session.decisions.iter().filter_map(|decision| {
@@ -81,12 +98,9 @@ pub(crate) fn extract_session_facts(
                 || summary.to_owned(),
                 |rationale| format!("{summary} — {rationale}"),
             );
-        Some(auto_session_fact(
-            "auto:decision",
-            value,
-            session,
-            decision.timestamp,
-            0.9,
+        Some((
+            auto_session_fact("auto:decision", value, session, decision.timestamp, 0.9),
+            None,
         ))
     }));
 
@@ -101,7 +115,7 @@ pub(crate) fn extract_session_facts(
                     .as_deref()
                     .filter(|summary| !summary.trim().is_empty())
                     .map_or_else(String::new, |summary| format!("; {summary}"));
-                auto_session_fact(
+                let fact = auto_session_fact(
                     "auto:pattern",
                     format!(
                         "Modified {} (mode: {}, reads: {}){summary}",
@@ -110,7 +124,8 @@ pub(crate) fn extract_session_facts(
                     session,
                     session.updated_at,
                     0.8,
-                )
+                );
+                (fact, None)
             }),
     );
 
@@ -140,13 +155,14 @@ pub(crate) fn extract_session_facts(
                 .line
                 .map_or_else(|| format!("{file}: "), |line| format!("{file}:{line}: "))
         });
-        Some(auto_session_fact(
+        let fact = auto_session_fact(
             "auto:blocker",
             format!("{label}: {location}{summary}"),
             session,
             finding.timestamp,
             0.75,
-        ))
+        );
+        Some((fact, Some(finding)))
     }));
 
     facts
@@ -161,6 +177,9 @@ fn auto_session_fact(
 ) -> crate::core::knowledge::KnowledgeFact {
     let key = value.clone();
     crate::core::knowledge::KnowledgeFact {
+        anchors: Vec::new(),
+        review: None,
+        capture: Default::default(),
         origin: crate::core::knowledge::FactOrigin::Unverified,
         category: category.to_owned(),
         key,
@@ -184,6 +203,8 @@ fn auto_session_fact(
         archetype: Default::default(),
         fidelity: None,
         revision_count: 0,
+        status: None,
+        validity: None,
     }
 }
 
@@ -242,10 +263,14 @@ impl SessionState {
         let session_id = self.id.clone();
         self.handoff_context = crate::core::knowledge::ProjectKnowledge::load(&project_root)
             .map(|knowledge| {
+                // The handoff context is printed with its fact values: only
+                // facts that may be delivered now are copied into it
+                // (`ProjectKnowledge::delivery_filter`).
+                let deliverable = knowledge.delivery_filter();
                 knowledge
                     .recent_decisions(10)
                     .into_iter()
-                    .filter(|fact| fact.source_session != session_id)
+                    .filter(|fact| fact.source_session != session_id && deliverable(fact))
                     .collect()
             })
             .unwrap_or_default();
@@ -500,30 +525,6 @@ impl SessionState {
         }
         self.stats.files_read += 1;
         self.increment();
-
-        if full_science_enabled()
-            && let Ok(mut trajectory) = FILE_TRAJECTORY.lock()
-        {
-            trajectory.record(path);
-        }
-    }
-
-    /// Returns predicted next file paths from the session file-access trajectory.
-    #[allow(dead_code)] // consumed by prefetch pipeline wiring
-    pub(crate) fn prefetch_predictions(&self, top_k: usize) -> Vec<String> {
-        if !full_science_enabled() || top_k == 0 {
-            return Vec::new();
-        }
-        FILE_TRAJECTORY
-            .lock()
-            .map(|trajectory| {
-                trajectory
-                    .predict(top_k)
-                    .into_iter()
-                    .map(|(path, _)| path)
-                    .collect()
-            })
-            .unwrap_or_default()
     }
 
     /// Marks a previously touched file as modified (written to).
@@ -551,6 +552,13 @@ impl SessionState {
         self.stats.total_tool_calls += 1;
         self.stats.total_tokens_saved += tokens_saved;
         self.stats.total_tokens_input += tokens_input;
+        self.stats.day_mut(Utc::now()).tool_calls += 1;
+        if self.stats.client.is_none() {
+            let client = crate::core::client_capabilities::current().client_id;
+            if client != "unknown" {
+                self.stats.client = Some(client);
+            }
+        }
     }
 
     /// Records an inferred or explicit intent, coalescing consecutive duplicates.
@@ -670,6 +678,7 @@ impl SessionState {
     /// Increments the session-level cache hit counter.
     pub fn record_cache_hit(&mut self) {
         self.stats.cache_hits += 1;
+        self.stats.day_mut(Utc::now()).cache_hits += 1;
     }
 
     /// Increments the session-level command counter.
@@ -715,6 +724,39 @@ impl SessionState {
                 .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string()),
             None,
         )
+    }
+
+    /// The directory a command is to RUN in, or the reason there is none.
+    ///
+    /// Unlike [`Self::effective_cwd_checked`] nothing is substituted: an
+    /// explicit `cwd` the project jail rejects is an error, so the command is
+    /// not executed, backgrounded or cached under a directory the caller did
+    /// not name. The stored shell cwd is held to the same jail — it was
+    /// accepted when it was stored, but the project root may have changed
+    /// since. Without a project root there is no jail to hold it to, and the
+    /// stored value is used as before.
+    pub fn execution_cwd(&self, explicit_cwd: Option<&str>) -> Result<String, String> {
+        let jailed = |candidate: &str, root: &str| {
+            crate::core::pathjail::jail_path(
+                std::path::Path::new(candidate),
+                std::path::Path::new(root),
+            )
+            .map(|path| path.to_string_lossy().to_string())
+            .map_err(|reason| reason.to_string())
+        };
+        if let Some(cwd) = explicit_cwd
+            && !cwd.is_empty()
+            && cwd != "."
+        {
+            return jailed(cwd, self.project_root.as_deref().unwrap_or("."));
+        }
+        match (self.shell_cwd.as_deref(), self.project_root.as_deref()) {
+            (Some(cwd), Some(root)) => jailed(cwd, root),
+            (Some(cwd), None) => Ok(cwd.to_string()),
+            (None, Some(root)) => Ok(root.to_string()),
+            (None, None) => Ok(std::env::current_dir()
+                .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string())),
+        }
     }
 
     /// Verifies that `candidate` is within the project jail.

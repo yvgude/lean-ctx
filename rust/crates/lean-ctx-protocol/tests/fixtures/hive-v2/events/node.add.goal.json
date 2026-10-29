@@ -1,0 +1,47 @@
+{
+  "actor": {
+    "kind": "server"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqam",
+  "body": {
+    "acceptance": [
+      "Flame graph attached as material",
+      "Top three hot spots named"
+    ],
+    "body_nonce": "16161616161616161616161616161616",
+    "criterion_id": null,
+    "kind": "task",
+    "order": 1,
+    "parent": "n_aaaaaaaaaaaaaaaaaaaaaadaay",
+    "text": "Produce a flame graph of POST /checkout under the staging load profile.",
+    "title": "Profile the checkout handler"
+  },
+  "body_commit": "2bc930e62942dcd82d94ecad26991159fbf1ebe69a2212acf4bfc444fee21cbd",
+  "causal_base": 2,
+  "cause": {
+    "epoch": 3,
+    "id": "wkr_cxdouocvevdhm22vpdrh",
+    "kind": "conductor"
+  },
+  "event_id": "01M5NKA4XR005G00000000W003",
+  "hlc": {
+    "counter": 0,
+    "node": "4fc7bebc302357bd",
+    "wall_ms": 1792800003000
+  },
+  "key_id": "4fc7bebc302357bd",
+  "node_type": "goal",
+  "op": "node.add",
+  "place": {
+    "id": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+    "kind": "swarm"
+  },
+  "provenance": "workspace",
+  "received_at": 1792800003350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "seq": 3,
+  "signature": "a419d3141cc9c937475f021af0985d99462e2af9ee9bf94023c8723b5bc38851fcbbb32fe9aa4a9763eeb300f63977af3a165fd7429ea72498d3e156fd1cb703",
+  "target": "n_aaaaaaaaaaaaaaaaaaaaaadaai"
+}

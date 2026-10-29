@@ -5,12 +5,10 @@
 //! Follows the same pattern as `gitlab.rs` but targets the GitHub REST API v3.
 //! Implements `ContextProvider` for the registry.
 
-use super::cache;
 use super::provider_trait::{ContextProvider, ProviderParams};
 use super::{ProviderItem, ProviderResult};
 
 const DEFAULT_PER_PAGE: usize = 20;
-const CACHE_TTL_SECS: u64 = 120;
 
 // ---------------------------------------------------------------------------
 // Config
@@ -26,14 +24,14 @@ pub struct GitHubConfig {
 
 impl GitHubConfig {
     pub fn from_env() -> Result<Self, String> {
-        let token = std::env::var("GITHUB_TOKEN")
-            .or_else(|_| std::env::var("GH_TOKEN"))
-            .or_else(|_| std::env::var("LEAN_CTX_GITHUB_TOKEN"))
+        let token = super::credentials::var("GITHUB_TOKEN")
+            .or_else(|_| super::credentials::var("GH_TOKEN"))
+            .or_else(|_| super::credentials::var("LEAN_CTX_GITHUB_TOKEN"))
             .map_err(|_| {
                 "No GitHub token found. Set GITHUB_TOKEN or LEAN_CTX_GITHUB_TOKEN.".to_string()
             })?;
 
-        let api_base = std::env::var("GITHUB_API_URL")
+        let api_base = super::credentials::var("GITHUB_API_URL")
             .unwrap_or_else(|_| "https://api.github.com".to_string());
 
         let (owner, repo) = detect_owner_repo();
@@ -59,14 +57,14 @@ impl GitHubConfig {
 }
 
 fn detect_owner_repo() -> (Option<String>, Option<String>) {
-    if let Ok(full) = std::env::var("GITHUB_REPOSITORY")
+    if let Ok(full) = super::credentials::var("GITHUB_REPOSITORY")
         && let Some((owner, repo)) = full.split_once('/')
     {
         return (Some(owner.to_string()), Some(repo.to_string()));
     }
     if let (Ok(o), Ok(r)) = (
-        std::env::var("GITHUB_REPOSITORY_OWNER"),
-        std::env::var("GITHUB_REPO"),
+        super::credentials::var("GITHUB_REPOSITORY_OWNER"),
+        super::credentials::var("GITHUB_REPO"),
     ) {
         return (Some(o), Some(r));
     }
@@ -144,28 +142,15 @@ pub fn list_issues(
         .ok_or("No GitHub repo configured. Set GITHUB_REPOSITORY or configure git remote.")?;
 
     let per_page = limit.unwrap_or(DEFAULT_PER_PAGE).min(100);
-    let state_param = state.unwrap_or("open");
+    let endpoint = list_endpoint(&slug, "issues", per_page, state.unwrap_or("open"));
 
-    let endpoint = format!(
-        "/repos/{slug}/issues?per_page={per_page}&state={state_param}&sort=updated&direction=desc"
-    );
-
-    let cache_key = cache::request_cache_key(
-        "github",
-        &config.api_url(&endpoint),
-        Some(config.token.as_str()),
-    );
-    if let Some(cached) = cache::get_cached(&cache_key)
-        && let Ok(result) = serde_json::from_str::<ProviderResult>(&cached)
-    {
-        return Ok(result);
-    }
-
+    // No response cache: a list answer is the principal's current access, and
+    // a cached one would keep serving objects after access was revoked.
     let body = api_get(config, &endpoint)?;
     let items: Vec<serde_json::Value> =
         serde_json::from_str(&body).map_err(|e| format!("JSON parse error: {e}"))?;
 
-    let result = ProviderResult {
+    Ok(ProviderResult {
         provider: "github".to_string(),
         resource_type: "issues".to_string(),
         total_count: None,
@@ -175,12 +160,16 @@ pub fn list_issues(
             .filter(|v| v.get("pull_request").is_none_or(serde_json::Value::is_null))
             .map(parse_issue)
             .collect(),
-    };
+    })
+}
 
-    if let Ok(json) = serde_json::to_string(&result) {
-        cache::set_cached(&cache_key, &json, CACHE_TTL_SECS);
-    }
-    Ok(result)
+/// A list endpoint whose filter value is one query value: it cannot add or
+/// replace a parameter, whatever the caller passes.
+fn list_endpoint(slug: &str, resource: &str, per_page: usize, state: &str) -> String {
+    format!(
+        "/repos/{slug}/{resource}?per_page={per_page}&state={}&sort=updated&direction=desc",
+        urlencoding::encode(state)
+    )
 }
 
 pub fn list_pull_requests(
@@ -191,39 +180,41 @@ pub fn list_pull_requests(
     let slug = config.repo_slug().ok_or("No GitHub repo configured.")?;
 
     let per_page = limit.unwrap_or(DEFAULT_PER_PAGE).min(100);
-    let state_param = state.unwrap_or("open");
-
-    let endpoint = format!(
-        "/repos/{slug}/pulls?per_page={per_page}&state={state_param}&sort=updated&direction=desc"
-    );
-
-    let cache_key = cache::request_cache_key(
-        "github",
-        &config.api_url(&endpoint),
-        Some(config.token.as_str()),
-    );
-    if let Some(cached) = cache::get_cached(&cache_key)
-        && let Ok(result) = serde_json::from_str::<ProviderResult>(&cached)
-    {
-        return Ok(result);
-    }
+    let endpoint = list_endpoint(&slug, "pulls", per_page, state.unwrap_or("open"));
 
     let body = api_get(config, &endpoint)?;
     let items: Vec<serde_json::Value> =
         serde_json::from_str(&body).map_err(|e| format!("JSON parse error: {e}"))?;
 
-    let result = ProviderResult {
+    Ok(ProviderResult {
         provider: "github".to_string(),
         resource_type: "pull_requests".to_string(),
         total_count: None,
         truncated: items.len() >= per_page,
         items: items.iter().map(parse_pr).collect(),
-    };
+    })
+}
 
-    if let Ok(json) = serde_json::to_string(&result) {
-        cache::set_cached(&cache_key, &json, CACHE_TTL_SECS);
+/// Fetch one issue or pull request now, with this config's credential. GitHub
+/// answers 404 for an object the credential may not read.
+fn show_item(config: &GitHubConfig, resource: &str, number: u64) -> Result<ProviderItem, String> {
+    let slug = config.repo_slug().ok_or("No GitHub repo configured.")?;
+    let (path, parse): (&str, fn(&serde_json::Value) -> ProviderItem) = match resource {
+        "issues" => ("issues", parse_issue),
+        "pull_requests" => ("pulls", parse_pr),
+        _ => return Err("unsupported stored GitHub resource".into()),
+    };
+    let body = api_get(config, &format!("/repos/{slug}/{path}/{number}"))?;
+    let value: serde_json::Value =
+        serde_json::from_str(&body).map_err(|_| "invalid GitHub item response")?;
+    // The issues endpoint also returns pull requests; an issue origin must not
+    // be satisfied by a pull request of the same number, or the reverse.
+    let is_pull =
+        value.get("pull_request").is_some_and(|v| !v.is_null()) || resource == "pull_requests";
+    if (resource == "issues") == is_pull {
+        return Err("stored GitHub resource changed kind".into());
     }
-    Ok(result)
+    Ok(parse(&value))
 }
 
 pub fn list_actions(
@@ -236,7 +227,7 @@ pub fn list_actions(
     let per_page = limit.unwrap_or(DEFAULT_PER_PAGE).min(30);
     let mut endpoint = format!("/repos/{slug}/actions/runs?per_page={per_page}");
     if let Some(s) = status {
-        endpoint.push_str(&format!("&status={s}"));
+        endpoint.push_str(&format!("&status={}", urlencoding::encode(s)));
     }
 
     let body = api_get(config, &endpoint)?;
@@ -377,7 +368,50 @@ impl ContextProvider for GitHubProvider {
     }
 
     fn cache_ttl_secs(&self) -> u64 {
-        CACHE_TTL_SECS
+        0
+    }
+
+    fn descriptor(&self) -> super::provider_trait::ConnectorDescriptor {
+        descriptor()
+    }
+
+    /// The source a stored item came from: API origin, repository and the
+    /// credential that read it. Another token or repository is another source.
+    fn reuse_binding(&self, action: &str, _params: &ProviderParams) -> Option<String> {
+        if !matches!(action, "issues" | "pull_requests") {
+            return None;
+        }
+        let config = self.config.as_ref().ok()?;
+        super::provenance::digest(&serde_json::json!({
+            "version": 1, "provider": "github", "api_base": config.api_base,
+            "repository": config.repo_slug()?, "credential": config.token,
+        }))
+    }
+
+    fn reacquire_item(
+        &self,
+        action: &str,
+        params: &ProviderParams,
+        item_id: &str,
+    ) -> Result<ProviderResult, String> {
+        if self.reuse_binding(action, params).is_none() {
+            return Err("GitHub source is unavailable for item reauthorization".into());
+        }
+        let number: u64 = item_id
+            .parse()
+            .map_err(|_| "invalid stored GitHub item number")?;
+        if number == 0 || number.to_string() != item_id {
+            return Err("invalid stored GitHub item number".into());
+        }
+        let config = self.config.as_ref().map_err(Clone::clone)?;
+        let item = show_item(config, action, number)?;
+        Ok(ProviderResult {
+            provider: "github".into(),
+            resource_type: action.into(),
+            items: vec![item],
+            total_count: Some(1),
+            truncated: false,
+        })
     }
 
     fn is_available(&self) -> bool {
@@ -388,6 +422,26 @@ impl ContextProvider for GitHubProvider {
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
+
+pub(crate) fn descriptor() -> super::provider_trait::ConnectorDescriptor {
+    use super::provider_trait::{CapabilityLevel as L, ConnectorDescriptor as C};
+    C {
+        principal_binding: "token (GITHUB_TOKEN / GH_TOKEN / LEAN_CTX_GITHUB_TOKEN), bound with API origin and repository",
+        search: L::Partial,
+        list: L::Supported,
+        get: L::Supported,
+        delta: L::Unsupported,
+        revalidate_acl: L::Supported,
+        revalidate_revision: L::Supported,
+        delete_event: L::Partial,
+        content_trust: C::UNTRUSTED,
+        write_surface: C::NO_WRITES,
+        failure_policy: C::FAIL_CLOSED,
+        notes: "search = state filter, no full text; issues and pull requests re-checked per item with the \
+                principal's token (404 = no longer accessible, kind checked); actions runs are list-only and \
+                never stored with an origin; no response cache",
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -433,5 +487,100 @@ mod tests {
         assert!(provider.supported_actions().contains(&"issues"));
         assert!(provider.supported_actions().contains(&"pull_requests"));
         assert!(provider.supported_actions().contains(&"actions"));
+    }
+
+    fn config(url: &str, token: &str, repo: &str) -> super::GitHubConfig {
+        super::GitHubConfig {
+            token: token.into(),
+            owner: Some("acme".into()),
+            repo: Some(repo.into()),
+            api_base: url.into(),
+        }
+    }
+
+    #[test]
+    fn a_revoked_list_is_asked_again_and_never_served_from_a_cache() {
+        use crate::core::providers::hardened_http::redirect_tests::Server;
+        let issue = r#"[{"number":3,"title":"canary","state":"open","updated_at":"t1"}]"#;
+        let server = Server::new(200, None, issue);
+        let provider = GitHubProvider::with_config(config(&server.url, "reader-token", "repo"));
+        let params = super::ProviderParams::default();
+        assert_eq!(
+            provider.execute("issues", &params).unwrap().items[0].title,
+            "canary"
+        );
+        server.respond(404, r#"{"message":"Not Found"}"#);
+        assert!(provider.execute("issues", &params).is_err());
+        assert_eq!(server.count(), 2);
+    }
+
+    #[test]
+    fn a_filter_value_stays_one_query_value() {
+        use crate::core::providers::hardened_http::redirect_tests::Server;
+        let server = Server::new(200, None, "[]");
+        let provider = GitHubProvider::with_config(config(&server.url, "reader-token", "repo"));
+        let params = super::ProviderParams {
+            state: Some("all&per_page=100&sort=created#x".into()),
+            ..super::ProviderParams::default()
+        };
+        provider.execute("pull_requests", &params).unwrap();
+        assert_eq!(
+            server.last_request_line().unwrap(),
+            "GET /repos/acme/repo/pulls?per_page=20&state=all%26per_page%3D100%26sort%3Dcreated%23x&sort=updated&direction=desc HTTP/1.1"
+        );
+    }
+
+    #[test]
+    fn an_item_is_reacquired_now_with_its_kind_and_credential() {
+        use crate::core::providers::hardened_http::redirect_tests::Server;
+        let server = Server::new(
+            200,
+            None,
+            r#"{"number":5,"title":"t","state":"open","updated_at":"t1"}"#,
+        );
+        let provider = GitHubProvider::with_config(config(&server.url, "reader-token", "repo"));
+        let params = super::ProviderParams::default();
+        let binding = provider.reuse_binding("issues", &params).unwrap();
+        assert!(provider.reuse_binding("actions", &params).is_none());
+
+        assert_eq!(
+            provider
+                .reacquire_item("issues", &params, "5")
+                .unwrap()
+                .items[0]
+                .id,
+            "5"
+        );
+        assert_eq!(
+            server.last_request_line().unwrap(),
+            "GET /repos/acme/repo/issues/5 HTTP/1.1"
+        );
+        // The issues endpoint answering with a pull request is not the stored issue.
+        server.respond(
+            200,
+            r#"{"number":5,"title":"t","pull_request":{"url":"u"}}"#,
+        );
+        assert!(provider.reacquire_item("issues", &params, "5").is_err());
+        // Lost access: GitHub answers 404.
+        server.respond(404, r#"{"message":"Not Found"}"#);
+        assert!(provider.reacquire_item("issues", &params, "5").is_err());
+        let before = server.count();
+        for bad in ["0", "05", "5/../6", "x"] {
+            assert!(
+                provider.reacquire_item("issues", &params, bad).is_err(),
+                "{bad}"
+            );
+        }
+        assert_eq!(server.count(), before);
+        // Another token or repository is another source.
+        for other in [
+            config(&server.url, "other-token", "repo"),
+            config(&server.url, "reader-token", "other"),
+        ] {
+            assert_ne!(
+                GitHubProvider::with_config(other).reuse_binding("issues", &params),
+                Some(binding.clone())
+            );
+        }
     }
 }

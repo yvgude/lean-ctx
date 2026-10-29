@@ -1,0 +1,17 @@
+{
+  "case": "receipts_v2_source_refs",
+  "base": "routes/receipts_v2.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/receipts/0/document/observation/source_lineage",
+      "value": [
+        "source:sha256:abababababababababababababababababababababababababababababababab"
+      ]
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "source references (M3)"
+}

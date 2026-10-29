@@ -1,0 +1,49 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqbi",
+  "body": {
+    "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+    "reason": "The sandbox processor fixed the small-amount bug."
+  },
+  "body_commit": "f2938aded8ffbba65066d4d2e1b67fb0657ed16567408f409678df15b34ca1c7",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 9,
+  "event_id": "01M5NKABRG005000000000W00A",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800010000
+  },
+  "key_id": "47983724220c8521",
+  "op": "retract",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800010350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 10,
+  "signature": "903526182cad17e768d5ba468e8b90fb201883f9149a1329250a2e201fc126ed06c0f319200bb817d0050c5a8fa5ee6dfbc422f9bf185148c3f809a475e18109",
+  "target": "n_ni4efcql5cttozq2pxust6len4",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

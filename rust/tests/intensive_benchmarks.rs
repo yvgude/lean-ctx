@@ -763,7 +763,7 @@ fn bench_rrf_eviction_empty() {
     use std::time::Instant;
     let now = Instant::now();
     let scores = lean_ctx::core::cache::eviction_scores_rrf(&[], now);
-    assert!(scores.is_empty(), "{scores:?}");
+    assert_eq!(scores, [] as [(std::string::String, f64); 0]);
 }
 
 // ═══════════════════════════════════════════════════════════════════════════
@@ -1802,24 +1802,39 @@ fn bench_session_prepare_save_is_cpu_only() {
         session.stats.unsaved_changes = 0;
     }
 
+    // What is timed: `prepare_save` alone — the step a caller runs under the
+    // live session lock. It validates the ID and detaches a copy of the
+    // session; it reads no file, configuration or policy input. Storage
+    // admission, serialization and the commit belong to `write_to_disk()` and
+    // are deliberately not part of this measurement, so nothing is published
+    // here and the session needs no project root.
+    let mut prepared_ok = 0_u32;
     let start = std::time::Instant::now();
     for _ in 0..100 {
         session.stats.unsaved_changes = 5;
         if let Ok(prepared) = session.prepare_save() {
+            prepared_ok += 1;
             std::mem::drop(prepared);
         }
     }
     let prepare_us = start.elapsed().as_micros();
 
+    // A refused preparation returns early and would make the timing
+    // meaningless: every one of the 100 must have produced a prepared save.
+    assert_eq!(
+        prepared_ok, 100,
+        "every prepare_save must succeed; the benchmark must not time refusals"
+    );
+
     eprintln!("\n{}", "=".repeat(70));
     eprintln!("  SESSION PREPARE_SAVE BENCHMARK (100 iters)");
     eprintln!("{}", "=".repeat(70));
-    eprintln!("  100x prepare_save (serialize only): {prepare_us:>6} us");
+    eprintln!("  100x prepare_save (detached copy, no I/O): {prepare_us:>6} us");
     eprintln!(
         "  Per call:                           {:>6} us",
         prepare_us / 100
     );
-    eprintln!("  Note: write_to_disk() I/O runs in background thread.");
+    eprintln!("  Note: admission and write_to_disk() I/O run in background thread.");
     eprintln!("{}", "=".repeat(70));
 
     assert!(
@@ -1844,6 +1859,12 @@ fn bench_session_prepare_save_is_cpu_only() {
 fn bench_session_save_semantics() {
     use lean_ctx::core::session::SessionState;
 
+    // A save is admitted and committed under one policy snapshot whose inputs
+    // include the data directory; other tests of this binary replace
+    // `LEAN_CTX_DATA_DIR` under this lock, which would change the snapshot
+    // between admission and commit.
+    let _lock = lean_ctx::core::data_dir::test_env_lock();
+
     let mut session = SessionState::new();
     for _ in 0..6 {
         session.increment();
@@ -1864,7 +1885,7 @@ fn bench_session_save_semantics() {
     let write_result = prepared.write_to_disk();
     assert!(
         write_result.is_ok(),
-        "write_to_disk to valid dir should succeed"
+        "write_to_disk to valid dir should succeed: {write_result:?}"
     );
 
     for _ in 0..6 {
@@ -1873,7 +1894,10 @@ fn bench_session_save_semantics() {
     assert!(session.should_save());
 
     let result = session.save();
-    assert!(result.is_ok(), "synchronous save should succeed");
+    assert!(
+        result.is_ok(),
+        "synchronous save should succeed: {result:?}"
+    );
     assert_eq!(
         session.stats.unsaved_changes, 0,
         "save must reset counter on success"

@@ -1,0 +1,18 @@
+{
+  "case": "edge_existing_id",
+  "description": "edge.add of an edge id that exists",
+  "base": "events/edge.add.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/seq",
+      "value": 19
+    }
+  ],
+  "resign_with": "instance_a",
+  "expect": {
+    "layer": "target_state",
+    "code": "invalid_event",
+    "reason": "target_state"
+  }
+}

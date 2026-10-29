@@ -6,23 +6,35 @@ pub(crate) fn cmd_overview(args: &[String]) {
     let task = positional_value(args);
     let json = args.iter().any(|a| a == "--json");
 
-    let out = daemon_overview(&project_root, task.as_deref()).unwrap_or_else(|| {
+    // The daemon's answer already passed the MCP pipeline. The local renderer
+    // gets the same treatment through the shared CLI tool run; with `--json`
+    // the text is wrapped into another document and is no tool-result carrier.
+    let daemon = daemon_overview(&project_root, task.as_deref());
+    let local = || {
         let cache = SessionCache::new();
         ctx_overview::handle(&cache, task.as_deref(), Some(&project_root), CrpMode::Off).0
-    });
+    };
+    let run = super::common::CliToolRun::new("ctx_overview", &project_root, None);
 
     if json {
-        let payload = serde_json::json!({
-            "project_root": project_root,
-            "task": task,
-            "output": out,
+        // What is printed is the wrapping document, so that document is what
+        // is released and receipted (G08) — whichever side rendered the text.
+        let released = run.human_facing().deliver_json(|| {
+            let out = daemon.unwrap_or_else(local);
+            let payload = serde_json::json!({
+                "project_root": project_root,
+                "task": task,
+                "output": out,
+            });
+            serde_json::to_string_pretty(&payload).unwrap_or(out)
         });
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&payload).unwrap_or_else(|_| out.clone())
-        );
+        match released {
+            Ok(document) => super::common::print_released(&document),
+            Err(reason) => super::common::exit_withheld(&reason),
+        }
     } else {
-        println!("{out}");
+        let out = daemon.unwrap_or_else(|| run.deliver_text(local));
+        super::common::print_released(&out);
     }
 }
 

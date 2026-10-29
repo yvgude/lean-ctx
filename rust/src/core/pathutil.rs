@@ -253,6 +253,23 @@ fn unescape_shell_path(path: &str) -> String {
 /// (`/c/Users/...` -> `C:/Users/...`), mixed separators, double slashes, and
 /// trailing slashes. Uses forward slashes for consistency. On non-Windows
 /// hosts `/c/...` is a literal directory and passes through unchanged (#397).
+/// Whether two recorded project roots name the same project: equal after
+/// separator and trailing-slash normalization, or after resolving symlinks.
+/// The one comparison for project-scoped records (agents, messages, shares):
+/// a raw string comparison split one project into several by spelling.
+pub fn same_project(a: &str, b: &str) -> bool {
+    let lexical = |path: &str| {
+        let path = path.trim().replace('\\', "/");
+        let trimmed = path.trim_end_matches('/');
+        if trimmed.is_empty() {
+            path
+        } else {
+            trimmed.to_string()
+        }
+    };
+    a == b || lexical(a) == lexical(b) || normalize_tool_path(a) == normalize_tool_path(b)
+}
+
 pub fn normalize_tool_path(path: &str) -> String {
     let mut p = normalize_tool_path_lexical(path);
 
@@ -347,14 +364,38 @@ fn is_wsl_windows_user_profile(dir: &Path) -> bool {
         && components.next().is_none()
 }
 
+/// Every spelling of the user's home directory a root guard must refuse: the
+/// profile folder (`dirs::home_dir`, which on Windows ignores the
+/// environment) and the override-friendly home (`HOME`/`USERPROFILE`,
+/// [`crate::core::home::resolve_home_dir`]). On Unix both are `$HOME` and
+/// one entry remains.
+pub fn home_dirs() -> Vec<PathBuf> {
+    let mut homes: Vec<PathBuf> = Vec::with_capacity(2);
+    for home in [dirs::home_dir(), crate::core::home::resolve_home_dir()]
+        .into_iter()
+        .flatten()
+    {
+        if !homes.contains(&home) {
+            homes.push(home);
+        }
+    }
+    homes
+}
+
 /// Returns `true` if the directory is too broad to be a valid project root.
 /// Rejects home directories (including WSL-mounted Windows profiles), filesystem
-/// root, `.` (bare CWD), and agent/IDE config directories
-/// ([`AGENT_CONFIG_DIRS`]). Used to prevent adopting a bogus project root and
-/// writing project-scoped data into the global `~/.lean-ctx/` data directory.
+/// root, `.` (bare CWD), agent/IDE config directories ([`AGENT_CONFIG_DIRS`])
+/// and LeanCTX's own stores ([`is_lean_ctx_store_dir`]). Used to prevent
+/// adopting a bogus project root and writing project-scoped data into the
+/// global `~/.lean-ctx/` data directory.
 pub fn is_broad_or_unsafe_root(dir: &Path) -> bool {
-    if let Some(home) = dirs::home_dir()
-        && dir == home
+    // Compared without the Windows verbatim `\\?\` prefix, which
+    // `std::fs::canonicalize` adds there: `\\?\C:\Users\me` is the home
+    // directory as much as `C:\Users\me`.
+    let plain = strip_verbatim(dir.to_path_buf());
+    if home_dirs()
+        .into_iter()
+        .any(|home| plain == strip_verbatim(home))
     {
         return true;
     }
@@ -365,7 +406,33 @@ pub fn is_broad_or_unsafe_root(dir: &Path) -> bool {
     if s == "/" || s == "\\" || s == "." {
         return true;
     }
-    is_agent_config_dir(dir)
+    is_agent_config_dir(dir) || is_lean_ctx_store_dir(dir)
+}
+
+/// `dir` is LeanCTX's data, state, config or cache directory itself. A CLI
+/// started there without a project (the Cockpit's fallback working directory)
+/// must never adopt it as a project. Folders inside a store stay allowed:
+/// setups and fixtures with `LEAN_CTX_DATA_DIR` in a temp dir keep their
+/// projects there. Resolved read-only: nothing is created. Both sides are
+/// compared as given and canonical, so another spelling of the same folder
+/// (a symlink, macOS `/var` → `/private/var`) matches too.
+pub fn is_lean_ctx_store_dir(dir: &Path) -> bool {
+    let real_dir = dir.canonicalize().ok();
+    [
+        crate::core::data_dir::resolve_data_dir(),
+        crate::core::paths::state_dir_read_only(),
+        crate::core::paths::config_dir_read_only(),
+        crate::core::paths::cache_dir_read_only(),
+    ]
+    .into_iter()
+    .flatten()
+    .filter(|store| store.is_absolute())
+    .any(|store| {
+        let real_store = store.canonicalize().ok();
+        dir == store
+            || real_store.as_deref() == Some(dir)
+            || (real_dir.is_some() && real_dir == real_store)
+    })
 }
 
 /// Well-known project markers used to identify project roots.
@@ -573,6 +640,58 @@ pub fn safe_project_data_dir(project_root: &Path) -> Result<PathBuf, String> {
 mod tests {
     use super::*;
 
+    /// AP04 review I1: project-scoped records compare roots by project, not
+    /// by spelling — a symlinked root, a trailing slash and Windows
+    /// separators name the same project; another directory does not.
+    #[cfg(unix)]
+    #[test]
+    fn same_project_ignores_spelling_but_not_identity() {
+        let tmp = tempfile::tempdir().unwrap();
+        let real = tmp.path().join("repo");
+        let other = tmp.path().join("other");
+        std::fs::create_dir_all(&real).unwrap();
+        std::fs::create_dir_all(&other).unwrap();
+        let link = tmp.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        let (real, link, other) = (
+            real.to_string_lossy().to_string(),
+            link.to_string_lossy().to_string(),
+            other.to_string_lossy().to_string(),
+        );
+
+        assert!(same_project(&real, &link));
+        assert!(same_project(&real, &format!("{real}/")));
+        assert!(same_project(r"C:\work\repo", "C:/work/repo/"));
+        assert!(!same_project(&real, &other));
+    }
+
+    #[test]
+    fn lean_ctx_stores_are_never_a_project_root() {
+        let iso = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        // The Cockpit's fallback working directory itself.
+        assert!(is_broad_or_unsafe_root(iso.path()));
+        // A fixture project inside a temp data dir stays a project.
+        assert!(!is_broad_or_unsafe_root(&iso.path().join("proj")));
+        assert!(!is_broad_or_unsafe_root(project.path()));
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_store_under_another_spelling_is_still_refused() {
+        let iso = crate::core::data_dir::isolated_data_dir();
+        let links = tempfile::tempdir().unwrap();
+        let alias = links.path().join("data-alias");
+        std::os::unix::fs::symlink(iso.path(), &alias).unwrap();
+        assert!(is_broad_or_unsafe_root(&alias));
+        // A folder that only links into the store is not the store.
+        let inner = iso.path().join("proj");
+        std::fs::create_dir_all(&inner).unwrap();
+        let inner_alias = links.path().join("proj-alias");
+        std::os::unix::fs::symlink(&inner, &inner_alias).unwrap();
+        assert!(!is_broad_or_unsafe_root(&inner_alias));
+    }
+
     #[test]
     fn strip_regular_verbatim() {
         let p = PathBuf::from(r"\\?\C:\Users\dev\project");
@@ -582,6 +701,9 @@ mod tests {
 
     #[test]
     fn tcc_sensitive_home_dir_matches_home_and_magic_dirs() {
+        // HOME is read here and again inside the check; tests that set HOME
+        // hold the env lock, so holding it keeps both reads the same.
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let Some(home) = dirs::home_dir() else {
             return;
         };
@@ -594,6 +716,7 @@ mod tests {
 
     #[test]
     fn tcc_sensitive_home_dir_allows_real_projects() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let Some(home) = dirs::home_dir() else {
             return;
         };
@@ -609,6 +732,7 @@ mod tests {
     #[test]
     #[cfg(target_os = "macos")]
     fn under_tcc_protected_dir_matches_nested_paths() {
+        let _env_lock = crate::core::data_dir::test_env_lock();
         let Some(home) = dirs::home_dir() else {
             return;
         };

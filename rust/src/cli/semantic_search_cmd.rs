@@ -127,46 +127,67 @@ pub(crate) fn cmd_semantic_search(args: &[String]) {
             eprintln!("semantic-search: --json is not supported with --artifacts yet");
             std::process::exit(2);
         }
-        let out = ctx_semantic_search::handle(
-            &query,
-            &parsed.path,
-            parsed.top_k,
-            crate::core::protocol::CrpMode::Off,
-            languages,
-            parsed.path_glob.as_deref(),
-            Some("bm25"),
-            Some(false),
-            Some(true),
-        );
-        if let Some(err) = out.strip_prefix("ERR: ") {
-            eprintln!("semantic-search: {err}");
-            std::process::exit(1);
+        // One tool run for the CLI (request scope, capture, release,
+        // redaction, lineage — see `CliToolRun`); an `ERR:` answer is reported
+        // on stderr and is never a carrier.
+        let out = super::common::CliToolRun::new("ctx_semantic_search", &parsed.path, None)
+            .deliver(|| {
+                let out = ctx_semantic_search::handle(
+                    &query,
+                    &parsed.path,
+                    parsed.top_k,
+                    crate::core::protocol::CrpMode::Off,
+                    languages,
+                    parsed.path_glob.as_deref(),
+                    Some("bm25"),
+                    Some(false),
+                    Some(true),
+                );
+                match out.strip_prefix("ERR: ") {
+                    Some(err) => Err(err.to_string()),
+                    None => Ok(out),
+                }
+            });
+        match out {
+            Ok(out) => super::common::print_released(&out),
+            Err(err) => {
+                eprintln!("semantic-search: {err}");
+                std::process::exit(1);
+            }
         }
-        println!("{out}");
         return;
     }
 
-    match ctx_semantic_search::search_hits(
-        &query,
-        &parsed.path,
-        parsed.top_k,
-        &parsed.mode,
-        languages,
-        parsed.path_glob.as_deref(),
-    ) {
-        Ok(hits) => {
-            if parsed.json {
-                println!("{}", to_json(&hits));
+    // The hit list is rendered inside the tool run, so the header and the
+    // hits are ONE released text; `--json` is a document for editors, not a
+    // tool-result carrier.
+    let json = parsed.json;
+    let run = super::common::CliToolRun::new("ctx_semantic_search", &parsed.path, None);
+    let run = if json { run.human_facing() } else { run };
+    match run.deliver(|| {
+        ctx_semantic_search::search_hits(
+            &query,
+            &parsed.path,
+            parsed.top_k,
+            &parsed.mode,
+            languages,
+            parsed.path_glob.as_deref(),
+        )
+        .map(|hits| {
+            if json {
+                to_json(&hits)
             } else {
-                println!(
-                    "Semantic search ({}): \"{}\" ({} results)",
+                format!(
+                    "Semantic search ({}): \"{}\" ({} results)\n{}",
                     parsed.mode,
                     query,
-                    hits.len()
-                );
-                println!("{}", format_hybrid_results(&hits, false));
+                    hits.len(),
+                    format_hybrid_results(&hits, false)
+                )
             }
-        }
+        })
+    }) {
+        Ok(text) => super::common::print_released(&text),
         Err(e) => {
             // In JSON mode the caller (extension) parses stdout; surface the
             // error on stderr and exit non-zero so it is never mistaken for an

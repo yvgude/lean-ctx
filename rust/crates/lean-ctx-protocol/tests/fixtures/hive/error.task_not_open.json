@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "Task 7 is claimed, not open.",
+    "number": 7,
+    "reason": "task_not_open"
+  }
+}

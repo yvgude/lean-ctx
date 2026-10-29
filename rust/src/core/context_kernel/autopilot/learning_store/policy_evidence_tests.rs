@@ -35,6 +35,22 @@ fn decision() -> AutopilotDecision {
     controller().plan(&input(), None).expect("plan")
 }
 
+#[test]
+fn outbound_preparation_does_not_become_measured_host_learning() {
+    let mut outbound = receipt(900, 300, Some(quality((5, 0, 0), true)));
+    outbound.destination.provider =
+        lean_ctx_protocol::ProtocolReference::new("openai").expect("provider");
+    for receipts in [
+        vec![outbound.clone()],
+        vec![receipt(100, 50, Some(quality((2, 0, 0), true))), outbound],
+    ] {
+        let result = observed(&decision(), AcceptanceState::Accepted, DAY, &task(receipts));
+        assert!(result.tokens.is_none());
+        assert!(result.quality.is_none());
+        assert!(result.security.is_none());
+    }
+}
+
 fn entry(object_id: &str) -> PlanEntry {
     PlanEntry {
         object_id: object_id.to_owned(),
@@ -82,6 +98,7 @@ fn receipt(
     use lean_ctx_protocol::{ProtocolReference, V1_SCHEMA_VERSION};
     ContextDecisionReceiptV1 {
         schema_version: V1_SCHEMA_VERSION,
+        object_digest: None,
         receipt_id: ProtocolReference::new("rcpt-1").expect("reference"),
         mode: GatewayModeV1::Developer,
         principal: PrincipalV1::unknown(),

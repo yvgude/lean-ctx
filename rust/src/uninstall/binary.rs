@@ -51,9 +51,15 @@ enum Disposition {
     Homebrew,
 }
 
+/// A dev build is recognised by the default path shape (also for a path that
+/// is not on disk) or by cargo's bookkeeping next to it (`CARGO_TARGET_DIR`,
+/// `--target <triple>`, a named profile). A wrong "dev build" only makes
+/// uninstall leave a file in place; a wrong "install" deletes a developer's
+/// build.
 fn classify(path: &Path) -> Disposition {
     let p = path.to_string_lossy().replace('\\', "/");
-    if p.contains("/target/release/") || p.contains("/target/debug/") {
+    let default_layout = p.contains("/target/release/") || p.contains("/target/debug/");
+    if default_layout || crate::core::portable_binary::in_cargo_output_dir(path) {
         Disposition::DevBuild
     } else if p.contains("/.cargo/") {
         Disposition::Cargo
@@ -295,6 +301,39 @@ mod tests {
             dirs.contains(&cargo_bin),
             "Cargo install bin omitted: {dirs:?}"
         );
+        // The same wherever cargo put this binary (`CARGO_TARGET_DIR`, a
+        // directory not named `target`): its own directory is never a shim dir.
+        let exe = std::env::current_exe().expect("test binary path");
+        let exe_dir = exe.parent().expect("test binary directory");
+        assert!(
+            !dirs.iter().any(|d| d == exe_dir),
+            "the test binary's directory leaked into shim dirs: {dirs:?}"
+        );
+    }
+
+    /// Regression: a build under `CARGO_TARGET_DIR`, `--target <triple>` or a
+    /// named profile has no `/target/debug/` in its path and was classified as
+    /// a removable install.
+    #[test]
+    fn dev_builds_in_a_custom_target_dir_are_never_removed() {
+        let root = tempfile::tempdir().expect("tempdir");
+        let profile = root.path().join("build-cache/aarch64-apple-darwin/dist");
+        std::fs::create_dir_all(profile.join(".fingerprint")).unwrap();
+        std::fs::create_dir_all(profile.join("deps")).unwrap();
+        for artifact in ["lean-ctx", "deps/lean_ctx-test"] {
+            assert!(
+                matches!(classify(&profile.join(artifact)), Disposition::DevBuild),
+                "{artifact}"
+            );
+        }
+        // Control: a directory without cargo's bookkeeping is not a dev build,
+        // also when it is called `deps`.
+        let install = root.path().join("opt/deps");
+        std::fs::create_dir_all(&install).unwrap();
+        assert!(!matches!(
+            classify(&install.join("lean-ctx")),
+            Disposition::DevBuild
+        ));
     }
 
     #[test]

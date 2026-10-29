@@ -31,7 +31,7 @@ Prefer the `lean_ctx` tool (installed by the extension) to run `lean-ctx` direct
 - `lean-ctx overview`
 - `lean-ctx session …`
 - `lean-ctx knowledge …`
-- `lean-ctx gain` / `lean-ctx stats`
+- `lean-ctx gain` / `lean-ctx stats` (terminal summary; the user's full views: `lean-ctx cockpit`)
 - `lean-ctx index …`
 
 ## MCP bridge

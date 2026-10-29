@@ -317,7 +317,9 @@ test("the lean-ctx skill is prefixed with this session's live facts", async ($, 
   const out = await $.skill.prompt({ skill: "lean-ctx", text: "STATIC SKILL BODY" });
   expect(out.text.startsWith("## Live in this session (lean-ctx Claude Code mod)")).toBe(true);
   expect(out.text).toContain("Never `sleep` or poll");
-  expect(out.text).toContain("ctx_callgraph, ctx_compose, ctx_read, ctx_search, ctx_session, ctx_shell");
+  expect(out.text).toContain(
+    "ctx_callgraph, ctx_compose, ctx_glob, ctx_patch, ctx_read, ctx_search, ctx_session, ctx_shell, ctx_tree",
+  );
   expect(out.text.endsWith("STATIC SKILL BODY")).toBe(true);
 
   const other = await $.skill.prompt({ skill: "commit", text: "COMMIT" });
@@ -337,9 +339,16 @@ test("lean-ctx tools keep descriptions and only configured tools are front-loade
     isDeferred: true,
     provider: { plugin: "mcp:lean-ctx", tier: "user" },
   });
-  const glob = await $.tool.describe({
-    tool: "mcp__lean-ctx__ctx_glob",
-    description: "glob description",
+  // Routed by the rules: deferring it sent models back to native Edit.
+  const patch = await $.tool.describe({
+    tool: "mcp__lean-ctx__ctx_patch",
+    description: "patch description",
+    isDeferred: true,
+    provider: { plugin: "mcp:lean-ctx", tier: "user" },
+  });
+  const expand = await $.tool.describe({
+    tool: "mcp__lean-ctx__ctx_expand",
+    description: "expand description",
     isDeferred: true,
     provider: { plugin: "mcp:lean-ctx", tier: "user" },
   });
@@ -357,7 +366,8 @@ test("lean-ctx tools keep descriptions and only configured tools are front-loade
   });
 
   expect(read).toEqual({ description: "read description", isDeferred: false });
-  expect(glob).toEqual({ description: "glob description", isDeferred: true });
+  expect(patch).toEqual({ description: "patch description", isDeferred: false });
+  expect(expand).toEqual({ description: "expand description", isDeferred: true });
   expect(bash).toEqual({ description: "native Bash description", isDeferred: true });
   expect(alias).toEqual({ description: "shell alias", isDeferred: true });
 });

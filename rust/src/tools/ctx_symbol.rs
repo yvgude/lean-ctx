@@ -381,7 +381,7 @@ mod tests {
     use crate::core::graph_index::{ProjectIndex, SymbolEntry};
     use crate::core::graph_provider::GraphProvider;
 
-    fn test_provider() -> GraphProvider {
+    fn test_provider() -> (GraphProvider, tempfile::TempDir) {
         let mut index = ProjectIndex::new("/tmp/test");
         index.symbols.insert(
             "src/main.rs::main".to_string(),
@@ -416,12 +416,13 @@ mod tests {
                 is_exported: true,
             },
         );
-        GraphProvider::GraphIndex(index)
+        let (index, files) = index.on_disk(&[]);
+        (GraphProvider::GraphIndex(index), files)
     }
 
     #[test]
     fn find_exact_match() {
-        let gp = test_provider();
+        let (gp, _files) = test_provider();
         let results = gp.find_symbols("main", None, None);
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].name, "main");
@@ -429,7 +430,7 @@ mod tests {
 
     #[test]
     fn find_with_kind_filter() {
-        let gp = test_provider();
+        let (gp, _files) = test_provider();
         let results = gp.find_symbols("Config", None, Some("struct"));
         assert_eq!(results.len(), 1);
         assert_eq!(results[0].kind, "struct");
@@ -437,14 +438,14 @@ mod tests {
 
     #[test]
     fn find_with_file_filter() {
-        let gp = test_provider();
+        let (gp, _files) = test_provider();
         let results = gp.find_symbols("Config", Some("lib.rs"), None);
         assert_eq!(results.len(), 2);
     }
 
     #[test]
     fn no_match_returns_empty() {
-        let gp = test_provider();
+        let (gp, _files) = test_provider();
         let results = gp.find_symbols("nonexistent", None, None);
         assert!(results.is_empty());
     }

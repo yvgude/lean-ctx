@@ -1,0 +1,14 @@
+{
+  "case": "pledge_max_cells",
+  "base": "routes/pledge.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/max_cells",
+      "value": 1
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

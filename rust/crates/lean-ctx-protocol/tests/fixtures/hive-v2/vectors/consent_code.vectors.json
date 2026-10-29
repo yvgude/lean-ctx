@@ -1,0 +1,17 @@
+{
+  "cases": [
+    {
+      "code": "7KQ2M9XA",
+      "code_hash": "872332d1092627aef33caa844494fef88d44383d0f7a836c1382f93f0db8cf68",
+      "consent_id": "cns_abcdefgh234567ab",
+      "display": "7KQ2-M9XA"
+    },
+    {
+      "code": "3HXT8W2P",
+      "code_hash": "2ab679b409abfc54367f767206440330ed55608f735522b4d714dcefa6f0fe50",
+      "consent_id": "cns_bcdefgh234567abc",
+      "display": "3hxt-8w2p"
+    }
+  ],
+  "rule": "pairing code: 40 random bits, Crockford base32 upper, shown XXXX-XXXX; code = the 8 characters without the dash; code_hash = hex(sha256(consent_id ‖ code))"
+}

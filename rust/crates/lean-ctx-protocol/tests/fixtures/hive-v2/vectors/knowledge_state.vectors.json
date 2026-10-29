@@ -1,0 +1,192 @@
+{
+  "rule": "first match wins: rejected (retracted|purged -> retracted; decision status reverted -> reverted), outdated (superseded edge or decision status superseded -> superseded; anchor_state gone -> anchor_gone; to_verify -> anchor_changed), conflicting (open contradicts -> contradicted), verified (review_state confirmed and evidence observed), provisional (review_state not confirmed -> unconfirmed; else not_observed). superseded = a live supersedes edge from a live node to this one; contradicted = a live contradicts edge to a live node that is not superseded.",
+  "defaults": {
+    "node_type": "fact",
+    "retracted": false,
+    "purged": false,
+    "review_state": "confirmed",
+    "evidence": "observed",
+    "status": null,
+    "anchor_state": null,
+    "superseded": false,
+    "contradicted": false
+  },
+  "cases": [
+    {
+      "name": "observed_confirmed_is_verified",
+      "state": "verified",
+      "reason": null
+    },
+    {
+      "name": "anchor_fresh_stays_verified",
+      "state": "verified",
+      "reason": null,
+      "set": {
+        "anchor_state": "fresh"
+      }
+    },
+    {
+      "name": "stated_is_provisional",
+      "state": "provisional",
+      "reason": "not_observed",
+      "set": {
+        "evidence": "stated"
+      }
+    },
+    {
+      "name": "imported_is_provisional",
+      "state": "provisional",
+      "reason": "not_observed",
+      "set": {
+        "evidence": "imported"
+      }
+    },
+    {
+      "name": "unconfirmed_is_provisional",
+      "state": "provisional",
+      "reason": "unconfirmed",
+      "set": {
+        "review_state": "unconfirmed"
+      }
+    },
+    {
+      "name": "needs_person_is_provisional",
+      "state": "provisional",
+      "reason": "unconfirmed",
+      "set": {
+        "review_state": "reviewed_needs_person"
+      }
+    },
+    {
+      "name": "unconfirmed_wins_over_not_observed",
+      "state": "provisional",
+      "reason": "unconfirmed",
+      "set": {
+        "evidence": "stated",
+        "review_state": "unconfirmed"
+      }
+    },
+    {
+      "name": "anchor_changed_is_outdated",
+      "state": "outdated",
+      "reason": "anchor_changed",
+      "set": {
+        "anchor_state": "to_verify"
+      }
+    },
+    {
+      "name": "anchor_gone_is_outdated",
+      "state": "outdated",
+      "reason": "anchor_gone",
+      "set": {
+        "anchor_state": "gone"
+      }
+    },
+    {
+      "name": "superseded_edge_is_outdated",
+      "state": "outdated",
+      "reason": "superseded",
+      "set": {
+        "superseded": true
+      }
+    },
+    {
+      "name": "decision_superseded_is_outdated",
+      "state": "outdated",
+      "reason": "superseded",
+      "set": {
+        "node_type": "decision",
+        "status": "superseded"
+      }
+    },
+    {
+      "name": "decision_active_is_verified",
+      "state": "verified",
+      "reason": null,
+      "set": {
+        "node_type": "decision",
+        "status": "active"
+      }
+    },
+    {
+      "name": "superseded_wins_over_anchor",
+      "state": "outdated",
+      "reason": "superseded",
+      "set": {
+        "anchor_state": "gone",
+        "superseded": true
+      }
+    },
+    {
+      "name": "contradicted_is_conflicting",
+      "state": "conflicting",
+      "reason": "contradicted",
+      "set": {
+        "contradicted": true
+      }
+    },
+    {
+      "name": "contradicted_provisional_is_conflicting",
+      "state": "conflicting",
+      "reason": "contradicted",
+      "set": {
+        "contradicted": true,
+        "evidence": "stated"
+      }
+    },
+    {
+      "name": "outdated_wins_over_conflicting",
+      "state": "outdated",
+      "reason": "anchor_changed",
+      "set": {
+        "anchor_state": "to_verify",
+        "contradicted": true
+      }
+    },
+    {
+      "name": "retracted_is_rejected",
+      "state": "rejected",
+      "reason": "retracted",
+      "set": {
+        "retracted": true
+      }
+    },
+    {
+      "name": "purged_is_rejected",
+      "state": "rejected",
+      "reason": "retracted",
+      "set": {
+        "purged": true
+      }
+    },
+    {
+      "name": "decision_reverted_is_rejected",
+      "state": "rejected",
+      "reason": "reverted",
+      "set": {
+        "node_type": "decision",
+        "status": "reverted"
+      }
+    },
+    {
+      "name": "rejected_wins_over_everything",
+      "state": "rejected",
+      "reason": "retracted",
+      "set": {
+        "anchor_state": "gone",
+        "contradicted": true,
+        "retracted": true,
+        "superseded": true
+      }
+    },
+    {
+      "name": "reference_anchor_gone_is_outdated",
+      "state": "outdated",
+      "reason": "anchor_gone",
+      "set": {
+        "anchor_state": "gone",
+        "node_type": "reference"
+      }
+    }
+  ]
+}

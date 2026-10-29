@@ -1,0 +1,13 @@
+{
+  "case": "edit_without_change",
+  "base": "routes/conductor_action.edit.request.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/acceptance"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

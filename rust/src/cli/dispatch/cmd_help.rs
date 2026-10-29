@@ -26,6 +26,7 @@ const SELF_HELP: &[&[&str]] = &[
     &["value-report", "value_report"],
     &["evidence-export"],
     &["evidence"],
+    &["compliance"],
     &["shadow"],
     &["finops"],
     &["roi"],
@@ -40,15 +41,15 @@ const SELF_HELP: &[&[&str]] = &[
     &["prompt-segment"],
     &["statusline"],
     &["inspect"],
+    &["gateway"],
     &["claude-mod", "claude_mod"],
     &["eval"],
-    &["compliance"],
     &["agent"],
     &["instructions"],
     &["index"],
     &["semantic-search", "search-code"],
     &["explore"],
-    &["dashboard"],
+    &["cockpit", "dashboard"],
     &["provider"],
     &["serve"],
     &["proxy"],
@@ -67,9 +68,6 @@ const SELF_HELP: &[&[&str]] = &[
     &["skillify"],
     &["summary"],
     &["benchmark"],
-    &["benchmark-run", "bench-run"],
-    &["calibrate"],
-    &["pair"],
     &["security"],
     &["trust"],
     &["untrust"],
@@ -80,7 +78,7 @@ const SELF_HELP: &[&[&str]] = &[
     &["uninstall"],
     &["cheat", "cheatsheet", "cheat-sheet"],
     &["telemetry"],
-    &["cloud"],
+    &["hive"],
 ];
 
 /// Arms the guard never intercepts: passthroughs whose arguments belong to the
@@ -96,7 +94,6 @@ const EXEMPT: &[&[&str]] = &[
     &["__complete"],
     &["wrapped"],
     &["plugin", "plugins"],
-    &["buddy", "pet"],
     &["watch"],
 ];
 
@@ -110,14 +107,12 @@ const GUARDED: &[&[&str]] = &[
     &["migrate"],
     // Launches an interactive Codex session; `--help` must never start it.
     &["codex-protected"],
-    &["badge"],
     &["shell", "--shell"],
     &["gain"],
     &["learning"],
     &["conformance", "selftest"],
     &["health"],
     &["quality-lab", "quality_lab"],
-    &["billing"],
     &["triage"],
     &["scenario"],
     &["pack"],
@@ -128,15 +123,11 @@ const GUARDED: &[&[&str]] = &[
     &["snapshot"],
     &["verify"],
     &["verify-cache", "cache-selftest"],
-    &["visualize"],
     &["audit"],
     &["repomap", "repo-map"],
     &["cep"],
-    &["demo"],
-    &["team"],
     &["install"],
     &["bootstrap"],
-    &["cognitive"],
     &["read"],
     &["call"],
     &["diff"],
@@ -166,12 +157,13 @@ const GUARDED: &[&[&str]] = &[
     &["config"],
     &["allow"],
     &["allow-path"],
+    &["project"],
+    &["workspace"],
     &["yolo"],
     &["secure", "lockdown"],
     &["stats"],
     &["introspect"],
     &["theme"],
-    &["enterprise"],
     &["tee"],
     &["slow-log"],
     &["debug-log"],
@@ -188,11 +180,6 @@ const GUARDED: &[&[&str]] = &[
     &["hook"],
     &["report-issue", "report"],
     &["safety-levels", "safety"],
-    &["login"],
-    &["register"],
-    &["forgot-password"],
-    &["sync"],
-    &["contribute"],
     &["upgrade"],
     &["mcp"],
 ];
@@ -208,8 +195,9 @@ const NON_COMMAND_SECTIONS: &[&str] = &[
 
 /// [`SELF_HELP`] arms whose handler honours `--help` at *any* position with its
 /// own, richer usage (`init --agent claude --help`, #1849 — covered by the
-/// `init_help_safety_1849` integration test).
-const SELF_HELP_ANYWHERE: &[&str] = &["init"];
+/// `init_help_safety_1849` integration test; `hive tasks --help` prints the
+/// tasks usage, `hive swarm|worker --help` the hive one).
+const SELF_HELP_ANYWHERE: &[&str] = &["init", "hive"];
 
 fn group_of<'a>(table: &'a [&'a [&'a str]], cmd: &str) -> Option<&'a [&'a str]> {
     table.iter().copied().find(|group| group.contains(&cmd))
@@ -220,6 +208,47 @@ fn wants_help(rest: &[String]) -> bool {
         .take_while(|a| *a != "--")
         .any(|a| a == "--help")
         || matches!(rest, [only] if only == "-h")
+}
+
+/// Measurement commands deprecated by the focus release
+/// (docs/migration/focus-2026-10.md, part E): they still run for one release.
+const DEPRECATED_COMMANDS: &[&str] = &["quality-lab", "quality_lab", "eval"];
+
+/// Measurement and demo commands removed by the focus release.
+const REMOVED_COMMANDS: &[&str] = &[
+    "visualize",
+    "demo",
+    "calibrate",
+    "benchmark-run",
+    "bench-run",
+    "pair",
+];
+
+/// The stderr message for a removed command; the dispatcher exits with 2.
+pub(super) fn removed_notice(cmd: &str) -> Option<String> {
+    REMOVED_COMMANDS.contains(&cmd).then(|| {
+        if cmd == "pair" {
+            return "lean-ctx: 'pair' was removed: remote pairing was never implemented and \
+                    the command only listed installed agent CLIs. LeanCTX does not launch \
+                    agents; see ctx_work_graph action=start (docs/migration/focus-2026-10.md)."
+                .to_string();
+        }
+        format!(
+            "lean-ctx: '{cmd}' was removed with the focus release; use `lean-ctx gain`, \
+             `lean-ctx benchmark`, `lean-ctx doctor` or `lean-ctx cockpit --export` \
+             (HTML report) instead (docs/migration/focus-2026-10.md)."
+        )
+    })
+}
+
+/// The stderr notice for a deprecated command, so stdout (often JSON) stays clean.
+pub(super) fn deprecation_notice(cmd: &str) -> Option<String> {
+    DEPRECATED_COMMANDS.contains(&cmd).then(|| {
+        format!(
+            "lean-ctx: '{cmd}' is deprecated and will be removed in the next minor release \
+             (docs/migration/focus-2026-10.md)."
+        )
+    })
 }
 
 /// `lean-ctx <cmd> --help` (or a lone `-h`) on any arm the guard covers: a
@@ -348,6 +377,11 @@ mod tests {
     fn every_non_exempt_arm_has_reference_lines() {
         let help = full_help_text();
         for group in SELF_HELP.iter().chain(GUARDED) {
+            // `hive` prints its own help and stays out of `help all` until
+            // the release switch is on (3.12.1).
+            if group[0] == "hive" && !crate::core::hive::HIVE_AVAILABLE {
+                continue;
+            }
             assert!(
                 !reference_lines(&help, group).is_empty(),
                 "`help all` has no line for {group:?}; `lean-ctx {} --help` would print nothing",
@@ -411,5 +445,15 @@ mod tests {
             "{lines:?}"
         );
         assert!(lines.iter().all(|l| !l.contains("grep/rg")), "{lines:?}");
+    }
+
+    /// `hive <sub> --help` reaches the hive handler, which prints the
+    /// subcommand's own usage, never the generic reference lines.
+    #[test]
+    fn hive_subcommand_help_is_answered_by_hive() {
+        for sub in ["tasks", "swarm", "worker", "review"] {
+            let rest = vec![sub.to_owned(), "--help".to_owned()];
+            assert_eq!(guarded_help("hive", &rest), None, "{sub}");
+        }
     }
 }

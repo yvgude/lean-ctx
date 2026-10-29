@@ -1,0 +1,792 @@
+{
+  "schema": "leanctx.hive.insights/v1",
+  "scope": {
+    "kind": "workspace",
+    "slug": "ada",
+    "name": "Ada Lovelace",
+    "plan": "community"
+  },
+  "range": "7d",
+  "resolution": "day",
+  "group": "total",
+  "filters": {
+    "vault": null,
+    "engine": null,
+    "person": null,
+    "workspace": null
+  },
+  "from": "2026-10-20T00:00:00Z",
+  "to": "2026-10-27T00:00:00Z",
+  "previous": {
+    "from": "2026-10-13T00:00:00Z",
+    "to": "2026-10-20T00:00:00Z"
+  },
+  "names_visible": false,
+  "sharing": {
+    "state": "on",
+    "plan_default": "off",
+    "policy": null,
+    "confirmed_at": "2026-10-26T15:12:40Z",
+    "since": "2026-10-26T15:00:00Z"
+  },
+  "coverage": {
+    "engines_reporting": 1,
+    "engines_connected": 1,
+    "sharing_off_engines": 0,
+    "first_bucket_at": "2026-10-26T15:00:00Z",
+    "engines": [
+      {
+        "id": "inst_5d1f3b7a9c2e4f6a8b0d1c3e5f7a9b2d",
+        "label": "ada-mbp",
+        "owner": {
+          "ref": "p_4f2a9c1e7b3d5a60",
+          "label": "You",
+          "name": null,
+          "you": true
+        },
+        "yours": true,
+        "workspace": null,
+        "sharing": "on",
+        "level": null,
+        "last_bucket_at": "2026-10-26T23:00:00Z",
+        "connected": true
+      }
+    ]
+  },
+  "labels": {
+    "tokens.input": "estimated",
+    "tokens.output": "measured",
+    "tokens.saved": "estimated",
+    "savings.measured": "measured",
+    "savings.estimated": "estimated",
+    "savings.estimated_low": "estimated",
+    "savings.estimated_high": "estimated",
+    "savings.evidenced": "evidenced",
+    "savings.overhead": "measured",
+    "calls.tool_calls": "measured",
+    "calls.cache_reads": "measured",
+    "calls.cache_hits": "measured",
+    "compression.original": "measured",
+    "compression.compressed": "measured",
+    "ledger.reduction": "estimated",
+    "ledger.cache_discount": "measured",
+    "ledger.correction": "estimated",
+    "ledger.edit": "estimated",
+    "ledger.other": "estimated",
+    "guards.secrets_redacted": "measured",
+    "guards.pii_redacted": "measured",
+    "guards.injection_flags": "measured",
+    "guards.content_withheld": "measured",
+    "guards.paths_blocked": "measured",
+    "guards.shell_blocked": "measured",
+    "guards.partial_inspections": "measured",
+    "policy.blocked": "measured",
+    "policy.would_block": "measured",
+    "refetch.truncated": "measured",
+    "refetch.refetched": "measured",
+    "unregulated.calls": "measured",
+    "sessions.started": "measured",
+    "hosts.tool_calls": "measured",
+    "spend.requests": "measured",
+    "spend.input_tokens": "measured",
+    "spend.output_tokens": "measured",
+    "spend.cached_tokens": "measured",
+    "spend.usd_micros": "estimated",
+    "knowledge.facts_current": "measured",
+    "engines.active": "derived"
+  },
+  "totals": {
+    "tokens.input": 8420000,
+    "tokens.output": 2105000,
+    "tokens.saved": 6315000,
+    "savings.measured": 5210000,
+    "savings.estimated": 1105000,
+    "savings.estimated_low": 820000,
+    "savings.estimated_high": 1390000,
+    "savings.evidenced": 2940000,
+    "savings.overhead": 184000,
+    "calls.tool_calls": 9860,
+    "calls.cache_reads": 2900,
+    "calls.cache_hits": 2210,
+    "compression.original": 5100000,
+    "compression.compressed": 1290000,
+    "ledger.reduction": 5800000,
+    "ledger.cache_discount": 515000,
+    "ledger.correction": 0,
+    "ledger.edit": 0,
+    "ledger.other": 0,
+    "guards.secrets_redacted": 14,
+    "guards.pii_redacted": 0,
+    "guards.injection_flags": 3,
+    "guards.content_withheld": 0,
+    "guards.paths_blocked": 22,
+    "guards.shell_blocked": 5,
+    "guards.partial_inspections": 0,
+    "policy.blocked": 27,
+    "policy.would_block": 9,
+    "refetch.truncated": 1210,
+    "refetch.refetched": 96,
+    "unregulated.calls": 310,
+    "sessions.started": 118,
+    "hosts.tool_calls": 9860,
+    "spend.requests": 1640,
+    "spend.input_tokens": 18200000,
+    "spend.output_tokens": 1210000,
+    "spend.cached_tokens": 12900000,
+    "spend.usd_micros": 84213000,
+    "knowledge.facts_current": 1240,
+    "engines.active": 6
+  },
+  "previous_totals": {
+    "tokens.input": 0,
+    "tokens.output": 0,
+    "tokens.saved": 0,
+    "savings.measured": 0,
+    "savings.estimated": 0,
+    "savings.estimated_low": 0,
+    "savings.estimated_high": 0,
+    "savings.evidenced": 0,
+    "savings.overhead": 0,
+    "calls.tool_calls": 0,
+    "calls.cache_reads": 0,
+    "calls.cache_hits": 0,
+    "compression.original": 0,
+    "compression.compressed": 0,
+    "ledger.reduction": 0,
+    "ledger.cache_discount": 0,
+    "ledger.correction": 0,
+    "ledger.edit": 0,
+    "ledger.other": 0,
+    "guards.secrets_redacted": 0,
+    "guards.pii_redacted": 0,
+    "guards.injection_flags": 0,
+    "guards.content_withheld": 0,
+    "guards.paths_blocked": 0,
+    "guards.shell_blocked": 0,
+    "guards.partial_inspections": 0,
+    "policy.blocked": 0,
+    "policy.would_block": 0,
+    "refetch.truncated": 0,
+    "refetch.refetched": 0,
+    "unregulated.calls": 0,
+    "sessions.started": 0,
+    "hosts.tool_calls": 0,
+    "spend.requests": 0,
+    "spend.input_tokens": 0,
+    "spend.output_tokens": 0,
+    "spend.cached_tokens": 0,
+    "spend.usd_micros": 0,
+    "knowledge.facts_current": 0,
+    "engines.active": 0
+  },
+  "deltas": {
+    "tokens.input": {
+      "abs": 8420000,
+      "pct": null
+    },
+    "tokens.output": {
+      "abs": 2105000,
+      "pct": null
+    },
+    "tokens.saved": {
+      "abs": 6315000,
+      "pct": null
+    },
+    "savings.measured": {
+      "abs": 5210000,
+      "pct": null
+    },
+    "savings.estimated": {
+      "abs": 1105000,
+      "pct": null
+    },
+    "savings.estimated_low": {
+      "abs": 820000,
+      "pct": null
+    },
+    "savings.estimated_high": {
+      "abs": 1390000,
+      "pct": null
+    },
+    "savings.evidenced": {
+      "abs": 2940000,
+      "pct": null
+    },
+    "savings.overhead": {
+      "abs": 184000,
+      "pct": null
+    },
+    "calls.tool_calls": {
+      "abs": 9860,
+      "pct": null
+    },
+    "calls.cache_reads": {
+      "abs": 2900,
+      "pct": null
+    },
+    "calls.cache_hits": {
+      "abs": 2210,
+      "pct": null
+    },
+    "compression.original": {
+      "abs": 5100000,
+      "pct": null
+    },
+    "compression.compressed": {
+      "abs": 1290000,
+      "pct": null
+    },
+    "ledger.reduction": {
+      "abs": 5800000,
+      "pct": null
+    },
+    "ledger.cache_discount": {
+      "abs": 515000,
+      "pct": null
+    },
+    "ledger.correction": {
+      "abs": 0,
+      "pct": null
+    },
+    "ledger.edit": {
+      "abs": 0,
+      "pct": null
+    },
+    "ledger.other": {
+      "abs": 0,
+      "pct": null
+    },
+    "guards.secrets_redacted": {
+      "abs": 14,
+      "pct": null
+    },
+    "guards.pii_redacted": {
+      "abs": 0,
+      "pct": null
+    },
+    "guards.injection_flags": {
+      "abs": 3,
+      "pct": null
+    },
+    "guards.content_withheld": {
+      "abs": 0,
+      "pct": null
+    },
+    "guards.paths_blocked": {
+      "abs": 22,
+      "pct": null
+    },
+    "guards.shell_blocked": {
+      "abs": 5,
+      "pct": null
+    },
+    "guards.partial_inspections": {
+      "abs": 0,
+      "pct": null
+    },
+    "policy.blocked": {
+      "abs": 27,
+      "pct": null
+    },
+    "policy.would_block": {
+      "abs": 9,
+      "pct": null
+    },
+    "refetch.truncated": {
+      "abs": 1210,
+      "pct": null
+    },
+    "refetch.refetched": {
+      "abs": 96,
+      "pct": null
+    },
+    "unregulated.calls": {
+      "abs": 310,
+      "pct": null
+    },
+    "sessions.started": {
+      "abs": 118,
+      "pct": null
+    },
+    "hosts.tool_calls": {
+      "abs": 9860,
+      "pct": null
+    },
+    "spend.requests": {
+      "abs": 1640,
+      "pct": null
+    },
+    "spend.input_tokens": {
+      "abs": 18200000,
+      "pct": null
+    },
+    "spend.output_tokens": {
+      "abs": 1210000,
+      "pct": null
+    },
+    "spend.cached_tokens": {
+      "abs": 12900000,
+      "pct": null
+    },
+    "spend.usd_micros": {
+      "abs": 84213000,
+      "pct": null
+    },
+    "knowledge.facts_current": {
+      "abs": 1240,
+      "pct": null
+    },
+    "engines.active": {
+      "abs": 6,
+      "pct": null
+    }
+  },
+  "self": null,
+  "average": null,
+  "series": [
+    {
+      "at": "2026-10-20T00:00:00Z",
+      "metrics": {
+        "tokens.input": 0,
+        "tokens.output": 0,
+        "tokens.saved": 600000,
+        "savings.measured": 480000,
+        "savings.estimated": 120000,
+        "savings.estimated_low": 0,
+        "savings.estimated_high": 0,
+        "savings.evidenced": 0,
+        "savings.overhead": 0,
+        "calls.tool_calls": 900,
+        "calls.cache_reads": 0,
+        "calls.cache_hits": 0,
+        "compression.original": 0,
+        "compression.compressed": 0,
+        "ledger.reduction": 0,
+        "ledger.cache_discount": 0,
+        "ledger.correction": 0,
+        "ledger.edit": 0,
+        "ledger.other": 0,
+        "guards.secrets_redacted": 0,
+        "guards.pii_redacted": 0,
+        "guards.injection_flags": 0,
+        "guards.content_withheld": 0,
+        "guards.paths_blocked": 0,
+        "guards.shell_blocked": 0,
+        "guards.partial_inspections": 0,
+        "policy.blocked": 0,
+        "policy.would_block": 0,
+        "refetch.truncated": 0,
+        "refetch.refetched": 0,
+        "unregulated.calls": 0,
+        "sessions.started": 0,
+        "hosts.tool_calls": 0,
+        "spend.requests": 0,
+        "spend.input_tokens": 0,
+        "spend.output_tokens": 0,
+        "spend.cached_tokens": 0,
+        "spend.usd_micros": 0,
+        "knowledge.facts_current": 0,
+        "engines.active": 14
+      }
+    },
+    {
+      "at": "2026-10-21T00:00:00Z",
+      "metrics": {
+        "tokens.input": 0,
+        "tokens.output": 0,
+        "tokens.saved": 610000,
+        "savings.measured": 488000,
+        "savings.estimated": 122000,
+        "savings.estimated_low": 0,
+        "savings.estimated_high": 0,
+        "savings.evidenced": 0,
+        "savings.overhead": 0,
+        "calls.tool_calls": 907,
+        "calls.cache_reads": 0,
+        "calls.cache_hits": 0,
+        "compression.original": 0,
+        "compression.compressed": 0,
+        "ledger.reduction": 0,
+        "ledger.cache_discount": 0,
+        "ledger.correction": 0,
+        "ledger.edit": 0,
+        "ledger.other": 0,
+        "guards.secrets_redacted": 0,
+        "guards.pii_redacted": 0,
+        "guards.injection_flags": 0,
+        "guards.content_withheld": 0,
+        "guards.paths_blocked": 0,
+        "guards.shell_blocked": 0,
+        "guards.partial_inspections": 0,
+        "policy.blocked": 0,
+        "policy.would_block": 0,
+        "refetch.truncated": 0,
+        "refetch.refetched": 0,
+        "unregulated.calls": 0,
+        "sessions.started": 0,
+        "hosts.tool_calls": 0,
+        "spend.requests": 0,
+        "spend.input_tokens": 0,
+        "spend.output_tokens": 0,
+        "spend.cached_tokens": 0,
+        "spend.usd_micros": 0,
+        "knowledge.facts_current": 0,
+        "engines.active": 15
+      }
+    },
+    {
+      "at": "2026-10-22T00:00:00Z",
+      "metrics": {
+        "tokens.input": 0,
+        "tokens.output": 0,
+        "tokens.saved": 620000,
+        "savings.measured": 496000,
+        "savings.estimated": 124000,
+        "savings.estimated_low": 0,
+        "savings.estimated_high": 0,
+        "savings.evidenced": 0,
+        "savings.overhead": 0,
+        "calls.tool_calls": 914,
+        "calls.cache_reads": 0,
+        "calls.cache_hits": 0,
+        "compression.original": 0,
+        "compression.compressed": 0,
+        "ledger.reduction": 0,
+        "ledger.cache_discount": 0,
+        "ledger.correction": 0,
+        "ledger.edit": 0,
+        "ledger.other": 0,
+        "guards.secrets_redacted": 0,
+        "guards.pii_redacted": 0,
+        "guards.injection_flags": 0,
+        "guards.content_withheld": 0,
+        "guards.paths_blocked": 0,
+        "guards.shell_blocked": 0,
+        "guards.partial_inspections": 0,
+        "policy.blocked": 0,
+        "policy.would_block": 0,
+        "refetch.truncated": 0,
+        "refetch.refetched": 0,
+        "unregulated.calls": 0,
+        "sessions.started": 0,
+        "hosts.tool_calls": 0,
+        "spend.requests": 0,
+        "spend.input_tokens": 0,
+        "spend.output_tokens": 0,
+        "spend.cached_tokens": 0,
+        "spend.usd_micros": 0,
+        "knowledge.facts_current": 0,
+        "engines.active": 16
+      }
+    },
+    {
+      "at": "2026-10-23T00:00:00Z",
+      "metrics": {
+        "tokens.input": 0,
+        "tokens.output": 0,
+        "tokens.saved": 630000,
+        "savings.measured": 504000,
+        "savings.estimated": 126000,
+        "savings.estimated_low": 0,
+        "savings.estimated_high": 0,
+        "savings.evidenced": 0,
+        "savings.overhead": 0,
+        "calls.tool_calls": 921,
+        "calls.cache_reads": 0,
+        "calls.cache_hits": 0,
+        "compression.original": 0,
+        "compression.compressed": 0,
+        "ledger.reduction": 0,
+        "ledger.cache_discount": 0,
+        "ledger.correction": 0,
+        "ledger.edit": 0,
+        "ledger.other": 0,
+        "guards.secrets_redacted": 0,
+        "guards.pii_redacted": 0,
+        "guards.injection_flags": 0,
+        "guards.content_withheld": 0,
+        "guards.paths_blocked": 0,
+        "guards.shell_blocked": 0,
+        "guards.partial_inspections": 0,
+        "policy.blocked": 0,
+        "policy.would_block": 0,
+        "refetch.truncated": 0,
+        "refetch.refetched": 0,
+        "unregulated.calls": 0,
+        "sessions.started": 0,
+        "hosts.tool_calls": 0,
+        "spend.requests": 0,
+        "spend.input_tokens": 0,
+        "spend.output_tokens": 0,
+        "spend.cached_tokens": 0,
+        "spend.usd_micros": 0,
+        "knowledge.facts_current": 0,
+        "engines.active": 17
+      }
+    },
+    {
+      "at": "2026-10-24T00:00:00Z",
+      "metrics": {
+        "tokens.input": 0,
+        "tokens.output": 0,
+        "tokens.saved": 640000,
+        "savings.measured": 512000,
+        "savings.estimated": 128000,
+        "savings.estimated_low": 0,
+        "savings.estimated_high": 0,
+        "savings.evidenced": 0,
+        "savings.overhead": 0,
+        "calls.tool_calls": 928,
+        "calls.cache_reads": 0,
+        "calls.cache_hits": 0,
+        "compression.original": 0,
+        "compression.compressed": 0,
+        "ledger.reduction": 0,
+        "ledger.cache_discount": 0,
+        "ledger.correction": 0,
+        "ledger.edit": 0,
+        "ledger.other": 0,
+        "guards.secrets_redacted": 0,
+        "guards.pii_redacted": 0,
+        "guards.injection_flags": 0,
+        "guards.content_withheld": 0,
+        "guards.paths_blocked": 0,
+        "guards.shell_blocked": 0,
+        "guards.partial_inspections": 0,
+        "policy.blocked": 0,
+        "policy.would_block": 0,
+        "refetch.truncated": 0,
+        "refetch.refetched": 0,
+        "unregulated.calls": 0,
+        "sessions.started": 0,
+        "hosts.tool_calls": 0,
+        "spend.requests": 0,
+        "spend.input_tokens": 0,
+        "spend.output_tokens": 0,
+        "spend.cached_tokens": 0,
+        "spend.usd_micros": 0,
+        "knowledge.facts_current": 0,
+        "engines.active": 18
+      }
+    },
+    {
+      "at": "2026-10-25T00:00:00Z",
+      "metrics": {
+        "tokens.input": 0,
+        "tokens.output": 0,
+        "tokens.saved": 650000,
+        "savings.measured": 520000,
+        "savings.estimated": 130000,
+        "savings.estimated_low": 0,
+        "savings.estimated_high": 0,
+        "savings.evidenced": 0,
+        "savings.overhead": 0,
+        "calls.tool_calls": 935,
+        "calls.cache_reads": 0,
+        "calls.cache_hits": 0,
+        "compression.original": 0,
+        "compression.compressed": 0,
+        "ledger.reduction": 0,
+        "ledger.cache_discount": 0,
+        "ledger.correction": 0,
+        "ledger.edit": 0,
+        "ledger.other": 0,
+        "guards.secrets_redacted": 0,
+        "guards.pii_redacted": 0,
+        "guards.injection_flags": 0,
+        "guards.content_withheld": 0,
+        "guards.paths_blocked": 0,
+        "guards.shell_blocked": 0,
+        "guards.partial_inspections": 0,
+        "policy.blocked": 0,
+        "policy.would_block": 0,
+        "refetch.truncated": 0,
+        "refetch.refetched": 0,
+        "unregulated.calls": 0,
+        "sessions.started": 0,
+        "hosts.tool_calls": 0,
+        "spend.requests": 0,
+        "spend.input_tokens": 0,
+        "spend.output_tokens": 0,
+        "spend.cached_tokens": 0,
+        "spend.usd_micros": 0,
+        "knowledge.facts_current": 0,
+        "engines.active": 14
+      }
+    },
+    {
+      "at": "2026-10-26T00:00:00Z",
+      "metrics": {
+        "tokens.input": 0,
+        "tokens.output": 0,
+        "tokens.saved": 660000,
+        "savings.measured": 528000,
+        "savings.estimated": 132000,
+        "savings.estimated_low": 0,
+        "savings.estimated_high": 0,
+        "savings.evidenced": 0,
+        "savings.overhead": 0,
+        "calls.tool_calls": 942,
+        "calls.cache_reads": 0,
+        "calls.cache_hits": 0,
+        "compression.original": 0,
+        "compression.compressed": 0,
+        "ledger.reduction": 0,
+        "ledger.cache_discount": 0,
+        "ledger.correction": 0,
+        "ledger.edit": 0,
+        "ledger.other": 0,
+        "guards.secrets_redacted": 0,
+        "guards.pii_redacted": 0,
+        "guards.injection_flags": 0,
+        "guards.content_withheld": 0,
+        "guards.paths_blocked": 0,
+        "guards.shell_blocked": 0,
+        "guards.partial_inspections": 0,
+        "policy.blocked": 0,
+        "policy.would_block": 0,
+        "refetch.truncated": 0,
+        "refetch.refetched": 0,
+        "unregulated.calls": 0,
+        "sessions.started": 0,
+        "hosts.tool_calls": 0,
+        "spend.requests": 0,
+        "spend.input_tokens": 0,
+        "spend.output_tokens": 0,
+        "spend.cached_tokens": 0,
+        "spend.usd_micros": 0,
+        "knowledge.facts_current": 0,
+        "engines.active": 15
+      }
+    }
+  ],
+  "breakdowns": {
+    "tools": [
+      {
+        "tool": "ctx_read",
+        "calls": 5120,
+        "saved": 4410000
+      },
+      {
+        "tool": "ctx_search",
+        "calls": 2210,
+        "saved": 1120000
+      },
+      {
+        "tool": "ctx_shell",
+        "calls": 1980,
+        "saved": 760000
+      },
+      {
+        "tool": "other",
+        "calls": 550,
+        "saved": 25000
+      }
+    ],
+    "read_modes": [
+      {
+        "mode": "auto",
+        "calls": 2100
+      },
+      {
+        "mode": "map",
+        "calls": 1400
+      },
+      {
+        "mode": "signatures",
+        "calls": 980
+      },
+      {
+        "mode": "full",
+        "calls": 410
+      },
+      {
+        "mode": "diff",
+        "calls": 230
+      }
+    ],
+    "policy_blocks": [
+      {
+        "rule": "security.excluded_paths",
+        "blocked": 22,
+        "would_block": 0
+      },
+      {
+        "rule": "context.denied_tools",
+        "blocked": 5,
+        "would_block": 0
+      },
+      {
+        "rule": "context.max_writes_per_min",
+        "blocked": 0,
+        "would_block": 9
+      }
+    ],
+    "refetch": [
+      {
+        "filter": "map",
+        "truncated": 820,
+        "refetched": 51
+      },
+      {
+        "filter": "shell_output",
+        "truncated": 390,
+        "refetched": 45
+      }
+    ],
+    "unregulated": [
+      {
+        "kind": "mcp_server",
+        "name": "github",
+        "calls": 214
+      },
+      {
+        "kind": "program",
+        "name": "terraform",
+        "calls": 96
+      }
+    ],
+    "secret_hits": [
+      {
+        "detector": "aws_access_key",
+        "count": 9,
+        "engines": 3
+      },
+      {
+        "detector": "github_token",
+        "count": 5,
+        "engines": 1
+      }
+    ],
+    "models": [
+      {
+        "model": "claude-sonnet-4.5",
+        "provider": "anthropic",
+        "requests": 1210,
+        "usd_micros": 61200000
+      },
+      {
+        "model": "gpt-5.4",
+        "provider": "openai",
+        "requests": 430,
+        "usd_micros": 23013000
+      }
+    ],
+    "hosts": [
+      {
+        "host": "claude-code",
+        "sessions": 81,
+        "tool_calls": 7020
+      },
+      {
+        "host": "cursor",
+        "sessions": 37,
+        "tool_calls": 2840
+      }
+    ]
+  },
+  "rows": [],
+  "hidden_rows": 0,
+  "budget_usd_micros": null,
+  "prices": []
+}

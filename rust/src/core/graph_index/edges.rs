@@ -268,7 +268,8 @@ fn build_implicit_edges_with_cache(
     index: &mut ProjectIndex,
     content_cache: &HashMap<String, String>,
 ) {
-    let file_paths: Vec<String> = index.files.keys().cloned().collect();
+    let mut file_paths: Vec<String> = index.files.keys().cloned().collect();
+    file_paths.sort();
     let file_set: std::collections::HashSet<&str> = file_paths.iter().map(String::as_str).collect();
 
     let mut new_edges: Vec<IndexEdge> = Vec::new();
@@ -582,7 +583,9 @@ fn build_sibling_edges(index: &mut ProjectIndex) {
         .flat_map(|e| [e.from.as_str(), e.to.as_str()])
         .collect();
 
-    let file_paths: Vec<String> = index.files.keys().cloned().collect();
+    // Sorted: "the first sibling" must not depend on the hash seed (#498).
+    let mut file_paths: Vec<String> = index.files.keys().cloned().collect();
+    file_paths.sort();
     let mut new_edges: Vec<IndexEdge> = Vec::new();
 
     for file in &file_paths {

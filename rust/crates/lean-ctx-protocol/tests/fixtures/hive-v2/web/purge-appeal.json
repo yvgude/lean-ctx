@@ -1,0 +1,36 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "Only moderation purges can be appealed.",
+          "reason": "not_moderation"
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "This purge was appealed already.",
+          "reason": "appeal_exists"
+        }
+      },
+      "status": 409
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/vaults/public-notes/purges/prg_aaaaaaaaaaaaaaaaaaaaaaezcm/appeal",
+  "request": {
+    "text": "The address belongs to our own office and was published with consent."
+  },
+  "response": {
+    "body": {
+      "appeal_id": "apl_88"
+    },
+    "status": 201
+  },
+  "route": "W64"
+}

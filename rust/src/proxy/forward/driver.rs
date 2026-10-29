@@ -5,6 +5,9 @@
 #[allow(clippy::wildcard_imports)]
 use super::*;
 
+/// Lifecycle stage reason of an organisation-policy refusal.
+const ORG_POLICY_REFUSED: &str = "org policy refused request";
+
 #[async_trait::async_trait]
 impl<F> crate::core::execution_lifecycle::ExecutionDriver for ProxyDriver<'_, F>
 where
@@ -31,8 +34,9 @@ where
             .map_err(|_| StatusCode::PAYLOAD_TOO_LARGE)?;
         // Enforce the requested model before routing or context transformations.
         #[cfg(feature = "enterprise")]
-        let gate_rules = super::super::policy_gate::active_rules().map_err(|error| {
-            tracing::error!("gateway org policy rejected: {error}");
+        let gate_rules = super::super::policy_gate::active_rules().map_err(|_| {
+            // The error can quote the policy file it failed on.
+            tracing::error!("gateway org policy rejected (policy.unverifiable)");
             StatusCode::SERVICE_UNAVAILABLE
         })?;
         #[cfg(feature = "enterprise")]
@@ -59,6 +63,7 @@ where
                         ),
                         original_tokens: raw_body_bytes.len() / 4,
                         trace_id: self.trace_id.clone(),
+                        reason: ORG_POLICY_REFUSED,
                     },
                 )));
                 return Ok(crate::core::execution_lifecycle::StageDisposition::Applied);
@@ -80,7 +85,7 @@ where
     ) -> Result<crate::core::execution_lifecycle::StageDisposition, Self::Error> {
         if self.prepared_request.is_some() {
             return Ok(crate::core::execution_lifecycle::StageDisposition::Skipped(
-                "org policy refused request",
+                ORG_POLICY_REFUSED,
             ));
         }
         let extra_stream_types: Vec<&str> =
@@ -122,7 +127,7 @@ where
         {
             PreparedProxyRequest::Terminal(primitive) => {
                 let reason = match primitive.as_ref() {
-                    ProxyPrimitive::Policy { .. } => "org policy refused request",
+                    ProxyPrimitive::Policy { reason, .. } => *reason,
                     ProxyPrimitive::Cache { .. } => "response cache hit",
                     ProxyPrimitive::Upstream { .. } => {
                         unreachable!("upstream result is not a prepared terminal")
@@ -136,10 +141,8 @@ where
             PreparedProxyRequest::Upstream(outbound) => {
                 let ProxyOutbound {
                     parts,
-                    upstream_url,
                     upstream_base,
                     forwarded_body,
-                    preserve_content_encoding,
                     mut prepared,
                 } = *outbound;
                 // Optional billable probes are dispatch effects too: never start
@@ -161,15 +164,36 @@ where
                     );
                 }
                 prepared.upstream_started = Some(std::time::Instant::now());
-                let response = transport::send_upstream(
+                let response = match transport::send_upstream(
                     &prepared.state,
-                    &parts,
-                    &upstream_url,
-                    forwarded_body,
+                    &forwarded_body,
                     self.provider_label,
-                    preserve_content_encoding,
                 )
-                .await;
+                .await
+                {
+                    Ok(dispatched) => {
+                        prepared.egress_unobserved = !dispatched.observed;
+                        Ok(dispatched.response)
+                    }
+                    Err(transport::UpstreamFailure::Status { status, observed }) => {
+                        prepared.egress_unobserved = !observed;
+                        Err(status)
+                    }
+                    Err(transport::UpstreamFailure::Refused(refusal)) => {
+                        // The authority changed after preparation (possibly
+                        // between two attempts): answer with the typed
+                        // refusal; nothing further is sent.
+                        return Ok((
+                            ProxyPrimitive::Policy {
+                                response: refusal.response(self.provider_label),
+                                original_tokens: prepared.original_tokens,
+                                trace_id: self.trace_id.clone(),
+                                reason: admission::GATEWAY_REFUSED,
+                            },
+                            crate::core::execution_lifecycle::StageDisposition::Applied,
+                        ));
+                    }
+                };
                 prepared.upstream_send_succeeded = response.is_ok();
                 Ok((
                     ProxyPrimitive::Upstream { response, prepared },
@@ -195,6 +219,7 @@ where
                 response,
                 original_tokens,
                 trace_id,
+                reason,
             } => Ok((
                 ProxyProcessed {
                     result: {
@@ -203,11 +228,9 @@ where
                         proxy_dispatch_result(response, 0, original_tokens, "policy_denied")
                     },
                     prepared: None,
-                    skip_reason: Some("org policy refused request"),
+                    skip_reason: Some(reason),
                 },
-                crate::core::execution_lifecycle::StageDisposition::Skipped(
-                    "org policy refused request",
-                ),
+                crate::core::execution_lifecycle::StageDisposition::Skipped(reason),
             )),
             ProxyPrimitive::Cache {
                 mut response,
@@ -266,6 +289,7 @@ where
                             prepared.state.ocla_cache.as_deref(),
                             prepared.model.as_deref(),
                             &prepared.cache_prompt_hash,
+                            prepared.sealed_recorder.take(),
                         )
                         .await
                     }
@@ -299,9 +323,14 @@ where
                         // Preserve the attempted request for the ledger even if
                         // sending or decoding failed; return the original error
                         // after lifecycle finalization, without inventing usage.
+                        // An attempt that left without its observation on
+                        // record: the proxy's own answer states it (AP10-C5).
+                        let stated = prepared
+                            .egress_unobserved
+                            .then(|| transport::unobserved_failure(status));
                         let result = ProxyDispatchResult {
                             error: Some(status),
-                            response: std::sync::Arc::new(std::sync::Mutex::new(None)),
+                            response: std::sync::Arc::new(std::sync::Mutex::new(stated)),
                             economics:
                                 crate::core::execution_lifecycle::ProxyEconomicsObservation {
                                     tokens_pruned: 0,
@@ -397,6 +426,13 @@ where
         }
         if prepared.headroom_compatible {
             super::super::prefix_cache_stats::record_headroom_compat();
+        }
+        if !prepared.kept_whole.is_empty() {
+            // Codes and counts only: no id, path, digest or content.
+            tracing::info!(
+                "lean-ctx proxy: blocks kept whole under protection, no recovery copy ({})",
+                prepared.kept_whole.summary()
+            );
         }
         super::super::metrics::record_request(
             prepared.tokens_saved,

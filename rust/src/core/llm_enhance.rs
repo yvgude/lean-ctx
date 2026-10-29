@@ -97,29 +97,6 @@ pub fn expand_query(query: &str) -> String {
     }
 }
 
-/// Generate a human-readable explanation for a knowledge contradiction.
-/// Falls back to a simple diff-style description.
-pub fn explain_contradiction(fact_a: &str, fact_b: &str) -> String {
-    let cfg = crate::core::config::Config::load().llm;
-    if !cfg.enabled {
-        return deterministic_contradiction(fact_a, fact_b);
-    }
-
-    let prompt = format!(
-        "These two facts contradict. Explain the conflict in one sentence:\n\
-         A: {fact_a}\nB: {fact_b}"
-    );
-
-    match call_llm(&cfg, &prompt) {
-        Ok(explanation) => explanation.trim().to_string(),
-        Err(_) => deterministic_contradiction(fact_a, fact_b),
-    }
-}
-
-fn deterministic_contradiction(a: &str, b: &str) -> String {
-    format!("Conflict: \"{a}\" vs \"{b}\"")
-}
-
 /// Refine a synthesized observation summary with an LLM (#802). Opt-in via
 /// `llm.enabled`; the deterministic input is always a valid result and is returned
 /// unchanged when LLM is disabled, errors, times out, or yields something unusable.
@@ -278,13 +255,6 @@ pub mod tests {
     fn expand_query_passthrough_when_disabled() {
         let result = expand_query("test query");
         assert_eq!(result, "test query");
-    }
-
-    #[test]
-    fn deterministic_contradiction_format() {
-        let result = deterministic_contradiction("A is true", "A is false");
-        assert!(result.contains("Conflict"));
-        assert!(result.contains("A is true"));
     }
 
     #[test]

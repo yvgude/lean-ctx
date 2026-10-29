@@ -1,0 +1,52 @@
+{
+  "cases": [
+    {
+      "canonical": "{\"max_sessions\":1,\"mode\":\"interactive\",\"tasks_per_day\":5,\"tokens_per_day\":null,\"usd_cents_per_day\":null,\"window\":null}",
+      "pledge": {
+        "max_sessions": 1,
+        "mode": "interactive",
+        "tasks_per_day": 5,
+        "tokens_per_day": null,
+        "usd_cents_per_day": null,
+        "window": null
+      },
+      "pledge_digest": "bcdc41b049980096993b60a5058f751cffe19a68382c112b5eb9e18b04a2abfd"
+    },
+    {
+      "canonical": "{\"max_sessions\":2,\"mode\":\"unattended\",\"tasks_per_day\":10,\"tokens_per_day\":2000000,\"usd_cents_per_day\":500,\"window\":{\"days\":[\"mon\",\"tue\",\"wed\",\"thu\",\"fri\"],\"from\":\"22:00\",\"to\":\"06:00\",\"tz\":\"Europe/Zurich\"}}",
+      "pledge": {
+        "max_sessions": 2,
+        "mode": "unattended",
+        "tasks_per_day": 10,
+        "tokens_per_day": 2000000,
+        "usd_cents_per_day": 500,
+        "window": {
+          "days": [
+            "mon",
+            "tue",
+            "wed",
+            "thu",
+            "fri"
+          ],
+          "from": "22:00",
+          "to": "06:00",
+          "tz": "Europe/Zurich"
+        }
+      },
+      "pledge_digest": "c674b3ffdffcd4fdc4cb1a8601af8c4d390bcad0c9ea63ef1d9fdc08844ea471"
+    },
+    {
+      "canonical": "{\"max_sessions\":1,\"mode\":\"interactive\",\"tasks_per_day\":6,\"tokens_per_day\":null,\"usd_cents_per_day\":null,\"window\":null}",
+      "pledge": {
+        "max_sessions": 1,
+        "mode": "interactive",
+        "tasks_per_day": 6,
+        "tokens_per_day": null,
+        "usd_cents_per_day": null,
+        "window": null
+      },
+      "pledge_digest": "d35aac853d9546f1e5572063960edc8ad1eee10fd03ac4ccf4d877692f8da660"
+    }
+  ],
+  "rule": "pledge_digest = hex(blake3(canonical_json({mode, tasks_per_day, tokens_per_day, usd_cents_per_day, window, max_sessions}))), absent fields as null (§3.20.7, R107; usd in integer cents)"
+}

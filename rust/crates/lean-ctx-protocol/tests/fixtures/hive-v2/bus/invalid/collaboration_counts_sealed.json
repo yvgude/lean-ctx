@@ -1,0 +1,44 @@
+{
+  "case": "collaboration_counts_sealed",
+  "base": "bus/message.sealed.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/type",
+      "value": "finding"
+    },
+    {
+      "op": "add",
+      "path": "/refs",
+      "value": [
+        {
+          "kind": "file",
+          "ref": "x.rs"
+        }
+      ]
+    },
+    {
+      "op": "add",
+      "path": "/about",
+      "value": "collaboration"
+    },
+    {
+      "op": "add",
+      "path": "/counts",
+      "value": {
+        "gate_reruns": 1
+      }
+    },
+    {
+      "op": "add",
+      "path": "/window",
+      "value": {
+        "from_ms": 1,
+        "to_ms": 2
+      }
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

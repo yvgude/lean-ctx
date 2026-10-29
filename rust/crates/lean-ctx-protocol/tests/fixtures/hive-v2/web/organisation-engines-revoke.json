@@ -1,0 +1,62 @@
+{
+  "route": "W74",
+  "method": "POST",
+  "path": "/api/v1/companies/acme-group/engines/revoke",
+  "request": {
+    "instance_ids": [
+      "3e7cbd85-6f41-4a0d-8c93-5db18eaf0234",
+      "inst_4f8dce9670524b1e9da46ec29fb01345"
+    ],
+    "reason": "admin"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "id": "3e7cbd85-6f41-4a0d-8c93-5db18eaf0234",
+          "workspace": "acme",
+          "already_revoked": false,
+          "reason": "admin",
+          "revoked_at": "2026-10-25T09:30:00Z"
+        },
+        {
+          "id": "4f8dce96-7052-4b1e-9da4-6ec29fb01345",
+          "workspace": "acme",
+          "already_revoked": true,
+          "reason": "admin",
+          "revoked_at": "2026-10-24T16:00:00Z"
+        }
+      ]
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "human_session_required",
+          "message": "only a person signed in on the web may do this"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "confirm with your authenticator code first"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "not found"
+        }
+      }
+    }
+  ]
+}

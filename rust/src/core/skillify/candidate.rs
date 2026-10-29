@@ -26,6 +26,53 @@ pub(crate) struct SkillCandidate {
     pub confidence: f32,
     /// Provenance: source session ids / agent ids.
     pub sources: Vec<String>,
+    /// The stored items the candidate was distilled from, for the source
+    /// binding of its rule file (`provenance`).
+    pub derivation: Derivation,
+}
+
+/// What a candidate was distilled from: identities only, no source is named
+/// here. The sources are those the knowledge store bound each fact to, asked
+/// when the rule is written (`provenance::prepare`).
+#[derive(Debug, Clone, Default, PartialEq, Eq)]
+pub(crate) struct Derivation {
+    /// Project root as the knowledge store names it (the key of its facts).
+    pub store: String,
+    /// `(category, key, value)` of every fact merged into the candidate.
+    pub facts: Vec<(String, String, String)>,
+    /// A part without a source on record was merged in (a diary entry): the
+    /// rule is originless, whatever its facts are bound to.
+    pub unbound: bool,
+}
+
+impl Derivation {
+    fn of_fact(store: &str, category: &str, key: &str, value: &str) -> Self {
+        Self {
+            store: store.to_owned(),
+            facts: vec![(category.to_owned(), key.to_owned(), value.to_owned())],
+            unbound: false,
+        }
+    }
+
+    fn unbound() -> Self {
+        Self {
+            unbound: true,
+            ..Self::default()
+        }
+    }
+
+    /// A merged candidate derives from every part: all of them must hold.
+    fn join(&mut self, other: Self) {
+        if self.store.is_empty() {
+            self.store = other.store;
+        }
+        self.unbound |= other.unbound;
+        for fact in other.facts {
+            if !self.facts.contains(&fact) {
+                self.facts.push(fact);
+            }
+        }
+    }
 }
 
 /// Knowledge categories that can become durable guidance. Progress and raw
@@ -43,9 +90,17 @@ pub(crate) fn mine_candidates(project_root: &str) -> Vec<SkillCandidate> {
     let mut by_slug: HashMap<String, SkillCandidate> = HashMap::new();
 
     // Source 1 — curated knowledge facts (already deduped by the knowledge layer).
+    // A candidate's body is the fact's value: only facts that may be
+    // delivered now are mined (`ProjectKnowledge::delivery_filter`).
     let knowledge = ProjectKnowledge::load_or_create(project_root);
+    let deliverable = knowledge.delivery_filter();
     for fact in &knowledge.facts {
-        if !knowledge_category_is_skillable(&fact.category) {
+        // A skill is an instruction to agents: other members' knowledge
+        // pulled from Hive is data (X5) and never becomes one.
+        if !knowledge_category_is_skillable(&fact.category)
+            || !deliverable(fact)
+            || fact.hive_origin().is_some()
+        {
             continue;
         }
         let title = title_from(&fact.key, &fact.value);
@@ -69,6 +124,12 @@ pub(crate) fn mine_candidates(project_root: &str) -> Vec<SkillCandidate> {
                 recurrence: fact.confirmation_count.max(1),
                 confidence: fact.confidence,
                 sources,
+                derivation: Derivation::of_fact(
+                    &knowledge.project_root,
+                    &fact.category,
+                    &fact.key,
+                    &fact.value,
+                ),
             },
         );
     }
@@ -101,6 +162,7 @@ pub(crate) fn mine_candidates(project_root: &str) -> Vec<SkillCandidate> {
                     recurrence: 1,
                     confidence: 0.6,
                     sources: vec![diary.agent_id.clone()],
+                    derivation: Derivation::unbound(),
                 },
             );
         }
@@ -119,6 +181,7 @@ pub(crate) fn mine_candidates(project_root: &str) -> Vec<SkillCandidate> {
 fn merge_candidate(map: &mut HashMap<String, SkillCandidate>, cand: SkillCandidate) {
     if let Some(existing) = map.get_mut(&cand.slug) {
         existing.recurrence = existing.recurrence.saturating_add(cand.recurrence);
+        existing.derivation.join(cand.derivation);
         if cand.confidence > existing.confidence {
             existing.confidence = cand.confidence;
         }
@@ -211,6 +274,7 @@ mod tests {
                 recurrence: 1,
                 confidence: 0.5,
                 sources: vec!["a".into()],
+                derivation: Derivation::default(),
             },
         );
         merge_candidate(
@@ -223,6 +287,7 @@ mod tests {
                 recurrence: 2,
                 confidence: 0.9,
                 sources: vec!["b".into()],
+                derivation: Derivation::default(),
             },
         );
         let c = &map["s"];
@@ -230,5 +295,28 @@ mod tests {
         assert_eq!(c.confidence, 0.9);
         assert_eq!(c.body, "a much longer body");
         assert_eq!(c.sources, vec!["a".to_string(), "b".to_string()]);
+    }
+
+    /// Only facts that are served now are mined into skill candidates.
+    #[test]
+    fn a_fact_that_is_not_served_is_not_mined() {
+        use crate::core::context_admission::stored::lineage_support::{
+            BOUND_FACT, TYPED_FACT, governed, project, scoped, two_facts, withdraw_source,
+        };
+        let _data = governed();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        two_facts(&root, "decision");
+        let bodies = || -> Vec<String> {
+            scoped(&root, || mine_candidates(&root))
+                .into_iter()
+                .map(|candidate| candidate.body)
+                .collect()
+        };
+        let before = bodies();
+        assert!(before.contains(&BOUND_FACT.to_owned()), "{before:?}");
+        assert!(before.contains(&TYPED_FACT.to_owned()), "{before:?}");
+        withdraw_source(&root);
+        assert_eq!(bodies(), [TYPED_FACT.to_owned()]);
     }
 }

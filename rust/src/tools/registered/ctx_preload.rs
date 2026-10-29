@@ -299,23 +299,30 @@ mod prefetch_policy_tests {
         ActivePolicy::from_resolved(crate::core::policy::resolve(&pack).expect("resolves"))
     }
 
+    /// A user-authored pack denying `deny` (the regulated packs ship with the
+    /// paid intelligence packs on this line).
+    fn denying(deny: &str) -> ActivePolicy {
+        let pack = crate::core::policy::parse(&format!(
+            "name = \"no-egress-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             extends = \"baseline\"\n\n[context]\ndeny_tools = [{deny}]\n"
+        ))
+        .expect("parses");
+        ActivePolicy::from_resolved(crate::core::policy::resolve(&pack).expect("resolves"))
+    }
+
     /// GHSA-jhf9-3pv4-m469: packs that say "no web fetches" stop the
     /// implicit provider prefetch, permissive packs keep it.
     #[test]
     fn no_egress_packs_block_provider_prefetch() {
         assert!(provider_prefetch_permitted(None));
-        for pack in [
-            "healthcare",
-            "finance-eu",
-            "soc2-context",
-            "iso42001-aligned",
-            "eu-ai-act-deployer",
-        ] {
-            assert!(
-                !provider_prefetch_permitted(Some(&builtin(pack))),
-                "{pack} must block provider prefetch"
-            );
-        }
+        let no_egress = denying(r#""ctx_url_read", "ctx_provider", "ctx_tools""#);
+        assert!(
+            !provider_prefetch_permitted(Some(&no_egress)),
+            "a no-egress pack must block provider prefetch"
+        );
+        assert!(provider_prefetch_permitted(Some(&denying(
+            r#""ctx_url_read""#
+        ))));
         assert!(provider_prefetch_permitted(Some(&builtin("baseline"))));
     }
 }

@@ -31,6 +31,34 @@ fn already_injected(key: &str) -> bool {
     !set.insert(key.to_string())
 }
 
+fn is_injected(key: &str) -> bool {
+    INJECTED
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .as_ref()
+        .is_some_and(|set| set.contains(key))
+}
+
+/// A rule file as any other source reaches a reply: through the admitted
+/// rooted reader, under the request project — path jail and secret-path
+/// rule, project policy, gateway classification and redaction, decode
+/// completeness. The reader also publishes the file into the call's source
+/// capture, so the rule text in a reply has a lineage like the file that was
+/// read. `None`: withheld, unreadable, empty, or not inside the project.
+fn admitted_rule(project_root: &str, source: &str) -> Option<String> {
+    let path = Path::new(project_root).join(source);
+    let mut remaining = crate::core::limits::max_read_bytes();
+    crate::tools::ctx_read::read_file_for_tool_rooted_admitted(
+        path.to_str()?,
+        project_root,
+        "ctx_read",
+        &mut remaining,
+    )
+    .ok()
+    .filter(|read| read.complete && !read.content.trim().is_empty())
+    .map(|read| read.content)
+}
+
 /// Reset injection tracking (for tests).
 #[cfg(test)]
 pub(crate) fn reset_injection_cache() {
@@ -68,10 +96,19 @@ pub(crate) fn rules_suffix_for_read(
     let mut token_count = 0;
     for rule in &rules {
         let key = format!("{}:{}", rule.source, blake3_short(&rule.content));
-        if already_injected(&key) {
+        if is_injected(&key) {
             continue;
         }
-        let part = format!("[From: {}]\n{}", rule.source, rule.content.trim());
+        // Discovery read the file only to decide whether it applies. What is
+        // appended to the reply is the file as the admitted reader delivers
+        // it now. A rule file that is withheld, unreadable or outside the
+        // project contributes nothing — not its text and not its name — and
+        // is not marked as injected, so it is offered again once it admits.
+        let Some(content) = admitted_rule(project_root, &rule.source) else {
+            continue;
+        };
+        already_injected(&key);
+        let part = format!("[From: {}]\n{}", rule.source, content.trim());
         let part_tokens = crate::core::tokens::count_tokens(&part);
         if token_count + part_tokens > MAX_RULES_SUFFIX_TOKENS && !parts.is_empty() {
             parts.push(format!(
@@ -355,6 +392,110 @@ fn blake3_short(content: &str) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    const BANNERED_RULE: &str = "*** TOP SECRET ***\nAlways deploy through the launch window.\n";
+    const INJECTING: &str = "[setup]\nauto_inject_rules = true\n";
+
+    fn isolated(config: &str) -> crate::core::data_dir::IsolatedDataDir {
+        let data = crate::core::data_dir::isolated_data_dir();
+        let dir = crate::core::paths::config_dir_read_only().expect("isolated config dir");
+        std::fs::create_dir_all(&dir).expect("config dir");
+        std::fs::write(dir.join("config.toml"), config).expect("config");
+        data
+    }
+
+    /// A project with one source file; returns the canonical root and file.
+    fn rule_project(rules: &[(&str, &str)]) -> (tempfile::TempDir, String, String) {
+        let directory = tempfile::tempdir().expect("project");
+        let root = directory.path().canonicalize().expect("canonical root");
+        std::fs::create_dir_all(root.join("src")).expect("source dir");
+        let file = root.join("src").join("main.rs");
+        std::fs::write(&file, "fn main() {}\n").expect("source");
+        for (name, content) in rules {
+            std::fs::write(root.join(name), content).expect("rule file");
+        }
+        let root = root.to_str().expect("utf-8 root").to_owned();
+        let file = file.to_str().expect("utf-8 file").to_owned();
+        (directory, root, file)
+    }
+
+    /// A rule file the gateway withholds contributes nothing to a `ctx_read`
+    /// reply: not its text and not its name. Before, discovery read it with
+    /// `read_to_string` and appended it unadmitted. Once the file admits, the
+    /// reply carries what the admitted reader delivers — not the text the
+    /// discovery cache still holds.
+    #[test]
+    fn a_withheld_rule_file_is_absent_from_the_reply() {
+        let _data = isolated(&format!(
+            "{INJECTING}[context_gateway]\nclassification = \"block\"\n"
+        ));
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let _injection = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let (_directory, root, file) = rule_project(&[("AGENTS.md", BANNERED_RULE)]);
+
+        reset_injection_cache();
+        let suffix = rules_suffix_for_read(&file, &root, "opencode");
+        assert!(
+            suffix.is_empty(),
+            "a withheld rule file must add nothing, got: {suffix:?}"
+        );
+
+        std::fs::write(
+            Path::new(&root).join("AGENTS.md"),
+            "Always write regression tests.\n",
+        )
+        .expect("declassified rule file");
+        let suffix = rules_suffix_for_read(&file, &root, "opencode");
+        assert!(
+            suffix.contains("Always write regression tests."),
+            "{suffix:?}"
+        );
+        assert!(!suffix.contains("launch window"), "{suffix:?}");
+    }
+
+    /// An admitted rule file is part of the reply AND of the call's source
+    /// set: the admitted reader publishes it, so the reply's lineage is
+    /// complete without marking it unknown, and it stops admitting once the
+    /// rule file is reclassified. A withheld sibling adds neither text, name
+    /// nor an unbound source.
+    #[tokio::test]
+    async fn an_admitted_rule_file_is_published_as_a_source_of_the_reply() {
+        let _data = isolated(&format!(
+            "{INJECTING}[context_gateway]\nmode = \"governed\"\nclassification = \"block\"\n"
+        ));
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let _injection = crate::setup::EnvVarGuard::set("LEAN_CTX_RULES_INJECTION", "shared");
+        let (_directory, root, file) = rule_project(&[
+            ("CLAUDE.md", "Prefer small modules.\n"),
+            ("AGENTS.md", BANNERED_RULE),
+        ]);
+
+        reset_injection_cache();
+        let (suffix, authority) = crate::core::archive::authority::capture(async {
+            rules_suffix_for_read(&file, &root, "opencode")
+        })
+        .await;
+        assert!(suffix.contains("[From: CLAUDE.md]"), "{suffix:?}");
+        assert!(suffix.contains("Prefer small modules."), "{suffix:?}");
+        for withheld in ["launch window", "TOP SECRET", "AGENTS.md"] {
+            assert!(!suffix.contains(withheld), "{withheld}: {suffix:?}");
+        }
+
+        let authority = authority.expect("the admitted reader published the rule file");
+        assert!(!authority.is_incomplete(), "the withheld rule is no source");
+        let admitted = || {
+            crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+                std::cell::RefCell::new(Some(std::path::PathBuf::from(&root))),
+                || {
+                    crate::core::policy::runtime::with_source_view(|| authority.admitted())
+                        .unwrap_or(false)
+                },
+            )
+        };
+        assert!(admitted(), "unchanged rule file: the reply may be reused");
+        std::fs::write(Path::new(&root).join("CLAUDE.md"), BANNERED_RULE).expect("reclassify");
+        assert!(!admitted(), "reclassified rule file: no reuse");
+    }
 
     #[test]
     fn explicit_auto_inject_false_suppresses_ctx_read_rule_discovery() {

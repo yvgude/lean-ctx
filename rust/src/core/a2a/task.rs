@@ -65,6 +65,7 @@ pub use authority::{
     TaskAuthorityExpectationV1, TaskCapabilityGrantV1, TaskControlDescriptorV1, TaskDescriptorV1,
     TaskPeerTrustV1, TaskScopeV1,
 };
+pub(crate) use model::{REASON_CANCELED_VIA_A2A, REASON_INPUT_RECEIVED};
 pub use model::{Task, TaskMessage, TaskPart, TaskState, TaskStatusV1, TaskTransition};
 pub use store::{RemoteTaskMaterialization, TaskStore};
 
@@ -73,6 +74,10 @@ use authority::{AuthorityClaimV1, authorize, validate_digest, validate_identifie
 #[cfg(test)]
 #[path = "task/tests.rs"]
 mod tests;
+
+#[cfg(test)]
+#[path = "task/gateway_tests.rs"]
+mod gateway_tests;
 
 #[cfg(test)]
 #[path = "task/authority_tests.rs"]

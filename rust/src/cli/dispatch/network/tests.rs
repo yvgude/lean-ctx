@@ -73,6 +73,20 @@ fn vscode_intent_never_falls_back_to_browser() {
     assert_ne!(super::vscode_fallback_open_mode(true), "browser");
 }
 
+/// `lean-ctx cockpit --port N` and `--port=N` pick the same port; a value
+/// that is not a port is not taken silently from the next flag.
+#[test]
+fn cockpit_port_accepts_both_flag_forms() {
+    assert_eq!(
+        super::port_flag(&args(&["--no-open", "--port", "4100"])),
+        Some(4100)
+    );
+    assert_eq!(super::port_flag(&args(&["--port=4101"])), Some(4101));
+    assert_eq!(super::port_flag(&args(&["-p", "4102"])), Some(4102));
+    assert_eq!(super::port_flag(&args(&["--port", "--no-open"])), None);
+    assert_eq!(super::port_flag(&args(&["--no-open"])), None);
+}
+
 #[test]
 fn task_authority_policy_reader_is_bounded() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -96,4 +110,26 @@ fn task_authority_policy_reader_rejects_symlinks() {
     std::fs::write(&target, "{}").expect("write target");
     symlink(&target, &link).expect("symlink");
     assert!(super::read_a2a_task_authority(&link).is_err());
+}
+
+// The owner's `lean-ctx cockpit --project <dir>` was silently ignored.
+#[test]
+fn cockpit_project_flag_takes_both_forms_and_refuses_a_missing_dir() {
+    let flag = |list: &[&str]| super::project_flag(&args(list));
+    assert_eq!(
+        flag(&["--project=/work/repo"]),
+        Ok(Some("/work/repo".into()))
+    );
+    assert_eq!(
+        flag(&["--project", "/work/repo", "--port=3334"]),
+        Ok(Some("/work/repo".into()))
+    );
+    assert_eq!(flag(&["--port=3334"]), Ok(None));
+    for refused in [
+        &["--project"][..],
+        &["--project="][..],
+        &["--project", "--port", "3334"][..],
+    ] {
+        assert!(flag(refused).is_err(), "{refused:?}");
+    }
 }

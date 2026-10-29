@@ -1,0 +1,80 @@
+{
+  "name": "waiting-kinds",
+  "values": [
+    {
+      "value": "review_disagreement",
+      "severity": "warn",
+      "snooze": true
+    },
+    {
+      "value": "review_needs_person",
+      "severity": "warn",
+      "snooze": true
+    },
+    {
+      "value": "procedure_commands",
+      "severity": "warn",
+      "snooze": true
+    },
+    {
+      "value": "review_overdue",
+      "severity": "warn",
+      "snooze": true
+    },
+    {
+      "value": "instruction_signal",
+      "severity": "info",
+      "snooze": true
+    },
+    {
+      "value": "consent_request",
+      "severity": "stop",
+      "snooze": false
+    },
+    {
+      "value": "binding_frozen",
+      "severity": "stop",
+      "snooze": false
+    },
+    {
+      "value": "purge_pending",
+      "severity": "stop",
+      "snooze": false
+    },
+    {
+      "value": "pledge_exhausted",
+      "severity": "info",
+      "snooze": true
+    },
+    {
+      "value": "question_unanswered",
+      "severity": "info",
+      "snooze": true
+    },
+    {
+      "value": "engine_revoked_events",
+      "severity": "warn",
+      "snooze": true
+    },
+    {
+      "value": "contradiction_open",
+      "severity": "info",
+      "snooze": true
+    },
+    {
+      "value": "retention_pending",
+      "severity": "info",
+      "snooze": true
+    },
+    {
+      "value": "invite",
+      "severity": "info",
+      "snooze": true
+    },
+    {
+      "value": "claim_lapsed_silent",
+      "severity": "warn",
+      "snooze": true
+    }
+  ]
+}

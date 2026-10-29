@@ -1,0 +1,927 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/reviews.schema.json",
+  "title": "Reviews by risk: items, verdicts, commit-reveal, enrolment, sealed decision, W47/W48 (SPEC-CONTRACT-SERVER §3.15, E30–E33, E41; RESOLUTIONS R10, R25, R36, R80, R108)",
+  "$defs": {
+    "trigger": {
+      "enum": [
+        "swarm_result",
+        "procedure_with_commands",
+        "security_or_policy_knowledge",
+        "large_retraction",
+        "low_trust"
+      ]
+    },
+    "risk_class": {
+      "description": "Hive v5 (plan v1.1 §7.4): the risky_command_v1 class of the command that opened a procedure_with_commands item",
+      "enum": [
+        "trust_boundary",
+        "privilege",
+        "security_critical",
+        "destructive"
+      ]
+    },
+    "also": {
+      "enum": [
+        "swarm_result",
+        "procedure_with_commands",
+        "security_or_policy_knowledge",
+        "large_retraction",
+        "low_trust",
+        "key_compromise"
+      ]
+    },
+    "state": {
+      "enum": [
+        "waiting_for_reviewer",
+        "reviewer_working",
+        "reviewers_disagree",
+        "needs_person",
+        "decided"
+      ]
+    },
+    "reason_code": {
+      "enum": [
+        "correct",
+        "duplicate",
+        "wrong",
+        "unsupported_claim",
+        "cannot_verify",
+        "unsafe_command",
+        "injection_suspected",
+        "secret_or_pii",
+        "off_topic",
+        "policy_violation",
+        "license_conflict",
+        "malformed"
+      ]
+    },
+    "verdict": {
+      "description": "structured verdict, no free text; unknown members → 400 invalid_body; malformed only from the engine",
+      "type": "object",
+      "required": [
+        "item_id",
+        "verdict",
+        "reason_code",
+        "confidence",
+        "checked_refs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "item_id": {
+          "$ref": "common.schema.json#/$defs/review_id"
+        },
+        "verdict": {
+          "enum": [
+            "accept",
+            "reject",
+            "abstain"
+          ]
+        },
+        "reason_code": {
+          "$ref": "#/$defs/reason_code"
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "checked_refs": {
+          "type": "array",
+          "maxItems": 20,
+          "items": {
+            "$ref": "bus.schema.json#/$defs/ref"
+          }
+        }
+      }
+    },
+    "item": {
+      "description": "ReviewItem (§3.15.3); item_digest = hex(blake3(canonical_json({events: [envelope digests], node_ids}))), command_digests[i] = hex(blake3(canonical_json(commands[i])))",
+      "type": "object",
+      "required": [
+        "id",
+        "place",
+        "trigger",
+        "also",
+        "state",
+        "events",
+        "node_ids",
+        "writer",
+        "required_weight",
+        "weight_accept",
+        "weight_reject",
+        "verdicts",
+        "sla_due_at",
+        "item_digest",
+        "command_digests",
+        "independence",
+        "created_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/review_id"
+        },
+        "place": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        },
+        "trigger": {
+          "$ref": "#/$defs/trigger"
+        },
+        "also": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/also"
+          }
+        },
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "events": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 1000,
+          "items": {
+            "$ref": "common.schema.json#/$defs/event_id"
+          }
+        },
+        "node_ids": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/node_id"
+          }
+        },
+        "writer": {
+          "type": "object",
+          "required": [
+            "worker_id",
+            "owner_hash"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "worker_id": {
+              "anyOf": [
+                {
+                  "$ref": "common.schema.json#/$defs/worker_id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "owner_hash": {
+              "$ref": "common.schema.json#/$defs/hex16"
+            }
+          }
+        },
+        "required_weight": {
+          "enum": [
+            2,
+            4
+          ],
+          "description": "in halves (C0 carries integers only): 2 = 1.0 (private, internal, team swarm, single owner), 4 = 2.0 (public)"
+        },
+        "weight_accept": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "in halves (1.5 → 3)"
+        },
+        "weight_reject": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "in halves"
+        },
+        "verdicts": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/revealed"
+          }
+        },
+        "sla_due_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "item_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "command_digests": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "common.schema.json#/$defs/hex64"
+          }
+        },
+        "independence": {
+          "enum": [
+            "normal",
+            "owner_self"
+          ]
+        },
+        "created_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "decided_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "decision": {
+          "enum": [
+            "accept",
+            "reject"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "const": "decided"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "decided_at",
+              "decision"
+            ]
+          },
+          "else": {
+            "not": {
+              "anyOf": [
+                {
+                  "required": [
+                    "decision"
+                  ]
+                },
+                {
+                  "required": [
+                    "decided_at"
+                  ]
+                }
+              ]
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "trigger": {
+                "const": "procedure_with_commands"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "command_digests": {
+                "minItems": 1
+              }
+            }
+          }
+        }
+      ]
+    },
+    "revealed": {
+      "type": "object",
+      "required": [
+        "worker_id",
+        "host_app",
+        "model",
+        "verdict",
+        "reason_code",
+        "confidence",
+        "weight",
+        "revealed_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "host_app": {
+          "$ref": "worker.schema.json#/$defs/host_app"
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 64
+        },
+        "verdict": {
+          "enum": [
+            "accept",
+            "reject",
+            "abstain"
+          ]
+        },
+        "reason_code": {
+          "$ref": "#/$defs/reason_code"
+        },
+        "confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "weight": {
+          "enum": [
+            0,
+            2,
+            3
+          ],
+          "description": "in halves: abstain 0, 1.0 → 2, 1.5 → 3 (another model/host)"
+        },
+        "revealed_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    },
+    "enrol_request": {
+      "description": "E30 POST /v1/reviews/enrol (reviewer_enable consent, every plan)",
+      "type": "object",
+      "required": [
+        "place"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "place": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        },
+        "consent_id": true,
+        "consent_proof": true
+      },
+      "allOf": [
+        {
+          "$ref": "swarm.schema.json#/$defs/consent_ref"
+        }
+      ]
+    },
+    "next_response": {
+      "description": "E31 GET /v1/reviews/next?place=&worker_id=",
+      "type": "object",
+      "required": [
+        "item",
+        "reveal_opens_at",
+        "limits"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "item": {
+          "type": "object",
+          "required": [
+            "id",
+            "trigger",
+            "events",
+            "context_nodes",
+            "commands"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "id": {
+              "$ref": "common.schema.json#/$defs/review_id"
+            },
+            "trigger": {
+              "$ref": "#/$defs/trigger"
+            },
+            "events": {
+              "type": "array",
+              "minItems": 1,
+              "maxItems": 1000,
+              "items": {
+                "$ref": "event.schema.json"
+              }
+            },
+            "context_nodes": {
+              "type": "array",
+              "maxItems": 50,
+              "items": {
+                "$ref": "event.schema.json"
+              }
+            },
+            "commands": {
+              "type": "array",
+              "maxItems": 10,
+              "items": {
+                "$ref": "event.schema.json#/$defs/command"
+              }
+            }
+          }
+        },
+        "reveal_opens_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "limits": {
+          "type": "object",
+          "required": [
+            "reviews_per_day",
+            "used_today",
+            "reviewer_usd_cents_per_day",
+            "reviewer_source"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "reviews_per_day": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 1000
+            },
+            "used_today": {
+              "$ref": "common.schema.json#/$defs/u32"
+            },
+            "reviewer_usd_cents_per_day": {
+              "type": "integer",
+              "minimum": 100,
+              "maximum": 50000
+            },
+            "reviewer_source": {
+              "enum": [
+                "owner_pledge",
+                "owner_api_key"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "commit_request": {
+      "description": "E32; commitment = hex(sha256(canonical_json({domain: \"leanctx.hive.review-commit/v1\", item_id, nonce, verdict_json: <verdict>})))",
+      "type": "object",
+      "required": [
+        "worker_id",
+        "commitment"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "commitment": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        }
+      }
+    },
+    "reveal_request": {
+      "description": "E33; usage is outside the committed verdict",
+      "type": "object",
+      "required": [
+        "worker_id",
+        "verdict",
+        "nonce",
+        "usage"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "verdict": {
+          "$ref": "#/$defs/verdict"
+        },
+        "nonce": {
+          "$ref": "common.schema.json#/$defs/hex32"
+        },
+        "usage": {
+          "$ref": "common.schema.json#/$defs/usage"
+        }
+      }
+    },
+    "sealed_decision": {
+      "description": "E41 POST /v1/reviews/{rv}/sealed-decision, signed by the instance key, domain leanctx.hive.sealed_decision.v1\\n, with a W50-answered procedure_confirm consent",
+      "type": "object",
+      "required": [
+        "item_digest",
+        "command_digests",
+        "answer",
+        "reason_code",
+        "consent_id",
+        "channel",
+        "approved_at",
+        "key_id",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "item_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "command_digests": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "common.schema.json#/$defs/hex64"
+          }
+        },
+        "answer": {
+          "enum": [
+            "accept",
+            "reject"
+          ]
+        },
+        "reason_code": {
+          "$ref": "#/$defs/reason_code"
+        },
+        "consent_id": {
+          "$ref": "common.schema.json#/$defs/consent_id"
+        },
+        "channel": {
+          "const": "web"
+        },
+        "approved_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        },
+        "signature": {
+          "$ref": "common.schema.json#/$defs/signature"
+        }
+      }
+    },
+    "w47_item": {
+      "description": "W47 ReviewItem on the web: RFC 3339 times, reviewers in the public rendering with place_role (R87)",
+      "type": "object",
+      "required": [
+        "id",
+        "place",
+        "vault",
+        "trigger",
+        "also",
+        "state",
+        "node_ids",
+        "item_digest",
+        "command_digests",
+        "required_weight",
+        "weight_accept",
+        "weight_reject",
+        "verdicts",
+        "sla_due_at",
+        "independence",
+        "created_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/review_id"
+        },
+        "place": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        },
+        "vault": {
+          "type": "object",
+          "required": [
+            "ws",
+            "name"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "ws": {
+              "$ref": "web.schema.json#/$defs/slug"
+            },
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z0-9-]{2,40}$"
+            }
+          }
+        },
+        "trigger": {
+          "$ref": "#/$defs/trigger"
+        },
+        "risk_class": {
+          "$ref": "#/$defs/risk_class"
+        },
+        "also": {
+          "$ref": "#/$defs/item/properties/also"
+        },
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "node_ids": {
+          "$ref": "#/$defs/item/properties/node_ids"
+        },
+        "item_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "command_digests": {
+          "$ref": "#/$defs/item/properties/command_digests"
+        },
+        "required_weight": {
+          "$ref": "#/$defs/item/properties/required_weight"
+        },
+        "weight_accept": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "weight_reject": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "verdicts": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "worker",
+              "host_app",
+              "model",
+              "verdict",
+              "reason_code",
+              "at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "worker": {
+                "type": "object",
+                "required": [
+                  "id",
+                  "name",
+                  "owner_handle",
+                  "place_role"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "id": {
+                    "$ref": "common.schema.json#/$defs/worker_id"
+                  },
+                  "name": {
+                    "$ref": "worker.schema.json#/$defs/name"
+                  },
+                  "owner_handle": {
+                    "$ref": "web.schema.json#/$defs/handle"
+                  },
+                  "place_role": {
+                    "enum": [
+                      "owner",
+                      "maintainer",
+                      null
+                    ]
+                  }
+                }
+              },
+              "host_app": {
+                "$ref": "worker.schema.json#/$defs/host_app"
+              },
+              "model": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 64
+              },
+              "verdict": {
+                "enum": [
+                  "accept",
+                  "reject",
+                  "abstain"
+                ]
+              },
+              "reason_code": {
+                "$ref": "#/$defs/reason_code"
+              },
+              "at": {
+                "$ref": "web.schema.json#/$defs/time"
+              }
+            }
+          }
+        },
+        "sla_due_at": {
+          "$ref": "web.schema.json#/$defs/time"
+        },
+        "independence": {
+          "enum": [
+            "normal",
+            "owner_self"
+          ]
+        },
+        "created_at": {
+          "$ref": "web.schema.json#/$defs/time"
+        },
+        "decided_at": {
+          "$ref": "web.schema.json#/$defs/time"
+        },
+        "decision": {
+          "enum": [
+            "accept",
+            "reject"
+          ]
+        },
+        "content": {
+          "type": "array",
+          "maxItems": 1000,
+          "items": {
+            "$ref": "#/$defs/w47_content"
+          }
+        }
+      }
+    },
+    "w47_list": {
+      "type": "object",
+      "required": [
+        "items",
+        "next_cursor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/w47_item"
+          }
+        },
+        "next_cursor": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "w48_request": {
+      "description": "W48 POST /api/v1/reviews/{id}/decision (H; class F with totp_code exactly for accept of an item with commands)",
+      "type": "object",
+      "required": [
+        "decision",
+        "item_digest",
+        "command_digests"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "decision": {
+          "enum": [
+            "accept",
+            "reject",
+            "another"
+          ]
+        },
+        "reason_code": {
+          "enum": [
+            "correct",
+            "duplicate",
+            "wrong",
+            "unsupported_claim",
+            "cannot_verify",
+            "unsafe_command",
+            "injection_suspected",
+            "secret_or_pii",
+            "off_topic",
+            "policy_violation",
+            "license_conflict"
+          ]
+        },
+        "item_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "command_digests": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "common.schema.json#/$defs/hex64"
+          }
+        },
+        "totp_code": {
+          "$ref": "web.schema.json#/$defs/totp_code"
+        }
+      },
+      "if": {
+        "properties": {
+          "decision": {
+            "const": "accept"
+          },
+          "command_digests": {
+            "minItems": 1
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "totp_code"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "totp_code"
+          ]
+        }
+      }
+    },
+    "w48_response": {
+      "type": "object",
+      "required": [
+        "state",
+        "decision"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "$ref": "#/$defs/state"
+        },
+        "decision": {
+          "anyOf": [
+            {
+              "enum": [
+                "accept",
+                "reject"
+              ]
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "item_list": {
+      "description": "E41a GET /v1/places/{p}/reviews?state=&limit=&after= (R134): review items of the place, oldest first, paged by item id; next = the after of the next page, null at the end",
+      "type": "object",
+      "required": [
+        "items",
+        "next"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "items": {
+          "type": "array",
+          "maxItems": 100,
+          "items": {
+            "$ref": "#/$defs/item"
+          }
+        },
+        "next": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/review_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "w47_content": {
+      "description": "R139: what a person reviews, one entry per node of the item. Plain places: the node body as the item's events leave it (no body_nonce) and, for a procedure, its commands in command_digests order so each can be ticked. Sealed places: the stored envelope with its body ciphertext, never opened by the server (the web opens it with the S0 helpers). item_digest covers it: each envelope digest binds its body through body_commit.",
+      "type": "object",
+      "required": [
+        "node_id",
+        "type"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "node_id": {
+          "$ref": "common.schema.json#/$defs/node_id"
+        },
+        "type": {
+          "$ref": "event.schema.json#/properties/node_type"
+        },
+        "body": {
+          "type": "object"
+        },
+        "commands": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "$ref": "event.schema.json#/$defs/command"
+          }
+        },
+        "sealed": {
+          "type": "object",
+          "required": [
+            "envelope",
+            "body_ct",
+            "body_nonce"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "envelope": {
+              "type": "object"
+            },
+            "body_ct": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]+$"
+            },
+            "body_nonce": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9_-]+$"
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "body"
+          ]
+        },
+        {
+          "required": [
+            "sealed"
+          ]
+        }
+      ]
+    }
+  }
+}

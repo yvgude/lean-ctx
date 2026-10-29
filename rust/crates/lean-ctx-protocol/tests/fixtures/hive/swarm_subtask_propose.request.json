@@ -1,0 +1,6 @@
+{
+  "acceptance": "The commit that last changed the retry line.",
+  "expected_kind": "hash",
+  "schema": "leanctx.hive.swarm-subtask-propose/v1",
+  "title": "Check the runbook's history"
+}

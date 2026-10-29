@@ -25,7 +25,7 @@ impl McpTool for CtxEditTool {
              old_string must be unique unless replace_all=true. create=true writes new files.\n\
              backup creates .bak. MD5/size/mtime pre-guards prevent race conditions.\n\
              ANTIPATTERN: Do NOT loop on failures — switch to ctx_patch (anchored), or verify file content and adjust old_string.\n\
-             For LSP-aware refactoring (rename, move, inline), use ctx_refactor.",
+             To replace a whole symbol body use ctx_patch(op=\"replace_symbol\"); find its references with ctx_callgraph.",
             json!({
                 "type": "object",
                 "properties": {
@@ -61,7 +61,10 @@ impl McpTool for CtxEditTool {
             get_int(args, "expected_mtime_ms").and_then(|v| u64::try_from(v).ok());
         let backup = get_bool(args, "backup").unwrap_or(false);
         let backup_path = get_str(args, "backup_path")
-            .map(|p| ctx.resolved_paths.get("backup_path").cloned().unwrap_or(p));
+            .map(|p| ctx.resolved_paths.get("backup_path").cloned().unwrap_or(p))
+            .map(|p| crate::core::workspace_authority::confine(&p, &ctx.project_root, true))
+            .transpose()
+            .map_err(|error| ErrorData::invalid_params(error, None))?;
         let evidence = get_bool(args, "evidence").unwrap_or(true);
         let diff_max_lines = get_int(args, "diff_max_lines")
             .and_then(|v| usize::try_from(v.max(0)).ok())

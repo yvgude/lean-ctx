@@ -1,0 +1,276 @@
+{
+  "aliases": [
+    {
+      "hlc_node": "0e9c7f2455744dc1",
+      "instance": "instance_a",
+      "key_id": "a81b399e9440c8ad",
+      "name": "a_swarm",
+      "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+      "public_key_b64url": "1HZQs--lIIolw9omhGSgaKzks52xjpJnHmaS6-c5y2I",
+      "public_key_hex": "d47650b3efa5208a25c3da268464a068ace4b39db18e92671e6692ebe739cb62",
+      "seed_hex": "8de28f4994cfad1479b9fe24698d3160ad11b6782b2d41bcdb1d6b173ad9b87d"
+    },
+    {
+      "hlc_node": "f448df82109b0d1e",
+      "instance": "instance_b",
+      "key_id": "25d7ed7d64c599b2",
+      "name": "b_swarm",
+      "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+      "public_key_b64url": "P2XUmAd0Nxqg00qeGLr5gtx0BkUabi2pHjQ1-8IBeMA",
+      "public_key_hex": "3f65d4980774371aa0d34a9e18baf982dc7406451a6e2da91e3435fbc20178c0",
+      "seed_hex": "8214f5b6199b66f9a5ecf94f0c51825c43e75708a950d0fbda7bfb454ae820bb"
+    }
+  ],
+  "canonical_json": [
+    {
+      "input": {
+        "a": null,
+        "b": [
+          1,
+          {
+            "c": true,
+            "d": "ü\n"
+          }
+        ]
+      },
+      "output": "{\"a\":null,\"b\":[1,{\"c\":true,\"d\":\"ü\\n\"}]}"
+    },
+    {
+      "input": {
+        "Z": 3,
+        "e": "\u0001\u001f\"\\",
+        "z": 2,
+        "é": 1
+      },
+      "output": "{\"Z\":3,\"e\":\"\\u0001\\u001f\\\"\\\\\",\"z\":2,\"é\":1}"
+    },
+    {
+      "input": {
+        "m": -9007199254740993,
+        "n": 18446744073709551615,
+        "s": "日本語 emoji 😀"
+      },
+      "output": "{\"m\":-9007199254740993,\"n\":18446744073709551615,\"s\":\"日本語 emoji 😀\"}"
+    }
+  ],
+  "cases": [
+    {
+      "envelope_digest": "ef79bc0dbff24dd48ed9882f6cbde3a1372bd428e40621f0054c9d4d9252f27f",
+      "fixture": "events/node.add.fact.json",
+      "key_id": "47983724220c8521",
+      "signature": "65d47c5c54d12c756e23348f2b7a45ec08f8c0b939e6832e24dc13a23969ba1be2525d420dbed5de82c43a0aa8b0618191cbddfe53c4b989c67ae79e9782660e",
+      "signing_input": "leanctx.hive.event.v2\n{\"actor\":{\"kind\":\"worker\"},\"body_commit\":\"8822df5777f67d58e2588e368ec433905afb8641635dbdb476d74330c2787b9d\",\"capture\":{\"evidence\":\"observed\",\"gate_version\":1,\"reasons_passed_hash\":\"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3\"},\"causal_base\":0,\"event_id\":\"01M5NKA2Z8005000000000W001\",\"hlc\":{\"counter\":0,\"node\":\"6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b\",\"wall_ms\":1792800001000},\"key_id\":\"47983724220c8521\",\"node_type\":\"fact\",\"op\":\"node.add\",\"place\":{\"id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"kind\":\"vault\"},\"provenance_claim\":\"own\",\"schema\":\"leanctx.hive.event/v2\",\"screening\":{\"counts\":{\"forbidden\":0,\"local_path\":0,\"pii\":0,\"redaction\":0,\"secret\":0},\"scanner_version\":1},\"target\":\"n_tyvnza7clspg4cpmb7ew7fvl7b\",\"worker_id\":\"wkr_vk4oelpv5lzjmev44hun\"}"
+    },
+    {
+      "envelope_digest": "4ad900dc88e8c5c81b456acfa8a77a03b7d711bf0ad48eaf9d2c735f8f24ae43",
+      "fixture": "events/node.add.result.json",
+      "key_id": "a81b399e9440c8ad",
+      "signature": "c63da3b70d0d0a9bf3f0b17ae6d84c0d43d7fd3b73c496d872f7ef886ed2093851fd7c5a4ba40759d0c7b62a6bfe88ba102d2392e0c3f9acfa63363d6bbcaf02",
+      "signing_input": "leanctx.hive.event.v2\n{\"actor\":{\"kind\":\"worker\"},\"body_commit\":\"c63e8f41e9a2cde6eb9d9eff40f249907b2eb8fdbec76e50902332444a2e4b52\",\"capture\":{\"evidence\":\"observed\",\"gate_version\":1,\"reasons_passed_hash\":\"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3\"},\"causal_base\":3,\"event_id\":\"01M5NKA5X0005G00000000W004\",\"hlc\":{\"counter\":0,\"node\":\"0e9c7f2455744dc1\",\"wall_ms\":1792800004000},\"key_id\":\"a81b399e9440c8ad\",\"node_type\":\"result\",\"op\":\"node.add\",\"place\":{\"id\":\"9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02\",\"kind\":\"swarm\"},\"provenance_claim\":\"workspace\",\"schema\":\"leanctx.hive.event/v2\",\"screening\":{\"counts\":{\"forbidden\":0,\"local_path\":0,\"pii\":0,\"redaction\":0,\"secret\":0},\"scanner_version\":1},\"target\":\"n_aaaaaaaaaaaaaaaaaaaaaadaam\",\"worker_id\":\"wkr_76aa2uwmpczt3cqkhfed\"}"
+    },
+    {
+      "envelope_digest": "0404890879075eafb4a2d9143614deb7d780f708768ec8b2b62d61d6752429bd",
+      "fixture": "events/system.retract.person.json",
+      "key_id": "4fc7bebc302357bd",
+      "signature": "505598bdd31a58e4d3ed96d1f1d773b5f18b6988a31f0341f2bccbba30c4e9262274b7383a02f1dfd05817a54943386a9aa8bb25a8430c4ce8ce403342f0de0d",
+      "signing_input": "leanctx.hive.event.v2\n{\"actor\":{\"kind\":\"person\",\"user_id\":\"2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f\"},\"body_commit\":\"97155d52695083fb49c057c09102253e53fd28342578cb7ab8e383b3ad95e9ae\",\"causal_base\":11,\"cause\":{\"kind\":\"person_action\"},\"event_id\":\"01M5NKADQ0005000000000W00C\",\"hlc\":{\"counter\":0,\"node\":\"4fc7bebc302357bd\",\"wall_ms\":1792800012000},\"key_id\":\"4fc7bebc302357bd\",\"op\":\"retract\",\"place\":{\"id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"kind\":\"vault\"},\"schema\":\"leanctx.hive.event/v2\",\"target\":\"n_rpesdfdzbnjufd7zdvw6myufgz\"}"
+    },
+    {
+      "envelope_digest": "e700afc2d96565a595bd236b84bc7eefa98b759307efbb987f2791f2ed7cd92a",
+      "fixture": "events/purge.json",
+      "key_id": "4fc7bebc302357bd",
+      "signature": "4266d51313355f58ca97527c8809451609eaf7e193cc89659599f0116eafb1292feb0189284c367fe331279d1eeb41f6fe0f0044abef9f752c478d59eecac302",
+      "signing_input": "leanctx.hive.event.v2\n{\"actor\":{\"kind\":\"server\"},\"body_commit\":\"b2b9624c0d54b10baafa4347c56c8bfd86b269542311fd9a2311424f5a9874a8\",\"causal_base\":12,\"event_id\":\"01M5NKAEP8005000000000W00D\",\"hlc\":{\"counter\":0,\"node\":\"4fc7bebc302357bd\",\"wall_ms\":1792800013000},\"key_id\":\"4fc7bebc302357bd\",\"op\":\"purge\",\"place\":{\"id\":\"3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"kind\":\"vault\"},\"schema\":\"leanctx.hive.event/v2\"}"
+    },
+    {
+      "envelope_digest": "21af567090a12adaa53990039d62fa3209c62ce09ea3fb1391290490d9656f0e",
+      "fixture": "events/node.add.sealed.json",
+      "key_id": "47983724220c8521",
+      "signature": "4489705bf11830d11b5fbddcbbcf48fab91f055bc9582ad04758d7b9e160df37930cd3ef9596abe1e5524158df005d3b3faa948299cf1daeece050f55d2bbc00",
+      "signing_input": "leanctx.hive.event.v2\n{\"actor\":{\"kind\":\"worker\"},\"body_commit\":\"b9708b0e19aefc0f4776e089b0706acd5c2d03e36a248e7562561c6641eb1aca\",\"capture\":{\"evidence\":\"observed\",\"gate_version\":1,\"reasons_passed_hash\":\"a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3\"},\"causal_base\":0,\"epoch\":1,\"event_id\":\"01M5NKA2Z8006000000000W001\",\"flags\":{\"commands\":false},\"hlc\":{\"counter\":0,\"node\":\"6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b\",\"wall_ms\":1792800001000},\"key_id\":\"47983724220c8521\",\"node_type\":\"fact\",\"op\":\"node.add\",\"place\":{\"id\":\"c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03\",\"kind\":\"vault\"},\"provenance_claim\":\"own\",\"schema\":\"leanctx.hive.event/v2\",\"screening\":{\"counts\":{\"forbidden\":0,\"local_path\":0,\"pii\":0,\"redaction\":0,\"secret\":0},\"scanner_version\":1},\"target\":\"n_4mndss76mipfgf6fk2wsnkmnd5\",\"worker_id\":\"wkr_vk4oelpv5lzjmev44hun\"}"
+    }
+  ],
+  "keys": {
+    "hive_consent": {
+      "key_id": "b7bda707a8979c46",
+      "kind": "hive",
+      "public_key_b64url": "2sMevKFZ0oP4NB_ZDX-hzZW_XsyrZX95UmYuZ-Vq--M",
+      "public_key_hex": "dac31ebca159d283f8341fd90d7fa1cd95bf5eccab657f7952662e67e56afbe3",
+      "purpose": "consent",
+      "seed_hex": "5858585858585858585858585858585858585858585858585858585858585858"
+    },
+    "hive_control": {
+      "key_id": "fac2346807329f09",
+      "kind": "hive",
+      "public_key_b64url": "Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY",
+      "public_key_hex": "22fc297792f0b6ffc0bfcfdb7edb0c0aa14e025a365ec0e342e86e3829cb74b6",
+      "purpose": "control",
+      "seed_hex": "4343434343434343434343434343434343434343434343434343434343434343"
+    },
+    "hive_event": {
+      "key_id": "4fc7bebc302357bd",
+      "kind": "hive",
+      "public_key_b64url": "Y1VpHBeKj_kQB6dHivuVXvc1LGPnslcDmEz3iybiGlY",
+      "public_key_hex": "6355691c178a8ff91007a7478afb955ef7352c63e7b25703984cf78b26e21a56",
+      "purpose": "event",
+      "seed_hex": "4545454545454545454545454545454545454545454545454545454545454545"
+    },
+    "hive_event_retired": {
+      "key_id": "5c4707450391efe5",
+      "kind": "hive",
+      "note": "revoked event key of the key set (negative vectors)",
+      "public_key_b64url": "7pOk9m-NFrgZu5vrn_zN_NwUEuh_7moyTCqZoeDmcUg",
+      "public_key_hex": "ee93a4f66f8d16b819bb9beb9ffccdfcdc1412e87fee6a324c2a99a1e0e67148",
+      "purpose": "event",
+      "seed_hex": "4646464646464646464646464646464646464646464646464646464646464646"
+    },
+    "hive_policy": {
+      "key_id": "552e43422b3589fa",
+      "kind": "hive",
+      "note": "lease and policy signer; the same test key as C0 1.x signing_seed_hex (kid hive-2026-10 there)",
+      "public_key_b64url": "-AzM3OSuHAeuIIoq35mjEK5CB-Awb6AjYRCwaCe7uNA",
+      "public_key_hex": "f80cccdce4ae1c07ae208a2adf99a310ae4207e0306fa0236110b06827bbb8d0",
+      "purpose": "policy",
+      "seed_hex": "5353535353535353535353535353535353535353535353535353535353535353"
+    },
+    "hive_purge": {
+      "key_id": "5d2abe57a3a2c50f",
+      "kind": "hive",
+      "public_key_b64url": "a3NKjv8kb-c0s41ARsFI7uXwT-h7OgpCOVWneVbeBms",
+      "public_key_hex": "6b734a8eff246fe734b38d4046c148eee5f04fe87b3a0a423955a77956de066b",
+      "purpose": "purge",
+      "seed_hex": "5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b5b"
+    },
+    "hive_revocation": {
+      "key_id": "41dad53017a5f8de",
+      "kind": "hive",
+      "public_key_b64url": "iN9VZBNTiwAgFelhmwG9tcxIxyFWRXklY_VGD3MHp2M",
+      "public_key_hex": "88df556413538b002015e9619b01bdb5cc48c7215645792563f5460f7307a763",
+      "purpose": "revocation",
+      "seed_hex": "5656565656565656565656565656565656565656565656565656565656565656"
+    },
+    "hive_snapshot": {
+      "key_id": "7bc9f7e9dc1a0621",
+      "kind": "hive",
+      "public_key_b64url": "DXVQdU4IAKXSN-71gmA1dmubPloVhoqUCrKJlYeI47A",
+      "public_key_hex": "0d7550754e0800a5d237eef5826035766b9b3e5a15868a940ab289958788e3b0",
+      "purpose": "snapshot",
+      "seed_hex": "5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a5a"
+    },
+    "instance_a": {
+      "instance_id": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+      "key_id": "47983724220c8521",
+      "kind": "instance",
+      "public_key_b64url": "dyyKRCt9sG4WbPvBzLy83m8-unak6Y7z_8UZUCI31u8",
+      "public_key_hex": "772c8a442b7db06e166cfbc1ccbcbcde6f3eba76a4e98ef3ffc519502237d6ef",
+      "seed_hex": "4949494949494949494949494949494949494949494949494949494949494949",
+      "worker_alias_key_hex": "1de10440cc6771c69a508b36eb21d0e1b987fa88f4dc237537b0e8f0bfdb10a9"
+    },
+    "instance_b": {
+      "instance_id": "8e3c0d5f-2b4e-4f60-9b8c-1d2e3f4a5b6c",
+      "key_id": "685e652d8892a354",
+      "kind": "instance",
+      "public_key_b64url": "NTyKf-7KOLLEU24L0lhv2xjQcOUOBZ8dQ_i_77l6fOE",
+      "public_key_hex": "353c8a7feeca38b2c4536e0bd2586fdb18d070e50e059f1d43f8bfefb97a7ce1",
+      "seed_hex": "4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a4a",
+      "worker_alias_key_hex": "234700375ec3f020a87688ead28ec98cd3d58212a27172543aa9d93bb88a839e"
+    },
+    "presence_a": {
+      "alg": "ed25519",
+      "instance": "instance_a",
+      "key_id": "ef1bd9c792ccc768",
+      "kind": "presence",
+      "public_key_b64url": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs",
+      "public_key_hex": "3ef08959033028c8fc6fc6d491a12548e78df6aefb2d7c2c190c3f78cef3f50b",
+      "seed_hex": "5050505050505050505050505050505050505050505050505050505050505050"
+    },
+    "root_new": {
+      "key_id": "168d42cf763161e3",
+      "kind": "root",
+      "public_key_b64url": "AU5NkixZajgK38nu1yLoNYIvEjZ2FpPkurth4a-7BPE",
+      "public_key_hex": "014e4d922c596a380adfc9eed722e835822f1236761693e4babb61e1afbb04f1",
+      "role": "hosted root of 3.12.0 (HOSTED_ROOT_KEYS)",
+      "seed_hex": "6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e6e"
+    },
+    "root_old": {
+      "key_id": "7c05bc3512a2bbe7",
+      "kind": "root",
+      "public_key_b64url": "IBLLkMpg6OXY2vZuInLSIz4EhtVX6MZhQe2JIBd9frc",
+      "public_key_hex": "2012cb90ca60e8e5d8daf66e2272d2233e0486d557e8c66141ed8920177d7eb7",
+      "role": "retired hosted root (RETIRED_ROOT_KEYS); also the C0 1.x root (v1 root_seed_hex)",
+      "seed_hex": "5252525252525252525252525252525252525252525252525252525252525252"
+    }
+  },
+  "note": "Test-only keys and salts; never valid outside fixtures and test servers. Outputs are derived by crates/hive-server/src/routes/tests_c0v2_fixtures.rs.",
+  "places": [
+    {
+      "created_at_ms": 1792700000000,
+      "id_salt_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+      "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+      "sealed": false
+    },
+    {
+      "created_at_ms": 1792750000000,
+      "id_salt_hex": "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f",
+      "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+      "sealed": false
+    },
+    {
+      "created_at_ms": 1792700000000,
+      "epoch_keys": {
+        "1": "e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1"
+      },
+      "pk_id_hex": "2ecd00816d667153da3e0e855b777579fa73f26088bd66ab9729ae000c4da45e",
+      "place": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03",
+      "place_secret_hex": "5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c5c",
+      "sealed": true
+    }
+  ],
+  "rules": {
+    "alias_hlc_node": "hex(blake3_keyed(worker_alias_key, place_ref))[..16]",
+    "alias_signing_seed": "HKDF-SHA256(ikm = instance seed, salt = \"leanctx.hive.alias.v1\", info = place_ref, L = 32); place_ref = \"{kind}:{id}\"",
+    "class_a_hlc_node": "events signed by an Hive key carry hlc.node = that key's key_id",
+    "envelope_digest": "hex(blake3(canonical_json(signing_input object + signature)))",
+    "event_domain": "leanctx.hive.event.v2\n",
+    "key_id": "hex(blake3(public_key))[..16]",
+    "presence_key_id": "presence keys: hex(sha256(public key encoding))[..16] (R58); ed25519 encoding = raw 32 bytes",
+    "sealed_pk_id": "HKDF-SHA256(ikm = place_secret, salt = empty, info = \"leanctx.hive.node-id.v1\", L = 32)",
+    "signature": "Ed25519, 128 lowercase hex",
+    "signing_input": "event_domain ‖ canonical_json(event without body, ck_wrapped, signature and the server fields seq, received_at, provenance, review_state, reviewed_by, review_id, batch_id, purged, revoked_signer, legacy)",
+    "worker_alias_key": "HKDF-SHA256(ikm = instance seed, salt = \"leanctx.hive.worker-alias.v1\", info = empty, L = 32)",
+    "worker_id_alias": "\"wkr_\" + base32lower(blake3_keyed(worker_alias_key, host_app ‖ \"|\" ‖ role ‖ \"|\" ‖ place_ref))[..20]",
+    "worker_id_workspace": "\"wkr_\" + base32lower(blake3(instance_id ‖ \"|\" ‖ host_app ‖ \"|\" ‖ role))[..20]"
+  },
+  "workers": [
+    {
+      "host_app": "claude-code",
+      "instance": "instance_a",
+      "name": "a_backend",
+      "role": "backend",
+      "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+    },
+    {
+      "host_app": "codex",
+      "instance": "instance_b",
+      "name": "b_review",
+      "role": "reviewer",
+      "worker_id": "wkr_gawyravj36igdp3irdfo"
+    },
+    {
+      "host_app": "codex",
+      "instance": "instance_a",
+      "name": "a_swarm_codex",
+      "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+      "role": "general",
+      "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+    },
+    {
+      "host_app": "claude-code",
+      "instance": "instance_b",
+      "name": "b_swarm_conductor",
+      "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+      "role": "conductor",
+      "worker_id": "wkr_cxdouocvevdhm22vpdrh"
+    }
+  ]
+}

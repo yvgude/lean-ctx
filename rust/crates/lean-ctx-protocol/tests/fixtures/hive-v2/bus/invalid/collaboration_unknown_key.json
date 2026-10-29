@@ -1,0 +1,14 @@
+{
+  "case": "collaboration_unknown_key",
+  "base": "bus/message.finding.collaboration.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/counts/tokens",
+      "value": 10
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

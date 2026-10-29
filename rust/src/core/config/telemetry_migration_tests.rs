@@ -33,9 +33,16 @@ fn legacy_contributor_explicit_opt_out_survives_migration() {
 
 #[test]
 fn telemetry_migration_is_idempotent_after_legacy_flag_is_cleared() {
-    let current = "[cloud]\ncontribute_enabled = false\n\n[telemetry]\nenabled = false\n";
+    let legacy = "[cloud]\ncontribute_enabled = false\n\n[telemetry]\nenabled = false\n";
+    // The retired `[cloud]` table is removed once; the opt-out stays.
+    let current = Config::migrate_v4_config_document(legacy, None, false)
+        .expect("valid legacy config")
+        .expect("the retired table is removed");
+    assert!(!current.contains("[cloud]"), "{current}");
+    let parsed: Config = toml::from_str(&current).expect("migrated config parses");
+    assert!(!parsed.telemetry.enabled);
     assert_eq!(
-        Config::migrate_v4_config_document(current, None, false).expect("valid current config"),
+        Config::migrate_v4_config_document(&current, None, false).expect("valid current config"),
         None
     );
 }

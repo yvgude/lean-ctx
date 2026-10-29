@@ -1,0 +1,22 @@
+{
+  "name": "control-actions",
+  "values": [
+    {
+      "value": "hold",
+      "human_only": false
+    },
+    {
+      "value": "stop",
+      "human_only": false
+    },
+    {
+      "value": "resume",
+      "human_only": true
+    },
+    {
+      "value": "veto",
+      "human_only": false,
+      "needs_ref": true
+    }
+  ]
+}

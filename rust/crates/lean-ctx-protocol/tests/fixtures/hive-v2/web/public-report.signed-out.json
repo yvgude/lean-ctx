@@ -1,0 +1,51 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "unauthorized",
+          "message": "Sign in to report this; only an illegal-content notice works without an account."
+        }
+      },
+      "status": 401
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_body",
+          "field": "contact_email",
+          "message": "contact_email is required without an account"
+        }
+      },
+      "status": 400
+    },
+    {
+      "body": {
+        "error": {
+          "code": "rate_limited",
+          "message": "Too many notices from this address. Try again later.",
+          "retry_after_s": 3600
+        }
+      },
+      "status": 429
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/public/vaults/acme/payments/report",
+  "request": {
+    "contact_email": "alex@example.org",
+    "contact_name": "Alex Doe",
+    "good_faith": true,
+    "note": "This page shares stolen card data.",
+    "reason": "illegal",
+    "target_id": "n_zcjqmmor453nyxqgshlgpogwdm",
+    "target_kind": "vault_node"
+  },
+  "response": {
+    "body": {
+      "report_id": "rpt_4712"
+    },
+    "status": 201
+  },
+  "route": "W46"
+}

@@ -1,0 +1,4 @@
+{
+  "schema": "leanctx.hive.link/v2",
+  "vault": "acme/payments@hive.acme.example:8443"
+}

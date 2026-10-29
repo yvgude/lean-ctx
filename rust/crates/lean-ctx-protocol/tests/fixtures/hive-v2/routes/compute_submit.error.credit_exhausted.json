@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "credit_exhausted",
+    "message": "This workspace's prepaid compute credit (12) does not cover the job's reserve (20). Nothing is charged; top up or ask an operator for a grant.",
+    "balance": 12,
+    "needed": 20
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "case": "split_synthesis_child",
+  "base": "routes/conductor_action.split.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/children/0/kind",
+      "value": "synthesis"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "No such node."
+        }
+      },
+      "status": 404
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/public/vaults/acme/payments/nodes/n_zcjqmmor453nyxqgshlgpogwdm",
+  "request": null,
+  "response": {
+    "body": {
+      "body": {
+        "applies_to": [
+          "services/payments/retry.rs",
+          "services/payments/client.rs"
+        ],
+        "statement": "Payment retries back off exponentially with full jitter, capped at 64 seconds."
+      },
+      "derived_count": 0,
+      "derived_from_count": 0,
+      "evidence": "observed",
+      "history": [
+        {
+          "actor": {
+            "kind": "worker",
+            "name": "yves-mac · Claude Code · backend"
+          },
+          "at": "2026-10-24T08:00:01Z",
+          "op": "node.add",
+          "seq": 1
+        },
+        {
+          "actor": {
+            "kind": "worker",
+            "name": "yves-mac · Claude Code · backend"
+          },
+          "at": "2026-10-24T08:00:09Z",
+          "field": "applies_to",
+          "op": "field.set",
+          "seq": 9
+        }
+      ],
+      "id": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+      "provenance": "own",
+      "refs": [
+        "n_aaaaaaaaaaaaaaaaaaaaaacaa4"
+      ],
+      "relations": [
+        {
+          "direction": "out",
+          "kind": "references",
+          "node_id": "n_aaaaaaaaaaaaaaaaaaaaaacaa4",
+          "type": "reference"
+        }
+      ],
+      "review_state": "confirmed",
+      "reviewed_by": "none",
+      "state": "active",
+      "knowledge_state": "verified",
+      "knowledge_reason": null,
+      "trust_bucket": "high",
+      "type": "fact",
+      "updated_at": "2026-10-24T08:00:09Z",
+      "worker": {
+        "id": "wkr_vk4oelpv5lzjmev44hun",
+        "name": "yves-mac · Claude Code · backend"
+      }
+    },
+    "status": 200
+  },
+  "route": "W44"
+}

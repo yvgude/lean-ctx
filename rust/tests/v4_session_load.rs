@@ -190,14 +190,21 @@ fn session_load_uses_receiver_scope_without_expanding_authority() {
 
     // Save a valid latest project entry after the deliberately malformed candidate.
     saved.save().unwrap();
-    let mut latest = session(&project, "fresh-process-view");
-    latest.extra_roots.clone_from(&extra);
+    // Without an id a session loads only its own saved state, never the
+    // project's latest, which may be another agent's (owner decision 19.10.,
+    // I07/S03, f4e0dcceac).
+    let mut other = session(&project, "fresh-process-view");
+    other.extra_roots.clone_from(&extra);
     // Process cwd is fixture, deliberately not the receiving project's root.
-    let result = load(&mut latest, None);
+    rejected(&mut other, None);
+    let mut own = session(&project, "same-root");
+    own.extra_roots.clone_from(&extra);
+    let result = load(&mut own, None);
     assert!(result.starts_with("Session loaded"), "{result}");
-    assert_eq!(latest.id, saved.id);
-    assert_eq!(latest.extra_roots, extra);
-    assert!(latest.shell_cwd.is_none());
+    assert_eq!(own.id, saved.id);
+    assert_eq!(own.next_steps, saved.next_steps);
+    assert_eq!(own.extra_roots, extra);
+    assert!(own.shell_cwd.is_none());
     assert_eq!(std::fs::read(&archive).unwrap(), archive_before);
     assert!(oneshot_status(&project).contains("Private task for same-root"));
 

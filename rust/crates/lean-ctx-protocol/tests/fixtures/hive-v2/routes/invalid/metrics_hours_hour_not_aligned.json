@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_hour_not_aligned",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets/1/hour",
+      "value": "2026-10-26T17:30:00Z"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "hour not on the hour"
+}

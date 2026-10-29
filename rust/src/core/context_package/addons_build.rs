@@ -78,6 +78,7 @@ pub(crate) fn write_addon_package(
         signature: None,
         graph_summary: None,
         marketplace: None,
+        redistributable: None,
     };
 
     manifest.validate().map_err(|errs| errs.join("; "))?;

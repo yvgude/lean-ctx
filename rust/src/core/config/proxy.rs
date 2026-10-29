@@ -1,6 +1,16 @@
 //! API proxy upstream overrides (`config.toml`).
 
+use lean_ctx_protocol::ProtocolReference;
 use serde::{Deserialize, Serialize};
+
+#[path = "proxy_upstream.rs"]
+mod upstream;
+use upstream::is_custom_upstream_host;
+pub(super) use upstream::validate_upstream_url;
+pub use upstream::{
+    ProxyProvider, UpstreamDrift, Upstreams, diagnose_drift, env_upstream_override,
+    is_local_proxy_url, normalize_url, normalize_url_opt,
+};
 
 /// API proxy upstream overrides. `None` = use provider default.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -32,6 +42,9 @@ pub struct ProxyConfig {
     /// `config.toml` and never the shell's `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM`, can
     /// honor a custom upstream too (#590).
     pub allow_custom_upstream: Option<bool>,
+    /// Absolute project root the proxy acts for; operator-set only, verified at
+    /// use. Env `LEAN_CTX_PROXY_PROJECT_ROOT`. See `proxy::request_project`.
+    pub project_root: Option<String>,
     /// Inject `stream_options.include_usage = true` into streamed OpenAI Chat
     /// Completions so the final chunk reports real token usage for the measured
     /// spend meter. Default on; set `false` for a client that mishandles the
@@ -162,8 +175,6 @@ pub struct ProxyConfig {
     /// would invalidate the prompt cache. Env `LEAN_CTX_PROXY_EFFORT`. See
     /// [`ProxyConfig::resolved_effort`].
     pub effort: Option<String>,
-    #[serde(default)]
-    pub reasoning_budget: ReasoningBudgetConfig,
     /// How the proxy squeezes prose it must shrink (#895): `"auto"` (default) and
     /// `"extractive"` use embedding-based extractive ranking — keeping the most
     /// central sentences instead of just the prefix — when the local embedding
@@ -242,26 +253,6 @@ pub struct ProxyConfig {
 ///   hardware and power are real — so the shadow rate keeps local-model savings
 ///   honest instead of infinite. Default: `0.25` USD/MTok, a conservative
 ///   self-hosting cost estimate; calibrate per deployment.
-///
-/// Output-reasoning budget controls for triage-classified requests.
-#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
-#[serde(default)]
-pub struct ReasoningBudgetConfig {
-    /// Apply a reduced reasoning budget to simple, low-complexity requests.
-    pub enabled: bool,
-    /// Anthropic `thinking.budget_tokens` for qualifying requests.
-    pub simple_task_budget: u32,
-}
-
-impl Default for ReasoningBudgetConfig {
-    fn default() -> Self {
-        Self {
-            enabled: true,
-            simple_task_budget: 1024,
-        }
-    }
-}
-
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct BaselineConfig {
@@ -276,7 +267,6 @@ pub struct BaselineConfig {
 pub struct PipelineConfig {
     pub enable_dedup: bool,
     pub enable_prose: bool,
-    pub enable_effort: bool,
     /// Use KnowledgeRouter references to protect relevant request context.
     pub enable_knowledge_routing: bool,
     pub min_savings_pct: f32,
@@ -287,7 +277,6 @@ impl Default for PipelineConfig {
         Self {
             enable_dedup: true,
             enable_prose: true,
-            enable_effort: true,
             enable_knowledge_routing: true,
             min_savings_pct: 5.0,
         }
@@ -420,6 +409,13 @@ pub struct ProviderEntry {
     /// environment variables and rejects `api_key_env`.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub aws_region: Option<String>,
+    /// Non-secret opaque account label for destination policy. This is an
+    /// operator-configured route label, not a provider-verified account ID.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub account_ref: Option<String>,
+    /// Declared provider region. Bedrock uses its validated SigV4 `aws_region`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub region: Option<String>,
     /// Set `false` to keep the entry in config but take it out of service.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub enabled: Option<bool>,
@@ -443,6 +439,11 @@ pub struct ResolvedProvider {
     pub api_key_env: Option<String>,
     /// Validated SigV4 region for Bedrock; absent for other shapes.
     pub aws_region: Option<String>,
+    /// Non-secret operator label, only usable as an account binding with
+    /// gateway-managed authentication and no caller scope override.
+    pub account_ref: Option<String>,
+    /// Validated destination region; Bedrock's value is its signing region.
+    pub region: Option<String>,
     /// Billed as local inference (shadow rate). Explicit `local` flag when the
     /// entry declares one, otherwise loopback-URL derivation.
     pub local: bool,
@@ -894,6 +895,16 @@ impl ProxyConfig {
         self.effort.as_deref().and_then(super::Effort::parse)
     }
 
+    /// The proxy's project root as written, unverified: env
+    /// `LEAN_CTX_PROXY_PROJECT_ROOT` wins over `[proxy] project_root`; blank = unset.
+    pub fn configured_project_root(&self) -> Option<String> {
+        let set = |root: &String| !root.trim().is_empty();
+        let env = std::env::var("LEAN_CTX_PROXY_PROJECT_ROOT")
+            .ok()
+            .filter(set);
+        env.or_else(|| self.project_root.clone()).filter(set)
+    }
+
     /// Whether the proxy live-compresses non-protected `tool_result` content
     /// (#481). `LEAN_CTX_PROXY_LIVE_COMPRESS` (`0`/`false`/`off`/`no` → off,
     /// `1`/`true`/`on`/`yes` → on) wins, then `[proxy] live_compress` in
@@ -1161,6 +1172,41 @@ impl ProxyConfig {
             match validate_upstream_url(&entry.base_url, self.allows_insecure_http_upstream(), true)
             {
                 Ok(base_url) => {
+                    let account_ref = entry
+                        .account_ref
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty());
+                    // Check raw controls before normalization can remove them.
+                    if entry
+                        .account_ref
+                        .as_deref()
+                        .is_some_and(|value| value.chars().any(char::is_control))
+                        || account_ref
+                            .is_some_and(|value| ProtocolReference::new(value.to_owned()).is_err())
+                    {
+                        tracing::warn!(
+                            "[proxy.providers] provider '{id}' has invalid account_ref — skipped"
+                        );
+                        continue;
+                    }
+                    let configured_region = entry
+                        .region
+                        .as_deref()
+                        .map(str::trim)
+                        .filter(|value| !value.is_empty());
+                    if entry
+                        .region
+                        .as_deref()
+                        .is_some_and(|value| value.chars().any(char::is_control))
+                        || configured_region
+                            .is_some_and(|value| ProtocolReference::new(value.to_owned()).is_err())
+                    {
+                        tracing::warn!(
+                            "[proxy.providers] provider '{id}' has invalid region — skipped"
+                        );
+                        continue;
+                    }
                     let aws_region = entry
                         .aws_region
                         .as_deref()
@@ -1178,6 +1224,12 @@ impl ProxyConfig {
                         {
                             tracing::warn!(
                                 "[proxy.providers] Bedrock provider '{id}' has invalid credential mode or endpoint — skipped"
+                            );
+                            continue;
+                        }
+                        if configured_region.is_some_and(|configured| configured != region) {
+                            tracing::warn!(
+                                "[proxy.providers] Bedrock provider '{id}' region must match aws_region — skipped"
                             );
                             continue;
                         }
@@ -1201,6 +1253,12 @@ impl ProxyConfig {
                             .filter(|v| !v.is_empty())
                             .map(str::to_string),
                         aws_region: aws_region.map(str::to_string),
+                        account_ref: account_ref.map(str::to_string),
+                        region: if entry.shape == WireShape::Bedrock {
+                            aws_region.map(str::to_string)
+                        } else {
+                            configured_region.map(str::to_string)
+                        },
                         local,
                     });
                 }
@@ -1253,80 +1311,6 @@ impl ProxyConfig {
     }
 }
 
-/// The resolved provider upstreams a running proxy forwards to. Published
-/// to request handlers via a `tokio::sync::watch` channel so a config change is
-/// picked up live, without a proxy restart (#449).
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Upstreams {
-    pub anthropic: String,
-    pub openai: String,
-    pub chatgpt: String,
-    pub gemini: String,
-    /// Registry providers from `[[proxy.providers]]` (universal framework),
-    /// validated and live-reloadable exactly like the built-ins.
-    pub providers: Vec<ResolvedProvider>,
-}
-
-impl Upstreams {
-    /// Look up a registry provider by id (`/providers/{id}/...` route, router
-    /// upstream overrides). Built-ins are not addressed here.
-    #[must_use]
-    pub fn provider_by_id(&self, id: &str) -> Option<&ResolvedProvider> {
-        self.providers.iter().find(|p| p.id == id)
-    }
-}
-
-#[derive(Debug, Clone, Copy)]
-pub enum ProxyProvider {
-    Anthropic,
-    OpenAi,
-    ChatGpt,
-    Gemini,
-}
-
-/// Why a running proxy's live upstream differs from what the operator expects.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum UpstreamDrift {
-    /// A `LEAN_CTX_*_UPSTREAM` env var is set in *this* process but the proxy
-    /// serves a different value — the env never reached the MCP/service-spawned
-    /// proxy. This is the #449 trap: Codex (and other MCP hosts) launch the
-    /// server with a stripped, allowlisted env that omits `LEAN_CTX_*_UPSTREAM`,
-    /// so the proxy it spawns never sees it. Fix: persist it to config.toml,
-    /// which the proxy reads live.
-    EnvNotApplied,
-    /// The proxy serves a value other than config.toml resolves to: it was
-    /// started with an env override that now masks a later config edit. Fix:
-    /// `lean-ctx proxy restart`.
-    ConfigNotApplied,
-}
-
-/// The `LEAN_CTX_*_UPSTREAM` override visible to *this* process for a provider,
-/// normalized (`None` if unset/blank). Lets status/doctor explain why an env var
-/// a user exported in their shell never reaches an MCP/service-spawned proxy.
-pub fn env_upstream_override(provider: ProxyProvider) -> Option<String> {
-    let var = match provider {
-        ProxyProvider::Anthropic => "LEAN_CTX_ANTHROPIC_UPSTREAM",
-        ProxyProvider::OpenAi => "LEAN_CTX_OPENAI_UPSTREAM",
-        ProxyProvider::ChatGpt => "LEAN_CTX_CHATGPT_UPSTREAM",
-        ProxyProvider::Gemini => "LEAN_CTX_GEMINI_UPSTREAM",
-    };
-    std::env::var(var).ok().and_then(|v| normalize_url_opt(&v))
-}
-
-/// Diagnose upstream drift for one provider from the CLI-visible env override
-/// (`env`), the config.toml value (`disk`) and the proxy's live value (`live`).
-/// `None` means in sync.
-pub fn diagnose_drift(env: Option<&str>, disk: &str, live: &str) -> Option<UpstreamDrift> {
-    if let Some(env) = env {
-        // An env override is present in this process: the proxy honours it only
-        // if it was started with it. If the proxy serves something else, the env
-        // never reached it (#449). If it matches, that is consistent (no drift).
-        return (env != live).then_some(UpstreamDrift::EnvNotApplied);
-    }
-    // No env override here: the proxy should mirror config.toml.
-    (disk != live).then_some(UpstreamDrift::ConfigNotApplied)
-}
-
 /// Resolve a tri-state boolean toggle for the default-**on** proxy features: an
 /// explicit `on`/`off`-style environment variable wins, then the config
 /// `Option<bool>`, else `default`. Lets an operator force a feature on **or** off
@@ -1349,103 +1333,6 @@ fn env_bool_or(env_key: &str, configured: Option<bool>, default: bool) -> bool {
 /// would otherwise gut them. Protect anything namespaced `serena` by default.
 fn default_live_compress_exclude() -> Vec<String> {
     vec!["serena".to_string()]
-}
-
-pub fn normalize_url(value: &str) -> String {
-    value.trim().trim_end_matches('/').to_string()
-}
-
-pub fn normalize_url_opt(value: &str) -> Option<String> {
-    let trimmed = normalize_url(value);
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed)
-    }
-}
-
-const ALLOWED_UPSTREAM_HOSTS: &[&str] = &[
-    "api.anthropic.com",
-    "api.openai.com",
-    "chatgpt.com",
-    "generativelanguage.googleapis.com",
-    // xAI Grok (OpenAI-compatible). Used by auto-seeded registry providers
-    // when `lean-ctx proxy enable` wires Grok (API-key rail + subscription rail).
-    "api.x.ai",
-    "cli-chat-proxy.grok.com",
-    // Command Code gateway. Used by the auto-seeded `commandcode` registry
-    // provider when `lean-ctx proxy enable` wires Command Code.
-    "api.commandcode.ai",
-];
-
-pub(super) fn validate_upstream_url(
-    url: &str,
-    allow_insecure_http: bool,
-    allow_custom_host: bool,
-) -> Result<String, String> {
-    let normalized = normalize_url(url);
-    // Loopback HTTP never leaves the machine — always allowed.
-    if is_local_proxy_url(&normalized) {
-        return Ok(normalized);
-    }
-
-    // A non-loopback plaintext `http://` upstream is reachable only through the
-    // explicit opt-in (#440). The old code rejected it on the HTTPS check *before*
-    // any override could apply, and pointed at `LEAN_CTX_ALLOW_CUSTOM_UPSTREAM`,
-    // which never lifted the scheme restriction. Handle it up front: the opt-in
-    // implies a deliberate custom host on a trusted local network, so it needs no
-    // separate allowlist check; otherwise give a hint that actually works.
-    if normalized.starts_with("http://") {
-        if allow_insecure_http {
-            return Ok(normalized);
-        }
-        return Err(format!(
-            "upstream URL must use HTTPS: {normalized} (for a trusted local-network HTTP \
-             upstream opt in with LEAN_CTX_ALLOW_INSECURE_HTTP_UPSTREAM=1 or \
-             `[proxy] allow_insecure_http_upstream = true`)"
-        ));
-    }
-    let Some(host_segment) = normalized.strip_prefix("https://") else {
-        return Err(format!(
-            "upstream URL must start with http:// or https://: {normalized}"
-        ));
-    };
-
-    let host = host_segment.split('/').next().unwrap_or("");
-    let host_no_port = host.split(':').next().unwrap_or(host);
-    if ALLOWED_UPSTREAM_HOSTS.contains(&host_no_port) || allow_custom_host {
-        Ok(normalized)
-    } else {
-        Err(format!(
-            "upstream host '{host_no_port}' not in allowlist {ALLOWED_UPSTREAM_HOSTS:?} (for a \
-             custom upstream host opt in with LEAN_CTX_ALLOW_CUSTOM_UPSTREAM=1 or \
-             `[proxy] allow_custom_upstream = true`)"
-        ))
-    }
-}
-
-/// True when `url` is an HTTPS upstream whose host is not in the built-in
-/// allowlist (and not loopback) — the case the `allow_custom_upstream` opt-in
-/// governs. Plaintext-HTTP custom hosts are governed by
-/// `allow_insecure_http_upstream` instead, so they are excluded here.
-fn is_custom_upstream_host(url: &str) -> bool {
-    let n = normalize_url(url);
-    if is_local_proxy_url(&n) {
-        return false;
-    }
-    let Some(host_segment) = n.strip_prefix("https://") else {
-        return false;
-    };
-    let host = host_segment.split('/').next().unwrap_or("");
-    let host_no_port = host.split(':').next().unwrap_or(host);
-    !host_no_port.is_empty() && !ALLOWED_UPSTREAM_HOSTS.contains(&host_no_port)
-}
-
-pub fn is_local_proxy_url(value: &str) -> bool {
-    let n = normalize_url(value);
-    n.starts_with("http://127.0.0.1:")
-        || n.starts_with("http://localhost:")
-        || n.starts_with("http://[::1]:")
 }
 
 #[cfg(test)]

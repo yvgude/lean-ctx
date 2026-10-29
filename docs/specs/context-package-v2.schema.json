@@ -72,8 +72,18 @@
           "description": "Legacy v1 layer indicators"
         },
         "dependencies": {
-          "type": "array",
-          "items": { "$ref": "#/$defs/Dependency" }
+          "description": "Direct dependencies. Writers emit the list form; readers MUST also accept the map form (scoped name -> SemVer range).",
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/Dependency" } },
+            { "$ref": "#/$defs/DependencyMap" }
+          ]
+        },
+        "optional_dependencies": {
+          "description": "Dependencies whose installation is attempted; a failure MUST NOT abort the install and MUST be reported. Same shapes as dependencies.",
+          "oneOf": [
+            { "type": "array", "items": { "$ref": "#/$defs/Dependency" } },
+            { "$ref": "#/$defs/DependencyMap" }
+          ]
         },
         "tags": {
           "type": "array",
@@ -300,6 +310,10 @@
         "license": { "type": "string" }
       }
     },
+    "DependencyMap": {
+      "type": "object",
+      "additionalProperties": { "type": "string", "description": "SemVer range" }
+    },
     "Dependency": {
       "type": "object",
       "required": ["name", "version_req"],
@@ -365,7 +379,13 @@
         },
         "value": {
           "type": "string",
-          "pattern": "^[a-f0-9]{128}$"
+          "pattern": "^[a-f0-9]{128}$",
+          "description": "Ed25519 over the identity message (spec section 9): name, version and integrity.sha256."
+        },
+        "manifest_value": {
+          "type": "string",
+          "pattern": "^[a-f0-9]{128}$",
+          "description": "Ed25519 over the manifest message (spec section 9): the whole manifest without its signature member. Absent = identity-only coverage."
         }
       }
     },

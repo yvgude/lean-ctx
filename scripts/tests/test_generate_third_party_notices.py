@@ -155,11 +155,6 @@ class GeneratorUnitTests(unittest.TestCase):
         second, second_approved = GEN._generate(ROOT)
         self.assertEqual(first, second)
         self.assertEqual(first_approved, second_approved)
-        self.assertIn(b"dashboard-d3", first)
-        self.assertIn(b"dashboard-chartjs", first)
-        self.assertIn(b"font-inter", first)
-        self.assertIn(b"font-jetbrains-mono", first)
-        self.assertIn(b"font-space-grotesk", first)
         self.assertIn(b"vendored-rmcp", first)
         self.assertIn(b"Modification summary: LeanCTX carries the local JoinSet", first)
         self.assertIn(b"mcp-sdk-bundle", first)
@@ -333,13 +328,11 @@ class GeneratorUnitTests(unittest.TestCase):
             root = Path(name)
             _fixture(root)
             for directory in (
-                "rust/src/dashboard/static/vendor",
                 "rust/crates/vendor",
                 "packages/pi-lean-ctx/extensions/vendor",
-                "rust/src/dashboard/static/fonts",
             ):
                 (root / directory).mkdir(parents=True, exist_ok=True)
-            _write(root, "rust/src/dashboard/static/vendor/unlisted.js", b"unexpected\n")
+            _write(root, "packages/pi-lean-ctx/extensions/vendor/unlisted.js", b"unexpected\n")
             manifest, assets = GEN._load_manifest(root)
             del manifest
             with self.assertRaisesRegex(GEN.GenerationError, "missing asset manifest entry"):
@@ -359,11 +352,15 @@ class GeneratorUnitTests(unittest.TestCase):
             1,
         )
         self.assertEqual(hashlib.sha256(canonical).hexdigest(), digest)
-        self.assertEqual(text.count("### OFL-1.1"), 1)
-        self.assertIn("font-inter", text)
-        self.assertIn("font-space-grotesk", text)
+        # Several shipped assets are MIT; the licence text appears once.
+        self.assertEqual(text.count("### MIT\n"), 1)
 
     def test_normal_provenance_checker_invokes_generator_path(self) -> None:
+        # The audit describes the public host tree. The private consolidated
+        # tree also holds `ee/`, `sdk/` and agent skills, which the audit rightly
+        # rejects; there it runs on the public export instead (R05).
+        if (ROOT / "ee").is_dir():
+            self.skipTest("private consolidated tree: the provenance audit runs on the export")
         result = subprocess.run(
             [sys.executable, "scripts/ip-provenance-audit.py", "--root", "."],
             cwd=ROOT,

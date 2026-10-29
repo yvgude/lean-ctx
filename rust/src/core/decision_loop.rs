@@ -107,8 +107,6 @@ impl DecisionLoop {
                 provider: cost.provider.clone(),
                 success,
                 outcome_signals: signals,
-                shadow_auto_record: false,
-                shadow_tokens: None,
                 proxy_economics: None,
                 heatmap: None,
             },

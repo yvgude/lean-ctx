@@ -1,0 +1,59 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "Only Thinkery moderators read reports."
+        }
+      },
+      "status": 403
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/moderation/reports?state=open",
+  "request": null,
+  "response": {
+    "body": {
+      "items": [
+        {
+          "contact_email": "alex@example.org",
+          "contact_name": "Alex Doe",
+          "created_at": "2026-10-24T07:58:00Z",
+          "note": "This page shares stolen card data.",
+          "place": {
+            "kind": "vault",
+            "name": "public-notes",
+            "ws": "acme"
+          },
+          "reason": "illegal",
+          "report_id": "rpt_4712",
+          "reports_count": 2,
+          "state": "open",
+          "target_id": "n_zcjqmmor453nyxqgshlgpogwdm",
+          "target_kind": "vault_node",
+          "weight": 1
+        },
+        {
+          "created_at": "2026-10-24T07:50:00Z",
+          "note": null,
+          "place": {
+            "kind": "vault",
+            "name": "public-notes",
+            "ws": "acme"
+          },
+          "reason": "secret_or_pii",
+          "report_id": "rpt_4711",
+          "reports_count": 2,
+          "state": "open",
+          "target_id": "n_zcjqmmor453nyxqgshlgpogwdm",
+          "target_kind": "vault_node",
+          "weight": 0.5
+        }
+      ],
+      "next_cursor": null
+    },
+    "status": 200
+  },
+  "route": "W63"
+}

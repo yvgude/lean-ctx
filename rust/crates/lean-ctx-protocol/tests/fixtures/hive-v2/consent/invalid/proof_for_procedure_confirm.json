@@ -1,0 +1,14 @@
+{
+  "case": "proof_for_procedure_confirm",
+  "base": "consent/proof.ed25519.swarm_join.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/kind",
+      "value": "procedure_confirm"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

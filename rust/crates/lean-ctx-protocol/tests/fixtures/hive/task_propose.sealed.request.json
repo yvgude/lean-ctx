@@ -1,0 +1,14 @@
+{
+  "origin": {
+    "kind": "agent"
+  },
+  "schema": "leanctx.hive.task-propose/v1",
+  "sealed": {
+    "alg": "xchacha20poly1305",
+    "ciphertext": "6mVB0KFmhK6usA1KSnBMN3B1fauM6nSXgE1oQKVz/MCWkqB/aBU1dP66krG9ggT99p2t7yYkWjmErmXo723X6Jl1K5oduTsT1YjNb7biEv8HGh7crJ4Sv4ZF18vp0uOMbJSGDf0qXHuMXwS69AerThEu1YDCaAvbqF82C+O7Cv3VwTIabS05Yf7IcxVkRmo6xo0jaeoLJy2UowJe1JUaHLCCC3IQ",
+    "content_schema": "leanctx.hive.sealed-task/v1",
+    "epoch": 1,
+    "nonce": "cHBwcHBwcHBwcHBwcHBwcHBwcHBwcHBw"
+  },
+  "session_ref": "ses_01jb8z7"
+}

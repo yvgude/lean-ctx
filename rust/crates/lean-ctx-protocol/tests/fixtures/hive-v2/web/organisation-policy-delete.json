@@ -1,0 +1,56 @@
+{
+  "route": "W85",
+  "method": "DELETE",
+  "path": "/api/v1/companies/acme-group/policies/org?expected_version=2",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "level": "org",
+      "scope": "orgn_9e8d7c6b5a4f30211f2e3d4c5b6a7980",
+      "version": 3,
+      "document": null,
+      "digest": null,
+      "updated_by": {
+        "kind": "user",
+        "user": {
+          "id": "0b9a8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d",
+          "name": "Ada"
+        },
+        "instance": null,
+        "agent": null
+      },
+      "updated_at": "2026-10-26T09:20:00Z"
+    }
+  },
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "human_session_required",
+          "message": "only a person signed in on the web may do this"
+        }
+      },
+      "status": 403
+    },
+    {
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "confirm with your authenticator code first"
+        }
+      },
+      "status": 403
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "there is no policy to remove",
+          "state": "no_document"
+        }
+      },
+      "status": 409
+    }
+  ]
+}

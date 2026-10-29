@@ -5,7 +5,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex};
 
-use super::{CognitiveMode, Config, ConfigCacheSlot, default_shell_allowlist};
+use super::{Config, ConfigCacheSlot, default_shell_allowlist};
 
 const CONFIG_PROFILE_ENV: &str = "LEAN_CTX_CONFIG_PROFILE";
 
@@ -22,9 +22,26 @@ pub(super) fn parse_config_with_profile(
     raw: &str,
     explicit_profile: Option<&str>,
 ) -> Result<Config, String> {
+    resolve_config_table(raw, explicit_profile)?
+        .try_into()
+        .map_err(|error: toml::de::Error| error.to_string())
+}
+
+/// The TOML document `raw` describes once its selected profile overlay is
+/// applied (and legacy compression keys are migrated), before it becomes a
+/// [`Config`]: a merge can see which keys the document sets.
+pub(super) fn resolve_config_table(
+    raw: &str,
+    explicit_profile: Option<&str>,
+) -> Result<toml::Value, String> {
     let migrated = Config::migrate_v3_compression_document(raw)?;
     let raw = migrated.as_deref().unwrap_or(raw);
     let mut value: toml::Value = toml::from_str(raw).map_err(|error| error.to_string())?;
+    super::renamed::apply(
+        value
+            .as_table_mut()
+            .expect("a TOML document always has a root table"),
+    );
     let configured_profile = value.get("config_profile").and_then(toml::Value::as_str);
     let selected = explicit_profile
         .map(str::trim)
@@ -46,6 +63,7 @@ pub(super) fn parse_config_with_profile(
                 "config profile '{name}' cannot override reserved profile keys"
             ));
         }
+        super::renamed::apply(&mut overlay);
         merge_toml_tables(
             value
                 .as_table_mut()
@@ -54,7 +72,7 @@ pub(super) fn parse_config_with_profile(
         );
     }
 
-    value.try_into().map_err(|error| error.to_string())
+    Ok(value)
 }
 
 fn merge_toml_tables(base: &mut toml::Table, overlay: toml::Table) {
@@ -90,6 +108,34 @@ fn record_parse_error(err: Option<String>) {
     }
 }
 
+/// Why a loaded [`Config`] holds built-in defaults although a global
+/// `config.toml` is present. Carried on the snapshot itself
+/// ([`Config::load_failure`]), so a decision that depends on "were the
+/// operator's settings applied?" reads it from the very value it uses.
+/// [`last_config_parse_error`] is a diagnostic for humans and must not be used
+/// for that: it is process-global and a later load overwrites it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ConfigLoadFailure {
+    /// The file exists but could not be read as text: permission denied,
+    /// invalid UTF-8, a directory in its place, or another I/O error. A file
+    /// that is simply absent (clean install) is not a failure.
+    Unreadable,
+    /// The file was read but is not a valid configuration: TOML syntax, a
+    /// field of the wrong type, or a selected profile that is not defined.
+    Invalid,
+}
+
+impl ConfigLoadFailure {
+    /// Stable reason code for refusals and diagnostics.
+    #[must_use]
+    pub fn code(self) -> &'static str {
+        match self {
+            Self::Unreadable => "config.global_unreadable",
+            Self::Invalid => "config.global_invalid",
+        }
+    }
+}
+
 /// Reset every SECURITY-sensitive field of a parsed project-local `Config` back
 /// to its default, returning the names of the ones that actually carried an
 /// override. Used by [`Config::merge_local`] for untrusted workspaces: clearing a
@@ -120,6 +166,21 @@ pub(crate) fn strip_sensitive_overrides(local: &mut Config) -> Vec<&'static str>
     if !local.extra_roots.is_empty() {
         local.extra_roots.clear();
         withheld.push("extra_roots");
+    }
+    // Shell-redirect write targets widen what lean-ctx may write.
+    if !local.write_allow_paths.is_empty() {
+        local.write_allow_paths.clear();
+        withheld.push("write_allow_paths");
+    }
+    // Read-only roots also resolve reads like extra roots (#475).
+    if !local.read_only_roots.is_empty() {
+        local.read_only_roots.clear();
+        withheld.push("read_only_roots");
+    }
+    // `off` skips the native-read redirect and the redaction it applies.
+    if local.read_redirect == super::ReadRedirect::Off {
+        local.read_redirect = super::ReadRedirect::default();
+        withheld.push("read_redirect");
     }
     if !local.allow_symlink_roots.is_empty() {
         local.allow_symlink_roots.clear();
@@ -201,6 +262,15 @@ pub(crate) fn strip_sensitive_overrides(local: &mut Config) -> Vec<&'static str>
     withheld
 }
 
+/// Tell the gateway evidence store the ceiling this configuration gives.
+/// The store's writers run deep inside calls and must not load a
+/// configuration themselves (`receipt_store::capacity`, G09).
+fn note_gateway_store_ceiling(cfg: &Config) {
+    crate::core::context_admission::receipt_store::capacity::note_configured_ceiling(
+        cfg.gateway_store_configured_mb(),
+    );
+}
+
 /// Names of the SECURITY-sensitive overrides a project-local `.lean-ctx.toml`
 /// carries — the keys `strip_sensitive_overrides` would withhold for an
 /// untrusted workspace. Read-only (parses a throwaway `Config`); used by
@@ -252,8 +322,18 @@ impl Config {
     /// cwd), cached for the process. Exposed crate-wide so workspace-trust and the
     /// CLI agree with config loading on *which* directory a `.lean-ctx.toml`
     /// belongs to (GH security audit, finding 4).
+    ///
+    /// Inside a request the request's bound project is the root, uncached: a
+    /// server serving several projects must apply each one's own
+    /// `.lean-ctx.toml` and trust, never the first one it happened to resolve
+    /// (AP04-G3).
     pub(crate) fn find_project_root() -> Option<String> {
         static ROOT_CACHE: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+        if let Ok(project) =
+            crate::core::policy::runtime::REQUEST_PROJECT.try_with(|slot| slot.borrow().clone())
+        {
+            return project.map(|root| root.to_string_lossy().into_owned());
+        }
         ROOT_CACHE
             .get_or_init(Self::find_project_root_inner)
             .clone()
@@ -355,8 +435,14 @@ impl Config {
 
         let local_path = project_root.map(Self::local_path);
 
-        // Read raw content up front so the cache key is a content hash.
-        let global_content = std::fs::read_to_string(&path).ok();
+        // Read raw content up front so the cache key is a content hash. Only a
+        // file that is absent counts as "no config"; any other read error
+        // means settings exist that could not be applied.
+        let (global_content, unreadable) = match std::fs::read_to_string(&path) {
+            Ok(content) => (Some(content), None),
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => (None, None),
+            Err(error) => (None, Some(error.kind())),
+        };
         // TCC (#356): never read a project-local `.lean-ctx.toml` under
         // ~/Documents from a launchd-standalone process — the read pops the
         // macOS privacy prompt. `find_project_root` already avoids returning
@@ -366,8 +452,17 @@ impl Config {
             .filter(|p| crate::core::pathutil::may_probe_path(p.as_path()))
             .and_then(|p| std::fs::read_to_string(p).ok());
 
-        let global_hash = global_content.as_deref().map(crate::core::hasher::hash_str);
+        // An unreadable file gets its own cache key, distinct from "absent".
+        let global_hash = global_content
+            .as_deref()
+            .map(crate::core::hasher::hash_str)
+            .or_else(|| unreadable.map(|kind| format!("unreadable:{kind:?}")));
         let local_hash = local_content.as_deref().map(crate::core::hasher::hash_str);
+        // Trust is per project: equal local files of two projects are not one
+        // cache entry.
+        let local_key = local_hash
+            .as_deref()
+            .map(|hash| format!("{}\0{hash}", project_root.unwrap_or_default()));
         let selected_profile = environment_config_profile();
 
         // Finding 4: a project-local `.lean-ctx.toml`'s SECURITY-sensitive
@@ -394,13 +489,15 @@ impl Config {
                 cached_trusted,
             )) = *guard
             && *cached_global == global_hash
-            && *cached_local == local_hash
+            && *cached_local == local_key
             && *cached_profile == selected_profile
             && cached_trusted == trusted
         {
+            note_gateway_store_ceiling(cfg);
             return Arc::clone(cfg);
         }
 
+        let mut failure = unreadable.map(|_| ConfigLoadFailure::Unreadable);
         let mut cfg: Config = if let Some(ref content) = global_content {
             match parse_config_with_profile(content, selected_profile.as_deref()) {
                 Ok(c) => {
@@ -408,6 +505,7 @@ impl Config {
                     c
                 }
                 Err(e) => {
+                    failure = Some(ConfigLoadFailure::Invalid);
                     record_parse_error(Some(e.clone()));
                     tracing::warn!("config parse error in {}: {e}", path.display());
                     eprintln!(
@@ -418,6 +516,16 @@ impl Config {
                     Self::default()
                 }
             }
+        } else if let Some(kind) = unreadable {
+            let message = format!("cannot read config: {kind}");
+            record_parse_error(Some(message.clone()));
+            tracing::warn!("{message} ({})", path.display());
+            eprintln!(
+                "\x1b[33m[lean-ctx] WARNING: {message} ({})\n  \
+                 Using defaults. Run `lean-ctx doctor --fix` to repair.\x1b[0m",
+                path.display()
+            );
+            Self::default()
         } else {
             record_parse_error(None);
             Self::default()
@@ -427,19 +535,26 @@ impl Config {
             cfg.merge_local(local, trusted);
         }
 
-        cfg.migrate_v4_config_on_disk();
+        // A snapshot of defaults standing in for an unusable file must not be
+        // migrated back to disk.
+        if failure.is_none() {
+            cfg.migrate_v4_config_on_disk();
+        }
+        // Last, so no merge step can drop it: the marker belongs to this value.
+        cfg.load_failure = failure;
 
         let cfg = Arc::new(cfg);
         if let Ok(mut guard) = cache.lock() {
             *guard = Some((
                 Arc::clone(&cfg),
                 global_hash,
-                local_hash,
+                local_key,
                 selected_profile,
                 trusted,
             ));
         }
 
+        note_gateway_store_ceiling(&cfg);
         cfg
     }
 
@@ -499,9 +614,6 @@ impl Config {
                 self.telemetry.enabled = true;
                 self.telemetry.preference = super::TelemetryPreference::ExplicitlyEnabled;
             }
-        }
-        if matches!(self.cognitive_mode, CognitiveMode::Basic) {
-            self.cognitive_mode = CognitiveMode::Full;
         }
         let Some(path) = path else {
             return;
@@ -573,16 +685,8 @@ impl Config {
         if let Some(next) = Self::validated_v3_compression_document(&updated, selected_profile)? {
             updated = next;
         }
-        let mut document = updated
-            .parse::<toml_edit::DocumentMut>()
-            .map_err(|error| error.to_string())?;
-        if document
-            .get("cognitive_mode")
-            .and_then(toml_edit::Item::as_str)
-            == Some("basic")
-        {
-            document["cognitive_mode"] = toml_edit::value("full");
-            updated = document.to_string();
+        if let Some(next) = super::retired::migrate_retired_document(&updated)? {
+            updated = next;
         }
         parse_config_with_profile(&updated, selected_profile)?;
         Ok((updated != raw).then_some(updated))

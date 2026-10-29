@@ -3,7 +3,7 @@
 
 #[allow(clippy::wildcard_imports)]
 use crate::doctor::common::*;
-use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, YELLOW};
+use crate::doctor::{BOLD, DIM, GREEN, Outcome, RED, RST, WHITE, YELLOW};
 use std::net::TcpListener;
 
 /// Cognition v2 activation: how many science-backed subsystems have actually
@@ -288,7 +288,7 @@ pub(crate) fn port_3333_outcome() -> Outcome {
     match TcpListener::bind("127.0.0.1:3333") {
         Ok(_listener) => Outcome {
             ok: true,
-            line: format!("{BOLD}Dashboard port 3333{RST}  {GREEN}available on 127.0.0.1{RST}"),
+            line: format!("{BOLD}Cockpit port 3333{RST}  {GREEN}available on 127.0.0.1{RST}"),
         },
         // #644: a busy port is only a problem if it's *not* us. Reuse the dashboard's
         // own auth-aware /api/version probe (single source of truth) so our own
@@ -296,12 +296,12 @@ pub(crate) fn port_3333_outcome() -> Outcome {
         Err(_) if crate::dashboard::dashboard_responding("127.0.0.1", 3333) => Outcome {
             ok: true,
             line: format!(
-                "{BOLD}Dashboard port 3333{RST}  {GREEN}already serving lean-ctx dashboard{RST}  {DIM}(http://localhost:3333){RST}"
+                "{BOLD}Cockpit port 3333{RST}  {GREEN}already serving the LeanCTX Cockpit{RST}  {DIM}(http://localhost:3333){RST}"
             ),
         },
         Err(e) => Outcome {
             ok: false,
-            line: format!("{BOLD}Dashboard port 3333{RST}  {RED}not available: {e}{RST}"),
+            line: format!("{BOLD}Cockpit port 3333{RST}  {RED}not available: {e}{RST}"),
         },
     }
 }
@@ -419,7 +419,7 @@ pub(crate) fn session_state_outcome() -> Outcome {
             None => Outcome {
                 ok: true,
                 line: format!(
-                    "{BOLD}Session state{RST}  {YELLOW}no active session{RST}  {DIM}(will be created on first tool call){RST}"
+                    "{BOLD}Session state{RST}  {WHITE}no active session{RST}  {DIM}(will be created on first tool call){RST}"
                 ),
             },
         },
@@ -530,6 +530,30 @@ pub(crate) fn docker_env_outcomes() -> Vec<Outcome> {
 
     outcomes
 }
+
+/// Hive org policy compliance, shown only on an enrolled instance. A refused
+/// bundle (a required filter pack missing or not as signed, an older or
+/// tampered policy) is a warning, never a failure: local work goes on under
+/// the last verified bundle. Local files only — no network.
+pub(crate) fn hive_policy_outcome() -> Option<Outcome> {
+    use crate::core::hive::{policy, state::HiveStore};
+    let store = HiveStore::open().ok()?;
+    store.instance().ok().flatten()?;
+    let state = policy::load_state(store.data_dir());
+    let line = match (&state.last_refusal, state.org_state.as_deref()) {
+        (Some(refusal), _) => format!(
+            "{BOLD}Hive policy{RST}     {YELLOW}not compliant: {refusal}{RST}  {DIM}(the last verified bundle stays; see lean-ctx hive status){RST}"
+        ),
+        (None, Some("required")) => format!(
+            "{BOLD}Hive policy{RST}     {GREEN}v{} verified with {} filter pack(s){RST}",
+            state.policy_version,
+            state.filter_packs.len()
+        ),
+        (None, _) => format!("{BOLD}Hive policy{RST}     {DIM}no org policy in force{RST}"),
+    };
+    Some(Outcome { ok: true, line })
+}
+
 /// The optional lean-ctx Claude Code mod: shown when Claude Code is present,
 /// never a failure when absent (it is opt-in). File-only — no `claude` spawn.
 pub(crate) fn claude_mod_outcome() -> Option<Outcome> {

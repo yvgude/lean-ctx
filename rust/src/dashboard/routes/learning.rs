@@ -2,7 +2,6 @@
 //!
 //! Surfaces what the learning layers (#538–#544) have actually learned, plus
 //! the efficacy evidence (#549) that the adaptation works:
-//! - learned compression-threshold deltas per extension
 //! - LITM placement calibration per client profile
 //! - the session playbook (distilled strategies/pitfalls/facts)
 //! - currently active stigmergy scents
@@ -17,22 +16,6 @@ pub(super) fn handle(
     if path != "/api/learning" || !method.eq_ignore_ascii_case("GET") {
         return None;
     }
-
-    let thresholds: Vec<serde_json::Value> = crate::core::threshold_learning::snapshot()
-        .into_iter()
-        .map(|(ext, d)| {
-            serde_json::json!({
-                "extension": ext,
-                "delta_entropy": d.delta_entropy,
-                "samples": d.samples,
-                // Positive delta -> compresses more aggressively; negative ->
-                // backs off because bounces/edit-failures were observed.
-                "direction": if d.delta_entropy > 0.0 { "more_compression" }
-                             else if d.delta_entropy < 0.0 { "less_compression" }
-                             else { "neutral" },
-            })
-        })
-        .collect();
 
     let litm: Vec<serde_json::Value> = crate::core::litm_calibration::snapshot()
         .into_iter()
@@ -83,7 +66,6 @@ pub(super) fn handle(
         .collect();
 
     let body = serde_json::json!({
-        "thresholds": thresholds,
         "litm": litm,
         "playbook": playbook,
         "scents": scents,

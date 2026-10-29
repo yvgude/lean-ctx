@@ -129,22 +129,46 @@ pub fn install_skill_for_agent(home: &std::path::Path, agent_key: &str) -> Resul
 /// Install SKILL.md for all detected agents.
 /// Returns `Vec<(display_name, was_new_or_updated)>`.
 pub fn install_all_skills(home: &std::path::Path) -> Vec<(String, bool)> {
+    install_skills_where(home, &|_| true)
+}
+
+/// SKILL.md files a setup run would write for the agents `allows` admits.
+/// Writes nothing.
+#[must_use]
+pub fn planned_skill_files(
+    home: &std::path::Path,
+    allows: &dyn Fn(&str) -> bool,
+) -> Vec<(String, PathBuf)> {
+    if crate::core::config::Config::load().rules_injection_effective()
+        == crate::core::config::RulesInjection::Off
+    {
+        return Vec::new();
+    }
+    build_skill_targets(home)
+        .into_iter()
+        .filter(|t| allows(t.agent_key) && is_skill_agent_detected(t.agent_key, home))
+        .map(|t| (t.display_name.to_string(), t.skill_dir.join("SKILL.md")))
+        .collect()
+}
+
+/// [`install_all_skills`] restricted to the agents `allows` admits.
+pub fn install_skills_where(
+    home: &std::path::Path,
+    allows: &dyn Fn(&str) -> bool,
+) -> Vec<(String, bool)> {
     // `rules_injection = off`: the user opted out of lean-ctx-authored steering
     // entirely (GH #361). The on-demand SKILL.md is part of that surface, so
     // write none — mirrors `inject_all_rules`'s early return.
-    let cfg = crate::core::config::Config::load();
-    if cfg.rules_injection_effective() == crate::core::config::RulesInjection::Off {
+    if crate::core::config::Config::load().rules_injection_effective()
+        == crate::core::config::RulesInjection::Off
+    {
         return Vec::new();
     }
     let targets = build_skill_targets(home);
     let mut results = Vec::new();
 
     for target in &targets {
-        if !is_skill_agent_detected(target.agent_key, home)
-            || !cfg
-                .setup
-                .allows_agent(target.agent_key, target.display_name)
-        {
+        if !allows(target.agent_key) || !is_skill_agent_detected(target.agent_key, home) {
             continue;
         }
 

@@ -20,6 +20,14 @@ fn main() {
     // allocator must never be freed by the other (#2075).
     lean_ctx::core::memory_guard::route_tree_sitter_to_jemalloc();
 
+    // Before any TLS client: the tree enables two rustls providers, so the
+    // process default must be named (the Hive bus relay panicked without it).
+    lean_ctx::core::crypto_provider::install_default();
+
+    // Which binary this process runs, so a long-lived MCP server can tell an
+    // agent when an install replaced it on disk.
+    lean_ctx::core::binary_identity::record_start();
+
     // Seal the inherited capability before the TCC guard can spawn a probe or
     // re-exec. An orphaned bootstrap may fail closed; its FD must not reach a
     // helper started before the normal CLI receiver takes ownership.

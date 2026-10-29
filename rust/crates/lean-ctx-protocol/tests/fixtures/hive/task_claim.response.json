@@ -1,0 +1,9 @@
+{
+  "claim": {
+    "fencing_token": 7,
+    "lease_id": "lse_01jbtask7"
+  },
+  "number": 7,
+  "schema": "leanctx.hive.task-claim/v1",
+  "until": "2026-10-20T12:15:00Z"
+}

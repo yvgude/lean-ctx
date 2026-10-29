@@ -404,8 +404,11 @@ mod tests {
     /// parallel competed with each other for the CPU and measured that
     /// contention (1.05 s against the 1 s budget on a busy runner).
     fn report() -> &'static BenchmarkReport {
-        static REPORT: std::sync::LazyLock<BenchmarkReport> =
-            std::sync::LazyLock::new(run_benchmark);
+        static REPORT: std::sync::LazyLock<BenchmarkReport> = std::sync::LazyLock::new(|| {
+            let _data = crate::core::data_dir::isolated_data_dir();
+            let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+            run_benchmark()
+        });
         &REPORT
     }
 

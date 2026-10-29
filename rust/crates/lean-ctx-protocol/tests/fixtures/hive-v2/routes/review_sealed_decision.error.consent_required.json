@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "consent_required",
+    "message": "Confirm this procedure in the browser first.",
+    "kind": "procedure_confirm",
+    "reason": "missing"
+  }
+}

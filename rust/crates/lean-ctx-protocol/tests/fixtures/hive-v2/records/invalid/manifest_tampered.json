@@ -1,0 +1,14 @@
+{
+  "case": "manifest_tampered",
+  "base": "records/snapshot_manifest.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/seq",
+      "value": 17
+    }
+  ],
+  "expect": {
+    "layer": "signature"
+  }
+}

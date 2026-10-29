@@ -83,17 +83,29 @@ pub(crate) fn cmd_explore(args: &[String]) {
     };
 
     let opts = ExploreOptions::new(parsed.max_turns, parsed.citation);
-    let outcome = ctx_explore::handle(&query, &parsed.path, CrpMode::Off, &opts);
-
-    if outcome.text.starts_with("ERROR") {
-        eprintln!("explore: {}", outcome.text.trim_start_matches("ERROR: "));
-        std::process::exit(1);
-    }
-
-    if parsed.json {
-        println!("{}", to_json(&outcome.citations));
-    } else {
-        println!("{}", outcome.text);
+    // One tool run for the CLI (request scope, capture, release, redaction,
+    // lineage — see `CliToolRun`). The printed text is the released one; a
+    // tool error is reported on stderr and is never a carrier.
+    let json = parsed.json;
+    let run = super::common::CliToolRun::new("ctx_explore", &parsed.path, None);
+    let run = if json { run.human_facing() } else { run };
+    let printed = run.deliver(|| {
+        let outcome = ctx_explore::handle(&query, &parsed.path, CrpMode::Off, &opts);
+        if outcome.text.starts_with("ERROR") {
+            return Err(outcome.text.trim_start_matches("ERROR: ").to_string());
+        }
+        Ok(if json {
+            to_json(&outcome.citations)
+        } else {
+            outcome.text
+        })
+    });
+    match printed {
+        Ok(text) => super::common::print_released(&text),
+        Err(error) => {
+            eprintln!("explore: {error}");
+            std::process::exit(1);
+        }
     }
 }
 

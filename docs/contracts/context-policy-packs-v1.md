@@ -77,20 +77,17 @@ an error (`AllowDenyOverlap`) — a pack cannot both allow and deny a tool.
 | `baseline` | — | secret redaction (PEM keys, AWS, credential assignments, bearer tokens), `auto` mode, 90-day audit expectation |
 | `strict-redaction` | baseline | + JWT/GitHub/GitLab/Slack/OpenAI/Anthropic/Stripe/DB-URL coverage, `map` mode, 180 days |
 | `open-source` | baseline | permissive, keeps secret coverage, 30 days |
-| `finance-eu` | strict-redaction | + IBAN/payment-card/EU-VAT/SWIFT, denies `ctx_url_read`, 12 k cap, 365 days, **PII filter + egress DLP** |
-| `healthcare` | strict-redaction | + SSN/MRN/member-id/DOB/NPI (HIPAA-aligned), denies `ctx_url_read`, 12 k cap, 2 190 days, **PII filter + egress DLP** |
-| `soc2-context` | strict-redaction | SOC 2 TSC slice (CC6.1/CC6.6/C1.1), denies `ctx_url_read`, 16 k cap, 365 days, **PII filter + egress DLP** |
-| `iso42001-aligned` | strict-redaction | ISO/IEC 42001 Annex A (A.7.4/A.9.2/A.9.4), denies `ctx_url_read`, 16 k cap, 365 days, **PII filter + egress DLP** |
-| `eu-ai-act-deployer` | strict-redaction | EU AI Act deployer (Art. 10(5)/14(4)(e)/26(6)), denies `ctx_url_read`, 12 k cap, 365 days, **PII filter + egress DLP** |
 
 Built-ins are embedded at compile time (`include_str!`) and covered by tests:
 every pack must parse, validate, resolve and retain the baseline secret
-coverage; the regulated packs must deny web fetches and pin budgets. The five
-regulated packs additionally ship `[filters]` (PII redaction, prompt-injection
-handling) and `[egress]` (`block_secrets`, write/action rate limit) so their
-runtime DLP matches the compliance posture they advertise — additive to the
-static framework-coverage claims (the coverage assessment reads redaction /
-tool / budget / retention only, so these sections never inflate a claim).
+coverage.
+
+**Paid packs (2026-10-16).** `healthcare` and `finance-eu` (LeanCTX Pro) and
+`soc2-context`, `iso42001-aligned`, `eu-ai-act-deployer` (LeanCTX Enterprise)
+were built-ins up to 3.11.x. `extends` naming one of them now fails with
+`PolicyError::UnknownParent`, whose message names the tier instead of listing
+the built-ins. Only `baseline`, `strict-redaction` and `open-source` remain
+built-in; `scripts/check-private-paths.py` rejects any other pack in a public path.
 
 ## CLI
 
@@ -213,8 +210,8 @@ Invariants:
    built-in registry and `extends`.
 2. **Conformance scoring against live telemetry** — `policy coverage` (v1) is
    static pack analysis. Runtime evidence is *emitted* (denials audited as
-   `ToolDenied`, redaction/filter counts as `SecretDetected`) and aggregated by
-   `lean-ctx compliance report`; a continuous score is the follow-up.
+   `ToolDenied`, redaction/filter counts as `SecretDetected`) and exported by
+   `lean-ctx audit evidence`; aggregation into a signed report is Enterprise.
 3. Multi-file packs, non-built-in parents (`extends` against local files).
 
 **Historical implementation notes:** earlier work recorded central signed

@@ -27,6 +27,21 @@ pub fn canonical_serialize<T: Serialize>(value: &T) -> Vec<u8> {
     serde_json::to_vec(&sort_json(value)).expect("JSON value must be serializable")
 }
 
+/// `value` in canonical form: every object's keys sorted by byte order,
+/// recursively; arrays keep their order. The one canonical JSON of the engine:
+/// digests, signatures and exact-bytes gates all go through it.
+#[must_use]
+pub fn canonical_value(value: &Value) -> Value {
+    sort_json(value.clone())
+}
+
+/// Compact canonical JSON bytes of `value` ([`canonical_value`], no
+/// whitespace, scalars and escapes as `serde_json` writes them).
+#[must_use]
+pub fn canonical_json_bytes(value: &Value) -> Vec<u8> {
+    serde_json::to_vec(&sort_json(value.clone())).expect("JSON values always serialize")
+}
+
 fn sort_json(value: Value) -> Value {
     match value {
         Value::Object(object) => {
@@ -138,6 +153,26 @@ pub fn verify_manifest_signature(manifest: &Value, public_key: &[u8]) -> Result<
 mod tests {
     use super::*;
     use serde_json::json;
+
+    /// The one canonical form, pinned: nested objects in insertion order,
+    /// escaped and non-ASCII keys, numbers, arrays of objects. Eight former
+    /// private copies (handoff ledger digests, checkpoint wire gates, bundle
+    /// manifests, customer proofs) now produce exactly these bytes.
+    #[test]
+    fn canonical_form_is_pinned() {
+        let value = json!({
+            "z": [{"b": 1, "a": [3, 2]}, null, true],
+            "ä": "ü\n\"",
+            "a": {"y": 1.5, "x": -7, "\u{1}": "ctl"},
+        });
+        let expected = r#"{"a":{"\u0001":"ctl","x":-7,"y":1.5},"z":[{"a":[3,2],"b":1},null,true],"ä":"ü\n\""}"#;
+        assert_eq!(
+            String::from_utf8(canonical_json_bytes(&value)).unwrap(),
+            expected
+        );
+        assert_eq!(canonical_serialize(&value), expected.as_bytes());
+        assert_eq!(canonical_value(&value).to_string(), expected);
+    }
 
     fn key(seed: u8) -> AgentIdentity {
         SigningKey::from_bytes(&[seed; 32])

@@ -12,6 +12,43 @@ use super::startup::detect_startup_context;
 
 const MAX_WARM_SESSIONS: usize = 8;
 
+/// How often a connection re-checks that its bus presence is still listed.
+/// Shorter than the default worker lease, so a presence an older binary
+/// retired is restored before the dashboard polls twice.
+const PRESENCE_VERIFY_INTERVAL: std::time::Duration = std::time::Duration::from_mins(1);
+
+/// Last successful presence verification per presence id. A process holds
+/// one presence per connection, so this stays a handful of entries.
+fn presence_verifications() -> &'static std::sync::Mutex<std::collections::HashMap<String, Instant>>
+{
+    static VERIFIED: std::sync::OnceLock<
+        std::sync::Mutex<std::collections::HashMap<String, Instant>>,
+    > = std::sync::OnceLock::new();
+    VERIFIED.get_or_init(Default::default)
+}
+
+fn presence_verification_due(agent_id: &str) -> bool {
+    presence_verifications()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .get(agent_id)
+        .is_none_or(|at| at.elapsed() >= PRESENCE_VERIFY_INTERVAL)
+}
+
+fn mark_presence_verified(agent_id: &str) {
+    presence_verifications()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .insert(agent_id.to_string(), Instant::now());
+}
+
+fn forget_presence_verification(agent_id: &str) {
+    presence_verifications()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .remove(agent_id);
+}
+
 fn collect_warming_history(
     project_root: Option<&str>,
 ) -> Vec<crate::core::cache::warming::RecentFile> {
@@ -91,14 +128,14 @@ impl LeanCtxServer {
     /// executing a tool. Construction registers eagerly; this is the
     /// fail-closed retry for a transient startup lock or registry failure.
     pub(crate) async fn ensure_session_presence(&self) -> Result<(), String> {
-        if self.presence_agent_id.read().await.is_some() {
+        if self.presence_is_current().await {
             return Ok(());
         }
         // Concurrent first calls (16 parallel reads on a fresh engine) each
         // registered their own agent and timed out on the registry file lock
         // on Windows. One registers; the rest wait and reuse its id.
         let _init = self.presence_init.lock().await;
-        if self.presence_agent_id.read().await.is_some() {
+        if self.presence_is_current().await {
             return Ok(());
         }
 
@@ -107,16 +144,74 @@ impl LeanCtxServer {
         // must register with it — falling back to the `context-engine`
         // placeholder rewrote a `reviewer` presence.
         let requested_role = self.presence_role.read().await.clone();
-        let agent_id = match requested_role.as_deref() {
-            Some(role) => crate::core::agents::AgentRegistry::register_mcp_process_as(
-                project_root,
-                role,
-                None,
-            )?,
-            None => crate::core::agents::AgentRegistry::register_mcp_process(project_root, None)?,
+        let registration = match requested_role.as_deref() {
+            Some(role) => {
+                let role_source = if crate::core::agents::declared_session_role().is_some() {
+                    crate::core::agents::RoleSource::Declared
+                } else {
+                    crate::core::agents::RoleSource::Assumed
+                };
+                crate::core::agents::AgentRegistry::register_mcp_process_as(
+                    project_root,
+                    role,
+                    role_source,
+                    None,
+                )
+            }
+            None => crate::core::agents::AgentRegistry::register_mcp_process(project_root, None),
         };
-        *self.presence_agent_id.write().await = Some(agent_id);
-        Ok(())
+        let retired = self.presence_agent_id.read().await.clone();
+        match registration {
+            Ok(agent_id) => {
+                if let Some(retired) = retired.as_deref()
+                    && retired != agent_id
+                {
+                    tracing::info!("lean-ctx: MCP presence {retired} was retired; now {agent_id}");
+                    forget_presence_verification(retired);
+                }
+                mark_presence_verified(&agent_id);
+                *self.presence_agent_id.write().await = Some(agent_id);
+                Ok(())
+            }
+            // Re-registering a retired presence is best effort: a transient
+            // registry failure must not block a connection that already
+            // passed the fail-closed gate once. Retry after the interval.
+            Err(error) if retired.is_some() => {
+                tracing::warn!("lean-ctx: failed to re-register retired MCP presence: {error}");
+                if let Some(retired) = retired.as_deref() {
+                    mark_presence_verified(retired);
+                }
+                Ok(())
+            }
+            Err(error) => Err(error),
+        }
+    }
+
+    /// True while this connection holds a presence that is still listed.
+    /// The registry is shared with other processes: an older binary finishes
+    /// quiet presences after the worker lease, and finished history is
+    /// pruned. A retired presence reports `false` so the caller re-registers
+    /// instead of heartbeating a dead id forever (`/api/agents` went empty
+    /// while five MCP servers were connected). Verification reads the
+    /// registry at most once per `PRESENCE_VERIFY_INTERVAL` per presence.
+    async fn presence_is_current(&self) -> bool {
+        let Some(agent_id) = self.presence_agent_id.read().await.clone() else {
+            return false;
+        };
+        if !presence_verification_due(&agent_id) {
+            return true;
+        }
+        let id = agent_id.clone();
+        let live = tokio::task::spawn_blocking(move || {
+            crate::core::agents::AgentRegistry::transport_presence_is_live(&id)
+        })
+        .await
+        // A failed check must not knock out a working presence.
+        .unwrap_or(true);
+        if live {
+            mark_presence_verified(&agent_id);
+        }
+        live
     }
 
     fn presence_root(&self) -> &str {
@@ -169,7 +264,12 @@ impl LeanCtxServer {
                 (Arc::new(RwLock::new(session)), None)
             }
             SessionMode::Shared => {
-                let Some(ref root) = startup.project_root else {
+                // Every client of a shared session works in its root, so it
+                // must be an existing absolute directory (AP04-G5).
+                let Some(root) = startup.project_root.as_ref().filter(|root| {
+                    let root = std::path::Path::new(root);
+                    root.is_absolute() && root.is_dir()
+                }) else {
                     // Shared mode without a project root is not useful; fall back to personal.
                     return Self::new_with_startup(
                         project_root,
@@ -242,11 +342,10 @@ impl LeanCtxServer {
 
         Self {
             cache,
-            session,
+            session: crate::core::session::SessionSlot::new(session),
             tool_calls: Arc::new(RwLock::new(Vec::new())),
             call_count: Arc::new(AtomicUsize::new(0)),
             background_tick: Arc::new(AtomicUsize::new(0)),
-            pro_trigger_check_count: Arc::new(AtomicUsize::new(0)),
             cache_ttl_secs: ttl,
             last_call: Arc::new(RwLock::new(Instant::now())),
             agent_id: Arc::new(RwLock::new(None)),
@@ -262,9 +361,10 @@ impl LeanCtxServer {
                     &crate::core::config::Config::load().loop_detection,
                 ),
             )),
-            workflow: Arc::new(RwLock::new(
-                crate::core::workflow::load_active().ok().flatten(),
-            )),
+            // ctx_workflow was removed (focus release): nothing can start or stop
+            // a run, so a run left on disk by an older version must not gate
+            // tools here. The gate code goes with the workflow store.
+            workflow: Arc::new(RwLock::new(None)),
             ledger: Arc::new(RwLock::new(
                 crate::core::context_ledger::ContextLedger::load(),
             )),
@@ -293,6 +393,7 @@ impl LeanCtxServer {
             startup_project_root: startup.project_root,
             startup_shell_cwd: startup.shell_cwd,
             peer: Arc::new(tokio::sync::RwLock::new(None)),
+            shell_approvals: Arc::default(),
             has_client_roots: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             roots_resolved: Arc::new(std::sync::atomic::AtomicBool::new(false)),
             roots_list_attempts: Arc::new(std::sync::atomic::AtomicU32::new(0)),
@@ -327,19 +428,17 @@ impl LeanCtxServer {
 
     async fn clear_idle_cache(&self) {
         tokio::spawn(crate::core::session::SessionState::save_shared_logged(
-            self.session.clone(),
+            self.session.instance(),
         ));
         let mut cache = self.cache.write().await;
-        let redelivered = cache.count_full_delivered();
         let count = cache.clear();
-        crate::core::cache_telemetry::record_idle(redelivered as u64);
         // The persisted stub index outlives the warm-cache clear, so a
         // same-conversation re-read after idle still collapses to the stub
         // via the cold fallback (#955). Flush it now for durability.
         crate::core::read_stub_index::persist();
         if count > 0 {
             tracing::info!(
-                "Cache auto-cleared after {}s idle ({count} file(s), {redelivered} forced re-delivery)",
+                "Cache auto-cleared after {}s idle ({count} file(s))",
                 self.cache_ttl_secs
             );
         }
@@ -379,7 +478,7 @@ impl LeanCtxServer {
         );
     }
 
-    async fn record_shutdown_episode(&self) {
+    async fn record_shutdown_episode(&self, until: Instant) {
         let tool_calls: Vec<(String, u64)> = self
             .tool_calls
             .read()
@@ -409,40 +508,113 @@ impl LeanCtxServer {
             .unwrap_or_default();
         let project_hash = crate::core::project_hash::hash_project_root(&project_root);
 
-        match crate::core::episodic_memory::record_session_episode(
-            &project_hash,
-            &session,
-            &tool_calls,
-            agent_id.as_deref(),
-            &policy.episodic,
-            true,
-        ) {
-            Ok(Some(id)) => tracing::info!("lean-ctx: recorded shutdown episode {id}"),
-            Ok(None) => {}
-            Err(error) => tracing::warn!("lean-ctx: failed to record shutdown episode: {error}"),
+        // Storage admission of the session's text: off the async executor and
+        // within the shutdown's enrichment time.
+        let recorded = within_shutdown("episode", until, move || {
+            crate::core::episodic_memory::record_session_episode(
+                &project_hash,
+                &session,
+                &tool_calls,
+                agent_id.as_deref(),
+                &policy.episodic,
+                true,
+            )
+        })
+        .await;
+        match recorded {
+            Some(Ok(Some(id))) => tracing::info!("lean-ctx: recorded shutdown episode {id}"),
+            Some(Ok(None)) | None => {}
+            Some(Err(error)) => {
+                tracing::warn!("lean-ctx: failed to record shutdown episode: {error}");
+            }
         }
     }
 
     /// Aggressive cleanup on connection drop: save session, consolidate knowledge, clear caches.
+    ///
+    /// Order and bounds: the host that closed the connection waits a bounded
+    /// time and then kills the process. What must not be lost comes first —
+    /// the session's last state — and what only enriches later sessions (the
+    /// shutdown episode, the knowledge consolidation) runs afterwards within
+    /// `SHUTDOWN_ENRICHMENT`. With a semantic detector bound each of the
+    /// two re-admits the session's text through the model; run first and
+    /// unbounded, they kept the server alive beyond the host's wait while
+    /// the last state was still to be saved. The consolidation reads the
+    /// SAVED session, so it also belongs after the save.
     pub async fn shutdown(&self) {
-        self.record_shutdown_episode().await;
-        crate::core::savings_tracker::persist_session_summary();
-        if let Some(agent_id) = self.presence_agent_id.read().await.clone()
-            && let Err(error) = crate::core::agents::AgentRegistry::finish_persistent(&agent_id)
-        {
-            tracing::warn!("lean-ctx: failed to finish MCP agent presence: {error}");
+        let stage = Instant::now();
+        let last_state_durable =
+            crate::core::session::SessionState::save_shared_at_shutdown(self.session.instance())
+                .await;
+        let stage = shutdown_stage("session save", stage);
+        if !last_state_durable {
+            // The save's own warning says why. Its changes stay pending as
+            // after any failed save, and nothing later in this process saves
+            // them. What follows must not make that worse: the consolidation
+            // imports from the SAVED session and advances its watermark, so
+            // on a state that is not the last one it is not run.
+            tracing::error!(
+                "lean-ctx: the session's last state is NOT durable at shutdown; \
+                 knowledge consolidation is skipped"
+            );
         }
+        crate::core::savings_tracker::persist_session_summary();
+        if let Some(agent_id) = self.presence_agent_id.read().await.clone() {
+            forget_presence_verification(&agent_id);
+            if let Err(error) = crate::core::agents::AgentRegistry::finish_persistent(&agent_id) {
+                tracing::warn!("lean-ctx: failed to finish MCP agent presence: {error}");
+            }
+        }
+        let stage = shutdown_stage("summary and presence", stage);
+
+        let enrichment_ends = Instant::now() + SHUTDOWN_ENRICHMENT;
+        self.record_shutdown_episode(enrichment_ends).await;
+        let stage = shutdown_stage("episode", stage);
         {
             let session = self.session.read().await;
             let has_insights = !session.findings.is_empty() || !session.decisions.is_empty();
             let root = session.project_root.clone();
+            let hive_target = root.clone().map(|root| (root, session.id.clone()));
             drop(session);
 
-            if has_insights && let Some(ref root) = root {
-                crate::tools::startup::auto_consolidate_knowledge(root);
+            if last_state_durable
+                && has_insights
+                && let Some(root) = root
+            {
+                // Incremental, and only this server's own session — never the
+                // project's latest saved one, which may be another agent's
+                // (I07/S03). What is not consolidated now stays newer than the
+                // session's watermark, which advances only after the knowledge
+                // write: when this agent resumes the session explicitly
+                // (`ctx_session` load with `session_id`, or a handoff), its next
+                // consolidation (checkpoint, compaction or shutdown) imports
+                // those items. A new server starts its own fresh session and
+                // never takes this one up by itself; nothing consolidates at
+                // start-up.
+                let own = self.session.instance();
+                within_shutdown("knowledge consolidation", enrichment_ends, move || {
+                    crate::core::session::caller::scope(Some(own), || {
+                        crate::tools::startup::auto_consolidate_knowledge(&root);
+                    });
+                })
+                .await;
+            }
+            // Queue this session's learnings for Hive (local only, no network).
+            if last_state_durable && let Some((root, session_id)) = hive_target {
+                crate::core::hive::knowledge::draft::on_session_event(
+                    &root,
+                    &session_id,
+                    crate::core::hive::knowledge::draft::Trigger::Shutdown,
+                );
             }
         }
-        crate::core::session::SessionState::save_shared_logged(self.session.clone()).await;
+        // Give back this process's Hive task claims (each bounded; one
+        // Hive cannot be reached for ends at its expiry there).
+        within_shutdown("hive task claims", enrichment_ends, || {
+            crate::core::hive::tasks::release_own_claims("the agent session ended")
+        })
+        .await;
+        shutdown_stage("knowledge consolidation", stage);
         // Persist buffered stats (incl. CEP cache-hit/session counters) before
         // the process exits. Short bridge sessions — e.g. a phase-isolated
         // benchmark harness that spawns a fresh server per phase — may never
@@ -465,6 +637,62 @@ impl LeanCtxServer {
         }
         crate::core::memory_guard::force_purge();
     }
+}
+
+/// Time the shutdown gives to what only enriches later sessions, AFTER the
+/// session's last state is durable. An engineering bound, not a contract of
+/// any host: hosts wait differently long before they kill a server.
+const SHUTDOWN_ENRICHMENT: std::time::Duration = std::time::Duration::from_secs(8);
+
+/// Run blocking shutdown work off the async executor until `until` at the
+/// latest. `None`: it was not started (no time left) or did not finish in
+/// time; the log names the stage.
+///
+/// The bound ends the WAIT, not the work: a blocking task cannot be stopped.
+/// Work that did not finish keeps running until the process ends (or to its
+/// end, when the server object lives on). Both stages write their store in
+/// one atomic replace at the end (`episodic_memory::mutate_locked_admitted`,
+/// `knowledge::persist::write_json_atomic`), so a process that ends first
+/// leaves the store as it was — this session's episode is then missing, and
+/// the consolidation's items stay ahead of the session's watermark for the
+/// next consolidation of the continued session.
+async fn within_shutdown<T: Send + 'static>(
+    stage: &'static str,
+    until: Instant,
+    work: impl FnOnce() -> T + Send + 'static,
+) -> Option<T> {
+    let left = until.saturating_duration_since(Instant::now());
+    if left.is_zero() {
+        tracing::info!("lean-ctx: shutdown stage `{stage}` skipped: no time left for it");
+        return None;
+    }
+    match tokio::time::timeout(left, tokio::task::spawn_blocking(work)).await {
+        Ok(Ok(value)) => Some(value),
+        Ok(Err(error)) => {
+            tracing::warn!("lean-ctx: shutdown stage `{stage}` failed: {error}");
+            None
+        }
+        Err(_) => {
+            tracing::info!(
+                "lean-ctx: shutdown stage `{stage}` not finished within its time and left behind"
+            );
+            None
+        }
+    }
+}
+
+/// Name a shutdown stage that took a second or more, and return the start of
+/// the next one. A host waits a bounded time for the server to end after it
+/// closed the connection and kills it afterwards; without these lines a
+/// shutdown that outlives that wait leaves no trace of where the time went.
+pub(crate) fn shutdown_stage(stage: &'static str, started: Instant) -> Instant {
+    let milliseconds = started.elapsed().as_millis();
+    if milliseconds >= 1000 {
+        tracing::info!("lean-ctx: shutdown stage `{stage}` took {milliseconds} ms");
+    } else {
+        tracing::debug!("lean-ctx: shutdown stage `{stage}` took {milliseconds} ms");
+    }
+    Instant::now()
 }
 
 #[cfg(test)]
@@ -534,6 +762,69 @@ mod tests {
                 .iter()
                 .any(|agent| agent.agent_id == agent_id)
         );
+    }
+
+    /// Audit bug 1: another process (an older binary's lease expiry) finished
+    /// this live connection's presence; the server kept heartbeating the dead
+    /// id and the dashboard listed no agents. The next tool call re-registers.
+    #[tokio::test]
+    async fn retired_presence_is_replaced_on_next_tool_call() {
+        let _isolated_data_dir = crate::core::data_dir::isolated_data_dir();
+        let server = LeanCtxServer::new_shared_with_context("/workspace/lean-ctx", "ws", "ch");
+        server
+            .ensure_session_presence()
+            .await
+            .expect("initial presence");
+        let retired = server
+            .presence_agent_id
+            .read()
+            .await
+            .clone()
+            .expect("presence id");
+        crate::core::agents::AgentRegistry::mutate_locked(|registry| {
+            registry.set_status(
+                &retired,
+                crate::core::agents::AgentStatus::Finished,
+                Some("worker lease expired; register again before continuing"),
+            )
+        })
+        .expect("registry writable")
+        .1
+        .expect("presence exists");
+        super::forget_presence_verification(&retired);
+
+        server
+            .ensure_session_presence()
+            .await
+            .expect("re-registration succeeds");
+
+        let current = server
+            .presence_agent_id
+            .read()
+            .await
+            .clone()
+            .expect("presence id");
+        assert_ne!(current, retired, "a retired presence id must be replaced");
+        assert!(crate::core::agents::AgentRegistry::transport_presence_is_live(&current));
+        let registry = crate::core::agents::AgentRegistry::load().expect("registry persisted");
+        let entry = registry
+            .agents
+            .iter()
+            .find(|agent| agent.agent_id == current)
+            .expect("new presence persisted");
+        assert!(entry.transport.is_some(), "re-registered as a transport");
+    }
+
+    /// Verification is throttled: a live presence is not re-read per call.
+    #[test]
+    fn presence_verification_is_throttled_per_presence() {
+        let id = "throttle-test-presence";
+        super::forget_presence_verification(id);
+        assert!(super::presence_verification_due(id));
+        super::mark_presence_verified(id);
+        assert!(!super::presence_verification_due(id));
+        super::forget_presence_verification(id);
+        assert!(super::presence_verification_due(id));
     }
 
     #[tokio::test]

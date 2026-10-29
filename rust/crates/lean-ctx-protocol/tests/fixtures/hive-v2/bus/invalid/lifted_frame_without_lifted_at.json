@@ -1,0 +1,13 @@
+{
+  "case": "lifted_frame_without_lifted_at",
+  "base": "bus/frame.control.lifted.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/control/lifted_at"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

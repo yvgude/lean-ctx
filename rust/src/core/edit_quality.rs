@@ -360,24 +360,24 @@ fn record_outcome_with(path: &str, last_mode: &str, success: bool, esc: Escalati
                 Escalation::Full => store.set_pending_escalation(&norm, now),
                 Escalation::Anchored => store.set_pending_anchored_escalation(&norm, now),
             }
-            // Quality signal (#538): edit failures after a stale read are the
-            // strongest "the model's view was wrong" evidence we have — they also
-            // penalize the bandit arm that produced the read (#593).
-            crate::core::adaptive_thresholds::record_quality_signal(
-                path,
-                crate::core::threshold_learning::QualitySignal::EditFail,
-            );
+            // Edit failures after a stale read are the strongest "the model's
+            // view was wrong" evidence: penalize the arm that produced it (#593).
+            crate::core::adaptive_thresholds::penalize_read_arm(path);
             // Stigmergy (#540): edit failures mark the path as Stuck ("context
             // drifted"), the explicit anchor-miss signal called for in #1008.
+            // The request's project is resolved before the thread starts.
             let scent_path = norm.clone();
-            std::thread::spawn(move || {
-                crate::core::scent_field::deposit(
-                    crate::core::scent_field::scent_agent_id(),
-                    crate::core::scent_field::ScentKind::Stuck,
-                    &scent_path,
-                    1.0,
-                );
-            });
+            if let Some(project_root) = crate::core::scent_field::current_project() {
+                std::thread::spawn(move || {
+                    crate::core::scent_field::deposit_for(
+                        &project_root,
+                        crate::core::scent_field::scent_agent_id(),
+                        crate::core::scent_field::ScentKind::Stuck,
+                        &scent_path,
+                        1.0,
+                    );
+                });
+            }
         }
     }
     maybe_flush(&mut store);

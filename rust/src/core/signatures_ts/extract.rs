@@ -18,7 +18,24 @@ pub(crate) fn extract_signatures_ts(content: &str, file_ext: &str) -> Option<Vec
     if matches!(file_ext, "svelte" | "vue") {
         return extract_sfc_signatures(content);
     }
+    Some(
+        extract_spans_ts(content, file_ext)?
+            .into_iter()
+            .map(|(sig, _)| sig)
+            .collect(),
+    )
+}
 
+/// The signatures of [`extract_signatures_ts`] with the byte range of each
+/// definition node in `content` (code anchors digest exactly these bytes).
+/// Single-file components (`svelte`, `vue`) have no node spans: `None`.
+pub(crate) fn extract_spans_ts(
+    content: &str,
+    file_ext: &str,
+) -> Option<Vec<(Signature, std::ops::Range<usize>)>> {
+    if matches!(file_ext, "svelte" | "vue") {
+        return None;
+    }
     let language = get_language(file_ext)?;
 
     thread_local! {
@@ -58,7 +75,7 @@ pub(crate) fn extract_signatures_ts(content: &str, file_ext: &str) -> Option<Vec
             && !name_text.is_empty()
             && let Some(sig) = node_to_signature(&node, &name_text, file_ext, source)
         {
-            sigs.push(sig);
+            sigs.push((sig, node.byte_range()));
         }
     }
 

@@ -1,6 +1,7 @@
 use rmcp::ErrorData;
 use rmcp::model::Tool;
 use serde_json::{Map, Value, json};
+use std::time::Duration;
 
 use crate::server::tool_trait::{McpTool, ToolContext, ToolOutput, get_str, get_usize};
 use crate::tool_defs::tool_def;
@@ -9,6 +10,18 @@ use crate::tools::ctx_transcript_compact::{compact_messages, render_result, seri
 const DEFAULT_FRESH_TAIL_TOKENS: usize = 4_000;
 const DEFAULT_PROTECT_MIN_MESSAGES: usize = 6;
 const OFFLOAD_MAX_CHARS: usize = 8_000;
+const SESSION_LOCK_BUDGET: Duration = Duration::from_millis(250);
+
+fn session_matches_snapshot(
+    live: &crate::core::session::SessionState,
+    snapshot: &crate::core::session::SessionState,
+) -> bool {
+    live.id == snapshot.id
+        && live.version == snapshot.version
+        && live.project_root == snapshot.project_root
+        && live.shell_cwd == snapshot.shell_cwd
+        && live.extra_roots == snapshot.extra_roots
+}
 
 pub struct CtxTranscriptCompactTool;
 
@@ -66,9 +79,8 @@ impl McpTool for CtxTranscriptCompactTool {
 
         let result = compact_messages(messages.clone(), fresh_tail, protect_min, focus.as_deref());
 
-        // Best-effort offload of the raw older turns into session memory so the
-        // recall tools (and the autonomy consolidation pipeline) can recover
-        // them. Skipped when no session is bound (e.g. one-shot CLI).
+        // Offload only through the same detached admission and optimistic
+        // commit path used by direct session actions.
         let offload_target = if result.did_compact && !result.summarized.is_empty() {
             ctx.session.as_ref()
         } else {
@@ -77,22 +89,41 @@ impl McpTool for CtxTranscriptCompactTool {
         if let Some(session_handle) = offload_target {
             let digest = serialize_transcript(&result.summarized, OFFLOAD_MAX_CHARS);
             if !digest.is_empty() {
-                let mut session = session_handle.blocking_write();
-                let _ = crate::tools::ctx_session::handle(
-                    &mut session,
-                    &[],
-                    "finding",
-                    Some(&digest),
-                    None,
-                    crate::tools::ctx_session::SessionToolOptions {
-                        format: None,
-                        path: None,
-                        write: false,
-                        privacy: None,
-                        terse: Some(true),
-                        agent_id: None,
-                    },
-                );
+                if let Some(snapshot) = crate::server::bounded_lock::read_for(
+                    session_handle,
+                    "transcript compact session snapshot",
+                    SESSION_LOCK_BUDGET,
+                )
+                .map(|session| session.clone())
+                {
+                    if let Ok(prepared) = crate::tools::ctx_session::prepare_admitted_action(
+                        &snapshot,
+                        &[],
+                        "finding",
+                        Some(&digest),
+                        None,
+                        crate::tools::ctx_session::SessionToolOptions {
+                            format: None,
+                            path: None,
+                            write: false,
+                            privacy: None,
+                            terse: Some(true),
+                            agent_id: None,
+                        },
+                    ) {
+                        if let Some(mut live) = crate::server::bounded_lock::write_for(
+                            session_handle,
+                            "transcript compact session commit",
+                            SESSION_LOCK_BUDGET,
+                        ) {
+                            if session_matches_snapshot(&live, &snapshot)
+                                && prepared.store_admission.is_current()
+                            {
+                                *live = prepared.candidate;
+                            }
+                        }
+                    }
+                }
             }
         }
 

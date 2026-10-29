@@ -1,6 +1,11 @@
 //! Immune detector (#8): artificial-immune-system screening for context
 //! poisoning.
 //!
+//! Product role: a **Control** detector. It decides what provider data may
+//! enter the long-term stores, next to the admission detectors in
+//! [`crate::core::context_admission`]. The module keeps its published path
+//! because that path is pinned in `legal/provenance-manifest.json`.
+//!
 //! Biological immune systems work by *self / non-self discrimination*: foreign
 //! material is recognized and neutralized before it can harm the organism. The
 //! analogue here is the agent's privileged context: provider data (issues, PRs,

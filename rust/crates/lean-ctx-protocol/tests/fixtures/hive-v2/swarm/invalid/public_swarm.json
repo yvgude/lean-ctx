@@ -1,0 +1,14 @@
+{
+  "case": "public_swarm",
+  "base": "swarm/swarm.running.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/visibility",
+      "value": "public"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

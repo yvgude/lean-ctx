@@ -201,3 +201,40 @@ async fn reference_http_auth_does_not_supply_protected_source_identity() {
         server.await.unwrap();
     }
 }
+
+/// Handing a stored reference back is a new delivery: it is re-admitted
+/// under the gateway policy that is current at that moment, not the one it
+/// was stored under.
+#[tokio::test]
+async fn reference_is_readmitted_under_the_current_gateway_policy() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = TestPolicyOverride::set(None);
+    let content = format!("CONFIDENTIAL\n{}", "quarterly plan line\n".repeat(20));
+    let id = reference_store::store(&content).expect("stored under the permissive policy");
+
+    let served = v1_resolve_reference(axum::extract::Path(id.clone())).await;
+    assert_eq!(served.status(), StatusCode::OK);
+
+    let config = crate::core::paths::config_dir_read_only().expect("config directory");
+    std::fs::create_dir_all(&config).expect("config directory");
+    std::fs::write(
+        config.join("config.toml"),
+        "[context_gateway]\nclassification = \"block\"\n",
+    )
+    .expect("tightened gateway policy");
+
+    let refused = v1_resolve_reference(axum::extract::Path(id)).await;
+    assert_eq!(refused.status(), StatusCode::BAD_REQUEST);
+    assert!(
+        refused
+            .headers()
+            .contains_key(admitted::REASON_CODES_HEADER)
+    );
+    let body = axum::body::to_bytes(refused.into_body(), usize::MAX)
+        .await
+        .expect("refusal body");
+    assert!(
+        !String::from_utf8_lossy(&body).contains("quarterly plan"),
+        "a refusal never returns the stored content"
+    );
+}

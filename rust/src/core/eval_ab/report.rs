@@ -12,7 +12,7 @@
 
 use serde::{Deserialize, Serialize};
 
-use super::model::ModelFingerprint;
+use super::model::{ModelFingerprint, ObservationOrigin, ProviderExchange, ProviderUsage};
 use crate::core::context_quality::EvidenceTier;
 
 /// Report schema discriminator + version (also guards artifact parsing).
@@ -194,6 +194,29 @@ pub struct AbReport {
     /// Sample-size status. `None` only for v1 reports.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub power: Option<PowerStatus>,
+    /// What the provider's exchanges looked like, per task, where a runner saw
+    /// one. Empty — and then not serialized, so earlier reports keep their bytes
+    /// — for synthetic runners and recordings without it.
+    ///
+    /// This is NOT `baseline_tokens` / `lean_ctx_tokens` of a [`PairRecord`]:
+    /// those are this build's own count of the context it assembled; these are
+    /// the provider's reported counts for the whole request and answer. They are
+    /// reported, not signed by the provider, and an entry of origin `replayed`
+    /// is history from a recording. The determinism digest
+    /// (`artifact::determinism_digest`) does not cover this field.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub provider_exchanges: Vec<TaskProviderExchange>,
+}
+
+/// The exchanges behind the two answers of one task; `None` where there was none.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TaskProviderExchange {
+    pub task_id: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub baseline: Option<ProviderExchange>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub lean_ctx: Option<ProviderExchange>,
 }
 
 impl AbReport {
@@ -222,6 +245,7 @@ impl AbReport {
             verdict,
             evidence_tier: Some(evidence_tier),
             power: Some(power),
+            provider_exchanges: Vec::new(),
         }
     }
 
@@ -296,6 +320,28 @@ impl AbReport {
         } else {
             "CLAIM:   none — this run is a mechanism / regression check only\n"
         });
+        let exchanges: Vec<&ProviderExchange> = self
+            .provider_exchanges
+            .iter()
+            .flat_map(|task| [task.baseline.as_ref(), task.lean_ctx.as_ref()])
+            .flatten()
+            .collect();
+        if !exchanges.is_empty() {
+            let count = |keep: fn(&ProviderExchange) -> bool| {
+                exchanges.iter().filter(|exchange| keep(exchange)).count()
+            };
+            out.push_str(&format!(
+                "USAGE:   provider-reported (not signed) for {} answer(s): {} with counts, {} \
+                 damaged, {} replayed from a recording — see provider_exchanges in the JSON\n",
+                exchanges.len(),
+                count(|e| e.usage.as_ref().is_some_and(ProviderUsage::is_well_formed)),
+                count(|e| e
+                    .usage
+                    .as_ref()
+                    .is_some_and(|usage| !usage.is_well_formed())),
+                count(|e| e.origin == ObservationOrigin::Replayed),
+            ));
+        }
         out
     }
 }
@@ -379,21 +425,40 @@ fn verdict_for(stats: &AbStats, cfg: ReportConfig) -> Verdict {
 
 /// Deterministic percentile bootstrap of the mean of `diffs` (paired deltas).
 fn bootstrap_ci(diffs: &[f64], iters: usize, seed: u64) -> (f64, f64) {
-    let n = diffs.len();
+    bootstrap_ci_with(diffs, iters, seed, |sample| {
+        // In draw order from 0.0, as this interval was always summed.
+        let mut sum = 0.0;
+        for value in sample.iter() {
+            sum += *value;
+        }
+        sum / sample.len() as f64
+    })
+}
+
+/// [`bootstrap_ci`] for any statistic: the same draws for the same seed, the
+/// same nearest-rank 95% interval. `statistic` is given each resample (never
+/// empty, as long as `values` is, and free to reorder it).
+pub(super) fn bootstrap_ci_with(
+    values: &[f64],
+    iters: usize,
+    seed: u64,
+    statistic: impl Fn(&mut [f64]) -> f64,
+) -> (f64, f64) {
+    let n = values.len();
     if n == 0 || iters == 0 {
         return (0.0, 0.0);
     }
     let mut rng = SplitMix64::new(seed);
-    let mut means: Vec<f64> = Vec::with_capacity(iters);
+    let mut observed: Vec<f64> = Vec::with_capacity(iters);
+    let mut sample = vec![0.0; n];
     for _ in 0..iters {
-        let mut sum = 0.0;
-        for _ in 0..n {
-            sum += diffs[rng.below(n)];
+        for slot in &mut sample {
+            *slot = values[rng.below(n)];
         }
-        means.push(sum / n as f64);
+        observed.push(statistic(&mut sample));
     }
-    means.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
-    (percentile(&means, 2.5), percentile(&means, 97.5))
+    observed.sort_by(|a, b| a.partial_cmp(b).unwrap_or(std::cmp::Ordering::Equal));
+    (percentile(&observed, 2.5), percentile(&observed, 97.5))
 }
 
 /// Nearest-rank percentile of a pre-sorted slice.

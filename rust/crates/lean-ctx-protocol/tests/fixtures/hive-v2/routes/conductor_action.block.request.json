@@ -1,0 +1,7 @@
+{
+  "action": "block",
+  "epoch": 3,
+  "goal": "g_yyyyyyyyyyyyyyyyyyyyyyyyya",
+  "reason": "Waits for the staging load profile.",
+  "worker_id": "wkr_cxdouocvevdhm22vpdrh"
+}

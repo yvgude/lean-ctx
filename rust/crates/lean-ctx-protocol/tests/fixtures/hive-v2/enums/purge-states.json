@@ -1,0 +1,59 @@
+{
+  "name": "purge-states",
+  "values": [
+    {
+      "value": "requested"
+    },
+    {
+      "value": "approved"
+    },
+    {
+      "value": "keys_destroying"
+    },
+    {
+      "value": "keys_destroyed"
+    },
+    {
+      "value": "propagating"
+    },
+    {
+      "value": "done"
+    },
+    {
+      "value": "expired"
+    },
+    {
+      "value": "cancelled"
+    }
+  ],
+  "transitions": [
+    [
+      "requested",
+      "approved"
+    ],
+    [
+      "approved",
+      "keys_destroying"
+    ],
+    [
+      "keys_destroying",
+      "keys_destroyed"
+    ],
+    [
+      "keys_destroyed",
+      "propagating"
+    ],
+    [
+      "propagating",
+      "done"
+    ],
+    [
+      "requested",
+      "expired"
+    ],
+    [
+      "requested",
+      "cancelled"
+    ]
+  ]
+}

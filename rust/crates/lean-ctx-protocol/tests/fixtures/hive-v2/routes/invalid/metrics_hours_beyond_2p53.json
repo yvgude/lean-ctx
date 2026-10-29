@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_beyond_2p53",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets/0/slices/0/calls/tool_calls",
+      "value": 9007199254740993
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "counter beyond 2^53"
+}

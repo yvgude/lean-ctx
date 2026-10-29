@@ -34,14 +34,14 @@ redaction + sensitivity test modules in `rust/src/core/`.
 
 **CGB-1.2 (Basic) Declarative, reviewable rules — Met.**
 Policy packs: named TOML patterns, versioned in-repo, built-ins
-(`baseline`, `strict-redaction`, `finance-eu`, `healthcare`,
-`open-source`). Evidence: `docs/contracts/context-policy-packs-v1.md`,
+(`baseline`, `strict-redaction`, `open-source`). Evidence: `docs/contracts/context-policy-packs-v1.md`,
 `lean-ctx policy show strict-redaction --toml`.
 
 **CGB-1.3 (Hardened) Classification beyond secrets — Met.**
-Sensitivity classes + domain packs: `finance-eu` (IBAN, payment cards, VAT,
-BIC), `healthcare` (SSN, MRN, DOB, NPI). Evidence: built-in pack TOML +
-pack tests.
+Sensitivity classes in the Community PII filter (IBAN, payment cards,
+e-mail, phone, US SSN, Swiss AHV; checksummed where the format allows) plus
+user-defined pack patterns. Evidence: `rust/src/core/input_filters/pii.rs`
+and its tests. Curated domain packs are LeanCTX Pro.
 
 **CGB-1.4 (Hardened) Fail-closed coverage of content paths — Partial.**
 Read/shell/search share the redaction pipeline, but there is no structural
@@ -91,8 +91,8 @@ provider bills on**; LeanCTX measures with its own tokenizer and documents
 divergence. Graded down to Partial on the basis-match requirement.
 
 **CGB-3.2 (Basic) Hard budgets bind — Met.**
-`core/budgets.rs` + `core/roles.rs::RoleLimits` enforce hard caps with
-refusal on exhaustion. Evidence: budget tests.
+`core/budgets.rs` (policy-pack budgets) enforces hard caps with refusal
+on exhaustion; role token/shell/cost limits were removed in October 2026. Evidence: budget tests.
 
 **CGB-3.3 (Hardened) Attribution per principal/workload — Met.**
 Per-member drilldown (team server), agent identities
@@ -155,7 +155,7 @@ tooling is not a separately gated tier bound to roles. Gap: single tier
 beyond the deny set.
 
 **CGB-5.4 (Hardened) Roles bind capabilities — Met.**
-`core/roles.rs`: ToolPolicy, TeamScope, RoleLimits, deny-by-default for
+`core/roles.rs`: ToolPolicy, TeamScope, deny-by-default for
 ungranted tools. Evidence: roles tests.
 
 **CGB-5.5 (Hardened) Egress governed — Partial.**

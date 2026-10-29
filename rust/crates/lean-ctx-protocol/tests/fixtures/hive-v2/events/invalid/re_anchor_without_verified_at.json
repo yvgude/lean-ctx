@@ -1,0 +1,16 @@
+{
+  "case": "re_anchor_without_verified_at",
+  "base": "events/field.set.anchors.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/body/verified_at"
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/body/verified_at"
+  }
+}

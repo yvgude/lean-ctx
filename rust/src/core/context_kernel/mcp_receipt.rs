@@ -136,14 +136,14 @@ pub mod tests {
         McpReceipt, mcp_accounting, per_tool_savings, record_receipt, reset_receipts,
         savings_report, total_kernel_overhead,
     };
+    use crate::core::context_kernel::kernel_config::KERNEL_TEST_LOCK;
     use std::sync::MutexGuard;
-    /// The kernel-wide test lock, also held by `mcp_e2e`, which resets the
-    /// same process-wide receipt store; a private lock let the two race
-    /// (`per_tool_aggregates` saw 1 of 3 calls).
+    // The kernel's one lock: `mcp_e2e` records into the same receipt store.
     fn isolated_test() -> MutexGuard<'static, ()> {
-        let guard = crate::core::context_kernel::kernel_config::KERNEL_TEST_LOCK
-            .lock()
-            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let guard = match KERNEL_TEST_LOCK.lock() {
+            Ok(guard) => guard,
+            Err(poisoned) => poisoned.into_inner(),
+        };
         reset_receipts();
         guard
     }

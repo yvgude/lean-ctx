@@ -1,0 +1,38 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "rate_limited",
+          "message": "Too many requests. Try again in 30 s.",
+          "retry_after_s": 30
+        }
+      },
+      "status": 429
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/public/vaults/acme/payments/contributors",
+  "request": null,
+  "response": {
+    "body": {
+      "people": [
+        {
+          "events_30d": 214,
+          "handle": "yves",
+          "reviews_30d": 9,
+          "role": "owner"
+        },
+        {
+          "events_30d": 57,
+          "handle": "mara",
+          "reviews_30d": 23,
+          "role": "maintainer"
+        }
+      ],
+      "workers": []
+    },
+    "status": 200
+  },
+  "route": "W44"
+}

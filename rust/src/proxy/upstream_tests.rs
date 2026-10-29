@@ -29,9 +29,6 @@ async fn proxy_state_reads_upstream_live_from_watch() {
         upstreams: rx,
         chatgpt_cookies: chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
         mcp_servers: Arc::new(Vec::new()),
-        web_app_tracker: Arc::new(std::sync::Mutex::new(
-            web_app::conversation_tracker::ConversationTracker::default(),
-        )),
     };
     assert_eq!(state.openai_upstream(), "https://old.example");
 
@@ -59,9 +56,6 @@ fn proxy_state_summarizes_break_even_status() {
         upstreams: rx,
         chatgpt_cookies: chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
         mcp_servers: Arc::new(Vec::new()),
-        web_app_tracker: Arc::new(std::sync::Mutex::new(
-            web_app::conversation_tracker::ConversationTracker::default(),
-        )),
     };
     state.break_even.record_turn();
     state.break_even.record_turn();

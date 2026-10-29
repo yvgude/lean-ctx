@@ -6,7 +6,6 @@ use serde::Serialize;
 
 use crate::proxy::{ProxyState, value_gate_proxy};
 
-const DASHBOARD_HTML: &str = include_str!("dashboard.html");
 static PROXY_STARTED: LazyLock<Mutex<Option<Instant>>> = LazyLock::new(|| Mutex::new(None));
 
 #[derive(Serialize)]
@@ -35,8 +34,52 @@ pub(crate) fn mark_proxy_started() {
     *started = Some(Instant::now());
 }
 
-pub(crate) async fn page() -> Html<&'static str> {
-    Html(DASHBOARD_HTML)
+/// `GET /dashboard`: the proxy's own page gave way to the Cockpit. It names
+/// the command and links the running Cockpit of this data dir when one is
+/// recorded — never with the token (the Cockpit asks for it, or
+/// `lean-ctx cockpit` opens it signed in).
+pub(crate) async fn page() -> Html<String> {
+    let cockpit = crate::dashboard::launch::read_record()
+        .filter(crate::dashboard::launch::LaunchRecord::process_alive)
+        .map(|record| (record.port, record.base_path));
+    Html(cockpit_pointer_page(
+        cockpit.as_ref().map(|(p, b)| (*p, b.as_str())),
+    ))
+}
+
+fn escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+
+/// The pointer page; `cockpit` is the running Cockpit's port and subpath.
+pub(crate) fn cockpit_pointer_page(cockpit: Option<(u16, &str)>) -> String {
+    let link = cockpit.map_or_else(String::new, |(port, base_path)| {
+        let url = escape(&format!("http://localhost:{port}{base_path}/#spend"));
+        format!("<p>Running now: <a href=\"{url}\">{url}</a></p>\n")
+    });
+    format!(
+        r#"<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>LeanCTX Cockpit</title>
+<style>
+:root{{color-scheme:light dark;--fg:#1d1d1f;--muted:#5f6368;--bg:#fafafa;--card:#fff;--line:#dadce0}}
+@media (prefers-color-scheme:dark){{:root{{--fg:#e8eaed;--muted:#9aa0a6;--bg:#151517;--card:#1f1f22;--line:#3c4043}}}}
+body{{margin:0;background:var(--bg);color:var(--fg);font:16px/1.55 system-ui,-apple-system,"Segoe UI",sans-serif}}
+main{{max-width:36rem;margin:12vh auto;padding:0 16px}}
+pre{{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:.75rem 1rem;overflow-x:auto}}
+p.tag{{color:var(--muted)}}
+</style></head>
+<body><main>
+<h1>LeanCTX Cockpit</h1>
+<p class="tag">Spend, savings and proof of the context this proxy carries are in the local Cockpit.</p>
+<pre><code>lean-ctx cockpit</code></pre>
+{link}<p class="tag">Proxy counters stay available as JSON at <code>/api/stats</code>.</p>
+</main></body></html>
+"#
+    )
 }
 
 pub(crate) async fn stats(State(state): State<ProxyState>) -> Json<DashboardStats> {
@@ -93,4 +136,22 @@ pub(crate) async fn stats(State(state): State<ProxyState>) -> Json<DashboardStat
         per_tool_stats,
         uptime_seconds,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::cockpit_pointer_page;
+
+    #[test]
+    fn the_pointer_page_names_the_command_and_links_the_running_cockpit_without_a_token() {
+        let without = cockpit_pointer_page(None);
+        assert!(without.contains("lean-ctx cockpit"));
+        assert!(without.contains("/api/stats"));
+        assert!(!without.contains("http://localhost"));
+
+        let with = cockpit_pointer_page(Some((3334, "/c")));
+        assert!(with.contains("href=\"http://localhost:3334/c/#spend\""));
+        assert!(!with.contains("token"));
+        assert!(!with.contains("<script"));
+    }
 }

@@ -1,0 +1,36 @@
+{
+  "route": "W62",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/vaults/payments/retention",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "rows": [
+        {
+          "subject": "node:episode",
+          "keep": 730
+        }
+      ],
+      "effective_at": "2026-09-01T08:00:00Z",
+      "pending": {
+        "rows": [
+          {
+            "subject": "node:episode",
+            "keep": 365
+          },
+          {
+            "subject": "bus_messages",
+            "keep": 90
+          },
+          {
+            "subject": "node:fact",
+            "keep": "forever"
+          }
+        ],
+        "effective_at": "2026-10-31T08:00:00Z"
+      }
+    }
+  },
+  "errors": []
+}

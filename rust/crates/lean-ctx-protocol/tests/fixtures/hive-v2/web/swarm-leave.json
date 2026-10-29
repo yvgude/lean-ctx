@@ -1,0 +1,11 @@
+{
+  "errors": [],
+  "method": "POST",
+  "path": "/api/v1/swarms/9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02/leave",
+  "request": null,
+  "response": {
+    "body": null,
+    "status": 204
+  },
+  "route": "W41"
+}

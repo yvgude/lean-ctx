@@ -1,0 +1,25 @@
+{
+  "keys": [
+    {
+      "created_at": 1792713600000,
+      "key_id": "47983724220c8521",
+      "kind": "instance",
+      "public_key": "dyyKRCt9sG4WbPvBzLy83m8-unak6Y7z_8UZUCI31u8",
+      "revoked_at": null,
+      "worker_ids": [
+        "wkr_vk4oelpv5lzjmev44hun"
+      ]
+    },
+    {
+      "created_at": 1792720000000,
+      "key_id": "685e652d8892a354",
+      "kind": "instance",
+      "public_key": "NTyKf-7KOLLEU24L0lhv2xjQcOUOBZ8dQ_i_77l6fOE",
+      "revoked_at": 1792800500000,
+      "worker_ids": [
+        "wkr_gawyravj36igdp3irdfo"
+      ]
+    }
+  ],
+  "next_since": 1792720000000
+}

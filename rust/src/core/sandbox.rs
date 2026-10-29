@@ -18,6 +18,12 @@ const MAX_OUTPUT_BYTES: usize = 32_768;
 /// agent from forcing a multi-megabyte temp-file write / interpreter argv → memory abuse.
 const MAX_CODE_BYTES: usize = 256 * 1024;
 
+/// Runs a snippet in the sandbox runtime of `language`.
+///
+/// A run does not leave processes behind (Q13, Unix, in the `lean-ctx`
+/// binary): whatever the snippet started in its process group is ended when
+/// the run is over — after a normal exit before the output is collected, on a
+/// timeout with the snippet itself — and when this process is gone.
 pub fn execute(language: &str, code: &str, timeout_secs: Option<u64>) -> SandboxResult {
     execute_in(language, code, timeout_secs, None)
 }
@@ -183,19 +189,35 @@ struct RuntimeConfig {
     env: HashMap<String, String>,
 }
 
-fn resolve_runtime(language: &str) -> Option<RuntimeConfig> {
-    let lang = language.to_lowercase();
-    let lang = lang.as_str();
+/// The language `language` runs as (one of [`supported_languages`]), after
+/// aliases (`py`, `node`, `bash`, …) and case; `None` when unsupported.
+pub fn canonical_language(language: &str) -> Option<&'static str> {
+    Some(match language.to_lowercase().as_str() {
+        "javascript" | "js" | "node" => "javascript",
+        "typescript" | "ts" => "typescript",
+        "python" | "py" => "python",
+        "shell" | "bash" | "sh" => "shell",
+        "ruby" | "rb" => "ruby",
+        "go" | "golang" => "go",
+        "rust" | "rs" => "rust",
+        "php" => "php",
+        "perl" | "pl" => "perl",
+        "r" => "r",
+        "elixir" | "ex" => "elixir",
+        _ => return None,
+    })
+}
 
-    match lang {
-        "javascript" | "js" | "node" => Some(RuntimeConfig {
+fn resolve_runtime(language: &str) -> Option<RuntimeConfig> {
+    match canonical_language(language)? {
+        "javascript" => Some(RuntimeConfig {
             command: find_binary(&["bun", "node"])?,
             args: vec!["-e".to_string()],
             needs_temp_file: false,
             file_extension: "js".to_string(),
             env: HashMap::new(),
         }),
-        "typescript" | "ts" => Some(RuntimeConfig {
+        "typescript" => Some(RuntimeConfig {
             command: find_binary(&["bun", "npx"])?,
             args: if which_exists("bun") {
                 vec!["-e".to_string()]
@@ -206,7 +228,7 @@ fn resolve_runtime(language: &str) -> Option<RuntimeConfig> {
             file_extension: "ts".to_string(),
             env: HashMap::new(),
         }),
-        "python" | "py" => Some(RuntimeConfig {
+        "python" => Some(RuntimeConfig {
             command: find_binary(&["python3", "python"])?,
             args: vec!["-c".to_string()],
             needs_temp_file: false,
@@ -235,21 +257,21 @@ fn resolve_runtime(language: &str) -> Option<RuntimeConfig> {
                 })
             }
         }
-        "ruby" | "rb" => Some(RuntimeConfig {
+        "ruby" => Some(RuntimeConfig {
             command: find_binary(&["ruby"])?,
             args: vec!["-e".to_string()],
             needs_temp_file: false,
             file_extension: "rb".to_string(),
             env: HashMap::new(),
         }),
-        "go" | "golang" => Some(RuntimeConfig {
+        "go" => Some(RuntimeConfig {
             command: find_binary(&["go"])?,
             args: vec!["run".to_string()],
             needs_temp_file: true,
             file_extension: "go".to_string(),
             env: HashMap::new(),
         }),
-        "rust" | "rs" => Some(RuntimeConfig {
+        "rust" => Some(RuntimeConfig {
             command: "rustc_script".to_string(),
             args: vec![],
             needs_temp_file: true,
@@ -263,7 +285,7 @@ fn resolve_runtime(language: &str) -> Option<RuntimeConfig> {
             file_extension: "php".to_string(),
             env: HashMap::new(),
         }),
-        "perl" | "pl" => Some(RuntimeConfig {
+        "perl" => Some(RuntimeConfig {
             command: find_binary(&["perl"])?,
             args: vec!["-e".to_string()],
             needs_temp_file: false,
@@ -277,7 +299,7 @@ fn resolve_runtime(language: &str) -> Option<RuntimeConfig> {
             file_extension: "R".to_string(),
             env: HashMap::new(),
         }),
-        "elixir" | "ex" => Some(RuntimeConfig {
+        "elixir" => Some(RuntimeConfig {
             command: find_binary(&["elixir"])?,
             args: vec!["-e".to_string()],
             needs_temp_file: false,
@@ -678,6 +700,18 @@ fn execute_rust(
     result
 }
 
+/// Lets go of the run's process guard: it ends what is left of the command's
+/// process group and is reaped.
+#[cfg(unix)]
+fn let_go_of_guard(guard: &mut Option<crate::shell::containment::CallGuard>) {
+    if let Some(guard) = guard.take() {
+        let ended = guard.finish();
+        if ended != crate::shell::containment::GuardOutcome::Ended {
+            tracing::warn!("sandbox run: the end of its process group is {ended:?}");
+        }
+    }
+}
+
 fn wait_with_timeout(
     cmd: &mut Command,
     timeout_secs: u64,
@@ -686,6 +720,31 @@ fn wait_with_timeout(
     // #1920: contain the whole tree, so a timeout on Windows ends what the
     // snippet started instead of only the interpreter.
     crate::shell::process_tree::ProcessTree::prepare(cmd);
+    // Q13 (Unix): the command leads its own process group (`process_group(0)`
+    // in the only caller) and has a guard on that group, which ends it when
+    // this run is over or this process is gone. The command's program is
+    // executed only once the guard is ready: a caller that dies in between
+    // leaves nothing running, and a run that cannot get a guard never
+    // started. `None` for the guard: this process is not the `lean-ctx`
+    // binary.
+    #[cfg(unix)]
+    let (mut child, mut guard) = {
+        use crate::shell::containment::Refusal;
+        match crate::shell::containment::start_guarded_child(cmd) {
+            Ok(started) => started,
+            Err(Refusal::NotStarted(error)) => return Err(spawn_error(error)),
+            Err(Refusal::NotLeader) => {
+                return Err(
+                    "Execution could not be contained: the process does not lead a group of its own"
+                        .to_string(),
+                );
+            }
+            Err(Refusal::NoGuard(reason)) => {
+                return Err(format!("Execution could not be contained: {reason}"));
+            }
+        }
+    };
+    #[cfg(not(unix))]
     let mut child = cmd.spawn().map_err(spawn_error)?;
     let tree = crate::shell::process_tree::ProcessTree::start(&mut child)?;
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(timeout_secs);
@@ -694,11 +753,18 @@ fn wait_with_timeout(
         match child.try_wait() {
             Ok(Some(_)) => {
                 tree.release();
+                // What the command left running in its group is ended before
+                // the output is collected, so a leftover that holds the pipes
+                // cannot keep this call waiting.
+                #[cfg(unix)]
+                let_go_of_guard(&mut guard);
                 return child.wait_with_output().map_err(|e| e.to_string());
             }
             Ok(None) => {
                 if std::time::Instant::now() > deadline {
                     tree.kill(&mut child);
+                    #[cfg(unix)]
+                    let_go_of_guard(&mut guard);
                     // GH #1504: after killing, drain whatever the child wrote
                     // before the timeout so partial output is preserved instead
                     // of being silently discarded.
@@ -715,6 +781,8 @@ fn wait_with_timeout(
             }
             Err(e) => {
                 tree.kill(&mut child);
+                #[cfg(unix)]
+                let_go_of_guard(&mut guard);
                 let _ = child.wait();
                 return Err(e.to_string());
             }
@@ -753,7 +821,12 @@ fn truncate_output(output: &str) -> String {
     if output.len() <= MAX_OUTPUT_BYTES {
         return output.to_string();
     }
-    truncate_smart(output, MAX_OUTPUT_BYTES)
+    crate::core::recovery::with_original_pointer(
+        "ctx_execute",
+        "stdout",
+        output,
+        truncate_smart(output, MAX_OUTPUT_BYTES),
+    )
 }
 
 fn truncate_smart(output: &str, max_bytes: usize) -> String {
@@ -909,6 +982,101 @@ pub mod tests {
         let result = execute("shell", "echo 'test output'", None);
         assert_eq!(result.exit_code, 0);
         assert!(result.stdout.contains("test output"));
+    }
+
+    /// Q13: a sandbox run does not leave processes behind. A background
+    /// child of the snippet is ended before the output is returned.
+    #[test]
+    #[cfg(unix)]
+    fn a_run_ends_what_its_snippet_left_running() {
+        crate::shell::containment::tests::run_external_fixture(
+            module_path!(),
+            "left_running_fixture",
+        );
+    }
+
+    /// Body of the test above; runs in a fixture process group of its own
+    /// that is ended when this returns or an assertion fails. The snippet's
+    /// background child is in the snippet's group, not the fixture's: if a
+    /// regression leaves it, it expires by itself (20 s).
+    #[test]
+    #[ignore = "fixture body of a_run_ends_what_its_snippet_left_running"]
+    #[cfg(unix)]
+    fn left_running_fixture() {
+        let fixture = crate::shell::containment::tests::external_fixture();
+        let _lock = crate::core::data_dir::test_env_lock();
+        let result = execute(
+            "shell",
+            "sleep 20 >/dev/null 2>&1 &\necho \"LEFT $!\"",
+            Some(20),
+        );
+        assert_eq!(result.exit_code, 0, "{}", result.stderr);
+        let pid: libc::pid_t = result
+            .stdout
+            .lines()
+            .find_map(|line| line.strip_prefix("LEFT "))
+            .expect("the snippet names its background child")
+            .trim()
+            .parse()
+            .unwrap();
+        // The guard has finished before `execute` returns; what remains is the
+        // reap of the killed child by the system.
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(5);
+        // SAFETY: signal 0 only probes for existence.
+        while unsafe { libc::kill(pid, 0) } == 0 {
+            assert!(
+                std::time::Instant::now() < deadline,
+                "a background child of the snippet outlived the run"
+            );
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        fixture.complete();
+    }
+
+    /// Q13: a sandbox run's command is not executed before its guard is
+    /// ready. A caller killed in between leaves nothing running, and the
+    /// command's program never ran.
+    #[test]
+    #[cfg(unix)]
+    fn a_run_never_starts_before_its_guard_is_ready() {
+        crate::shell::containment::tests::run_external_fixture(
+            module_path!(),
+            "run_caller_killed_fixture",
+        );
+    }
+
+    /// Body of the test above: the stand-in below is killed between "the
+    /// command's process exists" and "attach its guard".
+    #[test]
+    #[ignore = "fixture body of a_run_never_starts_before_its_guard_is_ready"]
+    #[cfg(unix)]
+    fn run_caller_killed_fixture() {
+        let fixture = crate::shell::containment::tests::external_fixture();
+        crate::shell::containment::tests::caller_killed_before_its_guard(
+            module_path!(),
+            "run_caller_standin",
+        );
+        fixture.complete();
+    }
+
+    /// Stands in for a process in the middle of a sandbox run.
+    #[test]
+    #[ignore = "stand-in caller of run_caller_killed_fixture"]
+    #[cfg(unix)]
+    fn run_caller_standin() {
+        use std::os::unix::process::CommandExt as _;
+        let marker = crate::shell::containment::tests::caller_standin_marker();
+        let mut command = std::process::Command::new("sh");
+        command
+            .args([
+                "-c",
+                &format!("echo ran > '{}'; sleep 60", marker.display()),
+            ])
+            .stdin(std::process::Stdio::null())
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .process_group(0);
+        let _ = super::wait_with_timeout(&mut command, 60, |error| error.to_string());
     }
 
     #[test]

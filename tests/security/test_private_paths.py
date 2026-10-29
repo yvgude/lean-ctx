@@ -57,6 +57,46 @@ class PrivatePathTests(unittest.TestCase):
         )
         self.assertEqual(findings, [])
 
+    def test_paid_detection_content_in_a_public_path_fails(self):
+        texts = {
+            "rust/src/core/detect.rs": "// brought up with GLiNER small\n",
+            "docs/guides/eval.md": "Recall on MAPA-de\n",
+            "rust/src/core/serde.rs": "use serde::de::MapAccess;\n",
+            "rust/src/core/compliance_evidence/checks.rs": '    "SOC2-CC6.6" => egress,\n',
+        }
+        findings = CHECK.paid_detection_findings(
+            [
+                "rust/data/pii.onnx",
+                "rust/src/core/policy/builtin/legal-ch.toml",
+                "rust/src/core/policy/builtin/healthcare.toml",
+                "rust/src/core/policy/builtin/baseline.toml",
+                "rust/data/compliance/mappings/soc2.toml",
+                "rust/src/core/compliance.rs",
+                *texts,
+            ],
+            texts.get,
+        )
+        self.assertEqual(
+            findings,
+            [
+                "[paid] docs/guides/eval.md:1 names the commercial detection runtime ('MAPA')",
+                "[paid] rust/data/compliance/mappings/soc2.toml is compliance-framework content; "
+                "it belongs to LeanCTX Enterprise",
+                "[paid] rust/data/pii.onnx is a model file; model packs ship signed and private",
+                "[paid] rust/src/core/compliance.rs is compliance-framework content; "
+                "it belongs to LeanCTX Enterprise",
+                "[paid] rust/src/core/compliance_evidence/checks.rs:1 carries a compliance-framework "
+                "mapping ('SOC2-CC6'); mappings belong to the Enterprise runtime",
+                "[paid] rust/src/core/detect.rs:1 names the commercial detection runtime ('GLiNER')",
+                "[paid] rust/src/core/policy/builtin/healthcare.toml is a built-in policy pack outside "
+                "the community floor; domain and compliance packs are commercial "
+                "(community keeps baseline, strict-redaction, open-source)",
+                "[paid] rust/src/core/policy/builtin/legal-ch.toml is a built-in policy pack outside "
+                "the community floor; domain and compliance packs are commercial "
+                "(community keeps baseline, strict-redaction, open-source)",
+            ],
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -25,12 +25,20 @@ use std::sync::atomic::{AtomicU64, Ordering};
 
 // The `http` crate's type (what axum re-exports), so the slot builds without
 // the `http-server` feature (#586).
+#[cfg(feature = "http-server")]
 use http::request::Parts;
+#[cfg(feature = "http-server")]
 use serde_json::Value;
+
+#[cfg(feature = "http-server")]
+use super::admitted::{self, Admission, AdmittedBody, Payload};
+#[cfg(feature = "http-server")]
+use crate::core::context_admission::egress::{EgressTarget, TrustedDestinationBinding};
 
 /// Probe timeout: `count_tokens` typically answers in well under a second; a
 /// probe slower than the model's own response is useless (the row degrades to
 /// the estimate), so give up early and free the connection.
+#[cfg(feature = "http-server")]
 const PROBE_TIMEOUT_SECS: u64 = 10;
 
 /// Lock-free result slot shared between the detached probe task and the usage
@@ -67,6 +75,7 @@ impl CounterfactualSlot {
 /// unknown fields (`max_tokens`, `stream`, `metadata`, … → 400), so the probe
 /// body is a whitelist projection of the original request, never the request
 /// itself.
+#[cfg(feature = "http-server")]
 const COUNT_TOKENS_FIELDS: &[&str] = &[
     "model",
     "messages",
@@ -82,6 +91,7 @@ const COUNT_TOKENS_FIELDS: &[&str] = &[
 /// *original* request would have cost. Returns `None` when the body has no
 /// `model`/`messages` (nothing meaningful to count). Read-only: the forwarded
 /// request is never touched (#701 regression contract).
+#[cfg(feature = "http-server")]
 pub(crate) fn probe_body(original: &Value, original_model: Option<&str>) -> Option<Vec<u8>> {
     let obj = original.as_object()?;
     if !obj.contains_key("model") || !obj.contains_key("messages") {
@@ -102,6 +112,7 @@ pub(crate) fn probe_body(original: &Value, original_model: Option<&str>) -> Opti
 /// Auth/version headers the probe replays from the client request. Everything
 /// else (content-encoding, content-length, tracing) is request-specific and
 /// must not leak onto the probe.
+#[cfg(feature = "http-server")]
 const PROBE_HEADERS: &[&str] = &[
     "x-api-key",
     "authorization",
@@ -114,6 +125,7 @@ const PROBE_HEADERS: &[&str] = &[
 /// polls at response end, or `None` when no probe was spawned (feature off,
 /// non-messages path, unparseable body). Never blocks: the probe runs as a
 /// detached task; every failure mode just leaves the slot empty.
+#[cfg(feature = "http-server")]
 pub(crate) fn maybe_spawn_probe(
     client: &reqwest::Client,
     parts: &Parts,
@@ -134,53 +146,120 @@ pub(crate) fn maybe_spawn_probe(
     {
         return None;
     }
-    // The probe is a second egress to the provider: it carries the admitted
-    // request, never content the gateway masked or withheld (G6).
-    let target = crate::core::context_admission::egress::EgressTarget {
+    // The probe is a separate egress. Inspect the final count_tokens shape,
+    // including its explicit original model, and retain its own receipt gate.
+    let original_body = probe_body(original?, original_model)?;
+    let probe_doc: Value = serde_json::from_slice(&original_body).ok()?;
+    let target = EgressTarget {
         provider: "Anthropic",
-        model: original_model,
+        model: probe_doc.get("model").and_then(Value::as_str),
         upstream_base,
     };
-    let admitted = crate::core::context_admission::egress::admitted_copy(original?, &target)?;
-    let body = probe_body(&admitted, original_model)?;
-
-    let url = format!(
-        "{}/v1/messages/count_tokens",
-        upstream_base.trim_end_matches('/')
-    );
-    let mut req = client
-        .post(&url)
-        .timeout(std::time::Duration::from_secs(PROBE_TIMEOUT_SECS))
-        .header("content-type", "application/json")
-        .body(body);
-    for &name in PROBE_HEADERS {
-        if let Some(v) = parts.headers.get(name) {
-            req = req.header(name, v.clone());
-        }
+    let mut admission = admitted::admit(
+        Payload::Document(&probe_doc),
+        &target,
+        TrustedDestinationBinding::default(),
+    )
+    .ok()?;
+    if admission.is_refused() {
+        return None;
     }
+    let original_size = original_body.len();
+    let body = match admission.take_rewritten() {
+        Some(admitted_doc) => serde_json::to_vec(&admitted_doc).ok()?,
+        None => original_body,
+    };
+    let probe = Probe {
+        client: client.clone(),
+        upstream_base: upstream_base.to_owned(),
+        headers: PROBE_HEADERS
+            .iter()
+            .filter_map(|&name| Some((name, parts.headers.get(name)?.clone())))
+            .collect(),
+        body,
+        original_size,
+    };
 
     let slot = CounterfactualSlot::new();
     let task_slot = slot.clone();
     tokio::spawn(async move {
-        match req.send().await {
-            Ok(resp) if resp.status().is_success() => match resp.json::<Value>().await {
-                Ok(v) => {
-                    if let Some(tokens) = v.get("input_tokens").and_then(Value::as_u64) {
-                        task_slot.set(tokens);
-                    } else {
-                        tracing::debug!("counterfactual probe: response without input_tokens");
-                    }
-                }
-                Err(e) => tracing::debug!("counterfactual probe: unreadable response: {e}"),
-            },
-            Ok(resp) => tracing::debug!(
-                "counterfactual probe: count_tokens returned {}",
-                resp.status()
-            ),
-            Err(e) => tracing::debug!("counterfactual probe: {e}"),
-        }
+        dispatch_probe(probe, admission, task_slot).await;
     });
     Some(slot)
+}
+
+/// Everything the detached probe needs besides its admission.
+#[cfg(feature = "http-server")]
+struct Probe {
+    client: reqwest::Client,
+    upstream_base: String,
+    headers: Vec<(&'static str, axum::http::HeaderValue)>,
+    body: Vec<u8>,
+    original_size: usize,
+}
+
+/// The probe leaves through the proxy's one send path: bound to its receipt
+/// and to the admitted upstream, or not sent at all.
+#[cfg(feature = "http-server")]
+async fn dispatch_probe(probe: Probe, admission: Admission, task_slot: CounterfactualSlot) {
+    let url = format!(
+        "{}/v1/messages/count_tokens",
+        probe.upstream_base.trim_end_matches('/')
+    );
+    let head = crate::proxy::admitted::RequestHead::new(
+        reqwest::Method::POST,
+        std::iter::once((
+            axum::http::header::CONTENT_TYPE,
+            axum::http::HeaderValue::from_static("application/json"),
+        ))
+        .chain(
+            probe
+                .headers
+                .into_iter()
+                .map(|(name, value)| (axum::http::HeaderName::from_static(name), value)),
+        ),
+    );
+    let Ok(admitted_probe) = AdmittedBody::bind(
+        admission,
+        probe.body,
+        &probe.upstream_base,
+        &url,
+        head,
+        probe.original_size,
+        None,
+    )
+    .await
+    else {
+        return;
+    };
+    let attempt = admitted_probe
+        .send(&probe.client, 1, |request| {
+            request.timeout(std::time::Duration::from_secs(PROBE_TIMEOUT_SECS))
+        })
+        .await;
+    let Ok(attempt) = attempt else {
+        return;
+    };
+    match attempt.response {
+        Ok(resp) if resp.status().is_success() => match resp.json::<Value>().await {
+            Ok(v) => {
+                if let Some(tokens) = v.get("input_tokens").and_then(Value::as_u64) {
+                    task_slot.set(tokens);
+                } else {
+                    tracing::debug!("counterfactual probe: response without input_tokens");
+                }
+            }
+            Err(e) => tracing::debug!(
+                "counterfactual probe: unreadable response: {}",
+                admitted::transport_failure(&e)
+            ),
+        },
+        Ok(resp) => tracing::debug!(
+            "counterfactual probe: count_tokens returned {}",
+            resp.status()
+        ),
+        Err(e) => tracing::debug!("counterfactual probe: {}", admitted::transport_failure(&e)),
+    }
 }
 
 #[cfg(test)]
@@ -201,6 +280,53 @@ mod tests {
             "temperature": 0.7,
             "metadata": {"user_id": "u1"}
         })
+    }
+
+    #[tokio::test(flavor = "current_thread")]
+    async fn mandatory_receipt_failure_prevents_counterfactual_network_request() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let config = crate::core::paths::config_dir_read_only().expect("config directory");
+        std::fs::create_dir_all(&config).expect("config directory");
+        std::fs::write(
+            config.join("config.toml"),
+            "[context_gateway]\nmode = \"governed\"\n",
+        )
+        .expect("governed config");
+        let data = crate::core::data_dir::lean_ctx_data_dir().expect("data directory");
+        std::fs::create_dir_all(&data).expect("data directory");
+        std::fs::write(data.join("gateway"), b"blocked test store").expect("store obstruction");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("listener");
+        let upstream = format!("http://{}", listener.local_addr().expect("address"));
+        let body = probe_body(&full_request(), None).expect("probe bytes");
+        let document: Value = serde_json::from_slice(&body).expect("probe JSON");
+        let admission = admitted::admit(
+            Payload::Document(&document),
+            &EgressTarget {
+                provider: "Anthropic",
+                model: document.get("model").and_then(Value::as_str),
+                upstream_base: &upstream,
+            },
+            TrustedDestinationBinding::default(),
+        )
+        .expect("probe admission");
+        let probe = Probe {
+            client: reqwest::Client::new(),
+            upstream_base: upstream.clone(),
+            headers: Vec::new(),
+            original_size: body.len(),
+            body,
+        };
+        let slot = CounterfactualSlot::new();
+        dispatch_probe(probe, admission, slot.clone()).await;
+        assert!(slot.get().is_none());
+        assert!(
+            tokio::time::timeout(std::time::Duration::from_millis(50), listener.accept())
+                .await
+                .is_err()
+        );
     }
 
     #[test]

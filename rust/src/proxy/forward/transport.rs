@@ -8,58 +8,147 @@ use axum::{
 
 use super::headers::{is_forwarded_response_header, should_forward_request_header};
 use crate::proxy::ProxyState;
+use crate::proxy::admitted::{
+    AdmittedBody, GatewayRefusal, RequestHead, SendAttempt, transport_failure,
+};
 use crate::proxy::codec::{is_retryable_status, retry_backoff};
+use futures::StreamExt as _;
 
 #[cfg(feature = "shape-xlat")]
 use super::xlat::xlat_response_bytes;
 
+/// Why no upstream response is handed back.
+#[derive(Debug)]
+pub(crate) enum UpstreamFailure {
+    /// Transport failure, reported as `status`. `observed`: every attempt
+    /// that was sent has its observation on record (AP10-C5).
+    Status { status: StatusCode, observed: bool },
+    /// The gateway did not (or no longer) let the body leave.
+    Refused(GatewayRefusal),
+}
+
+/// The proxy's own answer `status` to a request one of whose sent attempts
+/// is not on record: empty, with [`EGRESS_EVIDENCE_HEADER`].
+pub(crate) fn unobserved_failure(status: StatusCode) -> Response {
+    let mut response = Response::new(Body::empty());
+    *response.status_mut() = status;
+    response.headers_mut().insert(
+        EGRESS_EVIDENCE_HEADER,
+        axum::http::HeaderValue::from_static(OBSERVATION_UNAVAILABLE),
+    );
+    response
+}
+
+/// Response header on a reply whose sent attempts are not all on record: an
+/// attempt left, but its transport observation could not be saved. The
+/// stored lifecycle alone cannot show that gap — a missing attempt 2 reads
+/// like a request that was never retried — so the reply states it.
+pub(crate) const EGRESS_EVIDENCE_HEADER: &str = "x-leanctx-egress-evidence";
+pub(crate) const OBSERVATION_UNAVAILABLE: &str = "receipt.observation_unavailable";
+
+/// The upstream response a dispatch hands back.
+#[derive(Debug)]
+pub(crate) struct Dispatched {
+    pub(crate) response: reqwest::Response,
+    /// Every attempt that was sent has its observation on record. `false`
+    /// (AP10-C5) is carried to the reply as [`EGRESS_EVIDENCE_HEADER`].
+    pub(crate) observed: bool,
+}
+
+/// The head a forwarded request is sent with: the caller's method and the
+/// allow-listed caller headers, as they are when the body is bound. It is
+/// bound with the body, so nothing added to `parts` afterwards leaves.
+pub(crate) fn forwarded_head(parts: &Parts, preserve_content_encoding: bool) -> RequestHead {
+    RequestHead::new(
+        parts.method.clone(),
+        parts
+            .headers
+            .iter()
+            .filter(|(name, _)| {
+                should_forward_request_header(
+                    &name.as_str().to_lowercase(),
+                    preserve_content_encoding,
+                )
+            })
+            .map(|(name, value)| (name.clone(), value.clone())),
+    )
+}
+
+/// Dispatch an admitted body. The body type is the guarantee: only gateway
+/// admission creates an [`AdmittedBody`], and it carries the bytes, the bound
+/// upstream URL and head, the receipt every attempt is recorded against and
+/// the authority each attempt — the retry after its backoff included — must
+/// still find current before anything is sent.
 pub(crate) async fn send_upstream(
     state: &ProxyState,
-    parts: &Parts,
-    url: &str,
-    body: Vec<u8>,
+    body: &AdmittedBody,
     provider_label: &str,
-    preserve_content_encoding: bool,
-) -> Result<reqwest::Response, StatusCode> {
-    let send_once = |body: Vec<u8>| {
-        let mut req = state.client.request(parts.method.clone(), url);
-        for (key, value) in &parts.headers {
-            let k = key.as_str().to_lowercase();
-            if should_forward_request_header(&k, preserve_content_encoding) {
-                req = req.header(key.clone(), value.clone());
-            }
-        }
-        req.body(body).send()
+) -> Result<Dispatched, UpstreamFailure> {
+    // The retry uses the same admitted bytes and destination. A timeout does
+    // not establish whether the peer processed the first attempt; preserve
+    // each attempt separately instead of claiming exactly-once delivery.
+    let SendAttempt {
+        response: first,
+        recorded,
+    } = body
+        .send(&state.client, 1, |request| request)
+        .await
+        .map_err(UpstreamFailure::Refused)?;
+    let dispatched = |response: Result<reqwest::Response, reqwest::Error>, observed: bool| {
+        response
+            .map(|response| Dispatched { response, observed })
+            .map_err(|_| UpstreamFailure::Status {
+                status: StatusCode::BAD_GATEWAY,
+                observed,
+            })
     };
-
-    // First attempt. The request body is fully buffered, and no response byte
-    // has reached the client yet — retrying here is always safe for the
-    // client connection; the status filter keeps it safe semantically.
-    let first = send_once(body.clone()).await;
+    if !recorded {
+        return dispatched(first, false);
+    }
     let retry_reason = match &first {
         Ok(resp) if is_retryable_status(resp.status()) => {
             format!("status {}", resp.status().as_u16())
         }
-        Err(e) if e.is_connect() || e.is_timeout() => format!("connect error: {e}"),
+        Err(e) if e.is_connect() || e.is_timeout() => transport_failure(e).to_owned(),
         Ok(resp) => {
             let _ = resp; // healthy (or non-retryable) response — pass through
-            return first.map_err(|_| StatusCode::BAD_GATEWAY);
+            return dispatched(first, true);
         }
         Err(e) => {
-            tracing::error!("lean-ctx proxy: {provider_label} upstream error: {e}");
-            return Err(StatusCode::BAD_GATEWAY);
+            tracing::error!(
+                "lean-ctx proxy: {provider_label} upstream error: {}",
+                transport_failure(e)
+            );
+            return dispatched(first, true);
         }
     };
 
     tracing::warn!("lean-ctx proxy: {provider_label} upstream {retry_reason} — retrying once");
     retry_backoff().await;
-    match send_once(body).await {
-        Ok(resp) => Ok(resp),
+    // The policy may have changed during the backoff: the retry proves its
+    // authority again and is refused, not sent, when it is no longer current.
+    // Whatever is returned, attempt 2 was sent: an observation of it that was
+    // not saved travels with the reply (AP10-C5), not only into a log line.
+    let SendAttempt {
+        response: second,
+        recorded,
+    } = body
+        .send(&state.client, 2, |request| request)
+        .await
+        .map_err(UpstreamFailure::Refused)?;
+    match second {
+        Ok(response) => Ok(Dispatched {
+            response,
+            observed: recorded,
+        }),
         Err(e) => {
             // Second failure: surface the ORIGINAL outcome when it was an HTTP
             // response (its status/headers are more honest than our 502).
-            tracing::error!("lean-ctx proxy: {provider_label} retry failed: {e}");
-            first.map_err(|_| StatusCode::BAD_GATEWAY)
+            tracing::error!(
+                "lean-ctx proxy: {provider_label} retry failed: {}",
+                transport_failure(&e)
+            );
+            dispatched(first, recorded)
         }
     }
 }
@@ -77,6 +166,7 @@ pub(crate) async fn build_response(
     cache: Option<&crate::proxy::ocla_cache_bridge::OclaCacheBridge>,
     model: Option<&str>,
     cache_prompt_hash: &str,
+    mut sealed: Option<crate::proxy::sealed_origin::Recorder>,
 ) -> Result<Response, StatusCode> {
     let status = StatusCode::from_u16(response.status().as_u16()).unwrap_or(StatusCode::OK);
     let resp_headers = response.headers().clone();
@@ -105,7 +195,22 @@ pub(crate) async fn build_response(
             .with_cohort(cohort)
             .with_wire_context(wire)
             .with_header_cost(header_cost);
-        let inner = Box::pin(response.bytes_stream());
+        // The finished sealed items of the stream are recorded as they pass;
+        // the bytes themselves are relayed untouched.
+        let framed = resp_headers
+            .get("content-type")
+            .and_then(|v| v.to_str().ok())
+            .is_some_and(|ct| ct.contains("application/vnd.amazon.eventstream"));
+        let inner = Box::pin(response.bytes_stream().map(move |chunk| {
+            if let (Some(recorder), Ok(bytes)) = (sealed.as_mut(), &chunk) {
+                if framed {
+                    recorder.feed_eventstream(bytes);
+                } else {
+                    recorder.feed(bytes);
+                }
+            }
+            chunk
+        }));
         let body = crate::proxy::bedrock::build_stream_body(
             inner,
             scanner,
@@ -129,6 +234,10 @@ pub(crate) async fn build_response(
         .bytes()
         .await
         .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    if let Some(recorder) = sealed.as_mut() {
+        recorder.observe_body(&resp_bytes);
+    }
 
     // Non-streaming: the whole body is one JSON object carrying `usage`.
     let ocla_context = wire

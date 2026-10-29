@@ -1,0 +1,40 @@
+{
+  "filter_packs": [
+    {
+      "envelope": {
+        "kid": "hive-2026-10",
+        "signature": "k47hph+9T1Nise+dwnsD+TIQbvLuHp6+Ue85zElLOZnXHCNSA3sYy416WewK7injb4Fve7M7loUmRxIap/P7Bg==",
+        "statement_b64": "eyJwYWNrX2lkIjoiY2gtaWRlbnRpZmllcnMiLCJwYXR0ZXJucyI6W3siYWN0aW9uIjoicmVkYWN0IiwiaWQiOiJhaHYiLCJraW5kIjoicmVnZXgiLCJsYWJlbCI6ImFodi1udW1iZXIiLCJwYXR0ZXJuIjoiNzU2XFwuXFxkezR9XFwuXFxkezR9XFwuXFxkezJ9In0seyJhY3Rpb24iOiJibG9jayIsImlkIjoiaWJhbi1jaCIsImtpbmQiOiJyZWdleCIsInBhdHRlcm4iOiJDSFxcZHsyfSg/OiA/WzAtOUEtWl17NH0pezR9ID9bMC05QS1aXSJ9XSwic2NoZW1hIjoibGVhbmN0eC5maWx0ZXItcGFjay92MSIsInRpdGxlIjoiU3dpc3MgaWRlbnRpZmllcnMiLCJ2ZXJzaW9uIjozfQ=="
+      },
+      "pack_id": "ch-identifiers",
+      "sha256": "bbabcca8272c217781a8a883f8c9bed2d16b16846f95a9c6b7e1110170a415d0",
+      "version": 3
+    }
+  ],
+  "org_policy": {
+    "pack_toml": "name = \"acme-floor\"\nversion = \"1.0.0\"\ndescription = \"ACME org floor\"\n\n[context]\ndeny_tools = [\"ctx_url_read\"]\n",
+    "public_key": "AOPFa5GrCgFxdLlmRer5KDZs264eh_0hv4ZmHYbz5-8",
+    "signature": "r-6T7zMUQCaT2J8EWE7b0oHhsoGzVnKg7vqgbq8vQMRKk-28TnTEc0Ipbb6adHCohgCe1rM_UCR17UgHt2brBQ",
+    "statement": {
+      "grace_seconds": 604800,
+      "issued_at": "2026-10-20T12:00:00Z",
+      "key_id": "key:ed25519-b5012793a0020228e9affe7e7ba5dd18",
+      "not_after": "2026-11-20T12:00:00Z",
+      "not_before": "2026-10-20T12:00:00Z",
+      "organization_id": "org_acme",
+      "pack_digest": "sha256:ee77530a49b960a08875c07048fad762e4f147491ca3acef4c0f5db591dee610",
+      "policy_version": 2,
+      "required_filter_packs": [
+        {
+          "pack_id": "ch-identifiers",
+          "sha256": "bbabcca8272c217781a8a883f8c9bed2d16b16846f95a9c6b7e1110170a415d0",
+          "version": 3
+        }
+      ],
+      "schema": "leanctx.org-policy/v2"
+    }
+  },
+  "policy_version": 2,
+  "schema": "leanctx.hive.policy-bundle/v1",
+  "unpin": null
+}

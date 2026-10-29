@@ -81,14 +81,21 @@ pub(crate) fn resume_package(
         session.test_results.clone_from(&pkg.session.test_results);
     }
 
-    // Replay knowledge facts into the project knowledge store.
+    // Replay knowledge facts and summaries into the package's project stores.
+    // The session slice is already merged: a store that refuses the replay
+    // (project absent here, policy, lock timeout) is reported as skipped
+    // instead of failing a resume that has in part happened.
     if !pkg.knowledge.is_empty() {
-        report.knowledge_merged = replay_knowledge(&pkg)?;
+        match replay_knowledge(&pkg) {
+            Ok(merged) => report.knowledge_merged = merged,
+            Err(reason) => report.skipped.push(format!("knowledge facts ({reason})")),
+        }
     }
-
-    // Replay summaries into the summary store.
     if !pkg.summaries.is_empty() {
-        report.summaries_merged = replay_summaries(&pkg)?;
+        match replay_summaries(&pkg) {
+            Ok(merged) => report.summaries_merged = merged,
+            Err(reason) => report.skipped.push(format!("summaries ({reason})")),
+        }
     }
 
     report.source_session_id = pkg.session_id;
@@ -106,6 +113,8 @@ pub(crate) struct ResumeReport {
     pub next_steps_merged: usize,
     pub knowledge_merged: usize,
     pub summaries_merged: usize,
+    /// Package parts that were not replayed, each with its reason.
+    pub skipped: Vec<String>,
 }
 
 impl ResumeReport {
@@ -137,44 +146,52 @@ impl ResumeReport {
         if self.summaries_merged > 0 {
             lines.push(format!("  + {} summaries", self.summaries_merged));
         }
+        for skipped in &self.skipped {
+            lines.push(format!("  ! not replayed: {skipped}"));
+        }
         lines.join("\n")
     }
 }
 
+/// Replays the package facts as one locked read-modify-write, so a parallel
+/// writer of the same project store is never overwritten.
 fn replay_knowledge(pkg: &ContextPackage) -> Result<usize, String> {
-    let mut pk = crate::core::knowledge::ProjectKnowledge::load(&pkg.project_root)
-        .unwrap_or_else(|| crate::core::knowledge::ProjectKnowledge::new(&pkg.project_root));
     let policy = crate::core::memory_policy::MemoryPolicy::default();
-    let before = pk.facts.len();
-    for fact in &pkg.knowledge {
-        pk.remember_with_origin(
-            &fact.category,
-            &fact.key,
-            &fact.value,
-            &pkg.session_id,
-            fact.confidence,
-            &policy,
-            crate::core::knowledge::source_view::imported_origin(&fact.origin),
-        );
-    }
-    pk.save().map_err(|e| format!("save knowledge: {e}"))?;
-    Ok(pk.facts.len().saturating_sub(before))
+    let (_, merged) =
+        crate::core::knowledge::ProjectKnowledge::mutate_locked(&pkg.project_root, |pk| {
+            let before = pk.facts.len();
+            for fact in &pkg.knowledge {
+                pk.remember_with_origin(
+                    &fact.category,
+                    &fact.key,
+                    &fact.value,
+                    &pkg.session_id,
+                    fact.confidence,
+                    &policy,
+                    crate::core::knowledge::source_view::imported_origin(&fact.origin),
+                );
+            }
+            pk.facts.len().saturating_sub(before)
+        })
+        .map_err(|e| format!("save knowledge: {e}"))?;
+    Ok(merged)
 }
 
 fn replay_summaries(pkg: &ContextPackage) -> Result<usize, String> {
-    let mut store =
-        crate::core::session_summary::store::SummaryStore::load_or_create(&pkg.project_root);
-    let before = store.summaries.len();
-    let existing_ids: std::collections::HashSet<String> =
-        store.summaries.iter().map(|s| s.id.clone()).collect();
-    let cfg = crate::core::config::Config::load();
-    for s in &pkg.summaries {
-        if !existing_ids.contains(&s.id) {
-            store.push(s.clone(), cfg.summaries.max_kept as usize);
+    let max_kept = crate::core::config::Config::load().summaries.max_kept as usize;
+    crate::core::session_summary::store::SummaryStore::mutate_locked(&pkg.project_root, |store| {
+        let before = store.summaries.len();
+        let existing_ids: std::collections::HashSet<String> =
+            store.summaries.iter().map(|s| s.id.clone()).collect();
+        for s in &pkg.summaries {
+            if !existing_ids.contains(&s.id) {
+                store.push(s.clone(), max_kept);
+            }
         }
-    }
-    store.save().map_err(|e| format!("save summaries: {e}"))?;
-    Ok(store.summaries.len().saturating_sub(before))
+        Some(store.summaries.len().saturating_sub(before))
+    })
+    .map(Option::unwrap_or_default)
+    .map_err(|e| format!("save summaries: {e}"))
 }
 
 #[cfg(test)]
@@ -252,6 +269,67 @@ mod tests {
                 .iter()
                 .any(|d| d.summary == "use bounded_lock for cache")
         );
+    }
+
+    /// AP07-G2: the replay loaded and saved outside the project lock, so
+    /// parallel imports into one project lost each other's facts.
+    #[test]
+    fn parallel_knowledge_replays_keep_every_fact() {
+        use std::sync::{Arc, Barrier};
+        const IMPORTS: usize = 8;
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().expect("tempdir");
+        let project_root = project.path().to_string_lossy().to_string();
+        let barrier = Arc::new(Barrier::new(IMPORTS));
+        let imports: Vec<_> = (0..IMPORTS)
+            .map(|index| {
+                let package = ContextPackage {
+                    format_version: super::super::bundle::FORMAT_VERSION,
+                    created_at: Utc::now(),
+                    project_root: project_root.clone(),
+                    session_id: format!("session-{index}"),
+                    metadata: super::super::bundle::PackageMetadata {
+                        agent_id: None,
+                        description: None,
+                        tool_calls: 0,
+                        tokens_saved: 0,
+                    },
+                    session: super::super::bundle::SessionSlice {
+                        task: None,
+                        findings: Vec::new(),
+                        decisions: Vec::new(),
+                        files: Vec::new(),
+                        next_steps: Vec::new(),
+                        test_results: None,
+                    },
+                    summaries: Vec::new(),
+                    knowledge: vec![super::super::bundle::KnowledgeFact {
+                        origin: crate::core::knowledge::FactOrigin::Local,
+                        category: "imported".into(),
+                        key: format!("fact-{index}"),
+                        value: format!("parallel import number {index}"),
+                        confidence: 0.9,
+                        created_at: Utc::now(),
+                    }],
+                };
+                let barrier = Arc::clone(&barrier);
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    replay_knowledge(&package)
+                })
+            })
+            .collect();
+        for import in imports {
+            assert_eq!(import.join().expect("import thread"), Ok(1));
+        }
+        let stored = crate::core::knowledge::ProjectKnowledge::load(&project_root).expect("stored");
+        for index in 0..IMPORTS {
+            let key = format!("fact-{index}");
+            assert!(
+                stored.facts.iter().any(|fact| fact.key == key),
+                "{key} was lost"
+            );
+        }
     }
 
     #[test]

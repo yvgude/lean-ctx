@@ -1,0 +1,173 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/keyset.schema.json",
+  "title": "E13 GET /v1/keys key set v3 (RESOLUTIONS R55 as amended by R103: no min_image_version, no revoked_image_keys in 3.12.0)",
+  "$defs": {
+    "purpose": {
+      "enum": [
+        "policy",
+        "event",
+        "snapshot",
+        "revocation",
+        "consent",
+        "control",
+        "purge"
+      ]
+    },
+    "keyset": {
+      "type": "object",
+      "required": [
+        "schema",
+        "keys",
+        "signatures",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.keyset/v3"
+        },
+        "keys": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": [
+              "key_id",
+              "public_key",
+              "purposes",
+              "created_at",
+              "revoked_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "key_id": {
+                "$ref": "common.schema.json#/$defs/key_id"
+              },
+              "public_key": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9_-]{43}$",
+                "description": "base64url of the raw 32-byte Ed25519 key"
+              },
+              "purposes": {
+                "type": "array",
+                "minItems": 1,
+                "uniqueItems": true,
+                "items": {
+                  "$ref": "#/$defs/purpose"
+                }
+              },
+              "created_at": {
+                "$ref": "common.schema.json#/$defs/ms"
+              },
+              "revoked_at": {
+                "anyOf": [
+                  {
+                    "$ref": "common.schema.json#/$defs/ms"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            }
+          }
+        },
+        "signatures": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 2,
+          "description": "hex Ed25519 by each hosted root over \"leanctx.hive.keyset.v3\\n\" ‖ canonical_json({schema, keys}); old and new root from release day",
+          "items": {
+            "type": "object",
+            "required": [
+              "key_id",
+              "signature"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "key_id": {
+                "$ref": "common.schema.json#/$defs/key_id"
+              },
+              "signature": {
+                "$ref": "common.schema.json#/$defs/signature"
+              }
+            }
+          }
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$",
+          "description": "legacy: standard base64 Ed25519 by the old root over \"leanctx.hive.keyset.v1\\n\" ‖ canonical_json(key set without signature), the C0 1.x rule"
+        }
+      }
+    },
+    "keyset_v1": {
+      "description": "the C0 1.x key set, served unchanged to engines that send Hive-Protocol 1.x (byte copy of contracts/hive-v1/fixtures/keyset.response.json)",
+      "type": "object",
+      "required": [
+        "schema",
+        "keys",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.keyset/v1"
+        },
+        "keys": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "kid",
+              "ed25519_pub",
+              "not_after"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "kid": {
+                "type": "string"
+              },
+              "ed25519_pub": {
+                "type": "string"
+              },
+              "not_after": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "signature": {
+          "type": "string"
+        }
+      }
+    },
+    "lease_envelope": {
+      "description": "lease envelope for 2.x engines: unchanged v1 envelope, kid = the key_id of the key set v3 key with purpose policy; signature = standard base64 Ed25519 over \"leanctx.hive.lease.v1\\n\" ‖ canonical_json(lease)",
+      "type": "object",
+      "required": [
+        "schema",
+        "lease",
+        "kid",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.lease-envelope/v1"
+        },
+        "lease": {
+          "type": "object"
+        },
+        "kid": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]{86}==$"
+        }
+      }
+    }
+  }
+}

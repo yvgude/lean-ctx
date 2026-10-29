@@ -1,0 +1,55 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqae",
+  "body": {
+    "applies_to": [
+      "services/payments/retry.rs"
+    ],
+    "body_nonce": "01010101010101010101010101010101",
+    "evidence": "observed",
+    "sensitivity": "internal",
+    "statement": "Payment retries back off exponentially with full jitter, capped at 64 seconds."
+  },
+  "body_commit": "8822df5777f67d58e2588e368ec433905afb8641635dbdb476d74330c2787b9d",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 0,
+  "event_id": "01M5NKA2Z8005000000000W001",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800001000
+  },
+  "key_id": "47983724220c8521",
+  "node_type": "fact",
+  "op": "node.add",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800001350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 1,
+  "signature": "65d47c5c54d12c756e23348f2b7a45ec08f8c0b939e6832e24dc13a23969ba1be2525d420dbed5de82c43a0aa8b0618191cbddfe53c4b989c67ae79e9782660e",
+  "target": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

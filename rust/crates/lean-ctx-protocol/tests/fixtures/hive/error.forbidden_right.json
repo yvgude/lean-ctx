@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "forbidden_right",
+    "message": "This instance may not contribute to acme/payments."
+  }
+}

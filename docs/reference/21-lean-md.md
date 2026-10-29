@@ -20,14 +20,11 @@ Engine, full directive catalog, and spec: **https://github.com/dasTholo/lean-md*
 ## 2. Installation
 
 ```bash
-lean-ctx addon add @dasTholo/lean-md        # hosted pack (ctxpkg.com)
-lean-ctx addon add ./lean-md-2.0.0.ctxpkg   # a signed package you already have
+lean-ctx addon add ./lean-md-2.0.0.ctxpkg   # a signed package file
 ```
 
-`addon add` prefers a path that exists on disk and otherwise resolves
-`ns/name[@version]` against a registry. Either way the package is verified
-locally and its `[mcp]` command shown before you are asked. There is no
-`addon search`, and no install-by-name from the bundled list — that list is a
+`addon add` installs from a local file. The package is verified locally and
+its `[mcp]` command shown before you are asked. There is no `addon search`, and no install-by-name from the bundled list — that list is a
 directory, not a package source.
 
 lean-ctx does **not** install the `lean-md` binary for you; the manifest records
@@ -64,11 +61,12 @@ reports `false` and the entry serves discovery only. The validator
 ### 3.3 ctx_* outbound surface = addon contract
 
 Every lean-md code-intel directive calls back into lean-ctx via
-`backend.call("ctx_*", …)`. That tool set (`ctx_read`, `ctx_refactor`,
-`ctx_search`, `ctx_outline`, `ctx_impact`, `ctx_repomap`, `ctx_review`,
-`ctx_routes`, `ctx_smells`, `ctx_architecture`, `ctx_graph`, `ctx_callgraph`,
-`ctx_knowledge`, `ctx_handoff`, `ctx_agent`, …) is a stable **outbound contract**
-and must stay registered. Only `ctx_md_render` / `ctx_md_check` are addon-provided
+`backend.call("ctx_*", …)`. That tool set (`ctx_read`, `ctx_search`,
+`ctx_outline`, `ctx_graph`, `ctx_callgraph`, `ctx_knowledge`, `ctx_handoff`,
+`ctx_agent`, …) is a stable **outbound contract** and must stay registered.
+Tools removed in 3.11.5 (for example `ctx_refactor`, `ctx_impact`,
+`ctx_repomap`) answer a directive's call with the removal message naming their
+successor ([focus-2026-10](../migration/focus-2026-10.md)). Only `ctx_md_render` / `ctx_md_check` are addon-provided
 and absent from lean-ctx.
 
 ## 4. Decoupling rationale (vs. main)

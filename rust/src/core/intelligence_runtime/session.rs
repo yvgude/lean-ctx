@@ -11,7 +11,10 @@ use std::process::Stdio;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use lean_ctx_protocol::{EngineInvocationV1, runtime_exchange::RuntimeRequestV1};
+use lean_ctx_protocol::{
+    EngineInvocationV1,
+    runtime_exchange::{RuntimeExchangeProfile, RuntimeRequestV1},
+};
 use serde::Serialize;
 #[cfg(unix)]
 use tokio::io::AsyncWriteExt;
@@ -26,6 +29,29 @@ struct Bootstrap<'a> {
     session_id: &'a str,
     deadline_unix_ms: u64,
     invocation: &'a EngineInvocationV1,
+    /// The Hive runtime lease, the same value as in the request; only for a
+    /// package that declares `runtime_lease` `v1` or `v2` (older ones refuse
+    /// the field).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    lease_b64: Option<&'a str>,
+}
+
+/// The Hive runtime lease for `package`, base64: only for a package that
+/// declares `"runtime_lease"` `"v1"` or `"v2"`, and only while Hive offers a
+/// lease. The bytes — a v1 document, or a v2 one carrying a self-hosted
+/// Hive's root certificate — are opaque here; the runtime verifies them.
+pub(super) fn runtime_lease_b64(package: &VerifiedPackage) -> Option<String> {
+    takes_lease(package)
+        .then(super::lease::current_lease_b64)
+        .flatten()
+}
+
+/// Whether `package` declares that it takes the Hive runtime lease.
+pub(super) fn takes_lease(package: &VerifiedPackage) -> bool {
+    matches!(
+        package.description["runtime_lease"].as_str(),
+        Some("v1" | "v2")
+    )
 }
 
 /// The caller supplies an admitted projection, not untrusted tool arguments.
@@ -36,9 +62,29 @@ pub(super) fn invoke(
     trust: &[u8; 32],
     request: &RuntimeRequestV1,
 ) -> Result<serde_json::Value> {
-    let deadline = request_deadline(request)?;
+    let deadline = request_deadline(request, RuntimeExchangeProfile::ORDINARY)?;
     let package = install::verified_active(root, selected, trust)?;
     invoke_verified(root, selected, trust, request, &package, deadline)
+}
+
+/// The size profile of one exchange, decided from the authenticated package
+/// and the exact operation — the two things the request cannot forge. Only
+/// the organization policy verifier of a package that declares it in a
+/// complete admitted set gets its wider, finite profile; everything else,
+/// including a request that merely names the verifier, stays ordinary.
+pub(super) fn exchange_profile(
+    package: &VerifiedPackage,
+    invocation: &EngineInvocationV1,
+) -> RuntimeExchangeProfile {
+    let operation = &invocation.operation;
+    if operation.capability_id.as_str() == super::org_policy_verifier::CAPABILITY_ID
+        && operation.capability_version.as_str() == super::org_policy_verifier::CAPABILITY_VERSION
+        && health::supports_org_policy_verifier(package)
+    {
+        RuntimeExchangeProfile::ORG_POLICY_VERIFIER
+    } else {
+        RuntimeExchangeProfile::ORDINARY
+    }
 }
 
 /// Authenticate once for this invocation, then construct the request from that
@@ -51,21 +97,69 @@ pub(super) fn invoke_built(
 ) -> Result<(RuntimeRequestV1, serde_json::Value)> {
     let package = install::verified_active(root, selected, trust)?;
     let request = build(&package)?;
-    let deadline = request_deadline(&request)?;
+    let deadline = request_deadline(&request, exchange_profile(&package, &request.invocation))?;
     let response = invoke_verified(root, selected, trust, &request, &package, deadline)?;
     Ok((request, response))
 }
 
-fn request_deadline(request: &RuntimeRequestV1) -> Result<Instant> {
+fn request_deadline(
+    request: &RuntimeRequestV1,
+    profile: RuntimeExchangeProfile,
+) -> Result<Instant> {
     let started = Instant::now();
     let now = unix_millis()?;
     request
-        .validate_at(now)
+        .validate_at_in(now, profile)
         .map_err(|_| InstallError::Exchange)?;
     if request.sequence != 1 {
         return Err(InstallError::Exchange);
     }
     Ok(started + Duration::from_millis(request.deadline_unix_ms - now))
+}
+
+/// Check the authenticated package and requested operation before staging or
+/// starting a peer. Legacy routing descriptions remain installable, but never
+/// authorize an invocation of model routing. Semantic detectors are never an
+/// exchange invocation: a model set is asked through the warm worker of a
+/// long-lived process only, so no one-shot process is started for it.
+pub(super) fn admit_invocation(
+    package: &VerifiedPackage,
+    invocation: &EngineInvocationV1,
+) -> Result<()> {
+    health::validate_capabilities(package)?;
+    let operation = &invocation.operation;
+    // The organization policy verifier is an operation only of a package
+    // that declares it inside a complete admitted set; no other operation
+    // stands in for it and it stands in for none.
+    let verifier = operation.capability_id.as_str() == "enterprise.runtime.org_policy_verifier";
+    let supported = (matches!(
+        operation.capability_id.as_str(),
+        "pro.runtime.adaptive_context"
+            | "pro.runtime.memory_curation"
+            | "pro.runtime.personal_protection"
+            | "pro.runtime.code_security"
+            | "pro.runtime.context_policy"
+    ) || (verifier && health::supports_org_policy_verifier(package))
+        || (operation.capability_id.as_str() == super::compliance_frameworks::CAPABILITY_ID
+            && health::supports_compliance_frameworks(package)))
+        && package.description["capabilities"]
+            .as_array()
+            .is_some_and(|capabilities| {
+                capabilities.iter().any(|capability| {
+                    capability
+                        == &serde_json::json!({
+                            "id": operation.capability_id.as_str(),
+                            "version": operation.capability_version.as_str()
+                        })
+                })
+            });
+    if invocation.engine.engine_id.as_str() != "leanctx-intelligence"
+        || invocation.engine.engine_version.as_str() != package.receipt.version
+        || !supported
+    {
+        return Err(InstallError::InvocationAdmission);
+    }
+    Ok(())
 }
 
 fn invoke_verified(
@@ -76,40 +170,39 @@ fn invoke_verified(
     package: &VerifiedPackage,
     deadline: Instant,
 ) -> Result<serde_json::Value> {
-    // Released packages still describe themselves through the retired routing
-    // capability; it identifies the package generation but is never invoked.
-    health::routing_version(package)?;
-    let requested_version = request.invocation.operation.capability_version.as_str();
-    let supported = match request.invocation.operation.capability_id.as_str() {
-        "pro.runtime.adaptive_context" => {
-            requested_version == "1.0.0" && health::supports_context(package)
+    admit_invocation(package, &request.invocation)?;
+    // Fixed here, after admission and before a process exists, for the whole
+    // exchange: request, response frame and response content.
+    let profile = exchange_profile(package, &request.invocation);
+    // The lease travels in the request and the bootstrap alike; the bounded
+    // request is validated again with it.
+    let lease_b64 = runtime_lease_b64(package);
+    let leased;
+    let request = match &lease_b64 {
+        Some(lease) => {
+            let mut with_lease = request.clone();
+            with_lease.lease_b64 = Some(lease.clone());
+            with_lease
+                .validate_in(profile)
+                .map_err(|_| InstallError::Exchange)?;
+            leased = with_lease;
+            &leased
         }
-        "pro.runtime.memory_curation" => {
-            requested_version == "1.0.0" && health::supports_memory(package)
-        }
-        "pro.runtime.personal_protection" => {
-            requested_version == "1.0.0" && health::supports_protection(package)
-        }
-        "pro.runtime.code_security" => {
-            requested_version == "1.0.0" && health::supports_code_security(package)
-        }
-        "pro.runtime.semantic_detectors" => {
-            requested_version == "1.0.0" && health::supports_semantic_detectors(package)
-        }
-        _ => false,
+        None => request,
     };
-    if request.invocation.engine.engine_id.as_str() != "leanctx-intelligence"
-        || request.invocation.engine.engine_version.as_str() != package.receipt.version
-        || !supported
-    {
-        return Err(InstallError::Exchange);
-    }
     let (temporary, mut command) = health::prepare(package, root)?;
     if package.description["entitlement_required"] == true {
         // Operator provisioning is independent of request input and the transport
         // session key. Only the private peer interprets/enforces commercial claims.
-        let configuration = super::provisioning::configuration_path(root, selected, trust)?;
-        command.env("LEANCTX_INTELLIGENCE_LICENSE_CONFIG", configuration);
+        match super::license::configuration_path(root, selected, trust) {
+            Ok(configuration) => {
+                command.env("LEANCTX_INTELLIGENCE_LICENSE_CONFIG", configuration);
+            }
+            // No commercial licence: the Hive lease is the claim instead,
+            // and the runtime decides what it admits.
+            Err(_) if lease_b64.is_some() => {}
+            Err(error) => return Err(error),
+        }
     }
     #[cfg(unix)]
     let endpoint = temporary.path().canonicalize()?.join("peer.sock");
@@ -130,6 +223,7 @@ fn invoke_verified(
             session_id: &request.session_id,
             deadline_unix_ms: request.deadline_unix_ms,
             invocation: &request.invocation,
+            lease_b64: lease_b64.as_deref(),
         })
         .map_err(|_| InstallError::Exchange)?,
     );
@@ -203,16 +297,18 @@ fn invoke_verified(
                                         &mut provision,
                                         &key,
                                         request,
+                                        profile,
                                     )
                                     .await
                                     .map_err(|_| InstallError::Exchange);
                                 }
                                 provision.shutdown().await?;
                                 wait_ready(&endpoint, &finished).await?;
-                                crate::ipc::runtime::exchange(
+                                crate::ipc::runtime::exchange_in(
                                     &crate::ipc::DaemonAddr::Unix(endpoint.clone()),
                                     &key,
                                     request,
+                                    profile,
                                 )
                                 .await
                                 .map_err(|_| InstallError::Exchange)
@@ -224,6 +320,7 @@ fn invoke_verified(
                                     provision,
                                     &key,
                                     request,
+                                    profile,
                                     bootstrap.as_slice(),
                                     &finished,
                                 )

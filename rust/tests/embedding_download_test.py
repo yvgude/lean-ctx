@@ -225,8 +225,8 @@ pub fn parse_csv_line(line: &str) -> Vec<String> {
         # Reindex with embeddings
         print("\n--- Reindex with embedding generation ---")
         resp = client.request("tools/call", {
-            "name": "ctx_semantic_search",
-            "arguments": {"query": "", "path": project_dir, "action": "reindex"}
+            "name": "ctx_index",
+            "arguments": {"project_root": project_dir, "action": "build-full"}
         }, 2, timeout=60)
         text = get_text(resp)
         print(f"  Output: {text}")
@@ -239,8 +239,8 @@ pub fn parse_csv_line(line: &str) -> Vec<String> {
         # Search — should be hybrid mode now
         print("\n--- Hybrid search test ---")
         resp = client.request("tools/call", {
-            "name": "ctx_semantic_search",
-            "arguments": {"query": "fibonacci number calculation", "path": project_dir, "top_k": 5}
+            "name": "ctx_search",
+            "arguments": {"action": "semantic", "query": "fibonacci number calculation", "path": project_dir, "top_k": 5}
         }, 3, timeout=30)
         text = get_text(resp)
         print(f"  Output: {text[:300]}")
@@ -261,8 +261,8 @@ pub fn parse_csv_line(line: &str) -> Vec<String> {
         ]
         for query, expected in queries:
             resp = client.request("tools/call", {
-                "name": "ctx_semantic_search",
-                "arguments": {"query": query, "path": project_dir, "top_k": 3}
+                "name": "ctx_search",
+                "arguments": {"action": "semantic", "query": query, "path": project_dir, "top_k": 3}
             }, 40 + queries.index((query, expected)), timeout=15)
             text = get_text(resp)
             check(f"'{query}' → matches '{expected}'", resp,

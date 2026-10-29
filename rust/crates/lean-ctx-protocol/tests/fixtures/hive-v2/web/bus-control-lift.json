@@ -1,0 +1,21 @@
+{
+  "route": "W38",
+  "method": "DELETE",
+  "path": "/api/v1/buses/v/acme/payments/controls/ctl_vvvvvvvvvvvvvvvvvvvvvvvvva",
+  "request": null,
+  "response": {
+    "status": 204,
+    "body": null
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "Confirm with your authenticator app."
+        }
+      }
+    }
+  ]
+}

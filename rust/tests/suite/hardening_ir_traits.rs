@@ -494,10 +494,28 @@ mod contracts_integrity {
     #[test]
     fn mcp_logging_targets_stderr_never_stdout() {
         let logging = include_str!("../../src/core/logging.rs");
-        assert!(
-            logging.matches("with_writer(std::io::stderr)").count() >= 2,
-            "both init_logging and init_mcp_logging must pin the tracing writer to stderr"
+        // One installer pins the writer (`init_with_default`); both entry
+        // points go through it and nothing else installs a subscriber.
+        assert_eq!(
+            logging.matches("with_writer(").count(),
+            1,
+            "exactly one place installs the tracing writer"
         );
+        assert!(
+            logging.contains("with_writer(std::io::stderr)"),
+            "the one tracing writer must be stderr"
+        );
+        for entry in ["init_logging", "init_mcp_logging"] {
+            let body = logging
+                .split_once(&format!("fn {entry}() {{"))
+                .and_then(|(_, rest)| rest.split_once('}'))
+                .map(|(body, _)| body)
+                .unwrap_or_default();
+            assert!(
+                body.contains("init_with_default("),
+                "{entry} must install logging through the stderr installer"
+            );
+        }
         assert!(
             !logging.contains("std::io::stdout"),
             "logging must never route tracing to stdout — it corrupts the MCP JSON-RPC channel (#348)"

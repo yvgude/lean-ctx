@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "task_claimed",
+    "message": "Another worker holds this task."
+  }
+}

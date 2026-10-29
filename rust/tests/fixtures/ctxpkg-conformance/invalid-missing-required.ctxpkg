@@ -1,0 +1,116 @@
+{
+  "manifest": {
+    "schema_version": 1,
+    "name": "conformance-l1",
+    "version": "1.0.0",
+    "description": "",
+    "author": null,
+    "created_at": "2026-06-11T09:45:49.262348Z",
+    "updated_at": null,
+    "layers": [
+      "knowledge"
+    ],
+    "dependencies": [],
+    "tags": [],
+    "provenance": {
+      "tool": "lean-ctx",
+      "tool_version": "3.7.5",
+      "project_hash": "0dba39bc25d8d3b1",
+      "source_session_id": null
+    },
+    "compatibility": {
+      "min_lean_ctx_version": null,
+      "target_languages": [],
+      "target_frameworks": []
+    },
+    "stats": {
+      "knowledge_facts": 3,
+      "graph_nodes": 0,
+      "graph_edges": 0,
+      "pattern_count": 0,
+      "gotcha_count": 0,
+      "compression_ratio": 0.28996692392502754
+    }
+  },
+  "content": {
+    "knowledge": {
+      "facts": [
+        {
+          "category": "facts",
+          "key": "cv-fact-1",
+          "value": "Conformance vector: a Level-1 reader loads flat typed nodes",
+          "source_session": "cli-19eb612d64b",
+          "confidence": 0.8,
+          "created_at": "2026-06-11T09:45:48.431807Z",
+          "last_confirmed": "2026-06-11T09:45:48.431807Z",
+          "retrieval_count": 0,
+          "last_retrieved": null,
+          "valid_from": "2026-06-11T09:45:48.431807Z",
+          "valid_until": null,
+          "supersedes": null,
+          "confirmation_count": 1,
+          "feedback_up": 0,
+          "feedback_down": 0,
+          "last_feedback": null,
+          "privacy": "project_only",
+          "sensitivity": "public",
+          "imported_from": null,
+          "archetype": "fact",
+          "fidelity": null,
+          "revision_count": 1
+        },
+        {
+          "category": "facts",
+          "key": "cv-fact-2",
+          "value": "Readers must reject packages whose integrity hashes do not match",
+          "source_session": "cli-19eb612d7db",
+          "confidence": 0.8,
+          "created_at": "2026-06-11T09:45:48.816823Z",
+          "last_confirmed": "2026-06-11T09:45:48.816823Z",
+          "retrieval_count": 0,
+          "last_retrieved": null,
+          "valid_from": "2026-06-11T09:45:48.816823Z",
+          "valid_until": null,
+          "supersedes": null,
+          "confirmation_count": 1,
+          "feedback_up": 0,
+          "feedback_down": 0,
+          "last_feedback": null,
+          "privacy": "project_only",
+          "sensitivity": "public",
+          "imported_from": null,
+          "archetype": "fact",
+          "fidelity": null,
+          "revision_count": 1
+        },
+        {
+          "category": "gotcha",
+          "key": "cv-gotcha-1",
+          "value": "Unknown node types are preserved on round-trip",
+          "source_session": "cli-19eb612d957",
+          "confidence": 0.8,
+          "created_at": "2026-06-11T09:45:49.196339Z",
+          "last_confirmed": "2026-06-11T09:45:49.196339Z",
+          "retrieval_count": 0,
+          "last_retrieved": null,
+          "valid_from": "2026-06-11T09:45:49.196339Z",
+          "valid_until": null,
+          "supersedes": null,
+          "confirmation_count": 1,
+          "feedback_up": 0,
+          "feedback_down": 0,
+          "last_feedback": null,
+          "privacy": "project_only",
+          "sensitivity": "public",
+          "imported_from": null,
+          "archetype": "fact",
+          "fidelity": null,
+          "revision_count": 1
+        }
+      ],
+      "patterns": [],
+      "insights": [],
+      "exported_at": "2026-06-11T09:45:49.235428Z"
+    }
+  }
+}

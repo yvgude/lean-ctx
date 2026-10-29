@@ -2,8 +2,8 @@
 //!
 //! Net-new detectors that run inside the policy enforcement pipeline **before**
 //! tool output reaches the agent:
-//! - [`pii`] — names of value: Swiss AHV, IBAN, payment cards, email, with
-//!   checksum guardrails against false positives;
+//! - [`pii`] — email, phone and payment cards (checksum guardrails against
+//!   false positives); country identifiers come as Hive filter packs;
 //! - [`classification`] — block/warn on files *marked* confidential/secret;
 //! - [`injection`] — OWASP LLM01 prompt-injection in file content.
 //!

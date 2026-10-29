@@ -1,0 +1,14 @@
+{
+  "agents": [
+    {
+      "agent_id": "claude-3e",
+      "role": "hive",
+      "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+    }
+  ],
+  "cursors": {
+    "org:org_acme/vault:3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42/general": 41
+  },
+  "instance_id": "inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+  "t": "hello"
+}

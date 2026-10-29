@@ -110,6 +110,7 @@ pub(crate) fn execute_command_in(command: &str, cwd: &str) -> (String, i32) {
     execute_command_with_env(command, cwd, &std::collections::HashMap::new(), None)
 }
 
+#[cfg(test)]
 pub(crate) fn execute_command_with_env(
     command: &str,
     cwd: &str,
@@ -136,6 +137,98 @@ pub(crate) fn execute_command_with_env(
 /// genuinely runaway output hits the byte cap, which freezes the captured
 /// length and so restarts the clock, and `LEAN_CTX_SHELL_BG_MAX_MS` (default
 /// 1h) caps lifetime absolutely.
+pub(crate) struct ShellExecution {
+    pub output: String,
+    pub exit_code: i32,
+    pub completeness: crate::core::context_admission::OutputCompleteness,
+    /// Q13: what the caller has to be told about the call's processes — a
+    /// fixed, content-free line (`shell::containment`). It is NOT part of
+    /// `output`: whoever delivers the result puts it in front of the text
+    /// with [`with_notice`], after everything that admits, compresses or
+    /// shortens that text, so none of it can drop or alter the line.
+    pub notice: Option<&'static str>,
+}
+
+/// Puts a call's notice, if it has one, in front of the text delivered for
+/// it, as a line of its own. The last step of a delivery, applied once.
+pub(crate) fn with_notice(notice: Option<&'static str>, text: String) -> String {
+    match notice {
+        Some(notice) => format!("{notice}\n{text}"),
+        None => text,
+    }
+}
+
+/// Takes a notice off the front of a result that arrived as plain text (the
+/// protected launcher's supervisor runs the shell and answers with text
+/// only), so that it travels on as the typed field.
+#[cfg(unix)]
+fn split_notice(text: String) -> (Option<&'static str>, String) {
+    match leading_notice(&text) {
+        Some(notice) => {
+            let rest = text.get(notice.len() + 1..).unwrap_or_default().to_string();
+            (Some(notice), rest)
+        }
+        None => (None, text),
+    }
+}
+
+/// The notice a delivered text starts with, as a line of its own.
+#[cfg(unix)]
+pub(crate) fn leading_notice(text: &str) -> Option<&'static str> {
+    use crate::shell::containment::{END_NOTICE, HELPER_NOTICE, RELEASE_NOTICE, UNCLEAR_NOTICE};
+    [HELPER_NOTICE, END_NOTICE, UNCLEAR_NOTICE, RELEASE_NOTICE]
+        .into_iter()
+        .find(|notice| {
+            text.strip_prefix(notice)
+                .is_some_and(|rest| rest.is_empty() || rest.starts_with('\n'))
+        })
+}
+
+/// No notice exists without process containment.
+#[cfg(not(unix))]
+pub(crate) fn leading_notice(_text: &str) -> Option<&'static str> {
+    None
+}
+
+/// Keeps a call's notice in front of a text that replaced the one it stood
+/// on: the digest of a result too large to deliver inline says nothing about
+/// the call's processes by itself.
+pub(crate) fn keep_notice(notice: Option<&'static str>, text: String) -> String {
+    if leading_notice(&text).is_some() {
+        text
+    } else {
+        with_notice(notice, text)
+    }
+}
+
+impl ShellExecution {
+    fn complete(output: String, exit_code: i32) -> Self {
+        Self {
+            output,
+            exit_code,
+            completeness: crate::core::context_admission::OutputCompleteness::complete(),
+            notice: None,
+        }
+    }
+
+    /// A brokered run: the supervisor captured it, so this process cannot
+    /// vouch for the readers. Brokered execution exists on Unix only.
+    #[cfg(unix)]
+    fn unknown_capture(output: String, exit_code: i32) -> Self {
+        Self {
+            output,
+            exit_code,
+            completeness: crate::core::context_admission::OutputCompleteness {
+                reader_incomplete: true,
+                ..crate::core::context_admission::OutputCompleteness::complete()
+            },
+            notice: None,
+        }
+    }
+}
+
+// Production caller: core::protected_execution, which is unix-only.
+#[cfg(any(unix, test))]
 pub(crate) fn execute_command_with_env_cancellable(
     command: &str,
     cwd: &str,
@@ -143,10 +236,38 @@ pub(crate) fn execute_command_with_env_cancellable(
     timeout_ms: Option<u64>,
     cancel: Option<&AtomicBool>,
     idle_keyed: bool,
-    // #1217: while running, mirror the captured-so-far output here so a detached
-    // background job's `status` poll can show progress instead of nothing.
     live: Option<&std::sync::Mutex<String>>,
 ) -> (String, i32) {
+    // Kept as a compatibility wrapper. Raw progressive output is no longer
+    // written to caller-owned buffers.
+    let _ = live;
+    let execution = execute_command_with_env_cancellable_captured(
+        command, cwd, extra_env, timeout_ms, cancel, idle_keyed,
+    );
+    // Nothing shortens the text on this path: the notice goes in front here.
+    (
+        with_notice(execution.notice, execution.output),
+        execution.exit_code,
+    )
+}
+
+pub(crate) fn execute_command_with_env_captured(
+    command: &str,
+    cwd: &str,
+    extra_env: &std::collections::HashMap<String, String>,
+    timeout_ms: Option<u64>,
+) -> ShellExecution {
+    execute_command_with_env_cancellable_captured(command, cwd, extra_env, timeout_ms, None, false)
+}
+
+pub(crate) fn execute_command_with_env_cancellable_captured(
+    command: &str,
+    cwd: &str,
+    extra_env: &std::collections::HashMap<String, String>,
+    timeout_ms: Option<u64>,
+    cancel: Option<&AtomicBool>,
+    idle_keyed: bool,
+) -> ShellExecution {
     // Store isolation for model-directed subprocesses of a protected session.
     //
     // macOS refuses a nested `sandbox_apply` under the whole-MCP profile, so
@@ -165,11 +286,16 @@ pub(crate) fn execute_command_with_env_cancellable(
     let protected_prefix: Option<Vec<String>> = {
         use crate::core::protected_execution::{Mode, launch_mode, sandbox_prefix};
         match launch_mode() {
-            Err(error) => return (format!("ERROR: {error}"), 1),
+            Err(error) => return ShellExecution::complete(format!("ERROR: {error}"), 1),
             Ok(Mode::Brokered(client)) => {
-                return client.shell(
-                    command, cwd, extra_env, timeout_ms, cancel, idle_keyed, live,
+                let (output, exit_code) = client.shell(
+                    command, cwd, extra_env, timeout_ms, cancel, idle_keyed, None,
                 );
+                let (notice, output) = split_notice(output);
+                return ShellExecution {
+                    notice,
+                    ..ShellExecution::unknown_capture(output, exit_code)
+                };
             }
             Ok(Mode::Sandboxed(profile)) => Some(sandbox_prefix(&profile)),
             Ok(Mode::Direct) => None,
@@ -178,12 +304,12 @@ pub(crate) fn execute_command_with_env_cancellable(
     #[cfg(not(unix))]
     let protected_prefix = match crate::cli::protected_child_prefix() {
         Ok(prefix) => prefix,
-        Err(error) => return (format!("ERROR: {error}"), 1),
+        Err(error) => return ShellExecution::complete(format!("ERROR: {error}"), 1),
     };
 
     let _build_lease = match acquire_build_lease(command, cancel) {
         Ok(lease) => lease,
-        Err(error) => return (format!("ERROR: {error}"), 130),
+        Err(error) => return ShellExecution::complete(format!("ERROR: {error}"), 130),
     };
     let resource_config = crate::core::config::Config::load().agents;
     let (shell, flag) = crate::shell::shell_and_flag();
@@ -259,7 +385,7 @@ pub(crate) fn execute_command_with_env_cancellable(
     if dir.is_dir() {
         cmd.current_dir(dir);
     } else {
-        return (
+        return ShellExecution::complete(
             format!("ERROR: working directory does not exist or is not a directory: {cwd}"),
             1,
         );
@@ -276,43 +402,34 @@ pub(crate) fn execute_command_with_env_cancellable(
     // tcsetpgrp, and the agent that launched the MCP server is stopped by
     // SIGTTIN — "zsh: suspended claude", with mouse reporting still on.
     // The session leader's pid is its pgid, so the timeout kill is unchanged.
-    #[cfg(unix)]
-    {
-        use std::os::unix::process::CommandExt;
-        // SAFETY: setsid is async-signal-safe and touches no parent state.
-        unsafe {
-            cmd.pre_exec(|| {
-                if libc::setsid() == -1 {
-                    return Err(std::io::Error::last_os_error());
-                }
-                Ok(())
-            });
-        }
-    }
+    //
+    // Q13: on Unix the shell's parent is this process's spawn helper
+    // (`shell::containment`), which starts it with that same `setsid` and
+    // ends its session should this process die during the call. Everything
+    // decided above — command line, environment, directory, sandbox prefix —
+    // is handed over as it is. Without a helper the shell is started here, as
+    // before, and the result says so in its first line.
+    //
     // Windows has no process group to kill: contain the tree in a job object
     // instead, so a timeout or cancel ends the `python -` a heredoc started
     // rather than only its shell (#1920).
     crate::shell::process_tree::ProcessTree::prepare(&mut cmd);
 
-    let mut child = match cmd.stdout(Stdio::piped()).stderr(Stdio::piped()).spawn() {
-        Ok(c) => c,
-        Err(e) => return (format!("ERROR: {e}"), 1),
+    let started = match crate::shell::process_tree::ShellChild::start(&mut cmd) {
+        Ok(started) => started,
+        Err(e) => return ShellExecution::complete(format!("ERROR: {e}"), 1),
     };
-    let tree = match crate::shell::process_tree::ProcessTree::start(&mut child) {
-        Ok(tree) => tree,
-        Err(e) => return (format!("ERROR: {e}"), 1),
-    };
+    let mut child = started.child;
     // Stream each pipe into a shared, cap-bounded buffer that the main thread can
     // read at any time. Crucially this lets a timed-out wait recover the bytes
     // captured so far instead of discarding all output (#945).
-    let (out_buf, out_done) = spawn_capture(child.stdout.take(), cap);
-    let (err_buf, err_done) = spawn_capture(child.stderr.take(), cap);
+    let (out_buf, out_done) = spawn_capture(started.stdout, cap);
+    let (err_buf, err_done) = spawn_capture(started.stderr, cap);
 
     let timeout = command_timeout(command, timeout_ms);
     let start = Instant::now();
     let hard_deadline = idle_keyed.then(|| start + streaming_max_lifetime());
     let mut last_len = 0usize;
-    let mut live_last_len = 0usize;
     let mut last_output_at = start;
     // Named on timeout so a multi-segment pipeline says *which* part hung (#1086).
     let mut still_running: Vec<String> = Vec::new();
@@ -321,30 +438,9 @@ pub(crate) fn execute_command_with_env_cancellable(
             Ok(Some(status)) => break (crate::shell::exit_status::exit_code(status), false, false),
             Ok(None) => {
                 if cancel.is_some_and(|signal| signal.load(std::sync::atomic::Ordering::Acquire)) {
-                    tree.kill(&mut child);
-                    let _ = child.wait();
+                    child.kill();
+                    child.wait();
                     break (130, false, true);
-                }
-                // #1217: mirror the captured-so-far output into the live buffer
-                // whenever it grows, so a background `status` poll sees progress.
-                // Gated on length change and bounded by the same cap as the final
-                // capture — the decode runs at most once per 25ms sleep tick.
-                if let Some(live) = live {
-                    let len = captured_len(&out_buf) + captured_len(&err_buf);
-                    if len != live_last_len {
-                        live_last_len = len;
-                        let (out_now, _) = snapshot(&out_buf);
-                        let (err_now, _) = snapshot(&err_buf);
-                        let so = crate::shell::resolve_carriage_returns(
-                            &crate::shell::decode_output(&out_now),
-                        );
-                        let se = crate::shell::resolve_carriage_returns(
-                            &crate::shell::decode_output(&err_now),
-                        );
-                        if let Ok(mut guard) = live.lock() {
-                            *guard = crate::shell::combine_streams(&so, &se, 0);
-                        }
-                    }
                 }
                 let idle_for = if idle_keyed {
                     let len = captured_len(&out_buf) + captured_len(&err_buf);
@@ -357,22 +453,29 @@ pub(crate) fn execute_command_with_env_cancellable(
                     start.elapsed()
                 };
                 if idle_for >= timeout || hard_deadline.is_some_and(|d| Instant::now() >= d) {
-                    still_running = running_segments(&child, &normalized_cmd);
-                    tree.kill(&mut child);
-                    let _ = child.wait();
+                    still_running = running_segments(child.id(), &normalized_cmd);
+                    child.kill();
+                    child.wait();
                     break (124, true, false);
                 }
                 std::thread::sleep(Duration::from_millis(25));
             }
             Err(_) => {
-                tree.kill(&mut child);
+                child.kill();
                 break (1, false, false);
             }
         }
     };
+    // Q13: a shell whose helper went away before its exit was known has no
+    // parent that answers for it; the caller is told with the fixed notice.
+    // Such a call's outcome is not known in full — whether the command ran
+    // at all, or how it ended — so its capture counts as incomplete.
+    let lost_notice = child.lost_notice();
     // A command that exited on its own keeps what it deliberately left running,
-    // as the Unix session does; a killed tree has nothing left to release.
-    tree.release();
+    // as the Unix session does; a killed tree has nothing left to release. A
+    // release that could not be handed over is said to the caller as well.
+    let release_notice = child.release();
+    let containment_notice = started.notice.or(lost_notice).or(release_notice);
 
     // Bounded grace period for the readers to reach EOF, but always read the
     // shared buffers afterwards so output is never silently lost (#945). A reader
@@ -381,9 +484,13 @@ pub(crate) fn execute_command_with_env_cancellable(
     let reader_deadline = Instant::now() + READER_RESULT_TIMEOUT;
     let out_complete = wait_for_reader(&out_done, reader_deadline);
     let err_complete = wait_for_reader(&err_done, reader_deadline);
-    let (out_bytes, out_trunc) = snapshot(&out_buf);
-    let (err_bytes, err_trunc) = snapshot(&err_buf);
-    let reader_incomplete = !out_complete || !err_complete;
+    let (out_bytes, out_trunc, out_read_failed) = snapshot(&out_buf);
+    let (err_bytes, err_trunc, err_read_failed) = snapshot(&err_buf);
+    let reader_incomplete = !out_complete || !err_complete || out_read_failed || err_read_failed;
+    // The legacy decoder may replace invalid UTF-8 bytes. On Windows this also
+    // conservatively flags ACP decoding, whose fallback does not prove lossless.
+    let decode_lossy =
+        std::str::from_utf8(&out_bytes).is_err() || std::str::from_utf8(&err_bytes).is_err();
 
     let stdout = crate::shell::resolve_carriage_returns(&crate::shell::decode_output(&out_bytes));
     let stderr = crate::shell::resolve_carriage_returns(&crate::shell::decode_output(&err_bytes));
@@ -467,7 +574,19 @@ pub(crate) fn execute_command_with_env_cancellable(
         text.push_str("[cancelled: command stopped on request]");
     }
 
-    (text, code)
+    ShellExecution {
+        output: text,
+        exit_code: code,
+        // Q13: fixed and content-free; carried beside the text, not in it.
+        notice: containment_notice,
+        completeness: crate::core::context_admission::OutputCompleteness {
+            truncated: out_trunc || err_trunc,
+            timed_out,
+            reader_incomplete: reader_incomplete || lost_notice.is_some(),
+            cancelled,
+            decode_lossy,
+        },
+    }
 }
 
 /// Shared, cap-bounded capture buffer for one child pipe. The reader thread
@@ -479,6 +598,7 @@ pub(crate) fn execute_command_with_env_cancellable(
 struct CaptureBuf {
     bytes: Vec<u8>,
     truncated: bool,
+    read_failed: bool,
 }
 
 /// Spawn a reader that streams `pipe` into a shared [`CaptureBuf`] (bounded to
@@ -497,7 +617,15 @@ fn spawn_capture<R: Read + Send + 'static>(
             let mut buf = [0u8; 8192];
             loop {
                 match r.read(&mut buf) {
-                    Ok(0) | Err(_) => break,
+                    Ok(0) => break,
+                    Err(ref error) if error.kind() == std::io::ErrorKind::Interrupted => {}
+                    Err(_) => {
+                        writer
+                            .lock()
+                            .unwrap_or_else(std::sync::PoisonError::into_inner)
+                            .read_failed = true;
+                        break;
+                    }
                     Ok(n) => {
                         let mut s = writer
                             .lock()
@@ -523,11 +651,11 @@ fn spawn_capture<R: Read + Send + 'static>(
 
 /// Snapshot a capture buffer (clone bytes + truncation flag) under its lock.
 /// Safe to call while the reader is still writing — yields a consistent prefix.
-fn snapshot(buf: &Arc<Mutex<CaptureBuf>>) -> (Vec<u8>, bool) {
+fn snapshot(buf: &Arc<Mutex<CaptureBuf>>) -> (Vec<u8>, bool, bool) {
     let s = buf
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    (s.bytes.clone(), s.truncated)
+    (s.bytes.clone(), s.truncated, s.read_failed)
 }
 
 /// Bytes captured so far, used as the liveness signal for an idle-keyed
@@ -575,8 +703,7 @@ struct LiveProc {
 ///
 /// Best-effort: an unavailable or unparsable `ps` yields no attribution.
 #[cfg(unix)]
-fn running_segments(child: &std::process::Child, command: &str) -> Vec<String> {
-    let pgid = child.id();
+fn running_segments(pgid: u32, command: &str) -> Vec<String> {
     // POSIX-portable field selection; `ps -g` differs between BSD and Linux.
     // `ppid` is read so a descendant can be labelled as one rather than
     // presented as a sibling stage.
@@ -645,7 +772,7 @@ fn parse_ps_row(line: &str, pgid: u32, needle: &str) -> Option<LiveProc> {
 }
 
 #[cfg(not(unix))]
-fn running_segments(_child: &std::process::Child, _command: &str) -> Vec<String> {
+fn running_segments(_pgid: u32, _command: &str) -> Vec<String> {
     // No process groups here, so a descendant cannot be attributed to this run.
     Vec::new()
 }

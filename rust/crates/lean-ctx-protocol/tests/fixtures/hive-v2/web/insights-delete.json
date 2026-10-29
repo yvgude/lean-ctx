@@ -1,0 +1,33 @@
+{
+  "route": "W102",
+  "method": "DELETE",
+  "path": "/api/v1/orgs/platform/insights/data?engine=inst_7e2a4c6e8a0c2e4a6c8e0a2c4e6a8c0e",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "deleted_buckets": 1412,
+      "engines": 1
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "confirm with your second factor"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "only the engine's owner or an admin deletes its metrics"
+        }
+      }
+    }
+  ]
+}

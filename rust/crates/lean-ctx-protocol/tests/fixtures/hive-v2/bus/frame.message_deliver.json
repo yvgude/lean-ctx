@@ -1,0 +1,24 @@
+{
+  "body": {
+    "text": "Yes; the lock is released only after the export commit."
+  },
+  "client_msg_id": "01M5NKA2Z8B000000000000002",
+  "id": "msg_00000000000000a2",
+  "provenance": "workspace",
+  "received_at": 1792800002000,
+  "reply_to": "msg_00000000000000a1",
+  "schema": "leanctx.hive.bus/v2",
+  "sender": {
+    "host_app": "codex",
+    "kind": "worker",
+    "name": "mara-pc · Codex · reviewer",
+    "owner_handle": "mara",
+    "worker_id": "wkr_gawyravj36igdp3irdfo"
+  },
+  "seq": 2,
+  "t": "message.deliver",
+  "thread_id": "msg_00000000000000a1",
+  "to": "#acme/payments",
+  "type": "answer",
+  "worker_id": "wkr_gawyravj36igdp3irdfo"
+}

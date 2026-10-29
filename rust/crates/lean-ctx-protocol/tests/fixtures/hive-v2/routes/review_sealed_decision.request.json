@@ -1,0 +1,13 @@
+{
+  "answer": "accept",
+  "approved_at": 1792805000000,
+  "channel": "web",
+  "command_digests": [
+    "b3fd3eb9eb726da6ec7d607676e34ef9911178e8dc3c89fd55c555c8a75737be"
+  ],
+  "consent_id": "cns_fgh234567abcdefg",
+  "item_digest": "76747fc3113073b18d24d25fb561f26ba9b5dc3bbd568a040ba40f600c351f4b",
+  "key_id": "47983724220c8521",
+  "reason_code": "correct",
+  "signature": "bb2e34d326683f947831d721de3527c32ab7b5430c41f5c85832300f72a26da17cbe58d502d9060638b0c3578e2a0d8d9aec7ce9e876c87e44abb6b9598c8304"
+}

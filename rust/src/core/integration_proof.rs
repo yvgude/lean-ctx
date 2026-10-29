@@ -1,4 +1,9 @@
-//! Executable end-to-end proof for the task decision pipeline.
+//! Executable end-to-end self-test of the task decision pipeline.
+//!
+//! It runs five fixture tasks with simulated execution costs and outcomes, so its
+//! result is a test of the pipeline wiring, never evidence of real acceptance.
+//! It used to back `lean-ctx prove` and the evidence export; both now carry only
+//! measured data (`docs/migration/focus-2026-10.md`).
 
 use std::sync::Arc;
 
@@ -6,7 +11,6 @@ use lean_ctx_protocol::AcceptanceState;
 
 use super::{
     decision_loop::{DecisionLoop, DecisionResult, protocol_profile},
-    evidence_ledger::EvidenceLedgerV1,
     knowledge_router::{
         ContextCandidate, KnowledgeRouter, PatternReferenceResolver,
         source_manifest::builtin_manifests,
@@ -15,18 +19,16 @@ use super::{
 };
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct ProofResult {
+pub(crate) struct ProofResult {
     pub tasks: Vec<TaskProof>,
     pub aggregate_cpao_micros: Option<u64>,
     pub total_cost_micros: u64,
     pub accepted_rate: f64,
     pub evidence_chain_complete: bool,
-    /// In-memory ledger proving each stage for every task in this run.
-    pub evidence_ledger: EvidenceLedgerV1,
 }
 
 #[derive(Debug, Clone, serde::Serialize)]
-pub struct TaskProof {
+pub(crate) struct TaskProof {
     pub task_id: String,
     pub query: String,
     pub profile_intent: String,
@@ -42,7 +44,7 @@ pub struct TaskProof {
     pub evidence_stages: Vec<String>,
 }
 
-pub fn prove_decision_loop() -> ProofResult {
+pub(crate) fn prove_decision_loop() -> ProofResult {
     let loop_ = DecisionLoop::default();
     let router = KnowledgeRouter {
         manifests: builtin_manifests(),
@@ -57,7 +59,6 @@ pub fn prove_decision_loop() -> ProofResult {
     ];
     let mut results = Vec::with_capacity(queries.len());
     let mut tasks = Vec::with_capacity(queries.len());
-    let mut evidence_ledger = EvidenceLedgerV1::default();
     for (index, query) in queries.into_iter().enumerate() {
         let mut result = loop_.execute_task(query, "integration-proof", &format!("proof-{index}"));
         let routing = router.route(
@@ -69,7 +70,7 @@ pub fn prove_decision_loop() -> ProofResult {
         );
         let (cost, signals) = simulated_execution(index);
         loop_.complete_simulated_task(&mut result, cost, signals);
-        let evidence_stages = record_evidence_chain(&mut evidence_ledger, &result, &routing);
+        let evidence_stages = record_evidence_chain(&result, &routing);
         tasks.push(task_proof(
             query,
             &result,
@@ -92,7 +93,6 @@ pub fn prove_decision_loop() -> ProofResult {
         total_cost_micros,
         accepted_rate: accepted as f64 / tasks.len() as f64,
         evidence_chain_complete,
-        evidence_ledger,
         tasks,
     }
 }
@@ -103,8 +103,8 @@ fn has_complete_stage_chain(stages: &[String]) -> bool {
     stages.iter().map(String::as_str).eq(EVIDENCE_STAGES)
 }
 
+/// The stages that produced a value for this task, in pipeline order.
 fn record_evidence_chain(
-    ledger: &mut EvidenceLedgerV1,
     result: &DecisionResult,
     routing: &super::knowledge_router::RoutingResult,
 ) -> Vec<String> {
@@ -114,20 +114,11 @@ fn record_evidence_chain(
         &routing.receipt.receipt_id,
         acceptance_label(result.acceptance_state),
     ];
-    for (stage, detail) in EVIDENCE_STAGES.iter().zip(details) {
-        ledger.record_manual_with_task(
-            &format!("decision_loop.{stage}"),
-            Some(detail),
-            Some(&result.task_id),
-            chrono::Utc::now(),
-        );
-    }
-    ledger
-        .items
+    EVIDENCE_STAGES
         .iter()
-        .filter(|item| item.task_id.as_deref() == Some(result.task_id.as_str()))
-        .filter_map(|item| item.key.strip_prefix("decision_loop."))
-        .map(str::to_owned)
+        .zip(details)
+        .filter(|(_, detail)| !detail.is_empty())
+        .map(|(stage, _)| (*stage).to_owned())
         .collect()
 }
 
@@ -306,23 +297,6 @@ mod tests {
     }
 
     #[test]
-    fn test_prove_output_contains_tasks() {
-        let proof = prove_decision_loop();
-        let output = crate::cli::prove::render(&proof, "table").unwrap();
-        assert!(
-            proof.tasks.iter().all(|task| {
-                output.contains(&task.task_id.chars().take(11).collect::<String>())
-            })
-        );
-    }
-
-    #[test]
-    fn test_prove_json_valid() {
-        let output = crate::cli::prove::render(&prove_decision_loop(), "json").unwrap();
-        assert!(serde_json::from_str::<serde_json::Value>(&output).is_ok());
-    }
-
-    #[test]
     fn test_proof_simulation_does_not_persist_fake_evidence() {
         let _isolation = crate::core::data_dir::isolated_data_dir();
         let proof = super::prove_decision_loop();
@@ -365,24 +339,6 @@ mod tests {
     }
 
     #[test]
-    fn test_prove_outputs_are_labeled_simulated_self_test() {
-        let proof = prove_decision_loop();
-        for format in ["json", "table", "markdown"] {
-            let output = crate::cli::prove::render(&proof, format).unwrap();
-            assert!(output.contains("SIMULATED SELF-TEST ONLY"));
-            assert!(output.contains("NOT ACTUAL PAID EXECUTION OR PRODUCTION ACCEPTANCE"));
-        }
-
-        let json: serde_json::Value =
-            serde_json::from_str(&crate::cli::prove::render(&proof, "json").unwrap()).unwrap();
-        assert_eq!(json["execution_mode"], "simulated_self_test");
-        assert_eq!(
-            json["disclaimer"],
-            "NOT ACTUAL PAID EXECUTION OR PRODUCTION ACCEPTANCE"
-        );
-    }
-
-    #[test]
     fn test_prove_evidence_complete() {
         assert!(prove_decision_loop().evidence_chain_complete);
     }
@@ -415,9 +371,7 @@ mod tests {
         assert_eq!(result.outcome.as_ref().unwrap().task_id, result.task_id);
         assert_eq!(result.assessment.as_ref().unwrap().task_id, result.task_id);
         assert!(has_complete_stage_chain(&record_evidence_chain(
-            &mut EvidenceLedgerV1::default(),
-            &result,
-            &routing,
+            &result, &routing,
         )));
     }
 

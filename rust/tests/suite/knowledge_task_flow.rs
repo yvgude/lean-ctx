@@ -35,7 +35,7 @@ fn knowledge_object(id: &str, source_type: KnowledgeSourceType) -> KnowledgeObje
 }
 
 #[test]
-fn receipt_proves_technical_and_governed_knowledge_context() {
+fn enrichment_binds_technical_and_governed_knowledge_context() {
     let mut store = LocalKnowledgeStore::new();
     store
         .put(knowledge_object(
@@ -55,22 +55,13 @@ fn receipt_proves_technical_and_governed_knowledge_context() {
         KnowledgeQuery::default(),
     );
     let references = enrich_with_knowledge("task:wire-knowledge", &mut context, &store);
-    let receipt = lean_ctx::core::context_kernel::receipt_builder::ReceiptBuilder::new(
-        "task:wire-knowledge".to_owned(),
-    )
-    .with_knowledge_refs(
-        references
-            .iter()
-            .map(|reference| reference.object_id.clone())
-            .collect(),
-    )
-    .build()
-    .expect("receipt should build");
-
     assert_eq!(context.technical_refs, ["src/core/context_kernel/mod.rs"]);
     assert!(context.knowledge_snapshot.is_some());
     assert_eq!(
-        receipt.knowledge_refs,
+        references
+            .iter()
+            .map(|reference| reference.object_id.as_str())
+            .collect::<Vec<_>>(),
         ["knowledge:architecture", "knowledge:policy"]
     );
     assert_eq!(references[0].policy_ref, "policy:org-approved");

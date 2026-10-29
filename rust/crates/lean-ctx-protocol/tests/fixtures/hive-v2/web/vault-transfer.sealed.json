@@ -1,0 +1,22 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "Sealed vaults can't be transferred yet.",
+          "reason": "sealed_transfer_later",
+          "state": "sealed"
+        }
+      },
+      "status": 409
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/vaults/card-vault/transfer",
+  "request": {
+    "target_org": "acme-labs"
+  },
+  "response": null,
+  "route": "W11"
+}

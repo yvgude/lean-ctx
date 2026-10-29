@@ -224,15 +224,104 @@ pub fn apply_artifacts_to_stores(
     project_root: &str,
     prune: &PrunePrior,
 ) {
-    let root_path = std::path::Path::new(project_root);
+    apply_artifacts_to_stores_with_origins(artifacts, project_root, prune, Vec::new());
+}
+
+/// Index a text block a tool call DELIVERED, bound to the lineage of that
+/// delivery, so that it is searchable where a source authority is required
+/// exactly as long as every source of the delivery is admitted
+/// (`bm25_index::external_origin::DeliveryOrigin`).
+///
+/// `producer` and `tool` name the chunk (`<producer>://tool_output/<tool>/…`,
+/// one chunk per distinct text); `delivered_text` must be the exact bytes
+/// the delivered-content register recorded
+/// (`archive::delivered::record_tool_delivery_for_call`), so call it AFTER
+/// that record, inside or outside the request scope. Returns `false` and
+/// does nothing when the register holds no complete lineage for these bytes
+/// in `project_root` — a text without known sources is never indexed
+/// through this function. On `true` the store write runs on a background
+/// thread (it loads and saves the project's index) and never touches the
+/// delivered text (#498).
+pub(crate) fn index_delivery(
+    project_root: &str,
+    producer: &str,
+    tool: &str,
+    delivered_text: &str,
+) -> bool {
+    use crate::core::bm25_index::external_origin::{ChunkOrigin, DeliveryOrigin, chunk_digest};
+    if project_root.is_empty() || delivered_text.trim().is_empty() {
+        return false;
+    }
+    let Some(origin) = DeliveryOrigin::of_delivered(delivered_text, project_root) else {
+        return false;
+    };
+    let chunk = ContentChunk::from_provider(
+        producer,
+        "tool_output",
+        &format!("{tool}/{}", &chunk_digest(delivered_text)[..16]),
+        &format!("{producer}::{tool}"),
+        crate::core::bm25_index::ChunkKind::ExternalOther,
+        delivered_text.to_owned(),
+        crate::core::content_chunk::extract_file_references(delivered_text),
+        None,
+    );
+    let uri = chunk.file_path.clone();
+    let project_root = project_root.to_owned();
+    crate::core::policy::runtime::spawn_for_project(project_root.clone(), move || {
+        let artifacts = consolidate(&[chunk]);
+        // The same text indexed again replaces its earlier chunk.
+        let prune = PrunePrior {
+            bm25_prefix: Some(uri.clone()),
+            ..PrunePrior::default()
+        };
+        let origins = vec![(uri, ChunkOrigin::Delivery(Box::new(origin)))];
+        apply_artifacts_to_stores_with_origins(&artifacts, &project_root, &prune, origins);
+    });
+    true
+}
+
+/// [`apply_artifacts_to_stores`] for chunks whose origin the caller knows
+/// and that is not a provider origin travelling in the chunk itself (tool
+/// output: the lineage of its delivery, or the downstream server it came
+/// from). Each `(chunk URI, origin)` is bound to the chunk as the index
+/// stores it after admission and kept beside the index, so the serve-time
+/// gate can re-check it (`bm25_index::external_origin`). A reference, never
+/// a grant.
+pub(crate) fn apply_artifacts_to_stores_with_origins(
+    artifacts: &ConsolidationArtifacts,
+    project_root: &str,
+    prune: &PrunePrior,
+    origins: Vec<(
+        String,
+        crate::core::bm25_index::external_origin::ChunkOrigin,
+    )>,
+) {
     let artifacts = &admitted(artifacts);
 
     // BM25: optionally evict the prior pass, then ingest the current chunks.
+    // Into the index of the canonical root: search reads that one
+    // (`ctx_semantic_search::scope`), and a root reached through a symlink
+    // (macOS `/var` → `/private/var`) would otherwise index where no search looks.
     let bm25_prefix = prune.bm25_prefix.as_deref();
     if bm25_prefix.is_some() || !artifacts.bm25_chunks.is_empty() {
+        let canonical =
+            crate::core::pathutil::safe_canonicalize_or_self(std::path::Path::new(project_root));
+        let root_path = canonical.as_path();
+        let _write = crate::core::bm25_index::persist_lock();
         let mut index = crate::core::bm25_index::BM25Index::load_or_build(root_path);
-        let removed = bm25_prefix.map_or(0, |p| index.remove_chunks_with_prefix(p));
+        let mut removed = bm25_prefix.map_or(0, |p| index.remove_chunks_with_prefix(p));
+        // An item ingested again (the same issue from a second query) replaces
+        // its earlier chunk instead of standing beside it.
+        let incoming: std::collections::HashSet<&str> = artifacts
+            .bm25_chunks
+            .iter()
+            .map(|chunk| chunk.file_path.as_str())
+            .collect();
+        removed += index.remove_sources(&incoming);
         let ingested = index.ingest_content_chunks(artifacts.bm25_chunks.clone());
+        if ingested > 0 {
+            index.bind_external_origins(origins);
+        }
         if (removed > 0 || ingested > 0) && index.save(root_path).is_err() {
             tracing::warn!("[consolidation] BM25 save failed");
         }
@@ -323,6 +412,7 @@ mod tests {
 
     #[test]
     fn consolidate_produces_all_artifact_types() {
+        let _data = crate::core::data_dir::isolated_data_dir();
         let chunks = sample_chunks();
         let artifacts = consolidate(&chunks);
 
@@ -390,6 +480,7 @@ mod tests {
 
     #[test]
     fn consolidation_summary_counts_correctly() {
+        let _data = crate::core::data_dir::isolated_data_dir();
         let chunks = sample_chunks();
         let artifacts = consolidate(&chunks);
         let summary = artifacts.summary();
@@ -402,6 +493,9 @@ mod tests {
 
     #[test]
     fn apply_artifacts_to_bm25() {
+        // Admission decides what reaches the stores: pin "no policy" so a
+        // parallel test's override cannot withhold the provider chunks.
+        let _no_policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let chunks = sample_chunks();
         let artifacts = consolidate(&chunks);
 
@@ -415,6 +509,7 @@ mod tests {
 
     #[test]
     fn apply_artifacts_to_graph() {
+        let _data = crate::core::data_dir::isolated_data_dir();
         let chunks = sample_chunks();
         let artifacts = consolidate(&chunks);
 
@@ -428,6 +523,7 @@ mod tests {
 
     #[test]
     fn apply_artifacts_to_session_cache() {
+        let _data = crate::core::data_dir::isolated_data_dir();
         let chunks = sample_chunks();
         let artifacts = consolidate(&chunks);
 
@@ -441,6 +537,7 @@ mod tests {
 
     #[test]
     fn apply_artifacts_to_all_systems() {
+        let _data = crate::core::data_dir::isolated_data_dir();
         let chunks = sample_chunks();
         let artifacts = consolidate(&chunks);
 
@@ -465,6 +562,7 @@ mod tests {
     fn apply_artifacts_persists_cross_source_to_property_graph_for_hints() {
         // End-to-end (#682): provider chunks → consolidate → PropertyGraph, then
         // the cross_source_hints consumer resolves a hint for the referenced file.
+        let _no_policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let chunks = sample_chunks(); // github issue + PR, both reference src/auth.rs
         let artifacts = consolidate(&chunks);
 
@@ -481,6 +579,52 @@ mod tests {
         assert!(
             hints.iter().any(|h| h.source_uri.contains("github://")),
             "issue/PR hint resolves from PG-backed edges, got {hints:?}"
+        );
+    }
+
+    /// The same provider items ingested twice (a compact and a chunks query)
+    /// are held once, as their latest copy — not side by side.
+    #[test]
+    fn an_item_ingested_again_replaces_its_earlier_chunk() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let directory = tempfile::tempdir().expect("project");
+        let root = directory.path().canonicalize().expect("canonical root");
+        let artifacts = consolidate(&sample_chunks());
+        let root_text = root.to_string_lossy();
+        apply_artifacts_to_stores(&artifacts, &root_text, &PrunePrior::default());
+        let once = BM25Index::load(&root)
+            .expect("index")
+            .external_chunk_count();
+        apply_artifacts_to_stores(&artifacts, &root_text, &PrunePrior::default());
+        let twice = BM25Index::load(&root)
+            .expect("index")
+            .external_chunk_count();
+        assert!(once > 0);
+        assert_eq!(
+            twice, once,
+            "a re-ingested item stands beside its earlier copy"
+        );
+    }
+
+    /// Provider chunks ingested under a root reached through a symlink land in
+    /// the index search reads (the canonical root's), not in one of their own.
+    #[cfg(unix)]
+    #[test]
+    fn chunks_ingested_through_a_symlinked_root_reach_the_canonical_index() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let directory = tempfile::tempdir().expect("project");
+        let real = directory.path().join("real");
+        std::fs::create_dir_all(&real).expect("real root");
+        let link = directory.path().join("link");
+        std::os::unix::fs::symlink(&real, &link).expect("symlinked root");
+        let artifacts = consolidate(&sample_chunks());
+        apply_artifacts_to_stores(&artifacts, &link.to_string_lossy(), &PrunePrior::default());
+        let canonical = real.canonicalize().expect("canonical root");
+        // The persisted index as stored (no staleness rebuild of the empty root).
+        let index = BM25Index::load(&canonical).expect("an index at the canonical root");
+        assert!(
+            index.external_chunk_count() > 0,
+            "ingested where search does not read"
         );
     }
 }

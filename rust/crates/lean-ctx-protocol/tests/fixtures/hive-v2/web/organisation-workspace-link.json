@@ -1,0 +1,62 @@
+{
+  "route": "W71",
+  "method": "POST",
+  "path": "/api/v1/companies/acme-group/workspaces",
+  "request": {
+    "workspace": "acme"
+  },
+  "response": {
+    "status": 201,
+    "body": {
+      "slug": "acme",
+      "name": "Acme AG",
+      "plan": "team",
+      "seats": 10,
+      "members": 6,
+      "engines_connected": 4
+    }
+  },
+  "errors": [
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "this team already belongs to a company",
+          "state": "already_linked"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "a personal workspace cannot join a company",
+          "state": "personal_org"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "confirm with your authenticator code first"
+        }
+      }
+    },
+    {
+      "status": 402,
+      "body": {
+        "error": {
+          "code": "plan_required",
+          "message": "Teams join a company once its Enterprise plan is in force. Talk to us about Enterprise.",
+          "feature": "company",
+          "plan_needed": "enterprise",
+          "contact": true
+        }
+      }
+    }
+  ]
+}

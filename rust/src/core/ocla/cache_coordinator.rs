@@ -9,12 +9,12 @@ use super::cache_types::{CacheKey, CacheValidator, DeliveryEntryV2, DeliveryStat
 
 static GLOBAL_CACHE: OnceLock<BuiltinCacheCoordinator> = OnceLock::new();
 
-/// Returns the process-global cache coordinator, lazily initialized with
-/// default tier sizes.
+/// Returns the process-global cache coordinator, lazily initialized from
+/// `[cache]`.
 pub fn materialized_cache() -> &'static BuiltinCacheCoordinator {
     GLOBAL_CACHE.get_or_init(|| {
         let config = crate::core::config::Config::load();
-        let cache_cfg = &config.ocla.delivery.cache;
+        let cache_cfg = &config.cache;
         let l3 = L3DiskCache::open(
             crate::core::data_dir::lean_ctx_data_dir()
                 .unwrap_or_else(|_| std::path::PathBuf::from("/tmp/lean-ctx-cache")),
@@ -29,7 +29,10 @@ pub fn materialized_cache() -> &'static BuiltinCacheCoordinator {
         );
         BuiltinCacheCoordinator::new(
             L1ProcessCache::new(std::time::Duration::from_secs(cache_cfg.l1_ttl_secs)),
-            L2DaemonCache::new(cache_cfg.l2_max_entries, std::time::Duration::from_hours(1)),
+            L2DaemonCache::new(
+                cache_cfg.l2_max_entries,
+                std::time::Duration::from_secs(cache_cfg.l2_ttl_secs),
+            ),
             l3,
         )
     })

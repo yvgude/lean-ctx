@@ -1,0 +1,168 @@
+{
+  "key_cases": [
+    {
+      "case": "event key for an event",
+      "key": "hive_event",
+      "key_id": "4fc7bebc302357bd",
+      "outcome": {
+        "result": "accept"
+      },
+      "purpose": "event",
+      "received_at": 1792800000000
+    },
+    {
+      "case": "revoked key used after revoked_at",
+      "key": "hive_event_retired",
+      "key_id": "5c4707450391efe5",
+      "outcome": {
+        "reason": "revoked_key",
+        "result": "reject"
+      },
+      "purpose": "event",
+      "received_at": 1792800000000
+    },
+    {
+      "case": "revoked key for an event received before revoked_at",
+      "key": "hive_event_retired",
+      "key_id": "5c4707450391efe5",
+      "outcome": {
+        "result": "accept"
+      },
+      "purpose": "event",
+      "received_at": 1789344000000
+    },
+    {
+      "case": "missing purpose: control key signing a consent statement",
+      "key": "hive_control",
+      "key_id": "fac2346807329f09",
+      "outcome": {
+        "reason": "missing_purpose",
+        "result": "reject"
+      },
+      "purpose": "consent",
+      "received_at": 1792800000000
+    },
+    {
+      "case": "unknown key: instance key as an Hive key",
+      "key": "instance_a",
+      "key_id": "47983724220c8521",
+      "outcome": {
+        "reason": "unknown_key",
+        "result": "reject"
+      },
+      "purpose": "event",
+      "received_at": 1792800000000
+    },
+    {
+      "case": "purge key for shred journal objects",
+      "key": "hive_purge",
+      "key_id": "5d2abe57a3a2c50f",
+      "outcome": {
+        "result": "accept"
+      },
+      "purpose": "purge",
+      "received_at": 1792800000000
+    }
+  ],
+  "keyset_cases": [
+    {
+      "case": "valid",
+      "engine_1x": {
+        "result": "accept"
+      },
+      "engine_3_12": {
+        "result": "accept"
+      },
+      "patch": []
+    },
+    {
+      "case": "bad_signature: keys changed after signing",
+      "engine_1x": {
+        "reason": "bad_signature",
+        "result": "reject"
+      },
+      "engine_3_12": {
+        "reason": "bad_signature",
+        "result": "reject"
+      },
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/keys/0/purposes",
+          "value": [
+            "event",
+            "consent"
+          ]
+        }
+      ]
+    },
+    {
+      "case": "retired root only (new root signature removed)",
+      "drop_new_root": true,
+      "engine_1x": {
+        "reason": "bad_signature",
+        "result": "reject"
+      },
+      "engine_3_12": {
+        "reason": "retired_root_only",
+        "result": "reject"
+      },
+      "patch": []
+    },
+    {
+      "case": "legacy signature tampered",
+      "engine_1x": {
+        "reason": "bad_signature",
+        "result": "reject"
+      },
+      "engine_3_12": {
+        "result": "accept"
+      },
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/signature",
+          "value": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+        }
+      ]
+    }
+  ],
+  "lease_cases": [
+    {
+      "case": "lease signed by the policy key",
+      "fixture": "routes/lease_envelope.for_2x.response.json",
+      "kid": "552e43422b3589fa",
+      "outcome": {
+        "result": "accept"
+      },
+      "received_at": 1792800000000,
+      "sign_with": "hive_policy",
+      "signature": "dzRPJl6AvE6yaRK9Tptn4sM6n/M2lZWRatvn5b/Pc8YDUVTsKgkuHiqtm4gsM3nIR34GOKnnjnO61pmYk8evBA==",
+      "signing_input": "leanctx.hive.lease.v1\n{\"expires_at\":\"2026-10-21T12:00:00Z\",\"grace_until\":\"2026-10-27T12:00:00Z\",\"instance_id\":\"inst_01jb8z3k4m5n6p7q8r9s0t1v2w\",\"issued_at\":\"2026-10-20T12:00:00Z\",\"lease_id\":\"lse_01jb8z4a2b3c4d5e6f7g8h9j0k\",\"org_id\":\"org_acme\",\"org_settings\":{\"metrics_upload\":true,\"receipts_upload\":false},\"plan\":\"team\",\"policy_signer_keys\":[{\"ed25519_pub\":\"AOPFa5GrCgFxdLlmRer5KDZs264eh/0hv4ZmHYbz5+8=\",\"org\":\"org_acme\"}],\"rights\":[\"knowledge.read\",\"knowledge.draft\",\"knowledge.merge\",\"metrics.upload\",\"receipts.upload\",\"policy.pull\",\"bus.relay\",\"bus.control\",\"sealed\",\"runtime\"],\"schema\":\"leanctx.hive.lease/v1\",\"seats_limit\":25,\"server_time\":\"2026-10-20T12:00:00Z\"}"
+    },
+    {
+      "case": "lease signed by a non-policy key (control)",
+      "fixture": "routes/lease_envelope.for_2x.response.json",
+      "kid": "fac2346807329f09",
+      "outcome": {
+        "reason": "missing_purpose",
+        "result": "reject"
+      },
+      "received_at": 1792800000000,
+      "sign_with": "hive_control",
+      "signature": "ZWag8SGW7kNp+9YhiYg6Uu6tEavdFbbyK4ivKlA8V5KXUYumXV0srAojTzWw7Kzm5LmowIbL4Xhq8bAZGSG4Aw==",
+      "signing_input": "leanctx.hive.lease.v1\n{\"expires_at\":\"2026-10-21T12:00:00Z\",\"grace_until\":\"2026-10-27T12:00:00Z\",\"instance_id\":\"inst_01jb8z3k4m5n6p7q8r9s0t1v2w\",\"issued_at\":\"2026-10-20T12:00:00Z\",\"lease_id\":\"lse_01jb8z4a2b3c4d5e6f7g8h9j0k\",\"org_id\":\"org_acme\",\"org_settings\":{\"metrics_upload\":true,\"receipts_upload\":false},\"plan\":\"team\",\"policy_signer_keys\":[{\"ed25519_pub\":\"AOPFa5GrCgFxdLlmRer5KDZs264eh/0hv4ZmHYbz5+8=\",\"org\":\"org_acme\"}],\"rights\":[\"knowledge.read\",\"knowledge.draft\",\"knowledge.merge\",\"metrics.upload\",\"receipts.upload\",\"policy.pull\",\"bus.relay\",\"bus.control\",\"sealed\",\"runtime\"],\"schema\":\"leanctx.hive.lease/v1\",\"seats_limit\":25,\"server_time\":\"2026-10-20T12:00:00Z\"}"
+    }
+  ],
+  "rules": {
+    "engine_3_12": "accept iff some signatures[] entry verifies with a root of HOSTED_ROOT_KEYS (root_new); a valid signature only from RETIRED_ROOT_KEYS (root_old) → reject retired_root_only",
+    "key_use": "an object is accepted with key k for purpose p iff k is in keys, p ∈ k.purposes, created_at ≤ received_at and (revoked_at null or received_at < revoked_at)",
+    "lease": "a lease envelope verifies with the v3 key whose key_id = kid, purpose policy, created_at ≤ received_at < revoked_at",
+    "legacy": "signature = base64(Ed25519(root_old, \"leanctx.hive.keyset.v1\\n\" ‖ canonical_json(key set without signature))), the C0 1.x verification rule",
+    "negotiation": "GET /v1/keys answers by the Hive-Protocol major of the request: 1.x → the v1 set unchanged (routes/keyset.v1.for_1x.response.json), 2.x → key set v3 (routes/keyset.v3.response.json), which also lists the lease/policy signer under purpose policy",
+    "roots": "test roots in signing.vectors.json keys.root_old / keys.root_new (test-only)",
+    "signatures": "signatures[i] = hex(Ed25519(root_i, \"leanctx.hive.keyset.v3\\n\" ‖ canonical_json({schema, keys})))"
+  },
+  "signing_input_legacy": "leanctx.hive.keyset.v1\n{\"keys\":[{\"created_at\":1790208000000,\"key_id\":\"552e43422b3589fa\",\"public_key\":\"-AzM3OSuHAeuIIoq35mjEK5CB-Awb6AjYRCwaCe7uNA\",\"purposes\":[\"policy\"],\"revoked_at\":null},{\"created_at\":1790208000000,\"key_id\":\"4fc7bebc302357bd\",\"public_key\":\"Y1VpHBeKj_kQB6dHivuVXvc1LGPnslcDmEz3iybiGlY\",\"purposes\":[\"event\"],\"revoked_at\":null},{\"created_at\":1775520000000,\"key_id\":\"5c4707450391efe5\",\"public_key\":\"7pOk9m-NFrgZu5vrn_zN_NwUEuh_7moyTCqZoeDmcUg\",\"purposes\":[\"event\"],\"revoked_at\":1790121600000},{\"created_at\":1790208000000,\"key_id\":\"7bc9f7e9dc1a0621\",\"public_key\":\"DXVQdU4IAKXSN-71gmA1dmubPloVhoqUCrKJlYeI47A\",\"purposes\":[\"snapshot\"],\"revoked_at\":null},{\"created_at\":1790208000000,\"key_id\":\"41dad53017a5f8de\",\"public_key\":\"iN9VZBNTiwAgFelhmwG9tcxIxyFWRXklY_VGD3MHp2M\",\"purposes\":[\"revocation\"],\"revoked_at\":null},{\"created_at\":1790208000000,\"key_id\":\"b7bda707a8979c46\",\"public_key\":\"2sMevKFZ0oP4NB_ZDX-hzZW_XsyrZX95UmYuZ-Vq--M\",\"purposes\":[\"consent\"],\"revoked_at\":null},{\"created_at\":1790208000000,\"key_id\":\"fac2346807329f09\",\"public_key\":\"Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY\",\"purposes\":[\"control\"],\"revoked_at\":null},{\"created_at\":1790208000000,\"key_id\":\"5d2abe57a3a2c50f\",\"public_key\":\"a3NKjv8kb-c0s41ARsFI7uXwT-h7OgpCOVWneVbeBms\",\"purposes\":[\"purge\"],\"revoked_at\":null}],\"schema\":\"leanctx.hive.keyset/v3\",\"signatures\":[{\"key_id\":\"7c05bc3512a2bbe7\",\"signature\":\"8a9784a08577d16d579b51e324d0fc8fb5833a6f03286de73b1be6f282bddfaa0eb4fe9c442362a7c504494cff8305caa6536910108f7b9e01e8405b53f1610a\"},{\"key_id\":\"168d42cf763161e3\",\"signature\":\"78eddc47fc969dabfc3cd6f2c879d605f8316a10cb9b5cd621e4353f383d822f62af17505ab1da01e4dab3875d32b23123a1d8a63a1acbe1939d539c23478d09\"}]}",
+  "signing_input_v3": "leanctx.hive.keyset.v3\n{\"keys\":[{\"created_at\":1790208000000,\"key_id\":\"552e43422b3589fa\",\"public_key\":\"-AzM3OSuHAeuIIoq35mjEK5CB-Awb6AjYRCwaCe7uNA\",\"purposes\":[\"policy\"],\"revoked_at\":null},{\"created_at\":1790208000000,\"key_id\":\"4fc7bebc302357bd\",\"public_key\":\"Y1VpHBeKj_kQB6dHivuVXvc1LGPnslcDmEz3iybiGlY\",\"purposes\":[\"event\"],\"revoked_at\":null},{\"created_at\":1775520000000,\"key_id\":\"5c4707450391efe5\",\"public_key\":\"7pOk9m-NFrgZu5vrn_zN_NwUEuh_7moyTCqZoeDmcUg\",\"purposes\":[\"event\"],\"revoked_at\":1790121600000},{\"created_at\":1790208000000,\"key_id\":\"7bc9f7e9dc1a0621\",\"public_key\":\"DXVQdU4IAKXSN-71gmA1dmubPloVhoqUCrKJlYeI47A\",\"purposes\":[\"snapshot\"],\"revoked_at\":null},{\"created_at\":1790208000000,\"key_id\":\"41dad53017a5f8de\",\"public_key\":\"iN9VZBNTiwAgFelhmwG9tcxIxyFWRXklY_VGD3MHp2M\",\"purposes\":[\"revocation\"],\"revoked_at\":null},{\"created_at\":1790208000000,\"key_id\":\"b7bda707a8979c46\",\"public_key\":\"2sMevKFZ0oP4NB_ZDX-hzZW_XsyrZX95UmYuZ-Vq--M\",\"purposes\":[\"consent\"],\"revoked_at\":null},{\"created_at\":1790208000000,\"key_id\":\"fac2346807329f09\",\"public_key\":\"Ivwpd5Lwtv_Av8_bftsMCqFOAlo2XsDjQuhuOCnLdLY\",\"purposes\":[\"control\"],\"revoked_at\":null},{\"created_at\":1790208000000,\"key_id\":\"5d2abe57a3a2c50f\",\"public_key\":\"a3NKjv8kb-c0s41ARsFI7uXwT-h7OgpCOVWneVbeBms\",\"purposes\":[\"purge\"],\"revoked_at\":null}],\"schema\":\"leanctx.hive.keyset/v3\"}"
+}

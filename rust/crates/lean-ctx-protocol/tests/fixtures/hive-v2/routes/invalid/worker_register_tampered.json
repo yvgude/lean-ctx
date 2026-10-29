@@ -1,0 +1,14 @@
+{
+  "case": "worker_register_tampered",
+  "base": "routes/worker_register.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/role",
+      "value": "frontend"
+    }
+  ],
+  "expect": {
+    "layer": "signature"
+  }
+}

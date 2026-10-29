@@ -1,0 +1,9 @@
+{
+  "channel": "org:org_acme/vault:3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42/general",
+  "event": "quarantined",
+  "review_by": "2026-10-21T13:00:00Z",
+  "revision": 5,
+  "seq": 46,
+  "server_time": "2026-10-20T13:00:00Z",
+  "t": "knowledge.event"
+}

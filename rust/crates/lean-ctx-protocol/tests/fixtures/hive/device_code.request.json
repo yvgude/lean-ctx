@@ -1,0 +1,6 @@
+{
+  "client_id": "lean-ctx-engine",
+  "engine_version": "3.12.0",
+  "os": "macos",
+  "schema": "leanctx.hive.device-code-request/v1"
+}

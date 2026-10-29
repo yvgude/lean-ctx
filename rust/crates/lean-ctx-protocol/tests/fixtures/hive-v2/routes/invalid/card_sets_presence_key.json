@@ -1,0 +1,19 @@
+{
+  "case": "card_sets_presence_key",
+  "base": "routes/instance_card.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/presence_key",
+      "value": {
+        "alg": "ed25519",
+        "key_id": "abababababababab",
+        "hardware": false,
+        "bound_at": 1
+      }
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

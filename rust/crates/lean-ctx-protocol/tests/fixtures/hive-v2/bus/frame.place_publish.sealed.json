@@ -1,0 +1,13 @@
+{
+  "body": {
+    "sealed": "DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NbXYTU1Wbud8hSiOtZfJOP6BjU4NJA0EEPGlCqy4RBYakTZ3-lSyYrHNwVeD_7bIXZnvuS7v0OBHEUedV_L2l5mqSEVeBxAI6HhFXjNLOZ0dVFgN03YytqO7urFsUFH2CrTwV"
+  },
+  "ck_wrapped": "Dg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4OMhtTaBDCaJqspG8WlB8QuSzdsvTr-Fed4BTR-SZGbvp7cAX1orrgQoHrQo1fDoQd",
+  "client_msg_id": "01M5NKA2Z8B000000000000010",
+  "epoch": 1,
+  "schema": "leanctx.hive.bus/v2",
+  "t": "place.publish",
+  "to": "#acme/card-vault",
+  "type": "question",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

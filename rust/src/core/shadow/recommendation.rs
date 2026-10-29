@@ -31,11 +31,9 @@ pub struct TreatmentMeasurement {
 
 pub fn measure_treatment(task: &ShadowTask) -> TreatmentMeasurement {
     let mut optimizations = Vec::new();
+    // Only context changes are LeanCTX optimizations; the model is the host's choice.
     if task.compressed_input_tokens < task.raw_input_tokens {
         optimizations.push("compression".into());
-    }
-    if task.model_used != "gpt-4o" {
-        optimizations.push("model_routing".into());
     }
     TreatmentMeasurement {
         task_id: task.task_id.clone(),

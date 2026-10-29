@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "forbidden_right",
+    "message": "The opt-in does not cover this vault.",
+    "reason": "optin_scope"
+  }
+}

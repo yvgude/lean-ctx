@@ -1,0 +1,24 @@
+{
+  "base": "routes/vault_match.none.response.json",
+  "case": "vault_match_none_with_vault",
+  "expect": {
+    "layer": "schema"
+  },
+  "patch": [
+    {
+      "op": "add",
+      "path": "/vault",
+      "value": {
+        "label": "payments",
+        "schema": "leanctx.hive.vault/v1",
+        "sealed": false,
+        "sealed_conversion": "none",
+        "vault": {
+          "name": "payments",
+          "ns": "acme"
+        },
+        "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+      }
+    }
+  ]
+}

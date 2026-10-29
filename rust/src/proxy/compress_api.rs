@@ -32,11 +32,19 @@
 //! result stays byte-stable for provider prompt caching.
 
 #[cfg(feature = "http-server")]
-use axum::{Json, http::StatusCode, response::IntoResponse};
+use axum::{
+    Json,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
+#[cfg(feature = "http-server")]
+use super::admitted::{self, GatewayRefusal, Payload};
 use super::{adaptive_policy::select_policy, live_zone};
+#[cfg(feature = "http-server")]
+use crate::core::context_admission::egress::{EgressTarget, TrustedDestinationBinding};
 use crate::core::protocol::strip_trailing_savings_footer;
 use crate::core::tokens::{TokenizerFamily, count_tokens_for, detect_tokenizer};
 
@@ -84,10 +92,79 @@ struct Totals {
     compressed: usize,
 }
 
-/// Axum handler. Malformed bodies are rejected by the `Json` extractor (400).
+/// Destination label of the compress API in receipts. The reply goes back to
+/// a caller that forwards it to a model this proxy never sees, so the
+/// destination's locality is unknown — not provably local: restricted
+/// content is withheld, and configured placement rules cannot be satisfied.
 #[cfg(feature = "http-server")]
-pub async fn handler(Json(req): Json<CompressRequest>) -> impl IntoResponse {
-    (StatusCode::OK, Json(compress_messages(req)))
+const COMPRESS_DESTINATION: &str = "compress-api";
+
+/// Axum handler. Malformed bodies are rejected by the `Json` extractor (400).
+///
+/// The reply is a delivery and the retrieval copies compression keeps are a
+/// store: the messages are admitted by the gateway first, compression only
+/// ever sees the admitted form, and the reply bytes are bound to the receipt.
+/// A refusal is answered with the typed gateway reason.
+#[cfg(feature = "http-server")]
+pub async fn handler(Json(req): Json<CompressRequest>) -> Response {
+    match admitted_compress(req).await {
+        Ok(response) => response,
+        Err(refusal) => refusal.response("OpenAI"),
+    }
+}
+
+#[cfg(feature = "http-server")]
+async fn admitted_compress(req: CompressRequest) -> Result<Response, GatewayRefusal> {
+    let CompressRequest { messages, model } = req;
+    let mut document = Value::Array(messages);
+    let original_bytes = document.to_string().len();
+    let target = EgressTarget {
+        provider: COMPRESS_DESTINATION,
+        model: model.as_deref(),
+        upstream_base: "",
+    };
+    let mut admission = admitted::admit(
+        Payload::Document(&document),
+        &target,
+        TrustedDestinationBinding::default(),
+    )?;
+    if admission.is_refused() {
+        return Err(admitted::record_refusal(admission, original_bytes, None).await);
+    }
+    if let Some(admitted_document) = admission.take_rewritten() {
+        document = admitted_document;
+    }
+    let Value::Array(messages) = document else {
+        return Err(GatewayRefusal::unavailable("egress.encode_failed"));
+    };
+    // The reader of this reply can call this proxy's routes: under protection
+    // a block is compressed only with a recovery copy bound to its lineage,
+    // and its stub names `GET /v1/references/{id}`. What stays whole for want
+    // of such a copy is named, by code only, in the reply's reason-code
+    // header; the body keeps its contract.
+    let (compressed, kept_whole) =
+        super::compress::observing(super::compress::Reader::GatewayCaller, || {
+            compress_messages(CompressRequest { messages, model })
+        });
+    let reply = serde_json::to_vec(&compressed)
+        .map_err(|_| GatewayRefusal::unavailable("egress.encode_failed"))?;
+    // The receipt of this reply states the same codes, one note per block.
+    let admission = admission.note_kept_whole(&kept_whole);
+    admitted::bind_delivery(admission, &reply, original_bytes).await?;
+    let mut response = (
+        StatusCode::OK,
+        [(axum::http::header::CONTENT_TYPE, "application/json")],
+        reply,
+    )
+        .into_response();
+    if let Some(codes) = kept_whole.codes()
+        && let Ok(value) = axum::http::HeaderValue::from_str(&codes)
+    {
+        response
+            .headers_mut()
+            .insert(admitted::REASON_CODES_HEADER, value);
+    }
+    Ok(response)
 }
 
 /// Pure, deterministic core: rewrites every text payload in `messages` and
@@ -248,6 +325,7 @@ mod tests {
     #[test]
     fn string_content_is_compressed_and_stats_reported() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let resp = run(
             vec![json!({"role": "user", "content": dedupable_prose()})],
             Some("claude-sonnet-4"),
@@ -264,6 +342,47 @@ mod tests {
         assert_eq!(resp.stats.model.as_deref(), Some("claude-sonnet-4"));
     }
 
+    /// The reply of `/v1/compress` is a delivery to a destination this proxy
+    /// cannot see: a protected value is masked before compression or the
+    /// reply sees it, and restricted content is withheld in place (a notice
+    /// with its block id) instead of being handed back.
+    #[tokio::test]
+    async fn handler_admits_messages_before_compressing_or_replying() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let key = concat!("AK", "IAIOSFODNN7EXAMPLE");
+        let request = |text: String| {
+            Json(CompressRequest {
+                messages: vec![json!({"role": "user", "content": text})],
+                model: None,
+            })
+        };
+
+        let response = handler(request(format!("deploy with {key} today"))).await;
+        assert_eq!(response.status(), StatusCode::OK);
+        let reply = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("reply body");
+        let reply = String::from_utf8(reply.to_vec()).expect("JSON reply");
+        assert!(!reply.contains(key), "the reply carries the value: {reply}");
+        assert!(reply.contains("deploy with"), "{reply}");
+
+        // Restricted content is withheld in place: the reply carries the
+        // notice, never the content, and the rest of the messages.
+        let withheld = handler(request(
+            "Classification: RESTRICTED\nmerger terms for the board".to_owned(),
+        ))
+        .await;
+        assert_eq!(withheld.status(), StatusCode::OK);
+        let body = axum::body::to_bytes(withheld.into_body(), usize::MAX)
+            .await
+            .expect("reply body");
+        let body = String::from_utf8_lossy(&body);
+        assert!(!body.contains("merger terms"), "{body}");
+        assert!(body.contains("destination.remote_restricted"), "{body}");
+        assert!(body.contains("lean-ctx gateway why w-"), "{body}");
+    }
+
     #[test]
     fn model_selects_tokenizer_family_for_gateway_compression() {
         let resp = run(
@@ -278,6 +397,7 @@ mod tests {
     #[test]
     fn litellm_guardrail_fields_present_and_consistent() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         // LiteLLM's headroom guardrail logs `tokens_before`/`tokens_after`/
         // `compression_ratio` from the /v1/compress reply (#700). They must
         // exist at the top level and agree with `stats`.
@@ -319,6 +439,7 @@ mod tests {
     #[test]
     fn lossy_rewrite_carries_litellm_retrieval_marker() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let original = dedupable_prose();
         let resp = run(
             vec![json!({"role": "user", "content": original.clone()})],
@@ -349,6 +470,7 @@ mod tests {
     #[test]
     fn output_is_deterministic() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let msgs = vec![
             json!({"role": "system", "content": "You are a helpful assistant."}),
             json!({"role": "user", "content": dedupable_prose()}),
@@ -369,6 +491,7 @@ mod tests {
     #[test]
     fn anthropic_blocks_text_compressed_image_passthrough() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let resp = run(
             vec![json!({
                 "role": "user",
@@ -395,6 +518,7 @@ mod tests {
     #[test]
     fn anthropic_tool_result_block_is_compressed() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let resp = run(
             vec![json!({
                 "role": "user",
@@ -449,6 +573,7 @@ mod tests {
     #[test]
     fn determinism_regression_full_conversation_498() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let conversation = || {
             vec![
                 json!({"role": "system", "content": "You are a helpful assistant."}),
@@ -476,6 +601,121 @@ mod tests {
         // The byte-stable bodies must also be footer-free (savings live in stats).
         assert!(!baseline.contains("[lean-ctx:"));
         assert!(!baseline.contains('\u{2500}'));
+    }
+
+    /// One tool result through the handler: the reply's reason codes (if
+    /// any) and the content that came back. The reply is never a refusal.
+    async fn reply_for(text: &str) -> (Option<String>, String) {
+        let response = handler(Json(CompressRequest {
+            messages: vec![json!({"role": "tool", "name": "bash", "content": text})],
+            model: None,
+        }))
+        .await;
+        assert_eq!(response.status(), StatusCode::OK);
+        assert!(
+            !response.headers().contains_key(admitted::REFUSAL_HEADER),
+            "a delivered reply is not a refusal"
+        );
+        let codes = response
+            .headers()
+            .get(admitted::REASON_CODES_HEADER)
+            .and_then(|value| value.to_str().ok())
+            .map(str::to_owned);
+        let body = axum::body::to_bytes(response.into_body(), usize::MAX)
+            .await
+            .expect("reply body");
+        let body: Value = serde_json::from_slice(&body).expect("JSON reply");
+        let content = body["messages"][0]["content"]
+            .as_str()
+            .expect("string content")
+            .to_owned();
+        (codes, content)
+    }
+
+    /// [real register and store] Under protection `/v1/compress` follows the
+    /// rule of the forward path: a block the Engine delivered with a lineage
+    /// is compressed, with a recovery copy stored for the proxy's project and
+    /// a stub naming the route that resolves it to the exact original; a
+    /// block without a lineage comes back whole and the reply's reason-code
+    /// header says why, by code only. Before, every block came back whole
+    /// under protection and nothing said why.
+    #[tokio::test]
+    async fn protected_reply_compresses_only_with_a_bound_copy_and_names_why_not() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let directory = tempfile::tempdir().expect("project");
+        let root = directory.path().canonicalize().expect("canonical root");
+        let config = crate::core::paths::config_dir_read_only().expect("config directory");
+        std::fs::create_dir_all(&config).expect("config directory");
+        std::fs::write(
+            config.join("config.toml"),
+            format!(
+                "[context_gateway]\nmode = \"governed\"\n\n[proxy]\nproject_root = '{}'\n",
+                root.display()
+            ),
+        )
+        .expect("gateway config");
+        let log = (1..=400)
+            .map(|i| format!("[info] processed item {i:04} ok"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        let source = root.join("build.log");
+        std::fs::write(&source, &log).expect("source");
+        // The test plays the Engine: an admitted read, recorded as delivered.
+        let delivered_text = super::super::request_project::in_project(&root, || {
+            let path = source.to_str().expect("utf-8 path");
+            let admitted_text = crate::tools::ctx_read::read_file_for_tool_rooted(
+                path,
+                root.to_str().expect("utf-8 root"),
+                "ctx_read",
+            )
+            .expect("admitted read");
+            let authority = crate::core::archive::authority::ArchiveAuthority::file(
+                &root,
+                path,
+                "ctx_read",
+                &admitted_text,
+            )
+            .expect("protection is active: the read is bound");
+            assert!(crate::core::archive::delivered::record_lineage(
+                &crate::core::archive::delivered::digest(&admitted_text),
+                &crate::core::archive::delivered::Lineage::of_files(authority)
+            ));
+            admitted_text
+        });
+
+        let (codes, sent) = reply_for(&delivered_text).await;
+        assert_eq!(codes, None, "nothing stayed whole");
+        assert!(sent.len() < delivered_text.len(), "compressed: {sent}");
+        let (_, rest) = sent
+            .rsplit_once("GET /v1/references/")
+            .expect("a stub naming the route");
+        let id: String = rest.chars().take(64).collect();
+        assert!(
+            sent.ends_with(&format!(
+                "[lean-ctx CCR: full original archived — GET /v1/references/{id} on this \
+                 gateway returns it while its sources are admitted]"
+            )),
+            "{sent}"
+        );
+        assert!(!sent.contains("hash="), "not a tee marker: {sent}");
+        assert_eq!(
+            super::super::compress::resolve_recovery(&id),
+            Some(Ok(delivered_text.clone())),
+            "the id resolves to the exact original"
+        );
+        let (_, again) = reply_for(&delivered_text).await;
+        assert_eq!(again, sent, "byte-stable");
+
+        let unknown = format!("{delivered_text}\n[info] a line the Engine never delivered");
+        let (codes, whole) = reply_for(&unknown).await;
+        assert_eq!(whole, unknown, "no lineage, no copy: the original");
+        assert_eq!(codes.as_deref(), Some("recovery.unknown_lineage"));
+
+        std::fs::remove_file(&source).expect("delete the source");
+        let (codes, whole) = reply_for(&delivered_text).await;
+        assert_eq!(whole, delivered_text);
+        assert_eq!(codes.as_deref(), Some("recovery.source_no_longer_admitted"));
     }
 
     /// Daemon-free, o200k_base benchmark over a real on-disk corpus. Prints a

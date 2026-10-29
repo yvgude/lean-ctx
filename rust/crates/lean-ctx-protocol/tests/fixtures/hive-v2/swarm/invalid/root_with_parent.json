@@ -1,0 +1,14 @@
+{
+  "case": "root_with_parent",
+  "base": "swarm/goal_node.root.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/parent",
+      "value": "g_sssssssssssssssssssssssssa"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

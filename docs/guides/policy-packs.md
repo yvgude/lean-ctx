@@ -8,7 +8,7 @@ baselines — **Policies as Code**.
 
 ```bash
 lean-ctx policy list        # see what ships built in
-lean-ctx policy show finance-eu
+lean-ctx policy show strict-redaction
 ```
 
 ## Quick start
@@ -30,17 +30,16 @@ Commit `.lean-ctx/policy.toml`. From now on, governance changes are diffs.
 | `baseline` | Any team — secret redaction (private keys, AWS, credentials, bearer tokens), 90-day audit expectation |
 | `strict-redaction` | Teams handling customer data — adds JWT, GitHub/GitLab/Slack tokens, OpenAI/Anthropic/Stripe keys, DB connection strings; compact `map` reads |
 | `open-source` | Public repos — permissive, but secrets stay covered |
-| `finance-eu` | EU financial services — adds IBAN, payment cards, EU VAT, SWIFT/BIC; denies web fetches; 1-year audit expectation |
-| `healthcare` | HIPAA-aligned — adds SSN, MRN, member ids, DOB, NPI; denies web fetches; 6-year audit expectation |
-| `soc2-context` | SOC 2 TSC alignment (CC6.1 access, CC6.6 boundary, C1.1 confidentiality) |
-| `iso42001-aligned` | ISO/IEC 42001 Annex A (A.7.4 data filtering, A.9.2/A.9.4 use control) |
-| `eu-ai-act-deployer` | EU AI Act deployer (Art. 10(5) data, 14(4)(e) cap, 26(6) retention) |
 
-The five regulated packs (`finance-eu`, `healthcare`, `soc2-context`,
-`iso42001-aligned`, `eu-ai-act-deployer`) ship live `[filters]` (PII redaction +
-prompt-injection handling) and `[egress]` DLP (`block_secrets`, write-rate cap)
-on top of their redaction — the runtime filter matches the posture they
-advertise. Inspect any pack resolved (`lean-ctx policy show healthcare`) or raw
+Domain packs (health, finance, legal, company-specific) and the
+compliance-framework packs (EU AI Act, ISO 42001, SOC 2) are part of
+LeanCTX Pro / Enterprise and no longer ship with the Community engine. A pack
+that `extends` a former built-in (`healthcare`, `finance-eu`, `soc2-context`,
+`iso42001-aligned`, `eu-ai-act-deployer`) now fails to load with a pointer to
+its tier: switch `extends` to `strict-redaction` and add your own patterns
+(below), or install the paid pack. The Community PII filter (`[filters] pii`)
+still detects IBAN, payment cards, e-mail, phone, US SSN and Swiss AHV numbers.
+Inspect any pack resolved (`lean-ctx policy show strict-redaction`) or raw
 (`--toml`).
 
 ## Writing your own pack
@@ -163,7 +162,7 @@ legacy CLI command or replace the separate protected Codex/SDK release gates.
 
 ```bash
 lean-ctx policy coverage              # project pack (.lean-ctx/policy.toml)
-lean-ctx policy coverage finance-eu   # any built-in or .toml path
+lean-ctx policy coverage strict-redaction   # any built-in or .toml path
 lean-ctx policy coverage --json       # machine-readable, CI-friendly
 ```
 
@@ -227,9 +226,8 @@ lean-ctx policy enforce ctx_search   --project-root . \
 ```
 
 It honors the active policy (project pack ⊕ trusted org floor), so the verdict
-is exactly what an agent on this endpoint would hit. `scripts/demo-great-filter.sh`
-chains these into the full CISO flow: sign → install → enforce → signed
-compliance report → offline verify.
+is exactly what an agent on this endpoint would hit. Chained together: sign → install → enforce →
+`lean-ctx audit evidence` bundle → offline verify.
 
 ## Input filters (#675)
 
@@ -290,49 +288,24 @@ writes/actions are checked, never your own manual edits.
 
 Full contract: `docs/contracts/context-policy-packs-v1.md`.
 
-## Compliance report (#677)
+## Compliance report
 
-Policy packs *do* the governance; the compliance report *proves* it. One command
-folds the engine's evidence surfaces into a single **Ed25519-signed** artifact
-for a date range — the thing a CISO or auditor actually signs off on:
+`lean-ctx compliance report --from <rfc3339> --to <rfc3339> [--framework <id>]...
+[--pack <name|path>] [--format json|csv|pdf|text]` writes the signed CISO report:
+OWASP agentic alignment, enforcement counts folded from the audit chain, retention
+posture and — with LeanCTX Enterprise — framework coverage (EU AI Act, ISO 42001,
+SOC 2). The framework assessment runs in the licensed runtime on the facts
+`lean-ctx compliance facts` prints (policy facts only: retention, context cap,
+tool scope, which credential and identifier classes are redacted — no patterns, no
+file content). `policy coverage --framework <id>` and
+`audit evidence --framework <id>` use the same assessment. Without Enterprise these
+commands name the tier and change nothing.
 
-```bash
-lean-ctx compliance report \
-  --from 2026-01-01T00:00:00Z --to 2026-03-31T23:59:59Z \
-  --framework eu-ai-act --framework iso42001 \
-  --pack regulated-eu --format pdf --out q1-report.pdf
-# → writes q1-report.json  (signed, always — the verifiable deliverable)
-#   and     q1-report.pdf   (human rendering)
-# Without --out, the signed JSON lands in
-#   ~/.local/share/lean-ctx/compliance/report-v1_<timestamp>.json
-```
-
-The artifact bundles, for the period:
-
-- **OWASP Top-10-for-Agents alignment** — how the active controls map to the
-  agentic threat list.
-- **Framework coverage** — EU AI Act / ISO 42001 / SOC2 rows, verified *live*
-  against the resolved pack (not a static claim).
-- **Enforcement evidence** — what was **blocked** (`ToolDenied`) and **redacted**
-  (`SecretDetected`), folded from the append-only audit chain; the segment's
-  `head_hash` is bound into the signed payload.
-- **Retention posture** — the pack's `audit_retention_days` intent vs. your
-  plan entitlement.
-
-Honest by construction: a quiet quarter reports **zero** blocks rather than
-inventing activity, and a broken local audit chain is surfaced
-(`chain_valid = false`), never hidden. The signed JSON is offline-verifiable with
-no audit trail and no LeanCTX install:
-
-```bash
-lean-ctx compliance verify q1-report.json
-# → VALID — signature verifies (Ed25519, offline)
-#     Signer key: <key-id> · Period: … · Audit head: <sha-256>
-```
-
-`--format json` (default) writes only the signed artifact; `--format csv|pdf`
-additionally emits that human rendering — the PDF is a real, dependency-free
-PDF 1.7. Full contract: `docs/contracts/compliance-report-v1.md`.
+`lean-ctx compliance verify <report.json>` checks the Ed25519 signature offline and
+needs no license. The Community engine also keeps the raw evidence:
+`lean-ctx audit evidence` writes the offline-verifiable bundle
+(`docs/contracts/evidence-bundle-v1.md`) and `lean-ctx policy coverage` runs the CGB
+assessment.
 
 ## Central org policy (#674)
 

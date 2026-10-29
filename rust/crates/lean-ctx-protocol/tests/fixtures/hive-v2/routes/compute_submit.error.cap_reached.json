@@ -1,0 +1,9 @@
+{
+  "error": {
+    "code": "cap_reached",
+    "message": "The job would pass this workspace's daily compute cap (500 credits). Nothing was queued.",
+    "cap": "daily_credits",
+    "limit": 500,
+    "requested": 504
+  }
+}

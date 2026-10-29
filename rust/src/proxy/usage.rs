@@ -121,6 +121,9 @@ pub struct WireContext {
     pub team: Option<String>,
     /// Project: `x-leanctx-project` header wins over the key's default project.
     pub project: Option<String>,
+    /// Local project key of the folder the agent named in the request
+    /// (`super::project_attribution`); splits measured spend per project.
+    pub project_key: Option<String>,
     /// Estimated tokens this request saved through wire compression
     /// (bytes/4 heuristic, same basis as the proxy stats).
     pub saved_tokens: u64,
@@ -249,6 +252,7 @@ impl Scanner {
 
     /// Starts measurement at the caller's actual upstream dispatch boundary.
     #[must_use]
+    #[cfg(feature = "http-server")]
     pub(crate) fn with_response_clock(
         mut self,
         started: Option<std::time::Instant>,
@@ -747,6 +751,7 @@ mod tests {
             person: Some("yves".into()),
             team: None,
             project: Some("billing".into()),
+            project_key: None,
             saved_tokens: 42,
             uncompressed_input_tokens: 500,
             is_local: false,

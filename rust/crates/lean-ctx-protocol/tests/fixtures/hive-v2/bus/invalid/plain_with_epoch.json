@@ -1,0 +1,14 @@
+{
+  "case": "plain_with_epoch",
+  "base": "bus/publish.question.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/epoch",
+      "value": 1
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

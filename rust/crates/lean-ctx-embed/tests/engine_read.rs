@@ -165,10 +165,6 @@ fn raw_call_does_not_grant_new_registry_tools_or_host_handles() {
             serde_json::json!({"path":"src/main.rs", "patch":"replacement"}),
         ),
         (
-            "ctx_refactor",
-            serde_json::json!({"action":"rename", "from":"helper", "to":"renamed"}),
-        ),
-        (
             "ctx_search",
             serde_json::json!({"action":"symbol", "handle":"outside-handle"}),
         ),

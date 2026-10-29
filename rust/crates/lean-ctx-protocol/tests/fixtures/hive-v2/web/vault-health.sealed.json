@@ -1,0 +1,37 @@
+{
+  "route": "W24",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/vaults/card-vault/health",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "sealed": true,
+      "active_nodes": null,
+      "knowledge_states": null,
+      "evidenced_pct": null,
+      "stale_pct": null,
+      "contradicted_pct": null,
+      "unconfirmed_pct": null,
+      "trust": null,
+      "review_sla": {
+        "median_s": null,
+        "p90_s": null,
+        "overdue": 0
+      },
+      "blocked_reviews": 1,
+      "capture_gate": {
+        "engines": 1,
+        "considered": 12,
+        "captured": 2,
+        "rejected": {}
+      },
+      "replicas": {
+        "count": 1,
+        "last_sync": "2026-10-24T08:30:00Z",
+        "oldest_sync": "2026-10-24T08:30:00Z"
+      }
+    }
+  },
+  "errors": []
+}

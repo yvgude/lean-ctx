@@ -4,13 +4,16 @@
 use std::fs::File;
 #[cfg(not(windows))]
 use std::fs::OpenOptions;
-use std::io::Write;
+use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 
 use fs2::FileExt;
 use serde::{Deserialize, Serialize};
 
-use super::manifest::{MAX_ARCHIVE, PackageReceipt};
+use super::manifest::{
+    MAX_ARCHIVE, MAX_SEMANTIC_DESCRIPTOR, PackageReceipt, SEMANTIC_DESCRIPTOR, SemanticCompanion,
+    SemanticCompanions, SemanticInstallation,
+};
 #[cfg(not(windows))]
 use super::read_regular as read_input;
 use super::{InstallError, Result, VerifiedPackage, is_digest, sha256, verify};
@@ -18,6 +21,10 @@ use super::{InstallError, Result, VerifiedPackage, is_digest, sha256, verify};
 use crate::core::windows_private::{Directory, Privacy};
 
 const STATE: &str = "selection.json";
+/// The companions of a v4 package, inside its package directory.
+const SEMANTIC_DIRECTORY: &str = "semantic";
+/// A companion is copied through this buffer and never held whole.
+const COMPANION_BUFFER: usize = 64 * 1024;
 
 #[derive(Debug, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -43,7 +50,7 @@ struct Store {
 /// `Busy` only after a short bounded wait. A child forked by another thread
 /// shares the open lock until it execs, so a lock this process just released
 /// can still read as held for a moment (seen in the parallel test suite).
-fn lock_exclusive_bounded(lock: &File) -> Result<()> {
+pub(super) fn lock_exclusive_bounded(lock: &File) -> Result<()> {
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     loop {
         match lock.try_lock_exclusive() {
@@ -358,6 +365,25 @@ pub(super) fn active_manifest(root: &Path) -> Result<String> {
         .map_or_else(|| "none".into(), |value| value.manifest_sha256))
 }
 
+/// The active manifest as the selection file names it, read WITHOUT the store
+/// lock: for a caller that only asks whether the selection moved while
+/// another holder — an installation, a worker start, another process
+/// authenticating the package — has the store. The selection is replaced
+/// atomically (`Store::select`), so a reader sees the old or the new file,
+/// never a part of one. This authenticates nothing: no package byte is
+/// checked here, and nothing may be started or installed on its answer.
+pub(super) fn active_manifest_unlocked(root: &Path) -> Result<String> {
+    let path = root.join(STATE);
+    if !path.try_exists()? {
+        return Ok("none".into());
+    }
+    let state: Selection =
+        serde_json::from_slice(&read_regular(&path, 16_384)?).map_err(|_| InstallError::State)?;
+    Ok(state
+        .active
+        .map_or_else(|| "none".into(), |value| value.manifest_sha256))
+}
+
 pub(super) fn channel_trust(
     root: &Path,
     expected: &str,
@@ -512,11 +538,22 @@ pub(super) fn verified_active(
     selected: &str,
     key: &[u8; 32],
 ) -> Result<VerifiedPackage> {
+    verified_active_kind(super::RuntimeKind::Intelligence, root, selected, key)
+}
+
+/// As [`verified_active`], authenticating the package as exactly `kind`.
+pub(super) fn verified_active_kind(
+    kind: super::RuntimeKind,
+    root: &Path,
+    selected: &str,
+    key: &[u8; 32],
+) -> Result<VerifiedPackage> {
     let store = Store::open(root)?;
     let state = store.load(Some(selected))?;
     let directory = store.package_dir(selected)?;
     let production = verify_delegation(root, &directory, selected, key, &state)?;
-    let package = verify(
+    let mut package = super::verify_kind(
+        kind,
         &read_regular(&directory.join("artifact.tar.gz"), MAX_ARCHIVE)?,
         &read_regular(&directory.join("manifest.json"), 65_536)?,
         &read_regular(&directory.join("manifest.sig"), 64)?,
@@ -529,7 +566,361 @@ pub(super) fn verified_active(
     if state.active.as_ref() != Some(&package.receipt) {
         return Err(InstallError::State);
     }
+    observe_semantic(&directory, &mut package)?;
     Ok(package)
+}
+
+/// What a runtime start with the installed model set needs: where the
+/// companions are and the descriptor digest the signed manifest states.
+pub(crate) struct SemanticSet {
+    pub(crate) directory: PathBuf,
+    pub(crate) descriptor_sha256: String,
+    /// The semantic detector contract versions the package declares.
+    pub(crate) versions: Vec<String>,
+}
+
+/// The installed model set of an authenticated v4 package, or `None`: an
+/// earlier format, companions not installed, or a companion directory that
+/// does not pass the cheap admission. That admission is repeated on every
+/// call, because the path is handed to a process start.
+pub(crate) fn semantic_set(package: &VerifiedPackage) -> Option<SemanticSet> {
+    let semantic = package.semantic.as_ref()?;
+    let SemanticInstallation::Installed { directory, .. } = &semantic.installation else {
+        return None;
+    };
+    admit_semantic_directory(directory, &semantic.companions).ok()?;
+    let versions = super::manifest::semantic_versions(&package.description);
+    if versions.is_empty() {
+        return None;
+    }
+    Some(SemanticSet {
+        directory: directory.clone(),
+        descriptor_sha256: semantic.companions.descriptor.sha256.clone(),
+        versions,
+    })
+}
+
+/// Install-side state of semantic detectors for one authenticated package.
+/// A caller that could not authenticate a package at all reports
+/// `unverified`, and one without an enabled runtime `not_configured`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) enum SemanticState {
+    /// Declared, and the signed model set is installed and admitted.
+    Offered { descriptor_sha256: String },
+    /// A v4 package installed without its companions.
+    SetNotPresent,
+    /// No model set belongs to the package. That includes an earlier format
+    /// whose description names the capability: no backend ever served it.
+    NotOffered,
+    /// A companion directory exists and is not the signed set.
+    Unverified,
+}
+
+impl SemanticState {
+    pub(crate) const fn as_str(&self) -> &'static str {
+        match self {
+            Self::Offered { .. } => "offered",
+            Self::SetNotPresent => "set_not_present",
+            Self::NotOffered => "not_offered",
+            Self::Unverified => "unverified",
+        }
+    }
+
+    /// The first twelve hex digits of the signed descriptor digest.
+    pub(crate) fn descriptor_prefix(&self) -> Option<&str> {
+        match self {
+            Self::Offered { descriptor_sha256 } => descriptor_sha256.get(..12),
+            _ => None,
+        }
+    }
+}
+
+pub(crate) fn semantic_state(package: &VerifiedPackage) -> SemanticState {
+    let Some(semantic) = package.semantic.as_ref() else {
+        return SemanticState::NotOffered;
+    };
+    match semantic.installation {
+        SemanticInstallation::NotPresent => SemanticState::SetNotPresent,
+        SemanticInstallation::Rejected => SemanticState::Unverified,
+        SemanticInstallation::Installed { .. } => {
+            semantic_set(package).map_or(SemanticState::Unverified, |set| SemanticState::Offered {
+                descriptor_sha256: set.descriptor_sha256,
+            })
+        }
+    }
+}
+
+fn present(path: &Path) -> Result<bool> {
+    match std::fs::symlink_metadata(path) {
+        Ok(_) => Ok(true),
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => Ok(false),
+        Err(error) => Err(error.into()),
+    }
+}
+
+/// Cheap admission of a companion directory: a private directory of this
+/// user, never a link, holding exactly the signed files as regular files of
+/// the signed lengths. No content is hashed here. The runtime compares every
+/// file with the descriptor, and the descriptor with the signed digest it is
+/// given, at every load.
+fn admit_semantic_directory(directory: &Path, companions: &SemanticCompanions) -> Result<()> {
+    private_directory(directory)?;
+    if std::fs::read_dir(directory)?.count() != companions.all().count() {
+        return Err(InstallError::State);
+    }
+    for companion in companions.all() {
+        let metadata = std::fs::symlink_metadata(directory.join(&companion.name))?;
+        if !super::regular_metadata(&metadata) || metadata.len() != companion.bytes {
+            return Err(InstallError::State);
+        }
+    }
+    Ok(())
+}
+
+/// Admit the directory and bind its descriptor (small, so read and hashed
+/// here) to the signed list and the package description.
+fn bound_semantic_directory(
+    directory: &Path,
+    companions: &SemanticCompanions,
+    description: &serde_json::Value,
+) -> Result<[bool; 3]> {
+    admit_semantic_directory(directory, companions)?;
+    let descriptor = read_regular(
+        &directory.join(SEMANTIC_DESCRIPTOR),
+        MAX_SEMANTIC_DESCRIPTOR,
+    )?;
+    super::manifest::bind_descriptor(companions, &descriptor, description)
+}
+
+/// Record whether the companions of a v4 package are installed. A missing
+/// directory is the valid state "set not present". A directory that is not
+/// the signed set withholds semantic detectors; the package's other
+/// capabilities do not depend on it.
+fn observe_semantic(directory: &Path, package: &mut VerifiedPackage) -> Result<()> {
+    let Some(semantic) = package.semantic.as_mut() else {
+        return Ok(());
+    };
+    let path = directory.join(SEMANTIC_DIRECTORY);
+    if !present(&path)? {
+        return Ok(());
+    }
+    semantic.installation =
+        match bound_semantic_directory(&path, &semantic.companions, &package.description) {
+            Ok(coverage) => SemanticInstallation::Installed {
+                directory: path,
+                coverage,
+            },
+            Err(_) => SemanticInstallation::Rejected,
+        };
+    Ok(())
+}
+
+/// Open one companion offered for installation: a regular file, never a
+/// link, of exactly the signed length. Its content is compared while copied.
+fn open_companion(path: &Path, expected: &SemanticCompanion) -> Result<File> {
+    if !super::regular_metadata(&std::fs::symlink_metadata(path)?) {
+        return Err(InstallError::Input);
+    }
+    let mut options = std::fs::OpenOptions::new();
+    options.read(true);
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::OpenOptionsExt;
+        options.custom_flags(libc::O_NOFOLLOW | libc::O_NONBLOCK);
+    }
+    #[cfg(windows)]
+    {
+        use std::os::windows::fs::OpenOptionsExt;
+        use windows_sys::Win32::Storage::FileSystem::FILE_FLAG_OPEN_REPARSE_POINT;
+        // Bind the leaf itself even if it becomes a reparse point after stat.
+        options.custom_flags(FILE_FLAG_OPEN_REPARSE_POINT);
+    }
+    let file = options.open(path)?;
+    let metadata = file.metadata()?;
+    if !super::regular_metadata(&metadata) {
+        return Err(InstallError::Input);
+    }
+    if metadata.len() != expected.bytes {
+        return Err(InstallError::Size);
+    }
+    Ok(file)
+}
+
+/// Where the companions of a package are taken from. Both are verified by
+/// the same code against the same signed manifest.
+enum CompanionSource<'a> {
+    /// A local directory holding the files under their fixed names.
+    Directory(&'a Path),
+    /// The base URL a signed catalog entry names; each file is `<base>/<name>`.
+    Channel(&'a str),
+}
+
+/// Copy one companion into a new private file through a bounded buffer,
+/// comparing its length and SHA-256 with the signed manifest on the way.
+fn stream_companion(
+    source: &CompanionSource,
+    destination: &Path,
+    expected: &SemanticCompanion,
+) -> Result<()> {
+    match source {
+        CompanionSource::Directory(directory) => write_companion(
+            &mut open_companion(&directory.join(&expected.name), expected)?,
+            destination,
+            expected,
+        ),
+        CompanionSource::Channel(base) => {
+            let url = format!("{}/{}", base.trim_end_matches('/'), expected.name);
+            write_companion(
+                &mut super::channel::open_companion(&url, expected.bytes)?,
+                destination,
+                expected,
+            )
+        }
+    }
+}
+
+fn write_companion(
+    input: &mut impl Read,
+    destination: &Path,
+    expected: &SemanticCompanion,
+) -> Result<()> {
+    use sha2::{Digest, Sha256};
+    #[cfg(windows)]
+    let directory = Directory::open(
+        destination.parent().ok_or(InstallError::Directory)?,
+        Privacy::Private,
+    )?;
+    #[cfg(windows)]
+    let mut output = directory.create_file(file_name(destination)?)?;
+    #[cfg(not(windows))]
+    let mut output = {
+        let mut options = OpenOptions::new();
+        options.create_new(true).write(true);
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::OpenOptionsExt;
+            options.mode(0o400);
+        }
+        options.open(destination)?
+    };
+    let mut digest = Sha256::new();
+    let mut buffer = vec![0_u8; COMPANION_BUFFER];
+    let mut remaining = expected.bytes;
+    loop {
+        let read = match input.read(&mut buffer) {
+            Ok(0) => break,
+            Ok(read) => read,
+            Err(error) if error.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(error) => return Err(error.into()),
+        };
+        // More than the signed length is not the signed companion.
+        remaining = u64::try_from(read)
+            .ok()
+            .and_then(|read| remaining.checked_sub(read))
+            .ok_or(InstallError::Size)?;
+        digest.update(&buffer[..read]);
+        output.write_all(&buffer[..read])?;
+    }
+    if remaining != 0 || hex::encode(digest.finalize().as_slice()) != expected.sha256 {
+        return Err(InstallError::Archive);
+    }
+    output.sync_all()?;
+    Ok(())
+}
+
+/// Install the companions of `package` from `source` as `parent/semantic`.
+/// Every file is streamed into a private temporary directory beside its
+/// destination and compared with the signed manifest while it is written;
+/// only a complete, verified set is renamed into place. Any mismatch removes
+/// the temporary directory: nothing of the set remains.
+fn install_companions(
+    parent: &Path,
+    source: &CompanionSource,
+    package: &VerifiedPackage,
+) -> Result<()> {
+    let semantic = package.semantic.as_ref().ok_or(InstallError::Manifest)?;
+    if let CompanionSource::Directory(directory) = source {
+        let metadata = std::fs::symlink_metadata(directory)?;
+        if !metadata.is_dir() || metadata.file_type().is_symlink() {
+            return Err(InstallError::Input);
+        }
+    }
+    #[cfg(not(windows))]
+    let staged = {
+        let mut builder = tempfile::Builder::new();
+        builder.prefix(".semantic-");
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            builder.permissions(std::fs::Permissions::from_mode(0o700));
+        }
+        builder.tempdir_in(parent)?
+    };
+    #[cfg(windows)]
+    let staged = temporary_directory(parent, ".semantic-")?;
+    private_directory(staged.path())?;
+    for companion in semantic.companions.all() {
+        stream_companion(source, &staged.path().join(&companion.name), companion)?;
+    }
+    bound_semantic_directory(staged.path(), &semantic.companions, &package.description)?;
+    let destination = parent.join(SEMANTIC_DIRECTORY);
+    #[cfg(windows)]
+    staged.publish(&destination)?;
+    #[cfg(not(windows))]
+    {
+        File::open(staged.path())?.sync_all()?;
+        std::fs::rename(staged.path(), &destination)?;
+        File::open(parent)?.sync_all()?;
+    }
+    Ok(())
+}
+
+/// After a channel install of a v4 package: give the installed package its
+/// model set. `Ok(true)` when the signed set is installed afterwards.
+///
+/// A set of the same signed files that another retained package already
+/// holds is copied from there, verified in full against this package's
+/// manifest, so an update that keeps its model set downloads nothing.
+/// Otherwise each companion is fetched from `<base>/<name>` when the signed
+/// catalog entry names a base. The caller treats an error as "set not
+/// present": the package is installed and selected before this runs, and
+/// nothing here can undo or block that.
+pub(super) fn install_channel_companions(
+    root: &Path,
+    package: &VerifiedPackage,
+    base: Option<&str>,
+) -> Result<bool> {
+    let Some(semantic) = package.semantic.as_ref() else {
+        return Ok(false);
+    };
+    let store = Store::open(root)?;
+    let state = store.load(None)?;
+    let selected = package.receipt.manifest_sha256.as_str();
+    let directory = store.package_dir(selected)?;
+    let destination = directory.join(SEMANTIC_DIRECTORY);
+    if present(&destination)? {
+        bound_semantic_directory(&destination, &semantic.companions, &package.description)?;
+        return Ok(true);
+    }
+    for retained in [&state.active, &state.previous].into_iter().flatten() {
+        if retained.manifest_sha256 == selected {
+            continue;
+        }
+        let held = store
+            .package_dir(&retained.manifest_sha256)?
+            .join(SEMANTIC_DIRECTORY);
+        if present(&held)?
+            && admit_semantic_directory(&held, &semantic.companions).is_ok()
+            && install_companions(&directory, &CompanionSource::Directory(&held), package).is_ok()
+        {
+            return Ok(true);
+        }
+    }
+    let Some(base) = base else {
+        return Ok(false);
+    };
+    install_companions(&directory, &CompanionSource::Channel(base), package)?;
+    Ok(true)
 }
 
 fn verify_delegation(
@@ -575,14 +966,36 @@ pub(super) fn install(
     manifest: &[u8],
     signature: &[u8],
 ) -> Result<serde_json::Value> {
-    install_selected(
+    install_package(
         root,
         expected_active,
         package,
-        archive,
-        manifest,
-        signature,
+        [archive, manifest, signature],
         None,
+        None,
+    )
+}
+
+/// Install a package from local files together with the companions its
+/// signed manifest lists, read from the directory `companions`. A v4 package
+/// installed without them (`install`) is the valid state "set not present";
+/// running this afterwards for the same package adds the set.
+pub(super) fn install_with_companions(
+    root: &Path,
+    expected_active: &str,
+    package: &VerifiedPackage,
+    archive: &[u8],
+    manifest: &[u8],
+    signature: &[u8],
+    companions: &Path,
+) -> Result<serde_json::Value> {
+    install_package(
+        root,
+        expected_active,
+        package,
+        [archive, manifest, signature],
+        None,
+        Some(companions),
     )
 }
 
@@ -595,6 +1008,46 @@ pub(super) fn install_selected(
     signature: &[u8],
     channel: Option<&super::catalog::Admission>,
 ) -> Result<serde_json::Value> {
+    install_package(
+        root,
+        expected_active,
+        package,
+        [archive, manifest, signature],
+        channel,
+        None,
+    )
+}
+
+/// The install result with the state of a v4 package's companions; the
+/// result for an earlier format is unchanged.
+fn with_companion_state(
+    mut result: serde_json::Value,
+    package: &VerifiedPackage,
+    destination: &Path,
+) -> Result<serde_json::Value> {
+    if package.semantic.is_some() {
+        let state = if present(&destination.join(SEMANTIC_DIRECTORY))? {
+            "installed"
+        } else {
+            "set_not_present"
+        };
+        result["semantic_models"] = state.into();
+    }
+    Ok(result)
+}
+
+fn install_package(
+    root: &Path,
+    expected_active: &str,
+    package: &VerifiedPackage,
+    [archive, manifest, signature]: [&[u8]; 3],
+    channel: Option<&super::catalog::Admission>,
+    companions: Option<&Path>,
+) -> Result<serde_json::Value> {
+    // Companions belong to a manifest that lists them.
+    if companions.is_some() && package.semantic.is_none() {
+        return Err(InstallError::Manifest);
+    }
     let production = super::bootstrap::production_key(root)?;
     if package.receipt.staging_only == production.is_some()
         || production.is_some_and(|key| {
@@ -612,7 +1065,12 @@ pub(super) fn install_selected(
     if let Some(channel) = channel {
         let trusted =
             super::rotation::resolve_for(&channel.anchor, &state.rotations, production.is_some())?;
-        channel.receipt.admit(state.channel.as_ref(), &trusted)?;
+        channel.receipt.admit(
+            state.channel.as_ref(),
+            &trusted,
+            !channel.bundled,
+            channel.downgrade,
+        )?;
         if let Some(delegation) = &channel.delegation {
             let (key, receipt) = delegation.verify(&package.receipt.manifest_sha256, &trusted)?;
             if receipt != channel.receipt {
@@ -630,15 +1088,16 @@ pub(super) fn install_selected(
     }
     let receipt = &package.receipt;
     let already_installed = state.active.as_ref() == Some(receipt);
+    // A channel orders its packages by the root-signed catalog sequence,
+    // admitted above, so a user may skip releases. A package installed without
+    // a channel has no sequence: its signed rollback link must name the
+    // complete active archive, not only its executable (which excludes package
+    // metadata and provenance).
     if !already_installed
-        && state
-            .active
-            .as_ref()
-            // The signed rollback link identifies the complete prior archive, not
-            // only its executable (which excludes package metadata and provenance).
-            .is_some_and(|active| {
-                receipt.rollback_sha256.as_deref() != Some(active.artifact_sha256.as_str())
-            })
+        && channel.is_none()
+        && state.active.as_ref().is_some_and(|active| {
+            receipt.rollback_sha256.as_deref() != Some(active.artifact_sha256.as_str())
+        })
     {
         return Err(InstallError::State);
     }
@@ -661,6 +1120,18 @@ pub(super) fn install_selected(
             let trusted = super::rotation::resolve_for(&channel.anchor, &state.rotations, true)?;
             let (key, _) = delegation.verify(&receipt.manifest_sha256, &trusted)?;
             verify_delegation(root, &directory, &receipt.manifest_sha256, &key, &state)?;
+        }
+        if let (Some(source), Some(semantic)) = (companions, package.semantic.as_ref()) {
+            if present(&directory.join(SEMANTIC_DIRECTORY))? {
+                // An installed set is kept, never replaced; it must be the signed one.
+                bound_semantic_directory(
+                    &directory.join(SEMANTIC_DIRECTORY),
+                    &semantic.companions,
+                    &package.description,
+                )?;
+            } else {
+                install_companions(&directory, &CompanionSource::Directory(source), package)?;
+            }
         }
     } else {
         #[cfg(not(windows))]
@@ -696,6 +1167,10 @@ pub(super) fn install_selected(
             &package.binary,
             true,
         )?;
+        if let Some(source) = companions {
+            // Inside the staged package: a refused companion leaves no package.
+            install_companions(staged.path(), &CompanionSource::Directory(source), package)?;
+        }
         #[cfg(windows)]
         staged.publish(&destination)?;
         #[cfg(not(windows))]
@@ -709,14 +1184,20 @@ pub(super) fn install_selected(
         if channel_changed {
             store.select(&state)?;
         }
-        return Ok(serde_json::json!({"status": "already_installed", "receipt": receipt}));
+        return with_companion_state(
+            serde_json::json!({"status": "already_installed", "receipt": receipt}),
+            package,
+            &destination,
+        );
     }
     state.previous = state.active.take();
     state.active = Some(receipt.clone());
     store.select(&state)?;
-    Ok(
+    with_companion_state(
         serde_json::json!({"status": "installed", "receipt": receipt,
         "runtime_started": false, "user_state_modified": false}),
+        package,
+        &destination,
     )
 }
 

@@ -1,0 +1,18 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/swarms/9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02/capacity",
+  "request": null,
+  "response": {
+    "body": {
+      "max_workers_effective": 200,
+      "open_claims": 2,
+      "open_tasks": 9,
+      "participants": 3,
+      "unattended_workers": 1,
+      "workers": 7
+    },
+    "status": 200
+  },
+  "route": "W39"
+}

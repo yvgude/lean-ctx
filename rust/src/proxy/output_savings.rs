@@ -141,9 +141,14 @@ pub fn from_cohorts(cohorts: &HashMap<String, CohortUsage>) -> Savings {
     }
 }
 
-/// Two-sample reduction with a Welch 95 % CI, or `None` if degenerate
-/// (control mean 0, or variance unavailable).
+/// Two-sample reduction with a Welch 95 % CI, or `None` (not measured) if the
+/// sample is too small or degenerate: control mean 0, or a variance that is
+/// zero, undefined or inconsistent with the sums (a zero-width CI is not a
+/// measurement).
 fn measured(control: &CohortUsage, treatment: &CohortUsage) -> Option<Measured> {
+    if control.requests < MIN_SAMPLES_PER_ARM || treatment.requests < MIN_SAMPLES_PER_ARM {
+        return None;
+    }
     welch_reduction(
         Sample::new(
             control.output_tokens,
@@ -177,9 +182,15 @@ impl Sample {
     }
 
     /// Unbiased sample variance, clamped at 0 against floating-point error.
+    /// `None` with < 2 observations, or when the sum of squares cannot belong
+    /// to the sum (`n·Σx² < (Σx)²`) — e.g. totals whose squares were lost.
     #[allow(clippy::cast_precision_loss)]
     fn variance(self) -> Option<f64> {
         if self.n < 2 {
+            return None;
+        }
+        let sum = u128::from(self.sum);
+        if u128::from(self.sum_sq) * u128::from(self.n) < sum * sum {
             return None;
         }
         let (n, sum, sum_sq) = (self.n as f64, self.sum as f64, self.sum_sq as f64);
@@ -203,6 +214,11 @@ pub(crate) fn welch_reduction(control: Sample, treatment: Sample) -> Option<Meas
 
     let diff = control_avg - treatment_avg; // tokens saved per turn (may be < 0)
     let se = (var_c / n_c + var_t / n_t).sqrt();
+    // No spread means no interval: real per-turn token counts always vary, so
+    // a zero standard error signals lost or synthetic sums, not certainty.
+    if !(se.is_finite() && se > 0.0) {
+        return None;
+    }
     let margin = Z95 * se;
 
     Some(Measured {
@@ -335,20 +351,38 @@ mod tests {
     }
 
     #[test]
-    fn zero_variance_constant_samples_yield_finite_ci() {
-        // Constant per-arm output → variance 0 → CI collapses to the point.
+    fn zero_variance_is_not_reported_as_measured() {
+        // Constant per-arm output → variance 0 → a zero-width CI, which is no
+        // measurement at all.
         let control = from_samples(&[180; 40]);
         let treatment = from_samples(&[120; 40]);
         let mut m = HashMap::new();
         m.insert("control".to_string(), control);
         m.insert("treatment".to_string(), treatment);
-        match from_cohorts(&m) {
-            Savings::Measured(measured) => {
-                assert!((measured.reduction_pct - 33.333).abs() < 0.1);
-                assert!((measured.ci95_low_pct - measured.ci95_high_pct).abs() < 1e-6);
-                assert!(measured.reduction_pct.is_finite());
-            }
-            other => panic!("expected Measured, got {other:?}"),
-        }
+        assert!(
+            !matches!(from_cohorts(&m), Savings::Measured(_)),
+            "zero variance must not be reported as measured"
+        );
+    }
+
+    #[test]
+    fn lost_sums_of_squares_are_not_reported_as_measured() {
+        // Pre-fix restarts dropped `sum_sq_output`: the totals then imply a
+        // negative variance. Those cohorts must read as not measured.
+        let mut control = from_samples(&[170, 180, 190, 185].repeat(10));
+        let mut treatment = from_samples(&[110, 120, 130, 125].repeat(10));
+        control.sum_sq_output = 0;
+        treatment.sum_sq_output = 0;
+        let mut m = HashMap::new();
+        m.insert("control".to_string(), control);
+        m.insert("treatment".to_string(), treatment);
+        assert!(!matches!(from_cohorts(&m), Savings::Measured(_)));
+    }
+
+    #[test]
+    fn measured_requires_minimum_samples_on_its_own() {
+        let control = from_samples(&[170, 180, 190]);
+        let treatment = from_samples(&[110, 120, 130]);
+        assert!(measured(&control, &treatment).is_none());
     }
 }

@@ -443,8 +443,64 @@ fn prepared_update_executes_and_records_the_receipt() {
     assert!(!recover_pending_transaction(&exe).expect("recovery after rollback"));
 }
 
+/// When signing the staged binary stops because a signing tool could not be
+/// confirmed ended, that tool may still be writing the file: the update is
+/// refused before the file is read, and nothing is sealed, recorded or swapped.
+#[test]
+#[cfg(target_os = "macos")]
+fn an_update_is_neither_sealed_nor_swapped_when_signing_could_not_be_confirmed_over() {
+    let sandbox = UpdaterSandbox::new(b"#!/bin/sh\necho old\n");
+    let exe = sandbox.exe.clone();
+    let tools = tempfile::tempdir().expect("signing tools dir");
+    let _stopped = crate::core::codesign::test_scope::unconfirmable(tools.path());
+    let target = b"#!/bin/sh\necho new\n";
+    let verified = VerifiedArtifact {
+        archive_sha256: "a".repeat(64),
+        manifest_sha256: "b".repeat(64),
+        release_commit: "c".repeat(40),
+        payload_sha256: sha256_hex(target),
+    };
+
+    let refused = prepare_update_transaction(
+        &exe,
+        "lean-ctx-aarch64-apple-darwin.tar.gz",
+        "9.9.9",
+        &verified,
+        target,
+    );
+    assert!(
+        refused
+            .err()
+            .is_some_and(|error| error.contains("code signing stopped")),
+        "the update was prepared although signing was not confirmed over"
+    );
+    assert_eq!(
+        std::fs::read(&exe).expect("installed binary"),
+        b"#!/bin/sh\necho old\n"
+    );
+    assert!(
+        load_update_receipt_for(&exe)
+            .expect("receipt loads")
+            .is_none(),
+        "a receipt was written"
+    );
+    assert!(
+        !update_transaction_path()
+            .expect("transaction path")
+            .exists(),
+        "a transaction was sealed"
+    );
+    assert!(!recover_pending_transaction(&exe).expect("recovery"));
+}
+
 /// Stand-in install for transaction tests: isolated state dir plus a binary.
 struct UpdaterSandbox {
+    /// Signing during an update uses stand-in tools of this sandbox: these
+    /// tests show the transaction around the signing step, never the user's
+    /// keychain or a real signature. Installed on the thread that prepares
+    /// the update, before it does, and put back when the sandbox goes.
+    #[cfg(target_os = "macos")]
+    _signing: (crate::core::codesign::test_scope::Scoped, tempfile::TempDir),
     _env_lock: crate::core::data_dir::TestEnvGuard,
     _state: tempfile::TempDir,
     _install: tempfile::TempDir,
@@ -459,7 +515,17 @@ impl UpdaterSandbox {
         let install = tempfile::tempdir().expect("install dir");
         let exe = install.path().join("lean-ctx");
         std::fs::write(&exe, binary).expect("current binary");
+        #[cfg(target_os = "macos")]
+        let signing = {
+            let tools = tempfile::tempdir().expect("signing tools dir");
+            (
+                crate::core::codesign::test_scope::without_identity(tools.path()),
+                tools,
+            )
+        };
         Self {
+            #[cfg(target_os = "macos")]
+            _signing: signing,
             _env_lock: env_lock,
             _state: state,
             _install: install,

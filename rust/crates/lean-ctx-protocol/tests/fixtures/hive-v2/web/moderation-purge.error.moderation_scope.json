@@ -1,0 +1,27 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "moderation_scope",
+          "message": "Moderation purges apply to public vaults only."
+        }
+      },
+      "status": 403
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/moderation/purges",
+  "request": {
+    "report_id": "rpt_4713",
+    "selector": {
+      "node_ids": [
+        "n_zcjqmmor453nyxqgshlgpogwdm"
+      ]
+    },
+    "statement_of_reasons": "A private vault is outside moderation; this request is refused.",
+    "totp_code": "482913"
+  },
+  "response": null,
+  "route": "W56"
+}

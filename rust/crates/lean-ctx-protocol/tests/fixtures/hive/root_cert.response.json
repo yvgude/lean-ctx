@@ -1,0 +1,20 @@
+{
+  "hive_origin": "https://hive.example.test",
+  "issued_at": "2026-10-21T09:00:00Z",
+  "issuer_key_id": "key:ed25519-172254a78e85a99ae803544c9a133698",
+  "max_seats": 250,
+  "not_after": "2027-10-21T00:00:00Z",
+  "not_before": "2026-10-21T00:00:00Z",
+  "org_ids": [
+    "org_acme"
+  ],
+  "plans": [
+    "enterprise",
+    "team"
+  ],
+  "root_ed25519_pub": "IBLLkMpg6OXY2vZuInLSIz4EhtVX6MZhQe2JIBd9frc=",
+  "schema": "leanctx.hive.root-cert/v1",
+  "serial": "rc-2026-0001",
+  "signature": "XJOBP/sGpjjpDSP346sliwevkZJRRTNQTpSk+yNHgaQDLX5/z0OkjM9a5Ulh9VgCRsylI5RXSvbuXC92r2YiBg==",
+  "subject": "Example Gov Office"
+}

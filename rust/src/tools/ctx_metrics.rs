@@ -112,19 +112,6 @@ pub fn handle(cache: &SessionCache, tool_calls: &[ToolCallRecord], crp_mode: Crp
         }
     }
 
-    // Online-learned threshold deltas (#538): show which extensions have
-    // shifted away from the static base table and by how much.
-    let learned = crate::core::threshold_learning::report();
-    if !learned.is_empty() {
-        out.push(String::new());
-        if crp_mode.is_tdd() {
-            out.push("§learned-thresholds".to_string());
-        } else {
-            out.push("Learned Thresholds (quality loop):".to_string());
-        }
-        out.extend(learned);
-    }
-
     // LITM placement calibration (#539): observed begin/end hit rates and the
     // calibrated begin-share per client profile.
     let litm_cal = crate::core::litm_calibration::report();

@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "Task 7 is done; it takes no more writes.",
+    "number": 7,
+    "reason": "task_closed"
+  }
+}

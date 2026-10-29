@@ -5,6 +5,7 @@
 //! - When empty: all commands pass (backwards-compatible blocklist-only mode)
 //! - Dangerous patterns (subshells, eval, backticks) are blocked in restricted mode
 
+mod approval;
 mod case_construct;
 mod compound;
 mod config;
@@ -35,6 +36,9 @@ use tokenizer::{
     split_on_operators,
 };
 
+pub use approval::{
+    ApprovalMiss, ApprovalRequest, approval_request, check_shell_allowlist_granted,
+};
 pub(crate) use case_construct::{contains_double_semicolon, rewrite_case_constructs};
 pub use config::*;
 pub use enforcement::*;
@@ -63,6 +67,8 @@ mod tests_multiword;
 mod tests_pipe_target;
 #[cfg(test)]
 mod tests_ps1930;
+#[cfg(test)]
+mod tests_redaction_marker;
 #[cfg(test)]
 mod tests_tokenizer;
 #[cfg(test)]

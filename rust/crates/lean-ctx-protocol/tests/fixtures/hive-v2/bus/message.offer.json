@@ -1,0 +1,25 @@
+{
+  "body": {
+    "capability": "profiling",
+    "eta_minutes": 45,
+    "what": "I can profile the tax lookup with the staging load profile."
+  },
+  "client_msg_id": "01M5NKA2Z8B000000000000003",
+  "id": "msg_00000000000000a3",
+  "provenance": "workspace",
+  "received_at": 1792800003000,
+  "schema": "leanctx.hive.bus/v2",
+  "sender": {
+    "host_app": "codex",
+    "kind": "worker",
+    "name": "Codex · general",
+    "owner_handle": "yves",
+    "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+  },
+  "seq": 3,
+  "thread_id": "msg_00000000000000a3",
+  "thread_status": "open",
+  "to": "~checkout-latency",
+  "type": "offer",
+  "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+}

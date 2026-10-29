@@ -115,12 +115,15 @@ async fn phase1_session_task_and_overview() {
     );
 
     let overview = engine
-        .call_tool_text("ctx_overview", None)
+        .call_tool_text(
+            "ctx_compose",
+            Some(json!({"task": "Implement caching layer"})),
+        )
         .await
-        .expect("overview");
+        .expect("compose");
     assert!(
         overview.contains("src") || overview.contains("project"),
-        "overview should contain project structure: {overview}"
+        "compose should contain project structure: {overview}"
     );
 
     // SAFETY: serialized by `test_env_lock()`.
@@ -520,7 +523,7 @@ async fn phase5_edit_and_verify() {
 // ── Phase 6: Context Management ────────────────────────────
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase6_compress_and_cache_status() {
+async fn phase6_compress() {
     let _lock = lean_ctx::core::data_dir::test_env_lock();
     let (_dir, engine) = setup_project();
 
@@ -542,35 +545,6 @@ async fn phase6_compress_and_cache_status() {
             );
         }
     }
-
-    let cache = engine
-        .call_tool_text("ctx_cache", Some(json!({"action": "status"})))
-        .await
-        .expect("cache status");
-    let cache_lower = cache.to_lowercase();
-    assert!(
-        cache_lower.contains("cache")
-            || cache_lower.contains("entries")
-            || cache_lower.contains("file"),
-        "cache status should show info: {cache}"
-    );
-
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
-    }
-}
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase6_ledger_status() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
-    let (_dir, engine) = setup_project();
-
-    let ledger = engine
-        .call_tool_text("ctx_ledger", Some(json!({"action": "status"})))
-        .await
-        .expect("ledger status");
-    assert!(!ledger.is_empty(), "ledger status should return output");
 
     // SAFETY: serialized by `test_env_lock()`.
     unsafe {
@@ -606,28 +580,6 @@ async fn phase6_dedup() {
         std::env::remove_var("LEAN_CTX_DATA_DIR");
     }
 }
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn phase6_plan() {
-    let _lock = lean_ctx::core::data_dir::test_env_lock();
-    let (_dir, engine) = setup_project();
-
-    let plan = engine
-        .call_tool_text(
-            "ctx_plan",
-            Some(json!({"task": "Add a caching layer to the Config struct"})),
-        )
-        .await
-        .expect("plan");
-    assert!(!plan.is_empty(), "plan should return output");
-
-    // SAFETY: serialized by `test_env_lock()`.
-    unsafe {
-        std::env::remove_var("LEAN_CTX_DATA_DIR");
-    }
-}
-
-// ── Phase 7: Knowledge & Session ───────────────────────────
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn phase7_knowledge_remember_and_recall() {

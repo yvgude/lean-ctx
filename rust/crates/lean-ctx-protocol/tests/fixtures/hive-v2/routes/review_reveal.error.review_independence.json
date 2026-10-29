@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "review_independence",
+    "message": "A reviewer must be independent of the writer."
+  }
+}

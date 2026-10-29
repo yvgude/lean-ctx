@@ -1,0 +1,14 @@
+{
+  "case": "hold_bus_with_worker_id",
+  "base": "bus/control.hold.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/target",
+      "value": "bus"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

@@ -57,14 +57,14 @@ GETTING STARTED:
     lean-ctx setup                 Guided setup with full control over every option
     lean-ctx doctor                Check that everything is wired up correctly
     lean-ctx inspect               Inspect recorded context operations and evidence
-    lean-ctx gain                  Inspect local context-usage estimates (not a benchmark)
+    lean-ctx cockpit (also: lean-ctx dashboard)  Savings · Spend · Proof in the browser
 
 EVERYDAY COMMANDS:
     lean-ctx -c \"command\"          Run a shell command with compressed output
     lean-ctx raw \"command\"         Same, but full uncompressed output (escape hatch)
     lean-ctx read <file>           Read a file with compression
     lean-ctx grep <pattern>        Search with compressed output
-    lean-ctx dashboard             Open the web dashboard (localhost:3333)
+    lean-ctx gain                  Terminal summary of local context-usage estimates
     lean-ctx tools <profile>       Choose how many MCP tools your agent sees
                                    (minimal · standard · power)
     lean-ctx tools health          Token-budget & rot report (unused tools,
@@ -108,7 +108,7 @@ GETTING STARTED:
     lean-ctx onboard               Connect all AI tools at once (zero questions)
     lean-ctx setup                 Guided setup with full control over every option
     lean-ctx doctor                Check that everything is wired up correctly
-    lean-ctx gain                  Inspect local context-usage estimates (not a benchmark)
+    lean-ctx cockpit (also: lean-ctx dashboard)  Savings · Spend · Proof in the browser
     (everything below is reference — run `lean-ctx help` for the short version)
 
 USAGE:
@@ -125,8 +125,10 @@ USAGE:
     lean-ctx shell                 Interactive shell with compression
 
 COMMANDS:
-    gain                           Local context-usage report (observed or estimated; not a benchmark)
-    gain --live                    Live mode: auto-refreshes every 1s in-place
+    gain                           On a terminal: open the Cockpit (#savings); elsewhere the text report
+    gain --terminal                Local context-usage report in the terminal (observed or estimated)
+    gain --web                     Open the Savings view in the Cockpit
+    gain --live                    Open the Calls (Ledger) view in the Cockpit
     gain --deep                    Full breakdown (cost + tasks + agents + heatmap combined)
     gain --graph                   30-day local context-usage chart
     gain --daily                   Bordered day-by-day table with USD
@@ -153,15 +155,11 @@ COMMANDS:
     gain --share [=<path>]         Self-hostable Wrapped page (HTML; alias: --page)
     gain --copy                    Copy a ready-to-post share line to the clipboard
     gain --svg|--share --open      Also open the written card/page in your browser
-    gain --publish [--name=<n>]    Development-only local export (hosted publication is Research)
-    gain --publish --leaderboard   Unavailable: public rankings are Research
-    gain --link [CODE]             Development-only local pairing experiment
-    gain --unpublish[=<id|url|all>]  Take a published card down (works even when publishing is off)
-    config set gain.auto_publish true  Development-only local export setting (off by default)
     savings [--period day|week|month|all] [--format table|json|markdown] Local representation-change report; not comparable proof
     value [--session <id>|--all] [--json]  What lean-ctx did, recomputed from the verified chains
     statusline [--wrap \"<cmd>\"]    Claude Code status line (set up by `init --agent claude`)
     inspect [--last <N>|--task <ID>] [--json]  Why the Context Gateway delivered, changed or withheld sources; --task: one task's plan→delivery→outcome
+    gateway why|list|allow-once|revoke <id>  A withheld block of a model request: why, and the human-only override
     claude-mod [status|install|uninstall]  Claude Code mod: wake-not-poll, Bash shaping, /leanctx (opt-in)
     prompt-segment [--shell zsh|bash|fish|plain]  Shell prompt segment (set up by `init --prompt`)
     learning [status|export|import]  Local adaptive-learning state: inspect, export, import
@@ -174,10 +172,10 @@ COMMANDS:
     embeddings status              Show the ONNX Runtime used for semantic embeddings (ORT_DYLIB_PATH)
     cep                            CEP report (compression metrics, cache, modes, trends)
     verify-cache [path] [--json]   Inspect local session-cache re-read behavior
-    prove [--format table|json|markdown] [--output FILE]  Generate Decision Loop evidence report
     prove speed --suite FILE [--runs N] [--budget N] [--json] | --verify [FILE]  Signed A/B proof of model latency with vs. without lean-ctx
     health [path] [--json] [--gate]  Code-health report: cognitive complexity, naming, navigability score + token tax
-    dashboard [--port=N] [--host=H] [--base-path=/prefix] [--open=browser|none|vscode]  Open web dashboard (default: http://localhost:3333)
+    cockpit [--port N] [--foreground] [--no-open] [--host=H] [--base-path=/prefix] [--open=browser|none|vscode]  Open the Cockpit (also: lean-ctx dashboard; background server, default http://localhost:3333)
+    cockpit stop                   Stop the background Cockpit server
     serve [--host H] [--port N]    MCP over HTTP (Streamable HTTP, local-first)
     proxy start [--port=4444] [--detach]  API proxy: compress tool_results before LLM API
     proxy status                   Show proxy statistics
@@ -233,6 +231,8 @@ COMMANDS:
     security secrets <on|off>      Toggle secret/.env redaction (separate from containment)
     allow <cmd>                    Allow one shell command (additive; granular re-enable after yolo)
     allow-path <dir>               Let tools reach a dir outside ~ or a protected one (no restart)
+    workspace <create|add|remove|show|diagnose>  Launcher-bound Workspace: the only roots a server bound
+                                   with LEAN_CTX_WORKSPACE_FILE may reach (revision-checked changes)
     tools [minimal|standard|power|show|list]  How many MCP tools your agent sees
     profile [list|show|diff|create|set|suggest]  Manage local context configuration profiles
     kit [list|load|show|unload] [name]  Manage available local TOML/.ctxpkg substrate; first-class Kit semantics are Research
@@ -254,18 +254,18 @@ COMMANDS:
     doctor --migrate-check         v1.0 migration readiness audit (config, deprecations, data)
     migrate config [path] --rollback          Restore digest-bound pre-v4 global config
     migrate task-receipt <dir> [--rollback] Preserve or roll back V3 task migration metadata
+    migrate legacy-context [--adopt --project <root> --items <ids|all> [--dry-run]]
+                                   List / adopt pre-3.11.5 context that belongs to no project
     smells [scan|summary|rules|file] [--rule=<r>] [--path=<p>] [--json]
                                    Code smell detection (Property Graph, 8 rules)
     control <action> [--target=<t>] Context field manipulation (exclude/pin/priority)
     plan <task> [--budget=N]       Context planning (optimal Phi-scored context plan)
     compile [--mode=<m>] [--budget=N] Context compilation (knapsack + Boltzmann)
-    visualize [--output F] [--open] Generate interactive HTML report (D3.js graph)
     addon list|search|info|add|remove
                                    Unavailable: marketplace/addon surface is Research
     rules sync|diff|lint|status|init
                                    Local rules management; no public cross-agent governance product
     policy list|show|validate|coverage|org  Local policy-pack utilities; organization controls are Research
-    compliance report|verify       Research-only compliance artifact; not a public CISO product claim
     uninstall [--keep-config] [--keep-binary] [--dry-run]
                                    Full clean removal: stops all processes, removes hooks,
                                    MCP configs, rules, autostart, data, AND the binary itself.
@@ -293,15 +293,15 @@ PROJECT & AGENT TOOLS:
                                    Agent identities: registered, attested, revocable
     instructions --client <id> [--profile <name>] [--json] | --list-clients
                                    Print the agent instructions lean-ctx generates for a client
-    provider init|auth|logout|list Context providers (config scaffolds, Jira OAuth)
+    provider init|auth|logout|list|check|credentials
+                                   Context sources (scaffolds, Jira OAuth, checks, stored credentials)
     trust [<path>|status [<path>]|--list]  Trust a workspace (gates project-level overrides)
     untrust [<path>]               Remove a workspace from the trust store
     harden [options]               Deny native Read/Grep/Glob in IDE configs
   telemetry [status|on|off|show|reset-id|history]  Inspect and control product telemetry
-    completions <zsh|bash|fish>    Print the shell completion script
+{hive}    completions <zsh|bash|fish>    Print the shell completion script
     report-issue [--title T] [--description D] [--dry-run] [--include-tee]
                                    Open a GitHub issue with diagnostics (alias: report)
-    billing status|plans|entitlements <plan>|usage|settlement <verify|export> [--json]
                                    Plan, entitlement and usage details
 
 EVIDENCE & MEASUREMENT:
@@ -319,18 +319,14 @@ EVIDENCE & MEASUREMENT:
     verify <bundle.zip> [--public-key F] [--verbose] [--json]  Verify an evidence bundle offline
     proof [--format json|summary|both] [--no-write] [--filename F]  Write context proof artifacts
     audit [evidence|determinism]   Compliance report (default), evidence audit, determinism check
+    compliance report|facts|verify  Signed CISO report (frameworks: Enterprise), assessed facts, offline verify
     conformance [--json]           Conformance scorecard, non-zero exit on failure (alias: selftest)
     quality-lab [--original F --compressed F --ext E] [--json] [--gate]  Compression quality check
-    benchmark-run [AGENT] [options]  Run a benchmark against a coding agent (alias: bench-run)
-    calibrate [PROFILE] [options]  Find the optimal Performance Profile
-    pair <CODE>                    Pair with leanctx.com for remote benchmarks
     scenario [all|triage|knowledge|shadow|value-gate|full-loop]  Run an end-to-end scenario
     triage accuracy [--json]       Triage model accuracy report
     model install triage | model status | model remove triage  Manage the local triage model
-    cognitive                      Context-intelligence subsystem status
-    introspect <cognition|qubo> [--json]  Cognition snapshot or QUBO selection benchmark
+    introspect [cognition] [--json]  Cognition snapshot (which subsystems are wired/active)
     safety-levels                  Per-command compression safety levels (alias: safety)
-    badge [generate|stats [--json]|github-action|install]  \"Written with lean-ctx\" README badge
 
 INTEGRATION ENTRY POINTS (called by editors and hooks, not by hand):
     mcp                            Start the MCP server on stdio (same as bare lean-ctx)
@@ -343,9 +339,6 @@ INTEGRATION ENTRY POINTS (called by editors and hooks, not by hand):
     git-trailer <msg-file> [source]  Add the lean-ctx commit trailer (prepare-commit-msg hook)
 
 RESEARCH & RENAMED:
-    demo                           Research: control-plane demo (not in the public runtime)
-    enterprise                     Research: organization operations (not in the public runtime)
-    team                           Requires the lean-ctx Enterprise edition
     upgrade [args]                 Renamed to `update`; forwards its arguments
 
 SHELL HOOK PATTERNS (95+):
@@ -397,13 +390,15 @@ EXAMPLES:
     lean-ctx -c \"git status\"       Compressed git output
     lean-ctx -c \"kubectl get pods\" Compressed k8s output
     lean-ctx -c \"gh pr list\"       Compressed GitHub CLI output
-    lean-ctx gain                  Visual terminal dashboard
-    lean-ctx gain --live           Live auto-updating terminal dashboard
+    lean-ctx gain                  Open the Cockpit (#savings); --terminal for the text summary
+    lean-ctx gain --live           Calls (Ledger) view in the Cockpit
     lean-ctx gain --graph          30-day local context-usage chart
     lean-ctx gain --daily          Day-by-day breakdown with USD
     lean-ctx token-report --json   Machine-readable token + memory report
-    lean-ctx dashboard             Open web dashboard at localhost:3333
-    lean-ctx dashboard --host=0.0.0.0  Bind to all interfaces (remote access)
+    lean-ctx cockpit (also: lean-ctx dashboard)  Open the Cockpit
+    lean-ctx cockpit --foreground  Run the Cockpit server in this terminal
+    lean-ctx cockpit stop          Stop the background Cockpit server
+    lean-ctx cockpit --host=0.0.0.0  Bind to all interfaces (remote access)
     lean-ctx gain --wrapped        Wrapped report card (recommended)
     lean-ctx gain --wrapped --period=month  Monthly Wrapped report card
     lean-ctx gain --svg            Shareable SVG card -> lean-ctx-wrapped.svg
@@ -411,7 +406,6 @@ EXAMPLES:
     lean-ctx gain --share          Self-hostable Wrapped page -> lean-ctx-wrapped.html
     lean-ctx gain --share --base-url=https://you.dev/w  Page with social preview meta
     lean-ctx gain --copy           Copy your share line to the clipboard
-    lean-ctx gain --publish        Development-only local export (hosted publication is Research)
     lean-ctx savings               Local representation-change ledger; not comparable proof by itself
     lean-ctx savings verify        Re-check the savings ledger SHA-256 hash chain
     lean-ctx savings sign          Export an Ed25519-signed savings batch (ROI/audit artifact)
@@ -458,17 +452,14 @@ GRAPH (project analysis):
     lean-ctx graph symbol <spec>   Inspect a symbol (format: <file>::<symbol>, or bare <symbol>)
     lean-ctx graph context <query> Query the property graph for a concept
 
-ACCOUNT SYNC (accounts under an existing agreement; local tooling needs no account):
-    login <email>                  Sign in to your LeanCTX account on this machine
-    register <email>               Create a LeanCTX account
-    forgot-password <email>        Send a password reset email
-    sync                           Sync stats, plus your context when your plan includes synchronization
-    sync index <push|pull|status>  Encrypted cross-device retrieval index
-    cloud status                   Show account, plan and last sync
-    cloud pull                     Restore your synchronized knowledge onto this machine
-    cloud autosync <on|off|status> Daily background push of your synchronized context
-    cloud upgrade                  Unavailable: paid plans are application-only (hello@thinkery.ch)
-    contribute                     Share anonymized compression data
+PROJECT:
+    project status [<path>] [--json]
+                                   This checkout: partition, project link, workspace-root choice
+    project link --project <team-project-id> [--organization <uuid>] [--label <text>] [<path>]
+                                   Checkouts linked to the same project share their knowledge
+    project unlink [<path>]        Remove this checkout's project link
+    project use <path>             Of several workspace roots, bind sessions to <path> (default: first)
+                                   All of it: lean-ctx project help
 
 TROUBLESHOOTING:
     Commands broken?     lean-ctx-off             (fixes current session)
@@ -483,6 +474,11 @@ GITHUB:  https://github.com/yvgude/lean-ctx
         version = env!("CARGO_PKG_VERSION"),
         banner = capability_banner(),
         rc_file = crate::shell_hook::shell_rc_file(),
+        hive = if crate::core::hive::HIVE_AVAILABLE {
+            "    hive connect|status|disconnect|link  Connect this machine to LeanCTX Hive\n"
+        } else {
+            ""
+        },
     )
 }
 
@@ -503,8 +499,20 @@ mod tests {
             "`help all` must not list the removed TUI dashboard"
         );
         assert!(
-            text.contains("dashboard [--port=N]"),
-            "the web dashboard — the actual replacement — must still be listed"
+            text.contains("cockpit [--port N]"),
+            "the Cockpit — the actual replacement — must still be listed"
         );
+    }
+
+    /// 3.12.0 ships without Hive: `help all` lists it only once the release
+    /// switch is on.
+    #[test]
+    fn full_help_lists_hive_only_when_available() {
+        let text = super::full_help_text();
+        assert_eq!(
+            text.contains("hive connect"),
+            crate::core::hive::HIVE_AVAILABLE
+        );
+        assert!(text.contains("    completions <zsh|bash|fish>"));
     }
 }

@@ -3,8 +3,17 @@
 //! (property-graph cross-source edges from file references), and remembered
 //! (knowledge). Runs on a background thread and never touches the text returned
 //! to the model, so it cannot perturb output determinism (#498).
+//!
+//! The indexed chunk gets an origin the serve-time gate re-checks
+//! (`bm25_index::external_origin`), so it is usable where a source authority
+//! is required instead of being withheld as originless: the lineage of the
+//! delivery when the delivered-content register knows exactly these bytes,
+//! otherwise the downstream server and tool that returned them. One chunk
+//! per distinct output (`<server>://tool_output/<tool>/<digest prefix>`): an
+//! origin is bound to exactly one text.
 
 use crate::core::bm25_index::ChunkKind;
+use crate::core::bm25_index::external_origin::{ChunkOrigin, DownstreamOrigin};
 use crate::core::consolidation::{self, PrunePrior};
 use crate::core::content_chunk::{ContentChunk, extract_file_references};
 
@@ -21,25 +30,72 @@ pub fn spawn(server: String, tool: String, text: String, project_root: String) {
     std::thread::spawn(move || run(&server, &tool, &text, &project_root));
 }
 
+/// [`spawn`] for a result of the configured downstream `server`: the chunk
+/// is indexed with that server and tool as its origin.
+pub(crate) fn spawn_for(
+    server: &crate::core::mcp_catalog::GatewayServer,
+    tool: &str,
+    text: String,
+    project_root: String,
+) {
+    if project_root.is_empty() || text.trim().is_empty() {
+        return;
+    }
+    let origin = DownstreamOrigin::of(server, tool);
+    let (name, tool) = (server.name.clone(), tool.to_owned());
+    std::thread::spawn(move || index(&name, &tool, &text, &project_root, origin));
+}
+
 /// Synchronous core of [`spawn`] (also the unit-test entry point). Builds an
 /// external content chunk from the tool output and runs the standard
 /// consolidate → persist flow. Best-effort; never panics.
 pub fn run(server: &str, tool: &str, text: &str, project_root: &str) {
+    index(server, tool, text, project_root, None);
+}
+
+fn index(
+    server: &str,
+    tool: &str,
+    text: &str,
+    project_root: &str,
+    downstream: Option<DownstreamOrigin>,
+) {
+    // Bytes the delivered-content register knows with a complete lineage
+    // (source-bound Engine output) are indexed bound to that lineage.
+    if consolidation::index_delivery(project_root, server, tool, text) {
+        return;
+    }
+    let digest = blake3::hash(text.as_bytes()).to_hex();
     let chunk = ContentChunk::from_provider(
         server,
         RESOURCE,
-        tool,
+        &format!("{tool}/{}", &digest[..16]),
         &format!("{server}::{tool}"),
         ChunkKind::ExternalOther,
         text.to_string(),
         extract_file_references(text),
         None,
     );
+    let uri = chunk.file_path.clone();
     let artifacts = consolidation::consolidate(&[chunk]);
     if artifacts.is_empty() {
         return;
     }
-    consolidation::apply_artifacts_to_stores(&artifacts, project_root, &PrunePrior::default());
+    // The server that returned the text is its origin on record; under
+    // protection such a chunk is closed (`DownstreamOrigin`). Unknown
+    // server: the chunk stays originless.
+    let origin = downstream.map(ChunkOrigin::Downstream);
+    // The same output indexed again replaces its earlier chunk.
+    let prune = PrunePrior {
+        bm25_prefix: Some(uri.clone()),
+        ..PrunePrior::default()
+    };
+    consolidation::apply_artifacts_to_stores_with_origins(
+        &artifacts,
+        project_root,
+        &prune,
+        origin.map(|origin| (uri, origin)).into_iter().collect(),
+    );
 }
 
 #[cfg(test)]

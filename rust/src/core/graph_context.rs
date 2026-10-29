@@ -266,20 +266,13 @@ pub fn graph_neighbor_ranks_for_recent_files(
     per_seed_limit: usize,
     max_ranked: usize,
 ) -> Option<HashMap<String, usize>> {
-    // Two neighbour sources, blended per seed:
-    //   1. Traversal (co-access) — files the agent actually opened *together*
-    //      (behavioural, the strongest "what next" signal). Listed first so it
-    //      gets the best RRF rank. Works even without a static graph (#289).
-    //   2. Static graph — import/call/type proximity.
-    let coaccess = if crate::core::cooccurrence::traversal_enabled() {
-        Some(crate::core::cooccurrence::load(project_root))
-    } else {
-        None
-    };
-    let open = graph_provider::open_best_effort(project_root);
-    if open.is_none() && coaccess.is_none() {
-        return None;
-    }
+    // Neighbours come from the static graph — import/call/type proximity. The
+    // learned co-access source was retired on 2026-10-16: it changed no
+    // retrieval result in the A/B corpus and made ranking history-dependent.
+    let open = graph_provider::open_best_effort(project_root)?;
+
+    // One gate decides every file, so the request's bound is spent once.
+    let request_gate = crate::core::property_graph::served::GraphGate::for_root(project_root);
 
     let mut seen = HashSet::<String>::new();
     let mut ranked: Vec<String> = Vec::new();
@@ -290,27 +283,14 @@ pub fn graph_neighbor_ranks_for_recent_files(
             continue;
         }
 
-        if let Some(co) = &coaccess {
-            for (path, _) in co.related(&rel_path, per_seed_limit) {
-                if seen.insert(path.clone()) {
-                    ranked.push(path);
-                    if ranked.len() >= max_ranked {
-                        break 'seeds;
-                    }
-                }
-            }
-        }
-
-        if let Some(open) = &open {
-            for (path, _) in open
-                .provider
-                .related_files_scored(&rel_path, per_seed_limit)
-            {
-                if seen.insert(path.clone()) {
-                    ranked.push(path);
-                    if ranked.len() >= max_ranked {
-                        break 'seeds;
-                    }
+        for (path, _) in
+            open.provider
+                .related_files_scored_with(Some(&request_gate), &rel_path, per_seed_limit)
+        {
+            if seen.insert(path.clone()) {
+                ranked.push(path);
+                if ranked.len() >= max_ranked {
+                    break 'seeds;
                 }
             }
         }

@@ -1,0 +1,19 @@
+{
+  "case": "tags_on_fact",
+  "base": "events/node.add.fact.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/body/tags",
+      "value": [
+        "payments"
+      ]
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/body/tags"
+  }
+}

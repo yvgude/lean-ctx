@@ -1,0 +1,9 @@
+{
+  "bundle_ref": "bundle:sha256:5d41402abc4b2a76b9719d911017c592",
+  "channel": "org:org_acme/vault:3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42/general",
+  "deadline": "2026-10-20T12:30:00Z",
+  "from": "claude-3e",
+  "handoff_id": "hof_01jb8zb",
+  "t": "handoff.offer",
+  "to": "codex-85"
+}

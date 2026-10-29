@@ -6,32 +6,7 @@ use crate::core::consolidation_engine::ConsolidateOptions;
 use crate::core::memory_lifecycle::LifecycleReport;
 use crate::core::procedural_memory::ProceduralStore;
 use crate::core::procedural_memory::Procedure;
-
-struct CurrentDirGuard {
-    previous: std::path::PathBuf,
-    _lock: crate::core::data_dir::TestEnvGuard,
-}
-
-impl CurrentDirGuard {
-    fn enter(dir: &std::path::Path) -> Self {
-        // The cwd is process-global like the env: every test that moves it
-        // shares the (reentrant) env lock, so a test holding that lock sees a
-        // stable cwd.
-        let guard = crate::core::data_dir::test_env_lock();
-        let previous = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir).unwrap();
-        Self {
-            previous,
-            _lock: guard,
-        }
-    }
-}
-
-impl Drop for CurrentDirGuard {
-    fn drop(&mut self) {
-        std::env::set_current_dir(&self.previous).unwrap();
-    }
-}
+use crate::test_env::CurrentDirGuard;
 
 struct DataDirGuard;
 
@@ -45,6 +20,43 @@ impl DataDirGuard {
 impl Drop for DataDirGuard {
     fn drop(&mut self) {
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+}
+
+struct ConfigDirGuard(Option<std::ffi::OsString>);
+
+impl ConfigDirGuard {
+    fn set(path: &std::path::Path) -> Self {
+        let previous = std::env::var_os("LEAN_CTX_CONFIG_DIR");
+        crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", path);
+        Self(previous)
+    }
+}
+
+impl Drop for ConfigDirGuard {
+    fn drop(&mut self) {
+        if let Some(previous) = self.0.take() {
+            crate::test_env::set_var("LEAN_CTX_CONFIG_DIR", previous);
+        } else {
+            crate::test_env::remove_var("LEAN_CTX_CONFIG_DIR");
+        }
+    }
+}
+
+fn gateway_config(value: &str) {
+    let dir = crate::core::paths::config_dir_read_only().expect("isolated config directory");
+    std::fs::create_dir_all(&dir).unwrap();
+    std::fs::write(dir.join("config.toml"), value).unwrap();
+}
+
+fn append_files(root: &std::path::Path, output: &mut String) {
+    for entry in std::fs::read_dir(root).unwrap().flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            append_files(&path, output);
+        } else if let Ok(text) = std::fs::read_to_string(path) {
+            output.push_str(&text);
+        }
     }
 }
 
@@ -255,7 +267,13 @@ fn consolidation_loads_session_for_requested_project_root() {
     target_session.save().unwrap();
 
     let _cwd = CurrentDirGuard::enter(cwd_project.path());
-    let report = consolidate_project_knowledge(&target_root).unwrap();
+    // The session imported is the caller's own (I07/S03), here the target
+    // project's agent; the process CWD plays no part.
+    let own = std::sync::Arc::new(tokio::sync::RwLock::new(target_session.clone()));
+    let report = crate::core::session::caller::scope(Some(own), || {
+        consolidate_project_knowledge(&target_root)
+    })
+    .unwrap();
 
     assert_eq!(
         report.session_id.as_deref(),
@@ -323,4 +341,247 @@ fn all_consolidation_report_marks_empty_store_set() {
     let out = format_all_consolidation_reports(&reports);
 
     assert_eq!(out, "No project knowledge stores found.");
+}
+
+#[test]
+fn json_and_okf_exports_withhold_unsafe_legacy_rows_without_rewriting_store() {
+    const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+    let _env_lock = crate::core::data_dir::test_env_lock();
+    let data_dir = tempfile::tempdir().unwrap();
+    let _data_dir = DataDirGuard::set(data_dir.path());
+    let _config_dir = ConfigDirGuard::set(&data_dir.path().join("config"));
+    gateway_config("[context_gateway]\nenabled = false\n");
+
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_string_lossy().to_string();
+    let mut knowledge = ProjectKnowledge::new(&root);
+    knowledge.remember(
+        "finding",
+        "safe",
+        "ordinary note",
+        "fixture",
+        0.9,
+        &MemoryPolicy::default(),
+    );
+    knowledge.remember(
+        "finding",
+        "legacy-secret",
+        AWS_KEY,
+        "fixture",
+        0.9,
+        &MemoryPolicy::default(),
+    );
+    knowledge.save().unwrap();
+    let store_path = data_dir
+        .path()
+        .join("knowledge")
+        .join(&knowledge.project_hash)
+        .join("knowledge.json");
+    let original_store = std::fs::read(&store_path).unwrap();
+
+    gateway_config("[context_gateway]\nmode = \"governed\"\n");
+    let json_result = handle_export(&root);
+    assert!(json_result.starts_with("Export saved:"), "{json_result}");
+    let export_dir = data_dir.path().join("exports").join("knowledge");
+    let mut json_output = String::new();
+    for entry in std::fs::read_dir(&export_dir).unwrap().flatten() {
+        json_output.push_str(&std::fs::read_to_string(entry.path()).unwrap());
+    }
+    assert!(json_output.contains("ordinary note"));
+    assert!(!json_output.contains(AWS_KEY));
+
+    let okf_dir = data_dir.path().join("exports").join("okf-test");
+    let okf_result = handle_export_okf(&root, Some(okf_dir.to_str().unwrap()));
+    assert!(
+        okf_result.starts_with("OKF bundle exported:"),
+        "{okf_result}"
+    );
+    let mut okf_output = String::new();
+    append_files(&okf_dir, &mut okf_output);
+    assert!(okf_output.contains("ordinary note"));
+    assert!(!okf_output.contains(AWS_KEY));
+    assert_eq!(std::fs::read(store_path).unwrap(), original_store);
+}
+
+#[test]
+fn restore_does_not_rehydrate_unsafe_archived_knowledge_after_gateway_tightens() {
+    const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+    let _env_lock = crate::core::data_dir::test_env_lock();
+    let data_dir = tempfile::tempdir().unwrap();
+    let _data_dir = DataDirGuard::set(data_dir.path());
+    let _config_dir = ConfigDirGuard::set(&data_dir.path().join("config"));
+    gateway_config("[context_gateway]\nenabled = false\n");
+
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_string_lossy().to_string();
+    let mut knowledge = ProjectKnowledge::new(&root);
+    knowledge.remember(
+        "finding",
+        "legacy-secret",
+        AWS_KEY,
+        "fixture",
+        0.9,
+        &MemoryPolicy::default(),
+    );
+    knowledge.save().unwrap();
+    let archive_path = {
+        let _cwd = CurrentDirGuard::enter(project.path());
+        crate::core::memory_archive::archive_items(
+            crate::core::memory_archive::MemoryStore::Facts,
+            None,
+            &knowledge.facts,
+            &crate::core::memory_archive::ArchiveConfig::default(),
+        )
+        .unwrap()
+        .unwrap()
+    };
+    let original_archive = std::fs::read(&archive_path).unwrap();
+    knowledge.facts.clear();
+    knowledge.save().unwrap();
+
+    gateway_config("[context_gateway]\nmode = \"governed\"\n");
+    let report = run_restore(
+        &root,
+        &RestoreOptions::new(
+            Some(crate::core::memory_archive::MemoryStore::Facts),
+            None,
+            DEFAULT_RESTORE_LIMIT,
+        ),
+    )
+    .unwrap();
+    assert_eq!(report.total_restored(), 0);
+    assert!(ProjectKnowledge::load(&root).unwrap().facts.is_empty());
+    assert_eq!(std::fs::read(archive_path).unwrap(), original_archive);
+}
+
+/// The short wake-up answer needs all three: a presenter the request proved,
+/// a briefing with exactly this text released to that presenter, and its hash
+/// named by the caller. Building the full answer records nothing.
+#[test]
+fn a_wakeup_is_shortened_only_for_a_released_briefing_its_holder_confirms() {
+    let text = |facts: &str| format!("{WAKEUP_HEAD}{facts}");
+    let hash_of = |answer: &str| {
+        answer
+            .rsplit_once(WAKEUP_HASH_LINE)
+            .and_then(|(_, rest)| rest.split_once(' '))
+            .map(|(hash, _)| hash.to_string())
+            .expect("the full answer names its hash")
+    };
+
+    // No proven presenter: the briefing as it is, with nothing to confirm.
+    assert_eq!(
+        wakeup_delta_for(None, None, text("ARCH: db=pg")),
+        text("ARCH: db=pg")
+    );
+
+    let first = wakeup_delta_for(Some("holder-a"), None, text("ARCH: db=pg"));
+    let hash = hash_of(&first);
+    // Built, not released: naming the hash shortens nothing.
+    let unreleased = wakeup_delta_for(Some("holder-a"), Some(&hash), text("ARCH: db=pg"));
+    assert!(unreleased.starts_with(&text("ARCH: db=pg")), "{unreleased}");
+
+    // An answer that was altered on the way out is no released briefing.
+    let shortened = first.replacen("db=pg", "db=", 1);
+    // Cut inside the closing line: hash and the space after it are still there.
+    let cut = &first[..first.len() - 40];
+    assert!(cut.contains(&format!("{hash} ")));
+    let cut_and_followed = format!("{cut}\n[checkpoint]");
+    note_wakeup_release_for(
+        "holder-a",
+        &[shortened.as_str(), cut, cut_and_followed.as_str()],
+    );
+    let altered = wakeup_delta_for(Some("holder-a"), Some(&hash), text("ARCH: db=pg"));
+    assert!(altered.starts_with(&text("ARCH: db=pg")), "{altered}");
+
+    // Released whole, with pipeline text around it: nothing of it is missing.
+    let decorated = format!("[notice]\n{first}\n[checkpoint]");
+    note_wakeup_release_for("holder-a", &[decorated.as_str()]);
+    let again = wakeup_delta_for(Some("holder-a"), Some(&hash), text("ARCH: db=pg"));
+    assert!(
+        again.contains("unchanged") && !again.contains("db=pg"),
+        "{again}"
+    );
+    for (holder, held, facts) in [
+        (Some("holder-a"), None, "ARCH: db=pg"),
+        (Some("holder-b"), Some(hash.as_str()), "ARCH: db=pg"),
+        (None, Some(hash.as_str()), "ARCH: db=pg"),
+        (Some("holder-a"), Some(hash.as_str()), "ARCH: db=mysql"),
+    ] {
+        let full = wakeup_delta_for(holder, held, text(facts));
+        assert!(
+            full.starts_with(&text(facts)),
+            "{holder:?} {held:?}: {full}"
+        );
+    }
+    let refusal = text(crate::core::sanitize::FENCE_REFUSAL);
+    assert_eq!(
+        wakeup_delta_for(Some("holder-a"), None, refusal.clone()),
+        refusal
+    );
+}
+
+/// AP07-G2: a bridge pull loaded and saved the project knowledge outside the
+/// project lock, so facts other writers stored in between were lost.
+#[test]
+fn bridge_pull_keeps_facts_written_in_parallel() {
+    use std::sync::{Arc, Barrier};
+    const PULLERS: usize = 4;
+    const WRITERS: usize = 4;
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let project = tempfile::tempdir().unwrap();
+    let root = project.path().to_string_lossy().to_string();
+    let hash = crate::core::project_hash::hash_project_root(&root);
+    crate::core::knowledge_bridge::KnowledgeBridge::mutate_locked(&hash, |bridge| {
+        let mut shared = ProjectKnowledge::new(&root);
+        shared.remember(
+            "architecture",
+            "database",
+            "PostgreSQL",
+            "source",
+            0.95,
+            &crate::core::memory_policy::MemoryPolicy::default(),
+        );
+        bridge.publish("agent-source", &shared.facts)
+    })
+    .unwrap();
+    let barrier = Arc::new(Barrier::new(PULLERS + WRITERS));
+    let mut threads = Vec::new();
+    for index in 0..PULLERS {
+        let (barrier, root) = (Arc::clone(&barrier), root.clone());
+        threads.push(std::thread::spawn(move || {
+            barrier.wait();
+            let reply = handle_bridge_pull(&root, &format!("puller-{index}"));
+            assert!(!reply.starts_with("Error"), "{reply}");
+        }));
+    }
+    for index in 0..WRITERS {
+        let (barrier, root) = (Arc::clone(&barrier), root.clone());
+        threads.push(std::thread::spawn(move || {
+            barrier.wait();
+            ProjectKnowledge::mutate_locked(&root, |knowledge| {
+                knowledge.remember(
+                    "notes",
+                    &format!("writer-{index}"),
+                    "kept",
+                    "writer",
+                    0.9,
+                    &crate::core::memory_policy::MemoryPolicy::default(),
+                );
+            })
+            .unwrap();
+        }));
+    }
+    for thread in threads {
+        thread.join().unwrap();
+    }
+    let stored = ProjectKnowledge::load(&root).unwrap();
+    for key in (0..WRITERS)
+        .map(|index| format!("writer-{index}"))
+        .chain(["database".to_string()])
+    {
+        assert!(
+            stored.facts.iter().any(|fact| fact.key == key),
+            "{key} was lost"
+        );
+    }
 }

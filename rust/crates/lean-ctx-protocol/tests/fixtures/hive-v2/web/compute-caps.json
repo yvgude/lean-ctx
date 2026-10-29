@@ -1,0 +1,39 @@
+{
+  "route": "W93",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/compute/caps",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "caps": {
+        "max_concurrent_jobs": 2,
+        "max_runtime_s": 1800,
+        "max_job_credits": 120,
+        "daily_credits": 500
+      },
+      "maxima": {
+        "max_concurrent_jobs": 8,
+        "max_runtime_s": 3600,
+        "max_job_credits": 1000,
+        "daily_credits": 10000
+      },
+      "max_queued_jobs": 32,
+      "bundle_bytes": 1073741824,
+      "entitled": true,
+      "provider": "fake"
+    }
+  },
+  "errors": [
+    {
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "feature_disabled",
+          "message": "this feature is switched off on this Hive",
+          "feature": "compute"
+        }
+      }
+    }
+  ]
+}

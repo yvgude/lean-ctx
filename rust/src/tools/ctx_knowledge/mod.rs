@@ -9,6 +9,7 @@ use crate::core::memory_policy::MemoryPolicy;
 use crate::core::session::SessionState;
 pub(crate) mod embeddings;
 pub(crate) use embeddings::*;
+mod linked;
 mod remember;
 pub(crate) use remember::*;
 mod restore;
@@ -39,16 +40,67 @@ pub fn handle(
     mode: Option<&str>,
     as_of: Option<&str>,
 ) -> String {
+    match handle_outcome(
+        project_root,
+        action,
+        category,
+        key,
+        value,
+        query,
+        session_id,
+        pattern_type,
+        examples,
+        confidence,
+        mode,
+        as_of,
+    ) {
+        Ok(text) | Err(text) => text,
+    }
+}
+
+/// [`handle`] with a typed outcome: `Ok` is the reply, `Err` is the text of a
+/// failed call — the same text [`handle`] answers, after the same gates.
+///
+/// Typed as failures are the refusals every action shares (knowledge
+/// protection unavailable, output withheld by policy, recovered text not
+/// admitted) and every failure of `recall`, `timeline` and `search` — the
+/// actions that declare every source
+/// (`CtxKnowledgeTool::publishes_every_source`), whose error text must never
+/// be recorded as a delivery of the sources captured before the failure. The
+/// other actions still answer their own failures as reply text.
+#[allow(clippy::too_many_arguments)]
+pub fn handle_outcome(
+    project_root: &str,
+    action: &str,
+    category: Option<&str>,
+    key: Option<&str>,
+    value: Option<&str>,
+    query: Option<&str>,
+    session_id: &str,
+    pattern_type: Option<&str>,
+    examples: Option<Vec<String>>,
+    confidence: Option<f32>,
+    mode: Option<&str>,
+    as_of: Option<&str>,
+) -> Result<String, String> {
     if let Err(error) = crate::core::knowledge::protection::current(project_root) {
-        return format!("Error: {error}");
+        return Err(format!("Error: {error}"));
     }
     crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
         std::cell::RefCell::new(Some(std::path::PathBuf::from(project_root))),
         || {
-    let result = match action {
+    let declared = match action {
+        "recall" => Some(handle_recall(project_root, category, query, session_id, mode, as_of)),
+        "timeline" => Some(handle_timeline(project_root, category)),
+        "search" => Some(handle_search(query, session_id)),
+        _ => None,
+    };
+    let failed = matches!(declared, Some(Err(_)));
+    let result = match declared {
+        Some(Ok(text) | Err(text)) => text,
+        None => match action {
         "policy" => handle_policy(value),
         "remember" => handle_remember(project_root, category, key, value, session_id, confidence),
-        "recall" => handle_recall(project_root, category, query, session_id, mode, as_of),
         "pattern" => handle_pattern(project_root, pattern_type, value, examples, session_id),
         "feedback" => handle_feedback(project_root, category, key, value, session_id),
         "relate" => crate::tools::ctx_knowledge_relations::handle_relate(
@@ -88,9 +140,7 @@ pub fn handle(
         "consolidate" => handle_consolidate(project_root),
         "consolidate_preview" => handle_consolidate_preview(project_root),
         "restore" => handle_restore(project_root, category, query, None),
-        "timeline" => handle_timeline(project_root, category),
         "rooms" => handle_rooms(project_root),
-        "search" => handle_search(query),
         "wakeup" => handle_wakeup(project_root),
         "embeddings_status" => handle_embeddings_status(project_root),
         "embeddings_reset" => handle_embeddings_reset(project_root),
@@ -103,15 +153,20 @@ pub fn handle(
         _ => format!(
             "Unknown action: {action}. Use: policy, remember, recall, pattern, feedback, judge, relate, unrelate, relations, relations_diagram, status, health, lifecycle_report, remove, export, consolidate, consolidate_preview, restore, timeline, rooms, search, wakeup, embeddings_status, embeddings_reset, embeddings_reindex, cognition_loop, bridge_publish, bridge_pull, bridge_status"
         ),
+        },
     };
     let Ok(result) = crate::core::policy::content::protect_active(&result) else {
-        return "Error: knowledge output withheld by current policy".into();
+        return Err("Error: knowledge output withheld by current policy".to_string());
     };
     // Stored knowledge is recovered text: every view of it passes the context
     // gateway under the current policy, including facts written before the
-    // store admitted its input (G5).
-    crate::core::context_admission::recovery::admit_recovered(&result, "knowledge")
-        .unwrap_or_else(|error| format!("Error: {error}"))
+    // store admitted its input (G5). A failure text passes the same gates.
+    match crate::core::context_admission::recovery::admit_recovered(&result, "knowledge") {
+        Ok(text) if failed => Err(text),
+        Ok(text) if action == "wakeup" => Ok(wakeup_delta(value, text)),
+        Ok(text) => Ok(text),
+        Err(error) => Err(format!("Error: {error}")),
+    }
         },
     )
 }
@@ -228,7 +283,7 @@ fn handle_feedback(
     )
 }
 
-fn handle_judge(
+pub(crate) fn handle_judge(
     project_root: &str,
     category: Option<&str>,
     key: Option<&str>,
@@ -260,47 +315,47 @@ fn handle_judge(
     }
 
     let verdict = query.unwrap_or("compatible").trim().to_lowercase();
-    if !matches!(verdict.as_str(), "supersedes" | "compatible" | "unrelated") {
-        return format!("Error: verdict must be supersedes|compatible|unrelated, got '{verdict}'");
+    if !matches!(
+        verdict.as_str(),
+        "supersedes" | "compatible" | "unrelated" | "contradicts"
+    ) {
+        return format!(
+            "Error: verdict must be supersedes|compatible|unrelated|contradicts, got '{verdict}'"
+        );
     }
 
     // Read-modify-write under the cross-process lock (#326/#594).
     let result = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
-        let source_exists = {
-            let parts: Vec<&str> = source.splitn(2, '/').collect();
-            parts.len() == 2
-                && knowledge
-                    .facts
-                    .iter()
-                    .any(|f| f.category == parts[0] && f.key == parts[1] && f.is_current())
-        };
-        if !source_exists {
-            return Err(format!("Error: no current fact found for '{source}'"));
+        let src = current_fact_index(knowledge, &source)?;
+        let tgt = current_fact_index(knowledge, &target)?;
+        if src == tgt {
+            return Err("Error: a fact is not judged against itself".to_string());
         }
-
-        let target_parts: Vec<&str> = target.splitn(2, '/').collect();
-        if target_parts.len() != 2 {
-            return Err(format!("Error: invalid target format '{target}'"));
-        }
-        let (tcat, tkey) = (target_parts[0], target_parts[1]);
-
-        let target_exists = knowledge
-            .facts
-            .iter()
-            .any(|f| f.category == tcat && f.key == tkey && f.is_current());
-        if !target_exists {
-            return Err(format!("Error: no current fact found for '{target}'"));
-        }
+        let now = Utc::now();
 
         if verdict == "supersedes" {
-            let now = Utc::now();
-            if let Some(tf) = knowledge
-                .facts
-                .iter_mut()
-                .find(|f| f.category == tcat && f.key == tkey && f.is_current())
-            {
-                tf.valid_until = Some(now);
-                tf.valid_from = tf.valid_from.or(Some(tf.created_at));
+            let tf = &mut knowledge.facts[tgt];
+            tf.valid_until = Some(now);
+            tf.valid_from = tf.valid_from.or(Some(tf.created_at));
+            // The survivor of a judged contradiction is no longer contradicted.
+            let sf = &mut knowledge.facts[src];
+            if sf.review.as_ref().is_some_and(|r| {
+                r.reason == crate::core::knowledge::FactReviewReason::Contradiction
+            }) {
+                sf.clear_review();
+            }
+        }
+        // J2: both stay current and both are marked until one supersedes the
+        // other. A Hive fact's state reaches Hive with the next sync
+        // (C0 1.9 section 3), which opens a task when nobody resolves it.
+        if verdict == "contradicts" {
+            use crate::core::knowledge::{FactReviewReason, FactReviewState};
+            for i in [src, tgt] {
+                knowledge.facts[i].mark_review(
+                    FactReviewState::Contradicted,
+                    FactReviewReason::Contradiction,
+                    now,
+                );
             }
         }
 
@@ -310,7 +365,7 @@ fn handle_judge(
                 key_a: source.clone(),
                 key_b: target.clone(),
                 verdict: verdict.clone(),
-                judged_at: Utc::now(),
+                judged_at: now,
             });
         Ok(())
     });
@@ -325,10 +380,33 @@ fn handle_judge(
         "supersedes" => format!("{source} supersedes {target} (target archived)"),
         "compatible" => format!("{source} ↔ {target} (compatible, suppressed from future similar)"),
         "unrelated" => format!("{source} ≠ {target} (unrelated, suppressed from future similar)"),
+        "contradicts" => format!(
+            "{source} ⟂ {target} (contradicts: both marked contradicted until one supersedes the other)"
+        ),
         _ => unreachable!(),
     };
 
     format!("Judged: {action_desc}")
+}
+
+/// The current fact named `spec` (`category/key`; categories and keys may
+/// contain `/`, so the whole name is matched).
+fn current_fact_index(
+    knowledge: &crate::core::knowledge::ProjectKnowledge,
+    spec: &str,
+) -> Result<usize, String> {
+    let mut found = knowledge.facts.iter().enumerate().filter(|(_, f)| {
+        f.is_current()
+            && spec.len() == f.category.len() + 1 + f.key.len()
+            && spec.starts_with(f.category.as_str())
+            && spec[f.category.len()..].starts_with('/')
+            && spec.ends_with(f.key.as_str())
+    });
+    match (found.next(), found.next()) {
+        (Some((i, _)), None) => Ok(i),
+        (Some(_), Some(_)) => Err(format!("Error: '{spec}' names more than one current fact")),
+        (None, _) => Err(format!("Error: no current fact found for '{spec}'")),
+    }
 }
 
 fn handle_pattern(
@@ -427,7 +505,7 @@ fn handle_lifecycle_report(project_root: &str) -> String {
     }
 
     // Archive files (restorable via recall rehydration).
-    let archives = crate::core::memory_lifecycle::list_archives();
+    let archives = crate::core::memory_lifecycle::list_archives(project_root);
     out.push_str(&format!(
         "archives    {} file(s); auto-rehydrated when recall misses\n",
         archives.len()
@@ -588,12 +666,7 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
     // index is a separate store, so it is synced afterwards from the committed
     // knowledge — mirroring handle_remember.
     let (knowledge, removed) = match ProjectKnowledge::mutate_locked(project_root, |knowledge| {
-        if knowledge.remove_fact(cat, k) {
-            let _ = knowledge.run_memory_lifecycle(&policy);
-            true
-        } else {
-            false
-        }
+        knowledge.remove_fact(cat, k)
     }) {
         Ok(pair) => pair,
         Err(e) => return format!("Error: removal was not saved: {e}"),
@@ -623,44 +696,89 @@ fn handle_remove(project_root: &str, category: Option<&str>, key: Option<&str>) 
         });
     }
     #[cfg(not(feature = "embeddings"))]
-    let _ = &knowledge;
+    let _ = (&knowledge, &policy);
 
     format!("Removed [{cat}] {k}")
 }
 
 fn handle_export(project_root: &str) -> String {
-    let Some(knowledge) = ProjectKnowledge::load(project_root) else {
-        return "No knowledge to export.".to_string();
-    };
-    let data_dir = match crate::core::data_dir::lean_ctx_data_dir() {
-        Ok(d) => d,
-        Err(e) => return format!("Export failed: {e}"),
-    };
-
-    let export_dir = data_dir.join("exports").join("knowledge");
-    let ts = Utc::now().format("%Y%m%d-%H%M%S");
-    let filename = format!(
-        "knowledge-{}-{ts}.json",
-        short_hash(&knowledge.project_hash)
-    );
-    let path = export_dir.join(filename);
-
-    match serde_json::to_string_pretty(&knowledge) {
-        Ok(mut json) => {
-            json.push('\n');
-            match crate::config_io::write_atomic_with_backup(&path, &json) {
-                Ok(()) => format!(
-                    "Export saved: {} (active facts: {}, patterns: {}, history: {})",
-                    path.display(),
-                    knowledge.facts.iter().filter(|f| f.is_current()).count(),
-                    knowledge.patterns.len(),
-                    knowledge.history.len()
-                ),
-                Err(e) => format!("Export failed: {e}"),
+    let result = crate::core::policy::runtime::with_explicit_project_source_view(
+        std::path::Path::new(project_root),
+        |authority| -> Result<String, String> {
+            let admission =
+                crate::core::knowledge::protection::KnowledgeAdmission::capture(project_root)?;
+            let Some(knowledge) = ProjectKnowledge::load_for_admission(project_root, &admission)?
+            else {
+                admission.authorize_publication(authority)?;
+                return Ok("No knowledge to export.".to_string());
+            };
+            if knowledge.facts.is_empty()
+                && knowledge.patterns.is_empty()
+                && knowledge.history.is_empty()
+            {
+                admission.authorize_publication(authority)?;
+                return Ok("No knowledge to export.".to_string());
             }
-        }
-        Err(e) => format!("Export failed: {e}"),
+            let data_dir = crate::core::data_dir::lean_ctx_data_dir()?;
+            let export_dir = data_dir.join("exports").join("knowledge");
+            let ts = Utc::now().format("%Y%m%d-%H%M%S");
+            let filename = format!(
+                "knowledge-{}-{ts}.json",
+                short_hash(&knowledge.project_hash)
+            );
+            let path = export_dir.join(filename);
+            let mut json = serde_json::to_string_pretty(&knowledge)
+                .map_err(|_| "Export serialization failed")?;
+            json.push('\n');
+            admission.authorize_publication(authority)?;
+            crate::config_io::write_atomic_with_backup(&path, &json)?;
+            Ok(format!(
+                "Export saved: {} (active facts: {}, patterns: {}, history: {})",
+                path.display(),
+                knowledge.facts.iter().filter(|f| f.is_current()).count(),
+                knowledge.patterns.len(),
+                knowledge.history.len()
+            ))
+        },
+    );
+    match result {
+        Ok(Ok(message)) => message,
+        Ok(Err(error)) | Err(error) => format!("Export failed: {error}"),
     }
+}
+
+fn admitted_snapshot(
+    project_root: &str,
+    admission: &crate::core::knowledge::protection::KnowledgeAdmission,
+) -> Result<Option<crate::core::knowledge::KnowledgeSnapshot>, String> {
+    let Some(knowledge) = ProjectKnowledge::load_for_admission(project_root, admission)? else {
+        return Ok(None);
+    };
+    let visible_nodes: std::collections::HashSet<(String, String)> = knowledge
+        .facts
+        .iter()
+        .map(|fact| (fact.category.clone(), fact.key.clone()))
+        .collect();
+    let relations =
+        crate::core::knowledge_relations::KnowledgeRelationGraph::load(&knowledge.project_hash)
+            .map(|graph| {
+                graph
+                    .edges
+                    .into_iter()
+                    .filter(|edge| {
+                        visible_nodes.contains(&(edge.from.category.clone(), edge.from.key.clone()))
+                            && visible_nodes
+                                .contains(&(edge.to.category.clone(), edge.to.key.clone()))
+                            && serde_json::to_value(edge)
+                                .is_ok_and(|value| admission.admits_archive_value(&value))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+    admission.authorize_gateway()?;
+    Ok(Some(
+        crate::core::knowledge::KnowledgeSnapshot::from_project(&knowledge, relations),
+    ))
 }
 
 /// Exports the project's current knowledge as an Open Knowledge Format (OKF)
@@ -669,32 +787,41 @@ fn handle_export(project_root: &str) -> String {
 /// disagrees with a ctxpkg export on what the knowledge is. `out` is the target
 /// directory (defaults to the data dir's `exports/okf/<hash>`).
 pub fn handle_export_okf(project_root: &str, out: Option<&str>) -> String {
-    let snapshot = crate::core::knowledge::KnowledgeSnapshot::collect(project_root);
-    if snapshot.is_empty() {
-        return "No knowledge to export.".to_string();
-    }
-
-    let dir = match out {
-        Some(p) => std::path::PathBuf::from(p),
-        None => match crate::core::data_dir::lean_ctx_data_dir() {
-            Ok(d) => d
-                .join("exports")
-                .join("okf")
-                .join(short_hash(&snapshot.project_hash)),
-            Err(e) => return format!("Export failed: {e}"),
+    let result = crate::core::policy::runtime::with_explicit_project_source_view(
+        std::path::Path::new(project_root),
+        |authority| -> Result<String, String> {
+            let admission =
+                crate::core::knowledge::protection::KnowledgeAdmission::capture(project_root)?;
+            let Some(snapshot) = admitted_snapshot(project_root, &admission)? else {
+                admission.authorize_publication(authority)?;
+                return Ok("No knowledge to export.".to_string());
+            };
+            if snapshot.is_empty() {
+                admission.authorize_publication(authority)?;
+                return Ok("No knowledge to export.".to_string());
+            }
+            let dir = match out {
+                Some(p) => std::path::PathBuf::from(p),
+                None => crate::core::data_dir::lean_ctx_data_dir()?
+                    .join("exports")
+                    .join("okf")
+                    .join(short_hash(&snapshot.project_hash)),
+            };
+            let bundle = crate::core::knowledge::okf::to_okf_bundle(&snapshot);
+            admission.authorize_publication(authority)?;
+            crate::core::knowledge::okf::write_okf_bundle(&dir, &bundle)?;
+            Ok(format!(
+                "OKF bundle exported: {} ({} concepts, {} patterns, {} relations)",
+                dir.display(),
+                snapshot.current_facts().len(),
+                snapshot.patterns.len(),
+                snapshot.relations.len()
+            ))
         },
-    };
-
-    let bundle = crate::core::knowledge::okf::to_okf_bundle(&snapshot);
-    match crate::core::knowledge::okf::write_okf_bundle(&dir, &bundle) {
-        Ok(()) => format!(
-            "OKF bundle exported: {} ({} concepts, {} patterns, {} relations)",
-            dir.display(),
-            snapshot.current_facts().len(),
-            snapshot.patterns.len(),
-            snapshot.relations.len()
-        ),
-        Err(e) => format!("Export failed: {e}"),
+    );
+    match result {
+        Ok(Ok(message)) => message,
+        Ok(Err(error)) | Err(error) => format!("Export failed: {error}"),
     }
 }
 
@@ -718,12 +845,8 @@ pub fn handle_import(
         Ok(f) => f,
         Err(e) => return format!("Parse error: {e}"),
     };
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
     match ProjectKnowledge::mutate_locked(project_root, |k| {
-        k.import_facts(facts, merge, session_id, &policy)
+        k.import_facts(facts, merge, session_id)
     }) {
         Ok((_, r)) => format!(
             "Import complete: {} added, {} skipped, {} replaced",
@@ -753,7 +876,7 @@ fn handle_import_okf(
 
     let pattern_count = imp.patterns.len();
     let (knowledge, result) = match ProjectKnowledge::mutate_locked(project_root, |k| {
-        let r = k.import_facts(imp.facts, merge, session_id, &policy);
+        let r = k.import_facts(imp.facts, merge, session_id);
         for p in &imp.patterns {
             k.add_pattern(
                 &p.pattern_type,
@@ -855,23 +978,20 @@ fn handle_restore(
     }
 }
 
-fn handle_timeline(project_root: &str, category: Option<&str>) -> String {
+fn handle_timeline(project_root: &str, category: Option<&str>) -> Result<String, String> {
     let Some(knowledge) = ProjectKnowledge::load(project_root) else {
-        return "No knowledge stored yet.".to_string();
+        return Ok("No knowledge stored yet.".to_string());
     };
 
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    let policy = load_policy_or_error()?;
 
     let Some(cat) = category else {
-        return "Error: category is required for timeline".to_string();
+        return Err("Error: category is required for timeline".to_string());
     };
 
     let facts = knowledge.timeline(cat);
     if facts.is_empty() {
-        return format!("No history for category '{cat}'.");
+        return Ok(format!("No history for category '{cat}'."));
     }
 
     let mut ordered: Vec<&crate::core::knowledge::KnowledgeFact> = facts;
@@ -890,6 +1010,8 @@ fn handle_timeline(project_root: &str, category: Option<&str>) -> String {
     if ordered.len() > limit {
         ordered = ordered[ordered.len() - limit..].to_vec();
     }
+    // Only what may be delivered now (see `fact_served`).
+    ordered.retain(|f| fact_served(project_root, &f.category, &f.key, &f.value));
 
     let mut out = format!(
         "Timeline [{cat}] (showing {}/{} entries):\n",
@@ -914,12 +1036,12 @@ fn handle_timeline(project_root: &str, category: Option<&str>) -> String {
         out.push_str(&format!(
             "  {} = {} [{status}] ({valid_range}) conf={:.0}% x{}\n",
             f.key,
-            f.value,
+            f.as_delivered(f.value.clone()),
             f.confidence * 100.0,
             f.confirmation_count
         ));
     }
-    out
+    Ok(out)
 }
 
 fn handle_rooms(project_root: &str) -> String {
@@ -966,22 +1088,26 @@ fn handle_cognition_loop(project_root: &str) -> String {
 
 fn handle_bridge_publish(project_root: &str, session_id: &str) -> String {
     let knowledge = ProjectKnowledge::load_or_create(project_root);
-    let mut bridge =
-        crate::core::knowledge_bridge::KnowledgeBridge::load_or_create(&knowledge.project_hash);
-    let count = bridge.publish(session_id, &knowledge.facts);
-    match bridge.save() {
-        Ok(()) => format!(
-            "Published {count} fact(s) to bridge (total: {}, agent: {session_id})",
-            bridge.shared_facts.len()
-        ),
+    let published = crate::core::knowledge_bridge::KnowledgeBridge::mutate_locked(
+        &knowledge.project_hash,
+        |bridge| {
+            (
+                bridge.publish(session_id, &knowledge.facts),
+                bridge.shared_facts.len(),
+            )
+        },
+    );
+    match published {
+        Ok((count, total)) => {
+            format!("Published {count} fact(s) to bridge (total: {total}, agent: {session_id})")
+        }
         Err(e) => format!("Error: context publication was not saved: {e}"),
     }
 }
 
 fn handle_bridge_pull(project_root: &str, session_id: &str) -> String {
-    let knowledge = ProjectKnowledge::load_or_create(project_root);
-    let bridge =
-        crate::core::knowledge_bridge::KnowledgeBridge::load_or_create(&knowledge.project_hash);
+    let project_hash = crate::core::project_hash::hash_project_root(project_root);
+    let bridge = crate::core::knowledge_bridge::KnowledgeBridge::load_or_create(&project_hash);
     let entries = bridge.pull(session_id);
     if entries.is_empty() {
         return "No facts available from other agents.".to_string();
@@ -992,36 +1118,54 @@ fn handle_bridge_pull(project_root: &str, session_id: &str) -> String {
         Err(e) => return e,
     };
 
-    let mut target = knowledge;
-    let mut imported = 0u32;
-    for entry in &entries {
+    let missing = |target: &ProjectKnowledge,
+                   entry: &crate::core::knowledge_bridge::BridgeEntry| {
         let fact = crate::core::knowledge_bridge::KnowledgeBridge::entry_to_fact(entry);
-        let existing = target
+        let present = target
             .facts
             .iter()
             .any(|f| f.is_current() && f.category == fact.category && f.key == fact.key);
-        if !existing {
-            target.remember(
-                &fact.category,
-                &fact.key,
-                &fact.value,
-                session_id,
-                fact.confidence,
-                &policy,
-            );
-            imported += 1;
-        }
-    }
-
-    if imported == 0 {
+        (!present).then_some(fact)
+    };
+    // Nothing to import: the store is neither locked nor rewritten.
+    let current = ProjectKnowledge::load_or_create(project_root);
+    if entries
+        .iter()
+        .all(|entry| missing(&current, entry).is_none())
+    {
         return format!(
             "Bridge has {} fact(s) from other agents, but all already exist locally.",
             entries.len()
         );
     }
 
-    match target.save() {
-        Ok(()) => format!(
+    // The existence check and the import run again on the store as it is
+    // inside the project lock, so a parallel writer's facts are never
+    // overwritten.
+    let imported = ProjectKnowledge::mutate_locked(project_root, |target| {
+        let mut imported = 0u32;
+        for entry in &entries {
+            if let Some(fact) = missing(target, entry) {
+                target.remember(
+                    &fact.category,
+                    &fact.key,
+                    &fact.value,
+                    session_id,
+                    fact.confidence,
+                    &policy,
+                );
+                imported += 1;
+            }
+        }
+        imported
+    });
+
+    match imported {
+        Ok((_, 0)) => format!(
+            "Bridge has {} fact(s) from other agents, but all already exist locally.",
+            entries.len()
+        ),
+        Ok((_, imported)) => format!(
             "Pulled {imported}/{} fact(s) from bridge into local knowledge.",
             entries.len()
         ),
@@ -1044,5 +1188,133 @@ fn handle_wakeup(project_root: &str) -> String {
     if aaak.is_empty() {
         return "No knowledge yet. Start using ctx_knowledge(action=\"remember\") to build project memory.".to_string();
     }
-    format!("WAKE-UP BRIEFING:\n{aaak}")
+    format!("{WAKEUP_HEAD}{aaak}")
+}
+
+const WAKEUP_HEAD: &str = "WAKE-UP BRIEFING:\n";
+
+/// The delta form of a wake-up briefing, in the one channel that has a
+/// history: a tool result stays in the caller's context.
+///
+/// The Engine cannot see a context. What it can check is the existing
+/// possession proof of a request — the presenter capability its host showed
+/// (`core::archive::presented`) — and what left the release point of the
+/// tool pipeline. The short answer is given only when all three hold:
+///
+/// 1. the request shows an issued presenter capability that may still
+///    present (`shown_presenter_reference`); the capability of the process,
+///    which every connection without one shares, never counts;
+/// 2. a briefing with exactly this admitted text was RELEASED to a request of
+///    that same presenter ([`note_wakeup_release`], called where the result
+///    blocks are the bytes the client receives — not when the text is built);
+/// 3. the caller names the hash of that text in `value`.
+///
+/// Anything else is answered in full: no capability, another presenter,
+/// nothing on record (another process, a result that was withheld, replaced,
+/// shortened or compressed after it was built), a record that cannot be read in time, a
+/// changed memory or policy (another admitted text), no or another hash.
+/// `admitted` is the briefing after `protect_active` and `admit_recovered`.
+fn wakeup_delta(held: Option<&str>, admitted: String) -> String {
+    let holder = crate::core::archive::presented::shown_presenter_reference();
+    wakeup_delta_for(holder.as_deref(), held, admitted)
+}
+
+const WAKEUP_HASH_LINE: &str = "\n[memory hash ";
+
+fn wakeup_hash(briefing: &str) -> String {
+    blake3::hash(briefing.as_bytes()).to_hex()[..16].to_string()
+}
+
+fn wakeup_delta_for(holder: Option<&str>, held: Option<&str>, admitted: String) -> String {
+    let Some(holder) = holder else {
+        // No possession proof exists for this request: the briefing as before.
+        return admitted;
+    };
+    if !admitted.starts_with(WAKEUP_HEAD) || admitted.contains(crate::core::sanitize::FENCE_REFUSAL)
+    {
+        return admitted;
+    }
+    let hash = wakeup_hash(&admitted);
+    if held.map(str::trim) == Some(hash.as_str()) && wakeup_released(holder, &hash) {
+        return format!(
+            "{WAKEUP_HEAD}[project memory unchanged since the briefing with hash {hash}]"
+        );
+    }
+    wakeup_full(&admitted, &hash)
+}
+
+/// The full answer: the admitted briefing and, as its last line, its hash.
+fn wakeup_full(admitted: &str, hash: &str) -> String {
+    format!(
+        "{admitted}{WAKEUP_HASH_LINE}{hash} — while this briefing is still in your context, \
+         ctx_knowledge(action=\"wakeup\", value=\"{hash}\") answers \"unchanged\" instead of repeating it]"
+    )
+}
+
+type WakeupReleases = std::sync::Arc<tokio::sync::RwLock<Vec<(String, String)>>>;
+
+/// Briefings released by this process: (presenter reference, hash). Bounded,
+/// in memory only: a new process has released nothing.
+fn wakeup_releases() -> &'static WakeupReleases {
+    static RELEASED: std::sync::OnceLock<WakeupReleases> = std::sync::OnceLock::new();
+    RELEASED.get_or_init(WakeupReleases::default)
+}
+
+/// Whether a briefing with this hash was released to this presenter. A record
+/// that cannot be read within the lock bound counts as none.
+fn wakeup_released(holder: &str, hash: &str) -> bool {
+    crate::server::bounded_lock::read(wakeup_releases(), "ctx_knowledge wakeup release read")
+        .is_some_and(|released| {
+            released
+                .iter()
+                .any(|(presenter, released_hash)| presenter == holder && released_hash == hash)
+        })
+}
+
+/// The release point of the tool pipeline reports the text blocks a client
+/// receives for a call that did not fail. A block counts as a released
+/// briefing only when it holds, byte for byte and in one piece, the full
+/// answer this module builds for the briefing it contains — from the head to
+/// the end of the closing hash line. Text the pipeline put before or after it
+/// (a notice, a hint, a checkpoint) takes nothing from the briefing and does
+/// not matter; a block in which the answer was shortened anywhere (the
+/// closing line included), compressed, redacted or replaced is no such block.
+/// A request without an issued presenter capability records nothing.
+pub(crate) fn note_wakeup_release(delivered_blocks: &[&str]) {
+    let Some(holder) = crate::core::archive::presented::shown_presenter_reference() else {
+        return;
+    };
+    note_wakeup_release_for(&holder, delivered_blocks);
+}
+
+fn note_wakeup_release_for(holder: &str, delivered_blocks: &[&str]) {
+    const REMEMBERED: usize = 64;
+    for block in delivered_blocks {
+        // Head and marker only locate the answer; what counts is that the
+        // block holds it whole, from the head to the end of its closing line.
+        let Some(answer) = block.find(WAKEUP_HEAD).map(|start| &block[start..]) else {
+            continue;
+        };
+        let Some((briefing, _)) = answer.rsplit_once(WAKEUP_HASH_LINE) else {
+            continue;
+        };
+        let hash = wakeup_hash(briefing);
+        if !answer.starts_with(&wakeup_full(briefing, &hash)) {
+            continue;
+        }
+        let entry = (holder.to_string(), hash);
+        // Not recorded within the lock bound: the next wake-up is answered in full.
+        let Some(mut released) = crate::server::bounded_lock::write(
+            wakeup_releases(),
+            "ctx_knowledge wakeup release write",
+        ) else {
+            return;
+        };
+        if !released.contains(&entry) {
+            if released.len() == REMEMBERED {
+                released.remove(0);
+            }
+            released.push(entry);
+        }
+    }
 }

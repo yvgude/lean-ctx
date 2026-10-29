@@ -1,0 +1,13 @@
+{
+  "acceptance": "One of the two facts is superseded, with evidence",
+  "origin": {
+    "facts": [
+      "f-retry-3",
+      "f-retry-5"
+    ],
+    "kind": "contradiction"
+  },
+  "schema": "leanctx.hive.task-propose/v1",
+  "session_ref": "ses_01jb8z6",
+  "title": "Settle the retry budget: 3 or 5?"
+}

@@ -1,0 +1,625 @@
+{
+  "cases": [
+    {
+      "arrivals": [
+        [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1,
+          0
+        ],
+        [
+          4,
+          0,
+          6,
+          1,
+          7,
+          2,
+          5,
+          3
+        ]
+      ],
+      "events": [
+        {
+          "body": {
+            "applies_to": [
+              "services/payments/retry.rs"
+            ],
+            "body_nonce": "01010101010101010101010101010101",
+            "evidence": "observed",
+            "sensitivity": "internal",
+            "statement": "Payment retries back off exponentially with full jitter, capped at 64 seconds."
+          },
+          "event_id": "01M5NKA2Z8005000000000W001",
+          "node_type": "fact",
+          "op": "node.add",
+          "seq": 1,
+          "target": "n_tyvnza7clspg4cpmb7ew7fvl7b"
+        },
+        {
+          "body": {
+            "body_nonce": "04040404040404040404040404040404",
+            "commands": [
+              {
+                "cmd": "make deploy SECRETS=webhook",
+                "cwd_hint": "services/payments",
+                "shell": "sh"
+              }
+            ],
+            "evidence": "observed",
+            "preconditions": [
+              "Maintainer role in the provider dashboard"
+            ],
+            "steps": [
+              "Create the new secret in the provider dashboard.",
+              "Deploy with both secrets accepted for one hour.",
+              "Remove the old secret from the deployment."
+            ],
+            "title": "Rotate the webhook signing secret"
+          },
+          "event_id": "01M5NKA5X0005000000000W004",
+          "node_type": "procedure",
+          "op": "node.add",
+          "seq": 4,
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaacaaq"
+        },
+        {
+          "body": null,
+          "event_id": "01M5NKA6W8005000000000W005",
+          "node_type": "finding",
+          "op": "node.add",
+          "seq": 5,
+          "target": "n_zcjqmmor453nyxqgshlgpogwdm"
+        },
+        {
+          "body": {
+            "body_nonce": "08080808080808080808080808080808",
+            "from": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+            "kind": "references",
+            "to": "n_aaaaaaaaaaaaaaaaaaaaaacaa4"
+          },
+          "event_id": "01M5NKA9T0005000000000W008",
+          "op": "edge.add",
+          "seq": 8,
+          "target": "e_aaaaaaaaaaaaaaaaaaaaaacqba"
+        },
+        {
+          "body": {
+            "body_nonce": "09090909090909090909090909090909",
+            "field": "applies_to",
+            "value": [
+              "services/payments/retry.rs",
+              "services/payments/client.rs"
+            ]
+          },
+          "event_id": "01M5NKAAS8005000000000W009",
+          "op": "field.set",
+          "seq": 9,
+          "target": "n_tyvnza7clspg4cpmb7ew7fvl7b"
+        },
+        {
+          "body": {
+            "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "reason": "The sandbox processor fixed the small-amount bug."
+          },
+          "event_id": "01M5NKABRG005000000000W00A",
+          "op": "retract",
+          "seq": 10,
+          "target": "n_ni4efcql5cttozq2pxust6len4"
+        },
+        {
+          "body": {
+            "body_nonce": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+            "reason": "The bug is back in the new sandbox version."
+          },
+          "event_id": "01M5NKACQR005000000000W00B",
+          "op": "restore",
+          "seq": 11,
+          "target": "n_ni4efcql5cttozq2pxust6len4"
+        },
+        {
+          "body": {
+            "body_nonce": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c",
+            "reason": "Superseded by the queue-based ledger close."
+          },
+          "event_id": "01M5NKADQ0005000000000W00C",
+          "op": "retract",
+          "seq": 12,
+          "target": "n_rpesdfdzbnjufd7zdvw6myufgz"
+        }
+      ],
+      "expect": {
+        "cursor": 12,
+        "digest": "caa1cb1e37b5918c",
+        "edges": {
+          "e_aaaaaaaaaaaaaaaaaaaaaacqba": {
+            "from": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+            "kind": "references",
+            "retracted": false,
+            "to": "n_aaaaaaaaaaaaaaaaaaaaaacaa4"
+          }
+        },
+        "live_nodes": [
+          "n_aaaaaaaaaaaaaaaaaaaaaacaaq",
+          "n_tyvnza7clspg4cpmb7ew7fvl7b"
+        ],
+        "nodes": {
+          "n_aaaaaaaaaaaaaaaaaaaaaacaaq": {
+            "fields": {
+              "commands": [
+                {
+                  "cmd": "make deploy SECRETS=webhook",
+                  "cwd_hint": "services/payments",
+                  "shell": "sh"
+                }
+              ],
+              "evidence": "observed",
+              "preconditions": [
+                "Maintainer role in the provider dashboard"
+              ],
+              "steps": [
+                "Create the new secret in the provider dashboard.",
+                "Deploy with both secrets accepted for one hour.",
+                "Remove the old secret from the deployment."
+              ],
+              "title": "Rotate the webhook signing secret"
+            },
+            "node_type": "procedure",
+            "purged": false,
+            "retracted": false
+          },
+          "n_tyvnza7clspg4cpmb7ew7fvl7b": {
+            "fields": {
+              "applies_to": [
+                "services/payments/retry.rs",
+                "services/payments/client.rs"
+              ],
+              "evidence": "observed",
+              "sensitivity": "internal",
+              "statement": "Payment retries back off exponentially with full jitter, capped at 64 seconds."
+            },
+            "node_type": "fact",
+            "purged": false,
+            "retracted": false
+          },
+          "n_zcjqmmor453nyxqgshlgpogwdm": {
+            "fields": {},
+            "node_type": "finding",
+            "purged": true,
+            "retracted": false
+          }
+        },
+        "purged_nodes": {},
+        "tombstones": []
+      },
+      "name": "contract_events",
+      "shows": "the C0 event fixtures in seq order: field.set wins over the added value, a purged stub folds without text"
+    },
+    {
+      "arrivals": [
+        [
+          7,
+          6,
+          5,
+          4,
+          3,
+          2,
+          1,
+          0
+        ],
+        [
+          1,
+          3,
+          5,
+          7,
+          0,
+          2,
+          4,
+          6
+        ],
+        [
+          7,
+          0,
+          6,
+          1,
+          5,
+          2,
+          4,
+          3
+        ]
+      ],
+      "events": [
+        {
+          "body": {
+            "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "evidence": "stated",
+            "statement": "The relay drops frames when the link is slow."
+          },
+          "event_id": "01M5NKA7VG0000000000000001",
+          "node_type": "fact",
+          "op": "node.add",
+          "seq": 1,
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "body": {
+            "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "evidence": "stated",
+            "statement": "The outbox retries a refused push after renewal."
+          },
+          "event_id": "01M5NKA7VG0000000000000002",
+          "node_type": "fact",
+          "op": "node.add",
+          "seq": 2,
+          "target": "n_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "body": {
+            "field": "evidence",
+            "value": "observed"
+          },
+          "event_id": "01M5NKA7VG0000000000000003",
+          "op": "field.set",
+          "seq": 3,
+          "target": "n_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "body": {
+            "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "evidence": "stated",
+            "statement": "The relay drops frames when the link is slow!"
+          },
+          "event_id": "01M5NKA7VG0000000000000004",
+          "node_type": "fact",
+          "op": "node.add",
+          "seq": 4,
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "body": {
+            "from": "n_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "depends_on",
+            "to": "n_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+          },
+          "event_id": "01M5NKA7VG0000000000000005",
+          "op": "edge.add",
+          "seq": 5,
+          "target": "e_abababababababababababab"
+        },
+        {
+          "body": {
+            "reason": "Superseded."
+          },
+          "event_id": "01M5NKA7VG0000000000000006",
+          "op": "retract",
+          "seq": 6,
+          "target": "n_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "body": {
+            "reason": "Still true."
+          },
+          "event_id": "01M5NKA7VG0000000000000007",
+          "op": "restore",
+          "seq": 7,
+          "target": "n_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "body": {
+            "reason": "Wrong link."
+          },
+          "event_id": "01M5NKA7VG0000000000000008",
+          "op": "retract",
+          "seq": 8,
+          "target": "e_abababababababababababab"
+        }
+      ],
+      "expect": {
+        "cursor": 8,
+        "digest": "76419d45a00491f3",
+        "edges": {
+          "e_abababababababababababab": {
+            "from": "n_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "kind": "depends_on",
+            "retracted": true,
+            "to": "n_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+          }
+        },
+        "live_nodes": [
+          "n_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "n_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ],
+        "nodes": {
+          "n_aaaaaaaaaaaaaaaaaaaaaaaaaa": {
+            "fields": {
+              "evidence": "stated",
+              "statement": "The relay drops frames when the link is slow."
+            },
+            "node_type": "fact",
+            "purged": false,
+            "retracted": false
+          },
+          "n_bbbbbbbbbbbbbbbbbbbbbbbbbb": {
+            "fields": {
+              "evidence": "observed",
+              "statement": "The outbox retries a refused push after renewal."
+            },
+            "node_type": "fact",
+            "purged": false,
+            "retracted": false
+          }
+        },
+        "purged_nodes": {},
+        "tombstones": []
+      },
+      "name": "two_engines_interleaved",
+      "shows": "two engines add the same claim (first text kept, only the seq moves), retract/restore by seq, edge retract"
+    },
+    {
+      "arrivals": [
+        [
+          4,
+          3,
+          2,
+          1,
+          0
+        ],
+        [
+          3,
+          0,
+          4,
+          1,
+          2
+        ]
+      ],
+      "events": [
+        {
+          "body": {
+            "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "evidence": "stated",
+            "statement": "A token was pasted into this claim."
+          },
+          "event_id": "01M5NKA7VG0000000000000001",
+          "node_type": "fact",
+          "op": "node.add",
+          "seq": 1,
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "body": {
+            "field": "evidence",
+            "value": "observed"
+          },
+          "event_id": "01M5NKA7VG0000000000000002",
+          "op": "field.set",
+          "seq": 2,
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "body": {
+            "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "evidence": "stated",
+            "statement": "The outbox retries a refused push after renewal."
+          },
+          "event_id": "01M5NKA7VG0000000000000003",
+          "node_type": "fact",
+          "op": "node.add",
+          "seq": 3,
+          "target": "n_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "body": {
+            "bus_cascade": [],
+            "cascade": [],
+            "purge_id": "prg_aaaaaaaaaaaaaaaaaaaaaaezcm",
+            "reason": "leaked_secret",
+            "targets": [
+              "01M5NKA7VG0000000000000001"
+            ]
+          },
+          "event_id": "01M5NKA7VG0000000000000004",
+          "op": "purge",
+          "seq": 4
+        },
+        {
+          "body": {
+            "field": "evidence",
+            "value": "stated"
+          },
+          "event_id": "01M5NKA7VG0000000000000005",
+          "op": "field.set",
+          "seq": 5,
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "expect": {
+        "cursor": 5,
+        "digest": "95a343bfa87be4f7",
+        "edges": {},
+        "live_nodes": [
+          "n_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+        ],
+        "nodes": {
+          "n_aaaaaaaaaaaaaaaaaaaaaaaaaa": {
+            "fields": {},
+            "node_type": "fact",
+            "purged": true,
+            "retracted": false
+          },
+          "n_bbbbbbbbbbbbbbbbbbbbbbbbbb": {
+            "fields": {
+              "evidence": "stated",
+              "statement": "The outbox retries a refused push after renewal."
+            },
+            "node_type": "fact",
+            "purged": false,
+            "retracted": false
+          }
+        },
+        "purged_nodes": {
+          "n_aaaaaaaaaaaaaaaaaaaaaaaaaa": "leaked_secret"
+        },
+        "tombstones": [
+          [
+            "prg_aaaaaaaaaaaaaaaaaaaaaaezcm",
+            4
+          ]
+        ]
+      },
+      "name": "purge_in_a_later_tail",
+      "shows": "a purge shreds the node its target event added; a field.set after it does not bring text back"
+    },
+    {
+      "arrivals": [
+        [
+          2,
+          1,
+          0
+        ]
+      ],
+      "events": [
+        {
+          "body": {
+            "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "evidence": "stated",
+            "statement": "A forged claim slipped into the log."
+          },
+          "event_id": "01M5NKA7VG0000000000000001",
+          "node_type": "fact",
+          "op": "node.add",
+          "seq": 1,
+          "sig_invalid": true,
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "body": null,
+          "event_id": "01M5NKA7VG0000000000000002",
+          "node_type": "fact",
+          "op": "node.add",
+          "seq": 2,
+          "target": "n_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+        },
+        {
+          "body": {
+            "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "evidence": "stated",
+            "statement": "The relay drops frames when the link is slow."
+          },
+          "event_id": "01M5NKA7VG0000000000000003",
+          "node_type": "fact",
+          "op": "node.add",
+          "seq": 3,
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+        }
+      ],
+      "expect": {
+        "cursor": 3,
+        "digest": "7d7af74da4fa4c3c",
+        "edges": {},
+        "live_nodes": [
+          "n_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+        ],
+        "nodes": {
+          "n_aaaaaaaaaaaaaaaaaaaaaaaaaa": {
+            "fields": {
+              "evidence": "stated",
+              "statement": "The relay drops frames when the link is slow."
+            },
+            "node_type": "fact",
+            "purged": false,
+            "retracted": false
+          },
+          "n_bbbbbbbbbbbbbbbbbbbbbbbbbb": {
+            "fields": {},
+            "node_type": "fact",
+            "purged": true,
+            "retracted": false
+          }
+        },
+        "purged_nodes": {},
+        "tombstones": []
+      },
+      "name": "invalid_signature_and_withheld_body",
+      "shows": "an event whose signature failed moves the cursor but never folds; a body-less node.add folds as purged"
+    },
+    {
+      "arrivals": [],
+      "events": [
+        {
+          "body": {
+            "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "evidence": "stated",
+            "statement": "The relay drops frames when the link is slow."
+          },
+          "event_id": "01M5NKA7VG0000000000000001",
+          "node_type": "fact",
+          "op": "node.add",
+          "seq": 1,
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "body": {
+            "purge_id": "prg_x",
+            "reason": "because",
+            "targets": []
+          },
+          "event_id": "01M5NKA7VG0000000000000002",
+          "op": "purge",
+          "seq": 2
+        }
+      ],
+      "expect": {
+        "error": "purge_reason_invalid"
+      },
+      "name": "purge_reason_invalid",
+      "shows": "a purge reason outside the four owner-approved values stops the fold (fail closed)"
+    },
+    {
+      "arrivals": [],
+      "events": [
+        {
+          "body": {
+            "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "evidence": "stated",
+            "statement": "The relay drops frames when the link is slow."
+          },
+          "event_id": "01M5NKA7VG0000000000000005",
+          "node_type": "fact",
+          "op": "node.add",
+          "seq": 5,
+          "target": "n_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+        },
+        {
+          "body": {
+            "body_nonce": "0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a",
+            "evidence": "stated",
+            "statement": "The outbox retries a refused push after renewal."
+          },
+          "event_id": "01M5NKA7VG00OTHER000000005",
+          "node_type": "fact",
+          "op": "node.add",
+          "seq": 5,
+          "target": "n_bbbbbbbbbbbbbbbbbbbbbbbbbb"
+        }
+      ],
+      "expect": {
+        "error": "seq_conflict",
+        "seq": 5
+      },
+      "name": "seq_conflict",
+      "shows": "two different events with one seq stop the fold"
+    }
+  ],
+  "rules": {
+    "arrivals": "each list is an arrival order of the events by index; every order must fold to expect",
+    "digest": "first 16 hex chars of blake3 over, for each node in id order, canonical_json([id, node_type, fields, retracted, purged]) + \"\\n\", then for each edge in id order canonical_json([id, kind, from, to, retracted]) + \"\\n\"",
+    "fields": "the body without body_nonce",
+    "fold": "apply events in seq order whatever their arrival order; an event at or below the cursor is skipped; two different events with one seq -> error seq_conflict; sig_invalid events move the cursor and never fold; node.add creates the node once (a second add of the same target keeps the first fields; a missing body or a purged event id folds a purged node without fields); field.set sets one field on a live, unpurged node; edge.add creates the edge once; retract/restore set retracted on the node or edge; purge: reason must be one of leaked_secret, gdpr_erasure, retention_schedule, illegal_content (else error purge_reason_invalid), its targets and cascade event ids are shredded and the nodes those events added lose all fields and become purged",
+    "live_nodes": "nodes neither retracted nor purged, in id order",
+    "version": 1
+  }
+}

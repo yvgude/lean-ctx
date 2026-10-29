@@ -14,7 +14,9 @@ pub(crate) struct RecallHit {
 
 /// Recall the `top_k` summaries most relevant to `query`.
 pub(crate) fn recall(project_root: &str, query: &str, top_k: usize) -> Vec<RecallHit> {
-    let store = SummaryStore::load_or_create(project_root);
+    // Ranking and rendering both work on the served view: a summary that is
+    // not released now can neither match a query nor be returned.
+    let store = super::served(SummaryStore::load_or_create(project_root));
     if store.summaries.is_empty() || query.trim().is_empty() {
         return Vec::new();
     }

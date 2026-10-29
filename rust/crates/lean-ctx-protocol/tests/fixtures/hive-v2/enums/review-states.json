@@ -1,0 +1,20 @@
+{
+  "name": "review-states",
+  "values": [
+    {
+      "value": "waiting_for_reviewer"
+    },
+    {
+      "value": "reviewer_working"
+    },
+    {
+      "value": "reviewers_disagree"
+    },
+    {
+      "value": "needs_person"
+    },
+    {
+      "value": "decided"
+    }
+  ]
+}

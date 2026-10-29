@@ -106,7 +106,8 @@ include = [
   "**/third_party/**",
   "aur/lean-ctx-bin",
 ]
-exclude = []
+# ee/** belongs only to enterprise-private-source (order 20); no other effect.
+exclude = ["ee/**"]
 vendor = true
 owner = "upstream-project"
 provenance = "upstream package metadata and license files"
@@ -125,7 +126,8 @@ include = [
   "SBOM.cdx.json",
   "SBOM.spdx.json",
 ]
-exclude = []
+# ee/** belongs only to enterprise-private-source (order 20); no other effect.
+exclude = ["ee/**"]
 generated = true
 owner = "release-engineering"
 provenance = "locked dependency inventory and deterministic generator"
@@ -185,6 +187,8 @@ include = [
   "docs/**",
   "assets/**",
   "skills/**",
+  ".agents/skills/leanctx-gateway-delivery/**",
+  ".claude/skills/leanctx-gateway-delivery/**",
   "kits/**",
   "integrations/**",
   "cookbook/**",
@@ -329,3 +333,16 @@ class = "docs_assets"
 license = "apache"
 include = ["specs/**"]
 exclude = []
+
+[[rules]]
+# Source visibility only: the whole private ee/ tree may never enter the public
+# tree. It states no ownership, licence or grant and reclassifies no published
+# Apache bytes; ee/LICENSE keeps its own licence-text rule (order 16). Embedded
+# third-party or generated files under ee/ keep their own upstream licences and
+# notices; private visibility is not a proprietary licence for them.
+order = 20
+name = "enterprise-private-source"
+class = "private_service"
+include = ["ee/**"]
+exclude = ["ee/LICENSE"]
+forbidden_public = true

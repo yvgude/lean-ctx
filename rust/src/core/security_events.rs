@@ -15,7 +15,9 @@
 //! hooks, config loading) is deliberately dropped, so a secret redacted twice
 //! on its way through nested passes, or a re-rendered cache entry outside a
 //! tool call, never inflates the count. Undercounting is acceptable; claiming
-//! more than happened is not.
+//! more than happened is not. Prompt-injection flags go further: one per
+//! flagged object per process ([`record_injections`]), however often the same
+//! object is delivered again.
 //!
 //! The audit trail's `event_type` enum is **not** extended: an older binary
 //! verifying a trail that contains an unknown variant would report it as
@@ -276,6 +278,84 @@ pub fn record(tool: &str, agent_id: &str, counts: &SecurityCounts) {
     }
 }
 
+/// One object the prompt-injection heuristic flagged: which pattern families
+/// matched and the object's SHA-256 — never its content.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct InjectionFlag {
+    /// Lowercase hex SHA-256 of the flagged object.
+    pub object_sha256: String,
+    /// [`crate::core::output_sanitizer::InjectionCategory`] bits.
+    pub patterns: u8,
+}
+
+/// Flagged objects remembered per process (a few hundred KiB at most).
+const SEEN_INJECTIONS_CAPACITY: usize = 4096;
+
+/// Digests of flagged objects recorded by this process, bounded LRU.
+static SEEN_INJECTIONS: Mutex<Option<lru::LruCache<String, ()>>> = Mutex::new(None);
+
+/// Whether this process records `object_sha256` for the first time. The
+/// proxy re-admits the unchanged history of every turn and agents re-read the
+/// same files: the object is one finding, not one per delivery. Receipts
+/// still carry the per-delivery signal.
+fn first_sighting(object_sha256: &str) -> bool {
+    let Ok(mut seen) = SEEN_INJECTIONS.lock() else {
+        // Undercounting is acceptable; claiming more than happened is not.
+        return false;
+    };
+    let seen = seen.get_or_insert_with(|| {
+        lru::LruCache::new(
+            std::num::NonZeroUsize::new(SEEN_INJECTIONS_CAPACITY).expect("non-zero capacity"),
+        )
+    });
+    seen.put(object_sha256.to_owned(), ()).is_none()
+}
+
+/// The audit `action` of one flagged object: the count first (older readers
+/// parse `<kind>:<n>` up to the session), then what matched and a short
+/// object digest prefix, then the session.
+fn injection_action(flag: &InjectionFlag, session: &str) -> String {
+    let prefix: String = flag.object_sha256.chars().take(12).collect();
+    format!(
+        "{}:1|pattern={}|object={prefix}{session}",
+        SecurityKind::InjectionFlagged.as_str(),
+        crate::core::output_sanitizer::InjectionCategory::describe(flag.patterns),
+    )
+}
+
+/// Records flagged objects: one audit-trail entry per object this process has
+/// not recorded yet (with the pattern kinds and a digest prefix, never
+/// content) plus the pending session counter. Returns how many were recorded.
+pub fn record_injections(tool: &str, agent_id: &str, flags: &[InjectionFlag]) -> u64 {
+    let fresh: Vec<&InjectionFlag> = flags
+        .iter()
+        .filter(|flag| first_sighting(&flag.object_sha256))
+        .collect();
+    if fresh.is_empty() {
+        return 0;
+    }
+    let role = crate::core::roles::active_role_name();
+    let session = crate::core::value::current_session()
+        .map(|id| format!("|session={id}"))
+        .unwrap_or_default();
+    for flag in &fresh {
+        crate::core::audit_trail::record(crate::core::audit_trail::AuditEntryData {
+            agent_id: agent_id.to_string(),
+            tool: tool.to_string(),
+            action: Some(injection_action(flag, &session)),
+            input_hash: String::new(),
+            output_tokens: 0,
+            role: role.clone(),
+            event_type: SecurityKind::InjectionFlagged.audit_event_type(),
+        });
+    }
+    let recorded = fresh.len() as u64;
+    if let Ok(mut pending) = PENDING.lock() {
+        pending.add(SecurityKind::InjectionFlagged, recorded);
+    }
+    recorded
+}
+
 /// Anchors a Context Gateway receipt in the signed, hash-chained audit trail:
 /// the digest in the hashed `action` binds the stored receipt to the chain.
 /// Not a counted kind (`parse_action` ignores it), so nothing is counted twice.
@@ -310,14 +390,16 @@ pub fn drain_pending() -> SecurityCounts {
         .unwrap_or_default()
 }
 
-/// Splits a recorded `action` (`<kind>:<n>[|session=<id>]`) into its parts.
+/// Splits a recorded `action` (`<kind>:<n>[|<detail>…][|session=<id>]`) into
+/// its parts; details (an injection flag's pattern kinds) are skipped.
 pub fn parse_action(action: &str) -> Option<(SecurityKind, u64, Option<&str>)> {
     let kind = SecurityKind::from_action(action)?;
     let rest = action.split_once(':').map_or("", |(_, rest)| rest);
-    let (n, session) = match rest.split_once("|session=") {
-        Some((n, session)) => (n, Some(session)),
+    let (head, session) = match rest.split_once("|session=") {
+        Some((head, session)) => (head, Some(session)),
         None => (rest, None),
     };
+    let n = head.split('|').next().unwrap_or(head);
     Some((kind, n.parse().unwrap_or(1), session))
 }
 
@@ -382,6 +464,35 @@ mod tests {
         assert_eq!(
             parse_action("shell_blocked:1"),
             Some((SecurityKind::ShellBlocked, 1, None))
+        );
+    }
+
+    #[test]
+    fn a_flagged_object_is_recorded_once_per_process() {
+        let object = "f".repeat(63) + "1";
+        assert!(first_sighting(&object), "first delivery is recorded");
+        assert!(!first_sighting(&object), "a re-read is not a new finding");
+        assert!(first_sighting(&("f".repeat(63) + "2")));
+    }
+
+    #[test]
+    fn injection_action_explains_without_content_and_parses() {
+        let flag = InjectionFlag {
+            object_sha256: "0123456789abcdef".repeat(4),
+            patterns: crate::core::output_sanitizer::InjectionCategory::RoleMarker.bit(),
+        };
+        let action = injection_action(&flag, "|session=s1");
+        assert_eq!(
+            action,
+            "injection_flagged:1|pattern=role_marker|object=0123456789ab|session=s1"
+        );
+        assert_eq!(
+            parse_action(&action),
+            Some((SecurityKind::InjectionFlagged, 1, Some("s1")))
+        );
+        assert_eq!(
+            parse_action(&injection_action(&flag, "")),
+            Some((SecurityKind::InjectionFlagged, 1, None))
         );
     }
 

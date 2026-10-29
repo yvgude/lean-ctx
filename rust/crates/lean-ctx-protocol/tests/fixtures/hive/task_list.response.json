@@ -1,0 +1,23 @@
+{
+  "schema": "leanctx.hive.task-list/v1",
+  "tasks": [
+    {
+      "mine": true,
+      "number": 7,
+      "origin": "agent",
+      "role": "backend",
+      "state": "claimed",
+      "title": "Explain the retry budget",
+      "updated_at": "2026-10-20T12:00:00Z"
+    },
+    {
+      "mine": false,
+      "number": 9,
+      "origin": "contradiction",
+      "state": "open",
+      "title": "Settle the retry budget: 3 or 5?",
+      "updated_at": "2026-10-20T12:00:00Z"
+    }
+  ],
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

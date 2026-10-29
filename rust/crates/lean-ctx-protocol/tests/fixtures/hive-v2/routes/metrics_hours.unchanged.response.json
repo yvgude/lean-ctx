@@ -1,0 +1,20 @@
+{
+  "schema": "leanctx.hive.engine-metrics-ack/v2",
+  "accepted": 0,
+  "unchanged": 1,
+  "refused": [
+    {
+      "hour": "2026-10-26T14:00:00Z",
+      "vault": null,
+      "reason": "before_sharing",
+      "level": null
+    }
+  ],
+  "sharing": {
+    "state": "on",
+    "plan_default": "off",
+    "policy": null,
+    "confirmed_at": "2026-10-26T15:12:40Z",
+    "since": "2026-10-26T15:00:00Z"
+  }
+}

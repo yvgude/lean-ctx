@@ -1,5 +1,7 @@
 # MCP tool consolidation plan
 
+> Historical plan: the consolidation shipped in 3.11.5 — see [docs/migration/focus-2026-10.md](migration/focus-2026-10.md) for what was removed and the successors.
+
 Issue: #1376
 
 ## Problem and audit

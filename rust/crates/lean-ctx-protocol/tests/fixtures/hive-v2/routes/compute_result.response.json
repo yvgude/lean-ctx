@@ -1,0 +1,39 @@
+{
+  "job_id": "cj_0b4f9a7e3c2d4e1f8a6b5c4d3e2f1a09",
+  "state": "succeeded",
+  "reason": null,
+  "result": {
+    "exit_code": 0,
+    "summary": {
+      "outcome": "passed",
+      "counts": {
+        "passed": 412,
+        "failed": 0,
+        "skipped": 3
+      },
+      "text": "412 passed, 3 skipped"
+    },
+    "artifacts": [
+      {
+        "name": "junit.xml",
+        "digest": "sha256:00972bdeea7812bfb6af2b9af51a14d24fc92c9e7e16d8d384fdafcf1546aeb6",
+        "size_bytes": 88231
+      }
+    ],
+    "logs": {
+      "digest": "sha256:98f38f12db221a8cf8ca7aadfdcd759b01d52eb4ebb3eedbb2d97e92805c6960",
+      "size_bytes": 20480,
+      "truncated": false,
+      "redactions": 1
+    }
+  },
+  "cost": {
+    "credits_reserved": 20,
+    "credits_spent": 4,
+    "credits_refunded": 16,
+    "wall_seconds": 95,
+    "rate": {
+      "credits_per_cpu_minute": 1
+    }
+  }
+}

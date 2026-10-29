@@ -26,7 +26,6 @@ use lean_ctx::core::cross_source_hints::{format_hints, hints_for_file};
 use lean_ctx::core::graph_index::IndexEdge;
 use lean_ctx::core::knowledge_provider_extract::extract_facts;
 use lean_ctx::core::provider_bandit::ProviderBandit;
-use lean_ctx::core::saliency::{EcsWeights, compute_ecs_scores, mig_select};
 
 // ---------------------------------------------------------------------------
 // Helpers: realistic data generators
@@ -196,6 +195,8 @@ fn scenario_bug_investigation_full_pipeline() {
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
         admission_policy: None,
+        source_root: None,
+        provider_origins: std::sync::Arc::default(),
     };
     let mut edges: Vec<IndexEdge> = Vec::new();
     let mut cache = SessionCache::new();
@@ -245,67 +246,7 @@ fn scenario_bug_investigation_full_pipeline() {
         "jwt.rs should be connected via cross-source edges"
     );
 
-    // === 4. SALIENCY + MIG ===
-    let task_keywords = vec![
-        "jwt".into(),
-        "token".into(),
-        "expiry".into(),
-        "authentication".into(),
-    ];
-    let edge_counts: Vec<usize> = chunks
-        .iter()
-        .map(|c| {
-            edges
-                .iter()
-                .filter(|e| e.from == c.file_path || e.to == c.file_path)
-                .count()
-        })
-        .collect();
-    let scores = compute_ecs_scores(
-        &chunks,
-        &task_keywords,
-        &edge_counts,
-        &EcsWeights::default(),
-    );
-
-    // JWT-related chunks should have highest saliency
-    let jwt_scores: Vec<(usize, f64)> = scores
-        .iter()
-        .filter(|s| {
-            chunks[s.chunk_idx].file_path.contains("jwt")
-                || chunks[s.chunk_idx].symbol_name.contains("JWT")
-        })
-        .map(|s| (s.chunk_idx, s.ecs_score))
-        .collect();
-    let other_max = scores
-        .iter()
-        .filter(|s| {
-            !chunks[s.chunk_idx].file_path.contains("jwt")
-                && !chunks[s.chunk_idx].symbol_name.contains("JWT")
-        })
-        .map(|s| s.ecs_score)
-        .fold(0.0f64, f64::max);
-
-    assert!(!jwt_scores.is_empty(), "JWT chunks should have scores");
-    let jwt_max = jwt_scores.iter().map(|(_, s)| *s).fold(0.0f64, f64::max);
-    assert!(
-        jwt_max >= other_max,
-        "JWT chunks should score >= non-JWT: jwt={jwt_max:.3} other={other_max:.3}"
-    );
-
-    // MIG should select diverse chunks (not just all JWT)
-    let selected = mig_select(&scores, &chunks, 4, 0.6);
-    assert_eq!(selected.len(), 4);
-    let jwt_count = selected
-        .iter()
-        .filter(|&&i| chunks[i].file_path.contains("jwt"))
-        .count();
-    assert!(
-        jwt_count <= 2,
-        "MIG should diversify, not only pick JWT chunks"
-    );
-
-    // === 5. CROSS-SOURCE HINTS ===
+    // === 4. CROSS-SOURCE HINTS ===
     let hints = hints_for_file("src/auth/jwt.rs", &edges, "/project");
     assert!(!hints.is_empty(), "jwt.rs should have cross-source hints");
     let formatted = format_hints(&hints);
@@ -520,58 +461,3 @@ fn scenario_code_review_bandit_learns() {
 // ---------------------------------------------------------------------------
 // Scenario 5: MIG Dedup with Near-Duplicate External Sources
 // ---------------------------------------------------------------------------
-
-#[test]
-fn scenario_dedup_duplicate_issues_from_different_sources() {
-    // Same bug reported in GitHub AND Jira (common in real orgs)
-    let chunks = vec![
-        github_issue(
-            "100",
-            "Auth token expires too early",
-            "JWT authentication tokens expire after 30 minutes instead of 24 hours in production",
-            &["bug"],
-            vec!["src/auth/jwt.rs"],
-        ),
-        jira_ticket(
-            "PROJ-50",
-            "Authentication token expiry broken",
-            "JWT authentication tokens expire after 30 minutes instead of the expected 24 hours",
-            &["bug", "defect"],
-            vec!["src/auth/jwt.rs"],
-        ),
-        github_issue(
-            "101",
-            "Homepage loads slowly",
-            "The main page takes 5 seconds to load due to unoptimized database queries",
-            &["performance"],
-            vec!["src/api/home.rs"],
-        ),
-    ];
-
-    let keywords = vec!["authentication".into(), "token".into(), "expiry".into()];
-    let scores = compute_ecs_scores(&chunks, &keywords, &[0, 0, 0], &EcsWeights::default());
-
-    // MIG should detect the duplicates and pick only one auth issue
-    let selected = mig_select(&scores, &chunks, 2, 0.6);
-    assert_eq!(selected.len(), 2);
-
-    let auth_count = selected
-        .iter()
-        .filter(|&&i| {
-            chunks[i].symbol_name.contains("Auth")
-                || chunks[i].symbol_name.contains("Authentication")
-        })
-        .count();
-    assert!(
-        auth_count <= 1,
-        "MIG should deduplicate near-identical auth issues from GitHub and Jira"
-    );
-
-    // Should include the homepage issue for diversity
-    assert!(
-        selected
-            .iter()
-            .any(|&i| chunks[i].symbol_name.contains("Homepage")),
-        "Should include the diverse homepage issue"
-    );
-}

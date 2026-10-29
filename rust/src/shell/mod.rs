@@ -1,5 +1,7 @@
 pub(crate) mod agent_wrapper;
 pub mod compress;
+#[cfg(unix)]
+pub(crate) mod containment;
 pub(crate) mod exec;
 pub(crate) mod exit_status;
 mod interactive;

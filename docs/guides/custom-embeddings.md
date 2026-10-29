@@ -1,6 +1,6 @@
 # Custom Embedding Models (`hf:org/repo`)
 
-`ctx_semantic_search` ships three built-in ONNX models — but every team's corpus is
+`ctx_search action="semantic"` ships three built-in ONNX models — but every team's corpus is
 different. Since GL #397 you can point lean-ctx at **any HuggingFace repo with an ONNX
 export**, fully local, no API keys:
 

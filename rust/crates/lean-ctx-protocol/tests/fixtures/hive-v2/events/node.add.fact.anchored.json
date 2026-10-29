@@ -1,0 +1,62 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqce",
+  "body": {
+    "anchors": [
+      {
+        "commit": "3e9f0c1a7b5d2e4f6a8b0c1d2e3f4a5b6c7d8e9f",
+        "digest": "a2cbed1079cadf4df4f7d54e9517e7934ebc5efc8aecc91519728a984b407a6f",
+        "ref": "sym:services/payments/retry.rs::backoff"
+      }
+    ],
+    "applies_to": [
+      "sym:services/payments/retry.rs::backoff"
+    ],
+    "body_nonce": "11111111111111111111111111111111",
+    "evidence": "observed",
+    "sensitivity": "internal",
+    "statement": "The retry backoff is computed in one function and capped at 64 seconds of jitter."
+  },
+  "body_commit": "4c144dd781eaa54d4ba7cc9574d6bebce7139fa1eace2964a8a5cc948bfd4757",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 16,
+  "event_id": "01M5NKAJK8005000000000W00H",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800017000
+  },
+  "key_id": "47983724220c8521",
+  "node_type": "fact",
+  "op": "node.add",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800017350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 17,
+  "signature": "9b42d0d7b9f2442a9b1201dc316ebf0eb187b29b974e14edce997b09b0a0e8d41c5a9c19808a423300a0b617516bb1c5f92a0fd96c7717f80f27754a3d51c408",
+  "target": "n_7chq56yvwzef6tv2modcu3oaxw",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

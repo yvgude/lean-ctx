@@ -160,6 +160,7 @@ fn inspect(root: &Path) -> Output {
         .unwrap()
 }
 
+#[track_caller]
 fn success(output: &Output) -> Value {
     assert!(
         output.status.success(),
@@ -208,7 +209,7 @@ fn invalid_live_state_is_rejected_before_package_publication() {
             .insert(key.into(), replacement);
         let rejected = seal(directory.path(), &input);
         assert!(!rejected.status.success(), "accepted {pointer}");
-        assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
+        assert_eq!(rejected.stdout, [] as [u8; 0]);
         assert!(!directory.path().join("state.ctxpkg").exists());
     }
 }
@@ -236,7 +237,7 @@ fn unsupported_versions_and_incomplete_canonical_values_fail_closed() {
             !rejected.status.success(),
             "accepted {wrapper}/{live}/{remove_updated_at}"
         );
-        assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
+        assert_eq!(rejected.stdout, [] as [u8; 0]);
         assert!(!directory.path().join("state.ctxpkg").exists());
     }
 }
@@ -252,7 +253,7 @@ fn modified_signed_checkpoint_is_not_returned_as_verified_state() {
     std::fs::write(&path, serde_json::to_vec(&document).unwrap()).unwrap();
     let rejected = inspect(directory.path());
     assert!(!rejected.status.success());
-    assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
+    assert_eq!(rejected.stdout, [] as [u8; 0]);
 }
 
 fn host_call(root: &Path, arguments: &[&str], request: &Value, settings: &Value) -> Output {
@@ -430,7 +431,7 @@ fn host_checkpoint_binds_real_receipts_and_requires_distinct_signing_authority()
         }
         let rejected = host_call(root, &["context-checkpoint", "--json"], &attempt, &grant);
         assert!(!rejected.status.success(), "accepted case {case}");
-        assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
+        assert_eq!(rejected.stdout, [] as [u8; 0]);
         assert_eq!(
             std::fs::read_dir(artifact.parent().unwrap())
                 .unwrap()
@@ -477,7 +478,7 @@ fn exercise_v2_carrier(root: &Path, checkpoint: &Value) {
             !rejected.status.success(),
             "accepted version mismatch {case}"
         );
-        assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
+        assert_eq!(rejected.stdout, [] as [u8; 0]);
         assert_eq!(std::fs::read(&path).unwrap(), bytes);
     }
 }
@@ -604,7 +605,7 @@ fn exercise_checkpoint_resume(root: &Path, exported: &Value, settings: &Value, a
             &denied,
         );
         assert!(!rejected.status.success(), "accepted resume case {case}");
-        assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
+        assert_eq!(rejected.stdout, [] as [u8; 0]);
         assert_eq!(std::fs::read(&pointer_path).unwrap(), pointer);
         assert_eq!(
             std::fs::read_dir(root.join("data/sessions"))
@@ -626,7 +627,7 @@ fn exercise_checkpoint_resume(root: &Path, exported: &Value, settings: &Value, a
     let bad = json!({"schema_version":1,"artifact_digest":format!("sha256:{hash}")});
     let rejected = host_call(root, &["context-checkpoint-resume", "--json"], &bad, &grant);
     assert!(!rejected.status.success());
-    assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
+    assert_eq!(rejected.stdout, [] as [u8; 0]);
     assert_eq!(std::fs::read(&pointer_path).unwrap(), pointer);
     assert_eq!(std::fs::read(&session_path).unwrap(), session_bytes);
     exercise_canonical_writes(root, &request, &grant, &source_bytes, artifact, legacy_id);
@@ -795,7 +796,7 @@ fn exercise_canonical_writes(
         .output()
         .unwrap();
     assert!(!refused.status.success());
-    assert!(refused.stdout.is_empty(), "{:?}", refused.stdout);
+    assert_eq!(refused.stdout, [] as [u8; 0]);
     assert!(
         String::from_utf8_lossy(&refused.stderr).contains("engine_artifact_"),
         "{}",
@@ -912,7 +913,7 @@ fn exercise_canonical_writes(
         .output()
         .unwrap();
     assert!(!refusal.status.success());
-    assert!(refusal.stdout.is_empty(), "{:?}", refusal.stdout);
+    assert_eq!(refusal.stdout, [] as [u8; 0]);
     assert_eq!(std::fs::read(&path).unwrap(), latest);
     assert_eq!(std::fs::read(artifact).unwrap(), source);
     exercise_v2_reauthorization(root, &canonical_grant, &transported);
@@ -938,7 +939,7 @@ fn exercise_session_carrier(root: &Path, id: &str, legacy_id: &str, checkpoint: 
         }
         let rejected = attempt.output().unwrap();
         assert!(!rejected.status.success());
-        assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
+        assert_eq!(rejected.stdout, [] as [u8; 0]);
         assert!(!output.exists());
     }
     let outside = tempfile::tempdir().unwrap();
@@ -955,7 +956,7 @@ fn exercise_session_carrier(root: &Path, id: &str, legacy_id: &str, checkpoint: 
         "export outside the project root must be refused; stderr: {}",
         String::from_utf8_lossy(&rejected.stderr)
     );
-    assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
+    assert_eq!(rejected.stdout, [] as [u8; 0]);
     assert!(!denied_path.exists());
     success(&command(id).env("LEAN_CTX_ROLE", "admin").output().unwrap());
     let inspected = success(
@@ -978,7 +979,7 @@ fn exercise_session_carrier(root: &Path, id: &str, legacy_id: &str, checkpoint: 
         .output()
         .unwrap();
     assert!(!ambiguous.status.success());
-    assert!(ambiguous.stdout.is_empty(), "{:?}", ambiguous.stdout);
+    assert_eq!(ambiguous.stdout, [] as [u8; 0]);
     assert_eq!(std::fs::read(&output).unwrap(), bytes);
     let mut tampered: Value = serde_json::from_slice(&bytes).unwrap();
     tampered["content"]["checkpoint"]["checkpoint"]["live_state"]["findings"] =
@@ -990,7 +991,7 @@ fn exercise_session_carrier(root: &Path, id: &str, legacy_id: &str, checkpoint: 
         .output()
         .unwrap();
     assert!(!rejected.status.success());
-    assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
+    assert_eq!(rejected.stdout, [] as [u8; 0]);
     inspected["checkpoint"]["checkpoint"].clone()
 }
 
@@ -1034,7 +1035,7 @@ fn exercise_v2_reauthorization(root: &Path, grant: &Value, transported: &Value) 
             !rejected.status.success(),
             "accepted V2 reauthorization case {case}"
         );
-        assert!(rejected.stdout.is_empty(), "{:?}", rejected.stdout);
+        assert_eq!(rejected.stdout, [] as [u8; 0]);
         assert_eq!(std::fs::read_dir(&artifacts).unwrap().count(), count);
         assert_eq!(std::fs::read(&pointer).unwrap(), previous_pointer);
     }

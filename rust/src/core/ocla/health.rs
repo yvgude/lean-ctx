@@ -10,7 +10,6 @@ use crate::core::a2a::dlq::DeadLetterQueue;
 use super::capsule::global_capsule_store;
 use super::registry::OclaRegistry;
 use super::response_cache::global_response_cache;
-use super::tracing::initialized_collector;
 use super::types::{OCLA_API_VERSION, OclaCapability, OclaCapabilityKind, OclaCapabilityStatus};
 use super::unified_ledger::{FileUnifiedLedger, UnifiedLedger};
 
@@ -45,8 +44,6 @@ pub struct DlqHealthDetails {
     pub misses: Option<u64>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub evictions: Option<u64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub span_count: Option<usize>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Serialize)]
@@ -78,7 +75,7 @@ pub struct SystemHealth {
 pub fn check_system_health() -> SystemHealth {
     let started_at = STARTED_AT.get_or_init(Instant::now);
     let registry = OclaRegistry::global();
-    let mut components = Vec::with_capacity(OclaCapabilityKind::ALL.len() + 7);
+    let mut components = Vec::with_capacity(OclaCapabilityKind::ALL.len() + 6);
 
     components.push(poll_capability("observation_hook", || {
         registry.observation_hook.capability()
@@ -146,7 +143,6 @@ pub fn check_system_health() -> SystemHealth {
     components.push(check_dlq(dead_letter_queue()));
     components.push(check_capsule_store());
     components.push(check_response_cache());
-    components.push(check_tracing());
 
     let overall = aggregate_statuses(&components);
     SystemHealth {
@@ -303,23 +299,6 @@ fn check_response_cache() -> ComponentHealth {
     }
 }
 
-fn check_tracing() -> ComponentHealth {
-    let started_at = Instant::now();
-    let (status, span_count) = match initialized_collector() {
-        Some(collector) => (HealthStatus::Healthy, collector.span_count()),
-        None => (HealthStatus::Healthy, 0),
-    };
-    ComponentHealth {
-        name: "tracing".into(),
-        status,
-        latency_ms: Some(started_at.elapsed().as_millis() as u64),
-        details: Some(DlqHealthDetails {
-            span_count: Some(span_count),
-            ..Default::default()
-        }),
-    }
-}
-
 fn aggregate_statuses(components: &[ComponentHealth]) -> HealthStatus {
     if let Some(reason) = components
         .iter()
@@ -374,17 +353,6 @@ mod tests {
                 .components
                 .iter()
                 .any(|component| { component.name == "response_cache" })
-        );
-    }
-
-    #[test]
-    fn health_includes_tracing() {
-        let report = check_system_health();
-        assert!(
-            report
-                .components
-                .iter()
-                .any(|component| { component.name == "tracing" })
         );
     }
 
@@ -453,7 +421,7 @@ mod tests {
         let report = check_system_health();
         assert_eq!(
             report.components.len(),
-            OclaCapabilityKind::ALL.len() + 6 + OclaRegistry::global().adapters.len()
+            OclaCapabilityKind::ALL.len() + 5 + OclaRegistry::global().adapters.len()
         );
         assert!(
             report

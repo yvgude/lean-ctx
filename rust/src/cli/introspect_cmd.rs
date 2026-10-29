@@ -2,7 +2,7 @@
 //! actually active at runtime. Reads the shared activity registry persisted by
 //! the running server (see [`crate::core::introspect`]).
 
-use crate::core::{introspect, qubo_select};
+use crate::core::introspect;
 
 pub(crate) fn cmd_introspect(args: &[String]) {
     let json = args.iter().any(|a| a == "--json");
@@ -19,26 +19,10 @@ pub(crate) fn cmd_introspect(args: &[String]) {
                 print!("{}", introspect::format_report());
             }
         }
-        "qubo" => run_qubo_benchmark(),
         other => {
             eprintln!("Unknown introspect target: {other}");
-            eprintln!("Usage: lean-ctx introspect <cognition|qubo> [--json]");
+            eprintln!("Usage: lean-ctx introspect [cognition] [--json]");
             std::process::exit(2);
         }
-    }
-}
-
-/// `lean-ctx introspect qubo` — run the experimental QUBO-vs-greedy selection
-/// benchmark (#10) on a deterministic synthetic problem and print the report.
-/// This is a research spike: greedy remains the production default regardless.
-fn run_qubo_benchmark() {
-    let (items, budget) = qubo_select::synthetic_problem();
-    let report = qubo_select::benchmark(&items, budget);
-    println!("{}", report.format());
-    if !qubo_select::is_enabled() {
-        println!(
-            "\nnote: QUBO is a benchmark spike and is NOT used for selection.\n\
-             set LEAN_CTX_EXPERIMENTAL_QUBO=1 to opt into experiments."
-        );
     }
 }

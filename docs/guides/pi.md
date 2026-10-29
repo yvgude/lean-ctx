@@ -84,15 +84,13 @@ This spawns lean-ctx as an embedded MCP server and registers additional tools:
 |------|---------|
 | `ctx_session` | Session state management and persistence |
 | `ctx_knowledge` | Project knowledge graph with temporal validity |
-| `ctx_semantic_search` | Find code by meaning, not exact text |
-| `ctx_overview` | Codebase overview and architecture analysis |
-| `ctx_repomap` | PageRank-based repo map (most important symbols) |
+| `ctx_search` | `action="semantic"` finds code by meaning, `action="symbol"` a definition |
+| `ctx_compose` | Task-ranked files, symbols and structure in one call |
+| `ctx_graph` | File dependency graph: blast radius (`impact`), chains (`path`), diagrams |
 | `ctx_callgraph` | Multi-hop call graph traversal and risk analysis |
-| `ctx_impact` | Blast radius analysis for code changes |
 | `ctx_pack` | Context packaging (export project as AI-friendly format) |
 | `ctx_compress` | Manual compression control |
 | `ctx_metrics` | Token savings dashboard |
-| `ctx_multi_read` | Batch file reads |
 
 ### Tool surface: lean / standard / power
 
@@ -195,10 +193,10 @@ Best for complex tasks — full lean-ctx power:
 You (in Pi): "Understand the architecture and find what's affected by changing the User model"
 
 Pi uses:
-  ctx_overview                  → project architecture
-  ctx_repomap                   → most important symbols
+  ctx_compose task="User model" → task-ranked files and symbols
+  ctx_graph action=impact path=src/models/user.rs → dependent files
   ctx_callgraph action=risk symbol=User → impact analysis
-  ctx_semantic_search query="user model" → find related code
+  ctx_search action=semantic query="user model" → find related code
   ctx_knowledge recall          → previous findings about User
 ```
 

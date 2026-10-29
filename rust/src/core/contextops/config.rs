@@ -87,8 +87,16 @@ impl RulesConfig {
                 let key = status.name.to_lowercase().replace(' ', "_");
                 let path = Path::new(&status.path);
                 if let Ok(content) = std::fs::read_to_string(path) {
+                    // The user's own lines are copied into `rules.toml`, a
+                    // persisted artefact of the project: stored bytes are the
+                    // text admitted for a derived store (E3). Lines that are
+                    // withheld or restricted are not exported; the agent file
+                    // itself is neither changed nor rewritten here.
                     let extra = extract_user_content(&content);
-                    if !extra.is_empty() {
+                    if !extra.is_empty()
+                        && let Ok(extra) =
+                            crate::core::context_admission::carrier::admit_for_store(&extra)
+                    {
                         agent_rules.insert(key, AgentRules { extra });
                     }
                 }

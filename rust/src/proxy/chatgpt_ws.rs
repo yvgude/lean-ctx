@@ -32,6 +32,9 @@ use tokio_tungstenite::tungstenite::protocol::CloseFrame as TCloseFrame;
 use tokio_tungstenite::{MaybeTlsStream, WebSocketStream};
 
 use super::ProxyState;
+use super::admitted::{self, GatewayRefusal, Payload, TextAdmission};
+use super::chatgpt::BACKEND_PROVIDER;
+use crate::core::context_admission::egress::{EgressTarget, TrustedDestinationBinding};
 
 /// True when `headers` describe a WebSocket upgrade (`Connection: Upgrade` +
 /// `Upgrade: websocket`, both case-insensitive). Lets the `/backend-api`
@@ -56,18 +59,24 @@ pub(super) fn is_websocket_upgrade(headers: &HeaderMap) -> bool {
 /// user-agent, the `x-openai-*`/`x-codex-*` identity set, subprotocol) is
 /// forwarded so chatgpt.com sees the same request Codex would have sent direct.
 fn is_handshake_header(name: &HeaderName) -> bool {
-    matches!(
-        name.as_str().to_ascii_lowercase().as_str(),
-        "host"
-            | "connection"
-            | "upgrade"
-            | "content-length"
-            | "content-type"
-            | "sec-websocket-key"
-            | "sec-websocket-version"
-            | "sec-websocket-accept"
-            | "sec-websocket-extensions"
-    )
+    let lower = name.as_str().to_ascii_lowercase();
+    // Not handshake headers, but never forwarded either: `x-leanctx-*` is
+    // this proxy's own namespace (project path, ids, presenter capability),
+    // and this tunnel passes everything it does not name — so the whole
+    // prefix is named, not a list that can go stale.
+    lower.starts_with(super::chatgpt::LEANCTX_INTERNAL_HEADER_PREFIX)
+        || matches!(
+            lower.as_str(),
+            "host"
+                | "connection"
+                | "upgrade"
+                | "content-length"
+                | "content-type"
+                | "sec-websocket-key"
+                | "sec-websocket-version"
+                | "sec-websocket-accept"
+                | "sec-websocket-extensions"
+        )
 }
 
 fn capture_forward_headers(headers: &HeaderMap) -> Vec<(HeaderName, HeaderValue)> {
@@ -113,12 +122,54 @@ pub(super) async fn passthrough(state: ProxyState, req: Request<Body>) -> Respon
         .path_and_query()
         .map_or("/backend-api", PathAndQuery::as_str)
         .to_string();
-    let Some(ws_url) = to_ws_url(&state.chatgpt_upstream(), &path) else {
+    let upstream_base = state.chatgpt_upstream();
+    let Some(ws_url) = to_ws_url(&upstream_base, &path) else {
         return (StatusCode::BAD_GATEWAY, "invalid ChatGPT upstream").into_response();
     };
-
-    let forwarded = capture_forward_headers(&parts.headers);
-    let cf_cookie = state.chatgpt_cookie_header();
+    // The caller as the upgrade presented it: every frame is admitted for it.
+    let principal = super::forward::sealed_principal(&parts);
+    // The handshake's relayed headers, final before anything is decided:
+    // the channel's receipt binds them (AP10-C2).
+    let mut handshake = HeaderMap::new();
+    for (name, value) in capture_forward_headers(&parts.headers) {
+        handshake.insert(name, value);
+    }
+    if let Some(cf_cookie) = state.chatgpt_cookie_header() {
+        merge_cookie(&mut handshake, &cf_cookie);
+    }
+    // The tunnel is an egress channel to the configured upstream. Before the
+    // upgrade is accepted or anything connects, the path, query and relayed
+    // header values the handshake carries are admitted (AP10-C2) — first, so
+    // a refused target leaves no prepared channel receipt behind — and then
+    // the placement rules, in the receipt that binds the handshake.
+    let target = tunnel_target(&upstream_base);
+    let head = admitted::RequestHead::new(
+        axum::http::Method::GET,
+        handshake
+            .iter()
+            .map(|(name, value)| (name.clone(), value.clone())),
+    );
+    let decided = async {
+        admitted::admit_request_target(
+            &path,
+            &handshake,
+            &target,
+            TrustedDestinationBinding::default(),
+            principal.as_deref(),
+        )
+        .await?;
+        admitted::admit_channel(
+            &target,
+            TrustedDestinationBinding::default(),
+            principal.as_deref(),
+            &ws_url,
+            &head,
+        )
+        .await
+    };
+    if let Err(refusal) = decided.await {
+        return refusal.response(BACKEND_PROVIDER);
+    }
 
     let ws = match WebSocketUpgrade::from_request_parts(&mut parts, &state).await {
         Ok(ws) => ws,
@@ -126,48 +177,150 @@ pub(super) async fn passthrough(state: ProxyState, req: Request<Body>) -> Respon
     };
 
     ws.on_upgrade(move |client| async move {
-        if let Err(err) = tunnel(client, ws_url, forwarded, cf_cookie).await {
-            tracing::warn!("lean-ctx proxy: ChatGPT WebSocket passthrough failed: {err}");
+        let tunnelled = tunnel(client, ws_url, &upstream_base, principal, handshake);
+        if let Err(err) = tunnelled.await {
+            tracing::warn!(
+                "lean-ctx proxy: ChatGPT WebSocket passthrough failed: {}",
+                handshake_failure(&err)
+            );
         }
     })
+}
+
+/// The kind of a failed upstream handshake, for logs (AP10-R4). A
+/// tungstenite error can print the request URL with its query, or the
+/// upstream's HTTP response; the log line names the kind only.
+fn handshake_failure(error: &tokio_tungstenite::tungstenite::Error) -> &'static str {
+    use tokio_tungstenite::tungstenite::Error;
+    match error {
+        Error::Io(_) => "connection failure",
+        Error::Url(_) => "invalid upstream url",
+        Error::Http(response) if response.status().is_client_error() => "upstream refused (4xx)",
+        Error::Http(_) => "upstream refused",
+        Error::HttpFormat(_) => "invalid handshake request",
+        Error::ConnectionClosed | Error::AlreadyClosed => "connection closed",
+        _ => "protocol failure",
+    }
+}
+
+fn tunnel_target(upstream_base: &str) -> EgressTarget<'_> {
+    EgressTarget {
+        provider: BACKEND_PROVIDER,
+        model: None,
+        upstream_base,
+    }
+}
+
+/// A client frame the gateway admitted for the tunnel's upstream, with the
+/// receipt it is bound to (`None`: a control frame, which carries no
+/// context). The relay can only send these.
+struct AdmittedFrame(TMessage, Option<admitted::BoundDelivery>);
+
+impl AdmittedFrame {
+    /// Hand the frame to the upstream socket: the authority it was admitted
+    /// under is proved immediately before the send (AP10-R1), and the send is
+    /// observed against the frame's receipt after it (AP10-C7). `Ok(false)`:
+    /// the socket is gone.
+    async fn send<S>(self, upstream_tx: &mut S) -> Result<bool, GatewayRefusal>
+    where
+        S: futures::Sink<TMessage> + Unpin,
+    {
+        let Self(message, bound) = self;
+        if let Some(bound) = &bound {
+            bound.verify_current()?;
+        }
+        let sent = upstream_tx.send(message).await.is_ok();
+        if let Some(bound) = &bound {
+            bound.observe_frame(sent).await?;
+        }
+        Ok(sent)
+    }
+}
+
+/// Admit one client frame before it leaves. Text is admitted as one object
+/// and forwarded unchanged or masked — one frame in, one frame out. A binary
+/// frame cannot be inspected: it is an opaque payload, forwarded marked as
+/// such in developer mode and refused in governed and sovereign mode.
+/// Control frames carry no context. Each admitted frame is bound to its own
+/// receipt under the authority current at that moment.
+async fn admit_frame(
+    msg: AxumMessage,
+    upstream_base: &str,
+    principal: Option<&str>,
+) -> Result<AdmittedFrame, GatewayRefusal> {
+    let target = tunnel_target(upstream_base);
+    let binding = TrustedDestinationBinding::default();
+    match msg {
+        AxumMessage::Text(text) if !text.is_empty() => {
+            let TextAdmission {
+                admission,
+                rewritten,
+            } = admitted::admit_text(text.as_str(), &target, binding, principal)?;
+            let delivered = rewritten.unwrap_or_else(|| text.as_str().to_owned());
+            let bound =
+                admitted::bind_delivery(admission, delivered.as_bytes(), text.len()).await?;
+            Ok(AdmittedFrame(
+                TMessage::Text(delivered.as_str().into()),
+                Some(bound),
+            ))
+        }
+        AxumMessage::Binary(data) if !data.is_empty() => {
+            let admission =
+                admitted::admit_as(Payload::Opaque(data.len()), &target, binding, principal)?;
+            let bound = admitted::bind_delivery(admission, &data, data.len()).await?;
+            Ok(AdmittedFrame(TMessage::Binary(data), Some(bound)))
+        }
+        other => Ok(AdmittedFrame(axum_to_tungstenite(other), None)),
+    }
 }
 
 async fn tunnel(
     client: WebSocket,
     ws_url: String,
-    forwarded: Vec<(HeaderName, HeaderValue)>,
-    cf_cookie: Option<String>,
+    upstream_base: &str,
+    principal: Option<String>,
+    handshake: HeaderMap,
 ) -> Result<(), tokio_tungstenite::tungstenite::Error> {
     let mut request = ws_url.into_client_request()?;
-    {
-        let headers = request.headers_mut();
-        for (name, value) in forwarded {
-            headers.insert(name, value);
-        }
-        if let Some(cf) = cf_cookie {
-            merge_cookie(headers, &cf);
-        }
-    }
+    // Exactly the bound header set, beside what the protocol generates.
+    request.headers_mut().extend(handshake);
 
     let (upstream, _response) = tokio_tungstenite::connect_async(request).await?;
-    relay(client, upstream).await;
+    relay(client, upstream, upstream_base, principal.as_deref()).await;
     Ok(())
 }
 
-async fn relay(client: WebSocket, upstream: WebSocketStream<MaybeTlsStream<TcpStream>>) {
+/// RFC 6455 close code for a message that violates the endpoint's policy.
+const CLOSE_POLICY_VIOLATION: u16 = 1008;
+
+async fn relay(
+    client: WebSocket,
+    upstream: WebSocketStream<MaybeTlsStream<TcpStream>>,
+    upstream_base: &str,
+    principal: Option<&str>,
+) {
     let (mut client_tx, mut client_rx) = client.split();
     let (mut upstream_tx, mut upstream_rx) = upstream.split();
 
+    // Ends with the refusal when the gateway did not admit a client frame;
+    // that frame and everything after it stays on this machine.
     let client_to_upstream = async {
         while let Some(Ok(msg)) = client_rx.next().await {
             let closing = matches!(msg, AxumMessage::Close(_));
-            if upstream_tx.send(axum_to_tungstenite(msg)).await.is_err() {
-                break;
+            let sent = match admit_frame(msg, upstream_base, principal).await {
+                Ok(frame) => frame.send(&mut upstream_tx).await,
+                Err(refusal) => Err(refusal),
+            };
+            match sent {
+                Ok(true) => {}
+                Ok(false) => break,
+                Err(refusal) => return Some(refusal),
             }
             if closing {
                 break;
             }
         }
+        None
     };
 
     let upstream_to_client = async {
@@ -187,9 +340,18 @@ async fn relay(client: WebSocket, upstream: WebSocketStream<MaybeTlsStream<TcpSt
 
     // Either side closing tears down the other: dropping the unfinished future
     // releases its socket half, which closes the connection.
-    tokio::select! {
-        () = client_to_upstream => {},
-        () = upstream_to_client => {},
+    let refusal = tokio::select! {
+        refusal = client_to_upstream => refusal,
+        () = upstream_to_client => None,
+    };
+    if let Some(refusal) = refusal {
+        // Tell the client why the tunnel ends: a typed, content-free close.
+        let _ = client_tx
+            .send(AxumMessage::Close(Some(AxumCloseFrame {
+                code: CLOSE_POLICY_VIOLATION,
+                reason: refusal.close_reason().as_str().into(),
+            })))
+            .await;
     }
 }
 
@@ -284,8 +446,22 @@ mod tests {
             HeaderValue::from_static("Bearer chatgpt-token"),
         );
         headers.insert("x-codex-installation-id", HeaderValue::from_static("abc"));
+        // The proxy's own namespace, in a spelling a client might send and
+        // with a name no list in this file knows.
+        for internal in ["X-LeanCTX-Project", "x-leanctx-agent-id", "x-leanctx-later"] {
+            headers.insert(
+                HeaderName::from_bytes(internal.as_bytes()).expect("header name"),
+                HeaderValue::from_static("internal"),
+            );
+        }
 
         let forwarded = capture_forward_headers(&headers);
+        assert!(
+            !forwarded
+                .iter()
+                .any(|(name, _)| name.as_str().starts_with("x-leanctx-")),
+            "no x-leanctx-* header leaves the proxy"
+        );
         let names: Vec<String> = forwarded
             .iter()
             .map(|(n, _)| n.as_str().to_string())
@@ -331,18 +507,17 @@ mod tests {
         assert!(matches!(back, AxumMessage::Binary(b) if b.as_ref() == [1, 2, 3]));
     }
 
-    /// End-to-end: a WebSocket client → proxy `/backend-api` → upstream echo
-    /// server. Proves the handshake is tunnelled and frames relay both ways,
-    /// which is exactly what Codex Desktop remote-control pairing needs (#597).
-    #[tokio::test]
-    async fn tunnels_websocket_through_backend_api_to_upstream() {
+    use std::time::Duration;
+    use tokio_tungstenite::tungstenite::Message;
+
+    /// A WebSocket client connected through the proxy's `/backend-api` rail
+    /// to an upstream that echoes every text and binary frame it receives.
+    async fn client_through_tunnel() -> WebSocketStream<MaybeTlsStream<TcpStream>> {
         use std::sync::Arc;
-        use std::time::Duration;
 
         use axum::Router;
         use axum::routing::any;
         use tokio::net::TcpListener;
-        use tokio_tungstenite::tungstenite::Message;
 
         // Upstream echo WS server, addressed exactly like chatgpt.com would be.
         let upstream_listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
@@ -385,9 +560,6 @@ mod tests {
             chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(
             ),
             mcp_servers: Arc::new(Vec::new()),
-            web_app_tracker: Arc::new(std::sync::Mutex::new(
-                crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
-            )),
         };
         let app = Router::new()
             .route(
@@ -401,15 +573,34 @@ mod tests {
             axum::serve(proxy_listener, app).await.unwrap();
         });
 
-        // Client connects to the proxy and round-trips a frame each way.
         let url = format!("ws://{proxy_addr}/backend-api/wham/connect");
-        let (mut client, _resp) = tokio::time::timeout(
+        tokio::time::timeout(
             Duration::from_secs(3),
             tokio_tungstenite::connect_async(url),
         )
         .await
         .expect("handshake must complete")
-        .expect("proxy must tunnel the upgrade to the upstream");
+        .expect("proxy must tunnel the upgrade to the upstream")
+        .0
+    }
+
+    async fn next_frame(client: &mut WebSocketStream<MaybeTlsStream<TcpStream>>) -> Message {
+        tokio::time::timeout(Duration::from_secs(3), client.next())
+            .await
+            .expect("a frame must arrive")
+            .expect("stream open")
+            .expect("valid frame")
+    }
+
+    /// End-to-end: a WebSocket client → proxy `/backend-api` → upstream echo
+    /// server. Proves the handshake is tunnelled and frames relay both ways,
+    /// which is exactly what Codex Desktop remote-control pairing needs (#597).
+    #[tokio::test]
+    async fn tunnels_websocket_through_backend_api_to_upstream() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        // Client connects to the proxy and round-trips a frame each way.
+        let mut client = client_through_tunnel().await;
 
         client
             .send(Message::Text("remote-control".into()))
@@ -430,5 +621,182 @@ mod tests {
             .expect("stream open")
             .expect("valid frame");
         assert_eq!(echoed, binary);
+    }
+
+    /// The tunnel is an egress carrier (P1): a text frame leaves masked, in
+    /// one frame, and a frame the gateway cannot inspect ends the tunnel with
+    /// a typed close in governed mode instead of reaching the upstream.
+    #[tokio::test]
+    async fn tunnelled_frames_are_admitted_before_they_leave() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let config = crate::core::paths::config_dir_read_only().expect("config directory");
+        std::fs::create_dir_all(&config).expect("config directory");
+        std::fs::write(
+            config.join("config.toml"),
+            "[context_gateway]\nmode = \"governed\"\n",
+        )
+        .expect("governed config");
+        let key = concat!("AK", "IAIOSFODNN7EXAMPLE");
+        let mut client = client_through_tunnel().await;
+
+        client
+            .send(Message::Text(format!("pair with {key} now").into()))
+            .await
+            .unwrap();
+        let Message::Text(echoed) = next_frame(&mut client).await else {
+            panic!("the upstream echoes one text frame per text frame");
+        };
+        assert!(
+            !echoed.as_str().contains(key),
+            "the upstream received the raw value: {echoed}"
+        );
+        assert!(echoed.as_str().contains("pair with"), "{echoed}");
+
+        client
+            .send(Message::Binary(vec![0xff, 0x00, 0x7f].into()))
+            .await
+            .unwrap();
+        let Message::Close(Some(close)) = next_frame(&mut client).await else {
+            panic!("an uninspectable frame must end the tunnel, not be echoed by the upstream");
+        };
+        assert_eq!(u16::from(close.code), CLOSE_POLICY_VIOLATION);
+        assert!(
+            close.reason.as_str().contains("egress.opaque_payload"),
+            "the close names its reason: {}",
+            close.reason
+        );
+    }
+
+    fn governed(extra: &str) {
+        let config = crate::core::paths::config_dir_read_only().expect("config directory");
+        std::fs::create_dir_all(&config).expect("config directory");
+        std::fs::write(
+            config.join("config.toml"),
+            format!("[context_gateway]\nmode = \"governed\"\n{extra}"),
+        )
+        .expect("governed config");
+    }
+
+    /// AP10-R2 (candidate, not reproduced): the tunnel admits with the
+    /// default destination binding, which carries no account or region. A
+    /// placement rule that names an account and region for this very
+    /// provider must therefore refuse the channel and every frame, never
+    /// pass them for lack of a binding to compare.
+    #[tokio::test]
+    async fn an_account_and_region_rule_refuses_the_unbound_tunnel() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let config = crate::core::paths::config_dir_read_only().expect("config directory");
+        std::fs::create_dir_all(&config).expect("config directory");
+        std::fs::write(
+            config.join("config.toml"),
+            "[[context_gateway.allowed_destinations]]\nprovider = \"chatgpt\"\n\
+             locality = \"remote\"\norganization_managed = false\n\
+             account_ref = \"production-account\"\nregion = \"eu-west-1\"\n",
+        )
+        .expect("destination allow-list config");
+        let upstream = "https://chatgpt.com";
+        let head = admitted::RequestHead::new(axum::http::Method::GET, []);
+        let refused = admitted::admit_channel(
+            &tunnel_target(upstream),
+            TrustedDestinationBinding::default(),
+            None,
+            "wss://chatgpt.com/backend-api/wham/connect",
+            &head,
+        )
+        .await
+        .expect_err("no account or region is bound");
+        assert!(
+            refused
+                .close_reason()
+                .contains("destination.constraint_unsatisfied"),
+            "{refused:?}"
+        );
+        let Err(refused) = admit_frame(AxumMessage::Text("pair".into()), upstream, None).await
+        else {
+            panic!("a frame left for an unbound destination");
+        };
+        assert!(
+            refused
+                .close_reason()
+                .contains("destination.constraint_unsatisfied")
+        );
+    }
+
+    /// AP10-R1: a frame was sealed under one policy and handed to the socket
+    /// after an await, with no proof in between — the policy could change
+    /// there and the frame still left. Sealed, then the policy changes, then
+    /// the send: refused, and the socket received nothing.
+    #[tokio::test]
+    async fn a_frame_sealed_under_an_old_policy_is_not_sent() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        governed("");
+        let frame = admit_frame(
+            AxumMessage::Text("pairing frame".into()),
+            "http://127.0.0.1:9",
+            None,
+        )
+        .await
+        .expect("admitted under the current policy");
+        governed("secrets = \"block\"\n");
+        let (mut upstream, mut received) = futures::channel::mpsc::unbounded::<TMessage>();
+        let refusal = frame
+            .send(&mut upstream)
+            .await
+            .expect_err("the authority is no longer current");
+        assert!(
+            refusal.close_reason().contains("policy.changed"),
+            "{refusal:?}"
+        );
+        assert!(received.try_recv().is_err(), "nothing reached the socket");
+    }
+
+    /// AP10-C7: a tunnelled frame left without any transport observation.
+    /// Now each send is observed against the frame's receipt; where the
+    /// receipt is owed and the observation cannot be saved, the channel
+    /// refuses to go on.
+    #[tokio::test]
+    async fn an_owed_frame_observation_that_cannot_be_saved_ends_the_channel() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        governed("");
+        let observations = crate::core::data_dir::lean_ctx_data_dir()
+            .expect("data dir")
+            .join("gateway/egress/observations");
+        std::fs::create_dir_all(observations.parent().expect("egress dir")).expect("egress dir");
+        std::fs::write(&observations, b"obstructed").expect("obstruct the observation store");
+        let (mut upstream, mut received) = futures::channel::mpsc::unbounded::<TMessage>();
+
+        let frame = admit_frame(
+            AxumMessage::Text("first".into()),
+            "http://127.0.0.1:9",
+            None,
+        )
+        .await
+        .expect("admitted");
+        let refusal = frame
+            .send(&mut upstream)
+            .await
+            .expect_err("no evidence, no further frames");
+        assert!(
+            refusal
+                .close_reason()
+                .contains("receipt.observation_unavailable"),
+            "{refusal:?}"
+        );
+        assert!(received.try_recv().is_ok(), "the frame itself had left");
+
+        std::fs::remove_file(&observations).expect("clear the obstruction");
+        let frame = admit_frame(
+            AxumMessage::Text("second".into()),
+            "http://127.0.0.1:9",
+            None,
+        )
+        .await
+        .expect("admitted");
+        assert_eq!(frame.send(&mut upstream).await, Ok(true));
+        assert!(observations.is_dir(), "the send was observed");
     }
 }

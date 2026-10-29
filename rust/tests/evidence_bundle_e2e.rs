@@ -32,7 +32,6 @@ fn bundle_is_deterministic_and_complete() {
     let spec = |out: &std::path::Path| BundleSpec {
         from: (now - chrono::Duration::hours(1)).to_rfc3339(),
         to: (now + chrono::Duration::hours(1)).to_rfc3339(),
-        framework: Some("eu-ai-act".to_string()),
         pack: None,
         out: Some(out.to_path_buf()),
     };
@@ -70,7 +69,12 @@ fn bundle_is_deterministic_and_complete() {
     assert!(names.contains(&"manifest.json".to_string()));
     assert!(names.contains(&"audit/trail.jsonl".to_string()));
     assert!(names.contains(&"coverage/cgb.json".to_string()));
-    assert!(names.contains(&"coverage/eu-ai-act.json".to_string()));
+    // Framework coverage is LeanCTX Enterprise: never written by the engine.
+    assert!(
+        !names
+            .iter()
+            .any(|n| n.starts_with("coverage/") && n != "coverage/cgb.json")
+    );
     assert!(
         names
             .iter()
@@ -87,6 +91,10 @@ fn bundle_is_deterministic_and_complete() {
         .expect("read");
     let manifest: serde_json::Value = serde_json::from_str(&manifest_raw).expect("json");
     assert_eq!(manifest["version"], 1);
+    assert!(
+        manifest["framework"].is_null(),
+        "v1 field kept, always null"
+    );
     assert_eq!(manifest["chain"]["entries"], 3);
     assert_eq!(manifest["chain"]["anchor_prev_hash"], "genesis");
     assert_eq!(manifest["signing"]["algorithm"], "ed25519");
@@ -180,7 +188,6 @@ fn empty_period_is_an_error_not_an_empty_attestation() {
     let spec = BundleSpec {
         from: "1999-01-01T00:00:00Z".to_string(),
         to: "1999-01-02T00:00:00Z".to_string(),
-        framework: None,
         pack: None,
         out: Some(tmp.path().join("never.zip")),
     };

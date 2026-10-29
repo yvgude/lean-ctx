@@ -161,11 +161,6 @@ impl ModePredictor {
         {
             return Some(bandit);
         }
-        if let Some(cloud) = self.predict_from_cloud(sig)
-            && allow_override(&cloud)
-        {
-            return Some(cloud);
-        }
         default_mode
     }
 
@@ -226,57 +221,8 @@ impl ModePredictor {
             .map(|(mode, _)| mode.to_string())
     }
 
-    /// Loads cloud adaptive models (synced from LeanCTX Cloud).
-    /// Models are cached locally and auto-updated for cloud users.
-    #[allow(clippy::unused_self)]
-    fn predict_from_cloud(&self, sig: &FileSignature) -> Option<String> {
-        let data = crate::cloud_client::load_cloud_models()?;
-        let models = data["models"].as_array()?;
-
-        let ext_with_dot = format!(".{}", sig.ext);
-        let bucket_name = match sig.size_bucket {
-            0 => "0-500",
-            1 => "500-2k",
-            2 => "2k-10k",
-            _ => "10k+",
-        };
-
-        let mut best: Option<(&str, f64)> = None;
-
-        for model in models {
-            let m_ext = model["file_ext"].as_str().unwrap_or("");
-            let m_bucket = model["size_bucket"].as_str().unwrap_or("");
-            let confidence = model["confidence"].as_f64().unwrap_or(0.0);
-
-            if m_ext == ext_with_dot
-                && m_bucket == bucket_name
-                && confidence > 0.5
-                && let Some(mode) = model["recommended_mode"].as_str()
-                && best.is_none_or(|(_, c)| confidence > c)
-            {
-                best = Some((mode, confidence));
-            }
-        }
-
-        if let Some((mode, _)) = best {
-            return Some(mode.to_string());
-        }
-
-        for model in models {
-            let m_ext = model["file_ext"].as_str().unwrap_or("");
-            let confidence = model["confidence"].as_f64().unwrap_or(0.0);
-            if m_ext == ext_with_dot && confidence > 0.5 {
-                return model["recommended_mode"]
-                    .as_str()
-                    .map(std::string::ToString::to_string);
-            }
-        }
-
-        None
-    }
-
     /// Built-in defaults for common file types and sizes.
-    /// Ensures reasonable compression even without local history or cloud models.
+    /// Ensures reasonable compression even without local history.
     /// Respects Kolmogorov-Gate: files with K>0.7 skip aggressive modes.
     fn predict_from_defaults(sig: &FileSignature) -> Option<String> {
         if sig.size_bucket == 0 {

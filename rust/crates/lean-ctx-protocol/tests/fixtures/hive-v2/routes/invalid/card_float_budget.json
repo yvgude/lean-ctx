@@ -1,0 +1,16 @@
+{
+  "case": "card_float_budget",
+  "base": "routes/worker_register.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/card/budget",
+      "value": {
+        "usd_cents_per_day": 2.5
+      }
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

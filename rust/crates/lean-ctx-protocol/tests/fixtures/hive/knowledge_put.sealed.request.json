@@ -1,0 +1,14 @@
+{
+  "expected_revision": 3,
+  "merged_proposals": [
+    12
+  ],
+  "schema": "leanctx.hive.knowledge-put-request/v1",
+  "sealed": {
+    "alg": "xchacha20poly1305",
+    "ciphertext": "Re0BYOP/77VCsPtUEdlFt33mlB0/58uA0561BHQpfs6KicqVTHiMnIleoVSsSE5JoawMtkcBFvkfnbqMP/vdijoMD6nRw8uMxraRT4ii5OL8K57Odx9PQgoKAm7rrSV5GqmnxSQd9wGDlEeEAW79h4XioeAIa29Co6KhipAcJ60XXnY7nR4r0nTYv3IxclOj4Dr+CH8o8/CICYFmwByQufu5jRiHC0W2IWQ37048PUFW49CfjHHz8HaXtEvpl2uZUl/3AxjRnXtPdGV2nwweEhIPZlbNeIcw5EzN7KtfH3QSrJaHTcufnrceotgW7YAwkjLumr3YMn8m3HmwagpT4fid4tysbLEdP0VAuDqYp04aHYHQGhplNqcHa8ntjTwhLGoliA6t9/DDYUk1VCXzHDXMjc3o7Rl9iaZSOvga+ycCTSpOOX3+jSm6f0kRcSSimvRPvSpfa4FHc2o48ZmyPelrj+ZuqTvUTn9633mjyXi2if86yxcP6AQ8mVe+E/bsmDCwr2xRMGGE9s/65UcH9k/Uff4NmrtaDU14yHTKyVJDlKg3Bgxi3wPrOr56wN2xxPgqxqH4o9s08hrA68m4aATA2rcBuVM0Vi9BS4y7zpx22GltHH+rYBu1jE2tBffVMxBRQkoiv+TUJQzpwrTK3zL42+NL1uERgRuRWgs+x8Vshu63hO6rWNH4pKCsYb8GorQ6MHWY8RpkZvCGK6HhV2X4fuVwcanOzPl7rwjVozMDM4Zih8nlbA==",
+    "content_schema": "ctxpkg.research-context.v1",
+    "epoch": 1,
+    "nonce": "NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0"
+  }
+}

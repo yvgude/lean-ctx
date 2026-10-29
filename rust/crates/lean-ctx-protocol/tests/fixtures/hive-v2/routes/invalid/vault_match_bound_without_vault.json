@@ -1,0 +1,13 @@
+{
+  "base": "routes/vault_match.bound.response.json",
+  "case": "vault_match_bound_without_vault",
+  "expect": {
+    "layer": "schema"
+  },
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/vault"
+    }
+  ]
+}

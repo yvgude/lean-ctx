@@ -96,9 +96,11 @@ fn warm_and_stale_gitlab_results_cannot_replace_source_authorization() {
             let key =
                 cache::request_cache_key("gitlab", &config.api_url(&endpoint), Some(&config.token));
             cache::set_cached(&key, &serde_json::to_string(&previous).unwrap(), ttl);
-            assert!(
+            // Positive control while fresh; an expired entry is never served.
+            assert_eq!(
                 cache::get_cached(&key).is_some(),
-                "positive control: old cache can serve this response"
+                ttl > 0,
+                "a fresh cache entry is readable, an expired one is a miss"
             );
             let provider = GitLabProvider::with_config(config.clone());
             let params = ProviderParams {

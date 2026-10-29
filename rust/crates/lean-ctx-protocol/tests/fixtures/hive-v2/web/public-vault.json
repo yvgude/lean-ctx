@@ -1,0 +1,52 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "No such public vault."
+        }
+      },
+      "status": 404
+    },
+    {
+      "body": {
+        "error": {
+          "code": "rate_limited",
+          "message": "Too many requests. Try again in 30 s.",
+          "retry_after_s": 30
+        }
+      },
+      "status": 429
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/public/vaults/acme/payments",
+  "request": null,
+  "response": {
+    "body": {
+      "vault": {
+        "description": "How refunds, retries and payouts work.",
+        "followers": 4,
+        "forge": {
+          "host": "gitlab.pounce.ch",
+          "repo": "acme/payments",
+          "state": "verified"
+        },
+        "frozen": false,
+        "license": "CC-BY-4.0",
+        "name": "payments",
+        "presence_public": false,
+        "stars": 12,
+        "title": "Payments",
+        "viewer": {
+          "following": false,
+          "starred": true
+        },
+        "ws": "acme"
+      }
+    },
+    "status": 200
+  },
+  "route": "W44"
+}

@@ -121,9 +121,9 @@ pub fn prune_history_range(
                 if let Some(content) = msg.get_mut("content").and_then(|c| c.as_array_mut()) {
                     for block in content.iter_mut() {
                         if block.get("type").and_then(|t| t.as_str()) == Some("tool_result") {
-                            let kind = block
-                                .get("tool_use_id")
-                                .and_then(|v| v.as_str())
+                            let call_id = block.get("tool_use_id").and_then(|v| v.as_str());
+                            let _block = super::sticky_tools::block(call_id);
+                            let kind = call_id
                                 .and_then(|id| tool_names.get(id))
                                 .map_or(ToolResultKind::Other, |n| classify_tool_name(n));
                             modified |= summarize_anthropic_tool_result(block, kind);
@@ -133,9 +133,9 @@ pub fn prune_history_range(
             }
             // OpenAI: tool role messages
             "tool" => {
-                let kind = msg
-                    .get("tool_call_id")
-                    .and_then(|v| v.as_str())
+                let call_id = msg.get("tool_call_id").and_then(|v| v.as_str());
+                let _block = super::sticky_tools::block(call_id);
+                let kind = call_id
                     .and_then(|id| tool_names.get(id))
                     .map_or(ToolResultKind::Other, |n| classify_tool_name(n));
                 if let Some(content) = msg.get("content").and_then(|c| c.as_str())
@@ -218,7 +218,17 @@ fn purge_errored_tool_inputs(window: &mut [Value]) -> bool {
             {
                 continue;
             }
-            if serde_json::to_string(input).map(|s| s.len()).unwrap_or(0) < PURGED_INPUT_MIN_BYTES {
+            let serialized = serde_json::to_string(input).unwrap_or_default();
+            if serialized.len() < PURGED_INPUT_MIN_BYTES {
+                continue;
+            }
+            // The marker loses the input, and an input is a JSON value the
+            // model wrote, not text with a lineage: under protection nothing
+            // can back the marker, so the input stays and is counted.
+            if super::compress::gate::keeps_whole(
+                &serialized,
+                super::compress::gate::NOT_ENGINE_TEXT,
+            ) {
                 continue;
             }
             block["input"] = serde_json::json!({ PURGED_INPUT_KEY: PURGED_INPUT_NOTE });
@@ -287,7 +297,22 @@ pub fn prune_output_text(text: &str, kind: ToolResultKind) -> Option<String> {
 /// *historical* bytes instead of re-reading a file that may have changed (or
 /// vanished) since. The handle is a pure function of the content hash, so the
 /// stub stays byte-identical across turns — cache-safe by construction (#448).
+///
+/// Under protection the tee store holds nothing, and pruning is no exception
+/// to the rule of live compression: the pruned form leaves only with the stub
+/// of a recovery copy bound to the lineage of the original
+/// (`compress::shorten_with_copy`); otherwise the result stays whole and the
+/// reason is counted. There is no size-forced pruning in this module that
+/// could need another rule.
 fn summarize_or_stub(text: &str, kind: ToolResultKind) -> String {
+    if super::compress::protected() {
+        return super::compress::shorten_with_copy(text, &pruned_form(text, kind))
+            .unwrap_or_else(|| text.to_string());
+    }
+    pruned_form(text, kind)
+}
+
+fn pruned_form(text: &str, kind: ToolResultKind) -> String {
     if should_protect(kind, text) {
         let lines = text.lines().count();
         return match super::ccr::persist(text) {
@@ -351,6 +376,8 @@ mod tests {
 
     #[test]
     fn prune_skips_recent_messages() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let long_content = (0..40).map(|i| format!("line {i}: this is a longer line to ensure content exceeds the 200 character threshold for pruning")).collect::<Vec<_>>().join("\n");
         let mut messages = vec![
             serde_json::json!({"role": "tool", "content": long_content}),
@@ -417,6 +444,7 @@ mod tests {
         // serialize against tests that repoint LEAN_CTX_DATA_DIR so the data dir
         // stays fixed across turns — exactly the stable-env reality in production.
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let long = (0..30)
             .map(|i| {
                 format!("INFO line {i}: a sufficiently long log line for the pruning threshold")
@@ -459,6 +487,7 @@ mod tests {
         // See `cache_aware_prefix_is_byte_stable_across_turns`: the CCR handle is
         // `state_dir()`-derived, so hold the env lock for a fixed data dir.
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let long = (0..30)
             .map(|i| format!("line {i}: deterministic content that exceeds the length threshold"))
             .collect::<Vec<_>>()
@@ -483,6 +512,8 @@ mod tests {
 
     #[test]
     fn cache_control_breakpoints_survive_pruning() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let long = (0..20)
             .map(|i| format!("log line {i}: some sufficiently long diagnostic output here"))
             .collect::<Vec<_>>()
@@ -512,6 +543,8 @@ mod tests {
 
     #[test]
     fn old_file_read_gets_honest_reread_stub() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let code = (0..40)
             .map(|i| format!("    let value_{i} = compute_{i}(input);"))
             .collect::<Vec<_>>()
@@ -542,6 +575,7 @@ mod tests {
     #[test]
     fn pruned_file_read_is_recoverable_and_honest_about_staleness() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let code = (0..60)
             .map(|i| format!("    let handle_marker_{i} = compute_{i}(input);"))
             .collect::<Vec<_>>()
@@ -582,6 +616,7 @@ mod tests {
     #[test]
     fn ccr_stub_is_byte_stable_across_turns() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let code = (0..60)
             .map(|i| format!("    let stable_{i} = f_{i}();"))
             .collect::<Vec<_>>()
@@ -601,6 +636,8 @@ mod tests {
 
     #[test]
     fn old_log_output_keeps_head_tail_summary() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let log = (0..40)
             .map(|i| format!("INFO line {i}: processing item number {i} in the batch run"))
             .collect::<Vec<_>>()
@@ -663,6 +700,8 @@ mod tests {
 
     #[test]
     fn errored_tool_input_is_purged_and_error_text_preserved() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let mut messages = errored_pair(500, true);
         assert!(prune_history(&mut messages, 2, &no_names()));
         let input = &messages[0]["content"][0]["input"];
@@ -768,6 +807,8 @@ mod tests {
     /// invalidated from the first changed message.
     #[test]
     fn cached_prefix_is_never_rewritten_across_stride_jump() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         // Production guard: prune only `[cached_prefix_len .. boundary)`.
         let stubs = |pairs: usize| -> usize {
             let mut messages = anthropic_turns(pairs, true);

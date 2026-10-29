@@ -1,0 +1,44 @@
+{
+  "actor": {
+    "kind": "server"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqae",
+  "body": {
+    "acceptance": [
+      "p95 below 300 ms over 24 h in staging"
+    ],
+    "body_nonce": "15151515151515151515151515151515",
+    "criterion_id": null,
+    "kind": "root",
+    "order": 0,
+    "parent": null,
+    "text": "Bring the p95 of POST /checkout below 300 ms without dropping features.",
+    "title": "Cut checkout p95 latency below 300 ms"
+  },
+  "body_commit": "a8812d010a3ccdb5420be7dfb1b98a0945375bb57e6ea37a54e04c7960a7668e",
+  "causal_base": 0,
+  "cause": {
+    "kind": "person_action"
+  },
+  "event_id": "01M5NKA2Z8005G00000000W001",
+  "hlc": {
+    "counter": 0,
+    "node": "4fc7bebc302357bd",
+    "wall_ms": 1792800001000
+  },
+  "key_id": "4fc7bebc302357bd",
+  "node_type": "goal",
+  "op": "node.add",
+  "place": {
+    "id": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+    "kind": "swarm"
+  },
+  "provenance": "workspace",
+  "received_at": 1792800001350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "seq": 1,
+  "signature": "3790cbc591b87de6e30c62f5509e31727bad8e8c9abba1f9d51c49b8f16bb0a3050db1d61908b0b54f667f575e30c1a811a11ef4c641920bb07ba44439c1a808",
+  "target": "n_aaaaaaaaaaaaaaaaaaaaaadaae"
+}

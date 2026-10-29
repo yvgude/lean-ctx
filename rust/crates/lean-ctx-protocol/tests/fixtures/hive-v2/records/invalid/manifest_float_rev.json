@@ -1,0 +1,14 @@
+{
+  "case": "manifest_float_rev",
+  "base": "records/snapshot_manifest.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/rev",
+      "value": 1.5
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

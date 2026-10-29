@@ -1,0 +1,98 @@
+{
+  "name": "goal-node-states",
+  "values": [
+    {
+      "value": "open",
+      "label": "Open"
+    },
+    {
+      "value": "claimed",
+      "label": "Claimed"
+    },
+    {
+      "value": "working",
+      "label": "Working"
+    },
+    {
+      "value": "in_review",
+      "label": "In review"
+    },
+    {
+      "value": "done",
+      "label": "Done"
+    },
+    {
+      "value": "blocked",
+      "label": "Blocked"
+    },
+    {
+      "value": "dropped",
+      "label": "Dropped"
+    }
+  ],
+  "kinds": [
+    "root",
+    "subgoal",
+    "task",
+    "synthesis"
+  ],
+  "claimable_kinds": [
+    "task",
+    "synthesis"
+  ],
+  "transitions": [
+    [
+      "open",
+      "claimed"
+    ],
+    [
+      "open",
+      "blocked"
+    ],
+    [
+      "open",
+      "dropped"
+    ],
+    [
+      "claimed",
+      "working"
+    ],
+    [
+      "claimed",
+      "open"
+    ],
+    [
+      "working",
+      "in_review"
+    ],
+    [
+      "working",
+      "open"
+    ],
+    [
+      "in_review",
+      "done"
+    ],
+    [
+      "in_review",
+      "open"
+    ],
+    [
+      "in_review",
+      "blocked"
+    ],
+    [
+      "blocked",
+      "open"
+    ],
+    [
+      "done",
+      "open"
+    ],
+    [
+      "dropped",
+      "open"
+    ]
+  ],
+  "max_attempts": 3
+}

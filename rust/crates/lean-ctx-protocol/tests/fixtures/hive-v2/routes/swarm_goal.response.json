@@ -1,0 +1,86 @@
+{
+  "epoch": 3,
+  "nodes": [
+    {
+      "assignee": null,
+      "attempts": 0,
+      "criterion_id": null,
+      "id": "g_rrrrrrrrrrrrrrrrrrrrrrrrra",
+      "kind": "root",
+      "lock_until": null,
+      "node": "n_aaaaaaaaaaaaaaaaaaaaaadaae",
+      "parent": null,
+      "results": [],
+      "review": null,
+      "state": "open",
+      "title": "Cut checkout p95 latency below 300 ms"
+    },
+    {
+      "assignee": null,
+      "attempts": 0,
+      "criterion_id": "sc_1",
+      "id": "g_sssssssssssssssssssssssssa",
+      "kind": "subgoal",
+      "lock_until": null,
+      "node": "n_aaaaaaaaaaaaaaaaaaaaaadaay",
+      "parent": "g_rrrrrrrrrrrrrrrrrrrrrrrrra",
+      "results": [],
+      "review": null,
+      "state": "open",
+      "title": "p95 below 300 ms over 24 h in staging"
+    },
+    {
+      "assignee": "wkr_76aa2uwmpczt3cqkhfed",
+      "attempts": 0,
+      "criterion_id": null,
+      "id": "g_ttttttttttttttttttttttttta",
+      "kind": "task",
+      "lock_until": null,
+      "node": "n_aaaaaaaaaaaaaaaaaaaaaadaai",
+      "parent": "g_sssssssssssssssssssssssssa",
+      "results": [
+        "n_aaaaaaaaaaaaaaaaaaaaaadaam"
+      ],
+      "review": {
+        "review_id": "rv_aaaaaaaaaaaaaaaaaaaaaadxam",
+        "state": "waiting_for_reviewer"
+      },
+      "state": "in_review",
+      "title": "Profile the checkout handler"
+    }
+  ],
+  "swarm": {
+    "conductor_workers": [
+      "wkr_cxdouocvevdhm22vpdrh"
+    ],
+    "coordinator": "wkr_cxdouocvevdhm22vpdrh",
+    "created_at": 1792750000000,
+    "delegates": [],
+    "goal": "Bring the p95 of POST /checkout below 300 ms without dropping features.",
+    "id": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+    "max_workers": 200,
+    "max_workers_effective": 200,
+    "org_id": "4b6d8f0a-2c4e-4f6a-8b0c-2e4f6a8c0e1a",
+    "owner_user": "7a1c3e5f-9b2d-4f6e-8a0c-3e5f7a9b1c2d",
+    "participant_task_cap": 5,
+    "repos": [
+      {
+        "host": "gitlab.acme.example",
+        "path": "acme/checkout",
+        "private": true
+      }
+    ],
+    "review_sla_hours": 24,
+    "slug": "checkout-latency",
+    "state": "running",
+    "success_criteria": [
+      {
+        "goal": "g_sssssssssssssssssssssssssa",
+        "id": "sc_1",
+        "text": "p95 below 300 ms over 24 h in staging"
+      }
+    ],
+    "title": "Checkout latency below 300 ms",
+    "visibility": "team"
+  }
+}

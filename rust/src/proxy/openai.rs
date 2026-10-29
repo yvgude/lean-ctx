@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use super::ProxyState;
 use super::forward;
+use super::sticky_tools::{self, Shape};
 use super::tool_kind::{self, ToolResultKind};
 use super::{cache_safety, prose};
 use crate::core::config::{HistoryMode, ProseRole};
@@ -29,12 +30,25 @@ pub async fn handler(
     .await
 }
 
+/// One pass over a Chat Completions request, as on the Messages path: the
+/// unit in which a block that leaves with a recovery stub and the
+/// conversation it belongs to are brought together (`sticky_tools`).
 pub(super) fn compress_request_body(
     parsed: Value,
     original_size: usize,
 ) -> (Vec<u8>, usize, usize) {
+    sticky_tools::in_pass(|| compress_in_pass(parsed, original_size))
+}
+
+fn compress_in_pass(parsed: Value, original_size: usize) -> (Vec<u8>, usize, usize) {
     let mut doc = parsed;
     let mut modified = false;
+    // Under protection a block leaves shortened only with a stub that names
+    // the Engine's expand tool as the host listed it in this request's own
+    // `tools[].function.name`. Whether the request lists it and lets its
+    // model call it is settled before any block is touched; if not, blocks
+    // stay whole. The proxy adds no tool.
+    sticky_tools::begin(Shape::Chat, &doc);
 
     // Opt-in per-role prose aggressiveness (#710); both default `None` → no-op.
     let cfg = crate::core::config::Config::load();
@@ -94,6 +108,10 @@ pub(super) fn compress_request_body(
         let out = serde_json::to_vec(&doc).unwrap_or_default();
         return (out, original_size, original_size);
     }
+    // K26: large tool descriptions leave shortened (see the Messages path).
+    if live_compress {
+        modified |= super::tool_descriptions::shorten(&mut doc);
+    }
     let mut prose_segments: u64 = 0;
 
     if let Some(messages) = doc.get_mut("messages").and_then(|m| m.as_array_mut()) {
@@ -117,9 +135,11 @@ pub(super) fn compress_request_body(
                 continue;
             }
 
-            let name = msg
-                .get("tool_call_id")
-                .and_then(|v| v.as_str())
+            let call_id = msg.get("tool_call_id").and_then(|v| v.as_str());
+            // One tool-result block: what is shortened below is text of the
+            // call with this id (`sticky_tools::block`).
+            let _block = sticky_tools::block(call_id);
+            let name = call_id
                 .and_then(|id| tool_names.get(id))
                 .map(String::as_str);
             let kind = name.map_or(ToolResultKind::Other, tool_kind::classify_tool_name);
@@ -237,6 +257,7 @@ mod tests {
     #[test]
     fn json_envelope_tool_output_is_compressed() {
         let _iso = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, Some("Bash"));
         let envelope = serde_json::to_string(&serde_json::json!({

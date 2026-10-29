@@ -114,7 +114,7 @@ fn post_feedback(body: &str) -> (&'static str, &'static str, String) {
         "contact": req.contact.as_deref().map(str::trim).filter(|c| !c.is_empty()),
     });
 
-    match crate::cloud_client::submit_product_feedback(&payload) {
+    match crate::telemetry_transport::submit_product_feedback(&payload) {
         Ok(message) => (
             "200 OK",
             "application/json",

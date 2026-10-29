@@ -327,11 +327,11 @@ pub(crate) fn process_mode_tuned(
             format_anchored_output_window(file_ref, short, &body, line_count, Some((start, end)))
         }
         "signatures" => render_signatures(content, ctx),
-        "map" => render_map(content, ctx),
+        // `cognitive` and `mdl`: former science views, retired 2026-10-16
+        // without a measured retrieval gain; they render the map view.
+        "map" | "cognitive" | "mdl" => render_map(content, ctx),
         "aggressive" => render_aggressive(content, ctx),
         "entropy" => render_entropy(content, ctx, &tuning),
-        "cognitive" => render_cognitive(content, ctx),
-        "mdl" => render_mdl(content, ctx),
         "task" => render_task_mode(content, ctx, &tuning),
         "reference" => {
             let tok = count_tokens(content);
@@ -914,147 +914,6 @@ fn render_map(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     )
 }
 
-/// Full science pipeline: IB intent → relevance scores → Wasserstein OT allocation.
-/// Returns chunk indices sorted by file position, with per-chunk token budgets
-/// optimally distributed by the Sinkhorn solver.
-fn wasserstein_select(
-    chunks: &[crate::core::cognitive::SemanticChunk],
-    total_budget: usize,
-) -> Vec<usize> {
-    use crate::core::cognitive::budget_select;
-    use crate::core::ib::{classify_intent, compute_relevance};
-    use crate::core::session::SessionState;
-
-    let session = SessionState::load_latest().unwrap_or_default();
-    let intent = classify_intent(&session);
-
-    let chunk_texts: Vec<&str> = chunks.iter().map(|c| c.content.as_str()).collect();
-    let task_query = session
-        .task
-        .as_ref()
-        .map(|t| t.description.as_str())
-        .unwrap_or("");
-    let scores = compute_relevance(&chunk_texts, &intent, Some(task_query));
-
-    if scores.is_empty() || scores.iter().all(|s| s.score == 0.0) {
-        return budget_select(chunks, None);
-    }
-
-    let names: Vec<String> = (0..chunks.len()).map(|i| format!("chunk_{i}")).collect();
-    let files: Vec<(&str, usize, f64)> = names
-        .iter()
-        .zip(chunks.iter().zip(scores.iter()))
-        .map(|(name, (chunk, score))| (name.as_str(), chunk.token_count, score.score))
-        .collect();
-
-    let allocations = crate::core::wasserstein::allocate_budget(&files, total_budget / 2);
-
-    let mut ranked: Vec<(usize, usize)> = allocations
-        .iter()
-        .enumerate()
-        .filter(|(_, alloc)| alloc.tokens > 0)
-        .map(|(i, alloc)| (i, alloc.tokens))
-        .collect();
-
-    const MAX_CHUNKS: usize = 9;
-    ranked.sort_by_key(|b| std::cmp::Reverse(b.1));
-    ranked.truncate(MAX_CHUNKS);
-    ranked.sort_by_key(|(i, _)| chunks[*i].line_range);
-    ranked.into_iter().map(|(i, _)| i).collect()
-}
-
-fn render_cognitive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
-    use crate::core::cognitive::{budget_select, detect_chunks, render_budget_output};
-    use crate::core::cognitive_gate::basic_science_enabled;
-
-    let RenderCtx {
-        file_ref,
-        short,
-        ext,
-        file_path,
-        original_tokens,
-        line_count,
-        ..
-    } = ctx;
-
-    if !basic_science_enabled() {
-        return render_map(content, ctx);
-    }
-
-    let chunks = detect_chunks(content, ext);
-    if chunks.is_empty() {
-        return render_map(content, ctx);
-    }
-
-    let selected = {
-        use crate::core::cognitive_gate::full_science_enabled;
-        if full_science_enabled() {
-            wasserstein_select(&chunks, original_tokens)
-        } else {
-            budget_select(&chunks, None)
-        }
-    };
-    let body = render_budget_output(&chunks, &selected, file_path);
-
-    let output = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-        format!("{file_ref}={short} {line_count}L cognitive\n{body}")
-    } else {
-        format!("{short} {line_count}L cognitive\n{body}")
-    };
-
-    let sent = count_tokens(&output);
-    if !monotonic_check(original_tokens, sent) {
-        return raw_fallback(file_path, content, original_tokens, sent);
-    }
-    (
-        append_compressed_hint(
-            &protocol::append_savings(&output, original_tokens, sent),
-            file_path,
-        ),
-        sent,
-    )
-}
-
-fn render_mdl(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
-    use crate::core::cognitive_gate::basic_science_enabled;
-    use crate::core::mdl_mode::generate_structural_description;
-
-    let RenderCtx {
-        file_ref,
-        short,
-        ext,
-        file_path,
-        original_tokens,
-        line_count,
-        ..
-    } = ctx;
-
-    if !basic_science_enabled() {
-        return render_map(content, ctx);
-    }
-
-    let desc = generate_structural_description(content, file_path, ext);
-    let body = desc.render();
-
-    let output = if crate::core::protocol::meta_visible() && !file_ref.is_empty() {
-        format!("{file_ref}={short} {line_count}L mdl\n{body}")
-    } else {
-        format!("{short} {line_count}L mdl\n{body}")
-    };
-
-    let sent = count_tokens(&output);
-    if !monotonic_check(original_tokens, sent) {
-        return raw_fallback(file_path, content, original_tokens, sent);
-    }
-    (
-        append_compressed_hint(
-            &protocol::append_savings(&output, original_tokens, sent),
-            file_path,
-        ),
-        sent,
-    )
-}
-
 fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     let RenderCtx {
         file_ref,
@@ -1133,7 +992,7 @@ fn render_aggressive(content: &str, ctx: RenderCtx<'_>) -> (String, usize) {
     let base = ast_pruned.as_deref().unwrap_or(content);
 
     let session_intent =
-        crate::core::session::SessionState::load_latest().and_then(|s| s.active_structured_intent);
+        crate::core::session::caller::with(|s| s.active_structured_intent.clone()).flatten();
     let raw = if let Some(ref intent) = session_intent {
         compressor::task_aware_compress(base, Some(ext), intent)
     } else {
@@ -1206,15 +1065,18 @@ fn render_entropy(content: &str, ctx: RenderCtx<'_>, tuning: &ReadTuning<'_>) ->
         .map(|t| crate::core::task_relevance::parse_task_hints(t).1)
         .filter(|kws| !kws.is_empty())
         .or_else(|| {
-            let session = crate::core::session::SessionState::load_latest()?;
-            if let Some(intent) = session.active_structured_intent
-                && !intent.keywords.is_empty()
-            {
-                return Some(intent.keywords);
-            }
-            let q = session.last_semantic_query?;
-            let kws = crate::core::task_relevance::parse_task_hints(&q).1;
-            (!kws.is_empty()).then_some(kws)
+            // The caller's own session, never another agent's (I07/S03).
+            crate::core::session::caller::with(|session| {
+                if let Some(intent) = &session.active_structured_intent
+                    && !intent.keywords.is_empty()
+                {
+                    return Some(intent.keywords.clone());
+                }
+                let q = session.last_semantic_query.as_deref()?;
+                let kws = crate::core::task_relevance::parse_task_hints(q).1;
+                (!kws.is_empty()).then_some(kws)
+            })
+            .flatten()
         })
         .unwrap_or_default();
     let result = match (task_kws.is_empty(), tuning.aggressiveness) {

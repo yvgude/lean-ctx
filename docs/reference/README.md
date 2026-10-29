@@ -32,7 +32,6 @@ navigation to an additional public product.
 | Record | Status | Boundary |
 | --- | --- | --- |
 | [Multi-agent collaboration](08-multi-agent.md) | Historical / Research | LeanCTX is not a multi-agent platform or orchestration product. |
-| [Team, Cloud & CI](09-team-cloud-ci.md) | Historical / Research | No hosted/team/cloud service is publicly available from this repository. |
 | [Analytics](11-analytics-and-insights.md) | Available local observations | Local counters are not universal savings or business-outcome proof. |
 | [Proof & audit](16-signed-savings-ledger.md) | Available local primitives | Integrity evidence is not a standalone savings claim. |
 | [Adaptive learning](18-adaptive-learning.md) | Research | LeanCTX does not offer AutoTune or autonomous promotion. |

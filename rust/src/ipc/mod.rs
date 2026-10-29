@@ -94,7 +94,7 @@ pub async fn connect(addr: &DaemonAddr) -> Result<tokio::net::UnixStream> {
 #[cfg(unix)]
 pub async fn connect_enterprise(
     path: &std::path::Path,
-    handshake: &crate::core::enterprise_handshake::RuntimeHandshake,
+    handshake: &lean_ctx_protocol::runtime_handshake::RuntimeHandshake,
 ) -> Result<tokio::net::UnixStream> {
     let mut stream = unix::connect(path).await?;
     let frame = handshake.encode_frame().map_err(|error| anyhow!(error))?;
@@ -149,7 +149,7 @@ mod tests {
         let dir = tempfile::tempdir().unwrap();
         let path = dir.path().join("enterprise.sock");
         let listener = unix::bind_listener(&path).unwrap();
-        let handshake = crate::core::enterprise_handshake::RuntimeHandshake::public([]);
+        let handshake = lean_ctx_protocol::runtime_handshake::RuntimeHandshake::public([]);
         let client = connect_enterprise(&path, &handshake);
         let server = listener.accept();
         let (client, accepted) = tokio::join!(client, server);

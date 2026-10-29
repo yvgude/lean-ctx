@@ -51,9 +51,6 @@ pub struct PostDispatchResult {
     pub eviction_hint: Option<String>,
     pub elicitation_hint: Option<String>,
     pub resource_changed: bool,
-    /// FEP prefetch suggestion (#9): files likely needed next, from the co-access
-    /// graph. A warmup hint only — never an automatic read.
-    pub prefetch_hint: Option<String>,
 }
 
 /// Best-effort KnowledgeRouter advice for the completed Context Gate flow.
@@ -487,7 +484,6 @@ pub fn post_dispatch_record_with_task(
             eviction_hint: Some(format!("File '{path}' is excluded by overlay.")),
             elicitation_hint: None,
             resource_changed: true,
-            prefetch_hint: None,
         };
     }
 
@@ -521,29 +517,20 @@ pub fn post_dispatch_record_with_task(
                 .collect();
             return PostDispatchResult {
                 eviction_hint: Some(format!(
-                    "Context pressure {:.0}%. Evict: ctx_ledger(action=\"evict\", targets=\"{}\")",
+                    "Context pressure {:.0}%. Evict: ctx_control(action=\"evict\", targets=\"{}\")",
                     pressure.utilization * 100.0,
                     names.join(", ")
                 )),
                 elicitation_hint: elicitation,
                 resource_changed,
-                // Under pressure we evict rather than prefetch — no warmup hint.
-                prefetch_hint: None,
             };
         }
     }
-
-    // #9 FEP prefetch: with budget to spare, suggest the files most likely needed
-    // next (co-access graph), so the agent can warm them before the surprise of a
-    // miss. Deterministic; runs in the background post-dispatch, never in output.
-    let prefetch_hint =
-        project_root.and_then(|root| crate::core::fep_prefetch::prefetch_hint(root, path, ledger));
 
     PostDispatchResult {
         eviction_hint: None,
         elicitation_hint: elicitation,
         resource_changed,
-        prefetch_hint,
     }
 }
 
@@ -578,8 +565,12 @@ fn apply_reinjection_plan(ledger: &mut ContextLedger, action: &PressureAction) {
     }
 }
 
+/// Graph for the per-read mode decision. Only an already populated property
+/// graph: this runs before every `ctx_read`, and the JSON-index fallback of
+/// `open_best_effort` re-parsed the whole index on each read of a cold
+/// session (focus analysis 2026-10-15).
 fn try_load_graph(project_root: &str) -> Option<crate::core::graph_provider::OpenGraphProvider> {
-    crate::core::graph_provider::open_best_effort(project_root)
+    crate::core::graph_provider::open_ready(project_root)
 }
 
 /// Determines the output-filtering aggressiveness from a task profile.

@@ -168,6 +168,19 @@ pub(crate) fn context_window_for_model(model: &str) -> usize {
     200_000
 }
 
+/// Small models hosts use for background work (titles, summaries, sub-steps).
+/// They are never the model the user works with, so they never become the
+/// detected or last-seen model.
+pub(crate) fn is_background_model(model: &str) -> bool {
+    let m = model.to_lowercase();
+    m.contains("flash")
+        || m.contains("mini")
+        || m.contains("haiku")
+        || m.contains("fast")
+        || m.contains("nano")
+        || m.contains("small")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

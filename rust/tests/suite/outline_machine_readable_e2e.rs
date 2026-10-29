@@ -7,9 +7,9 @@
 //! fires on the next human-facing call.
 //!
 //! Determinism: the project root is pinned via `LEAN_CTX_PROJECT_ROOT` (no
-//! async client-roots race) and the test polls `ctx_overview` — which returns
-//! the project overview *without* consuming the briefing flag — until the graph
-//! is loaded in-process. Only then does it run the discriminating sequence
+//! async client-roots race), one project fact is stored beforehand, and the
+//! test polls `ctx_preload` — which does *not* consume the briefing flag —
+//! until the graph is loaded in-process. Only then does it run the discriminating sequence
 //! (json call, then two text calls), so the graph-build race cannot make this
 //! test flaky and the root is live exactly when the json call runs.
 #![cfg(unix)]
@@ -146,6 +146,43 @@ impl McpSandbox {
         }
         true
     }
+
+    /// Store one project fact through the CLI, so the session has a wake-up
+    /// briefing to deliver.
+    fn remember(&self, value: &str) {
+        let out = self
+            .base_command()
+            .current_dir(&self.project)
+            .args(["knowledge", "remember", value, "--category", "decision"])
+            .args(["--key", "engine-power"])
+            .output()
+            .expect("spawn lean-ctx knowledge remember");
+        assert!(
+            out.status.success(),
+            "knowledge remember failed: {}",
+            String::from_utf8_lossy(&out.stderr)
+        );
+    }
+
+    /// Create a context package and mark it auto-load through the CLI.
+    fn auto_load_package(&self, name: &str) {
+        for args in [
+            vec!["pack", "create", "--name", name, "--description", "e2e"],
+            vec!["pack", "auto-load", name],
+        ] {
+            let out = self
+                .base_command()
+                .current_dir(&self.project)
+                .args(&args)
+                .output()
+                .expect("spawn lean-ctx pack");
+            assert!(
+                out.status.success(),
+                "{args:?} failed: {}",
+                String::from_utf8_lossy(&out.stderr)
+            );
+        }
+    }
 }
 
 /// A live `mcp` stdio session driven request/response so we can poll for
@@ -235,18 +272,25 @@ impl McpSession {
         text_content(&resp).unwrap_or_default()
     }
 
-    /// Poll `ctx_overview` until the project graph is loaded in-process. This
-    /// tool returns `None` from the autonomy pre-hook *before* the briefing flag
-    /// is touched, so warming this way never consumes the once-per-session slot.
+    /// Poll `ctx_preload` until the project graph is loaded in-process. The
+    /// wake-up briefing skips this tool *before* its flag is touched, so warming
+    /// this way never consumes the once-per-session slot.
     fn warm_overview(&mut self) {
         for i in 0..50 {
-            let overview = self.call(1000 + i, "ctx_overview", &json!({}));
-            if overview.contains("PROJECT OVERVIEW") {
+            let preload = self.call(
+                1000 + i,
+                "ctx_preload",
+                &json!({ "task": "outline sample" }),
+            );
+            if !preload.is_empty()
+                && !preload.contains("No graph available")
+                && !preload.starts_with("ERROR")
+            {
                 return;
             }
             std::thread::sleep(Duration::from_millis(100));
         }
-        panic!("ctx_overview never reported a ready project graph");
+        panic!("ctx_preload never reported a ready project graph");
     }
 
     fn shutdown(mut self) {
@@ -271,6 +315,8 @@ fn json_first_call_is_pure_and_preserves_wakeup_briefing() {
     if !sandbox.build_index() {
         return; // OOM-killed on CI — skip gracefully
     }
+    sandbox.remember("ignite sets engine power to 100");
+    sandbox.auto_load_package("e2e-pack");
 
     let mut session = McpSession::start(&sandbox);
     // Warm the in-process graph so the briefing content is ready deterministically
@@ -316,6 +362,18 @@ fn json_first_call_is_pure_and_preserves_wakeup_briefing() {
         call_b.contains("AUTO CONTEXT"),
         "wake-up briefing must survive a json-first call and fire on the next \
          human-facing call (#990); got:\n{call_b}"
+    );
+    // The briefing carries the stored fact: it used to ride on a full project
+    // overview that exceeded the 400-token injection cap on real projects.
+    assert!(
+        call_b.contains("engine power to 100"),
+        "the wake-up briefing must carry the stored project fact; got:\n{call_b}"
+    );
+    // Auto-load packages were applied by the retired session-start overview;
+    // the first human-facing call applies them now.
+    assert!(
+        call_b.contains("CONTEXT PACKAGES AUTO-LOADED: e2e-pack v1.0.0"),
+        "an auto-load context package must be applied on the first call; got:\n{call_b}"
     );
 
     // (3) Once-per-session semantics intact: the briefing fires exactly once.

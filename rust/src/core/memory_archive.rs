@@ -7,8 +7,11 @@
 //! rehydrate path.
 //!
 //! ## On-disk layout
-//! - Facts keep their legacy global location `memory/archive/archive-*.json`
-//!   for backward compatibility (pre-#995 archives stay readable).
+//! - Facts live under `memory/archive/facts/<project hash>/archive-*.json`; the
+//!   partition is always the request project's. Releases before 3.11.5 kept
+//!   unprotected facts in one installation-wide `memory/archive/archive-*.json`
+//!   without a provable project: those files are left in place, unread, and
+//!   are never listed, rehydrated or restored into any project.
 //! - Every other store lives under `memory/archive/<store>/<scope>/archive-*.json`,
 //!   where `<scope>` is the per-project hash so a restore lands in the right
 //!   project.
@@ -129,6 +132,11 @@ pub struct ArchiveEnvelope<T> {
     pub store: String,
     #[serde(default)]
     pub scope: Option<String>,
+    /// The project root the archive was written for. The scope hash also
+    /// covers the project's identity; this root proves the project when the
+    /// identity changed (`legacy_adoption`).
+    #[serde(default)]
+    pub project_root: Option<String>,
     #[serde(rename = "items", alias = "facts")]
     pub items: Vec<T>,
 }
@@ -141,16 +149,37 @@ struct ArchiveEnvelopeRef<'a, T: Serialize> {
     store: &'a str,
     #[serde(skip_serializing_if = "Option::is_none")]
     scope: Option<&'a str>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    project_root: Option<&'a str>,
     items: &'a [T],
 }
 
-fn effective_scope(scope: Option<&str>) -> Result<Option<String>, String> {
-    let root = crate::core::policy::diagnostics::project().ok_or("archive project unavailable")?;
+/// The project archives are keyed on: inside a request only its own bound
+/// project — a request without one has none, never the process's working
+/// directory (AP04 review S3); outside any request (the CLI) the directory
+/// it runs in.
+fn archive_project() -> Option<PathBuf> {
+    match crate::core::policy::runtime::REQUEST_PROJECT.try_with(|slot| slot.borrow().clone()) {
+        Ok(project) => project,
+        Err(_) => std::env::current_dir().ok(),
+    }
+}
+
+/// The scope an archive of `store` is written to and read from. Facts always
+/// belong to the request project's partition; a protected project pins every
+/// store to its own partition.
+fn effective_scope(store: MemoryStore, scope: Option<&str>) -> Result<Option<String>, String> {
+    let root = archive_project().ok_or("archive project unavailable")?;
     let root = root.to_string_lossy();
+    let expected = crate::core::project_hash::hash_project_root(&root);
     if crate::core::knowledge::protection::current(&root)?.is_some() {
-        let expected = crate::core::project_hash::hash_project_root(&root);
         if scope.is_some_and(|given| given != expected) {
             return Err("archive scope does not match protected project".into());
+        }
+        Ok(Some(expected))
+    } else if store == MemoryStore::Facts {
+        if scope.is_some_and(|given| given != expected) {
+            return Err("facts archive scope does not match the request project".into());
         }
         Ok(Some(expected))
     } else {
@@ -162,12 +191,10 @@ fn archive_dir(store: MemoryStore, scope: Option<&str>) -> Result<PathBuf, Strin
     let base = crate::core::data_dir::lean_ctx_data_dir()?
         .join("memory")
         .join("archive");
-    let scope = effective_scope(scope)?;
-    let root = crate::core::policy::diagnostics::project().ok_or("archive project unavailable")?;
-    let protected = crate::core::knowledge::protection::current(&root.to_string_lossy())?.is_some();
+    let scope = effective_scope(store, scope)?;
     let dir = match (store.subdir(), scope.as_deref()) {
-        (None, Some(s)) if protected => base.join("facts").join(sanitize_scope(s)),
-        (None, _) => base,                   // legacy global facts
+        (None, Some(s)) => base.join("facts").join(sanitize_scope(s)),
+        (None, None) => return Err("facts archive requires a project partition".into()),
         (Some(sub), None) => base.join(sub), // store-global
         (Some(sub), Some(s)) => base.join(sub).join(sanitize_scope(s)),
     };
@@ -209,10 +236,133 @@ fn archive_items_at<T: Serialize>(
     cfg: &ArchiveConfig,
     now: DateTime<Utc>,
 ) -> Result<Option<PathBuf>, String> {
+    if knowledge_store(store) && !items.is_empty() {
+        let root = archive_project().ok_or("archive project unavailable")?;
+        return crate::core::policy::runtime::with_explicit_project_source_view(
+            &root,
+            |authority| {
+                let admission = crate::core::knowledge::protection::KnowledgeAdmission::capture(
+                    &root.to_string_lossy(),
+                )?;
+                archive_items_inner(
+                    store,
+                    scope,
+                    items,
+                    cfg,
+                    Some((admission.gateway_snapshot(), authority)),
+                    Some((&admission, authority)),
+                    now,
+                )
+            },
+        )?;
+    }
+    archive_items_inner(store, scope, items, cfg, None, None, now)
+}
+
+pub(crate) fn archive_items_with_authority<T: Serialize>(
+    store: MemoryStore,
+    scope: Option<&str>,
+    items: &[T],
+    cfg: &ArchiveConfig,
+    admission: &crate::core::context_admission::stores::StoreAdmission,
+    authority: &crate::core::policy::runtime::PublicationAuthority,
+) -> Result<Option<PathBuf>, String> {
+    let knowledge = if knowledge_store(store) && !items.is_empty() {
+        let root = archive_project().ok_or("archive project unavailable")?;
+        let snapshot = crate::core::knowledge::protection::KnowledgeAdmission::capture(
+            &root.to_string_lossy(),
+        )?;
+        if snapshot.gateway_snapshot().digest() != admission.digest() {
+            return Err("archive admission changed; retry".into());
+        }
+        Some(snapshot)
+    } else {
+        None
+    };
+    archive_items_inner(
+        store,
+        scope,
+        items,
+        cfg,
+        Some((admission, authority)),
+        knowledge.as_ref().map(|snapshot| (snapshot, authority)),
+        Utc::now(),
+    )
+}
+
+fn knowledge_store(store: MemoryStore) -> bool {
+    matches!(
+        store,
+        MemoryStore::Facts | MemoryStore::History | MemoryStore::Patterns
+    )
+}
+
+fn admits_knowledge_archive_item(
+    store: MemoryStore,
+    admission: &crate::core::knowledge::protection::KnowledgeAdmission,
+    value: &serde_json::Value,
+) -> bool {
+    match store {
+        MemoryStore::Facts => admission.admits_archive_fact_value(value),
+        MemoryStore::History => admission.admits_archive_history_value(value),
+        MemoryStore::Patterns => admission.admits_archive_pattern_value(value),
+        MemoryStore::Procedures => admission.admits_archive_value(value),
+    }
+}
+
+fn admits_typed_knowledge_archive_item(
+    store: MemoryStore,
+    admission: &crate::core::knowledge::protection::KnowledgeAdmission,
+    value: &serde_json::Value,
+) -> bool {
+    match store {
+        MemoryStore::Facts => admission.admits_typed_archive_fact_value(value),
+        MemoryStore::History => admission.admits_typed_archive_history_value(value),
+        MemoryStore::Patterns => admission.admits_typed_archive_pattern_value(value),
+        MemoryStore::Procedures => false,
+    }
+}
+
+fn archive_store(value: &serde_json::Value) -> Option<MemoryStore> {
+    match value.get("store") {
+        Some(serde_json::Value::String(store)) => MemoryStore::parse(store),
+        None if value.get("facts").is_some() => Some(MemoryStore::Facts),
+        Some(_) | None => None,
+    }
+}
+
+fn archive_items_field(value: &serde_json::Value, store: MemoryStore) -> Option<&'static str> {
+    if value.get("items").is_some() {
+        Some("items")
+    } else if store == MemoryStore::Facts && value.get("facts").is_some() {
+        Some("facts")
+    } else {
+        None
+    }
+}
+
+fn archive_items_inner<T: Serialize>(
+    store: MemoryStore,
+    scope: Option<&str>,
+    items: &[T],
+    cfg: &ArchiveConfig,
+    authorization: Option<(
+        &crate::core::context_admission::stores::StoreAdmission,
+        &crate::core::policy::runtime::PublicationAuthority,
+    )>,
+    knowledge_authorization: Option<(
+        &crate::core::knowledge::protection::KnowledgeAdmission,
+        &crate::core::policy::runtime::PublicationAuthority,
+    )>,
+    now: DateTime<Utc>,
+) -> Result<Option<PathBuf>, String> {
     if items.is_empty() {
         return Ok(None);
     }
-    let scope = effective_scope(scope)?;
+    if knowledge_store(store) && knowledge_authorization.is_none() {
+        return Err("knowledge archive requires an admitted publication scope".into());
+    }
+    let scope = effective_scope(store, scope)?;
     let scope = scope.as_deref();
     let dir = archive_dir(store, scope)?;
     std::fs::create_dir_all(&dir).map_err(|e| format!("{e}"))?;
@@ -226,22 +376,43 @@ fn archive_items_at<T: Serialize>(
     let filename = format!("archive-{}-{suffix:09}.json", now.format("%Y%m%d-%H%M%S"));
     let path = dir.join(filename);
 
+    let project_root =
+        crate::core::policy::diagnostics::project().map(|root| root.to_string_lossy().into_owned());
     let envelope = ArchiveEnvelopeRef {
         archived_at: now,
         store: store.as_str(),
         scope,
+        project_root: project_root.as_deref(),
         items,
     };
     let original = serde_json::to_value(&envelope).map_err(|_| "archive cannot be inspected")?;
-    let safe = inspect_archive(&original)?;
+    if let Some((admission, _)) = knowledge_authorization {
+        let records = original["items"]
+            .as_array()
+            .ok_or("archive items are not inspectable")?;
+        if !records
+            .iter()
+            .all(|record| admits_knowledge_archive_item(store, admission, record))
+        {
+            return Err("knowledge archive withheld by current policy".into());
+        }
+    }
+    let typed_items = knowledge_authorization.map(|(admission, _)| (store, admission));
+    let safe = inspect_archive(&original, typed_items)?;
     let json = serde_json::to_string_pretty(&safe).map_err(|_| "archive serialization failed")?;
-    if inspect_archive(&safe)? != safe {
+    if inspect_archive(&safe, typed_items)? != safe {
         return Err("archive rules changed before publication".into());
     }
     use std::io::Write;
     let mut file = tempfile::NamedTempFile::new_in(&dir).map_err(|_| "archive staging failed")?;
     file.write_all(json.as_bytes())
         .map_err(|_| "archive write failed")?;
+    if let Some((admission, authority)) = authorization {
+        admission.authorize_publication(authority)?;
+    }
+    if let Some((admission, authority)) = knowledge_authorization {
+        admission.authorize_publication(authority)?;
+    }
     // A clock collision must never overwrite an existing recovery artifact.
     file.persist_noclobber(&path)
         .map_err(|_| "archive publication failed")?;
@@ -256,6 +427,152 @@ fn archive_items_at<T: Serialize>(
         }
     }
     Ok(Some(path))
+}
+
+/// The installation-wide facts archives of releases before 3.11.5, as
+/// `(path, envelope)`. They are served to no project; only the explicit
+/// `lean-ctx migrate legacy-context` adoption reads them.
+pub(crate) fn legacy_facts_archives() -> Vec<(PathBuf, serde_json::Value)> {
+    let Ok(base) = crate::core::data_dir::lean_ctx_data_dir().map(|d| d.join("memory/archive"))
+    else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(&base) else {
+        return Vec::new();
+    };
+    let mut archives: Vec<_> = entries
+        .flatten()
+        .map(|entry| entry.path())
+        .filter(|path| path.is_file() && path.extension().is_some_and(|ext| ext == "json"))
+        .filter_map(|path| {
+            let text = crate::core::policy::diagnostics::Target::read_file(&path)?;
+            let value = serde_json::from_str::<serde_json::Value>(&text).ok()?;
+            Some((path, value))
+        })
+        .collect();
+    archives.sort_by(|a, b| a.0.cmp(&b.0));
+    archives
+}
+
+/// Facts archives left in a partition that is no longer the current one of
+/// the root they recorded: that project's identity (remote, package name)
+/// changed since. Served to no project until adopted.
+pub(crate) fn orphaned_facts_archives() -> Vec<(PathBuf, serde_json::Value)> {
+    let Ok(base) =
+        crate::core::data_dir::lean_ctx_data_dir().map(|d| d.join("memory/archive/facts"))
+    else {
+        return Vec::new();
+    };
+    let Ok(partitions) = std::fs::read_dir(&base) else {
+        return Vec::new();
+    };
+    let mut current_of: std::collections::HashMap<String, String> =
+        std::collections::HashMap::new();
+    let mut archives = Vec::new();
+    for partition in partitions.flatten() {
+        let name = partition.file_name().to_string_lossy().into_owned();
+        let Ok(files) = std::fs::read_dir(partition.path()) else {
+            continue;
+        };
+        for path in files.flatten().map(|file| file.path()) {
+            if path.extension().is_none_or(|ext| ext != "json") {
+                continue;
+            }
+            let Some(value) = crate::core::policy::diagnostics::Target::read_file(&path)
+                .and_then(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+            else {
+                continue;
+            };
+            let Some(root) = value["project_root"].as_str() else {
+                continue;
+            };
+            let current = current_of
+                .entry(root.to_string())
+                .or_insert_with(|| crate::core::project_hash::hash_project_root(root));
+            if *current != name {
+                archives.push((path, value));
+            }
+        }
+    }
+    archives.sort_by(|a, b| a.0.cmp(&b.0));
+    archives
+}
+
+/// The orphaned facts archives that recorded `project_root` (canonically).
+pub(crate) fn drifted_facts_archives(project_root: &Path) -> Vec<(PathBuf, serde_json::Value)> {
+    let canonical = |path: &Path| crate::core::pathutil::safe_canonicalize_bounded(path, 2000);
+    let wanted = canonical(project_root);
+    orphaned_facts_archives()
+        .into_iter()
+        .filter(|(_, value)| {
+            value["project_root"]
+                .as_str()
+                .is_some_and(|root| canonical(Path::new(root)) == wanted)
+        })
+        .collect()
+}
+
+/// Copy legacy archived `facts` into the facts partition of `project_root`
+/// (an explicit, canonical root) through the admission of a normal facts archive write. Each fact
+/// is admitted on its own; the admitted ones are archived together. Returns
+/// one flag per fact: `true` adopted, `false` withheld. A fact the partition
+/// already holds is not archived again, so a rerun after an interrupted
+/// adoption (copied, not yet journaled) leaves exactly one copy.
+pub(crate) fn adopt_legacy_facts(
+    project_root: &Path,
+    facts: &[serde_json::Value],
+) -> Result<Vec<bool>, String> {
+    let root = project_root;
+    crate::core::policy::runtime::with_explicit_project_source_view(root, |authority| {
+        let admission = crate::core::knowledge::protection::KnowledgeAdmission::capture(
+            &root.to_string_lossy(),
+        )?;
+        let admitted: Vec<bool> = facts
+            .iter()
+            .map(|fact| admits_knowledge_archive_item(MemoryStore::Facts, &admission, fact))
+            .collect();
+        let archived = archived_fact_identities()?;
+        let kept: Vec<&serde_json::Value> = facts
+            .iter()
+            .zip(&admitted)
+            .filter_map(|(fact, ok)| {
+                (*ok && !archived.contains(&fact_identity(fact))).then_some(fact)
+            })
+            .collect();
+        archive_items_inner(
+            MemoryStore::Facts,
+            None,
+            &kept,
+            &ArchiveConfig::from_env(),
+            Some((admission.gateway_snapshot(), authority)),
+            Some((&admission, authority)),
+            Utc::now(),
+        )?;
+        Ok(admitted)
+    })?
+}
+
+/// What makes an archived fact the same fact: its text fields. Numbers
+/// (confidence) are left out, they need not survive a JSON round trip bit
+/// for bit.
+fn fact_identity(fact: &serde_json::Value) -> [String; 3] {
+    ["category", "key", "value"].map(|field| fact[field].as_str().unwrap_or_default().to_owned())
+}
+
+/// The identities of the facts archived in the request project's partition.
+fn archived_fact_identities() -> Result<std::collections::HashSet<[String; 3]>, String> {
+    let dir = archive_dir(MemoryStore::Facts, None)?;
+    Ok(ordered_archive_files(&dir)
+        .0
+        .iter()
+        .filter_map(|path| crate::core::policy::diagnostics::Target::read_file(path))
+        .filter_map(|text| serde_json::from_str::<serde_json::Value>(&text).ok())
+        .flat_map(|envelope| match envelope.get("items") {
+            Some(serde_json::Value::Array(items)) => items.clone(),
+            _ => Vec::new(),
+        })
+        .map(|fact| fact_identity(&fact))
+        .collect())
 }
 
 /// All archive files for `store`/`scope`, sorted by their recorded archive time.
@@ -329,11 +646,34 @@ pub fn reachable_archives(
 
 /// Restore the items from a single archive file.
 pub fn restore_items<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, String> {
+    restore_items_inner(path, None)
+}
+
+pub(crate) fn restore_knowledge_items<T: DeserializeOwned>(
+    path: &Path,
+    admission: &crate::core::knowledge::protection::KnowledgeAdmission,
+) -> Result<Vec<T>, String> {
+    restore_items_inner(path, Some(admission))
+}
+
+fn restore_items_inner<T: DeserializeOwned>(
+    path: &Path,
+    supplied_admission: Option<&crate::core::knowledge::protection::KnowledgeAdmission>,
+) -> Result<Vec<T>, String> {
     let data = crate::core::policy::diagnostics::Target::read_file(path)
         .ok_or("archive is unavailable or uninspectable")?;
     let original: serde_json::Value = serde_json::from_str(&data).map_err(|_| "invalid archive")?;
-    let root = crate::core::policy::diagnostics::project().ok_or("archive project unavailable")?;
-    if crate::core::knowledge::protection::current(&root.to_string_lossy())?.is_some() {
+    let root = archive_project().ok_or("archive project unavailable")?;
+    let canonical = |p: &Path| crate::core::pathutil::safe_canonicalize_bounded(p, 2000);
+    let protected = crate::core::knowledge::protection::current(&root.to_string_lossy())?.is_some();
+    if !protected && archive_store(&original) == Some(MemoryStore::Facts) {
+        // Facts restore only from the request project's own partition; an
+        // installation-wide legacy archive has no provable project.
+        let expected = archive_dir(MemoryStore::Facts, None)?;
+        if path.parent().map(canonical) != Some(canonical(&expected)) {
+            return Err("archive belongs to a different storage scope".into());
+        }
+    } else if protected {
         let kind = match original["store"].as_str() {
             Some("facts") => MemoryStore::Facts,
             Some("history") => MemoryStore::History,
@@ -345,22 +685,85 @@ pub fn restore_items<T: DeserializeOwned>(path: &Path) -> Result<Vec<T>, String>
             .as_str()
             .ok_or("archive has no protected scope")?;
         let expected = archive_dir(kind, Some(scope))?;
-        let canonical = |p: &Path| crate::core::pathutil::safe_canonicalize_bounded(p, 2000);
         if path.parent().map(canonical) != Some(canonical(&expected)) {
             return Err("archive belongs to a different storage scope".into());
         }
     }
-    let safe = inspect_archive(&original)?;
+    let store = archive_store(&original);
+    let mut candidate = original.clone();
+    let captured_admission = if store.is_some_and(knowledge_store) && supplied_admission.is_none() {
+        Some(
+            crate::core::knowledge::protection::KnowledgeAdmission::capture(
+                &root.to_string_lossy(),
+            )?,
+        )
+    } else {
+        None
+    };
+    let mut typed_items = None;
+    if let Some(store) = store.filter(|store| knowledge_store(*store)) {
+        let admission = supplied_admission
+            .or(captured_admission.as_ref())
+            .ok_or("archive admission unavailable")?;
+        let collection =
+            archive_items_field(&candidate, store).ok_or("archive items are unavailable")?;
+        let records = candidate[collection]
+            .as_array_mut()
+            .ok_or("archive items are invalid")?;
+        records.retain(|record| admits_knowledge_archive_item(store, admission, record));
+        admission.authorize_gateway()?;
+        typed_items = Some((store, admission));
+    }
+    let safe = inspect_archive(&candidate, typed_items)?;
+    if let Some((_, admission)) = typed_items {
+        admission.authorize_gateway()?;
+    }
     let envelope: ArchiveEnvelope<T> = serde_json::from_value(safe)
         .map_err(|_| "archive policy result is structurally invalid")?;
     Ok(envelope.items)
 }
 
-fn inspect_archive(original: &serde_json::Value) -> Result<serde_json::Value, String> {
-    let root = crate::core::policy::diagnostics::project().ok_or("archive project unavailable")?;
+fn inspect_archive(
+    original: &serde_json::Value,
+    typed_items: Option<(
+        MemoryStore,
+        &crate::core::knowledge::protection::KnowledgeAdmission,
+    )>,
+) -> Result<serde_json::Value, String> {
+    let root = archive_project().ok_or("archive project unavailable")?;
     let active = crate::core::knowledge::protection::current(&root.to_string_lossy())?;
-    let safe = crate::core::policy::diagnostics::inspect(original, active.as_deref())
+    let mut inspection = original.clone();
+    let mut preserved_items = Vec::new();
+    if let Some((store, admission)) = typed_items {
+        if let Some(collection) = archive_items_field(&inspection, store)
+            && let Some(items) = inspection
+                .get_mut(collection)
+                .and_then(serde_json::Value::as_array_mut)
+        {
+            for (index, item) in items.iter_mut().enumerate() {
+                if admits_typed_knowledge_archive_item(store, admission, item) {
+                    preserved_items.push((index, item.clone()));
+                    *item = serde_json::Value::Null;
+                }
+            }
+        }
+    }
+    let mut safe = crate::core::policy::diagnostics::inspect(&inspection, active.as_deref())
         .ok_or("archive withheld by current policy")?;
+    if let Some((store, _)) = typed_items {
+        if let Some(collection) = archive_items_field(&safe, store)
+            && let Some(items) = safe
+                .get_mut(collection)
+                .and_then(serde_json::Value::as_array_mut)
+        {
+            for (index, item) in preserved_items {
+                let slot = items
+                    .get_mut(index)
+                    .ok_or("archive item projection changed shape")?;
+                *slot = item;
+            }
+        }
+    }
     for field in ["store", "scope", "archived_at"] {
         if safe[field] != original[field] {
             return Err("archive identity cannot be rewritten".into());
@@ -416,6 +819,37 @@ pub mod tests {
         label: String,
     }
 
+    #[test]
+    fn admitted_archive_rejects_unobserved_policy_before_publication() {
+        with_temp_data_dir(|| {
+            let project = tempfile::tempdir().expect("project root");
+            let project_path = project.path().to_str().expect("UTF-8 project path");
+            crate::core::policy::runtime::with_project_source_view(project_path, || {
+                let authority = crate::core::policy::runtime::PublicationAuthority::capture()
+                    .expect("active project authority");
+                let config = crate::core::config::Config::load_arc();
+                let admission = crate::core::context_admission::stores::StoreAdmission::with_policy(
+                    crate::core::context_admission::AdmissionPolicy::from_config(&config),
+                );
+                let scope = Some("publication-guard-test");
+                let result = archive_items_with_authority(
+                    MemoryStore::History,
+                    scope,
+                    &items(1),
+                    &ArchiveConfig::default(),
+                    &admission,
+                    &authority,
+                );
+                assert!(
+                    result.is_err(),
+                    "explicit unobserved snapshots cannot publish"
+                );
+                assert!(list_archives(MemoryStore::History, scope).is_empty());
+            })
+            .expect("source view");
+        });
+    }
+
     fn items(n: u32) -> Vec<Item> {
         (0..n)
             .map(|i| Item {
@@ -444,6 +878,26 @@ pub mod tests {
         });
     }
 
+    /// AP04 review S3: a request bound to no project has no archive; it is
+    /// not keyed on the directory the process runs in.
+    #[test]
+    fn a_request_without_a_project_has_no_archive() {
+        with_temp_data_dir(|| {
+            let archived = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+                std::cell::RefCell::new(None),
+                || {
+                    archive_items(
+                        MemoryStore::Facts,
+                        None,
+                        &items(1),
+                        &ArchiveConfig::default(),
+                    )
+                },
+            );
+            assert!(archived.is_err(), "{archived:?}");
+        });
+    }
+
     #[test]
     fn empty_archive_is_noop() {
         with_temp_data_dir(|| {
@@ -458,18 +912,48 @@ pub mod tests {
         });
     }
 
+    fn in_project<T>(root: &Path, f: impl FnOnce() -> T) -> T {
+        crate::core::policy::runtime::REQUEST_PROJECT
+            .sync_scope(std::cell::RefCell::new(Some(root.to_path_buf())), f)
+    }
+
+    /// AP05-G1: an unprotected project's evicted facts went to one
+    /// installation-wide archive, so a recall miss or `restore` in another
+    /// project rehydrated them there as local facts.
     #[test]
-    fn facts_use_legacy_root_other_stores_are_scoped() {
+    fn facts_archives_are_partitioned_by_request_project() {
         with_temp_data_dir(|| {
+            let cfg = ArchiveConfig::default();
+            let a = tempfile::tempdir().expect("project a");
+            let b = tempfile::tempdir().expect("project b");
+            let archived = in_project(a.path(), || {
+                archive_items(MemoryStore::Facts, None, &items(2), &cfg)
+                    .unwrap()
+                    .expect("wrote an archive")
+            });
             let base = crate::core::data_dir::lean_ctx_data_dir()
                 .unwrap()
                 .join("memory")
                 .join("archive");
-            assert_eq!(archive_dir(MemoryStore::Facts, None).unwrap(), base);
-            assert_eq!(
-                archive_dir(MemoryStore::History, Some("h")).unwrap(),
-                base.join("history").join("h")
-            );
+            let legacy = base.join("archive-20260101-000000-000000.json");
+            std::fs::write(
+                &legacy,
+                r#"{"archived_at":"2026-01-01T00:00:00Z","facts":[{"id":7,"label":"old"}]}"#,
+            )
+            .unwrap();
+            in_project(b.path(), || {
+                assert!(list_archives(MemoryStore::Facts, None).is_empty());
+                assert!(restore_items::<Item>(&archived).is_err());
+                assert!(restore_items::<Item>(&legacy).is_err());
+            });
+            in_project(a.path(), || {
+                assert_eq!(
+                    list_archives(MemoryStore::Facts, None),
+                    vec![archived.clone()]
+                );
+                assert_eq!(restore_items::<Item>(&archived).unwrap(), items(2));
+                assert!(restore_items::<Item>(&legacy).is_err());
+            });
         });
     }
 
@@ -548,6 +1032,7 @@ pub mod tests {
                     archived_at: old_time,
                     store: store.as_str(),
                     scope: Some("p"),
+                    project_root: None,
                     items: &items(1),
                 })
                 .unwrap(),
@@ -621,5 +1106,14 @@ pub mod tests {
             assert_eq!(MemoryStore::parse(store.as_str()), Some(store));
         }
         assert_eq!(MemoryStore::parse("nope"), None);
+    }
+
+    #[test]
+    fn unknown_explicit_store_does_not_fall_back_to_legacy_facts() {
+        let invalid = serde_json::json!({"store":"unknown","facts":[]});
+        assert_eq!(archive_store(&invalid), None);
+
+        let legacy = serde_json::json!({"facts":[]});
+        assert_eq!(archive_store(&legacy), Some(MemoryStore::Facts));
     }
 }

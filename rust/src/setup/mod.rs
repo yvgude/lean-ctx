@@ -1,5 +1,6 @@
-mod agent_select;
-pub use agent_select::*;
+pub mod agent_selection;
+mod dry_run;
+pub use dry_run::print_plan;
 mod env_guard;
 mod first_run;
 mod index_build;

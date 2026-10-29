@@ -10,6 +10,7 @@ use std::collections::HashMap;
 use rusqlite::Connection;
 
 use crate::core::graph_provider::GraphProvider;
+use crate::core::property_graph::GraphSource;
 
 /// Edge weight by semantic kind. Calls bind tighter than plain imports; purely
 /// structural `defines`/`exports` edges are weak ties. Accepts both the
@@ -92,31 +93,44 @@ impl AdjGraph {
         }
     }
 
-    pub fn from_property_graph(conn: &Connection) -> Self {
-        let files = query_files(conn);
+    /// The file graph of `source` among the files it serves now (G04): a
+    /// withdrawn file is no node, so it carries no edge, no degree and no
+    /// weight into the partition, the edge counts, cohesion or modularity.
+    /// Under protection a graph with more files than one request can decide
+    /// yields the empty graph (`GraphGate::ranking_files`, no seeds).
+    pub fn from_property_graph<S: GraphSource + ?Sized>(source: &S) -> Self {
+        let conn = source.store();
+        let edges = query_file_edges(conn);
+        let file_pairs: Vec<(String, String)> = edges
+            .iter()
+            .map(|(a, b, _)| (a.clone(), b.clone()))
+            .collect();
+        let served = source.rankable_files(query_files(conn), &file_pairs, &[]);
+        // `query_files` order (by path) is the node order.
+        let mut files: Vec<String> = served.into_iter().collect();
+        files.sort();
         let idx: HashMap<&str, usize> = files
             .iter()
             .enumerate()
             .map(|(i, f)| (f.as_str(), i))
             .collect();
-        let pairs: Vec<(usize, usize, f64)> = query_file_edges(conn)
+        let pairs: Vec<(usize, usize, f64)> = edges
             .iter()
             .filter_map(|(a, b, w)| Some((*idx.get(a.as_str())?, *idx.get(b.as_str())?, *w)))
             .collect();
         Self::from_pairs(files, &pairs)
     }
 
+    /// As [`Self::from_property_graph`], for either backend: the files and
+    /// edges come from one gated read (`GraphProvider::ranking_graph`).
     pub fn from_provider(gp: &GraphProvider) -> Self {
-        let mut files = gp.file_paths();
-        files.sort();
-        files.dedup();
+        let (files, edges) = gp.ranking_graph();
         let idx: HashMap<&str, usize> = files
             .iter()
             .enumerate()
             .map(|(i, f)| (f.as_str(), i))
             .collect();
-        let pairs: Vec<(usize, usize, f64)> = gp
-            .edges()
+        let pairs: Vec<(usize, usize, f64)> = edges
             .iter()
             .filter_map(|e| {
                 let i = *idx.get(e.from.as_str())?;

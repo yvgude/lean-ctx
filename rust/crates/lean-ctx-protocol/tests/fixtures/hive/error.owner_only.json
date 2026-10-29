@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "forbidden_right",
+    "message": "Only the owner turns an opt-in on.",
+    "reason": "owner_only"
+  }
+}

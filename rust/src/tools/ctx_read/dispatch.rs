@@ -462,7 +462,6 @@ fn handle_with_options_resolved_preread(
             result.content = stub;
             result.output_tokens = stub_tokens;
             result.is_cache_hit = true;
-            crate::core::anti_interrupt::spawn_redundant_read(path);
         }
     }
 
@@ -478,34 +477,6 @@ fn handle_with_options_resolved_preread(
             result.output_tokens,
             original_tokens,
         );
-
-        // Quality signals (#538): compressed reads count as clean until a
-        // bounce proves otherwise (the bounce signal outweighs 6:1); large
-        // full reads of never-bouncing extensions are wasted compression
-        // opportunities and push the learned threshold up.
-        // SSOT via [`ReadMode`] (#528): only verbatim `full` and the `diff`
-        // delta are uncompressed. A resolved window is always the canonical
-        // `lines:N-M` (parses to `Lines` ⇒ compressed); the default of `true`
-        // for the unreachable bare `"lines"` keeps prior behaviour everywhere a
-        // real resolved mode can occur.
-        let compressed = result
-            .resolved_mode
-            .parse::<ReadMode>()
-            .map_or(true, |m| m.counts_as_compressed());
-        if compressed {
-            crate::core::adaptive_thresholds::record_quality_signal(
-                path,
-                crate::core::threshold_learning::QualitySignal::CleanCompressed,
-            );
-        } else if result.resolved_mode == "full"
-            && result.output_tokens > 2000
-            && bt.bounce_rate_for_extension(path).unwrap_or(0.0) < 0.05
-        {
-            crate::core::adaptive_thresholds::record_quality_signal(
-                path,
-                crate::core::threshold_learning::QualitySignal::WastedFull,
-            );
-        }
     }
 
     // Stigmergy (#540): deposit a Hot scent for this read in the background
@@ -514,18 +485,7 @@ fn handle_with_options_resolved_preread(
     // relative timestamp ("claimed Nm ago"), which would make the output a
     // non-pure function of wall-clock time and defeat provider prompt caching
     // (#498). The deposit remains so the field still reflects active work.
-    {
-        let self_agent = crate::core::scent_field::scent_agent_id();
-        let scent_path = crate::core::pathutil::normalize_tool_path(path);
-        std::thread::spawn(move || {
-            crate::core::scent_field::deposit(
-                self_agent,
-                crate::core::scent_field::ScentKind::Hot,
-                &scent_path,
-                0.3,
-            );
-        });
-    }
+    deposit_hot_scent(path);
 
     crate::core::context_gc::maybe_gc(cache);
 
@@ -589,7 +549,6 @@ pub(crate) fn try_stub_hit_readonly_scoped(
                 delivered_conv.as_deref(),
             )
         {
-            crate::core::cache_telemetry::record_conversation_mismatch();
             return None;
         }
         let original_tokens = cache.record_cache_hit(path)?.original_tokens;
@@ -614,7 +573,6 @@ pub(crate) fn try_stub_hit_readonly_scoped(
             rec.delivered_conversation.as_deref(),
         )
     {
-        crate::core::cache_telemetry::record_conversation_mismatch();
         return None;
     }
     Some(render_unchanged_stub(&rec.file_ref, path, rec.line_count))
@@ -983,6 +941,24 @@ pub(crate) fn record_cross_agent_delivery(
     crate::daemon_client::try_delivery_record_blocking(&entry);
     let reg = crate::core::ocla::OclaRegistry::global();
     reg.delivery_registry.record_delivery(entry);
+}
+
+/// Deposit a Hot scent for `path` in the request's project from a worker
+/// thread. The project is resolved here: the request scope does not reach
+/// the thread, which would otherwise have no project at all.
+fn deposit_hot_scent(path: &str) -> Option<std::thread::JoinHandle<()>> {
+    let project_root = crate::core::scent_field::current_project()?;
+    let self_agent = crate::core::scent_field::scent_agent_id();
+    let scent_path = crate::core::pathutil::normalize_tool_path(path);
+    Some(std::thread::spawn(move || {
+        crate::core::scent_field::deposit_for(
+            &project_root,
+            self_agent,
+            crate::core::scent_field::ScentKind::Hot,
+            &scent_path,
+            0.3,
+        );
+    }))
 }
 
 #[cfg(test)]
@@ -1365,5 +1341,26 @@ mod tests {
             output.is_none(),
             "regular file must respect conversation gate"
         );
+    }
+
+    /// AP05-G6 review: the read's Hot scent was deposited from a worker
+    /// thread that resolved the project there, outside the request scope.
+    #[test]
+    fn hot_scent_of_a_read_lands_in_the_request_project() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let other = tempfile::tempdir().unwrap();
+        let root = project.path().to_str().unwrap();
+        crate::core::policy::runtime::REQUEST_PROJECT
+            .sync_scope(
+                std::cell::RefCell::new(Some(project.path().to_path_buf())),
+                || super::deposit_hot_scent("src/hot_scent_marker.rs"),
+            )
+            .expect("a bound request deposits")
+            .join()
+            .unwrap();
+        assert!(crate::core::scent_field::sync_block(root).contains("hot_scent_marker"));
+        assert!(crate::core::scent_field::sync_block(other.path().to_str().unwrap()).is_empty());
+        assert!(super::deposit_hot_scent("src/unbound.rs").is_none());
     }
 }

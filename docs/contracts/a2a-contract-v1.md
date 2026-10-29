@@ -16,7 +16,7 @@ Ein **versionierter Agent↔Agent Vertrag** (A2A), der Multi‑Agent‑Koordinat
 - **bounded**: Outputs/Stores wachsen nicht unkontrolliert.
 - **deterministisch**: stable ordering + klare Semantik für Sichtbarkeit/TTL/Transitions.
 - **privacy-safe**: Private Messages sind nur Sender/Empfänger sichtbar; Exports sind redaction-safe.
-- **auditable**: Export‑Artefakte werden im Evidence Ledger referenziert.
+- **auditable**: Export‑Artefakte liegen unter `.lean-ctx/proofs/`; Tool-Aufrufe stehen im Audit-Trail.
 
 ## Version (SSOT)
 
@@ -97,6 +97,10 @@ Alle neuen Felder sind `#[serde(default)]` für backward compatibility.
 - `action=post`
 - Optional: `privacy=public|team|private`, `priority=low|normal|high|critical`, `ttl_hours=<u64>`
 - `privacy=private` erfordert `to_agent`.
+- Optional: `request_id=<1–128 Bytes>` (Idempotenz-Schlüssel, pro Absender und Projekt):
+  gleicher Schlüssel + gleiche Anfrage → Id der ersten Message, nichts wird erneut
+  geschrieben; gleicher Schlüssel + andere Anfrage → Fehler (`idempotency conflict`).
+  Der Schlüssel lebt so lange wie seine Message (Scratchpad-Obergrenze und TTL).
 
 **Read**:
 
@@ -110,15 +114,9 @@ Alle neuen Felder sind `#[serde(default)]` für backward compatibility.
 - `privacy=redacted|full`
   - `full` ist nur möglich, wenn Redaction für die aktive Role deaktiviert ist (Admin‑Semantik).
 
-### `ctx_task`
-
-- **Runtime**: `rust/src/tools/ctx_task.rs`
-- Actions: `create|update|list|get|cancel|message|info`
-
 ## Export Artefakte & Evidence
 
 - **Artefakt**: `.lean-ctx/proofs/a2a-snapshot-v1_<ts>.json`
-- **Evidence ledger key**: `proof:a2a-snapshot-v1`
 - **Redaction**: Exports sind standardmäßig redacted.
 
 ## Selektives Routing (Phase 1)
@@ -137,6 +135,7 @@ Alle neuen Felder sind `#[serde(default)]` für backward compatibility.
   - Content Types: `handoff_bundle`, `context_package`, `a2a_message`, `a2a_task`
 - **Runtime**: `rust/src/core/a2a_transport.rs`
 - **CLI**: `lean-ctx pack send/receive` für file- und HTTP-basiertes Senden/Empfangen.
+  - `pack send` verschickt ein Paket nur so, wie es installiert würde (Manifest geprüft, Hash gebunden, unter der aktuellen Policy zugelassen — sonst als Ganzes abgelehnt). Das Envelope trägt keinen lokalen Pfad und keinen Projekt-Hash; `daemon_fingerprint` ist nur aus der lean-ctx-Version abgeleitet. Mit `--target` durchlaufen die exakten Envelope-Bytes die Egress-Prüfung mit dem Ziel als Destination (fail-closed, Receipt vor dem Senden).
 - **HTTP Endpoints**:
   - `POST /v1/a2a/handoff` — Empfängt TransportEnvelope
   - `GET /v1/a2a/agent-card` — Agent Card für Discovery
@@ -148,7 +147,7 @@ Alle neuen Felder sind `#[serde(default)]` für backward compatibility.
 - **Agent Card v1.0**: Publiziert unter `/.well-known/agent.json` mit `provider`, `documentationUrl`, `skills` mit `inputModes/outputModes`.
 - **JSON-RPC 2.0**: `message/send` (Legacy-Name `tasks/send`), `tasks/get`, `tasks/cancel` gemapped auf interne TaskStore.
   - Absender jedes über `/a2a` erzeugten Tasks ist die feste Identität `a2a-client` — der Endpoint kennt nur einen Principal (Bearer-Token). `message.role` ist nur die A2A-Rolle (`user` | `agent`), andere Werte → `-32602`.
-  - Folge-Nachrichten (`message.taskId` bzw. `params.id`) und `tasks/cancel` gelten nur für Tasks, die über `/a2a` erzeugt wurden; lokale `ctx_task`-Tasks sind darüber nicht veränderbar.
+  - Folge-Nachrichten (`message.taskId` bzw. `params.id`) und `tasks/cancel` gelten nur für Tasks, die über `/a2a` erzeugt wurden; lokal angelegte Tasks (vor 2026-10-17 über das entfernte `ctx_task`) sind darüber nicht veränderbar.
   - Message-Parts: Diskriminator `kind` (A2A 0.2+) oder `type` (0.1).
 - **Runtime**: `rust/src/core/a2a/a2a_compat.rs`
 

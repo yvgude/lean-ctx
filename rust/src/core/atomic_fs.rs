@@ -28,6 +28,58 @@ pub(crate) fn try_atomic_write(
     bytes: &[u8],
     permissions: Option<&std::fs::Permissions>,
 ) -> std::io::Result<()> {
+    try_atomic_write_if(path, bytes, permissions, || true)
+}
+
+/// [`try_atomic_write`] with a last word for the caller: `admit` is asked once
+/// the new content is fully staged and synced, immediately before the replace.
+/// On `false` the staged file is removed, `path` is untouched and the error
+/// kind is `TimedOut`. Everything slow (cleanup, create, write, sync) lies
+/// before that question; after it only the replace itself follows — which on
+/// Windows may retry a held target for about a second.
+pub(crate) fn try_atomic_write_if(
+    path: &Path,
+    bytes: &[u8],
+    permissions: Option<&std::fs::Permissions>,
+    admit: impl FnOnce() -> bool,
+) -> std::io::Result<()> {
+    write_staged(path, bytes, permissions, admit, true)
+}
+
+/// [`try_atomic_write`] without the sweep for orphaned temps: for a directory
+/// of very many files (the gateway evidence store) where listing it on every
+/// write would cost more than the write, and whose owner removes stale temps
+/// itself ([`is_orphaned_temp`]).
+pub(crate) fn try_atomic_write_unswept(path: &Path, bytes: &[u8]) -> std::io::Result<()> {
+    write_staged(path, bytes, None, || true, false)
+}
+
+/// Whether `name` is a temp file of these atomic writes that a crash left
+/// behind: its writer is gone, or it is older than an hour (#958).
+pub(crate) fn is_orphaned_temp(name: &str, modified: SystemTime, now: SystemTime) -> bool {
+    let Some(rest) = name
+        .strip_prefix('.')
+        .and_then(|name| name.split_once(".lean-ctx.tmp."))
+        .map(|(_, rest)| rest)
+    else {
+        return false;
+    };
+    let pid: Option<u32> = rest.split('.').next().and_then(|s| s.parse().ok());
+    pid.is_some_and(|p| !crate::ipc::process::is_alive(p))
+        || now
+            .duration_since(modified)
+            .is_ok_and(|age| age > ORPHAN_AGE)
+}
+
+const ORPHAN_AGE: std::time::Duration = std::time::Duration::from_hours(1);
+
+fn write_staged(
+    path: &Path,
+    bytes: &[u8],
+    permissions: Option<&std::fs::Permissions>,
+    admit: impl FnOnce() -> bool,
+    sweep: bool,
+) -> std::io::Result<()> {
     use std::io::Write;
 
     let parent = path
@@ -44,7 +96,9 @@ pub(crate) fn try_atomic_write(
     // left them behind for good with no separate startup pass to catch
     // them. Piggybacking here means every atomic write into this directory
     // gets a chance to reap whatever an earlier crashed write left behind.
-    cleanup_orphaned_temps(parent, &filename);
+    if sweep {
+        cleanup_orphaned_temps(parent, &filename);
+    }
 
     let pid = std::process::id();
     let nanos = SystemTime::now()
@@ -68,6 +122,14 @@ pub(crate) fn try_atomic_write(
 
     if let Some(perms) = permissions {
         std::fs::set_permissions(&tmp, perms.clone())?;
+    }
+
+    if !admit() {
+        let _ = std::fs::remove_file(&tmp);
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::TimedOut,
+            "atomic write was not admitted to commit",
+        ));
     }
 
     // #956: on Windows, `rename` fails outright if `path` already exists, so
@@ -96,6 +158,20 @@ pub(crate) fn try_atomic_write(
     fsync_dir(parent);
 
     Ok(())
+}
+
+/// Atomically move a fully written `tmp` over `path`: `rename(2)` on Unix,
+/// [`windows_replace`] (with its bounded retry of a held target) on Windows.
+/// `tmp` is left in place on failure; the caller removes it.
+pub(crate) fn replace_file(tmp: &Path, path: &Path) -> std::io::Result<()> {
+    #[cfg(windows)]
+    {
+        windows_replace(tmp, path)
+    }
+    #[cfg(not(windows))]
+    {
+        std::fs::rename(tmp, path)
+    }
 }
 
 /// Atomically replace `path` with `tmp` via `MoveFileExW(MOVEFILE_REPLACE_EXISTING)`
@@ -176,11 +252,33 @@ pub(crate) fn sync_directory(dir: &Path) -> std::io::Result<()> {
     }
 }
 
+/// Directory listings made on this thread, so tests assert a write path
+/// lists nothing by counting operations instead of timing them.
+#[cfg(test)]
+pub(crate) mod listings {
+    use std::cell::Cell;
+
+    thread_local! {
+        static SEEN: Cell<u64> = const { Cell::new(0) };
+    }
+
+    pub(crate) fn seen() {
+        SEEN.with(|n| n.set(n.get() + 1));
+    }
+
+    /// The listings since the last call.
+    pub(crate) fn take() -> u64 {
+        SEEN.with(|n| n.replace(0))
+    }
+}
+
 /// Removes `.{filename}.lean-ctx.tmp.{pid}.{nanos}` leftovers in `parent` from
 /// a crash between temp-file creation and rename (#958).
 fn cleanup_orphaned_temps(parent: &Path, filename: &str) {
-    const STALE_AGE: std::time::Duration = std::time::Duration::from_hours(1);
+    const STALE_AGE: std::time::Duration = ORPHAN_AGE;
     let prefix = format!(".{filename}.lean-ctx.tmp.");
+    #[cfg(test)]
+    listings::seen();
 
     let Ok(entries) = std::fs::read_dir(parent) else {
         return;
@@ -464,6 +562,13 @@ mod tests {
         assert!(strays.is_empty(), "temp file must not linger");
         try_atomic_write(&path, b"second", None).unwrap();
         assert_eq!(std::fs::read(&path).unwrap(), b"second");
+
+        // A commit the caller does not admit leaves the target as it was
+        // and nothing staged behind.
+        let refused = try_atomic_write_if(&path, b"third", None, || false).unwrap_err();
+        assert_eq!(refused.kind(), std::io::ErrorKind::TimedOut);
+        assert_eq!(std::fs::read(&path).unwrap(), b"second");
+        assert_eq!(std::fs::read_dir(dir.path()).unwrap().count(), 1);
     }
 
     #[cfg(unix)]

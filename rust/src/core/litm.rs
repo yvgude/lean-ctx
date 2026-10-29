@@ -195,15 +195,19 @@ pub fn position_optimize_with_share(session: &SessionState, begin_share: f64) ->
         }
     }
 
-    if !session.findings.is_empty() {
-        let items: Vec<String> = session
-            .findings
-            .iter()
-            .rev()
-            .take(8)
-            .map(|f| f.summary.clone())
-            .collect();
-        end_lines.push(format!("Findings: {}", items.join(" | ")));
+    // Only findings that may be delivered now (`SessionState::finding_served`):
+    // a finding bound to a source that no longer admits is left out, and the
+    // line with it when none is left.
+    let findings: Vec<String> = session
+        .findings
+        .iter()
+        .rev()
+        .filter(|f| session.finding_served(f))
+        .take(8)
+        .map(|f| f.summary.clone())
+        .collect();
+    if !findings.is_empty() {
+        end_lines.push(format!("Findings: {}", findings.join(" | ")));
     }
 
     if let Some(ref tests) = session.test_results {
@@ -473,6 +477,68 @@ pub mod tests {
         assert!(
             (claude_eff - gemini_eff).abs() > 0.1,
             "different profiles should yield different efficiencies"
+        );
+    }
+
+    fn with_two_findings(root: &str) -> SessionState {
+        std::fs::write(format!("{root}/pool.rs"), "pub fn lease() {}\n").expect("source");
+        let mut session = SessionState::new();
+        session.project_root = Some(root.to_owned());
+        session.add_finding_for_file(Some("pool.rs"), Some(1), "the pool leaks one lease");
+        session.add_finding_for_file(None, None, "noted without a file");
+        session
+    }
+
+    /// The injected session block shows a finding bound to a source while
+    /// the source admits and drops it — and the line, when it was the only
+    /// one — once the source is deleted. A finding without a file stays.
+    #[test]
+    fn a_finding_whose_source_is_gone_leaves_the_injected_block() {
+        use crate::core::context_admission::stored::lineage_support::{governed, project, scoped};
+        let _data = governed();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        let session = with_two_findings(&root);
+        let mut bound_only = session.clone();
+        bound_only.findings.pop();
+        let end_block = |session: &SessionState| {
+            scoped(&root, || {
+                position_optimize_with_share(session, 1.0).end_block
+            })
+        };
+
+        let shown = end_block(&session);
+        assert!(
+            shown.contains("Findings: noted without a file | the pool leaks one lease\n"),
+            "{shown}"
+        );
+        assert!(end_block(&bound_only).contains("Findings: the pool leaks one lease\n"));
+
+        std::fs::remove_file(format!("{root}/pool.rs")).expect("delete");
+        let withheld = end_block(&session);
+        assert!(
+            withheld.contains("Findings: noted without a file\n"),
+            "{withheld}"
+        );
+        assert!(!withheld.contains("leaks"), "{withheld}");
+        let none = end_block(&bound_only);
+        assert!(!none.contains("Findings:"), "{none}");
+        assert!(none.starts_with("ACTIVE SESSION v"), "{none}");
+    }
+
+    /// Developer mode: the findings line is as before.
+    #[test]
+    fn findings_are_injected_as_before_in_developer_mode() {
+        use crate::core::context_admission::stored::lineage_support::project;
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        let session = with_two_findings(&root);
+        std::fs::remove_file(format!("{root}/pool.rs")).expect("delete");
+        let end_block = position_optimize_with_share(&session, 1.0).end_block;
+        assert!(
+            end_block.contains("Findings: noted without a file | the pool leaks one lease\n"),
+            "{end_block}"
         );
     }
 }

@@ -1,0 +1,8 @@
+{
+  "client_msg_id": "01jb8z8m2q4r6s8t0v2w4x6y8z",
+  "error": {
+    "code": "forbidden_right",
+    "message": "This lease has no bus.relay right."
+  },
+  "t": "error"
+}

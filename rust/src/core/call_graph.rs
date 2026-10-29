@@ -241,10 +241,71 @@ enum BuildState {
     Failed(String),
 }
 
-static BUILD: OnceLock<Mutex<BuildState>> = OnceLock::new();
+/// What a resident call graph answers for: the project it was built from
+/// and the protection state its inputs were decided under. A graph is never
+/// handed to a request of another project, and one filled in Community
+/// developer mode is not handed to a protected request (or the reverse).
+/// The serve-time gate is not part of this: it stays with the request, which
+/// decides the inputs the resident graph is compared with.
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct BuildKey {
+    root: String,
+    protected: bool,
+}
 
-fn global_state() -> &'static Mutex<BuildState> {
-    BUILD.get_or_init(|| Mutex::new(BuildState::Idle))
+impl BuildKey {
+    fn for_request(project_root: &str) -> Self {
+        Self {
+            root: normalize_project_root(project_root),
+            protected: crate::core::context_admission::stored::source_authority_required(),
+        }
+    }
+}
+
+/// Resident builds kept at once; the least recently requested one that is
+/// not building goes first.
+const MAX_RESIDENT_BUILDS: usize = 4;
+
+/// The state of a project nobody requested yet.
+static IDLE: BuildState = BuildState::Idle;
+
+/// The resident builds, least recently requested first.
+#[derive(Default)]
+struct Builds {
+    entries: Vec<(BuildKey, BuildState)>,
+}
+
+impl Builds {
+    fn state(&self, key: &BuildKey) -> &BuildState {
+        self.entries
+            .iter()
+            .find(|(k, _)| k == key)
+            .map_or(&IDLE, |(_, state)| state)
+    }
+
+    /// The most recently requested build.
+    fn latest(&self) -> &BuildState {
+        self.entries.last().map_or(&IDLE, |(_, state)| state)
+    }
+
+    fn set(&mut self, key: BuildKey, state: BuildState) {
+        self.entries.retain(|(k, _)| *k != key);
+        if self.entries.len() >= MAX_RESIDENT_BUILDS {
+            let evict = self
+                .entries
+                .iter()
+                .position(|(_, state)| !matches!(state, BuildState::Building { .. }))
+                .unwrap_or(0);
+            self.entries.remove(evict);
+        }
+        self.entries.push((key, state));
+    }
+}
+
+static BUILD: OnceLock<Mutex<Builds>> = OnceLock::new();
+
+fn global_state() -> &'static Mutex<Builds> {
+    BUILD.get_or_init(|| Mutex::new(Builds::default()))
 }
 
 impl CallGraph {
@@ -379,13 +440,23 @@ impl CallGraph {
         project_root: &str,
         inputs: Arc<CallGraphInputs>,
     ) -> Result<Arc<CallGraph>, BuildProgress> {
+        let key = BuildKey::for_request(project_root);
         let state = global_state();
         let mut guard = state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
 
-        match &*guard {
-            BuildState::Ready(graph) => return Ok(Arc::clone(graph)),
+        match guard.state(&key) {
+            // The resident graph outlives the request that built it. It is
+            // found only under this request's project and protection state
+            // (`BuildKey`), and handed out only while every file it was built
+            // from is still in this request's inputs — those come from the
+            // gated graph facade (G04), so a file withdrawn since is missing
+            // there. Otherwise the graph is rebuilt over the current inputs.
+            BuildState::Ready(graph) if !holds_withdrawn_files(graph, &inputs) => {
+                return Ok(Arc::clone(graph));
+            }
+            BuildState::Ready(_) | BuildState::Idle => {}
             BuildState::Building {
                 files_total,
                 files_done,
@@ -401,15 +472,15 @@ impl CallGraph {
             BuildState::Failed(msg) => {
                 tracing::warn!("[call_graph: previous build failed: {msg} — retrying]");
             }
-            BuildState::Idle => {}
         }
 
-        // Try serving from disk cache first
+        // Try serving from disk cache first (an exact file-set match, so a
+        // persisted graph with a withdrawn file is rebuilt, not served)
         if let Some(cached) = Self::load(project_root)
             && !cache_looks_stale(&cached, &inputs)
         {
             let arc = Arc::new(cached);
-            *guard = BuildState::Ready(Arc::clone(&arc));
+            guard.set(key, BuildState::Ready(Arc::clone(&arc)));
             return Ok(arc);
         }
 
@@ -417,14 +488,17 @@ impl CallGraph {
         let files_done = Arc::new(AtomicUsize::new(0));
         let edges_found = Arc::new(AtomicUsize::new(0));
 
-        *guard = BuildState::Building {
-            files_total,
-            files_done: Arc::clone(&files_done),
-            edges_found: Arc::clone(&edges_found),
-        };
+        guard.set(
+            key.clone(),
+            BuildState::Building {
+                files_total,
+                files_done: Arc::clone(&files_done),
+                edges_found: Arc::clone(&edges_found),
+            },
+        );
         drop(guard);
 
-        let root = normalize_project_root(project_root);
+        let root = key.root.clone();
         let fd = Arc::clone(&files_done);
         let ef = Arc::clone(&edges_found);
 
@@ -443,7 +517,7 @@ impl CallGraph {
                     let _ = graph.save();
                     let arc = Arc::new(graph);
                     if let Ok(mut g) = global_state().lock() {
-                        *g = BuildState::Ready(Arc::clone(&arc));
+                        g.set(key, BuildState::Ready(Arc::clone(&arc)));
                     }
                     tracing::info!(
                         "[call_graph: build complete — {} files, {} edges]",
@@ -455,7 +529,7 @@ impl CallGraph {
                     let msg = format!("{e:?}");
                     tracing::error!("[call_graph: build panicked: {msg}]");
                     if let Ok(mut g) = global_state().lock() {
-                        *g = BuildState::Failed(msg);
+                        g.set(key, BuildState::Failed(msg));
                     }
                 }
             }
@@ -469,13 +543,14 @@ impl CallGraph {
         })
     }
 
-    /// Returns current build status without starting anything.
+    /// Returns the status of the most recently requested build without
+    /// starting anything: counts only, no file or symbol of any project.
     pub fn build_status() -> BuildProgress {
         let state = global_state();
         let guard = state
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        match &*guard {
+        match guard.latest() {
             BuildState::Idle => BuildProgress {
                 status: "idle",
                 files_total: 0,
@@ -510,10 +585,11 @@ impl CallGraph {
         }
     }
 
-    /// Force-invalidate the cached result so next request triggers a rebuild.
+    /// Force-invalidate every resident result so the next request of any
+    /// project triggers a rebuild.
     pub fn invalidate() {
         if let Ok(mut g) = global_state().lock() {
-            *g = BuildState::Idle;
+            g.entries.clear();
         }
     }
 
@@ -810,6 +886,19 @@ fn cache_looks_stale(cached: &CallGraph, inputs: &CallGraphInputs) -> bool {
     let index_files: std::collections::HashSet<&str> =
         inputs.file_paths.iter().map(String::as_str).collect();
     cached_files != index_files
+}
+
+/// Whether `cached` was built from a file that is not among `inputs` — the
+/// files the current request may use. Unlike [`cache_looks_stale`] this
+/// ignores files the build could not read, so a resident graph is not
+/// rebuilt on every request because of one unreadable file.
+fn holds_withdrawn_files(cached: &CallGraph, inputs: &CallGraphInputs) -> bool {
+    let current: std::collections::HashSet<&str> =
+        inputs.file_paths.iter().map(String::as_str).collect();
+    cached
+        .file_hashes
+        .keys()
+        .any(|file| !current.contains(file.as_str()))
 }
 
 // ---------------------------------------------------------------------------

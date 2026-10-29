@@ -1,0 +1,38 @@
+{
+  "route": "W103",
+  "method": "PUT",
+  "path": "/api/v1/companies/acme-group/insights/settings",
+  "request": {
+    "person_names": true,
+    "budget_usd_micros": 2000000000
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "person_names": true,
+      "managed_by": "company",
+      "budget_usd_micros": 2000000000
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "confirm with your second factor"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "this team's company decides",
+          "reason": "company_setting"
+        }
+      }
+    }
+  ]
+}

@@ -20,6 +20,13 @@ const SETTLE: Duration = Duration::from_millis(50);
 pub(super) struct VerifiedPolicy {
     pub(super) policy: Option<Arc<ActivePolicy>>,
     pub(super) fingerprint: blake3::Hash,
+    /// Set when the policy rests on a verifier's decision: whoever holds the
+    /// policy past this refresh checks the signed horizon before acting on it.
+    pub(super) lifetime: Option<org::Lifetime>,
+    /// What the verifier's answer stated, when this very refresh asked it:
+    /// from the same answer the policy and the lifetime rest on, and handed
+    /// out only together with them. `None` without a verifier decision.
+    pub(super) observation: Option<org::Observation>,
 }
 
 struct Request {
@@ -42,7 +49,7 @@ fn worker() -> Option<&'static mpsc::SyncSender<Request>> {
                             continue;
                         }
                         let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-                            cache.refresh_verified(&request.root)
+                            cache.refresh_verified_by(&request.root, request.deadline)
                         }))
                         .unwrap_or_else(|_| Err("policy refresh failed".into()));
                         let result = if Instant::now() < request.deadline {
@@ -80,7 +87,68 @@ pub(super) fn current_verified(root: PathBuf) -> VerifiedResult {
     if Instant::now() >= deadline {
         return Err(DEADLINE_EXCEEDED.into());
     }
+    #[cfg(test)]
+    let result = result.map(|mut verified| {
+        ANSWER_HOOK.with(|slot| {
+            if let Some(hook) = slot.borrow_mut().as_mut() {
+                hook(&mut verified.lifetime);
+            }
+        });
+        verified
+    });
+    // The last handout: both bounds of a verifier's decision once more, on
+    // the receiving side. From here on only the signed horizon applies, and
+    // the policy carries that itself.
+    if let Ok(verified) = &result
+        && let Some(lifetime) = &verified.lifetime
+    {
+        lifetime.check()?;
+    }
     result
+}
+
+#[cfg(test)]
+type AnswerHook = Box<dyn FnMut(&mut Option<org::Lifetime>)>;
+
+#[cfg(test)]
+thread_local! {
+    /// Tests only: the lifetime of each verified answer this thread receives,
+    /// as the verifier would have stated it, set before the receiving side
+    /// checks its bounds. Policy, fingerprint and observation stay as the
+    /// bytes made them. Never re-enters `current_verified`.
+    static ANSWER_HOOK: std::cell::RefCell<Option<AnswerHook>> =
+        const { std::cell::RefCell::new(None) };
+}
+
+/// Shapes the lifetime of every answer [`current_verified`] hands out on this
+/// thread until the guard drops. Tests only. One hook per thread: arming
+/// while one is armed panics instead of replacing it.
+#[cfg(test)]
+#[must_use]
+pub(super) fn answer_hook_for_test(
+    hook: impl FnMut(&mut Option<org::Lifetime>) + 'static,
+) -> AnswerHookGuard {
+    ANSWER_HOOK.with(|slot| {
+        let mut slot = slot.borrow_mut();
+        assert!(
+            slot.is_none(),
+            "an answer hook is already armed on this thread"
+        );
+        *slot = Some(Box::new(hook));
+    });
+    AnswerHookGuard(std::marker::PhantomData)
+}
+
+/// Clears the hook of the thread that armed it; neither `Send` nor `Sync`, so
+/// it is dropped on that very thread.
+#[cfg(test)]
+pub(super) struct AnswerHookGuard(std::marker::PhantomData<std::rc::Rc<()>>);
+
+#[cfg(test)]
+impl Drop for AnswerHookGuard {
+    fn drop(&mut self) {
+        ANSWER_HOOK.with(|slot| slot.borrow_mut().take());
+    }
 }
 
 /// [`current_verified`], asked once more when the one shared worker was only
@@ -107,12 +175,38 @@ pub(super) fn settled(mut check: impl FnMut() -> VerifiedResult) -> VerifiedResu
 
 struct Snapshot {
     fingerprint: blake3::Hash,
+    /// Everything of the fingerprint before the marker text, which is hashed
+    /// last: what the fingerprint would be with another marker is computed
+    /// from here, without reading anything again.
+    before_marker: blake3::Hasher,
     local: Option<String>,
     organization: Option<String>,
     trust: Option<String>,
+    /// The installed Hive filter set, as one captured text.
+    hive_filters: Option<String>,
+    /// The Hive effective policy (2.x): floor, requirement and the vault
+    /// whose entry applies to this project ([`crate::core::hive::effective_floor`]).
+    hive_policy: HivePolicy,
+    /// The required-organization marker. Part of the fingerprint: a marker
+    /// change is a new snapshot, so no compiled policy outlives it.
+    marker: Option<String>,
+}
+
+/// See [`org::is_v2`]: the admission snapshot and the proxy's captured
+/// authority must agree on what a version-two artifact is.
+fn is_org_policy_v2(text: &str) -> bool {
+    org::is_v2(text)
 }
 
 impl Snapshot {
+    /// A version-two organization policy is valid only as currently verified:
+    /// its permit depends on time, on the verifier and on current
+    /// authorization, none of which is in the snapshot bytes. Such a snapshot
+    /// is compiled on every refresh and never answered from the cache.
+    fn needs_current_verification(&self) -> bool {
+        self.organization.as_deref().is_some_and(is_org_policy_v2)
+    }
+
     fn capture(project: &Path) -> Result<Self, String> {
         let required_root = std::env::var_os(super::REQUIRED_POLICY_ROOT_ENV).map(PathBuf::from);
         let snapshot = Self::capture_for(project, required_root.as_deref())?;
@@ -151,19 +245,56 @@ impl Snapshot {
         } else {
             files::read
         };
-        let organization = read(&org_path, org_required)?;
+        // The artifact alone is read at its own, larger bound; the same
+        // checks apply, and what is not version two stays at the usual one.
+        let organization =
+            files::read_org_artifact(&org_path, org_required, required_root.is_some())?;
         let trust = read(&trust_path, false)?;
         field(&mut hash, organization.as_deref().map(str::as_bytes));
         field(&mut hash, trust.as_deref().map(str::as_bytes));
+        // The Hive filter set is written atomically as one file; a changed
+        // set is a new snapshot, in every process that reads it.
+        let filters_path = crate::core::hive::policy::filter_set_path();
+        field(
+            &mut hash,
+            filters_path
+                .as_ref()
+                .map(|path| path.as_os_str().as_encoded_bytes()),
+        );
+        let hive_filters = match &filters_path {
+            Some(path) => read(path, false)?,
+            None => None,
+        };
+        field(&mut hash, hive_filters.as_deref().map(str::as_bytes));
+        let hive_policy = HivePolicy::capture(&root, read, &mut hash)?;
+        let marker_path = org::marker::marker_path_read_only()?;
+        field(&mut hash, Some(marker_path.as_os_str().as_encoded_bytes()));
+        let marker = read(&marker_path, false)?;
+        let before_marker = hash.clone();
+        field(&mut hash, marker.as_deref().map(str::as_bytes));
         Ok(Self {
             fingerprint: hash.finalize(),
+            before_marker,
             local,
             organization,
             trust,
+            hive_filters,
+            hive_policy,
+            marker,
         })
     }
 
-    fn compile(&self) -> PolicyResult {
+    /// The compiled policy and the fingerprint it is valid under.
+    ///
+    /// That is this snapshot's own fingerprint unless the verification itself
+    /// appended to the marker: then it is the fingerprint of the same captured
+    /// inputs with exactly that new marker text. A caller comparing against a
+    /// later snapshot thus accepts its own recorded decision and still
+    /// refuses every other change to artifact, trust store or marker.
+    fn compile(&self, deadline: Instant) -> Result<Compiled, String> {
+        let mut fingerprint = self.fingerprint;
+        let mut lifetime = None;
+        let mut observation = None;
         let local = self
             .local
             .as_deref()
@@ -174,23 +305,157 @@ impl Snapshot {
             Some(text) => toml::from_str(text).map_err(|_| "org trust input is invalid")?,
             None => org::TrustStore::default(),
         };
+        // A damaged marker is an error, never "no requirement".
+        let required = self
+            .marker
+            .as_deref()
+            .map(org::marker::parse)
+            .transpose()?
+            .is_some_and(|marker| marker.is_required());
         let organization = match self.organization.as_deref() {
+            Some(text) if is_org_policy_v2(text) => {
+                // Version two is decided by the authenticated verifier, for
+                // this refresh only. Whatever goes wrong, the policy is not
+                // established: deny, never fall back to version-one rules or
+                // to the local policy alone.
+                let verified = org::verify_v2(
+                    text,
+                    self.trust.as_deref(),
+                    self.marker.as_deref(),
+                    deadline,
+                )?;
+                // The packs the verified policy requires must be the ones
+                // installed, from this same snapshot (HIVE-RT-D5). A lifted
+                // requirement (no floor) requires nothing.
+                if verified.floor.is_some() {
+                    crate::core::hive::policy::required_packs_installed(
+                        text,
+                        self.hive_filters.as_deref(),
+                    )?;
+                }
+                if self.marker.as_deref() != Some(verified.marker.as_str()) {
+                    let mut hash = self.before_marker.clone();
+                    field(&mut hash, Some(verified.marker.as_bytes()));
+                    fingerprint = hash.finalize();
+                }
+                lifetime = Some(verified.lifetime);
+                // Kept whether or not there is a floor: a lifted requirement
+                // is an observed organization decision too.
+                observation = Some(verified.observation);
+                verified.floor
+            }
+            Some(text) if text.len() as u64 > files::MAX_BYTES => {
+                // Only a version-two artifact may be this large.
+                return Err("policy input exceeds byte limit".into());
+            }
+            Some(_) if required => {
+                // Under a recorded requirement only a verified version-two
+                // policy counts; a version-one artifact is as good as absent.
+                return Err("required organization policy is not verifiable".into());
+            }
             Some(text) => {
                 let artifact =
                     org::OrgPolicyV1::from_json(text).map_err(|_| "org policy input is invalid")?;
                 org::resolve_checked(&artifact, &trust)
                     .map_err(|_| "org policy verification failed")?
             }
+            None if required => {
+                // Artifact gone (with or without the trust store): the marker
+                // still says an organization policy is required.
+                return Err("required organization policy is missing".into());
+            }
             None if !trust.keys.is_empty() => {
                 return Err("configured organization has no signed policy".into());
             }
             None => None,
         };
-        let policy = super::apply_org_floor(local, Ok(organization));
+        // The compiled policy carries the signed end of its floor, so that a
+        // policy kept beyond this refresh ends with it.
+        let hive = crate::core::hive::policy::filter_rules(self.hive_filters.as_deref());
+        if hive.dropped > 0 {
+            tracing::warn!(
+                dropped = hive.dropped,
+                "hive filter set: rules that did not validate are not applied"
+            );
+        }
+        // A missing or damaged Hive policy in force fails the refresh
+        // closed; it never means "no Hive rules".
+        let hive_floor = self.hive_policy.resolve()?;
+        let policy = super::apply_org_floor(
+            local,
+            Ok(organization),
+            lifetime.as_ref().and_then(org::Lifetime::horizon),
+            &hive,
+            hive_floor.as_ref(),
+        );
         if policy.as_ref().is_some_and(|policy| !policy.content_valid) {
             return Err("policy compilation failed".into());
         }
-        Ok(policy)
+        Ok(Compiled {
+            policy,
+            fingerprint,
+            lifetime,
+            observation,
+        })
+    }
+}
+
+struct Compiled {
+    policy: Option<Arc<ActivePolicy>>,
+    fingerprint: blake3::Hash,
+    lifetime: Option<org::Lifetime>,
+    observation: Option<org::Observation>,
+}
+
+/// The captured Hive effective policy of one snapshot.
+#[derive(Default)]
+struct HivePolicy {
+    floor: Option<String>,
+    required: Option<String>,
+    vault: Option<String>,
+}
+
+impl HivePolicy {
+    /// Read the installed floor and requirement (and, for a floor with
+    /// per-vault entries, the vault linked to `root`). Hashed only when one
+    /// of them exists, so a snapshot without a Hive policy keeps the
+    /// fingerprint it had before Release B.
+    fn capture(
+        root: &Path,
+        read: fn(&Path, bool) -> Result<Option<String>, String>,
+        hash: &mut blake3::Hasher,
+    ) -> Result<Self, String> {
+        use crate::core::hive::effective_floor::{FLOOR_FILE, REQUIRED_FILE, floor_dir, vault_for};
+        let Some(dir) = floor_dir() else {
+            return Ok(Self::default());
+        };
+        let floor = read(&dir.join(FLOOR_FILE), false)?;
+        let required = read(&dir.join(REQUIRED_FILE), false)?;
+        if floor.is_none() && required.is_none() {
+            return Ok(Self::default());
+        }
+        let vault = floor.as_deref().and_then(|text| {
+            let hive_data = dir.parent()?.parent()?;
+            vault_for(text, hive_data, root)
+        });
+        field(hash, Some(b"hive-effective-policy-v1"));
+        field(hash, Some(dir.as_os_str().as_encoded_bytes()));
+        field(hash, floor.as_deref().map(str::as_bytes));
+        field(hash, required.as_deref().map(str::as_bytes));
+        field(hash, vault.as_deref().map(str::as_bytes));
+        Ok(Self {
+            floor,
+            required,
+            vault,
+        })
+    }
+
+    fn resolve(&self) -> Result<Option<super::ResolvedPolicy>, String> {
+        crate::core::hive::effective_floor::resolve(
+            self.floor.as_deref(),
+            self.required.as_deref(),
+            self.vault.as_deref(),
+        )
     }
 }
 
@@ -200,7 +465,10 @@ impl Snapshot {
 pub(crate) fn protected_policy_digest(project: &Path) -> Result<String, String> {
     let root = canonical_project_root(project)?;
     let snapshot = Snapshot::capture_for(&root, Some(&root))?;
-    snapshot.compile()?.ok_or("required policy is missing")?;
+    // The launch digest is the authority as captured: a marker this very
+    // verification appended is a new authority and needs a new launch.
+    let compiled = snapshot.compile(Instant::now() + DEADLINE)?;
+    compiled.policy.ok_or("required policy is missing")?;
     Ok(snapshot.fingerprint.to_hex().to_string())
 }
 
@@ -268,6 +536,7 @@ pub(crate) fn protected_authority_paths(root: &Path) -> Result<Vec<PathBuf>, Str
     paths.push(root.join(PROJECT_PACK_PATH));
     paths.push(org::store::selected_source()?.0);
     paths.push(org::trust::trust_path_read_only()?);
+    paths.push(org::marker::marker_path_read_only()?);
     Ok(paths)
 }
 
@@ -400,28 +669,59 @@ pub(super) struct RefreshCache {
 }
 
 impl RefreshCache {
-    /// Preserve the original cache API for policy callers that need only the
-    /// compiled policy; the worker uses `refresh_verified` to retain provenance.
+    /// The compiled policy only (tests drive the cache through this).
+    #[cfg(test)]
     pub(super) fn refresh(&mut self, root: &Path) -> PolicyResult {
-        self.refresh_verified(root).map(|verified| verified.policy)
+        self.refresh_verified_by(root, Instant::now() + DEADLINE)
+            .map(|verified| verified.policy)
     }
 
-    pub(super) fn refresh_verified(&mut self, root: &Path) -> VerifiedResult {
+    /// One refresh under the request's own monotonic bound: a verification
+    /// it needs gets only the time left and records nothing at or after it.
+    fn refresh_verified_by(&mut self, root: &Path, deadline: Instant) -> VerifiedResult {
         let snapshot = Snapshot::capture(root)?;
-        if let Some((fingerprint, compiled)) = &self.compiled
+        // Identical bytes prove nothing about a policy whose validity depends
+        // on the present moment: such a snapshot is never served from here.
+        if !snapshot.needs_current_verification()
+            && let Some((fingerprint, compiled)) = &self.compiled
             && *fingerprint == snapshot.fingerprint
         {
             return Ok(VerifiedPolicy {
                 policy: compiled.clone(),
                 fingerprint: *fingerprint,
+                lifetime: None,
+                observation: None,
             });
         }
-        let policy = snapshot.compile()?;
-        let fingerprint = snapshot.fingerprint;
+        let Compiled {
+            policy,
+            fingerprint,
+            lifetime,
+            observation,
+        } = snapshot.compile(deadline)?;
+        // A verification waited for an answer. Before its result is handed
+        // out, everything is read again and must be the captured authority
+        // with at most the marker this decision itself left stored: any other
+        // change to project policy, artifact, trust store or marker refuses.
+        if snapshot.needs_current_verification()
+            && Snapshot::capture(root)?.fingerprint != fingerprint
+        {
+            return Err("policy authority changed during verification".into());
+        }
+        // That read took time too: the signed horizon and the request's
+        // deadline are checked once more, last, whether the decision
+        // enforces a policy or lifts the requirement.
+        if let Some(lifetime) = &lifetime {
+            lifetime.check()?;
+        }
         self.compiled = Some((fingerprint, policy.clone()));
+        // After the recapture and both bounds: the observation leaves with
+        // the policy it belongs to, or not at all.
         Ok(VerifiedPolicy {
             policy,
             fingerprint,
+            lifetime,
+            observation,
         })
     }
 }

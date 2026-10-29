@@ -11,11 +11,18 @@ import type {
 import { registerCockpit } from "./cockpit";
 import { registerResultRendering } from "./render";
 
+// Every tool the injected rules route an intent to must stay in front: a
+// deferred ctx_patch/ctx_glob/ctx_tree sends the model back to native
+// Edit/Glob, which replace mode denies (`alwaysLoad` cannot undo a deferral).
+// `claude_mod.rs` tests this list against the rules and the server's core.
 const DEFAULT_FRONT_LOADED_TOOLS = [
   "ctx_read",
   "ctx_search",
   "ctx_shell",
+  "ctx_glob",
+  "ctx_tree",
   "ctx_compose",
+  "ctx_patch",
   "ctx_callgraph",
   "ctx_session",
 ];

@@ -1,0 +1,14 @@
+{
+  "base": "routes/vault_match.suggested.response.json",
+  "case": "vault_match_suggested_exact",
+  "expect": {
+    "layer": "schema"
+  },
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/matched",
+      "value": "exact"
+    }
+  ]
+}

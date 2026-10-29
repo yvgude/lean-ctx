@@ -4,20 +4,44 @@ use crate::hooks::{HookMode, recommend_hook_mode};
 
 use super::first_run::{first_run_setup_level, persist_setup_choice};
 use super::helpers::{
-    configure_plan_mode_settings, configure_premium_features, configure_tool_profile,
-    install_skill_files, shorten_path,
+    configure_plan_mode_settings, configure_premium_features, configure_tool_profile, shorten_path,
 };
 use super::index_build::spawn_index_build_background;
 use super::options::SetupOptions;
 use super::with_options::run_setup_with_options;
 
 pub fn run_setup() {
-    run_setup_wizard(true);
+    run_setup_with_agents(None);
 }
 
-/// The guided wizard. `ask_agents = false` when `--agents` already chose the
-/// tools to connect.
-pub fn run_setup_wizard(ask_agents: bool) {
+/// Which detected tools this setup connects: `--agents`, else the answer to
+/// the selection prompt. The choice is recorded so updates refresh exactly
+/// these tools; nothing is recorded while no tool is installed yet.
+fn choose_agents(
+    home: &std::path::Path,
+    targets: &[crate::core::editor_registry::EditorTarget],
+    explicit: Option<std::collections::BTreeSet<String>>,
+) -> std::collections::BTreeSet<String> {
+    use super::agent_selection as sel;
+
+    let detected = sel::detected_agents(home, targets);
+    let selection = match explicit {
+        Some(keys) => keys,
+        None if detected.is_empty() => return std::collections::BTreeSet::new(),
+        None => {
+            let saved = crate::core::config::Config::load_global().setup.agents;
+            let default = sel::prompt_default(&detected, saved.as_deref());
+            sel::prompt_agent_selection(&detected, &default)
+        }
+    };
+    if let Err(e) = sel::save_selection(&selection) {
+        crate::terminal_ui::print_status_warn(&e);
+    }
+    selection
+}
+
+/// Guided setup. `agents` (from `--agents`) skips the selection prompt.
+pub fn run_setup_with_agents(agents: Option<std::collections::BTreeSet<String>>) {
     use crate::terminal_ui;
 
     if crate::shell::is_non_interactive() {
@@ -25,13 +49,19 @@ pub fn run_setup_wizard(ask_agents: bool) {
         eprintln!(
             "Running in non-interactive mode (equivalent to: lean-ctx setup --non-interactive --yes)"
         );
+        if agents.is_none() {
+            eprintln!(
+                "Connecting all detected tools (or the recorded choice); use --agents to choose."
+            );
+        }
         eprintln!();
         let opts = SetupOptions {
             non_interactive: true,
             yes: true,
+            agents,
             ..Default::default()
         };
-        match run_setup_with_options(opts) {
+        match run_setup_with_options(&opts) {
             Ok(report) => {
                 for w in &report.warnings {
                     tracing::warn!("{w}");
@@ -59,21 +89,6 @@ pub fn run_setup_wizard(ask_agents: bool) {
     let allow_rule_steering =
         inject_rules && !crate::core::config::Config::load().declines_rule_steering();
 
-    // Ask before the first write: shell aliases (step 1) already follow it.
-    let targets = crate::core::editor_registry::build_targets(&home);
-    if ask_agents {
-        println!();
-        println!("  \x1b[1mWhich AI tools should lean-ctx connect to?\x1b[0m");
-        let current = crate::core::config::Config::load().setup.agents;
-        let chosen = super::agent_select::prompt_agent_selection(&targets, current.as_deref());
-        if chosen != current
-            && let Err(e) = super::agent_select::persist_agent_selection(chosen)
-        {
-            terminal_ui::print_status_warn(&e);
-        }
-    }
-    let selection = crate::core::config::Config::load().setup;
-
     terminal_ui::print_step_header(1, 14, "Shell Hook");
     crate::cli::cmd_init(&["--global".to_string()]);
     crate::shell_hook::install_all(false);
@@ -92,6 +107,10 @@ pub fn run_setup_wizard(ask_agents: bool) {
 
     terminal_ui::print_step_header(3, 14, "AI Tool Detection");
 
+    let targets = crate::core::editor_registry::build_targets(&home);
+    let selection = choose_agents(&home, &targets, agents);
+    let allows = |key: &str| selection.contains(key);
+    let mut deselected: Vec<&str> = Vec::new();
     // #281: in MCP-disabled environments (`auto_update_mcp = false`) editors are
     // still detected and hooks/rules still install, but the MCP server is never
     // written into their configs.
@@ -101,7 +120,6 @@ pub fn run_setup_wizard(ask_agents: bool) {
     let mut newly_configured: Vec<&str> = Vec::new();
     let mut already_configured: Vec<&str> = Vec::new();
     let mut not_installed: Vec<&str> = Vec::new();
-    let mut not_selected: Vec<&str> = Vec::new();
     let mut mcp_skipped: Vec<&str> = Vec::new();
     let mut errors: Vec<&str> = Vec::new();
     let mut configured_integration_ids = Vec::new();
@@ -113,8 +131,11 @@ pub fn run_setup_wizard(ask_agents: bool) {
             not_installed.push(target.name);
             continue;
         }
-        if !selection.allows_agent(&target.agent_key, target.name) {
-            not_selected.push(target.name);
+
+        if !allows(&target.agent_key) {
+            if !deselected.contains(&target.name) {
+                deselected.push(target.name);
+            }
             continue;
         }
 
@@ -165,20 +186,19 @@ pub fn run_setup_wizard(ask_agents: bool) {
     }
 
     let total_ok = newly_configured.len() + already_configured.len();
-    if total_ok == 0 && errors.is_empty() && mcp_skipped.is_empty() && not_selected.is_empty() {
+    if total_ok == 0 && errors.is_empty() && mcp_skipped.is_empty() && deselected.is_empty() {
         terminal_ui::print_status_warn(
             "No AI tools detected. Install one and re-run: lean-ctx setup",
         );
     }
 
-    if !not_selected.is_empty() {
+    if !deselected.is_empty() {
         println!(
-            "  \x1b[2m- {} not selected (left untouched): {}\x1b[0m",
-            not_selected.len(),
-            not_selected.join(", ")
+            "  \x1b[2m○ {} left untouched (not selected): {}\x1b[0m",
+            deselected.len(),
+            deselected.join(", ")
         );
     }
-
     if !not_installed.is_empty() {
         println!(
             "  \x1b[2m○ {} not detected: {}\x1b[0m",
@@ -191,7 +211,7 @@ pub fn run_setup_wizard(ask_agents: bool) {
 
     terminal_ui::print_step_header(4, 14, "Agent Rules");
     let rules_result = if inject_rules {
-        let r = crate::rules_inject::inject_all_rules(&home);
+        let r = crate::rules_inject::inject_rules_where(&home, &allows);
         for name in &r.injected {
             terminal_ui::print_status_new(&format!("{name:<20} \x1b[2mrules injected\x1b[0m"));
         }
@@ -225,9 +245,7 @@ pub fn run_setup_wizard(ask_agents: bool) {
     };
 
     for target in &targets {
-        if !target.detect_path.exists()
-            || target.agent_key.is_empty()
-            || !selection.allows_agent(&target.agent_key, target.name)
+        if !target.detect_path.exists() || target.agent_key.is_empty() || !allows(&target.agent_key)
         {
             continue;
         }
@@ -349,7 +367,7 @@ pub fn run_setup_wizard(ask_agents: bool) {
 
     terminal_ui::print_step_header(7, 14, "Skill Files");
     if inject_skills {
-        let skill_result = install_skill_files(&home);
+        let skill_result = crate::rules_inject::install_skills_where(&home, &allows);
         for (name, installed) in &skill_result {
             if *installed {
                 terminal_ui::print_status_new(&format!(
@@ -619,7 +637,7 @@ pub fn run_setup_wizard(ask_agents: bool) {
     println!(
         "  {dim}After restart, lean-ctx will automatically optimize every AI interaction.{rst}"
     );
-    println!("  {dim}Verify with:{rst} {bold}lean-ctx gain{rst}");
+    println!("  {dim}Verify with:{rst} {bold}lean-ctx cockpit{rst}");
 
     println!();
     terminal_ui::print_logo_animated();

@@ -47,10 +47,37 @@ pub fn save(store: &TrustStore) -> Result<(), String> {
     std::fs::write(&path, text).map_err(|e| format!("write {}: {e}", path.display()))
 }
 
-pub fn pin(org: &str, public_key: &str) -> Result<bool, String> {
+/// The trust store as it is stored, read without creating or repairing any
+/// directory: for a status that only observes. No file is an empty store; a
+/// file that cannot be read or parsed is an error, never an empty store.
+pub(crate) fn load_read_only() -> Result<TrustStore, String> {
+    let Some(text) = crate::core::policy::files::read(&trust_path_read_only()?, false)? else {
+        return Ok(TrustStore::default());
+    };
+    toml::from_str(&text).map_err(|_| "org trust input is invalid".into())
+}
+
+/// What a request to pin `public_key` for `org` did.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum PinOutcome {
+    /// The key is now pinned for this organization.
+    Added,
+    /// The key was already pinned for exactly this organization.
+    AlreadyPinned,
+    /// The key is pinned for another organization. Nothing was changed: a
+    /// pin is never moved or overwritten by pinning again.
+    PinnedForAnother(String),
+}
+
+/// Pin `public_key` for `org`, saying which of the three things happened.
+pub fn pin_for(org: &str, public_key: &str) -> Result<PinOutcome, String> {
     let mut store = load()?;
-    if store.keys.iter().any(|k| k.public_key == public_key) {
-        return Ok(false);
+    if let Some(existing) = store.keys.iter().find(|k| k.public_key == public_key) {
+        return Ok(if existing.org == org {
+            PinOutcome::AlreadyPinned
+        } else {
+            PinOutcome::PinnedForAnother(existing.org.clone())
+        });
     }
     store.keys.push(TrustedKey {
         org: org.to_string(),
@@ -58,7 +85,37 @@ pub fn pin(org: &str, public_key: &str) -> Result<bool, String> {
         added_at: chrono::Utc::now().to_rfc3339(),
     });
     save(&store)?;
-    Ok(true)
+    Ok(PinOutcome::Added)
+}
+
+/// [`pin_for`] as a yes/no: `true` only when a pin was added. `false` does
+/// not say the key is trusted for `org` — it may be pinned for another one.
+pub fn pin(org: &str, public_key: &str) -> Result<bool, String> {
+    pin_for(org, public_key).map(|outcome| outcome == PinOutcome::Added)
+}
+
+/// Whether `public_key` is pinned for exactly `org` — what enforcement means
+/// by trusted (`resolve_checked`). The same key pinned for another
+/// organization does not count; a store that cannot be read trusts nothing.
+pub fn is_trusted_for(org: &str, public_key: &str) -> bool {
+    load_read_only()
+        .map(|store| {
+            store
+                .keys
+                .iter()
+                .any(|key| key.public_key == public_key && key.org == org)
+        })
+        .unwrap_or(false)
+}
+
+/// The organization `public_key` is pinned for, if any.
+pub fn pinned_organization(public_key: &str) -> Option<String> {
+    load_read_only()
+        .ok()?
+        .keys
+        .into_iter()
+        .find(|key| key.public_key == public_key)
+        .map(|key| key.org)
 }
 
 pub fn remove(public_key: &str) -> Result<bool, String> {

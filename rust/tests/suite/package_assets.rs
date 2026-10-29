@@ -7,7 +7,6 @@ const MANIFESTS: &[&str] = &[
     "leanctx/context-optimization-v1.json",
     "leanctx/passthrough-v1.json",
     "example/word-count-optimizer-v1.json",
-    "rtk/rtk-shell-v1.json",
 ];
 
 const KITS: &[&str] = &["code-review/kit.toml"];

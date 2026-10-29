@@ -79,28 +79,125 @@ impl McpTool for CtxUrlReadTool {
             timeout_secs,
         };
 
-        let result = tokio::task::block_in_place(|| web::read_url(&opts));
+        // Admission runs twice, on purpose: on the extracted source text
+        // BEFORE any mode distils it (`read_url_admitted`), and on the text
+        // that is finally delivered, footer included (`admitted`).
+        let result = tokio::task::block_in_place(|| {
+            web::read_url_admitted(&opts, &admit_extracted).and_then(admitted)
+        });
 
-        match result {
-            Ok(read) => {
-                let sent = count_tokens(&read.content);
-                let saved = read.original_tokens.saturating_sub(sent);
-                let text = append_savings(&read.content, read.original_tokens, sent);
-                Ok(ToolOutput {
-                    text,
-                    original_tokens: read.original_tokens,
-                    saved_tokens: saved,
-                    mode: Some(read.mode.label().to_string()),
-                    path: Some(read.final_url),
-                    changed: false,
-                    shell_outcome: None,
-                    content_blocks: None,
-                })
-            }
-            Err(e) => Err(ErrorData::invalid_params(
-                format!("ctx_url_read failed: {e}"),
-                None,
-            )),
+        result.map_err(|e| ErrorData::invalid_params(format!("ctx_url_read failed: {e}"), None))
+    }
+}
+
+/// Admission of the extracted source text (page Markdown, PDF text,
+/// transcript, rendered link list, title), applied by `core::web` before it
+/// renders, ranks or summarizes anything (G01). A fetched body is a source
+/// that is not a file: project policy on the text, then the gateway.
+fn admit_extracted(text: &str) -> Result<String, String> {
+    crate::tools::admitted_sources::admit_remote_text(text, "ctx_url_read")
+        .map(|admission| admission.text)
+}
+
+/// What a receipt trace names as the source of a fetched text: scheme, host
+/// and path. Query, fragment and user information can carry a credential no
+/// detector knows, so they are never part of the reference.
+fn source_reference(url: &str) -> String {
+    let end = url.find(['?', '#']).unwrap_or(url.len());
+    let plain = &url[..end];
+    let Some((scheme, rest)) = plain.split_once("://") else {
+        return plain.to_owned();
+    };
+    let authority_end = rest.find('/').unwrap_or(rest.len());
+    let host = rest[..authority_end]
+        .rsplit_once('@')
+        .map_or(&rest[..authority_end], |(_, host)| host);
+    format!("{scheme}://{host}{}", &rest[authority_end..])
+}
+
+/// The last check before a fetched text becomes a tool result: the text this
+/// call delivers, citation footer included, is admitted once more, and only
+/// the admitted text is counted, footed and returned. A text that is withheld
+/// yields the content-free reason as the tool's error; it never becomes an
+/// empty or partial success. A body `core::web` cannot extract as text (an
+/// unsupported content type) is refused there, in every mode.
+fn admitted(read: web::ReadResult) -> Result<ToolOutput, String> {
+    let content =
+        crate::tools::admitted_sources::admit_remote_text(&read.content, "ctx_url_read")?.text;
+    crate::core::context_admission::capture::note_source_id(&source_reference(&read.final_url));
+    let sent = count_tokens(&content);
+    let saved = read.original_tokens.saturating_sub(sent);
+    let text = append_savings(&content, read.original_tokens, sent);
+    Ok(ToolOutput {
+        text,
+        original_tokens: read.original_tokens,
+        saved_tokens: saved,
+        mode: Some(read.mode.label().to_string()),
+        path: Some(read.final_url),
+        changed: false,
+        shell_outcome: None,
+        content_blocks: None,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+
+    fn fetched(content: &str) -> web::ReadResult {
+        web::ReadResult {
+            content: content.to_string(),
+            mode: ReadMode::Markdown,
+            original_tokens: 400,
+            final_url: "https://docs.example/page".to_string(),
         }
+    }
+
+    /// G01: the old handler returned the fetched text as it came — a key on
+    /// a page reached the model unless the release point caught it, and a
+    /// page the project policy blocks was delivered. A clean page keeps its
+    /// bytes.
+    #[test]
+    fn a_fetched_body_is_admitted_before_it_is_returned() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        {
+            let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+            let clean = "# Guide\n\nInstall the widget, then run it.\n\n[source](https://docs.example/page)";
+            let Ok(output) = admitted(fetched(clean)) else {
+                panic!("a clean page is delivered");
+            };
+            let sent = count_tokens(clean);
+            assert_eq!(output.text, append_savings(clean, 400, sent));
+            assert_eq!(output.path.as_deref(), Some("https://docs.example/page"));
+
+            let keyed = format!("# Setup\n\nexport AWS_ACCESS_KEY_ID={AWS_KEY}\n");
+            let Ok(output) = admitted(fetched(&keyed)) else {
+                panic!("a page with a maskable value is delivered masked");
+            };
+            assert!(!output.text.contains(AWS_KEY), "{}", output.text);
+            assert!(output.text.contains("# Setup"), "{}", output.text);
+        }
+        let policy = crate::core::policy::load(
+            "name = \"ctx-url-read-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )
+        .unwrap();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+        let Err(reason) = admitted(fetched("CONFIDENTIAL\nroadmap-marker for the launch\n")) else {
+            panic!("a blocked page must not be delivered");
+        };
+        assert!(reason.contains("withheld"), "{reason}");
+        assert!(!reason.contains("roadmap-marker"), "{reason}");
+        // The same decision is taken on the extracted text, before any mode
+        // distils it (the hook `core::web::read_url_admitted` applies).
+        let reason = admit_extracted("CONFIDENTIAL\nroadmap-marker for the launch\n")
+            .expect_err("blocked before distillation");
+        assert!(!reason.contains("roadmap-marker"), "{reason}");
+        assert_eq!(
+            admit_extracted("plain extracted text\n").as_deref(),
+            Ok("plain extracted text\n")
+        );
     }
 }

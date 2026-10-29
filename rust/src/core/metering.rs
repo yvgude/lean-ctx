@@ -38,6 +38,10 @@ pub struct MeterEntry {
     pub input_tokens: u64,
     pub output_tokens: u64,
     pub savings_tokens: u64,
+    /// Project key of the work (`savings_ledger::project_scope::project_key_of`);
+    /// absent on entries written before projects were kept, and outside a project.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
 }
 
 impl MeterEntry {
@@ -54,6 +58,7 @@ impl MeterEntry {
             input_tokens,
             output_tokens,
             savings_tokens,
+            project: crate::core::savings_ledger::project_scope::current_project_key(),
         }
     }
 }
@@ -149,10 +154,25 @@ impl MeterStore {
     /// earlier entry: the cost follows the day's volume, not the history.
     #[must_use]
     pub fn day_totals(&self, day: NaiveDate) -> DayTotals {
-        self.day_totals_in_blocks(day, TAIL_BLOCK_BYTES)
+        self.day_totals_in_blocks(day, TAIL_BLOCK_BYTES, |_| true)
     }
 
-    fn day_totals_in_blocks(&self, day: NaiveDate, block: usize) -> DayTotals {
+    /// [`Self::day_totals`] over the entries whose project key `keep` accepts.
+    #[must_use]
+    pub fn day_totals_where(
+        &self,
+        day: NaiveDate,
+        keep: impl Fn(Option<&str>) -> bool,
+    ) -> DayTotals {
+        self.day_totals_in_blocks(day, TAIL_BLOCK_BYTES, keep)
+    }
+
+    fn day_totals_in_blocks(
+        &self,
+        day: NaiveDate,
+        block: usize,
+        keep: impl Fn(Option<&str>) -> bool,
+    ) -> DayTotals {
         let mut totals = DayTotals::default();
         let Ok(mut file) = std::fs::File::open(&self.path) else {
             return totals;
@@ -185,7 +205,7 @@ impl MeterStore {
                 if date < day {
                     return totals;
                 }
-                if date > day {
+                if date > day || !keep(entry.project.as_deref()) {
                     continue;
                 }
                 totals.input_tokens = totals.input_tokens.saturating_add(entry.input_tokens);
@@ -232,6 +252,7 @@ mod tests {
             input_tokens: input,
             output_tokens: input - saved,
             savings_tokens: saved,
+            project: (tool == "ctx_search").then(|| "0123456789abcdef".to_string()),
         };
         store
             .append(&at("2026-10-01T23:59:59Z", "ctx_read", 1_000, 900))
@@ -261,7 +282,18 @@ mod tests {
         };
         assert_eq!(store.day_totals(day), expected);
         // Blocks smaller than a line: every line is split across reads.
-        assert_eq!(store.day_totals_in_blocks(day, 7), expected);
+        assert_eq!(store.day_totals_in_blocks(day, 7, |_| true), expected);
+        // One project's share: only the entries carrying its key.
+        let project = store.day_totals_where(day, |key| key == Some("0123456789abcdef"));
+        assert_eq!(
+            project,
+            DayTotals {
+                input_tokens: 50,
+                savings_tokens: 10,
+                routed_calls: 1,
+                native_passthrough_calls: 0,
+            }
+        );
         assert_eq!(
             MeterStore::new(dir.path().join("missing")).day_totals(day),
             DayTotals::default()

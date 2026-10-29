@@ -554,6 +554,8 @@ async fn gateway_credential_route_requires_lean_ctx_token() {
         base_url: "http://127.0.0.1:9".into(),
         api_key_env: api_key_env.map(str::to_string),
         aws_region: None,
+        account_ref: None,
+        region: None,
         local: true,
     };
     let mut upstreams = crate::core::config::Config::default()

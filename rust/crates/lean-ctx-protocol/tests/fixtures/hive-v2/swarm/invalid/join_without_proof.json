@@ -1,0 +1,13 @@
+{
+  "case": "join_without_proof",
+  "base": "routes/swarm_join.request.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/consent_id"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

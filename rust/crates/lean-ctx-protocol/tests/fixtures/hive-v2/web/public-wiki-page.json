@@ -1,0 +1,33 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "No such page."
+        }
+      },
+      "status": 404
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/public/vaults/acme/payments/wiki/wp_7kq2m6xa3fz5c6hbt4nrd2wysu",
+  "request": null,
+  "response": {
+    "body": {
+      "items": [
+        {
+          "prose": "How refunds work."
+        },
+        {
+          "node_id": "n_zcjqmmor453nyxqgshlgpogwdm"
+        }
+      ],
+      "page_id": "wp_7kq2m6xa3fz5c6hbt4nrd2wysu",
+      "title": "Refunds",
+      "updated_seq": 41
+    },
+    "status": 200
+  },
+  "route": "W44"
+}

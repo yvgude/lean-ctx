@@ -1,0 +1,10 @@
+{
+  "action": "hold",
+  "control_id": "ctl_01jb8za",
+  "issued_by": "admin@acme",
+  "reason": "Owner review of the contract.",
+  "seq": 43,
+  "server_time": "2026-10-20T12:00:00Z",
+  "t": "control",
+  "target_agent": "claude-3e"
+}

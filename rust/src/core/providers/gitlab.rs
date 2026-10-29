@@ -232,12 +232,33 @@ impl ContextProvider for GitLabProvider {
         0
     }
 
+    fn descriptor(&self) -> super::provider_trait::ConnectorDescriptor {
+        // Item re-checks need a project to re-read from; without one GitLab
+        // stays list-only for governed reuse.
+        descriptor(
+            self.config
+                .as_ref()
+                .is_ok_and(|config| config.project_path.is_some()),
+        )
+    }
+
+    /// The source a stored item came from. A selected source binds its pinned
+    /// identity (re-verified on every request); an environment-configured one
+    /// binds host, project and the token that read it — another token or
+    /// project is another source.
     fn reuse_binding(&self, action: &str, params: &ProviderParams) -> Option<String> {
         if !matches!(action, "issues" | "merge_requests") {
             return None;
         }
         super::selected_gitlab::check_project(params.project.as_deref()).ok()?;
-        super::selected_gitlab::reuse_binding(self.config.as_ref().ok()?)
+        let config = self.config.as_ref().ok()?;
+        if super::selected_gitlab::config().is_some() {
+            return super::selected_gitlab::reuse_binding(config);
+        }
+        super::provenance::digest(&serde_json::json!({
+            "version": 1, "provider": "gitlab", "host": config.host,
+            "project": config.project_path.as_deref()?, "credential": config.token,
+        }))
     }
 
     fn reacquire_item(
@@ -279,6 +300,27 @@ impl ContextProvider for GitLabProvider {
 
     fn is_available(&self) -> bool {
         self.config.is_ok()
+    }
+}
+
+pub(crate) fn descriptor(bound: bool) -> super::provider_trait::ConnectorDescriptor {
+    use super::provider_trait::{CapabilityLevel as L, ConnectorDescriptor as C};
+    C {
+        principal_binding: "personal access token (PRIVATE-TOKEN), bound with host and project; a selected source is pinned by id and namespace",
+        search: L::Partial,
+        list: L::Supported,
+        get: L::Supported,
+        delta: L::Unsupported,
+        revalidate_acl: if bound { L::Supported } else { L::Unsupported },
+        revalidate_revision: if bound { L::Supported } else { L::Unsupported },
+        delete_event: if bound { L::Partial } else { L::Unsupported },
+        content_trust: C::UNTRUSTED,
+        write_surface: C::NO_WRITES,
+        failure_policy: C::FAIL_CLOSED,
+        notes: "search = state/label filters, no full text; issues and merge requests re-checked per item with \
+                the principal's token against the configured project (current item digest); a selected source \
+                also re-verifies its pinned project identity on every request; without a configured project \
+                list-only; deletion seen as 404 on re-check, no event feed; pipelines are list-only",
     }
 }
 
@@ -356,6 +398,9 @@ fn parse_mr(v: &serde_json::Value) -> ProviderItem {
 
 #[cfg(test)]
 mod authorization_tests;
+
+#[cfg(test)]
+mod source_rights_tests;
 
 #[cfg(test)]
 mod tests {

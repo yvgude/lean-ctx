@@ -1,0 +1,69 @@
+{
+  "edges": [
+    {
+      "from": "actor:claude-3e",
+      "to": "proposal:12",
+      "type": "worked_on"
+    },
+    {
+      "from": "fact:hive.outbox-order",
+      "to": "code:rust/src/core/hive/outbox.rs#hive::outbox::enqueue",
+      "type": "applies_to"
+    },
+    {
+      "from": "fact:hive.outbox-order",
+      "to": "fact:hive.never-blocks",
+      "type": "explains"
+    },
+    {
+      "from": "page:hive.outbound",
+      "to": "fact:hive.never-blocks",
+      "type": "shows"
+    },
+    {
+      "from": "page:hive.outbound",
+      "to": "fact:hive.outbox-order",
+      "type": "shows"
+    },
+    {
+      "from": "proposal:12",
+      "to": "fact:hive.outbox-order",
+      "type": "changed"
+    }
+  ],
+  "nodes": [
+    {
+      "id": "actor:claude-3e",
+      "kind": "actor",
+      "label": "claude-3e"
+    },
+    {
+      "id": "code:rust/src/core/hive/outbox.rs#hive::outbox::enqueue",
+      "kind": "code",
+      "label": "hive::outbox::enqueue"
+    },
+    {
+      "id": "fact:hive.never-blocks",
+      "kind": "knowledge",
+      "label": "Hive never blocks a tool call"
+    },
+    {
+      "id": "fact:hive.outbox-order",
+      "kind": "knowledge",
+      "label": "The outbox keeps upload order per project"
+    },
+    {
+      "id": "page:hive.outbound",
+      "kind": "knowledge",
+      "label": "Outbound path"
+    },
+    {
+      "id": "proposal:12",
+      "kind": "work",
+      "label": "Outbox ordering"
+    }
+  ],
+  "revision": 4,
+  "schema": "leanctx.hive.graph/v1",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

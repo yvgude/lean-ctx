@@ -4,7 +4,6 @@ use std::time::Instant;
 use tokio::sync::RwLock;
 
 use crate::core::cache::SessionCache;
-use crate::core::session::SessionState;
 use rmcp::service::{Peer, RoleServer};
 
 pub(super) struct CepComputedStats {
@@ -87,7 +86,7 @@ impl InteractionMode {
 #[derive(Clone)]
 pub struct LeanCtxServer {
     pub cache: SharedCache,
-    pub session: Arc<RwLock<SessionState>>,
+    pub session: crate::core::session::SessionSlot,
     pub tool_calls: Arc<RwLock<Vec<ToolCallRecord>>>,
     pub call_count: Arc<AtomicUsize>,
     /// Every tool call, counted unconditionally at the top of
@@ -99,7 +98,6 @@ pub struct LeanCtxServer {
     /// `call_count` therefore never runs in a default install. The daily
     /// telemetry flush was scheduled that way and consequently never sent.
     pub background_tick: Arc<AtomicUsize>,
-    pub pro_trigger_check_count: Arc<AtomicUsize>,
     pub cache_ttl_secs: u64,
     pub last_call: Arc<RwLock<Instant>>,
     pub agent_id: Arc<RwLock<Option<String>>>,
@@ -134,6 +132,8 @@ pub struct LeanCtxServer {
     pub(crate) startup_project_root: Option<String>,
     pub(crate) startup_shell_cwd: Option<String>,
     pub(crate) peer: Arc<RwLock<Option<Peer<RoleServer>>>>,
+    /// The user's answers to shell approval prompts in this session.
+    pub(crate) shell_approvals: Arc<crate::server::shell_approval::ShellApprovalState>,
     pub(crate) has_client_roots: Arc<std::sync::atomic::AtomicBool>,
     pub(crate) roots_resolved: Arc<std::sync::atomic::AtomicBool>,
     /// Failed `roots/list` attempts (GH #694): transient failures re-arm

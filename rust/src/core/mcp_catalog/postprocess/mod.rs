@@ -50,12 +50,7 @@ pub fn process(
     if cfg.index_output && !project_root.is_empty() && !text.trim().is_empty() {
         let claimed = adapters::ingest_spawn(kind, &server.name, tool, &text, project_root);
         if !claimed {
-            index::spawn(
-                server.name.clone(),
-                tool.to_string(),
-                text.clone(),
-                project_root.to_string(),
-            );
+            index::spawn_for(server, tool, text.clone(), project_root.to_string());
         }
     }
 

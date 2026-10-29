@@ -91,6 +91,13 @@ fn stripe_key_re() -> &'static Regex {
     static_regex!(r"[sr]k_live_[0-9a-zA-Z]{10,}")
 }
 
+/// A password in the userinfo of any other URL (`https://user:pw@host`).
+fn url_credentials_re() -> &'static Regex {
+    static_regex!(
+        r"(?i)(?:https?|ftps?|sftp|ssh|amqps?|smtps?|ldaps?|wss?|git)://[^\s:/@]+:[^\s@/]+@"
+    )
+}
+
 fn npm_token_re() -> &'static Regex {
     static_regex!(r"npm_[A-Za-z0-9]{10,}")
 }
@@ -111,6 +118,7 @@ const BUILTIN_PATTERNS: &[(&str, fn() -> &'static Regex)] = &[
     ("jwt", jwt_re),
     ("slack_token", slack_token_re),
     ("stripe_key", stripe_key_re),
+    ("url_credentials", url_credentials_re),
     ("npm_token", npm_token_re),
 ];
 
@@ -268,6 +276,27 @@ fn collect_matches(
     matches
 }
 
+/// How many matches the `custom_patterns` of `config` alone have in
+/// `content` — no built-in pattern runs. The custom-pattern step of
+/// `collect_matches` on its own: the same normalized text, the same
+/// `exclude_patterns`, a pattern that does not compile is skipped. For a
+/// caller that has counted the built-in patterns elsewhere (the gateway's
+/// whole-text pass for custom patterns that can match across lines).
+pub(crate) fn custom_pattern_hits(content: &str, config: &SecretDetectionConfig) -> usize {
+    let excludes = compile_excludes(&config.exclude_patterns);
+    let normalized = crate::core::redaction::normalize_secret_text(content);
+    config
+        .custom_patterns
+        .iter()
+        .filter_map(|pattern| Regex::new(pattern).ok())
+        .map(|re| {
+            re.find_iter(&normalized)
+                .filter(|found| !excluded(&excludes, found.as_str()))
+                .count()
+        })
+        .sum()
+}
+
 pub fn detect_secrets(content: &str) -> Vec<SecretMatch> {
     collect_matches(content, &[], &[])
 }
@@ -291,8 +320,9 @@ pub fn scan_and_redact(
         return (content.to_string(), matches);
     }
 
-    let mut redacted =
-        crate::core::redaction::redact_text_with_excludes_for_detection(content, &excludes);
+    // The same masker and the same labels as every other redaction pass
+    // (`redaction::redact_counting`): one spelling per secret kind.
+    let mut redacted = crate::core::redaction::redact_text_with_excludes(content, &excludes);
 
     for pattern_str in &config.custom_patterns {
         if let Ok(re) = Regex::new(pattern_str) {
@@ -504,7 +534,7 @@ pub mod tests {
         let input = concat!("key = AK", "IAIOSFODNN7EXAMPLE");
         let (redacted, matches) = scan_and_redact(input, &cfg);
         assert!(!matches.is_empty());
-        assert!(redacted.contains("[REDACTED:aws_key]"));
+        assert!(redacted.contains("[REDACTED:AWS key]"));
         assert!(!redacted.contains(concat!("AK", "IAIOSFODNN7EXAMPLE")));
     }
 

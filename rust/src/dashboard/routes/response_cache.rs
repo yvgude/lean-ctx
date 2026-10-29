@@ -43,6 +43,8 @@ const CACHED_ROUTES: &[&str] = &[
     "/api/context-model",
     // Re-walks the savings ledger and audit trail from genesis.
     "/api/value",
+    // Verifies the audit trail's chain from genesis for the anchors.
+    "/api/gateway/receipts",
 ];
 
 /// Check if a route is cache-eligible.
@@ -50,11 +52,20 @@ pub(super) fn is_cacheable(path: &str, method: &str) -> bool {
     method.eq_ignore_ascii_case("GET") && CACHED_ROUTES.contains(&path)
 }
 
+/// The cache key of `path` for the current request: a read bound to a named
+/// project (`X-LeanCTX-Project`) never shares an entry with another project.
+pub(super) fn key(path: &str) -> String {
+    match super::helpers::request_project() {
+        Some(project) => format!("{project}\0{path}"),
+        None => path.to_string(),
+    }
+}
+
 /// Try to get a cached response. Returns `Some((status, content_type, body))`
 /// if fresh, `None` if stale or absent.
-pub(super) fn get(path: &str) -> Option<(&'static str, &'static str, String)> {
+pub(super) fn get(key: &str) -> Option<(&'static str, &'static str, String)> {
     let cache = CACHE.lock().ok()?;
-    let entry = cache.get(path)?;
+    let entry = cache.get(key)?;
     if entry.is_fresh() {
         let (ref ct, ref body) = entry.response;
         Some(("200 OK", leak_content_type(ct), body.clone()))
@@ -64,10 +75,10 @@ pub(super) fn get(path: &str) -> Option<(&'static str, &'static str, String)> {
 }
 
 /// Store a response in the cache.
-pub(super) fn put(path: &str, content_type: &str, body: &str) {
+pub(super) fn put(key: &str, content_type: &str, body: &str) {
     if let Ok(mut cache) = CACHE.lock() {
         cache.insert(
-            path.to_string(),
+            key.to_string(),
             CacheEntry {
                 response: (content_type.to_string(), body.to_string()),
                 created: Instant::now(),
@@ -113,6 +124,24 @@ mod tests {
         assert_eq!(status, "200 OK");
         assert_eq!(ct, "application/json");
         assert_eq!(body, r#"{"test":true}"#);
+    }
+
+    #[test]
+    fn a_read_for_one_project_never_answers_another_from_cache() {
+        use crate::core::policy::runtime::in_project;
+        in_project("/work/alpha", || {
+            put(
+                &key("/api/context-risk"),
+                "application/json",
+                r#"{"p":"alpha"}"#,
+            );
+        });
+        let beta = in_project("/work/beta", || get(&key("/api/context-risk")));
+        let unscoped = get(&key("/api/context-risk"));
+        let alpha = in_project("/work/alpha", || get(&key("/api/context-risk")));
+        assert!(beta.is_none());
+        assert!(unscoped.is_none());
+        assert_eq!(alpha.map(|r| r.2).as_deref(), Some(r#"{"p":"alpha"}"#));
     }
 
     #[test]

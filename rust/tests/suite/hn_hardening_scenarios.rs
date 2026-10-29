@@ -565,9 +565,10 @@ mod first_contact {
         let block = &src[auto_ctx_pos..auto_ctx_pos + 300];
 
         assert!(
-            block.contains("ctx_tokens <= 400"),
-            "auto_context must enforce 400 token budget: {block}"
+            block.contains("ctx_tokens <= crate::tools::autonomy::AUTO_CONTEXT_MAX_TOKENS"),
+            "auto_context must enforce the shared token budget: {block}"
         );
+        assert_eq!(lean_ctx::tools::autonomy::AUTO_CONTEXT_MAX_TOKENS, 400);
     }
 
     #[test]

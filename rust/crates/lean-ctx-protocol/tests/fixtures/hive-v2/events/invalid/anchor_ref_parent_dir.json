@@ -1,0 +1,17 @@
+{
+  "case": "anchor_ref_parent_dir",
+  "base": "events/node.add.fact.anchored.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/body/anchors/0/ref",
+      "value": "file:../secrets.env"
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/body/anchors/0/ref"
+  }
+}

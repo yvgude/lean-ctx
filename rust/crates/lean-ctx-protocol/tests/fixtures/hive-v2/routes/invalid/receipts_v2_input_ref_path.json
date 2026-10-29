@@ -1,0 +1,15 @@
+{
+  "case": "receipts_v2_input_ref_path",
+  "base": "routes/receipts_v2.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/receipts/0/document/invocation/input_ref",
+      "value": "file:///Users/ada/src/main.rs"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a path-carrying reference (M3)"
+}

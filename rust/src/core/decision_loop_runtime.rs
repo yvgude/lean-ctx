@@ -97,36 +97,6 @@ impl DecisionLoopRuntime {
         .flatten()
     }
 
-    /// Records a completed tool and schedules an accepted Shadow Mode sample.
-    ///
-    /// Shadow work is detached from the MCP response path: inability to spawn
-    /// or persist a comparison must never affect the completed tool call.
-    pub fn on_tool_end_with_shadow(
-        &self,
-        ctx: &TaskContext,
-        input_tokens: u64,
-        output_tokens: u64,
-        model: &str,
-        success: bool,
-        shadow_auto_record: bool,
-        shadow_tokens: Option<(u64, u64)>,
-    ) -> Option<crate::core::value_gate::ValueAssessment> {
-        if ctx.outcome().is_some() {
-            return None;
-        }
-        catch_unwind(AssertUnwindSafe(|| {
-            let mut observation =
-                CompletionObservation::tool_result(input_tokens, output_tokens, model, success);
-            observation.shadow_auto_record = shadow_auto_record;
-            observation.shadow_tokens = shadow_tokens;
-            self.lifecycle
-                .complete_once(ctx, observation)
-                .and_then(|outcome| outcome.assessment)
-        }))
-        .ok()
-        .flatten()
-    }
-
     #[cfg(test)]
     pub(crate) fn with_triage(triage: TriageEngine) -> Self {
         Self {

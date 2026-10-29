@@ -86,175 +86,106 @@ pub fn is_windows_absolute_path(path: &str) -> bool {
     path.starts_with("\\\\") || path.starts_with("//")
 }
 
-pub fn detect_project_root_for_dashboard() -> String {
+/// Where the dashboard's project binding came from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DashboardProjectSource {
+    /// `--project` / `LEAN_CTX_DASHBOARD_PROJECT`.
+    ExplicitFlag,
+    /// `LEAN_CTX_PROJECT_ROOT`.
+    Env,
+    /// The real project the dashboard was started in.
+    Cwd,
+    /// This request's `X-LeanCTX-Project`, checked against the workspace
+    /// pool (`crate::dashboard::project_binding`).
+    Request,
+    /// None of these: no project data is shown.
+    Unbound,
+}
+
+/// The dashboard's project and the binding it came from. Never another
+/// project's most recent session: a LaunchAgent dashboard started in `/` or
+/// `~` is unbound rather than showing whichever project was active last
+/// (AP04-G8).
+///
+/// The binding is the one an MCP session would make: an explicit
+/// `--project` / `LEAN_CTX_PROJECT_ROOT` is taken as given (never promoted to
+/// an enclosing checkout), and a folder the dashboard was started in is bound
+/// by the MCP startup rule ([`crate::server::derive_project_root_from`]).
+///
+/// Every dashboard route reads its project through here. Inside a read that
+/// named its project (`X-LeanCTX-Project`), the request-scoped project wins;
+/// it is set per request, never process-wide.
+pub fn dashboard_project_binding() -> (Option<String>, DashboardProjectSource) {
+    if let Some(project) = request_project() {
+        return (Some(project), DashboardProjectSource::Request);
+    }
+    dashboard_project_binding_in(std::env::current_dir().ok().as_deref())
+}
+
+/// The project bound to the current request, if any.
+pub(crate) fn request_project() -> Option<String> {
+    crate::core::policy::runtime::REQUEST_PROJECT
+        .try_with(|slot| slot.borrow().clone())
+        .ok()
+        .flatten()
+        .map(|project| project.to_string_lossy().into_owned())
+        .filter(|project| !project.is_empty())
+}
+
+/// The ledger share of the project this request names (`X-LeanCTX-Project`);
+/// `None` when the read is for every project.
+pub(crate) fn request_ledger_scope() -> Option<crate::core::savings_ledger::ProjectScope> {
+    request_project()
+        .map(|project| crate::core::savings_ledger::ProjectScope::for_project(Path::new(&project)))
+}
+
+/// Project key → project name for every project this dashboard may show,
+/// named after its main checkout as the project switch names it.
+pub(crate) fn project_names() -> std::collections::HashMap<String, String> {
+    use crate::core::savings_ledger::project_scope::{project_key_of, project_root_of};
+    crate::dashboard::project_binding::project_pool()
+        .iter()
+        .filter_map(|root| {
+            let key = project_key_of(Path::new(root))?;
+            let name = project_root_of(Path::new(root))
+                .file_name()?
+                .to_string_lossy()
+                .into_owned();
+            Some((key, name))
+        })
+        .collect()
+}
+
+pub(crate) fn dashboard_project_binding_in(
+    cwd: Option<&Path>,
+) -> (Option<String>, DashboardProjectSource) {
     if let Some(explicit) = crate::core::runtime_flags::dashboard_project() {
-        return promote_to_git_root(&explicit);
+        return (
+            Some(explicit.trim().to_string()),
+            DashboardProjectSource::ExplicitFlag,
+        );
     }
 
     if let Ok(explicit) = std::env::var("LEAN_CTX_PROJECT_ROOT")
         && !explicit.trim().is_empty()
     {
-        return promote_to_git_root(&explicit);
+        return (
+            Some(explicit.trim().to_string()),
+            DashboardProjectSource::Env,
+        );
     }
 
-    // Try cwd-scoped session first (works when dashboard runs inside a project).
-    if let Some(root) =
-        try_session_project_root(crate::core::session::SessionState::load_latest().as_ref())
+    if let Some(root) = cwd
+        .filter(|cwd| !crate::core::pathutil::is_broad_or_unsafe_root(cwd))
+        .and_then(crate::server::derive_project_root_from)
+        .filter(|root| !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(root)))
     {
-        return root;
+        return (Some(root), DashboardProjectSource::Cwd);
     }
-
-    // Dashboard often runs as a LaunchAgent with cwd=/ or HOME — load_latest()
-    // returns None for broad roots. Fall back to the global latest-pointer
-    // which tracks the most recently active session across all projects.
-    if let Some(root) = try_session_project_root(
-        crate::core::session::SessionState::load_global_latest_pointer().as_ref(),
-    ) {
-        return root;
-    }
-
-    // Last resort: scan recent sessions for the newest one with a real project.
-    let sessions = crate::core::session::SessionState::list_sessions();
-    for summary in sessions.iter().take(10) {
-        if let Some(ref pr) = summary.project_root
-            && !pr.trim().is_empty()
-            && !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(pr))
-        {
-            if let Some(git_root) = git_root_for(pr) {
-                return git_root;
-            }
-            if is_real_project(pr) {
-                return pr.clone();
-            }
-        }
-    }
-
-    let cwd = std::env::current_dir()
-        .map_or_else(|_| ".".to_string(), |p| p.to_string_lossy().to_string());
-    let r = crate::core::protocol::detect_project_root_or_cwd(&cwd);
-    promote_to_git_root(&r)
+    (None, DashboardProjectSource::Unbound)
 }
 
-/// Extracts a validated project root from a session, trying project_root,
-/// shell_cwd, and last touched file in order. Returns None if the session
-/// is None or contains no usable project root.
-fn try_session_project_root(
-    session: Option<&crate::core::session::SessionState>,
-) -> Option<String> {
-    let session = session?;
-    if let Some(root) = session.project_root.as_deref()
-        && !root.trim().is_empty()
-        && !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(root))
-    {
-        if let Some(git_root) = git_root_for(root) {
-            return Some(git_root);
-        }
-        if is_real_project(root) {
-            return Some(root.to_string());
-        }
-    }
-    if let Some(cwd) = session.shell_cwd.as_deref()
-        && !cwd.trim().is_empty()
-        && !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(cwd))
-        && Path::new(cwd).is_dir()
-    {
-        let r = crate::core::protocol::detect_project_root_or_cwd(cwd);
-        if !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(&r)) {
-            return Some(promote_to_git_root(&r));
-        }
-    }
-    if let Some(last) = session.files_touched.last()
-        && !last.path.trim().is_empty()
-    {
-        let p_path = Path::new(&last.path);
-        if let Some(parent) = p_path.parent()
-            && parent.is_dir()
-            && !crate::core::pathutil::is_broad_or_unsafe_root(parent)
-        {
-            let p = parent.to_string_lossy().to_string();
-            let r = crate::core::protocol::detect_project_root_or_cwd(&p);
-            if !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(&r)) {
-                return Some(promote_to_git_root(&r));
-            }
-        }
-    }
-    None
-}
-
-fn is_real_project(path: &str) -> bool {
-    let p = Path::new(path);
-    // macOS TCC (#356): a launchd-standalone process must not stat under
-    // ~/Documents/Desktop/Downloads — `is_dir`/marker probes would pop the
-    // privacy prompt. Report "not a project" without touching the filesystem.
-    if !crate::core::pathutil::may_probe_path(p) {
-        return false;
-    }
-    if !p.is_dir() {
-        return false;
-    }
-    const MARKERS: &[&str] = &[
-        ".git",
-        "Cargo.toml",
-        "package.json",
-        "go.mod",
-        "pyproject.toml",
-        "requirements.txt",
-        "pom.xml",
-        "build.gradle",
-        "CMakeLists.txt",
-        ".lean-ctx.toml",
-    ];
-    MARKERS.iter().any(|m| p.join(m).exists())
-}
-
-fn promote_to_git_root(path: &str) -> String {
-    git_root_for(path).unwrap_or_else(|| path.to_string())
-}
-
-fn git_root_for(path: &str) -> Option<String> {
-    let mut p = Path::new(path);
-    loop {
-        if is_valid_git_boundary(&p.join(".git")) {
-            return Some(p.to_string_lossy().to_string());
-        }
-        p = p.parent()?;
-    }
-}
-
-fn is_valid_git_boundary(git: &Path) -> bool {
-    const MAX_GITFILE_BYTES: u64 = 4096;
-
-    let Ok(metadata) = git.metadata() else {
-        return false;
-    };
-    if metadata.is_dir() {
-        return true;
-    }
-    if !metadata.is_file() || metadata.len() > MAX_GITFILE_BYTES {
-        return false;
-    }
-
-    let Ok(contents) = std::fs::read_to_string(git) else {
-        return false;
-    };
-    let Some(gitdir) = contents
-        .lines()
-        .next()
-        .and_then(|line| line.strip_prefix("gitdir:"))
-        .map(str::trim)
-        .filter(|path| !path.is_empty())
-    else {
-        return false;
-    };
-    let gitdir = Path::new(gitdir);
-    let target = if gitdir.is_absolute() {
-        gitdir.to_path_buf()
-    } else {
-        let Some(parent) = git.parent() else {
-            return false;
-        };
-        parent.join(gitdir)
-    };
-
-    target.is_dir()
+/// The dashboard's project root; empty when unbound.
+pub fn detect_project_root_for_dashboard() -> String {
+    dashboard_project_binding().0.unwrap_or_default()
 }

@@ -54,6 +54,7 @@ fn persist_below_min_tee_bytes_yields_no_handle_for_any_prefix() {
 #[test]
 fn persist_is_idempotent_content_addressed_and_prefix_segregated() {
     let _lock = test_env_lock();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let body = big("verbatim original row");
     let proxy_a = persist(&body).unwrap();
     let proxy_b = persist(&body).unwrap();
@@ -106,6 +107,7 @@ fn repersisting_identical_content_keeps_the_file_and_refreshes_its_age() {
 #[test]
 fn ctx_expand_is_graceful_when_tee_file_deleted_past_ttl() {
     let _lock = test_env_lock();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let body = big("recoverable until the ttl lapses");
     let handle = persist(&body).unwrap();
     let path = resolve_tee(&handle).expect("resolves before deletion");
@@ -127,6 +129,7 @@ fn ctx_expand_is_graceful_when_tee_file_deleted_past_ttl() {
 #[test]
 fn ctx_expand_surgical_slices_over_tee_handle() {
     let _lock = test_env_lock();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let body = (1..=60)
         .map(|i| format!("output row {i:03}"))
         .collect::<Vec<_>>()
@@ -181,6 +184,7 @@ fn resolve_tee_rejects_traversal_nontee_and_bad_hex_across_prefixes() {
 #[test]
 fn inband_marker_splices_on_streaming_shaped_request() {
     let _lock = test_env_lock();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let body = big("historical streaming line");
     let handle = persist(&body).unwrap();
     let marker = inband_marker(&handle).expect("a proxy tee handle yields a marker");
@@ -227,6 +231,7 @@ fn inband_splice_keeps_unresolvable_marker_and_is_noop_without_one() {
 #[test]
 fn tabular_lossy_dropped_column_is_recoverable_via_ctx_expand() {
     let _lock = test_env_lock();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let mut csv = String::from("status,uuid\n");
     for i in 0..50 {
         csv.push_str(&format!("ok,uuid-{i:08}\n"));
@@ -292,6 +297,7 @@ fn read_stub_bookkeeping_survives_restart_without_storing_content() {
 #[test]
 fn recovery_verifier_checks_resolved_bytes_digest_and_expiry() {
     let _lock = test_env_lock();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let body = big("recovery verification body");
     let handle = persist(&body).expect("tee handle");
     let digest = blake3::hash(body.as_bytes()).to_hex().to_string();
@@ -349,6 +355,7 @@ fn recovery_verifier_checks_resolved_bytes_digest_and_expiry() {
 #[test]
 fn recovery_paths_reject_traversal_symlink_escape_and_cross_store_handles() {
     let _lock = test_env_lock();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let body = big("cross-store recovery verification");
     let ccr_handle = persist(&body).expect("tee handle");
 
@@ -476,6 +483,7 @@ fn tee_store_that_links_to_another_store_is_refused() {
     use std::os::unix::fs::symlink;
 
     let _lock = test_env_lock();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let body = big("tee store link");
     let handle = persist(&body).expect("tee handle");
     let state = crate::core::paths::state_dir().expect("state directory");

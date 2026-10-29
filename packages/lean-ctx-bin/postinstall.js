@@ -207,8 +207,8 @@ function curlDownload(url, dest) {
 // Node.js HTTPS → PowerShell (Windows) / curl (Unix) → error with manual URL
 // ---------------------------------------------------------------------------
 
-async function downloadToFile(url, dest) {
-  console.log("lean-ctx: downloading binary...");
+async function downloadToFile(url, dest, label = "binary") {
+  console.log(`lean-ctx: downloading ${label}...`);
 
   // Attempt 1: Node.js native HTTPS
   try {
@@ -365,6 +365,85 @@ async function fetchRelease() {
 }
 
 // ---------------------------------------------------------------------------
+// LeanCTX Cockpit — the free web UI shipped beside the engine. Its bundle is
+// checked against COCKPIT_SHA256SUMS (fail closed) and then verified offline by
+// `lean-ctx cockpit install --from`. Every failure is a single warning: the
+// engine install has already succeeded and stays successful.
+// ---------------------------------------------------------------------------
+
+function httpsGetText(url) {
+  return httpsGet(url).then((res) => new Promise((resolve, reject) => {
+    let data = "";
+    res.on("data", (c) => (data += c));
+    res.on("end", () => resolve(data));
+    res.on("error", reject);
+  }));
+}
+
+function sha256File(file) {
+  return crypto.createHash("sha256").update(fs.readFileSync(file)).digest("hex");
+}
+
+function expectedDigest(sumsText, assetName) {
+  for (const line of sumsText.split("\n")) {
+    const [digest, name] = line.trim().split(/\s+/);
+    if (name === assetName || name === `*${assetName}`) return (digest || "").toLowerCase();
+  }
+  return null;
+}
+
+async function installCockpit(engine, release, target, io = {}) {
+  const env = io.env || process.env;
+  const log = io.log || console.log;
+  const download = io.download || ((url, dest) => downloadToFile(url, dest, "Cockpit"));
+  const fetchText = io.fetchText || httpsGetText;
+  if (env.LEAN_CTX_NO_COCKPIT === "1") {
+    log("lean-ctx: Cockpit skipped (LEAN_CTX_NO_COCKPIT=1)");
+    return "skipped";
+  }
+  const assetName = `lean-ctx-cockpit-${target}.tar.gz`;
+  const assets = (release && release.assets) || [];
+  const asset = assets.find((a) => a.name === assetName);
+  const sums = assets.find((a) => a.name === "COCKPIT_SHA256SUMS");
+  if (!asset || !sums) {
+    log(`lean-ctx: Cockpit not installed (release ${release && release.tag_name} has no Cockpit for ${target})`);
+    return "unavailable";
+  }
+  const tmpDir = fs.mkdtempSync(path.join(require("os").tmpdir(), "lean-ctx-cockpit-"));
+  try {
+    const archive = path.join(tmpDir, assetName);
+    await download(asset.browser_download_url, archive);
+    const expected = expectedDigest(await fetchText(sums.browser_download_url), assetName);
+    if (!expected || sha256File(archive) !== expected) {
+      log("lean-ctx: Cockpit not installed (checksum missing or mismatched — refusing an unverified Cockpit)");
+      return "unverified";
+    }
+    const extractDir = path.join(tmpDir, "extract");
+    fs.mkdirSync(extractDir);
+    execFileSync("tar", ["-xzf", archive, "-C", extractDir], { stdio: "ignore", timeout: 60000 });
+    const bundle = path.join(extractDir, "lean-ctx-cockpit");
+    if (!fs.existsSync(path.join(bundle, "manifest.json"))) {
+      throw new Error("the bundle could not be unpacked");
+    }
+    try {
+      execFileSync(engine, ["cockpit", "install", "--from", bundle], {
+        stdio: ["ignore", "ignore", "pipe"], timeout: 120000, windowsHide: true,
+      });
+    } catch (err) {
+      const reason = String((err.stderr && err.stderr.toString()) || err.message).trim().split("\n")[0];
+      throw new Error(reason || "verification failed");
+    }
+    log("lean-ctx: Cockpit installed and verified ✓ (open it with: lean-ctx cockpit)");
+    return "installed";
+  } catch (err) {
+    log(`lean-ctx: Cockpit not installed (${err.message}); the engine works without it`);
+    return "failed";
+  } finally {
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  }
+}
+
+// ---------------------------------------------------------------------------
 // Checksum verification — fails closed (GHSA-rxv5-4c3x-g4q6 D): a release
 // without SHA256SUMS, a failed checksum fetch, a missing/duplicate entry or a
 // digest mismatch aborts before anything is extracted.
@@ -497,6 +576,7 @@ async function main() {
     }
 
     console.log(`lean-ctx: installed to ${BINARY_PATH}`);
+    await installCockpit(BINARY_PATH, release, target);
     runOnboard(BINARY_PATH);
     printSuccess();
   } finally {
@@ -504,7 +584,10 @@ async function main() {
   }
 }
 
-main().catch((err) => {
+if (require.main !== module) {
+  // Loaded by tests: expose the pieces, run nothing.
+  module.exports = { installCockpit, expectedDigest };
+} else main().catch((err) => {
   console.error(`\nlean-ctx: installation failed: ${err.message}`);
   console.error("");
   console.error("Manual install options:");

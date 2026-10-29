@@ -1,0 +1,8 @@
+{
+  "counts": {
+    "contradicted": 1,
+    "to_verify": 1
+  },
+  "revision": 4,
+  "schema": "leanctx.hive.fact-state-report/v1"
+}

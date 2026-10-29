@@ -45,9 +45,7 @@ async fn inputs(
         "ctx_search" if crate::tools::registered::ctx_search::uses_kernel_context(args) => {
             (string("query").map(str::to_owned), Budget::Semantic, None)
         }
-        "ctx_multi_read" | "ctx_read"
-            if args.get("paths").is_some_and(serde_json::Value::is_array) =>
-        {
+        "ctx_read" if args.get("paths").is_some_and(serde_json::Value::is_array) => {
             anyhow::ensure!(
                 string("mode") != Some("raw")
                     && args.get("raw").and_then(serde_json::Value::as_bool) != Some(true),

@@ -1,0 +1,19 @@
+{
+  "schema": "leanctx.hive.bus/v2",
+  "client_msg_id": "01M5NKA2Z8B000000000000011",
+  "to": "#acme/payments",
+  "type": "answer",
+  "reply_to": "msg_00000000000000a1",
+  "body": {
+    "text": "Confirmed from the runbook as well."
+  },
+  "id": "msg_00000000000000ab",
+  "seq": 11,
+  "thread_id": "msg_00000000000000a1",
+  "sender": {
+    "kind": "person",
+    "handle": "mara"
+  },
+  "provenance": "workspace",
+  "received_at": 1792800011000
+}

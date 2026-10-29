@@ -6,10 +6,13 @@
 use std::fmt;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use lean_ctx_protocol::runtime_exchange::{RuntimeRequestV1, RuntimeResponseV1};
+use lean_ctx_protocol::runtime_exchange::{
+    RuntimeExchangeProfile, RuntimeRequestV1, RuntimeResponseV1,
+};
 use lean_ctx_protocol::runtime_frame::{
     RUNTIME_FRAME_HEADER_BYTES, RUNTIME_FRAME_NONCE_BYTES, RUNTIME_FRAME_TAG_BYTES,
-    RuntimeFrameDirection, decode_runtime_frame, encode_runtime_frame, runtime_payload_length,
+    RuntimeFrameDirection, decode_runtime_frame_in, encode_runtime_frame_in,
+    runtime_payload_length_in,
 };
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::time::{Instant, timeout_at};
@@ -62,13 +65,25 @@ pub async fn exchange(
     key: &[u8; 32],
     request: &RuntimeRequestV1,
 ) -> Result<RuntimeResponseV1, RuntimeExchangeError> {
+    exchange_in(address, key, request, RuntimeExchangeProfile::ORDINARY).await
+}
+
+/// [`exchange`] under a size profile the caller admitted from the
+/// authenticated package and the exact operation — never from the request,
+/// which could name any operation.
+pub(crate) async fn exchange_in(
+    address: &DaemonAddr,
+    key: &[u8; 32],
+    request: &RuntimeRequestV1,
+    profile: RuntimeExchangeProfile,
+) -> Result<RuntimeResponseV1, RuntimeExchangeError> {
     validate_local_address(address)?;
-    let (deadline, frame) = prepare_exchange(key, request)?;
+    let (deadline, frame) = prepare_exchange(key, request, profile)?;
     let response = timeout_at(deadline, async {
         let mut stream = super::connect(address)
             .await
             .map_err(|_| RuntimeExchangeError::ConnectionUnavailable)?;
-        exchange_connected(&mut stream, key, request, &frame).await
+        exchange_connected(&mut stream, key, request, &frame, profile).await
     })
     .await
     .map_err(|_| RuntimeExchangeError::DeadlineExceeded)?;
@@ -77,36 +92,48 @@ pub async fn exchange(
 
 /// Exchange over a caller-protected connected stream, including inherited Unix
 /// streams and one-use Windows named pipes. Authentication and deadline checks
-/// are identical to the explicit-endpoint exchange path.
+/// are identical to the explicit-endpoint exchange path. The profile is the
+/// caller's own admission, as for [`exchange_in`].
 pub(crate) async fn exchange_inherited<S: AsyncRead + AsyncWrite + Unpin>(
     stream: &mut S,
     key: &[u8; 32],
     request: &RuntimeRequestV1,
+    profile: RuntimeExchangeProfile,
 ) -> Result<RuntimeResponseV1, RuntimeExchangeError> {
-    let (deadline, frame) = prepare_exchange(key, request)?;
-    let response = timeout_at(deadline, exchange_connected(stream, key, request, &frame))
-        .await
-        .map_err(|_| RuntimeExchangeError::DeadlineExceeded)?;
+    let (deadline, frame) = prepare_exchange(key, request, profile)?;
+    let response = timeout_at(
+        deadline,
+        exchange_connected(stream, key, request, &frame, profile),
+    )
+    .await
+    .map_err(|_| RuntimeExchangeError::DeadlineExceeded)?;
     finish_exchange(deadline, response)
 }
 
 fn prepare_exchange(
     key: &[u8; 32],
     request: &RuntimeRequestV1,
+    profile: RuntimeExchangeProfile,
 ) -> Result<(Instant, Vec<u8>), RuntimeExchangeError> {
     let started = Instant::now();
     let now = unix_millis()?;
     request
-        .validate_at(now)
+        .validate_at_in(now, profile)
         .map_err(|_| RuntimeExchangeError::InvalidRequest)?;
     let deadline = started + Duration::from_millis(request.deadline_unix_ms - now);
     let payload = request
-        .to_bytes()
+        .to_bytes_in(profile)
         .map_err(|_| RuntimeExchangeError::InvalidRequest)?;
     let mut nonce = [0; RUNTIME_FRAME_NONCE_BYTES];
     getrandom::fill(&mut nonce).map_err(|_| RuntimeExchangeError::EntropyUnavailable)?;
-    let frame = encode_runtime_frame(key, RuntimeFrameDirection::Request, &nonce, &payload)
-        .map_err(|_| RuntimeExchangeError::InvalidFrame)?;
+    let frame = encode_runtime_frame_in(
+        key,
+        RuntimeFrameDirection::Request,
+        &nonce,
+        &payload,
+        profile,
+    )
+    .map_err(|_| RuntimeExchangeError::InvalidFrame)?;
     ensure_remaining(deadline)?;
     Ok((deadline, frame))
 }
@@ -144,27 +171,37 @@ async fn exchange_connected<S: AsyncRead + AsyncWrite + Unpin>(
     key: &[u8; 32],
     request: &RuntimeRequestV1,
     frame: &[u8],
+    profile: RuntimeExchangeProfile,
 ) -> Result<RuntimeResponseV1, RuntimeExchangeError> {
     stream
         .write_all(frame)
         .await
         .map_err(|_| RuntimeExchangeError::Io)?;
     stream.flush().await.map_err(|_| RuntimeExchangeError::Io)?;
-    let response_frame = read_frame(stream).await?;
-    let payload = decode_runtime_frame(key, RuntimeFrameDirection::Response, &response_frame)
-        .map_err(|_| RuntimeExchangeError::InvalidFrame)?;
-    RuntimeResponseV1::from_bytes(&payload, request, unix_millis()?)
+    let response_frame = read_frame(stream, profile).await?;
+    let payload = decode_runtime_frame_in(
+        key,
+        RuntimeFrameDirection::Response,
+        &response_frame,
+        profile,
+    )
+    .map_err(|_| RuntimeExchangeError::InvalidFrame)?;
+    RuntimeResponseV1::from_bytes_in(&payload, request, unix_millis()?, profile)
         .map_err(|_| RuntimeExchangeError::InvalidResponse)
 }
 
-async fn read_frame<S: AsyncRead + Unpin>(stream: &mut S) -> Result<Vec<u8>, RuntimeExchangeError> {
+async fn read_frame<S: AsyncRead + Unpin>(
+    stream: &mut S,
+    profile: RuntimeExchangeProfile,
+) -> Result<Vec<u8>, RuntimeExchangeError> {
     let mut header = [0_u8; RUNTIME_FRAME_HEADER_BYTES];
     stream
         .read_exact(&mut header)
         .await
         .map_err(|_| RuntimeExchangeError::Io)?;
     // Validate magic/version and the length limit before allocation or body reads.
-    let length = runtime_payload_length(&header).map_err(|_| RuntimeExchangeError::InvalidFrame)?;
+    let length = runtime_payload_length_in(&header, RuntimeFrameDirection::Response, profile)
+        .map_err(|_| RuntimeExchangeError::InvalidFrame)?;
     let mut frame = vec![
         0;
         RUNTIME_FRAME_HEADER_BYTES

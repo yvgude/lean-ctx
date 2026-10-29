@@ -1,0 +1,92 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "forge_unverified",
+          "message": "Verify the repository before making this vault public."
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "sealed_public_conflict",
+          "message": "A sealed vault cannot be public."
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "Public vaults are switched off for this workspace.",
+          "reason": "policy"
+        }
+      },
+      "status": 403
+    },
+    {
+      "body": {
+        "error": {
+          "code": "plan_required",
+          "feature": "internal_vaults",
+          "message": "Internal vaults: included in Team and Enterprise.",
+          "plan_needed": "team"
+        }
+      },
+      "status": 402
+    },
+    {
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "Enter the code from your authenticator app.",
+          "reason": "action_code_required"
+        }
+      },
+      "status": 403
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/vaults/payments/visibility",
+  "request": {
+    "totp_code": "482913",
+    "visibility": "public"
+  },
+  "response": {
+    "body": {
+      "vault": {
+        "counts": {
+          "nodes": 0,
+          "open_reviews": 0,
+          "workers": 0
+        },
+        "description": "How refunds, retries and payouts work.",
+        "followers": 0,
+        "forge": {
+          "host": "gitlab.pounce.ch",
+          "repo": "acme/payments",
+          "state": "verified"
+        },
+        "frozen": false,
+        "license": "CC-BY-4.0",
+        "name": "payments",
+        "presence_public": false,
+        "sealed": false,
+        "sealed_conversion": "none",
+        "sealed_grants": "confirm",
+        "stars": 0,
+        "title": "Payments",
+        "viewer": {
+          "role": "owner"
+        },
+        "visibility": "public"
+      }
+    },
+    "status": 200
+  },
+  "route": "W26"
+}

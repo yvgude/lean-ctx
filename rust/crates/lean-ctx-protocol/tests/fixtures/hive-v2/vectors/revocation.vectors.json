@@ -1,0 +1,21 @@
+{
+  "cases": [
+    {
+      "fixture": "routes/revocation.response.json",
+      "key_id": "41dad53017a5f8de",
+      "signature": "c8cce40a34f6f5f93578142a03fbbe6c082caaaddbe6fb7d7ab1056903f82f7ee9698e258e97b30730962bac2ef619be411e0587dc6e4bf6e76cb0fff6d63c06",
+      "signing_input": "leanctx.hive.revocation.v1\n{\"compromised_since\":1792796400000,\"instance_id\":\"8e3c0d5f-2b4e-4f60-9b8c-1d2e3f4a5b6c\",\"key_id\":\"41dad53017a5f8de\",\"org_id\":\"4b6d8f0a-2c4e-4f6a-8b0c-2e4f6a8c0e1a\",\"reason\":\"key_compromise\",\"revoked_at\":1792800500000,\"schema\":\"leanctx.hive.revocation.v1\"}"
+    },
+    {
+      "fixture": "routes/revocation.web_revoke.response.json",
+      "key_id": "41dad53017a5f8de",
+      "signature": "fb97d67e9eafddd7c0e722e1b2c471972f19efc1088cc7556c06ca4bff701cbfe90c7d5ca7aaaa9dc9c4f07910dc455f22ccc44516b284eab829b78b3c6bf10d",
+      "signing_input": "leanctx.hive.revocation.v1\n{\"instance_id\":\"8e3c0d5f-2b4e-4f60-9b8c-1d2e3f4a5b6c\",\"key_id\":\"41dad53017a5f8de\",\"org_id\":\"4b6d8f0a-2c4e-4f6a-8b0c-2e4f6a8c0e1a\",\"reason\":\"web_revoke\",\"revoked_at\":1792800500000,\"schema\":\"leanctx.hive.revocation.v1\"}"
+    }
+  ],
+  "rules": {
+    "domain": "leanctx.hive.revocation.v1\n",
+    "signer": "Hive key of purpose revocation (signing.vectors.json hive_revocation)",
+    "signing_input": "domain ‖ canonical_json(statement without signature)"
+  }
+}

@@ -1,0 +1,662 @@
+{
+  "cases": [
+    {
+      "case": "empty_chain",
+      "effective": {
+        "context": {},
+        "schema": "leanctx.hive.policy/v1",
+        "security": {},
+        "sharing": {}
+      },
+      "effective_digest": "sha256:cf8ab444d549087fcef4bf839ce551810d21d590eaf31d60ddc97e72fdc3560c",
+      "levels": []
+    },
+    {
+      "case": "single_document_normal_form",
+      "effective": {
+        "context": {
+          "denied_tools": [
+            "ctx_shell"
+          ]
+        },
+        "schema": "leanctx.hive.policy/v1",
+        "security": {
+          "excluded_paths": [
+            "**/*.pem",
+            ".env*",
+            "secrets/**"
+          ]
+        },
+        "sharing": {}
+      },
+      "effective_digest": "sha256:ebe7ff7527093456e8c8c6267c55534d194c6bb4905458e39ddbd43a0044fbf0",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "denied_tools": [
+                "ctx_shell"
+              ]
+            },
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "excluded_paths": [
+                "secrets/**",
+                ".env*",
+                "**/*.pem"
+              ]
+            }
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "deny_wins_union",
+      "effective": {
+        "context": {
+          "denied_tools": [
+            "ctx_edit",
+            "ctx_shell"
+          ]
+        },
+        "schema": "leanctx.hive.policy/v1",
+        "security": {
+          "blocked_labels": [
+            "confidential",
+            "secret"
+          ],
+          "excluded_paths": [
+            "customers/**",
+            "secrets/**"
+          ],
+          "external_model_excluded_classes": [
+            "customer_data",
+            "pii",
+            "secrets"
+          ]
+        },
+        "sharing": {
+          "consent_required_for": [
+            "destructive_change",
+            "permission_expansion",
+            "team_sharing"
+          ]
+        }
+      },
+      "effective_digest": "sha256:eb83c926f7b4bcd82143c56f647986d0471219e9195d82dbb7c9fdfcb727f63e",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "denied_tools": [
+                "ctx_shell"
+              ]
+            },
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "blocked_labels": [
+                "secret"
+              ],
+              "excluded_paths": [
+                "secrets/**"
+              ],
+              "external_model_excluded_classes": [
+                "secrets"
+              ]
+            },
+            "sharing": {
+              "consent_required_for": [
+                "permission_expansion"
+              ]
+            }
+          },
+          "level": "org"
+        },
+        {
+          "document": {
+            "context": {
+              "denied_tools": [
+                "ctx_edit"
+              ]
+            },
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "blocked_labels": [
+                "confidential"
+              ],
+              "excluded_paths": [
+                "customers/**",
+                "secrets/**"
+              ],
+              "external_model_excluded_classes": [
+                "customer_data",
+                "pii"
+              ]
+            },
+            "sharing": {
+              "consent_required_for": [
+                "destructive_change",
+                "team_sharing"
+              ]
+            }
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "allowed_values_intersect",
+      "effective": {
+        "context": {
+          "allowed_sources": [],
+          "allowed_tools": [
+            "ctx_read",
+            "ctx_search"
+          ]
+        },
+        "schema": "leanctx.hive.policy/v1",
+        "security": {},
+        "sharing": {
+          "allowed_vaults": [
+            "8a2b4c6d8e0f1a3b5c7d9e1f2a4b6c8d"
+          ]
+        }
+      },
+      "effective_digest": "sha256:de754eefe890b90299b892b46d2465c1309cd1ba2aae8df29153680e3a304761",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "allowed_sources": [
+                "files",
+                "knowledge"
+              ],
+              "allowed_tools": [
+                "ctx_read",
+                "ctx_search",
+                "ctx_shell"
+              ]
+            },
+            "schema": "leanctx.hive.policy/v1",
+            "sharing": {
+              "allowed_vaults": [
+                "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42",
+                "8a2b4c6d8e0f1a3b5c7d9e1f2a4b6c8d"
+              ]
+            }
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "context": {
+              "allowed_sources": [
+                "web"
+              ],
+              "allowed_tools": [
+                "ctx_search",
+                "ctx_read",
+                "ctx_tree"
+              ]
+            },
+            "schema": "leanctx.hive.policy/v1",
+            "sharing": {
+              "allowed_vaults": [
+                "8a2b4c6d8e0f1a3b5c7d9e1f2a4b6c8d"
+              ]
+            }
+          },
+          "level": "engine"
+        }
+      ]
+    },
+    {
+      "case": "numbers_take_the_stricter_limit",
+      "effective": {
+        "context": {
+          "max_context_tokens": 64000,
+          "max_cost_cents_per_person_per_day": 500,
+          "max_source_age_days": 90,
+          "max_writes_per_min": 0
+        },
+        "schema": "leanctx.hive.policy/v1",
+        "security": {},
+        "sharing": {}
+      },
+      "effective_digest": "sha256:440c861981228f3042009e2fd4b9702d80a3540f9d876ed3ed66d9d661f8c8f7",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "max_context_tokens": 120000,
+              "max_cost_cents_per_person_per_day": 2000,
+              "max_source_age_days": 90
+            },
+            "schema": "leanctx.hive.policy/v1"
+          },
+          "level": "org"
+        },
+        {
+          "document": {
+            "context": {
+              "max_context_tokens": 200000,
+              "max_cost_cents_per_person_per_day": 500,
+              "max_writes_per_min": 30
+            },
+            "schema": "leanctx.hive.policy/v1"
+          },
+          "level": "vault"
+        },
+        {
+          "document": {
+            "context": {
+              "max_context_tokens": 64000,
+              "max_source_age_days": 365,
+              "max_writes_per_min": 0
+            },
+            "schema": "leanctx.hive.policy/v1"
+          },
+          "level": "engine"
+        }
+      ]
+    },
+    {
+      "case": "restrictive_booleans_win",
+      "effective": {
+        "context": {
+          "auto_extraction": false,
+          "extraction_requires_source_anchor": true
+        },
+        "schema": "leanctx.hive.policy/v1",
+        "security": {
+          "block_secrets": true,
+          "confidential_out_of_sharing": true
+        },
+        "sharing": {
+          "auto_merge_results": true,
+          "cross_team_sharing": false
+        }
+      },
+      "effective_digest": "sha256:df7cda14286981f8dcb8e3b7b711b4d02962bd42fa002435358d6db71da207ec",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "auto_extraction": true,
+              "extraction_requires_source_anchor": false
+            },
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "block_secrets": false,
+              "confidential_out_of_sharing": true
+            },
+            "sharing": {
+              "auto_merge_results": true,
+              "cross_team_sharing": true
+            }
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "context": {
+              "auto_extraction": false,
+              "extraction_requires_source_anchor": true
+            },
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "block_secrets": true,
+              "confidential_out_of_sharing": false
+            },
+            "sharing": {
+              "cross_team_sharing": false
+            }
+          },
+          "level": "vault"
+        }
+      ]
+    },
+    {
+      "case": "ranked_values_take_the_stricter",
+      "effective": {
+        "context": {
+          "injection_filter": "block"
+        },
+        "schema": "leanctx.hive.policy/v1",
+        "security": {
+          "classification": "block",
+          "pii": "redact"
+        },
+        "sharing": {
+          "task_claim_min_role": "maintainer"
+        }
+      },
+      "effective_digest": "sha256:fa42c0b715522a8bb87715eec85e9ea7fed3de6cee0d1daf3bc83532ee9d9cfe",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "injection_filter": "block"
+            },
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "classification": "warn",
+              "pii": "redact"
+            },
+            "sharing": {
+              "task_claim_min_role": "maintainer"
+            }
+          },
+          "level": "org"
+        },
+        {
+          "document": {
+            "context": {
+              "injection_filter": "off"
+            },
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "classification": "block",
+              "pii": "warn"
+            },
+            "sharing": {
+              "task_claim_min_role": "contributor"
+            }
+          },
+          "level": "engine"
+        }
+      ]
+    },
+    {
+      "case": "model_allowlists_all_apply",
+      "effective": {
+        "context": {},
+        "schema": "leanctx.hive.policy/v1",
+        "security": {
+          "allowed_models": [
+            [
+              "claude-*"
+            ],
+            [
+              "claude-*",
+              "gpt-*"
+            ]
+          ]
+        },
+        "sharing": {}
+      },
+      "effective_digest": "sha256:1f506317e9933f6d824af60e9e38ec819018b20c203ae33c8fc1acf8d6d1a95b",
+      "levels": [
+        {
+          "document": {
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "allowed_models": [
+                [
+                  "gpt-*",
+                  "claude-*"
+                ]
+              ]
+            }
+          },
+          "level": "org"
+        },
+        {
+          "document": {
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "allowed_models": [
+                [
+                  "claude-*"
+                ],
+                [
+                  "claude-*",
+                  "gpt-*"
+                ]
+              ]
+            }
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "equal_members_agree",
+      "effective": {
+        "context": {
+          "ranking_profile": "precision",
+          "read_mode": "map"
+        },
+        "schema": "leanctx.hive.policy/v1",
+        "security": {},
+        "sharing": {}
+      },
+      "effective_digest": "sha256:94be2d53d2d21a0581a1c62ab59415b2ec12e834f1fec4a79675ee817e7cece2",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "ranking_profile": "precision",
+              "read_mode": "map"
+            },
+            "schema": "leanctx.hive.policy/v1"
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "context": {
+              "read_mode": "map"
+            },
+            "schema": "leanctx.hive.policy/v1"
+          },
+          "level": "vault"
+        }
+      ]
+    },
+    {
+      "case": "equal_members_disagree_non_mergeable",
+      "error": {
+        "code": "non_mergeable",
+        "field": "context.read_mode"
+      },
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "read_mode": "map"
+            },
+            "schema": "leanctx.hive.policy/v1"
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "context": {
+              "read_mode": "full"
+            },
+            "schema": "leanctx.hive.policy/v1"
+          },
+          "level": "engine"
+        }
+      ]
+    },
+    {
+      "case": "unknown_member_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": "security.allow_everything"
+      },
+      "levels": [
+        {
+          "document": {
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "allow_everything": true
+            }
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "unknown_schema_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": "schema"
+      },
+      "levels": [
+        {
+          "document": {
+            "schema": "leanctx.hive.policy/v2"
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "limit_out_of_range_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": "context.max_context_tokens"
+      },
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "max_context_tokens": 0
+            },
+            "schema": "leanctx.hive.policy/v1"
+          },
+          "level": "engine"
+        }
+      ]
+    },
+    {
+      "case": "repeated_value_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": "context.denied_tools"
+      },
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "denied_tools": [
+                "ctx_shell",
+                "ctx_shell"
+              ]
+            },
+            "schema": "leanctx.hive.policy/v1"
+          },
+          "level": "vault"
+        }
+      ]
+    },
+    {
+      "case": "levels_out_of_order_refused",
+      "error": {
+        "code": "invalid_policy",
+        "field": ""
+      },
+      "levels": [
+        {
+          "document": {
+            "schema": "leanctx.hive.policy/v1"
+          },
+          "level": "engine"
+        },
+        {
+          "document": {
+            "schema": "leanctx.hive.policy/v1"
+          },
+          "level": "workspace"
+        }
+      ]
+    },
+    {
+      "case": "bundle_chain",
+      "effective": {
+        "context": {
+          "denied_tools": [
+            "ctx_shell"
+          ],
+          "max_context_tokens": 64000
+        },
+        "schema": "leanctx.hive.policy/v1",
+        "security": {
+          "block_secrets": true,
+          "excluded_paths": [
+            ".env*",
+            "customers/**",
+            "secrets/**"
+          ],
+          "pii": "block"
+        },
+        "sharing": {
+          "auto_merge_results": false,
+          "consent_required_for": [
+            "permission_expansion"
+          ],
+          "cross_team_sharing": false
+        }
+      },
+      "effective_digest": "sha256:f98d383844a3c655827537b5aaec7ba6b2213927421882e2f9db0d0505aea23a",
+      "levels": [
+        {
+          "document": {
+            "context": {
+              "denied_tools": [
+                "ctx_shell"
+              ],
+              "max_context_tokens": 120000
+            },
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "block_secrets": true,
+              "excluded_paths": [
+                ".env*",
+                "secrets/**"
+              ],
+              "pii": "redact"
+            },
+            "sharing": {
+              "consent_required_for": [
+                "permission_expansion"
+              ],
+              "cross_team_sharing": false
+            }
+          },
+          "level": "workspace"
+        },
+        {
+          "document": {
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "excluded_paths": [
+                "customers/**"
+              ],
+              "pii": "block"
+            },
+            "sharing": {
+              "auto_merge_results": false
+            }
+          },
+          "level": "vault"
+        },
+        {
+          "document": {
+            "context": {
+              "max_context_tokens": 64000
+            },
+            "schema": "leanctx.hive.policy/v1"
+          },
+          "level": "engine"
+        }
+      ]
+    }
+  ],
+  "name": "policy_merge",
+  "note": "Merge of the policy hierarchy (policy.schema.json): `levels` outermost first (org, workspace, vault, engine; at most one each), each document validated, then merged member by member by its x-merge rule. `effective` is authored by hand and never re-blessed; `effective_digest` = \"sha256:\" + hex(sha256(canonical_json(effective))) is derived. A case with `error` must be refused with that code at that member path (\"\" = the document or chain as a whole). Merging never weakens any member relative to any input, is idempotent, commutative and associative where defined. Case bundle_chain is the input of routes/policy_bundle.v2.response.json."
+}

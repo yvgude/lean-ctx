@@ -4,6 +4,12 @@
 mod engine;
 mod shells;
 pub mod spec;
+mod spec_account;
+mod spec_setup;
+mod spec_team;
+mod spec_tools;
+mod spec_value;
+mod workspace;
 
 /// `lean-ctx completions zsh|bash|fish` — print a static completion script.
 pub fn run_completions(args: &[String]) {

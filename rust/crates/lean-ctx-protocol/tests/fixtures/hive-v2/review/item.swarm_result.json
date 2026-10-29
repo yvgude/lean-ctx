@@ -1,0 +1,29 @@
+{
+  "also": [
+    "security_or_policy_knowledge"
+  ],
+  "command_digests": [],
+  "created_at": 1792800004350,
+  "events": [
+    "01M5NKA5X0005G00000000W004",
+    "01M5NKA6W8005G00000000W005"
+  ],
+  "id": "rv_aaaaaaaaaaaaaaaaaaaaaadxam",
+  "independence": "normal",
+  "item_digest": "40222278ec9e36918a7540ec7c2496ca58fa3286a18f7fe0bc89823bd75a083c",
+  "node_ids": [
+    "n_aaaaaaaaaaaaaaaaaaaaaadaam"
+  ],
+  "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+  "required_weight": 2,
+  "sla_due_at": 1792886400000,
+  "state": "waiting_for_reviewer",
+  "trigger": "swarm_result",
+  "verdicts": [],
+  "weight_accept": 0,
+  "weight_reject": 0,
+  "writer": {
+    "owner_hash": "3c9a5e7b1d2f4a60",
+    "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+  }
+}

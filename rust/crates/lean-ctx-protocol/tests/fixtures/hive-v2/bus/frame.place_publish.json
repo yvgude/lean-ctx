@@ -1,0 +1,13 @@
+{
+  "body": {
+    "deadline": 1792886400000,
+    "text": "Does the ledger close still hold the advisory lock during the export step?",
+    "to_worker": "wkr_gawyravj36igdp3irdfo"
+  },
+  "client_msg_id": "01M5NKA2Z8B000000000000001",
+  "schema": "leanctx.hive.bus/v2",
+  "t": "place.publish",
+  "to": "#acme/payments",
+  "type": "question",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

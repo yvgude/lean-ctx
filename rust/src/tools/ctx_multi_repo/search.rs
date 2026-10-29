@@ -364,10 +364,12 @@ mod tests {
 
     #[test]
     fn handle_search_rejects_unknown_mode() {
-        // Mode validation runs inside the policy source view. Policy tests pin
-        // a process-wide override and others move the cwd, so pin "no policy"
-        // and name the request project instead of reading the shared cwd.
-        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        // The search answers under the process environment and policy (a
+        // pinned protected session, an active pack): both held, in the
+        // order environment then policy, so no other test's state decides.
+        // Name the request project instead of reading the shared cwd.
+        let _env = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let project = tempfile::tempdir().unwrap();
         let (out, _) = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
             std::cell::RefCell::new(Some(project.path().to_path_buf())),

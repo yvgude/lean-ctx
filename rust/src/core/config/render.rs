@@ -180,7 +180,6 @@ mod tests {
             ..Config::default()
         };
         cfg.proxy.anthropic_upstream = Some("https://upstream.example".to_string());
-        cfg.gain.display_name = Some("alice".to_string());
         cfg
     }
 

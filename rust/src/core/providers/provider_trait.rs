@@ -44,6 +44,14 @@ pub trait ContextProvider: Send + Sync {
         120
     }
 
+    /// What this connector actually guarantees (strategy package 2026-10-14,
+    /// doc 17). The default claims nothing it cannot prove: it lists, and it
+    /// cannot re-check a stored item, so its content stays personal-local and
+    /// is withheld from governed reuse.
+    fn descriptor(&self) -> ConnectorDescriptor {
+        ConnectorDescriptor::list_only("token or none")
+    }
+
     /// Whether this provider requires authentication.
     fn requires_auth(&self) -> bool {
         true
@@ -51,6 +59,70 @@ pub trait ContextProvider: Send + Sync {
 
     /// Check if the provider is configured and ready to serve requests.
     fn is_available(&self) -> bool;
+}
+
+/// How far a connector supports one capability. `Partial` always names its
+/// limit in the descriptor's `notes`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum CapabilityLevel {
+    Supported,
+    Partial,
+    Unsupported,
+}
+
+/// The connector contract of doc 17: what a source connector can do, how it
+/// fails and what it may write. Declared by the connector, rendered into the
+/// capability matrix and consulted before governed or shared use.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub struct ConnectorDescriptor {
+    /// How the principal is bound (token, OAuth data source, none).
+    pub principal_binding: &'static str,
+    pub search: CapabilityLevel,
+    pub list: CapabilityLevel,
+    pub get: CapabilityLevel,
+    pub delta: CapabilityLevel,
+    /// Re-check, with the principal's own credential, that a stored item is
+    /// still readable (`reacquire_item`).
+    pub revalidate_acl: CapabilityLevel,
+    /// Detect that a stored item changed since it was read.
+    pub revalidate_revision: CapabilityLevel,
+    pub delete_event: CapabilityLevel,
+    /// Source text is data, never instructions, whatever its detectors say.
+    pub content_trust: &'static str,
+    /// Mutations of the source: none. Writes belong to the host application.
+    pub write_surface: &'static str,
+    /// Error, timeout, rate limit or lost access: what the gateway does.
+    pub failure_policy: &'static str,
+    pub notes: &'static str,
+}
+
+impl ConnectorDescriptor {
+    pub(crate) const UNTRUSTED: &'static str = "untrusted data";
+    pub(crate) const NO_WRITES: &'static str = "none";
+    pub(crate) const FAIL_CLOSED: &'static str = "deny; no stale or cached answer";
+
+    pub(crate) fn list_only(principal_binding: &'static str) -> Self {
+        Self {
+            principal_binding,
+            search: CapabilityLevel::Unsupported,
+            list: CapabilityLevel::Supported,
+            get: CapabilityLevel::Unsupported,
+            delta: CapabilityLevel::Unsupported,
+            revalidate_acl: CapabilityLevel::Unsupported,
+            revalidate_revision: CapabilityLevel::Unsupported,
+            delete_event: CapabilityLevel::Unsupported,
+            content_trust: Self::UNTRUSTED,
+            write_surface: Self::NO_WRITES,
+            failure_policy: Self::FAIL_CLOSED,
+            notes: "no item re-check: personal-local use only, withheld from governed reuse",
+        }
+    }
+
+    /// Governed or shared reuse of a stored item needs a current ACL check.
+    pub fn allows_shared_reuse(&self) -> bool {
+        self.revalidate_acl == CapabilityLevel::Supported
+    }
 }
 
 /// Parameters passed to a provider action.

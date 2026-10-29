@@ -1,0 +1,14 @@
+{
+  "case": "proof_subject_of_other_kind",
+  "base": "consent/proof.ed25519.swarm_join.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/kind",
+      "value": "pledge_change"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

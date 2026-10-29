@@ -203,16 +203,21 @@ fn cmd_verify(args: &[String]) {
         }
     );
     println!("  signer key:    {pubkey}");
-    if org::trust::any_pinned() {
-        let trusted = org::trust::is_trusted(&pubkey);
+    // Trusted is what enforcement means by it: this key pinned for THIS
+    // artifact's organization. The same key pinned for another organization
+    // is not trust in this artifact, and is said so.
+    if org::trust::is_trusted_for(&artifact.org, &pubkey) {
         println!(
-            "  trust:         {}",
-            if trusted {
-                "TRUSTED (key is pinned on this endpoint)"
-            } else {
-                "NOT TRUSTED (key is not pinned here)"
-            }
+            "  trust:         TRUSTED (key is pinned for '{}' on this endpoint)",
+            artifact.org
         );
+    } else if let Some(other) = org::trust::pinned_organization(&pubkey) {
+        println!(
+            "  trust:         NOT TRUSTED for '{}' (this key is pinned for another organization: '{other}')",
+            artifact.org
+        );
+    } else if org::trust::any_pinned() {
+        println!("  trust:         NOT TRUSTED (key is not pinned here)");
     } else {
         println!("  trust:         no anchors pinned on this endpoint");
     }
@@ -243,11 +248,22 @@ fn cmd_trust(args: &[String]) {
         std::process::exit(2);
     };
     let org_name = flag(args, "--org").unwrap_or_else(|| "org".to_string());
-    match org::trust::pin(&org_name, &pubkey) {
-        Ok(_) => println!(
+    match org::trust::pin_for(&org_name, &pubkey) {
+        Ok(org::trust::PinOutcome::Added) => println!(
             "Pinned trust anchor for '{org_name}': {}",
             pubkey.trim().to_ascii_lowercase()
         ),
+        Ok(org::trust::PinOutcome::AlreadyPinned) => {
+            println!("Trust anchor is already pinned for '{org_name}'; nothing changed.");
+        }
+        Ok(org::trust::PinOutcome::PinnedForAnother(other)) => {
+            eprintln!(
+                "policy org trust: this key is pinned for another organization ('{other}'); \
+                 it was not pinned for '{org_name}'.\n  A pin is never moved by pinning again. \
+                 Remove the existing pin deliberately first:  lean-ctx policy org untrust <pubkey>"
+            );
+            std::process::exit(1);
+        }
         Err(e) => {
             eprintln!("policy org trust: {e}");
             std::process::exit(1);
@@ -297,18 +313,48 @@ fn cmd_install(args: &[String]) {
 
     // Trust must be established. `--trust` pins the signer key (TOFU) in one
     // step for first-time setup; otherwise the operator must pin it explicitly.
-    if !org::trust::is_trusted(&pubkey) {
+    //
+    // Trusted means what enforcement means by it: this key pinned for THIS
+    // artifact's organization. A key pinned for another organization does not
+    // admit the artifact, and `--trust` never moves such a pin.
+    if !org::trust::is_trusted_for(&artifact.org, &pubkey) {
+        let pinned_elsewhere = |other: &str| {
+            eprintln!(
+                "policy org install: refusing to install — the signer key is pinned for another \
+                 organization ('{other}'), not for '{}'.\n  A pin is never moved by installing. \
+                 Remove the existing pin deliberately first:  lean-ctx policy org untrust {pubkey}",
+                artifact.org
+            );
+            std::process::exit(1)
+        };
         if args.iter().any(|a| a == "--trust") {
-            if let Err(e) = org::trust::pin(&artifact.org, &pubkey) {
-                eprintln!("policy org install: {e}");
-                std::process::exit(1);
+            match org::trust::pin_for(&artifact.org, &pubkey) {
+                Ok(org::trust::PinOutcome::Added) => {
+                    println!("Pinned trust anchor for '{}': {pubkey}", artifact.org);
+                }
+                Ok(org::trust::PinOutcome::AlreadyPinned) => {}
+                Ok(org::trust::PinOutcome::PinnedForAnother(other)) => pinned_elsewhere(&other),
+                Err(e) => {
+                    eprintln!("policy org install: {e}");
+                    std::process::exit(1);
+                }
             }
-            println!("Pinned trust anchor for '{}': {pubkey}", artifact.org);
+        } else if let Some(other) = org::trust::pinned_organization(&pubkey) {
+            pinned_elsewhere(&other);
         } else {
             eprintln!(
                 "policy org install: signer key is not trusted on this endpoint.\n  \
                  Pin it first:  lean-ctx policy org trust {pubkey} --org {}\n  \
                  or re-run with --trust to pin it now.",
+                artifact.org
+            );
+            std::process::exit(1);
+        }
+        // Checked once more on what is stored now, before anything is
+        // installed: the exact assignment, not the outcome of the pin call.
+        if !org::trust::is_trusted_for(&artifact.org, &pubkey) {
+            eprintln!(
+                "policy org install: refusing to install — the signer key is not pinned for '{}'",
                 artifact.org
             );
             std::process::exit(1);
@@ -351,9 +397,47 @@ fn cmd_uninstall() {
 
 // ── status / show ──────────────────────────────────────────────────────────────
 
+/// The stored requirement record as lines of the status. It is shown as what
+/// it is: the record of the last decision that was accepted and stored. This
+/// command asks no verifier and changes nothing; whether a policy is in force
+/// is decided by the enforcement pipeline at use, not here.
+fn recorded_lines(recorded: &org::RecordedRequirement) -> Vec<String> {
+    match recorded {
+        org::RecordedRequirement::Absent => Vec::new(),
+        org::RecordedRequirement::Unavailable(error) => vec![
+            format!("  recorded:      UNAVAILABLE — the stored requirement record cannot be read ({error})"),
+            "                 governed operations refuse while it is in this state; it is not \"no requirement\"".to_owned(),
+        ],
+        org::RecordedRequirement::Recorded {
+            organization,
+            required,
+            sequence,
+            statement,
+            recorded_at,
+            entries,
+        } => vec![
+            format!(
+                "  recorded:      {} — organization {organization}, signed sequence {sequence}",
+                if *required {
+                    "REQUIRED"
+                } else {
+                    "UNPINNED (requirement lifted by a signed organization decision)"
+                }
+            ),
+            format!("                 statement {statement}"),
+            format!("                 recorded at {recorded_at} (entry {entries} of the stored record)"),
+            "                 the stored record of the last accepted decision — not verified by this command".to_owned(),
+        ],
+    }
+}
+
 fn cmd_status() {
     let s = org::status();
-    if !s.present {
+    let recorded = recorded_lines(&s.recorded);
+    // Only an endpoint with no artifact, no diagnostic AND no stored record
+    // has no central policy. A recorded unpin is an organization decision on
+    // record: such an endpoint is not offered a first enrollment.
+    if !s.present && s.source.is_none() && s.resolve_error.is_none() && recorded.is_empty() {
         println!("Org policy: none installed.");
         println!("  pinned trust anchors: {}", s.pinned_anchors);
         if s.pinned_anchors == 0 {
@@ -364,9 +448,37 @@ fn cmd_status() {
         return;
     }
 
+    // A source or requirement can exist without readable V1 metadata.
+    // Report the loader's diagnostic without inventing signature or mode details.
+    if s.org.is_none() {
+        if s.source.is_none() && s.resolve_error.is_none() {
+            // Nothing installed and nothing refused: what there is, is the record.
+            println!("Org policy: none installed; a decision of the organization is on record.");
+        } else {
+            println!("Org policy: unavailable for enforcement.");
+        }
+        if let Some(source) = &s.source {
+            println!("  source:        {}", source.display());
+            // What is installed is not read here as being in force: an
+            // artifact this status cannot verify is decided by the verifier
+            // at use, and its own metadata is no fresh authority.
+            println!(
+                "  installed:     an artifact this command does not verify; nothing here says it is in force"
+            );
+        }
+        if let Some(err) = &s.resolve_error {
+            println!("  resolve error: {err}");
+        }
+        for line in &recorded {
+            println!("{line}");
+        }
+        println!("  pinned anchors: {}", s.pinned_anchors);
+        return;
+    }
+
     println!(
         "Org policy: {}",
-        if s.applied {
+        if s.applied && s.resolve_error.is_none() {
             "ENFORCED"
         } else {
             "present, NOT enforced"
@@ -411,11 +523,16 @@ fn cmd_status() {
     if let Some(err) = &s.resolve_error {
         println!("  resolve error: {err}");
     }
+    for line in &recorded {
+        println!("{line}");
+    }
     println!("  pinned anchors: {}", s.pinned_anchors);
 
-    // Show the effective floor merge for inspection, even when not yet applied,
-    // so an admin can preview exactly what the endpoint would enforce.
-    if let Some(effective) = effective_preview() {
+    // Preserve the V1 diagnostic preview when resolution succeeds, even when
+    // not applied; a refused authority must not produce an effective floor.
+    if s.resolve_error.is_none()
+        && let Some(effective) = effective_preview(&s)
+    {
         println!("\nEffective policy (org floor ⊕ local pack):\n");
         print_resolved(&effective);
     }
@@ -424,10 +541,11 @@ fn cmd_status() {
 /// Build the would-be effective policy for `show`: the artifact's pack as the
 /// floor merged with the local project pack — independent of trust/enforced, so
 /// it is a true preview of what enforcement would look like once turned on.
-fn effective_preview() -> Option<ResolvedPolicy> {
-    let artifact = org::store::load_active()?;
-    let org_resolved = artifact.resolved().ok()?;
-    Some(floor::merge_floor(&org_resolved, local_pack().as_ref()))
+/// The floor is the one of the artifact the status itself read: the same
+/// stored bytes it describes, not loaded a second time.
+fn effective_preview(status: &org::OrgStatus) -> Option<ResolvedPolicy> {
+    let org_resolved = status.floor_preview.as_ref()?;
+    Some(floor::merge_floor(org_resolved, local_pack().as_ref()))
 }
 
 /// The resolved local project pack, if present and valid.

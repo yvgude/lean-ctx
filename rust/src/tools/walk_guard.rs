@@ -19,6 +19,14 @@
 pub(crate) fn deny_unsafe_walk_root(dir: &str) -> Option<String> {
     let abs = std::path::absolute(dir)
         .map_or_else(|_| dir.to_string(), |p| p.to_string_lossy().to_string());
+    // One named file is no walk: `lean-ctx grep X ~/Documents/…/notes.md`
+    // was refused because its folder has no project markers (IMPROVER-2,
+    // 25.10.). Checked first, so the scan-root check does not log a refusal
+    // for it; the TCC rule still applies before anything is stat'ed.
+    let path = std::path::Path::new(&abs);
+    if crate::core::pathutil::may_probe_path(path) && path.is_file() {
+        return None;
+    }
     if crate::core::graph_index::is_safe_scan_root_public(&abs) {
         return None;
     }
@@ -164,5 +172,25 @@ mod tests {
         // markers), so "." must absolutize to a safe root — this is exactly
         // the `lean-ctx grep` / `lean-ctx ls` CLI case.
         assert_eq!(deny_unsafe_walk_root("."), None);
+    }
+
+    /// The playbook every agent edits lives in a markerless folder under
+    /// ~/Documents; `lean-ctx grep X <it>` must read it, while the folder
+    /// itself stays refused as a walk root.
+    #[test]
+    fn one_named_file_in_a_markerless_documents_folder_is_no_walk() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().canonicalize().unwrap();
+        let folder = home.join("Documents/Privat/Projects");
+        std::fs::create_dir_all(&folder).unwrap();
+        let file = folder.join("playbook.md");
+        std::fs::write(&file, "notes").unwrap();
+        let _home = crate::test_env::VarGuard::set("HOME", &home);
+        assert!(
+            deny_unsafe_walk_root(&folder.to_string_lossy()).is_some(),
+            "the folder stays refused as a walk root"
+        );
+        assert_eq!(deny_unsafe_walk_root(&file.to_string_lossy()), None);
     }
 }

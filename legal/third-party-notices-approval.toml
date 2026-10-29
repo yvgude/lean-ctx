@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "4477a49e3a367ae7f0c5e2125d5b78e4c52e49ea9ec2a3031844a572d8dda395"
+approved_content_sha256 = "e12d06d59d681e1592a62c8905c7ec805dff74c5b81ba3ea408205fecba1fc65"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval (explicit \"yes mach alles\", 2026-10-26, for the generated content with pending digest 3f96cf8f...e946c7; this file binds its GENERATED AND APPROVED variant 4477a49e...dda395 of scripts/generate-third-party-notices.py) of the THIRD_PARTY_NOTICES for the zstd security bump (RUSTSEC-2026-0391/0398/0403/0410): zstd 0.13.3 and zstd-safe 7.2.4 leave the Cargo graph, zstd 0.14.3, zstd-safe 8.2.0 and zstd-sys 2.1.2 replace 0.14.2/8.1.0/2.1.1; the Cargo.lock, Cargo metadata inventory, SBOM, asset-manifest and content digests change; no new packages, licenses or notice text."
-approved_at = "2026-10-26"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for the engine C line after merging GitHub main 0c9134e880 (#2150) as e81d39b1c5: zstd 0.14.3, SBOM 558 -> 556 packages. Owner okay in the Atlas lead session on 2026-10-27 (answer \"Freigeben\" to the notices digest question)."
+approved_at = "2026-10-27"

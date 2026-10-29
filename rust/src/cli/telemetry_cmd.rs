@@ -160,7 +160,7 @@ fn reset_id() {
             std::process::exit(1);
         }
     };
-    match crate::cloud_client::delete_remote_telemetry(&current_id, &deletion_token) {
+    match crate::telemetry_transport::delete_remote_telemetry(&current_id, &deletion_token) {
         Ok(true) => {}
         Ok(false) => {
             eprintln!(
@@ -296,7 +296,7 @@ fn delete_remote() {
             std::process::exit(1);
         }
     };
-    match crate::cloud_client::delete_remote_telemetry(&installation_id, &deletion_token) {
+    match crate::telemetry_transport::delete_remote_telemetry(&installation_id, &deletion_token) {
         Ok(true) => {
             match crate::core::telemetry_aggregate::rotate_identity_state_then(
                 installation_id::reset,

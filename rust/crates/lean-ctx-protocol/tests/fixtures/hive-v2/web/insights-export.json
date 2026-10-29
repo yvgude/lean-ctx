@@ -1,0 +1,22 @@
+{
+  "route": "W101",
+  "method": "GET",
+  "path": "/api/v1/orgs/platform/insights/export?format=jsonl&from=2026-10-01&to=2026-10-27",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": null
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "invalid_field",
+          "message": "format is csv or jsonl",
+          "field": "format"
+        }
+      }
+    }
+  ]
+}

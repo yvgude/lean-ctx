@@ -493,6 +493,76 @@ pub fn load_events_from_file(n: usize) -> Vec<LeanCtxEvent> {
     }
 }
 
+/// [`load_events_from_file`] for a surface that SHOWS events — paths, names,
+/// free text — to a host or a model, for a reader working in `project` (the
+/// project of the running request when `None`). Every event passes the
+/// serve-time rule of the observation store (`ObservationGate`): an event
+/// that names a file is shown only while that file is admitted now; one
+/// without a source on record follows the originless rule. Historical JSONL
+/// records and rows written before admission existed are asked the same way.
+/// Counts and timestamps need no gate: use [`load_events_from_file`].
+///
+/// With a reader project the whole call — the admission snapshot, every
+/// payload check and every source read — runs inside ONE pinned policy view
+/// of that project (`policy::runtime::with_project_source_view`): every read
+/// sees the same project policy and role, and the view compares both again
+/// when it ends. A view that cannot be opened, that is not the view of the
+/// reader's project, or that reports a change shows NOTHING for this call.
+/// A reader without a project has no view; only the originless rule applies.
+pub fn load_served_events(n: usize, project: Option<&std::path::Path>) -> Vec<LeanCtxEvent> {
+    use crate::core::context_os::observation::ObservationGate;
+
+    let request = crate::tools::admitted_sources::request_root();
+    let reader = project
+        .map(|root| root.to_string_lossy().into_owned())
+        .or_else(|| (!request.is_empty()).then_some(request));
+    let Some(reader) = reader else {
+        return served_through(ObservationGate::for_project(None), n);
+    };
+    crate::core::policy::runtime::with_project_source_view(&reader, || {
+        // The view pins the project the request is already bound to, if any.
+        // The gate reads under that project; a reader that asked for another
+        // one is not served from it.
+        // Compared in the view's own spelling: it pins `Path::canonicalize`
+        // of the project (`policy::runtime::canonical_project_root`).
+        let pinned = crate::tools::admitted_sources::request_root();
+        let same = std::path::Path::new(&reader)
+            .canonicalize()
+            .is_ok_and(|asked| asked == std::path::Path::new(&pinned));
+        if same {
+            served_through(ObservationGate::for_project(None), n)
+        } else {
+            Vec::new()
+        }
+    })
+    .unwrap_or_else(|error| {
+        tracing::debug!("[events] nothing shown: {error}");
+        Vec::new()
+    })
+}
+
+fn served_through(
+    mut gate: crate::core::context_os::observation::ObservationGate,
+    n: usize,
+) -> Vec<LeanCtxEvent> {
+    let mut events = load_events_from_file(n);
+    events.retain(|event| gate.serves(event));
+    // The view pins project policy and role, not the gateway rules: those are
+    // compared once more before anything is returned. Changed mid-call:
+    // nothing is shown.
+    if !gate.gateway_unchanged() {
+        tracing::debug!("[events] nothing shown: gateway rules changed during the call");
+        return Vec::new();
+    }
+    if gate.withheld() > 0 {
+        tracing::debug!(
+            "[events] {} observation(s) withheld: no current source authority",
+            gate.withheld()
+        );
+    }
+    events
+}
+
 /// Merge immutable historical JSONL with validated canonical observations.
 pub fn try_load_events_from_file(
     n: usize,

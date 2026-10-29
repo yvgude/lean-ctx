@@ -1,0 +1,58 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "sealed_plaintext",
+          "message": "Search is not available in a sealed vault; select by id."
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_body",
+          "field": "selector",
+          "message": "Use exactly one selector."
+        }
+      },
+      "status": 400
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/vaults/payments/purges/preview",
+  "request": {
+    "reason": "leaked_secret",
+    "selector": {
+      "node_ids": [
+        "n_zcjqmmor453nyxqgshlgpogwdm"
+      ]
+    }
+  },
+  "response": {
+    "body": {
+      "cascade": {
+        "derived": 0,
+        "messages": 1,
+        "snapshots": 1,
+        "wiki": 0
+      },
+      "item_count": 1,
+      "items": [
+        {
+          "id": "n_zcjqmmor453nyxqgshlgpogwdm",
+          "kind": "node",
+          "label": "Refund webhooks arrive before the charge webhook in about two percent of cases."
+        }
+      ],
+      "message_gids": [],
+      "node_ids": [
+        "n_zcjqmmor453nyxqgshlgpogwdm"
+      ],
+      "wiki_pages": []
+    },
+    "status": 200
+  },
+  "route": "W30"
+}

@@ -9,8 +9,8 @@
 //!
 //! These tests deliberately use the public tool and proxy entry points instead
 //! of reaching into implementation details. They protect the boundaries an
-//! agent sees: `ctx_read` output, proxy message rewriting, conversation dedup,
-//! prose relevance filtering, and `ctx_crush` structured-data summaries.
+//! agent sees: `ctx_read` output, proxy message rewriting, conversation dedup
+//! and prose relevance filtering.
 
 use serde_json::{Map, Value, json};
 
@@ -22,8 +22,6 @@ use crate::{
         forward::pipeline::CompressionPipeline,
         prose_compress::compress_prose,
     },
-    server::tool_trait::{McpTool, ToolContext},
-    tools::registered::ctx_crush::CtxCrushTool,
 };
 
 fn conversation_tokens(messages: &[Value]) -> usize {
@@ -182,6 +180,9 @@ fn detailed_type_error(revision: char) -> String {
 
 #[test]
 fn repeated_errors_deduped() {
+    // The line delta is written outside protection only: pin the mode.
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let first = detailed_type_error('a');
     let mut messages = vec![json!({
         "role": "system",
@@ -216,7 +217,6 @@ fn repeated_errors_deduped() {
 
     let config = PipelineConfig {
         enable_prose: false,
-        enable_effort: false,
         min_savings_pct: 0.0,
         ..PipelineConfig::default()
     };
@@ -249,6 +249,8 @@ fn repeated_errors_deduped() {
 
 #[test]
 fn search_results_compressed() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let mut lines = (1..=49)
         .map(|line| {
             format!(
@@ -352,69 +354,4 @@ fn prose_filtered_by_relevance() {
             .contains("leisurely historical anecdote"),
         "irrelevant prose survived the relevance filter"
     );
-}
-
-#[test]
-fn json_array_delta_encoded() {
-    let payload = (1..=100)
-        .map(|id| {
-            json!({
-                "id": id,
-                "timestamp": format!("2026-08-14T12:{:02}:00Z", id % 60),
-                "service": "auth-api",
-                "region": "eu-central-1",
-                "environment": "production",
-                "status": if id == 42 { "error: token decoder timeout" } else { "ok" },
-                "request_path": "/v1/sessions/validate",
-            })
-        })
-        .collect::<Vec<_>>();
-    let raw = serde_json::to_string(&payload).expect("JSON fixture serializes");
-    let messages = vec![
-        json!({"role": "user", "content": "Summarize auth API failures without losing the response schema."}),
-        json!({
-            "role": "tool",
-            "name": "ctx_crush",
-            "content": raw,
-        }),
-    ];
-
-    let args = Map::from_iter([
-        (
-            "content".to_string(),
-            Value::String(tool_content(&messages[1]).to_string()),
-        ),
-        ("mode".to_string(), Value::String("array".to_string())),
-        ("keep_anomalies".to_string(), Value::Bool(true)),
-    ]);
-    let output = CtxCrushTool
-        .handle(&args, &ToolContext::default())
-        .expect("ctx_crush accepts a JSON array");
-    let response: Value = serde_json::from_str(&output.text).expect("ctx_crush emits JSON");
-    let compressed = response["compressed"]
-        .as_str()
-        .expect("ctx_crush includes compressed text");
-    let stats = &response["stats"];
-
-    assert_eq!(stats["delta_encoded"], Value::Bool(true));
-    assert_savings_at_least(
-        stats["original_tokens"]
-            .as_u64()
-            .expect("original token count") as usize,
-        stats["compressed_tokens"]
-            .as_u64()
-            .expect("compressed token count") as usize,
-        15,
-        "sequential JSON array",
-    );
-    assert!(compressed.contains("[DELTA base="), "delta header missing");
-    assert!(
-        compressed.contains("schema") || compressed.contains("DELTA") || compressed.contains("D1:"),
-        "schema summary missing"
-    );
-    assert!(
-        compressed.contains("token decoder timeout"),
-        "anomaly was lost"
-    );
-    assert_eq!(stats["anomalies_found"], Value::from(1));
 }

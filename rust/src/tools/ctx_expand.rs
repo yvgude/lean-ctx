@@ -3,15 +3,28 @@ use crate::core::context_admission::recovery;
 use crate::core::context_handles::HandleRegistry;
 use crate::core::context_ledger::ContextLedger;
 
+/// The text of either outcome of [`handle_outcome`], for callers that only
+/// print it. The registered tool takes the typed outcome.
 pub fn handle(args: &serde_json::Value) -> String {
+    match handle_outcome(args) {
+        Ok(text) | Err(text) => text,
+    }
+}
+
+/// `Ok` is the reply; `Err` is the text of a failed retrieval — the same text
+/// [`handle`] answers. Retrieval declares every source
+/// (`CtxExpandTool::publishes_every_source`), so its failure must reach the
+/// registered tool as a failure and never as a reply that could be recorded
+/// as a delivery. `list` and `search_all` declare nothing and answer as before.
+pub fn handle_outcome(args: &serde_json::Value) -> Result<String, String> {
     let action = args
         .get("action")
         .and_then(|v| v.as_str())
         .unwrap_or("retrieve");
 
     match action {
-        "list" => handle_list(args),
-        "search_all" => handle_search_all(args),
+        "list" => Ok(handle_list(args)),
+        "search_all" => Ok(handle_search_all(args)),
         _ => handle_retrieve(args),
     }
 }
@@ -62,9 +75,9 @@ pub fn resolve_handle_ref(id: &str) -> Option<String> {
     registry.resolve(clean).map(|h| h.source_path.clone())
 }
 
-fn handle_retrieve(args: &serde_json::Value) -> String {
+fn handle_retrieve(args: &serde_json::Value) -> Result<String, String> {
     let Some(id) = args.get("id").and_then(|v| v.as_str()) else {
-        return "ERROR: 'id' parameter is required. Use ctx_expand(action=\"list\") to see available archives, or pass a handle ref like @F1.".to_string();
+        return Err("ERROR: 'id' parameter is required. Use ctx_expand(action=\"list\") to see available archives, or pass a handle ref like @F1.".to_string());
     };
 
     // Handle reference resolution: @F1, @K1, @S1, etc.
@@ -83,9 +96,9 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
             Some((true, None)) | None => task_signals::record_unattributed(),
         }
         let mode = args.get("mode").and_then(|v| v.as_str()).unwrap_or("full");
-        return format!(
+        return Ok(format!(
             "[handle:{id} -> {path}]\nUse ctx_read(path=\"{path}\", mode=\"{mode}\") to load content."
-        );
+        ));
     }
 
     // Unified tee-store handle (#482 / #936). One resolver, fixed precedence:
@@ -98,6 +111,8 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
     // re-injecting the whole original — the surgical front-end the issue calls
     // "preferred when available". Admit the complete original before selecting.
     if let Some(path) = crate::proxy::ccr::resolve_tee(id) {
+        // The tee store keeps no lineage: the reply's sources are unknown.
+        archive::authority::mark_unbound();
         return expand_tee_file(&path, args);
     }
 
@@ -108,39 +123,107 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
     // front also drops the archive path's per-selector disk re-reads.
     if id.starts_with("ref_") {
         let Some(content) = crate::server::reference_store::resolve(id) else {
-            return format!(
+            return Err(format!(
                 "Reference '{id}' unavailable, expired (5-min TTL), or no longer authorized."
-            );
+            ));
         };
+        archive::authority::mark_unbound();
         // Recovery is a new delivery: re-admitted under the current policy
         // before any selector sees it (G5).
         let content = match recovery::admit_recovered(&content, "reference") {
             Ok(content) => content,
-            Err(reason) => return format!("ERROR: {reason}"),
+            Err(reason) => return Err(format!("ERROR: {reason}")),
         };
-        return dispatch_selectors(id, &content, "Reference", args);
+        return Ok(dispatch_selectors(id, &content, "Reference", args));
     }
     let archive_id = if id.starts_with("shell_") {
         match archive::resolve_alias(id) {
             Some(archive_id) => archive_id,
-            None => match archive_finished_job(id) {
-                Ok(archive_id) => archive_id,
-                Err(message) => return message,
+            None => match archive_finished_job(id)? {
+                FinishedJob::Archived(archive_id) => archive_id,
+                // A job that still runs, or that finished and printed
+                // nothing, is a state of the job: a reply, not a failure.
+                FinishedJob::Running(message) | FinishedJob::NoOutput(message) => {
+                    return Ok(message);
+                }
             },
         }
     } else {
         id.to_string()
     };
-    let Some(content) = archive::retrieve(&archive_id) else {
-        return format!(
-            "Archive '{archive_id}' not found or expired. Use ctx_expand(action=\"list\") to see available archives."
-        );
+    // One resolver per id shape. A 64-hex id addresses a copy bound to a
+    // lineage (project files, caller-supplied sources or both): it resolves
+    // under the authority that holds NOW, and a refusal is a typed,
+    // content-free tool error. Any other id is a public archive as before.
+    let recovery_id = archive::RecoveryId::parse(&archive_id);
+    let resolved = match &recovery_id {
+        Some(recovery_id) => archive::retrieve_recovery_checked(recovery_id).map_err(Some),
+        None => archive::retrieve(&archive_id).ok_or(None),
     };
+    let content = match resolved {
+        Ok(content) => content,
+        Err(None | Some(archive::RecoveryRefusal::Missing)) => {
+            return Err(format!(
+                "Archive '{archive_id}' not found or expired. Use ctx_expand(action=\"list\") to see available archives. Archives stored before 3.11.5 belong to no project; the owner can adopt them with `lean-ctx migrate legacy-context`."
+            ));
+        }
+        Err(Some(refusal)) => {
+            return Err(format!(
+                "ERROR: archive '{archive_id}' is not released ({refusal})"
+            ));
+        }
+    };
+    // The reply below is derived from this copy and from nothing else, so it
+    // takes the copy's lineage: the checked resolver has just registered the
+    // released text, and that lineage goes into the call's source capture
+    // (this tool declares its sources; the release point records the reply
+    // as delivered). A public archive has no lineage, and neither has a copy
+    // the register does not know: unknown. The lineage is looked up for the
+    // copy as resolved, and published only after the last step that can fail:
+    // a call that fails publishes nothing.
+    let lineage = recovery_id
+        .and_then(|_| archive::delivered::lineage_of(&archive::delivered::digest(&content)));
     let content = match recovery::admit_recovered(&content, "archive") {
         Ok(content) => content,
-        Err(reason) => return format!("ERROR: {reason}"),
+        Err(reason) => return Err(format!("ERROR: {reason}")),
     };
-    dispatch_selectors(&archive_id, &content, "Archive", args)
+    match lineage {
+        Some(lineage) => lineage.publish_files(),
+        None => archive::authority::mark_unbound(),
+    }
+    // K10: the agent fetched a truncated output back in full through its
+    // pointer (no head/tail/search/json/range selector), counted by the
+    // output class of the tool that produced it.
+    {
+        use crate::core::hive::metrics_v2::signals;
+        if full_fetch(args)
+            && signals::recording()
+            && let Some(tool) = archive::tool_of(&archive_id)
+            && crate::core::firewall::is_firewallable_tool(&tool)
+        {
+            signals::refetched(&signals::output_filter(&tool));
+        }
+    }
+    Ok(dispatch_selectors(&archive_id, &content, "Archive", args))
+}
+
+/// Whether a retrieval returns the whole archive: no selector that cuts it
+/// down ([`dispatch_selectors`]; a range needs both ends).
+fn full_fetch(args: &serde_json::Value) -> bool {
+    let has = |key: &str| args.get(key).is_some_and(|v| !v.is_null());
+    let json_keys = args.get("json_keys").and_then(serde_json::Value::as_bool) == Some(true);
+    let range = has("start_line") && has("end_line");
+    !(has("head") || has("tail") || has("search") || has("json_path") || json_keys || range)
+}
+
+/// What [`archive_finished_job`] found for a known job.
+enum FinishedJob {
+    /// The archive id its output is stored under.
+    Archived(String),
+    /// The job still runs: the message that says so.
+    Running(String),
+    /// The job printed nothing: the message that says so.
+    NoOutput(String),
 }
 
 /// GH #2005: a background job is archived when a status poll first reports it
@@ -148,32 +231,57 @@ fn handle_retrieve(args: &serde_json::Value) -> String {
 /// and answered "expired" for a running job, a finished one and an unknown ID
 /// alike. Ask the job table instead: archive a finished job's output now (the
 /// same redaction and alias as the status path), and name the other two cases.
-fn archive_finished_job(id: &str) -> Result<String, String> {
-    use crate::server::background_shell::{JobState, status};
-    let (output, label) = match status(id) {
-        None => {
-            return Err(format!(
-                "Background job '{id}' does not exist, or finished more than 5 minutes ago \
-                 without being polled or expanded."
-            ));
-        }
-        Some(JobState::Running { .. }) => {
-            return Err(format!(
+///
+/// This is not a second way to the retained text: it takes the status path's
+/// own checks. Output the job record holds back, or that the current storage
+/// policy no longer admits, is refused with the status path's wording — it is
+/// neither archived nor reported as a job that printed nothing.
+///
+/// `Err` is a failed retrieval (unknown job, withheld output, no archive). A
+/// job that still runs and a finished job without output are replies
+/// ([`FinishedJob::Running`], [`FinishedJob::NoOutput`]).
+fn archive_finished_job(id: &str) -> Result<FinishedJob, String> {
+    use crate::server::background_shell::{JobState, snapshot};
+    let Some(snapshot) = snapshot(id) else {
+        return Err(format!(
+            "Background job '{id}' does not exist, or finished more than 5 minutes ago \
+             without being polled or expanded."
+        ));
+    };
+    let (output, label) = match &snapshot.state {
+        JobState::Running { .. } => {
+            return Ok(FinishedJob::Running(format!(
                 "Background job '{id}' is still running. Expand it once it has finished, or \
                  read its progress with ctx_shell(background_action=\"status\", job_id=\"{id}\")."
-            ));
+            )));
         }
-        Some(JobState::Completed { output, exit_code }) => (output, format!("exit {exit_code}")),
-        Some(JobState::Cancelled { output }) => (output, "cancelled".to_string()),
+        JobState::Completed { output, exit_code } => (output.as_str(), format!("exit {exit_code}")),
+        JobState::Cancelled { output } => (output.as_str(), "cancelled".to_string()),
     };
-    if output.trim().is_empty() {
-        return Err(format!(
-            "Background job '{id}' finished ({label}) without output."
-        ));
+    let withheld = || {
+        format!(
+            "Background job '{id}' finished ({label}). \
+             [lean-ctx gateway: retained output withheld by storage policy]"
+        )
+    };
+    if snapshot.output_withheld {
+        return Err(withheld());
     }
-    let redacted = crate::core::redaction::redact_text_if_enabled(&output);
+    if output.trim().is_empty() {
+        return Ok(FinishedJob::NoOutput(format!(
+            "Background job '{id}' finished ({label}) without output."
+        )));
+    }
+    let Some(admission) =
+        crate::tools::registered::ctx_shell_background::reauthorize_retained_output(
+            id, &snapshot, output,
+        )
+    else {
+        return Err(withheld());
+    };
+    let redacted = crate::core::redaction::redact_text_if_enabled(&admission.rendered());
     archive::store_background("ctx_shell", id, &redacted, None)
-        .map(|stored| stored.id)
+        .map(|stored| FinishedJob::Archived(stored.id))
         .ok_or_else(|| {
             format!(
                 "Background job '{id}' finished ({label}), but its output could not be archived."
@@ -245,11 +353,17 @@ fn dispatch_selectors(id: &str, content: &str, noun: &str, args: &serde_json::Va
 /// selectors (head / tail / search / json_path / range / full) but operates on
 /// the verbatim tee content on disk, so the agent pulls back only the slice it
 /// needs rather than undoing the proxy's compression with a full re-inject.
-fn expand_tee_file(path: &std::path::Path, args: &serde_json::Value) -> String {
-    let content = match crate::proxy::ccr::read_tee_detailed(path) {
-        Ok(content) => content,
-        Err(reason) => return format!("ERROR: {reason}"),
-    };
+///
+/// `Err` is the error text of a tee file that could not be read or admitted.
+fn expand_tee_file(path: &std::path::Path, args: &serde_json::Value) -> Result<String, String> {
+    match crate::proxy::ccr::read_tee_detailed(path) {
+        Ok(content) => Ok(tee_selectors(path, &content, args)),
+        Err(reason) => Err(format!("ERROR: {reason}")),
+    }
+}
+
+/// The selector ladder of [`expand_tee_file`] over the admitted tee `content`.
+fn tee_selectors(path: &std::path::Path, content: &str, args: &serde_json::Value) -> String {
     let label = path.file_name().and_then(|n| n.to_str()).unwrap_or("ccr");
 
     if let Some(n) = args.get("head").and_then(serde_json::Value::as_u64) {
@@ -446,6 +560,102 @@ mod tests {
         assert!(result.contains("not found"));
     }
 
+    /// `ctx_expand` resolves a lineage-bound recovery copy through the one
+    /// checked resolver: a file-bound id as before; a copy bound to a
+    /// caller-supplied source only while its presentation is current, with a
+    /// typed, content-free error otherwise. Before, the handler refused every
+    /// lineage-bound copy as "not found".
+    #[test]
+    fn lineage_bound_copies_resolve_under_current_authority_only() {
+        use crate::core::archive::delivered::Lineage;
+        use crate::core::archive::presented::{PresentedBinding, record_presentation};
+        let data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let write_config = |config: &str| {
+            let dir = crate::core::paths::config_dir_read_only().expect("isolated config dir");
+            std::fs::create_dir_all(&dir).expect("config dir");
+            std::fs::write(dir.join("config.toml"), config).expect("config");
+        };
+        write_config("[context_gateway]\nmode = \"governed\"\n");
+        let directory = tempfile::tempdir().expect("project");
+        let root = directory.path().canonicalize().expect("canonical root");
+        crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(root.clone())),
+            || {
+                // File-bound copy: resolves, and is refused typed once its
+                // source is gone.
+                let source = root.join("kept.rs");
+                let original = "pub fn kept_quartz() {}\n";
+                std::fs::write(&source, original).expect("source");
+                let admitted = crate::tools::ctx_read::read_file_for_tool_rooted(
+                    source.to_str().expect("utf-8 path"),
+                    root.to_str().expect("utf-8 root"),
+                    "ctx_read",
+                )
+                .expect("admitted read");
+                let files = crate::core::archive::authority::ArchiveAuthority::file(
+                    &root,
+                    source.to_str().expect("utf-8 path"),
+                    "ctx_read",
+                    &admitted,
+                )
+                .expect("bound read");
+                let file_id =
+                    archive::store_recovery_with_lineage(original, &Lineage::of_files(files))
+                        .expect("stored");
+                let expanded = handle(&json!({"id": file_id.as_str()}));
+                assert!(expanded.contains("kept_quartz"), "{expanded}");
+                std::fs::remove_file(&source).expect("delete the source");
+                let refused = handle(&json!({"id": file_id.as_str()}));
+                assert!(
+                    refused.contains("recovery.source_no_longer_admitted"),
+                    "{refused}"
+                );
+                assert!(!refused.contains("kept_quartz"), "{refused}");
+
+                // Copy bound to a caller-supplied source.
+                let prepared = "## leanctx-source-v1\ninvoice ledger basalt\n";
+                let binding =
+                    PresentedBinding::admitted_now(&root, "ref-one", "source-one", "sha256:aa")
+                        .expect("policy identity available");
+                assert!(record_presentation(&binding));
+                let id = archive::store_recovery_with_lineage(
+                    prepared,
+                    &Lineage::of_presented(vec![binding.clone()]),
+                )
+                .expect("stored");
+                let expanded = handle(&json!({"id": id.as_str()}));
+                assert!(expanded.contains("invoice ledger basalt"), "{expanded}");
+
+                // Presentation lapsed.
+                std::fs::remove_dir_all(
+                    data.path()
+                        .join("archives")
+                        .join(crate::core::archive::presented::REGISTER_DIRECTORY),
+                )
+                .expect("presentation register");
+                let lapsed = handle(&json!({"id": id.as_str()}));
+                assert!(lapsed.contains("recovery.source_not_presented"), "{lapsed}");
+                assert!(!lapsed.contains("basalt"), "{lapsed}");
+                assert!(record_presentation(&binding));
+                assert!(handle(&json!({"id": id.as_str()})).contains("basalt"));
+
+                // Policy changed.
+                write_config("[context_gateway]\nmode = \"sovereign\"\n");
+                let changed = handle(&json!({"id": id.as_str()}));
+                assert!(
+                    changed.contains("recovery.source_no_longer_admitted"),
+                    "{changed}"
+                );
+                assert!(!changed.contains("basalt"), "{changed}");
+
+                // An unknown canonical id is still "not found".
+                let absent = handle(&json!({"id": "0".repeat(64)}));
+                assert!(absent.contains("not found"), "{absent}");
+            },
+        );
+    }
+
     #[test]
     fn handle_list_empty() {
         let result = handle(&json!({"action": "list"}));
@@ -453,6 +663,23 @@ mod tests {
             result.contains("No archives") || result.contains("archive(s)"),
             "unexpected: {result}"
         );
+    }
+
+    #[test]
+    fn only_an_unselected_retrieval_is_a_full_fetch_back() {
+        assert!(full_fetch(&json!({"id": "abc"})));
+        assert!(full_fetch(&json!({"id": "abc", "start_line": 5})));
+        assert!(full_fetch(&json!({"id": "abc", "json_keys": false})));
+        for selected in [
+            json!({"id": "abc", "head": 10}),
+            json!({"id": "abc", "tail": 10}),
+            json!({"id": "abc", "search": "ERROR"}),
+            json!({"id": "abc", "json_keys": true}),
+            json!({"id": "abc", "json_path": "a.b"}),
+            json!({"id": "abc", "start_line": 1, "end_line": 80}),
+        ] {
+            assert!(!full_fetch(&selected), "{selected}");
+        }
     }
 
     #[test]
@@ -481,6 +708,7 @@ mod tests {
     #[test]
     fn ctx_expand_retrieves_proxy_tee_handle_surgically() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         // Mimic what the proxy does: persist a verbatim original to the tee store
         // and hand the agent its content-addressed handle.
         let original = (1..=60)
@@ -505,6 +733,7 @@ mod tests {
     #[test]
     fn ctx_expand_retrieves_shell_tee_output_surgically() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         // Every compressed shell command already tees its verbatim output to the
         // shared store (#936). With the unified resolver, ctx_expand can slice
         // that tee surgically — the agent no longer has to re-read the whole file.
@@ -534,6 +763,7 @@ mod tests {
     #[test]
     fn ctx_expand_retrieves_json_crush_original() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         // The lossy JSON crusher persists its verbatim original under json_<hash>
         // (#936). The dropped columns must be recoverable through the same
         // ctx_expand path the stub/footer advertises.
@@ -558,6 +788,7 @@ mod tests {
     #[test]
     fn ctx_expand_retrieves_html_crush_original() {
         let _lock = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let original = (1..=40)
             .map(|i| format!("<h2>Section {i}</h2><p>body of section {i}</p>"))
             .collect::<Vec<_>>()
@@ -625,5 +856,83 @@ mod tests {
             missing.contains("unavailable") && missing.contains("5-min TTL"),
             "got: {missing}"
         );
+    }
+
+    /// The formatted reply (selector applied, header added) of a file-bound
+    /// recovery copy is registered under the copy's file lineage and fails
+    /// together with its source. A copy bound to a caller-presented source
+    /// resolves, but its reply stays unknown: the capture carries files only.
+    #[test]
+    fn a_file_bound_reply_is_registered_and_fails_with_its_source() {
+        use crate::core::archive::delivered::{Lineage, LineageRefusal};
+        use crate::core::archive::presented::{PresentedBinding, record_presentation};
+        use crate::core::context_admission::stored::lineage_support::{
+            deliver, governed, project, reusable, scoped,
+        };
+        let _data = governed();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        let source = format!("{root}/kept.rs");
+        let original = "pub fn kept_quartz() {}\nfn second_line() {}\n";
+        std::fs::write(&source, original).expect("source");
+        let (file_id, presented_id) = scoped(&root, || {
+            let admitted =
+                crate::tools::ctx_read::read_file_for_tool_rooted(&source, &root, "ctx_read")
+                    .expect("admitted read");
+            let files = crate::core::archive::authority::ArchiveAuthority::file(
+                std::path::Path::new(&root),
+                &source,
+                "ctx_read",
+                &admitted,
+            )
+            .expect("bound read");
+            let file_id = archive::store_recovery_with_lineage(original, &Lineage::of_files(files))
+                .expect("stored");
+            let binding = PresentedBinding::admitted_now(
+                std::path::Path::new(&root),
+                "ref-one",
+                "source-one",
+                "sha256:aa",
+            )
+            .expect("policy identity available");
+            assert!(record_presentation(&binding));
+            let presented_id = archive::store_recovery_with_lineage(
+                "## leanctx-source-v1\ninvoice ledger basalt\n",
+                &Lineage::of_presented(vec![binding]),
+            )
+            .expect("stored");
+            (file_id, presented_id)
+        });
+
+        let (reply, recorded) = deliver(&root, || {
+            handle(&json!({"id": file_id.as_str(), "head": 1}))
+        });
+        assert!(reply.contains("kept_quartz"), "{reply}");
+        assert!(
+            !reply.contains("second_line"),
+            "the selector applied: {reply}"
+        );
+        assert_eq!(recorded, 1, "the formatted reply is registered");
+        assert_eq!(reusable(&root, &reply), Ok(()));
+
+        let (presented, recorded) =
+            deliver(&root, || handle(&json!({"id": presented_id.as_str()})));
+        assert!(presented.contains("invoice ledger basalt"), "{presented}");
+        assert_eq!(recorded, 0);
+        assert_eq!(reusable(&root, &presented), Err(LineageRefusal::Unknown));
+
+        std::fs::remove_file(&source).expect("delete the source");
+        assert_eq!(
+            reusable(&root, &reply),
+            Err(LineageRefusal::SourceNoLongerAdmitted)
+        );
+        let (refused, recorded) = deliver(&root, || {
+            handle(&json!({"id": file_id.as_str(), "head": 1}))
+        });
+        assert!(
+            refused.contains("recovery.source_no_longer_admitted"),
+            "{refused}"
+        );
+        assert_eq!(recorded, 0);
     }
 }

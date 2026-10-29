@@ -1,0 +1,14 @@
+{
+  "case": "purge_ack_tampered",
+  "base": "routes/purge_ack.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/seq",
+      "value": 14
+    }
+  ],
+  "expect": {
+    "layer": "signature"
+  }
+}

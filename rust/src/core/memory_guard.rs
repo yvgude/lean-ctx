@@ -399,12 +399,16 @@ mod rjem {
     use std::ffi::{c_char, c_int, c_void};
 
     unsafe extern "C" {
+        #[cfg(feature = "tree-sitter")]
         #[link_name = "_rjem_malloc"]
         pub(super) fn malloc(size: usize) -> *mut c_void;
+        #[cfg(feature = "tree-sitter")]
         #[link_name = "_rjem_calloc"]
         pub(super) fn calloc(count: usize, size: usize) -> *mut c_void;
+        #[cfg(feature = "tree-sitter")]
         #[link_name = "_rjem_realloc"]
         pub(super) fn realloc(ptr: *mut c_void, size: usize) -> *mut c_void;
+        #[cfg(feature = "tree-sitter")]
         #[link_name = "_rjem_free"]
         pub(super) fn free(ptr: *mut c_void);
         #[link_name = "_rjem_mallctl"]
@@ -660,6 +664,21 @@ pub fn force_purge() {
     jemalloc_purge();
     release_system_heap();
     tracing::info!("[memory_guard] force_purge completed");
+}
+
+/// Return freed pages to the OS now, then measure and publish the pressure
+/// again. For work that would otherwise refuse under pressure the guardian
+/// published earlier: memory a finished request dropped is not pressure.
+pub fn reclaim_now() -> PressureLevel {
+    jemalloc_purge();
+    release_system_heap();
+    match MemorySnapshot::capture() {
+        Some(snap) => {
+            publish_pressure(snap.pressure_level);
+            snap.pressure_level
+        }
+        None => current_pressure(),
+    }
 }
 
 /// Route tree-sitter's C allocations (parse trees, parser stacks, query

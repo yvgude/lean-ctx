@@ -1,0 +1,11 @@
+{
+  "keys": [
+    {
+      "ed25519_pub": "+AzM3OSuHAeuIIoq35mjEK5CB+Awb6AjYRCwaCe7uNA=",
+      "kid": "hive-2026-10",
+      "not_after": "2027-10-20T12:00:00Z"
+    }
+  ],
+  "schema": "leanctx.hive.keyset/v1",
+  "signature": "5DWLVwAal3wblvpvgdO1zO77S75iZ3hzeLDQZxbuUHamgLSa9oJlUG3dl+z+dsx0En2innBypf9fGds4Gy84Bw=="
+}

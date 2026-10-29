@@ -1,0 +1,16 @@
+{
+  "by": {
+    "agent": "claude-3e",
+    "kind": "instance",
+    "label": "ada-laptop",
+    "mine": true,
+    "owner": "Ada"
+  },
+  "channel": "org:org_acme/vault:3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42/general",
+  "event": "claimed",
+  "number": 7,
+  "seq": 45,
+  "server_time": "2026-10-20T12:00:00Z",
+  "state": "claimed",
+  "t": "task.event"
+}

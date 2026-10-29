@@ -1,0 +1,73 @@
+{
+  "route": "W86",
+  "method": "GET",
+  "path": "/api/v1/companies/acme-group/policies/org/history",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "level": "org",
+          "scope": "orgn_9e8d7c6b5a4f30211f2e3d4c5b6a7980",
+          "version": 2,
+          "document": {
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "block_secrets": true,
+              "pii": "redact"
+            },
+            "context": {
+              "max_context_tokens": 120000
+            },
+            "sharing": {
+              "cross_team_sharing": false
+            }
+          },
+          "digest": "sha256:5555555555555555555555555555555555555555555555555555555555555555",
+          "updated_by": {
+            "kind": "user",
+            "user": {
+              "id": "0b9a8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d",
+              "name": "Ada"
+            },
+            "instance": null,
+            "agent": null
+          },
+          "updated_at": "2026-10-26T09:10:00Z"
+        },
+        {
+          "level": "org",
+          "scope": "orgn_9e8d7c6b5a4f30211f2e3d4c5b6a7980",
+          "version": 1,
+          "document": {
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "block_secrets": true,
+              "pii": "redact"
+            },
+            "context": {
+              "max_context_tokens": 150000
+            },
+            "sharing": {
+              "cross_team_sharing": false
+            }
+          },
+          "digest": "sha256:4444444444444444444444444444444444444444444444444444444444444444",
+          "updated_by": {
+            "kind": "user",
+            "user": {
+              "id": "0b9a8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d",
+              "name": "Ada"
+            },
+            "instance": null,
+            "agent": null
+          },
+          "updated_at": "2026-10-26T09:00:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "errors": []
+}

@@ -1,0 +1,134 @@
+{
+  "name": "consent-kinds",
+  "values": [
+    {
+      "value": "link_vault",
+      "channels": [
+        "cli",
+        "cockpit",
+        "web"
+      ],
+      "subject": [
+        "bound_repo",
+        "link_digest",
+        "remote_seen",
+        "target_vault",
+        "vault"
+      ],
+      "server_route": null
+    },
+    {
+      "value": "public_presence",
+      "channels": [
+        "cli",
+        "cockpit",
+        "web"
+      ],
+      "subject": [
+        "vault",
+        "worker_id"
+      ],
+      "server_route": "E40"
+    },
+    {
+      "value": "swarm_join",
+      "channels": [
+        "cli",
+        "cockpit",
+        "web"
+      ],
+      "subject": [
+        "cli",
+        "pledge_digest",
+        "swarm"
+      ],
+      "server_route": "E23, first E24 PUT"
+    },
+    {
+      "value": "pledge_change",
+      "channels": [
+        "cli",
+        "cockpit",
+        "web"
+      ],
+      "subject": [
+        "after_digest",
+        "before_digest",
+        "swarm"
+      ],
+      "server_route": "E24 loosening PUT"
+    },
+    {
+      "value": "unattended_start",
+      "channels": [
+        "cli",
+        "cockpit",
+        "web"
+      ],
+      "subject": [
+        "cli",
+        "pledge_digest",
+        "swarm",
+        "usd_cents_per_day"
+      ],
+      "server_route": "E25 first unattended claim"
+    },
+    {
+      "value": "procedure_confirm",
+      "channels": [
+        "web"
+      ],
+      "subject": [
+        "command_digests",
+        "item_digest",
+        "item_id"
+      ],
+      "server_route": "E41 (form a only)"
+    },
+    {
+      "value": "reviewer_enable",
+      "channels": [
+        "cli",
+        "cockpit",
+        "web"
+      ],
+      "subject": [
+        "cli",
+        "place",
+        "reviewer_usd_cents_per_day",
+        "source"
+      ],
+      "server_route": "E30"
+    },
+    {
+      "value": "api_key_set",
+      "channels": [
+        "cli"
+      ],
+      "subject": [
+        "cli",
+        "vendor"
+      ],
+      "server_route": null
+    },
+    {
+      "value": "sealed_grant",
+      "channels": [
+        "cli",
+        "cockpit",
+        "web"
+      ],
+      "subject": [
+        "engine_fingerprint",
+        "requester",
+        "vault"
+      ],
+      "server_route": null
+    }
+  ],
+  "after_3_12_0": [
+    "cell_start",
+    "reduced_isolation",
+    "contribute_branch"
+  ]
+}

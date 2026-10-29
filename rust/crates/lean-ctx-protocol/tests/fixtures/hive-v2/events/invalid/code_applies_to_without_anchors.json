@@ -1,0 +1,16 @@
+{
+  "case": "code_applies_to_without_anchors",
+  "base": "events/node.add.fact.anchored.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/body/anchors"
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/body/anchors"
+  }
+}

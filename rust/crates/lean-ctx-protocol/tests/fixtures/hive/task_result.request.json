@@ -1,0 +1,31 @@
+{
+  "claim": {
+    "fencing_token": 7,
+    "lease_id": "lse_01jbtask7"
+  },
+  "evidence": [
+    {
+      "kind": "commit",
+      "reference": "9f01cf32a3"
+    },
+    {
+      "kind": "receipt",
+      "reference": "fea5396a7f4325c408b1b65b33a4d77ba5486ceba941804d8889a8546cfbab96"
+    },
+    {
+      "anchor": {
+        "digest": "sha256:d01d85cc0fd199431b46d3d089aea422c1e10c176e0cec1031130bbd212ecbd1",
+        "lang": "rust",
+        "path": "src/retry.rs",
+        "symbol": "retry::budget"
+      },
+      "kind": "file_anchor"
+    }
+  ],
+  "schema": "leanctx.hive.task-result/v1",
+  "summary": "Budget is 3 retries, see retry.rs",
+  "usage": {
+    "tokens": 48210,
+    "usd_micros": 412000
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "case": "worker_with_cause",
+  "base": "events/node.add.fact.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/cause",
+      "value": {
+        "kind": "review"
+      }
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/cause"
+  }
+}

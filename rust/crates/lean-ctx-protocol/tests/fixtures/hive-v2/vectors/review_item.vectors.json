@@ -1,0 +1,48 @@
+{
+  "cases": [
+    {
+      "command_digests": [
+        "7eebe61a9cb4e8846e4385ac47de89ee5885b5872f7e4874f7bc9e58be2d3e7c"
+      ],
+      "envelope_digests": [
+        "6b00e6ed49f61fde3dcee83f6977b756c0fed7febeeb97b13cc919a1e6b86962"
+      ],
+      "fixture": "review/item.procedure.json",
+      "item_digest": "ee8ebef8190836e50eb76f8899693eedeef5d4357c391402ffed8021d8678eca",
+      "node_ids": [
+        "n_aaaaaaaaaaaaaaaaaaaaaacaaq"
+      ]
+    },
+    {
+      "command_digests": [],
+      "envelope_digests": [
+        "4ad900dc88e8c5c81b456acfa8a77a03b7d711bf0ad48eaf9d2c735f8f24ae43",
+        "bab4629a2d4ae01c6ebd5042befff0637af21b991cf15050598c8c3b899e504b"
+      ],
+      "fixture": "review/item.swarm_result.json",
+      "item_digest": "40222278ec9e36918a7540ec7c2496ca58fa3286a18f7fe0bc89823bd75a083c",
+      "node_ids": [
+        "n_aaaaaaaaaaaaaaaaaaaaaadaam"
+      ]
+    },
+    {
+      "command_digests": [
+        "b3fd3eb9eb726da6ec7d607676e34ef9911178e8dc3c89fd55c555c8a75737be"
+      ],
+      "envelope_digests": [
+        "c6f9b85faee6bdc5b52a7e6d20f99f155b9a5017862608fb7069428dca35dcce"
+      ],
+      "fixture": "review/item.sealed.json",
+      "item_digest": "76747fc3113073b18d24d25fb561f26ba9b5dc3bbd568a040ba40f600c351f4b",
+      "node_ids": [
+        "n_aaaaaaaaaaaaaaaaaaaaaacmai"
+      ]
+    }
+  ],
+  "rules": {
+    "command_digests": "hex(blake3(canonical_json(command))) per command, in body order",
+    "envelope_digest": "signing.vectors.json rules.envelope_digest",
+    "item_digest": "hex(blake3(canonical_json({events: [envelope digests in item order], node_ids})))",
+    "version_binding": "any new event on the item's nodes changes item_digest (W48, E41 and the procedure_confirm subject carry it)"
+  }
+}

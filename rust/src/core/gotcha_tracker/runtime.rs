@@ -74,7 +74,9 @@ fn process_session_id() -> &'static str {
 /// session id internally, keeping the call site (a single line in `shell::exec`)
 /// minimal. Never panics and never blocks the shell on lock contention.
 pub fn record_shell_outcome(command: &str, output: &str, exit_code: i32) {
-    if !super::detect::is_correlatable_command(command) {
+    if !super::detect::is_correlatable_command(command)
+        || crate::core::protocol::request_project_unresolved()
+    {
         return;
     }
 

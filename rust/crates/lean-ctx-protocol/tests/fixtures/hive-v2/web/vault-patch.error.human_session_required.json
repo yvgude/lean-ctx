@@ -1,0 +1,20 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "human_session_required",
+          "message": "only a person signed in on the web may do this"
+        }
+      },
+      "status": 403
+    }
+  ],
+  "method": "PATCH",
+  "path": "/api/v1/orgs/acme/vaults/payments",
+  "request": {
+    "sealed": true
+  },
+  "response": null,
+  "route": "W25"
+}

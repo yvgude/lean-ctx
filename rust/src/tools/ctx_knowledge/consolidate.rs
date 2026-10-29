@@ -4,6 +4,7 @@
 use chrono::{DateTime, Utc};
 
 use crate::core::consolidation_engine::{ConsolidateOptions, ImportCounts, import_session_into};
+use crate::core::context_admission::stores::StoreAdmission;
 use crate::core::knowledge::ProjectKnowledge;
 use crate::core::memory_archive::MemoryStore;
 use crate::core::memory_capacity::{reclaim_preview, reclaim_store, reclaim_target};
@@ -62,20 +63,48 @@ pub(crate) fn consolidate_project_knowledge_with(
     project_root: &str,
     opts: &ConsolidateOptions,
 ) -> Result<KnowledgeConsolidationReport, String> {
+    crate::core::policy::runtime::with_explicit_project_source_view(
+        std::path::Path::new(project_root),
+        |_| consolidate_project_knowledge_with_view(project_root, opts),
+    )?
+}
+
+fn consolidate_project_knowledge_with_view(
+    project_root: &str,
+    opts: &ConsolidateOptions,
+) -> Result<KnowledgeConsolidationReport, String> {
+    let admission = StoreAdmission::current();
+    let knowledge_admission =
+        crate::core::knowledge::protection::KnowledgeAdmission::capture(project_root)?;
     let policy = load_policy_or_error()?;
+    // Only the caller's own session is imported (I07/S03): the project's
+    // latest saved session may be another agent's. A driver without a caller
+    // (background, SDK, CLI without `--session`) imports no session.
     let session = if opts.import_session {
-        SessionState::load_latest_for_project_root(project_root)
+        crate::core::session::caller::with_for_project(project_root, Clone::clone)
     } else {
         None
     };
+    if let Some(session) = session.as_ref().filter(|_| opts.import_session) {
+        if !session_import_is_admitted(session, &knowledge_admission) {
+            return Err("session knowledge import withheld by current policy".into());
+        }
+    }
 
     if opts.dry_run {
-        return Ok(dry_run_report(
+        let report = dry_run_report(
             project_root,
             session.as_ref(),
             opts,
             &policy,
-        ));
+            &admission,
+            &knowledge_admission,
+        )?;
+        if !admission.is_current() {
+            return Err("session admission policy changed; retry".into());
+        }
+        knowledge_admission.authorize_gateway()?;
+        return Ok(report);
     }
 
     // Incremental (startup) mode advances a per-session watermark; when nothing
@@ -89,24 +118,55 @@ pub(crate) fn consolidate_project_knowledge_with(
         && let Some(s) = session.as_ref()
         && !has_new_session_items(s, watermark)
     {
+        knowledge_admission.authorize_gateway()?;
         return Ok(KnowledgeConsolidationReport {
             session_id: Some(s.id.clone()),
             ..Default::default()
         });
     }
 
-    let (_knowledge, report) = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
-        run_consolidation_locked(knowledge, session.as_ref(), opts, &policy, watermark)
-    })
+    let (_knowledge, report) = ProjectKnowledge::mutate_locked_with_admission(
+        project_root,
+        &knowledge_admission,
+        |knowledge| {
+            run_consolidation_locked(
+                knowledge,
+                session.as_ref(),
+                opts,
+                &policy,
+                &admission,
+                &knowledge_admission,
+                watermark,
+            )
+        },
+    )
     .map_err(|e| format!("Consolidation done but save failed: {e}"))?;
     let report = report?;
+    if !admission.is_current() {
+        return Err("session admission policy changed; retry".into());
+    }
+    knowledge_admission.authorize_gateway()?;
 
     // Advance the watermark only after the knowledge write succeeded.
     if opts.incremental
         && let Some(mut s) = session
     {
-        s.last_consolidate_ts = Some(Utc::now());
-        let _ = s.save();
+        let now = Utc::now();
+        // The caller's live session carries its own watermark; a copy saved
+        // here would be overwritten by the next save of the live instance.
+        // Saved now: shutdown consolidates after the final session save.
+        let advanced = crate::core::session::caller::with_mut(|own| {
+            (own.id == s.id).then(|| {
+                own.last_consolidate_ts = Some(now);
+                own.increment();
+                let _ = own.save();
+            })
+        })
+        .flatten();
+        if advanced.is_none() {
+            s.last_consolidate_ts = Some(now);
+            let _ = s.save();
+        }
     }
 
     if opts.emit_event {
@@ -120,14 +180,36 @@ pub(crate) fn consolidate_project_knowledge_with(
     Ok(report)
 }
 
+fn session_import_is_admitted(
+    session: &SessionState,
+    admission: &crate::core::knowledge::protection::KnowledgeAdmission,
+) -> bool {
+    let task_description = session.task.as_ref().map(|task| task.description.as_str());
+    let lineage = serde_json::json!({
+        "session_id": &session.id,
+        "task_description": task_description,
+    });
+    if !admission.admits_archive_value(&lineage) {
+        return false;
+    }
+    crate::core::session::extract_session_facts(session)
+        .iter()
+        .all(|fact| {
+            serde_json::to_value(fact).is_ok_and(|value| admission.admits_archive_value(&value))
+        })
+}
+
 /// The locked read-modify-write body of a real consolidation run.
 fn run_consolidation_locked(
     knowledge: &mut ProjectKnowledge,
     session: Option<&SessionState>,
     opts: &ConsolidateOptions,
     policy: &MemoryPolicy,
+    admission: &StoreAdmission,
+    knowledge_admission: &crate::core::knowledge::protection::KnowledgeAdmission,
     watermark: Option<DateTime<Utc>>,
 ) -> Result<KnowledgeConsolidationReport, String> {
+    knowledge_admission.authorize_gateway()?;
     let mut imported = ImportCounts::default();
     let mut session_id = None;
     let mut history_compacted = 0usize;
@@ -165,15 +247,16 @@ fn run_consolidation_locked(
         history_compacted += reclaim_history(knowledge, policy)?;
     }
     let (procedures, procedure_capacity_target, procedures_compacted) = if opts.reclaim_stores {
-        reclaim_procedures(&knowledge.project_hash, policy)?
+        reclaim_procedures(&knowledge.project_hash, policy, admission)?
     } else {
-        procedure_counts(&knowledge.project_hash, policy)
+        procedure_counts(&knowledge.project_hash, policy, admission)?
     };
 
     let active_facts = knowledge.facts.iter().filter(|f| f.is_current()).count();
     let archived_facts = knowledge.facts.len().saturating_sub(active_facts);
     let headroom = policy.lifecycle.reclaim_headroom_pct;
 
+    knowledge_admission.authorize_gateway()?;
     Ok(KnowledgeConsolidationReport {
         session_id,
         session_items: imported.total(),
@@ -207,9 +290,11 @@ fn dry_run_report(
     session: Option<&SessionState>,
     opts: &ConsolidateOptions,
     policy: &MemoryPolicy,
-) -> KnowledgeConsolidationReport {
-    let mut knowledge =
-        ProjectKnowledge::load(project_root).unwrap_or_else(|| ProjectKnowledge::new(project_root));
+    admission: &StoreAdmission,
+    knowledge_admission: &crate::core::knowledge::protection::KnowledgeAdmission,
+) -> Result<KnowledgeConsolidationReport, String> {
+    let mut knowledge = ProjectKnowledge::load_for_admission(project_root, knowledge_admission)?
+        .unwrap_or_else(|| ProjectKnowledge::new(project_root));
     let headroom = policy.lifecycle.reclaim_headroom_pct;
     let enabled = policy.lifecycle.reclaim_enabled;
 
@@ -266,8 +351,9 @@ fn dry_run_report(
         headroom,
         enabled,
     );
-    let procedures_len =
-        ProceduralStore::load(&knowledge.project_hash).map_or(0, |s| s.procedures.len());
+    let procedures_len = ProceduralStore::load_admitted(&knowledge.project_hash, admission)?
+        .procedures
+        .len();
     let procedures_compacted = reclaim_preview(
         procedures_len,
         policy.procedural.max_procedures,
@@ -278,7 +364,8 @@ fn dry_run_report(
     let active_facts = knowledge.facts.iter().filter(|f| f.is_current()).count();
     let archived_facts = knowledge.facts.len().saturating_sub(active_facts);
 
-    KnowledgeConsolidationReport {
+    knowledge_admission.authorize_gateway()?;
+    Ok(KnowledgeConsolidationReport {
         session_id,
         session_items: imported.total(),
         imported_decisions: imported.decisions,
@@ -300,7 +387,7 @@ fn dry_run_report(
         procedures_compacted,
         lifecycle,
         dry_run: true,
-    }
+    })
 }
 
 fn has_new_session_items(session: &SessionState, watermark: Option<DateTime<Utc>>) -> bool {
@@ -356,41 +443,46 @@ fn reclaim_patterns(
 fn reclaim_procedures(
     project_hash: &str,
     policy: &MemoryPolicy,
+    admission: &StoreAdmission,
 ) -> Result<(usize, usize, usize), String> {
     let target = reclaim_target(
         policy.procedural.max_procedures,
         policy.lifecycle.reclaim_headroom_pct,
     );
-    let Some(mut store) = ProceduralStore::load(project_hash) else {
-        return Ok((0, target, 0));
-    };
-    let archived = reclaim_store(
-        MemoryStore::Procedures,
-        Some(project_hash),
-        &mut store.procedures,
-        policy.procedural.max_procedures,
-        policy.lifecycle.reclaim_headroom_pct,
-        policy.lifecycle.reclaim_enabled,
-        retention_cmp,
-    );
-    let archived = archived?;
-    let compacted = archived.len();
-    if compacted > 0 {
-        store
-            .save()
-            .map_err(|e| format!("Procedure capacity compact failed: {e}"))?;
-    }
+    let (store, compacted) = ProceduralStore::mutate_locked_admitted_with_authority(
+        project_hash,
+        admission,
+        |store, authority| {
+            let archived = crate::core::memory_capacity::reclaim_store_with_authority(
+                MemoryStore::Procedures,
+                Some(project_hash),
+                &mut store.procedures,
+                policy.procedural.max_procedures,
+                policy.lifecycle.reclaim_headroom_pct,
+                policy.lifecycle.reclaim_enabled,
+                (admission, authority),
+                retention_cmp,
+            )?;
+            Ok(archived.len())
+        },
+    )?;
     Ok((store.procedures.len(), target, compacted))
 }
 
 /// Report-only procedure counts when no reclaim is requested.
-fn procedure_counts(project_hash: &str, policy: &MemoryPolicy) -> (usize, usize, usize) {
+fn procedure_counts(
+    project_hash: &str,
+    policy: &MemoryPolicy,
+    admission: &StoreAdmission,
+) -> Result<(usize, usize, usize), String> {
     let target = reclaim_target(
         policy.procedural.max_procedures,
         policy.lifecycle.reclaim_headroom_pct,
     );
-    let len = ProceduralStore::load(project_hash).map_or(0, |s| s.procedures.len());
-    (len, target, 0)
+    let len = ProceduralStore::load_admitted(project_hash, admission)?
+        .procedures
+        .len();
+    Ok((len, target, 0))
 }
 
 /// `consolidate --all`: consolidate every stored project, with explicit options
@@ -499,3 +591,7 @@ fn project_label(project_root: &str) -> &str {
         project_root
     }
 }
+
+#[cfg(test)]
+#[path = "consolidate_admission_tests.rs"]
+mod admission_tests;

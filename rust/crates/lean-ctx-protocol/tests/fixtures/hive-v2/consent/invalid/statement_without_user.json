@@ -1,0 +1,13 @@
+{
+  "case": "statement_without_user",
+  "base": "consent/statement.allow.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/user_id"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

@@ -139,6 +139,17 @@ pub fn adjust_savings(command: &str, over_report_delta: i64) {
     let Some((store, baseline, last_flush)) = guard.as_mut() else {
         return;
     };
+    apply_adjust(store, command, over_report_delta);
+    if let Some(merged) = io::merge_and_save(store, baseline) {
+        *store = merged.clone();
+        *baseline = merged;
+        *last_flush = Instant::now();
+    }
+    drop(guard);
+    record_for_project(|project| apply_adjust(project, command, over_report_delta));
+}
+
+fn apply_adjust(store: &mut StatsStore, command: &str, over_report_delta: i64) {
     let cmd_key = format::normalize_command(command);
     let stream_tracked = classify_command(&cmd_key) == TrafficClass::Compressible;
     if over_report_delta > 0 {
@@ -166,11 +177,6 @@ pub fn adjust_savings(command: &str, over_report_delta: i64) {
             }
         }
     }
-    if let Some(merged) = io::merge_and_save(store, baseline) {
-        *store = merged.clone();
-        *baseline = merged;
-        *last_flush = Instant::now();
-    }
 }
 
 pub fn record(command: &str, input_tokens: usize, output_tokens: usize) {
@@ -196,6 +202,12 @@ pub fn record_reread(tokens_saved: usize) {
         *baseline = merged;
         *last_flush = Instant::now();
     }
+    drop(guard);
+    record_for_project(|project| {
+        project.reread_tokens_saved = project
+            .reread_tokens_saved
+            .saturating_add(tokens_saved as u64);
+    });
 }
 
 /// Records a tool result against an observed provider turn. `turn == 0` keeps
@@ -212,6 +224,60 @@ pub fn record_at_turn(command: &str, input_tokens: usize, output_tokens: usize, 
         return;
     };
 
+    apply_record(store, command, input_tokens, output_tokens, turn);
+
+    // MCP stdio servers are routinely terminated without a graceful shutdown.
+    // Delaying this write made the append-only ledger survive while aggregate
+    // stats disappeared, so persist every completed accounting event.
+    if let Some(merged) = io::merge_and_save(store, baseline) {
+        *store = merged.clone();
+        *baseline = merged;
+        *last_flush = Instant::now();
+    }
+    drop(guard);
+    record_for_project(|project| {
+        apply_record(project, command, input_tokens, output_tokens, turn);
+    });
+}
+
+/// Books one event into the store of the project being worked on as well;
+/// `stats.json` stays the device total.
+fn record_for_project(apply: impl FnOnce(&mut StatsStore)) {
+    if let Some(key) = crate::core::savings_ledger::project_scope::current_project_key() {
+        io::update_project(&key, apply);
+    }
+}
+
+/// The usage counters of one project: the stores of its project keys, summed.
+pub fn load_for_project(scope: &crate::core::savings_ledger::ProjectScope) -> StatsStore {
+    let zero = StatsStore::default();
+    let hashes = scope.repo_hashes();
+    io::load_projects(hashes.iter().map(String::as_str))
+        .iter()
+        .fold(StatsStore::default(), |acc, other| {
+            io::apply_deltas(&acc, other, &zero)
+        })
+}
+
+/// Every project store by its project key (for the device view's split).
+pub fn load_all_projects() -> Vec<(String, StatsStore)> {
+    io::project_keys()
+        .into_iter()
+        .filter_map(|key| {
+            let store = io::load_projects(std::iter::once(key.as_str())).pop()?;
+            Some((key, store))
+        })
+        .collect()
+}
+
+/// Counts one tool result into `store` (totals, per command, per day).
+fn apply_record(
+    store: &mut StatsStore,
+    command: &str,
+    input_tokens: usize,
+    output_tokens: usize,
+    turn: u64,
+) {
     // Tool-call accounting is durable per event, matching the savings ledger.
     let now = chrono::Local::now();
     let today = now.format("%Y-%m-%d").to_string();
@@ -289,15 +355,6 @@ pub fn record_at_turn(command: &str, input_tokens: usize, output_tokens: usize, 
             .daily
             .drain(..store.daily.len() - MAX_DAILY_HISTORY_DAYS);
     }
-
-    // MCP stdio servers are routinely terminated without a graceful shutdown.
-    // Delaying this write made the append-only ledger survive while aggregate
-    // stats disappeared, so persist every completed accounting event.
-    if let Some(merged) = io::merge_and_save(store, baseline) {
-        *store = merged.clone();
-        *baseline = merged;
-        *last_flush = Instant::now();
-    }
 }
 
 pub fn reset_cep() {
@@ -367,6 +424,21 @@ pub fn record_cep_session(
     );
 
     maybe_flush(store, baseline, last_flush);
+    drop(guard);
+    record_for_project(|project| {
+        apply_cep_snapshot(
+            &mut project.cep,
+            std::process::id(),
+            score,
+            cache_hits,
+            cache_reads,
+            tokens_original,
+            tokens_compressed,
+            modes,
+            tool_calls,
+            complexity,
+        );
+    });
 }
 
 /// Fold one CEP snapshot into `cep`. Pure (no globals, no I/O) so the
@@ -506,6 +578,52 @@ mod tests {
         let healthy = make_store(42, 9000, 1000);
         std::fs::write(&stats_path, serde_json::to_string(&healthy).unwrap()).unwrap();
         assert_eq!(io::load_from_disk().total_commands, 42);
+    }
+
+    /// Work done in a project is counted into that project's own store (a
+    /// worktree into its main checkout's); outside any project into none.
+    #[test]
+    fn each_project_keeps_its_own_counters() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let projects = tempfile::tempdir().unwrap();
+        let base = crate::core::pathutil::safe_canonicalize_or_self(projects.path());
+        let alpha = base.join("alpha");
+        let beta = base.join("beta");
+        let worktree = base.join("alpha-wt");
+        std::fs::create_dir_all(alpha.join(".git/worktrees/wt")).unwrap();
+        std::fs::create_dir_all(beta.join(".git")).unwrap();
+        std::fs::create_dir_all(&worktree).unwrap();
+        std::fs::write(
+            worktree.join(".git"),
+            format!("gitdir: {}\n", alpha.join(".git/worktrees/wt").display()),
+        )
+        .unwrap();
+        for (folder, calls) in [(&alpha, 2), (&worktree, 1), (&beta, 1)] {
+            crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+                std::cell::RefCell::new(Some(folder.clone())),
+                || {
+                    for _ in 0..calls {
+                        record_for_project(|s| apply_record(s, "ctx_read", 100, 40, 0));
+                    }
+                },
+            );
+        }
+
+        let scope =
+            crate::core::savings_ledger::ProjectScope::from_sessions(&alpha, std::iter::empty());
+        let mine = load_for_project(&scope);
+        assert_eq!(
+            mine.total_commands, 3,
+            "the worktree counts for its project"
+        );
+        assert_eq!(mine.commands["ctx_read"].input_tokens, 300);
+        let all = load_all_projects();
+        assert_eq!(all.len(), 2);
+        assert_eq!(
+            all.iter().map(|(_, s)| s.total_commands).sum::<u64>(),
+            4,
+            "the projects add up"
+        );
     }
 
     #[test]

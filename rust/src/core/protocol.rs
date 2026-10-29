@@ -91,7 +91,9 @@ pub fn detect_project_root(file_path: &str) -> Option<String> {
     let mut best: Option<String> = None;
 
     loop {
-        if is_project_root_marker(dir) {
+        // `~` with a dotfiles `.git`, `/` or an agent directory carries a
+        // marker without being a project (AP04-G6).
+        if is_project_root_marker(dir) && !crate::core::pathutil::is_broad_or_unsafe_root(dir) {
             best = Some(dir.to_string_lossy().to_string());
         }
         match dir.parent() {
@@ -100,6 +102,15 @@ pub fn detect_project_root(file_path: &str) -> Option<String> {
         }
     }
     best
+}
+
+/// True inside a request that is bound to no project: project-keyed writes
+/// are refused there (`project_unresolved`, AP01 §3) instead of keying them
+/// on a file's location.
+pub(crate) fn request_project_unresolved() -> bool {
+    crate::core::policy::runtime::REQUEST_PROJECT
+        .try_with(|slot| slot.borrow().is_none())
+        .unwrap_or(false)
 }
 
 /// Checks if a directory looks like a project root (has `.git`, workspace config, etc.).
@@ -124,9 +135,32 @@ fn is_project_root_marker(dir: &Path) -> bool {
 }
 
 /// Returns the project root for `file_path`, falling back to cwd if none found.
-/// Checks LEAN_CTX_PROJECT_ROOT env var and config.toml `project_root` first.
+/// Outside a request, checks LEAN_CTX_PROJECT_ROOT env var and config.toml
+/// `project_root` first.
 /// Logs a warning when the fallback is a broad directory (home, root).
 pub fn detect_project_root_or_cwd(file_path: &str) -> String {
+    // Inside a request its bound project is the partition everything it
+    // touches belongs to; a pin, the global config or the process cwd never
+    // replace it. Without a bound project only the file's own location counts
+    // (AP01 §3, AP04-G4).
+    if let Ok(project) =
+        crate::core::policy::runtime::REQUEST_PROJECT.try_with(|slot| slot.borrow().clone())
+    {
+        return match project {
+            Some(root) => root.to_string_lossy().into_owned(),
+            None => detect_project_root(file_path).unwrap_or_else(|| {
+                let path = Path::new(file_path);
+                if path.is_dir() {
+                    file_path.to_string()
+                } else {
+                    path.parent().map_or_else(
+                        || file_path.to_string(),
+                        |p| p.to_string_lossy().into_owned(),
+                    )
+                }
+            }),
+        };
+    }
     if let Ok(env_root) = std::env::var("LEAN_CTX_PROJECT_ROOT")
         && !env_root.is_empty()
     {
@@ -470,6 +504,24 @@ pub fn encode_instructions_with_snr(complexity: &str, compression_pct: f64) -> S
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// AP04-G4: a pinned `LEAN_CTX_PROJECT_ROOT` (or global config root) does
+    /// not replace the project a request is bound to.
+    #[test]
+    fn a_pin_does_not_replace_the_request_project() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let (request, pinned) = (tempfile::tempdir().unwrap(), tempfile::tempdir().unwrap());
+        let file = request.path().join("lib.rs");
+        std::fs::write(&file, "fn main() {}\n").unwrap();
+        let _pin = crate::test_env::VarGuard::set("LEAN_CTX_PROJECT_ROOT", pinned.path());
+
+        let root = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(request.path().to_path_buf())),
+            || detect_project_root_or_cwd(&file.to_string_lossy()),
+        );
+
+        assert_eq!(root, request.path().to_string_lossy());
+    }
 
     #[test]
     fn strip_trailing_savings_footer_handles_both_styles() {

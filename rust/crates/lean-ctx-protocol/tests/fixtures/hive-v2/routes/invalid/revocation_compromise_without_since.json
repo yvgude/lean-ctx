@@ -1,0 +1,13 @@
+{
+  "case": "revocation_compromise_without_since",
+  "base": "routes/revocation.response.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/compromised_since"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

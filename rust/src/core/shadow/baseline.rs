@@ -16,35 +16,21 @@ pub struct BaselineMeasurement {
     pub outcome_accepted: bool,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct BaselineConfig {
-    pub model: String,
-    pub no_compression: bool,
-    pub no_routing: bool,
-}
-
-impl Default for BaselineConfig {
-    fn default() -> Self {
-        Self {
-            model: "gpt-4o".into(),
-            no_compression: true,
-            no_routing: true,
-        }
-    }
-}
-
-pub fn simulate_baseline(task: &ShadowTask, config: &BaselineConfig) -> BaselineMeasurement {
+/// The same task without context reduction: uncompressed input, priced with the model the host
+/// actually chose for this task. The model is never swapped for a configured reference model —
+/// LeanCTX does not choose models, so a price difference between models is not a LeanCTX saving.
+pub fn simulate_baseline(task: &ShadowTask) -> BaselineMeasurement {
     let accepted = accepted(&task.task_id, &task.outcome_signals);
     BaselineMeasurement {
         task_id: task.task_id.clone(),
         input_tokens: task.raw_input_tokens,
         output_tokens: task.output_tokens,
-        model: config.model.clone(),
+        model: task.model_used.clone(),
         total_cost_micros: calculate_cost(
             task.raw_input_tokens,
             task.output_tokens,
             0,
-            &config.model,
+            &task.model_used,
         ),
         duration_ms: task.duration_ms,
         outcome_accepted: accepted,

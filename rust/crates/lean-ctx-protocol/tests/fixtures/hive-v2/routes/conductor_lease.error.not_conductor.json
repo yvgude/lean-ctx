@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "forbidden",
+    "message": "This worker is not a conductor of the swarm.",
+    "reason": "not_conductor"
+  }
+}

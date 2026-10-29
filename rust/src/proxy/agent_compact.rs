@@ -98,6 +98,14 @@ pub(crate) fn apply(parsed: &mut Value) -> usize {
         .map(std::string::ToString::to_string)
         .collect::<Vec<_>>()
         .join("\n");
+    // The summary replaces turns of several blocks with text the agent
+    // wrote; the only copy of the span would be an originless tee entry,
+    // which protection does not keep. Under protection the conversation
+    // stays as it is — decided before anything is pinned or persisted — and
+    // the request counts it once.
+    if super::compress::gate::keeps_whole(&span_serialized, super::compress::SUMMARY_WITHOUT_COPY) {
+        return 0;
+    }
     let span_tokens = crate::core::tokens::count_tokens(&span_serialized);
 
     if directive.boundary_fingerprint.is_none() {

@@ -3,29 +3,6 @@
 
 use crate::{core, tools};
 
-fn publication_research_enabled() -> bool {
-    std::env::var("LEAN_CTX_EXPERIMENTAL_PUBLICATION").as_deref() == Ok("1")
-}
-
-/// Whether this invocation asks for a research-gated *publication* action.
-/// `--unpublish` is deliberately absent: removal stays available even when
-/// publishing is not (#1726).
-fn publication_requested(rest: &[String]) -> bool {
-    rest.iter().any(|arg| {
-        matches!(
-            arg.as_str(),
-            "--publish" | "--leaderboard" | "--link" | "--rejoin"
-        ) || arg.starts_with("--rejoin=")
-    }) || link_request(rest).is_some()
-}
-
-fn print_publication_unavailable() {
-    eprintln!(
-        "Hosted publication and public rankings are Research and unavailable in the public LeanCTX Runtime. \\
-         Set LEAN_CTX_EXPERIMENTAL_PUBLICATION=1 only for a local development evaluation."
-    );
-}
-
 pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
     // Keep the latest-version cache fresh (#563): non-blocking, 24h-TTL
     // guarded, opt-out respected. Without a CLI-side trigger the cache only
@@ -36,8 +13,22 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         println!("Stats reset. All token savings data cleared.");
         return;
     }
-    if rest.iter().any(|a| a == "--live") {
-        core::stats::gain_live();
+    // The Cockpit shows savings and the recorded calls (Ledger). On a
+    // terminal they open in the background; elsewhere (agent shells, CI,
+    // pipes) nothing is started and nothing blocks — one line names the view.
+    let cockpit_view = if rest.iter().any(|a| a == "--live") {
+        Some(crate::cli::dispatch::network::VIEW_CALLS)
+    } else if rest.iter().any(|a| a == "--web") {
+        Some(crate::cli::dispatch::network::VIEW_SAVINGS)
+    } else {
+        None
+    };
+    if let Some(view) = cockpit_view {
+        if crate::cli::dispatch::network::cockpit_start::interactive() {
+            crate::cli::dispatch::network::cmd_cockpit(rest, Some(view));
+        } else {
+            println!("Open on a terminal: lean-ctx cockpit \u{2192} #{view}");
+        }
         return;
     }
     let model = rest.iter().enumerate().find_map(|(i, a)| {
@@ -81,59 +72,6 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
 
     if rest.iter().any(|a| a == "--no-cache-adjust") {
         core::context_overhead::set_no_cache_adjust(true);
-    }
-
-    // #1726: taking a published card down is never gated. Turning publication
-    // off (or shipping a runtime where it was never on) must not strand a page
-    // that is already public — the exit door has to outlive the entrance.
-    if let Some(req) = unpublish_request(rest) {
-        use crate::cli::wrapped_publish::UnpublishTarget;
-        let target = match &req {
-            UnpublishReq::All => UnpublishTarget::All,
-            UnpublishReq::Target(s) => UnpublishTarget::One(s.as_str()),
-            UnpublishReq::Latest => UnpublishTarget::Latest,
-        };
-        crate::cli::wrapped_publish::unpublish(target);
-        return;
-    }
-
-    if publication_requested(rest) && !publication_research_enabled() {
-        print_publication_unavailable();
-        return;
-    }
-    if rest.iter().any(|a| a == "--rejoin") {
-        let phrase = rest.iter().enumerate().find_map(|(i, a)| {
-            if let Some(v) = a.strip_prefix("--rejoin=") {
-                return Some(v.to_string());
-            }
-            if a == "--rejoin" {
-                let words: Vec<_> = rest[i + 1..]
-                    .iter()
-                    .take_while(|w| !w.starts_with("--"))
-                    .cloned()
-                    .collect();
-                if words.is_empty() {
-                    return None;
-                }
-                return Some(words.join(" "));
-            }
-            None
-        });
-        crate::cli::wrapped_publish::rejoin(phrase.as_deref());
-        return;
-    }
-    if rest.iter().any(|a| a == "--publish") {
-        let leaderboard = rest.iter().any(|a| a == "--leaderboard");
-        crate::cli::wrapped_publish::publish(&period, name_arg(rest).as_deref(), leaderboard);
-        return;
-    }
-    if let Some(req) = link_request(rest) {
-        let code = match &req {
-            LinkReq::Complete(c) => Some(c.as_str()),
-            LinkReq::Start => None,
-        };
-        crate::cli::wrapped_publish::link(code);
-        return;
     }
 
     if let Some(svg_path) = svg_target(rest) {
@@ -227,40 +165,6 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
             "{}",
             tools::ctx_gain::handle("wrapped", Some(&period), model.as_deref(), Some(limit))
         );
-        // Development-only interactive publication evaluation (if TTY and not
-        // already published). Public publication is Research by default.
-        if publication_research_enabled()
-            && !rest.iter().any(|a| a == "--publish")
-            && std::io::IsTerminal::is_terminal(&std::io::stdin())
-            && !crate::cli::wrapped_publish::has_published()
-        {
-            eprint!("\n  Publish this card? [y/N/leaderboard] ");
-            let mut input = String::new();
-            if std::io::stdin().read_line(&mut input).is_ok() {
-                let answer = input.trim().to_lowercase();
-                match answer.as_str() {
-                    "y" | "yes" => {
-                        let cfg = crate::core::config::Config::load();
-                        crate::cli::wrapped_publish::publish(
-                            &period,
-                            cfg.gain.display_name.as_deref(),
-                            cfg.gain.leaderboard,
-                        );
-                    }
-                    "l" | "leaderboard" => {
-                        let cfg = crate::core::config::Config::load();
-                        crate::cli::wrapped_publish::publish(
-                            &period,
-                            cfg.gain.display_name.as_deref(),
-                            true,
-                        );
-                    }
-                    _ => {}
-                }
-            }
-        } else if publication_research_enabled() {
-            crate::cli::wrapped_publish::maybe_auto_publish(&period);
-        }
     } else if rest.iter().any(|a| a == "--pipeline") {
         let stats_path = crate::core::paths::state_dir()
             .unwrap_or_else(|_| dirs::home_dir().unwrap_or_default().join(".lean-ctx"))
@@ -301,10 +205,6 @@ pub(in crate::cli::dispatch) fn cmd_gain(rest: &[String]) {
         print_cloud_sync_hint();
         print_bridge_warning();
         print_split_hint();
-        if publication_research_enabled() {
-            crate::cli::wrapped_publish::maybe_auto_publish(&period);
-        }
-        print_community_hint();
     }
 }
 
@@ -463,14 +363,6 @@ fn print_split_hint() {
     }
 }
 
-fn print_community_hint() {
-    if publication_research_enabled() {
-        eprintln!(
-            "\n  \x1b[2mHosted publication is a local development evaluation only; it is not a public LeanCTX product surface.\x1b[0m"
-        );
-    }
-}
-
 /// A prominent, friendly nudge to support lean-ctx financially. The engine is
 /// free and never gated — this is the single place the default `gain` view asks
 /// for support, rendered right under the savings hero so the people who benefit
@@ -515,66 +407,6 @@ fn print_support_hint() {
 /// Resolves the output path for the shareable SVG Wrapped card, or `None` when no
 /// card was requested. Accepts `--svg`, `--svg=<path>`, `--card`, `--card=<path>`;
 /// a bare flag falls back to `lean-ctx-wrapped.svg` in the current directory.
-/// A requested `--unpublish`: the most recent card, every card, or one named
-/// by id or by its published permalink.
-enum UnpublishReq {
-    Latest,
-    All,
-    Target(String),
-}
-
-/// Parses `--unpublish[=<id|url|all>]`. `None` means it was not requested.
-fn unpublish_request(rest: &[String]) -> Option<UnpublishReq> {
-    for a in rest {
-        if let Some(v) = a.strip_prefix("--unpublish=") {
-            return Some(if v.eq_ignore_ascii_case("all") {
-                UnpublishReq::All
-            } else {
-                UnpublishReq::Target(v.to_string())
-            });
-        }
-        if a == "--unpublish" {
-            return Some(UnpublishReq::Latest);
-        }
-    }
-    None
-}
-
-/// A requested `--link`: start a pairing (mint a code) or complete one with a code.
-enum LinkReq {
-    Start,
-    Complete(String),
-}
-
-/// Parses `--link[=CODE]` / `--link CODE` (GH #736). `None` = not requested.
-fn link_request(rest: &[String]) -> Option<LinkReq> {
-    for (i, a) in rest.iter().enumerate() {
-        if let Some(v) = a.strip_prefix("--link=") {
-            return Some(LinkReq::Complete(v.to_string()));
-        }
-        if a == "--link" {
-            return Some(match rest.get(i + 1) {
-                Some(next) if !next.starts_with('-') => LinkReq::Complete(next.clone()),
-                _ => LinkReq::Start,
-            });
-        }
-    }
-    None
-}
-
-/// Parses `--name=<display>` / `--name <display>` for the optional publish display label.
-fn name_arg(rest: &[String]) -> Option<String> {
-    rest.iter().enumerate().find_map(|(i, a)| {
-        if let Some(v) = a.strip_prefix("--name=") {
-            return Some(v.to_string());
-        }
-        if a == "--name" {
-            return rest.get(i + 1).cloned();
-        }
-        None
-    })
-}
-
 fn svg_target(rest: &[String]) -> Option<String> {
     let mut requested = false;
     let mut path: Option<String> = None;
@@ -894,10 +726,7 @@ fn cmd_stats_raw(rest: &[String]) {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        UnpublishReq, base_url_arg, publication_requested, share_target, svg_target,
-        unpublish_request,
-    };
+    use super::{base_url_arg, share_target, svg_target};
 
     fn args(xs: &[&str]) -> Vec<String> {
         xs.iter().map(|s| (*s).to_string()).collect()
@@ -973,47 +802,5 @@ mod tests {
             Some("https://me.dev")
         );
         assert_eq!(base_url_arg(&args(&["--share"])), None);
-    }
-
-    #[test]
-    fn unpublish_accepts_id_permalink_and_all() {
-        assert!(matches!(
-            unpublish_request(&args(&["--unpublish"])),
-            Some(UnpublishReq::Latest)
-        ));
-        assert!(matches!(
-            unpublish_request(&args(&["--unpublish=all"])),
-            Some(UnpublishReq::All)
-        ));
-        assert!(matches!(
-            unpublish_request(&args(&["--unpublish=ALL"])),
-            Some(UnpublishReq::All)
-        ));
-        match unpublish_request(&args(&[
-            "--unpublish=https://leanctx.com/w/196127aaad436a2cd42164cbbbbcd3cb",
-        ])) {
-            Some(UnpublishReq::Target(target)) => {
-                assert!(target.ends_with("196127aaad436a2cd42164cbbbbcd3cb"));
-            }
-            other => panic!(
-                "permalink must parse as a target, got {:?}",
-                other.is_some()
-            ),
-        }
-        assert!(unpublish_request(&args(&["--publish"])).is_none());
-    }
-
-    #[test]
-    fn unpublish_is_not_a_research_gated_publication_action() {
-        // #1726: removal must stay reachable when publishing is unavailable,
-        // otherwise an already-published page can never be taken down.
-        assert!(!publication_requested(&args(&["--unpublish"])));
-        assert!(!publication_requested(&args(&["--unpublish=all"])));
-        for gated in ["--publish", "--leaderboard", "--link", "--rejoin"] {
-            assert!(
-                publication_requested(&args(&[gated])),
-                "`{gated}` must stay behind the research gate"
-            );
-        }
     }
 }

@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_host_path",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets/0/slices/0/hosts/0/host",
+      "value": "/usr/local/bin/claude"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a path as host"
+}

@@ -1,0 +1,13 @@
+{
+  "case": "finding_without_refs",
+  "base": "bus/message.finding.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/refs"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

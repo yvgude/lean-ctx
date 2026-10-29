@@ -1,0 +1,789 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/consent.schema.json",
+  "title": "Consents: 9 kinds and subjects, E35 relay, Hive-signed statement, presence-key proofs, W49/W50 (SPEC-CONTRACT-SERVER §3.21, SPEC-ENGINE §3.8, RESOLUTIONS R16, R37, R49, R58, R61, R82, R107)",
+  "$defs": {
+    "kind": {
+      "enum": [
+        "link_vault",
+        "public_presence",
+        "swarm_join",
+        "pledge_change",
+        "unattended_start",
+        "procedure_confirm",
+        "reviewer_enable",
+        "api_key_set",
+        "sealed_grant"
+      ]
+    },
+    "cli": {
+      "$ref": "worker.schema.json#/$defs/host_app"
+    },
+    "subject_link_vault": {
+      "type": "object",
+      "required": [
+        "vault",
+        "remote_seen",
+        "bound_repo",
+        "link_digest",
+        "target_vault"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "vault": {
+          "$ref": "common.schema.json#/$defs/vault_address"
+        },
+        "remote_seen": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "bound_repo": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 500
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "link_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "target_vault": {
+          "type": "null",
+          "description": "always null in 3.12.0"
+        }
+      }
+    },
+    "subject_public_presence": {
+      "type": "object",
+      "required": [
+        "vault",
+        "worker_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "vault": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        }
+      }
+    },
+    "subject_swarm_join": {
+      "type": "object",
+      "required": [
+        "swarm",
+        "pledge_digest",
+        "cli"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "swarm": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "pledge_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "cli": {
+          "$ref": "#/$defs/cli"
+        }
+      }
+    },
+    "subject_pledge_change": {
+      "type": "object",
+      "required": [
+        "swarm",
+        "before_digest",
+        "after_digest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "swarm": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "before_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "after_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        }
+      }
+    },
+    "subject_unattended_start": {
+      "type": "object",
+      "required": [
+        "swarm",
+        "pledge_digest",
+        "cli",
+        "usd_cents_per_day"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "swarm": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "pledge_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "cli": {
+          "$ref": "#/$defs/cli"
+        },
+        "usd_cents_per_day": {
+          "$ref": "swarm.schema.json#/$defs/usd_cents_day"
+        }
+      }
+    },
+    "subject_procedure_confirm": {
+      "type": "object",
+      "required": [
+        "item_id",
+        "item_digest",
+        "command_digests"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "item_id": {
+          "$ref": "common.schema.json#/$defs/review_id"
+        },
+        "item_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "command_digests": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "$ref": "common.schema.json#/$defs/hex64"
+          }
+        }
+      }
+    },
+    "subject_reviewer_enable": {
+      "type": "object",
+      "required": [
+        "place",
+        "cli",
+        "reviewer_usd_cents_per_day",
+        "source"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "place": {
+          "$ref": "common.schema.json#/$defs/place_ref"
+        },
+        "cli": {
+          "$ref": "#/$defs/cli"
+        },
+        "reviewer_usd_cents_per_day": {
+          "type": "integer",
+          "minimum": 100,
+          "maximum": 50000,
+          "description": "USD 1–500 per day as cents (default 1000)"
+        },
+        "source": {
+          "enum": [
+            "owner",
+            "own"
+          ]
+        }
+      }
+    },
+    "subject_api_key_set": {
+      "type": "object",
+      "required": [
+        "cli",
+        "vendor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "cli": {
+          "$ref": "#/$defs/cli"
+        },
+        "vendor": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,31}$"
+        }
+      }
+    },
+    "subject_sealed_grant": {
+      "type": "object",
+      "required": [
+        "vault",
+        "engine_fingerprint",
+        "requester"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "vault": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "engine_fingerprint": {
+          "$ref": "common.schema.json#/$defs/hex16",
+          "description": "first 16 hex of blake3 of the requesting instance's public key"
+        },
+        "requester": {
+          "type": "string",
+          "pattern": "^[a-z0-9][a-z0-9-]{0,38}$"
+        }
+      }
+    },
+    "kind_subject": {
+      "description": "object with kind + subject: subject shape by kind",
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "link_vault"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "subject": {
+                "$ref": "#/$defs/subject_link_vault"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "public_presence"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "subject": {
+                "$ref": "#/$defs/subject_public_presence"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "swarm_join"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "subject": {
+                "$ref": "#/$defs/subject_swarm_join"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "pledge_change"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "subject": {
+                "$ref": "#/$defs/subject_pledge_change"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "unattended_start"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "subject": {
+                "$ref": "#/$defs/subject_unattended_start"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "procedure_confirm"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "subject": {
+                "$ref": "#/$defs/subject_procedure_confirm"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "reviewer_enable"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "subject": {
+                "$ref": "#/$defs/subject_reviewer_enable"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "api_key_set"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "subject": {
+                "$ref": "#/$defs/subject_api_key_set"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "sealed_grant"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "subject": {
+                "$ref": "#/$defs/subject_sealed_grant"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "create_request": {
+      "description": "E35 POST /v1/consents (instance token); subject_digest = hex(blake3(canonical_json(subject))) recomputed by the server; code_hash = hex(sha256(consent_id ‖ code)), code = 8 Crockford characters without the dash",
+      "type": "object",
+      "required": [
+        "consent_id",
+        "kind",
+        "subject",
+        "subject_digest",
+        "expires_at",
+        "code_hash",
+        "code_expires_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "consent_id": {
+          "$ref": "common.schema.json#/$defs/consent_id"
+        },
+        "kind": {
+          "$ref": "#/$defs/kind"
+        },
+        "subject": {
+          "type": "object"
+        },
+        "subject_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "expires_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "code_hash": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "code_expires_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/kind_subject"
+        },
+        {
+          "not": {
+            "properties": {
+              "kind": {
+                "const": "api_key_set"
+              }
+            }
+          },
+          "$comment": "api_key_set is answered on the TTY only; it never reaches the relay"
+        }
+      ]
+    },
+    "create_request_device": {
+      "description": "C0 2.1 E35 POST /v1/consents bound to the instance's device approval page instead of a pairing code (link_vault only, no code_hash/code_expires_at): approved at once when the subject is exactly the share the page showed, else answered on that page",
+      "type": "object",
+      "required": [
+        "consent_id",
+        "kind",
+        "subject",
+        "subject_digest",
+        "expires_at",
+        "binding"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "consent_id": {
+          "$ref": "common.schema.json#/$defs/consent_id"
+        },
+        "kind": {
+          "const": "link_vault"
+        },
+        "subject": {
+          "type": "object"
+        },
+        "subject_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "expires_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "binding": {
+          "const": "device"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/kind_subject"
+        }
+      ]
+    },
+    "create_response": {
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string",
+          "pattern": "^https://[a-z0-9.:-]+/consent/cns_[a-z2-7]{16}/$"
+        }
+      }
+    },
+    "statement": {
+      "description": "leanctx.hive.consent.v1, Hive key purpose consent, domain leanctx.hive.consent.v1\\n over the statement without signature",
+      "type": "object",
+      "required": [
+        "schema",
+        "consent_id",
+        "subject_digest",
+        "answer",
+        "answered_at",
+        "user_id",
+        "key_id",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.consent.v1"
+        },
+        "consent_id": {
+          "$ref": "common.schema.json#/$defs/consent_id"
+        },
+        "subject_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "answer": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "answered_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "user_id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        },
+        "signature": {
+          "$ref": "common.schema.json#/$defs/signature"
+        }
+      }
+    },
+    "state_response": {
+      "description": "E35 GET /v1/consents/{id}",
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "pending",
+            "approved",
+            "denied",
+            "expired"
+          ]
+        },
+        "statement": {
+          "$ref": "#/$defs/statement"
+        }
+      },
+      "if": {
+        "properties": {
+          "state": {
+            "enum": [
+              "approved",
+              "denied"
+            ]
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "statement"
+        ]
+      },
+      "else": {
+        "not": {
+          "required": [
+            "statement"
+          ]
+        }
+      }
+    },
+    "proof": {
+      "description": "form (b) presence proof; signature (base64url, no padding) by the bound presence key with its alg over \"leanctx.hive.consent_proof.v1\\n\" ‖ canonical_json({consent_id, kind, subject_digest, approved_at}); never for procedure_confirm",
+      "type": "object",
+      "required": [
+        "consent_id",
+        "kind",
+        "subject",
+        "subject_digest",
+        "approved_at",
+        "presence_key_id",
+        "signature"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "consent_id": {
+          "$ref": "common.schema.json#/$defs/consent_id"
+        },
+        "kind": {
+          "enum": [
+            "link_vault",
+            "public_presence",
+            "swarm_join",
+            "pledge_change",
+            "unattended_start",
+            "reviewer_enable",
+            "api_key_set",
+            "sealed_grant"
+          ]
+        },
+        "subject": {
+          "type": "object"
+        },
+        "subject_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "approved_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "presence_key_id": {
+          "$ref": "common.schema.json#/$defs/hex16"
+        },
+        "signature": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9_-]{60,512}$"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/kind_subject"
+        }
+      ]
+    },
+    "consent_required_error": {
+      "allOf": [
+        {
+          "$ref": "worker.schema.json#/$defs/error"
+        }
+      ],
+      "properties": {
+        "error": {
+          "required": [
+            "kind",
+            "reason"
+          ],
+          "properties": {
+            "code": {
+              "const": "consent_required"
+            },
+            "kind": {
+              "$ref": "#/$defs/kind"
+            },
+            "reason": {
+              "enum": [
+                "missing",
+                "kind",
+                "user",
+                "channel",
+                "stale",
+                "used",
+                "subject",
+                "signature",
+                "presence_key"
+              ]
+            }
+          }
+        }
+      }
+    },
+    "w49_response": {
+      "description": "W49 GET /api/v1/consents/{id}: only the stored first subject; the web shows the first 16 hex of subject_digest as \"Request fingerprint\"; RFC 3339 times (S17)",
+      "type": "object",
+      "required": [
+        "id",
+        "kind",
+        "subject",
+        "subject_digest",
+        "channels",
+        "created_at",
+        "expires_at",
+        "code_expires_at",
+        "state"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/consent_id"
+        },
+        "kind": {
+          "$ref": "#/$defs/kind"
+        },
+        "subject": {
+          "type": "object"
+        },
+        "subject_digest": {
+          "$ref": "common.schema.json#/$defs/hex64"
+        },
+        "channels": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "enum": [
+              "cli",
+              "cockpit",
+              "web"
+            ]
+          }
+        },
+        "created_at": {
+          "$ref": "web.schema.json#/$defs/time"
+        },
+        "expires_at": {
+          "$ref": "web.schema.json#/$defs/time"
+        },
+        "code_expires_at": {
+          "$ref": "web.schema.json#/$defs/time"
+        },
+        "state": {
+          "enum": [
+            "pending",
+            "approved",
+            "denied",
+            "expired"
+          ]
+        },
+        "binding": {
+          "enum": [
+            "code",
+            "device"
+          ],
+          "description": "C0 2.1: device = answered on the device approval page only"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/kind_subject"
+        }
+      ]
+    },
+    "w50_request": {
+      "description": "W50 POST /api/v1/consents/{id} (class F): pairing code shown as XXXX-XXXX in the terminal, sent without the dash or with it",
+      "type": "object",
+      "required": [
+        "pairing_code",
+        "answer",
+        "totp_code"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "pairing_code": {
+          "type": "string",
+          "pattern": "^[0-9A-HJKMNP-TV-Z]{4}-?[0-9A-HJKMNP-TV-Z]{4}$"
+        },
+        "answer": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        },
+        "totp_code": {
+          "$ref": "web.schema.json#/$defs/totp_code"
+        }
+      }
+    },
+    "w50_response": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "approved",
+            "denied"
+          ]
+        }
+      }
+    },
+    "channel": {
+      "enum": [
+        "os_presence",
+        "tty_only",
+        "cockpit",
+        "web"
+      ]
+    }
+  }
+}

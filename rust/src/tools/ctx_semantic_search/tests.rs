@@ -164,6 +164,59 @@ mod root_resolution_tests {
             },
         );
     }
+
+    /// I07/S03: the search query is remembered in the caller's own session.
+    /// It was saved into the project's latest session — another agent's when
+    /// that agent had saved last.
+    #[test]
+    fn the_search_query_lands_in_the_callers_session_not_the_latest() {
+        use crate::core::session::SessionState;
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let tmp = tempfile::tempdir().unwrap();
+        let root = crate::core::pathutil::safe_canonicalize_or_self(tmp.path());
+        std::fs::create_dir_all(root.join(".git")).unwrap();
+        std::fs::write(
+            root.join("auth.rs"),
+            "fn validate_token(token: &str) -> bool { true }\n",
+        )
+        .unwrap();
+        let root_s = root.to_string_lossy().into_owned();
+
+        let mut a1 = SessionState::new();
+        a1.project_root = Some(root_s.clone());
+        a1.save().unwrap();
+        let mut a2 = SessionState::new();
+        a2.project_root = Some(root_s.clone());
+        let a2 = std::sync::Arc::new(tokio::sync::RwLock::new(a2));
+
+        let search = || {
+            handle_for_tool(
+                "ctx_search",
+                "validate token",
+                &root_s,
+                5,
+                CrpMode::Off,
+                None,
+                None,
+                Some("bm25"),
+                None,
+                None,
+            )
+        };
+        crate::core::session::caller::scope(Some(a2.clone()), search);
+        // Without a caller (CLI) nothing is written anywhere.
+        search();
+
+        let a1_stored = SessionState::load_by_id_for_project_root(&a1.id, &root_s)
+            .unwrap()
+            .unwrap();
+        assert_eq!(a1_stored.last_semantic_query, None);
+        assert_eq!(
+            a2.try_read().unwrap().last_semantic_query.as_deref(),
+            Some("validate token")
+        );
+    }
 }
 
 #[cfg(all(test, feature = "embeddings"))]

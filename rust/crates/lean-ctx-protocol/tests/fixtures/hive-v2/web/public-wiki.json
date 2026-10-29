@@ -1,0 +1,28 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "rate_limited",
+          "message": "Too many requests. Try again in 30 s.",
+          "retry_after_s": 30
+        }
+      },
+      "status": 429
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/public/vaults/acme/payments/wiki",
+  "request": null,
+  "response": {
+    "body": [
+      {
+        "page_id": "wp_7kq2m6xa3fz5c6hbt4nrd2wysu",
+        "title": "Refunds",
+        "updated_seq": 41
+      }
+    ],
+    "status": 200
+  },
+  "route": "W44"
+}

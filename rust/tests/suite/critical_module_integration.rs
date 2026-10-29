@@ -10,7 +10,10 @@
 fn pathjail_blocks_traversal() {
     use lean_ctx::core::pathjail;
 
-    let jail = std::env::current_dir().unwrap();
+    // A temp-dir root: from the crate directory, `../../` may still land below
+    // `~`, which the `home` jail scope (default since 3.11.3) admits by design.
+    let root = tempfile::tempdir().unwrap();
+    let jail = root.path().to_path_buf();
     let escaped = jail.join("../../etc/passwd");
 
     let result = pathjail::jail_path(&escaped, &jail);
@@ -38,7 +41,7 @@ fn pathjail_allows_safe_path() {
 fn learn_extracts_high_confidence_gotchas() {
     use lean_ctx::core::gotcha_tracker::learn::extract_learnings;
     use lean_ctx::core::gotcha_tracker::{
-        Gotcha, GotchaCategory, GotchaSeverity, GotchaSource, GotchaStats, GotchaStore,
+        Gotcha, GotchaCategory, GotchaSeverity, GotchaSource, GotchaStore,
     };
 
     let mut g = Gotcha::new(
@@ -56,14 +59,8 @@ fn learn_extracts_high_confidence_gotchas() {
     g.occurrences = 3;
     g.session_ids = vec!["a".into(), "b".into(), "c".into()];
 
-    let store = GotchaStore {
-        project_hash: "test".into(),
-        gotchas: vec![g],
-        error_log: vec![],
-        stats: GotchaStats::default(),
-        updated_at: chrono::Utc::now(),
-        pending_errors: vec![],
-    };
+    let mut store = GotchaStore::new("test");
+    store.gotchas = vec![g];
 
     let learnings = extract_learnings(&store);
     assert_eq!(learnings.len(), 1);
@@ -89,14 +86,8 @@ fn learn_filters_low_confidence() {
     g.confidence = 0.3;
     g.occurrences = 1;
 
-    let store = GotchaStore {
-        project_hash: "test".into(),
-        gotchas: vec![g],
-        error_log: vec![],
-        stats: GotchaStats::default(),
-        updated_at: chrono::Utc::now(),
-        pending_errors: vec![],
-    };
+    let mut store = GotchaStore::new("test");
+    store.gotchas = vec![g];
 
     let learnings = extract_learnings(&store);
     assert!(

@@ -149,23 +149,6 @@ impl ContextCheckpointMigrationV1 for StrictContextCheckpointMigratorV1 {
 }
 
 fn canonical_json_bytes(value: &Value) -> Result<Vec<u8>, ContextCheckpointMigrationErrorV1> {
-    let mut value = value.clone();
-    sort_value(&mut value);
-    serde_json::to_vec(&value)
+    serde_json::to_vec(&crate::core::canonical::canonical_value(value))
         .map_err(|error| ContextCheckpointMigrationErrorV1::InvalidJson(error.to_string()))
-}
-
-fn sort_value(value: &mut Value) {
-    match value {
-        Value::Object(object) => {
-            let mut entries: Vec<_> = std::mem::take(object).into_iter().collect();
-            entries.sort_by(|left, right| left.0.cmp(&right.0));
-            for (_, child) in &mut entries {
-                sort_value(child);
-            }
-            object.extend(entries);
-        }
-        Value::Array(values) => values.iter_mut().for_each(sort_value),
-        _ => {}
-    }
 }

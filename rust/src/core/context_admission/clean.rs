@@ -10,15 +10,26 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Mutex, OnceLock, PoisonError};
 
-use lean_ctx_protocol::context_gateway::ContextDecisionV1;
+use lean_ctx_protocol::context_gateway::{ClassificationV1, ContextDecisionV1};
 
 const CAPACITY: usize = 4_096;
 
 type Key = [u8; 32];
 
+pub(super) struct CachedAdmission {
+    pub(super) decision: ContextDecisionV1,
+    pub(super) classification: ClassificationV1,
+    pub(super) storable: bool,
+}
+
+enum CachedEntry {
+    Decision(Arc<ContextDecisionV1>),
+    Source(Arc<CachedAdmission>),
+}
+
 struct Memo {
     order: VecDeque<Key>,
-    decisions: HashMap<Key, Arc<ContextDecisionV1>>,
+    entries: HashMap<Key, Arc<CachedEntry>>,
 }
 
 fn memo() -> &'static Mutex<Memo> {
@@ -26,7 +37,7 @@ fn memo() -> &'static Mutex<Memo> {
     MEMO.get_or_init(|| {
         Mutex::new(Memo {
             order: VecDeque::with_capacity(CAPACITY),
-            decisions: HashMap::with_capacity(CAPACITY),
+            entries: HashMap::with_capacity(CAPACITY),
         })
     })
 }
@@ -43,30 +54,57 @@ pub(super) fn key(policy_fingerprint: &[u8], path: &str, text: &str) -> Key {
 }
 
 pub(super) fn get(key: &Key) -> Option<Arc<ContextDecisionV1>> {
-    memo()
-        .lock()
-        .unwrap_or_else(PoisonError::into_inner)
-        .decisions
-        .get(key)
-        .cloned()
+    let memo = memo().lock().unwrap_or_else(PoisonError::into_inner);
+    match memo.entries.get(key)?.as_ref() {
+        CachedEntry::Decision(decision) => Some(decision.clone()),
+        CachedEntry::Source(admission) => Some(Arc::new(admission.decision.clone())),
+    }
+}
+
+pub(super) fn get_source(key: &Key) -> Option<Arc<CachedAdmission>> {
+    let memo = memo().lock().unwrap_or_else(PoisonError::into_inner);
+    match memo.entries.get(key)?.as_ref() {
+        CachedEntry::Source(admission) => Some(admission.clone()),
+        CachedEntry::Decision(_) => None,
+    }
 }
 
 #[cfg(test)]
 pub(super) fn clear() {
     let mut memo = memo().lock().unwrap_or_else(PoisonError::into_inner);
     memo.order.clear();
-    memo.decisions.clear();
+    memo.entries.clear();
 }
 
 pub(super) fn insert(key: Key, decision: ContextDecisionV1) {
+    insert_entry(key, CachedEntry::Decision(Arc::new(decision)));
+}
+
+pub(super) fn insert_source(
+    key: Key,
+    decision: ContextDecisionV1,
+    classification: ClassificationV1,
+    storable: bool,
+) {
+    insert_entry(
+        key,
+        CachedEntry::Source(Arc::new(CachedAdmission {
+            decision,
+            classification,
+            storable,
+        })),
+    );
+}
+
+fn insert_entry(key: Key, entry: CachedEntry) {
     let mut memo = memo().lock().unwrap_or_else(PoisonError::into_inner);
-    if memo.decisions.insert(key, Arc::new(decision)).is_some() {
+    if memo.entries.insert(key, Arc::new(entry)).is_some() {
         return;
     }
     memo.order.push_back(key);
     if memo.order.len() > CAPACITY
         && let Some(oldest) = memo.order.pop_front()
     {
-        memo.decisions.remove(&oldest);
+        memo.entries.remove(&oldest);
     }
 }

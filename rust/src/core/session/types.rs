@@ -13,7 +13,7 @@ pub struct SessionState {
     #[serde(skip)]
     pub(crate) canonical_checkpoint: Option<Box<crate::core::context_checkpoint::CanonicalSession>>,
     #[serde(skip)]
-    pub(crate) save_gate: std::sync::Arc<tokio::sync::Mutex<()>>,
+    pub(crate) save_gate: std::sync::Arc<super::save_outcome::SaveGate>,
     #[serde(skip)]
     pub(crate) last_save_failed: bool,
     pub id: String,
@@ -48,6 +48,9 @@ pub struct SessionState {
     /// Watermark: timestamp of last auto-consolidation to prevent duplicate knowledge entries.
     #[serde(default)]
     pub last_consolidate_ts: Option<DateTime<Utc>>,
+    /// Retired, kept so stored sessions keep their shape: no delivery path
+    /// reads or writes it. The project memory in the initialize instructions
+    /// is always given in full (see `instructions.rs`).
     #[serde(default)]
     pub last_aaak_hash: Option<String>,
     /// Extra project roots for multi-root workspaces.
@@ -205,6 +208,38 @@ pub struct SessionStats {
     /// Security events of this session (display counters; the audit trail is
     /// the proof — see `lean-ctx value`).
     pub security: crate::core::security_events::SecurityCounts,
+    /// Tool calls and cache hits per UTC day (`YYYY-MM-DD`), so a session that
+    /// spans midnight still reports each day's own counts (Cloud Cockpit
+    /// metrics). Bounded to the newest `SESSION_DAYS_KEPT` (120) days.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub daily: std::collections::BTreeMap<String, SessionDayCounts>,
+    /// The MCP client that drove this session (its handshake id, e.g.
+    /// `claude-code`); `None` until the first call of a known client.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client: Option<String>,
+}
+
+/// Days of [`SessionStats::daily`] a session keeps.
+pub(super) const SESSION_DAYS_KEPT: usize = 120;
+
+/// One UTC day of a session's counters.
+#[derive(Serialize, Deserialize, Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[serde(default)]
+pub struct SessionDayCounts {
+    pub tool_calls: u64,
+    pub cache_hits: u64,
+}
+
+impl SessionStats {
+    /// The counters of `now`'s UTC day, dropping the oldest day once more
+    /// than `SESSION_DAYS_KEPT` (120) are held.
+    pub fn day_mut(&mut self, now: DateTime<Utc>) -> &mut SessionDayCounts {
+        let day = now.format("%Y-%m-%d").to_string();
+        if !self.daily.contains_key(&day) && self.daily.len() >= SESSION_DAYS_KEPT {
+            self.daily.pop_first();
+        }
+        self.daily.entry(day).or_default()
+    }
 }
 
 #[derive(Serialize, Deserialize, Clone, Debug)]
@@ -212,23 +247,86 @@ pub(crate) struct LatestPointer {
     pub(crate) id: String,
 }
 
-/// Pre-serialized session data ready for background disk I/O.
-/// Created by `SessionState::prepare_save()` while holding the write lock,
-/// then written via `write_to_disk()` after the lock is released.
+/// A detached copy of the session, taken by `SessionState::prepare_save()`
+/// while the caller may hold the live session lock.
+///
+/// Taking it is memory work only: no file, configuration or policy input is
+/// read, so nothing a caller holds can wait on a policy refresh (#1783). The
+/// copy is NOT admitted for storage yet and carries no publishable bytes.
+/// Storage admission, serialization and the commit all run in
+/// `write_to_disk()` / `publish()`, after the lock has been released.
+///
+/// Contract: the copy is admitted under the Gateway and project policy that
+/// are current when it is ADMITTED, not when it was prepared — no policy
+/// state is captured here. If the policy is tightened between prepare and
+/// publication, records it withholds are omitted and the admitted remainder
+/// is published. Only a change between admission and the commit refuses the
+/// whole save (`SaveError::AuthorityChanged`).
 pub struct PreparedSave {
-    pub(crate) canonical: bool,
     pub(crate) expected_storage_digest: Option<lean_ctx_protocol::Sha256Digest>,
-    pub(crate) dir: PathBuf,
     pub(crate) id: String,
-    /// Monotonic in-memory version captured with the serialized payload. It
+    /// Monotonic in-memory version captured with the detached copy. It
     /// prevents a slower background writer from replacing a newer snapshot.
     pub(crate) version: u32,
-    pub(crate) json: String,
-    pub(crate) pointer_json: String,
-    pub(crate) compaction_snapshot: Option<String>,
-    /// Canonical, safe project root used to update the bounded warm-history
-    /// index after the primary session file has been committed.
-    pub(crate) project_index_root: Option<String>,
+    /// The request project bound when the copy was taken. Admission and the
+    /// commit run under exactly this binding, also on a background thread
+    /// that has no request scope of its own.
+    pub(crate) request_project: Option<PathBuf>,
+    pub(crate) snapshot: Box<SessionState>,
+}
+
+/// Why a prepared save was not published.
+///
+/// `Display` prints the bare message, so callers that carry the failure as a
+/// `String` see the same text as before this type existed.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum SaveError {
+    /// Storage admission refused the detached session (unsafe or unavailable
+    /// project root, unavailable policy, withheld identity). Nothing was
+    /// written.
+    AdmissionRefused(String),
+    /// The Gateway policy or project authority under which the content was
+    /// admitted no longer holds at the commit. Nothing was written.
+    AuthorityChanged(String),
+    /// The commit itself failed: lock deadline, version/CAS conflict or a
+    /// filesystem error.
+    Storage(String),
+}
+
+impl SaveError {
+    pub(crate) fn authority_changed(detail: &str) -> Self {
+        Self::AuthorityChanged(format!(
+            "session save refused: admission authority changed before publication ({detail})"
+        ))
+    }
+
+    /// The message without its classification.
+    #[must_use]
+    pub fn message(&self) -> &str {
+        match self {
+            Self::AdmissionRefused(message)
+            | Self::AuthorityChanged(message)
+            | Self::Storage(message) => message,
+        }
+    }
+}
+
+impl std::fmt::Display for SaveError {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        formatter.write_str(self.message())
+    }
+}
+
+impl std::error::Error for SaveError {}
+
+impl From<SaveError> for String {
+    fn from(error: SaveError) -> Self {
+        match error {
+            SaveError::AdmissionRefused(message)
+            | SaveError::AuthorityChanged(message)
+            | SaveError::Storage(message) => message,
+        }
+    }
 }
 
 /// Lightweight summary of a session for listing purposes.

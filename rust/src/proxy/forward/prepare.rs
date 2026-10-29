@@ -17,6 +17,7 @@ use super::xlat::translated_openai_body;
 /// (Anthropic/OpenAI dialects) or the URL path (Gemini). Encrypted-passthrough
 /// or unparseable bodies yield `None` — the ceiling governs what the gateway
 /// can see; budgets (identity-keyed) still apply to every request.
+#[cfg(feature = "enterprise")]
 pub(crate) fn requested_model_of(parts: &Parts, body_bytes: &[u8]) -> Option<String> {
     if let Some(m) = crate::proxy::usage::gemini_model_from_path(parts.uri.path()) {
         return Some(m);
@@ -73,6 +74,7 @@ pub(crate) fn wire_context(
         person: tags.person,
         team: tags.team,
         project: tags.project,
+        project_key: None, // read from the request body by the forward path
         saved_tokens: tokens_saved,
         // bytes/4 — the same estimation basis the proxy stats use throughout.
         uncompressed_input_tokens: original_size as u64 / 4,
@@ -121,9 +123,6 @@ pub(crate) struct PreparedRequestBody {
     pub(crate) content_dedup_tokens_saved: usize,
     /// Routing decision applied to the body (enterprise#13); `None` = passthrough.
     pub(crate) route: Option<crate::proxy::routing::RouteDecision>,
-    /// Input-compression holdout arm (#1905); `None` when that holdout is off
-    /// or the body could not be parsed.
-    pub(crate) compression_arm: Option<crate::proxy::holdout::Arm>,
 }
 
 pub(crate) fn prepare_request_body(
@@ -150,7 +149,6 @@ pub(crate) fn prepare_request_body(
                 preserve_content_encoding: true,
                 content_dedup_tokens_saved: 0,
                 route: None,
-                compression_arm,
             });
         }
     };
@@ -158,8 +156,6 @@ pub(crate) fn prepare_request_body(
     // #1905: the control arm of the input-compression holdout skips every
     // compression stage below — conversation shaping, agent compaction and the
     // provider compressor — so it is forwarded as sent.
-    // Every return carries the arm: the comparison is by assignment, so a body
-    // that could not be compressed still counts in the arm it was assigned to.
     let compression_control = compression_arm == Some(crate::proxy::holdout::Arm::Control);
 
     let decoded = if !compression_control
@@ -181,7 +177,6 @@ pub(crate) fn prepare_request_body(
             preserve_content_encoding: encoding != RequestBodyEncoding::Identity,
             content_dedup_tokens_saved: 0,
             route: None,
-            compression_arm,
         });
     };
     // #1570 P1: agent-requested compaction runs FIRST, on the raw client
@@ -264,7 +259,6 @@ pub(crate) fn prepare_request_body(
         preserve_content_encoding: encoding != RequestBodyEncoding::Identity,
         content_dedup_tokens_saved,
         route,
-        compression_arm,
     })
 }
 

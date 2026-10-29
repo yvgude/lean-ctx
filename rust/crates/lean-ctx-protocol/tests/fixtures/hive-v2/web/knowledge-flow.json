@@ -1,0 +1,55 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_field",
+          "field": "days",
+          "message": "days is 1 to 180",
+          "reason": "invalid"
+        }
+      },
+      "status": 400
+    },
+    {
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "not found"
+        }
+      },
+      "status": 404
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/knowledge/flow?days=3",
+  "request": null,
+  "response": {
+    "body": {
+      "days": [
+        {
+          "captured": 3,
+          "day": "2026-10-24",
+          "delivered": 1,
+          "reused": 0
+        },
+        {
+          "captured": 0,
+          "day": "2026-10-25",
+          "delivered": 0,
+          "reused": 0
+        },
+        {
+          "captured": 5,
+          "day": "2026-10-26",
+          "delivered": 4,
+          "reused": 1
+        }
+      ],
+      "from": "2026-10-24",
+      "to": "2026-10-26"
+    },
+    "status": 200
+  },
+  "route": "W97"
+}

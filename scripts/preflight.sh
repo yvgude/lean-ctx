@@ -189,8 +189,19 @@ fi
 # breaks *after* every one of the nine release build legs has already compiled a
 # full binary. v3.10.2 lost ~15 minutes of CI to exactly that on 2026-09-16.
 # Needs network; reports a skip (not a pass) when GitHub is unreachable.
+# The gate reads TOML with `tomllib` (Python >= 3.11); macOS's own python3 is 3.9.
+COUPLING_PY=python3
+for candidate in python3.14 python3.13 python3.12 python3.11; do
+  if command -v "$candidate" >/dev/null 2>&1; then COUPLING_PY="$candidate"; break; fi
+done
 step "Engine ↔ Agent-Tools-SDK coupling" \
-  python3 "$REPO_ROOT/scripts/check-sdk-engine-coupling.py"
+  "$COUPLING_PY" "$REPO_ROOT/scripts/check-sdk-engine-coupling.py"
+
+# Always-on, <1s, no build: plan/licence/entitlement checks only under
+# rust/src/core/hive/ or in product/local-free-allowlist.toml
+# (docs/contracts/local-free-invariant-v2.md).
+step "Local-free invariant (check-local-free.py)" \
+  "$COUPLING_PY" "$REPO_ROOT/scripts/check-local-free.py" --root "$REPO_ROOT"
 
 # Always-on cheap gate: whitespace errors + leftover conflict markers. Checks
 # the pushed range (base..HEAD) when known, else the working tree.

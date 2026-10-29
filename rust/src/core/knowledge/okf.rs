@@ -427,6 +427,9 @@ fn build_fact(fm: &Map<String, Value>, body: &str, category: String, key: String
         .unwrap_or_else(|| sensitivity::classify_content(&value));
 
     KnowledgeFact {
+        anchors: Vec::new(),
+        review: None,
+        capture: Default::default(),
         origin: super::source_view::imported_origin(
             &fm.get("leanctx_origin")
                 .and_then(|value| serde_json::from_value(value.clone()).ok())
@@ -454,6 +457,8 @@ fn build_fact(fm: &Map<String, Value>, body: &str, category: String, key: String
         archetype,
         fidelity: None,
         revision_count,
+        status: None,
+        validity: None,
     }
 }
 
@@ -731,6 +736,9 @@ mod tests {
     ) -> KnowledgeFact {
         let now = Utc::now();
         KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: category.into(),
             key: key.into(),
@@ -754,6 +762,8 @@ mod tests {
             archetype,
             fidelity: None,
             revision_count: 1,
+            status: None,
+            validity: None,
         }
     }
 

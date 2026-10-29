@@ -1,0 +1,33 @@
+{
+  "name": "cause-kinds",
+  "values": [
+    {
+      "value": "person_action"
+    },
+    {
+      "value": "revert"
+    },
+    {
+      "value": "export"
+    },
+    {
+      "value": "review"
+    },
+    {
+      "value": "conductor"
+    },
+    {
+      "value": "retention"
+    },
+    {
+      "value": "moderation"
+    },
+    {
+      "value": "legacy_import"
+    }
+  ],
+  "after_3_12_0": [
+    "branch_accept",
+    "copy"
+  ]
+}

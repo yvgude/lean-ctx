@@ -1,6 +1,6 @@
 //! End-to-end tests for deeper addon integration (#1102).
 //!
-//! These drive the *production* gateway path — `proxy` → secret redaction →
+//! These drive the *production* gateway path — `proxy` → source admission →
 //! `postprocess` → typed adapters — against a **spawned** Node.js MCP server
 //! (`tests/fixtures/mcp_stdio_addon.mjs`), with no protocol mocks. They assert:
 //!   * L2 spill   — oversized output becomes a `ctx_expand` retrieval handle
@@ -73,8 +73,10 @@ fn ensure_env() {
         let dir = std::env::temp_dir().join(format!("lean-ctx-addon-e2e-{}", std::process::id()));
         let _ = std::fs::create_dir_all(&dir);
         set_env("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
+        set_env("LEAN_CTX_CONFIG_DIR", dir.to_str().unwrap());
         set_env("LEAN_CTX_ARCHIVE", "1");
         unset_env("LEAN_CTX_GATEWAY");
+        unset_env("LEAN_CTX_CONTEXT_GATEWAY");
     });
 }
 
@@ -200,8 +202,7 @@ async fn proxy_compressed_output_is_deterministic() {
     pool::clear();
 }
 
-/// Security (GHSA-gvg8-285q-m62g): `proxy` redacts downstream output *before*
-/// post-processing, so a secret never reaches the model — even with all flags off.
+/// Source admission protects success and error text before post-processing.
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[serial(gateway_postprocess)]
 async fn proxy_redacts_secrets_before_postprocessing() {
@@ -212,28 +213,68 @@ async fn proxy_redacts_secrets_before_postprocessing() {
     ensure_env();
     pool::clear();
 
-    let cfg = base_cfg(fixture_server("addonfix", ""));
-    // A GitHub PAT the addon tries to echo back — the redaction layer's
-    // unit test proves this exact shape is caught regardless of config.
-    let secret = "ghp_0123456789abcdefghijklmnopqrstuvwxyzAB";
-    let out = proxy(
-        &cfg,
-        "addonfix::echo",
-        text_args(format!("api_key={secret} trailing")),
-        "",
-    )
-    .await
-    .expect("proxy redaction call");
-
-    assert!(
-        !out.contains(secret),
-        "the secret must be redacted before it reaches the model, got: {out}"
-    );
-    assert!(
-        out.contains("trailing"),
-        "redaction must be surgical (non-secret text preserved), got: {out}"
-    );
-
+    let mut cfg = base_cfg(fixture_server("addonfix", ""));
+    cfg.handle_spill = true;
+    cfg.index_output = true;
+    cfg.output_budget_tokens = 16;
+    // Synthetic PAT; concatenation keeps tooling from rewriting the fixture.
+    let secret = concat!("gh", "p_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijk");
+    let marker = "gatewayadmissionmarker";
+    let mut text = format!("credential {secret} trailing\n{marker}\n");
+    for i in 0..400 {
+        writeln!(text, "retained payload line {i}").unwrap();
+    }
+    for tool_error in [false, true] {
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_str().unwrap();
+        let mut args = text_args(text.clone());
+        args.insert("error".into(), json!(tool_error));
+        let result = proxy(&cfg, "addonfix::echo", args, root).await;
+        let out = if tool_error {
+            result.expect_err("downstream error stays an error")
+        } else {
+            result.expect("proxy redaction call")
+        };
+        assert!(
+            !out.contains(secret),
+            "the secret must be removed from both success and error output"
+        );
+        assert!(out.contains("trailing"), "non-secret context is preserved");
+        if tool_error {
+            assert!(!out.contains("ctx_expand"), "errors bypass post-processing");
+            assert!(
+                !wait_until(|| BM25Index::load(project.path()).is_some()),
+                "errors must not be indexed"
+            );
+        } else {
+            let id = out
+                .split("ctx_expand(id=\"")
+                .nth(1)
+                .and_then(|tail| tail.split('"').next())
+                .expect("spill retrieval handle");
+            // Inspect bytes at rest: retrieve() would re-admit and could hide a bad write.
+            let stored = std::fs::read_to_string(lean_ctx::core::archive::content_path_str(id))
+                .expect("stored spill");
+            assert!(stored.contains("retained payload line 399"));
+            assert!(
+                !stored.contains(secret),
+                "archive must never persist the secret"
+            );
+            assert!(
+                wait_until(|| BM25Index::load(project.path())
+                    .is_some_and(|idx| !idx.search(marker, 5).is_empty())),
+                "the admitted response must reach the search index"
+            );
+            let index = BM25Index::load(project.path()).expect("persisted index");
+            assert!(
+                index
+                    .chunks
+                    .iter()
+                    .all(|chunk| !chunk.content.contains(secret)),
+                "indexed chunks must never persist the secret"
+            );
+        }
+    }
     pool::clear();
 }
 
@@ -401,6 +442,7 @@ async fn gateway_compressor_roundtrips_through_a_downstream_addon() {
     }
     ensure_env();
     let config_dir = tempfile::tempdir().unwrap();
+    let previous_config_dir = std::env::var("LEAN_CTX_CONFIG_DIR").unwrap();
     // `FIXTURE` is absolute; on Windows it contains backslashes, which are escape
     // sequences inside a TOML *basic* string. Escape them so the config parses on
     // every platform — otherwise the server entry is dropped and the gateway
@@ -424,5 +466,5 @@ async fn gateway_compressor_roundtrips_through_a_downstream_addon() {
     );
 
     pool::clear();
-    unset_env("LEAN_CTX_CONFIG_DIR");
+    set_env("LEAN_CTX_CONFIG_DIR", &previous_config_dir);
 }

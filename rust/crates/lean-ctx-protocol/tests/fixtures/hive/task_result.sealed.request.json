@@ -1,0 +1,14 @@
+{
+  "claim": {
+    "fencing_token": 7,
+    "lease_id": "lse_01jbtask7"
+  },
+  "schema": "leanctx.hive.task-result/v1",
+  "sealed": {
+    "alg": "xchacha20poly1305",
+    "ciphertext": "cHNM4N+63tlLOAm2um67Fcv+0s7UoETRFyULyv03zGCKFlSDYZVP+TS1KM/tBgK7E6BGAbtop/+bQELSHTkPHKrXkRRYKf14jXTOu09tWYJk3lpKmW/yopGgeS6z12rxCP/RO9BFQBUmmNfAv3A2tKueppZIoT9EJKC8SmuzOwhP/fOxdx/n1kT5YjBF3Y7Lc5nMQtt+JuAK778O22k9tKLpY9nPoMu14++VRrbNqh0EVut/9H/taE5jUV9qU8hAc39IOXTa6za7EujdG8aOv3b97saVF1pAlbC6zMZ+7MXkbfpaPIrkoP6NjCEnOkC3oaQSz8++24eghniyGY1fEeBxbCgCYVPBoeJJ8+bnHd1AsRShvk5Zor9FzcNvs9yEL68WykGm2u82Bv6ONqwBROtqMBEVAIE1XTjyQX3JOnw61RQW7YREqoIfvuVX+GHJ0KxWZW2Cb9X1POGI4/i2Ev0CsLmmqf5n91Y7jlY0eFsOKE+Abb8IkUFNG+sgqaqjNO+c5eEnQ9NFKfbnT/toAZJR0wabgvfQaLhDyZIZjZKJbD2GfNNYrDM9beDXHd0Fy9Z0Dj5Wx3eK",
+    "content_schema": "leanctx.hive.sealed-task-result/v1",
+    "epoch": 1,
+    "nonce": "cXFxcXFxcXFxcXFxcXFxcXFxcXFxcXFx"
+  }
+}

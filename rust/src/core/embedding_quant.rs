@@ -81,6 +81,7 @@ pub(crate) fn quantize(v: &[f32]) -> QuantizedVector {
 /// quantization error is well within embedding-ranking tolerance.
 #[must_use]
 #[allow(unknown_lints, clippy::chunks_exact_to_as_chunks)]
+#[cfg(feature = "embeddings")]
 pub(crate) fn dot_quant(query: &[f32], doc: &QuantizedVector) -> f32 {
     debug_assert_eq!(query.len(), doc.code.len(), "dim mismatch");
     if doc.scale == 0.0 {

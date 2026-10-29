@@ -16,6 +16,8 @@ pub const OBSERVE_HOOK_BUDGET: Duration = Duration::from_secs(2);
 /// dead-winner dedup loser that would otherwise wait then redo the work — is
 /// bounded here and FAILS OPEN instead of wedging the host's tool call (#1035).
 const HOOK_GATING_TIMEOUT: Duration = Duration::from_secs(15);
+// One admission decision on the original hook payload, before any derivation.
+mod admission;
 mod codex;
 mod dedup;
 mod deny;

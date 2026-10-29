@@ -118,10 +118,16 @@ pub(crate) struct FileLock {
     file: std::fs::File,
 }
 
+/// How long [`FileLock::acquire`] waits. The lock is polled (25 ms steps),
+/// not a fair queue (GitLab #1295): under load a waiter behind writers that
+/// take it back to back could pass the former 750 ms and fail its tool call.
+/// A dead holder's lock is released by the OS, so waiting longer never makes
+/// a stale lock permanent; it only lets a contended call through.
+pub(crate) const ACQUIRE_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(5);
+
 impl FileLock {
     pub(crate) fn acquire(path: &std::path::Path) -> Result<Self, String> {
-        const TIMEOUT: std::time::Duration = std::time::Duration::from_millis(750);
-        Self::acquire_with_timeout(path, TIMEOUT)
+        Self::acquire_with_timeout(path, ACQUIRE_TIMEOUT)
     }
 
     pub(crate) fn acquire_with_timeout(
@@ -137,7 +143,9 @@ impl FileLock {
         #[cfg(unix)]
         {
             use std::os::unix::fs::OpenOptionsExt;
-            options.custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC);
+            options
+                .custom_flags(libc::O_NOFOLLOW | libc::O_CLOEXEC)
+                .mode(0o600);
         }
         let file = options
             .open(path)
@@ -168,5 +176,58 @@ impl FileLock {
 impl Drop for FileLock {
     fn drop(&mut self) {
         let _ = self.file.unlock();
+    }
+}
+
+#[cfg(test)]
+mod lock_tests {
+    use super::{ACQUIRE_TIMEOUT, FileLock};
+    use std::time::{Duration, Instant};
+
+    /// Holds the lock at `path` for `hold`, signalling once it holds it.
+    fn hold_for(path: &std::path::Path, hold: Duration) -> std::thread::JoinHandle<()> {
+        let path = path.to_path_buf();
+        let (held, wait) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let _lock = FileLock::acquire_with_timeout(&path, Duration::from_secs(1)).unwrap();
+            held.send(()).unwrap();
+            std::thread::sleep(hold);
+        });
+        wait.recv().unwrap();
+        holder
+    }
+
+    /// A waiter behind two seconds of contention gets the lock (it failed
+    /// after 750 ms before, GitLab #1295).
+    #[test]
+    fn a_waiter_behind_two_seconds_of_contention_gets_the_lock() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("registry.lock");
+        let holder = hold_for(&path, Duration::from_secs(2));
+        let started = Instant::now();
+        let lock = FileLock::acquire(&path);
+        assert!(lock.is_ok(), "{:?}", lock.err());
+        assert!(started.elapsed() >= Duration::from_millis(1500));
+        holder.join().unwrap();
+    }
+
+    /// A waiter behind a holder that keeps the lock past the timeout gets a
+    /// clear error naming the lock and the wait.
+    #[test]
+    fn a_waiter_behind_a_longer_holder_gets_a_clear_error() {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("registry.lock");
+        let holder = hold_for(&path, ACQUIRE_TIMEOUT + Duration::from_secs(1));
+        let error = FileLock::acquire(&path).err().expect("timed out");
+        assert_eq!(
+            error,
+            format!(
+                "lock {} timed out after {}ms",
+                path.display(),
+                ACQUIRE_TIMEOUT.as_millis()
+            )
+        );
+        assert_eq!(ACQUIRE_TIMEOUT, Duration::from_secs(5));
+        holder.join().unwrap();
     }
 }

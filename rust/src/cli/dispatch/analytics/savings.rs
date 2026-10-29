@@ -37,15 +37,13 @@ pub(in crate::cli::dispatch) fn cmd_savings(rest: &[String]) {
             }
         }
         "sign" => cmd_savings_sign(&rest[1..]),
-        "push" => cmd_savings_push(&rest[1..]),
-        "team" => cmd_savings_team(&rest[1..]),
         "verify-batch" => cmd_savings_verify_batch(rest.get(1).map(String::as_str)),
         "roi" => cmd_savings_roi(&rest[1..]),
         "summary" => print!("{}", format_savings_summary()),
         "" | "--period" | "--format" | "-h" | "--help" => crate::cli::cmd_savings_report(rest),
         _ => {
             eprintln!(
-                "Usage: lean-ctx savings [summary|team|verify|rechain|export|sign|push|verify-batch|roi]"
+                "Usage: lean-ctx savings [summary|verify|rechain|export|sign|verify-batch|roi]"
             );
             std::process::exit(1);
         }
@@ -146,7 +144,7 @@ fn cmd_savings_roi(args: &[String]) {
 /// Resolves the signing identity (same precedence as the ledger's own attribution).
 /// `pub(super)`: billing meters usage under the same identity.
 pub(super) fn savings_agent_id() -> String {
-    core::savings_ledger::push::agent_id()
+    core::agent_identity::current_agent_id().to_string()
 }
 
 /// `lean-ctx savings sign [--out FILE]` — builds + Ed25519-signs a portable savings batch and
@@ -218,164 +216,6 @@ fn cmd_savings_sign(args: &[String]) {
             std::process::exit(1);
         }
     }
-}
-
-/// `lean-ctx savings push [--team-url URL]` — signs the local savings ledger and pushes
-/// the batch to the team server for opt-in org roll-up.
-/// Resolve the team server URL: `--team-url[=]` arg → `team_url` in config.toml.
-fn resolve_team_url(args: &[String]) -> Option<String> {
-    args.iter()
-        .find_map(|a| a.strip_prefix("--team-url=").map(String::from))
-        .or_else(|| {
-            args.iter()
-                .position(|a| a == "--team-url")
-                .and_then(|i| args.get(i + 1).cloned())
-        })
-        .or_else(|| crate::core::config::Config::load().team_url.clone())
-        .filter(|s| !s.trim().is_empty())
-}
-
-/// Resolve the team bearer token: `--team-token[=]` arg → `LEAN_CTX_TEAM_TOKEN`
-/// env → `team_token` in config.toml. `None` means push/pull is unauthenticated.
-fn resolve_team_token(args: &[String]) -> Option<String> {
-    args.iter()
-        .find_map(|a| a.strip_prefix("--team-token=").map(String::from))
-        .or_else(|| {
-            args.iter()
-                .position(|a| a == "--team-token")
-                .and_then(|i| args.get(i + 1).cloned())
-        })
-        .or_else(|| std::env::var("LEAN_CTX_TEAM_TOKEN").ok())
-        .or_else(|| crate::core::config::Config::load().team_token.clone())
-        .filter(|s| !s.trim().is_empty())
-}
-
-fn cmd_savings_push(args: &[String]) {
-    use core::savings_ledger::push::{PushError, ingest_endpoint, push_batch};
-
-    let Some(url) = resolve_team_url(args) else {
-        eprintln!("No team URL configured. Use --team-url or set team_url in config.toml");
-        std::process::exit(1);
-    };
-    let team_token = resolve_team_token(args);
-
-    match push_batch(&url, team_token.as_deref()) {
-        Ok(outcome) => {
-            use core::wrapped::format_tokens;
-            println!("\x1b[32m✓\x1b[0m Savings batch pushed to team server.");
-            println!(
-                "  Net saved:  {} tokens (~${:.2})",
-                format_tokens(outcome.net_saved_tokens),
-                outcome.saved_usd
-            );
-            println!("  Endpoint:   {}", ingest_endpoint(&url));
-        }
-        Err(PushError::Unauthorized) => {
-            eprintln!(
-                "Team server denied the push (HTTP 401/403). Set a member token via \
-                 --team-token, LEAN_CTX_TEAM_TOKEN, or team_token in config.toml."
-            );
-            std::process::exit(1);
-        }
-        Err(e) => {
-            eprintln!("{e}");
-            std::process::exit(1);
-        }
-    }
-}
-
-/// `lean-ctx savings team` — pull the team server's aggregated savings roll-up
-/// (the opt-in org view) and print it. Requires a token with the `audit` scope.
-fn cmd_savings_team(args: &[String]) {
-    let Some(url) = resolve_team_url(args) else {
-        eprintln!("No team URL configured. Use --team-url or set team_url in config.toml");
-        std::process::exit(1);
-    };
-    let endpoint = format!("{}/v1/savings/summary", url.trim_end_matches('/'));
-    let mut request = ureq::get(&endpoint);
-    if let Some(tok) = resolve_team_token(args) {
-        request = request.header("Authorization", &format!("Bearer {tok}"));
-    }
-    match request.call() {
-        Ok(resp) => {
-            let status = resp.status();
-            let text = resp.into_body().read_to_string().unwrap_or_default();
-            match status.as_u16() {
-                200 => print!("{}", format_team_savings(&text)),
-                401 | 403 => {
-                    eprintln!(
-                        "Team server denied access (HTTP {status}). The token needs the \
-                         'audit' scope (owner/admin). Set it via --team-token, \
-                         LEAN_CTX_TEAM_TOKEN, or team_token in config.toml."
-                    );
-                    std::process::exit(1);
-                }
-                code => {
-                    eprintln!("Team server error (HTTP {code}): {text}");
-                    std::process::exit(1);
-                }
-            }
-        }
-        Err(e) => {
-            eprintln!("Failed to reach team server at {endpoint}: {e}");
-            std::process::exit(1);
-        }
-    }
-}
-
-/// Render the team `/v1/savings/summary` JSON into a compact, human-readable view.
-fn format_team_savings(body: &str) -> String {
-    use core::wrapped::format_tokens;
-    let Ok(v) = serde_json::from_str::<serde_json::Value>(body) else {
-        return "Team savings: could not parse the server response.\n".to_string();
-    };
-
-    let net = v["totals"]["net_saved_tokens"].as_u64().unwrap_or(0);
-    let usd = v["totals"]["saved_usd"].as_f64().unwrap_or(0.0);
-    let members = v["member_count"].as_u64().unwrap_or(0);
-
-    let mut out = String::new();
-    out.push_str("\n  \x1b[1mTeam savings\x1b[0m (opt-in roll-up)\n");
-    out.push_str(&format!("  Members reporting: {members}\n"));
-    out.push_str(&format!(
-        "  Net saved:         {} tokens (~${usd:.2})\n",
-        format_tokens(net)
-    ));
-
-    if members == 0 {
-        out.push_str(
-            "\n  No member has pushed a signed savings batch yet.\n  \
-             One-off:    lean-ctx savings push\n  \
-             Automatic:  lean-ctx config set team_url <url> \
-             && lean-ctx config set team_token <member-token> \
-             && lean-ctx config set team_auto_push true\n",
-        );
-        return out;
-    }
-
-    if let Some(rows) = v["by_member"].as_array().filter(|r| !r.is_empty()) {
-        out.push_str("\n  Per member:\n");
-        for m in rows {
-            let id = m["agent_id"].as_str().unwrap_or("?");
-            let mnet = m["net_saved_tokens"].as_u64().unwrap_or(0);
-            let musd = m["saved_usd"].as_f64().unwrap_or(0.0);
-            out.push_str(&format!(
-                "    {id:<30} {} tokens (~${musd:.2})\n",
-                format_tokens(mnet)
-            ));
-        }
-    }
-
-    if let Some(rows) = v["by_model"].as_array().filter(|r| !r.is_empty()) {
-        out.push_str("\n  Per model:\n");
-        for m in rows {
-            let model = m["model"].as_str().unwrap_or("?");
-            let t = m["saved_tokens"].as_u64().unwrap_or(0);
-            out.push_str(&format!("    {model:<30} {} tokens\n", format_tokens(t)));
-        }
-    }
-    out.push('\n');
-    out
 }
 
 /// `lean-ctx savings verify-batch FILE` — verifies an exported batch's Ed25519 signature

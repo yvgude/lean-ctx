@@ -2,7 +2,7 @@
 //!
 //! Only high-precision signals raise a level, to avoid false positives:
 //! - secret-like paths ([`is_secret_like`]) and detected secrets → `Secret`
-//! - Luhn-validated card numbers and mod-97-validated IBANs → `Confidential`
+//! - Luhn-validated card numbers → `Confidential`
 
 use std::path::Path;
 use std::sync::OnceLock;
@@ -28,7 +28,7 @@ pub fn classify_content(content: &str) -> SensitivityLevel {
     if !secret_detection::detect_secrets(content).is_empty() {
         return SensitivityLevel::Secret;
     }
-    if has_credit_card(content) || has_iban(content) {
+    if has_credit_card(content) {
         return SensitivityLevel::Confidential;
     }
     SensitivityLevel::Public
@@ -41,7 +41,7 @@ pub fn classify(path: Option<&Path>, content: &str) -> SensitivityLevel {
 }
 
 /// Redact the spans that raise sensitivity: known secrets (via the config-driven
-/// scanner) plus PII (card numbers, IBANs) the secret scanner does not cover.
+/// scanner) plus card numbers, which the secret scanner does not cover.
 pub(super) fn redact_sensitive(text: &str) -> String {
     // Force redaction on regardless of the global `secret_detection` toggle: a
     // sensitivity floor must always mask, not merely detect.
@@ -51,8 +51,7 @@ pub(super) fn redact_sensitive(text: &str) -> String {
         ..Default::default()
     };
     let (secrets_masked, _) = secret_detection::scan_and_redact(text, &forced);
-    let cards_masked = redact_credit_cards(&secrets_masked);
-    redact_ibans(&cards_masked)
+    redact_credit_cards(&secrets_masked)
 }
 
 // ---- Card numbers (Luhn) ---------------------------------------------------
@@ -118,57 +117,6 @@ fn redact_credit_cards(text: &str) -> String {
         .into_owned()
 }
 
-// ---- IBANs (ISO 7064 mod-97) ----------------------------------------------
-
-fn iban_re() -> &'static Regex {
-    static RE: OnceLock<Regex> = OnceLock::new();
-    RE.get_or_init(|| {
-        Regex::new(r"\b[A-Za-z]{2}\d{2}[A-Za-z0-9]{11,30}\b").expect("valid iban regex")
-    })
-}
-
-/// Validate an IBAN candidate via the ISO 7064 mod-97 checksum.
-fn iban_valid(candidate: &str) -> bool {
-    let s: String = candidate.chars().filter(|c| !c.is_whitespace()).collect();
-    if s.len() < 15 || s.len() > 34 {
-        return false;
-    }
-    if !s.is_char_boundary(4) {
-        return false;
-    }
-    // Move the first four characters to the end, then map letters A..Z -> 10..35.
-    let rearranged = format!("{}{}", &s[4..], &s[..4]);
-    let mut rem: u32 = 0;
-    for c in rearranged.chars() {
-        if let Some(d) = c.to_digit(10) {
-            rem = (rem * 10 + d) % 97;
-        } else if c.is_ascii_alphabetic() {
-            let val = (c.to_ascii_uppercase() as u8 - b'A' + 10) as u32;
-            rem = (rem * 100 + val) % 97;
-        } else {
-            return false;
-        }
-    }
-    rem == 1
-}
-
-fn has_iban(content: &str) -> bool {
-    iban_re().find_iter(content).any(|m| iban_valid(m.as_str()))
-}
-
-fn redact_ibans(text: &str) -> String {
-    iban_re()
-        .replace_all(text, |caps: &regex::Captures| {
-            let m = caps.get(0).map(|x| x.as_str()).unwrap_or_default();
-            if iban_valid(m) {
-                "[REDACTED:iban]".to_string()
-            } else {
-                m.to_string()
-            }
-        })
-        .into_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -207,27 +155,11 @@ mod tests {
     }
 
     #[test]
-    fn valid_iban_is_confidential() {
-        // DE89 3704 0044 0532 0130 00 is a well-known valid test IBAN.
-        assert_eq!(
-            classify_content("pay to DE89370400440532013000 now"),
-            SensitivityLevel::Confidential
-        );
-    }
-
-    #[test]
-    fn invalid_iban_not_flagged() {
-        assert_eq!(
-            classify_content("ref DE00370400440532013000"),
-            SensitivityLevel::Public
-        );
-    }
-
-    #[test]
-    fn redact_masks_card_and_iban_keeps_text() {
+    fn redact_masks_card_and_leaves_an_iban_to_filter_packs() {
         let red = redact_sensitive("card 4111 1111 1111 1111 iban DE89370400440532013000 end");
         assert!(red.contains("[REDACTED:card]"));
-        assert!(red.contains("[REDACTED:iban]"));
+        // IBANs are a Hive filter pack, not a built-in detector.
+        assert!(red.contains("DE89370400440532013000"));
         assert!(red.contains("end"));
         assert!(!red.contains("4111 1111 1111 1111"));
     }

@@ -80,7 +80,7 @@ Both connect to an external MCP server, but for **opposite purposes**:
   (`ctx_tools find` / `call`). Use it for *actions*.
 - **MCP Bridge** (a Context Provider) pulls the server's **resources** into the
   consolidation pipeline — BM25 index, graph, knowledge, session — so they
-  become *context* (searchable via `ctx_semantic_search`, recallable via
+  become *context* (searchable via `ctx_search action="semantic"`, recallable via
   `ctx_knowledge`). Use it for *data*.
 
 If you want the agent to *do something*, build an Addon. If you want lean-ctx to

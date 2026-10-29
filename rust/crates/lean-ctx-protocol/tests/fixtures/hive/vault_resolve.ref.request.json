@@ -1,0 +1,9 @@
+{
+  "identity_digest": "09d59089077323f5d937145bee0e87aff7555044d3fe16af8ca3d15143823742",
+  "org_salt_id": "salt_2026_10",
+  "schema": "leanctx.hive.vault-resolve-request/v1",
+  "vault": {
+    "name": "payments",
+    "ns": "acme"
+  }
+}

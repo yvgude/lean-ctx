@@ -111,6 +111,27 @@ pub fn record_forwarded(conv_id: u64, forwarded: Vec<u8>, originals: &[Value], m
     }
 }
 
+/// Whether the previously forwarded request and the current one are the same
+/// request around their messages: every top-level member other than
+/// `messages` (model, limits, tools, system, …) is present in both and equal.
+///
+/// The conversation id only hashes the system prompt and the first message,
+/// and the store is shared by every route. Replaying the forwarded bytes of a
+/// request with another frame would send that request's model and parameters
+/// — possibly another provider's — in place of the caller's.
+pub fn same_request_frame(prefix_bytes: &[u8], current: &Value) -> bool {
+    let Ok(Value::Object(previous)) = serde_json::from_slice::<Value>(prefix_bytes) else {
+        return false;
+    };
+    let Some(current) = current.as_object() else {
+        return false;
+    };
+    previous.len() == current.len()
+        && previous
+            .iter()
+            .all(|(key, value)| key == "messages" || current.get(key) == Some(value))
+}
+
 /// Overlay cached prefix bytes with fresh delta bytes, producing a valid JSON
 /// array where the prefix portion is byte-identical to the previous forward.
 pub fn overlay_prefix(prefix_bytes: &[u8], delta_messages: &[Value]) -> Option<Vec<u8>> {
@@ -141,6 +162,31 @@ mod tests {
             json!({"role": "user", "content": format!("hello-{tag}")}),
             json!({"role": "assistant", "content": format!("hi-{tag}")}),
         ]
+    }
+
+    /// A forwarded request may only be replayed into a turn of the same
+    /// request frame: another model, another route's parameters or a dropped
+    /// limit must never be carried over from the stored bytes.
+    #[test]
+    fn replay_is_limited_to_the_same_request_frame() {
+        let hello = json!({"role": "user", "content": "hello"});
+        let forwarded =
+            serde_json::to_vec(&json!({"model": "gpt-test", "messages": [hello]})).unwrap();
+        let next = json!({"role": "user", "content": "continue"});
+        assert!(same_request_frame(
+            &forwarded,
+            &json!({"model": "gpt-test", "messages": [hello, next]})
+        ));
+        for other_frame in [
+            json!({"model": "claude-test", "max_tokens": 16, "messages": [hello, next]}),
+            json!({"model": "gpt-test", "max_tokens": 16, "messages": [hello, next]}),
+            json!({"model": "claude-test", "messages": [hello, next]}),
+        ] {
+            assert!(
+                !same_request_frame(&forwarded, &other_frame),
+                "{other_frame}"
+            );
+        }
     }
 
     #[test]

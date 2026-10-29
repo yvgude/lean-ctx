@@ -1,0 +1,16 @@
+{
+  "case": "missing_actor",
+  "base": "events/node.add.fact.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/actor"
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/actor"
+  }
+}

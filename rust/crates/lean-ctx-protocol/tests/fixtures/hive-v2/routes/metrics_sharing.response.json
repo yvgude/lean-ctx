@@ -1,0 +1,10 @@
+{
+  "state": "off",
+  "plan_default": "on",
+  "policy": {
+    "value": false,
+    "level": "workspace"
+  },
+  "confirmed_at": null,
+  "since": null
+}

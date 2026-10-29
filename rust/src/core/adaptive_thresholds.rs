@@ -282,48 +282,29 @@ pub fn thresholds_for_path(path: &str) -> CompressionThresholds {
     CompressionThresholds::default()
 }
 
-pub fn adaptive_thresholds(path: &str, content: &str) -> CompressionThresholds {
-    let mut base = thresholds_for_path(path);
-
-    let ext = std::path::Path::new(path)
+/// Selects the bandit arm for a read of `path`: its FieldWeights feed the
+/// adaptive context planner (`context_kernel::autopilot`), and a later bounce
+/// or edit failure penalizes it. The rendered text never depends on it (#498).
+fn select_threshold_arm(path: &str, content: &str) {
+    let Some(project_root) =
+        crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)
+    else {
+        return;
+    };
+    let ext = Path::new(path)
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
-    let feedback = super::feedback::FeedbackStore::load();
-    if let Some(learned_entropy) = feedback.get_learned_entropy(ext) {
-        base.bpe_entropy = base.bpe_entropy * 0.6 + learned_entropy * 0.4;
-    }
-    if let Some(learned_jaccard) = feedback.get_learned_jaccard(ext) {
-        base.jaccard = base.jaccard * 0.6 + learned_jaccard * 0.4;
-    }
-
-    // Quality-signal loop (#538): bounce/edit-fail history shifts the threshold
-    // additively, clamped to ±0.15 inside threshold_learning. Applied before the
-    // Kolmogorov adjustment so the final clamp below still bounds everything.
-    base.bpe_entropy =
-        (base.bpe_entropy + super::threshold_learning::learned_delta(ext)).clamp(0.4, 2.0);
-
-    apply_content_compressibility(&mut base, content);
-
-    if let Some(project_root) =
-        crate::core::session::SessionState::load_latest().and_then(|s| s.project_root)
-    {
-        let bandit_key =
-            crate::core::bandit::bandit_key("threshold", ext, Some(token_bucket_label(content)));
-        let mut store = super::bandit::BanditStore::load(&project_root);
-        let bandit = store.get_or_create(&bandit_key);
-        // #4: deterministic argmax-of-mean by default (Thompson only under the
-        // stochastic flag). The chosen arm drives both the entropy/jaccard
-        // thresholds AND the learned FieldWeights that feed Phi.
-        let arm = bandit.choose_arm();
-        base.bpe_entropy = base.bpe_entropy * 0.5 + arm.entropy_threshold * 0.5;
-        base.jaccard = base.jaccard * 0.5 + arm.jaccard_threshold * 0.5;
-        let arm_name = arm.name.clone();
-        super::context_field::set_active_weights(super::context_field::FieldWeights::from_arm(arm));
-        record_selected_arm(path, project_root, bandit_key, arm_name);
-    }
-
-    base
+    let bandit_key =
+        crate::core::bandit::bandit_key("threshold", ext, Some(token_bucket_label(content)));
+    let mut store = super::bandit::BanditStore::load(&project_root);
+    let bandit = store.get_or_create(&bandit_key);
+    // #4: deterministic argmax-of-mean by default (Thompson only under the
+    // stochastic flag).
+    let arm = bandit.choose_arm();
+    let arm_name = arm.name.clone();
+    super::context_field::set_active_weights(super::context_field::FieldWeights::from_arm(arm));
+    record_selected_arm(path, project_root, bandit_key, arm_name);
 }
 
 /// Shift the thresholds by the content's own compressibility (Kolmogorov
@@ -339,16 +320,11 @@ fn apply_content_compressibility(base: &mut CompressionThresholds, content: &str
 
 /// Thresholds for rendering a read: the per-language base adjusted by the
 /// content's compressibility, so the rendered text is a pure function of
-/// `(path, content)` (#498).
-///
-/// The learned blend in [`adaptive_thresholds`] — feedback store, threshold
-/// learner, bandit arm — moves between calls. Since #1910 the entropy
-/// threshold decides which lines survive, so two reads of one file could
-/// differ and bust provider prompt caches. The arm is still selected here, so
-/// the Phi field weights it sets keep working; only the text ignores the
-/// learned values.
+/// `(path, content)` (#498). Learned threshold shifts were retired on
+/// 2026-10-16: since #1910 the text ignored them, so they only cost a store
+/// load per read. The bandit arm is still selected for the planner weights.
 pub fn read_thresholds(path: &str, content: &str) -> CompressionThresholds {
-    let _learned = adaptive_thresholds(path, content);
+    select_threshold_arm(path, content);
     let mut base = thresholds_for_path(path);
     apply_content_compressibility(&mut base, content);
     base
@@ -398,22 +374,11 @@ fn record_selected_arm(path: &str, project_root: String, bandit_key: String, arm
     }
 }
 
-/// Record a real downstream quality signal (#538/#593). It always feeds the
-/// online threshold learner; `Bounce`/`EditFail` additionally penalize the
-/// bandit arm that produced this file's compression, replacing the old
-/// savings-only / hardcoded reward. `CleanCompressed`/`WastedFull` stay
-/// learner-only — the positive bandit signal comes from realized savings
-/// (`report_bandit_outcome_for_path` in entropy mode), so we avoid a bandit
-/// disk write on every compressed read.
-pub fn record_quality_signal(path: &str, signal: crate::core::threshold_learning::QualitySignal) {
-    use crate::core::threshold_learning::QualitySignal;
-    crate::core::threshold_learning::record_signal(path, signal);
-    match signal {
-        QualitySignal::Bounce | QualitySignal::EditFail => {
-            report_bandit_outcome_for_path(path, false);
-        }
-        QualitySignal::CleanCompressed | QualitySignal::WastedFull => {}
-    }
+/// A bounce or edit failure after a read of `path` (#593): penalize the bandit
+/// arm that produced the read. The positive signal comes from realized savings
+/// (`report_bandit_outcome_for_path` in entropy mode).
+pub fn penalize_read_arm(path: &str) {
+    report_bandit_outcome_for_path(path, false);
 }
 
 /// Reward (`success=true`) or penalize (`false`) the bandit arm recorded for
@@ -494,8 +459,6 @@ pub mod tests {
         );
     }
 
-    use crate::core::threshold_learning::QualitySignal;
-
     fn arm_mean(project_root: &str, key: &str, arm: &str) -> f64 {
         let mut store = crate::core::bandit::BanditStore::load(project_root);
         store
@@ -518,37 +481,14 @@ pub mod tests {
         );
 
         let before = arm_mean(root, "threshold:rs:md", "aggressive");
-        for _ in 0..15 {
-            record_quality_signal("src/foo.rs", QualitySignal::Bounce);
+        for _ in 0..16 {
+            penalize_read_arm("src/foo.rs");
         }
-        record_quality_signal("src/foo.rs", QualitySignal::EditFail);
         let after = arm_mean(root, "threshold:rs:md", "aggressive");
 
         assert!(
             after < before,
             "bounce/edit-fail must lower the selected arm mean: {before} -> {after}"
-        );
-    }
-
-    #[test]
-    fn clean_and_wasted_signals_leave_bandit_untouched() {
-        let _data = crate::core::data_dir::isolated_data_dir();
-        let root = "/fix1/untouched";
-        record_selected_arm(
-            "a.rs",
-            root.into(),
-            "threshold:rs:sm".into(),
-            "balanced".into(),
-        );
-
-        let before = arm_mean(root, "threshold:rs:sm", "balanced");
-        record_quality_signal("a.rs", QualitySignal::CleanCompressed);
-        record_quality_signal("a.rs", QualitySignal::WastedFull);
-        let after = arm_mean(root, "threshold:rs:sm", "balanced");
-
-        assert!(
-            (before - after).abs() < f64::EPSILON,
-            "clean/wasted are learner-only: bandit mean must not move ({before} -> {after})"
         );
     }
 

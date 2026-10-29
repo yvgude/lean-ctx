@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "forbidden",
+    "message": "Public vaults of other workspaces are read on the web.",
+    "reason": "public_read_web_only"
+  }
+}

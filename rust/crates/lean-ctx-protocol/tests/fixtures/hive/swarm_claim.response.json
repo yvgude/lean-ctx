@@ -1,0 +1,9 @@
+{
+  "fencing_token": 3,
+  "number": 7,
+  "schema": "leanctx.hive.swarm-claim/v1",
+  "subtask_id": "ss_01jbretry7",
+  "swarm_id": "sw_01jbretry",
+  "trust": "untrusted",
+  "until": "2026-10-20T12:15:00Z"
+}

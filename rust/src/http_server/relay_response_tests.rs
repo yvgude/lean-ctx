@@ -251,12 +251,17 @@ async fn old_completed_task_without_response_is_not_reexecuted() {
     drop(guard);
     for _ in 0..2 {
         let response = deliver(&cfg, &envelope, "origin-bearer").await;
-        assert_eq!(response.status(), StatusCode::SERVICE_UNAVAILABLE);
+        // Completed, response not retained: its own code, not "unavailable"
+        // (a retry cannot produce it), and nothing but the two fixed fields.
+        assert_eq!(response.status(), StatusCode::GONE);
         let bytes = axum::body::to_bytes(response.into_body(), 1024)
             .await
             .expect("error body");
         let error: serde_json::Value = serde_json::from_slice(&bytes).expect("error JSON");
-        assert_eq!(error["error"], "task_response_unavailable");
+        assert_eq!(
+            error,
+            serde_json::json!({"error": "task_response_not_retained", "status": "completed"})
+        );
     }
     assert!(!root.path().join(".lean-ctx/handoffs").exists());
 }

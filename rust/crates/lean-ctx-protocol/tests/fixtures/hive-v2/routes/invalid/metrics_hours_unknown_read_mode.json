@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_unknown_read_mode",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/buckets/0/slices/0/read_modes/everything",
+      "value": 3
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a read mode outside the closed set"
+}

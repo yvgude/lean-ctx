@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "Proposal 11 is already merged.",
+    "number": 11,
+    "reason": "proposal_state"
+  }
+}

@@ -1,0 +1,93 @@
+{
+  "name": "edge-kinds",
+  "values": [
+    {
+      "value": "references",
+      "from": "any",
+      "to": "node",
+      "places": [
+        "vault",
+        "swarm"
+      ]
+    },
+    {
+      "value": "depends_on",
+      "from": "any",
+      "to": "node",
+      "places": [
+        "vault",
+        "swarm"
+      ]
+    },
+    {
+      "value": "supersedes",
+      "from": "any",
+      "to": "node",
+      "places": [
+        "vault",
+        "swarm"
+      ]
+    },
+    {
+      "value": "contradicts",
+      "from": "any",
+      "to": "node",
+      "places": [
+        "vault",
+        "swarm"
+      ],
+      "symmetric": true
+    },
+    {
+      "value": "derived_from",
+      "from": "any",
+      "to": "node",
+      "places": [
+        "vault",
+        "swarm"
+      ]
+    },
+    {
+      "value": "part_of",
+      "from": "any",
+      "to": "episode",
+      "places": [
+        "vault",
+        "swarm"
+      ]
+    },
+    {
+      "value": "answers",
+      "from": "finding",
+      "to": "message",
+      "places": [
+        "vault",
+        "swarm"
+      ]
+    },
+    {
+      "value": "child_of",
+      "from": "goal",
+      "to": "goal",
+      "places": [
+        "swarm"
+      ]
+    },
+    {
+      "value": "result_of",
+      "from": "result",
+      "to": "goal",
+      "places": [
+        "swarm"
+      ]
+    },
+    {
+      "value": "blocked_by",
+      "from": "goal",
+      "to": "goal",
+      "places": [
+        "swarm"
+      ]
+    }
+  ]
+}

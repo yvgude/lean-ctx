@@ -1,0 +1,14 @@
+{
+  "assignee": null,
+  "attempts": 0,
+  "criterion_id": "sc_1",
+  "id": "g_sssssssssssssssssssssssssa",
+  "kind": "subgoal",
+  "lock_until": null,
+  "node": "n_aaaaaaaaaaaaaaaaaaaaaadaay",
+  "parent": "g_rrrrrrrrrrrrrrrrrrrrrrrrra",
+  "results": [],
+  "review": null,
+  "state": "open",
+  "title": "p95 below 300 ms over 24 h in staging"
+}

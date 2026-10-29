@@ -31,6 +31,51 @@ impl SummaryRecord {
         t.push_str(&self.body);
         t
     }
+
+    /// This record with every text field passed through `admit`; `None` when
+    /// one of them is refused. Ids, timestamps, counters and file paths are
+    /// metadata and are kept as they are.
+    fn with_text(&self, admit: impl Fn(&str) -> Option<String>) -> Option<Self> {
+        // An empty field carries nothing to decide about.
+        let admit = |text: &str| {
+            if text.is_empty() {
+                Some(String::new())
+            } else {
+                admit(text)
+            }
+        };
+        let each = |items: &[String]| -> Option<Vec<String>> {
+            items.iter().map(|item| admit(item)).collect()
+        };
+        Some(Self {
+            title: admit(&self.title)?,
+            body: admit(&self.body)?,
+            decisions: each(&self.decisions)?,
+            next_steps: each(&self.next_steps)?,
+            ..self.clone()
+        })
+    }
+
+    /// The record as it may be PERSISTED (E3): every text field admitted for
+    /// a derived store under the current policy. A summary is distilled from
+    /// session state and has no source to bind to, so the content rules
+    /// decide: a field that is withheld or restricted refuses the whole
+    /// record — a summary is never stored with a hole in it — and a value the
+    /// gateway masks is stored masked.
+    pub(crate) fn admitted_for_store(&self) -> Option<Self> {
+        self.with_text(|text| crate::core::context_admission::carrier::admit_for_store(text).ok())
+    }
+
+    /// The record as it may be SERVED now (G04). A stored summary carries no
+    /// source binding, so it follows the originless rule of
+    /// `context_admission::stored::serve_stored`: withheld while protection
+    /// is active in any layer, re-admitted under today's content rules
+    /// otherwise. `None`: not served.
+    pub(crate) fn served(&self) -> Option<Self> {
+        self.with_text(|text| {
+            crate::core::context_admission::stored::serve_stored(text, None, None).ok()
+        })
+    }
 }
 
 /// An owned snapshot built while holding the session lock, then persisted off the

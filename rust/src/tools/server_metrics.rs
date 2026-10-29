@@ -1,4 +1,4 @@
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::Ordering;
 
 use super::server::{CepComputedStats, CrpMode, LeanCtxServer, ToolCallRecord};
 use super::startup::auto_consolidate_knowledge;
@@ -15,35 +15,6 @@ pub(crate) const BACKGROUND_POLL_MODE: &str = "background";
 #[must_use]
 pub(crate) fn counts_in_session(tool: &str, mode: Option<&str>) -> bool {
     !(tool == "ctx_shell" && mode == Some(BACKGROUND_POLL_MODE))
-}
-
-/// Single-flight flag for the Pro usage scan in `record_call`.
-static PRO_SIGNAL_SCAN_RUNNING: AtomicBool = AtomicBool::new(false);
-
-/// Clears `PRO_SIGNAL_SCAN_RUNNING` when the scan ends, even on panic or when
-/// the blocking task is dropped unrun.
-struct ProSignalScanGuard;
-
-impl Drop for ProSignalScanGuard {
-    fn drop(&mut self) {
-        PRO_SIGNAL_SCAN_RUNNING.store(false, Ordering::Release);
-    }
-}
-
-/// The part of the live session `local_usage_signals` reads (its id and the
-/// agents in its evidence), cloned so the scan can run without the lock.
-fn pro_signal_probe(
-    session: &crate::core::session::SessionState,
-) -> crate::core::session::SessionState {
-    let mut probe = crate::core::session::SessionState::new();
-    probe.id.clone_from(&session.id);
-    probe.evidence = session
-        .evidence
-        .iter()
-        .filter(|record| record.agent_id.is_some())
-        .cloned()
-        .collect();
-    probe
 }
 
 /// Moves the security events recorded since the last call into the session's
@@ -161,10 +132,20 @@ impl LeanCtxServer {
         duration_ms: u64,
         path: Option<&str>,
     ) {
-        if let Some(agent_id) = self.presence_agent_id.read().await.clone()
-            && let Err(error) = crate::core::agents::AgentRegistry::heartbeat_persistent(&agent_id)
+        let presence = self.presence_agent_id.read().await.clone();
+        if let Some(agent_id) = presence.as_deref()
+            && let Err(error) = crate::core::agents::AgentRegistry::heartbeat_persistent(agent_id)
         {
             tracing::warn!("lean-ctx: failed to update MCP agent heartbeat: {error}");
+        }
+        // The agent `ctx_agent register` made in this session keeps its
+        // worker lease while the session calls tools; one that expired is
+        // renewed (and `read`/`wait` say so once).
+        if let Some(worker) = self.agent_id.read().await.clone()
+            && presence.as_deref() != Some(worker.as_str())
+            && let Err(error) = crate::core::agents::AgentRegistry::renew_worker_persistent(&worker)
+        {
+            tracing::debug!("lean-ctx: failed to renew agent {worker}: {error}");
         }
         let ts = chrono::Local::now().format("%Y-%m-%d %H:%M:%S").to_string();
         let mut calls = self.tool_calls.write().await;
@@ -295,37 +276,13 @@ impl LeanCtxServer {
         drop(session);
         publish_value_snapshot(value_snapshot);
 
-        let pro_count = self.pro_trigger_check_count.fetch_add(1, Ordering::Relaxed) + 1;
-        if pro_count.is_multiple_of(10) && !PRO_SIGNAL_SCAN_RUNNING.swap(true, Ordering::AcqRel) {
-            // The usage scan deserializes every persisted session. Running it
-            // on a runtime worker while holding the session lock stalled every
-            // concurrent tool call behind it (a queued writer blocks new
-            // readers), so snapshot only what the scan reads and move it off
-            // the async path; at most one scan runs at a time.
-            let running = ProSignalScanGuard;
-            let probe = {
-                let session = self.session.read().await;
-                pro_signal_probe(&session)
-            };
-            drop(tokio::task::spawn_blocking(move || {
-                let signals = {
-                    let _running = running;
-                    crate::core::pro_triggers::local_usage_signals(&probe)
-                };
-                for nudge in crate::core::pro_triggers::evaluate_triggers(&signals) {
-                    tracing::info!(kind = ?nudge.kind, message = %nudge.message, "lean-ctx Pro trigger fired");
-                }
-            }));
-        }
-
         if save_due {
             tokio::spawn(crate::core::session::SessionState::save_shared_logged(
-                self.session.clone(),
+                self.session.instance(),
             ));
         }
 
         self.write_mcp_live_stats().await;
-        write_science_live_stats();
     }
 
     /// Folds security events recorded outside `record_call` (e.g. injection
@@ -365,20 +322,24 @@ impl LeanCtxServer {
         drop(session);
 
         tokio::spawn(crate::core::session::SessionState::save_shared_logged(
-            self.session.clone(),
+            self.session.instance(),
         ));
 
         if has_insights && let Some(ref root) = project_root {
             let root = root.clone();
-            std::thread::spawn(move || {
-                auto_consolidate_knowledge(&root);
+            // This server's own session, never the project's latest (I07/S03).
+            let own = self.session.instance();
+            crate::core::policy::runtime::spawn_for_project(root.clone(), move || {
+                crate::core::session::caller::scope(Some(own), || {
+                    auto_consolidate_knowledge(&root);
+                });
             });
         }
 
         // Periodically record a recallable AI session summary (#292), off-thread.
         if let Some(ref root) = project_root {
             let root = root.clone();
-            std::thread::spawn(move || {
+            crate::core::policy::runtime::spawn_for_project(root.clone(), move || {
                 let _ =
                     crate::core::session_summary::maybe_record_periodic(&root, summary_candidate);
             });
@@ -454,13 +415,22 @@ impl LeanCtxServer {
         let pending_count = registry
             .scratchpad
             .iter()
-            .filter(|e| !e.read_by.contains(&my_id) && e.from_agent != my_id)
+            .filter(|e| {
+                !e.read_by.contains(&my_id)
+                    && e.from_agent != my_id
+                    && (e.to_agent.is_none() || e.to_agent.as_deref() == Some(my_id.as_str()))
+                    && e.project_root
+                        .as_deref()
+                        .is_some_and(|own| crate::core::pathutil::same_project(own, &root))
+            })
             .count();
 
+        // Only this project's shares (`ctx_share` partitions by project).
         let shared_dir = crate::core::data_dir::lean_ctx_data_dir()
             .unwrap_or_default()
             .join("agents")
-            .join("shared");
+            .join("shared")
+            .join(crate::core::project_hash::hash_project_root(root));
         let shared_count = if shared_dir.exists() {
             std::fs::read_dir(&shared_dir).map_or(0, std::iter::Iterator::count)
         } else {
@@ -801,112 +771,6 @@ impl LeanCtxServer {
         let edit_heavy = edit_count >= 3 && edit_count >= shell_count;
 
         (weighted_score, significant_tools, shell_heavy, edit_heavy)
-    }
-}
-
-/// Persist science-module telemetry for the dashboard (separate process).
-pub(crate) fn write_science_live_stats() {
-    use crate::core::anti_interrupt::{InterruptionEvent, session_interruptions};
-    use crate::core::cognitive_gate;
-
-    let events = session_interruptions();
-    let mut redundant_reads = 0usize;
-    let mut bounce_waste = 0usize;
-    let mut prevented = 0usize;
-    for (event, was_prevented) in &events {
-        if *was_prevented {
-            prevented += 1;
-        }
-        match event {
-            InterruptionEvent::RedundantRead { .. } => redundant_reads += 1,
-            InterruptionEvent::BounceWaste { .. } => bounce_waste += 1,
-            _ => {}
-        }
-    }
-
-    let echo = crate::core::output_echo::load_stats();
-    let impact = crate::core::anti_interrupt::compute_impact();
-
-    let stats = serde_json::json!({
-        "cognitive_mode": if cognitive_gate::full_science_enabled() {
-            "full"
-        } else if cognitive_gate::basic_science_enabled() {
-            "basic"
-        } else {
-            "off"
-        },
-        "anti_interrupt": {
-            "events": events.len(),
-            "redundant_reads": redundant_reads,
-            "bounce_waste": bounce_waste,
-            "prevented": prevented,
-            "score": impact.score,
-            "focus_time_saved_minutes": impact.focus_time_saved_minutes,
-        },
-        "verbosity": {
-            "recommended_level": crate::core::verbosity::recommended_compression()
-                .map(|l| format!("{l:?}")),
-            "auto_applied": crate::core::verbosity::auto_apply_happened(),
-        },
-        "prefetch": {
-            "warmed": crate::core::context_prefetch::warmed_count(),
-            "skipped": crate::core::context_prefetch::skipped_count(),
-        },
-        "echo": {
-            "avg_ratio": echo.avg_ratio(50),
-            "window": echo.reports.len(),
-            "total_analyzed": echo.total_analyzed,
-        },
-        "updated_at": chrono::Local::now().to_rfc3339(),
-    });
-
-    if let Ok(dir) = crate::core::paths::state_dir() {
-        if let Ok(json) = serde_json::to_string_pretty(&stats) {
-            let _ = std::fs::write(dir.join("science-live.json"), json);
-        }
-    }
-}
-
-#[cfg(test)]
-mod pro_signal_probe_tests {
-    use super::*;
-    use crate::core::session::{EvidenceKind, EvidenceRecord, SessionState};
-
-    fn evidence(agent: Option<&str>) -> EvidenceRecord {
-        EvidenceRecord {
-            kind: EvidenceKind::ToolCall,
-            key: "tool:ctx_read".into(),
-            value: Some("payload that the scan never reads".into()),
-            tool: Some("ctx_read".into()),
-            input_md5: None,
-            output_md5: None,
-            agent_id: agent.map(String::from),
-            client_name: None,
-            task_id: None,
-            timestamp: chrono::Utc::now(),
-        }
-    }
-
-    #[test]
-    fn probe_keeps_id_and_agent_tagged_evidence_only() {
-        let mut session = SessionState::new();
-        session.evidence = vec![evidence(Some("a")), evidence(None), evidence(Some("b"))];
-        let probe = pro_signal_probe(&session);
-        assert_eq!(probe.id, session.id);
-        let agents: Vec<_> = probe
-            .evidence
-            .iter()
-            .filter_map(|r| r.agent_id.as_deref())
-            .collect();
-        assert_eq!(agents, ["a", "b"]);
-        assert_eq!(probe.evidence.len(), 2);
-    }
-
-    #[test]
-    fn scan_guard_releases_flag_when_dropped_unrun() {
-        PRO_SIGNAL_SCAN_RUNNING.store(true, Ordering::Release);
-        drop(ProSignalScanGuard);
-        assert!(!PRO_SIGNAL_SCAN_RUNNING.load(Ordering::Acquire));
     }
 }
 

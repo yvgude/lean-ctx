@@ -15,6 +15,8 @@ use super::{
     TASK_DESCRIPTOR_VERSION,
 };
 
+use crate::core::context_admission::carrier::{Withheld, admit_for_store};
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub(super) struct TaskIdempotencyRecordV1 {
@@ -61,10 +63,16 @@ impl TaskStore {
         task_store_path()
     }
 
+    /// Snapshot of the default store, read under the store lock so it never
+    /// observes a writer's half-applied update. Read-modify-write callers use
+    /// [`Self::mutate_locked`]; a `load` → change → [`Self::save`] sequence
+    /// overwrites concurrent updates.
     pub fn load() -> std::io::Result<Self> {
-        Self::load_from_path(&task_store_path()?)
+        Self::read_locked(&task_store_path()?, Self::clone)
     }
 
+    /// Overwrite the default store with this snapshot. Prefer
+    /// [`Self::mutate_locked`] for read-modify-write updates.
     pub fn save(&self) -> std::io::Result<()> {
         let path = task_store_path()?;
         Self::prepare_parent(&path)?;
@@ -106,9 +114,37 @@ impl TaskStore {
         E: From<std::io::Error>,
     {
         Self::prepare_parent(path).map_err(E::from)?;
-        let _lock = crate::core::agents::FileLock::acquire(&path.with_extension("lock"))
-            .map_err(std::io::Error::other)
-            .map_err(E::from)?;
+        let lock = crate::core::agents::FileLock::acquire(&path.with_extension("lock"));
+        Self::mutate_under(path, lock, mutate)
+    }
+
+    /// [`Self::mutate_locked`] that waits up to `wait` for the store lock.
+    /// The lock is a polled try-lock, not a fair queue: a caller that runs
+    /// once per request (such as `ctx_agent export`) can be kept out past
+    /// the default timeout by a writer taking the lock back to back.
+    pub fn mutate_locked_within<R, E>(
+        path: &Path,
+        wait: std::time::Duration,
+        mutate: impl FnOnce(&mut Self) -> Result<R, E>,
+    ) -> Result<R, E>
+    where
+        E: From<std::io::Error>,
+    {
+        Self::prepare_parent(path).map_err(E::from)?;
+        let lock =
+            crate::core::agents::FileLock::acquire_with_timeout(&path.with_extension("lock"), wait);
+        Self::mutate_under(path, lock, mutate)
+    }
+
+    fn mutate_under<R, E>(
+        path: &Path,
+        lock: Result<crate::core::agents::FileLock, String>,
+        mutate: impl FnOnce(&mut Self) -> Result<R, E>,
+    ) -> Result<R, E>
+    where
+        E: From<std::io::Error>,
+    {
+        let _lock = lock.map_err(std::io::Error::other).map_err(E::from)?;
         let mut store = Self::load_from_path(path).map_err(E::from)?;
         let result = mutate(&mut store)?;
         if store.tasks.len() > MAX_TASKS {
@@ -279,7 +315,28 @@ impl TaskStore {
         id
     }
 
+    /// [`Self::create_task`] for a description typed by a caller: admitted
+    /// for the store first, so what the gateway masks is stored masked and
+    /// restricted or withheld text creates no task (E3). Returns the new task.
+    pub(crate) fn create_admitted(
+        &mut self,
+        from: &str,
+        to: &str,
+        description: &str,
+    ) -> Result<&mut Task, Withheld> {
+        let task = Task::new(from, to, &admit_for_store(description)?);
+        let index = self.tasks.len();
+        self.tasks.push(task);
+        self.updated_at = Some(Utc::now());
+        Ok(&mut self.tasks[index])
+    }
+
     /// Durably materialize an already-authorized remote task descriptor.
+    ///
+    /// The description is admitted for the store like any new caller text: a
+    /// descriptor whose description is restricted or withheld is refused with
+    /// `PermissionDenied` and a content-free message, and neither a task nor
+    /// an idempotency record is written.
     ///
     /// The idempotency ledger lives in the same file as the tasks and is
     /// written under the same lock and atomic rename, so a delivery is either
@@ -323,7 +380,13 @@ impl TaskStore {
                 ));
             }
             let task_id = format!("task-{}", uuid::Uuid::new_v4());
-            let task = Task::from_remote_descriptor(descriptor, task_id.clone());
+            let task =
+                Task::from_remote_descriptor(descriptor, task_id.clone()).map_err(|withheld| {
+                    std::io::Error::new(
+                        std::io::ErrorKind::PermissionDenied,
+                        withheld.message("task text"),
+                    )
+                })?;
             store.tasks.push(task);
             store.idempotency.push(TaskIdempotencyRecordV1 {
                 schema_version: TASK_DESCRIPTOR_VERSION,

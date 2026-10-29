@@ -22,28 +22,8 @@ fn registry_tools_use_resolved_path() {
             include_str!("../../src/tools/registered/ctx_tree.rs"),
         ),
         (
-            "ctx_benchmark",
-            include_str!("../../src/tools/registered/ctx_benchmark.rs"),
-        ),
-        (
-            "ctx_analyze",
-            include_str!("../../src/tools/registered/ctx_analyze.rs"),
-        ),
-        (
             "ctx_outline",
             include_str!("../../src/tools/registered/ctx_outline.rs"),
-        ),
-        (
-            "ctx_review",
-            include_str!("../../src/tools/registered/ctx_review.rs"),
-        ),
-        (
-            "ctx_impact",
-            include_str!("../../src/tools/registered/ctx_impact.rs"),
-        ),
-        (
-            "ctx_architecture",
-            include_str!("../../src/tools/registered/ctx_architecture.rs"),
         ),
         (
             "ctx_pack",

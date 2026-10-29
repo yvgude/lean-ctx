@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "A key rotation is pending; seal with the required epoch.",
+    "reason": "epoch_rotating"
+  }
+}

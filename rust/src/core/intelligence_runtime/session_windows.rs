@@ -7,7 +7,9 @@ use std::io::{PipeReader, PipeWriter, Write};
 use std::ptr::null_mut;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use lean_ctx_protocol::runtime_exchange::{RuntimeRequestV1, RuntimeResponseV1};
+use lean_ctx_protocol::runtime_exchange::{
+    RuntimeExchangeProfile, RuntimeRequestV1, RuntimeResponseV1,
+};
 use tokio::net::windows::named_pipe::{NamedPipeServer, ServerOptions};
 use windows_sys::Win32::Foundation::LocalFree;
 use windows_sys::Win32::Security::Authorization::{
@@ -88,6 +90,7 @@ pub(super) async fn exchange_once(
     mut provision: PipeWriter,
     key: &[u8; 32],
     request: &RuntimeRequestV1,
+    profile: RuntimeExchangeProfile,
     bootstrap: &[u8],
     finished: &AtomicBool,
 ) -> Result<RuntimeResponseV1> {
@@ -102,7 +105,7 @@ pub(super) async fn exchange_once(
         return Err(InstallError::Exchange);
     }
     server.connect().await.map_err(|_| InstallError::Exchange)?;
-    crate::ipc::runtime::exchange_inherited(&mut server, key, request)
+    crate::ipc::runtime::exchange_inherited(&mut server, key, request, profile)
         .await
         .map_err(|_| InstallError::Exchange)
 }

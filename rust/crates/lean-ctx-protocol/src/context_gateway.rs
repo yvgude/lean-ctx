@@ -901,13 +901,76 @@ pub struct TokenAccountV1 {
     pub delivered: u64,
 }
 
+/// Receipt schema version 2 (AP10-C4, `context-gateway-v2.md`): every
+/// `decisions[].object` is keyed under the installation's receipt key and the
+/// receipt names that key in [`ContextDecisionReceiptV1::object_digest`].
+/// Version 1 receipts (plain SHA-256 objects) stay readable and valid.
+pub const RECEIPT_V2_SCHEMA_VERSION: u32 = 2;
+
+/// How the decision objects of a version 2 receipt are digested.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum ObjectDigestAlgorithmV2 {
+    /// `HMAC-SHA256(key, "leanctx.receipt.object.v2" || 0x00 || v1_object)`,
+    /// where `v1_object` is the `sha256:<hex>` a version 1 receipt would name.
+    #[serde(rename = "hmac-sha256")]
+    HmacSha256,
+}
+
+/// The key a version 2 receipt's decision objects are digested under: its
+/// algorithm and a public identifier, never the key.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ReceiptObjectDigestV2 {
+    pub algorithm: ObjectDigestAlgorithmV2,
+    /// `rk-` and the first 32 hex digits of
+    /// `HMAC-SHA256(key, "leanctx.receipt.key-id.v2")`: tells keys apart,
+    /// reveals nothing of the key.
+    pub key_id: String,
+}
+
+impl ReceiptObjectDigestV2 {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        let valid = self.key_id.strip_prefix("rk-").is_some_and(|hex| {
+            hex.len() == 32 && hex.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f'))
+        });
+        if valid {
+            Ok(())
+        } else {
+            Err(ValidationError::new(
+                "receipt key id must be rk- and 32 lowercase hex digits",
+            ))
+        }
+    }
+}
+
+fn deserialize_receipt_schema_version<'de, D>(deserializer: D) -> Result<u32, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let version = u32::deserialize(deserializer)?;
+    if version == V1_SCHEMA_VERSION || version == RECEIPT_V2_SCHEMA_VERSION {
+        Ok(version)
+    } else {
+        Err(DeError::custom(format!(
+            "unsupported receipt schema_version {version}; expected 1 or 2"
+        )))
+    }
+}
+
 /// One governed delivery: who asked, for what, what was considered, what was
 /// withheld and why, what reached which destination under which policy.
+///
+/// The type keeps its V1 name; it carries both receipt schema versions. In
+/// version 2 `decisions[].object` keeps its `sha256:<hex>` form but is keyed
+/// ([`ObjectDigestAlgorithmV2`]) under the key `object_digest` names.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct ContextDecisionReceiptV1 {
-    #[serde(deserialize_with = "deserialize_schema_version")]
+    #[serde(deserialize_with = "deserialize_receipt_schema_version")]
     pub schema_version: u32,
+    /// Present exactly on a version 2 receipt.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub object_digest: Option<ReceiptObjectDigestV2>,
     pub receipt_id: ProtocolReference,
     pub mode: GatewayModeV1,
     pub principal: PrincipalV1,
@@ -935,7 +998,20 @@ impl ContextDecisionReceiptV1 {
     /// Receipt consistency: counts must describe the recorded decisions, and
     /// only a delivered receipt names the delivered context.
     pub fn validate(&self) -> Result<(), ValidationError> {
-        validate_schema_version(self.schema_version)?;
+        match (self.schema_version, &self.object_digest) {
+            (V1_SCHEMA_VERSION, None) => {}
+            (RECEIPT_V2_SCHEMA_VERSION, Some(object_digest)) => object_digest.validate()?,
+            (V1_SCHEMA_VERSION | RECEIPT_V2_SCHEMA_VERSION, _) => {
+                return Err(ValidationError::new(
+                    "exactly a version 2 receipt names its object digest key",
+                ));
+            }
+            (version, _) => {
+                return Err(ValidationError::new(format!(
+                    "unsupported receipt schema_version {version}; expected 1 or 2"
+                )));
+            }
+        }
         if let Some(quality) = &self.quality {
             quality.validate()?;
         }
@@ -985,6 +1061,212 @@ impl ContextDecisionReceiptV1 {
             .map_err(|e| ValidationError::new(format!("receipt serialization: {e}")))?;
         let bytes = serde_json::to_vec(&value)
             .map_err(|e| ValidationError::new(format!("receipt serialization: {e}")))?;
+        sha256_digest(&bytes)
+    }
+}
+
+/// The admission lifecycle for one exact request body. This does not change the
+/// legacy ContextDecisionReceiptV1 wire format or its outcome semantics.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EgressAdmissionOutcomeV1 {
+    /// The policy admitted these bytes and their digest is bound; no send is implied.
+    Prepared,
+    /// Policy withheld the request before dispatch.
+    Withheld,
+    /// Admission could not produce a dispatchable request.
+    Failed,
+}
+
+/// A versioned, content-addressable admission record for outbound request bytes.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EgressAdmissionReceiptV1 {
+    #[serde(deserialize_with = "deserialize_schema_version")]
+    pub schema_version: u32,
+    pub receipt_id: ProtocolReference,
+    /// Digest of the associated ContextDecisionReceiptV1 when one was recorded.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub decision_receipt_digest: Option<Sha256Digest>,
+    pub outcome: EgressAdmissionOutcomeV1,
+    /// SHA-256 of the exact prepared wire bytes; present only for Prepared.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub prepared_bytes_digest: Option<Sha256Digest>,
+}
+
+impl EgressAdmissionReceiptV1 {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_schema_version(self.schema_version)?;
+        match self.outcome {
+            EgressAdmissionOutcomeV1::Prepared => {
+                if self.prepared_bytes_digest.is_none() {
+                    return Err(ValidationError::new(
+                        "a prepared egress receipt must bind the prepared bytes digest",
+                    ));
+                }
+                if self.decision_receipt_digest.is_none() {
+                    return Err(ValidationError::new(
+                        "a prepared egress receipt must link its decision receipt",
+                    ));
+                }
+            }
+            EgressAdmissionOutcomeV1::Withheld => {
+                if self.prepared_bytes_digest.is_some() {
+                    return Err(ValidationError::new(
+                        "a withheld egress receipt cannot name prepared bytes",
+                    ));
+                }
+                if self.decision_receipt_digest.is_none() {
+                    return Err(ValidationError::new(
+                        "a withheld egress receipt must link its decision receipt",
+                    ));
+                }
+            }
+            EgressAdmissionOutcomeV1::Failed => {
+                if self.prepared_bytes_digest.is_some() {
+                    return Err(ValidationError::new(
+                        "a failed egress receipt cannot name prepared bytes",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Deterministic content identity over canonical JSON.
+    pub fn canonical_digest(&self) -> Result<Sha256Digest, ValidationError> {
+        self.validate()?;
+        let value = serde_json::to_value(self)
+            .map_err(|e| ValidationError::new(format!("egress admission serialization: {e}")))?;
+        let bytes = serde_json::to_vec(&value)
+            .map_err(|e| ValidationError::new(format!("egress admission serialization: {e}")))?;
+        sha256_digest(&bytes)
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EgressTransportV1 {
+    Http,
+    WebSocket,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EgressTransportObserverV1 {
+    /// The Engine transport itself observed this attempt.
+    EngineObserved,
+    /// A calling host reported what it observed; this is not independently attested.
+    HostReported,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EgressTransportResultV1 {
+    /// A response was observed. The status does not claim model consumption.
+    ResponseObserved,
+    /// No response was observed; request bytes may still have reached the peer.
+    NoResponseObserved,
+}
+
+/// Bounded error classes only; raw transport errors may contain sensitive data.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EgressTransportFailureV1 {
+    Connect,
+    Timeout,
+    Cancelled,
+    Other,
+}
+
+/// Append-only observation of one transport attempt, linked to its admission receipt.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct EgressTransportObservationV1 {
+    #[serde(deserialize_with = "deserialize_schema_version")]
+    pub schema_version: u32,
+    pub admission_receipt_digest: Sha256Digest,
+    /// One-based attempt number for this admission receipt.
+    pub attempt: u32,
+    pub transport: EgressTransportV1,
+    pub observer: EgressTransportObserverV1,
+    pub result: EgressTransportResultV1,
+    /// Required for an HTTP response; optional for a WebSocket handshake/message.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub http_status: Option<u16>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub failure: Option<EgressTransportFailureV1>,
+}
+
+impl EgressTransportObservationV1 {
+    pub fn validate(&self) -> Result<(), ValidationError> {
+        validate_schema_version(self.schema_version)?;
+        if self.attempt == 0 {
+            return Err(ValidationError::new(
+                "transport attempt numbers are one-based",
+            ));
+        }
+        if self
+            .http_status
+            .is_some_and(|status| !(100..=599).contains(&status))
+        {
+            return Err(ValidationError::new(
+                "observed HTTP status must be between 100 and 599",
+            ));
+        }
+        match self.result {
+            EgressTransportResultV1::ResponseObserved => {
+                if self.failure.is_some() {
+                    return Err(ValidationError::new(
+                        "a response observation cannot include a transport failure",
+                    ));
+                }
+                if self.transport == EgressTransportV1::Http && self.http_status.is_none() {
+                    return Err(ValidationError::new(
+                        "an observed HTTP response must include its status",
+                    ));
+                }
+            }
+            EgressTransportResultV1::NoResponseObserved => {
+                if self.http_status.is_some() || self.failure.is_none() {
+                    return Err(ValidationError::new(
+                        "a no-response observation needs one bounded failure and no status",
+                    ));
+                }
+            }
+        }
+        Ok(())
+    }
+
+    /// Check that this observation names the exact prepared admission record.
+    pub fn validate_for(
+        &self,
+        admission: &EgressAdmissionReceiptV1,
+    ) -> Result<(), ValidationError> {
+        self.validate()?;
+        admission.validate()?;
+        if admission.outcome != EgressAdmissionOutcomeV1::Prepared {
+            return Err(ValidationError::new(
+                "transport observations require a prepared admission receipt",
+            ));
+        }
+        if self.admission_receipt_digest != admission.canonical_digest()? {
+            return Err(ValidationError::new(
+                "transport observation does not match its admission receipt digest",
+            ));
+        }
+        Ok(())
+    }
+
+    /// Deterministic content identity over canonical JSON.
+    pub fn canonical_digest(&self) -> Result<Sha256Digest, ValidationError> {
+        self.validate()?;
+        let value = serde_json::to_value(self).map_err(|e| {
+            ValidationError::new(format!("transport observation serialization: {e}"))
+        })?;
+        let bytes = serde_json::to_vec(&value).map_err(|e| {
+            ValidationError::new(format!("transport observation serialization: {e}"))
+        })?;
         sha256_digest(&bytes)
     }
 }

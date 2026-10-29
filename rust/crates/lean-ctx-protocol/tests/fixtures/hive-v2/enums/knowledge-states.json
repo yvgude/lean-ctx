@@ -1,0 +1,51 @@
+{
+  "name": "knowledge-states",
+  "values": [
+    {
+      "value": "verified",
+      "precedence": 4,
+      "rule": "review_state confirmed and evidence observed",
+      "served_as_truth": true
+    },
+    {
+      "value": "provisional",
+      "precedence": 5,
+      "rule": "otherwise",
+      "served_as_truth": true
+    },
+    {
+      "value": "outdated",
+      "precedence": 2,
+      "rule": "a live supersedes edge points at it, decision status superseded, or anchor_state gone/to_verify",
+      "served_as_truth": false
+    },
+    {
+      "value": "conflicting",
+      "precedence": 3,
+      "rule": "a live contradicts edge to a live node that is not superseded",
+      "served_as_truth": false
+    },
+    {
+      "value": "rejected",
+      "precedence": 1,
+      "rule": "retracted or purged; decision status reverted",
+      "served_as_truth": false
+    }
+  ],
+  "reasons": [
+    "retracted",
+    "reverted",
+    "superseded",
+    "anchor_gone",
+    "anchor_changed",
+    "contradicted",
+    "unconfirmed",
+    "not_observed"
+  ],
+  "web_state": {
+    "retracted": "rejected",
+    "stale": "outdated",
+    "contradicted": "conflicting",
+    "active": "verified|provisional"
+  }
+}

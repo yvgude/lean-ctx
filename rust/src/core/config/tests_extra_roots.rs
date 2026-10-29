@@ -1,5 +1,14 @@
 use super::*;
 
+/// `merge_local` resolves the profile the PROCESS ENVIRONMENT selects
+/// (`LEAN_CTX_CONFIG_PROFILE`) and drops the whole fragment when that profile
+/// is not in it. Another test sets the variable under this lock, so every
+/// fixture that merges holds it: without it a fragment may silently not be
+/// merged, and an assertion that something is NOT applied would still pass.
+fn merge_environment() -> crate::core::data_dir::TestEnvGuard {
+    crate::core::data_dir::test_env_lock()
+}
+
 #[test]
 fn default_is_empty() {
     let cfg = Config::default();
@@ -14,6 +23,7 @@ fn deserialization_from_toml() {
 
 #[test]
 fn merge_extends() {
+    let _env = merge_environment();
     let mut base = Config {
         extra_roots: vec!["/base".to_string()],
         ..Config::default()
@@ -24,6 +34,7 @@ fn merge_extends() {
 
 #[test]
 fn merge_local_omitting_shell_allowlist_keeps_global() {
+    let _env = merge_environment();
     // Regression: the field defaults (via serde) to the full built-in list, so a
     // local override that never mentions `shell_allowlist` must NOT clobber a
     // deliberately shorter global allowlist.
@@ -37,6 +48,7 @@ fn merge_local_omitting_shell_allowlist_keeps_global() {
 
 #[test]
 fn merge_local_defining_shell_allowlist_overrides() {
+    let _env = merge_environment();
     let mut base = Config {
         shell_allowlist: vec!["git".to_string(), "cargo".to_string()],
         ..Config::default()
@@ -47,6 +59,7 @@ fn merge_local_defining_shell_allowlist_overrides() {
 
 #[test]
 fn merge_local_empty_shell_allowlist_disables_restriction() {
+    let _env = merge_environment();
     // Explicit empty list = intentional blocklist-only mode; must be honored.
     let mut base = Config {
         shell_allowlist: vec!["git".to_string()],
@@ -64,13 +77,14 @@ fn merge_local_empty_shell_allowlist_disables_restriction() {
 fn merge_local_untrusted_withholds_sensitive_keeps_comfort() {
     // Finding 4: an untrusted workspace's security-sensitive overrides
     // (allowlist, path-jail widening) are withheld, but a comfort override
-    // (theme) still applies — selective gating, not a blanket block.
+    // (a project key) still applies — selective gating, not a blanket block.
+    let _env = merge_environment();
     let mut base = Config {
         shell_allowlist: vec!["git".to_string()],
         ..Config::default()
     };
     base.merge_local(
-        "shell_allowlist = [\"rm\"]\nextra_roots = [\"/etc\"]\ntheme = \"midnight\"\n",
+        "shell_allowlist = [\"rm\"]\nextra_roots = [\"/etc\"]\ncheckpoint_interval = 7\n",
         false,
     );
     assert_eq!(
@@ -83,13 +97,14 @@ fn merge_local_untrusted_withholds_sensitive_keeps_comfort() {
         "path-jail widening must be withheld for untrusted workspace"
     );
     assert_eq!(
-        base.theme, "midnight",
-        "comfort override must still apply for untrusted workspace"
+        base.checkpoint_interval, 7,
+        "a project key must still apply for an untrusted workspace"
     );
 }
 
 #[test]
 fn merge_local_trusted_applies_sensitive() {
+    let _env = merge_environment();
     let mut base = Config {
         shell_allowlist: vec!["git".to_string()],
         ..Config::default()
@@ -106,6 +121,7 @@ fn merge_local_trusted_applies_sensitive() {
 /// switch detectors off or loosen them.
 #[test]
 fn merge_local_never_weakens_the_context_gateway() {
+    let _env = merge_environment();
     for trusted in [false, true] {
         let mut base = Config::default();
         base.merge_local(
@@ -138,6 +154,7 @@ fn merge_local_never_accepts_untrusted_a2a_signers() {
 /// GH #833: untrusted workspace must not disable gitignore-respecting indexing.
 #[test]
 fn merge_local_untrusted_withholds_respect_gitignore_833() {
+    let _env = merge_environment();
     let mut base = Config::default();
     assert!(
         base.index.respect_gitignore,
@@ -155,6 +172,7 @@ fn merge_local_untrusted_withholds_respect_gitignore_833() {
 /// the mode, a trusted one may raise it.
 #[test]
 fn merge_local_semantic_mode_escalation_requires_trust() {
+    let _env = merge_environment();
     use crate::core::config::SemanticMode;
     let mut untrusted = Config::default();
     untrusted.merge_local("semantic_mode = \"eager\"\n", false);
@@ -217,6 +235,7 @@ fn semantic_mode_is_evaluated_for_the_target_project() {
 /// GH #833: trusted workspace CAN disable gitignore respect.
 #[test]
 fn merge_local_trusted_allows_respect_gitignore_833() {
+    let _env = merge_environment();
     let mut base = Config::default();
     base.merge_local("[index]\nrespect_gitignore = false\n", true);
     assert!(
@@ -229,6 +248,7 @@ fn merge_local_trusted_allows_respect_gitignore_833() {
 /// subcommand scoping back to the vulnerable base-binary-only matching.
 #[test]
 fn merge_local_untrusted_withholds_shell_allowlist_subcommand_scoping() {
+    let _env = merge_environment();
     let mut base = Config::default();
     assert!(
         base.shell_allowlist_subcommand_scoping,
@@ -245,6 +265,7 @@ fn merge_local_untrusted_withholds_shell_allowlist_subcommand_scoping() {
 /// base-binary-only matching as a deliberate compat/rollback path.
 #[test]
 fn merge_local_trusted_allows_shell_allowlist_subcommand_scoping() {
+    let _env = merge_environment();
     let mut base = Config::default();
     base.merge_local("shell_allowlist_subcommand_scoping = false\n", true);
     assert!(
@@ -255,6 +276,7 @@ fn merge_local_trusted_allows_shell_allowlist_subcommand_scoping() {
 
 #[test]
 fn merge_local_untrusted_withholds_tool_surface_overrides() {
+    let _env = merge_environment();
     // Regression: an untrusted repo's .lean-ctx.toml could silently widen
     // the agent's tool surface (tool_profile/tools_enabled/
     // default_tool_categories weren't in strip_sensitive_overrides), bypassing
@@ -286,6 +308,7 @@ fn merge_local_untrusted_withholds_tool_surface_overrides() {
 
 #[test]
 fn redirect_exclude_follows_workspace_trust() {
+    let _env = merge_environment();
     // `redirect_exclude` routes native reads around the lean-ctx redirect (and
     // its redaction), so an untrusted repo's own list is withheld; the global
     // list stays in force either way.
@@ -304,6 +327,7 @@ fn redirect_exclude_follows_workspace_trust() {
 
 #[test]
 fn merge_local_trusted_applies_tool_surface_overrides() {
+    let _env = merge_environment();
     let mut base = Config {
         tool_profile: Some("minimal".to_string()),
         ..Config::default()
@@ -321,6 +345,7 @@ fn merge_local_trusted_applies_tool_surface_overrides() {
 
 #[test]
 fn allow_symlink_roots_follows_extra_roots_trust_semantics() {
+    let _env = merge_environment();
     // #596 premium: the symlink write-through allowlist is security-sensitive,
     // so an untrusted workspace's entry is withheld while a trusted one applies.
     let mut untrusted = Config::default();

@@ -4,7 +4,7 @@ const DEFAULT_RESOLVE_TIMEOUT: Duration = Duration::from_secs(5);
 const DEFAULT_CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const DEFAULT_RESPONSE_TIMEOUT: Duration = Duration::from_secs(30);
 const DEGRADED_MULTIPLIER: u32 = 2;
-const MAX_RESPONSE_BODY_BYTES: u64 = 10 * 1024 * 1024;
+pub(crate) const MAX_RESPONSE_BODY_BYTES: u64 = 10 * 1024 * 1024;
 
 #[cfg(test)]
 pub(crate) mod redirect_tests;

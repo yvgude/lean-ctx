@@ -1,0 +1,59 @@
+{
+  "blobs": [
+    {
+      "blob": "sha256:ec39c6fe44a04b3b998f1353e14ed427db3064d0c7b58b42e2eb6712f33aa764",
+      "fact": "hive.never-blocks"
+    },
+    {
+      "blob": "sha256:249d41466a4eb6c46c19c910f7b766cb266a5d7666b5ed9587bd317c1b467eed",
+      "fact": "hive.screening-first"
+    },
+    {
+      "blob": "sha256:4381664a9ffa003495729bc50405a58c34611933cca5b292ec7b27508ff5b1b7",
+      "fact": "hive.outbox-order"
+    }
+  ],
+  "commits": [
+    {
+      "commit": "sha256:e79848a1065e8b2b3fb92e62e79736490d1d55f5ef81d061754030c8f9ede89b",
+      "merged_proposals": [
+        11
+      ],
+      "parent": null,
+      "revision": 3
+    },
+    {
+      "commit": "sha256:668f83d2788fc35009a3349288cd2b93b632d6fe79d2477b60b272752d233a66",
+      "merged_proposals": [
+        12,
+        13
+      ],
+      "parent": "sha256:e79848a1065e8b2b3fb92e62e79736490d1d55f5ef81d061754030c8f9ede89b",
+      "revision": 4
+    }
+  ],
+  "document_tree": "sha256:fd4e10d20c8b3174f732b6a4964b765085733e7680cb7ddd6edc34174d7b9a62",
+  "import_slugs": [
+    {
+      "heading": "## Retry budget (payments)",
+      "slug": "retry-budget-payments"
+    },
+    {
+      "heading": "Ünïcode — only",
+      "slug": "n-code-only"
+    },
+    {
+      "heading": "!!!",
+      "slug": "section"
+    },
+    {
+      "heading": "Outbox: ordering & retries",
+      "slug": "outbox-ordering-retries"
+    }
+  ],
+  "note": "ids are sha256: + hex of canonical_json of the typed objects in hive::ctxpkg; the document is knowledge_revision.wiki.response",
+  "page_tree": {
+    "page": "hive.outbound",
+    "tree": "sha256:ac4aaa0262a3f98fd44a9b308c67a36621a0f4288035be88322e14a74dca8e7e"
+  }
+}

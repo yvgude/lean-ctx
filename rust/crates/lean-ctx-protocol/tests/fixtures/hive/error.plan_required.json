@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "plan_required",
+    "message": "Hive is part of Personal, Team and Enterprise."
+  }
+}

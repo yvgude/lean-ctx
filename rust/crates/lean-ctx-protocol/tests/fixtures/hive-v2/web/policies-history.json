@@ -1,0 +1,80 @@
+{
+  "route": "W82",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/policies/workspace/history",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "level": "workspace",
+          "scope": "org_7c1b2a3d4e5f60718293a4b5c6d7e8f9",
+          "version": 2,
+          "document": {
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "block_secrets": true,
+              "excluded_paths": [
+                ".env*",
+                "secrets/"
+              ]
+            },
+            "context": {
+              "max_context_tokens": 100000
+            },
+            "sharing": {
+              "allowed_vaults": [
+                "3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c"
+              ],
+              "task_claim_min_role": "contributor"
+            }
+          },
+          "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "updated_by": {
+            "kind": "user",
+            "user": {
+              "id": "0b9a8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d",
+              "name": "Ada"
+            },
+            "instance": null,
+            "agent": null
+          },
+          "updated_at": "2026-10-25T21:10:00Z"
+        },
+        {
+          "level": "workspace",
+          "scope": "org_7c1b2a3d4e5f60718293a4b5c6d7e8f9",
+          "version": 1,
+          "document": {
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "block_secrets": true,
+              "excluded_paths": [
+                ".env*",
+                "secrets/"
+              ]
+            },
+            "context": {
+              "max_context_tokens": 100000
+            },
+            "sharing": {}
+          },
+          "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "updated_by": {
+            "kind": "user",
+            "user": {
+              "id": "0b9a8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d",
+              "name": "Ada"
+            },
+            "instance": null,
+            "agent": null
+          },
+          "updated_at": "2026-10-25T21:00:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "errors": []
+}

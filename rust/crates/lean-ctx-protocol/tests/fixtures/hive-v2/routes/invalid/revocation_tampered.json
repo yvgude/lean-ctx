@@ -1,0 +1,14 @@
+{
+  "case": "revocation_tampered",
+  "base": "routes/revocation.response.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/revoked_at",
+      "value": 1792800600000
+    }
+  ],
+  "expect": {
+    "layer": "signature"
+  }
+}

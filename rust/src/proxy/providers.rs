@@ -29,7 +29,7 @@
 use axum::{
     body::Body,
     extract::{Path, State},
-    http::{HeaderMap, HeaderValue, Request, StatusCode},
+    http::{HeaderMap, HeaderValue, Request, StatusCode, Uri},
     response::Response,
 };
 
@@ -48,6 +48,9 @@ use crate::core::config::{ResolvedProvider, WireShape};
 pub(super) struct RegistryProviderId {
     pub id: String,
     pub local: bool,
+    pub account_ref: Option<String>,
+    pub region: Option<String>,
+    pub gateway_managed_credential: bool,
 }
 
 /// Registry ids that share the Grok / xAI dual-rail (subscription `grok-chat`,
@@ -103,6 +106,10 @@ pub async fn handler(
     req.extensions_mut().insert(RegistryProviderId {
         id: provider.id.clone(),
         local: provider.local,
+        account_ref: provider.account_ref.clone(),
+        region: provider.region.clone(),
+        gateway_managed_credential: provider.api_key_env.is_some()
+            || provider.shape == WireShape::Bedrock,
     });
 
     // Strip the `/providers/{id}` prefix so the upstream sees the bare provider
@@ -119,6 +126,9 @@ pub async fn handler(
         super::bedrock::validate_invoke_request(&req)?;
         super::bedrock::attach_signing_context(&provider, &mut req)?;
     } else if provider.api_key_env.is_some() {
+        if provider.shape == WireShape::Gemini {
+            strip_gemini_api_key_query(req.uri_mut())?;
+        }
         inject_gateway_credential(&provider, req.headers_mut())?;
     }
 
@@ -195,6 +205,64 @@ pub async fn handler(
             .await
         }
     }
+}
+
+fn query_component_name(component: &str) -> Result<Option<String>, StatusCode> {
+    if component.is_empty() {
+        return Ok(None);
+    }
+    let url = reqwest::Url::parse(&format!("http://leanctx.invalid/?{component}"))
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    Ok(url.query_pairs().next().map(|(name, _)| name.into_owned()))
+}
+
+fn is_api_key_query_component(component: &str) -> Result<bool, StatusCode> {
+    Ok(query_component_name(component)?.is_some_and(|name| name.eq_ignore_ascii_case("key")))
+}
+
+/// Gemini accepts API credentials through `?key=` as well as `x-goog-api-key`.
+/// For gateway-managed credentials, discard every decoded `key` query parameter
+/// so a caller cannot override the configured credential at the upstream.
+pub(super) fn strip_gemini_api_key_query(uri: &mut Uri) -> Result<(), StatusCode> {
+    let Some(query) = uri.query() else {
+        return Ok(());
+    };
+
+    let mut removed_key = false;
+    let mut retained = Vec::new();
+    for component in query.split('&') {
+        if is_api_key_query_component(component)? {
+            removed_key = true;
+        } else {
+            retained.push(component);
+        }
+    }
+    if !removed_key {
+        return Ok(());
+    }
+
+    let mut path_and_query = uri.path().to_string();
+    if retained.iter().any(|component| !component.is_empty()) {
+        path_and_query.push('?');
+        path_and_query.push_str(&retained.join("&"));
+    }
+    *uri = path_and_query
+        .parse()
+        .map_err(|_| StatusCode::BAD_REQUEST)?;
+    Ok(())
+}
+
+/// Any caller-supplied `key` parameter is a possible upstream credential or
+/// account selector. Treat undecodable query components conservatively when
+/// deciding whether a configured account label can be trusted.
+pub(super) fn has_untrusted_key_query(uri: &Uri) -> bool {
+    uri.query().is_some_and(|query| {
+        query.split('&').any(|component| {
+            query_component_name(component).map_or(true, |name| {
+                name.is_some_and(|name| name.eq_ignore_ascii_case("key"))
+            })
+        })
+    })
 }
 
 /// Replace every caller credential header with the gateway-held key from the
@@ -313,6 +381,8 @@ mod tests {
             base_url: "https://example.invalid".into(),
             api_key_env: api_key_env.map(str::to_string),
             aws_region: None,
+            account_ref: None,
+            region: None,
             local: false,
         }
     }
@@ -351,6 +421,30 @@ mod tests {
             }
         }
         crate::test_env::remove_var("LC_TEST_PROVIDER_KEY");
+    }
+
+    #[test]
+    fn gemini_gateway_credential_strips_decoded_and_duplicate_key_query_parameters() {
+        let mut uri: Uri = "/v1/models?alt=sse&%6Bey=caller-key&key=second-key&pretty=1"
+            .parse()
+            .expect("valid request URI");
+
+        strip_gemini_api_key_query(&mut uri).expect("query is valid");
+
+        assert_eq!(uri.to_string(), "/v1/models?alt=sse&pretty=1");
+        assert!(!has_untrusted_key_query(&uri));
+    }
+
+    #[test]
+    fn gemini_gateway_query_sanitizer_preserves_unrelated_query_parameters() {
+        let mut uri: Uri = "/v1/models?alt=sse&pretty=1"
+            .parse()
+            .expect("valid request URI");
+
+        strip_gemini_api_key_query(&mut uri).expect("query is valid");
+
+        assert_eq!(uri.to_string(), "/v1/models?alt=sse&pretty=1");
+        assert!(!has_untrusted_key_query(&uri));
     }
 
     #[test]

@@ -35,9 +35,6 @@ fn proxy_state(upstream: &str) -> ProxyState {
         upstreams: rx,
         chatgpt_cookies: super::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
         mcp_servers: Arc::new(Vec::new()),
-        web_app_tracker: Arc::new(std::sync::Mutex::new(
-            super::web_app::conversation_tracker::ConversationTracker::default(),
-        )),
     }
 }
 
@@ -93,6 +90,7 @@ fn assert_secret_stayed_local(received: &str, surrounding: &str) {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn claude_code_turn_reaches_the_model_without_the_credential() {
     let _isolation = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let (upstream, received) = spawn_recording_upstream().await;
     let body = serde_json::json!({
         "model": "claude-sonnet-4-5",
@@ -133,6 +131,7 @@ async fn claude_code_turn_reaches_the_model_without_the_credential() {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn codex_subscription_turn_reaches_the_model_without_the_credential() {
     let _isolation = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let (upstream, received) = spawn_recording_upstream().await;
     let body = serde_json::json!({
         "model": "gpt-5.5",

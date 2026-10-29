@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "stale_epoch",
+    "message": "The conductor lease moved on; take it again."
+  }
+}

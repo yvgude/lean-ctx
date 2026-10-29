@@ -651,6 +651,7 @@ fn verbatim_json_crush_gate_is_opt_in_and_lossless() {
 fn verbatim_json_crush_lossy_drops_noise_behind_recoverable_handle() {
     use super::super::engine::verbatim_json_crush_lossy;
     let _lock = crate::core::data_dir::test_env_lock();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
 
     // A near-unique high-entropy column (`ts`) the lossless stage cannot
     // factor. The opt-in lossy stage drops it — but only behind a CCR handle

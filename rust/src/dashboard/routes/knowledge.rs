@@ -23,6 +23,9 @@ fn get_routes(path: &str, _query_str: &str) -> Option<(&'static str, &'static st
     match path {
         "/api/knowledge" => {
             let project_root = detect_project_root_for_dashboard();
+            if project_root.is_empty() {
+                return Some(unbound());
+            }
             let policy = crate::core::config::Config::load()
                 .memory_policy_effective()
                 .unwrap_or_default();
@@ -56,6 +59,11 @@ fn get_routes(path: &str, _query_str: &str) -> Option<(&'static str, &'static st
                     "max_facts".to_string(),
                     serde_json::json!(policy.knowledge.max_facts),
                 );
+                if let Some(facts) = obj.get_mut("facts").and_then(|f| f.as_array_mut()) {
+                    for (fact, json) in knowledge.facts.iter().zip(facts.iter_mut()) {
+                        describe_scope(fact, json);
+                    }
+                }
             }
             let json = serde_json::to_string(&value).unwrap_or_else(|_| "{}".to_string());
             Some(("200 OK", "application/json", json))
@@ -458,6 +466,46 @@ fn is_linkable_reference(tok: &str) -> bool {
         return true;
     }
     false
+}
+
+/// The answer of a knowledge route when the dashboard has no project binding.
+fn unbound() -> (&'static str, &'static str, String) {
+    (
+        "200 OK",
+        "application/json",
+        r#"{"facts":[],"reason_code":"project_unresolved","next_step":"bind_project"}"#.to_string(),
+    )
+}
+
+/// AP01 §6/§7 fields of one local fact: who sees it, whether it is current
+/// and, when not, the closed reason and the next allowed step. A local fact
+/// is the project's for this person's agents; across people it is shared
+/// only by publishing it to the team.
+fn describe_scope(fact: &crate::core::knowledge::KnowledgeFact, json: &mut serde_json::Value) {
+    use crate::core::memory_boundary::FactPrivacy;
+    let Some(object) = json.as_object_mut() else {
+        return;
+    };
+    let visibility = match fact.privacy {
+        FactPrivacy::ProjectOnly | FactPrivacy::LinkedProjects => "project",
+        FactPrivacy::Team => "team",
+    };
+    object.insert("visibility".into(), visibility.into());
+    // AP01 §4/§7: what reuse of the fact is bound to; `unclassified` keeps
+    // the behaviour of facts written before classes existed.
+    object.insert(
+        "validity_class".into(),
+        fact.validity
+            .map_or("unclassified", crate::core::knowledge::FactValidity::as_str)
+            .into(),
+    );
+    if fact.is_current() {
+        object.insert("state".into(), "current".into());
+    } else {
+        object.insert("state".into(), "expired".into());
+        object.insert("reason_code".into(), "expired".into());
+        object.insert("next_step".into(), "republish".into());
+    }
 }
 
 #[cfg(test)]

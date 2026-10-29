@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "upload_disabled",
+    "kind": "receipts",
+    "message": "The organization has switched receipts upload off."
+  }
+}

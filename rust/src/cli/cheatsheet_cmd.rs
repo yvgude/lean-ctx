@@ -14,7 +14,7 @@ pub fn cmd_cheatsheet() {
 
 \x1b[1;33m━━━ BEFORE YOU START ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m
   ctx_session load               \x1b[2m# restore previous session\x1b[0m
-  ctx_overview task=\"...\"         \x1b[2m# task-aware file map\x1b[0m
+  ctx_compose task=\"...\"          \x1b[2m# ranked files + symbols for a task\x1b[0m
   ctx_graph action=build          \x1b[2m# index project (first time)\x1b[0m
   ctx_knowledge action=recall     \x1b[2m# check stored project facts\x1b[0m
 
@@ -23,7 +23,6 @@ pub fn cmd_cheatsheet() {
   ctx_read mode=map     \x1b[2m# structure and dependencies first\x1b[0m
   ctx_read mode=diff    \x1b[2m# inspect changes after editing\x1b[0m
   ctx_read mode=sigs    \x1b[2m# API surface of large files\x1b[0m
-  ctx_multi_read        \x1b[2m# read multiple files at once\x1b[0m
   ctx_search            \x1b[2m# focused search results with references\x1b[0m
   ctx_shell             \x1b[2m# shape large CLI output with recovery\x1b[0m
   ctx_read raw=true     \x1b[2m# escape hatch: exact bytes (CLI: lean-ctx raw \"cmd\")\x1b[0m
@@ -49,10 +48,9 @@ pub fn cmd_cheatsheet() {
   Browsing?   → \x1b[1maggressive\x1b[0m (syntax stripped)
 
 \x1b[1;36m━━━ MONITORING ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\x1b[0m
-  lean-ctx gain          \x1b[2m# local context-usage estimates (not a benchmark)\x1b[0m
-  lean-ctx gain --live   \x1b[2m# live local estimates (Ctrl+C)\x1b[0m
-  lean-ctx dashboard     \x1b[2m# web dashboard with charts\x1b[0m
-  lean-ctx gain --wrapped \x1b[2m# local usage summary\x1b[0m
+  lean-ctx cockpit       \x1b[2m# Savings · Spend · Proof (localhost:3333)\x1b[0m
+  lean-ctx gain          \x1b[2m# terminal summary of local context-usage estimates\x1b[0m
+  lean-ctx gain --wrapped \x1b[2m# local usage summary (recap: Cockpit → #report)\x1b[0m
   lean-ctx discover      \x1b[2m# find uncompressed commands\x1b[0m
   lean-ctx doctor        \x1b[2m# diagnose installation\x1b[0m
   lean-ctx update        \x1b[2m# self-update (or 'update 3.8.5' to pin)\x1b[0m

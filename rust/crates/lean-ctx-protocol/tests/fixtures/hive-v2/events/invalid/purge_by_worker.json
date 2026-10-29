@@ -1,0 +1,18 @@
+{
+  "case": "purge_by_worker",
+  "base": "events/purge.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/actor",
+      "value": {
+        "kind": "worker"
+      }
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "actor_kind"
+  }
+}

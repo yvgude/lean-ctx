@@ -1,13 +1,24 @@
 //! Aggregate baseline-versus-treatment comparison.
 
-use std::collections::BTreeSet;
-
 use serde::{Deserialize, Serialize};
 
 use super::{baseline::BaselineMeasurement, recommendation::TreatmentMeasurement};
 
+/// Reports whose baseline uses each task's own host model (3.11.0 and later).
+pub const SAME_HOST_MODEL_SEMANTICS: &str = "same-host-model/v2";
+/// Reports written before 3.11.0 carry no `semantics` field. Their baseline was priced with a
+/// fixed reference model, so cost differences may be model price differences and their
+/// recommendations may name a model switch. They are kept as records, never shown as current.
+pub const LEGACY_SEMANTICS: &str = "legacy-reference-model";
+
+fn legacy_semantics() -> String {
+    LEGACY_SEMANTICS.into()
+}
+
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ShadowReport {
+    #[serde(default = "legacy_semantics")]
+    pub semantics: String,
     pub report_id: String,
     pub timestamp: String,
     pub tasks_count: u32,
@@ -90,10 +101,10 @@ pub fn compare(
             _ => None,
         },
     };
-    let recommendations =
-        recommendations(baselines, treatments, &savings, baseline.total_cost_micros);
+    let recommendations = recommendations(baselines, treatments, &savings);
 
     ShadowReport {
+        semantics: SAME_HOST_MODEL_SEMANTICS.into(),
         report_id: format!(
             "shadow-{}-{}-{}",
             baseline.total_cost_micros, treatment.total_cost_micros, baseline.total_tokens
@@ -113,7 +124,24 @@ pub fn compare(
 /// the treatment, so the acceptance comparison cannot show a quality change.
 pub const BASELINE_NOTE: &str = "Note: the baseline is simulated (uncompressed token counts, same outcome signals), not a second measured run. Cost and token deltas are estimates; the acceptance line is not a measured quality comparison.";
 
+impl ShadowReport {
+    /// A stored report from before the same-host-model comparison (see [`LEGACY_SEMANTICS`]).
+    pub fn is_legacy(&self) -> bool {
+        self.semantics != SAME_HOST_MODEL_SEMANTICS
+    }
+}
+
+pub const LEGACY_NOTE: &str = "Legacy record: written before reports compared each task with its own host model. Its baseline may be priced with a different reference model, so its cost difference is not a context saving and its recommendations are not current guidance. Kept for history only.";
+
 pub fn format_report(report: &ShadowReport) -> String {
+    if report.is_legacy() {
+        // Token counts do not depend on the model, so they stay readable; costs and
+        // recommendations from the reference-model baseline are withheld.
+        return format!(
+            "# Shadow Comparison Report (legacy record)\n\n{LEGACY_NOTE}\n\nRecorded tasks: {}. Tokens: baseline {}, treatment {}.\n\n{BASELINE_NOTE}\n\n## Recommendations\n- Withheld: recommendations of legacy records are not current guidance.",
+            report.tasks_count, report.baseline.total_tokens, report.treatment.total_tokens,
+        );
+    }
     let recommendations = if report.recommendations.is_empty() {
         "- No recommendation: treatment did not reduce cost without lowering outcome acceptance."
             .into()
@@ -180,62 +208,34 @@ fn aggregate(items: impl Iterator<Item = Metric>) -> AggregateMetrics {
     }
 }
 
+/// LeanCTX never recommends a model: the host chooses it. A cost difference is attributed to
+/// context compression only when every task was priced with the same model on both sides, so a
+/// price difference between models can never appear as a context saving.
 fn recommendations(
     baselines: &[BaselineMeasurement],
     treatments: &[TreatmentMeasurement],
     savings: &SavingsMetrics,
-    baseline_cost_micros: u64,
 ) -> Vec<Recommendation> {
-    if savings.absolute_micros == 0 || !savings.quality_maintained {
+    let same_models = baselines.len() == treatments.len()
+        && baselines
+            .iter()
+            .zip(treatments)
+            .all(|(baseline, treatment)| baseline.model == treatment.model);
+    if !same_models
+        || savings.absolute_micros == 0
+        || savings.tokens_saved == 0
+        || !savings.quality_maintained
+    {
         return Vec::new();
     }
-
-    let mut results = Vec::new();
-    if savings.tokens_saved > 0 {
-        results.push(Recommendation {
-            category: "Context compression".into(),
-            description: format!(
-                "Keep context compression: it removed an estimated {} tokens against the simulated baseline.",
-                savings.tokens_saved
-            ),
-            estimated_savings_micros: savings.absolute_micros,
-        });
-    }
-
-    let baseline_models = model_labels(baselines.iter().map(|item| item.model.as_str()));
-    let treatment_models = model_labels(treatments.iter().map(|item| item.model.as_str()));
-    if baseline_models != treatment_models {
-        results.push(Recommendation {
-            category: "Model routing".into(),
-            description: format!(
-                "Route comparable tasks from {} to {}; this lowered estimated cost by {:.2}% against the simulated baseline.",
-                baseline_models.join(", "),
-                treatment_models.join(", "),
-                percentage_savings(baseline_cost_micros, baseline_cost_micros - savings.absolute_micros),
-            ),
-            estimated_savings_micros: savings.absolute_micros,
-        });
-    }
-    results
-}
-
-fn model_labels<'a>(models: impl Iterator<Item = &'a str>) -> Vec<String> {
-    models
-        .into_iter()
-        .map(model_label)
-        .collect::<BTreeSet<_>>()
-        .into_iter()
-        .collect()
-}
-
-fn model_label(model: &str) -> String {
-    match model {
-        "gpt-4o" => "OpenAI GPT-4o".into(),
-        "claude-sonnet" => "Anthropic Claude Sonnet".into(),
-        _ if model.starts_with("gpt-") => format!("OpenAI {model}"),
-        _ if model.starts_with("claude-") => format!("Anthropic {model}"),
-        _ => format!("configured provider {model}"),
-    }
+    vec![Recommendation {
+        category: "Context compression".into(),
+        description: format!(
+            "Keep context compression: it removed an estimated {} tokens against the simulated baseline.",
+            savings.tokens_saved
+        ),
+        estimated_savings_micros: savings.absolute_micros,
+    }]
 }
 
 #[derive(Clone, Copy)]

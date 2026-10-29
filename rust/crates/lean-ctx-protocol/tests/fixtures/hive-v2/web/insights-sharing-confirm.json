@@ -1,0 +1,28 @@
+{
+  "route": "W104",
+  "method": "POST",
+  "path": "/api/v1/orgs/ada/insights/sharing/confirm",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "state": "on",
+      "plan_default": "off",
+      "policy": null,
+      "confirmed_at": "2026-10-26T15:12:40Z",
+      "since": "2026-10-26T15:00:00Z"
+    }
+  },
+  "errors": [
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "sharing is on by default for this plan",
+          "reason": "not_required"
+        }
+      }
+    }
+  ]
+}

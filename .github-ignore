@@ -71,6 +71,15 @@ LICENSES/LicenseRef-LeanCTX-Commercial-Source-2.0.txt
 LICENSES/Thinkery-Free-Runtime-License-1.0-DRAFT.txt
 LICENSES-LeanCTX-Commercial-Source-License-2.0.txt
 ee/LICENSE
+# Local consolidation inputs; publication needs a separately reviewed mixed-source export.
+ee/
+sdk/
+.github/workflows/product-ci.yml
+.github/workflows/cockpit-release.yml
+.github/workflows/sdk-ci.yml
+# Names the enforcing files and functions inside ee/; the public registry
+# projection withholds exactly that, so the map stays with the sources it names.
+product/tier-map.json
 LEGAL_REVIEW_REQUIRED.md
 TRADEMARKS.md
 legal/cla/CLA-v2.md

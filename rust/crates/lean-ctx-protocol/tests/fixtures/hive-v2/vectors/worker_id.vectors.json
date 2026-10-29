@@ -1,0 +1,124 @@
+{
+  "alias": [
+    {
+      "host_app": "codex",
+      "place": "swarm:9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+      "role": "general",
+      "worker_alias_key_hex": "1de10440cc6771c69a508b36eb21d0e1b987fa88f4dc237537b0e8f0bfdb10a9",
+      "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+    },
+    {
+      "host_app": "codex",
+      "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+      "role": "general",
+      "worker_alias_key_hex": "1de10440cc6771c69a508b36eb21d0e1b987fa88f4dc237537b0e8f0bfdb10a9",
+      "worker_id": "wkr_antuyxwcovsu2lqob3ak"
+    }
+  ],
+  "name": [
+    {
+      "input": "yves-mac · Claude Code · backend",
+      "result": "ok"
+    },
+    {
+      "input": "Codex · general",
+      "result": "ok"
+    },
+    {
+      "input": "Пётр · reviewer",
+      "result": "confusable"
+    },
+    {
+      "input": "Pаypal bot",
+      "result": "confusable"
+    },
+    {
+      "input": "my hive helper",
+      "result": "reserved"
+    },
+    {
+      "input": "LeanCTX bot",
+      "result": "reserved"
+    },
+    {
+      "input": "",
+      "result": "length"
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "result": "length"
+    },
+    {
+      "input": "emoji 😀 bot",
+      "result": "charset"
+    },
+    {
+      "input": "ｆｕｌｌｗｉｄｔｈ ok",
+      "result": "ok"
+    },
+    {
+      "input": "日本 bot",
+      "result": "confusable"
+    }
+  ],
+  "role": [
+    {
+      "input": "backend",
+      "output": "backend"
+    },
+    {
+      "input": "Backend Dev",
+      "output": "backend-dev"
+    },
+    {
+      "input": "  QA / Review!!  ",
+      "output": "qa-review"
+    },
+    {
+      "input": "",
+      "output": "general"
+    },
+    {
+      "input": "---",
+      "output": "general"
+    },
+    {
+      "input": "Ünïcode Rôle",
+      "output": "n-code-r-le"
+    },
+    {
+      "input": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "output": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    {
+      "input": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx-yz",
+      "output": "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+    }
+  ],
+  "rules": {
+    "alias": "\"wkr_\" + base32lower(blake3_keyed(worker_alias_key, host_app ‖ \"|\" ‖ role ‖ \"|\" ‖ place_ref))[..20] (worker_alias_key: signing.vectors.json rules)",
+    "name": "NFKC, then 1–64 Unicode scalar values from [\\p{L}\\p{N} ._·-]; every letter of one Script (Common/Inherited allowed); case-insensitive substrings hive, thinkery, leanctx, moderator refused (reserved)",
+    "role_normalisation": "lowercase; every character outside [a-z0-9-] → '-'; runs of '-' collapsed; '-' trimmed at both ends; first 32 characters, trailing '-' trimmed again; empty → general (SPEC-ENGINE §3.6)",
+    "workspace": "\"wkr_\" + base32lower(blake3(instance_id ‖ \"|\" ‖ host_app ‖ \"|\" ‖ role))[..20]"
+  },
+  "workspace": [
+    {
+      "host_app": "claude-code",
+      "instance_id": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+      "role": "backend",
+      "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+    },
+    {
+      "host_app": "codex",
+      "instance_id": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+      "role": "backend",
+      "worker_id": "wkr_kevgmpb7tmes3ii4aly6"
+    },
+    {
+      "host_app": "claude-code",
+      "instance_id": "8e3c0d5f-2b4e-4f60-9b8c-1d2e3f4a5b6c",
+      "role": "backend",
+      "worker_id": "wkr_jnt2cjplb6j4ugrq4pxw"
+    }
+  ]
+}

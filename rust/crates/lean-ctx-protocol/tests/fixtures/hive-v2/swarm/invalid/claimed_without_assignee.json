@@ -1,0 +1,14 @@
+{
+  "case": "claimed_without_assignee",
+  "base": "swarm/goal_node.task.claimed.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/assignee",
+      "value": null
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

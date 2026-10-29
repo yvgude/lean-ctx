@@ -1,0 +1,19 @@
+{
+  "answer_revision": 0,
+  "body": "Code says 3, the runbook says 5.",
+  "licence": "CC-BY-4.0",
+  "material": [],
+  "org_id": "org_acme",
+  "owner": {
+    "handle": "quiet-heron"
+  },
+  "schema": "leanctx.hive.swarm/v1",
+  "scope": "team",
+  "state": "working",
+  "swarm_id": "sw_01jbretry",
+  "title": "Which retry budget does payments use?",
+  "topics": [
+    "payments"
+  ],
+  "trust": "untrusted"
+}

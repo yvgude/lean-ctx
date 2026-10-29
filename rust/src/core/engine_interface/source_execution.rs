@@ -122,6 +122,12 @@ pub(crate) fn execute(
         if context_plan::materialize(&root, request)? != snapshot {
             return Err("source_plan_changed");
         }
+        // The disclosed view derives from the materialized context only.
+        context_plan::materialize_impl::record_derived_delivery(
+            &root,
+            &snapshot.content,
+            &view.text,
+        );
         return Ok(SourceExecutionResult {
             source_plan: snapshot.plan,
             execution_plan: plan,
@@ -146,6 +152,8 @@ pub(crate) fn execute(
         return Err("source_plan_changed");
     }
     let receipt = authority.publish(&attempt, &invocation, &observation, &view.text)?;
+    // The disclosed view derives from the materialized context only.
+    context_plan::materialize_impl::record_derived_delivery(&root, &snapshot.content, &view.text);
     Ok(SourceExecutionResult {
         source_plan: snapshot.plan,
         execution_plan: plan,

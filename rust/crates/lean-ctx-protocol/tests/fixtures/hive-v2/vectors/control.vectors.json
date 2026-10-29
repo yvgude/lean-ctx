@@ -1,0 +1,28 @@
+{
+  "cases": [
+    {
+      "fixture": "bus/control.hold.json",
+      "key_id": "fac2346807329f09",
+      "signature": "68d392eb253c768ff0fbcdb32100aa11c04280e53761ded07c31710073ca0c8d9b1d52ab67fa8cc1387b3b3e83ec40156e6b8e183f80a9c942cdff55fb247a03",
+      "signing_input": "leanctx.hive.control.v1\n{\"action\":\"hold\",\"created_at\":1792800020000,\"id\":\"ctl_hhhhhhhhhhhhhhhhhhhhhhhhha\",\"issued_by\":{\"kind\":\"person\",\"label\":\"yves\",\"user_id\":\"2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f\"},\"key_id\":\"fac2346807329f09\",\"place\":\"vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"reason\":\"Pausing the reviewer while the ledger migration runs.\",\"target\":\"worker\",\"worker_id\":\"wkr_gawyravj36igdp3irdfo\"}"
+    },
+    {
+      "fixture": "bus/control.veto.json",
+      "key_id": "fac2346807329f09",
+      "signature": "7fc57a4598d728d81bea98868ab24acd8b020467d2ef227bfaa2f0bad20ad30c509b3112501f9c9a084387b339342e342f2609377bd0e65cd55fcd80ad142501",
+      "signing_input": "leanctx.hive.control.v1\n{\"action\":\"veto\",\"created_at\":1792800021000,\"id\":\"ctl_vvvvvvvvvvvvvvvvvvvvvvvvva\",\"issued_by\":{\"kind\":\"person\",\"label\":\"yves\",\"user_id\":\"2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f\"},\"key_id\":\"fac2346807329f09\",\"place\":\"vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"reason\":\"The migration needs a maintainer, not a reviewer.\",\"ref\":{\"id\":\"msg_00000000000000a4\",\"kind\":\"handoff\"},\"target\":\"bus\"}"
+    },
+    {
+      "fixture": "bus/control.veto.lifted.json",
+      "key_id": "fac2346807329f09",
+      "signature": "e172f754bed8d9d38c4314185aa4d54e8262b616cf4defd42d3f1c0739a9a3b05761480dc5da7016d986ddd0aa32c1d6a403638338f2f62b5bb98c9e01d64f0a",
+      "signing_input": "leanctx.hive.control.v1\n{\"action\":\"veto\",\"created_at\":1792800021000,\"id\":\"ctl_vvvvvvvvvvvvvvvvvvvvvvvvva\",\"issued_by\":{\"kind\":\"person\",\"label\":\"yves\",\"user_id\":\"2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f\"},\"key_id\":\"fac2346807329f09\",\"lifted_at\":1792800030000,\"place\":\"vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"reason\":\"The migration needs a maintainer, not a reviewer.\",\"ref\":{\"id\":\"msg_00000000000000a4\",\"kind\":\"handoff\"},\"target\":\"bus\"}"
+    }
+  ],
+  "rules": {
+    "domain": "leanctx.hive.control.v1\n",
+    "receiver": "engines ignore a Control whose signature fails and count it sig_invalid",
+    "signer": "Hive key of purpose control (signing.vectors.json hive_control)",
+    "signing_input": "domain ‖ canonical_json(Control without signature)"
+  }
+}

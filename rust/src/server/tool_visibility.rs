@@ -395,51 +395,6 @@ mod tests {
     }
 
     #[test]
-    fn deprecated_aliases_never_visible_even_in_power() {
-        // #509: folded read-cluster aliases are hidden from tools/list in every
-        // mode (Power enables everything) — but stay registered + callable.
-        let p = ToolProfile::Power;
-        assert!(!is_tool_visible(
-            "ctx_smart_read",
-            &p,
-            &[],
-            no_quirks(),
-            true
-        ));
-        assert!(!is_tool_visible(
-            "ctx_multi_read",
-            &p,
-            &[],
-            no_quirks(),
-            true
-        ));
-    }
-
-    #[test]
-    fn deprecated_aliases_stay_registered_and_callable() {
-        // The non-breaking contract (#509): hidden from the advertised surface,
-        // but still in the registry so direct calls and ctx_call keep working
-        // for one release. Removal is Phase 2.
-        let _guard = crate::core::data_dir::isolated_data_dir();
-        let defs = crate::server::registry::build_registry().registered_tool_defs();
-        for name in [
-            "ctx_smart_read",
-            "ctx_multi_read",
-            "ctx_semantic_search",
-            "ctx_symbol",
-        ] {
-            assert!(
-                defs.iter().any(|t| t.name.as_ref() == name),
-                "{name} must stay registered (callable) even though hidden"
-            );
-            assert!(
-                !is_tool_visible(name, &ToolProfile::Power, &[], no_quirks(), true),
-                "{name} must be hidden from tools/list"
-            );
-        }
-    }
-
-    #[test]
     fn local_collaboration_tools_stay_callable_but_are_never_advertised() {
         // The local bus/task/workflow substrate remains installed for existing
         // local integrations. It is not a public coordination product, even in
@@ -479,7 +434,7 @@ mod tests {
         // surface them.
         let p = ToolProfile::Standard;
         assert!(is_tool_visible("ctx_execute", &p, &[], no_quirks(), true));
-        assert!(is_tool_visible("ctx_explore", &p, &[], no_quirks(), true));
+        assert!(is_tool_visible("ctx_compose", &p, &[], no_quirks(), true));
         assert!(is_tool_visible("ctx_callgraph", &p, &[], no_quirks(), true));
         assert!(is_tool_visible("ctx_graph", &p, &[], no_quirks(), true));
         // #1008: anchored editing ships with the pinned Standard profile.
@@ -487,32 +442,10 @@ mod tests {
     }
 
     #[test]
-    fn folded_search_aliases_never_visible() {
-        // #509: ctx_semantic_search + ctx_symbol are consolidated into ctx_search
-        // (action=…). Hidden from tools/list in every mode, but stay callable.
-        let p = ToolProfile::Power;
-        assert!(!is_tool_visible(
-            "ctx_semantic_search",
-            &p,
-            &[],
-            no_quirks(),
-            true
-        ));
-        assert!(!is_tool_visible("ctx_symbol", &p, &[], no_quirks(), true));
-        assert!(is_tool_visible("ctx_search", &p, &[], no_quirks(), true));
-    }
-
-    #[test]
     fn minimal_hides_non_minimal_tools() {
         let p = ToolProfile::Minimal;
         assert!(is_tool_visible("ctx_read", &p, &[], no_quirks(), true));
-        assert!(!is_tool_visible(
-            "ctx_architecture",
-            &p,
-            &[],
-            no_quirks(),
-            true
-        ));
+        assert!(!is_tool_visible("ctx_index", &p, &[], no_quirks(), true));
     }
 
     #[test]

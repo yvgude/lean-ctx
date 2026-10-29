@@ -1,0 +1,63 @@
+{
+  "route": "W79",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/policies/enforcement",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "instance_id": "inst_5f0e1d2c3b4a59687766554433221100",
+          "label": "ada-laptop",
+          "state": "acked",
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "conflict": null,
+          "acked": {
+            "version": 3,
+            "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "unenforced": [
+              "context.max_context_tokens"
+            ],
+            "acked_at": "2026-10-25T21:15:02Z"
+          },
+          "refused": null,
+          "last_seen_at": "2026-10-25T21:15:00Z"
+        },
+        {
+          "instance_id": "inst_8899aabbccddeeff0011223344556677",
+          "label": "bob-mbp",
+          "state": "refused",
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "conflict": null,
+          "acked": {
+            "version": 2,
+            "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+            "unenforced": [],
+            "acked_at": "2026-10-24T18:02:11Z"
+          },
+          "refused": {
+            "version": 3,
+            "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+            "reason_code": "key_unavailable",
+            "detail": "effective policy: no valid policy key for this key_id",
+            "refused_at": "2026-10-25T21:14:40Z"
+          },
+          "last_seen_at": "2026-10-25T21:14:40Z"
+        },
+        {
+          "instance_id": "inst_00112233445566778899aabbccddeeff",
+          "label": "ci-runner",
+          "state": "unreachable",
+          "digest": "sha256:3333333333333333333333333333333333333333333333333333333333333333",
+          "conflict": null,
+          "acked": null,
+          "refused": null,
+          "last_seen_at": "2026-10-20T08:00:00Z"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "errors": []
+}

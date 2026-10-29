@@ -1,0 +1,569 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/compute.schema.json",
+  "title": "Optional Task Compute (Release C, BAUPLAN v1.1 §9)",
+  "description": "One defined job (tests, static analysis, index build) of an existing agent runs in an isolated, short-lived sandbox of one provider and returns a bounded result. No Agent Compute. Switched off unless the server runs with HIVE_COMPUTE=on (else every route answers 404 feature_disabled, feature compute). Prepaid credit only: the job's maximum cost is reserved at submit, the real cost settled at the end and the rest refunded; the balance never goes below zero. 1 credit = 1 vCPU-minute (`rate`). Jobs never receive engine keys, tokens, a home directory, other workspaces' data or host paths; the network is denied unless the job lists hosts. Times are integer milliseconds since the Unix epoch (C0 S17).",
+  "$defs": {
+    "job_id": {
+      "type": "string",
+      "pattern": "^cj_[0-9a-f]{32}$",
+      "description": "`cj_` + the job's UUID in simple form; made by the server"
+    },
+    "workspace_id": {
+      "type": "string",
+      "pattern": "^org_[0-9a-f]{32}$"
+    },
+    "instance_id": {
+      "type": "string",
+      "pattern": "^inst_[0-9a-f]{32}$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "sha256 of the plaintext bytes: bundles, artifacts and logs are content-addressed per workspace"
+    },
+    "job_type": {
+      "enum": ["tests", "static_analysis", "index_build"]
+    },
+    "job_state": {
+      "description": "queued -> running -> succeeded | failed | cancelled | expired; queued -> cancelled | expired. The last four are terminal.",
+      "enum": ["queued", "running", "succeeded", "failed", "cancelled", "expired"]
+    },
+    "terminal_reason": {
+      "description": "Why a job is failed, cancelled or expired (null while queued or running and when succeeded): exit_nonzero (failed: the command exited non-zero), provider_error (failed: the sandbox could not run it), runner_lost (failed: the node running it stopped; charged up to its last heartbeat), isolation_refused (failed: the spec broke an isolation rule before anything ran), cancelled (cancelled by an engine or a person), queue_timeout (expired: not started before queue_deadline_ms), runtime_exceeded (expired: killed at max_runtime_s)",
+      "enum": ["exit_nonzero", "provider_error", "runner_lost", "isolation_refused", "cancelled", "queue_timeout", "runtime_exceeded"]
+    },
+    "result_format": {
+      "description": "What the job's result carries: junit_xml and json_summary for tests, sarif and json_summary for static_analysis, artifact_bundle for index_build",
+      "enum": ["junit_xml", "sarif", "json_summary", "artifact_bundle"]
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$",
+      "description": "a file name without a path; the sandbox sees an input as /work/in/<name>"
+    },
+    "bundle_ref": {
+      "type": "object",
+      "required": ["name", "digest", "size_bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "name": { "$ref": "#/$defs/name" },
+        "digest": { "$ref": "#/$defs/digest" },
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 67108864 }
+      }
+    },
+    "inputs": {
+      "description": "Versioned, content-addressed inputs: every bundle was uploaded before (E51) to this workspace and is referenced by its digest; inputs carry no secrets (the engine screens before upload, the server screens the command)",
+      "type": "object",
+      "required": ["version", "bundles"],
+      "additionalProperties": false,
+      "properties": {
+        "version": { "const": 1 },
+        "bundles": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "items": { "$ref": "#/$defs/bundle_ref" }
+        }
+      }
+    },
+    "image": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9._-]{0,63}$",
+      "description": "a runner image by name from the server's allowlist (each pinned by digest on the server, never pulled at run time); another name answers 400 invalid_request field image"
+    },
+    "command": {
+      "type": "object",
+      "required": ["argv"],
+      "additionalProperties": false,
+      "properties": {
+        "argv": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 32,
+          "items": { "type": "string", "minLength": 1, "maxLength": 512 }
+        },
+        "workdir": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*\\.\\.)[A-Za-z0-9._/-]{0,128}$",
+          "description": "relative to /work, no `..`; default empty (= /work)"
+        }
+      }
+    },
+    "resources": {
+      "type": "object",
+      "required": ["cpu", "memory_mb", "disk_mb"],
+      "additionalProperties": false,
+      "properties": {
+        "cpu": { "type": "integer", "minimum": 1, "maximum": 8, "description": "vCPUs" },
+        "memory_mb": { "type": "integer", "minimum": 256, "maximum": 16384 },
+        "disk_mb": { "type": "integer", "minimum": 256, "maximum": 20480, "description": "scratch space (/tmp and /work/out together)" }
+      }
+    },
+    "max_runtime_s": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 3600
+    },
+    "network_allowlist": {
+      "description": "Hosts the sandbox may reach (TCP 443 only); empty = no network at all (the default). A provider that cannot enforce a host list refuses a non-empty one (400 invalid_request field network_allowlist reason unsupported)",
+      "type": "array",
+      "maxItems": 16,
+      "uniqueItems": true,
+      "items": {
+        "type": "string",
+        "maxLength": 253,
+        "pattern": "^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?\\.)+[a-z]{2,63}$"
+      }
+    },
+    "budget": {
+      "type": "object",
+      "required": ["credits"],
+      "additionalProperties": false,
+      "properties": {
+        "credits": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000,
+          "description": "the most this job may cost; must cover its reserve ceil(cpu x max_runtime_s / 60), else 409 cap_reached cap job_budget"
+        }
+      }
+    },
+    "client_ref": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9._:-]{1,64}$",
+      "description": "idempotency key per engine: the same client_ref with the same spec returns the existing job (200), with another spec 409 invalid_state state idempotency_mismatch"
+    },
+    "submit_request": {
+      "description": "E47 POST /v1/compute/jobs (engine, right tasks.work, Team or Business plan, sharing.allowed_vaults and sharing.task_claim_min_role of the vault)",
+      "type": "object",
+      "required": ["schema", "vault_id", "type", "inputs", "image", "command", "resources", "max_runtime_s", "network_allowlist", "budget", "result_format"],
+      "additionalProperties": false,
+      "properties": {
+        "schema": { "const": "leanctx.hive.compute-job/v1" },
+        "vault_id": { "$ref": "common.schema.json#/$defs/hex32" },
+        "type": { "$ref": "#/$defs/job_type" },
+        "inputs": { "$ref": "#/$defs/inputs" },
+        "image": { "$ref": "#/$defs/image" },
+        "command": { "$ref": "#/$defs/command" },
+        "resources": { "$ref": "#/$defs/resources" },
+        "max_runtime_s": { "$ref": "#/$defs/max_runtime_s" },
+        "network_allowlist": { "$ref": "#/$defs/network_allowlist" },
+        "budget": { "$ref": "#/$defs/budget" },
+        "result_format": { "$ref": "#/$defs/result_format" },
+        "client_ref": { "$ref": "#/$defs/client_ref" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "type": { "const": "tests" } } },
+          "then": { "properties": { "result_format": { "enum": ["junit_xml", "json_summary"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "static_analysis" } } },
+          "then": { "properties": { "result_format": { "enum": ["sarif", "json_summary"] } } }
+        },
+        {
+          "if": { "properties": { "type": { "const": "index_build" } } },
+          "then": { "properties": { "result_format": { "const": "artifact_bundle" } } }
+        }
+      ]
+    },
+    "cost": {
+      "description": "The job's cost record. reserved = ceil(cpu x max_runtime_s / 60) at submit; spent = min(reserved, max(1, ceil(cpu x wall_seconds / 60))) once it ran (0 when it never started); refunded = reserved - spent (vectors/compute_cost.vectors.json)",
+      "type": "object",
+      "required": ["credits_reserved", "credits_spent", "credits_refunded", "wall_seconds", "rate"],
+      "additionalProperties": false,
+      "properties": {
+        "credits_reserved": { "type": "integer", "minimum": 1 },
+        "credits_spent": { "type": ["integer", "null"], "minimum": 0 },
+        "credits_refunded": { "type": ["integer", "null"], "minimum": 0 },
+        "wall_seconds": { "type": ["integer", "null"], "minimum": 0 },
+        "rate": {
+          "type": "object",
+          "required": ["credits_per_cpu_minute"],
+          "additionalProperties": false,
+          "properties": { "credits_per_cpu_minute": { "const": 1 } }
+        }
+      }
+    },
+    "artifact_ref": {
+      "type": "object",
+      "required": ["name", "digest", "size_bytes"],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^(?!/)(?!.*\\.\\.)[A-Za-z0-9._/-]{1,128}$",
+          "description": "path below /work/out"
+        },
+        "digest": { "$ref": "#/$defs/digest" },
+        "size_bytes": { "type": "integer", "minimum": 0, "maximum": 67108864 }
+      }
+    },
+    "logs": {
+      "description": "stdout and stderr together, the last 256 KiB at most (truncated), screened for secrets before storage (each finding replaced by a [REDACTED] marker, counted in redactions)",
+      "type": "object",
+      "required": ["digest", "size_bytes", "truncated", "redactions"],
+      "additionalProperties": false,
+      "properties": {
+        "digest": { "$ref": "#/$defs/digest" },
+        "size_bytes": { "type": "integer", "minimum": 0, "maximum": 262144 },
+        "truncated": { "type": "boolean" },
+        "redactions": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "required": ["outcome", "counts", "text"],
+      "additionalProperties": false,
+      "properties": {
+        "outcome": { "enum": ["passed", "failed", "error"] },
+        "counts": {
+          "description": "e.g. passed, failed, skipped (tests) or findings by level (static analysis); from /work/out/summary.json when the job writes one",
+          "type": "object",
+          "maxProperties": 16,
+          "propertyNames": { "pattern": "^[a-z][a-z0-9_]{0,31}$" },
+          "additionalProperties": { "type": "integer", "minimum": 0 }
+        },
+        "text": { "type": "string", "maxLength": 2000, "description": "screened like the logs" }
+      }
+    },
+    "result": {
+      "description": "Bounded result: at most 32 artifacts of 64 MiB in total, the logs reference and a summary. Artifacts and logs are kept for the workspace's retention (7 days by default, artifacts_expire_ms) and deleted afterwards; the job row stays",
+      "type": "object",
+      "required": ["exit_code", "summary", "artifacts", "logs"],
+      "additionalProperties": false,
+      "properties": {
+        "exit_code": { "type": ["integer", "null"] },
+        "summary": { "$ref": "#/$defs/summary" },
+        "artifacts": {
+          "type": "array",
+          "maxItems": 32,
+          "items": { "$ref": "#/$defs/artifact_ref" }
+        },
+        "logs": {
+          "anyOf": [{ "$ref": "#/$defs/logs" }, { "type": "null" }]
+        }
+      }
+    },
+    "job": {
+      "type": "object",
+      "required": ["job_id", "workspace", "vault_id", "type", "state", "reason", "inputs", "image", "command", "resources", "max_runtime_s", "network_allowlist", "budget", "result_format", "client_ref", "submitted_by", "cost", "created_ms", "started_ms", "finished_ms", "queue_deadline_ms", "run_deadline_ms", "cancel_requested", "artifacts_expire_ms", "result_available"],
+      "additionalProperties": false,
+      "properties": {
+        "job_id": { "$ref": "#/$defs/job_id" },
+        "workspace": { "$ref": "#/$defs/workspace_id" },
+        "vault_id": { "$ref": "common.schema.json#/$defs/hex32" },
+        "type": { "$ref": "#/$defs/job_type" },
+        "state": { "$ref": "#/$defs/job_state" },
+        "reason": { "anyOf": [{ "$ref": "#/$defs/terminal_reason" }, { "type": "null" }] },
+        "inputs": { "$ref": "#/$defs/inputs" },
+        "image": { "$ref": "#/$defs/image" },
+        "command": { "$ref": "#/$defs/command" },
+        "resources": { "$ref": "#/$defs/resources" },
+        "max_runtime_s": { "$ref": "#/$defs/max_runtime_s" },
+        "network_allowlist": { "$ref": "#/$defs/network_allowlist" },
+        "budget": { "$ref": "#/$defs/budget" },
+        "result_format": { "$ref": "#/$defs/result_format" },
+        "client_ref": { "anyOf": [{ "$ref": "#/$defs/client_ref" }, { "type": "null" }] },
+        "submitted_by": {
+          "type": "object",
+          "required": ["instance_id", "user_id"],
+          "additionalProperties": false,
+          "properties": {
+            "instance_id": { "anyOf": [{ "$ref": "#/$defs/instance_id" }, { "type": "null" }] },
+            "user_id": { "anyOf": [{ "$ref": "common.schema.json#/$defs/uuid" }, { "type": "null" }] }
+          }
+        },
+        "cost": { "$ref": "#/$defs/cost" },
+        "created_ms": { "$ref": "common.schema.json#/$defs/ms" },
+        "started_ms": { "anyOf": [{ "$ref": "common.schema.json#/$defs/ms" }, { "type": "null" }] },
+        "finished_ms": { "anyOf": [{ "$ref": "common.schema.json#/$defs/ms" }, { "type": "null" }] },
+        "queue_deadline_ms": { "$ref": "common.schema.json#/$defs/ms" },
+        "run_deadline_ms": { "anyOf": [{ "$ref": "common.schema.json#/$defs/ms" }, { "type": "null" }] },
+        "cancel_requested": { "type": "boolean" },
+        "artifacts_expire_ms": { "anyOf": [{ "$ref": "common.schema.json#/$defs/ms" }, { "type": "null" }] },
+        "result_available": { "type": "boolean", "description": "a result exists and its artifacts are not deleted yet" }
+      },
+      "allOf": [
+        {
+          "if": { "properties": { "state": { "enum": ["queued", "running", "succeeded"] } } },
+          "then": { "properties": { "reason": { "type": "null" } } },
+          "else": { "properties": { "reason": { "$ref": "#/$defs/terminal_reason" } } }
+        },
+        {
+          "if": { "properties": { "state": { "const": "queued" } } },
+          "then": { "properties": { "started_ms": { "type": "null" }, "finished_ms": { "type": "null" } } }
+        },
+        {
+          "if": { "properties": { "state": { "const": "running" } } },
+          "then": { "properties": { "started_ms": { "type": "integer" }, "finished_ms": { "type": "null" }, "run_deadline_ms": { "type": "integer" } } }
+        },
+        {
+          "if": { "properties": { "state": { "enum": ["succeeded", "failed", "cancelled", "expired"] } } },
+          "then": { "properties": { "finished_ms": { "type": "integer" }, "cost": { "properties": { "credits_spent": { "type": "integer" }, "credits_refunded": { "type": "integer" } } } } },
+          "else": { "properties": { "cost": { "properties": { "credits_spent": { "type": "null" }, "credits_refunded": { "type": "null" } } } } }
+        }
+      ]
+    },
+    "job_response": {
+      "description": "E47 submit (201 new, 200 an existing job of the same client_ref), E48 GET /v1/compute/jobs/{job_id}, E49 POST /v1/compute/jobs/{job_id}/cancel; W89, W90",
+      "type": "object",
+      "required": ["job"],
+      "additionalProperties": false,
+      "properties": { "job": { "$ref": "#/$defs/job" } }
+    },
+    "result_response": {
+      "description": "E50 GET /v1/compute/jobs/{job_id}/result: a terminal job's result (null when it never ran) and cost; a job still queued or running answers 409 invalid_state state not_finished",
+      "type": "object",
+      "required": ["job_id", "state", "reason", "result", "cost"],
+      "additionalProperties": false,
+      "properties": {
+        "job_id": { "$ref": "#/$defs/job_id" },
+        "state": { "enum": ["succeeded", "failed", "cancelled", "expired"] },
+        "reason": { "anyOf": [{ "$ref": "#/$defs/terminal_reason" }, { "type": "null" }] },
+        "result": { "anyOf": [{ "$ref": "#/$defs/result" }, { "type": "null" }] },
+        "cost": { "$ref": "#/$defs/cost" }
+      }
+    },
+    "bundle_response": {
+      "description": "E51 PUT /v1/compute/bundles/{digest} (application/octet-stream, at most 64 MiB, sha256 of the body must equal the digest, else 400 invalid_request reason digest_mismatch): 201 stored, 200 already there (its expiry renewed). A workspace holds at most 1 GiB of live input bundles (409 cap_reached cap bundle_bytes)",
+      "type": "object",
+      "required": ["digest", "size_bytes", "expires_ms", "created"],
+      "additionalProperties": false,
+      "properties": {
+        "digest": { "$ref": "#/$defs/digest" },
+        "size_bytes": { "type": "integer", "minimum": 1, "maximum": 67108864 },
+        "expires_ms": { "$ref": "common.schema.json#/$defs/ms" },
+        "created": { "type": "boolean" }
+      }
+    },
+    "caps": {
+      "description": "Hard caps per workspace, set by an admin (W94) within the server maxima; raising one needs a fresh second factor",
+      "type": "object",
+      "required": ["max_concurrent_jobs", "max_runtime_s", "max_job_credits", "daily_credits"],
+      "additionalProperties": false,
+      "properties": {
+        "max_concurrent_jobs": { "type": "integer", "minimum": 0, "maximum": 8, "description": "running at once; 0 stops new starts" },
+        "max_runtime_s": { "type": "integer", "minimum": 10, "maximum": 3600 },
+        "max_job_credits": { "type": "integer", "minimum": 1, "maximum": 1000 },
+        "daily_credits": { "type": "integer", "minimum": 0, "maximum": 10000, "description": "reserved plus spent per UTC day" }
+      }
+    },
+    "caps_view": {
+      "description": "W93 GET (reader), W94 PUT (admin) /api/v1/orgs/{o}/compute/caps",
+      "type": "object",
+      "required": ["caps", "maxima", "max_queued_jobs", "bundle_bytes", "entitled", "provider"],
+      "additionalProperties": false,
+      "properties": {
+        "caps": { "$ref": "#/$defs/caps" },
+        "maxima": { "$ref": "#/$defs/caps" },
+        "max_queued_jobs": { "const": 32 },
+        "bundle_bytes": { "const": 1073741824 },
+        "entitled": { "type": "boolean", "description": "the plan includes Task Compute (Team, Business); Community and Pro do not" },
+        "provider": { "enum": ["fake", "local_docker", "managed"], "description": "the configured sandbox provider" }
+      }
+    },
+    "ledger_entry": {
+      "type": "object",
+      "required": ["kind", "amount", "balance_after", "job_id", "created_ms"],
+      "additionalProperties": false,
+      "properties": {
+        "kind": {
+          "description": "grant (operator, on the host), top_up (a test-mode Stripe payment), reserve (submit), refund (the unused reserve at the end), settle (amount 0: the spent part of a reserve, for the record)",
+          "enum": ["grant", "top_up", "reserve", "refund", "settle"]
+        },
+        "amount": { "type": "integer", "description": "change of the available balance" },
+        "balance_after": { "type": "integer", "minimum": 0 },
+        "job_id": { "anyOf": [{ "$ref": "#/$defs/job_id" }, { "type": "null" }] },
+        "created_ms": { "$ref": "common.schema.json#/$defs/ms" }
+      }
+    },
+    "credit_view": {
+      "description": "W91 GET /api/v1/orgs/{o}/compute/credit (admin): prepaid balance, the reserve of queued and running jobs, today's spend against the daily cap and the last 50 ledger entries (newest first)",
+      "type": "object",
+      "required": ["balance", "reserved", "spent_today", "daily_credits", "top_up", "ledger"],
+      "additionalProperties": false,
+      "properties": {
+        "balance": { "type": "integer", "minimum": 0, "description": "available, not reserved" },
+        "reserved": { "type": "integer", "minimum": 0 },
+        "spent_today": { "type": "integer", "minimum": 0 },
+        "daily_credits": { "type": "integer", "minimum": 0 },
+        "top_up": { "enum": ["stripe_test", "operator"], "description": "stripe_test: W92 opens a test-mode Stripe Checkout; operator: credit comes only from an operator grant on the host" },
+        "ledger": { "type": "array", "maxItems": 50, "items": { "$ref": "#/$defs/ledger_entry" } }
+      }
+    },
+    "job_list": {
+      "description": "W88 GET /api/v1/orgs/{o}/compute/jobs?state=&limit= (reader): newest first, at most 100",
+      "type": "object",
+      "required": ["items", "next_cursor"],
+      "additionalProperties": false,
+      "properties": {
+        "items": { "type": "array", "maxItems": 100, "items": { "$ref": "#/$defs/job" } },
+        "next_cursor": { "type": "null" }
+      }
+    },
+    "top_up_request": {
+      "description": "W92 POST /api/v1/orgs/{o}/compute/credit/top-up (owner, human session, step-up): test-mode Stripe only; any Authorization header is refused (403 human_session_required), so no token can buy credit",
+      "type": "object",
+      "required": ["credits"],
+      "additionalProperties": false,
+      "properties": { "credits": { "type": "integer", "minimum": 100, "maximum": 10000, "multipleOf": 100 } }
+    },
+    "top_up_response": {
+      "type": "object",
+      "required": ["url"],
+      "additionalProperties": false,
+      "properties": { "url": { "type": "string", "pattern": "^https://" } }
+    },
+    "provider_spec": {
+      "description": "Exactly what the server hands a sandbox provider for one job (server-internal; the fake provider of the tests validates every spec it receives against this definition). Inputs are the job's own bundles only, mounted read-only at /work/in; /work/out is the only writable mount; no environment beyond these three variables; HOME is a directory that does not exist; network mode none unless hosts are listed",
+      "type": "object",
+      "required": ["job_id", "image_ref", "argv", "workdir", "inputs", "resources", "max_runtime_s", "network", "env", "mounts", "user"],
+      "additionalProperties": false,
+      "properties": {
+        "job_id": { "$ref": "#/$defs/job_id" },
+        "image_ref": { "type": "string", "pattern": "^[a-z0-9][a-z0-9./_:-]{0,200}@sha256:[0-9a-f]{64}$", "description": "the allowlisted image pinned by digest" },
+        "argv": { "$ref": "#/$defs/command/properties/argv" },
+        "workdir": { "type": "string", "pattern": "^/work(/(?!\\.\\.)[A-Za-z0-9._-]+)*$" },
+        "inputs": { "type": "array", "minItems": 1, "maxItems": 16, "items": { "$ref": "#/$defs/bundle_ref" } },
+        "resources": { "$ref": "#/$defs/resources" },
+        "max_runtime_s": { "$ref": "#/$defs/max_runtime_s" },
+        "network": {
+          "type": "object",
+          "required": ["mode", "hosts"],
+          "additionalProperties": false,
+          "properties": {
+            "mode": { "enum": ["none", "allowlist"] },
+            "hosts": { "$ref": "#/$defs/network_allowlist" }
+          },
+          "if": { "properties": { "mode": { "const": "none" } } },
+          "then": { "properties": { "hosts": { "maxItems": 0 } } },
+          "else": { "properties": { "hosts": { "minItems": 1 } } }
+        },
+        "env": {
+          "type": "object",
+          "required": ["HOME", "LEANCTX_JOB_ID", "LEANCTX_JOB_TYPE"],
+          "additionalProperties": false,
+          "properties": {
+            "HOME": { "const": "/nonexistent" },
+            "LEANCTX_JOB_ID": { "$ref": "#/$defs/job_id" },
+            "LEANCTX_JOB_TYPE": { "$ref": "#/$defs/job_type" }
+          }
+        },
+        "mounts": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 2,
+          "prefixItems": [
+            { "const": { "target": "/work/in", "read_only": true } },
+            { "const": { "target": "/work/out", "read_only": false } }
+          ],
+          "items": false
+        },
+        "user": { "const": "65534:65534" }
+      }
+    },
+    "credit_exhausted_error": {
+      "description": "402: the available balance does not cover the job's reserve",
+      "type": "object",
+      "required": ["error"],
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "object",
+          "required": ["code", "message", "balance", "needed"],
+          "additionalProperties": false,
+          "properties": {
+            "code": { "const": "credit_exhausted" },
+            "message": { "type": "string", "minLength": 1 },
+            "balance": { "type": "integer", "minimum": 0 },
+            "needed": { "type": "integer", "minimum": 1 }
+          }
+        }
+      }
+    },
+    "cap_reached_error": {
+      "description": "409: a hard cap refuses the job (no overage, nothing queued)",
+      "type": "object",
+      "required": ["error"],
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "object",
+          "required": ["code", "message", "cap", "limit", "requested"],
+          "additionalProperties": false,
+          "properties": {
+            "code": { "const": "cap_reached" },
+            "message": { "type": "string", "minLength": 1 },
+            "cap": { "enum": ["max_runtime_s", "max_job_credits", "job_budget", "daily_credits", "queued_jobs", "bundle_bytes"] },
+            "limit": { "type": "integer", "minimum": 0 },
+            "requested": { "type": "integer", "minimum": 0 }
+          }
+        }
+      }
+    },
+    "feature_disabled_error": {
+      "description": "404 on every compute route while HIVE_COMPUTE is off (the default), before authentication",
+      "type": "object",
+      "required": ["error"],
+      "additionalProperties": false,
+      "properties": {
+        "error": {
+          "type": "object",
+          "required": ["code", "message", "feature"],
+          "additionalProperties": false,
+          "properties": {
+            "code": { "const": "feature_disabled" },
+            "message": { "type": "string", "minLength": 1 },
+            "feature": { "const": "compute" }
+          }
+        }
+      }
+    },
+    "cost_vectors": {
+      "type": "object",
+      "required": ["description", "cases"],
+      "additionalProperties": false,
+      "properties": {
+        "description": { "type": "string" },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["case", "cpu", "max_runtime_s", "budget", "wall_seconds", "expect"],
+            "additionalProperties": false,
+            "properties": {
+              "case": { "type": "string", "pattern": "^[a-z0-9_]+$" },
+              "cpu": { "$ref": "#/$defs/resources/properties/cpu" },
+              "max_runtime_s": { "$ref": "#/$defs/max_runtime_s" },
+              "budget": { "type": "integer", "minimum": 1, "maximum": 1000 },
+              "wall_seconds": { "type": ["integer", "null"], "minimum": 0, "description": "null: never started" },
+              "expect": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "required": ["reserved", "spent", "refunded"],
+                    "additionalProperties": false,
+                    "properties": {
+                      "reserved": { "type": "integer", "minimum": 1 },
+                      "spent": { "type": "integer", "minimum": 0 },
+                      "refunded": { "type": "integer", "minimum": 0 }
+                    }
+                  },
+                  {
+                    "type": "object",
+                    "required": ["error"],
+                    "additionalProperties": false,
+                    "properties": { "error": { "const": "job_budget" } }
+                  }
+                ]
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}

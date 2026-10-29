@@ -7,19 +7,12 @@
 //! savings". This module observes the engagement state so `gain` can emit an
 //! honest diagnostic instead of a silent zero.
 
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpStream};
-use std::time::Duration;
-
 use serde::Serialize;
 
 /// How far back a persisted proxy-introspect record still counts as "the bridge
 /// has intercepted traffic". 24h keeps a running-but-idle proxy classified as
 /// engaged across a normal working day.
 const INTROSPECT_MAX_AGE_SECS: u64 = 86_400;
-
-/// Timeout for the live TCP probe against the proxy port. The probe runs from a
-/// user-invoked status command, so a short budget keeps `gain` responsive.
-const PROXY_PROBE_TIMEOUT: Duration = Duration::from_millis(150);
 
 /// Observable engagement state of the lean-ctx bridge.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize)]
@@ -39,6 +32,8 @@ pub enum BridgeEngagement {
 pub struct BridgeStatus {
     pub engagement: BridgeEngagement,
     pub proxy_running: bool,
+    /// Whether the proxy is enabled in config at all (`proxy_enabled = true`).
+    pub proxy_configured: bool,
     /// Cumulative LLM requests the proxy has intercepted (within the freshness
     /// window). `0` means the bridge has not seen compressible traffic.
     pub total_requests: u64,
@@ -60,18 +55,22 @@ pub fn classify(proxy_running: bool, total_requests: u64) -> BridgeEngagement {
 }
 
 impl BridgeStatus {
-    /// Probe the live proxy port and persisted introspection data to determine
-    /// whether the bridge is engaged. Never panics: every signal degrades to a
-    /// conservative default (proxy down / 0 requests) on error.
+    /// Check the configured proxy endpoint and persisted introspection data to
+    /// determine whether the bridge is engaged. Uses the same source of truth as
+    /// `doctor`: the proxy must be enabled in config and answer as lean-ctx (a
+    /// foreign process on the port does not count). Never panics: every signal
+    /// degrades to a conservative default (proxy down / 0 requests) on error.
     #[must_use]
     pub fn detect() -> Self {
-        let proxy_running = probe_proxy(crate::proxy_setup::default_port());
+        let proxy_configured = crate::core::config::Config::load().proxy_enabled == Some(true);
+        let proxy_running = crate::proxy_setup::configured_proxy_live();
         let total_requests = persisted_request_count(INTROSPECT_MAX_AGE_SECS);
         let tool_count = crate::server::registry::tool_count();
         let engagement = classify(proxy_running, total_requests);
         Self {
             engagement,
             proxy_running,
+            proxy_configured,
             total_requests,
             tool_count,
         }
@@ -89,6 +88,10 @@ impl BridgeStatus {
             ),
             BridgeEngagement::NoRequests => format!(
                 "Bridge: proxy up, 0 requests intercepted — {} tools exposed (route the editor through lean-ctx)",
+                self.tool_count
+            ),
+            BridgeEngagement::ProxyDown if !self.proxy_configured => format!(
+                "Bridge: OFF — proxy not configured (enable: lean-ctx proxy enable); savings cannot be measured ({} tools registered)",
                 self.tool_count
             ),
             BridgeEngagement::ProxyDown => format!(
@@ -122,12 +125,6 @@ impl BridgeStatus {
                 .to_string(),
         })
     }
-}
-
-/// Live TCP probe: is the proxy accepting connections on `port`?
-fn probe_proxy(port: u16) -> bool {
-    let addr = SocketAddr::new(IpAddr::V4(Ipv4Addr::LOCALHOST), port);
-    TcpStream::connect_timeout(&addr, PROXY_PROBE_TIMEOUT).is_ok()
 }
 
 /// Cumulative intercepted-request count from the persisted introspection file,
@@ -168,6 +165,7 @@ pub mod tests {
         let status = BridgeStatus {
             engagement: BridgeEngagement::Engaged,
             proxy_running: true,
+            proxy_configured: true,
             total_requests: 10,
             tool_count: 69,
         };
@@ -179,12 +177,14 @@ pub mod tests {
         let off = BridgeStatus {
             engagement: BridgeEngagement::ProxyDown,
             proxy_running: false,
+            proxy_configured: true,
             total_requests: 0,
             tool_count: 69,
         };
         let real = BridgeStatus {
             engagement: BridgeEngagement::Engaged,
             proxy_running: true,
+            proxy_configured: true,
             total_requests: 10,
             tool_count: 69,
         };
@@ -200,6 +200,7 @@ pub mod tests {
         let engaged = BridgeStatus {
             engagement: BridgeEngagement::Engaged,
             proxy_running: true,
+            proxy_configured: true,
             total_requests: 7,
             tool_count: 69,
         };

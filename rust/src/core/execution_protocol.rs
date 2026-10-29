@@ -17,7 +17,7 @@ use sha2::{Digest, Sha256};
 use crate::core::{
     engine_interface::read_verified_engine_receipt, execution_ledger::PublishedCanonicalReceipt,
     execution_ledger::ReceiptSignerAdmissionV1,
-    receipt_document_adapter::join_receipt_document_inputs,
+    execution_ledger::receipt_inputs::join_receipt_document_inputs,
 };
 
 /// Authoritative artifacts produced by the owners of stages 5 through 13.

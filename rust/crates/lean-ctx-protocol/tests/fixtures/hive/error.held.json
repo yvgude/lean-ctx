@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "A moderator holds this question: results are not taken.",
+    "reason": "held"
+  }
+}

@@ -15,21 +15,96 @@ fn builtin_profiles_count() {
     assert!(builtins.contains_key("passthrough"));
 }
 
+/// Profile files written before the 2026-10-16 cleanup carry sections and
+/// keys that never had an effect. They must keep loading, and a profile that
+/// is written back no longer suggests them (G07: no model tier either).
 #[test]
-fn hotfix_has_minimal_budget() {
-    let p = builtin_profiles().remove("hotfix").unwrap();
-    assert_eq!(p.budget.max_context_tokens_effective(), 30_000);
-    assert_eq!(p.budget.max_shell_invocations_effective(), 20);
+fn legacy_profile_with_retired_keys_loads_and_is_written_back_without_them() {
+    let legacy = r#"
+[profile]
+name = "legacy"
+inherits = "exploration"
+
+[read]
+default_mode = "signatures"
+max_tokens_per_file = 2000
+prefer_cache = true
+
+[compression]
+crp_mode = "tdd"
+output_density = "ultra"
+terse_mode = true
+adaptive = false
+entropy_threshold = 0.4
+
+[translation]
+enabled = true
+ruleset = "auto"
+
+[layout]
+enabled = true
+
+[budget]
+max_context_tokens = 30000
+
+[constraints]
+quality_floor = 0.9
+
+[capabilities.code_context]
+provider = "leanctx"
+
+[pipeline]
+intent = false
+
+[routing]
+max_model_tier = "fast"
+degrade_under_pressure = false
+
+[autonomy]
+auto_response = true
+response_min_tokens = 100
+checkpoint_interval = 7
+"#;
+    let p: Profile = toml::from_str(legacy).expect("legacy profile still loads");
     assert_eq!(p.read.default_mode_effective(), "signatures");
-    assert_eq!(p.compression.output_density_effective(), "ultra");
+    assert_eq!(p.compression.crp_mode.as_deref(), Some("tdd"));
+    assert!(!p.routing.degrade_under_pressure_effective());
+    assert_eq!(p.autonomy.checkpoint_interval_effective(), 7);
+
+    let written = format_as_toml(&p);
+    for retired in [
+        "max_tokens_per_file",
+        "prefer_cache",
+        "output_density",
+        "terse_mode",
+        "adaptive",
+        "entropy_threshold",
+        "[translation]",
+        "[layout]",
+        "[budget]",
+        "[constraints]",
+        "[capabilities",
+        "[pipeline]",
+        "max_model_tier",
+        "auto_response",
+        "response_min_tokens",
+    ] {
+        assert!(!written.contains(retired), "{retired} written back");
+    }
+    for (name, profile) in builtin_profiles() {
+        assert!(
+            !format_as_toml(&profile).contains("max_model_tier"),
+            "{name}"
+        );
+    }
 }
 
 #[test]
-fn exploration_has_broad_context() {
-    let p = builtin_profiles().remove("exploration").unwrap();
-    assert_eq!(p.budget.max_context_tokens_effective(), 200_000);
-    assert_eq!(p.read.default_mode_effective(), "map");
-    assert!(p.read.prefer_cache_effective());
+fn hotfix_reads_signatures_with_tdd_output() {
+    let p = builtin_profiles().remove("hotfix").unwrap();
+    assert_eq!(p.read.default_mode_effective(), "signatures");
+    assert_eq!(p.compression.crp_mode.as_deref(), Some("tdd"));
+    assert_eq!(p.autonomy.checkpoint_interval_effective(), 5);
 }
 
 #[test]
@@ -39,7 +114,7 @@ fn profile_roundtrip_toml() {
     let parsed: Profile = toml::from_str(&toml_str).unwrap();
     assert_eq!(parsed.profile.name, "exploration");
     assert_eq!(parsed.read.default_mode_effective(), "map");
-    assert_eq!(parsed.budget.max_context_tokens_effective(), 200_000);
+    assert!(parsed.output_hints.related_hint());
 }
 
 #[test]
@@ -68,11 +143,7 @@ fn engine_config_projects_consumed_mechanisms_without_changing_legacy_toml() {
 #[test]
 fn engine_config_excludes_product_policy() {
     let mut profile = builtin_exploration();
-    profile.read.prefer_cache = Some(false);
-    profile.routing.max_model_tier = Some("fast".into());
-    profile.budget.max_context_tokens = Some(1);
-    profile.constraints.quality_floor = Some(0.1);
-    profile.autonomy.auto_prefetch = Some(true);
+    profile.autonomy.enabled = Some(false);
 
     let engine = profile.engine_config();
     assert_eq!(engine.read.default_mode, "map");
@@ -83,86 +154,33 @@ fn engine_config_excludes_product_policy() {
 }
 
 #[test]
-fn merge_child_overrides_parent() {
+fn merge_child_overrides_parent_and_inherits_the_rest() {
     let parent = builtin_exploration();
-    let child = Profile {
-        profile: ProfileMeta {
-            name: "custom".to_string(),
-            inherits: Some("exploration".to_string()),
-            description: String::new(),
-        },
-        read: ReadConfig {
-            default_mode: Some("signatures".to_string()),
-            ..ReadConfig::default()
-        },
-        compression: CompressionConfig::default(),
-        translation: TranslationConfig::default(),
-        layout: LayoutConfig::default(),
-        memory: crate::core::memory_policy::MemoryPolicyOverrides::default(),
-        verification: crate::core::output_verification::VerificationConfig::default(),
-        budget: BudgetConfig {
-            max_context_tokens: Some(10_000),
-            ..BudgetConfig::default()
-        },
-        constraints: ConstraintsConfig::default(),
-        capabilities: CapabilitiesConfig::default(),
-        pipeline: PipelineConfig::default(),
-        routing: RoutingConfig::default(),
-        autonomy: ProfileAutonomy::default(),
-        output_hints: OutputHints::default(),
-    };
+    let child: Profile = toml::from_str(
+        r#"
+[profile]
+name = "custom"
+inherits = "exploration"
+
+[read]
+default_mode = "signatures"
+
+[output_hints]
+related_hint = false
+"#,
+    )
+    .unwrap();
 
     let merged = merge_profiles(parent, child);
     assert_eq!(merged.read.default_mode_effective(), "signatures");
-    assert_eq!(merged.budget.max_context_tokens_effective(), 10_000);
+    assert!(!merged.output_hints.related_hint());
+    assert!(
+        merged.output_hints.cross_source_hint(),
+        "should inherit unset hints from parent"
+    );
     assert_eq!(
         merged.profile.description,
         "Broad context for understanding codebases"
-    );
-}
-
-#[test]
-fn merge_partial_child_inherits_parent_fields() {
-    let parent = builtin_exploration();
-    let child = Profile {
-        profile: ProfileMeta {
-            name: "partial".to_string(),
-            inherits: Some("exploration".to_string()),
-            description: String::new(),
-        },
-        read: ReadConfig {
-            default_mode: Some("map".to_string()),
-            ..ReadConfig::default()
-        },
-        compression: CompressionConfig::default(),
-        translation: TranslationConfig::default(),
-        layout: LayoutConfig::default(),
-        memory: crate::core::memory_policy::MemoryPolicyOverrides::default(),
-        verification: crate::core::output_verification::VerificationConfig::default(),
-        budget: BudgetConfig::default(),
-        constraints: ConstraintsConfig::default(),
-        capabilities: CapabilitiesConfig::default(),
-        pipeline: PipelineConfig::default(),
-        routing: RoutingConfig::default(),
-        autonomy: ProfileAutonomy::default(),
-        output_hints: OutputHints::default(),
-    };
-
-    let merged = merge_profiles(parent, child);
-    assert_eq!(merged.read.default_mode_effective(), "map");
-    assert_eq!(
-        merged.read.max_tokens_per_file_effective(),
-        80_000,
-        "should inherit max_tokens_per_file from parent"
-    );
-    assert!(
-        merged.read.prefer_cache_effective(),
-        "should inherit prefer_cache from parent"
-    );
-    assert_eq!(
-        merged.budget.max_context_tokens_effective(),
-        200_000,
-        "should inherit budget from parent"
     );
 }
 
@@ -213,64 +231,6 @@ fn profile_source_display() {
 }
 
 #[test]
-fn default_profile_has_sane_values() {
-    let p = Profile {
-        profile: ProfileMeta::default(),
-        read: ReadConfig::default(),
-        compression: CompressionConfig::default(),
-        translation: TranslationConfig::default(),
-        layout: LayoutConfig::default(),
-        memory: crate::core::memory_policy::MemoryPolicyOverrides::default(),
-        verification: crate::core::output_verification::VerificationConfig::default(),
-        budget: BudgetConfig::default(),
-        constraints: ConstraintsConfig::default(),
-        capabilities: CapabilitiesConfig::default(),
-        pipeline: PipelineConfig::default(),
-        routing: RoutingConfig::default(),
-        autonomy: ProfileAutonomy::default(),
-        output_hints: OutputHints::default(),
-    };
-    assert_eq!(p.read.default_mode_effective(), "auto");
-    assert_eq!(p.compression.crp_mode, None);
-    assert_eq!(p.budget.max_context_tokens_effective(), 200_000);
-    assert!(p.pipeline.compression_effective());
-    assert!(p.pipeline.intent_effective());
-}
-
-#[test]
-fn pipeline_layers_configurable() {
-    let toml_str = r#"
-[profile]
-name = "no-intent"
-
-[pipeline]
-intent = false
-relevance = false
-"#;
-    let p: Profile = toml::from_str(toml_str).unwrap();
-    assert!(!p.pipeline.intent_effective());
-    assert!(!p.pipeline.relevance_effective());
-    assert!(p.pipeline.compression_effective());
-    assert!(p.pipeline.translation_effective());
-}
-
-#[test]
-fn partial_toml_fills_defaults() {
-    let toml_str = r#"
-[profile]
-name = "minimal"
-
-[read]
-default_mode = "entropy"
-"#;
-    let p: Profile = toml::from_str(toml_str).unwrap();
-    assert_eq!(p.read.default_mode_effective(), "entropy");
-    assert_eq!(p.read.max_tokens_per_file_effective(), 50_000);
-    assert_eq!(p.budget.max_context_tokens_effective(), 200_000);
-    assert_eq!(p.compression.crp_mode, None);
-}
-
-#[test]
 fn partial_toml_leaves_unset_as_none() {
     let toml_str = r#"
 [profile]
@@ -281,123 +241,6 @@ default_mode = "map"
 "#;
     let p: Profile = toml::from_str(toml_str).unwrap();
     assert_eq!(p.read.default_mode, Some("map".to_string()));
-    assert_eq!(p.read.max_tokens_per_file, None);
-    assert_eq!(p.read.prefer_cache, None);
-    assert_eq!(p.budget.max_context_tokens, None);
     assert_eq!(p.compression.crp_mode, None);
-}
-
-#[test]
-fn constraints_merge_field_by_field() {
-    let mut parent = builtin_exploration();
-    parent.constraints = ConstraintsConfig {
-        quality_floor: Some(0.99),
-        max_cost_usd: Some(2.50),
-        max_latency_ms: Some(500),
-        max_context_tokens: Some(80_000),
-        require_verification: Some(true),
-    };
-    let mut child = builtin_exploration();
-    child.constraints = ConstraintsConfig {
-        quality_floor: Some(0.97),
-        max_cost_usd: None,
-        max_latency_ms: Some(250),
-        max_context_tokens: None,
-        require_verification: None,
-    };
-
-    let merged = merge_profiles(parent, child);
-
-    assert_eq!(merged.constraints.quality_floor, Some(0.97));
-    assert_eq!(merged.constraints.max_cost_usd, Some(2.50));
-    assert_eq!(merged.constraints.max_latency_ms, Some(250));
-    assert_eq!(merged.constraints.max_context_tokens, Some(80_000));
-    assert_eq!(merged.constraints.require_verification, Some(true));
-}
-
-#[test]
-fn capabilities_merge_field_by_field() {
-    let mut parent = builtin_exploration();
-    parent.capabilities = CapabilitiesConfig {
-        code_context: Some(CapabilityBinding {
-            provider: Some("leanctx".to_string()),
-            strategy: Some("structural".to_string()),
-            version: Some("1.0".to_string()),
-        }),
-        knowledge: Some(CapabilityBinding {
-            provider: Some("leanctx".to_string()),
-            strategy: Some("semantic".to_string()),
-            version: None,
-        }),
-        ..CapabilitiesConfig::default()
-    };
-    let mut child = builtin_exploration();
-    child.capabilities = CapabilitiesConfig {
-        code_context: Some(CapabilityBinding {
-            provider: None,
-            strategy: Some("adaptive".to_string()),
-            version: Some("2.0".to_string()),
-        }),
-        routing: Some(CapabilityBinding {
-            provider: Some("custom".to_string()),
-            strategy: None,
-            version: None,
-        }),
-        ..CapabilitiesConfig::default()
-    };
-
-    let merged = merge_profiles(parent, child);
-    let code_context = merged.capabilities.code_context.unwrap();
-
-    assert_eq!(code_context.provider.as_deref(), Some("leanctx"));
-    assert_eq!(code_context.strategy.as_deref(), Some("adaptive"));
-    assert_eq!(code_context.version.as_deref(), Some("2.0"));
-    assert_eq!(
-        merged
-            .capabilities
-            .knowledge
-            .as_ref()
-            .and_then(|binding| binding.strategy.as_deref()),
-        Some("semantic")
-    );
-    assert_eq!(
-        merged
-            .capabilities
-            .routing
-            .as_ref()
-            .and_then(|binding| binding.provider.as_deref()),
-        Some("custom")
-    );
-}
-
-#[test]
-fn constraints_effective_defaults_are_unbounded() {
-    let constraints = ConstraintsConfig::default();
-
-    assert_eq!(constraints.quality_floor_effective(), 0.95);
-    assert_eq!(constraints.max_cost_usd_effective(), f64::MAX);
-    assert_eq!(constraints.max_latency_ms_effective(), u64::MAX);
-    assert_eq!(constraints.max_context_tokens_effective(), usize::MAX);
-    assert!(!constraints.require_verification_effective());
-}
-
-#[test]
-fn builtin_constraints_match_profile_purpose() {
-    let builtins = builtin_profiles();
-
-    assert_eq!(
-        builtins["coder"].constraints.quality_floor_effective(),
-        0.95
-    );
-    assert_eq!(
-        builtins["exploration"]
-            .constraints
-            .quality_floor_effective(),
-        0.90
-    );
-    assert_eq!(
-        builtins["review"].constraints.quality_floor_effective(),
-        0.98
-    );
-    assert_eq!(builtins["coder"].constraints.max_cost_usd, None);
+    assert_eq!(p.autonomy.checkpoint_interval, None);
 }

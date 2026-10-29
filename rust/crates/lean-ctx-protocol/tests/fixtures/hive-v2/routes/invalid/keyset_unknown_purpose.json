@@ -1,0 +1,16 @@
+{
+  "case": "keyset_unknown_purpose",
+  "base": "routes/keyset.v3.response.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/keys/0/purposes",
+      "value": [
+        "cell"
+      ]
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

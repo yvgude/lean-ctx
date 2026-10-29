@@ -31,7 +31,10 @@ static RECORD_CALLS: AtomicUsize = AtomicUsize::new(0);
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 pub(crate) struct PathModeStats {
     pub bounce_count: u32,
-    /// Reads observed since the path entered the store (first bounce).
+    /// Compressed reads observed since the path entered the store (first
+    /// bounce). Whole reads — the bounce re-reads among them — are not
+    /// compression attempts and are never counted, so a path that bounces on
+    /// every compressed read reaches a ratio of 1, not ~0.5.
     pub read_count: u32,
     pub last_bounce_unix: u64,
 }
@@ -83,26 +86,27 @@ impl PathModeMemory {
     pub(crate) fn record_bounce(&mut self, norm_path: &str, now: u64) {
         let entry = self.paths.entry(norm_path.to_string()).or_default();
         entry.bounce_count = entry.bounce_count.saturating_add(1);
-        // The bounce implies a read happened; count it so the majority rule
-        // (`bounce_count * 2 >= read_count`) stays meaningful from day one.
+        // The bounce implies a compressed read happened (the first one, before
+        // the path was tracked, was never counted); count it so the majority
+        // rule (`bounce_count * 2 >= read_count`) stays meaningful from day one.
         entry.read_count = entry.read_count.max(entry.bounce_count);
         entry.last_bounce_unix = now;
         self.dirty = true;
         self.evict_to_cap();
     }
 
-    /// Count a read only for paths already being tracked (i.e. that bounced
-    /// before). Tracking every read of every file would bloat the store for
-    /// zero signal.
-    pub(crate) fn record_read_if_tracked(&mut self, norm_path: &str) {
+    /// Count a compressed read only for paths already being tracked (i.e. that
+    /// bounced before). Tracking every read of every file would bloat the store
+    /// for zero signal.
+    pub(crate) fn record_compressed_read_if_tracked(&mut self, norm_path: &str) {
         if let Some(entry) = self.paths.get_mut(norm_path) {
             entry.read_count = entry.read_count.saturating_add(1);
             self.dirty = true;
         }
     }
 
-    /// A path is force-full when it bounced at least twice and bounces make up
-    /// the majority of its observed reads — compressing it keeps backfiring.
+    /// A path is force-full when it bounced at least twice and at least half
+    /// of its compressed reads bounced — compressing it keeps backfiring.
     pub(crate) fn should_force_full(&self, norm_path: &str) -> bool {
         self.paths.get(norm_path).is_some_and(|s| {
             s.bounce_count >= 2 && u64::from(s.bounce_count) * 2 >= u64::from(s.read_count)
@@ -147,12 +151,12 @@ pub(crate) fn record_bounce(norm_path: &str) {
     maybe_flush(&mut store);
 }
 
-/// Process-global: count a read for an already-tracked path.
-pub(crate) fn record_read_if_tracked(norm_path: &str) {
+/// Process-global: count a compressed read for an already-tracked path.
+pub(crate) fn record_compressed_read_if_tracked(norm_path: &str) {
     let Ok(mut store) = global().lock() else {
         return;
     };
-    store.record_read_if_tracked(norm_path);
+    store.record_compressed_read_if_tracked(norm_path);
     maybe_flush(&mut store);
 }
 
@@ -209,11 +213,27 @@ mod tests {
         m.record_bounce("b.rs", 1000);
         m.record_bounce("b.rs", 1001);
         assert!(m.should_force_full("b.rs"));
-        // 5 clean reads later the bounce majority is gone (2*2 < 7).
+        // 5 clean compressed reads later the bounce majority is gone (2*2 < 7).
         for _ in 0..5 {
-            m.record_read_if_tracked("b.rs");
+            m.record_compressed_read_if_tracked("b.rs");
         }
         assert!(!m.should_force_full("b.rs"));
+    }
+
+    #[test]
+    fn bounce_on_every_compressed_read_forces_full() {
+        // Pattern compressed → bounce, repeated: before the fix every bounce
+        // re-read also entered the denominator and the ratio hovered at ~0.5.
+        let mut m = PathModeMemory::default();
+        m.record_bounce("c.rs", 1000);
+        for ts in 1001..1005 {
+            m.record_compressed_read_if_tracked("c.rs");
+            m.record_bounce("c.rs", ts);
+        }
+        let s = m.paths.get("c.rs").unwrap();
+        assert_eq!(s.bounce_count, 5);
+        assert_eq!(s.read_count, 5, "only compressed reads are counted");
+        assert!(m.should_force_full("c.rs"));
     }
 
     #[test]
@@ -243,7 +263,7 @@ mod tests {
     #[test]
     fn untracked_reads_are_ignored() {
         let mut m = PathModeMemory::default();
-        m.record_read_if_tracked("never_bounced.rs");
+        m.record_compressed_read_if_tracked("never_bounced.rs");
         assert!(m.paths.is_empty());
     }
 

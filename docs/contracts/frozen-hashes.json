@@ -3,8 +3,6 @@
   "delivery-manifest-v1.md": "2aed9735fc42baa10ca96a7edd786f8c2e26b568b6a6325ce2e4bcded33fe5b1",
   "deployment-rehearsal-v1.md": "db76d9779887e3e5493a99b4356a1629df34607b54f52815e4da0e29ecfc832d",
   "http-mcp-contract-v1.md": "7550166fcefddea0752129e99aaf03a7821589e998a637905388f0392129d240",
-  "invocation-context-binding-v1.md": "5e870a14aa25d8d74a9b5439463678cae920339f100fee2af115e26d1e23c022",
-  "invocation-evidence-manifest-v1.md": "d85ef0595d213c7bfb068755d04638803e5b732d39d1da64ae30c24dc1c25855",
   "local-free-invariant-v1.md": "492d4525152b90887bb7b189ebdc760b5de011e7809d78e09ef38d9b0d112e45",
   "oss-plane-separation-v1.md": "38612e3e61bc80e50195a993c2f14c0fb1da74d0aea17acb57a620324f3cdcd2",
   "receipt-document-v1.md": "916525b43ec0d77109d9278d814af31c1d09b087ec510c6367f1e5eec19636a7",

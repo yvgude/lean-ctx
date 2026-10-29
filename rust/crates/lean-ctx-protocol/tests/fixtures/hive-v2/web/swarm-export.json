@@ -1,0 +1,26 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "sealed_foreign_refused",
+          "message": "A sealed vault takes no swarm results."
+        }
+      },
+      "status": 409
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/swarms/9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02/results/n_aaaaaaaaaaaaaaaaaaaaaadaaq/export",
+  "request": {
+    "totp_code": "123456",
+    "vault": "payments"
+  },
+  "response": {
+    "body": {
+      "review_id": "rv_aaaaaaaaaaaaaaaaaaaaaaaaaa"
+    },
+    "status": 201
+  },
+  "route": "W43"
+}

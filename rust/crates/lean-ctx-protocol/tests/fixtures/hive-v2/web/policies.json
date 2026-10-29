@@ -1,0 +1,279 @@
+{
+  "route": "W77",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/policies",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "level": "workspace",
+          "scope": "org_7c1b2a3d4e5f60718293a4b5c6d7e8f9",
+          "version": 2,
+          "document": {
+            "schema": "leanctx.hive.policy/v1",
+            "security": {
+              "block_secrets": true,
+              "excluded_paths": [
+                ".env*",
+                "secrets/"
+              ]
+            },
+            "context": {
+              "max_context_tokens": 100000
+            },
+            "sharing": {
+              "allowed_vaults": [
+                "3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c"
+              ],
+              "task_claim_min_role": "contributor"
+            }
+          },
+          "digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+          "updated_by": {
+            "kind": "user",
+            "user": {
+              "id": "0b9a8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d",
+              "name": "Ada"
+            },
+            "instance": null,
+            "agent": null
+          },
+          "updated_at": "2026-10-25T21:10:00Z"
+        },
+        {
+          "level": "vault",
+          "scope": "3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c",
+          "version": 1,
+          "document": {
+            "schema": "leanctx.hive.policy/v1",
+            "security": {},
+            "context": {},
+            "sharing": {
+              "auto_merge_results": false,
+              "cross_team_sharing": false
+            }
+          },
+          "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+          "updated_by": {
+            "kind": "user",
+            "user": {
+              "id": "0b9a8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d",
+              "name": "Ada"
+            },
+            "instance": null,
+            "agent": null
+          },
+          "updated_at": "2026-10-25T21:12:00Z"
+        }
+      ],
+      "fields": [
+        {
+          "path": "security.excluded_paths",
+          "merge": "union",
+          "enforcement": "server",
+          "engine_field": null,
+          "server_point": "unsealed vaults: a push, task result, draft or code graph with a code anchor path the globs match is refused; sealed vaults stay advisory (the server cannot read their anchors)"
+        },
+        {
+          "path": "security.block_secrets",
+          "merge": "true_wins",
+          "enforcement": "engine",
+          "engine_field": "egress.block_secrets",
+          "server_point": null
+        },
+        {
+          "path": "security.pii",
+          "merge": "rank",
+          "enforcement": "engine",
+          "engine_field": "filters.pii",
+          "server_point": null
+        },
+        {
+          "path": "security.classification",
+          "merge": "rank",
+          "enforcement": "engine",
+          "engine_field": "filters.classification",
+          "server_point": null
+        },
+        {
+          "path": "security.blocked_labels",
+          "merge": "union",
+          "enforcement": "engine",
+          "engine_field": "filters.blocked_labels",
+          "server_point": null
+        },
+        {
+          "path": "security.allowed_models",
+          "merge": "groups",
+          "enforcement": "engine",
+          "engine_field": "routing.model_ceiling_groups",
+          "server_point": null
+        },
+        {
+          "path": "security.external_model_excluded_classes",
+          "merge": "union",
+          "enforcement": "advisory",
+          "engine_field": null,
+          "server_point": null
+        },
+        {
+          "path": "security.confidential_out_of_sharing",
+          "merge": "true_wins",
+          "enforcement": "advisory",
+          "engine_field": null,
+          "server_point": null
+        },
+        {
+          "path": "context.max_context_tokens",
+          "merge": "min",
+          "enforcement": "engine",
+          "engine_field": "context.max_context_tokens",
+          "server_point": null
+        },
+        {
+          "path": "context.injection_filter",
+          "merge": "rank",
+          "enforcement": "engine",
+          "engine_field": "filters.injection",
+          "server_point": null
+        },
+        {
+          "path": "context.read_mode",
+          "merge": "equal",
+          "enforcement": "engine",
+          "engine_field": "context.default_read_mode",
+          "server_point": null
+        },
+        {
+          "path": "context.ranking_profile",
+          "merge": "equal",
+          "enforcement": "advisory",
+          "engine_field": null,
+          "server_point": null
+        },
+        {
+          "path": "context.allowed_tools",
+          "merge": "intersection",
+          "enforcement": "engine",
+          "engine_field": "context.allow_tools",
+          "server_point": null
+        },
+        {
+          "path": "context.denied_tools",
+          "merge": "union",
+          "enforcement": "engine",
+          "engine_field": "context.deny_tools",
+          "server_point": null
+        },
+        {
+          "path": "context.allowed_sources",
+          "merge": "intersection",
+          "enforcement": "advisory",
+          "engine_field": null,
+          "server_point": null
+        },
+        {
+          "path": "context.max_writes_per_min",
+          "merge": "min",
+          "enforcement": "engine",
+          "engine_field": "egress.max_writes_per_min",
+          "server_point": null
+        },
+        {
+          "path": "context.max_cost_cents_per_person_per_day",
+          "merge": "min",
+          "enforcement": "engine",
+          "engine_field": "budgets.max_cost_usd_per_person_per_day",
+          "server_point": null
+        },
+        {
+          "path": "context.max_cost_cents_per_project_per_month",
+          "merge": "min",
+          "enforcement": "engine",
+          "engine_field": "budgets.max_cost_usd_per_project_per_month",
+          "server_point": null
+        },
+        {
+          "path": "context.max_requests_per_minute_per_person",
+          "merge": "min",
+          "enforcement": "engine",
+          "engine_field": "budgets.max_requests_per_minute_per_person",
+          "server_point": null
+        },
+        {
+          "path": "context.auto_extraction",
+          "merge": "false_wins",
+          "enforcement": "advisory",
+          "engine_field": null,
+          "server_point": null
+        },
+        {
+          "path": "context.extraction_requires_source_anchor",
+          "merge": "true_wins",
+          "enforcement": "advisory",
+          "engine_field": null,
+          "server_point": null
+        },
+        {
+          "path": "context.max_source_age_days",
+          "merge": "min",
+          "enforcement": "advisory",
+          "engine_field": null,
+          "server_point": null
+        },
+        {
+          "path": "sharing.allowed_vaults",
+          "merge": "intersection",
+          "enforcement": "server",
+          "engine_field": null,
+          "server_point": "every engine route that names a vault (resolve, match, reads, pushes, tasks, reviews, bus v1/v2, presence, metrics): a vault outside the list is refused, a new vault too"
+        },
+        {
+          "path": "sharing.cross_team_sharing",
+          "merge": "false_wins",
+          "enforcement": "server",
+          "engine_field": null,
+          "server_point": "false: moving a vault to another workspace (W11) and making it public (W26) are refused"
+        },
+        {
+          "path": "sharing.task_claim_min_role",
+          "merge": "rank",
+          "enforcement": "server",
+          "engine_field": null,
+          "server_point": "task claim and claim renew by an engine whose owner's role is lower are refused"
+        },
+        {
+          "path": "sharing.auto_merge_results",
+          "merge": "false_wins",
+          "enforcement": "server",
+          "engine_field": null,
+          "server_point": "false: a task result's plain ops are held as a proposal for a person instead of entering the shared log"
+        },
+        {
+          "path": "sharing.consent_required_for",
+          "merge": "union",
+          "enforcement": "server",
+          "engine_field": null,
+          "server_point": "trust_boundary: an engine linking a project to an existing vault is refused (a person links it); the other actions stay advisory"
+        },
+        {
+          "path": "sharing.personal_workspace",
+          "merge": "rank",
+          "enforcement": "server",
+          "engine_field": null,
+          "server_point": "forbid: a vault of the team is never moved to a personal workspace (W11), and an engine enrolled in a team never reaches a personal vault; engines from the C line on also refuse to give a project they worked on in the team a vault in a personal workspace (older engines: advisory)"
+        },
+        {
+          "path": "sharing.share_engine_metrics",
+          "merge": "false_wins",
+          "enforcement": "server",
+          "engine_field": null,
+          "server_point": "POST /v1/metrics/hours and POST /v1/metrics: an engine whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices and day entries refused; absent at every level = the plan default (Team, Business on; Community, Pro off until the person confirms once, 403 sharing_not_confirmed)"
+        }
+      ]
+    }
+  },
+  "errors": []
+}

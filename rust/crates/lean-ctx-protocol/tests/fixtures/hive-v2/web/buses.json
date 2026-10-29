@@ -1,0 +1,45 @@
+{
+  "route": "W35",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/buses",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": [
+      {
+        "kind": "v",
+        "ws": "acme",
+        "id": "payments",
+        "address": "#acme/payments",
+        "name": "payments",
+        "unread": 2,
+        "present": 1,
+        "control": "none",
+        "sealed": false
+      },
+      {
+        "kind": "v",
+        "ws": "acme",
+        "id": "card-vault",
+        "address": "#acme/card-vault",
+        "name": "card-vault",
+        "unread": 0,
+        "present": 0,
+        "control": "held",
+        "sealed": true
+      },
+      {
+        "kind": "s",
+        "ws": "acme",
+        "id": "checkout-latency",
+        "address": "~checkout-latency",
+        "name": "Checkout latency below 300 ms",
+        "unread": 5,
+        "present": 2,
+        "control": "none",
+        "sealed": false
+      }
+    ]
+  },
+  "errors": []
+}

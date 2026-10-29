@@ -8,7 +8,9 @@ const MAX_CACHE_ENTRIES: usize = 2048;
 const STALE_SERVE_GRACE: Duration = Duration::from_hours(1);
 
 /// Partition cached responses by the exact request and credential, not authorization state.
-/// Credential rotation misses the cache; same-credential revocation still follows cache TTL.
+/// No built-in provider caches a response any more (an answer is the principal's current
+/// access); the key stays for the tests that prove a warm entry under it changes nothing.
+#[cfg(test)]
 pub(super) fn request_cache_key(
     provider_id: &str,
     request_url: &str,
@@ -39,7 +41,6 @@ struct CacheEntry {
 }
 
 struct StaleEntry {
-    data: String,
     evicted_at: Instant,
     provider_id: String,
 }
@@ -120,10 +121,11 @@ impl ProviderCache {
             || key.split(':').next().unwrap_or("unknown").to_string(),
             |entry| entry.provider_id.clone(),
         );
-        *self.misses.entry(provider_id.clone()).or_insert(0) += 1;
-        let stale = self.stale_entries.get(key)?;
-        tracing::warn!(key, provider_id, "serving stale provider cache entry");
-        Some(stale.data.as_str())
+        *self.misses.entry(provider_id).or_insert(0) += 1;
+        // An expired response is never an answer: serving it would keep returning
+        // a source object after the principal lost access to it (stale-allow).
+        // Evicted entries stay only for the stale-entry metric.
+        None
     }
 
     fn set(&mut self, key: String, data: String, ttl: Duration, provider_id: &str) {
@@ -170,7 +172,6 @@ impl ProviderCache {
             self.stale_entries.insert(
                 key.to_string(),
                 StaleEntry {
-                    data: entry.data,
                     evicted_at,
                     provider_id: entry.provider_id,
                 },
@@ -335,7 +336,7 @@ mod tests {
     }
 
     #[test]
-    fn test_stale_serve_on_expired_entry() {
+    fn an_expired_entry_is_a_miss_never_a_stale_answer() {
         let mut cache = ProviderCache::new();
         cache.set(
             "test:key".into(),
@@ -344,7 +345,8 @@ mod tests {
             "test",
         );
         std::thread::sleep(Duration::from_millis(20));
-        assert_eq!(cache.get("test:key"), Some("value"));
+        assert_eq!(cache.get("test:key"), None);
+        assert_eq!(cache.metrics().stale_entries, 1);
     }
 
     #[test]
@@ -459,7 +461,6 @@ mod tests {
         cache.stale_entries.insert(
             "test:key".into(),
             StaleEntry {
-                data: "value".into(),
                 evicted_at: Instant::now()
                     .checked_sub(STALE_SERVE_GRACE + Duration::from_millis(1))
                     .unwrap(),
@@ -492,7 +493,6 @@ mod tests {
         cache.stale_entries.insert(
             "old".into(),
             StaleEntry {
-                data: "value".into(),
                 evicted_at: Instant::now()
                     .checked_sub(STALE_SERVE_GRACE + Duration::from_millis(1))
                     .unwrap(),
@@ -613,7 +613,7 @@ mod tests {
             assert_eq!(cache.get(key), None);
         }
         cache.move_to_stale(&principal_key, Instant::now());
-        assert_eq!(cache.get(&principal_key), Some("principal response"));
+        assert_eq!(cache.get(&principal_key), None);
         for key in &foreign_keys {
             assert_eq!(cache.get(key), None);
         }

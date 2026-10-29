@@ -107,7 +107,7 @@ fn graph() -> (&'static str, &'static str, String) {
         })
         .collect();
 
-    let mut edges: Vec<serde_json::Value> = all_edges
+    let edges: Vec<serde_json::Value> = all_edges
         .iter()
         .map(|e| {
             serde_json::json!({
@@ -122,34 +122,6 @@ fn graph() -> (&'static str, &'static str, String) {
             })
         })
         .collect();
-
-    // Traversal overlay (#289): co-access edges learned from real sessions,
-    // drawn on top of the static graph. Restricted to files present in the graph
-    // (skip deleted/unindexed files) and capped so the view stays readable. The
-    // static analyses above intentionally run on structural edges only, so this
-    // overlay never skews god-nodes / cycles / orphan-rate.
-    let co_access_edges: Vec<(String, String, f64)> = {
-        let in_graph: std::collections::HashSet<String> = gp.file_paths().into_iter().collect();
-        crate::core::cooccurrence::export_edges(&root, 0.15, 250)
-            .into_iter()
-            .filter(|(a, b, _)| in_graph.contains(a) && in_graph.contains(b))
-            .collect()
-    };
-    if !co_access_edges.is_empty() {
-        *edge_stats.entry("co_access").or_default() += co_access_edges.len();
-        edges.extend(co_access_edges.iter().map(|(from, to, weight)| {
-            serde_json::json!({
-                "from": from,
-                "to": to,
-                "kind": "co_access",
-                "weight": weight,
-                "confidence": (crate::core::graph_analysis::edge_confidence("co_access", *weight)
-                    * 1000.0)
-                    .round()
-                    / 1000.0,
-            })
-        }));
-    }
 
     // When the graph is empty, explain *why*: a project built mostly from
     // graph-unsupported languages (e.g. Lua/Luau, #360) would otherwise leave the

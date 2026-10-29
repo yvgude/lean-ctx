@@ -241,8 +241,6 @@ fn print_usage() {
     println!("  --json            Machine-readable JSON (the RoiReport)");
     println!("  --md, --markdown  Markdown (shareable)");
     println!("  --export <path>   Write to a file (.json → JSON, else Markdown)");
-    println!();
-    println!("Team roll-up across developers (opt-in): lean-ctx savings team");
 }
 
 #[cfg(test)]

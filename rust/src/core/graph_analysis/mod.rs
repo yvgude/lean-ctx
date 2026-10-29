@@ -51,9 +51,6 @@ pub(crate) fn edge_confidence(kind: &str, weight: f64) -> f64 {
         "module" => 0.6,
         // More co-changes ⇒ more confidence, with diminishing returns.
         "cochange" => (0.30 + weight.max(0.0).ln_1p() * 0.18).clamp(0.30, 0.85),
-        // Learned co-access (files opened together in real sessions, #289): a
-        // behavioural signal that strengthens with repeated reinforcement.
-        "co_access" => (0.35 + weight.max(0.0).ln_1p() * 0.16).clamp(0.35, 0.80),
         "sibling" => 0.25,
         _ => 0.5,
     }
@@ -87,18 +84,5 @@ mod confidence_tests {
     #[test]
     fn unknown_kind_is_neutral() {
         assert_eq!(edge_confidence("mystery", 0.0), 0.5);
-    }
-
-    #[test]
-    fn co_access_scales_with_weight_and_is_bounded() {
-        let low = edge_confidence("co_access", 1.0);
-        let high = edge_confidence("co_access", 50.0);
-        assert!(high > low, "more reinforcement should raise confidence");
-        assert!((0.35..=0.80).contains(&low));
-        assert!((0.35..=0.80).contains(&high));
-        // Behavioural co-access sits above pure co-location (sibling) but below
-        // an explicit import.
-        assert!(low > edge_confidence("sibling", 0.0));
-        assert!(high < edge_confidence("import", 0.0));
     }
 }

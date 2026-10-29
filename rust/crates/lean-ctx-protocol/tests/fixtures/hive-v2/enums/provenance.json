@@ -1,0 +1,17 @@
+{
+  "name": "provenance",
+  "values": [
+    {
+      "value": "own"
+    },
+    {
+      "value": "workspace"
+    },
+    {
+      "value": "public"
+    },
+    {
+      "value": "foreign"
+    }
+  ]
+}

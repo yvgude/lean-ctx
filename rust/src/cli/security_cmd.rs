@@ -220,6 +220,9 @@ fn jail_line(jail: &JailState) -> String {
         JailState::Disabled(source) => {
             format!("{RED}disabled{RST}  {DIM}({source} — every tool path allowed){RST}")
         }
+        JailState::Workspace(binding) => format!(
+            "{GREEN}workspace{RST}  {DIM}({binding}: only its roots — `lean-ctx workspace show`){RST}"
+        ),
     }
 }
 

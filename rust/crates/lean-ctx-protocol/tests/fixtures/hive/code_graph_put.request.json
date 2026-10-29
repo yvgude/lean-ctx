@@ -1,0 +1,53 @@
+{
+  "graph": {
+    "edges": [
+      {
+        "from": "code:rust/src/core/hive/outbox.rs",
+        "to": "code:rust/src/core/hive/outbox.rs#hive::outbox::enqueue",
+        "type": "contains"
+      },
+      {
+        "from": "code:rust/src/core/hive/outbox.rs",
+        "to": "code:rust/src/core/hive/queue.rs",
+        "type": "imports"
+      },
+      {
+        "from": "code:rust/src/core/hive/outbox.rs#hive::outbox::enqueue",
+        "to": "code:rust/src/core/hive/queue.rs#hive::queue::push",
+        "type": "calls"
+      },
+      {
+        "from": "code:rust/src/core/hive/queue.rs",
+        "to": "code:rust/src/core/hive/queue.rs#hive::queue::push",
+        "type": "contains"
+      }
+    ],
+    "nodes": [
+      {
+        "id": "code:rust/src/core/hive/outbox.rs",
+        "kind": "file",
+        "lang": "rust"
+      },
+      {
+        "id": "code:rust/src/core/hive/outbox.rs#hive::outbox::enqueue",
+        "kind": "symbol",
+        "lang": "rust",
+        "symbol_kind": "fn"
+      },
+      {
+        "id": "code:rust/src/core/hive/queue.rs",
+        "kind": "file",
+        "lang": "rust"
+      },
+      {
+        "id": "code:rust/src/core/hive/queue.rs#hive::queue::push",
+        "kind": "symbol",
+        "lang": "rust",
+        "symbol_kind": "fn"
+      }
+    ],
+    "revision_hint": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f423f6c1e9a",
+    "schema": "leanctx.hive.code-graph/v1"
+  },
+  "schema": "leanctx.hive.code-graph-put/v1"
+}

@@ -39,8 +39,11 @@ pub(crate) fn cmd_summary(args: &[String]) {
         .then(|| SessionState::load_latest_for_project_root(&project_root))
         .flatten();
 
-    let out = ctx_summary::handle(&project_root, session.as_ref(), action, query_opt, top_k);
-    println!("{out}");
+    let out =
+        super::common::CliToolRun::new("ctx_summary", &project_root, None).deliver_text(|| {
+            ctx_summary::handle(&project_root, session.as_ref(), action, query_opt, top_k)
+        });
+    super::common::print_released(&out);
 }
 
 fn parse_top_k(args: &[String]) -> Option<usize> {

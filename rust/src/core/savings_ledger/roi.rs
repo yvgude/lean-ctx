@@ -158,6 +158,19 @@ pub fn roi_report(agent_id: &str) -> RoiReport {
     RoiReport::from_signed_batch(&batch).with_observed_overhead()
 }
 
+/// [`roi_report`] for one project, or for the whole ledger with `None`. The
+/// observed injection overhead is device-wide, so a project's report leaves
+/// it out rather than charge every project's turns to one of them.
+#[must_use]
+pub fn roi_report_for(agent_id: &str, scope: Option<&super::ProjectScope>) -> RoiReport {
+    let Some(scope) = scope else {
+        return roi_report(agent_id);
+    };
+    let mut batch = SignedSavingsBatchV1::build_for_project(agent_id, scope);
+    let _ = batch.sign(agent_id);
+    RoiReport::from_signed_batch(&batch)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

@@ -3,7 +3,6 @@ use serde::{Deserialize, Serialize};
 
 use super::types::{KnowledgeArchetype, KnowledgeFact, ProjectKnowledge};
 use crate::core::memory_boundary::FactPrivacy;
-use crate::core::memory_policy::MemoryPolicy;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ImportMerge {
@@ -28,6 +27,10 @@ pub struct ImportResult {
     pub added: u32,
     pub skipped: u32,
     pub replaced: u32,
+    /// `category/key` of every skipped fact whose incoming value differs from
+    /// the kept local one (counted in `skipped` too). A skip-existing merge
+    /// never overwrites; these are the conflicts it must make visible.
+    pub conflicts: Vec<String>,
 }
 
 /// Community-compatible simple fact format for import/export interop.
@@ -58,6 +61,9 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
         let facts = entries
             .into_iter()
             .map(|e| KnowledgeFact {
+                anchors: Vec::new(),
+                review: None,
+                capture: Default::default(),
                 origin: super::FactOrigin::Unverified,
                 archetype: KnowledgeArchetype::infer_from_category(&e.category),
                 sensitivity: crate::core::sensitivity::classify_content(&e.value),
@@ -81,6 +87,8 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
                 imported_from: None,
                 fidelity: None,
                 revision_count: 0,
+                status: None,
+                validity: None,
             })
             .collect();
         return Ok(facts);
@@ -95,6 +103,9 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
         if let Ok(entry) = serde_json::from_str::<SimpleFactEntry>(line) {
             let now = Utc::now();
             facts.push(KnowledgeFact {
+                anchors: Vec::new(),
+                review: None,
+                capture: Default::default(),
                 origin: super::FactOrigin::Unverified,
                 archetype: KnowledgeArchetype::infer_from_category(&entry.category),
                 sensitivity: crate::core::sensitivity::classify_content(&entry.value),
@@ -118,6 +129,8 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
                 imported_from: None,
                 fidelity: None,
                 revision_count: 0,
+                status: None,
+                validity: None,
             });
         } else {
             return Err(format!(
@@ -136,6 +149,9 @@ pub fn parse_import_data(data: &str) -> Result<Vec<KnowledgeFact>, String> {
 fn imported_fact(source: &KnowledgeFact, session_id: &str) -> KnowledgeFact {
     let now = Utc::now();
     KnowledgeFact {
+        anchors: Vec::new(),
+        review: None,
+        capture: Default::default(),
         origin: super::source_view::imported_origin(&source.origin),
         category: source.category.clone(),
         key: source.key.clone(),
@@ -159,6 +175,8 @@ fn imported_fact(source: &KnowledgeFact, session_id: &str) -> KnowledgeFact {
         archetype: source.archetype.clone(),
         fidelity: None,
         revision_count: 0,
+        status: None,
+        validity: source.validity,
     }
 }
 
@@ -170,11 +188,11 @@ impl ProjectKnowledge {
         incoming: Vec<KnowledgeFact>,
         merge: ImportMerge,
         session_id: &str,
-        policy: &MemoryPolicy,
     ) -> ImportResult {
         let mut added = 0u32;
         let mut skipped = 0u32;
         let mut replaced = 0u32;
+        let mut conflicts = Vec::new();
 
         for fact in incoming {
             let existing = self
@@ -183,7 +201,10 @@ impl ProjectKnowledge {
                 .position(|f| f.category == fact.category && f.key == fact.key && f.is_current());
 
             match (&merge, existing) {
-                (ImportMerge::SkipExisting, Some(_)) => {
+                (ImportMerge::SkipExisting, Some(idx)) => {
+                    if self.facts[idx].value != fact.value {
+                        conflicts.push(format!("{}/{}", fact.category, fact.key));
+                    }
                     skipped += 1;
                 }
                 (ImportMerge::Replace, Some(idx)) => {
@@ -200,14 +221,6 @@ impl ProjectKnowledge {
 
         if added > 0 || replaced > 0 {
             self.updated_at = Utc::now();
-            // Mirror remember()'s hard cap: a bulk import must settle the store at
-            // <= max_facts, not 2x. run_lifecycle archives the excess by importance
-            // (nothing is lost). The previous `* 2` guard diverged from the
-            // remember() path and let an import inflate a store to twice the cap —
-            // observed live as a doctor CRIT (facts 232/200).
-            if self.facts.len() > policy.knowledge.max_facts {
-                let _ = self.run_memory_lifecycle(policy);
-            }
             self.rebuild_index();
         }
 
@@ -215,6 +228,7 @@ impl ProjectKnowledge {
             added,
             skipped,
             replaced,
+            conflicts,
         }
     }
 

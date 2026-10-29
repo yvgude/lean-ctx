@@ -83,40 +83,25 @@ struct McpReceiptIntent {
     output_token_count: usize,
 }
 
-#[allow(clippy::too_many_arguments)]
-#[cfg(test)]
-#[cfg_attr(windows, allow(dead_code))] // its only consumer is a cfg(not(windows)) test
-pub(in crate::server) async fn dispatch_and_post_process(
+/// What the semantic tool of this call declares about its source acquisition.
+/// A declaration belongs to the tool that runs, so a `ctx_call` wrapper is
+/// unwrapped one level, as admission does. No registry, an unknown tool or an
+/// unresolvable wrapper declares nothing.
+pub(super) fn tool_declaration(
     server: &LeanCtxServer,
     name: &str,
     args: Option<&serde_json::Map<String, serde_json::Value>>,
-    minimal: bool,
-    config: std::sync::Arc<crate::core::config::Config>,
-    machine_readable: bool,
-    auto_context: Option<String>,
-    throttle_warning: Option<String>,
-    args_fp: String,
-    decision_context: Option<crate::core::decision_loop_runtime::TaskContext>,
-) -> Result<CallToolResult, ErrorData> {
-    let raw = dispatch_primitive(server, name, args, minimal, &args_fp).await?;
-    let mut processed = reversible_post_process(
-        server,
-        name,
-        args,
-        minimal,
-        config,
-        machine_readable,
-        auto_context,
-        throttle_warning,
-        decision_context,
-        raw,
-    )
-    .await?;
-    let _ = record_context_ir(server, &processed).await;
-    record_ledger(server, &processed).await?;
-    let checkpoint = processed.checkpoint.take();
-    let _ = record_checkpoint(server, checkpoint, &mut processed.result).await;
-    Ok(processed.result)
+) -> super::guarded::replay_lineage::Declaration {
+    crate::tools::registered::ctx_call::resolve(name, args)
+        .ok()
+        .and_then(|(inner, inner_args)| {
+            let tool = server.registry.as_ref()?.get_arc(&inner)?;
+            Some(super::guarded::replay_lineage::Declaration {
+                publishes_every_source: tool.publishes_every_source(inner_args.as_ref()),
+                attests_source_free: tool.attests_source_free(inner_args.as_ref()),
+            })
+        })
+        .unwrap_or_default()
 }
 
 pub(in crate::server) async fn dispatch_primitive(
@@ -139,6 +124,14 @@ pub(in crate::server) async fn dispatch_primitive(
     };
     let (dispatched, archive_authority) =
         crate::core::archive::authority::capture(server.dispatch_tool(name, args, minimal)).await;
+    // What this dispatch acquired, for later reuse of its output (idempotent
+    // replay, response cache): the captured source set when the tool declares
+    // it complete, the tool's attestation that this invocation reads no
+    // source, or — when neither holds — unknown.
+    super::guarded::replay_lineage::record(
+        archive_authority.as_ref(),
+        tool_declaration(server, name, args),
+    );
     if name == "ctx_shell"
         && let Ok((_, _, outcome, _)) = &dispatched
         && !matches!(
@@ -426,7 +419,7 @@ pub(in crate::server) async fn reversible_post_process(
         } else if name == "ctx_shell" {
             let cmd = helpers::get_str(args, "command").unwrap_or_default();
             detector.record_shell_for_correction(&cmd);
-        } else if name == "ctx_expand" || name == "ctx_retrieve" {
+        } else if name == "ctx_expand" {
             // CCR-learning (#941): a verbatim/original re-fetch means the inline
             // compressed form was too lossy for this session.
             detector.record_retrieve();
@@ -450,6 +443,7 @@ pub(in crate::server) async fn reversible_post_process(
     // For firewallable tools (ctx_shell/ctx_execute/ctx_search/ctx_tree) whose output
     // exceeds the ephemeral threshold, the full (redacted) body is stored out-of-band
     // and the inline result is replaced by a compact digest + ctx_expand drilldown.
+    let shell_notice = crate::server::execute::leading_notice(&result_text);
     let mut firewalled = false;
     let mut firewall_saved_tokens: usize = 0;
     // GH #1453: `raw`/`inline`/`bypass` explicitly request verbatim delivery —
@@ -572,13 +566,7 @@ pub(in crate::server) async fn reversible_post_process(
             use crate::core::archive;
             let archivable = matches!(
                 name,
-                "ctx_shell"
-                    | "ctx_read"
-                    | "ctx_multi_read"
-                    | "ctx_smart_read"
-                    | "ctx_execute"
-                    | "ctx_search"
-                    | "ctx_tree"
+                "ctx_shell" | "ctx_read" | "ctx_execute" | "ctx_search" | "ctx_tree"
             );
             if archivable && archive::should_archive(&result_text) {
                 let cmd = helpers::get_str(args, "command")
@@ -587,12 +575,22 @@ pub(in crate::server) async fn reversible_post_process(
                 let session_id = server.session.read().await.id.clone();
                 let to_store = crate::core::redaction::redact_text_if_enabled(&result_text);
                 let tokens = crate::core::tokens::count_tokens(&to_store);
-                // Only the admitted file handler currently supplies complete archive
-                // source provenance. Other output classes must not borrow its binding.
-                let authority = (name == "ctx_execute"
+                // A captured source set binds the archive copy only when it is
+                // the WHOLE set: the admitted file handler, and every tool
+                // that declares `publishes_every_source` for this invocation.
+                // Other output classes must not borrow a binding (G02: under
+                // protection a declared tool's permitted output keeps a
+                // source-bound, revocable recovery copy instead of none).
+                let authority = ((name == "ctx_execute"
                     && helpers::get_str(args, "action").as_deref() == Some("file"))
-                .then_some(archive_authority.as_deref())
-                .flatten();
+                    || tool_declaration(server, name, args).publishes_every_source)
+                    .then_some(archive_authority.as_deref())
+                    .flatten()
+                    // An incomplete set binds nothing. Under protection the
+                    // store then refuses the copy (no source authority);
+                    // without protection the output is archived originless,
+                    // exactly as before source capture existed.
+                    .filter(|authority| !authority.is_incomplete());
                 match archive::store_with_authority(
                     name,
                     &cmd,
@@ -656,6 +654,12 @@ pub(in crate::server) async fn reversible_post_process(
             }
         }
     };
+    if firewalled {
+        result_text = crate::server::execute::keep_notice(shell_notice, result_text);
+        // K10: served truncated, by output class (never the command).
+        use crate::core::hive::metrics_v2::signals;
+        signals::truncated(&signals::output_filter(name));
+    }
 
     if background_status && !triage_bypass && !is_raw_shell && !firewalled {
         result_text = apply_task_triage_filter(
@@ -716,29 +720,6 @@ pub(in crate::server) async fn reversible_post_process(
     ) {
         result_text.push_str("\n\n");
         result_text.push_str(&hint);
-    }
-
-    // Echo-ratio nudge (#science): when output largely repeats the task
-    // description, surface a deterministic hint before footer markers (#498).
-    if !machine_readable
-        && !is_raw_shell
-        && !firewalled
-        && crate::core::cognitive_gate::full_science_enabled()
-        && !result_text.is_empty()
-    {
-        let task_input = {
-            let session = server.session.read().await;
-            session.task.as_ref().map(|t| t.description.clone())
-        };
-        if let Some(task) = task_input.filter(|t| !t.is_empty()) {
-            let report = crate::core::echo_ratio::compute_echo_ratio(&task, &result_text);
-            if report.ratio > 0.7 {
-                result_text.push_str(&format!(
-                    "\n[cognitive: high echo ratio ({:.0}%) — consider generating novel content]",
-                    report.ratio * 100.0
-                ));
-            }
-        }
     }
 
     // Resolve the active profile once per dispatch: it is stable for the
@@ -807,15 +788,23 @@ pub(in crate::server) async fn reversible_post_process(
     // ═══════════════════════════════════════════════════════════════════════
     if !is_raw_shell && let Some(ctx) = auto_context {
         let ctx_tokens = crate::core::tokens::count_tokens(&ctx);
-        if ctx_tokens <= 400 {
+        if ctx_tokens <= crate::tools::autonomy::AUTO_CONTEXT_MAX_TOKENS {
             result_text = format!("{ctx}\n\n{result_text}");
         }
     }
 
-    if !is_raw_shell
-        && legacy_context_allowed
-        && name != "ctx_memory"
-        && let Some(hint) = crate::core::shared_context::session_start_hint()
+    // Shared memory is partitioned by project: only the request project's own
+    // facts may decorate this result.
+    let hint_root = if !is_raw_shell && legacy_context_allowed && name != "ctx_memory" {
+        match crate::core::policy::diagnostics::request_project() {
+            Some(root) => Some(root.to_string_lossy().into_owned()),
+            None => server.session.read().await.project_root.clone(),
+        }
+    } else {
+        None
+    };
+    if let Some(root) = hint_root
+        && let Some(hint) = crate::core::shared_context::session_start_hint(&root)
     {
         had_legacy_context = true;
         result_text = format!("{hint}\n\n{result_text}");
@@ -907,68 +896,7 @@ pub(in crate::server) async fn reversible_post_process(
             .resolve_path_or_passthrough(&helpers::get_str(args, "path").unwrap_or_default())
             .await;
         let project_root = server.session.read().await.project_root.clone();
-        if minimal {
-            let cache_clone = server.cache.clone();
-            let autonomy_clone = server.autonomy.clone();
-            let name_owned = name.to_string();
-            tokio::spawn(async move {
-                let result = std::panic::AssertUnwindSafe(async {
-                    // #807: bounded lock — the old unbounded `.write().await`
-                    // could queue behind a long computation and then hold the
-                    // lock during dedup, cascading the stall.
-                    let cache_timeout = tokio::time::timeout(
-                        std::time::Duration::from_secs(5),
-                        cache_clone.write(),
-                    )
-                    .await;
-                    if let Ok(mut cache) = cache_timeout {
-                        crate::tools::autonomy::maybe_auto_dedup(
-                            &autonomy_clone,
-                            &mut cache,
-                            &name_owned,
-                        );
-                    } else {
-                        tracing::debug!("background auto_dedup: cache lock timeout (5s), skipping");
-                    }
-                })
-                .catch_unwind()
-                .await;
-                if let Err(e) = result {
-                    let msg = e
-                        .downcast_ref::<String>()
-                        .map(String::as_str)
-                        .or_else(|| e.downcast_ref::<&str>().copied())
-                        .unwrap_or("unknown");
-                    tracing::error!("background auto_dedup panicked: {msg}");
-                }
-            });
-        } else {
-            // Bounded cache lock for enrichment — degrade gracefully under contention
-            let enrich_timeout =
-                tokio::time::timeout(std::time::Duration::from_secs(3), server.cache.write()).await;
-            if let Ok(mut cache) = enrich_timeout {
-                let enrich = crate::tools::autonomy::enrich_after_read(
-                    &server.autonomy,
-                    &mut cache,
-                    &read_path,
-                    project_root.as_deref(),
-                    None,
-                    crate::tools::CrpMode::effective(),
-                    false,
-                );
-                if profile_hints.related_hint()
-                    && let Some(hint) = enrich.related_hint
-                {
-                    result_text = format!("{result_text}\n{hint}");
-                }
-                crate::tools::autonomy::maybe_auto_dedup(&server.autonomy, &mut cache, name);
-            } else {
-                tracing::warn!(
-                    "post-dispatch cache lock timeout (3s) for {read_path}, skipping enrichment"
-                );
-            }
-        }
-        // Continuity is independent of optional enrichment/minimal output.
+        // Continuity is independent of minimal output.
         // Directory overviews are not file reads (GL #512).
         if std::path::Path::new(&read_path).is_file() {
             ledger_intent = Some(McpLedgerIntent {
@@ -1037,11 +965,11 @@ pub(in crate::server) async fn reversible_post_process(
                         })
             })
         {
-            session.add_finding(
-                safe["file"].as_str(),
-                None,
-                safe["summary"].as_str().unwrap_or_default(),
-            );
+            // Bound to the call's sources only when the tool declares them all.
+            let declared = tool_declaration(server, name, args).publishes_every_source;
+            let (file, summary) = (safe["file"].as_str(), safe["summary"].as_str());
+            let sources = archive_authority.as_deref().filter(|_| declared);
+            session.add_finding_from_call(file, summary.unwrap_or_default(), sources);
         }
         let project_root = crate::core::policy::diagnostics::request_project()
             .map(|root| root.to_string_lossy().into_owned())
@@ -1052,7 +980,7 @@ pub(in crate::server) async fn reversible_post_process(
             let r = root.clone();
             let source_tool = name.to_owned();
             let source_record = diagnostic_fields.clone();
-            std::thread::spawn(move || {
+            crate::core::policy::runtime::spawn_for_project(r.clone(), move || {
                 let Some(record) = source_record else { return };
                 let Some(original) = record["result"].as_str() else {
                     return;
@@ -1077,7 +1005,7 @@ pub(in crate::server) async fn reversible_post_process(
             let r = root.clone();
             let source_tool = name.to_owned();
             let source_record = diagnostic_fields.clone();
-            std::thread::spawn(move || {
+            crate::core::policy::runtime::spawn_for_project(r.clone(), move || {
                 let Some(record) = source_record else { return };
                 let Some(original) = record["result"].as_str() else {
                     return;
@@ -1248,9 +1176,6 @@ pub(in crate::server) async fn reversible_post_process(
             name,
             "ctx_compress"
                 | "ctx_metrics"
-                | "ctx_benchmark"
-                | "ctx_analyze"
-                | "ctx_cache"
                 | "ctx_discover"
                 | "ctx_dedup"
                 | "ctx_session"
@@ -1258,16 +1183,9 @@ pub(in crate::server) async fn reversible_post_process(
                 | "ctx_agent"
                 | "ctx_share"
                 | "ctx_gain"
-                | "ctx_overview"
                 | "ctx_preload"
                 | "ctx_cost"
                 | "ctx_heatmap"
-                | "ctx_task"
-                | "ctx_impact"
-                | "ctx_architecture"
-                | "ctx_smells"
-                | "ctx_quality"
-                | "ctx_workflow"
         );
 
     // Output-echo nudge (#501): when the agent keeps re-quoting delivered
@@ -1319,12 +1237,6 @@ pub(in crate::server) async fn reversible_post_process(
         }
     }
 
-    // #509: a folded read-cluster alias (ctx_smart_read / ctx_multi_read) stays
-    // callable but warns — prepend a one-line notice steering to the primary.
-    if let Some(notice) = crate::server::dynamic_tools::deprecation_notice(name) {
-        result_text = format!("{notice}\n{result_text}");
-    }
-
     // #990: a machine-readable invocation (e.g. ctx_outline format=json) must
     // return a byte-exact, parseable payload. The state-consuming briefings
     // are already skipped above (so their once-per-session flags survive),
@@ -1346,6 +1258,7 @@ pub(in crate::server) async fn reversible_post_process(
         &result_text,
         verbatim_requested(delivery_name, delivery_args),
         recovery_line.as_deref(),
+        name,
     );
 
     // Decorations can contain recovered session/source text. Inspect the final
@@ -1367,6 +1280,31 @@ pub(in crate::server) async fn reversible_post_process(
         result.is_error = Some(true);
         record_error_category(crate::core::telemetry_v2::ErrorCategory::Internal);
     }
+    // Delivered-content lineage (G03/G04): this is the release point — the
+    // text blocks of `result` are the bytes the client receives (a later
+    // checkpoint is a block of its own). Each is registered under its digest
+    // with the call's source set, so the proxy can re-authorize the same
+    // bytes when they come back. Only a COMPLETE set of a declared tool is
+    // recorded, and nothing when session-derived context without source
+    // authority was mixed into the text: unknown stays unknown. The
+    // conditions live in `record_tool_delivery`, shared with the CLI path;
+    // this site only states what the pipeline itself added to the text.
+    let declares_every_source = !had_legacy_context
+        && ((name == "ctx_execute" && helpers::get_str(args, "action").as_deref() == Some("file"))
+            || server.registry.as_deref().is_some_and(|registry| {
+                crate::core::archive::delivered::declares_every_source(registry, name, args)
+            }));
+    let delivered_blocks: Vec<&str> = result
+        .content
+        .iter()
+        .filter_map(|block| block.as_text().map(|text| text.text.as_str()))
+        .collect();
+    crate::server::call_identity::record_delivery(
+        declares_every_source,
+        tool_error || result.is_error == Some(true),
+        archive_authority.as_deref().cloned(),
+        &delivered_blocks,
+    );
     let has_dynamic = had_auto_context || had_throttle_warning;
     let mut meta = rmcp::model::Meta::new();
     meta.0.insert(
@@ -1411,10 +1349,6 @@ pub(in crate::server) use records::{record_checkpoint, record_context_ir, record
 #[path = "pipeline_telemetry.rs"]
 mod telemetry;
 
-#[path = "pipeline_terminal.rs"]
-mod terminal;
-use terminal::{policy_blocked_output, protect_terminal_result};
-
 #[cfg(test)]
 use telemetry::shell_error_category;
 pub(in crate::server) use telemetry::{error_failure, result_failure};
@@ -1429,34 +1363,19 @@ mod triage;
 use triage::apply_task_triage_filter;
 pub(super) use triage::{triage_bypass_requested, verbatim_requested};
 
-/// Record real compression savings after every response rewrite is complete.
-///
-/// Registered tools report the raw-to-tool-output delta in `tool_saved_tokens`.
-/// The final output count includes dispatcher-level terse compression and
-/// decorations. This is deliberately best-effort: tracker failures cannot
-/// affect a completed tool response.
-fn record_compression_savings(name: &str, tool_saved_tokens: usize, output_tokens: usize) {
-    if let Some((raw_tokens, compressed_tokens)) =
-        compression_tracker_tokens(name, tool_saved_tokens, output_tokens)
-    {
-        crate::core::savings_tracker::record_compression(raw_tokens, compressed_tokens, name);
-    }
-}
+#[path = "pipeline_terminal.rs"]
+mod terminal;
+use terminal::{policy_blocked_output, protect_terminal_result};
 
-fn compression_tracker_tokens(
-    name: &str,
-    tool_saved_tokens: usize,
-    output_tokens: usize,
-) -> Option<(u64, u64)> {
-    matches!(
-        name,
-        "ctx_read" | "ctx_shell" | "ctx_search" | "ctx_compose"
-    )
-    .then(|| {
-        let raw_tokens = tool_saved_tokens.saturating_add(output_tokens) as u64;
-        (raw_tokens, output_tokens as u64)
-    })
-}
+#[path = "pipeline_savings.rs"]
+mod savings;
+#[cfg(test)]
+use savings::compression_tracker_tokens;
+use savings::record_compression_savings;
+
+#[cfg(test)]
+#[cfg_attr(windows, allow(unused_imports))] // its only consumer is a cfg(not(windows)) test
+pub(in crate::server) use test_driver::dispatch_and_post_process;
 
 #[cfg(test)]
 #[path = "pipeline_savings_tests.rs"]
@@ -1465,3 +1384,7 @@ mod savings_tests;
 #[cfg(test)]
 #[path = "pipeline_policy_tests.rs"]
 mod policy_tests;
+
+#[cfg(test)]
+#[path = "pipeline_test_driver.rs"]
+mod test_driver;

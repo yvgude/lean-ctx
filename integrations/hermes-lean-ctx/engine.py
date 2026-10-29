@@ -250,11 +250,11 @@ class LeanCtxEngine(ContextEngine):
             self._gateway.call_text("ctx_session", {"action": "resume"})
 
     def on_session_end(self, session_id: str, messages: List[Dict[str, Any]]) -> None:
-        # Durable cross-session persistence: record a session summary and write a
+        # Durable cross-session persistence: save the session state and write a
         # deterministic handoff ledger the next session can pull (ctx_handoff).
         if not self._gateway.is_available():
             return
-        self._gateway.call_text("ctx_summary", {"action": "record"})
+        self._gateway.call_text("ctx_session", {"action": "save"})
         self._gateway.call_text("ctx_handoff", {"action": "create"})
 
     def on_session_reset(self) -> None:

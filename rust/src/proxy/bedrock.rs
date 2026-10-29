@@ -61,33 +61,19 @@ pub(super) fn passthrough_request_body(
     (body, original_size, original_size)
 }
 
-pub(super) fn final_request_body(
-    provider_label: &str,
-    parts: &Parts,
-    raw: &[u8],
-    transformed: Vec<u8>,
-) -> Vec<u8> {
-    if provider_label == "Bedrock" && !parts.headers.contains_key("content-encoding") {
-        raw.to_vec()
-    } else {
-        transformed
-    }
-}
-
 pub(super) fn finalize_request(
-    provider_label: &str,
     parts: &mut Parts,
-    raw: &[u8],
-    transformed: Vec<u8>,
+    admitted_body: Vec<u8>,
     limit: usize,
     url: &str,
 ) -> Result<Vec<u8>, StatusCode> {
-    let body = final_request_body(provider_label, parts, raw, transformed);
-    if body.len() > limit {
+    if admitted_body.len() > limit {
         return Err(StatusCode::PAYLOAD_TOO_LARGE);
     }
-    sign_request_from_environment(parts, url, &body)?;
-    Ok(body)
+    // Finalization may add authentication headers, but it must never select or
+    // restore a body after Gateway admission. SigV4 binds these exact bytes.
+    sign_request_from_environment(parts, url, &admitted_body)?;
+    Ok(admitted_body)
 }
 
 /// AWS event-stream frame decoder used only for usage observation. Bytes still
@@ -185,7 +171,7 @@ impl EventStreamScanner {
     }
 }
 
-fn crc32(bytes: &[u8]) -> u32 {
+pub(super) fn crc32(bytes: &[u8]) -> u32 {
     let mut crc = u32::MAX;
     for byte in bytes {
         crc ^= u32::from(*byte);
@@ -803,16 +789,42 @@ mod tests {
     }
 
     #[test]
-    fn identity_body_preserves_provider_bytes() {
-        let parts = Request::post("/model/demo/invoke")
+    fn finalizer_never_restores_pre_admission_bedrock_bytes() {
+        let mut parts = Request::post("/model/demo/invoke")
             .body(())
             .unwrap()
             .into_parts()
             .0;
         let raw = br#"{"b":1,"a":2}"#;
+        let admitted = br#"{"b":"[redacted]","a":2}"#;
+        let forwarded = finalize_request(
+            &mut parts,
+            admitted.to_vec(),
+            1024,
+            "https://bedrock.example/model/demo/invoke",
+        )
+        .expect("admitted body fits the request bound");
+        assert_ne!(forwarded, raw);
+        assert_eq!(forwarded, admitted);
+    }
+
+    #[test]
+    fn unchanged_bedrock_bytes_remain_unchanged_when_already_selected() {
+        let mut parts = Request::post("/model/demo/invoke")
+            .body(())
+            .unwrap()
+            .into_parts()
+            .0;
+        let unchanged = br#" { "b": 1, "a": 2 } "#;
         assert_eq!(
-            final_request_body("Bedrock", &parts, raw, br#"{"a":2,"b":1}"#.to_vec()),
-            raw
+            finalize_request(
+                &mut parts,
+                unchanged.to_vec(),
+                1024,
+                "https://bedrock.example/model/demo/invoke",
+            )
+            .expect("unchanged body fits the request bound"),
+            unchanged
         );
     }
 
@@ -962,6 +974,14 @@ mod tests {
             "20240301T000000Z",
         )
         .unwrap();
+        assert_eq!(
+            first["x-amz-content-sha256"].to_str().unwrap(),
+            sha256_hex(b"final-body-a")
+        );
+        assert_eq!(
+            second["x-amz-content-sha256"].to_str().unwrap(),
+            sha256_hex(b"final-body-b")
+        );
         assert_ne!(
             first["x-amz-content-sha256"],
             second["x-amz-content-sha256"]

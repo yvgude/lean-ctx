@@ -41,10 +41,40 @@ mod continuation;
 mod source_evidence;
 pub(super) use continuation::CheckpointContinueAdmission;
 
-pub(super) fn inspect_personal_sync_payload(root: &str, value: &serde_json::Value) -> Result<()> {
-    content::inspect_personal_sync_payload(root, value)
+/// The same for a checkpoint this host is asked to verify, sign and export:
+/// the Engine computes digest and signature itself, so the admitted form is
+/// what gets bound.
+pub(super) fn admit_fresh_checkpoint(checkpoint: &mut serde_json::Value) -> Result<bool> {
+    content::admit_fresh("checkpoint:", content::Document::Checkpoint, checkpoint)
+}
+
+/// The same for the one text a continuation renders and returns.
+pub(super) fn admit_fresh_text(reference: &str, text: String) -> Result<String> {
+    let mut rendered = serde_json::Value::String(text);
+    content::admit_fresh(reference, content::Document::Unlisted, &mut rendered)?;
+    match rendered {
+        serde_json::Value::String(text) => Ok(text),
+        other => Ok(other.to_string()),
+    }
+}
+
+/// The admission of a document another component produced and this host is
+/// about to write out: FOREIGN content without a table — every string is a
+/// source — admitted bound under `tool` (unchanged, or refused whole).
+#[cfg(unix)]
+pub(super) fn admit_foreign_document_narrative(
+    document: &str,
+    value: &serde_json::Value,
+    tool: &'static str,
+) -> Result<()> {
+    let origin = content::Origin::Foreign(tool);
+    content::admit_bound(document, content::Document::Unlisted, value, origin)
 }
 pub(super) use source_evidence::{SourceDependency, SourceKind};
+
+/// A transferred package is another host's content: its narrative is admitted
+/// as a remote source under this tool label.
+const FOREIGN_PACKAGE: content::Origin = content::Origin::Foreign("context-checkpoint-import");
 
 pub(super) const TRANSFER_SCHEMA: &str = "leanctx.checkpoint-transfer/v1";
 const SOURCE_TRANSFER_SCHEMA: &str = "leanctx.checkpoint-transfer/v2";
@@ -411,7 +441,11 @@ impl HostReceiptAuthority {
                 "checkpoint export scope mismatch"
             );
         }
-        content::admit(&package, std::path::Path::new(&root))?;
+        content::admit(
+            &package,
+            std::path::Path::new(&root),
+            content::Origin::Local,
+        )?;
         let package_digest = digest(&package_bytes).map_err(anyhow::Error::msg)?;
         drop(
             persist_engine_artifact_content(
@@ -905,7 +939,11 @@ fn stage_verified_package(
         "declared package lineage disagrees with the verified checkpoint"
     );
     let receiving = &admission.receiving;
-    content::admit(package, std::path::Path::new(&inputs.root))?;
+    // Foreign content enters this project here: project policy, secret floor
+    // and the gateway's admission of its narrative all run BEFORE the first
+    // local store sees it (the staging store below, then — for a
+    // continuation — the session store).
+    content::admit(package, std::path::Path::new(&inputs.root), FOREIGN_PACKAGE)?;
     if inputs.inspect_sources {
         let sources =
             source_evidence::derive(receipts, |hash| inputs.evidence.canonical_bytes(hash))?;
@@ -1102,9 +1140,13 @@ fn admit_evidence(
     Ok((receipts, task, plan, outcomes))
 }
 
+/// The receiving root in the one spelling a request project has
+/// (`pathutil::canonicalize_secure`, without the Windows verbatim `\\?\`
+/// prefix): the policy source view rebinds `REQUEST_PROJECT` to exactly that
+/// spelling, and the content and source checks compare the two verbatim.
 fn canonical_receiving_root(configured: &std::path::Path) -> Result<String> {
     ensure!(configured.is_absolute(), "absolute receiving root required");
-    let root = std::fs::canonicalize(configured)?;
+    let root = crate::core::pathutil::canonicalize_secure(configured)?;
     ensure!(
         root.is_dir() && !crate::core::pathutil::is_broad_or_unsafe_root(&root),
         "unsafe receiving root"

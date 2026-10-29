@@ -14,16 +14,20 @@
 
 use std::sync::{Mutex, OnceLock};
 
-use super::hnsw::{AnnIndex, FlatEmbeddings, brute_force_topk};
+use super::hnsw::AnnIndex;
+#[cfg(feature = "embeddings")]
+use super::hnsw::{FlatEmbeddings, brute_force_topk};
 
 /// Minimum corpus size before an HNSW graph is worth building and caching.
 /// Below this, exact SIMD brute force is faster *and* exact (no recall loss).
 /// At 2500, a medium codebase (~7k chunks for lean-ctx itself) enters the
 /// HNSW path and gets sub-linear dense search; brute force remains the default
 /// for smaller projects where it is both simpler and just as fast.
+#[cfg(feature = "embeddings")]
 pub(crate) const ANN_MIN_VECTORS: usize = 2_500;
 
 struct Cached {
+    #[cfg(feature = "embeddings")]
     fingerprint: u64,
     index: AnnIndex,
 }
@@ -64,12 +68,14 @@ pub(crate) fn memory_usage_bytes() -> usize {
 /// The [`FlatEmbeddings`] data is shared via `Arc::clone` (a refcount bump, zero
 /// bytes copied) when building the cached HNSW index.
 #[must_use]
+#[cfg(feature = "embeddings")]
 pub(crate) fn topk(embeddings: &FlatEmbeddings, query: &[f32], top_k: usize) -> Vec<(usize, f32)> {
     topk_gated(embeddings, query, top_k, ANN_MIN_VECTORS)
 }
 
 /// Core implementation with an injectable gate so tests can exercise the HNSW
 /// path without materializing a 50k-vector corpus.
+#[cfg(feature = "embeddings")]
 fn topk_gated(
     embeddings: &FlatEmbeddings,
     query: &[f32],
@@ -104,6 +110,7 @@ fn topk_gated(
 
 /// Cheap, content-sensitive fingerprint (FNV-1a over lengths + sampled values).
 /// Operates directly on the flat [`FlatEmbeddings`] buffer.
+#[cfg(feature = "embeddings")]
 fn fingerprint(embeddings: &FlatEmbeddings) -> u64 {
     let mut h: u64 = 0xcbf2_9ce4_8422_2325;
     macro_rules! mix {

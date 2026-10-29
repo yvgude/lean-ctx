@@ -16,7 +16,7 @@ use rmcp::model::{CallToolResult, ContentBlock};
 use crate::core::policy::runtime::{self, ActivePolicy};
 
 mod release;
-pub(crate) use release::release_result;
+pub(crate) use release::{release_outcome, release_result};
 
 /// Tools that can never be policy-denied (mirror role_guard's session/meta
 /// exemption), so a pack can't lock the operator out of fixing the policy.

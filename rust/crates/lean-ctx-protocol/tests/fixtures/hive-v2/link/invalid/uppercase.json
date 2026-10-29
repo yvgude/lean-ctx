@@ -1,0 +1,14 @@
+{
+  "case": "uppercase",
+  "base": "link/lean-ctx-hive.hosted.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/vault",
+      "value": "Acme/Payments"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

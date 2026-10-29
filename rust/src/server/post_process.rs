@@ -15,11 +15,9 @@ use crate::core::context_ir::ContextIrSourceKindV1;
 /// Map a tool name to the Context-IR source kind recorded for lineage.
 pub(super) fn context_ir_source_kind(name: &str) -> ContextIrSourceKindV1 {
     match name {
-        n if n.contains("read") || n.contains("multi_read") || n.contains("smart_read") => {
-            ContextIrSourceKindV1::Read
-        }
+        n if n.contains("read") => ContextIrSourceKindV1::Read,
         "ctx_shell" => ContextIrSourceKindV1::Shell,
-        "ctx_search" | "ctx_semantic_search" => ContextIrSourceKindV1::Search,
+        "ctx_search" => ContextIrSourceKindV1::Search,
         "ctx_provider" => ContextIrSourceKindV1::Provider,
         _ => ContextIrSourceKindV1::Other,
     }
@@ -65,18 +63,7 @@ pub(super) fn compress_terse(
     if skip_terse(name, args, is_raw_shell) {
         return text;
     }
-    let mut compression = CompressionLevel::effective(config);
-    if crate::core::cognitive_gate::full_science_enabled()
-        && CompressionLevel::session_degrade_level().is_none()
-        && let Some(recommended) = crate::core::verbosity::recommended_compression()
-        && recommended.is_more_aggressive_than(&compression)
-    {
-        tracing::info!(
-            "[verbosity] applying recommended compression: {}",
-            recommended.label()
-        );
-        compression = recommended;
-    }
+    let compression = CompressionLevel::effective(config);
     if !compression.is_active() {
         return text;
     }
@@ -142,19 +129,11 @@ mod tests {
             ContextIrSourceKindV1::Read
         ));
         assert!(matches!(
-            context_ir_source_kind("ctx_smart_read"),
-            ContextIrSourceKindV1::Read
-        ));
-        assert!(matches!(
             context_ir_source_kind("ctx_shell"),
             ContextIrSourceKindV1::Shell
         ));
         assert!(matches!(
             context_ir_source_kind("ctx_search"),
-            ContextIrSourceKindV1::Search
-        ));
-        assert!(matches!(
-            context_ir_source_kind("ctx_semantic_search"),
             ContextIrSourceKindV1::Search
         ));
         assert!(matches!(
@@ -176,14 +155,6 @@ mod tests {
         assert!(
             skip_terse("ctx_read", None, false),
             "full/verbatim read (0 savings) must still skip terse"
-        );
-        assert!(
-            skip_terse("ctx_multi_read", None, false),
-            "multi_read must skip terse"
-        );
-        assert!(
-            skip_terse("ctx_smart_read", None, false),
-            "smart_read must skip terse"
         );
         assert!(
             !skip_terse("ctx_grep", None, false),

@@ -1,0 +1,84 @@
+{
+  "days": [
+    {
+      "agents": [
+        {
+          "host": "claude",
+          "sessions": 3,
+          "tool_calls": 214
+        }
+      ],
+      "date": "2026-10-19",
+      "guards": {
+        "content_withheld": 0,
+        "injection_flags": 0,
+        "partial_inspections": 0,
+        "paths_blocked": 0,
+        "pii_redacted": 1,
+        "secrets_redacted": 2,
+        "shell_blocked": 1
+      },
+      "hive": {
+        "first_context_ms_p50": 840,
+        "first_context_sessions": 6,
+        "knowledge_hits_referenced": 14,
+        "task_usage": [
+          {
+            "input_tokens": 182000,
+            "list_usd_micros": 687000,
+            "number": 7,
+            "output_tokens": 9400
+          },
+          {
+            "input_tokens": 41500,
+            "list_usd_micros": 156000,
+            "number": 9,
+            "output_tokens": 2100
+          }
+        ]
+      },
+      "ledger": {
+        "cache_discount": 4,
+        "correction": 1,
+        "edit": 3,
+        "other": 0,
+        "reduction": 12
+      },
+      "memory": {
+        "facts_added": 2,
+        "facts_current": 48,
+        "lessons_linked": 1
+      },
+      "receipts": 2,
+      "savings": {
+        "cache_hits": 57,
+        "tokens_delivered": 61000,
+        "tokens_requested": 182000,
+        "tokens_saved": 121000,
+        "tool_calls": 214
+      },
+      "spend": [
+        {
+          "cached_tokens": 900000,
+          "input_tokens": 120000,
+          "list_usd": 3.25,
+          "model": "claude-opus-5-5",
+          "output_tokens": 18000,
+          "provider": "anthropic",
+          "requests": 41
+        }
+      ],
+      "vault": {
+        "id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42",
+        "label": "payments"
+      }
+    }
+  ],
+  "device": {
+    "engine_version": "3.12.0",
+    "id": "0b7d1c3e-9f2a-4c5b-8d6e-1a2b3c4d5e6f",
+    "label": "studio-mac",
+    "os": "macos"
+  },
+  "schema": "leanctx.cloud-metrics/v1"
+}

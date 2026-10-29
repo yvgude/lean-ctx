@@ -67,12 +67,17 @@ pub(super) fn handle_with_options_inner(
     }
 
     if mode == "diff" {
-        let (out, _) = handle_diff(cache, path, &file_ref);
+        // A diff whose file cannot be read is this read's typed failure
+        // (`resolved_mode == "error"`), with the same text as before.
+        let (out, resolved_mode) = match handle_diff(cache, path, &file_ref) {
+            Ok((out, _)) => (out, "diff"),
+            Err(failure) => (failure, "error"),
+        };
         let out = crate::core::redaction::redact_text_if_enabled(&out);
         let sent = count_tokens(&out);
         return ReadOutput {
             content: out,
-            resolved_mode: "diff".into(),
+            resolved_mode: resolved_mode.into(),
             output_tokens: sent,
             is_cache_hit: false,
         };
@@ -472,8 +477,6 @@ pub(crate) fn cap_to_raw(
     requested_mode: &str,
 ) -> String {
     if raw_tokens > 0 && framed_tokens > raw_tokens {
-        let prevented = (framed_tokens - raw_tokens) as u64;
-        crate::core::cache_telemetry::record_raw_cap(prevented);
         // #1587: a caller who asked for a *summary* and silently receives the
         // whole file pays full-file tokens believing they compressed. Say so —
         // but only above the banner threshold, so the cap keeps its #361
@@ -636,21 +639,32 @@ pub(super) fn handle_full_with_auto_delta(
 /// delta view with no whole-file renderer, so it must never reach
 /// `process_mode_tuned` (which would report it as an unknown mode and fall back
 /// to dumping the entire file, #1584).
-pub(crate) fn handle_diff(cache: &mut SessionCache, path: &str, file_ref: &str) -> (String, usize) {
-    let (output, sent, baseline) = prepare_diff(cache, path, file_ref);
+///
+/// `Err` is the error text of a file that could not be read (see
+/// [`prepare_diff`]): a failure of the read, never a delta.
+pub(crate) fn handle_diff(
+    cache: &mut SessionCache,
+    path: &str,
+    file_ref: &str,
+) -> Result<(String, usize), String> {
+    let (output, sent, baseline) = prepare_diff(cache, path, file_ref)?;
     if let Some(content) = baseline {
         let result = cache.store(path, &content);
         crate::core::telemetry::global_metrics().record_cache(result.was_hit);
     }
-    (output, sent)
+    Ok((output, sent))
 }
 
 /// Prepare a delta without advancing its baseline until the caller delivers it.
+///
+/// `Ok` is `(text, sent tokens, new baseline)`. `Err` is the error text of a
+/// file that could not be read (`ERROR: …`): the caller reports it as a failed
+/// read with exactly this text, never as a `diff` result.
 pub(crate) fn prepare_diff(
     cache: &SessionCache,
     path: &str,
     file_ref: &str,
-) -> (String, usize, Option<String>) {
+) -> Result<(String, usize, Option<String>), String> {
     let _mode_guard = crate::core::savings_footer::ModeGuard::new("diff");
     let short = protocol::shorten_path(path);
     let old_content = cache
@@ -659,11 +673,7 @@ pub(crate) fn prepare_diff(
 
     let new_content = match read_file_lossy(path) {
         Ok(c) => c,
-        Err(e) => {
-            let msg = format!("ERROR: {e}");
-            let tokens = count_tokens(&msg);
-            return (msg, tokens, None);
-        }
+        Err(e) => return Err(format!("ERROR: {e}")),
     };
 
     let original_tokens = count_tokens(&new_content);
@@ -677,7 +687,7 @@ pub(crate) fn prepare_diff(
             "{file_ref}={short} [no cached version for diff — use mode=full first, then diff on re-read]"
         );
         let sent = count_tokens(&msg);
-        return (msg, sent, Some(new_content));
+        return Ok((msg, sent, Some(new_content)));
     };
 
     let sent = count_tokens(&diff_output);
@@ -687,11 +697,11 @@ pub(crate) fn prepare_diff(
     } else {
         short
     };
-    (
+    Ok((
         format!("{head} [diff]\n{diff_output}\n{savings}"),
         sent,
         Some(new_content),
-    )
+    ))
 }
 
 #[cfg(test)]

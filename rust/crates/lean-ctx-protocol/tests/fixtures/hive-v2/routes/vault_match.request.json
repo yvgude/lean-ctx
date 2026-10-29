@@ -1,0 +1,18 @@
+{
+  "candidates": [
+    {
+      "digest": "fe7c4812ccdd0ad5d64ef964242d992b52aaa0ab5c79c718705126cf7e6da73c",
+      "kind": "exact"
+    },
+    {
+      "digest": "09d59089077323f5d937145bee0e87aff7555044d3fe16af8ca3d15143823742",
+      "kind": "legacy"
+    },
+    {
+      "digest": "08e191ad7f9f745ecde926aed9a1ed2286e1030a58bc84d066f66a1cfcae95b3",
+      "kind": "history"
+    }
+  ],
+  "org_salt_id": "salt_2026_10",
+  "schema": "leanctx.hive.vault-match-request/v1"
+}

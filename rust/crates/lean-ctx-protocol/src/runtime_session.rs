@@ -8,8 +8,8 @@ use std::fmt;
 use crate::{
     EngineInvocationV1, EngineOperationV1, EnginePolicyDecisionV1, ProtocolReference,
     ResolvedLocalEngineIdentityV1,
-    runtime_exchange::RuntimeRequestV1,
-    runtime_frame::{RuntimeFrameDirection, RuntimeFrameError, decode_runtime_frame},
+    runtime_exchange::{RuntimeExchangeProfile, RuntimeRequestV1},
+    runtime_frame::{RuntimeFrameDirection, RuntimeFrameError, decode_runtime_frame_in},
     validate_bounded_opaque_identifier,
 };
 
@@ -21,6 +21,8 @@ pub struct RuntimeRequestSession<'key> {
     engine: ResolvedLocalEngineIdentityV1,
     operation: EngineOperationV1,
     policy_ref: ProtocolReference,
+    /// Fixed when the session was admitted; no request can change it.
+    profile: RuntimeExchangeProfile,
     next_sequence: Option<u64>,
 }
 
@@ -58,6 +60,19 @@ impl<'key> RuntimeRequestSession<'key> {
         session_id: String,
         admitted: &EngineInvocationV1,
     ) -> Result<Self, RuntimeSessionError> {
+        Self::new_in(key, session_id, admitted, RuntimeExchangeProfile::ORDINARY)
+    }
+
+    /// [`Self::new`] with the size profile the owner admitted for this
+    /// session from its own trusted state. The profile belongs to the
+    /// session like its scope: what a request says about itself never
+    /// selects it.
+    pub fn new_in(
+        key: &'key [u8; 32],
+        session_id: String,
+        admitted: &EngineInvocationV1,
+        profile: RuntimeExchangeProfile,
+    ) -> Result<Self, RuntimeSessionError> {
         validate_bounded_opaque_identifier(&session_id, "runtime session_id")
             .and_then(|()| admitted.validate())
             .map_err(|_| RuntimeSessionError::InvalidScope)?;
@@ -70,6 +85,7 @@ impl<'key> RuntimeRequestSession<'key> {
             engine: admitted.engine.clone(),
             operation: admitted.operation.clone(),
             policy_ref: admitted.policy_admission.policy_ref.clone(),
+            profile,
             next_sequence: Some(1),
         })
     }
@@ -86,9 +102,14 @@ impl<'key> RuntimeRequestSession<'key> {
         let sequence = self
             .next_sequence
             .ok_or(RuntimeSessionError::SequenceExhausted)?;
-        let payload = decode_runtime_frame(self.key, RuntimeFrameDirection::Request, frame)
-            .map_err(RuntimeSessionError::Frame)?;
-        let request = RuntimeRequestV1::from_bytes(&payload, now_unix_ms)
+        let payload = decode_runtime_frame_in(
+            self.key,
+            RuntimeFrameDirection::Request,
+            frame,
+            self.profile,
+        )
+        .map_err(RuntimeSessionError::Frame)?;
+        let request = RuntimeRequestV1::from_bytes_in(&payload, now_unix_ms, self.profile)
             .map_err(|_| RuntimeSessionError::InvalidRequest)?;
         if request.session_id != self.session_id
             || request.invocation.engine != self.engine

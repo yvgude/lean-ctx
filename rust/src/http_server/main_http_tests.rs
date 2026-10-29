@@ -114,8 +114,8 @@ async fn ipc_router_allows_local_tools_without_bearer_header() {
     let app = build_app_router_with_auth(&cfg, false, None);
 
     let body = json!({
-        "name": "ctx_cache",
-        "arguments": { "action": "stats" }
+        "name": "ctx_tree",
+        "arguments": { "depth": 1 }
     })
     .to_string();
     let req = Request::builder()
@@ -211,6 +211,56 @@ async fn daemon_tool_calls_run_in_the_project_they_name() {
     assert!(body.contains("project_root_refused"), "{body}");
 }
 
+/// AP10-R4: a failed tool call was logged with the error's text, and that
+/// text echoes what the caller sent (here the arguments) or what the release
+/// point withheld from the reply. The log line names the error kind only.
+#[tokio::test]
+async fn a_failed_tool_call_is_logged_by_kind_never_by_its_text() {
+    #[derive(Clone, Default)]
+    struct Captured(Arc<std::sync::Mutex<Vec<u8>>>);
+    impl std::io::Write for Captured {
+        fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+            self.0.lock().expect("log buffer").extend_from_slice(bytes);
+            Ok(bytes.len())
+        }
+        fn flush(&mut self) -> std::io::Result<()> {
+            Ok(())
+        }
+    }
+    let captured = Captured::default();
+    let writer = captured.clone();
+    let subscriber = tracing_subscriber::fmt()
+        .with_max_level(tracing::Level::TRACE)
+        .with_ansi(false)
+        .with_writer(move || writer.clone())
+        .finish();
+    let _logs = tracing::subscriber::set_default(subscriber);
+
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().expect("tempdir");
+    let cfg = HttpServerConfig {
+        project_root: dir.path().to_path_buf(),
+        ..HttpServerConfig::default()
+    };
+    let app = build_app_router_with_auth(&cfg, false, None);
+    let canary = "canary-7f3e1b-tool-error-text";
+    let req = Request::builder()
+        .method("POST")
+        .uri("/v1/tools/call")
+        .header("Host", "localhost")
+        .header("Content-Type", "application/json")
+        .body(Body::from(
+            json!({ "name": "ctx_tree", "arguments": canary }).to_string(),
+        ))
+        .expect("request");
+    let resp = app.oneshot(req).await.expect("resp");
+    assert_eq!(resp.status(), StatusCode::BAD_REQUEST);
+
+    let logs = String::from_utf8(captured.0.lock().expect("log buffer").clone()).expect("utf-8");
+    assert!(logs.contains("tool_error"), "the failure is logged: {logs}");
+    assert!(!logs.contains(canary), "{logs}");
+}
+
 #[tokio::test]
 async fn auth_token_blocks_requests_without_bearer_header() {
     let dir = tempfile::tempdir().expect("tempdir");
@@ -245,8 +295,6 @@ async fn auth_token_blocks_requests_without_bearer_header() {
         relay_quotas: None,
         a2a_task_authority: Arc::new(crate::core::a2a::task::TaskAuthorityConfigV1::default()),
         concurrency: Arc::new(tokio::sync::Semaphore::new(4)),
-        local_ipc: false,
-        project_servers: crate::http_server::ProjectServers::for_tests(),
         rate: Arc::new(RateLimiter::new(50, 100)),
         remote_replays: Arc::new(remote_replay::RemoteReplayGuard::new(
             &root_str,
@@ -255,6 +303,8 @@ async fn auth_token_blocks_requests_without_bearer_header() {
         project_root: root_str.clone(),
         timeout: Duration::from_secs(30),
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
+        local_ipc: false,
+        project_servers: crate::http_server::ProjectServers::for_tests(),
     };
 
     let app = Router::new()
@@ -1093,8 +1143,6 @@ async fn relay_http_quota_returns_retry_after_without_charging_failed_auth() {
         relay_quotas: Some(Arc::new(tokio::sync::Mutex::new(quotas))),
         a2a_task_authority: Arc::new(crate::core::a2a::task::TaskAuthorityConfigV1::default()),
         concurrency: Arc::new(tokio::sync::Semaphore::new(4)),
-        local_ipc: false,
-        project_servers: crate::http_server::ProjectServers::for_tests(),
         rate: Arc::new(RateLimiter::new(50, 100)),
         remote_replays: Arc::new(remote_replay::RemoteReplayGuard::new(
             &root_str,
@@ -1103,6 +1151,8 @@ async fn relay_http_quota_returns_retry_after_without_charging_failed_auth() {
         project_root: root_str.clone(),
         timeout: Duration::from_secs(5),
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
+        local_ipc: false,
+        project_servers: crate::http_server::ProjectServers::for_tests(),
     };
     let app = Router::new()
         .route("/a2a/deliver", axum::routing::post(a2a_deliver))

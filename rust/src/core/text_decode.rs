@@ -57,6 +57,96 @@ pub(crate) fn read_text(path: impl AsRef<Path>) -> std::io::Result<String> {
     Ok(decode(bytes))
 }
 
+/// [`read_text`] with the decoder's outcome: the text, the encoding it was
+/// decoded as, and whether any byte could not be represented. Readers that
+/// feed admission, caches or indexes use this form — a `String` alone cannot
+/// say that the text is not the whole source.
+pub(crate) fn read_text_checked(path: impl AsRef<Path>) -> std::io::Result<Decoded> {
+    let bytes = std::fs::read(path.as_ref())?;
+    if looks_binary(&bytes) {
+        return Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidData,
+            "binary content",
+        ));
+    }
+    Ok(decode_checked(bytes))
+}
+
+/// What a decode could not represent faithfully.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum DecodeLoss {
+    /// Invalid UTF-8 sequences were replaced by U+FFFD.
+    InvalidUtf8,
+    /// A dangling odd byte at the end of UTF-16 text was dropped.
+    Utf16OddTail,
+    /// An unpaired UTF-16 surrogate was replaced by U+FFFD.
+    Utf16UnpairedSurrogate,
+}
+
+/// The one decoder outcome every decoding path produces.
+///
+/// `loss == None` means every input byte is represented in `text`: valid
+/// UTF-8 (with or without BOM), well-formed UTF-16, and Windows-1252 — a
+/// total mapping of all 256 byte values, so nothing is dropped or replaced
+/// (the encoding is a guess, the decoding is lossless). Anything else is not
+/// a complete source: it may be delivered as the mode defines, but it is
+/// never complete for admission and never storable.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct Decoded {
+    pub(crate) text: String,
+    pub(crate) encoding: Encoding,
+    pub(crate) loss: Option<DecodeLoss>,
+}
+
+impl Decoded {
+    #[must_use]
+    pub(crate) fn complete(&self) -> bool {
+        self.loss.is_none()
+    }
+}
+
+/// Decode file bytes to text and report what was lost; never fails.
+#[must_use]
+pub(crate) fn decode_checked(mut bytes: Vec<u8>) -> Decoded {
+    if bytes.starts_with(UTF16_LE_BOM) {
+        return decode_utf16(&bytes[2..], u16::from_le_bytes, Encoding::Utf16Le);
+    }
+    if bytes.starts_with(UTF16_BE_BOM) {
+        return decode_utf16(&bytes[2..], u16::from_be_bytes, Encoding::Utf16Be);
+    }
+    let bom = bytes.starts_with(UTF8_BOM);
+    if bom {
+        bytes.drain(..UTF8_BOM.len());
+    }
+    match String::from_utf8(bytes) {
+        Ok(text) => Decoded {
+            text,
+            encoding: if bom {
+                Encoding::Utf8Bom
+            } else {
+                Encoding::Utf8
+            },
+            loss: None,
+        },
+        Err(err) => {
+            let bytes = err.into_bytes();
+            if is_mostly_utf8(&bytes) {
+                Decoded {
+                    text: String::from_utf8_lossy(&bytes).into_owned(),
+                    encoding: Encoding::Utf8Lossy,
+                    loss: Some(DecodeLoss::InvalidUtf8),
+                }
+            } else {
+                Decoded {
+                    text: decode_cp1252(&bytes),
+                    encoding: Encoding::Windows1252,
+                    loss: None,
+                }
+            }
+        }
+    }
+}
+
 /// NUL bytes mark binary data — except in UTF-16, where they are half the text.
 #[must_use]
 pub(crate) fn looks_binary(bytes: &[u8]) -> bool {
@@ -65,27 +155,8 @@ pub(crate) fn looks_binary(bytes: &[u8]) -> bool {
 
 /// Decode file bytes to text; never fails (see module docs).
 #[must_use]
-pub(crate) fn decode(mut bytes: Vec<u8>) -> String {
-    if bytes.starts_with(UTF16_LE_BOM) {
-        return decode_utf16(&bytes[2..], u16::from_le_bytes);
-    }
-    if bytes.starts_with(UTF16_BE_BOM) {
-        return decode_utf16(&bytes[2..], u16::from_be_bytes);
-    }
-    if bytes.starts_with(UTF8_BOM) {
-        bytes.drain(..UTF8_BOM.len());
-    }
-    match String::from_utf8(bytes) {
-        Ok(text) => text,
-        Err(err) => {
-            let bytes = err.into_bytes();
-            if is_mostly_utf8(&bytes) {
-                String::from_utf8_lossy(&bytes).into_owned()
-            } else {
-                decode_cp1252(&bytes)
-            }
-        }
-    }
+pub(crate) fn decode(bytes: Vec<u8>) -> String {
+    decode_checked(bytes).text
 }
 
 /// The encoding [`decode`] picks for a byte sequence, for diagnostics.
@@ -143,13 +214,25 @@ fn detect_single_byte_or_utf8(bytes: &[u8]) -> Encoding {
     }
 }
 
-fn decode_utf16(body: &[u8], unit: fn([u8; 2]) -> u16) -> String {
-    // A dangling odd byte cannot form a code unit; drop it rather than fail.
-    let (pairs, _) = body.as_chunks::<2>();
+fn decode_utf16(body: &[u8], unit: fn([u8; 2]) -> u16, encoding: Encoding) -> Decoded {
+    // A dangling odd byte cannot form a code unit; drop it rather than fail —
+    // and say so: the text is then not the whole source.
+    let (pairs, tail) = body.as_chunks::<2>();
+    let mut loss = (!tail.is_empty()).then_some(DecodeLoss::Utf16OddTail);
     let units = pairs.iter().map(|&pair| unit(pair));
-    char::decode_utf16(units)
-        .map(|c| c.unwrap_or(char::REPLACEMENT_CHARACTER))
-        .collect()
+    let text = char::decode_utf16(units)
+        .map(|unit| {
+            unit.unwrap_or_else(|_| {
+                loss = Some(DecodeLoss::Utf16UnpairedSurrogate);
+                char::REPLACEMENT_CHARACTER
+            })
+        })
+        .collect();
+    Decoded {
+        text,
+        encoding,
+        loss,
+    }
 }
 
 /// A UTF-8 file with a stray corrupt byte still has far more valid multi-byte
@@ -180,6 +263,55 @@ fn decode_cp1252(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Before, the decoder returned only a `String`: a dropped UTF-16 byte, a
+    /// replaced surrogate and replaced UTF-8 sequences all looked complete.
+    #[test]
+    fn decoder_reports_every_loss_and_keeps_faithful_encodings_complete() {
+        let utf16 = |bom: &[u8], units: &[u16], be: bool, tail: &[u8]| {
+            let mut bytes = bom.to_vec();
+            for unit in units {
+                bytes.extend_from_slice(&if be {
+                    unit.to_be_bytes()
+                } else {
+                    unit.to_le_bytes()
+                });
+            }
+            bytes.extend_from_slice(tail);
+            decode_checked(bytes)
+        };
+        let hi: Vec<u16> = "hi\n".encode_utf16().collect();
+        for (bom, be) in [(UTF16_LE_BOM, false), (UTF16_BE_BOM, true)] {
+            let clean = utf16(bom, &hi, be, &[]);
+            assert_eq!((clean.text.as_str(), clean.loss), ("hi\n", None));
+            assert_eq!(
+                utf16(bom, &hi, be, &[0x41]).loss,
+                Some(DecodeLoss::Utf16OddTail)
+            );
+            let unpaired = utf16(bom, &[0x0068, 0xD800, 0x0069], be, &[]);
+            assert_eq!(unpaired.loss, Some(DecodeLoss::Utf16UnpairedSurrogate));
+            assert!(!unpaired.complete());
+        }
+
+        let mut stray = "fn grüezi() { let ä = \"ö\"; }\n".as_bytes().to_vec();
+        stray.push(0xFF);
+        let lossy = decode_checked(stray);
+        assert_eq!(lossy.encoding, Encoding::Utf8Lossy);
+        assert_eq!(lossy.loss, Some(DecodeLoss::InvalidUtf8));
+
+        // Controls: nothing is lost, text and encoding are as before.
+        let ansi = decode_checked(b"// Gr\xF6\xDFe\r\n".to_vec());
+        assert_eq!((ansi.encoding, ansi.loss), (Encoding::Windows1252, None));
+        assert_eq!(ansi.text, "// Größe\r\n");
+        let mut bom = UTF8_BOM.to_vec();
+        bom.extend_from_slice(b"class A {}\n");
+        let with_bom = decode_checked(bom);
+        assert_eq!(
+            (with_bom.encoding, with_bom.loss),
+            (Encoding::Utf8Bom, None)
+        );
+        assert!(decode_checked(b"plain\n".to_vec()).complete());
+    }
 
     #[test]
     fn utf8_passes_through_and_loses_its_bom() {

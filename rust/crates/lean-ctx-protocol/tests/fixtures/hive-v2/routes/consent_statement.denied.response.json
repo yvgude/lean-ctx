@@ -1,0 +1,13 @@
+{
+  "state": "denied",
+  "statement": {
+    "answer": "deny",
+    "answered_at": 1792800180000,
+    "consent_id": "cns_bcdefgh234567abc",
+    "key_id": "b7bda707a8979c46",
+    "schema": "leanctx.hive.consent.v1",
+    "signature": "ac19af30a2ec472158f12b36110d86729c1607e5c56aef124824a1f1c4bccb20d3e65750a6d23d5a28017a1b7fd8b4014840c385bbad9c8c47cc12670e262500",
+    "subject_digest": "453d83bb1900960e3e7b870ac1912faf8f03b95d408b14f0e55972cb5084263e",
+    "user_id": "2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f"
+  }
+}

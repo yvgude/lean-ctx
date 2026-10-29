@@ -1,0 +1,58 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqci",
+  "body": {
+    "body_nonce": "12121212121212121212121212121212",
+    "field": "anchors",
+    "value": [
+      {
+        "commit": "4f0a1b2c3d4e5f60718293a4b5c6d7e8f9a0b1c2",
+        "digest": "f886e79a48bbcfd9a2d1419d3c1e160ccb9419cde8383983f3e268898c794008",
+        "ref": "sym:services/payments/retry.rs::backoff",
+        "verified_at": 1792800018000
+      }
+    ],
+    "verified_at": 1792800018000
+  },
+  "body_commit": "6223fe3388cfced1297b4db247208ae429b18293e189fe3f5d411e1bf14befc4",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 17,
+  "event_id": "01M5NKAKJG005000000000W00J",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800018000
+  },
+  "key_id": "47983724220c8521",
+  "op": "field.set",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800018350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 18,
+  "signature": "d9d3f6d48a12db92e0302607116d8b8ce452cd18d33f9d7d6f097dfcc191f1744c5da64902224ccf87b473a8815c66820bc5a3cf8081d5dc7da86b584711570b",
+  "target": "n_7chq56yvwzef6tv2modcu3oaxw",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

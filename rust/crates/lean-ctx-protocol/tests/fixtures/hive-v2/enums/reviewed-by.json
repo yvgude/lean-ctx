@@ -1,0 +1,14 @@
+{
+  "name": "reviewed-by",
+  "values": [
+    {
+      "value": "reviewer"
+    },
+    {
+      "value": "maintainer"
+    },
+    {
+      "value": "none"
+    }
+  ]
+}

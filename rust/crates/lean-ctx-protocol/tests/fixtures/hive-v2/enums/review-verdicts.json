@@ -1,0 +1,41 @@
+{
+  "name": "review-verdicts",
+  "values": [
+    {
+      "value": "accept"
+    },
+    {
+      "value": "reject"
+    },
+    {
+      "value": "abstain"
+    }
+  ],
+  "reason_codes": [
+    "correct",
+    "duplicate",
+    "wrong",
+    "unsupported_claim",
+    "cannot_verify",
+    "unsafe_command",
+    "injection_suspected",
+    "secret_or_pii",
+    "off_topic",
+    "policy_violation",
+    "license_conflict",
+    "malformed"
+  ],
+  "engine_only_reason_codes": [
+    "malformed"
+  ],
+  "confidence": [
+    "low",
+    "medium",
+    "high"
+  ],
+  "person_decisions": [
+    "accept",
+    "reject",
+    "another"
+  ]
+}

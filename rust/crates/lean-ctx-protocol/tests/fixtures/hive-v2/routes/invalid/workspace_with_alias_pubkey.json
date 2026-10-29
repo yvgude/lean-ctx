@@ -1,0 +1,14 @@
+{
+  "case": "workspace_with_alias_pubkey",
+  "base": "routes/worker_register.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/alias_pubkey",
+      "value": "1HZQs--lIIolw9omhGSgaKzks52xjpJnHmaS6-c5y2I"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

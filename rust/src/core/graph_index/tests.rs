@@ -1187,6 +1187,14 @@ fn build_edges_cached_is_deterministic_across_runs() {
         ),
         ("src/b.rs", "pub fn go() {}\n"),
         ("src/c.rs", "use crate::b::go;\npub fn c() { go(); }\n"),
+        // Isolates get one sibling edge each; which one must not follow the
+        // hash order of `index.files` (#498).
+        ("src/d.rs", "pub fn d() {}\n"),
+        ("src/e.rs", "pub fn e() {}\n"),
+        ("src/f.rs", "pub fn f() {}\n"),
+        ("src/g.rs", "pub fn g() {}\n"),
+        ("src/h.rs", "pub fn h() {}\n"),
+        ("src/i.rs", "pub fn i() {}\n"),
     ];
 
     let build = || {
@@ -1206,7 +1214,14 @@ fn build_edges_cached_is_deterministic_across_runs() {
         index.edges
     };
 
-    assert_eq!(build(), build(), "edge build must be deterministic");
+    let edges = build();
+    assert_eq!(edges, build(), "edge build must be deterministic");
+    let siblings: Vec<_> = edges.iter().filter(|e| e.kind == "sibling").collect();
+    assert_eq!(siblings.len(), 6, "{edges:?}");
+    assert!(
+        siblings.iter().all(|e| e.to == "src/a.rs"),
+        "each isolate links the first file of its directory: {siblings:?}"
+    );
 }
 
 /// GHSA-rxv5-4c3x-g4q6 A: secret-like paths never enter the persisted graph

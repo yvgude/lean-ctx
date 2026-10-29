@@ -1,0 +1,31 @@
+{
+  "route": "W75",
+  "method": "GET",
+  "path": "/api/v1/companies/acme-group/activity/revocations",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "view": "revocations",
+      "items": [
+        {
+          "id": "4f8dce96-7052-4b1e-9da4-6ec29fb01345",
+          "at": "2026-10-24T16:00:00Z",
+          "engine": {
+            "id": "4f8dce96-7052-4b1e-9da4-6ec29fb01345",
+            "label": "bob-ci"
+          },
+          "workspace": "acme",
+          "reason": "admin",
+          "compromised_since": null,
+          "owner": {
+            "id": "1c5a9b63-4d2f-4e8b-8a71-3b9f6c8dae12",
+            "name": "Bob"
+          }
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "errors": []
+}

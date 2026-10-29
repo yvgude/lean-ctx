@@ -138,7 +138,10 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
         get_str(args, "expected_blake3").or_else(|| get_str(args, "expected_md5"));
     let backup = get_bool(args, "backup").unwrap_or(false);
     let backup_path = get_str(args, "backup_path")
-        .map(|p| ctx.resolved_paths.get("backup_path").cloned().unwrap_or(p));
+        .map(|p| ctx.resolved_paths.get("backup_path").cloned().unwrap_or(p))
+        .map(|p| crate::core::workspace_authority::confine(&p, &ctx.project_root, true))
+        .transpose()
+        .map_err(|error| ErrorData::invalid_params(error, None))?;
     let evidence = get_bool(args, "evidence").unwrap_or(true);
     let diff_max_lines = get_int(args, "diff_max_lines")
         .and_then(|v| usize::try_from(v.max(0)).ok())
@@ -694,6 +697,39 @@ fn aliased(
     Ok(found.map(|(_, value)| value.to_string()))
 }
 
+/// What a bulk replace works from: the ORIGINAL text (the only thing that is
+/// ever written back, with the replacement applied) and the match count the
+/// caller is told.
+///
+/// The count is model-visible and is a statement about the file's content, so
+/// it is taken from the ADMITTED text, read through the common rooted reader
+/// (G01). A source that is withheld is neither counted nor edited. When the
+/// admitted text and the original disagree about the matches, the pattern
+/// touches content the read path masks: answering with the original's count
+/// would confirm a guess of a masked value, and replacing would edit content
+/// the caller cannot see — the operation is refused and nothing is written.
+/// Admitted or redacted text is never written to disk.
+fn replace_all_plan(path: &str, root: &str, find: &str) -> Result<(String, usize), String> {
+    use crate::tools::admitted_sources::SourceRead;
+    let mut remaining = crate::core::limits::max_read_bytes();
+    let admitted =
+        match crate::tools::admitted_sources::read(path, root, "ctx_patch", &mut remaining) {
+            SourceRead::Admitted(read) => read.content,
+            SourceRead::Withheld(reason) | SourceRead::Unavailable(reason) => {
+                return Err(format!("cannot read {path}: {reason}"));
+            }
+        };
+    let original = std::fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
+    let count = admitted.matches(find).count();
+    if count != original.matches(find).count() {
+        return Err(format!(
+            "replace_all refused for {path}: the pattern overlaps content the context gateway \
+             masks; nothing was changed"
+        ));
+    }
+    Ok((original, count))
+}
+
 /// #825: Bulk literal find-and-replace — no anchors needed.
 fn handle_replace_all(
     args: &Map<String, Value>,
@@ -704,10 +740,8 @@ fn handle_replace_all(
         resolve_find_replace(args).map_err(|e| ErrorData::invalid_params(e, None))?;
     let dry_run = get_bool(args, "dry_run").unwrap_or(false);
 
-    let content = std::fs::read_to_string(&path)
-        .map_err(|e| tool_execution_error(format!("cannot read {path}: {e}")))?;
-
-    let count = content.matches(find.as_str()).count();
+    let root = crate::tools::admitted_sources::root_in_context(&path, ctx);
+    let (content, count) = replace_all_plan(&path, &root, &find).map_err(tool_execution_error)?;
     if count == 0 {
         return Ok(ToolOutput::simple(format!(
             "No matches for {find:?} in {path}"
@@ -726,6 +760,8 @@ fn handle_replace_all(
         .map_err(|_| ErrorData::internal_error(format!("lock contention for {path}"), None))?;
 
     let new_content = content.replace(find.as_str(), &replace);
+    crate::core::pathjail::enforce_writable(std::path::Path::new(&path))
+        .map_err(|e| ErrorData::invalid_params(e, None))?;
     crate::config_io::write_atomic(std::path::Path::new(&path), &new_content)
         .map_err(|e| tool_execution_error(format!("write failed: {e}")))?;
     super::ctx_edit::observe_mcp_edit(
@@ -813,6 +849,56 @@ mod replace_all_tests {
     fn empty_find_is_rejected() {
         let err = resolve_find_replace(&obj(json!({"find": "", "replace": "b"}))).unwrap_err();
         assert!(err.contains("find"), "got: {err}");
+    }
+
+    /// G01: `replace_all` read the file with `fs::read_to_string` and reported
+    /// how often the pattern occurs — for any file, also one the request may
+    /// not read, and also for a value the read path masks. The count now
+    /// comes from the admitted text; the text that is written stays the
+    /// original.
+    #[test]
+    fn the_reported_count_comes_from_the_admitted_text_and_the_original_is_what_is_written() {
+        use crate::core::policy::runtime::TestPolicyOverride;
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let policy = crate::core::policy::load(
+            "name = \"ctx-patch-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [redaction]\ncustomer = \"CUS-[0-9]{4}\"\n\
+             [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )
+        .unwrap();
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        let file = |name: &str, content: &str| {
+            let path = project.path().join(name);
+            std::fs::write(&path, content).unwrap();
+            path.to_string_lossy().into_owned()
+        };
+        let original = "let owner = \"CUS-1234\";\nlet mode = old_mode();\nold_mode();\n";
+        let orders = file("orders.rs", original);
+        let plan = file("plan.rs", "CONFIDENTIAL\nold_mode();\n");
+        {
+            // Control without a pack: original and count as before.
+            let _community = TestPolicyOverride::set(None);
+            assert_eq!(
+                replace_all_plan(&orders, &root, "old_mode"),
+                Ok((original.to_string(), 2))
+            );
+        }
+        let _policy = TestPolicyOverride::set(Some(policy));
+        // Unmasked content: the ORIGINAL is returned for the write.
+        assert_eq!(
+            replace_all_plan(&orders, &root, "old_mode"),
+            Ok((original.to_string(), 2))
+        );
+        // A guess of the masked value is neither confirmed nor replaced.
+        let refused = replace_all_plan(&orders, &root, "CUS-1234").unwrap_err();
+        assert!(refused.contains("refused"), "{refused}");
+        assert!(!refused.contains("1 occurrence"), "{refused}");
+        // A withheld source is not counted at all.
+        let withheld = replace_all_plan(&plan, &root, "old_mode").unwrap_err();
+        assert!(withheld.contains("withheld"), "{withheld}");
+        // No project root: nothing is read.
+        assert!(replace_all_plan(&orders, "", "old_mode").is_err());
     }
 }
 

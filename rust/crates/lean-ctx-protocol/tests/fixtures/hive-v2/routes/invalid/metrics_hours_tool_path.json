@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_tool_path",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets/0/slices/0/tools/0/tool",
+      "value": "src/main.rs"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a path in a tool name"
+}

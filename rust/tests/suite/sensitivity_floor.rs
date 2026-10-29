@@ -113,10 +113,16 @@ fn classification_vectors_are_precise() {
         classify_content("invoice 1234567890123456"),
         SensitivityLevel::Public
     );
-    // Valid IBAN (mod-97) → Confidential.
+    // Luhn-valid card → Confidential.
+    assert_eq!(
+        classify_content("card 4111 1111 1111 1111"),
+        SensitivityLevel::Confidential
+    );
+    // A valid IBAN is screened by the Hive filter pack (CH/AHV/IBAN/US-SSN),
+    // not by the built-in detector set (2.1.0): the Engine alone leaves it.
     assert_eq!(
         classify_content("iban DE89370400440532013000"),
-        SensitivityLevel::Confidential
+        SensitivityLevel::Public
     );
     // Secret beats path-public.
     assert_eq!(

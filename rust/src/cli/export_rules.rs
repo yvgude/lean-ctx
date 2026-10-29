@@ -28,6 +28,10 @@ pub fn run(args: &[String]) {
         .facts
         .iter()
         .filter(|f| f.confidence >= 0.6 && f.retrieval_count >= 2)
+        // V04: rule files are instructions to agents; a fact from a context
+        // package is third-party data and never becomes one. Nor does a fact
+        // pulled from Hive: other members' text is data (X5).
+        .filter(|f| f.package_origin().is_none() && f.hive_origin().is_none())
         .collect();
 
     if high_confidence.is_empty() {

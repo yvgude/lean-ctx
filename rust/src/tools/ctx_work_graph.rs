@@ -2,7 +2,8 @@
 use serde_json::json;
 
 use crate::core::work_graph::{
-    BoundedWorkGraph, ChildExecutionReceipt, ChildOutcome, ResultClaim, StopReason, WorkNodeBudget,
+    BoundedWorkGraph, ChildExecutionReceipt, ChildOutcome, ResultClaim, StopReason, UsageSource,
+    WorkNodeBudget,
 };
 use crate::core::work_graph_store::{ClaimNodeExecution, WorkGraphStore, validate_id};
 
@@ -27,10 +28,7 @@ pub struct Request<'a> {
     pub claims: Option<&'a serde_json::Value>,
     pub accepted_nodes: Option<&'a serde_json::Value>,
     pub stop_reason: Option<&'a str>,
-    pub connector: Option<&'a str>,
-    pub model: Option<&'a str>,
     pub timeout_ms: Option<u64>,
-    pub max_attempts: Option<u8>,
     pub path_claims: Option<&'a serde_json::Value>,
     pub task_ref: Option<&'a str>,
     pub policy_ref: Option<&'a str>,
@@ -38,6 +36,9 @@ pub struct Request<'a> {
 }
 
 pub fn handle(request: Request<'_>) -> Result<String, String> {
+    if request.action == "execute" {
+        return Err(EXECUTE_REMOVED.to_string());
+    }
     if request.agent_id.is_empty() {
         return Err("agent must be registered first via ctx_agent".to_string());
     }
@@ -45,11 +46,23 @@ pub fn handle(request: Request<'_>) -> Result<String, String> {
     if request.action != "list" {
         validate_id(request.graph_id, "graph_id")?;
     }
+    check_required_fields(&request)?;
+    if request.if_revision.is_some()
+        && matches!(
+            request.action,
+            "create" | "fuse" | "attribution" | "value_report" | "get" | "list"
+        )
+    {
+        return Err(format!(
+            "if_revision applies to observe and to mutating actions, not to {}",
+            request.action
+        ));
+    }
     match request.action {
         "create" => create(&request),
         "delegate" => delegate(&request),
         "claim" => claim(&request),
-        "execute" => execute(&request),
+        "start" => start(&request),
         "consume" => consume(&request),
         "complete" => complete(&request),
         "receipt" => receipt(&request),
@@ -65,48 +78,53 @@ pub fn handle(request: Request<'_>) -> Result<String, String> {
     }
 }
 
-fn execute(request: &Request<'_>) -> Result<String, String> {
-    use crate::core::agent_lease::{
-        AGENT_LEASE_SCHEMA_VERSION, AgentLeaseAcquireV1, AgentLeaseRequestV1,
-        AgentLeaseResourceKindV1, acquire_shared, release_shared,
-    };
-    use crate::core::work_graph_executor::{NodeExecutionPlan, execute_claimed_node};
+/// Replies to the removed launcher action with the host-start path.
+const EXECUTE_REMOVED: &str = "execute was removed: LeanCTX no longer launches agents. Launch the \
+     child agent yourself and bind it to the node with action=start (returns the launch \
+     environment); finish with action=receipt or stop it with action=cancel";
+
+/// Bind a host-launched child agent to one fenced claim of its node. The host
+/// starts the process; LeanCTX verifies the handed-over context capsule, holds
+/// the node and path leases, and issues the child's delivery profile when the
+/// host is configured as delivery issuer. A receipt or cancel ends it; an
+/// expired lease is stopped on the next claim. Every stop revokes delivery.
+fn start(request: &Request<'_>) -> Result<String, String> {
+    use crate::core::work_graph_delegation as delegation;
 
     if let Some(policy) =
         crate::core::policy::runtime::for_project(std::path::Path::new(request.project_root))?
+        && !policy.tool_allowed("ctx_work_graph")
     {
-        if !policy.tool_allowed("ctx_work_graph") {
-            return Err("project policy denies Work Graph execution".into());
-        }
-        let routing = &policy.resolved.routing;
-        if (!routing.allowed_models.is_empty() || !routing.model_ceiling_groups.is_empty())
-            && !request
-                .model
-                .is_some_and(|model| !model.trim().is_empty() && routing.model_allowed(model))
-        {
-            // An implicit connector default cannot prove compliance with a
-            // configured ceiling. Reject before claiming or mutating a node.
-            return Err("project policy denies Work Graph model selection".into());
-        }
+        return Err("project policy denies Work Graph execution".into());
     }
     let node_id = required(request.node_id, "node_id")?;
-    let connector_name = required(request.connector, "connector")?;
-    let attempt_timeout_ms = request.timeout_ms.unwrap_or(300_000);
-    let max_attempts = request.max_attempts.unwrap_or(1);
-    let execution_window_ms =
-        crate::core::work_graph_executor::execution_window_ms(attempt_timeout_ms, max_attempts)?;
-    let now_epoch_ms: u64 = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|error| format!("system clock before Unix epoch: {error}"))?
-        .as_millis()
-        .try_into()
-        .map_err(|_| "system clock exceeds u64 milliseconds".to_string())?;
+    let window_ms = delegation::start_window_ms(
+        request
+            .timeout_ms
+            .unwrap_or(delegation::DEFAULT_START_WINDOW_MS),
+    )?;
+    // A malformed issuer configuration must fail before any node is claimed.
+    let issuer = delegation::DeliveryIssuerConfig::from_environment()?;
+    // The issuer signs as the root host. A process that holds the host's
+    // issuer configuration under another agent identity (a child whose host
+    // ignored launch.unset_env) must not sign for its own delegations.
+    if let Some(issuer) = &issuer
+        && issuer.host_agent() != request.agent_id
+    {
+        return Err(format!(
+            "{} belongs to host agent {}; it must not reach agent {}",
+            delegation::ISSUER_ENV,
+            issuer.host_agent(),
+            request.agent_id
+        ));
+    }
+    let now_epoch_ms = epoch_ms()?;
     let lease_expires_epoch_ms = now_epoch_ms
-        .checked_add(execution_window_ms)
+        .checked_add(window_ms)
         .ok_or_else(|| "execution lease expiry overflow".to_string())?;
-    let claimed = WorkGraphStore::mutate(request.project_root, |store| {
+    let claimed = mutate_store(request, |store| {
         let graph = store.graph_mut(request.graph_id)?;
-        authorize_node(graph, node_id, request.agent_id)?;
+        authorize_node_or_parent(graph, node_id, request.agent_id)?;
         let claim = store.claim_node_execution(
             request.graph_id,
             node_id,
@@ -116,7 +134,6 @@ fn execute(request: &Request<'_>) -> Result<String, String> {
         let ClaimNodeExecution::Claimed(node) = claim else {
             return Ok(None);
         };
-        let node = *node;
         let graph = store.graph(request.graph_id).expect("graph checked above");
         let root_agent = graph
             .root_agent_for(node_id)
@@ -127,7 +144,7 @@ fn execute(request: &Request<'_>) -> Result<String, String> {
             .as_deref()
             .and_then(|parent| graph.get_node(parent))
             .map(|parent| parent.capsule_ref.clone());
-        Ok(Some((node, root_agent, parent_capsule_ref)))
+        Ok(Some((*node, root_agent, parent_capsule_ref)))
     })?;
     let Some((node, root_agent, parent_capsule_ref)) = claimed else {
         return Err("expired execution was stopped and cannot be reclaimed".into());
@@ -136,205 +153,259 @@ fn execute(request: &Request<'_>) -> Result<String, String> {
         .execution_fence
         .clone()
         .ok_or_else(|| "claim did not produce execution fence".to_string())?;
-    let cancellation_key = crate::core::work_graph_executor::execution_key(
-        std::path::Path::new(request.project_root),
-        request.graph_id,
-        node_id,
-        &fence,
-    )?;
-    let resource_ref = crate::core::work_graph_executor::node_lease_resource(
-        request.project_root,
-        request.graph_id,
-        node_id,
-    )?;
-    let node_lease = match acquire_shared(AgentLeaseRequestV1 {
-        schema_version: AGENT_LEASE_SCHEMA_VERSION,
-        lease_request_ref: fence.clone(),
-        resource_kind: AgentLeaseResourceKindV1::WorkGraphNode,
-        resource_ref: resource_ref.clone(),
-        owner_agent_id: request.agent_id.to_string(),
-        duration_ms: execution_window_ms,
-    }) {
-        Err(error) => {
-            stop_unstarted_claim(request, node_id, &fence)?;
-            return Err(error.to_string());
-        }
-        Ok(AgentLeaseAcquireV1::Granted(lease)) => lease,
-        Ok(AgentLeaseAcquireV1::HeldBy { .. }) => {
-            stop_unstarted_claim(request, node_id, &fence)?;
-            return Err("work graph node lease is held by another execution".into());
-        }
-    };
-    let mut leases = vec![(
-        AgentLeaseResourceKindV1::WorkGraphNode,
-        resource_ref,
-        node_lease.lease_ref,
-    )];
-    for (index, path_ref) in node.path_claims.iter().enumerate() {
-        let acquired = match acquire_shared(AgentLeaseRequestV1 {
-            schema_version: AGENT_LEASE_SCHEMA_VERSION,
-            lease_request_ref: format!("{fence}:{index}"),
-            resource_kind: AgentLeaseResourceKindV1::Path,
-            resource_ref: path_ref.clone(),
-            owner_agent_id: request.agent_id.to_string(),
-            duration_ms: execution_window_ms,
-        }) {
-            Ok(acquired) => acquired,
-            Err(error) => {
-                for (kind, resource, lease_ref) in &leases {
-                    let _ = release_shared(*kind, resource, request.agent_id, lease_ref);
-                }
-                stop_unstarted_claim(request, node_id, &fence)?;
-                return Err(error.to_string());
+    // Every failure from here on stops the claim again, so a refused start
+    // never strands a claimed node. The shared leases must never outlive the
+    // node lease: a stopped child's paths are released by the graph at that
+    // instant, and a later claimant must then find the shared leases free.
+    let acquired = incarnation_leases(request.project_root, request.graph_id, &node, &fence)
+        .and_then(|leases| {
+            let remaining_ms = lease_expires_epoch_ms.saturating_sub(epoch_ms()?);
+            if remaining_ms == 0 {
+                return Err("execution window elapsed before its leases were acquired".into());
             }
-        };
-        match acquired {
-            AgentLeaseAcquireV1::Granted(lease) => leases.push((
-                AgentLeaseResourceKindV1::Path,
-                path_ref.clone(),
-                lease.lease_ref,
-            )),
-            AgentLeaseAcquireV1::HeldBy { .. } => {
-                for (kind, resource, lease_ref) in &leases {
-                    let _ = release_shared(*kind, resource, request.agent_id, lease_ref);
-                }
-                stop_unstarted_claim(request, node_id, &fence)?;
-                return Err(format!(
-                    "path lease is held by another execution: {path_ref}"
-                ));
-            }
-        }
-    }
-
-    let transport = crate::core::a2a::health::local_transport();
-    let mut reserved_delivery = None;
-    let mut capture_tracker = None;
-    let result = (|| {
-        let cancellation_watch = crate::core::agent_connector::timeout::durable::Guard::install(
-            request.project_root,
-            request.graph_id,
+            acquire_incarnation_leases(&node.agent_id, &leases, remaining_ms)
+        });
+    if let Err(error) = acquired {
+        abort_start(
+            request,
             node_id,
+            &node.agent_id,
             &fence,
+            StopReason::LeaseLost,
         )?;
-        capture_tracker = Some(cancellation_watch.captures());
+        return Err(error);
+    }
+    let plan = delegation::StartPlan {
+        graph_id: request.graph_id.to_string(),
+        node,
+        root_agent_id: root_agent,
+        parent_capsule_ref,
+        project_root: request.project_root.into(),
+        window_ms,
+    };
+    let transport = crate::core::a2a::health::local_transport();
+    let mut reserved = None;
+    let launch = (|| {
+        plan.validate()?;
         let (signed_capsule, delivery) = transport
-            .reserve(request.agent_id, &fence)
+            .reserve(&plan.node.agent_id, &fence)
             .map_err(|error| error.to_string())?
             .ok_or_else(|| {
-                "no unreserved signed context capsule is queued for this agent".to_string()
+                format!(
+                    "no unreserved signed context capsule is queued for agent {}",
+                    plan.node.agent_id
+                )
             })?;
-        reserved_delivery = Some(delivery.clone());
-        if delivery.capsule_ref != node.capsule_ref {
+        reserved = Some(delivery.clone());
+        if delivery.capsule_ref != plan.node.capsule_ref {
             return Err("queued delivery does not match claimed node capsule".into());
         }
-        let pinned_key = crate::core::agent_identity::get_stored_public_key(&root_agent)
+        let root_key = crate::core::agent_identity::get_stored_public_key(&plan.root_agent_id)
             .map_err(|error| format!("root-agent trust key unavailable: {error}"))?;
-        let connector = crate::core::agent_connector::detect_and_create_connectors()
-            .into_iter()
-            .find(|candidate| candidate.name() == connector_name)
-            .ok_or_else(|| format!("supported connector not available: {connector_name}"))?;
-        let execution = execute_claimed_node(
-            &NodeExecutionPlan {
-                graph_id: request.graph_id.to_string(),
-                node: node.clone(),
-                root_agent_id: root_agent.clone(),
-                parent_capsule_ref: parent_capsule_ref.clone(),
-                project_root: request.project_root.into(),
-                timeout_ms: attempt_timeout_ms,
-                model: request.model.map(str::to_string),
-                max_attempts,
-            },
-            &signed_capsule,
-            &pinned_key,
-            connector.as_ref(),
-        );
-        let receipt = match execution {
-            Ok(receipt) => receipt,
-            Err(failure) => {
-                if let Some(spend) = failure.measured_spend {
-                    if let Err(persist_error) =
-                        WorkGraphStore::mutate(request.project_root, |store| {
-                            store
-                                .graph_mut(request.graph_id)?
-                                .record_failed_execution_spend(*spend)
-                                .map_err(|error| error.to_string())
-                        })
-                    {
-                        return Err(format!(
-                            "{}; measured provider spend was not persisted: {persist_error}",
-                            failure.message
-                        ));
-                    }
-                }
-                return Err(failure.message);
-            }
-        };
-        if !cancellation_watch.captures().all_reaped() {
-            return Err("execution process exit is unconfirmed; receipt withheld".into());
-        }
+        plan.verify_capsule(&signed_capsule, &root_key)?;
+        // Publish the attempt before any delivery authority exists for it.
         WorkGraphStore::mutate(request.project_root, |store| {
             store
                 .graph_mut(request.graph_id)?
-                .record_child_receipt(receipt)
+                .begin_delivery_attempt(node_id, &fence, 1)
                 .map_err(|error| error.to_string())
         })?;
-        if !transport.acknowledge(request.agent_id, &delivery.relay_id, &fence) {
-            let _ = transport.quarantine_reserved(request.agent_id, &delivery.relay_id, &fence);
+        let task_id = delegation::attempt_task_id(
+            &delegation::execution_key(
+                std::path::Path::new(request.project_root),
+                request.graph_id,
+                node_id,
+                &fence,
+            )?,
+            1,
+        );
+        let profile = match &issuer {
+            Some(issuer) => {
+                let issued =
+                    issuer.issue(&plan, 1, &task_id, signed_capsule.capsule.sensitivity)?;
+                Some(
+                    issued
+                        .launch_value(&task_id, std::path::Path::new(request.project_root))
+                        .ok_or("issued delivery profile failed launch validation")?,
+                )
+            }
+            None => None,
+        };
+        if !transport.acknowledge(&plan.node.agent_id, &delivery.relay_id, &fence) {
+            let _ = transport.quarantine_reserved(&plan.node.agent_id, &delivery.relay_id, &fence);
+            reserved = None;
             return Err("capsule acknowledgement lost its reservation".into());
         }
-        get(request)
+        reserved = None;
+        Ok((task_id, profile))
     })();
-    let all_reaped = capture_tracker
-        .as_ref()
-        .is_none_or(crate::core::agent_connector::timeout::durable::CaptureTracker::all_reaped);
-    if all_reaped {
-        WorkGraphStore::mutate(request.project_root, |store| {
-            store
-                .graph_mut(request.graph_id)?
-                .acknowledge_execution_exit(node_id, &fence)
-                .map_err(|error| error.to_string())
-        })
-        .map_err(|error| {
-            format!("process exit acknowledgement failed; leases retained: {error}")
-        })?;
-        for (kind, resource, lease_ref) in &leases {
-            let _ = release_shared(*kind, resource, request.agent_id, lease_ref);
+    let (task_id, profile) = match launch {
+        Ok(launch) => launch,
+        Err(error) => {
+            if let Some(delivery) = reserved {
+                let _ =
+                    transport.negative_acknowledge(&plan.node.agent_id, &delivery.relay_id, &fence);
+            }
+            abort_start(
+                request,
+                node_id,
+                &plan.node.agent_id,
+                &fence,
+                StopReason::ExecutionFailed,
+            )?;
+            return Err(error);
         }
-    }
-    if result.is_err() {
-        if let Some(delivery) = reserved_delivery {
-            let _ = transport.negative_acknowledge(request.agent_id, &delivery.relay_id, &fence);
-        }
-        let _ = WorkGraphStore::mutate(request.project_root, |store| {
-            store
-                .graph_mut(request.graph_id)?
-                .stop(node_id, StopReason::ExecutionFailed)
-                .map_err(|error| error.to_string())
-        });
-    }
-    crate::core::agent_connector::timeout::clear_cancellation(&cancellation_key);
-    if !all_reaped {
-        return Err(format!(
-            "execution process exit is unconfirmed; leases retained; {}",
-            result
-                .as_ref()
-                .map_or_else(String::as_str, |_| "execution result withheld")
-        ));
-    }
-    result
+    };
+    let graph: serde_json::Value =
+        serde_json::from_str(&get(request)?).map_err(|error| error.to_string())?;
+    serde_json::to_string(&json!({
+        "graph": graph,
+        "launch": {
+            "graph_id": request.graph_id,
+            "node_id": node_id,
+            "agent_id": plan.node.agent_id,
+            "execution_fence": fence,
+            "task_id": task_id,
+            "lease_expires_epoch_ms": lease_expires_epoch_ms,
+            "delegated_delivery": profile.is_some(),
+            "env": {
+                delegation::CHILD_DELIVERY_ENV:
+                    profile.as_deref().unwrap_or(delegation::NO_CHILD_DELIVERY),
+            },
+            "unset_env": [delegation::ISSUER_ENV],
+            "finish": "action=receipt with this execution_fence, or action=cancel; \
+                       the lease ends at lease_expires_epoch_ms",
+        },
+    }))
+    .map_err(|error| error.to_string())
 }
 
-/// Called only on admission failures before any connector/process dispatch.
-fn stop_unstarted_claim(request: &Request<'_>, node_id: &str, fence: &str) -> Result<(), String> {
+fn epoch_ms() -> Result<u64, String> {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|error| format!("system clock before Unix epoch: {error}"))?
+        .as_millis()
+        .try_into()
+        .map_err(|_| "system clock exceeds u64 milliseconds".to_string())
+}
+
+type IncarnationLease = (
+    crate::core::agent_lease::AgentLeaseResourceKindV1,
+    String,
+    String,
+);
+
+/// Node and path leases of one execution incarnation, keyed by its fence.
+/// Path leases are project-bound and shared with `ctx_agent` leases, so an
+/// agent holding a path there excludes a node claiming it here, and back.
+fn incarnation_leases(
+    project_root: &str,
+    graph_id: &str,
+    node: &crate::core::work_graph::WorkNode,
+    fence: &str,
+) -> Result<Vec<IncarnationLease>, String> {
+    use crate::core::agent_lease::AgentLeaseResourceKindV1;
+    let mut leases = vec![(
+        AgentLeaseResourceKindV1::WorkGraphNode,
+        crate::core::work_graph_delegation::node_lease_resource(
+            project_root,
+            graph_id,
+            &node.node_id,
+        )?,
+        fence.to_string(),
+    )];
+    for (index, claim) in node.path_claims.iter().enumerate() {
+        leases.push((
+            AgentLeaseResourceKindV1::Path,
+            crate::core::work_graph_delegation::path_lease_resource(project_root, claim)?,
+            format!("{fence}:{index}"),
+        ));
+    }
+    Ok(leases)
+}
+
+fn acquire_incarnation_leases(
+    owner: &str,
+    leases: &[IncarnationLease],
+    duration_ms: u64,
+) -> Result<(), String> {
+    use crate::core::agent_lease::{
+        AGENT_LEASE_SCHEMA_VERSION, AgentLeaseAcquireV1, AgentLeaseRequestV1, acquire_shared,
+    };
+    for (kind, resource, lease_request_ref) in leases {
+        let acquired = acquire_shared(AgentLeaseRequestV1 {
+            schema_version: AGENT_LEASE_SCHEMA_VERSION,
+            lease_request_ref: lease_request_ref.clone(),
+            resource_kind: *kind,
+            resource_ref: resource.clone(),
+            owner_agent_id: owner.to_string(),
+            duration_ms,
+        })
+        .map_err(|error| error.to_string())?;
+        if let AgentLeaseAcquireV1::HeldBy { .. } = acquired {
+            return Err(format!("lease is held by another execution: {resource}"));
+        }
+    }
+    Ok(())
+}
+
+/// Releases every lease of one incarnation by its owner and fence, never by
+/// recomputed resource names: a project root spelled differently at release
+/// time must not leave the leases behind.
+fn release_incarnation_leases(owner: &str, fence: &str) {
+    // Leases expire with the execution window; a failed early release only
+    // delays reuse and never extends authority.
+    if let Err(error) = crate::core::agent_lease::release_fence_shared(owner, fence) {
+        tracing::warn!(event = "work_graph_lease_release_failed", %error);
+    }
+}
+
+/// Stop a claim whose launch was refused; the stop revokes delivery and frees
+/// the slot before any lease of this incarnation is released.
+fn abort_start(
+    request: &Request<'_>,
+    node_id: &str,
+    owner: &str,
+    fence: &str,
+    reason: StopReason,
+) -> Result<(), String> {
     WorkGraphStore::mutate(request.project_root, |store| {
-        let graph = store.graph_mut(request.graph_id)?;
-        graph
-            .stop(node_id, StopReason::LeaseLost)
-            .map_err(|error| error.to_string())?;
-        graph
-            .acknowledge_execution_exit(node_id, fence)
+        store
+            .graph_mut(request.graph_id)?
+            .stop_unlaunched(node_id, reason)
+            .map(|_| ())
             .map_err(|error| error.to_string())
-    })
+    })?;
+    release_incarnation_leases(owner, fence);
+    Ok(())
+}
+
+/// The caller's mutation of its graph. With `if_revision` it runs only while
+/// the graph still has that `write_revision` (from observe), checked under
+/// the same persistence lock; otherwise it fails as a revision conflict and
+/// changes nothing. The revision proves freshness, never authorization.
+fn mutate_store<T>(
+    request: &Request<'_>,
+    mutate: impl FnOnce(&mut WorkGraphStore) -> Result<T, String>,
+) -> Result<T, String> {
+    match request.if_revision {
+        Some(expected) => WorkGraphStore::mutate_if_revision(
+            request.project_root,
+            request.graph_id,
+            expected,
+            mutate,
+        )
+        .map_err(|error| {
+            if error == "work graph revision conflict" {
+                "work graph revision conflict: the graph changed since this write_revision; \
+                 observe again for the current write_revision"
+                    .to_string()
+            } else {
+                error
+            }
+        }),
+        None => WorkGraphStore::mutate(request.project_root, mutate),
+    }
 }
 
 fn create(request: &Request<'_>) -> Result<String, String> {
@@ -392,7 +463,7 @@ fn delegate(request: &Request<'_>) -> Result<String, String> {
         .into_iter()
         .map(|claim| canonical_path_claim(request.project_root, &claim))
         .collect::<Result<_, _>>()?;
-    WorkGraphStore::mutate(request.project_root, |store| {
+    mutate_store(request, |store| {
         let graph = store.graph_mut(request.graph_id)?;
         authorize_node(graph, parent, request.agent_id)?;
         graph
@@ -428,7 +499,7 @@ fn claim(request: &Request<'_>) -> Result<String, String> {
     let lease_expires_epoch_ms = now_epoch_ms
         .checked_add(lease_window_ms)
         .ok_or_else(|| "execution lease expiry overflow".to_string())?;
-    WorkGraphStore::mutate(request.project_root, |store| {
+    mutate_store(request, |store| {
         let graph = store.graph_mut(request.graph_id)?;
         authorize_node(graph, node, request.agent_id)?;
         graph
@@ -447,7 +518,7 @@ fn consume(request: &Request<'_>) -> Result<String, String> {
     if tokens == 0 && cost == 0 {
         return Err("tokens or cost_micros must be positive".to_string());
     }
-    WorkGraphStore::mutate(request.project_root, |store| {
+    mutate_store(request, |store| {
         let graph = store.graph_mut(request.graph_id)?;
         authorize_node(graph, node, request.agent_id)?;
         graph
@@ -463,7 +534,7 @@ fn complete(request: &Request<'_>) -> Result<String, String> {
     validate_id(node, "node_id")?;
     let outcome = required(request.outcome_ref, "outcome_ref")?;
     bounded_ref(outcome, "outcome_ref")?;
-    WorkGraphStore::mutate(request.project_root, |store| {
+    mutate_store(request, |store| {
         let graph = store.graph_mut(request.graph_id)?;
         authorize_node(graph, node, request.agent_id)?;
         if graph
@@ -482,6 +553,9 @@ fn complete(request: &Request<'_>) -> Result<String, String> {
     get(request)
 }
 
+/// Terminal child receipt from the node owner or the host that delegated it.
+/// A claimed node is bound by its fence; the figures are reported by the
+/// caller and stay bounded by the node and chain budgets.
 fn receipt(request: &Request<'_>) -> Result<String, String> {
     let node = required(request.node_id, "node_id")?;
     validate_id(node, "node_id")?;
@@ -489,17 +563,6 @@ fn receipt(request: &Request<'_>) -> Result<String, String> {
     validate_id(receipt_id, "receipt_id")?;
     let outcome_ref = required(request.outcome_ref, "outcome_ref")?;
     bounded_ref(outcome_ref, "outcome_ref")?;
-    if request.execution_fence.is_some() {
-        let (measured_tokens, measured_cost) =
-            crate::core::agent_connector::receipt::verified_receipt_usage_for_task(
-                outcome_ref,
-                &format!("{}:{}", request.graph_id, node),
-            )
-            .map_err(|error| format!("canonical receipt verification failed: {error}"))?;
-        if request.tokens != Some(measured_tokens) || request.cost_micros != Some(measured_cost) {
-            return Err("receipt token/cost claims do not match canonical measurements".into());
-        }
-    }
     let outcome = match required(request.outcome, "outcome")? {
         "accepted" => ChildOutcome::Accepted,
         "rejected" => ChildOutcome::Rejected,
@@ -513,9 +576,19 @@ fn receipt(request: &Request<'_>) -> Result<String, String> {
             |value| serde_json::from_value(value.clone()),
         )
         .map_err(|error| format!("invalid claims: {error}"))?;
-    WorkGraphStore::mutate(request.project_root, |store| {
+    let finished = mutate_store(request, |store| {
         let graph = store.graph_mut(request.graph_id)?;
-        authorize_node(graph, node, request.agent_id)?;
+        authorize_node_or_parent(graph, node, request.agent_id)?;
+        let work_node = graph
+            .get_node(node)
+            .ok_or_else(|| format!("node not found: {node}"))?
+            .clone();
+        if work_node.execution_fence.is_some() && request.execution_fence.is_none() {
+            return Err(
+                "receipt requires the execution_fence returned by action=start or action=claim"
+                    .into(),
+            );
+        }
         graph
             .record_child_receipt(ChildExecutionReceipt {
                 receipt_id: receipt_id.to_string(),
@@ -526,9 +599,18 @@ fn receipt(request: &Request<'_>) -> Result<String, String> {
                 cost_micros_consumed: request.cost_micros.unwrap_or(0),
                 execution_fence: request.execution_fence.map(str::to_string),
                 claims,
+                usage_source: UsageSource::Reported,
             })
-            .map_err(|error| error.to_string())
+            .map_err(|error| error.to_string())?;
+        Ok(work_node)
     })?;
+    // The receipt reports the child finished, so its leases end with it.
+    if let (true, Some(fence)) = (
+        finished.execution_started,
+        finished.execution_fence.as_deref(),
+    ) {
+        release_incarnation_leases(&finished.agent_id, fence);
+    }
     get(request)
 }
 
@@ -544,7 +626,7 @@ fn accept(request: &Request<'_>) -> Result<String, String> {
     if accepted.is_empty() {
         return Err("accepted_nodes must not be empty".to_string());
     }
-    WorkGraphStore::mutate(request.project_root, |store| {
+    mutate_store(request, |store| {
         let graph = store.graph_mut(request.graph_id)?;
         let root = graph
             .get_node(authorizer)
@@ -598,12 +680,14 @@ fn value_report(request: &Request<'_>) -> Result<String, String> {
     .map_err(|error| error.to_string())
 }
 
+/// Durable stop by the node owner or its delegating host. The stop revokes the
+/// child's delegated delivery at once; the host ends its own child process.
 fn cancel(request: &Request<'_>) -> Result<String, String> {
     let node = required(request.node_id, "node_id")?;
     validate_id(node, "node_id")?;
-    let cancellation_keys = WorkGraphStore::mutate(request.project_root, |store| {
+    mutate_store(request, |store| {
         let graph = store.graph_mut(request.graph_id)?;
-        authorize_node(graph, node, request.agent_id)?;
+        authorize_node_or_parent(graph, node, request.agent_id)?;
         let reason = match request.stop_reason.unwrap_or("manual_stop") {
             "manual_stop" => StopReason::ManualStop,
             "stale" => StopReason::Stale,
@@ -615,33 +699,13 @@ fn cancel(request: &Request<'_>) -> Result<String, String> {
             "execution_failed" => StopReason::ExecutionFailed,
             other => return Err(format!("unsupported stop_reason: {other}")),
         };
-        let stopped = graph
+        graph
             .stop(node, reason)
-            .map_err(|error| error.to_string())?;
-        let cancellation_keys = stopped
-            .iter()
-            .filter_map(|node_id| {
-                graph
-                    .get_node(node_id)
-                    .and_then(|node| node.execution_fence.as_deref())
-                    .map(|fence| {
-                        crate::core::work_graph_executor::execution_key(
-                            std::path::Path::new(request.project_root),
-                            request.graph_id,
-                            node_id,
-                            fence,
-                        )
-                    })
-            })
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(cancellation_keys)
+            .map(|_| ())
+            .map_err(|error| error.to_string())
     })?;
-    // The durable stop is authoritative. Never signal a process before the
-    // store has validated and persisted the requested transition.
-    crate::core::agent_connector::timeout::request_cancellations(
-        cancellation_keys.iter().map(String::as_str),
-    )
-    .map_err(|error| error.to_string())?;
+    // The stop revokes delivery at once. The stopped children's leases stay
+    // until their windows end: the host may still be ending those processes.
     get(request)
 }
 
@@ -660,8 +724,10 @@ fn observe(request: &Request<'_>) -> Result<String, String> {
         .graph(request.graph_id)
         .ok_or_else(|| format!("graph not found: {}", request.graph_id))?;
     authorize_member(graph, request.agent_id)?;
-    serde_json::to_string(&graph.observe_if_changed(request.if_revision))
-        .map_err(|error| error.to_string())
+    let mut observation = graph.observe_if_changed(request.if_revision);
+    // The precondition for a guarded write (if_revision on a mutating action).
+    observation["write_revision"] = store.graph_revision(request.graph_id)?.into();
+    serde_json::to_string(&observation).map_err(|error| error.to_string())
 }
 
 fn list(project_root: &str, agent_id: &str) -> Result<String, String> {
@@ -679,6 +745,63 @@ fn budget(tokens: u64, cost: u64) -> WorkNodeBudget {
         cost_micros_allocated: cost,
         cost_micros_consumed: 0,
     }
+}
+
+/// Names every missing field of an action at once. Reported one at a time,
+/// callers retried field by field (telemetry 10/2026: 11 of 45 failures).
+fn check_required_fields(request: &Request<'_>) -> Result<(), String> {
+    let fields: &[&str] = match request.action {
+        "create" => &[
+            "node_id",
+            "capsule_ref",
+            "task_ref",
+            "policy_ref",
+            "expected_outcome_ref",
+            "tokens",
+            "cost_micros",
+        ],
+        "delegate" => &[
+            "parent_node_id",
+            "node_id",
+            "to_agent",
+            "capsule_ref",
+            "task_ref",
+            "expected_outcome_ref",
+            "tokens",
+            "cost_micros",
+        ],
+        "claim" | "start" | "consume" | "cancel" => &["node_id"],
+        "complete" => &["node_id", "outcome_ref"],
+        "receipt" => &["node_id", "receipt_id", "outcome_ref", "outcome"],
+        "accept" => &["node_id", "accepted_nodes"],
+        _ => &[],
+    };
+    let present = |field: &str| match field {
+        "node_id" => request.node_id.is_some_and(|v| !v.is_empty()),
+        "parent_node_id" => request.parent_node_id.is_some_and(|v| !v.is_empty()),
+        "to_agent" => request.to_agent.is_some_and(|v| !v.is_empty()),
+        "capsule_ref" => request.capsule_ref.is_some_and(|v| !v.is_empty()),
+        "task_ref" => request.task_ref.is_some_and(|v| !v.is_empty()),
+        "policy_ref" => request.policy_ref.is_some_and(|v| !v.is_empty()),
+        "expected_outcome_ref" => request.expected_outcome_ref.is_some_and(|v| !v.is_empty()),
+        "outcome_ref" => request.outcome_ref.is_some_and(|v| !v.is_empty()),
+        "receipt_id" => request.receipt_id.is_some_and(|v| !v.is_empty()),
+        "outcome" => request.outcome.is_some_and(|v| !v.is_empty()),
+        "tokens" => request.tokens.is_some(),
+        "cost_micros" => request.cost_micros.is_some(),
+        "accepted_nodes" => request.accepted_nodes.is_some(),
+        _ => true,
+    };
+    let missing: Vec<&str> = fields.iter().copied().filter(|f| !present(f)).collect();
+    if missing.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "{} requires {}; missing: {}",
+        request.action,
+        fields.join(", "),
+        missing.join(", ")
+    ))
 }
 
 fn required<'a>(value: Option<&'a str>, field: &str) -> Result<&'a str, String> {
@@ -749,6 +872,28 @@ fn authorize_node(graph: &BoundedWorkGraph, node_id: &str, agent_id: &str) -> Re
     Ok(())
 }
 
+/// The node's owner, or the owner of its direct parent that delegated it.
+fn authorize_node_or_parent(
+    graph: &BoundedWorkGraph,
+    node_id: &str,
+    agent_id: &str,
+) -> Result<(), String> {
+    let node = graph
+        .get_node(node_id)
+        .ok_or_else(|| format!("node not found: {node_id}"))?;
+    let delegator = node
+        .parent_node_id
+        .as_deref()
+        .and_then(|parent| graph.get_node(parent))
+        .map(|parent| parent.agent_id.as_str());
+    if node.agent_id == agent_id || delegator == Some(agent_id) {
+        return Ok(());
+    }
+    Err(format!(
+        "agent {agent_id} neither owns node {node_id} nor delegated it"
+    ))
+}
+
 fn authorize_member(graph: &BoundedWorkGraph, agent_id: &str) -> Result<(), String> {
     if graph.contains_agent(agent_id) {
         return Ok(());
@@ -777,117 +922,12 @@ fn ensure_active_agent(project_root: &str, agent_id: &str) -> Result<(), String>
     {
         return Ok(());
     }
-    Err(format!("agent is not active in this project: {agent_id}"))
+    Err(format!(
+        "agent is not active in this project: {agent_id} — register it first with \
+         ctx_agent action=register (agent ids are per project)"
+    ))
 }
 
 #[cfg(test)]
-mod cancellation_tests {
-    use super::*;
-
-    #[test]
-    fn failed_persistence_does_not_signal_and_retry_commits_before_signal() {
-        let isolated = crate::core::data_dir::isolated_data_dir();
-        let project = isolated.path().to_str().unwrap();
-        let budget = WorkNodeBudget {
-            tokens_allocated: 100,
-            tokens_consumed: 0,
-            cost_micros_allocated: 100,
-            cost_micros_consumed: 0,
-        };
-        let mut graph = BoundedWorkGraph::default();
-        graph
-            .add_root(
-                "root".into(),
-                "lead".into(),
-                "capsule:root".into(),
-                budget.clone(),
-            )
-            .unwrap();
-        graph
-            .queue_child(
-                "root",
-                "child".into(),
-                "worker".into(),
-                "capsule:child".into(),
-                budget,
-            )
-            .unwrap();
-        let fence = WorkGraphStore::mutate(project, |store| {
-            store.create("graph", graph)?;
-            let ClaimNodeExecution::Claimed(node) =
-                store.claim_node_execution("graph", "child", 1, u64::MAX)?
-            else {
-                return Err("expected claim".into());
-            };
-            Ok(node.execution_fence.unwrap())
-        })
-        .unwrap();
-        let key = crate::core::work_graph_executor::execution_key(
-            std::path::Path::new(project),
-            "graph",
-            "child",
-            &fence,
-        )
-        .unwrap();
-        let request = Request {
-            action: "cancel",
-            project_root: project,
-            agent_id: "worker",
-            graph_id: "graph",
-            node_id: Some("child"),
-            if_revision: None,
-            parent_node_id: None,
-            to_agent: None,
-            capsule_ref: None,
-            outcome_ref: None,
-            tokens: None,
-            cost_micros: None,
-            max_concurrency: None,
-            receipt_id: None,
-            execution_fence: None,
-            outcome: None,
-            claims: None,
-            accepted_nodes: None,
-            stop_reason: None,
-            connector: None,
-            model: None,
-            timeout_ms: None,
-            max_attempts: None,
-            path_claims: None,
-            task_ref: None,
-            policy_ref: None,
-            expected_outcome_ref: None,
-        };
-        let error =
-            crate::core::work_graph_store::with_save_failure(|| cancel(&request)).unwrap_err();
-        assert!(error.contains("injected work graph persistence failure"));
-        assert!(!crate::core::agent_connector::timeout::cancellation_requested(&key));
-        assert!(
-            !WorkGraphStore::execution_stop_requested(project, "graph", "child", &fence).unwrap()
-        );
-        cancel(&request).unwrap();
-        let signalled = crate::core::agent_connector::timeout::cancellation_requested(&key);
-        crate::core::agent_connector::timeout::clear_cancellation(&key);
-        assert!(signalled);
-        assert!(
-            WorkGraphStore::execution_stop_requested(project, "graph", "child", &fence).unwrap()
-        );
-        // Invalid execution bounds are rejected before a stopped node can be
-        // claimed (which would otherwise produce a different error).
-        for (timeout, attempts, expected) in [
-            (0, 1, "timeout_ms"),
-            (1_800_001, 1, "timeout_ms"),
-            (1000, 0, "max_attempts"),
-            (1000, 3, "max_attempts"),
-        ] {
-            let invalid = Request {
-                action: "execute",
-                connector: Some("codex"),
-                timeout_ms: Some(timeout),
-                max_attempts: Some(attempts),
-                ..request
-            };
-            assert!(execute(&invalid).unwrap_err().contains(expected));
-        }
-    }
-}
+#[path = "ctx_work_graph_lifecycle_tests.rs"]
+mod lifecycle_tests;

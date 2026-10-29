@@ -112,3 +112,118 @@ fn save_is_atomic_and_leaves_no_temp_files() {
         .any(|e| e.file_name().to_string_lossy().contains(".tmp."));
     assert!(!leftover, "atomic write must not leave temp files");
 }
+
+/// One `lean-ctx` process in `project`, sharing the data directories under
+/// `shared` with every other process of the test; never the developer's
+/// daemon or state.
+fn cli(shared: &std::path::Path, project: &std::path::Path) -> std::process::Command {
+    let mut command = std::process::Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+    command
+        .current_dir(project)
+        .stdin(std::process::Stdio::null())
+        .env("LEAN_CTX_ACTIVE", "1")
+        .env("__LEAN_CTX_SKIP_EVENTS", "1")
+        .env("__LEAN_CTX_NO_DAEMON", "1")
+        .env("DO_NOT_TRACK", "1")
+        .env_remove("CLAUDECODE")
+        .env_remove("LEAN_CTX_PROJECT_ROOT")
+        .env("LEAN_CTX_CONVERSATION_SCOPE", "0");
+    for (name, directory) in [
+        ("HOME", "home"),
+        ("XDG_CONFIG_HOME", "config"),
+        ("XDG_DATA_HOME", "data"),
+        ("XDG_STATE_HOME", "state"),
+        ("XDG_CACHE_HOME", "cache"),
+        ("LEAN_CTX_CONFIG_DIR", "config"),
+        ("LEAN_CTX_DATA_DIR", "data"),
+        ("LEAN_CTX_STATE_DIR", "state"),
+        ("LEAN_CTX_CACHE_DIR", "cache"),
+    ] {
+        let path = shared.join(directory);
+        std::fs::create_dir_all(&path).unwrap();
+        command.env(name, path);
+    }
+    command
+}
+
+/// ABNAHME I01/I02 across independent processes, then after a restart:
+/// processes of two projects run at the same time against ONE data
+/// directory and write the same fact keys. Every acknowledged fact stays in
+/// its own project; a later process of one project neither recalls nor finds
+/// the other project's value, nor a hint that it exists.
+#[test]
+fn independent_processes_of_two_projects_keep_the_same_keys_apart() {
+    const KEYS: [&str; 3] = ["db", "queue", "auth"];
+    let shared = tempfile::tempdir().unwrap();
+    let shared = shared.path().canonicalize().unwrap();
+    let projects: Vec<(&str, std::path::PathBuf)> = ["p1", "p2"]
+        .into_iter()
+        .map(|name| {
+            let root = shared.join("work").join(name);
+            std::fs::create_dir_all(&root).unwrap();
+            (name, root)
+        })
+        .collect();
+
+    // All writers are started before any is awaited.
+    let shared_dirs = shared.as_path();
+    let writers: Vec<_> = projects
+        .iter()
+        .flat_map(|(name, root)| {
+            KEYS.iter().map(move |key| {
+                cli(shared_dirs, root)
+                    .args(["knowledge", "remember", &format!("canary-{name}-{key}")])
+                    .args(["--category", "decision", "--key", key])
+                    .stdout(std::process::Stdio::piped())
+                    .stderr(std::process::Stdio::piped())
+                    .spawn()
+                    .unwrap()
+            })
+        })
+        .collect();
+    for writer in writers {
+        let output = writer.wait_with_output().unwrap();
+        assert!(
+            output.status.success(),
+            "{}",
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+
+    // Restarted processes, one per project.
+    let run = |root: &std::path::Path, args: &[&str]| {
+        let output = cli(&shared, root).args(args).output().unwrap();
+        format!(
+            "{}{}",
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        )
+    };
+    for (name, root) in &projects {
+        let other = if *name == "p1" { "p2" } else { "p1" };
+        let recalled = run(root, &["knowledge", "recall", "--category", "decision"]);
+        for key in KEYS {
+            assert!(
+                recalled.contains(&format!("canary-{name}-{key}")),
+                "{name} lost {key}: {recalled}"
+            );
+        }
+        let searched = run(root, &["knowledge", "search", "canary"]);
+        let foreign = format!("canary-{other}");
+        assert!(
+            !recalled.contains(&foreign) && !searched.contains(&foreign),
+            "{recalled}{searched}"
+        );
+        // Searching for the other project's exact value says what a search
+        // for a value that never existed says.
+        assert_eq!(
+            run(
+                root,
+                &["knowledge", "search", &format!("canary-{other}-db")]
+            )
+            .replace(&format!("canary-{other}-db"), "QUERY"),
+            run(root, &["knowledge", "search", "canary-nowhere-db"])
+                .replace("canary-nowhere-db", "QUERY"),
+        );
+    }
+}

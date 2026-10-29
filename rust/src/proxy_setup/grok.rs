@@ -208,6 +208,8 @@ pub(super) fn reconcile_proxy_provider(
         base_url: desired,
         api_key_env: None, // forward caller's Bearer (session or XAI_API_KEY)
         aws_region: None,
+        account_ref: None,
+        region: None,
         enabled: None,
         local: None,
     });

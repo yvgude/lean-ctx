@@ -1,0 +1,8 @@
+{
+  "expires_at": "2026-10-20T12:10:00Z",
+  "fencing_token": 9,
+  "granted": true,
+  "lease_id": "bl_01jb8zc",
+  "schema": "leanctx.hive.bus-lease/v1",
+  "server_time": "2026-10-20T12:00:00Z"
+}

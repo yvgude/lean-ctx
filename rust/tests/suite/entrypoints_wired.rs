@@ -53,6 +53,8 @@ fn mcp_entrypoint_tools_are_advertised() {
     // The entrypoint tools that back the regressed CLI commands plus the core
     // read/search surface. If a handler exists but is not advertised here, the
     // tool is unreachable for MCP clients (the v3.4.7 "missing manifest entry").
+    // `ctx_explore` left this list with the focus release (2026-10-15): it is a
+    // deprecated alias of `ctx_compose`, callable but deliberately unadvertised.
     let required = [
         "ctx_read",
         "ctx_shell",
@@ -61,7 +63,7 @@ fn mcp_entrypoint_tools_are_advertised() {
         "ctx_index",
         "ctx_proof",
         "ctx_verify",
-        "ctx_explore",
+        "ctx_compose",
     ];
     for tool in required {
         assert!(

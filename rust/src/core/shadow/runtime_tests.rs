@@ -64,6 +64,19 @@ fn test_old_reports_cleaned() {
     assert!(persist_report(&ShadowEngine::run_comparison(&[task(1)])).is_ok());
     assert_eq!(list_reports().len(), 50);
 }
+/// The retired `[shadow] baseline_model` no longer reprices the host's tasks: an uncompressed
+/// task on another model reports no saving and no recommendation through the active runtime path.
+#[test]
+fn configured_baseline_model_does_not_reprice_host_tasks() {
+    let _iso = setup("[shadow]\nenabled = true\nbaseline_model = \"gpt-4o\"\nreport_interval = 1");
+    let mut uncompressed = task(1);
+    uncompressed.compressed_input_tokens = uncompressed.raw_input_tokens;
+    ShadowRuntime::on_task_complete(&uncompressed);
+    let report = ShadowRuntime::get_latest_report().expect("report at interval 1");
+    assert_eq!(report.savings.absolute_micros, 0);
+    assert!(report.recommendations.is_empty());
+}
+
 #[test]
 fn test_force_report() {
     let _iso = setup("[shadow]\nenabled = true");

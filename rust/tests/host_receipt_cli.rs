@@ -23,13 +23,16 @@ fn invoke(root: &Path, args: &[&str], input: &[u8]) -> Output {
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
+    // The stores live beside the project, not in it: a LeanCTX store is never
+    // adopted as a project root (`pathutil::is_lean_ctx_store_dir`).
+    let store = root.join(".lean-ctx-store");
     for name in [
         "LEAN_CTX_DATA_DIR",
         "LEAN_CTX_CONFIG_DIR",
         "LEAN_CTX_STATE_DIR",
         "LEAN_CTX_CACHE_DIR",
     ] {
-        command.env(name, root);
+        command.env(name, &store);
     }
     let mut child = command.spawn().expect("start real binary");
     child
@@ -121,10 +124,12 @@ fn real_cli_signs_native_receipt_from_host_stdin_and_refuses_repeat() {
     let digest = response["canonical_receipt"]["receipt_digest"]
         .as_str()
         .expect("receipt digest");
-    let path = root.join("execution/receipts").join(format!(
-        "{}.json",
-        digest.strip_prefix("sha256:").expect("SHA-256")
-    ));
+    let path = root
+        .join(".lean-ctx-store/execution/receipts")
+        .join(format!(
+            "{}.json",
+            digest.strip_prefix("sha256:").expect("SHA-256")
+        ));
     let receipt = ReceiptDocumentV1::from_canonical_bytes(
         &std::fs::read(path).expect("actual persisted receipt"),
     )
@@ -147,7 +152,7 @@ fn real_cli_signs_native_receipt_from_host_stdin_and_refuses_repeat() {
     assert_eq!(events.len(), 5);
     let repeated = invoke(&root, &args, &settings);
     assert_eq!(repeated.status.code(), Some(2));
-    assert!(repeated.stdout.is_empty(), "{:?}", repeated.stdout);
+    assert_eq!(repeated.stdout, [] as [u8; 0]);
     assert!(String::from_utf8_lossy(&repeated.stderr).contains("host_task_already_recorded"));
     assert_eq!(
         ledger.load_verified().expect("unchanged chain").len(),

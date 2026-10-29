@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "This sealed vault has content but no member holds a key for it.",
+    "reason": "keys_lost"
+  }
+}

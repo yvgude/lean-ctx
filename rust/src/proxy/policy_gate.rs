@@ -27,8 +27,11 @@
 //!   a no-op. A configured but unverifiable policy is an error, not absence.
 //! - **Fail-open on infrastructure:** seeding errors only degrade precision
 //!   (in-process counting continues); they never block traffic.
-//! - **O(1) per request:** the policy snapshot is cached with a short TTL;
-//!   budget lookups are two hash-map reads.
+//! - **Bounded per request:** three bounded reads of the authority files
+//!   (policy source, trust store, required marker) and one hash decide whether
+//!   the cached rules still apply; signature verification and pack resolution
+//!   happen only when those bytes changed or the short TTL ran out. Budget
+//!   lookups are two hash-map reads. The cost of the reads is not measured.
 
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock, RwLock};
@@ -39,9 +42,13 @@ use axum::response::{IntoResponse, Response};
 
 use crate::core::policy::{BudgetRules, RoutingPolicyRules};
 
-/// How long a loaded org-policy snapshot stays valid before the gate re-reads
-/// (and re-verifies) the installed artifact. Policy rollout latency, not a
-/// hot-path cost: within the TTL every request uses the cached snapshot.
+/// How long resolved rules may be reused **for unchanged authority bytes**
+/// before the gate verifies the artifact again. It no longer bounds rollout
+/// latency: every request reads the policy source, the trust store and the
+/// required marker (three bounded reads, hashed) and reuses the cached rules
+/// only if those bytes are the ones the rules came from. What the TTL still
+/// saves per request is signature verification and pack resolution, not the
+/// reads. The per-request cost of the reads is not measured.
 const SNAPSHOT_TTL: Duration = Duration::from_mins(1);
 
 /// The governance subset of the active org policy the gate enforces.
@@ -74,6 +81,11 @@ impl GateRules {
 struct CachedSnapshot {
     rules: Result<Option<GateRules>, String>,
     loaded_at: Instant,
+    /// The authority bytes these rules were resolved from. Rules are reused
+    /// only while the policy source, trust store and required marker are
+    /// byte-identical: a removed policy or a new requirement takes effect on
+    /// the next request, not after the TTL.
+    authority: blake3::Hash,
 }
 
 static SNAPSHOT: RwLock<Option<CachedSnapshot>> = RwLock::new(None);
@@ -126,24 +138,35 @@ pub fn active_rules() -> Result<Option<GateRules>, String> {
     {
         return Ok(pinned);
     }
+    // Captured once per call, before the cache is consulted. Authority that
+    // cannot be read is a refusal. The fingerprint and — on a miss — the rules
+    // come from these same captured bytes: nothing is read again in between,
+    // so rules of one authority can never be stored under another's identity.
+    let authority = crate::core::policy::org::AuthoritySnapshot::capture()?;
     {
         let guard = SNAPSHOT
             .read()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         if let Some(cached) = guard.as_ref()
+            && cached.authority == authority.fingerprint()
             && cached.loaded_at.elapsed() < SNAPSHOT_TTL
         {
             return cached.rules.clone();
         }
     }
-    let rules = crate::core::policy::org::active_resolved_checked()
+    let rules = authority
+        .resolve()
         .map(|policy| policy.and_then(|p| GateRules::from_policy(&p.routing, &p.budgets)));
     let mut guard = SNAPSHOT
         .write()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
+    // A concurrent call may have stored rules for other bytes meanwhile;
+    // whatever is kept is labelled with the bytes it was resolved from, and
+    // this call returns the rules of its own capture either way.
     *guard = Some(CachedSnapshot {
         rules: rules.clone(),
         loaded_at: Instant::now(),
+        authority: authority.fingerprint(),
     });
     rules
 }

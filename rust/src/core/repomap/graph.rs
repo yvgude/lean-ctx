@@ -105,6 +105,9 @@ fn graph_call_pairs(project_root: &str) -> Option<Vec<(String, String)>> {
         .file_edges_of_kind(&EdgeKind::Calls)
         .ok()?
         .into_iter()
+        // Serve-time source check (G04): an edge of a withdrawn file neither
+        // appears in the map nor ranks another file.
+        .filter(|(from, to, _)| graph.serves_file(from) && graph.serves_file(to))
         .map(|(from, to, _)| (from, to))
         .collect();
     (!pairs.is_empty() || graph.has_semantic_answers().unwrap_or(false)).then_some(pairs)
@@ -278,8 +281,9 @@ mod tests {
             target_symbol: None,
             context: String::new(),
         };
+        let admission = crate::core::context_admission::stores::StoreAdmission::current();
         graph
-            .semantic_store(("app.rs", 2, 4, "definition"), "h", &veto)
+            .semantic_store(("app.rs", 2, 4, "definition"), "h", &veto, &admission)
             .unwrap();
         assert_eq!(graph_call_pairs(root), Some(Vec::new()), "vetoed stays out");
     }

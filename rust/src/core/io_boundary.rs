@@ -176,6 +176,11 @@ Role: {role_name}. To allow: switch role to 'admin' or set io.allow_secret_paths
         path.display()
     );
     events::emit_policy_violation(&role_name, tool, &msg);
+    // K12: the secret-path rule refused (enforce) or would have (warn).
+    crate::core::hive::metrics_v2::signals::refused(
+        &crate::core::hive::metrics_v2::signals::secrets_rule(),
+        matches!(mode, BoundaryMode::Enforce),
+    );
 
     match mode {
         BoundaryMode::Enforce => Err(format!("ERROR: {msg}")),
@@ -194,8 +199,28 @@ pub fn jail_and_check_path(
     candidate: &Path,
     jail_root: &Path,
 ) -> Result<(PathBuf, Option<String>), String> {
+    jail_and_check_with(tool, candidate, jail_root, pathjail::jail_path)
+}
+
+/// [`jail_and_check_path`] for a destination that stays contained when the
+/// jail is compiled out (`no-jail`) or disabled (`path_jail = false`); see
+/// [`pathjail::jail_path_enforced`].
+pub fn jail_and_check_export_path(
+    tool: &str,
+    candidate: &Path,
+    jail_root: &Path,
+) -> Result<(PathBuf, Option<String>), String> {
+    jail_and_check_with(tool, candidate, jail_root, pathjail::jail_path_enforced)
+}
+
+fn jail_and_check_with(
+    tool: &str,
+    candidate: &Path,
+    jail_root: &Path,
+    jail: fn(&Path, &Path) -> Result<PathBuf, crate::core::error::PathJailError>,
+) -> Result<(PathBuf, Option<String>), String> {
     let role_name = roles::active_role_name();
-    let jailed = pathjail::jail_path(candidate, jail_root).map_err(|e| {
+    let jailed = jail(candidate, jail_root).map_err(|e| {
         // Only a real jail escape is a security event. A path that simply doesn't exist
         // (stale graph entry, removed file) is benign — emitting a policy violation for it
         // spams the event feed and mislabels missing files as denials.

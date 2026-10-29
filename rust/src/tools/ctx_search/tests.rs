@@ -1,60 +1,12 @@
 use super::*;
 use crate::tools::CrpMode;
 
-// The policy override is process-wide: a parallel test that installs a policy
-// made these searches answer "N sources withheld under policy". Every search
-// here pins "no policy" for its call; these shadow the glob-imported entries.
-
-#[allow(clippy::too_many_arguments)]
-fn handle(
-    pattern: &str,
-    dir: &str,
-    include: Option<&str>,
-    max_results: usize,
-    crp_mode: CrpMode,
-    respect_gitignore: bool,
-    allow_secret_paths: bool,
-    anchored: bool,
-) -> SearchOutcome {
-    let _no_policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
-    super::handle(
-        pattern,
-        dir,
-        include,
-        max_results,
-        crp_mode,
-        respect_gitignore,
-        allow_secret_paths,
-        anchored,
-    )
-}
-
-#[allow(clippy::too_many_arguments)]
-fn handle_filtered(
-    pattern: &str,
-    dir: &str,
-    include: Option<&str>,
-    max_results: usize,
-    crp_mode: CrpMode,
-    respect_gitignore: bool,
-    allow_secret_paths: bool,
-    anchored: bool,
-    exclude: Option<&str>,
-    exclude_pattern: Option<&str>,
-) -> SearchOutcome {
-    let _no_policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
-    super::handle_filtered(
-        pattern,
-        dir,
-        include,
-        max_results,
-        crp_mode,
-        respect_gitignore,
-        allow_secret_paths,
-        anchored,
-        exclude,
-        exclude_pattern,
-    )
+/// Search answers "withheld under policy" while any content policy is active,
+/// and policy tests elsewhere in the crate pin one process-wide. A test that
+/// searches without a policy pins "none" itself, or a parallel test decides
+/// its result (seen under load in the R05 export run).
+fn no_policy() -> crate::core::policy::runtime::TestPolicyOverride {
+    crate::core::policy::runtime::TestPolicyOverride::set(None)
 }
 
 /// Determinism contract (#498): identical search over identical files
@@ -62,6 +14,7 @@ fn handle_filtered(
 /// prompt-cache hits on repeated tool results.
 #[test]
 fn search_output_is_byte_stable_across_calls() {
+    let _no_policy = no_policy();
     let dir = tempfile::tempdir().unwrap();
     for i in 0..5 {
         std::fs::write(
@@ -91,6 +44,7 @@ fn search_output_is_byte_stable_across_calls() {
 /// not valid regex; the search runs literally and says so instead of failing.
 #[test]
 fn invalid_regex_is_searched_literally_with_a_note() {
+    let _no_policy = no_policy();
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(
         dir.path().join("a.rs"),
@@ -119,6 +73,7 @@ fn invalid_regex_is_searched_literally_with_a_note() {
 /// (anchored=false) output stays byte-identical so #498 is preserved.
 #[test]
 fn anchored_search_emits_line_hash_per_hit_opt_in_only() {
+    let _no_policy = no_policy();
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.rs"), "let needle = 1;\nother\n").unwrap();
     let root = dir.path().to_string_lossy().into_owned();
@@ -165,6 +120,7 @@ fn anchored_search_emits_line_hash_per_hit_opt_in_only() {
 #[test]
 #[cfg(feature = "tree-sitter")]
 fn hits_inside_multiline_symbols_carry_enclosing_tag() {
+    let _no_policy = no_policy();
     // #608: a hit inside a multi-line function names its enclosing symbol +
     // the handle anchor, and the output ships a self-describing legend.
     let dir = tempfile::tempdir().unwrap();
@@ -196,6 +152,7 @@ fn hits_inside_multiline_symbols_carry_enclosing_tag() {
 
 #[test]
 fn single_line_symbols_get_no_enclosing_tag() {
+    let _no_policy = no_policy();
     // #498/#608: a match whose only enclosing symbol is single-line gets no
     // tag, so the default output stays byte-identical (no `∈`, no legend).
     let dir = tempfile::tempdir().unwrap();
@@ -216,6 +173,7 @@ fn single_line_symbols_get_no_enclosing_tag() {
 
 #[test]
 fn search_results_are_deterministically_ordered_by_path() {
+    let _no_policy = no_policy();
     let dir = tempfile::tempdir().unwrap();
     let a = dir.path().join("a.txt");
     let b = dir.path().join("b.txt");
@@ -307,6 +265,7 @@ fn warm_index_and_content_cache_path_returns_correct_matches() {
 
 #[test]
 fn search_finds_word_literals_added_after_index_warm() {
+    let _no_policy = no_policy();
     // #624 regression: a native edit or add after the trigram index was
     // warmed must be found immediately. The resident index is gated by a live
     // corpus signature, so stale trigrams can never hide on-disk content from
@@ -368,6 +327,7 @@ fn search_finds_word_literals_added_after_index_warm() {
 
 #[test]
 fn symbol_substitution_is_off_by_default() {
+    let _no_policy = no_policy();
     let _lock = crate::core::data_dir::test_env_lock();
     crate::test_env::remove_var("LEAN_CTX_SYMBOL_MAP");
     let dir = tempfile::tempdir().unwrap();
@@ -406,6 +366,7 @@ fn symbol_substitution_is_off_by_default() {
 
 #[test]
 fn secret_like_files_are_skipped_by_default() {
+    let _no_policy = no_policy();
     let dir = tempfile::tempdir().unwrap();
     let secret = dir.path().join("key.pem");
     let ok = dir.path().join("ok.txt");
@@ -438,6 +399,7 @@ fn secret_like_files_are_skipped_by_default() {
 #[test]
 #[cfg(unix)]
 fn search_skips_named_pipe_without_hanging() {
+    let _no_policy = no_policy();
     use std::sync::mpsc;
     // #336: a named pipe (FIFO) in the search universe used to block
     // `read_to_string` forever, hanging the whole call with no output. It
@@ -530,6 +492,7 @@ fn extract_extensions_ignores_dots_in_directory_segments() {
 
 #[test]
 fn include_glob_filters_by_brace_expansion() {
+    let _no_policy = no_policy();
     let dir = tempfile::tempdir().unwrap();
     // Unique needle: the global search-delta tracker (src/core/search_delta.rs)
     // is keyed by pattern, so sharing "needle" with sibling tests lets a
@@ -560,6 +523,7 @@ fn include_glob_filters_by_brace_expansion() {
 /// result was a clean `0 matches` over an empty scope.
 #[test]
 fn comma_separated_include_is_a_glob_list() {
+    let _no_policy = no_policy();
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.go"), "comma_glob_needle_1994\n").unwrap();
     std::fs::write(dir.path().join("b.yaml"), "comma_glob_needle_1994\n").unwrap();
@@ -593,6 +557,7 @@ fn comma_separated_include_is_a_glob_list() {
 /// against the empty path relative to the file itself.
 #[test]
 fn include_and_exclude_apply_to_a_file_root_by_its_name() {
+    let _no_policy = no_policy();
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("main.rs");
     std::fs::write(&file, "fn main() { let needle2059 = 1; }\n").unwrap();
@@ -626,6 +591,7 @@ fn include_and_exclude_apply_to_a_file_root_by_its_name() {
 
 #[test]
 fn zero_hits_state_the_scope_and_name_an_empty_filter() {
+    let _no_policy = no_policy();
     let _lock = crate::core::data_dir::test_env_lock();
     crate::test_env::remove_var("LEAN_CTX_DISABLE_SEARCH_INDEX");
     let dir = tempfile::tempdir().unwrap();
@@ -668,6 +634,7 @@ fn zero_hits_state_the_scope_and_name_an_empty_filter() {
 
 #[test]
 fn bare_include_glob_matches_at_any_depth() {
+    let _no_policy = no_policy();
     // rg/git grep behaviour: a bare glob without `/` should match
     // files at any depth, not just in the search root.
     let dir = tempfile::tempdir().unwrap();
@@ -716,6 +683,7 @@ fn bare_include_glob_matches_at_any_depth() {
 
 #[test]
 fn include_glob_recursive_path_pattern() {
+    let _no_policy = no_policy();
     let dir = tempfile::tempdir().unwrap();
     std::fs::create_dir_all(dir.path().join("src/inner")).unwrap();
     std::fs::write(dir.path().join("src/inner/deep.rs"), "needle\n").unwrap();
@@ -743,6 +711,7 @@ fn include_glob_recursive_path_pattern() {
 /// #2059 as reported: `path` = `Cargo.toml`, `include` = `*.toml`.
 #[test]
 fn explicit_manifest_file_matches_its_include_glob() {
+    let _no_policy = no_policy();
     let dir = tempfile::tempdir().unwrap();
     let file = dir.path().join("Cargo.toml");
     std::fs::write(&file, "[package]\nname = \"manifest_include_2059\"\n").unwrap();
@@ -767,6 +736,7 @@ fn explicit_manifest_file_matches_its_include_glob() {
 
 #[test]
 fn exclude_glob_drops_paths_and_exclude_pattern_drops_lines() {
+    let _no_policy = no_policy();
     // #870: `exclude` is the negative complement of `include` (path glob),
     // and `exclude_pattern` is a `grep -v` over result lines.
     let dir = tempfile::tempdir().unwrap();
@@ -814,6 +784,7 @@ fn exclude_glob_drops_paths_and_exclude_pattern_drops_lines() {
 
 #[test]
 fn invalid_exclude_pattern_is_ignored_not_fatal() {
+    let _no_policy = no_policy();
     // #870: a malformed exclude regex must not hide matches — it's ignored.
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("a.rs"), "needle\n").unwrap();
@@ -836,6 +807,7 @@ fn invalid_exclude_pattern_is_ignored_not_fatal() {
 
 #[test]
 fn search_refuses_home_directory_root() {
+    let _no_policy = no_policy();
     // #356 class: the MCP server often runs with cwd == $HOME; a defaulted
     // `path` must never walk the whole home dir (macOS TCC prompts).
     let home = dirs::home_dir().expect("home dir in test env");
@@ -860,6 +832,7 @@ fn search_refuses_home_directory_root() {
 /// the number that matched. The two counts are now separate and labelled.
 #[test]
 fn match_count_reports_matched_files_not_scanned_files() {
+    let _no_policy = no_policy();
     let dir = tempfile::tempdir().unwrap();
     for i in 0..8 {
         std::fs::write(dir.path().join(format!("quiet{i}.rs")), "fn nothing() {}\n").unwrap();
@@ -900,6 +873,7 @@ fn match_count_reports_matched_files_not_scanned_files() {
 /// not completeness evidence when the budget ran out, and now says so.
 #[test]
 fn result_cap_is_announced_instead_of_looking_exhaustive() {
+    let _no_policy = no_policy();
     use std::fmt::Write as _;
 
     // Distinct literal per case: a repeated pattern in one process renders as
@@ -981,6 +955,7 @@ fn large_log(needle: &str) -> String {
 
 #[test]
 fn explicitly_named_large_file_is_searched() {
+    let _no_policy = no_policy();
     // #1917: `grep NEEDLE big.log` must look inside the file the caller named,
     // not report "0 matches" because the file exceeds the directory-walk cap.
     let dir = tempfile::tempdir().unwrap();
@@ -1003,6 +978,7 @@ fn explicitly_named_large_file_is_searched() {
 
 #[test]
 fn directory_walk_names_the_large_files_it_skipped() {
+    let _no_policy = no_policy();
     // #1917: a skipped file must be named so the caller can search it directly.
     let dir = tempfile::tempdir().unwrap();
     std::fs::write(dir.path().join("big.log"), large_log("NEEDLE_1917")).unwrap();
@@ -1028,4 +1004,65 @@ fn name_skipped_caps_the_list() {
     let names: Vec<String> = ["a", "b", "c"].iter().map(|s| (*s).to_string()).collect();
     assert_eq!(name_skipped(&names, 3), "a, b, c");
     assert_eq!(name_skipped(&names, 7), "a, b, c, +4 more");
+}
+
+/// Regression (M7 eval E1): under a policy, every scanned original is charged
+/// to one per-search byte budget. Once it was spent, every remaining file was
+/// reported as "withheld under policy" — 2087 of 2399 sources on a real tree,
+/// although the policy withheld none of them. The scan now stops and says why.
+///
+/// The policy is the project's own pack, scoped to this request, so it never
+/// reaches a parallel test; the override lock keeps any test-wide policy out
+/// for the duration. The corpus is larger than the default budget, so no
+/// process-wide limit is changed.
+#[test]
+fn spent_protected_read_budget_is_not_reported_as_policy_withholding() {
+    let _no_test_policy = crate::core::policy::runtime::lock_test_override();
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().canonicalize().unwrap();
+    std::fs::create_dir_all(root.join(".lean-ctx")).unwrap();
+    std::fs::write(
+        root.join(".lean-ctx/policy.toml"),
+        "name = 'budget'\nversion = '1.0.0'\ndescription = 'test'\n[redaction]\ncustomer = 'CUS-[0-9]{4}'\n",
+    )
+    .unwrap();
+    // Ten sources just below the per-file size limit: ~4.8 MB against the
+    // 4 MiB default budget of a protected search.
+    let filler = "// filler line of the budget fixture\n".repeat(12_500);
+    for i in 0..10 {
+        std::fs::write(
+            root.join(format!("f{i}.rs")),
+            format!("fn needle_{i}() {{}}\n{filler}"),
+        )
+        .unwrap();
+    }
+    let root_str = root.to_string_lossy().to_string();
+    let out = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+        std::cell::RefCell::new(Some(root.clone())),
+        || {
+            handle(
+                "needle_",
+                &root_str,
+                None,
+                50,
+                CrpMode::Off,
+                true,
+                false,
+                false,
+            )
+            .text
+        },
+    );
+    assert!(
+        !out.contains("withheld under policy"),
+        "unscanned files were counted as withheld: {out}"
+    );
+    // On a loaded host the time budget can end the scan before the read
+    // budget does; either way the early stop must be explained as a budget.
+    assert!(
+        out.contains("read budget of this search is spent")
+            || out.contains("search stopped after the"),
+        "the early stop is not explained: {out}"
+    );
 }

@@ -3,6 +3,8 @@ use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::core::archive::authority::ArchiveAuthority;
+// Pack active, or the global gateway governed/sovereign: one predicate.
+use crate::core::context_admission::stored::source_authority_required;
 use crate::core::policy::{content, runtime};
 
 #[derive(Clone)]
@@ -48,7 +50,7 @@ pub(crate) fn store_with_authority(
 ) -> Option<String> {
     runtime::with_source_view(|| {
         if text.len() > entry_budget()
-            || (runtime::is_active() && authority.is_none())
+            || (source_authority_required() && authority.is_none())
             || authority.is_some_and(|origin| !origin.admitted())
         {
             return None;
@@ -89,7 +91,7 @@ pub(crate) fn store_with_authority(
     .flatten()
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) enum ReferenceResolveError {
     Malformed,
     Missing,
@@ -97,6 +99,10 @@ pub(crate) enum ReferenceResolveError {
     /// Present, but its source authority, project binding or the current
     /// content rules do not allow it to be handed back. Content-free.
     Refused(&'static str),
+    /// Present and still authorized by its source, but the current gateway
+    /// policy refuses this delivery. Carries the gateway's own content-free
+    /// reason, so a carrier can answer with the typed refusal.
+    Gateway(String),
 }
 
 /// Detailed form shared by the MCP resolver and the recovery verifier. The
@@ -135,7 +141,7 @@ pub(crate) fn resolve_checked(id: &str) -> Result<String, ReferenceResolveError>
         ));
     }
     runtime::with_source_view(|| {
-        if runtime::is_active() && entry.authority.is_none() {
+        if source_authority_required() && entry.authority.is_none() {
             return Err(ReferenceResolveError::Refused(
                 "stored output has no source authority under the active policy",
             ));
@@ -150,11 +156,14 @@ pub(crate) fn resolve_checked(id: &str) -> Result<String, ReferenceResolveError>
                 "the reference's source is no longer admitted",
             ));
         }
-        content::protect_active(&entry.content)
-            .map(std::borrow::Cow::into_owned)
-            .map_err(|_| {
-                ReferenceResolveError::Refused("stored output is withheld by current content rules")
-            })
+        let checked = content::protect_active(&entry.content).map_err(|_| {
+            ReferenceResolveError::Refused("stored output is withheld by current content rules")
+        })?;
+        // Recovery is a new delivery for every resolver (`ctx_expand`, the
+        // proxy, the recovery verifier): re-admitted under the current
+        // gateway policy here, not only by individual callers.
+        crate::core::context_admission::recovery::admit_recovered(&checked, "reference")
+            .map_err(ReferenceResolveError::Gateway)
     })
     .unwrap_or(Err(ReferenceResolveError::Refused(
         "current policy cannot be verified",

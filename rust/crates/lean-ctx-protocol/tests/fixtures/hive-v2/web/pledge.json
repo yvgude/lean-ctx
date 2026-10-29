@@ -1,0 +1,26 @@
+{
+  "errors": [],
+  "method": "PUT",
+  "path": "/api/v1/swarms/9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02/pledge",
+  "request": {
+    "max_sessions": 1,
+    "mode": "interactive",
+    "tasks_per_day": 5,
+    "tokens_per_day": null,
+    "usd_cents_per_day": null,
+    "window": null
+  },
+  "response": {
+    "body": {
+      "engine_approved": true,
+      "max_sessions": 1,
+      "mode": "interactive",
+      "tasks_per_day": 5,
+      "tokens_per_day": null,
+      "usd_cents_per_day": null,
+      "window": null
+    },
+    "status": 200
+  },
+  "route": "W42"
+}

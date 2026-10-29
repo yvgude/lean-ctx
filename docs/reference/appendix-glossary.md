@@ -44,7 +44,8 @@ sessions; recallable by exact, semantic, or hybrid search.
 isn't repeated. Project-scoped or universal (cross-project).
 
 **Wakeup** — the bundle of relevant prior knowledge injected at session start
-(via `ctx_overview` when `enable_wakeup_ctx` is on).
+(as an `--- AUTO CONTEXT ---` block on the first tool reply when
+`enable_wakeup_ctx` is on).
 
 ## Read modes
 
@@ -66,14 +67,14 @@ tokens instead of the whole file.
 ## Code intelligence
 
 **Property graph** — the in-repo graph of files, symbols, and edges (imports,
-calls, references) that powers `graph`, `impact`, `callgraph`, `repomap`,
-`architecture`, and `smells`. Built with tree-sitter.
+calls, references) that powers `graph`, `callgraph`, `repomap` and `smells`.
+Built with tree-sitter.
 
 **Impact / blast radius** — everything transitively affected by changing a file
-or symbol (`ctx_impact`).
+(`ctx_graph action=impact`, `lean-ctx graph impact`).
 
 **Repomap** — a PageRank-ranked map of the most important symbols, within a token
-budget (`ctx_repomap`). MCP-only.
+budget (`lean-ctx repomap`). CLI-only; MCP clients use `ctx_compose`.
 
 **Call graph** — who-calls-what relationships (`ctx_callgraph`): callers, callees,
 traces, risk scores.

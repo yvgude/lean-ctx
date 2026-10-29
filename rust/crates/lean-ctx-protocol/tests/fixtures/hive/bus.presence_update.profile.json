@@ -1,0 +1,18 @@
+{
+  "agent_id": "claude-3e",
+  "instance_id": "inst_01jb8z3",
+  "profile": {
+    "display_name": "Claude (contracts)",
+    "model": "claude-opus-5-5",
+    "roles": [
+      "contracts",
+      "review"
+    ]
+  },
+  "profile_id": "prof_01jbc3e",
+  "role": "contracts",
+  "server_time": "2026-10-20T12:00:00Z",
+  "state": "active",
+  "t": "presence_update",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

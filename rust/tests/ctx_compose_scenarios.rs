@@ -116,50 +116,6 @@ fn compose_rejects_empty_task() {
     assert_eq!(tokens, 0);
 }
 
-#[test]
-fn compose_surfaces_associative_neighbours() {
-    let _guard = ENV_GUARD
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    // SAFETY: serialized by this file's local `ENV_GUARD` mutex, which every
-
-    // env-mutating test here holds for its whole body.
-    unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_BUDGET_MS") };
-    // Generous graph budget so the (tiny) index build never times out here.
-    // SAFETY: serialized by this file's local `ENV_GUARD` mutex, which every
-
-    // env-mutating test here holds for its whole body.
-    unsafe { std::env::set_var("LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS", "8000") };
-    let dir = write_corpus();
-    // This scenario tests graph retrieval, not cold-build scheduling. A worker
-    // from the separate tight-budget scenario may still own the build gate.
-    // Prepare the real graph explicitly, as in the disambiguation scenario.
-    lean_ctx::core::graph_provider::build_property_graph(&dir.path().to_string_lossy())
-        .expect("associative corpus graph must build");
-
-    // `authenticate_user` lives in auth.rs; config.rs is a same-dir sibling, so
-    // the graph connects them and spreading activation from the auth.rs seed
-    // must surface config.rs as an associative neighbour.
-    let (out, _tokens) = ctx_compose::handle(
-        "explain authenticate_user",
-        &dir.path().to_string_lossy(),
-        CrpMode::Off,
-    );
-    // SAFETY: serialized by this file's local `ENV_GUARD` mutex, which every
-
-    // env-mutating test here holds for its whole body.
-    unsafe { std::env::remove_var("LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS") };
-
-    assert!(
-        out.contains("## Related (associative"),
-        "associative section should appear when the graph connects files:\n{out}"
-    );
-    assert!(
-        out.contains("config.rs"),
-        "the sibling neighbour should be surfaced via spreading activation:\n{out}"
-    );
-}
-
 /// Two files define a symbol of the same name; the task keywords point at one.
 /// Regression for #993: `best_symbol_snippet` used to inline `find_symbols(name)
 /// .next()` — an arbitrary match — so a trivial config accessor could win over

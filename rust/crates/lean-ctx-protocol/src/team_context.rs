@@ -130,7 +130,9 @@ fn valid_calendar_fields(bytes: &[u8]) -> bool {
     (1..=days).contains(&day) && hour <= 23 && minute <= 59 && second <= 59
 }
 
-pub(crate) fn timestamp_cmp(left: &TeamTimestampV1, right: &TeamTimestampV1) -> Ordering {
+/// Orders two validated timestamps by instant: seconds first, then the
+/// fractional digits compared as a fraction (missing digits count as zero).
+pub fn timestamp_cmp(left: &TeamTimestampV1, right: &TeamTimestampV1) -> Ordering {
     let left = left.as_str().as_bytes();
     let right = right.as_str().as_bytes();
     match left[..19].cmp(&right[..19]) {

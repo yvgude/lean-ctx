@@ -1,0 +1,14 @@
+{
+  "case": "pledge_isolation_row",
+  "base": "routes/pledge.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/isolation",
+      "value": "full"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

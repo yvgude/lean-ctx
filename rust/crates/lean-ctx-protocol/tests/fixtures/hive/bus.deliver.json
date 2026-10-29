@@ -1,0 +1,14 @@
+{
+  "body": {
+    "text": "STATUS C0 Review"
+  },
+  "channel": "org:org_acme/vault:3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42/general",
+  "from": "claude-3e",
+  "kind": "status",
+  "priority": "normal",
+  "privacy": "team",
+  "seq": 42,
+  "server_time": "2026-10-20T12:00:00Z",
+  "t": "deliver",
+  "to": "codex-85"
+}

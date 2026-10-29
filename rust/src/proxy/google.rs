@@ -8,6 +8,7 @@ use serde_json::Value;
 
 use super::ProxyState;
 use super::forward;
+use super::sticky_tools::{self, Shape};
 use super::tool_kind::{self, ToolResultKind};
 use super::{cache_safety, prose};
 use crate::core::config::{HistoryMode, ProseRole};
@@ -32,13 +33,32 @@ pub async fn handler(
     .await
 }
 
+/// One pass over a Gemini request, as on the Messages path: the unit in
+/// which a block that leaves with a recovery stub and the conversation it
+/// belongs to are brought together (`sticky_tools`).
 pub(super) fn compress_request_body(
+    parsed: Value,
+    original_size: usize,
+    model: Option<&str>,
+) -> (Vec<u8>, usize, usize) {
+    sticky_tools::in_pass(|| compress_in_pass(parsed, original_size, model))
+}
+
+fn compress_in_pass(
     parsed: Value,
     original_size: usize,
     model: Option<&str>,
 ) -> (Vec<u8>, usize, usize) {
     let mut doc = parsed;
     let mut modified = false;
+    // Under protection a block leaves shortened only with a stub that names
+    // the Engine's expand tool as the host listed it in this request's own
+    // `tools[].functionDeclarations[].name`. Settled before any block is
+    // touched: the request must list it, function calling must be on and
+    // open, and the request must not run on cached content, whose tools are
+    // not in this request. If not, blocks stay whole. The proxy adds no
+    // declaration.
+    sticky_tools::begin(Shape::Gemini, &doc);
 
     // Opt-in per-role prose aggressiveness (#710); both default `None` → no-op.
     let cfg = crate::core::config::Config::load();
@@ -263,6 +283,7 @@ mod tests {
     fn recent_response_routes_tool_name_to_compressor() {
         // Default (isolated) config; single content → boundary 0 → recent path.
         let _iso = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         // A compressible search result. The proxy must route the inline tool name
         // to the shared engine, so its output matches the name-routed engine
         // byte-for-byte (the contract that distinguishes this from `None`).
@@ -297,6 +318,7 @@ mod tests {
     #[test]
     fn json_envelope_function_response_is_compressed() {
         let _iso = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let raw = long_git_status();
         let expected = compress_tool_result(&raw, Some("Bash"));
         let envelope = serde_json::to_string(&serde_json::json!({
@@ -390,6 +412,7 @@ mod tests {
     fn gemini_compression_is_deterministic() {
         // #498: identical request → identical bytes.
         let _iso = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let mk = || serde_json::json!({ "contents": gemini_read_turns(13) });
         let (a, b) = (mk(), mk());
         let (la, lb) = (
@@ -472,6 +495,7 @@ mod tests {
         // THE cache invariant for the Gemini rail: every `contents` entry before
         // an already-passed boundary stays byte-identical as the chat grows.
         let _iso = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let mut prev: Vec<String> = Vec::new();
         let mut prev_boundary = 0;
         for pairs in 1..=20 {

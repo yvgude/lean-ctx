@@ -7,6 +7,37 @@ use std::collections::HashMap;
 use super::authority::{AgentArtifactRefV1, TaskDescriptorV1};
 use super::{MAX_HISTORY, TASK_DESCRIPTOR_VERSION, TASK_STATUS_VERSION};
 
+use crate::core::context_admission::carrier::{Withheld, admit_for_store};
+use crate::core::context_admission::stored::serve_stored;
+
+/// Transition reasons the Engine writes itself. They are fixed text, not
+/// caller text: neither admitted on the way in nor withheld on the way out.
+const REASON_CREATED: &str = "task created";
+const REASON_MATERIALIZED: &str = "remote task materialized";
+pub(crate) const REASON_INPUT_RECEIVED: &str = "input received via A2A";
+pub(crate) const REASON_CANCELED_VIA_A2A: &str = "canceled via A2A";
+
+fn engine_reason(reason: &str) -> bool {
+    matches!(
+        reason,
+        REASON_CREATED | REASON_MATERIALIZED | REASON_INPUT_RECEIVED | REASON_CANCELED_VIA_A2A
+    )
+}
+
+/// Stored task text as a new delivery. A task carries no source binding, so
+/// this is the originless rule of `context_admission::stored`: withheld while
+/// protection is active, re-admitted under the current content rules
+/// otherwise.
+fn serve_text(text: &str) -> Result<String, Withheld> {
+    serve_stored(text, None, None)
+}
+
+/// [`serve_text`], with the typed, content-free gateway notice in place of
+/// text that is withheld.
+fn served_text(text: &str) -> String {
+    serve_text(text).unwrap_or_else(|withheld| withheld.notice())
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum TaskState {
     Created,
@@ -127,6 +158,47 @@ pub enum TaskPart {
     },
 }
 
+impl TaskPart {
+    /// The part with every caller-chosen string passed through `text`, or the
+    /// first refusal.
+    fn try_map(&self, text: fn(&str) -> Result<String, Withheld>) -> Result<Self, Withheld> {
+        Ok(match self {
+            Self::Text { text: value } => Self::Text { text: text(value)? },
+            Self::Data { mime_type, data } => Self::Data {
+                mime_type: text(mime_type)?,
+                data: text(data)?,
+            },
+            Self::File {
+                name,
+                mime_type,
+                data,
+                uri,
+            } => Self::File {
+                name: text(name)?,
+                mime_type: mime_type.as_deref().map(text).transpose()?,
+                data: data.as_deref().map(text).transpose()?,
+                uri: uri.as_deref().map(text).transpose()?,
+            },
+        })
+    }
+
+    /// NEW caller content on its way into the task store: what the gateway
+    /// masks is stored masked; restricted or withheld content is refused and
+    /// nothing of the part is stored (E3).
+    pub(crate) fn admitted(&self) -> Result<Self, Withheld> {
+        self.try_map(admit_for_store)
+    }
+
+    /// The stored part as a new delivery. A part that is withheld — whatever
+    /// its kind — becomes a text part carrying the gateway notice, in place.
+    fn served(&self) -> Self {
+        self.try_map(serve_text)
+            .unwrap_or_else(|withheld| Self::Text {
+                text: withheld.notice(),
+            })
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TaskTransition {
     pub from: TaskState,
@@ -187,7 +259,7 @@ impl Task {
                 from: TaskState::Created,
                 to: TaskState::Created,
                 timestamp: now,
-                reason: Some("task created".to_string()),
+                reason: Some(REASON_CREATED.to_string()),
             }],
             metadata: HashMap::new(),
             created_at: now,
@@ -202,10 +274,17 @@ impl Task {
         }
     }
 
-    pub(super) fn from_remote_descriptor(descriptor: &TaskDescriptorV1, task_id: String) -> Self {
+    /// The description is NEW caller text from the remote peer: it is
+    /// admitted for the store here (masked text is stored masked; restricted
+    /// or withheld text refuses the task and nothing is materialized).
+    pub(super) fn from_remote_descriptor(
+        descriptor: &TaskDescriptorV1,
+        task_id: String,
+    ) -> Result<Self, Withheld> {
         let now = Utc::now();
+        let description = admit_for_store(&descriptor.description)?;
         let parts = vec![TaskPart::Text {
-            text: descriptor.description.clone(),
+            text: description.clone(),
         }];
         let mut metadata = HashMap::new();
         metadata.insert(
@@ -213,12 +292,12 @@ impl Task {
             TASK_DESCRIPTOR_VERSION.to_string(),
         );
         metadata.insert("action".to_string(), descriptor.action.clone());
-        Self {
+        Ok(Self {
             id: task_id,
             from_agent: descriptor.sender.clone(),
             to_agent: descriptor.recipient.clone(),
             state: TaskState::Created,
-            description: descriptor.description.clone(),
+            description,
             messages: vec![TaskMessage {
                 role: descriptor.sender.clone(),
                 parts,
@@ -229,7 +308,7 @@ impl Task {
                 from: TaskState::Created,
                 to: TaskState::Created,
                 timestamp: now,
-                reason: Some("remote task materialized".to_string()),
+                reason: Some(REASON_MATERIALIZED.to_string()),
             }],
             metadata,
             created_at: now,
@@ -241,7 +320,48 @@ impl Task {
             authority_key_id: Some(descriptor.key_id.clone()),
             descriptor_digest: Some(descriptor.content_digest()),
             artifact_refs: descriptor.artifact_refs.clone(),
+        })
+    }
+
+    /// A copy of the task for delivery to a tool result or a peer.
+    ///
+    /// Description, message parts, artifacts, metadata values and
+    /// caller-typed transition reasons are each served on their own; a part
+    /// that is withheld is replaced in place by the typed gateway notice, so
+    /// the shape of the task (counts, order, states, timestamps, ids) is what
+    /// is stored. The stored task is not changed.
+    #[must_use]
+    pub fn served(&self) -> Self {
+        let mut task = self.clone();
+        task.description = self.served_description();
+        for message in &mut task.messages {
+            for part in &mut message.parts {
+                *part = part.served();
+            }
         }
+        for artifact in &mut task.artifacts {
+            *artifact = artifact.served();
+        }
+        for value in task.metadata.values_mut() {
+            *value = served_text(value);
+        }
+        for transition in &mut task.history {
+            if let Some(reason) = transition
+                .reason
+                .as_mut()
+                .filter(|reason| !engine_reason(reason.as_str()))
+            {
+                *reason = served_text(reason);
+            }
+        }
+        task
+    }
+
+    /// The description alone as [`Self::served`] delivers it, for a listing
+    /// that prints nothing else of the task's text.
+    #[must_use]
+    pub fn served_description(&self) -> String {
+        served_text(&self.description)
     }
 
     pub fn status_v1(&self) -> TaskStatusV1 {
@@ -272,11 +392,19 @@ impl Task {
         if now < self.updated_at {
             return Err("task clock precedes stored state".to_string());
         }
+        // A reason typed by a caller is new text for the store: admitted
+        // before anything changes. The refusal is typed and content-free.
+        let reason = match reason {
+            Some(reason) if !engine_reason(reason) => {
+                Some(admit_for_store(reason).map_err(|withheld| withheld.message("task reason"))?)
+            }
+            other => other.map(str::to_owned),
+        };
         self.history.push(TaskTransition {
             from: self.state.clone(),
             to: new_state.clone(),
             timestamp: now,
-            reason: reason.map(std::string::ToString::to_string),
+            reason,
         });
 
         self.state = new_state;
@@ -291,6 +419,22 @@ impl Task {
             timestamp: Utc::now(),
         });
         self.updated_at = Utc::now();
+    }
+
+    /// [`Self::add_message`] for NEW caller content: every part is admitted
+    /// for the store first ([`TaskPart::admitted`]). One refused part refuses
+    /// the message and nothing of it is appended.
+    pub(crate) fn append_message(
+        &mut self,
+        role: &str,
+        parts: &[TaskPart],
+    ) -> Result<(), Withheld> {
+        let parts = parts
+            .iter()
+            .map(TaskPart::admitted)
+            .collect::<Result<Vec<_>, _>>()?;
+        self.add_message(role, parts);
+        Ok(())
     }
 
     pub fn add_artifact(&mut self, artifact: TaskPart) {

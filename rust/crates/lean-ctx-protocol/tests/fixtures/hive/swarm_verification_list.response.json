@@ -1,0 +1,29 @@
+{
+  "items": [
+    {
+      "due_at": "2026-10-21T12:00:00Z",
+      "result": {
+        "body": "retry.rs sets RETRY_BUDGET = 3 since 2026-09; the runbook predates it.",
+        "by": {
+          "handle": "quiet-heron"
+        },
+        "summary": "payments retries 3 times; the 5 in the runbook is stale"
+      },
+      "state": "assigned",
+      "subtask": {
+        "acceptance": "The constant and the file it lives in.",
+        "expected_kind": "number",
+        "title": "Find the retry budget in code"
+      },
+      "swarm": {
+        "licence": "CC-BY-4.0",
+        "scope": "public",
+        "swarm_id": "sw_01jbretry",
+        "title": "Which retry budget does payments use?"
+      },
+      "verification_id": "sv_01jbretry7b"
+    }
+  ],
+  "schema": "leanctx.hive.swarm-verification-list/v1",
+  "trust": "untrusted"
+}

@@ -1,0 +1,6 @@
+{
+  "t": "swarm.event",
+  "swarm": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+  "kind": "conductor_changed",
+  "epoch": 4
+}

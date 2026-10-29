@@ -10,22 +10,93 @@ use super::{ProviderItem, ProviderResult};
 #[path = "provenance_tests.rs"]
 mod tests;
 
+/// Why a stored provider item may not be reused now, in the source-validity
+/// vocabulary of the context decision contract (doc 19): revoked (no right to
+/// read it any more), deleted (gone from the source), stale (another revision
+/// now), unavailable (the source did not answer), unsupported (no item
+/// re-check possible), revalidate_required (the authority or policy it was
+/// checked under changed). A provider that answers "not found" for both a
+/// deleted item and one the reader may not see is reported as revoked: the
+/// gateway never tells the two apart for the caller.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ReuseRefusal {
+    pub(crate) validity: lean_ctx_protocol::context_lineage::SourceValidityV1,
+    pub(crate) reason: String,
+}
+
+impl ReuseRefusal {
+    fn new(
+        validity: lean_ctx_protocol::context_lineage::SourceValidityV1,
+        reason: impl Into<String>,
+    ) -> Self {
+        Self {
+            validity,
+            reason: reason.into(),
+        }
+    }
+
+    /// The provider's own error for a re-acquisition, classified: an access
+    /// refusal or a not-found is revoked, a missing item re-check is
+    /// unsupported, everything else (timeouts, rate limits, outages) is
+    /// unavailable.
+    fn of_reacquisition(error: String) -> Self {
+        use lean_ctx_protocol::context_lineage::SourceValidityV1 as V;
+        let lower = error.to_ascii_lowercase();
+        let access_status = lower
+            .split(|c: char| !c.is_ascii_digit())
+            .any(|number| matches!(number, "401" | "403" | "404" | "410"));
+        let validity = if lower.contains("does not support current item authorization") {
+            V::Unsupported
+        } else if access_status || lower.contains("forbidden") || lower.contains("not found") {
+            V::Revoked
+        } else {
+            V::Unavailable
+        };
+        Self::new(validity, error)
+    }
+}
+
+impl std::fmt::Display for ReuseRefusal {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(&self.reason)
+    }
+}
+
+impl From<ReuseRefusal> for String {
+    fn from(refusal: ReuseRefusal) -> Self {
+        refusal.reason
+    }
+}
+
 tokio::task_local! {
     static REUSE_DEADLINE: std::time::Instant;
     static REUSE_CHECKS: std::cell::Cell<usize>;
 }
 
 pub(crate) fn with_reuse_deadline<T>(operation: impl FnOnce() -> T) -> T {
-    if REUSE_DEADLINE.try_with(|_| ()).is_ok() {
-        operation()
-    } else {
-        REUSE_CHECKS.sync_scope(std::cell::Cell::new(32), || {
-            REUSE_DEADLINE.sync_scope(
-                std::time::Instant::now() + std::time::Duration::from_secs(5),
-                operation,
-            )
-        })
+    with_reuse_deadline_until(None, operation)
+}
+
+/// [`with_reuse_deadline`] for a caller with a deadline of its own: the
+/// operation ends at the earlier of `outer` and the deadline that would
+/// apply without it (the enclosing scope's, or five seconds from now). It
+/// only ever shortens; `None` is exactly [`with_reuse_deadline`]. Inside an
+/// enclosing scope the check budget stays the enclosing one.
+pub(crate) fn with_reuse_deadline_until<T>(
+    outer: Option<std::time::Instant>,
+    operation: impl FnOnce() -> T,
+) -> T {
+    if let Ok(enclosing) = REUSE_DEADLINE.try_with(|end| *end) {
+        return match outer {
+            Some(outer) if outer < enclosing => REUSE_DEADLINE.sync_scope(outer, operation),
+            _ => operation(),
+        };
     }
+    let own = std::time::Instant::now() + std::time::Duration::from_secs(5);
+    let end = outer.map_or(own, |outer| outer.min(own));
+    REUSE_CHECKS.sync_scope(std::cell::Cell::new(32), || {
+        REUSE_DEADLINE.sync_scope(end, operation)
+    })
 }
 
 fn reserve_reuse_check() -> Result<(), String> {
@@ -158,6 +229,13 @@ impl BoundResult {
             if originals.next().is_some() {
                 continue;
             }
+            // The stores key a chunk (and its origin) by URI. Two sources —
+            // another project, host or principal — number their items alike,
+            // so `gitlab://issues/1` of one evicted the other's copy. Scope
+            // the URI by a one-way tag of the binding; the item id stays the
+            // last segment, which fact keys are derived from.
+            let scope = &blake3::hash(binding.as_bytes()).to_hex()[..12];
+            chunk.file_path = format!("{}://{scope}/{}/{}", self.provider, self.resource, item.id);
             chunk.origin = digest(original).map(|item_digest| ProviderOrigin {
                 version: 1,
                 provider: self.provider.clone(),
@@ -191,11 +269,16 @@ impl ProviderOrigin {
     pub(crate) fn current_chunks(
         &self,
         project_root: &str,
-    ) -> Result<CurrentProviderChunks, String> {
+    ) -> Result<CurrentProviderChunks, ReuseRefusal> {
+        use lean_ctx_protocol::context_lineage::SourceValidityV1 as V;
+        let refuse = |validity: V, reason: &str| ReuseRefusal::new(validity, reason);
         if reuse_time_remaining().is_none_or(|remaining| remaining.is_zero()) {
-            return Err("provider reuse deadline is unavailable or exhausted".into());
+            return Err(refuse(
+                V::Unavailable,
+                "provider reuse deadline is unavailable or exhausted",
+            ));
         }
-        reserve_reuse_check()?;
+        reserve_reuse_check().map_err(|reason| ReuseRefusal::new(V::Unavailable, reason))?;
         if self.version != 1
             || self.binding.len() != 64
             || self.item_digest.len() != 64
@@ -204,24 +287,34 @@ impl ProviderOrigin {
             || self.item_id.len() > 4096
             || serde_json::to_vec(&self.params).map_or(true, |v| v.len() > 16 * 1024)
         {
-            return Err("stored provider origin is invalid".into());
+            return Err(refuse(V::Unsupported, "stored provider origin is invalid"));
         }
         if !crate::core::roles::active_role().is_tool_allowed("ctx_provider")
             || crate::core::policy::runtime::active()
                 .is_some_and(|p| !p.tool_allowed("ctx_provider"))
         {
-            return Err("provider access is not authorized".into());
+            return Err(refuse(
+                V::RevalidateRequired,
+                "provider access is not authorized",
+            ));
         }
         let root = std::path::Path::new(project_root);
-        let request = crate::core::policy::diagnostics::request_project()
-            .ok_or("provider reuse requires a project scope")?;
+        let request = crate::core::policy::diagnostics::request_project().ok_or_else(|| {
+            refuse(
+                V::RevalidateRequired,
+                "provider reuse requires a project scope",
+            )
+        })?;
         if crate::core::pathutil::safe_canonicalize_bounded(&request, 2000)
             != crate::core::pathutil::safe_canonicalize_bounded(root, 2000)
         {
-            return Err("provider reuse belongs to another project".into());
+            return Err(refuse(
+                V::Revoked,
+                "provider reuse belongs to another project",
+            ));
         }
         if !crate::core::config::Config::load().providers.enabled {
-            return Err("providers are disabled".into());
+            return Err(refuse(V::RevalidateRequired, "providers are disabled"));
         }
         // A knowledge read must not register providers from stored project
         // paths into process-global state. Preserve startup-pinned authority;
@@ -229,14 +322,17 @@ impl ProviderOrigin {
         let provider: std::sync::Arc<dyn super::provider_trait::ContextProvider> =
             if let Some(selected) = super::registry::global_registry().get_pinned(&self.provider) {
                 selected
+            } else if let Some(builtin) = super::registry::builtin_for_reuse(&self.provider) {
+                builtin
             } else {
                 let config = super::config_provider::discovery::discover_configs(Some(root))
                     .into_iter()
                     .find(|entry| entry.config.id == self.provider)
-                    .ok_or("stored provider is unavailable")?;
-                std::sync::Arc::new(super::config_provider::ConfigProvider::from_config(
-                    config.config,
-                )?)
+                    .ok_or_else(|| refuse(V::Unavailable, "stored provider is unavailable"))?;
+                std::sync::Arc::new(
+                    super::config_provider::ConfigProvider::from_config(config.config)
+                        .map_err(|reason| ReuseRefusal::new(V::Unavailable, reason))?,
+                )
             };
         if !provider.is_available()
             || !provider
@@ -247,9 +343,14 @@ impl ProviderOrigin {
                 .as_ref()
                 != Some(&self.binding)
         {
-            return Err("stored provider binding is no longer authorized".into());
+            return Err(refuse(
+                V::Revoked,
+                "stored provider binding is no longer authorized",
+            ));
         }
-        let result = provider.reacquire_item(&self.resource, &self.params, &self.item_id)?;
+        let result = provider
+            .reacquire_item(&self.resource, &self.params, &self.item_id)
+            .map_err(ReuseRefusal::of_reacquisition)?;
         if provider
             .reuse_binding(&self.resource, &self.params)
             .as_ref()
@@ -257,19 +358,29 @@ impl ProviderOrigin {
             || result.provider != self.provider
             || result.resource_type != self.resource
         {
-            return Err("provider source changed during reauthorization".into());
+            return Err(refuse(
+                V::RevalidateRequired,
+                "provider source changed during reauthorization",
+            ));
         }
         let mut items = result.items.iter().filter(|item| item.id == self.item_id);
         let item: &ProviderItem = items
             .next()
-            .ok_or("stored resource is no longer accessible")?;
+            .ok_or_else(|| refuse(V::Deleted, "stored resource is no longer accessible"))?;
         if items.next().is_some() || digest(item).as_ref() != Some(&self.item_digest) {
-            return Err("stored resource revision is no longer current".into());
+            return Err(refuse(
+                V::Stale,
+                "stored resource revision is no longer current",
+            ));
         }
         let projected = ProviderResult {
             provider: self.provider.clone(),
             resource_type: self.resource.clone(),
-            items: vec![self.projection.item(item)?],
+            items: vec![
+                self.projection
+                    .item(item)
+                    .map_err(|reason| ReuseRefusal::new(V::Unsupported, reason))?,
+            ],
             total_count: Some(1),
             truncated: false,
         };
@@ -277,13 +388,14 @@ impl ProviderOrigin {
         let rendered_bytes = chunks
             .iter()
             .try_fold(0usize, |sum, chunk| sum.checked_add(chunk.content.len()))
-            .ok_or("provider source size overflow")?;
+            .ok_or_else(|| refuse(V::Unsupported, "provider source size overflow"))?;
         let original_bytes = crate::core::canonical::canonical_serialize(item)
             .len()
             .max(rendered_bytes);
         for chunk in &mut chunks {
-            chunk.content =
-                crate::core::policy::content::protect_active(&chunk.content)?.into_owned();
+            chunk.content = crate::core::policy::content::protect_active(&chunk.content)
+                .map_err(|reason| ReuseRefusal::new(V::RevalidateRequired, reason))?
+                .into_owned();
         }
         Ok(CurrentProviderChunks {
             chunks,

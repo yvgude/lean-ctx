@@ -113,7 +113,17 @@ pub(crate) fn detect_drift(home: &Path) -> Vec<DriftReport> {
                     diff: None,
                 }
             } else {
+                // The comparison needs the file as it is; what is REPORTED is
+                // a rendering of its content, so the diff passes admission as
+                // carrier text before it leaves this function (an agent rule
+                // file lives outside any project and has no rooted reader).
+                // Nothing read here is written anywhere.
                 let diff = compute_diff(expected_trimmed, section_trimmed);
+                let diff = match crate::core::context_admission::carrier::admit_carrier_text(&diff)
+                {
+                    Ok(admitted) => admitted.text,
+                    Err(withheld) => withheld.notice(),
+                };
                 DriftReport {
                     target: status.name,
                     path: status.path,

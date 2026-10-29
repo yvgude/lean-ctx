@@ -1,0 +1,49 @@
+{
+  "cases": [
+    {
+      "fixture": "records/shred_journal.keys.json",
+      "key_id": "5d2abe57a3a2c50f",
+      "signature": "cf9d0346fb21a1574ff4969e7776456b36ec2a40a1a73249c8dac48ad2470d9875248b35f8268616c0b2c5a23f686bd0cde60c8580453882f79dfed6f34a0000",
+      "signing_input": "leanctx.hive.shred_journal.v1\n{\"count\":2,\"key_id\":\"5d2abe57a3a2c50f\",\"keys\":[{\"key_ref\":\"01M5NKA6W8005000000000W005\",\"kind\":1},{\"key_ref\":\"s:1\",\"kind\":4}],\"place_id\":\"vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01\",\"place_key_versions\":[],\"purge_id\":\"prg_aaaaaaaaaaaaaaaaaaaaaaezcm\",\"reason\":\"leaked_secret\",\"scope\":\"keys\",\"shredded_at\":1792800013200,\"v\":1}"
+    },
+    {
+      "fixture": "records/shred_journal.place.json",
+      "key_id": "5d2abe57a3a2c50f",
+      "signature": "7dabd25e50bd721a04e245c7f2fe05fe4bb193e5dab634ccda819973aa6d30a649e23f7898e08ccffdba216d1f0dff1f8ed6e400d6f42d937fce71a051e4710e",
+      "signing_input": "leanctx.hive.shred_journal.v1\n{\"count\":0,\"key_id\":\"5d2abe57a3a2c50f\",\"keys\":[],\"place_id\":\"vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03\",\"place_key_versions\":[1,2],\"purge_id\":\"vdel_ddddddddddddddddddddddddda\",\"reason\":\"vault_deleted\",\"scope\":\"place\",\"shredded_at\":1792890000000,\"v\":1}"
+    }
+  ],
+  "negative": [
+    {
+      "case": "signed by a non-purge key (snapshot)",
+      "fixture": "records/shred_journal.keys.json",
+      "key_id": "7bc9f7e9dc1a0621",
+      "outcome": {
+        "reason": "missing_purpose",
+        "result": "reject"
+      },
+      "sign_with": "hive_snapshot",
+      "signature": "65d7f6d2080118af084345bad837b7c9ffc86ef17aed6b70dd0679188b23e58942a6fcecd834cbd526b1aed5e03f0ff74b6914c10228cd5b1233d71f6a3ce40e"
+    },
+    {
+      "case": "count changed after signing",
+      "fixture": "records/shred_journal.keys.json",
+      "outcome": {
+        "reason": "bad_signature",
+        "result": "reject"
+      },
+      "patch": [
+        {
+          "op": "replace",
+          "path": "/count",
+          "value": 1
+        }
+      ]
+    }
+  ],
+  "rules": {
+    "domain": "leanctx.hive.shred_journal.v1\n",
+    "reconcile": "keystore reconcile re-applies only files whose signature verifies with a purpose-purge key; anything else is refused (HiveShredJournalInvalid)",
+    "signer": "Hive key of purpose purge (keyset v3, not revoked)"
+  }
+}

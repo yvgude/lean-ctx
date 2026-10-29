@@ -5,7 +5,7 @@ use crate::core::config;
 use crate::core::slow_log;
 use crate::core::tokens::count_tokens;
 
-use super::exec::{combine_streams, exec_limits, wait_with_limits};
+use super::exec::{combine_streams, exec_limits};
 
 pub(super) fn exec_buffered(
     command: &str,
@@ -126,7 +126,8 @@ pub(super) fn exec_buffered(
     }
 
     let (max_bytes, timeout) = exec_limits(command);
-    let output = wait_with_limits(child, max_bytes, timeout, isolate);
+    let captured = super::exec::wait_with_limits_captured(child, max_bytes, timeout, isolate);
+    let output = captured.output;
 
     let duration_ms = start.elapsed().as_millis();
     let exit_code = super::exit_status::exit_code(output.status);
@@ -135,14 +136,37 @@ pub(super) fn exec_buffered(
     let stderr =
         super::platform::resolve_carriage_returns(&super::platform::decode_output(&output.stderr));
 
-    let full_output = combine_streams(&stdout, &stderr, exit_code);
-    let input_tokens = count_tokens(&full_output);
+    let raw_output = combine_streams(&stdout, &stderr, exit_code);
+    let admission =
+        crate::core::context_admission::admit_tool_output(&raw_output, captured.completeness);
+    let full_output = admission.rendered();
+    let input_tokens = count_tokens(&raw_output);
 
-    crate::core::diagnostics_store::record_from_shell(command, &full_output, exit_code);
-    crate::core::gotcha_tracker::record_shell_outcome(command, &full_output, exit_code);
+    let store_admission = crate::core::context_admission::stores::StoreAdmission::current();
+    let stored_command = store_admission.admit_shell_command(command);
+    let stored_output = store_admission.admit_shell_output(&raw_output, captured.completeness);
+    let storage_allowed =
+        store_admission.is_current() && stored_command.is_some() && stored_output.is_some();
+    let command_for_store = stored_command.as_deref().unwrap_or_default();
+    let output_for_store = stored_output.as_deref().unwrap_or_default();
+    if storage_allowed {
+        crate::core::diagnostics_store::record_from_shell(
+            command_for_store,
+            output_for_store,
+            exit_code,
+        );
+        crate::core::gotcha_tracker::record_shell_outcome(
+            command_for_store,
+            output_for_store,
+            exit_code,
+        );
+    }
 
+    // Compression sees only the output admitted for delivery; raw stream bytes
+    // cannot re-enter after the gateway has redacted or withheld them.
+    let safe_for_compression = admission.rendered();
     let (compressed, output_tokens) =
-        super::compress::compress_and_measure(command, &stdout, &stderr, exit_code);
+        super::compress::compress_and_measure(command, &safe_for_compression, "", exit_code);
 
     crate::core::tool_lifecycle::record_shell_command_named(command, input_tokens, output_tokens);
 
@@ -161,16 +185,17 @@ pub(super) fn exec_buffered(
         input_tokens,
         output_tokens,
     );
-    if should_tee
-        && let Some(path) = super::redact::save_tee(command, &full_output)
+    if storage_allowed
+        && should_tee
+        && let Some(path) = super::redact::save_tee(command_for_store, output_for_store)
         && !matches!(std::env::var("LEAN_CTX_QUIET"), Ok(v) if v.trim() == "1")
     {
         eprintln!("[lean-ctx: full output -> {path} (redacted, 24h TTL)]");
     }
 
     let threshold = cfg.slow_command_threshold_ms;
-    if threshold > 0 && duration_ms >= threshold as u128 {
-        slow_log::record(command, duration_ms, exit_code);
+    if storage_allowed && threshold > 0 && duration_ms >= threshold as u128 {
+        slow_log::record(command_for_store, duration_ms, exit_code);
     }
 
     #[cfg(windows)]

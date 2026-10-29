@@ -15,8 +15,11 @@ use crate::core::memory_policy::MemoryPolicy;
 #[cfg(feature = "embeddings")]
 use super::embeddings::EmbeddingEngine;
 
+#[cfg(feature = "embeddings")]
 const ALPHA_SEMANTIC: f32 = 0.6;
+#[cfg(feature = "embeddings")]
 const BETA_CONFIDENCE: f32 = 0.25;
+#[cfg(feature = "embeddings")]
 const GAMMA_RECENCY: f32 = 0.15;
 /// Observation tier (#802): additive boost for a synthesized entity-summary in the
 /// semantic recall paths, mirroring the lexical `recall_for_output` boost so the
@@ -24,7 +27,9 @@ const GAMMA_RECENCY: f32 = 0.15;
 /// [0,1] semantic score — a balanced nudge that lifts a relevant summary above
 /// incidental matches yet stays below an exact match (which scores 1.0), so a stale
 /// summary can never bury a precise raw fact.
+#[cfg(feature = "embeddings")]
 const OBSERVATION_TIER_BOOST: f32 = 0.15;
+#[cfg(feature = "embeddings")]
 const MAX_RECENCY_DAYS: f32 = 90.0;
 
 /// Cosine threshold above which a freshly-remembered fact is treated as a
@@ -54,6 +59,7 @@ impl FactEmbedding {
     /// Similarity against a full-precision (L2-normalized) query. Scores directly
     /// against the int8 codes when available; falls back to the legacy f32 vector
     /// for not-yet-migrated entries.
+    #[cfg(feature = "embeddings")]
     fn similarity(&self, query: &[f32]) -> f32 {
         match &self.quant {
             Some(q) => embedding_quant::dot_quant(query, q),
@@ -376,6 +382,7 @@ pub fn compact_against_knowledge(
     index.entries = kept.into_iter().map(|(e, _)| e).collect();
 }
 
+#[cfg(feature = "embeddings")]
 fn lexical_fallback<'a>(
     knowledge: &'a ProjectKnowledge,
     query: &str,
@@ -395,6 +402,7 @@ fn lexical_fallback<'a>(
         .collect()
 }
 
+#[cfg(feature = "embeddings")]
 fn recency_decay(fact: &KnowledgeFact) -> f32 {
     let days_old = chrono::Utc::now()
         .signed_duration_since(fact.last_confirmed)
@@ -405,6 +413,7 @@ fn recency_decay(fact: &KnowledgeFact) -> f32 {
 /// Add the observation-tier boost (#802) to a base recall score iff `fact` is a
 /// synthesized entity-summary. Pure + deterministic so the tier policy can be
 /// unit-tested without spinning up the embedding engine.
+#[cfg(feature = "embeddings")]
 fn apply_observation_tier(base: f32, fact: &KnowledgeFact) -> f32 {
     if fact.is_synthesized_observation() {
         base + OBSERVATION_TIER_BOOST
@@ -448,10 +457,17 @@ pub fn missing_current_facts<'a>(
         .map(|e| (e.category.as_str(), e.key.as_str()))
         .collect();
 
+    // A vector is derived from the fact's value: a fact that may not be
+    // delivered now is not embedded (`ProjectKnowledge::delivery_filter`).
+    let deliverable = knowledge.delivery_filter();
     let mut missing: Vec<&KnowledgeFact> = knowledge
         .facts
         .iter()
-        .filter(|f| f.is_current() && !have.contains(&(f.category.as_str(), f.key.as_str())))
+        .filter(|&f| {
+            f.is_current()
+                && !have.contains(&(f.category.as_str(), f.key.as_str()))
+                && deliverable(f)
+        })
         .collect();
     missing.sort_by(|a, b| {
         b.confidence
@@ -542,6 +558,7 @@ pub fn find_semantic_duplicates(
 /// `threshold`, maps them back to current facts, and excludes the incoming
 /// fact's own key, non-current facts, and pairs the agent already judged. Pure
 /// and deterministic so the dedup logic is unit-testable with raw vectors.
+#[cfg(feature = "embeddings")]
 fn semantic_duplicates_from_query(
     index: &KnowledgeEmbeddingIndex,
     knowledge: &ProjectKnowledge,
@@ -645,6 +662,9 @@ mod tests {
     fn fact_with(category: &str, key: &str, source: &str) -> KnowledgeFact {
         let now = chrono::Utc::now();
         KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: category.to_string(),
             key: key.to_string(),
@@ -668,6 +688,8 @@ mod tests {
             archetype: KnowledgeArchetype::infer_from_category(category),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         }
     }
 
@@ -799,9 +821,13 @@ mod tests {
 
     #[test]
     fn compact_drops_missing_or_archived_facts() {
-        let mut knowledge = ProjectKnowledge::new("/tmp/project");
+        let knowledge_root = tempfile::tempdir().unwrap();
+        let mut knowledge = ProjectKnowledge::new(knowledge_root.path().to_str().unwrap());
         let now = chrono::Utc::now();
         knowledge.facts.push(KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: "arch".to_string(),
             key: "db".to_string(),
@@ -825,8 +851,13 @@ mod tests {
             archetype: KnowledgeArchetype::default(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         });
         knowledge.facts.push(KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: "arch".to_string(),
             key: "old".to_string(),
@@ -850,6 +881,8 @@ mod tests {
             archetype: KnowledgeArchetype::default(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         });
 
         let mut idx = KnowledgeEmbeddingIndex::new(&knowledge.project_hash);
@@ -865,7 +898,8 @@ mod tests {
 
     #[test]
     fn missing_current_facts_selects_unindexed_by_confidence_capped() {
-        let mut knowledge = ProjectKnowledge::new("/tmp/project");
+        let knowledge_root = tempfile::tempdir().unwrap();
+        let mut knowledge = ProjectKnowledge::new(knowledge_root.path().to_str().unwrap());
 
         let indexed = fact_with("arch", "indexed", "s");
         let mut high = fact_with("arch", "high", "s");
@@ -923,6 +957,9 @@ mod tests {
     #[test]
     fn recency_decay_recent() {
         let fact = KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: "test".to_string(),
             key: "k".to_string(),
@@ -946,6 +983,8 @@ mod tests {
             archetype: KnowledgeArchetype::default(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         };
         let decay = recency_decay(&fact);
         assert!(
@@ -958,6 +997,9 @@ mod tests {
     fn recency_decay_old() {
         let old_date = chrono::Utc::now() - chrono::Duration::days(100);
         let fact = KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: "test".to_string(),
             key: "k".to_string(),
@@ -981,6 +1023,8 @@ mod tests {
             archetype: KnowledgeArchetype::default(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         };
         let decay = recency_decay(&fact);
         assert_eq!(decay, 0.0, "100-day-old fact should have 0 recency");
@@ -1008,6 +1052,9 @@ mod tests {
     #[test]
     fn format_scored_output() {
         let fact = KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: "arch".to_string(),
             key: "db".to_string(),
@@ -1031,6 +1078,8 @@ mod tests {
             archetype: KnowledgeArchetype::default(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         };
         let scored = vec![ScoredFact {
             fact: &fact,
@@ -1047,8 +1096,10 @@ mod tests {
 
     #[test]
     fn semantic_dup_flags_high_cosine_other_key() {
+        let _policy = crate::core::policy::runtime::lock_test_override(); // remember() admits through the process-wide policy
         let policy = MemoryPolicy::default();
-        let mut kn = ProjectKnowledge::new("/tmp/semdup-1");
+        let kn_root = tempfile::tempdir().unwrap();
+        let mut kn = ProjectKnowledge::new(kn_root.path().to_str().unwrap());
         kn.remember(
             "arch",
             "db",
@@ -1084,8 +1135,10 @@ mod tests {
 
     #[test]
     fn semantic_dup_excludes_self_and_judged() {
+        let _policy = crate::core::policy::runtime::lock_test_override(); // remember() admits through the process-wide policy
         let policy = MemoryPolicy::default();
-        let mut kn = ProjectKnowledge::new("/tmp/semdup-2");
+        let kn_root = tempfile::tempdir().unwrap();
+        let mut kn = ProjectKnowledge::new(kn_root.path().to_str().unwrap());
         kn.remember(
             "arch",
             "db",
@@ -1115,5 +1168,36 @@ mod tests {
         });
         let judged = semantic_duplicates_from_query(&idx, &kn, "arch", "database", &query, 0.86, 3);
         assert!(judged.is_empty(), "already-judged pairs are not re-flagged");
+    }
+
+    /// A fact that is not served now is not selected for embedding, so no
+    /// vector is derived from its value.
+    #[test]
+    fn a_fact_that_is_not_served_is_not_selected_for_embedding() {
+        use crate::core::context_admission::stored::lineage_support::{
+            governed, project, scoped, two_facts, withdraw_source,
+        };
+        let _data = governed();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        two_facts(&root, "architecture");
+        let index = KnowledgeEmbeddingIndex::new("test");
+        let selected = || -> Vec<String> {
+            scoped(&root, || {
+                let knowledge = ProjectKnowledge::load(&root).expect("knowledge");
+                let mut keys: Vec<String> = missing_current_facts(&index, &knowledge, 10)
+                    .into_iter()
+                    .map(|fact| fact.key.clone())
+                    .collect();
+                keys.sort();
+                keys
+            })
+        };
+        assert_eq!(
+            selected(),
+            ["release-duty".to_owned(), "token-check".to_owned()]
+        );
+        withdraw_source(&root);
+        assert_eq!(selected(), ["release-duty".to_owned()]);
     }
 }

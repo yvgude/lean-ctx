@@ -354,7 +354,6 @@ def _asset_covers(asset_path: str, candidate: str) -> bool:
 def _validate_coverage(root: Path, assets: list[dict[str, Any]]) -> None:
     required: list[str] = []
     for directory in (
-        "rust/src/dashboard/static/vendor",
         "rust/crates/vendor",
         "packages/pi-lean-ctx/extensions/vendor",
     ):
@@ -367,11 +366,6 @@ def _validate_coverage(root: Path, assets: list[dict[str, Any]]) -> None:
                 if candidate.is_symlink():
                     raise GenerationError(f"{candidate.relative_to(root)}: symlink is not allowed")
             for name in files:
-                required.append((Path(current) / name).relative_to(root).as_posix())
-    fonts = _repo_path(root, "rust/src/dashboard/static/fonts", "fonts")
-    for current, _, files in os.walk(fonts, topdown=True, followlinks=False):
-        for name in sorted(files):
-            if name.endswith(".woff2"):
                 required.append((Path(current) / name).relative_to(root).as_posix())
     for candidate in sorted(set(required)):
         if not any(_asset_covers(str(asset["path"]), candidate) for asset in assets):

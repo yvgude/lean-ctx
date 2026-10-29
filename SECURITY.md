@@ -67,6 +67,9 @@ lean-ctx enforces a **filesystem boundary** for tool I/O:
 - **Disabling the jail** (sandboxed environments where the OS is the boundary):
   - Config: `path_jail = false` in `~/.lean-ctx/config.toml`
   - Compile-time: the `no-jail` cargo feature
+  - Exception: the destination of `checkpoint-seal --session … --output=…` (a signed, unredacted
+    session checkpoint package) is bound to the project root and the explicit allow roots in
+    every build and configuration; neither switch disables that check
   - The legacy `LEAN_CTX_NO_JAIL=1` env var was removed in v3.7.4 and has no effect
   - Full reference: `docs/reference/appendix-paths-and-config.md` §5; `lean-ctx doctor` reports the effective jail state
 - **Symlink escape protection**: canonicalization ensures that symlinks pointing outside the jail are rejected.
@@ -112,7 +115,7 @@ In addition, roles can restrict **unsafe I/O**:
 - **Error response sanitization** — internal details logged server-side, generic codes returned to clients.
 - **MCP gateway output redaction** — downstream `ctx_tools call` output (success and error text) passes secret detection before it reaches the model.
 - **Signed handoffs and packages** — handoff bundle signatures cover the signer id and key; context packages and addons must be signed unless a local import passes `--allow-unsigned` (`allow_unsigned=true` over MCP); `/v1/a2a/handoff` rejects unsigned bundles and context packages. An embedded key proves integrity only: a signer is reported as trusted only when its key is pinned in `<data_dir>/trusted-signers.toml` (`[[signers]] subject = "<agent id or @namespace>"`, `public_key = "<hex>"`) or held by a local agent identity. Remote `pack install` / `addon add` pin the namespace publisher key on first install and refuse a different key afterwards.
-- **Bounded audit trail** — `<data_dir>/audit/trail.jsonl` rotates at 32 MiB into `trail.NNNNNN.jsonl`; the hash chain continues across segments and `verify` checks all of them. Archived segments are not deleted automatically, because removing one breaks chain verification.
+- **Bounded audit trail** — `<data_dir>/audit/trail.jsonl` is sealed once it reaches 64 MiB or the UTC day of its last entry has passed: a signed seal entry closes it and it moves to `trail.segments/<seq>.jsonl` (six-digit sequence number). The next active file links to that seal, so the hash chain runs unbroken through every segment and `verify` checks all of them. Sealed segments are never written again and never deleted, because removing one breaks chain verification.
 
 **Optional network activity (review effective configuration):**
 - **Update check**: a lightweight daily GET to `api.github.com/repos/yvgude/lean-ctx/releases/latest` to notify you of new versions. Sends only the current version as User-Agent. Disable with `update_check_disabled = true` in `~/.lean-ctx/config.toml` or `LEAN_CTX_NO_UPDATE_CHECK=1`.

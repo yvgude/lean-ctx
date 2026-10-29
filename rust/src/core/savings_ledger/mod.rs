@@ -6,9 +6,8 @@
 
 pub mod combined;
 pub mod event;
-pub mod evidence_projection;
 pub mod observation;
-pub mod push;
+pub mod project_scope;
 pub mod roi;
 pub mod signed_batch;
 pub mod store;
@@ -18,16 +17,10 @@ mod migration_tests;
 
 pub use combined::CombinedSavingsReport;
 pub use event::{MECHANISM_CACHING, MECHANISM_COMPRESSION, MECHANISM_ROUTING, SavingsEvent};
-pub use evidence_projection::{
-    LedgerAttributionLinkV2, LedgerEvidenceProjectionV2, LedgerEvidenceSourceBindingV2,
-    LedgerProjectionErrorV2, VerifiedLedgerSnapshotV2, load_projection_artifact_v2,
-    project_settlement_attribution_v2,
-};
-pub use roi::{RoiReport, roi_report};
+pub use project_scope::ProjectScope;
+pub use roi::{RoiReport, roi_report, roi_report_for};
 pub use signed_batch::{BatchVerifyResult, SignedSavingsBatchV1};
-pub use store::{
-    LedgerSnapshotReadErrorV2, LedgerSummary, VerifyResult, read_verified_snapshot_v2,
-};
+pub use store::{LedgerSummary, VerifyResult};
 
 use std::sync::OnceLock;
 
@@ -136,15 +129,21 @@ fn recorded_model(
 fn repo_hash() -> &'static str {
     static CACHE: OnceLock<String> = OnceLock::new();
     CACHE.get_or_init(|| {
-        use sha2::{Digest, Sha256};
         let cwd = std::env::current_dir()
             .map(|p| p.to_string_lossy().into_owned())
             .unwrap_or_default();
-        let mut hasher = Sha256::new();
-        hasher.update(cwd.as_bytes());
-        let hex = crate::core::agent_identity::hex_encode(&hasher.finalize());
-        hex.get(..16).unwrap_or(&hex).to_string()
+        hash_folder(&cwd)
     })
+}
+
+/// The ledger's attribution for a folder: the first 16 hex digits of SHA-256
+/// over its path text.
+pub(crate) fn hash_folder(folder: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(folder.as_bytes());
+    let hex = crate::core::agent_identity::hex_encode(&hasher.finalize());
+    hex.get(..16).unwrap_or(&hex).to_string()
 }
 
 /// Per-agent attribution of each event (client + bus identity, or host);
@@ -393,7 +392,14 @@ pub fn record_tool_event_with_stream(
 /// Best-effort append of a *caching* savings event: provider prompt-cache reads billed
 /// below the input rate. `discount_usd` must be the measured price difference
 /// (input rate − cache-read rate) × cache-read tokens for the serving model.
-pub fn record_caching_event(model: &str, cache_read_tokens: u64, discount_usd: f64) {
+/// `project_key` is the project of the request (the folder its agent named);
+/// without one the event carries the recording process's folder.
+pub fn record_caching_event(
+    model: &str,
+    cache_read_tokens: u64,
+    discount_usd: f64,
+    project_key: Option<&str>,
+) {
     if cache_read_tokens == 0 || discount_usd <= 0.0 || !enabled() {
         return;
     }
@@ -413,6 +419,9 @@ pub fn record_caching_event(model: &str, cache_read_tokens: u64, discount_usd: f
     event.baseline_tokens = cache_read_tokens;
     event.actual_tokens = cache_read_tokens;
     event.saved_usd = discount_usd;
+    if let Some(key) = project_key {
+        key.clone_into(&mut event.repo_hash);
+    }
     append_with_unified(&path, event, None);
 }
 
@@ -453,6 +462,16 @@ pub fn summary() -> LedgerSummary {
     store::default_path()
         .map(|p| store::summarize(&p))
         .unwrap_or_default()
+}
+
+/// [`summary`] over one project's events, or over the whole ledger for `None`.
+pub fn summary_for(scope: Option<&ProjectScope>) -> LedgerSummary {
+    match scope {
+        None => summary(),
+        Some(scope) => store::default_path()
+            .map(|p| store::summarize_scoped(&p, scope))
+            .unwrap_or_default(),
+    }
 }
 
 /// Per-day `(day, bounce_events, read_events)` for the last `days` days —

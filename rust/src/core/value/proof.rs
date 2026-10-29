@@ -105,6 +105,19 @@ pub fn build_from(
     session: Option<&str>,
     live: Option<ValueSnapshot>,
 ) -> Proof {
+    build_scoped(ledger_path, trail_path, session, live, None)
+}
+
+/// [`build_from`] narrowed to one project's ledger events and audit entries
+/// (`None`: every project). An audit entry without a session belongs to no
+/// one project, so a project's proof leaves it out.
+pub fn build_scoped(
+    ledger_path: Option<&Path>,
+    trail_path: Option<&Path>,
+    session: Option<&str>,
+    live: Option<ValueSnapshot>,
+    scope: Option<&savings_ledger::ProjectScope>,
+) -> Proof {
     let ledger_verify = ledger_path.map_or_else(savings_ledger::VerifyResult::empty, |p| {
         savings_ledger::store::verify(p)
     });
@@ -139,7 +152,9 @@ pub fn build_from(
     };
 
     for ev in &events {
-        if !in_session(ev.session_id.as_deref(), session) {
+        if !in_session(ev.session_id.as_deref(), session)
+            || scope.is_some_and(|scope| !scope.holds_event(ev))
+        {
             continue;
         }
         if ev.saved_tokens == 0 && ev.bounce_adjustment == 0 {
@@ -155,24 +170,39 @@ pub fn build_from(
     }
 
     if let Some(path) = trail_path {
-        let verify = audit_trail::verify_chain_at(path);
+        // The lifetime proof over an intact chain comes from the verifier's
+        // (incremental) state; only a session view or a broken chain reads
+        // every entry again.
+        let (verify, evidence) = audit_trail::verified_security_at(path);
+        if let (None, None, Some(evidence)) = (session, scope, evidence) {
+            proof.audit.entries = verify.total_entries;
+            proof.audit.intact = verify.valid;
+            proof.audit.first_invalid_at = verify.first_invalid_at;
+            proof.security = evidence.counts;
+            proof.audit_evidence = Evidence {
+                entries: evidence.entries,
+                first_hash: evidence.first_hash,
+                last_hash: evidence.last_hash,
+            };
+            return proof;
+        }
+        let entries: Vec<AuditEntry> = audit_trail::load_all_at(path);
+        proof.audit.entries = verify.total_entries.max(entries.len());
         proof.audit.intact = verify.valid;
         proof.audit.first_invalid_at = verify.first_invalid_at;
-        // Streams every rotated segment plus the active one (GHSA-jhf9-3pv4-m469).
-        let mut listed = 0usize;
-        audit_trail::for_each_entry_at(path, |entry: AuditEntry| {
-            listed += 1;
+        for entry in &entries {
             let Some((kind, n, entry_session)) = entry.action.as_deref().and_then(parse_action)
             else {
-                return;
+                continue;
             };
-            if !in_session(entry_session, session) {
-                return;
+            if !in_session(entry_session, session)
+                || scope.is_some_and(|scope| !scope.holds_session(entry_session))
+            {
+                continue;
             }
             proof.security.add(kind, n);
             proof.audit_evidence.push(&entry.entry_hash);
-        });
-        proof.audit.entries = verify.total_entries.max(listed);
+        }
     }
     proof
 }
@@ -203,6 +233,13 @@ pub fn build(session: Option<&str>, lifetime: bool) -> Proof {
     )
 }
 
+/// The lifetime proof over the local chains for one project.
+pub fn build_lifetime_for(scope: &savings_ledger::ProjectScope) -> Proof {
+    let ledger = savings_ledger::store::default_path();
+    let trail = audit_trail::default_trail_path();
+    build_scoped(ledger.as_deref(), trail.as_deref(), None, None, Some(scope))
+}
+
 /// ✓ measured security events since `cutoff` (lifetime when `None`), from the
 /// local audit trail. `None` when the trail fails verification, so a tampered
 /// chain never reaches a report or share card.
@@ -219,23 +256,18 @@ pub fn verified_security_evidence() -> Option<(SecurityCounts, Evidence)> {
     security_evidence_at(&audit_trail::default_trail_path()?)
 }
 
+/// Aggregated by the verifying pass itself, so a resumed (checkpointed)
+/// verification reads only the appended entries for the evidence too.
 fn security_evidence_at(path: &Path) -> Option<(SecurityCounts, Evidence)> {
-    if !audit_trail::verify_chain_at(path).valid {
-        return None;
-    }
-    let mut counts = SecurityCounts::default();
-    let mut evidence = Evidence::default();
-    audit_trail::for_each_entry_at(path, |entry| {
-        let Some((kind, n, _)) = entry.action.as_deref().and_then(parse_action) else {
-            return;
-        };
-        if !kind.in_signed_tally() {
-            return;
-        }
-        counts.add(kind, n);
-        evidence.push(&entry.entry_hash);
-    });
-    Some((counts, evidence))
+    let tally = audit_trail::verified_signed_tally_at(path)?;
+    Some((
+        tally.counts,
+        Evidence {
+            entries: tally.entries,
+            first_hash: tally.first_hash,
+            last_hash: tally.last_hash,
+        },
+    ))
 }
 
 fn security_since_at(path: &Path, cutoff: Option<DateTime<Utc>>) -> Option<SecurityCounts> {
@@ -243,19 +275,19 @@ fn security_since_at(path: &Path, cutoff: Option<DateTime<Utc>>) -> Option<Secur
         return None;
     }
     let mut counts = SecurityCounts::default();
-    audit_trail::for_each_entry_at(path, |entry| {
+    for entry in audit_trail::load_all_at(path) {
         if let Some(cutoff) = cutoff {
             let Ok(ts) = DateTime::parse_from_rfc3339(&entry.timestamp) else {
-                return;
+                continue;
             };
             if ts.with_timezone(&Utc) < cutoff {
-                return;
+                continue;
             }
         }
         if let Some((kind, n, _)) = entry.action.as_deref().and_then(parse_action) {
             counts.add(kind, n);
         }
-    });
+    }
     Some(counts)
 }
 
@@ -465,6 +497,44 @@ mod tests {
         assert_eq!(proof.audit.entries, 3);
     }
 
+    /// A project's proof counts the events recorded in its folders or its
+    /// sessions, over its whole lifetime; entries without a session stay out.
+    #[test]
+    fn project_scope_counts_only_that_projects_events_and_sessions() {
+        let (dir, ledger, trail) = fixture();
+        let project = dir.path().join("project");
+        std::fs::create_dir_all(project.join(".git")).unwrap();
+        let root = project.to_string_lossy().into_owned();
+        let other = dir.path().join("other");
+        std::fs::create_dir_all(other.join(".git")).unwrap();
+        let other_root = other.to_string_lossy().into_owned();
+        let mut folder_event = ledger_event(40, None);
+        folder_event.repo_hash = savings_ledger::hash_folder(&root);
+        savings_ledger::store::append(&ledger, folder_event).unwrap();
+        let scope = savings_ledger::ProjectScope::from_sessions(
+            &project,
+            [("s1", root.as_str()), ("s2", other_root.as_str())].into_iter(),
+        );
+
+        let proof = build_scoped(Some(&ledger), Some(&trail), None, None, Some(&scope));
+        assert!(!proof.tampered());
+        assert_eq!(
+            proof.tokens_saved, 1_040,
+            "session s1 plus the project's folder"
+        );
+        assert_eq!(proof.ledger_evidence.entries, 2);
+        assert_eq!(proof.security.secrets_redacted, 2);
+        assert_eq!(
+            proof.security.shell_blocked, 0,
+            "s2 worked in another project"
+        );
+        assert_eq!(proof.security.total(), 2);
+        assert_eq!(
+            proof.ledger.entries, 4,
+            "the chain check still covers the whole ledger"
+        );
+    }
+
     #[test]
     fn lifetime_scope_counts_everything() {
         let (_dir, ledger, trail) = fixture();
@@ -475,29 +545,6 @@ mod tests {
         assert!(text.contains("✓ measured"), "{text}");
         assert!(text.contains("2 secrets kept out of context"), "{text}");
         assert!(text.contains("savings ledger intact (3 entries)"), "{text}");
-    }
-
-    /// GHSA-jhf9-3pv4-m469: after the trail rotates, the proof and the
-    /// verified security counts include the archived segments.
-    #[test]
-    fn rotated_trail_segments_are_counted() {
-        let (dir, ledger, trail) = fixture();
-        // Rotate as the writer does: the full segment becomes the archive and
-        // the chain continues in a fresh active segment.
-        std::fs::rename(&trail, dir.path().join("trail.000001.jsonl")).unwrap();
-        security(&trail, "secret_redacted:4|session=s1");
-        assert!(audit_trail::verify_chain_at(&trail).valid);
-
-        let proof = build_from(Some(&ledger), Some(&trail), None, None);
-        assert!(!proof.tampered());
-        assert_eq!(proof.audit.entries, 4);
-        assert_eq!(proof.security.secrets_redacted, 6);
-        assert_eq!(proof.audit_evidence.entries, 3);
-        let since = security_since_at(&trail, None).expect("verified");
-        assert_eq!(since.secrets_redacted, 6);
-        assert_eq!(since.shell_blocked, 1);
-        let (tally, _) = security_evidence_at(&trail).expect("verified");
-        assert_eq!(tally.secrets_redacted, 6);
     }
 
     #[test]
@@ -578,6 +625,95 @@ mod tests {
         )
         .unwrap();
         assert!(security_evidence_at(&trail).is_none());
+    }
+
+    /// The evidence a full parse of the trail yields (the pre-checkpoint
+    /// algorithm): the reference the incremental aggregate must reproduce.
+    fn full_parse_evidence(path: &Path) -> (SecurityCounts, Evidence) {
+        let mut counts = SecurityCounts::default();
+        let mut evidence = Evidence::default();
+        for entry in audit_trail::load_all_at(path) {
+            if let Some((kind, n, _)) = entry.action.as_deref().and_then(parse_action) {
+                if kind.in_signed_tally() {
+                    counts.add(kind, n);
+                    evidence.push(&entry.entry_hash);
+                }
+            }
+        }
+        (counts, evidence)
+    }
+
+    /// In the data dir the evidence comes from the checkpointed pass, which
+    /// reads only appended entries; after every append it must serialize
+    /// byte-identically to a full parse.
+    #[test]
+    fn resumed_security_evidence_matches_a_full_parse_after_appends() {
+        let iso = crate::core::data_dir::isolated_data_dir();
+        let trail = audit_trail::default_trail_path().unwrap();
+        let bytes = |(counts, evidence): &(SecurityCounts, Evidence)| {
+            serde_json::to_string(&(counts, evidence)).unwrap()
+        };
+        security(&trail, "pii_redacted:4");
+        assert_eq!(
+            bytes(&security_evidence_at(&trail).unwrap()),
+            bytes(&full_parse_evidence(&trail))
+        );
+        let checkpoints = iso.path().join("audit").join("verified");
+        assert!(
+            std::fs::read_dir(&checkpoints).unwrap().next().is_some(),
+            "the first pass leaves a checkpoint to resume from"
+        );
+        for action in [
+            "secret_redacted:2|session=s1",
+            "tool_call",
+            "shell_blocked:1",
+            "path_blocked:3|session=s2",
+        ] {
+            security(&trail, action);
+            assert_eq!(
+                bytes(&security_evidence_at(&trail).unwrap()),
+                bytes(&full_parse_evidence(&trail)),
+                "after appending {action}"
+            );
+        }
+        assert_eq!(security_evidence_at(&trail).unwrap().1.entries, 3);
+    }
+
+    /// The lifetime proof takes its security counts and evidence from the
+    /// verifier's (resumed) state instead of reading the trail again; it must
+    /// equal a full parse after every append, every kind included.
+    #[test]
+    fn lifetime_proof_from_the_verified_state_matches_a_full_parse() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let trail = audit_trail::default_trail_path().unwrap();
+        let bytes = |counts: &SecurityCounts, evidence: &Evidence| {
+            serde_json::to_string(&(counts, evidence)).unwrap()
+        };
+        for action in [
+            "pii_redacted:4",
+            "secret_redacted:2|session=s1",
+            "tool_call",
+            "shell_blocked:1",
+            "path_blocked:3|session=s2",
+        ] {
+            security(&trail, action);
+            let proof = build_from(None, Some(&trail), None, None);
+            let mut counts = SecurityCounts::default();
+            let mut evidence = Evidence::default();
+            for entry in audit_trail::load_all_at(&trail) {
+                if let Some((kind, n, _)) = entry.action.as_deref().and_then(parse_action) {
+                    counts.add(kind, n);
+                    evidence.push(&entry.entry_hash);
+                }
+            }
+            assert_eq!(
+                bytes(&proof.security, &proof.audit_evidence),
+                bytes(&counts, &evidence),
+                "after appending {action}"
+            );
+            assert_eq!(proof.audit.entries, audit_trail::load_all_at(&trail).len());
+            assert!(!proof.tampered());
+        }
     }
 
     #[test]

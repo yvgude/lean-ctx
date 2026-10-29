@@ -1,13 +1,31 @@
-use super::model::{Gotcha, GotchaStore, MAX_PENDING};
+use super::model::{Gotcha, GotchaStore, MAX_GOTCHAS, MAX_PENDING};
 use std::path::PathBuf;
 
 impl GotchaStore {
     pub fn load(project_root: &str) -> Self {
+        let capacity = crate::core::config::Config::load()
+            .memory_policy_effective()
+            .map_or(MAX_GOTCHAS, |policy| policy.gotcha.max_gotchas_per_project);
+        let mut store = Self::load_unbounded(project_root);
+        store.capacity = capacity;
+        store
+    }
+
+    fn load_unbounded(project_root: &str) -> Self {
         let hash = crate::core::project_hash::hash_project_root(project_root);
         let path = gotcha_path(&hash);
+        // The project's identity changed and moved its hash: the gotchas of
+        // the partition whose knowledge records this path are its own.
+        if !path.exists()
+            && let Some(old) =
+                crate::core::legacy_adoption::drifted_knowledge_partition(project_root)
+        {
+            let _ = crate::core::legacy_adoption::copy_knowledge_partition(&old, project_root);
+        }
         if let Ok(content) = std::fs::read_to_string(&path)
             && let Ok(mut store) = serde_json::from_str::<GotchaStore>(&content)
         {
+            store.project_hash.clone_from(&hash);
             store.apply_decay();
             store.cross_session_boost();
             // #451 shell-ding: keep persisted pending errors so a fail→fix that
@@ -34,9 +52,11 @@ impl GotchaStore {
         let json = serde_json::to_string_pretty(self).map_err(|e| e.to_string())?;
         std::fs::write(&tmp, &json).map_err(|e| e.to_string())?;
         std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
-        let universal = self.extract_universal();
-        if !universal.is_empty() {
-            let _ = save_universal_gotchas(&universal);
+        if universal_gotchas_enabled() {
+            let universal = self.extract_universal();
+            if !universal.is_empty() {
+                let _ = save_universal_gotchas(&universal);
+            }
         }
         Ok(())
     }
@@ -54,9 +74,17 @@ fn gotcha_path(project_hash: &str) -> PathBuf {
 // Universal gotchas (cross-project)
 // ---------------------------------------------------------------------------
 
+/// `boundary_policy.universal_gotchas_enabled` as configured. Off, no
+/// gotcha leaves its project: none is published to or read from the
+/// cross-project file.
+fn universal_gotchas_enabled() -> bool {
+    crate::core::config::Config::load_arc()
+        .boundary_policy
+        .universal_gotchas_enabled
+}
+
 pub fn load_universal_gotchas() -> Vec<Gotcha> {
-    let policy = crate::core::memory_boundary::BoundaryPolicy::default();
-    if !policy.universal_gotchas_enabled {
+    if !universal_gotchas_enabled() {
         return Vec::new();
     }
     let Ok(dir) = crate::core::data_dir::lean_ctx_data_dir() else {
@@ -123,5 +151,32 @@ mod tests {
         );
         assert_eq!(p2.gotchas.len(), 1, "fix correlates across processes");
         assert_eq!(p2.pending_errors.len(), 0, "pending consumed by the fix");
+    }
+
+    /// AP05-G10: the switch read the built-in default (always on), so a
+    /// configured `universal_gotchas_enabled = false` never stopped gotchas
+    /// from crossing projects.
+    #[test]
+    fn disabled_universal_gotchas_are_neither_read_nor_written() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let config = crate::core::paths::config_dir_read_only().expect("isolated config dir");
+        std::fs::create_dir_all(&config).unwrap();
+        std::fs::write(
+            config.join("config.toml"),
+            "[boundary_policy]\nuniversal_gotchas_enabled = false\n",
+        )
+        .unwrap();
+        let foreign = Gotcha::new(
+            super::super::model::GotchaCategory::Build,
+            super::super::model::GotchaSeverity::Critical,
+            "foreign-project-trigger",
+            "foreign fix",
+            super::super::model::GotchaSource::AgentReported {
+                session_id: "s".into(),
+            },
+            "s",
+        );
+        save_universal_gotchas(std::slice::from_ref(&foreign)).unwrap();
+        assert!(load_universal_gotchas().is_empty());
     }
 }

@@ -1,0 +1,45 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "rate_limited",
+          "message": "Too many requests. Try again in 30 s.",
+          "retry_after_s": 30
+        }
+      },
+      "status": 429
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/public/vaults/acme/payments/health",
+  "request": null,
+  "response": {
+    "body": {
+      "active_nodes": 13,
+      "contradicted_pct": 0,
+      "evidenced_pct": 61.53,
+      "replicas": {
+        "count": 2,
+        "last_sync": "2026-10-24T08:30:00Z",
+        "oldest_sync": "2026-10-23T18:00:00Z"
+      },
+      "review_sla": {
+        "median_s": 5400,
+        "overdue": 0,
+        "p90_s": 14400
+      },
+      "sealed": false,
+      "stale_pct": 0,
+      "trust": {
+        "high": 6,
+        "low": 1,
+        "normal": 5,
+        "unconfirmed": 1
+      },
+      "unconfirmed_pct": 7.69
+    },
+    "status": 200
+  },
+  "route": "W44"
+}

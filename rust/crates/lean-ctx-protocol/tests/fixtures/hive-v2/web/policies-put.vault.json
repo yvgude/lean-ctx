@@ -1,0 +1,56 @@
+{
+  "route": "W80",
+  "method": "PUT",
+  "path": "/api/v1/orgs/acme/policies/vault/3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c",
+  "request": {
+    "document": {
+      "schema": "leanctx.hive.policy/v1",
+      "security": {},
+      "context": {},
+      "sharing": {
+        "auto_merge_results": false,
+        "cross_team_sharing": false
+      }
+    },
+    "expected_version": 0
+  },
+  "response": {
+    "status": 201,
+    "body": {
+      "level": "vault",
+      "scope": "3f2a1b0c9d8e7f6a5b4c3d2e1f0a9b8c",
+      "version": 1,
+      "document": {
+        "schema": "leanctx.hive.policy/v1",
+        "security": {},
+        "context": {},
+        "sharing": {
+          "auto_merge_results": false,
+          "cross_team_sharing": false
+        }
+      },
+      "digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+      "updated_by": {
+        "kind": "user",
+        "user": {
+          "id": "0b9a8c7d-6e5f-4a3b-9c2d-1e0f9a8b7c6d",
+          "name": "Ada"
+        },
+        "instance": null,
+        "agent": null
+      },
+      "updated_at": "2026-10-25T21:12:00Z"
+    }
+  },
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "limit_reached",
+          "message": "at most 32 vault policies"
+        }
+      },
+      "status": 409
+    }
+  ]
+}

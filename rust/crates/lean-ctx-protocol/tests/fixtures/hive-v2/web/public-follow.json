@@ -1,0 +1,24 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "unauthorized",
+          "message": "Sign in to follow this vault."
+        }
+      },
+      "status": 401
+    }
+  ],
+  "method": "PUT",
+  "path": "/api/v1/public/vaults/acme/payments/follow",
+  "request": null,
+  "response": {
+    "body": {
+      "followers": 5,
+      "following": true
+    },
+    "status": 200
+  },
+  "route": "W46"
+}

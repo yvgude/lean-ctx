@@ -23,7 +23,44 @@ pub(crate) struct PackageBuilder {
     content: PackageContent,
     project_hash: Option<String>,
     session_id: Option<String>,
+    /// The last update of the session a session layer was taken from (K04).
+    session_time: Option<chrono::DateTime<Utc>>,
     level: u32,
+    redistributable: Option<bool>,
+    scope_filter: ContentScope,
+}
+
+/// Decides whether a fact goes into the package.
+pub(crate) type FactFilter = Box<dyn Fn(&crate::core::knowledge::KnowledgeFact) -> bool>;
+
+/// What of the project's stores a build takes (V01). The default takes
+/// everything, as builds did before a selection existed.
+pub(crate) struct ContentScope {
+    /// The facts that go in; `None` = every fact.
+    pub facts: Option<FactFilter>,
+    /// Knowledge patterns and insights (dropped when facts are filtered).
+    pub knowledge_extras: bool,
+    /// Gotcha nodes of the context graph.
+    pub gotchas: bool,
+    /// Code-symbol nodes of the context graph.
+    pub code: bool,
+}
+
+impl Default for ContentScope {
+    fn default() -> Self {
+        Self {
+            facts: None,
+            knowledge_extras: true,
+            gotchas: true,
+            code: true,
+        }
+    }
+}
+
+impl ContentScope {
+    fn takes(&self, fact: &crate::core::knowledge::KnowledgeFact) -> bool {
+        self.facts.as_ref().is_none_or(|admits| admits(fact))
+    }
 }
 
 impl PackageBuilder {
@@ -40,8 +77,24 @@ impl PackageBuilder {
             content: PackageContent::default(),
             project_hash: None,
             session_id: None,
+            session_time: None,
             level: 1,
+            redistributable: None,
+            scope_filter: ContentScope::default(),
         }
+    }
+
+    /// Grant recipients the right to pass the package on (V02).
+    pub(crate) fn redistributable(mut self) -> Self {
+        self.redistributable = Some(true);
+        self
+    }
+
+    /// Restrict what the `add_*_from_project` steps and the context graph
+    /// take from the project's stores (V01).
+    pub(crate) fn content_scope(mut self, scope: ContentScope) -> Self {
+        self.scope_filter = scope;
+        self
     }
 
     pub(crate) fn description(mut self, desc: &str) -> Self {
@@ -101,14 +154,30 @@ impl PackageBuilder {
         // extractor). ctxpkg keeps the full fact history for fidelity.
         let snapshot = crate::core::knowledge::KnowledgeSnapshot::collect(project_root);
 
-        if snapshot.is_empty() {
+        // V01: the selected facts, each carrying its status (verified or
+        // assumption) so the recipient sees what rests on a source.
+        let facts: Vec<_> = snapshot
+            .facts
+            .into_iter()
+            .filter(|fact| self.scope_filter.takes(fact))
+            .map(|mut fact| {
+                fact.status = Some(fact.status());
+                fact
+            })
+            .collect();
+        let (patterns, insights) = if self.scope_filter.knowledge_extras {
+            (snapshot.patterns, snapshot.insights)
+        } else {
+            (Vec::new(), Vec::new())
+        };
+        if facts.is_empty() && patterns.is_empty() && insights.is_empty() {
             return self;
         }
 
         self.content.knowledge = Some(KnowledgeLayer {
-            facts: snapshot.facts,
-            patterns: snapshot.patterns,
-            insights: snapshot.insights,
+            facts,
+            patterns,
+            insights,
             exported_at: Utc::now(),
         });
 
@@ -149,6 +218,9 @@ impl PackageBuilder {
             return self;
         }
 
+        // V02: a package leaves this machine, so it carries the journal's
+        // paths relative to the project root, and none outside it.
+        let root = session.project_root.as_deref();
         let layer = SessionLayer {
             task_description: journal.task.map(|task| task.description),
             findings: journal
@@ -156,7 +228,7 @@ impl PackageBuilder {
                 .into_iter()
                 .map(|finding| SessionFinding {
                     summary: finding.summary,
-                    file: finding.file,
+                    file: finding.file.and_then(|file| portable_path(&file, root)),
                     line: finding.line,
                 })
                 .collect(),
@@ -172,11 +244,12 @@ impl PackageBuilder {
             files_touched: journal
                 .files_touched
                 .into_iter()
-                .map(|file| file.path)
+                .filter_map(|file| portable_path(&file.path, root))
                 .collect(),
             exported_at: Utc::now(),
         };
 
+        self.session_time = Some(session.updated_at);
         self.content.session = Some(layer);
         self
     }
@@ -211,7 +284,8 @@ impl PackageBuilder {
         let mut fact_id_map: std::collections::HashMap<String, String> =
             std::collections::HashMap::new();
 
-        for fact in &knowledge.facts {
+        let scope = &self.scope_filter;
+        for fact in knowledge.facts.iter().filter(|fact| scope.takes(fact)) {
             let id = next_id();
             let mut node = ContextNode::fact(&id, &fact.value, &fact.category);
             node.confidence = Some(fact.confidence);
@@ -225,7 +299,8 @@ impl PackageBuilder {
             graph.add_node(node);
         }
 
-        for pattern in &knowledge.patterns {
+        let extras = scope.knowledge_extras;
+        for pattern in knowledge.patterns.iter().filter(|_| extras) {
             let id = next_id();
             let mut node = ContextNode::fact(&id, &pattern.description, "pattern");
             node.node_type = "pattern".into();
@@ -233,7 +308,7 @@ impl PackageBuilder {
             graph.add_node(node);
         }
 
-        for insight in &knowledge.history {
+        for insight in knowledge.history.iter().filter(|_| extras) {
             let id = next_id();
             let mut node = ContextNode::fact(&id, &insight.summary, "insight");
             node.node_type = "insight".into();
@@ -242,7 +317,8 @@ impl PackageBuilder {
         }
 
         let gotcha_store = crate::core::gotcha_tracker::GotchaStore::load(project_root);
-        for g in &gotcha_store.gotchas {
+        let gotchas = scope.gotchas;
+        for g in gotcha_store.gotchas.iter().filter(|_| gotchas) {
             let id = next_id();
             let mut node = ContextNode::gotcha(&id, &g.trigger, &g.resolution);
             node.category = Some(g.category.short_label().to_string());
@@ -252,7 +328,9 @@ impl PackageBuilder {
         }
 
         if self.level >= 2 {
-            if let Ok(code_graph) = crate::core::property_graph::CodeGraph::open(project_root) {
+            if scope.code
+                && let Ok(code_graph) = crate::core::property_graph::CodeGraph::open(project_root)
+            {
                 let v1_nodes = export_graph_nodes(&code_graph);
                 let v1_edges = export_graph_edges(&code_graph);
 
@@ -359,7 +437,7 @@ impl PackageBuilder {
         self
     }
 
-    pub(crate) fn build(self) -> Result<(PackageManifest, PackageContent), String> {
+    pub(crate) fn build(mut self) -> Result<(PackageManifest, PackageContent), String> {
         if self.name.is_empty() {
             return Err("package name is required".into());
         }
@@ -368,6 +446,23 @@ impl PackageBuilder {
         }
         if self.content.is_empty() {
             return Err("package has no content — add at least one layer".into());
+        }
+
+        // K04: the same sources build to the same bytes — every layer and
+        // the manifest carry the build time, not the clock.
+        let stamp = build_time(&self.content, self.session_time);
+        let content = &mut self.content;
+        for exported_at in [
+            content.knowledge.as_mut().map(|l| &mut l.exported_at),
+            content.graph.as_mut().map(|l| &mut l.exported_at),
+            content.session.as_mut().map(|l| &mut l.exported_at),
+            content.patterns.as_mut().map(|l| &mut l.exported_at),
+            content.gotchas.as_mut().map(|l| &mut l.exported_at),
+        ]
+        .into_iter()
+        .flatten()
+        {
+            *exported_at = stamp;
         }
 
         let is_v2 = self.content.context_graph.is_some() || self.content.checkpoint.is_some();
@@ -422,7 +517,7 @@ impl PackageBuilder {
             description: self.description,
             author: self.author,
             scope: self.scope,
-            created_at: Utc::now(),
+            created_at: stamp,
             updated_at: None,
             layers,
             dependencies: Vec::new(),
@@ -444,12 +539,70 @@ impl PackageBuilder {
             signature: None,
             graph_summary,
             marketplace: None,
+            redistributable: self.redistributable,
         };
 
         manifest.validate().map_err(|errs| errs.join("; "))?;
 
         Ok((manifest, self.content))
     }
+}
+
+/// The time a build is stamped with (K04): `SOURCE_DATE_EPOCH` when set (the
+/// reproducible-builds convention), else the newest time the sources record
+/// — facts, insights, patterns, the session's last update — else the Unix
+/// epoch, for sources that record no time (a graph- or gotcha-only build).
+/// Never the clock: building the same sources twice gives the same bytes.
+fn build_time(
+    content: &PackageContent,
+    session_time: Option<chrono::DateTime<Utc>>,
+) -> chrono::DateTime<Utc> {
+    if let Some(epoch) = std::env::var("SOURCE_DATE_EPOCH")
+        .ok()
+        .and_then(|value| value.trim().parse::<i64>().ok())
+        .and_then(|seconds| chrono::DateTime::from_timestamp(seconds, 0))
+    {
+        return epoch;
+    }
+    let mut times: Vec<chrono::DateTime<Utc>> = session_time.into_iter().collect();
+    if let Some(knowledge) = &content.knowledge {
+        times.extend(
+            knowledge
+                .facts
+                .iter()
+                .flat_map(|f| [f.created_at, f.last_confirmed]),
+        );
+        times.extend(knowledge.insights.iter().map(|i| i.timestamp));
+        times.extend(knowledge.patterns.iter().map(|p| p.created_at));
+    }
+    if let Some(patterns) = &content.patterns {
+        times.extend(patterns.patterns.iter().map(|p| p.created_at));
+    }
+    times
+        .into_iter()
+        .max()
+        .unwrap_or(chrono::DateTime::UNIX_EPOCH)
+}
+
+/// A journal path as a package may carry it: a relative path as it is, an
+/// absolute one relative to the session's project root, and one outside the
+/// root (or without a known root) not at all.
+fn portable_path(path: &str, root: Option<&str>) -> Option<String> {
+    let candidate = std::path::Path::new(path);
+    // Anchored is more than `is_absolute`: on Windows `/home/me/x` (root, no
+    // drive) and `C:x` (drive, no root) count as relative there, yet both
+    // name a local place and must not be carried as they are.
+    let anchored = candidate.has_root()
+        || matches!(
+            candidate.components().next(),
+            Some(std::path::Component::Prefix(_))
+        );
+    if !anchored {
+        return Some(path.to_string());
+    }
+    let relative = candidate.strip_prefix(root?).ok()?;
+    let relative = relative.to_string_lossy().replace('\\', "/");
+    (!relative.is_empty()).then_some(relative)
 }
 
 fn export_graph_nodes(graph: &crate::core::property_graph::CodeGraph) -> Vec<GraphNodeExport> {
@@ -480,7 +633,18 @@ fn export_graph_nodes(graph: &crate::core::property_graph::CodeGraph) -> Vec<Gra
     let mut nodes = Vec::new();
     for row in rows {
         match row {
-            Ok(n) => nodes.push(n),
+            // Serve-time source check (G04): a package is a delivery. A node
+            // of a file that may not be served now is not exported.
+            Ok(n) => {
+                let served = if n.kind == "symbol" {
+                    graph.serves_symbol(&n.file_path, &n.name)
+                } else {
+                    graph.serves_file(&n.file_path)
+                };
+                if served {
+                    nodes.push(n);
+                }
+            }
             Err(e) => tracing::warn!("ctxpkg: skipping graph node: {e}"),
         }
     }
@@ -519,7 +683,12 @@ fn export_graph_edges(graph: &crate::core::property_graph::CodeGraph) -> Vec<Gra
     let mut edges = Vec::new();
     for row in rows {
         match row {
-            Ok(e) => edges.push(e),
+            // Both ends must still be served (G04).
+            Ok(e) => {
+                if graph.serves_file(&e.source_path) && graph.serves_file(&e.target_path) {
+                    edges.push(e);
+                }
+            }
             Err(e) => tracing::warn!("ctxpkg: skipping graph edge: {e}"),
         }
     }
@@ -585,12 +754,93 @@ mod tests {
         assert!(result.unwrap_err().contains("no content"));
     }
 
+    /// V02: the session layer takes the journal only — no conversation text,
+    /// query or intent of the session — and no local path: journal paths are
+    /// carried relative to the project root, and paths outside it are dropped.
     #[test]
-    fn sha256_is_deterministic() {
-        let a = sha256_hex(b"hello world");
-        let b = sha256_hex(b"hello world");
-        assert_eq!(a, b);
-        assert_eq!(a.len(), 64);
+    fn a_session_layer_carries_no_private_text_and_no_local_path() {
+        use crate::core::session::{Finding, SessionState, TaskInfo};
+        let root = "/home/someone/work/project";
+        let mut session = SessionState::new();
+        session.project_root = Some(root.to_string());
+        session.shell_cwd = Some("/home/someone/private-cwd".to_string());
+        session.last_semantic_query = Some("CHAT-CANARY what my manager said".to_string());
+        session.task = Some(TaskInfo {
+            description: "ship the parser".to_string(),
+            intent: Some("CHAT-CANARY private intent".to_string()),
+            progress_pct: None,
+        });
+        for file in [
+            format!("{root}/src/lib.rs"),
+            "/etc/private.conf".to_string(),
+        ] {
+            session.findings.push(Finding {
+                file: Some(file.clone()),
+                line: Some(1),
+                summary: "parser entry".to_string(),
+                timestamp: Utc::now(),
+            });
+            session.files_touched.push(
+                serde_json::from_value(serde_json::json!({
+                    "path": file, "file_ref": null, "read_count": 1,
+                    "modified": true, "last_mode": "full", "tokens": 1
+                }))
+                .expect("file touched"),
+            );
+        }
+
+        let (_, content) = PackageBuilder::new("session-pkg", "1.0.0")
+            .add_session(&session)
+            .build()
+            .expect("build");
+        let text = serde_json::to_string(&content).expect("content");
+        for private in ["CHAT-CANARY", "/home/someone", "/etc/private.conf"] {
+            assert!(!text.contains(private), "package carries {private}");
+        }
+        let layer = content.session.expect("session layer");
+        assert_eq!(layer.files_touched, vec!["src/lib.rs".to_string()]);
+        assert_eq!(layer.findings[0].file.as_deref(), Some("src/lib.rs"));
+        assert_eq!(layer.findings[1].file, None);
+    }
+
+    #[test]
+    /// K04 (replaces a test that hashed a constant twice): building the same
+    /// sources twice gives the same bytes and the same integrity, stamped
+    /// with the sources' newest time — or `SOURCE_DATE_EPOCH` when set.
+    fn a_package_build_is_reproducible() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let project = tempfile::tempdir().expect("project");
+        let root = project.path().to_string_lossy().into_owned();
+        crate::core::knowledge::ProjectKnowledge::mutate_locked(&root, |k| {
+            k.remember(
+                "decision",
+                "parser",
+                "the parser is hand-written",
+                "fixture",
+                0.9,
+                &crate::core::memory_policy::MemoryPolicy::default(),
+            );
+        })
+        .expect("fact");
+        let build = || {
+            let (manifest, content) = PackageBuilder::new("repro", "1.0.0")
+                .add_knowledge_from_project(&root)
+                .build()
+                .expect("build");
+            serde_json::to_string(&(manifest, content)).expect("bytes")
+        };
+        let first = build();
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        assert_eq!(build(), first, "same sources, same bytes");
+
+        let _epoch = crate::test_env::VarGuard::set("SOURCE_DATE_EPOCH", "1700000000");
+        let pinned = build();
+        assert!(
+            pinned.contains("\"created_at\":\"2023-11-14T22:13:20Z\""),
+            "{pinned}"
+        );
+        assert_eq!(build(), pinned);
     }
 
     #[test]

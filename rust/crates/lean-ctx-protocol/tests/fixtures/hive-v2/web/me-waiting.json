@@ -1,0 +1,72 @@
+{
+  "errors": [],
+  "method": "GET",
+  "path": "/api/v1/me/waiting?limit=20",
+  "request": null,
+  "response": {
+    "body": {
+      "items": [
+        {
+          "action": {
+            "href": "/o/acme/reviews/"
+          },
+          "created_at": "2026-10-24T08:00:04Z",
+          "due_at": "2026-10-25T08:00:00Z",
+          "id": "wt_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "procedure_commands",
+          "place": {
+            "id": "payments",
+            "kind": "vault",
+            "name": "payments",
+            "ws": "acme"
+          },
+          "severity": "warn",
+          "title_vars": {
+            "n": 1,
+            "node_id": "n_aaaaaaaaaaaaaaaaaaaaaacaaq",
+            "place": "payments"
+          }
+        },
+        {
+          "action": {
+            "href": "/consent/cns_abcdefgh234567ab/"
+          },
+          "created_at": "2026-10-24T08:00:00Z",
+          "due_at": "2026-10-25T08:00:00Z",
+          "id": "wt_bbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "kind": "consent_request",
+          "place": null,
+          "severity": "stop",
+          "title_vars": {
+            "consent_id": "cns_abcdefgh234567ab"
+          }
+        },
+        {
+          "action": {
+            "href": "/o/acme/bus/v/payments/"
+          },
+          "created_at": "2026-10-24T09:00:00Z",
+          "due_at": null,
+          "id": "wt_cccccccccccccccccccccccccc",
+          "kind": "question_unanswered",
+          "place": {
+            "id": "payments",
+            "kind": "vault",
+            "name": "payments",
+            "ws": "acme"
+          },
+          "severity": "info",
+          "title_vars": {
+            "msg": {
+              "purged": true
+            },
+            "place": "payments"
+          }
+        }
+      ],
+      "total": 3
+    },
+    "status": 200
+  },
+  "route": "W1"
+}

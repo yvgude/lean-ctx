@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "stale_claim",
+    "message": "This claim was replaced; stop working on it."
+  }
+}

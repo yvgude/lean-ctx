@@ -6,14 +6,35 @@ use std::path::Path;
 
 pub(crate) const MAX_BYTES: u64 = 1024 * 1024;
 
+/// The one larger input: the organization policy artifact. A signed
+/// version-two artifact carries a pack of up to 1 MiB JSON-escaped, so its
+/// file may be as large as the verifier channel's artifact allowance and no
+/// larger. Reading at this width admits nothing: an artifact that is not
+/// version two is still held to [`MAX_BYTES`] by whoever interprets it.
+pub(crate) const MAX_ORG_ARTIFACT_BYTES: u64 =
+    lean_ctx_protocol::runtime_exchange::RuntimeExchangeProfile::ORG_POLICY_VERIFIER
+        .max_output_bytes() as u64;
+
 pub(crate) fn read(path: &Path, required: bool) -> Result<Option<String>, String> {
-    read_with_link_check(path, required, false)
+    read_with_link_check(path, required, false, MAX_BYTES)
 }
 
 /// A path-based write boundary cannot protect a pre-existing hardlink alias.
 /// Protected sessions therefore admit only single-link policy/trust files.
 pub(crate) fn read_protected(path: &Path, required: bool) -> Result<Option<String>, String> {
-    read_with_link_check(path, required, true)
+    read_with_link_check(path, required, true, MAX_BYTES)
+}
+
+/// [`read`] or, when `protected`, [`read_protected`] — the same checks on the
+/// same opened object — for the organization policy artifact alone, bounded
+/// by [`MAX_ORG_ARTIFACT_BYTES`]. Trust store, marker, project policy and
+/// configuration keep their own readers and limits.
+pub(crate) fn read_org_artifact(
+    path: &Path,
+    required: bool,
+    protected: bool,
+) -> Result<Option<String>, String> {
+    read_with_link_check(path, required, protected, MAX_ORG_ARTIFACT_BYTES)
 }
 
 /// Configuration supports dotfile-manager links, like `Config::load`. Its bytes
@@ -34,6 +55,7 @@ fn read_with_link_check(
     path: &Path,
     required: bool,
     reject_hardlinks: bool,
+    limit: u64,
 ) -> Result<Option<String>, String> {
     match std::fs::symlink_metadata(path) {
         Ok(metadata) if !metadata.is_file() => {
@@ -69,7 +91,7 @@ fn read_with_link_check(
             return Err("policy input reparse point rejected".into());
         }
     }
-    if !metadata.is_file() || metadata.len() > MAX_BYTES {
+    if !metadata.is_file() || metadata.len() > limit {
         return Err("policy input must be a bounded regular file".into());
     }
     // Check the opened object, not just the pathname checked before open.
@@ -107,10 +129,10 @@ fn read_with_link_check(
         return Err("protected policy link validation is unavailable on this platform".into());
     }
     let mut text = String::new();
-    file.take(MAX_BYTES + 1)
+    file.take(limit + 1)
         .read_to_string(&mut text)
         .map_err(|_| "policy input cannot be read as UTF-8")?;
-    if text.len() as u64 > MAX_BYTES {
+    if text.len() as u64 > limit {
         return Err("policy input exceeds byte limit".into());
     }
     Ok(Some(text))

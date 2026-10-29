@@ -1,0 +1,14 @@
+{
+  "case": "keyset_v1_schema",
+  "base": "routes/keyset.v3.response.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/schema",
+      "value": "leanctx.hive.keyset/v1"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

@@ -282,7 +282,7 @@ class PythonEngineWheelTests(unittest.TestCase):
         self.assertNotIn("PYPI_TOKEN", publish_job)
         self.assertNotIn("thinkery_leanctx_engine*.whl", publish_job)
         announce_needs = (
-            "needs: [release, publish-crates, publish-npm, "
+            "needs: [publish-release, publish-crates, publish-npm, "
             "publish-python-engine, update-homebrew]"
         )
         self.assertEqual(workflow.count(announce_needs), 2)

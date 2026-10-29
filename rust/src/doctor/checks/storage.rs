@@ -524,15 +524,12 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
 
         let mut checks: Vec<(String, usize, usize)> = Vec::new();
 
+        // Facts have no count limit (owner decision 24.10.: knowledge grows
+        // without limit), so they are never "over cap".
         if let Ok(content) = std::fs::read_to_string(hash_dir.join("knowledge.json"))
             && let Ok(k) =
                 serde_json::from_str::<crate::core::knowledge::ProjectKnowledge>(&content)
         {
-            checks.push((
-                "facts".to_string(),
-                k.facts.len(),
-                policy.knowledge.max_facts,
-            ));
             checks.push((
                 "patterns".to_string(),
                 k.patterns.len(),
@@ -663,6 +660,97 @@ pub(crate) fn capacity_warnings() -> Vec<Outcome> {
                 ),
             });
         }
+    }
+
+    // Context Gateway evidence store vs its ceiling (G09): always its size,
+    // ceiling and last maintenance. Old unprotected receipts are removed in
+    // the background; only protected evidence filling the store, as the
+    // last pass counted it, refuses NEW receipts, which under protection
+    // withholds releases.
+    let gateway_dir = crate::core::data_dir::lean_ctx_data_dir()
+        .ok()
+        .map(|dir| dir.join("gateway"))
+        .filter(|dir| dir.is_dir());
+    if let Some(dir) = gateway_dir {
+        use crate::core::context_admission::receipt_store::{retention, store_usage};
+        let megabytes = cfg.gateway_store_max_mb_effective();
+        let maintained = match retention::last_pass(&dir).and_then(|at| at.elapsed().ok()) {
+            Some(age) => format!("last maintained {} min ago", age.as_secs() / 60),
+            None => "not maintained yet".to_owned(),
+        };
+        let policy = format!(
+            "kept {} days, last {} h protected",
+            retention::RETENTION_DAYS,
+            retention::PROTECT_HOURS
+        );
+        match store_usage(megabytes) {
+            Some(Ok(usage)) => {
+                let full = retention::proven_full(&dir);
+                let (color, label, size) = match usage.limit_bytes.filter(|limit| *limit > 0) {
+                    Some(limit) => {
+                        let pct = (usage.bytes as f64 / limit as f64 * 100.0) as u32;
+                        let (color, label) = if full {
+                            (RED, "CRIT")
+                        } else if pct >= 100 {
+                            (YELLOW, "WARN")
+                        } else {
+                            (GREEN, "ok")
+                        };
+                        let size = format!(
+                            "{}/{}MB ({pct}%)",
+                            usage.bytes / 1_048_576,
+                            limit / 1_048_576
+                        );
+                        (color, label, size)
+                    }
+                    None => (GREEN, "ok", format!("{}MB, no ceiling", usage.bytes / 1_048_576)),
+                };
+                results.push(Outcome {
+                    ok: !full,
+                    line: format!(
+                        "{BOLD}Capacity [gateway receipts]{RST} {color}{label}: {size}, {} objects, {maintained}{RST} {DIM}({policy}){RST}",
+                        usage.objects
+                    ),
+                });
+                if full || label == "WARN" {
+                    results.push(Outcome {
+                        ok: true,
+                        line: format!(
+                            "  {DIM}→ {}{RST}",
+                            if full {
+                                "store full of protected evidence (recent, latest-indexed, tasks in progress): no new Decision Receipt is stored; \
+                                 governed/sovereign releases are withheld. Raise LEAN_CTX_GATEWAY_STORE_MAX_MB (or max_disk_mb) or lower LEAN_CTX_GATEWAY_PROTECT_HOURS."
+                            } else {
+                                "older unprotected receipts are removed in the background; run `lean-ctx inspect --maintain` to do it now."
+                            }
+                        ),
+                    });
+                }
+            }
+            Some(Err(unmeasured)) => results.push(Outcome {
+                ok: false,
+                line: format!(
+                    "{BOLD}Capacity [gateway receipts]{RST} {YELLOW}WARN: {unmeasured}; the ceiling is not enforced until every file under <data>/gateway can be read{RST}"
+                ),
+            }),
+            None => {}
+        }
+    }
+
+    // The installation's receipt key (keyed caller and request-head
+    // references): a key file that is not a key refuses required proxy
+    // receipts, and lean-ctx never replaces it on its own.
+    if let Err(code) = crate::core::context_admission::receipt_store::keyed::key_status() {
+        results.push(Outcome {
+            ok: false,
+            line: format!("{BOLD}Receipt key [gateway]{RST} {RED}CRIT: {code}{RST}"),
+        });
+        results.push(Outcome {
+            ok: true,
+            line: format!(
+                "  {DIM}→ <data>/gateway/receipt.key is not a readable 32-byte key; proxy requests that owe a receipt are refused. Move it aside to let lean-ctx create a new key (references made under the old one no longer match).{RST}"
+            ),
+        });
     }
 
     // Graph index file count vs limit

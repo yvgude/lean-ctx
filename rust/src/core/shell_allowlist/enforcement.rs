@@ -15,8 +15,14 @@ use super::{
 /// - [`ShellSecurity::Off`] → always `Ok` (gating skipped; compression intact).
 /// - [`ShellSecurity::Warn`] → run the checks, log any violation, return `Ok`.
 /// - [`ShellSecurity::Enforce`] → block on violation (the secure default).
+///
+/// A command carrying a redaction marker is refused in every mode
+/// ([`refuse_redaction_marker`]).
 pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
-    match ShellSecurity::resolve() {
+    refuse_redaction_marker(command)?;
+    use crate::core::hive::metrics_v2::signals;
+    let mode = ShellSecurity::resolve();
+    let decided = match mode {
         ShellSecurity::Off => Ok(()),
         ShellSecurity::Warn => {
             // Advisory only, like the substitution finding (#1866): at `warn`
@@ -29,6 +35,8 @@ pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
                     "warn-only: shell_security=enforce would block this command; it ran ({})",
                     warn_only_reason(msg.message())
                 );
+                // K12: the rule was evaluated, not enforced.
+                signals::would_block(&signals::shell_rule());
             }
             Ok(())
         }
@@ -38,7 +46,46 @@ pub fn check_shell_allowlist(command: &str) -> Result<(), ShellError> {
                 crate::core::security_events::SecurityKind::ShellBlocked,
                 1,
             );
+            signals::blocked(&signals::shell_rule());
         }),
+    };
+    // K13: with the gate off or no allowlist, no rule covers the programs
+    // that run; they are counted by known-program name, never as text.
+    if decided.is_ok()
+        && signals::recording()
+        && (mode == ShellSecurity::Off || effective_allowlist().is_empty())
+    {
+        let programs: Vec<_> = extract_all_commands(command)
+            .iter()
+            .map(|segment| extract_base_from_segment(segment))
+            .filter(|base| !base.is_empty())
+            .map(|base| signals::program_name(&base))
+            .collect();
+        signals::unregulated_programs(&programs);
+    }
+    decided
+}
+
+/// Refuses code that contains a redaction marker such as
+/// `[REDACTED:Database credentials]`. Redaction applies only to what an agent
+/// is shown, never to what runs; an agent that copies a marker out of a
+/// redacted view into a command would write the marker itself into files or
+/// remote configs (a crash-looping server on 24.10.). No command means one,
+/// so it never runs, whatever the shell security mode.
+pub fn refuse_redaction_marker(code: &str) -> Result<(), ShellError> {
+    static MARKER: std::sync::OnceLock<regex::Regex> = std::sync::OnceLock::new();
+    let marker = MARKER.get_or_init(|| {
+        regex::Regex::new(r"\[REDACTED:[^\]\n]{1,64}\]").expect("BUG: invalid redaction marker")
+    });
+    match marker.find(code) {
+        None => Ok(()),
+        Some(found) => Err(ShellError::from(format!(
+            "[BLOCKED] the command contains the redaction marker `{}`. It stands for a \
+             value lean-ctx hid from your view; running it would write the marker itself, \
+             not the value. Read the real value where it lives (an env var, a secrets \
+             file) inside the command instead of retyping it, then run it again.",
+            found.as_str()
+        ))),
     }
 }
 
@@ -80,6 +127,18 @@ pub fn passes_enforced(command: &str) -> bool {
 /// When the allowlist is empty, all commands pass (blocklist-only mode).
 /// When non-empty, EVERY command segment in the pipeline must match.
 pub(super) fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
+    enforce_with(command, &[], None)
+}
+
+/// [`enforce_shell_allowlist`] with `granted` programs counted as listed (a
+/// user's approval, see [`super::approval`]) and, when `misses` is set,
+/// programs missing from the list recorded instead of refused. Every other
+/// check runs unchanged in both cases.
+pub(super) fn enforce_with(
+    command: &str,
+    granted: &[String],
+    misses: Option<&MissLog>,
+) -> Result<(), ShellError> {
     // GHSA-rxv5-4c3x-g4q6 E: a carriage return not followed by a line feed, or
     // a Unicode line/paragraph separator, is an ordinary word character to
     // bash, dash and zsh, but a line break to the checks below (`echo a⏎#$(x)`
@@ -126,13 +185,20 @@ pub(super) fn enforce_shell_allowlist(command: &str) -> Result<(), ShellError> {
     check_substitution_in_args(&normalized)?;
     check_pipe_to_bare_interpreter(cmd, strict)?;
 
-    let allowlist = effective_allowlist();
+    let mut allowlist = effective_allowlist();
     if allowlist.is_empty() {
         check_unconditional_blocked_only(cmd_all)?;
         return Ok(());
     }
+    for program in granted {
+        if !allowlist.contains(program) {
+            allowlist.push(program.clone());
+        }
+    }
     let subcommand_scoping = crate::core::config::Config::load().shell_allowlist_subcommand_scoping;
-    check_all_segments(cmd_all, &Allowlist::new(allowlist, subcommand_scoping))
+    let mut allowlist = Allowlist::new(allowlist, subcommand_scoping);
+    allowlist.misses = misses.cloned();
+    check_all_segments(cmd_all, &allowlist)
 }
 
 /// Normalize the command string: remove the backslash-newline continuations
@@ -333,6 +399,7 @@ fn check_interpreter_inner(
                 if !delegated.is_empty()
                     && !SHELL_BUILTINS.contains(&delegated)
                     && !matches_allowlist_entry(&delegated_tokens, al)
+                    && !al.record_miss(delegated, delegated_tok)
                 {
                     return Err(format!(
                         "[BLOCKED — DO NOT RETRY] '{base}' delegates to '{delegated}' which is not \
@@ -739,6 +806,25 @@ fn check_dangerous_flags(segment: &str) -> Result<(), ShellError> {
                 }
             }
         }
+        // lean-ctx's hidden modes (`__session-starter`, `__group-guard`,
+        // `__spawn-helper`) are started by lean-ctx and its SDKs only. From a
+        // shell line the starter would execute whatever program follows it,
+        // past this allowlist.
+        "lean-ctx" | "lean-ctx.exe" => {
+            for tok in &tokens[1..] {
+                if tok
+                    .trim_matches(|c| matches!(c, '"' | '\'' | '\\'))
+                    .starts_with("__")
+                {
+                    return Err(
+                        "[BLOCKED — DO NOT RETRY] 'lean-ctx' internal modes ('__…') cannot be \
+                         started from a shell command.\n\
+                         This is a permanent security restriction."
+                            .into(),
+                    );
+                }
+            }
+        }
         _ => {}
     }
     Ok(())
@@ -837,6 +923,15 @@ pub(super) fn is_project_root_binary(token: &str) -> bool {
     canonical.starts_with(&canonical_root)
 }
 
+/// The program token of `segment` as written (path kept), skipping a leading
+/// `{` of a brace group the same way the base-name extraction does.
+fn raw_program_token(segment: &str) -> String {
+    shell_tokenize(skip_env_assignments(segment.trim()))
+        .into_iter()
+        .find(|token| token != "{")
+        .unwrap_or_default()
+}
+
 /// Effective allowlist entries plus whether matching is subcommand-scoped
 /// (`shell_allowlist_subcommand_scoping`, GH #1419 follow-up). Threading this
 /// instead of a bare `&[String]` makes the flag explicit and testable at
@@ -848,18 +943,61 @@ pub(super) fn is_project_root_binary(token: &str) -> bool {
 pub(crate) struct Allowlist {
     pub(super) entries: Vec<String>,
     pub(super) subcommand_scoping: bool,
+    /// Set only by [`super::approval`]: a program missing from the list is
+    /// recorded here and the walk goes on, so every other check still decides.
+    pub(super) misses: Option<MissLog>,
 }
+
+/// Programs a command runs that the allowlist does not name, in walk order.
+pub(super) type MissLog = std::sync::Arc<std::sync::Mutex<Vec<super::approval::ApprovalMiss>>>;
 
 impl Allowlist {
     pub(crate) fn new(entries: Vec<String>, subcommand_scoping: bool) -> Self {
         Self {
             entries,
             subcommand_scoping,
+            misses: None,
         }
     }
 
     pub(crate) fn is_empty(&self) -> bool {
         self.entries.is_empty()
+    }
+
+    /// True when an entry names `base` with subcommands (`terraform plan *`):
+    /// the user scoped that binary on purpose.
+    pub(super) fn scopes(&self, base: &str) -> bool {
+        self.subcommand_scoping
+            && self
+                .entries
+                .iter()
+                .any(|entry| entry.split_whitespace().next() == Some(base))
+    }
+
+    /// Records `base` (written as `raw` in the command) as missing when this
+    /// walk collects misses. False means the caller blocks as usual.
+    pub(super) fn record_miss(&self, base: &str, raw: &str) -> bool {
+        let Some(log) = &self.misses else {
+            return false;
+        };
+        // A grant matches on the basename, so a lasting one would admit any
+        // program of that name: only once for a path-qualified program, a
+        // subcommand-scoped one, or an interpreter/shell, which runs whatever
+        // script the agent writes next.
+        let once_only =
+            raw.contains('/') || self.scopes(base) || INTERPRETER_COMMANDS.contains(&base);
+        let mut log = log
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if let Some(known) = log.iter_mut().find(|m| m.program == base) {
+            known.once_only |= once_only;
+        } else {
+            log.push(super::approval::ApprovalMiss {
+                program: base.to_string(),
+                once_only,
+            });
+        }
+        true
     }
 }
 
@@ -867,10 +1005,7 @@ impl From<Vec<String>> for Allowlist {
     /// Test/back-compat convenience: defaults subcommand scoping on, matching
     /// the shipped default for `shell_allowlist_subcommand_scoping`.
     fn from(entries: Vec<String>) -> Self {
-        Self {
-            entries,
-            subcommand_scoping: true,
-        }
+        Self::new(entries, true)
     }
 }
 
@@ -1017,7 +1152,9 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
                     check_builtin_side_doors(&body_tokens, allowlist)?;
                     continue;
                 }
-                if !matches_allowlist_entry(&body_tokens, allowlist) {
+                if !matches_allowlist_entry(&body_tokens, allowlist)
+                    && !allowlist.record_miss(&body_base, &raw_program_token(body_seg))
+                {
                     return Err(format!(
                         "[BLOCKED — DO NOT RETRY] '{body_base}' (inside function body) is not in the shell allowlist.\nFix (additive, keeps the defaults): run  lean-ctx allow {body_base}",
                     ).into());
@@ -1025,6 +1162,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
                 check_interpreter_abuse(body_seg, allowlist)?;
                 check_dangerous_flags(body_seg)?;
                 super::self_config::check_self_reconfiguration(&body_tokens)?;
+                super::self_config::check_state_tampering(&body_tokens)?;
             }
             continue;
         }
@@ -1075,6 +1213,7 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
         check_interpreter_abuse(seg, allowlist)?;
         check_dangerous_flags(seg)?;
         super::self_config::check_self_reconfiguration(&tokens)?;
+        super::self_config::check_state_tampering(&tokens)?;
         if !matches_allowlist_entry(&tokens, allowlist) {
             // #813: auto-allow binaries that resolve to existing files under
             // the project root. The first token (before rsplit) carries the
@@ -1100,6 +1239,10 @@ pub(super) fn check_all_segments(command: &str, allowlist: &Allowlist) -> Result
                 tracing::info!(
                     "[shell_allowlist] auto-allowing project-root binary: {first_token}"
                 );
+                continue;
+            }
+            // Every check above already passed for this segment.
+            if allowlist.record_miss(&base, &raw_program_token(seg)) {
                 continue;
             }
 

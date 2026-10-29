@@ -1,0 +1,16 @@
+{
+  "case": "legacy_statement_without_legacy",
+  "base": "events/node_add.legacy.json[0]",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/body/legacy"
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/body/statement"
+  }
+}

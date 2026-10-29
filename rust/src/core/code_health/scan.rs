@@ -155,6 +155,10 @@ fn walk_sources(root: &Path) -> Vec<(String, String, String)> {
         .build();
 
     let mut out: Vec<(String, String, String)> = Vec::new();
+    let root_text = root.to_string_lossy().into_owned();
+    // No total budget beyond the reader's per-file limit: a scan covers the
+    // project, as before.
+    let mut remaining = usize::MAX;
     for entry in walker.flatten() {
         if !entry.file_type().is_some_and(|ft| ft.is_file()) {
             continue;
@@ -175,12 +179,74 @@ fn walk_sources(root: &Path) -> Vec<(String, String, String)> {
         if crate::core::auto_findings::is_noise_path(&rel) {
             continue;
         }
-        if let Ok(content) = std::fs::read_to_string(path) {
-            out.push((rel, content, ext.to_string()));
+        // Health is a derivation that is rendered (function names, line
+        // numbers) and persisted (the score): it is computed from the ADMITTED
+        // text of a source whose ORIGINAL may be kept, read through the common
+        // rooted reader under `root` (G01, E3). A source that is withheld,
+        // restricted or incompletely decoded is not scanned.
+        let read = crate::tools::admitted_sources::read(
+            &path.to_string_lossy(),
+            &root_text,
+            "ctx_quality",
+            &mut remaining,
+        );
+        if let Some(content) = read.storable() {
+            out.push((rel, content.to_owned(), ext.to_string()));
         }
     }
     out.sort_by(|a, b| a.0.cmp(&b.0));
     out
+}
+
+#[cfg(test)]
+mod admission_tests {
+    use super::walk_sources;
+
+    const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+
+    /// G01: the health scan read every source with `fs::read_to_string` — a
+    /// source the project policy blocks was scanned and its function names
+    /// reported. It now scans admitted, storable text only; a clean source
+    /// keeps its bytes.
+    #[test]
+    fn the_health_scan_reads_admitted_storable_sources_only() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let clean = "fn add_one(x: i32) -> i32 { x + 1 }\n";
+        std::fs::write(project.path().join("clean.rs"), clean).unwrap();
+        std::fs::write(
+            project.path().join("keyed.rs"),
+            format!("fn connect() {{\n    let aws_key = \"{AWS_KEY}\";\n}}\n"),
+        )
+        .unwrap();
+        std::fs::write(
+            project.path().join("plan.rs"),
+            "CONFIDENTIAL\nfn hidden_marker() {}\n",
+        )
+        .unwrap();
+        let content_of = |sources: &[(String, String, String)], name: &str| {
+            sources
+                .iter()
+                .find(|(path, _, _)| path == name)
+                .map(|(_, content, _)| content.clone())
+        };
+        {
+            let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+            let sources = walk_sources(project.path());
+            assert_eq!(content_of(&sources, "clean.rs").as_deref(), Some(clean));
+            assert!(content_of(&sources, "keyed.rs").is_some_and(|text| !text.contains(AWS_KEY)));
+            assert!(content_of(&sources, "plan.rs").is_some());
+        }
+        let policy = crate::core::policy::load(
+            "name = \"code-health-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )
+        .unwrap();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+        let sources = walk_sources(project.path());
+        assert_eq!(content_of(&sources, "clean.rs").as_deref(), Some(clean));
+        assert_eq!(content_of(&sources, "plan.rs"), None);
+    }
 }
 
 #[cfg(all(test, feature = "tree-sitter"))]

@@ -48,34 +48,26 @@ lean-ctx registers itself via `claude mcp add-json --scope user` when available.
   "mcpServers": {
     "lean-ctx": {
       "command": "lean-ctx",
+      "args": [],
       "autoApprove": [
         "ctx_read",
         "ctx_shell",
+        "shell",
         "ctx_search",
+        "ctx_glob",
         "ctx_tree",
-        "ctx_overview",
-        "ctx_preload",
-        "ctx_compress",
-        "ctx_metrics",
-        "ctx_session",
-        "ctx_knowledge",
-        "ctx_agent",
-        "ctx_share",
-        "ctx_analyze",
-        "ctx_semantic_search",
-        "ctx_graph",
-        "ctx_refactor",
-        "ctx_expand",
-        "ctx_impact",
-        "ctx_review",
-        "ctx_pack"
-      ]
+        "ctx_compose",
+        "ctx_call",
+        "ctx_patch",
+        "…"
+      ],
+      "alwaysLoad": true
     }
   }
 }
 ```
 
-> **Note**: The `autoApprove` list includes all read-only and safe tools so Claude Code doesn't prompt for confirmation on every call. The full registered tool list is auto-configured.
+> **Note**: The `autoApprove` list (abbreviated above) covers the advertised lean-ctx tools so Claude Code doesn't prompt for confirmation on every call. The full list comes from `auto_approve_tools()` in `rust/src/core/editor_registry/writers/shared.rs` and is written automatically; it never names removed or non-advertised tools.
 
 If `claude mcp add-json` is not available (older Claude Code versions), lean-ctx falls back to directly writing `~/.claude.json`.
 
@@ -85,18 +77,20 @@ lean-ctx maintains a marker-delimited block in `~/.claude/CLAUDE.md`:
 
 ```markdown
 <!-- lean-ctx -->
-<!-- lean-ctx-claude-v6 -->
+<!-- lean-ctx-claude-v10 -->
 ## lean-ctx — Context Runtime
 
 When the `ctx_*` MCP tools are listed in this session, prefer them over native equivalents:
-- `ctx_read` instead of `Read` / `cat` for exploration (10 modes; unchanged reads may use compact cache references)
-- `ctx_shell` instead of `bash` / `Shell` (supported command outputs can be summarized)
+- `ctx_read` instead of `Read` / `cat` for exploration (cached, 10 modes incl. map/signatures)
+- `ctx_shell` instead of `bash` / `Shell` (pattern-based output compression)
 - `ctx_search` instead of `Grep` / `rg` (compact results)
 - `ctx_tree` instead of `ls` / `find` (compact directory maps)
 - Edits: `ctx_read(mode="anchored")` → `ctx_patch` (line+hash anchors, never echo old text; `op=create` for new files). `ctx_edit` (str_replace) is the legacy power-profile fallback.
 
 Native `Read` → `Edit`/`StrReplace` stays fully supported — the edit gate requires a
-prior native Read of the same file path. Write, Delete, Glob — use normally.
+prior native Read of the same file path. Auto memory under
+`~/.claude/projects/<slug>/memory/` also uses native Read/Edit (not MCP resources).
+Write, Delete, Glob — use normally.
 If no `ctx_*` tools are listed in this session, use the native tools throughout.
 
 Read modes: anchored (edit), full (verbatim), map (overview), signatures (API), diff (post-edit), lines:N-M (range), auto.
@@ -104,8 +98,9 @@ Details live in the `lean-ctx` skill (loads on demand — keep this file lean).
 <!-- /lean-ctx -->
 ```
 
-The v5 wording routes edits to the anchored editor (`ctx_patch` is advertised in the
-lazy core for Claude Code) while keeping v4's guard semantics: Claude Code enforces a
+The block (shown for MCP mode; Replace mode writes a variant that denies native
+Grep/Glob) routes edits to the anchored editor (`ctx_patch` is advertised in the
+lazy core for Claude Code) while keeping the guard semantics: Claude Code enforces a
 *path-keyed* read-before-write gate on Edit/Write, so a natively-edited file must have
 been read with the **native** Read tool (lean-ctx's `read_redirect = auto` keeps that
 gate intact, see [#637](https://github.com/yvgude/lean-ctx/issues/637)). And in sessions
@@ -161,21 +156,28 @@ lean-ctx installs a skill file at `~/.claude/skills/lean-ctx/SKILL.md` that prov
 
 When Claude Code starts a new session, it should:
 
-1. **Call `ctx_overview(task)`** — fast project orientation with task-relevant context
-2. **Use `ctx_read(path, "map")`** for context files — dependencies, exports, key signatures
-3. **Use `ctx_read(path, "full")`** only for files it will edit
+1. **Call `ctx_compose(task)` first** — ranked files and inline source for the task (replaces the removed `ctx_overview`)
+2. **Use `ctx_read(path, "signatures")` or `"map"`** for context files — API surface, dependencies, exports
+3. **Use `ctx_read(path, "anchored")`** for files it will edit, then `ctx_patch`
 
 ### During Development
 
 ```
-Read file for context    → ctx_read("src/auth.rs", "map")
-Read file to edit        → ctx_read("src/auth.rs", "full")
-Re-read after editing    → ctx_read("src/auth.rs", "diff")
-Search for patterns      → ctx_search("fn authenticate", "src/")
+Orient on a task         → ctx_compose(task="how does auth work?")
+Read file for context    → ctx_read("src/auth.rs", "signatures")
+Read file to edit        → ctx_read("src/auth.rs", "anchored") → ctx_patch
+Re-read after editing    → ctx_delta("src/auth.rs")
+Search for patterns      → ctx_search(pattern="fn authenticate", path="src/")
+Find by meaning          → ctx_search(action="semantic", query="token refresh")
+Exact symbol             → ctx_search(action="symbol", name="authenticate")
 Run shell commands       → Uses shell hook automatically (or ctx_shell)
-Find by meaning          → ctx_semantic_search("how does auth work?")
-Check code relationships → ctx_graph("impact", "src/auth.rs")
+Callers of a function    → ctx_callgraph(action="callers", symbol="authenticate")
+File-level impact        → ctx_graph(action="impact", path="src/auth.rs")
 ```
+
+Removed tools from older prompts (`ctx_overview`, `ctx_semantic_search`,
+`ctx_impact`, …) return their successor when called; see
+[Removed in the focus release](../reference/appendix-mcp-tools.md#removed-in-the-focus-release).
 
 ### Session Documentation
 
@@ -195,7 +197,7 @@ ctx_session(action="task", value="Current task status description")
 ### Context Management
 
 ```
-When context grows large  → ctx_compress (creates memory checkpoint)
+When context grows large  → ctx_compress (compresses the read cache)
 Check token savings       → ctx_metrics
 Per-tool cost breakdown   → ctx_cost
 File-level savings        → ctx_heatmap
@@ -203,7 +205,9 @@ File-level savings        → ctx_heatmap
 
 ## Multi-Agent Handoff
 
-Claude Code supports multi-agent workflows via lean-ctx:
+Claude Code supports multi-agent workflows via lean-ctx. `ctx_agent` is a local
+compatibility tool: it is not advertised in `tools/list` but stays callable
+(directly or via `ctx_call`).
 
 ```
 # Agent A records findings

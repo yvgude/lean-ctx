@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "Not every plaintext event is converted.",
+    "reason": "conversion_incomplete"
+  }
+}

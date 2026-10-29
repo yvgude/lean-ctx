@@ -45,8 +45,10 @@ impl McpTool for CtxOutlineTool {
         let name_match = get_str(args, "match");
         let as_json = get_str(args, "format").as_deref() == Some("json");
 
-        let (result, original) = crate::tools::ctx_outline::run(
+        let root = crate::tools::admitted_sources::root_in_context(&path, ctx);
+        let (result, original) = crate::tools::ctx_outline::run_rooted(
             &path,
+            &root,
             &OutlineOpts {
                 kind: kind.as_deref(),
                 name_match: name_match.as_deref(),

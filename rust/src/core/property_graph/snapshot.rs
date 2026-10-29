@@ -83,10 +83,21 @@ fn collect_nodes(graph: &CodeGraph) -> anyhow::Result<Vec<SnapNode>> {
         })?
         .collect::<Result<_, _>>()?;
     nodes.sort();
+    // A snapshot leaves the store as a repository file, so it is a serve
+    // (G04): only nodes whose source is served now are written — name and
+    // metadata — asked in the snapshot's own stable order.
+    nodes.retain(|n| graph.serves_node_parts(&n.kind, &n.file, &n.name, n.meta.as_deref()));
     Ok(nodes)
 }
 
-fn collect_edges(graph: &CodeGraph) -> anyhow::Result<Vec<SnapEdge>> {
+/// The edges between `nodes`: an edge is part of the snapshot only when both
+/// its ends are (see `collect_nodes`).
+fn collect_edges(graph: &CodeGraph, nodes: &[SnapNode]) -> anyhow::Result<Vec<SnapEdge>> {
+    let served: std::collections::HashSet<(&str, &str, &str)> = nodes
+        .iter()
+        .map(|n| (n.kind.as_str(), n.file.as_str(), n.name.as_str()))
+        .collect();
+    let is_served = |end: &(String, String, String)| served.contains(&(&*end.0, &*end.1, &*end.2));
     let conn = graph.connection();
     let mut stmt = conn.prepare(
         "SELECT e.kind, e.metadata,
@@ -108,14 +119,18 @@ fn collect_edges(graph: &CodeGraph) -> anyhow::Result<Vec<SnapEdge>> {
             })
         })?
         .collect::<Result<_, _>>()?;
+    edges.retain(|e| is_served(&e.source) && is_served(&e.target));
     edges.sort();
     Ok(edges)
 }
 
-/// Serialize the whole graph as deterministic JSON Lines.
+/// Serialize the graph as deterministic JSON Lines: every node whose source
+/// is served now and every edge between two such nodes. [`check_snapshot`]
+/// compares against this same collection, so a withdrawn source shows up as
+/// `only_snapshot` drift of an older snapshot, never as local content.
 pub fn export_snapshot(graph: &CodeGraph) -> anyhow::Result<String> {
     let nodes = collect_nodes(graph)?;
-    let edges = collect_edges(graph)?;
+    let edges = collect_edges(graph, &nodes)?;
 
     let mut out = String::new();
     out.push_str(&serde_json::to_string(&SnapshotHeader {

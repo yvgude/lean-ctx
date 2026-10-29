@@ -6,7 +6,7 @@
 
 ## Purpose
 
-Formalizes the Gotcha tracking system: structured provenance, category-specific decay, retrieval budgets, and time-bounded reminders.
+Formalizes the Gotcha tracking system: structured provenance, provenance-based decay, a per-project bound, and time-bounded reminders.
 
 ## Gotcha Schema
 
@@ -48,29 +48,24 @@ struct ProvenanceRef {
 
 ## GotchaPolicy
 
-Configurable via `memory.gotcha` in `.lean-ctx/config.toml` or `MemoryPolicy`:
+Configurable via `[memory.gotcha]` in `config.toml` (env `LEAN_CTX_GOTCHA_MAX_PER_PROJECT`):
 
 ```toml
 [memory.gotcha]
-max_gotchas_per_project = 100
-retrieval_budget_per_room = 10      # max gotchas returned per category
-default_decay_rate = 0.03
-auto_expire_days = null             # null = no auto-expire
-
-[memory.gotcha.category_decay_overrides]
-security = 0.005                    # security gotchas decay very slowly
-convention = 0.05                   # convention gotchas decay faster
+max_gotchas_per_project = 100       # lowest-confidence gotchas are dropped first
 ```
+
+Decay depends on each gotcha's `source` (promoted 0.01, agent-reported 0.02,
+cross-session 0.03, auto-detected 0.05 per week, damped by occurrences). The
+policy keys `retrieval_budget_per_room`, `default_decay_rate`,
+`category_decay_overrides` and `auto_expire_days` were documented here but never
+applied; they were retired on 2026-10-16 and are ignored (and removed by the
+automatic config migration) when an older config loads.
 
 ## Expiration
 
-- `expires_at`: absolute time after which the gotcha is automatically archived
-- `auto_expire_days` in policy: sets a default TTL for new gotchas (null = no default)
-- `decay_rate_override` per gotcha: overrides the category/default decay rate
-
-## Retrieval Budgets
-
-`retrieval_budget_per_room` limits how many gotchas are returned per category during recall. Prevents one noisy category from dominating context.
+- `expires_at`: absolute time after which the gotcha is removed when the store loads
+- `decay_rate_override` per gotcha: replaces the source-based decay rate
 
 ## Tool Actions
 

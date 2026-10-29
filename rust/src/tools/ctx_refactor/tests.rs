@@ -912,3 +912,52 @@ fn handle_replace_symbol_same_path_succeeds() {
     let after = std::fs::read_to_string(dir.path().join("a.rs")).unwrap();
     assert!(after.contains("fn new()"), "file: {after}");
 }
+
+/// G01: every refactor read was a bare `fs::read_to_string`, so a request
+/// could preview, hash and edit a source it may not read. The read path is
+/// now asked first. What a permitted request gets is still the ORIGINAL text
+/// (positions and edits need the bytes on disk; nothing redacted is written),
+/// and a withheld target is neither read nor edited.
+#[test]
+fn a_refactor_reads_originals_only_for_sources_the_request_may_read() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let policy = crate::core::policy::load(
+        "name = \"ctx-refactor-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+         [redaction]\ncustomer = \"CUS-[0-9]{4}\"\n\
+         [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+    )
+    .unwrap();
+    let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path().to_string_lossy().into_owned();
+    let orders = dir.path().join("orders.rs");
+    let plan = dir.path().join("plan.rs");
+    let original = "fn old() {\n  \"CUS-1234\"\n}\n";
+    let blocked = "CONFIDENTIAL\nfn old() {\n  1\n}\n";
+    std::fs::write(&orders, original).unwrap();
+    std::fs::write(&plan, blocked).unwrap();
+    let (orders, plan) = (
+        orders.to_string_lossy().into_owned(),
+        plan.to_string_lossy().into_owned(),
+    );
+
+    crate::tools::admitted_sources::as_agent_acquisition(&root, || {
+        // A redacting rule does not change what a refactor computes from.
+        assert_eq!(super::read_original_if_admitted(&orders).unwrap(), original);
+        let error = super::read_original_if_admitted(&plan).expect_err("withheld target");
+        assert_eq!(error.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(!error.to_string().contains("fn old"));
+
+        let args = serde_json::json!({
+            "action": "replace_symbol_body",
+            "path": "plan.rs",
+            "line": 2,
+            "end_line": 4,
+            "new_text": "fn new() {\n  2\n}"
+        });
+        let out = super::handle(&args, &root, &plan);
+        assert!(out.starts_with("ERROR: "), "got: {out}");
+        assert!(!out.contains("applied"), "got: {out}");
+    });
+    assert_eq!(std::fs::read_to_string(&plan).unwrap(), blocked);
+}

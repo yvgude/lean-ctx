@@ -5,15 +5,29 @@
 //! (vendor dirs, agent worktree copies), so a bundle sees the same project the
 //! index sees. Lockfiles, minified assets, binaries and oversized files are
 //! never candidates: they spend budget without explaining anything.
+//!
+//! Every file is read through the common rooted admitted reader
+//! (`tools::admitted_sources::read`, G01) — the reader `ctx_read` uses: path
+//! jail, project policy and gateway decide on the original, and the bundle
+//! only ever holds the text that reader delivered. The checks here (secret-like
+//! path, size, binary) run in addition and can only remove more.
 
 use std::path::Path;
 
 use ignore::overrides::OverrideBuilder;
 
-/// Files larger than this are listed as skipped instead of read.
+use crate::tools::admitted_sources::SourceRead;
+
+/// Files larger than this are listed as skipped instead of read. Also the
+/// byte budget handed to the admitted reader for each file, so the cost of a
+/// bundle stays bounded by [`MAX_WALKED_FILES`] reads of at most this size —
+/// a per-file budget, not a shared one: which files are read must not depend
+/// on the order the walk yields them (#498).
 pub(crate) const MAX_FILE_BYTES: u64 = 512 * 1024;
 /// Hard stop for pathological trees; the report says when it was hit.
 pub(crate) const MAX_WALKED_FILES: usize = 50_000;
+/// The tool the admitted reader decides, audits and publishes these reads for.
+const READER_TOOL: &str = "ctx_pack";
 
 /// Generated or machine-owned files that never help a reader.
 const DEFAULT_EXCLUDES: &[&str] = &[
@@ -40,10 +54,15 @@ const DEFAULT_EXCLUDES: &[&str] = &[
 pub(crate) struct Candidate {
     /// Path relative to the project root, `/`-separated.
     pub path: String,
-    /// UTF-8 content; `None` when the file was skipped.
+    /// The text the admitted reader delivered (masked where it masked);
+    /// `None` when the file was skipped.
     pub content: Option<String>,
-    /// Why the file was not read (`binary`, `too large`, `secret-like path`).
+    /// Why the file is not a source of the bundle (`binary`, `too large`,
+    /// `secret-like path`, `withheld`).
     pub skipped: Option<&'static str>,
+    /// The admitted reader's own content-free sentence when it withheld the
+    /// file. The bundle shows exactly this and nothing of its own.
+    pub refusal: Option<String>,
 }
 
 /// Result of the walk.
@@ -77,6 +96,7 @@ pub(crate) fn collect(
         })
         .build();
 
+    let root_text = root.to_string_lossy();
     let mut collection = Collection::default();
     for entry in walker.filter_map(Result::ok) {
         if !entry.file_type().is_some_and(|t| t.is_file()) {
@@ -91,7 +111,7 @@ pub(crate) fn collect(
         };
         collection
             .candidates
-            .push(read_candidate(entry.path(), path));
+            .push(read_candidate(&root_text, entry.path(), path));
     }
     collection.candidates.sort_by(|a, b| a.path.cmp(&b.path));
     Ok(collection)
@@ -131,35 +151,54 @@ fn relative_path(root: &Path, path: &Path) -> Option<String> {
     (!joined.is_empty()).then_some(joined)
 }
 
-fn read_candidate(abs: &Path, path: String) -> Candidate {
-    let skip = |reason| Candidate {
+/// One candidate, read under `root` through the admitted reader.
+///
+/// The bundle's own rules come first and never read content: a secret-like
+/// path and an oversized file are skipped on the path and the size alone.
+/// Everything else is decided by the reader. What it delivers is the
+/// candidate's content — the bytes of a clean file, the masked form of one it
+/// masked. What it withholds is not a source of the bundle: no content, no
+/// rank, and the reader's own sentence as the only thing said about it.
+fn read_candidate(root: &str, abs: &Path, path: String) -> Candidate {
+    let skip = |reason: &'static str, refusal: Option<String>| Candidate {
         path: path.clone(),
         content: None,
         skipped: Some(reason),
+        refusal,
     };
     if crate::core::sensitivity::classify_path(abs)
         == crate::core::sensitivity::SensitivityLevel::Secret
     {
-        return skip("secret-like path");
+        return skip("secret-like path", None);
     }
     match std::fs::metadata(abs) {
-        Ok(meta) if meta.len() > MAX_FILE_BYTES => return skip("too large"),
+        Ok(meta) if meta.len() > MAX_FILE_BYTES => return skip("too large", None),
         Ok(_) => {}
-        Err(_) => return skip("unreadable"),
+        Err(_) => return skip("unreadable", None),
     }
-    let Ok(bytes) = std::fs::read(abs) else {
-        return skip("unreadable");
-    };
-    if bytes.iter().take(8192).any(|&b| b == 0) {
-        return skip("binary");
-    }
-    match String::from_utf8(bytes) {
-        Ok(content) => Candidate {
+    let abs_text = abs.to_string_lossy();
+    let mut remaining = usize::try_from(MAX_FILE_BYTES).unwrap_or(usize::MAX);
+    match crate::tools::admitted_sources::read(&abs_text, root, READER_TOOL, &mut remaining) {
+        // A source the decoder could not represent completely was "binary"
+        // to the bundle before and stays out.
+        SourceRead::Admitted(read) if read.complete => Candidate {
             path,
-            content: Some(content),
+            content: Some(read.content),
             skipped: None,
+            refusal: None,
         },
-        Err(_) => skip("binary"),
+        SourceRead::Admitted(_) => skip("binary", None),
+        SourceRead::Withheld(reason) => skip("withheld", Some(reason)),
+        // The reader refuses a binary source by its extension, or by its
+        // first bytes with exactly `binary_file_message`. Every other
+        // unavailable source (gone, grown past the budget) is "unreadable".
+        SourceRead::Unavailable(reason)
+            if crate::core::binary_detect::has_binary_extension(&abs_text)
+                || reason == crate::core::binary_detect::binary_file_message(&abs_text) =>
+        {
+            skip("binary", None)
+        }
+        SourceRead::Unavailable(_) => skip("unreadable", None),
     }
 }
 

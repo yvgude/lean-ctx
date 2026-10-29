@@ -1,0 +1,13 @@
+{
+  "case": "action_without_epoch",
+  "base": "routes/conductor_action.block.request.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/epoch"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

@@ -351,13 +351,7 @@ fn verify_manifest_signature(
     unsigned_signing.insert("signed_digest".to_string(), Value::String(String::new()));
     unsigned_signing.insert("signature".to_string(), Value::String(String::new()));
 
-    let canonical_manifest = match canonical_json(&unsigned_manifest) {
-        Ok(bytes) => bytes,
-        Err(error) => {
-            errors.push(format!("cannot canonicalize manifest: {error:#}"));
-            return false;
-        }
-    };
+    let canonical_manifest = crate::core::canonical::canonical_json_bytes(&unsigned_manifest);
     let computed_digest = sha256_hex(&canonical_manifest);
     let digest_valid = expected_digest.eq_ignore_ascii_case(&computed_digest);
     if !digest_valid {
@@ -430,43 +424,6 @@ fn read_public_key(path: &Path) -> Result<Vec<u8>> {
         anyhow::bail!("public key must contain 32 bytes");
     }
     Ok(decoded)
-}
-
-fn canonical_json(value: &Value) -> Result<Vec<u8>> {
-    let mut output = Vec::new();
-    write_canonical_json(value, &mut output)?;
-    Ok(output)
-}
-
-fn write_canonical_json(value: &Value, output: &mut Vec<u8>) -> Result<()> {
-    match value {
-        Value::Object(map) => {
-            output.push(b'{');
-            let mut keys: Vec<&String> = map.keys().collect();
-            keys.sort_unstable();
-            for (index, key) in keys.iter().enumerate() {
-                if index > 0 {
-                    output.push(b',');
-                }
-                serde_json::to_writer(&mut *output, key)?;
-                output.push(b':');
-                write_canonical_json(map.get(*key).expect("key came from object"), output)?;
-            }
-            output.push(b'}');
-        }
-        Value::Array(values) => {
-            output.push(b'[');
-            for (index, value) in values.iter().enumerate() {
-                if index > 0 {
-                    output.push(b',');
-                }
-                write_canonical_json(value, output)?;
-            }
-            output.push(b']');
-        }
-        _ => serde_json::to_writer(&mut *output, value)?,
-    }
-    Ok(())
 }
 
 fn sha256_hex(bytes: &[u8]) -> String {
@@ -598,7 +555,7 @@ mod tests {
                 "signature": ""
             }
         });
-        let digest = sha256_hex(&canonical_json(&manifest).unwrap());
+        let digest = sha256_hex(&crate::core::canonical::canonical_json_bytes(&manifest));
         let signature = crate::core::agent_identity::sign_bytes_with(&key, digest.as_bytes());
         manifest["signing"]["signed_digest"] = Value::String(digest);
         manifest["signing"]["signature"] =
@@ -610,7 +567,8 @@ mod tests {
         let mut zip = zip::ZipWriter::new(Cursor::new(Vec::new()));
         let options = zip::write::SimpleFileOptions::default();
         zip.start_file("manifest.json", options).unwrap();
-        zip.write_all(&canonical_json(&manifest).unwrap()).unwrap();
+        zip.write_all(&crate::core::canonical::canonical_json_bytes(&manifest))
+            .unwrap();
         if !missing_file {
             zip.start_file("audit/trail.jsonl", options).unwrap();
             zip.write_all(if tamper_file { b"tampered\n" } else { payload })
@@ -666,14 +624,15 @@ mod tests {
                 if field == "public_key" {
                     manifest["signing"][field] = json!(malformed);
                 }
-                let digest = sha256_hex(&canonical_json(&manifest).unwrap());
+                let digest = sha256_hex(&crate::core::canonical::canonical_json_bytes(&manifest));
                 manifest["signing"]["signed_digest"] = json!(digest);
                 manifest["signing"]["signature"] = json!("00".repeat(64));
                 manifest["signing"][field] = json!(malformed);
                 let mut zip = zip::ZipWriter::new(File::create(&path).unwrap());
                 zip.start_file("manifest.json", zip::write::SimpleFileOptions::default())
                     .unwrap();
-                zip.write_all(&canonical_json(&manifest).unwrap()).unwrap();
+                zip.write_all(&crate::core::canonical::canonical_json_bytes(&manifest))
+                    .unwrap();
                 zip.finish().unwrap();
 
                 let result = execute_verify(&command(path.clone())).unwrap();

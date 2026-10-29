@@ -29,6 +29,11 @@ pub struct DependencyChain {
     pub depth: usize,
 }
 
+/// The serve-time source check of one request, as a traversal takes it:
+/// whether the file at a repo-relative path may be used now. One request has
+/// one such check, so the walk and the caller's output filter agree.
+pub type Served<'a> = &'a dyn Fn(&str) -> bool;
+
 /// Edge kinds considered structural (code connectivity).
 const STRUCTURAL_EDGE_KINDS: &str = "'imports','calls','references','implements','extends','exports','type_ref','tested_by','module','cochange','sibling'";
 
@@ -102,23 +107,40 @@ pub(super) fn dependencies(conn: &Connection, file_path: &str) -> anyhow::Result
 /// Weighted BFS from `file_path` following reverse structural edges up to `max_depth`.
 /// Edge weights attenuate propagation: calls edges carry less impact than imports.
 /// Nodes only propagate when cumulative weight exceeds the threshold (0.1).
+///
+/// `served` is the serve-time source check of the request (G04). It decides
+/// which files exist for the walk, not only which are reported: a file that
+/// is not served is not reached, nothing is reached through it, and its
+/// edges are not counted. Files are asked as the frontier reaches them, so a
+/// bounded gate spends its bound on the files nearest the root; a file it
+/// can no longer decide ends the walk there.
 pub(super) fn impact_analysis(
     conn: &Connection,
     file_path: &str,
     max_depth: usize,
+    served: Served<'_>,
 ) -> anyhow::Result<ImpactResult> {
     // Graph node keys use canonical `/` separators (see the builder walk);
     // accept native Windows input too.
     let file_path = file_path.replace('\\', "/");
     let file_path = file_path.as_str();
+    if !served(file_path) {
+        return Ok(ImpactResult {
+            root_file: file_path.to_string(),
+            affected_files: Vec::new(),
+            weak_files: Vec::new(),
+            max_depth_reached: 0,
+            edges_traversed: 0,
+        });
+    }
     let reverse_graph = build_weighted_reverse_graph(conn)?;
 
-    let all = propagate(&reverse_graph, file_path, max_depth, false);
+    let all = propagate(&reverse_graph, file_path, max_depth, false, served);
     // Files also reachable over evidence-backed edges alone; the rest hang on
     // name-match guesses only and are reported as such. A strong edge never
     // weighs more than the pair's strongest edge overall, so the strong set
     // is a subset of the full one.
-    let strong = propagate(&reverse_graph, file_path, max_depth, true);
+    let strong = propagate(&reverse_graph, file_path, max_depth, true, served);
     let weak_files: Vec<String> = all.reached.difference(&strong.reached).cloned().collect();
 
     Ok(ImpactResult {
@@ -142,12 +164,13 @@ struct Propagation {
 /// later still propagates, unless an equally heavy or heavier one already
 /// arrived at the same or a shallower depth. Processing order is sorted, so
 /// the result is deterministic. With `strong_only`, name-match-only edges
-/// are not followed.
+/// are not followed. An edge to a file `served` refuses does not exist.
 fn propagate(
     reverse_graph: &ReverseGraph,
     root: &str,
     max_depth: usize,
     strong_only: bool,
+    served: Served<'_>,
 ) -> Propagation {
     const PROPAGATION_THRESHOLD: f64 = 0.1;
     // Heaviest weight per file over all depths processed so far.
@@ -167,6 +190,9 @@ fn propagate(
                 }) else {
                     continue;
                 };
+                if !served(dep.file.as_str()) {
+                    continue;
+                }
                 edges_traversed += 1;
                 let propagated = weight * edge_weight;
                 if propagated < PROPAGATION_THRESHOLD
@@ -197,17 +223,23 @@ fn propagate(
     }
 }
 
-/// BFS shortest path from `from` to `to` following structural edges.
+/// BFS shortest path from `from` to `to` following structural edges. Every
+/// step of the path is a file `served` admits (see `impact_analysis`): a
+/// chain that exists only through a withdrawn file is not a chain.
 pub(super) fn dependency_chain(
     conn: &Connection,
     from: &str,
     to: &str,
+    served: Served<'_>,
 ) -> anyhow::Result<Option<DependencyChain>> {
     // Same canonicalization as `impact_analysis`.
     let from = from.replace('\\', "/");
     let to = to.replace('\\', "/");
     let from = from.as_str();
     let to = to.as_str();
+    if !served(from) {
+        return Ok(None);
+    }
     let forward_graph = build_forward_graph(conn)?;
 
     let mut visited: HashSet<String> = HashSet::new();
@@ -232,7 +264,7 @@ pub(super) fn dependency_chain(
 
         if let Some(deps) = forward_graph.get(&current) {
             for dep in deps {
-                if visited.insert(dep.clone()) {
+                if !visited.contains(dep) && served(dep) && visited.insert(dep.clone()) {
                     parent.insert(dep.clone(), current.clone());
                     queue.push_back(dep.clone());
                 }
@@ -245,11 +277,19 @@ pub(super) fn dependency_chain(
 
 /// Related files for a given path: direct neighbors via any structural edge,
 /// sorted by edge weight (strongest relationship first). Returns (path, weight) pairs.
+///
+/// Only neighbours `served` admits are ranked, and the limit is applied after
+/// that check in rank order: a withdrawn neighbour takes no slot, and a
+/// bounded gate is asked about the strongest neighbours first.
 pub fn related_files(
     conn: &Connection,
     file_path: &str,
     limit: usize,
+    served: Served<'_>,
 ) -> anyhow::Result<Vec<(String, f64)>> {
+    if !served(file_path) {
+        return Ok(Vec::new());
+    }
     let sql = format!(
         "SELECT p_other.path, e.kind, e.metadata
          FROM edges e
@@ -298,8 +338,11 @@ pub fn related_files(
     // Equal weights are common; break ties by path so the cut below does not
     // depend on hash order (planning must be identical across processes).
     results.sort_by(|a, b| b.1.total_cmp(&a.1).then_with(|| a.0.cmp(&b.0)));
-    results.truncate(limit);
-    Ok(results)
+    Ok(results
+        .into_iter()
+        .filter(|(path, _)| served(path))
+        .take(limit)
+        .collect())
 }
 
 /// Kind weight scaled by the edge's evidence grade (see
@@ -310,42 +353,49 @@ pub(super) fn evidence_weight(kind: &str, metadata: Option<&str>) -> f64 {
 }
 
 /// Graph connectivity stats for a file: incoming/outgoing edge counts by kind.
+///
+/// An edge is counted only while the file at its other end is one `served`
+/// admits (an end without a file — a commit, a fact — names no source and is
+/// counted); nothing is counted for a file that is itself not served.
 pub fn file_connectivity(
     conn: &Connection,
     file_path: &str,
+    served: Served<'_>,
 ) -> anyhow::Result<HashMap<String, (usize, usize)>> {
     let mut result: HashMap<String, (usize, usize)> = HashMap::new();
-
-    let mut stmt_out = conn.prepare(
-        "SELECT e.kind, COUNT(*)
-         FROM edges e JOIN nodes n ON e.source_id = n.id
-         JOIN paths p ON p.id = n.file_id
-         WHERE p.path = ?1
-         GROUP BY e.kind",
-    )?;
-    let rows = stmt_out.query_map(params![file_path], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-    })?;
-    for row in rows {
-        let (kind, count) = row?;
-        result.entry(kind).or_insert((0, 0)).0 = count as usize;
+    if !served(file_path) {
+        return Ok(result);
     }
-
-    let mut stmt_in = conn.prepare(
-        "SELECT e.kind, COUNT(*)
-         FROM edges e JOIN nodes n ON e.target_id = n.id
-         JOIN paths p ON p.id = n.file_id
-         WHERE p.path = ?1
-         GROUP BY e.kind",
-    )?;
-    let rows = stmt_in.query_map(params![file_path], |row| {
-        Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)?))
-    })?;
-    for row in rows {
-        let (kind, count) = row?;
-        result.entry(kind).or_insert((0, 0)).1 = count as usize;
+    // (this file's end, the other end): outgoing first, then incoming.
+    for (outgoing, own, other) in [
+        (true, "source_id", "target_id"),
+        (false, "target_id", "source_id"),
+    ] {
+        let mut stmt = conn.prepare(&format!(
+            "SELECT e.kind, po.path
+             FROM edges e
+             JOIN nodes n ON e.{own} = n.id
+             JOIN paths p ON p.id = n.file_id
+             JOIN nodes o ON e.{other} = o.id
+             JOIN paths po ON po.id = o.file_id
+             WHERE p.path = ?1"
+        ))?;
+        let rows = stmt.query_map(params![file_path], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?;
+        for row in rows {
+            let (kind, other_path) = row?;
+            if !(other_path.is_empty() || other_path == file_path || served(&other_path)) {
+                continue;
+            }
+            let slot = result.entry(kind).or_insert((0, 0));
+            if outgoing {
+                slot.0 += 1;
+            } else {
+                slot.1 += 1;
+            }
+        }
     }
-
     Ok(result)
 }
 

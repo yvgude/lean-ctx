@@ -318,6 +318,34 @@ pub fn enforce_writable(candidate: &Path) -> Result<(), String> {
     // This boundary covers caller-selected edit/backup/export destinations.
     // Engine-owned knowledge persistence uses its own authorized store writer.
     crate::cli::enforce_protected_store_path(candidate)?;
+    // Hive policies and limits are never changed by an agent (Release B).
+    if crate::core::hive::effective_floor::is_policy_path(&canonical_target(candidate)) {
+        return Err(format!(
+            "Hive policy files are written by the engine only; agents cannot change them: {}",
+            candidate.display()
+        ));
+    }
+    // Under a Workspace a write needs a read-write root (#2120).
+    match crate::core::workspace_authority::current() {
+        crate::core::workspace_authority::Authority::Legacy => {}
+        crate::core::workspace_authority::Authority::Unavailable(reason) => {
+            return Err(crate::core::workspace_authority::unavailable_reason(
+                &reason,
+            ));
+        }
+        crate::core::workspace_authority::Authority::Workspace(snapshot) => {
+            let target = canonical_target(candidate);
+            if snapshot.admits_write(&target) {
+                return Ok(());
+            }
+            return Err(format!(
+                "writes are denied outside the read-write roots of Workspace '{}' (rev {}): {}",
+                snapshot.id,
+                snapshot.revision,
+                candidate.display()
+            ));
+        }
+    }
     if is_read_only_path(candidate) {
         return Err(format!(
             "path is inside a read-only root — writes are denied (read_only_roots): {}",
@@ -455,6 +483,84 @@ pub fn jail_path(candidate: &Path, jail_root: &Path) -> Result<PathBuf, PathJail
     jail_path_with_roots(candidate, jail_root, &[])
 }
 
+/// Jail `candidate` to the request's Workspace snapshot (#2120). A relative
+/// path resolves against `jail_root` when the Workspace contains it, else
+/// against the primary root. Only the snapshot's roots admit — lean-ctx's own
+/// data and state directories hold every project's indexes, sessions and
+/// archives, and reach them through engine APIs (`ctx_expand`, recall), not
+/// through a model-chosen path. `..` below a missing ancestor is refused, and an
+/// existing target is re-resolved and re-checked.
+fn jail_in_workspace(
+    candidate: &Path,
+    jail_root: &Path,
+    snapshot: &crate::core::workspace_authority::Snapshot,
+) -> Result<PathBuf, PathJailError> {
+    let canonical = |path: &Path| crate::core::pathutil::canonicalize_secure(path).ok();
+    let base_root = canonical(jail_root)
+        .filter(|root| snapshot.admits(root))
+        .unwrap_or_else(|| snapshot.primary.clone());
+    let candidate = if candidate.is_absolute() {
+        candidate.to_path_buf()
+    } else {
+        base_root.join(candidate)
+    };
+    let admitted = |path: &Path| snapshot.admits(path);
+    let outside = |path: &Path| PathJailError::OutsideWorkspace {
+        path: path.to_path_buf(),
+        workspace: snapshot.id.clone(),
+        revision: snapshot.revision,
+        roots: snapshot
+            .granting_roots()
+            .map(|(root, access)| format!("{} ({})", root.display(), access.as_str()))
+            .collect::<Vec<_>>()
+            .join(", "),
+    };
+
+    let mut existing = candidate.clone();
+    let mut remainder: Vec<std::ffi::OsString> = Vec::new();
+    while !existing.exists() {
+        let Some(name) = existing.file_name() else {
+            return Err(PathJailError::NoExistingAncestor { path: candidate });
+        };
+        remainder.push(name.to_os_string());
+        if !existing.pop() {
+            return Err(PathJailError::NoExistingAncestor { path: candidate });
+        }
+    }
+    if remainder
+        .iter()
+        .any(|part| part == std::ffi::OsStr::new("..") || part == std::ffi::OsStr::new("."))
+    {
+        return Err(outside(&candidate));
+    }
+    // Unbounded on purpose: a timed-out canonicalization would leave a lexical
+    // path whose symlinks were never resolved.
+    let base = canonical(&existing).ok_or_else(|| outside(&candidate))?;
+    if !admitted(&base) {
+        return Err(outside(&candidate));
+    }
+
+    #[cfg(windows)]
+    reject_symlink_on_windows(&candidate)?;
+
+    let mut out = base;
+    for part in remainder.iter().rev() {
+        out.push(part);
+    }
+    if out.exists() {
+        let resolved = canonical(&out).ok_or_else(|| outside(&candidate))?;
+        if !admitted(&resolved) {
+            return Err(PathJailError::PostCanonicalizeEscape {
+                path: candidate,
+                resolved,
+            });
+        }
+    }
+    crate::cli::enforce_protected_store_path(&out)
+        .map_err(|reason| PathJailError::ProtectedContext { reason })?;
+    Ok(out)
+}
+
 /// Known language-cache markers (#899): (path substring, human label, config
 /// example). Single source of truth shared by [`detected_cache_hint`] (the
 /// jail-error suggestion) and [`detect_language_cache_root`] (session
@@ -507,6 +613,13 @@ const LANGUAGE_CACHE_PATTERNS: &[(&str, &str, &str)] = &[
         "~/.pub-cache/hosted",
     ),
     ("/.gem/ruby/", "Ruby gems", "~/.gem/ruby"),
+    // Interpreter installs whose stdlib agents look up like site-packages
+    // (which is already admitted inside them). Source and binaries only.
+    (
+        "/.pyenv/versions/",
+        "pyenv Python installations",
+        "~/.pyenv/versions",
+    ),
 ];
 
 /// Agent-owned instruction locations below `~` that the agents themselves are
@@ -653,6 +766,7 @@ fn detect_agent_instruction_root(candidate: &Path) -> Option<(&'static str, Path
         .iter()
         .find(|(root, _)| rel.starts_with(root))
         .map(|&(root, label)| (label, canon_home.join(root)))
+        .or_else(|| detect_host_session_output_root(rel, &canon_home))
         .or_else(|| {
             cursor_agent_output_root(rel)
                 .map(|root| canon_home.join(root))
@@ -662,6 +776,76 @@ fn detect_agent_instruction_root(candidate: &Path) -> Option<(&'static str, Path
                 .filter(|root| canonicalize_secure(root) == *root)
                 .map(|root| (CURSOR_AGENT_OUTPUT_LABEL, root))
         })
+}
+
+/// Output the host wrote for the agent's *own* session and then pointed the
+/// agent at: Claude Code persists large tool results under
+/// `~/.claude/projects/<slug>/<session>/tool-results` (and subagent logs next
+/// to it). Cursor's `agent-tools`/`terminals` take the stricter path of
+/// [`cursor_agent_output_root`] (own workspace only, no symlinked folder).
+/// They sit in protected dot folders, so every follow-up read was refused —
+/// ~1'900 refusals in 30 days on 3.11.3+ (focus analysis 2026-10-15). Only
+/// these exact per-session subtrees open, read-only; credentials beside them
+/// (`~/.claude/.credentials.json`, `~/.cursor/projects/<id>/mcp-auth.json`)
+/// and other conversations' transcripts stay jailed. `rel` is relative to
+/// `~` and contains normal components only.
+fn detect_host_session_output_root(
+    rel: &Path,
+    canon_home: &Path,
+) -> Option<(&'static str, PathBuf)> {
+    let parts: Vec<&str> = rel
+        .components()
+        .map(|c| c.as_os_str().to_str())
+        .collect::<Option<_>>()?;
+    let (depth, label) = match parts.as_slice() {
+        [
+            ".claude",
+            "projects",
+            _,
+            _,
+            "tool-results" | "subagents",
+            ..,
+        ] => (5, "Claude Code session output"),
+        _ => return None,
+    };
+    Some((
+        label,
+        canon_home.join(parts[..depth].iter().collect::<PathBuf>()),
+    ))
+}
+
+/// The host's own per-user scratch directory outside `~`: Claude Code keeps
+/// the session scratchpad below `<tmp>/claude-<uid>/` and tells the agent to
+/// put intermediate files there. Admitted read-only only when that directory
+/// belongs to this user and nobody else can write into it, so another local
+/// account cannot pre-create it in the shared `/tmp`.
+#[cfg(unix)]
+fn detect_host_scratch_root(candidate: &Path) -> Option<(&'static str, PathBuf)> {
+    use std::os::unix::fs::MetadataExt;
+    // SAFETY: geteuid has no arguments or failure state.
+    let uid = unsafe { libc::geteuid() };
+    let name = format!("claude-{uid}");
+    // Canonical through the nearest existing ancestor (`/var` vs
+    // `/private/var` on macOS); a `..` in the missing tail yields `None`.
+    let (base, rest) = canonicalize_existing_ancestor(candidate)?;
+    let candidate = rest.iter().rev().fold(base, |path, part| path.join(part));
+    [std::env::temp_dir(), PathBuf::from("/tmp")]
+        .into_iter()
+        .map(|tmp| tmp.join(&name))
+        .find_map(|dir| {
+            let meta = std::fs::symlink_metadata(&dir).ok()?;
+            let root = canonicalize_secure(&dir);
+            (meta.is_dir()
+                && meta.uid() == uid
+                && meta.mode() & 0o022 == 0
+                && candidate.starts_with(&root))
+            .then_some(("Claude Code scratchpad", root))
+        })
+}
+
+#[cfg(not(unix))]
+fn detect_host_scratch_root(_candidate: &Path) -> Option<(&'static str, PathBuf)> {
+    None
 }
 
 /// When `candidate` reaches its target through a symlink inside an agent
@@ -730,6 +914,11 @@ pub fn jail_path_auto_admitting(
     let Err(refused) = first else {
         return first;
     };
+    // Under a Workspace nothing is admitted on the fly (#2120): a cache or
+    // instruction folder is reachable only as an attached root.
+    if crate::core::workspace_authority::is_configured() {
+        return Err(refused);
+    }
     let Some((label, root)) = detect_language_cache_root(candidate) else {
         return Err(refused);
     };
@@ -780,6 +969,9 @@ pub fn detect_language_cache_root(candidate: &Path) -> Option<(&'static str, Pat
     if let Some(found) = detect_agent_instruction_root(candidate) {
         return Some(found);
     }
+    if let Some(found) = detect_host_scratch_root(candidate) {
+        return Some(found);
+    }
     let s = candidate.to_string_lossy().replace('\\', "/");
     for &(marker, label, _) in LANGUAGE_CACHE_PATTERNS {
         if let Some(idx) = s.find(marker) {
@@ -804,6 +996,27 @@ pub fn jail_path_with_roots(
     jail_root: &Path,
     extra_roots: &[String],
 ) -> Result<PathBuf, PathJailError> {
+    jail_path_checked(candidate, jail_root, extra_roots, true)
+}
+
+/// [`jail_path`] with the off-switches ignored: the root + allow-list check
+/// runs even in a `no-jail` build and under `path_jail = false`.
+///
+/// For destinations whose containment is a property of the operation rather
+/// than of the general tool jail — an unredacted canonical session export is
+/// bound to its session's project root (plus the configured allow-list), and a
+/// build or config that opens tool paths must not also open where that export
+/// may land. With the jail in force this is identical to [`jail_path`].
+pub fn jail_path_enforced(candidate: &Path, jail_root: &Path) -> Result<PathBuf, PathJailError> {
+    jail_path_checked(candidate, jail_root, &[], false)
+}
+
+fn jail_path_checked(
+    candidate: &Path,
+    jail_root: &Path,
+    extra_roots: &[String],
+    honor_off_switch: bool,
+) -> Result<PathBuf, PathJailError> {
     if candidate.to_string_lossy().as_bytes().contains(&0) {
         return Err(PathJailError::NullByte);
     }
@@ -819,19 +1032,34 @@ pub fn jail_path_with_roots(
     crate::cli::enforce_protected_store_path(&absolute)
         .map_err(|reason| PathJailError::ProtectedContext { reason })?;
 
+    // A launcher-bound Workspace is the only authority (#2120): it is checked
+    // before the off-switches, the configured widening and the home scope,
+    // none of which apply while it is bound.
+    match crate::core::workspace_authority::current() {
+        crate::core::workspace_authority::Authority::Legacy => {}
+        crate::core::workspace_authority::Authority::Unavailable(reason) => {
+            return Err(PathJailError::WorkspaceUnavailable {
+                reason: crate::core::workspace_authority::unavailable_reason(&reason),
+            });
+        }
+        crate::core::workspace_authority::Authority::Workspace(snapshot) => {
+            return jail_in_workspace(candidate, jail_root, &snapshot);
+        }
+    }
+
     // With the jail off a relative path still means "in the project": the
     // process CWD (the daemon's) is not the project, so resolve it against
     // the root here as well.
     #[cfg(feature = "no-jail")]
     {
-        let _ = extra_roots;
-        return Ok(canonicalize_or_self(&absolute));
+        if honor_off_switch {
+            return Ok(canonicalize_or_self(&absolute));
+        }
     }
 
-    #[allow(unreachable_code)]
     {
         let cfg = crate::core::config::Config::load();
-        if cfg.path_jail == Some(false) {
+        if honor_off_switch && cfg.path_jail == Some(false) {
             return Ok(canonicalize_or_self(&absolute));
         }
 
@@ -890,8 +1118,9 @@ pub fn jail_path_with_roots(
             let is_suspicious = crate::tools::startup::is_suspicious_root(&root);
             let mut hint = if is_suspicious || root == std::path::Path::new("/") {
                 ". lean-ctx has not bound this session to a project yet (the host reported \
-                     no project directory). Any path inside a project binds it; if it \
-                     persists: lean-ctx doctor --fix"
+                     no project directory). Relative paths cannot bind it: pass one \
+                     absolute path inside the project, e.g. /home/me/code/my-app/README.md, \
+                     and it stays the session project; if it persists: lean-ctx doctor --fix"
                     .to_string()
             } else {
                 super::pathjail_scope::escape_hint(candidate, &base, &root)

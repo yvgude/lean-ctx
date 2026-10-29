@@ -42,7 +42,7 @@ pub enum OclaEvent {
         outcome: FeedbackOutcome,
         tool: Option<String>,
     },
-    /// Compression threshold shifted (threshold_learning.rs).
+    /// Compression threshold shifted (feedback store).
     ThresholdShift {
         language: String,
         old_value: f64,

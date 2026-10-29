@@ -90,10 +90,11 @@ the only true agentless route.
 
 ## Dashboard
 
-Import [`integrations/datadog/dashboard.json`](../../integrations/datadog/dashboard.json):
-Datadog → Dashboards → New Dashboard → ⚙ → Import dashboard JSON.
+LeanCTX no longer ships a ready-made Datadog dashboard; build one from the
+metrics above (Datadog → Dashboards → New Dashboard). The local view of the
+same numbers is the Cockpit: `lean-ctx cockpit` (Savings · Spend · Report).
 
-Widgets: savings overview (estimated vs. verified vs. USD), token flow
+Useful widgets: savings overview (estimated vs. verified vs. USD), token flow
 (in/out/saved), cache hit ratio, cost trend per day, compression
 ratio by project. Template variables `$project`, `$agent_role`, `$model` give
 the FinOps showback drill-down.

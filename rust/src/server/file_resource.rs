@@ -67,6 +67,9 @@ pub(super) fn read_file_resource(
     let path_str = resolve_path(uri)?;
     let path = Path::new(&path_str);
     crate::cli::enforce_protected_store_path(path).map_err(FileResourceError::ProtectedContext)?;
+    // Under a Workspace a resource read is confined like a tool path (#2120).
+    crate::core::workspace_authority::confine(&path_str, project_root.unwrap_or(""), false)
+        .map_err(FileResourceError::ProtectedContext)?;
 
     if let Some(root) = project_root {
         validate_jail(path, root, extra_roots)?;

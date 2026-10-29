@@ -19,7 +19,6 @@ const SUBCOMMANDS: &[&str] = &[
     "pr",
     "create",
     "install",
-    "update",
     "list",
     "ls",
     "info",
@@ -32,7 +31,6 @@ const SUBCOMMANDS: &[&str] = &[
     "checkpoint-inspect",
     "snapshot-v1-inspect",
     "auto-load",
-    "publish",
     "send",
     "receive",
     "help",
@@ -54,7 +52,6 @@ pub(crate) fn cmd_pack(args: &[String]) {
         "pr" => cmd_pack_pr(args, &project_root),
         "create" => cmd_pack_create(args, &project_root),
         "install" => cmd_pack_install(args, &project_root),
-        "update" => super::pack_remote::cmd_pack_update(args, &project_root),
         "list" | "ls" => cmd_pack_list(),
         "info" => cmd_pack_info(args),
         "remove" | "rm" => cmd_pack_remove(args),
@@ -66,8 +63,7 @@ pub(crate) fn cmd_pack(args: &[String]) {
         "snapshot-v1-inspect" => checkpoint::cmd_pack_snapshot_v1_inspect(args),
         "migrate" => cmd_pack_migrate(args),
         "rollback" => cmd_pack_rollback(args),
-        "auto-load" => cmd_pack_auto_load(args),
-        "publish" => cmd_pack_publish(args),
+        "auto-load" => cmd_pack_auto_load(args, &project_root),
         "send" => cmd_pack_send(args, &project_root),
         "receive" => cmd_pack_receive(args, &project_root),
         "help" | "--help" | "-h" => print_usage(),
@@ -86,14 +82,22 @@ fn print_usage() {
          \n\
          Create & Manage:\n\
          \x20 create   --name <name> [--version <v>] [--level 1|2|3] [--scope @ns] [--description <d>] [--author <a>] [--tags <t>] [--layers <l>]\n\
+         \x20          [--category <c,..>] [--key <k,..>] [--fact <category/key,..>] [--redistributable] [--preview]\n\
+         \x20          --layers: knowledge,graph,session,patterns,gotchas (default knowledge,graph,session,gotchas);\n\
+         \x20          --category/--key keep only matching facts, --fact adds named ones; every fact carries\n\
+         \x20          its status (verified = backed by a source, else assumption). --preview lists exactly\n\
+         \x20          what would be packed (titles, status, sources, validity) and writes nothing.\n\
+         \x20          --redistributable lets recipients export, send or publish the package; without it a\n\
+         \x20          received package stays with its recipient.\n\
          \x20 create   --kind skills --name @ns/<name> --from <dir> --description <d>  Build a signed skills pack from a directory\n\
          \x20 list     List all installed packages\n\
          \x20 info     <name>[@version]  Show package details\n\
          \x20 remove   <name>[@version]  Remove a package\n\
          \n\
          Share & Distribute:\n\
-         \x20 export   <name>[@version] [--output=<path>] [--sign] [--private] [--allow-secrets]  Export to .{ext} file (--sign: ed25519, required for publish; --private: hidden on the hosted registry; secret scan blocks credential-shaped content unless --allow-secrets)\n\
-         \x20 import   <file.{ext}> [--apply]            Import from file\n\
+         \x20 export   <name>[@version] [--output=<path>] [--sign] [--private] [--allow-secrets]  Export to .{ext} file (--sign: ed25519; --private: marked private in the signed manifest; secret scan blocks credential-shaped content unless --allow-secrets)\n\
+         \x20          A received package is exported only when its signed manifest grants redistribution.\n\
+         \x20 import   <file.{ext}> [--apply]            Import from file (unsigned or identity-only signed: allowed, with a warning)\n\
          \x20 verify   <file.{ext}> [...]                Verify integrity + signature, no install (spec \u{a7}8/\u{a7}9; exit 1 on failure)\n\
          \x20 checkpoint-seal (--checkpoint=<payload.json> | --session=<id>) --output=<file.{ext}> --name=<name> [--version=<v>] [--unsigned]\n\
          \x20 checkpoint-inspect <file.{ext}>             Verify and emit the open checkpoint envelope as bounded JSON\n\
@@ -101,11 +105,6 @@ fn print_usage() {
          \x20 migrate  <file.lctxpkg>                    Verify and copy legacy package byte-for-byte to .{ext}\n\
          \x20 rollback <file.ctxpkg.migration.json>      Remove a verified migrated copy and retain its legacy source\n\
          \x20 install  <name>[@version] [--file=<path>]    Apply package to current project\n\
-         \x20 install  <ns>/<name>[@version]              Install from the hosted registry\n\
-         \x20                                             (ctxpkg.com; verifies sha256 + signature, pins in ctxpkg.lock,\n\
-         \x20                                             resolves declared dependencies depth-1)\n\
-         \x20 update   <ns>/<name>                        Refresh a hosted pack + its dependencies to the newest versions\n\
-         \x20 publish  <file.{ext}> [--registry <url>] [--token <ctxp_…>]  Publish (signed, scoped @ns/name)\n\
          \n\
          A2A Transport:\n\
          \x20 send     <file.{ext}> [--target <url>] [--to <agent>] [--secret <key>]\n\
@@ -124,7 +123,9 @@ fn print_usage() {
          \x20          [--no-security-check --force]\n\
          \x20          Ranks files by task + import graph; top files in full, next tier as signatures,\n\
          \x20          the rest only in the tree. The limit is a hard cap (default 128k chars); exit 1 if\n\
-         \x20          even the frame exceeds it. Files with detected secrets are withheld and listed.\n\
+         \x20          even the frame exceeds it. Files are read through the gateway: withheld files are\n\
+         \x20          listed by name, masked content stays masked. -o writes inside the project root only.\n\
+         \x20          --no-security-check skips only the bundle's own secret scan, never the gateway's masking.\n\
          \n\
          CONFORMANCE LEVELS:\n\
          \x20 1 (Basic)     Flat nodes, no edges (any tool can implement)\n\
@@ -134,6 +135,7 @@ fn print_usage() {
          EXAMPLES:\n\
          \x20 lean-ctx pack create --name rust-patterns --description \"Rust best practices\"\n\
          \x20 lean-ctx pack create --name auth-service --level 2 --scope @company\n\
+         \x20 lean-ctx pack create --name auth-notes --layers knowledge --category architecture --preview\n\
          \x20 lean-ctx pack export rust-patterns --output=rust-patterns.{ext}\n\
          \x20 lean-ctx pack send rust-patterns.{ext} --target http://remote:3344\n\
          \x20 lean-ctx pack receive envelope.json --secret mykey --apply\n\

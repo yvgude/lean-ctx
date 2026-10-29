@@ -1,0 +1,13 @@
+{
+  "description": "Root public keys compiled into Hive (hive_wire::roots) and the 3.12.0 engine (SPEC-SECURITY-OPS 5.6 step 2, RESOLUTIONS R55). public_key is standard base64 of the 32-byte Ed25519 key. Hosted and retired roots use the C0 key_id hex(blake3(pk))[..16]; vendor roots use the root certificate issuer_key_id key:ed25519-hex(sha256(pk))[..32]. hosted holds the root hive.leanctx.com uses today, so 3.12.0 engines keep connecting; pre_rotation names that root while the offline rotation V15.O9 is open, and root-cert status refuses government workspaces (roots_not_rotated) while it is the only hosted root that signs the key set. The 3.12.0 release gate refuses an empty hosted list.",
+  "hosted": [
+    {
+      "key_id": "b5406e1db468082e",
+      "public_key": "gu/tH0HqqDVcjm+fbHoS05NodwN7eWqQ5N4qAxq+cV8="
+    }
+  ],
+  "retired": [],
+  "pre_rotation": "b5406e1db468082e",
+  "vendor": [],
+  "old_vendor": []
+}

@@ -16,7 +16,22 @@ pub(super) struct PreparedCommand {
 }
 
 impl PreparedCommand {
+    /// Publish without a tool run: the prepared output is printed as it is.
+    #[cfg(test)]
     pub(super) fn publish(self) -> CommandOutput {
+        self.publish_delivered(|printable| printable.text)
+    }
+
+    /// Publish the prepared output. `deliver` finishes the shared CLI tool
+    /// run the acquisition started under (`CliToolRun::finish`: release
+    /// point, lineage record of the returned text); what it returns is
+    /// printed, and nothing else is. For admitted output that text is the
+    /// prepared output, byte for byte. A non-zero exit status is reported to
+    /// the run as a failure, so it is never recorded as a delivery.
+    pub(super) fn publish_delivered(
+        self,
+        deliver: impl FnOnce(super::common::Printable) -> String,
+    ) -> CommandOutput {
         if self.authority.verify().is_err() {
             eprintln!("Context output withheld because its authority changed.");
             return CommandOutput::local(1, None);
@@ -25,9 +40,69 @@ impl PreparedCommand {
             eprintln!("{warning}");
         }
         if !self.output.is_empty() {
-            println!("{}", self.output);
+            super::common::print_released(&deliver(super::common::Printable {
+                text: self.output,
+                source_only: true,
+                failed: self.exit_code != 0,
+            }));
         }
         CommandOutput::protected(self.exit_code, self.recording, self.authority)
+    }
+}
+
+/// The MCP tool a protected CLI command stands for.
+fn tool_of(command: ContextCommand) -> &'static str {
+    match command {
+        ContextCommand::Read | ContextCommand::Diff | ContextCommand::Deps => "ctx_read",
+        ContextCommand::Grep => "ctx_search",
+        ContextCommand::Glob | ContextCommand::Find => "ctx_glob",
+        ContextCommand::Ls => "ctx_tree",
+    }
+}
+
+/// What the shared CLI tool run needs to know about one protected command:
+/// its tool, the project authority (the working directory — the fallback
+/// `prepare` itself resolves), the tool arguments that decide whether the
+/// call declares every source, and whether the output is a listing or
+/// another view that is released but never recorded. Only `grep` is a
+/// declared carrier here; `read` has its own adapter.
+pub(super) struct Carrier {
+    tool: &'static str,
+    root: String,
+    arguments: Option<serde_json::Map<String, serde_json::Value>>,
+}
+
+impl Carrier {
+    pub(super) fn of(command: ContextCommand, args: &[String]) -> Self {
+        let arguments = (command == ContextCommand::Grep && !args.is_empty()).then(|| {
+            let mut map = serde_json::Map::new();
+            map.insert("pattern".to_owned(), args[0].clone().into());
+            map.insert(
+                "path".to_owned(),
+                args.get(1).map_or(".", String::as_str).into(),
+            );
+            map
+        });
+        Self {
+            tool: tool_of(command),
+            root: std::env::current_dir()
+                .map(|dir| dir.to_string_lossy().into_owned())
+                .unwrap_or_default(),
+            arguments,
+        }
+    }
+
+    /// The tool run of this command. Prepared output passed the rooted
+    /// admitted reader and the project policy, never the legacy output
+    /// redactor — its bytes stay as prepared.
+    pub(super) fn run(&self) -> super::common::CliToolRun<'_> {
+        let run = super::common::CliToolRun::new(self.tool, &self.root, self.arguments.as_ref())
+            .admitted_reader_output();
+        if self.arguments.is_some() {
+            run
+        } else {
+            run.human_facing()
+        }
     }
 }
 
@@ -76,12 +151,7 @@ pub(super) fn prepare(
         }
         // A surrounding request can supply stronger authority than process cwd.
         let root = policy::diagnostics::request_project().ok_or(())?;
-        let tool = match command {
-            ContextCommand::Read | ContextCommand::Diff | ContextCommand::Deps => "ctx_read",
-            ContextCommand::Grep => "ctx_search",
-            ContextCommand::Glob | ContextCommand::Find => "ctx_glob",
-            ContextCommand::Ls => "ctx_tree",
-        };
+        let tool = tool_of(command);
         if role_guard::check_tool_access(tool).blocked
             || policy_guard::check_tool_access(tool).blocked
         {
@@ -163,7 +233,7 @@ fn grep(scope: &mut SourceScope<'_>, args: &[String]) -> Result<(String, usize, 
         crate::core::roles::active_role().io.allow_secret_paths,
         false,
     );
-    if outcome.text.starts_with("ERROR:") {
+    if outcome.failed {
         return Err(());
     }
     scope.recording = Some(Recording::Search {

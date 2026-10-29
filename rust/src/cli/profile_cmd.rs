@@ -267,33 +267,8 @@ fn collect_diffs(a: &profiles::Profile, b: &profiles::Profile) -> Vec<(String, S
     }
 
     cmp!(read.default_mode);
-    cmp!(read.max_tokens_per_file);
-    cmp!(read.prefer_cache);
     cmp!(compression.crp_mode);
-    cmp!(compression.output_density);
-    cmp!(compression.entropy_threshold);
-    cmp!(translation.enabled);
-    cmp!(translation.ruleset);
-    cmp!(layout.enabled);
-    cmp!(layout.min_lines);
-    cmp!(budget.max_context_tokens);
-    cmp!(budget.max_shell_invocations);
-    cmp!(budget.max_cost_usd);
-    cmp!(pipeline.intent);
-    cmp!(pipeline.relevance);
-    cmp!(pipeline.compression);
-    cmp!(pipeline.translation);
     cmp!(autonomy.enabled);
-    cmp!(autonomy.auto_preload);
-    cmp!(autonomy.auto_dedup);
-    cmp!(autonomy.auto_related);
-    cmp!(autonomy.silent_preload);
-    cmp!(autonomy.auto_prefetch);
-    cmp!(autonomy.auto_response);
-    cmp!(autonomy.dedup_threshold);
-    cmp!(autonomy.prefetch_max_files);
-    cmp!(autonomy.prefetch_budget_tokens);
-    cmp!(autonomy.response_min_tokens);
     cmp!(autonomy.checkpoint_interval);
 
     diffs

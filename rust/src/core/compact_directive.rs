@@ -73,6 +73,13 @@ pub fn create(keep_recent_turns: usize, summary: String) -> Result<(), String> {
 }
 
 pub fn save(directive: &CompactDirective) -> Result<(), String> {
+    let mut admitted = directive.clone();
+    admitted.summary =
+        crate::core::session::admission::admit_storable_tool_text(&directive.summary)?;
+    write_admitted(&admitted)
+}
+
+fn write_admitted(directive: &CompactDirective) -> Result<(), String> {
     let path = store_path().ok_or_else(|| "no data dir".to_string())?;
     let json = serde_json::to_string(directive).map_err(|e| e.to_string())?;
     std::fs::write(path, json).map_err(|e| e.to_string())
@@ -87,7 +94,19 @@ pub fn load_active() -> Option<CompactDirective> {
         let _ = std::fs::remove_file(&path);
         return None;
     }
-    Some(directive)
+    let original_summary = directive.summary.clone();
+    let Ok(admitted_summary) =
+        crate::core::session::admission::admit_storable_tool_text(&original_summary)
+    else {
+        let _ = std::fs::remove_file(path);
+        return None;
+    };
+    let mut admitted = directive;
+    admitted.summary = admitted_summary;
+    if admitted.summary != original_summary {
+        write_admitted(&admitted).ok()?;
+    }
+    Some(admitted)
 }
 
 /// Drop the directive — the client's next request carries the full original

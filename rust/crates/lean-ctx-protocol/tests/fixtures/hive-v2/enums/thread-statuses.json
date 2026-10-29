@@ -1,0 +1,77 @@
+{
+  "name": "thread-statuses",
+  "values": [
+    {
+      "value": "open"
+    },
+    {
+      "value": "answered"
+    },
+    {
+      "value": "became_task"
+    },
+    {
+      "value": "closed"
+    },
+    {
+      "value": "taken"
+    },
+    {
+      "value": "withdrawn"
+    },
+    {
+      "value": "offered"
+    },
+    {
+      "value": "accepted"
+    },
+    {
+      "value": "rejected"
+    },
+    {
+      "value": "vetoed"
+    },
+    {
+      "value": "expired"
+    },
+    {
+      "value": "claimed"
+    },
+    {
+      "value": "active"
+    },
+    {
+      "value": "released"
+    }
+  ],
+  "by_type": {
+    "question": [
+      "open",
+      "answered",
+      "became_task",
+      "closed"
+    ],
+    "offer": [
+      "open",
+      "taken",
+      "withdrawn"
+    ],
+    "handoff": [
+      "offered",
+      "accepted",
+      "rejected",
+      "vetoed",
+      "expired"
+    ],
+    "need": [
+      "open",
+      "claimed",
+      "expired"
+    ],
+    "claim": [
+      "active",
+      "released",
+      "vetoed"
+    ]
+  }
+}

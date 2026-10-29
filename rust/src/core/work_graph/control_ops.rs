@@ -94,7 +94,7 @@ impl BoundedWorkGraph {
                 ));
             }
             if node.delivery_attempt.is_some_and(|attempt| {
-                !(1..=crate::core::work_graph_executor::MAX_ATTEMPTS).contains(&attempt)
+                !(1..=crate::core::work_graph_delegation::MAX_DELIVERY_ATTEMPTS).contains(&attempt)
             }) || (node.delivery_attempt.is_some()
                 && (!node.execution_started || node.execution_fence.is_none()))
             {
@@ -347,6 +347,20 @@ impl BoundedWorkGraph {
         Ok(stopped)
     }
 
+    /// Stop a node whose start was refused before the host received a launch:
+    /// no child process exists, so its paths are free at once.
+    pub(crate) fn stop_unlaunched(
+        &mut self,
+        node_id: &str,
+        reason: StopReason,
+    ) -> Result<Vec<String>, WorkGraphError> {
+        let stopped = self.stop(node_id, reason)?;
+        if let Some(node) = self.nodes.get_mut(node_id) {
+            node.lease_expires_epoch_ms = None;
+        }
+        Ok(stopped)
+    }
+
     /// Record token consumption on a node.
     pub fn consume_budget(
         &mut self,
@@ -444,7 +458,7 @@ impl BoundedWorkGraph {
             let node = self.nodes.get_mut(node_id).expect("node checked above");
             node.status = NodeStatus::Stopped;
             node.stop_reason = Some(StopReason::BudgetExhausted);
-            node.lease_expires_epoch_ms = None;
+            self.end_incarnation(node_id);
             return Ok(true);
         }
 
@@ -509,7 +523,7 @@ impl BoundedWorkGraph {
         if node.status != NodeStatus::Active
             || !node.execution_started
             || node.execution_fence.as_deref() != Some(fence)
-            || !(1..=crate::core::work_graph_executor::MAX_ATTEMPTS).contains(&attempt)
+            || !(1..=crate::core::work_graph_delegation::MAX_DELIVERY_ATTEMPTS).contains(&attempt)
             || node.delivery_attempt.unwrap_or(0).checked_add(1) != Some(attempt)
         {
             return Err(WorkGraphError::InvalidTransition(node_id.into()));
@@ -526,15 +540,23 @@ impl BoundedWorkGraph {
         self.children.get(node_id).map_or(&[], Vec::as_slice)
     }
 
+    /// A started incarnation holds its paths while it runs and, once stopped,
+    /// until its window ends: LeanCTX cannot observe the host's child exit, so
+    /// a stopped child keeps write exclusivity for the time it was granted.
     pub(crate) fn has_live_path_conflict(
         &self,
         requested: &[String],
-        _now_epoch_ms: u64,
+        now_epoch_ms: u64,
         except_node_id: Option<&str>,
     ) -> bool {
         self.nodes.values().any(|node| {
             Some(node.node_id.as_str()) != except_node_id
-                && self.execution_exit_unconfirmed(node)
+                && (self.execution_exit_unconfirmed(node)
+                    || (node.execution_started
+                        && node.status == NodeStatus::Stopped
+                        && node
+                            .lease_expires_epoch_ms
+                            .is_some_and(|expires| now_epoch_ms < expires)))
                 && node.path_claims.iter().any(|held| {
                     requested
                         .iter()
@@ -546,31 +568,31 @@ impl BoundedWorkGraph {
     pub fn active_count(&self) -> usize {
         self.nodes
             .values()
-            .filter(|n| n.status == NodeStatus::Active || self.execution_exit_unconfirmed(n))
+            .filter(|n| n.status == NodeStatus::Active)
             .count()
     }
 
+    /// A started incarnation is live exactly while its node is active: the host
+    /// owns the child process, and every terminal transition (receipt, complete,
+    /// stop, budget exhaustion) ends LeanCTX's authority over it. Stores written
+    /// by the removed launcher may hold terminal nodes it never acknowledged;
+    /// they are ended too.
     pub(super) fn execution_exit_unconfirmed(&self, node: &WorkNode) -> bool {
-        node.execution_started
-            && (node.execution_fence.is_none()
-                || self.reaped_executions.get(&node.node_id) != node.execution_fence.as_ref())
+        node.execution_started && node.status == NodeStatus::Active
     }
 
-    /// Only the owning executor's verified capture path may acknowledge exit.
-    pub(crate) fn acknowledge_execution_exit(
-        &mut self,
-        node_id: &str,
-        fence: &str,
-    ) -> Result<(), WorkGraphError> {
-        let node = self
-            .nodes
-            .get(node_id)
-            .ok_or_else(|| WorkGraphError::NodeNotFound(node_id.into()))?;
-        if !node.execution_started || node.execution_fence.as_deref() != Some(fence) {
-            return Err(WorkGraphError::InvalidTransition(node_id.into()));
+    /// Record the end of a started incarnation; earlier releases read this map
+    /// to free the slot, so it is still written.
+    pub(super) fn end_incarnation(&mut self, node_id: &str) {
+        let Some(node) = self.nodes.get_mut(node_id) else {
+            return;
+        };
+        if !node.execution_started {
+            node.lease_expires_epoch_ms = None;
+        } else if let Some(fence) = &node.execution_fence {
+            self.reaped_executions
+                .insert(node_id.to_string(), fence.clone());
         }
-        self.reaped_executions.insert(node_id.into(), fence.into());
-        Ok(())
     }
 
     pub fn total_count(&self) -> usize {
@@ -583,7 +605,9 @@ impl BoundedWorkGraph {
             if matches!(node.status, NodeStatus::Active | NodeStatus::Pending) {
                 node.status = NodeStatus::Stopped;
                 node.stop_reason = Some(reason);
-                node.lease_expires_epoch_ms = None;
+                // A started node keeps its lease expiry: it bounds the path
+                // exclusivity of a child that may still be running.
+                self.end_incarnation(node_id);
                 stopped.push(node_id.to_string());
             }
         }
@@ -643,11 +667,14 @@ impl BoundedWorkGraph {
                 // A terminal status alone does not settle usage: complete() can run
                 // without a receipt, and cancellation can leave provider usage unknown.
                 let settled = matches!(child.status, NodeStatus::Completed | NodeStatus::Failed)
-                    // Unfenced legacy receipts bypass canonical usage verification
-                    // at the registered tool boundary and cannot authorize reuse.
+                    // Only measured usage can free an allocation: unfenced legacy
+                    // receipts and figures the child or its host reported (every
+                    // receipt since LeanCTX stopped launching agents) keep the full
+                    // allocation reserved, so under-reporting cannot be re-delegated.
                     && child.execution_fence.is_some()
                     && self.receipts.values().any(|receipt| {
                         receipt.node_id == *child_id
+                            && receipt.usage_source == super::UsageSource::Measured
                             && receipt.tokens_consumed == child.budget.tokens_consumed
                             && receipt.cost_micros_consumed == child.budget.cost_micros_consumed
                             && receipt.execution_fence == child.execution_fence

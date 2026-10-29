@@ -1,0 +1,20 @@
+{
+  "created_at": 1792800020000,
+  "epoch": 1,
+  "key_id": "7bc9f7e9dc1a0621",
+  "place": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03",
+  "rev": 1,
+  "schema": "leanctx.hive.snapshot/v1",
+  "segments": [
+    {
+      "count": 1,
+      "envelope_root": "90d81a5f99746aa0fd131e6083608cc132171908bbbb2e23ff18a029b6fd3dd2",
+      "n": 0,
+      "seq_from": 1,
+      "seq_to": 1
+    }
+  ],
+  "seq": 1,
+  "server_time": 1792800020500,
+  "signature": "c4db85aacd05a12ac348de9c33c6d256889f029056b31501c13dec0942e7a50dd7f46845a1bd39c524c3bb4c99b09167fa46ef397a57aa1280173859928cfe06"
+}

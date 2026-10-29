@@ -21,7 +21,7 @@ impl McpTool for CtxProviderTool {
              WORKFLOW: action=list first to discover configured providers.\n\
              ANTIPATTERN: not for file content — use ctx_compose/ctx_read instead.\n\
              provider=id (github|gitlab|jira|mcp:<name>); resource=issues|pull_requests.\n\
-             Data flows through consolidation pipeline; results searchable via ctx_semantic_search.",
+             Data flows through consolidation pipeline; results searchable via ctx_search (action=\"semantic\").",
             json!({
                 "type": "object",
                 "properties": {

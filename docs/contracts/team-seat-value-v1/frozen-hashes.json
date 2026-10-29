@@ -1,9 +1,9 @@
 {
   "contract": "team-seat-value-v1",
   "sha256": {
-    ".github/workflows/ci.yml": "b37e5df6615a1435e38df222cd12fb1eb7bb3023f3274c46f153164925344f13",
-    "ci/gitlab-ci.yml": "fcc3c6b675b988e4f9452ace54f012e3e094eba1a5089c467a3192dc8a7b1cf6",
-    "docs/contracts/README.md": "f61fed796ff70a0d1989c10e0482086a85807bdb43d773b2542abbe9fdde8162",
+    ".github/workflows/ci.yml": "81242ea9046de08bc95eb4ec4e59edda0684dc97e636894cfca13fc30a0aaaef",
+    "ci/gitlab-ci.yml": "5a1251f812a03c6ab97df01feda26942dc22d406b0e79374e4ff97c5c279178b",
+    "docs/contracts/README.md": "3bcdddc0fd629d4ba812cbf751317a1288d18983d32629ca251e81ac30b5273d",
     "docs/contracts/team-seat-value-v1/README.md": "caecd3e67f1e9c0adacc272a9dae892ac0cddef42c5e17066c069d17a83505d6",
     "docs/contracts/team-seat-value-v1/common.schema.json": "ed7778ce53b4d17922f8d8b1c1fb36837bd0bee62d195c2c074bf849d78542a4",
     "docs/contracts/team-seat-value-v1/fixtures/cross-record/histories.json": "81ee94400fb3a7ebcd6b4a94829356b32ea2bde71957772d0225ba3339e70071",
@@ -22,11 +22,11 @@
     "docs/contracts/team-seat-value-v1/seat-usage.schema.json": "75ee7537f58adcbbd211f693aefef152fe00e9745d96c454f8f4f9dba07284fc",
     "docs/contracts/team-seat-value-v1/seat-value-signature-envelope.schema.json": "a6c6842f8d89b950e410408fc7e8c41f654691276d6af052888bac6893e241f2",
     "docs/contracts/team-seat-value-v1/team-value-aggregate.schema.json": "89b16787330ac2d2de94a383f3397d10b4d9535717d2034e0b08f9c64db970a7",
-    "rust/crates/lean-ctx-protocol/src/lib.rs": "8b767659b6804c055c8665f5a580282633c1801b4bc9309da617b81294321149",
+    "rust/crates/lean-ctx-protocol/src/lib.rs": "de7353d7e7121e75bdf910048cc47d88790d824a04e3e3a3268ebf8fc3484413",
     "rust/crates/lean-ctx-protocol/src/seat_value.rs": "9b07cb6288cc368874c27fdcd1a8d15f210f101494c797282a08ed9b3d039d14",
     "rust/crates/lean-ctx-protocol/src/team_seat_value_capability.rs": "3c470bcc74989a6c89968a2fca544ea8077eca193f9c74e1db4a70e81c1a6124",
-    "rust/src/core/contracts.rs": "2c2ea75728f3cad2418dfa38d9feebb0062cb611454b2fcb7acc7c3a1df97691",
-    "rust/src/core/server_capabilities.rs": "0a5b07f7b3697415faa2df638ea36752bde57b007eb667cb6d9cdc289785d29b",
+    "rust/src/core/contracts.rs": "f6bc3b947a05b2fe5956a6076dfcffdbabe66aff85d0f364971c6895582d6b50",
+    "rust/src/core/server_capabilities.rs": "f31c994cf83702f0bda3d08ba848b9ad35ae7ed6995d5ec8126f0277f0d19897",
     "scripts/verify-team-context-v1.py": "5df932374f44c32bdbf6598825498f54e30a2dee42eecc9bfbe79015525f74ee",
     "scripts/verify-team-seat-value-rust-parity.py": "ee8fa529b46407015be5561ef1a72e155e7ac40d5aebb36f0f66dac0481b6a5a",
     "scripts/verify-team-seat-value-v1.py": "759ba73a50485848f8128c1d58b8a62e3b78cd20a8baec48a335d8ec420df3cf"

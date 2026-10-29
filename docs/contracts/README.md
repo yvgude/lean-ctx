@@ -50,7 +50,6 @@ before interpreting them as a current product or licensing statement.
 
 ### Control Plane
 
-- [autonomy-drivers-v1.md](autonomy-drivers-v1.md) — Autonomy drivers.
 - [context-candidate-admission-v1.md](context-candidate-admission-v1.md) — Context candidate admission.
 - [context-policy-packs-v1.md](context-policy-packs-v1.md) — Policy packs.
 - [context-quality-v1.md](context-quality-v1.md) — Evidence tiers, eval verdicts, retention probes, quality receipt.
@@ -73,7 +72,6 @@ before interpreting them as a current product or licensing statement.
 - [settlement-evidence-v2.md](settlement-evidence-v2.md) — Settlement evidence.
 - [team-seat-value-v1/](team-seat-value-v1/) — Frozen Team seat-entitlement, allocation, usage, and value-evidence contract family.
 - [test-deployment-evidence-v1.md](test-deployment-evidence-v1.md) — Test-deployment evidence process.
-- [workflow-evidence-ledger-v1.md](workflow-evidence-ledger-v1.md) — Workflow evidence ledger.
 
 ### SDK & Integration
 
@@ -83,7 +81,7 @@ before interpreting them as a current product or licensing statement.
 - [conformance-v1.md](conformance-v1.md) — SDK and implementation conformance suite.
 - [engine-interface-compatibility-v1.md](engine-interface-compatibility-v1.md) — Local Engine boundary and future SDK compatibility policy.
 - [native-engine-context-proof-v1.md](native-engine-context-proof-v1.md) — Internal local Engine interface proof and receipt-lineage boundary.
-- [ctxpkg-registry-v1.md](ctxpkg-registry-v1.md) — Context-package registry.
+- [Hosted Index V2 candidate guide](../guides/hosted-index-v2.md) — Explicit destinations, owned-data recovery, pairing and current qualification limits.
 - [extractors-v1.md](extractors-v1.md) — Extractor integration.
 - [http-mcp-contract-v1.md](http-mcp-contract-v1.md) — HTTP MCP integration.
 - [provider-framework-contract-v1.md](provider-framework-contract-v1.md) — Provider framework.
@@ -101,12 +99,12 @@ before interpreting them as a current product or licensing statement.
 ### Context, Runtime & Operations
 
 - [attention-layout-driver-v1.md](attention-layout-driver-v1.md) — Attention layout driver.
-- [compliance-report-v1.md](compliance-report-v1.md) — Compliance reporting.
 - [context-ir-v1.md](context-ir-v1.md) — Context intermediate representation.
 - [context-snapshot-v1.md](context-snapshot-v1.md) — Context snapshot.
 - [deployment-rehearsal-v1.md](deployment-rehearsal-v1.md) — Deployment rehearsal.
 - [graph-reproducibility-contract-v1.md](graph-reproducibility-contract-v1.md) — Graph reproducibility.
 - [local-free-invariant-v1.md](local-free-invariant-v1.md) — Local-free invariant.
+- [local-free-invariant-v2.md](local-free-invariant-v2.md) — Local-free invariant v2 (3.12, LeanCTX Hive).
 - [logical-session-presence-v1.md](logical-session-presence-v1.md) — Logical session presence.
 - [memory-boundary-contract-v1.md](memory-boundary-contract-v1.md) — Memory boundary.
 - [multi-agent-efficiency-benchmark-v1.md](multi-agent-efficiency-benchmark-v1.md) — Multi-agent efficiency benchmark.
@@ -115,14 +113,12 @@ before interpreting them as a current product or licensing statement.
 - [pillar-boundaries-v1.md](pillar-boundaries-v1.md) — Pillar boundaries.
 - [runtime-reality-inventory-v1.json](runtime-reality-inventory-v1.json) — Runtime reality inventory.
 - [tokenizer-calibration-v1.md](tokenizer-calibration-v1.md) — Tokenizer calibration.
-- [tokenizer-translation-driver-v1.md](tokenizer-translation-driver-v1.md) — Tokenizer translation driver.
 - [wrapped-permalink-v1.md](wrapped-permalink-v1.md) — Wrapped permalink.
 
 ### Agent Workflow & Collaboration
 
 - [gotchas-reminders-contract-v1.md](gotchas-reminders-contract-v1.md) — Gotchas and reminders.
 - [handoff-transfer-bundle-v1.md](handoff-transfer-bundle-v1.md) — Handoff transfer bundle.
-- [intent-route-v1.md](intent-route-v1.md) — Intent routing.
 - [team-invite-links-v1.md](team-invite-links-v1.md) — Team invite links.
 
 ### Portal & Lifecycle

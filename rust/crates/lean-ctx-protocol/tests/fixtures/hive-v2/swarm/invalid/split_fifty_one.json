@@ -1,0 +1,321 @@
+{
+  "case": "split_fifty_one",
+  "base": "routes/conductor_action.split.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/children",
+      "value": [
+        {
+          "title": "Task 00",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 01",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 02",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 03",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 04",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 05",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 06",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 07",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 08",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 09",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 10",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 11",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 12",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 13",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 14",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 15",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 16",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 17",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 18",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 19",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 20",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 21",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 22",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 23",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 24",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 25",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 26",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 27",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 28",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 29",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 30",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 31",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 32",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 33",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 34",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 35",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 36",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 37",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 38",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 39",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 40",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 41",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 42",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 43",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 44",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 45",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 46",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 47",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 48",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 49",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        },
+        {
+          "title": "Task 50",
+          "text": "",
+          "acceptance": [],
+          "kind": "task"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

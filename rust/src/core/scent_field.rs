@@ -10,6 +10,14 @@
 //! Storage: one JSON file under `data_dir/agents/scent_field.json`, guarded by
 //! the same create-new file lock the agent registry uses. Decayed entries are
 //! garbage-collected lazily on every locked operation — no daemon, no timer.
+//!
+//! Every scent names the project partition (`project_hash::hash_project_root`)
+//! it was deposited in; claims, releases and the sync view see only the
+//! scents of their own project. Scents of releases before 3.11.5 name none,
+//! are never shown or honoured, and decay away within hours.
+//! Scents are ephemeral by design (half-lives of 10 to 60 minutes): when a
+//! project's identity (remote, package name) changes its partition, its live
+//! scents are not carried over; they decay instead of being adopted.
 
 use serde::{Deserialize, Serialize};
 use std::path::PathBuf;
@@ -69,6 +77,15 @@ pub struct Scent {
     pub intensity: f64,
     /// Unix seconds at deposit time.
     pub deposited_at: u64,
+    /// Project partition the scent was deposited in.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project: Option<String>,
+}
+
+impl Scent {
+    fn in_project(&self, project: &str) -> bool {
+        self.project.as_deref() == Some(project)
+    }
 }
 
 impl Scent {
@@ -147,6 +164,7 @@ impl ScentField {
     /// with summed effective intensity (capped), fresh timestamp.
     pub fn deposit(
         &mut self,
+        project: &str,
         agent_id: &str,
         kind: ScentKind,
         target: &str,
@@ -158,11 +176,9 @@ impl ScentField {
         if target.is_empty() || agent_id.is_empty() {
             return;
         }
-        if let Some(existing) = self
-            .scents
-            .iter_mut()
-            .find(|s| s.agent_id == agent_id && s.kind == kind && s.target == target)
-        {
+        if let Some(existing) = self.scents.iter_mut().find(|s| {
+            s.in_project(project) && s.agent_id == agent_id && s.kind == kind && s.target == target
+        }) {
             let carried = existing.effective_intensity(now);
             existing.intensity = (carried + intensity).min(INTENSITY_CAP);
             existing.deposited_at = now;
@@ -173,16 +189,25 @@ impl ScentField {
                 target: target.to_string(),
                 intensity: intensity.min(INTENSITY_CAP),
                 deposited_at: now,
+                project: Some(project.to_string()),
             });
         }
     }
 
-    /// Active foreign claim on `target`, if any: returns (agent_id, age_secs).
-    pub fn foreign_claim(&self, target: &str, self_agent: &str, now: u64) -> Option<(String, u64)> {
+    /// Active foreign claim on `target` in `project`, if any: returns
+    /// (agent_id, age_secs).
+    pub fn foreign_claim(
+        &self,
+        project: &str,
+        target: &str,
+        self_agent: &str,
+        now: u64,
+    ) -> Option<(String, u64)> {
         self.scents
             .iter()
             .filter(|s| {
-                s.kind == ScentKind::Claimed
+                s.in_project(project)
+                    && s.kind == ScentKind::Claimed
                     && s.target == target
                     && s.agent_id != self_agent
                     && s.effective_intensity(now) >= CLAIM_ACTIVE_THRESHOLD
@@ -197,13 +222,13 @@ impl ScentField {
 
     /// Arithmetic sync view: targets grouped, intensities superposed across
     /// agents, sorted by total intensity, capped at SYNC_TOP_K lines.
-    pub fn render_sync(&self, now: u64) -> String {
+    pub fn render_sync(&self, project: &str, now: u64) -> String {
         use std::collections::HashMap;
         // (kind, target) -> (total intensity, agents)
         type SyncKey<'a> = (ScentKind, &'a str);
         type SyncAgg<'a> = (f64, Vec<&'a str>);
         let mut groups: HashMap<SyncKey<'_>, SyncAgg<'_>> = HashMap::new();
-        for s in &self.scents {
+        for s in self.scents.iter().filter(|s| s.in_project(project)) {
             let eff = s.effective_intensity(now);
             if eff < GC_THRESHOLD {
                 continue;
@@ -261,24 +286,56 @@ fn with_field<R>(f: impl FnOnce(&mut ScentField, u64) -> R) -> Result<R, String>
     Ok(result)
 }
 
-/// Deposit a scent as a side effect of normal work. Errors are swallowed —
-/// coordination hints must never break the primary operation.
-pub fn deposit(agent_id: &str, kind: ScentKind, target: &str, intensity: f64) {
-    let _ = with_field(|field, now| field.deposit(agent_id, kind, target, intensity, now));
+/// The partition of `project_root`.
+fn partition(project_root: &str) -> String {
+    crate::core::project_hash::hash_project_root(project_root)
 }
 
-/// Atomic claim: fails with the holder's id if another agent's claim is still
-/// active, otherwise deposits a strong Claimed scent for `agent_id`.
-pub fn claim(agent_id: &str, target: &str) -> Result<(), String> {
+/// The project of the current request; `None` without one (the process
+/// directory is never a project). A caller that hands the work to another
+/// thread resolves it first, because the request scope does not travel.
+#[must_use]
+pub fn current_project() -> Option<String> {
+    crate::core::policy::diagnostics::request_project()
+        .map(|root| root.to_string_lossy().into_owned())
+}
+
+/// Deposit a scent as a side effect of normal work in the current request's
+/// project; nothing without a bound request project. Errors are swallowed — coordination hints must never break the
+/// primary operation.
+pub fn deposit(agent_id: &str, kind: ScentKind, target: &str, intensity: f64) {
+    if let Some(project_root) = current_project() {
+        deposit_for(&project_root, agent_id, kind, target, intensity);
+    }
+}
+
+/// [`deposit`] into `project_root`'s scents.
+pub fn deposit_for(
+    project_root: &str,
+    agent_id: &str,
+    kind: ScentKind,
+    target: &str,
+    intensity: f64,
+) {
+    let project = partition(project_root);
+    let _ =
+        with_field(|field, now| field.deposit(&project, agent_id, kind, target, intensity, now));
+}
+
+/// Atomic claim: fails with the holder's id if another agent's claim in the
+/// same project is still active, otherwise deposits a strong Claimed scent
+/// for `agent_id`.
+pub fn claim(project_root: &str, agent_id: &str, target: &str) -> Result<(), String> {
+    let project = partition(project_root);
     with_field(|field, now| {
-        if let Some((holder, age)) = field.foreign_claim(target, agent_id, now) {
+        if let Some((holder, age)) = field.foreign_claim(&project, target, agent_id, now) {
             field.claims_rejected += 1;
             return Err(format!(
                 "already claimed by {holder} ({}m ago, still active)",
                 age / 60
             ));
         }
-        field.deposit(agent_id, ScentKind::Claimed, target, 2.0, now);
+        field.deposit(&project, agent_id, ScentKind::Claimed, target, 2.0, now);
         Ok(())
     })?
 }
@@ -309,35 +366,28 @@ pub fn active_scents() -> Vec<(Scent, f64)> {
     v
 }
 
-/// Release a claim (and any Hot scent) on `target` held by `agent_id`.
-pub fn release(agent_id: &str, target: &str) {
+/// Release a claim (and any Hot scent) on `target` held by `agent_id` in
+/// `project_root`.
+pub fn release(project_root: &str, agent_id: &str, target: &str) {
+    let project = partition(project_root);
     let _ = with_field(|field, now| {
         field.scents.retain(|s| {
-            !(s.agent_id == agent_id && s.target == target && s.kind == ScentKind::Claimed)
+            !(s.in_project(&project)
+                && s.agent_id == agent_id
+                && s.target == target
+                && s.kind == ScentKind::Claimed)
         });
         field.gc(now);
     });
 }
 
-/// One-line hint for ctx_read when someone else actively claimed this path.
-/// Costs ~10 tokens and prevents duplicate work.
-pub fn read_hint(path: &str, self_agent: &str) -> Option<String> {
-    let field_file = field_path().ok()?;
-    // Read-only fast path: no lock needed for a hint; stale reads are fine.
-    let field = ScentField::load_unlocked(&field_file);
-    let now = now_secs();
-    let rel = crate::core::pathutil::normalize_tool_path(path);
-    let (holder, age) = field.foreign_claim(&rel, self_agent, now)?;
-    Some(format!("[scent: claimed by {holder} {}m ago]", age / 60))
-}
-
-/// Arithmetic sync block for ctx_agent sync.
-pub fn sync_block() -> String {
+/// Arithmetic sync block of `project_root` for ctx_agent sync.
+pub fn sync_block(project_root: &str) -> String {
     let Ok(path) = field_path() else {
         return String::new();
     };
     let field = ScentField::load_unlocked(&path);
-    field.render_sync(now_secs())
+    field.render_sync(&partition(project_root), now_secs())
 }
 
 #[cfg(test)]
@@ -345,6 +395,7 @@ pub mod tests {
     use super::*;
 
     const NOW: u64 = 1_780_000_000;
+    const P: &str = "project-a";
 
     #[test]
     fn decay_halves_at_half_life() {
@@ -354,6 +405,7 @@ pub mod tests {
             target: "src/x.rs".into(),
             intensity: 1.0,
             deposited_at: NOW,
+            project: Some(P.into()),
         };
         let eff = s.effective_intensity(NOW + 600);
         assert!((eff - 0.5).abs() < 0.01, "half-life decay, got {eff}");
@@ -365,7 +417,7 @@ pub mod tests {
     fn superposition_caps_intensity() {
         let mut f = ScentField::default();
         for _ in 0..20 {
-            f.deposit("a1", ScentKind::Hot, "src/x.rs", 0.3, NOW);
+            f.deposit(P, "a1", ScentKind::Hot, "src/x.rs", 0.3, NOW);
         }
         assert_eq!(f.scents.len(), 1);
         assert!(f.scents[0].intensity <= INTENSITY_CAP + f64::EPSILON);
@@ -374,29 +426,40 @@ pub mod tests {
     #[test]
     fn gc_drops_dead_scents() {
         let mut f = ScentField::default();
-        f.deposit("a1", ScentKind::Hot, "src/x.rs", 0.3, NOW);
+        f.deposit(P, "a1", ScentKind::Hot, "src/x.rs", 0.3, NOW);
         f.gc(NOW + 6 * 600); // six half-lives: 0.3 -> ~0.0047
         assert!(f.scents.is_empty());
     }
 
+    /// AP05-G6: the field was one installation-wide set: a claim blocked the
+    /// same-named file in every other project and `sync` showed their paths.
     #[test]
     fn foreign_claim_detected_and_own_ignored() {
         let mut f = ScentField::default();
-        f.deposit("a1", ScentKind::Claimed, "src/x.rs", 2.0, NOW);
-        assert!(f.foreign_claim("src/x.rs", "a2", NOW + 60).is_some());
-        assert!(f.foreign_claim("src/x.rs", "a1", NOW + 60).is_none());
+        f.deposit(P, "a1", ScentKind::Claimed, "src/x.rs", 2.0, NOW);
+        f.deposit(P, "a1", ScentKind::Done, "handoff secret-plan", 1.0, NOW);
+        assert!(f.foreign_claim(P, "src/x.rs", "a2", NOW + 60).is_some());
+        assert!(
+            f.foreign_claim("project-b", "src/x.rs", "a2", NOW + 60)
+                .is_none()
+        );
+        assert!(f.render_sync("project-b", NOW).is_empty());
+        assert!(f.foreign_claim(P, "src/x.rs", "a1", NOW + 60).is_none());
         // Expired claim no longer blocks.
-        assert!(f.foreign_claim("src/x.rs", "a2", NOW + 3 * 600).is_none());
+        assert!(
+            f.foreign_claim(P, "src/x.rs", "a2", NOW + 3 * 600)
+                .is_none()
+        );
     }
 
     #[test]
     fn sync_view_caps_lines_and_superposes() {
         let mut f = ScentField::default();
         for i in 0..50 {
-            f.deposit("a1", ScentKind::Hot, &format!("src/f{i}.rs"), 0.5, NOW);
+            f.deposit(P, "a1", ScentKind::Hot, &format!("src/f{i}.rs"), 0.5, NOW);
         }
-        f.deposit("a2", ScentKind::Hot, "src/f0.rs", 0.5, NOW);
-        let view = f.render_sync(NOW);
+        f.deposit(P, "a2", ScentKind::Hot, "src/f0.rs", 0.5, NOW);
+        let view = f.render_sync(P, NOW);
         let lines: Vec<&str> = view.lines().collect();
         assert!(
             lines.len() <= SYNC_TOP_K + 2,
@@ -411,7 +474,7 @@ pub mod tests {
     fn empty_field_renders_empty() {
         let f = ScentField::default();
         {
-            let found = &f.render_sync(NOW);
+            let found = &f.render_sync(P, NOW);
             assert!(found.is_empty(), "{found:?}");
         }
     }
@@ -429,9 +492,9 @@ pub mod tests {
         }
         // Claims between distinct PIDs are mutually foreign.
         let mut f = ScentField::default();
-        f.deposit("local-1111", ScentKind::Claimed, "src/x.rs", 2.0, NOW);
+        f.deposit(P, "local-1111", ScentKind::Claimed, "src/x.rs", 2.0, NOW);
         assert!(
-            f.foreign_claim("src/x.rs", "local-2222", NOW + 30)
+            f.foreign_claim(P, "src/x.rs", "local-2222", NOW + 30)
                 .is_some()
         );
     }

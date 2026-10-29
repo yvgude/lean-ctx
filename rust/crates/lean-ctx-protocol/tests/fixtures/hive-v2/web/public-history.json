@@ -1,0 +1,119 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "rate_limited",
+          "message": "Too many requests. Try again in 30 s.",
+          "retry_after_s": 30
+        }
+      },
+      "status": 429
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/public/vaults/acme/payments/history",
+  "request": null,
+  "response": {
+    "body": {
+      "items": [
+        {
+          "actor": {
+            "id": "wkr_vk4oelpv5lzjmev44hun",
+            "kind": "worker",
+            "name": "yves-mac · Claude Code · backend"
+          },
+          "at": "2026-10-24T08:15:00Z",
+          "counts": {
+            "facts": 4,
+            "relations": 1
+          },
+          "id": "lg_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "kind": "knowledge.added",
+          "place": {
+            "id": "payments",
+            "kind": "vault",
+            "name": "payments",
+            "ws": "acme"
+          },
+          "provenance": "own",
+          "text_vars": {
+            "node_id": "n_tyvnza7clspg4cpmb7ew7fvl7b"
+          }
+        },
+        {
+          "actor": {
+            "kind": "server",
+            "name": null
+          },
+          "at": "2026-10-24T08:20:00Z",
+          "counts": {
+            "n": 1
+          },
+          "id": "lg_bbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "kind": "purge.done",
+          "place": {
+            "id": "payments",
+            "kind": "vault",
+            "name": "payments",
+            "ws": "acme"
+          },
+          "provenance": "workspace"
+        },
+        {
+          "actor": null,
+          "at": "2026-10-24T08:30:00Z",
+          "counts": {
+            "accepted": 2,
+            "n": 3,
+            "rejected": 1
+          },
+          "id": "lg_cccccccccccccccccccccccccc",
+          "kind": "review.done",
+          "place": {
+            "id": "payments",
+            "kind": "vault",
+            "name": "payments",
+            "ws": "acme"
+          },
+          "provenance": "workspace"
+        },
+        {
+          "actor": {
+            "kind": "system",
+            "name": null
+          },
+          "at": "2026-10-24T08:40:00Z",
+          "counts": {
+            "done": 1,
+            "total": 3
+          },
+          "id": "lg_dddddddddddddddddddddddddd",
+          "kind": "swarm.progress",
+          "place": {
+            "id": "checkout-latency",
+            "kind": "swarm",
+            "name": "Checkout latency below 300 ms",
+            "ws": "acme"
+          },
+          "provenance": "workspace"
+        },
+        {
+          "actor": {
+            "kind": "person",
+            "name": "yves"
+          },
+          "at": "2026-10-24T07:50:00Z",
+          "counts": {},
+          "id": "lg_eeeeeeeeeeeeeeeeeeeeeeeeee",
+          "kind": "engine.connected",
+          "place": null,
+          "provenance": "own"
+        }
+      ],
+      "next_cursor": null
+    },
+    "status": 200
+  },
+  "route": "W44"
+}

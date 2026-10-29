@@ -1,0 +1,14 @@
+{
+  "case": "place_role_on_c0_message",
+  "base": "bus/message.question.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/sender/place_role",
+      "value": "owner"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

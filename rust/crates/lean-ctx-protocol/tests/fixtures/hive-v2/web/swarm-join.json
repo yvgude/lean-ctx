@@ -1,0 +1,32 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "not found"
+        }
+      },
+      "status": 404
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "max_workers": 200,
+          "message": "This swarm has all the workers it can take.",
+          "reason": "swarm_full"
+        }
+      },
+      "status": 409
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/swarms/9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02/join",
+  "request": null,
+  "response": {
+    "body": null,
+    "status": 204
+  },
+  "route": "W41"
+}

@@ -10,16 +10,7 @@ use lean_ctx_protocol::{
 };
 
 use super::{CAPABILITY_ID, CAPABILITY_VERSION, MAX_TRANSPORT_BUDGET_TOKENS};
-use crate::core::{
-    canonical::canonical_serialize,
-    ocla::{
-        adapters::native_context::manifest,
-        catalogue::{CatalogueEntry, ProviderEntry, TechnicalCatalogue},
-        policy_constraints::PolicyConstraints,
-        reference_scheduler::ReferenceScheduler,
-        scheduler_service::{ExecutionCandidate, SchedulerService},
-    },
-};
+use crate::core::{canonical::canonical_serialize, ocla::adapters::native_context::manifest};
 
 /// Select only the installed native operation; a recommendation is not admission.
 pub(crate) fn native_plan(
@@ -37,10 +28,34 @@ pub(crate) fn native_plan(
     )
 }
 
+/// Persisted native scheduling evidence (`artifact://execution/evidence/<digest>`).
+/// Names, order and values are frozen: validation recomputes the decision and
+/// compares it with the one earlier releases stored.
+#[derive(Clone, Debug, Eq, PartialEq, serde::Serialize, serde::Deserialize)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct NativeDecision {
+    pub selected: ExecutionPlanV1,
+    pub fallback: ExecutionPlanV1,
+    pub decision_ref: String,
+    pub rationale_code: String,
+    pub confidence_milli: u32,
+    pub candidates_evaluated: u32,
+    pub candidates_excluded: u32,
+}
+
+const NATIVE_MODEL: &str = "local-native";
+const FALLBACK_CAPABILITY: &str = "capability://leanctx/passthrough";
+const FALLBACK_MODEL: &str = "manual";
+const FALLBACK_PROVIDER: &str = "leanctx";
+
+/// Select only the installed native operation; a recommendation is not admission.
+/// The decision keeps the projection of the former reference scheduler for its
+/// single local candidate: it publishes no cost, quality or latency estimate,
+/// so a task that bounds any of them has no permitted candidate.
 fn native_decision(
     task: &TaskEnvelopeV1,
     admission: &EnginePolicyAdmissionV1,
-) -> Result<crate::core::ocla::scheduler_service::SchedulerDecision, String> {
+) -> Result<NativeDecision, String> {
     task.validate().map_err(|error| error.to_string())?;
     if admission.decision != EnginePolicyDecisionV1::Admitted {
         return Err("native plan requires actual policy admission".into());
@@ -65,93 +80,124 @@ fn native_decision(
         return Err("registered native runtime contract differs from pinned manifest".into());
     }
     let available = adapter.health_check().map_err(|error| error.to_string())?;
-    let mut catalogue = TechnicalCatalogue {
-        capabilities: vec![CatalogueEntry {
-            capability_id: manifest.capability_id.as_str().into(),
-            version: manifest.version.clone(),
-            manifest: manifest.clone(),
-            available,
-        }],
-        ..Default::default()
-    };
-    catalogue.providers.push(ProviderEntry {
-        provider_id: manifest.provider.clone(),
-        // This is the installed non-model execution profile, not an LLM call.
-        models_available: vec!["local-native".into()],
-        regions: vec![],
-    });
-    let scheduler = ReferenceScheduler::new();
-    let mut candidates = scheduler
-        .generate_candidates(task, std::slice::from_ref(manifest), &catalogue)
-        .map_err(|error| error.to_string())?;
-    for candidate in &mut candidates {
-        let plan = &mut candidate.plan;
-        plan.context_budget_policy = Some(ContextBudgetPolicyV1::NoTokenLimit {});
-        plan.context_budget_tokens = 0;
-        plan.expected_cost_micros = 0;
-        plan.expected_quality_milli = 0;
-        plan.expected_latency_ms = 0;
-        plan.estimates = Some(ExecutionPlanEstimatesV1::default());
-        plan.policy_decision_ref = Some(admission.policy_ref.as_str().into());
-        plan.capability_bindings = vec![CapabilityBindingV1 {
-            capability_id: manifest.capability_id.clone(),
-            version: manifest.version.clone(),
-            manifest_digest: Some(
-                super::sha256_digest(&canonical_serialize(manifest))?
-                    .as_str()
-                    .into(),
-            ),
-        }];
-        // A requested quality/deadline is not an estimate that proves compliance.
-        candidate.expected_cost_micros = None;
-        candidate.expected_quality_milli = None;
-        candidate.expected_latency_ms = None;
-    }
-    let filtered = scheduler.filter_candidates(
-        candidates,
-        &PolicyConstraints {
-            allowed_providers: Some(vec![manifest.provider.clone()]),
-            max_cost_micros: task.cost_budget_micros,
-            min_quality_milli: task.quality_requirement_milli.map(u32::from),
-            max_latency_ms: task.latency_budget_ms,
-            ..Default::default()
-        },
-    );
-    if filtered.len() != 1 {
+    manifest
+        .validate()
+        .map_err(|error| format!("invalid capability manifest: {error}"))?;
+    if !available
+        || task.cost_budget_micros.is_some()
+        || task.quality_requirement_milli.is_some()
+        || task.latency_budget_ms.is_some()
+    {
         return Err("native plan has no single policy-permitted candidate".into());
     }
-    let mut fallback_plan = scheduler
-        .fallback_plan(task)
-        .map_err(|error| error.to_string())?;
-    // Keep the unselectable fallback's historical evidence bytes. Native plans
-    // admit exactly one real candidate above; this manual template is never run.
-    // Changing its projection would invalidate already persisted native decisions.
-    fallback_plan.estimates = None;
-    let fallback = ExecutionCandidate::new(
-        fallback_plan.clone(),
-        fallback_plan.capability_ids[0].as_str(),
-        fallback_plan.model.clone(),
-        fallback_plan.provider.clone(),
+    let mut selected = reference_plan(
+        task,
+        manifest.capability_id.as_str(),
+        NATIVE_MODEL,
+        &manifest.provider,
         None,
-        None,
-        None,
+    )?;
+    selected.context_budget_policy = Some(ContextBudgetPolicyV1::NoTokenLimit {});
+    selected.context_budget_tokens = 0;
+    selected.expected_cost_micros = 0;
+    selected.expected_quality_milli = 0;
+    selected.expected_latency_ms = 0;
+    selected.estimates = Some(ExecutionPlanEstimatesV1::default());
+    selected.policy_decision_ref = Some(admission.policy_ref.as_str().into());
+    selected.capability_bindings = vec![CapabilityBindingV1 {
+        capability_id: manifest.capability_id.clone(),
+        version: manifest.version.clone(),
+        manifest_digest: Some(
+            super::sha256_digest(&canonical_serialize(manifest))?
+                .as_str()
+                .into(),
+        ),
+    }];
+    // The manual fallback is a template that is never run; its bytes stay as
+    // persisted decisions carry them.
+    let mut fallback = reference_plan(
+        task,
+        FALLBACK_CAPABILITY,
+        FALLBACK_MODEL,
+        FALLBACK_PROVIDER,
+        Some("fallback"),
+    )?;
+    fallback.estimates = None;
+    let seed = format!(
+        "reference-v1|permit:{}:{NATIVE_MODEL}:{}|fallback:{FALLBACK_CAPABILITY}:{FALLBACK_MODEL}:{FALLBACK_PROVIDER}",
+        manifest.capability_id.as_str(),
+        manifest.provider,
     );
-    let decision = scheduler.select_plan(&filtered, &fallback);
-    let plan = &decision.selected;
-    if plan.capability_ids != [manifest.capability_id.clone()]
-        || plan.model != "local-native"
-        || plan.provider != manifest.provider
-    {
-        return Err("scheduler recommendation is not the native operation".into());
-    }
-    Ok(decision)
+    Ok(NativeDecision {
+        selected,
+        fallback,
+        decision_ref: format!(
+            "decision:reference-v1:{}",
+            blake3::hash(seed.as_bytes()).to_hex()
+        ),
+        rationale_code: "reference_score_cost_latency_quality".into(),
+        confidence_milli: 1000,
+        candidates_evaluated: 1,
+        candidates_excluded: 0,
+    })
+}
+
+/// Plan template with the identity scheme of persisted native decisions.
+fn reference_plan(
+    task: &TaskEnvelopeV1,
+    capability_id: &str,
+    model: &str,
+    provider: &str,
+    fallback_marker: Option<&str>,
+) -> Result<ExecutionPlanV1, String> {
+    let seed = format!(
+        "reference-v1:{}:{capability_id}:{model}:{provider}",
+        task.task_id.as_str()
+    );
+    let plan = ExecutionPlanV1 {
+        schema_version: 1,
+        plan_id: PlanId::try_from(format!("plan:{}", blake3::hash(seed.as_bytes()).to_hex()))
+            .map_err(|error| format!("invalid deterministic plan id: {error}"))?,
+        task_id: task.task_id.clone(),
+        context_budget_tokens: 0,
+        context_budget_policy: None,
+        context_strategy: lean_ctx_protocol::ContextStrategy::Balanced,
+        knowledge_refs: Vec::new(),
+        capability_ids: vec![
+            lean_ctx_protocol::CapabilityId::try_from(capability_id.to_owned())
+                .map_err(|error| format!("invalid capability: {error}"))?,
+        ],
+        model: model.to_owned(),
+        provider: provider.to_owned(),
+        reasoning_allocation_milli: 0,
+        max_retries: 0,
+        fallback_refs: fallback_marker.map(str::to_owned).into_iter().collect(),
+        stop_condition: lean_ctx_protocol::StopCondition::OnCompletion,
+        expected_cost_micros: 0,
+        estimates: Some(ExecutionPlanEstimatesV1 {
+            cost_micros: fallback_marker.map(|_| 0_u64),
+            quality_milli: None,
+            latency_ms: None,
+        }),
+        expected_quality_milli: 0,
+        expected_latency_ms: 0,
+        policy_decision_ref: None,
+        scheduler_decision_ref: Some("scheduler:reference-v1".to_owned()),
+        executor_agent_id: Some(task.agent_id.clone()),
+        context_plan_id: None,
+        capability_bindings: Vec::new(),
+        extensions: Default::default(),
+    };
+    plan.validate()
+        .map_err(|error| format!("invalid deterministic execution plan: {error}"))?;
+    Ok(plan)
 }
 
 // Noncyclic projection: scheduler recommendation -> evidence link -> final plan ID.
 // The persisted decision intentionally cannot contain its own content hash.
 fn finalize_native_plan(
     task: &TaskEnvelopeV1,
-    decision: &crate::core::ocla::scheduler_service::SchedulerDecision,
+    decision: &NativeDecision,
     reference: &str,
     context: Option<&context_binding::NativeContextBinding>,
 ) -> Result<ExecutionPlanV1, String> {
@@ -206,7 +252,7 @@ pub(crate) fn validate_native_plan(
             .strip_prefix("artifact://execution/evidence/")
             .ok_or("native scheduler evidence reference is invalid")?;
         let bytes = super::artifact_store::read_content("execution/evidence", digest, "json")?;
-        let decision: crate::core::ocla::scheduler_service::SchedulerDecision =
+        let decision: NativeDecision =
             serde_json::from_slice(&bytes).map_err(|_| "native scheduler evidence is invalid")?;
         let context = context_binding::NativeContextBinding::from_plan(plan)?;
         if decision != native_decision(task, admission)?
@@ -315,6 +361,20 @@ mod tests {
         }
     }
 
+    /// Stored native plans are revalidated by recomputing this decision: its
+    /// bytes must never change (they were proven equal to the former
+    /// reference scheduler's before it was removed, 2026-10-16).
+    #[test]
+    fn native_decision_bytes_are_frozen() {
+        let decision = native_decision(&task(), &admission()).unwrap();
+        assert_eq!(
+            super::super::sha256_digest(&canonical_serialize(&decision))
+                .unwrap()
+                .as_str(),
+            "sha256:b320c7a5da703c1bd531058499c1816a63397c93ec6758c77edd6c55aac55847"
+        );
+    }
+
     #[test]
     fn native_plan_is_deterministic_manifest_bound_and_honest_about_unknowns() {
         let _data = crate::core::data_dir::isolated_data_dir();
@@ -340,8 +400,7 @@ mod tests {
             "json",
         )
         .unwrap();
-        let decision: crate::core::ocla::scheduler_service::SchedulerDecision =
-            serde_json::from_slice(&bytes).unwrap();
+        let decision: NativeDecision = serde_json::from_slice(&bytes).unwrap();
         assert_eq!(
             decision.selected.capability_bindings,
             plan.capability_bindings

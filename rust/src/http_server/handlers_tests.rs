@@ -71,6 +71,155 @@ async fn relay_preserves_task_response_bytes_and_rejects_missing_response() {
     assert!(json.get("signature").is_none());
 }
 
+/// A forwarded task response is peer bytes: it passes carrier admission
+/// before it reaches the origin. Before, the relay passed up to 64 KiB of
+/// unverified downstream text through unchanged.
+#[tokio::test]
+async fn forwarded_task_response_passes_carrier_admission() {
+    use crate::core::a2a::remote_transport::DeliveryReceipt;
+    const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let config_dir = crate::core::paths::config_dir_read_only().expect("isolated config dir");
+    std::fs::create_dir_all(&config_dir).expect("config dir");
+    std::fs::write(
+        config_dir.join("config.toml"),
+        "[context_gateway]\nmode = \"governed\"\nclassification = \"block\"\n",
+    )
+    .expect("config");
+    let forward = |raw: String| {
+        forwarded_delivery_response(
+            DeliveryReceipt {
+                envelope_id: "relay-1".into(),
+                delivered_at: chrono::Utc::now(),
+                remote_status: 200,
+                round_trip_ms: 1,
+                unverified_task_response: Some(raw),
+            },
+            &TransportContentType::A2ATask,
+        )
+    };
+
+    // Clean: forwarded byte-exactly.
+    let clean = "{\n  \"signature\": \"opaque-downstream-signature\"\n}";
+    let response = forward(clean.to_owned());
+    assert_eq!(response.status(), StatusCode::OK);
+    assert!(
+        response
+            .extensions()
+            .get::<TaskResponseWithheld>()
+            .is_none()
+    );
+    let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    assert_eq!(body.as_ref(), clean.as_bytes());
+
+    // A classified transcript is withheld: reason codes only, and the marker
+    // that completes the delivery without a stored body.
+    let classified = "*** TOP SECRET ***\nlaunch window and codes\n";
+    let response = forward(classified.to_owned());
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert!(
+        response
+            .extensions()
+            .get::<TaskResponseWithheld>()
+            .is_some()
+    );
+    let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["error"], "task_response_withheld");
+    assert!(
+        json["reason_codes"]
+            .as_array()
+            .is_some_and(|codes| !codes.is_empty())
+    );
+    let text = String::from_utf8_lossy(&body);
+    assert!(
+        !text.contains("launch window") && !text.contains("TOP SECRET"),
+        "{text}"
+    );
+
+    // A credential never reaches the origin and no altered transcript is
+    // forwarded: whether the gateway would withhold or redact, the answer is
+    // the typed refusal.
+    let leaking = format!("{{\"output\": \"aws_key = {AWS_KEY}\"}}");
+    let response = forward(leaking);
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert!(
+        response
+            .extensions()
+            .get::<TaskResponseWithheld>()
+            .is_some()
+    );
+    let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    let text = String::from_utf8_lossy(&body);
+    assert!(text.contains("task_response_withheld"), "{text}");
+    assert!(
+        !text.contains(AWS_KEY) && !text.contains("[REDACTED"),
+        "{text}"
+    );
+
+    // Oversized or missing: the existing typed refusal, no admission needed.
+    let response = forward("x".repeat(64 * 1024 + 1));
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    let body = axum::body::to_bytes(response.into_body(), 1024)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(json["error"], "missing_task_response");
+}
+
+/// A forwarded task response the gateway would only deliver redacted is
+/// refused with its own reason code instead of being forwarded altered
+/// (round seven forwarded the redacted bytes). Developer mode: a credential
+/// in carrier text is masked, not withheld.
+#[tokio::test]
+async fn forwarded_task_response_that_needs_redaction_is_refused_not_altered() {
+    use crate::core::a2a::remote_transport::DeliveryReceipt;
+    const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let raw = format!("{{\"output\": \"let aws_key = \\\"{AWS_KEY}\\\";\"}}");
+    let admitted = crate::core::context_admission::carrier::admit_carrier_text(&raw)
+        .expect("developer mode delivers a masked text");
+    assert_ne!(admitted.text, raw, "precondition: the gateway redacts this");
+
+    let response = forwarded_delivery_response(
+        DeliveryReceipt {
+            envelope_id: "relay-1".into(),
+            delivered_at: chrono::Utc::now(),
+            remote_status: 200,
+            round_trip_ms: 1,
+            unverified_task_response: Some(raw),
+        },
+        &TransportContentType::A2ATask,
+    );
+    assert_eq!(response.status(), StatusCode::BAD_GATEWAY);
+    assert!(
+        response
+            .extensions()
+            .get::<TaskResponseWithheld>()
+            .is_some(),
+        "the delivery is completed without a body, never forwarded again"
+    );
+    let body = axum::body::to_bytes(response.into_body(), 64 * 1024)
+        .await
+        .unwrap();
+    let json: Value = serde_json::from_slice(&body).unwrap();
+    assert_eq!(
+        json,
+        serde_json::json!({
+            "error": "task_response_withheld",
+            "reason_codes": [TASK_RESPONSE_REDACTION_REQUIRED],
+        })
+    );
+}
+
 #[tokio::test]
 async fn relay_replay_errors_preserve_typed_status_and_hide_storage_details() {
     use super::super::relay_replay::StoreError;
@@ -506,4 +655,208 @@ fn handoff_files_reject_symlink_destinations() {
         std::fs::read(&target).expect("target unchanged"),
         b"original"
     );
+}
+
+/// `accept_remote_task` answers `422 task_text_withheld` for the store's
+/// typed refusal only: the error the store builds for withheld task text
+/// (`PermissionDenied`, content-free message, no OS code). A file-system
+/// denial and an idempotency conflict keep their own answers.
+#[test]
+fn only_the_typed_store_refusal_is_task_text_withheld() {
+    use crate::core::context_admission::carrier::Withheld;
+    let refusal = std::io::Error::new(
+        std::io::ErrorKind::PermissionDenied,
+        Withheld::new(&["store.restricted_content"]).message("task text"),
+    );
+    assert!(task_text_withheld(&refusal));
+    assert!(!refusal.to_string().contains("SECRET"), "content-free");
+
+    let bare = std::io::Error::from(std::io::ErrorKind::PermissionDenied);
+    assert!(task_text_withheld(&bare), "a kind without an OS code");
+    #[cfg(unix)]
+    {
+        let eacces = std::io::Error::from_raw_os_error(13);
+        assert_eq!(eacces.kind(), std::io::ErrorKind::PermissionDenied);
+        assert!(!task_text_withheld(&eacces), "EACCES is a storage failure");
+    }
+    let conflict = std::io::Error::from(std::io::ErrorKind::AlreadyExists);
+    assert!(!task_text_withheld(&conflict));
+}
+
+fn handoff_state(root: &str) -> AppState {
+    AppState {
+        token: None,
+        a2a_signing_key: None,
+        a2a_recipient_id: None,
+        a2a_tenant_id: None,
+        a2a_project_id: None,
+        a2a_peers: std::sync::Arc::new(crate::core::a2a::relay::RelayPeerTableV1::default()),
+        relay_quotas: None,
+        a2a_task_authority: std::sync::Arc::new(
+            crate::core::a2a::task::TaskAuthorityConfigV1::default(),
+        ),
+        concurrency: std::sync::Arc::new(tokio::sync::Semaphore::new(4)),
+        rate: std::sync::Arc::new(super::super::RateLimiter::new(50, 100)),
+        remote_replays: std::sync::Arc::new(super::super::remote_replay::RemoteReplayGuard::new(
+            root,
+            REMOTE_REPLAY_RETENTION_SECONDS,
+        )),
+        project_root: root.to_string(),
+        timeout: std::time::Duration::from_secs(30),
+        server: crate::tools::LeanCtxServer::new_shared_with_context(root, "default", "default"),
+        local_ipc: false,
+        project_servers: crate::http_server::ProjectServers::for_tests(),
+    }
+}
+
+fn message_envelope(recipient: Option<&str>) -> TransportEnvelopeV1 {
+    TransportEnvelopeV1::new(
+        AgentIdentityV1 {
+            agent_id: "handoff-sender".into(),
+            agent_type: "test".into(),
+            daemon_fingerprint: "fingerprint".into(),
+            capabilities: vec!["a2a_messaging".into()],
+        },
+        recipient,
+        TransportContentType::A2AMessage,
+        "{}".into(),
+    )
+}
+
+/// A handoff addressed to one agent lands on the bus as a directed event:
+/// readable by the recipient, hidden from every other agent and from the
+/// broadcast view, for authenticated deliveries and local handoffs alike.
+#[tokio::test]
+async fn addressed_handoff_events_are_directed_to_the_recipient() {
+    use crate::core::context_os::TopicFilter;
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().to_string_lossy().to_string();
+    let as_agent = |agent: &str| TopicFilter {
+        agent_id: Some(agent.to_string()),
+        ..TopicFilter::default()
+    };
+    for (delivery_id, recipient) in [
+        (Some("directed-delivery"), Some("agent-a")),
+        (None, Some("agent-a")),
+        (None, None),
+    ] {
+        let body = serde_json::to_value(message_envelope(recipient)).expect("envelope json");
+        let (status, _) =
+            a2a_handoff_inner(State(handoff_state(&root)), Json(body), delivery_id, None);
+        assert_eq!(status, StatusCode::OK);
+    }
+    let events = crate::core::context_os::runtime()
+        .bus
+        .read(&root, "a2a", 0, 10);
+    assert_eq!(events.len(), 3);
+    for event in &events[..2] {
+        assert_eq!(event.target_agents, Some(vec!["agent-a".to_string()]));
+        assert!(as_agent("agent-a").matches(event));
+        assert!(!as_agent("agent-b").matches(event));
+        assert!(!TopicFilter::broadcast_only().matches(event));
+    }
+    assert_eq!(events[2].target_agents, None);
+    assert!(as_agent("agent-b").matches(&events[2]));
+}
+
+fn handoff_body(secret: Option<&[u8]>) -> Value {
+    let mut envelope = message_envelope(Some("agent-a"));
+    if let Some(secret) = secret {
+        envelope.sign(secret).expect("sign envelope");
+    }
+    serde_json::to_value(envelope).expect("envelope json")
+}
+
+fn rejection_of(result: Result<(), (StatusCode, Json<Value>)>) -> (StatusCode, String) {
+    let (status, Json(body)) = result.expect_err("envelope must be rejected");
+    (
+        status,
+        body["error"].as_str().unwrap_or_default().to_string(),
+    )
+}
+
+/// The `/v1/a2a/handoff` signature gate in all four configurations.
+#[test]
+fn handoff_signature_gate_covers_every_secret_and_signature_case() {
+    // Secret configured: only an envelope signed with it passes.
+    assert!(
+        verify_handoff_envelope(&handoff_body(Some(b"handoff-key")), Some("handoff-key")).is_ok()
+    );
+    assert_eq!(
+        rejection_of(verify_handoff_envelope(
+            &handoff_body(None),
+            Some("handoff-key")
+        )),
+        (StatusCode::UNAUTHORIZED, "signature_required".to_string())
+    );
+    assert_eq!(
+        rejection_of(verify_handoff_envelope(
+            &handoff_body(Some(b"other-key")),
+            Some("handoff-key")
+        )),
+        (StatusCode::UNAUTHORIZED, "invalid_signature".to_string())
+    );
+    let mut tampered = handoff_body(Some(b"handoff-key"));
+    tampered["payload_json"] = Value::String("{\"changed\":true}".into());
+    assert_eq!(
+        rejection_of(verify_handoff_envelope(&tampered, Some("handoff-key"))),
+        (StatusCode::UNAUTHORIZED, "invalid_signature".to_string())
+    );
+    // No secret: a signature that cannot be checked fails closed.
+    assert_eq!(
+        rejection_of(verify_handoff_envelope(
+            &handoff_body(Some(b"handoff-key")),
+            None
+        )),
+        (
+            StatusCode::UNAUTHORIZED,
+            "handoff_secret_not_configured".to_string()
+        )
+    );
+    // No secret, unsigned: today's local behaviour.
+    assert!(verify_handoff_envelope(&handoff_body(None), None).is_ok());
+    // An unparseable body stays a client error.
+    assert_eq!(
+        rejection_of(verify_handoff_envelope(&serde_json::json!({"x": 1}), None)).0,
+        StatusCode::BAD_REQUEST
+    );
+}
+
+/// The route reads its secret from `LEAN_CTX_HANDOFF_SECRET` and rejects
+/// before the payload is handled; a blank value counts as not configured.
+#[test]
+fn handoff_route_enforces_the_configured_secret() {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let root = dir.path().to_string_lossy().to_string();
+    let runtime = tokio::runtime::Builder::new_current_thread()
+        .enable_all()
+        .build()
+        .expect("runtime");
+    let post = |body: Value| {
+        let state = handoff_state(&root);
+        let semaphore = std::sync::Arc::new(tokio::sync::Semaphore::new(1));
+        let permit = std::sync::Arc::new(semaphore.try_acquire_owned().expect("permit"));
+        runtime
+            .block_on(v1_a2a_handoff(State(state), Extension(permit), Json(body)))
+            .into_response()
+            .status()
+    };
+    let _environment = crate::core::data_dir::test_env_lock();
+    {
+        let _secret = crate::test_env::VarGuard::set(HANDOFF_SECRET_ENV, "route-key");
+        assert_eq!(post(handoff_body(Some(b"route-key"))), StatusCode::OK);
+        assert_eq!(post(handoff_body(None)), StatusCode::UNAUTHORIZED);
+        assert_eq!(
+            post(handoff_body(Some(b"wrong-key"))),
+            StatusCode::UNAUTHORIZED
+        );
+    }
+    {
+        let _blank = crate::test_env::VarGuard::set(HANDOFF_SECRET_ENV, "  ");
+        assert_eq!(post(handoff_body(None)), StatusCode::OK);
+        assert_eq!(
+            post(handoff_body(Some(b"route-key"))),
+            StatusCode::UNAUTHORIZED
+        );
+    }
 }

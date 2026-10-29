@@ -1,0 +1,131 @@
+{
+  "events": [
+    {
+      "actor": {
+        "import_ref": "rev:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01:7#0",
+        "instance_id": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+        "kind": "legacy_import"
+      },
+      "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqb4",
+      "body": {
+        "applies_to": [
+          "services/payments/area-00",
+          "services/payments/area-01",
+          "services/payments/area-02",
+          "services/payments/area-03",
+          "services/payments/area-04",
+          "services/payments/area-05",
+          "services/payments/area-06",
+          "services/payments/area-07",
+          "services/payments/area-08",
+          "services/payments/area-09",
+          "services/payments/area-10",
+          "services/payments/area-11"
+        ],
+        "body_nonce": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+        "evidence": "imported",
+        "legacy": {
+          "anchors": [],
+          "applies_to": [
+            "services/payments/area-00",
+            "services/payments/area-01",
+            "services/payments/area-02",
+            "services/payments/area-03",
+            "services/payments/area-04",
+            "services/payments/area-05",
+            "services/payments/area-06",
+            "services/payments/area-07",
+            "services/payments/area-08",
+            "services/payments/area-09",
+            "services/payments/area-10",
+            "services/payments/area-11"
+          ],
+          "doc_index": 4,
+          "from_contributions": [
+            "prop-17"
+          ],
+          "kind": "observation",
+          "sources": [
+            "https://wiki.example.test/payments/retries"
+          ],
+          "statement": "Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported ."
+        },
+        "sensitivity": "internal",
+        "statement": "Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported note on the payment retry path that keeps its full 1.x text. Imported ."
+      },
+      "body_commit": "04c6ba62d97d19dc352db0e437ac394730668e34138ba7a8eade0d18abad99bb",
+      "causal_base": 14,
+      "cause": {
+        "id": "0d9b7c5a-3e1f-4a2b-8c6d-5e4f3a2b1c0d",
+        "kind": "legacy_import"
+      },
+      "event_id": "01M5NKAGMR005000000000W00F",
+      "hlc": {
+        "counter": 0,
+        "node": "4fc7bebc302357bd",
+        "wall_ms": 1792800015000
+      },
+      "key_id": "4fc7bebc302357bd",
+      "legacy": true,
+      "node_type": "fact",
+      "op": "node.add",
+      "place": {
+        "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+        "kind": "vault"
+      },
+      "provenance": "workspace",
+      "received_at": 1792800015350,
+      "review_state": "confirmed",
+      "reviewed_by": "none",
+      "schema": "leanctx.hive.event/v2",
+      "seq": 15,
+      "signature": "990f2ded658957846689cc286a614a4a0ff065c6bc865c622cac1e5dfadea573d07d15747bbbe711635568a4b503187e201a927d2fc45669df689cb0b227dc0e",
+      "target": "n_3nioi7cxjbupbhwcgrez4xthnq"
+    },
+    {
+      "actor": {
+        "import_ref": "rev:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01:7#1",
+        "instance_id": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+        "kind": "legacy_import"
+      },
+      "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqb4",
+      "body": {
+        "body_nonce": "20202020202020202020202020202020",
+        "from": "n_3nioi7cxjbupbhwcgrez4xthnq",
+        "kind": "references",
+        "legacy": {
+          "doc_index": 0,
+          "type": "explains"
+        },
+        "to": "n_tyvnza7clspg4cpmb7ew7fvl7b"
+      },
+      "body_commit": "377737f019e916d331dc6349673393bee0ebef4cc024618c28e1aee9f877e41c",
+      "causal_base": 15,
+      "cause": {
+        "id": "0d9b7c5a-3e1f-4a2b-8c6d-5e4f3a2b1c0d",
+        "kind": "legacy_import"
+      },
+      "event_id": "01M5NKAHM0005000000000W00G",
+      "hlc": {
+        "counter": 0,
+        "node": "4fc7bebc302357bd",
+        "wall_ms": 1792800016000
+      },
+      "key_id": "4fc7bebc302357bd",
+      "legacy": true,
+      "op": "edge.add",
+      "place": {
+        "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+        "kind": "vault"
+      },
+      "provenance": "workspace",
+      "received_at": 1792800016350,
+      "review_state": "confirmed",
+      "reviewed_by": "none",
+      "schema": "leanctx.hive.event/v2",
+      "seq": 16,
+      "signature": "9b1bf026612dea55222b658cfd4e607bb91b3a22dbc38db617e2f5a3c320b62022082255f01c73a8f1310725fae60d25ef1f6269fb290fb428148b511b7db303",
+      "target": "e_aaaaaaaaaaaaaaaaaaaaaacqcy"
+    }
+  ]
+}

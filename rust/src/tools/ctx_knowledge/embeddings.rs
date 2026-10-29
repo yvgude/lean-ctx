@@ -2,6 +2,7 @@
 //! Split out of `ctx_knowledge/mod.rs`; `use super::*` re-imports parent items.
 
 #[allow(clippy::wildcard_imports)]
+#[cfg(feature = "embeddings")]
 use super::*;
 
 /// Auto-download policy (#551): the env var, when set, wins in either

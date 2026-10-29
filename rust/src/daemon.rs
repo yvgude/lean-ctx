@@ -180,10 +180,6 @@ pub(crate) fn start_daemon_with_binary(
         anyhow::bail!("Daemon process exited immediately:\n{stderr_trimmed}");
     }
 
-    if let Err(error) = crate::core::enterprise_handshake::notify_configured_runtime() {
-        eprintln!("enterprise runtime handshake unavailable: {error}");
-    }
-
     let addr = daemon_addr();
     if crate::core::protocol::meta_visible() {
         eprintln!(

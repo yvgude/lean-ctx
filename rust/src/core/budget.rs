@@ -39,7 +39,18 @@ pub(crate) enum BudgetAction {
 /// `recovery` is the line naming where the full output is retrievable. It is
 /// already part of `text`; passing it separately is what lets the cut re-attach
 /// it instead of discarding it with the rest of the tail (#1660).
-pub(crate) fn enforce_turn_budget(text: &str, verbatim: bool, recovery: Option<&str>) -> String {
+///
+/// K25: a cut without such a line archives the full `text` under `tool` and
+/// names it with [`crate::core::recovery::original_pointer`], so no truncation
+/// leaves the caller without a way back. When the archive refuses the text
+/// (archive off, or protection without source authority) the notice stays as
+/// it was.
+pub(crate) fn enforce_turn_budget(
+    text: &str,
+    verbatim: bool,
+    recovery: Option<&str>,
+    tool: &str,
+) -> String {
     let cfg = crate::core::config::Config::load();
     let limit = if verbatim {
         cfg.turn_fresh_limit_verbatim_effective()
@@ -49,6 +60,20 @@ pub(crate) fn enforce_turn_budget(text: &str, verbatim: bool, recovery: Option<&
     if limit == 0 {
         return text.to_string();
     }
+    let pointer =
+        if recovery.is_none_or(|line| line.trim().is_empty()) && count_tokens(text) > limit {
+            crate::core::recovery::archive_original(tool, tool, text)
+        } else {
+            None
+        };
+    let with_pointer;
+    let (text, recovery) = match pointer.as_deref() {
+        Some(line) => {
+            with_pointer = format!("{text}\n{line}");
+            (with_pointer.as_str(), Some(line))
+        }
+        None => (text, recovery),
+    };
     let (budgeted, action) = apply_turn_budget(text, limit, recovery);
     if let BudgetAction::Truncated {
         original_tokens,
@@ -498,6 +523,36 @@ mod gh1660 {
             "must not point at a file tool for stream output: {out}"
         );
         assert!(out.contains("archived"), "{out}");
+    }
+
+    /// K25: a cut without a recovery line archives the original and names it;
+    /// the response is byte-identical on a repeat (#498) and the pointer
+    /// resolves to the whole original.
+    #[test]
+    fn a_cut_without_recovery_names_the_archived_original() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        crate::test_env::set_var("LEAN_CTX_TURN_FRESH_LIMIT", "500");
+        let text = long_body();
+        let first = enforce_turn_budget(&text, false, None, "ctx_tree");
+        let second = enforce_turn_budget(&text, false, None, "ctx_tree");
+        let small = enforce_turn_budget("short", false, None, "ctx_tree");
+        crate::test_env::remove_var("LEAN_CTX_TURN_FRESH_LIMIT");
+
+        assert_eq!(first, second, "byte-stable");
+        assert_eq!(small, "short", "no cut, no pointer");
+        let pointer = first.lines().last().unwrap();
+        let id = pointer
+            .strip_prefix("[Original available via ctx_expand id=")
+            .and_then(|rest| rest.strip_suffix(']'))
+            .unwrap_or_else(|| panic!("pointer is the last line: {first}"));
+        assert!(first.contains("the full output is archived"), "{first}");
+        assert!(count_tokens(&first) <= 500);
+        let archived = crate::core::archive::retrieve(id).expect("resolves");
+        assert!(
+            archived.starts_with(&text),
+            "the whole original is archived"
+        );
     }
 
     /// When there is nothing to preserve, behaviour is unchanged — the file

@@ -1,0 +1,110 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/sealed.schema.json",
+  "title": "Sealed vault keys: grant request and key record (contracts/sealed-repos-v1.md; RESOLUTIONS R135)",
+  "$defs": {
+    "wrapped_key": {
+      "description": "the epoch key wrapped to the recipient instance's kx key (sealed-repos-v1)",
+      "type": "object",
+      "required": [
+        "alg",
+        "ephemeral_pub",
+        "nonce",
+        "ciphertext"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "alg": {
+          "const": "x25519-hkdf-sha256-xchacha20poly1305"
+        },
+        "ephemeral_pub": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        },
+        "nonce": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        },
+        "ciphertext": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9+/]+={0,2}$"
+        }
+      }
+    },
+    "place_secret_wrapped": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9_-]{32,128}$",
+      "description": "R135: the place_secret (32 bytes) wrapped under this grant's epoch key: base64url (no padding) of nonce (24) ‖ XChaCha20-Poly1305 ciphertext, AAD vault_id|epoch|\"place_secret\" (SPEC-ENGINE §3.3.4)"
+    },
+    "grant_request": {
+      "description": "POST /v1/vaults/{pid}/sealed/grants: one grant per epoch, oldest first; place_secret_wrapped is required for a grant to a sealed place that has events (R135)",
+      "type": "object",
+      "required": [
+        "schema",
+        "epoch",
+        "instance_id",
+        "wrapped_key"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.sealed-grant-request/v1"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "instance_id": {
+          "type": "string",
+          "pattern": "^inst_[0-9a-z]{1,40}$"
+        },
+        "wrapped_key": {
+          "$ref": "#/$defs/wrapped_key"
+        },
+        "place_secret_wrapped": {
+          "$ref": "#/$defs/place_secret_wrapped"
+        }
+      }
+    },
+    "key_record": {
+      "description": "GET /v1/vaults/{pid}/sealed/keys[?epoch=n]: the caller's key at that epoch and, when the grant carried it, the place secret wrapped under it (R135)",
+      "type": "object",
+      "required": [
+        "schema",
+        "vault_id",
+        "instance_id",
+        "epoch",
+        "epoch_required",
+        "wrapped_key"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.sealed-key/v1"
+        },
+        "vault_id": {
+          "type": "string",
+          "pattern": "^[0-9a-f]{32}$"
+        },
+        "instance_id": {
+          "type": "string",
+          "pattern": "^inst_[0-9a-z]{1,40}$"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "epoch_required": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "wrapped_key": {
+          "$ref": "#/$defs/wrapped_key"
+        },
+        "place_secret_wrapped": {
+          "$ref": "#/$defs/place_secret_wrapped"
+        }
+      }
+    }
+  }
+}

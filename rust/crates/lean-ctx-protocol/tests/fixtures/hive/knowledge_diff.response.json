@@ -1,0 +1,60 @@
+{
+  "from": 3,
+  "ops": [
+    {
+      "fact": {
+        "anchors": [
+          {
+            "digest": "sha256:6869c3fea0619de5444550d1f7a0f31b01f79ea56eafcb78fbe15102fd4975be",
+            "lang": "rust",
+            "path": "rust/src/core/hive/outbox.rs",
+            "symbol": "hive::outbox::enqueue"
+          }
+        ],
+        "appliesTo": [
+          "rust/src/core/hive"
+        ],
+        "id": "hive.outbox-order",
+        "kind": "gotcha",
+        "statement": "The outbox keeps upload order per project; reordering breaks expected_revision."
+      },
+      "op": "add_fact"
+    },
+    {
+      "op": "add_relation",
+      "relation": {
+        "from": "hive.outbox-order",
+        "to": "hive.never-blocks",
+        "type": "explains"
+      }
+    },
+    {
+      "op": "add_page",
+      "page": {
+        "id": "hive.outbound",
+        "items": [
+          {
+            "kind": "prose",
+            "text": "Everything an engine sends to Hive takes one path."
+          },
+          {
+            "id": "hive.screening-first",
+            "kind": "fact"
+          },
+          {
+            "id": "hive.never-blocks",
+            "kind": "fact"
+          },
+          {
+            "id": "hive.outbox-order",
+            "kind": "fact"
+          }
+        ],
+        "title": "Outbound path"
+      }
+    }
+  ],
+  "schema": "leanctx.hive.revision-diff/v1",
+  "to": 4,
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

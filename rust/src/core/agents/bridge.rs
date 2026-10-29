@@ -199,6 +199,9 @@ mod tests {
             durable_identity_id: None,
             status: AgentStatus::Active,
             status_message: None,
+            transport: None,
+            role_source: None,
+            parent: None,
         });
         registry.save().expect("presence registry");
 
@@ -233,6 +236,9 @@ mod tests {
             durable_identity_id: Some("missing-durable".to_string()),
             status: AgentStatus::Active,
             status_message: None,
+            transport: None,
+            role_source: None,
+            parent: None,
         });
         registry.save().expect("presence registry");
         let missing = list_unified()

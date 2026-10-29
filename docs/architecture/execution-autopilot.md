@@ -4,6 +4,14 @@ Status: V4-Zielarchitektur. Die Entscheidungs- und Bindungsprimitive existieren
 (`TaskAutopilotDecision`), ein durchgehender Auswahl-, Ausführungs- und
 Lernpfad ist nicht abgenommen. Kein Release- oder Pro-Verfügbarkeitsnachweis.
 
+**Produkt-Scope (2026-10-14): nur Wartung.** LeanCTX ist das Context Gateway;
+Modellwahl, Ausführung und Task-Scheduling gehören dem Host. Der bestehende
+Vertrag bleibt kompatibel und wird nicht ausgebaut
+([`v4-overview.md`](v4-overview.md)). Seit 2026-10 startet LeanCTX keine
+Agenten mehr: die Connector-Schicht und `ctx_work_graph action=execute` sind
+entfernt; der Host startet, LeanCTX bindet das Kind an seinen Knoten
+([`work-graph-host-start.md`](work-graph-host-start.md)).
+
 ## Aufgabe und Abgrenzung
 
 Der Execution Autopilot ist **einzelbesitzer-adaptive Ausführungsintelligenz**:
@@ -95,7 +103,7 @@ Context Autopilot ──► ContextPlan ──► ContextPlanProjectionV1
 Execution Autopilot ──► ExecutionPlanV1 (gebunden, validiert)
    │
    ▼
-AgentConnector ──► TaskResult + Receipt
+Host-Start ──► ctx_work_graph start/receipt (Fence-gebunden)
    │
    ▼
 Outcome Evaluation ──► akzeptiert / abgelehnt / unbekannt
@@ -111,7 +119,6 @@ Lernzustand (nur bei validierter Evidenz)
 - `record_shadow_outcome` für kontrafaktische Evidenz.
 - Tests belegen die Abweisung veränderter Entscheidungen, falscher
   Ausführungslineage, abweichender Kontextplan-ID und erhöhten Budgets.
-- Connector-Schicht mit Claude Code, Codex und Cursor vorhanden.
 
 ## Offene Abnahme-Gates
 
@@ -122,9 +129,6 @@ Lernzustand (nur bei validierter Evidenz)
   durchgehender Produktivpfad belegt.
 - Fallback-Ketten und deren Wirksamkeitsmessung sind nicht abgenommen.
 - Die Pro-Entitlement-Kopplung ist nicht Ende-zu-Ende nachgewiesen.
-- Connector-Conformance-Tests im geforderten Umfang fehlen.
-- `lean-ctx pair` und entfernte Ausführung sind nicht als authentifizierter,
-  widerrufbarer, replay-geschützter Pfad abgenommen.
 
 ## Mindestabnahme
 

@@ -1,0 +1,16 @@
+{
+  "active": false,
+  "daily_budget": {
+    "tasks": 5
+  },
+  "networks": [],
+  "schema": "leanctx.hive.engine-optin/v1",
+  "topics": [],
+  "used_today": {
+    "day": "2026-10-20",
+    "tasks": 0,
+    "tokens": 0,
+    "usd_micros": 0
+  },
+  "vaults": []
+}

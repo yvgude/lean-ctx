@@ -1,7 +1,7 @@
 """Phase 3: session lifecycle + cross-session persistence + status enrichment.
 
 Hermetic: a ``FakeGateway`` records the daemon calls the lifecycle hooks make,
-so we assert the contract (resume on start, summary+handoff on end, graceful
+so we assert the contract (resume on start, save+handoff on end, graceful
 no-op when the daemon is down) without a running daemon.
 """
 
@@ -36,12 +36,12 @@ def test_on_session_start_offline_sets_id_without_calls():
     assert gw.names() == []  # no daemon calls when unavailable
 
 
-def test_on_session_end_records_summary_and_handoff():
+def test_on_session_end_saves_session_and_handoff():
     eng = _engine()
-    gw = FakeGateway(responses={"ctx_summary": "ok", "ctx_handoff": "ok"})
+    gw = FakeGateway(responses={"ctx_session": "ok", "ctx_handoff": "ok"})
     eng._gateway = gw
     eng.on_session_end("sess-1", make_messages(3))
-    assert gw.args_for("ctx_summary") == {"action": "record"}
+    assert gw.args_for("ctx_session") == {"action": "save"}
     assert gw.args_for("ctx_handoff") == {"action": "create"}
 
 

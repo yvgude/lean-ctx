@@ -734,7 +734,7 @@ mod tests {
     }
 
     /// A GDScript file that imports a not-yet-indexed `.tscn` scene (#315).
-    fn gd_provider_with_scene_edge() -> GraphProvider {
+    fn gd_provider_with_scene_edge() -> (GraphProvider, tempfile::TempDir) {
         use crate::core::graph_index::{FileEntry, IndexEdge, ProjectIndex};
         let mut idx = ProjectIndex::new("/project");
         idx.files.insert(
@@ -755,13 +755,16 @@ mod tests {
             kind: "import".to_string(),
             weight: 1.0,
         });
-        GraphProvider::GraphIndex(idx)
+        // The scene exists in the project; it is only not indexed.
+        let (idx, files) = idx.on_disk(&["scenes/Main.tscn"]);
+        (GraphProvider::GraphIndex(idx), files)
     }
 
     #[test]
     fn export_synthesizes_phantom_scene_node_and_keeps_import_edge() {
-        let gp = gd_provider_with_scene_edge();
-        let graph = build_export_graph(&gp, "/project", 100);
+        let (gp, files) = gd_provider_with_scene_edge();
+        let root = files.path().canonicalize().expect("root");
+        let graph = build_export_graph(&gp, &root.to_string_lossy(), 100);
 
         let scene = graph
             .nodes
@@ -788,8 +791,9 @@ mod tests {
     fn export_drops_dangling_edge_when_budget_is_full() {
         // A single real node fills max_nodes=1, so no phantom is added and the
         // edge to the unscanned scene is dropped (both endpoints must be nodes).
-        let gp = gd_provider_with_scene_edge();
-        let graph = build_export_graph(&gp, "/project", 1);
+        let (gp, files) = gd_provider_with_scene_edge();
+        let root = files.path().canonicalize().expect("root");
+        let graph = build_export_graph(&gp, &root.to_string_lossy(), 1);
         assert_eq!(graph.nodes.len(), 1);
         assert!(graph.edges.is_empty());
     }

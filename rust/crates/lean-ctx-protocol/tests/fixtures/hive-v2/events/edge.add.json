@@ -1,0 +1,51 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqba",
+  "body": {
+    "body_nonce": "08080808080808080808080808080808",
+    "from": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+    "kind": "references",
+    "to": "n_aaaaaaaaaaaaaaaaaaaaaacaa4"
+  },
+  "body_commit": "15d63f27328f6f4aad89dcaa5cb6c814e7bf4e7df6fca972151e1d0b61449418",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 7,
+  "event_id": "01M5NKA9T0005000000000W008",
+  "hlc": {
+    "counter": 0,
+    "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+    "wall_ms": 1792800008000
+  },
+  "key_id": "47983724220c8521",
+  "op": "edge.add",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "own",
+  "provenance_claim": "own",
+  "received_at": 1792800008350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 8,
+  "signature": "624f3525db299c3eed5d7d1b61e860ed488016c440f1d809d1f7aef5dc08b133c388c47b64629b810c673d12da1c6ae935b72b3db03c6bb0f01425475fa48005",
+  "target": "e_aaaaaaaaaaaaaaaaaaaaaacqba",
+  "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+}

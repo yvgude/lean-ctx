@@ -1,0 +1,88 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_body",
+          "message": "nothing to change"
+        }
+      },
+      "status": 400
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_field",
+          "field": "title",
+          "message": "title must be 1–120 characters",
+          "reason": "invalid"
+        }
+      },
+      "status": 400
+    },
+    {
+      "body": {
+        "error": {
+          "code": "plan_required",
+          "feature": "sealed",
+          "message": "Sealed vaults: included in Personal, Team and Enterprise.",
+          "plan_needed": "personal"
+        }
+      },
+      "status": 402
+    },
+    {
+      "body": {
+        "error": {
+          "code": "sealed_public_conflict",
+          "message": "A public vault cannot be sealed."
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "Confirm with your authenticator app."
+        }
+      },
+      "status": 403
+    }
+  ],
+  "method": "PATCH",
+  "path": "/api/v1/orgs/acme/vaults/payments",
+  "request": {
+    "description": "How refunds, retries and payouts work.",
+    "title": "Payments"
+  },
+  "response": {
+    "body": {
+      "vault": {
+        "counts": {
+          "nodes": 0,
+          "open_reviews": 0,
+          "workers": 0
+        },
+        "description": "How refunds, retries and payouts work.",
+        "followers": 0,
+        "forge": null,
+        "frozen": false,
+        "license": null,
+        "name": "payments",
+        "presence_public": false,
+        "sealed": false,
+        "sealed_conversion": "none",
+        "sealed_grants": "confirm",
+        "stars": 0,
+        "title": "Payments",
+        "viewer": {
+          "role": "owner"
+        },
+        "visibility": "private"
+      }
+    },
+    "status": 200
+  },
+  "route": "W25"
+}

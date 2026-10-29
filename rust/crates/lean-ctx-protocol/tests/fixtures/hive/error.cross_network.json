@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "Replies stay in their network.",
+    "reason": "cross_network"
+  }
+}

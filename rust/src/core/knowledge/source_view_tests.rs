@@ -163,12 +163,102 @@ fn source_view_cannot_admit_foreign_local_notes_in_a_bound_protected_request() {
         0.9,
         &MemoryPolicy::default(),
     );
+    knowledge
+        .patterns
+        .push(crate::core::knowledge::ProjectPattern {
+            pattern_type: "workflow".into(),
+            description: "private foreign pattern".into(),
+            examples: vec!["example".into()],
+            source_session: "local".into(),
+            created_at: chrono::Utc::now(),
+        });
+    knowledge
+        .history
+        .push(crate::core::knowledge::ConsolidatedInsight {
+            summary: "private foreign history".into(),
+            from_sessions: vec!["session".into()],
+            timestamp: chrono::Utc::now(),
+        });
+    knowledge
+        .judged_pairs
+        .push(crate::core::knowledge::JudgedPair {
+            key_a: "private-a".into(),
+            key_b: "private-b".into(),
+            verdict: "private verdict".into(),
+            judged_at: chrono::Utc::now(),
+        });
     crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
         std::cell::RefCell::new(Some(root.path().to_owned())),
         || {
             let view = knowledge.admit_sources();
             assert!(view.facts.is_empty());
-            assert_eq!(view.withheld.len(), 1);
+            assert!(view.patterns.is_empty());
+            assert!(view.history.is_empty());
+            assert!(view.judged_pairs.is_empty());
+            assert_eq!(view.withheld.len(), 4);
+            let debug = format!("{view:?}");
+            for hidden in [
+                "private other project note",
+                "private foreign pattern",
+                "private foreign history",
+                "private verdict",
+                "private-a",
+                "private-b",
+            ] {
+                assert!(
+                    !debug.contains(hidden),
+                    "withheld record reached Debug output"
+                );
+                assert!(!format!("{:?}", view.withheld).contains(hidden));
+            }
         },
     );
+}
+
+#[test]
+fn bound_request_without_project_policy_cannot_load_or_recall_foreign_knowledge() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let bound = tempfile::tempdir().unwrap();
+    let foreign = tempfile::tempdir().unwrap();
+    let foreign_root = foreign.path().to_str().unwrap();
+    let mut knowledge = ProjectKnowledge::new(foreign_root);
+    knowledge.remember(
+        "decision",
+        "foreign",
+        "private other project note",
+        "local",
+        0.9,
+        &MemoryPolicy::default(),
+    );
+    knowledge.save().unwrap();
+    assert!(
+        crate::core::policy::runtime::for_project(bound.path())
+            .unwrap()
+            .is_none()
+    );
+    crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+        std::cell::RefCell::new(Some(bound.path().to_owned())),
+        || {
+            assert!(ProjectKnowledge::load(foreign_root).is_none());
+            let response = crate::tools::ctx_knowledge::handle(
+                foreign_root,
+                "recall",
+                None,
+                None,
+                None,
+                None,
+                "local",
+                None,
+                None,
+                None,
+                None,
+                None,
+            );
+            assert!(response.starts_with("Error:"));
+            assert!(!response.contains("private other project note"));
+        },
+    );
+    // Rejection neither modifies the other project's store nor hides it from
+    // a later request that actually owns that project.
+    assert_eq!(ProjectKnowledge::load(foreign_root).unwrap().facts.len(), 1);
 }

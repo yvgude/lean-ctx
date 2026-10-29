@@ -1,0 +1,33 @@
+{
+  "body": {
+    "artefacts": [
+      {
+        "kind": "material",
+        "ref": "tls-trace.txt",
+        "sha256": "e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4e4"
+      }
+    ],
+    "goal": "g_aaaaaaaaaaaaaaaaaaaaaaaaaq",
+    "review_id": "rv_bbbbbbbbbbbbbbbbbbbbbbbbba",
+    "review_state": "unconfirmed",
+    "summary": "TLS session resumption is off on the checkout client; enabling it saves 38 ms at p95."
+  },
+  "client_msg_id": "01M5NKA2Z8B000000000000009",
+  "id": "msg_00000000000000a9",
+  "provenance": "workspace",
+  "received_at": 1792800009000,
+  "reply_to": "msg_00000000000000a7",
+  "schema": "leanctx.hive.bus/v2",
+  "sender": {
+    "host_app": "codex",
+    "kind": "worker",
+    "name": "Codex · general",
+    "owner_handle": "yves",
+    "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+  },
+  "seq": 9,
+  "thread_id": "msg_00000000000000a7",
+  "to": "~checkout-latency",
+  "type": "result",
+  "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+}

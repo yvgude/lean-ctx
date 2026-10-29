@@ -1,0 +1,13 @@
+{
+  "cargo_entrypoints": [
+    "rust/Cargo.toml"
+  ],
+  "core_manifest": "rust/Cargo.toml",
+  "license_changes": "none",
+  "native_storage_manifest": "rust/crates/leanctx-native-storage/Cargo.toml",
+  "ocla_manifest": "rust/crates/lean-ctx-ocla/Cargo.toml",
+  "projection": "public",
+  "protocol_manifest": "rust/crates/lean-ctx-protocol/Cargo.toml",
+  "publication": "not-approved",
+  "schema": "leanctx.source-layout/v1"
+}

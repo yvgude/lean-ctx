@@ -1,0 +1,14 @@
+{
+  "case": "journal_tampered",
+  "base": "records/shred_journal.keys.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/count",
+      "value": 1
+    }
+  ],
+  "expect": {
+    "layer": "signature"
+  }
+}

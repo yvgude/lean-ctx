@@ -212,8 +212,8 @@ die validierte Ausführungs- und Outcome-Kette; Tool-Erfolg genügt dafür nicht
 - Personalisierter, geräteübergreifender Lernzustand, verschlüsselte Kontinuität
   und gehosteter persönlicher Index sind nicht abgenommen.
 - Predictive Preload ist implementiert, aber nicht als Produktnutzen gemessen.
-- Die Kopplung an Entitlements (Pro schaltet den adaptiven Planer frei) ist nicht
-  Ende-zu-Ende nachgewiesen — siehe [entitlements.md](entitlements.md).
+- Die Kopplung an einen Plan (Pro schaltet den adaptiven Planer frei) ist nicht
+  Ende-zu-Ende nachgewiesen; Pläne verwaltet LeanCTX Hive.
 - Aktive Inferenz und Provider-Bandit sind angebunden, aber nicht als bewährter
   Produktivpfad belegt.
 

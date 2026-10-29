@@ -1,0 +1,56 @@
+{
+  "cases": [
+    {
+      "body": {
+        "ct": "MgZ4fsl5NMUk3z6Gdm61xEgP9X61zNHKKI9xcTsqD0ST8qD3y-sTVE39op0x4a7BPE2Ls5LvMYTiOYFHpLkjQj14z0vw6IHIE-3dycipldbhlo822ahK-CwT384KyiaTOapqiEYs6FuoLd5MUEa9wqAmBDOMidbb1lwlwP0E_h1fOpFjVys6ypS23zNiYyjIsUKZ8tqMyD9-xbkL6ahcSWVMrNUWP5veYbE8T6QO2Wh2zY40kunlhp6D_xkOhg",
+        "nonce": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b"
+      },
+      "body_aad": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03|01M5NKA2Z8006000000000W001|leanctx.hive.event/v2",
+      "body_commit": "b9708b0e19aefc0f4776e089b0706acd5c2d03e36a248e7562561c6641eb1aca",
+      "body_nonce_hex": "0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b0b",
+      "ck_hex": "c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7c7",
+      "ck_wrapped": "DAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMnvlB0Rz3ablDvZlQq-5IZ31xQdR5vDGkn_flja2gwPdhQI77UJNJgXZoLX26TXiR",
+      "fixture": "events/node.add.sealed.json",
+      "plaintext_body": {
+        "body_nonce": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+        "evidence": "stated",
+        "sensitivity": "internal",
+        "statement": "Sealed: the HSM partition for card tokens is named pci-tokens-eu."
+      },
+      "plaintext_canonical": "{\"body_nonce\":\"1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f\",\"evidence\":\"stated\",\"sensitivity\":\"internal\",\"statement\":\"Sealed: the HSM partition for card tokens is named pci-tokens-eu.\"}",
+      "wrap_aad": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03|01M5NKA2Z8006000000000W001|1|ck",
+      "wrap_nonce_hex": "0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c0c"
+    },
+    {
+      "body": {
+        "ct": "Bl4iF-x1nzJ1e5A04hxVuH320u3dvtIH7cO5rva5-N5lICOX7604Qj4KfuxTZMz7ZyvtO0YEHjwPHphYF3MWnDHPfI6rQHzj_8fVOdbiekJw-0guVrg-NiiTsca93ushTi-5GC7dEGMW3QOPouKGqgNkhM4g8931tYAt7HfnJ4EbyhwcydjlQyNk2gYcwXpavM6B7JPoW7DDz3ZUJzCXdEOo3eej2I--99-c1UpEIy11qC95CNkXpHmNS1u2OxmyNM47q8pfdvc2J-LUyK56nGTLsd0AVVQIrN8vJ13RfUIX4Kal-kad08Q_83jFwb3wevo8eJTY8I--XyfYgqALngSueaCN-b6Y-6zl9q0HG74IGmViW5xBAPUa5Jxv2uSA_lU3rkfuxDOfo3qunDlQCyUJscNPuDYIrSWnbhGg",
+        "nonce": "1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b"
+      },
+      "body_aad": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03|01M5NKA3YG006000000000W002|leanctx.hive.event/v2",
+      "body_commit": "251093afc15f5a470abe35d4caa7422f31ce1348e4604f990b5fce9ab83150ed",
+      "body_nonce_hex": "1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b1b",
+      "ck_hex": "c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8c8",
+      "ck_wrapped": "HBwcHBwcHBwcHBwcHBwcHBwcHBwcHBwc0LUunlEQYtRfnT6eVo9b87DIalDrOBkV-4N0jXQB1m532tq32iPhVKSj4Bii4NU8",
+      "fixture": "events/node.add.procedure.sealed.json",
+      "plaintext_body": {
+        "body_nonce": "2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f",
+        "commands": [
+          {
+            "cmd": "hsmctl partition rotate --name pci-tokens-eu",
+            "shell": "sh"
+          }
+        ],
+        "evidence": "observed",
+        "steps": [
+          "Open the HSM console with two operators.",
+          "Rotate the partition password and store it sealed."
+        ],
+        "title": "Rotate the HSM partition password"
+      },
+      "plaintext_canonical": "{\"body_nonce\":\"2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f2f\",\"commands\":[{\"cmd\":\"hsmctl partition rotate --name pci-tokens-eu\",\"shell\":\"sh\"}],\"evidence\":\"observed\",\"steps\":[\"Open the HSM console with two operators.\",\"Rotate the partition password and store it sealed.\"],\"title\":\"Rotate the HSM partition password\"}",
+      "wrap_aad": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03|01M5NKA3YG006000000000W002|1|ck",
+      "wrap_nonce_hex": "1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c1c"
+    }
+  ],
+  "note": "Sealed body and content-key wrap (SPEC-ENGINE §3.3.4, SPEC-CONTRACT-SERVER §3.12.2). XChaCha20-Poly1305; body AAD = place_ref|event_id|schema, wrap AAD = place_ref|event_id|epoch|ck (ASCII, epoch in decimal); ck_wrapped = base64url(wrap_nonce ‖ ciphertext ‖ tag); body_commit and the claim node id use the sealed pk_id over the plaintext."
+}

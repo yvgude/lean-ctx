@@ -126,6 +126,15 @@ fn forwards_grok_cli_chat_proxy_headers() {
     }
     // Internal gateway tag must stay off the allowlist (enterprise#11).
     assert!(!is_allowed_request_header("x-leanctx-project"));
+    // The presenter capability is a host-internal secret: never on the
+    // allowlist, in no spelling the relay would accept.
+    assert!(!is_allowed_request_header(
+        crate::proxy::request_project::PRESENTER_HEADER
+    ));
+    assert!(!should_forward_request_header(
+        crate::proxy::request_project::PRESENTER_HEADER,
+        true
+    ));
 }
 
 #[test]
@@ -304,10 +313,155 @@ fn relay_test_state() -> ProxyState {
         upstreams: state_upstreams,
         chatgpt_cookies: crate::proxy::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
         mcp_servers: Arc::new(Vec::new()),
-        web_app_tracker: Arc::new(std::sync::Mutex::new(
-            crate::proxy::web_app::conversation_tracker::ConversationTracker::default(),
-        )),
     }
+}
+
+/// The transport sends admitted bodies only: admit the empty-context `{}`
+/// these header tests relay and bind it, with `head`, to the loopback
+/// upstream.
+async fn admitted_relay_body(
+    upstream: &str,
+    head: crate::proxy::admitted::RequestHead,
+) -> crate::proxy::admitted::AdmittedBody {
+    let target = crate::core::context_admission::egress::EgressTarget {
+        provider: "Anthropic",
+        model: None,
+        upstream_base: upstream,
+    };
+    let admission = crate::proxy::admitted::admit(
+        crate::proxy::admitted::Payload::Opaque(0),
+        &target,
+        crate::core::context_admission::egress::TrustedDestinationBinding::default(),
+    )
+    .expect("an empty payload is admitted");
+    crate::proxy::admitted::AdmittedBody::bind(
+        admission,
+        b"{}".to_vec(),
+        upstream,
+        upstream,
+        head,
+        2,
+        None,
+    )
+    .await
+    .expect("the admitted body binds to its own upstream")
+}
+
+fn built_head(value: &'static str) -> crate::proxy::admitted::RequestHead {
+    crate::proxy::admitted::RequestHead::new(
+        reqwest::Method::POST,
+        [(
+            axum::http::HeaderName::from_static("x-built"),
+            axum::http::HeaderValue::from_static(value),
+        )],
+    )
+}
+
+/// AP10-C2: the caller's code that finished a request could add, change or
+/// drop headers after the body was bound, and they left with it. Now the
+/// head is bound with the body: a request whose finished head is not the
+/// bound one is refused before it is handed to the client.
+#[tokio::test]
+#[serial_test::serial(cache_telemetry)]
+async fn a_header_the_bound_head_does_not_carry_is_not_sent() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = format!("http://{}", listener.local_addr().unwrap());
+    let body = admitted_relay_body(&upstream, built_head("bound")).await;
+    let client = reqwest::Client::new();
+    let later: [fn(reqwest::RequestBuilder) -> reqwest::RequestBuilder; 2] = [
+        |request| request.header("authorization", "Bearer later"),
+        |request| request.header("x-built", "changed"),
+    ];
+    for decorate in later {
+        let refused = body.send(&client, 1, decorate).await;
+        let Err(refusal) = refused else {
+            panic!("a request with another head was handed to the client");
+        };
+        assert_eq!(
+            refusal.response("Anthropic").headers()[crate::proxy::admitted::REASON_CODES_HEADER],
+            "egress.head_unbound"
+        );
+    }
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(200), listener.accept())
+            .await
+            .is_err(),
+        "the upstream sees no connection"
+    );
+}
+
+/// The authority is proven on the request that is actually sent. A policy
+/// that changes while the caller's own code builds the request stops it:
+/// the first attempt of an admitted body goes out, the next one of the same
+/// body does not, and the upstream sees exactly one connection.
+#[tokio::test]
+#[serial_test::serial(cache_telemetry)]
+async fn a_policy_change_while_the_request_is_built_stops_the_send() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+    write_gateway_config("[context_gateway]\nmode = \"developer\"\n");
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let upstream = format!("http://{}", listener.local_addr().unwrap());
+    let body = admitted_relay_body(&upstream, built_head("live")).await;
+    let client = reqwest::Client::new();
+    let built = std::cell::Cell::new(0);
+
+    // Live: the decorated request reaches the bound upstream. The answer
+    // closes the connection, so a second dispatch would have to open one.
+    let serve = async {
+        let (mut stream, _) = listener.accept().await.unwrap();
+        let mut request = Vec::new();
+        let mut buffer = [0_u8; 1024];
+        while !request.windows(4).any(|window| window == b"\r\n\r\n") {
+            let read = stream.read(&mut buffer).await.unwrap();
+            assert!(read > 0, "the request ended before its headers");
+            request.extend_from_slice(&buffer[..read]);
+        }
+        stream
+            .write_all(b"HTTP/1.1 200 OK\r\nconnection: close\r\ncontent-length: 2\r\n\r\n{}")
+            .await
+            .unwrap();
+        String::from_utf8_lossy(&request).to_lowercase()
+    };
+    let (first, seen) = tokio::join!(
+        body.send(&client, 1, |request| {
+            built.set(built.get() + 1);
+            request
+        }),
+        serve
+    );
+    assert!(first.is_ok_and(|attempt| {
+        attempt
+            .response
+            .is_ok_and(|response| response.status().is_success())
+    }));
+    assert!(seen.contains("x-built: live"), "{seen}");
+
+    // The same admitted body again; the policy changes inside the caller's
+    // decoration, after the first proof and before the request would leave.
+    let refused = body
+        .send(&client, 2, |request| {
+            built.set(built.get() + 1);
+            write_gateway_config("[context_gateway]\nmode = \"governed\"\n");
+            request
+        })
+        .await;
+    assert_eq!(built.get(), 2, "both requests were really built");
+    let Err(refusal) = refused else {
+        panic!("a request built under a changed policy was handed to the client");
+    };
+    assert_eq!(
+        refusal.response("Anthropic").headers()[crate::proxy::admitted::REASON_CODES_HEADER],
+        "policy.changed"
+    );
+    assert!(
+        tokio::time::timeout(std::time::Duration::from_millis(200), listener.accept())
+            .await
+            .is_err(),
+        "the ready upstream must see no second connection"
+    );
 }
 
 #[test]
@@ -322,6 +476,8 @@ fn forwards_opencode_session_header() {
 
 #[tokio::test]
 async fn opencode_session_reaches_the_upstream_verbatim() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     // #1752 end-to-end: assert what the upstream actually receives, including
     // the mixed-case spelling OpenCode puts on the wire.
     let (upstream, server) = upstream_capturing_headers().await;
@@ -330,21 +486,17 @@ async fn opencode_session_reaches_the_upstream_verbatim() {
         .uri("/v1/messages")
         .header("X-OpenCode-Session", "0f9c2b71-4d3a-4e58-9c11-7a6e5b2d8f40")
         .header("X-Leanctx-Project", "internal-only")
+        .header("X-Leanctx-Presenter", format!("lcp1_{}", "c3".repeat(32)))
         .body(())
         .unwrap()
         .into_parts()
         .0;
 
-    let response = transport::send_upstream(
-        &relay_test_state(),
-        &parts,
-        &upstream,
-        b"{}".to_vec(),
-        "Anthropic",
-        false,
-    )
-    .await
-    .unwrap();
+    let body = admitted_relay_body(&upstream, transport::forwarded_head(&parts, false)).await;
+    let response = transport::send_upstream(&relay_test_state(), &body, "Anthropic")
+        .await
+        .unwrap()
+        .response;
     assert!(response.status().is_success());
 
     let seen = server.await.unwrap();
@@ -357,6 +509,27 @@ async fn opencode_session_reaches_the_upstream_verbatim() {
         !seen.contains("x-leanctx-project"),
         "internal header must stay stripped, got: {seen}"
     );
+    // The relay drops a presenter capability even where the handler did not
+    // take it out of the headers first (this call bypasses the handler).
+    assert!(
+        !seen.contains("x-leanctx-presenter") && !seen.contains(&"c3".repeat(32)),
+        "a presenter capability must never reach the upstream"
+    );
+
+    // The handler's own step: read from the headers only, removed there, and
+    // exactly one well-formed value counts.
+    let header = crate::proxy::request_project::PRESENTER_HEADER;
+    let mut headers = parts.headers.clone();
+    assert!(crate::proxy::request_project::take_presenter(&mut headers).is_some());
+    assert!(
+        !headers.contains_key(header),
+        "taken out of the request before anything else sees it"
+    );
+    for _ in 0..2 {
+        headers.append(header, parts.headers[header].clone());
+    }
+    assert!(crate::proxy::request_project::take_presenter(&mut headers).is_none());
+    assert!(!headers.contains_key(header));
 }
 
 #[test]
@@ -373,6 +546,8 @@ fn forwards_claude_code_session_id_header() {
 
 #[tokio::test]
 async fn claude_code_session_id_reaches_the_upstream_verbatim() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     // #1730 end-to-end: assert what the upstream actually receives, including
     // the mixed-case spelling Claude Code puts on the wire.
     let (upstream, server) = upstream_capturing_headers().await;
@@ -389,16 +564,11 @@ async fn claude_code_session_id_reaches_the_upstream_verbatim() {
         .into_parts()
         .0;
 
-    let response = transport::send_upstream(
-        &relay_test_state(),
-        &parts,
-        &upstream,
-        b"{}".to_vec(),
-        "Anthropic",
-        false,
-    )
-    .await
-    .unwrap();
+    let body = admitted_relay_body(&upstream, transport::forwarded_head(&parts, false)).await;
+    let response = transport::send_upstream(&relay_test_state(), &body, "Anthropic")
+        .await
+        .unwrap()
+        .response;
     assert!(response.status().is_success());
 
     let seen = server.await.unwrap();
@@ -481,6 +651,7 @@ async fn upstream_capturing_body() -> (String, tokio::task::JoinHandle<Vec<u8>>)
 #[tokio::test]
 async fn unchanged_request_is_forwarded_byte_identical() {
     let _iso = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let (upstream, server) = upstream_capturing_body().await;
     // Key order, spacing and `1.0` all differ from serde_json's canonical form.
     let raw = br#"{ "temperature": 1.0,  "model": "claude-sonnet-4-5",
@@ -515,4 +686,74 @@ async fn unchanged_request_is_forwarded_byte_identical() {
         raw,
         "an unchanged request must be forwarded as the client's exact bytes"
     );
+}
+
+/// A model alias that targets a `[[proxy.providers]]` entry with `api_key_env`
+/// moves a built-in route onto the operator's key. A request that only got in
+/// through the provider-key fallback must not have that key injected.
+#[tokio::test]
+async fn routed_gateway_credential_requires_lean_ctx_token() {
+    let _isolation = crate::core::data_dir::isolated_data_dir();
+    let mut config = crate::core::config::Config::default();
+    config.proxy.routing.enabled = Some(true);
+    config
+        .proxy
+        .routing
+        .aliases
+        .insert("acme/fast".into(), "foundry:gpt-4o-mini".into());
+    config.save().unwrap();
+    crate::test_env::set_var("LC_TEST_GATEWAY_HELD_KEY", "sk-gateway-held");
+    let body = serde_json::json!({
+        "model": "acme/fast",
+        "messages": [{"role": "user", "content": "hi"}]
+    });
+
+    for fallback_only in [true, false] {
+        let (upstream, server) = upstream_capturing_headers().await;
+        let mut state = proxy_test_state("http://127.0.0.1:9");
+        let (_sender, upstreams) =
+            tokio::sync::watch::channel(Arc::new(crate::core::config::Upstreams {
+                anthropic: "http://127.0.0.1:9".into(),
+                openai: "http://127.0.0.1:9".into(),
+                chatgpt: "http://127.0.0.1:9".into(),
+                gemini: "http://127.0.0.1:9".into(),
+                providers: vec![crate::core::config::ResolvedProvider {
+                    id: "foundry".into(),
+                    shape: crate::core::config::WireShape::OpenAi,
+                    base_url: upstream,
+                    api_key_env: Some("LC_TEST_GATEWAY_HELD_KEY".into()),
+                    aws_region: None,
+                    account_ref: None,
+                    region: None,
+                    local: true,
+                }],
+            }));
+        state.upstreams = upstreams;
+        let mut driver = proxy_test_driver(state, &body, "http://127.0.0.1:9");
+        let request = driver.request.as_mut().unwrap();
+        request
+            .headers_mut()
+            .insert("x-api-key", "caller-junk".parse().unwrap());
+        if fallback_only {
+            request
+                .extensions_mut()
+                .insert(crate::proxy::server::ProviderKeyFallback);
+        }
+        let context = proxy_test_context();
+        driver.apply_security_boundaries(&context).await.unwrap();
+        let prepared = driver.gather_context_strategy(&context).await;
+        if fallback_only {
+            assert_eq!(prepared.err(), Some(StatusCode::UNAUTHORIZED));
+            server.abort();
+        } else {
+            prepared.unwrap();
+            driver.dispatch_primitive(&context).await.unwrap();
+            let headers = server.await.unwrap();
+            assert!(
+                headers.contains("authorization: bearer sk-gateway-held"),
+                "token-authenticated alias traffic still gets the gateway key: {headers}"
+            );
+        }
+    }
+    crate::test_env::remove_var("LC_TEST_GATEWAY_HELD_KEY");
 }

@@ -48,7 +48,25 @@ impl McpTool for CtxExpandTool {
         _ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
         let args_val = Value::Object(args.clone());
-        let result = crate::tools::ctx_expand::handle(&args_val);
+        // A failed retrieval is a tool error with the same text: it is never
+        // recorded as a delivery, and it has published no lineage.
+        let result = crate::tools::ctx_expand::handle_outcome(&args_val)
+            .map_err(crate::server::tool_trait::tool_execution_error)?;
         Ok(ToolOutput::simple(result))
+    }
+
+    /// Declared for retrieval (every action but `list` and `search_all`):
+    /// `ctx_expand::handle_retrieve` publishes the file lineage of the copy
+    /// it resolved, and marks the capture incomplete for every store without
+    /// one (tee, reference, public archive) and for a copy whose lineage
+    /// names a caller-presented source — the capture carries files only, so
+    /// such a reply stays unknown. A handle reference and a refusal publish
+    /// nothing. The pipeline then records the reply as it is delivered.
+    fn publishes_every_source(&self, args: Option<&Map<String, Value>>) -> bool {
+        !matches!(
+            args.and_then(|args| args.get("action"))
+                .and_then(Value::as_str),
+            Some("list" | "search_all")
+        )
     }
 }

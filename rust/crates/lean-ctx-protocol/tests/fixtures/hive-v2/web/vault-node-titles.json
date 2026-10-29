@@ -1,0 +1,46 @@
+{
+  "route": "W14t",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/vaults/payments/nodes/titles?ids=n_aaaaaaaaaaaaaaaaaaaaaaaaaa%2Cn_bbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "id": "n_aaaaaaaaaaaaaaaaaaaaaaaaaa",
+          "type": "fact",
+          "title": "Payment retries back off exponentially, capped at 64 seconds.",
+          "knowledge_state": "verified"
+        },
+        {
+          "id": "n_bbbbbbbbbbbbbbbbbbbbbbbbbb",
+          "type": "decision",
+          "title": "Use Postgres advisory locks for the nightly ledger close.",
+          "knowledge_state": "outdated"
+        }
+      ]
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "invalid_request",
+          "message": "ids: 1 to 100 node ids (n_…), comma separated",
+          "field": "ids"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "sealed_plaintext",
+          "message": "a sealed vault's nodes are read on its engines only"
+        }
+      }
+    }
+  ]
+}

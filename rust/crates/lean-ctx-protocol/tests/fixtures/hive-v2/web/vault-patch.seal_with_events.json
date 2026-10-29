@@ -1,0 +1,48 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "conversion_pending",
+          "message": "This vault has content; sealing it needs a conversion that is not available yet.",
+          "retry_after_s": 3600
+        }
+      },
+      "status": 503
+    }
+  ],
+  "method": "PATCH",
+  "path": "/api/v1/orgs/acme/vaults/payments",
+  "request": {
+    "sealed": true
+  },
+  "response": {
+    "body": {
+      "vault": {
+        "counts": {
+          "nodes": 14,
+          "open_reviews": 0,
+          "workers": 3
+        },
+        "description": "Knowledge of the payments services.",
+        "followers": 0,
+        "forge": null,
+        "frozen": false,
+        "license": null,
+        "name": "payments",
+        "presence_public": false,
+        "sealed": true,
+        "sealed_conversion": "pending",
+        "sealed_grants": "confirm",
+        "stars": 0,
+        "title": "Payments",
+        "viewer": {
+          "role": "owner"
+        },
+        "visibility": "private"
+      }
+    },
+    "status": 200
+  },
+  "route": "W25"
+}

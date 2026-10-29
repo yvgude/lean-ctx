@@ -1,0 +1,16 @@
+{
+  "match": "bound",
+  "matched": "legacy",
+  "schema": "leanctx.hive.vault-match/v1",
+  "vault": {
+    "key_epoch": 1,
+    "schema": "leanctx.hive.vault/v1",
+    "sealed": true,
+    "sealed_conversion": "none",
+    "vault": {
+      "name": "payments",
+      "ns": "acme"
+    },
+    "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+  }
+}

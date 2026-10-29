@@ -1,0 +1,24 @@
+{
+  "route": "W51",
+  "method": "PUT",
+  "path": "/api/v1/account/notifications",
+  "request": {
+    "digest": "immediate_stop"
+  },
+  "response": {
+    "status": 204,
+    "body": null
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "invalid_body",
+          "message": "digest must be off, daily or immediate_stop.",
+          "field": "digest"
+        }
+      }
+    }
+  ]
+}

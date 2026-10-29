@@ -6,8 +6,29 @@
 //! `io_boundary::is_secret_like` for paths.
 //!
 //! Detectors scan line-aligned chunks under a byte budget and a per-detector
-//! deadline. Every built-in pattern is line-local, so line-aligned chunks
-//! without overlap find exactly what a whole-text scan finds. Coverage is
+//! deadline. Most built-in patterns are line-local. One that runs here is
+//! not: the classification field of `input_filters::classification` (key,
+//! separator and value may stand on different lines). A chunk therefore
+//! never ends inside a possible match of it — it is extended to the end of
+//! the open construct (`line_chunks`, [`super::cross_line`]). Chunks
+//! stay disjoint, so nothing is counted twice, and no built-in match lies
+//! across a chunk boundary: the chunks find exactly what a whole-text scan
+//! finds, wherever the boundaries fall. The private-key block mask is not
+//! run per chunk (detection matches its header line; masking runs on the
+//! whole text in `Findings::redact`).
+//!
+//! A configured custom secret pattern is a free regular expression. It is
+//! matched per chunk only when that provably finds what a whole-text match
+//! finds (`chunk_safe`: proven unable to consume a line feed, and without an
+//! anchor that a chunk edge could satisfy). Every other custom pattern is
+//! matched ONCE over the whole text (`whole_text_hits`), never per chunk —
+//! so a match across a chunk boundary is found and the count does not depend
+//! on where the boundaries fall (#498). That pass runs on top of a complete
+//! chunked run only; it is not a chunk (`chunks_inspected` and `chunks_total`
+//! keep counting line chunks), and when the deadline leaves no room for it
+//! the run reports no byte as inspected.
+//!
+//! Coverage is
 //! reported as it happened: `complete` only when every byte was inspected,
 //! `partial` when the budget or the deadline stopped the scan, `failed` when a
 //! configured rule could not run, `not_required` when the detector is off.
@@ -23,13 +44,28 @@ use lean_ctx_protocol::context_gateway::{
 };
 use lean_ctx_protocol::{ProtocolReference, SemanticVersion};
 
-use super::AdmissionCounts;
+use super::{AdmissionCounts, cross_line};
 use crate::core::config::SecretDetectionConfig;
 use crate::core::input_filters::{FilterAction, classification, injection, pii};
+use crate::core::output_sanitizer::ContentKind;
 use crate::core::secret_detection;
 
 /// Version of the built-in detector set; bump when a detector's semantics change.
-const BUILTIN_VERSION: &str = "1.1.0";
+///
+/// 2.1.0: prompt injection reads code, logs and prose differently (role
+/// markers and chat-template tokens count only in prose; a quoted pattern
+/// literal in code does not), and an object counts as one injection signal
+/// however many of its lines matched (the matched lines stay the evidence).
+///
+/// 2.0.0: the PII detector finds email, phone and payment cards only; Swiss
+/// AHV, IBAN and US SSN left the built-in set (Hive filter packs carry
+/// them).
+///
+/// 1.2.0: what the detectors FIND changed — an AHV number or a classification
+/// field across a chunk boundary, and a custom secret pattern that matches
+/// across lines, are found where 1.1.0 missed them. No rule was added or
+/// removed. (1.1.0 was the coverage change of the chunked scan itself.)
+const BUILTIN_VERSION: &str = "2.1.0";
 
 /// Target chunk size; chunks end on a line boundary, so a chunk can be longer.
 pub(super) const CHUNK_BYTES: usize = 256 * 1024;
@@ -77,7 +113,12 @@ pub(super) struct Findings {
     secrets: Option<Run>,
     secret_path: Option<Run>,
     pii: Option<Run>,
+    /// Its `hits` are matched lines (evidence); the object counts once.
     injection: Option<Run>,
+    /// How the injection detector read the object (by path, else content).
+    injection_kind: Option<ContentKind>,
+    /// [`crate::core::output_sanitizer::InjectionCategory`] bits that matched.
+    injection_patterns: u8,
     markings: Option<(Run, ClassificationV1)>,
 }
 
@@ -90,8 +131,16 @@ fn micros(elapsed: Duration) -> u64 {
 }
 
 /// Split `text` into chunks of about [`CHUNK_BYTES`] that end on a line
-/// boundary (or at the end of the text).
+/// boundary (or at the end of the text) — and never inside a possible match
+/// of a built-in rule that can cross a line end: while a chunk ends inside
+/// one, the next non-blank line is taken with it. The chunks are disjoint and
+/// cover the text exactly.
 fn line_chunks(text: &str) -> Vec<&str> {
+    let line_end = |from: usize| {
+        text[from..]
+            .find('\n')
+            .map_or(text.len(), |offset| from + offset + 1)
+    };
     let mut chunks = Vec::new();
     let mut start = 0;
     while start < text.len() {
@@ -100,9 +149,15 @@ fn line_chunks(text: &str) -> Vec<&str> {
             end += 1;
         }
         if end < text.len() {
-            end = text[end..]
-                .find('\n')
-                .map_or(text.len(), |offset| end + offset + 1);
+            end = line_end(end);
+        }
+        while end < text.len() && cross_line::ends_inside_classification_field(&text[start..end]) {
+            // Blank lines keep a field open; the line after them closes it
+            // or opens the next one.
+            let content = text[end..]
+                .find(|character: char| !character.is_whitespace())
+                .map_or(text.len(), |offset| end + offset);
+            end = line_end(content);
         }
         chunks.push(&text[start..end]);
         start = end;
@@ -154,6 +209,75 @@ fn secret_hits(text: &str, patterns: &SecretDetectionConfig) -> usize {
         .len()
 }
 
+/// Whether matching a custom secret pattern chunk by chunk finds exactly what
+/// matching it over the whole text finds: it is proven unable to consume a
+/// line feed (`cross_line::pattern_is_single_line`, a proof by exclusion), and
+/// it holds no anchor — `^`, `$`, `\A`, `\z` — that the edge of a chunk could
+/// satisfy where the whole text does not. Conservative: anything else is
+/// matched over the whole text, which is always the reference result.
+fn chunk_safe(pattern: &str) -> bool {
+    cross_line::pattern_is_single_line(pattern)
+        && !pattern.contains(['^', '$'])
+        && !pattern.contains(r"\A")
+        && !pattern.contains(r"\z")
+}
+
+/// The secrets detector over `text`: the built-in patterns and the custom
+/// patterns that are [`chunk_safe`] per chunk; every other custom pattern
+/// once over the whole text ([`whole_text_hits`]).
+fn secrets_run(
+    text: &str,
+    chunks: &[&str],
+    patterns: &SecretDetectionConfig,
+    budget: Budget,
+) -> Run {
+    let (chunked, whole): (Vec<String>, Vec<String>) = patterns
+        .custom_patterns
+        .iter()
+        .cloned()
+        .partition(|pattern| chunk_safe(pattern));
+    if whole.is_empty() {
+        return run_chunked(chunks, budget, |chunk| secret_hits(chunk, patterns));
+    }
+    let chunked = SecretDetectionConfig {
+        custom_patterns: chunked,
+        ..patterns.clone()
+    };
+    let whole = SecretDetectionConfig {
+        custom_patterns: whole,
+        ..patterns.clone()
+    };
+    let mut run = run_chunked(chunks, budget, |chunk| secret_hits(chunk, &chunked));
+    whole_text_hits(&mut run, text, &whole, budget);
+    run
+}
+
+/// Add what the custom patterns of `whole` — the ones not [`chunk_safe`] —
+/// match in the WHOLE text. The text is bounded like every chunked scan: this
+/// runs only on top of a chunked run that inspected every byte, so a text
+/// above the byte budget, or a run the deadline stopped, stays partial as it
+/// is. When the deadline has passed before this pass can start, the run is
+/// timed out and reports NO byte as inspected: no byte was inspected by every
+/// rule of the detector. Only the custom patterns run here
+/// (`secret_detection::custom_pattern_hits`): the built-in ones were counted
+/// per chunk; the exclude patterns apply as they do there.
+fn whole_text_hits(run: &mut Run, text: &str, whole: &SecretDetectionConfig, budget: Budget) {
+    let bytes_total = u64::try_from(text.len()).unwrap_or(u64::MAX);
+    if text.is_empty() || !run.complete(bytes_total) {
+        return;
+    }
+    if Duration::from_micros(run.latency_us) >= budget.deadline {
+        run.status = DetectorStatusV1::TimedOut;
+        run.bytes_inspected = 0;
+        run.chunks_inspected = 0;
+        return;
+    }
+    let started = Instant::now();
+    let hits = secret_detection::custom_pattern_hits(text, whole);
+    run.hits = run.hits.saturating_add(saturating_u32(hits));
+    run.latency_us = run.latency_us.saturating_add(micros(started.elapsed()));
+}
+
 fn pii_hits(text: &str) -> usize {
     pii::redact_checksummed(text).1.iter().map(|(_, n)| n).sum()
 }
@@ -195,7 +319,7 @@ pub(super) fn inspect(
         ..Findings::default()
     };
     if !actions.secrets.is_off() {
-        let mut run = run_chunked(&chunks, budget, |chunk| secret_hits(chunk, patterns));
+        let mut run = secrets_run(text, &chunks, patterns, budget);
         if invalid_custom_pattern(patterns) {
             run.status = DetectorStatusV1::Failed;
             run.failure = Some("detector.invalid_pattern");
@@ -218,7 +342,16 @@ pub(super) fn inspect(
         findings.pii = Some(run_chunked(&chunks, budget, pii_hits));
     }
     if !actions.injection.is_off() {
-        findings.injection = Some(run_chunked(&chunks, budget, injection::detect));
+        // One kind for the whole object: a chunk of a log is still a log.
+        let kind = ContentKind::of(text, path);
+        let mut patterns = 0u8;
+        findings.injection = Some(run_chunked(&chunks, budget, |chunk| {
+            let (lines, mask) = injection::scan(chunk, kind);
+            patterns |= mask;
+            lines
+        }));
+        findings.injection_kind = Some(kind);
+        findings.injection_patterns = patterns;
     }
     if !actions.classification.is_off() {
         let mut labels = std::collections::BTreeSet::new();
@@ -257,7 +390,9 @@ impl Findings {
         AdmissionCounts {
             secrets: hits(self.secrets.as_ref()),
             pii: hits(self.pii.as_ref()),
-            injection: hits(self.injection.as_ref()),
+            // One signal per flagged object; the line count stays evidence.
+            injection: u32::from(hits(self.injection.as_ref()) > 0),
+            injection_patterns: self.injection_patterns,
             markings: hits(self.markings.as_ref().map(|(run, _)| run)),
             incomplete: saturating_u32(self.incomplete().len()),
             semantic: 0,
@@ -300,7 +435,8 @@ impl Findings {
         let counts = self.counts();
         let mut out = text.to_owned();
         if actions.injection == FilterAction::Redact && counts.injection > 0 {
-            out = injection::redact(&out).0;
+            let kind = self.injection_kind.unwrap_or(ContentKind::Prose);
+            out = injection::redact_as(&out, kind).0;
         }
         if actions.pii == FilterAction::Redact && counts.pii > 0 {
             out = pii::redact_checksummed(&out).0;

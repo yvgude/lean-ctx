@@ -14,50 +14,26 @@ use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ShadowConfig {
-    #[serde(default = "serde_defaults::default_true")]
-    pub auto_record: bool,
     pub enabled: bool,
     pub report_interval: usize,
-    pub baseline_model: String,
     pub report_dir: String,
 }
 
 impl Default for ShadowConfig {
     fn default() -> Self {
         Self {
-            auto_record: true,
             enabled: false,
             report_interval: 10,
-            baseline_model: "gpt-4o".into(),
             report_dir: String::new(),
         }
     }
 }
 
-#[cfg(test)]
-mod shadow_config_tests {
-    use super::ShadowConfig;
-
-    #[test]
-    fn auto_record_defaults_to_true_and_can_be_disabled() {
-        let defaults: ShadowConfig = serde_json::from_str("{}").expect("valid config");
-        let disabled: ShadowConfig =
-            serde_json::from_str(r#"{"auto_record": false}"#).expect("valid config");
-
-        assert!(defaults.auto_record);
-        assert!(!disabled.auto_record);
-    }
-}
-
-/// OCLA deployment settings.
-///
-/// This wrapper maps the TOML shape `[ocla.sidecar]` and `[ocla.grpc]`; the
-/// runtime types remain in `core::ocla` so they can be used independently.
+/// OCLA settings (`[ocla.delivery]`). The former `[ocla.sidecar]` and
+/// `[ocla.grpc]` sections started no server and are ignored when present.
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(default)]
 pub struct OclaConfig {
-    pub sidecar: crate::core::ocla::sidecar::SidecarConfig,
-    pub grpc: crate::core::ocla::grpc_bridge::GrpcConfig,
     pub delivery: DeliveryConfig,
 }
 
@@ -70,8 +46,6 @@ pub struct DeliveryConfig {
     pub delivery_for_subagents: bool,
     pub max_entries: usize,
     pub ttl_minutes: u64,
-    /// Generalized cache tier settings.
-    pub cache: CacheConfig,
 }
 
 impl Default for DeliveryConfig {
@@ -81,7 +55,6 @@ impl Default for DeliveryConfig {
             delivery_for_subagents: true,
             max_entries: 4096,
             ttl_minutes: 30,
-            cache: CacheConfig::default(),
         }
     }
 }
@@ -92,28 +65,32 @@ impl OclaConfig {
     }
 }
 
-/// Bounds and feature switches for the generalized cross-agent cache.
+/// Bounds and switches for the cross-agent delivery cache (`[cache]`).
+///
+/// The one source for these values: the former copy under
+/// `[ocla.delivery.cache]` is moved here by the automatic config migration.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct CacheConfig {
-    pub l1_max_entries: usize,
+    /// Process-local tier lifetime (seconds).
     pub l1_ttl_secs: u64,
+    /// Daemon tier size (entries).
     pub l2_max_entries: usize,
+    /// Daemon tier lifetime (seconds).
     pub l2_ttl_secs: u64,
+    /// Disk tier budget (bytes), enforced when the cache opens.
     pub l3_max_bytes: u64,
-    pub l3_gc_threshold: f64,
+    /// Reuse a `ctx_compose` result for the same task and path.
     pub compose_cache_enabled: bool,
 }
 
 impl Default for CacheConfig {
     fn default() -> Self {
         Self {
-            l1_max_entries: 1_000,
             l1_ttl_secs: 300,
             l2_max_entries: 10_000,
             l2_ttl_secs: 3_600,
             l3_max_bytes: 500_000_000,
-            l3_gc_threshold: 0.9,
             compose_cache_enabled: true,
         }
     }
@@ -133,10 +110,13 @@ mod cache_config_tests {
     fn cache_config_deserializes_partial_overrides() {
         // `shell_cache_enabled` was removed (#1980); configs that still set it
         // must keep loading.
-        let parsed: CacheConfig =
-            serde_json::from_str(r#"{"l1_max_entries": 12, "shell_cache_enabled": true}"#).unwrap();
-        assert_eq!(parsed.l1_max_entries, 12);
-        assert_eq!(parsed.l2_ttl_secs, 3_600);
+        // `l1_max_entries` and `l3_gc_threshold` were retired (never applied).
+        let parsed: CacheConfig = serde_json::from_str(
+            r#"{"l1_max_entries": 12, "l3_gc_threshold": 0.5, "shell_cache_enabled": true, "l2_ttl_secs": 60}"#,
+        )
+        .unwrap();
+        assert_eq!(parsed.l2_ttl_secs, 60);
+        assert_eq!(parsed.l2_max_entries, 10_000);
     }
 }
 
@@ -149,22 +129,12 @@ mod cache_config_tests {
 pub struct AgentsConfig {
     /// How often the background reaper runs (minutes). 0 = disabled.
     pub gc_interval_minutes: u64,
-    /// Identity registry: decommission agents not seen for this many hours.
-    pub identity_ttl_hours: u64,
     /// Presence registry: remove finished agents older than this (hours).
     pub presence_ttl_hours: u64,
     /// Default TTL for scratchpad messages without explicit expiry (hours).
     pub scratchpad_default_ttl_hours: u64,
     /// Logical session timeout (seconds).
     pub logical_session_ttl_seconds: u64,
-    /// Legacy registration-cap setting retained for config compatibility only.
-    /// Presence registration ignores this value; WorkGraph execution has its
-    /// own concurrency, lease, and budget admission checks.
-    pub max_concurrent_workers: usize,
-    /// Legacy mutating-slot cap retained for config compatibility only.
-    /// Presence registration ignores this value, so no session is refused or
-    /// demoted to read-only (#1765); builds and tests stay serialized below.
-    pub max_concurrent_mutating_workers: usize,
     /// Active worker lease. Missing heartbeats release capacity automatically.
     pub active_worker_lease_seconds: u64,
     /// Opt-in: let only one cargo/npm build or test run at a time across all
@@ -187,12 +157,9 @@ impl Default for AgentsConfig {
     fn default() -> Self {
         Self {
             gc_interval_minutes: 10,
-            identity_ttl_hours: 48,
             presence_ttl_hours: 24,
             scratchpad_default_ttl_hours: 12,
             logical_session_ttl_seconds: 180,
-            max_concurrent_workers: 12,
-            max_concurrent_mutating_workers: 4,
             active_worker_lease_seconds: 120,
             serialize_build_commands: false,
             cargo_build_jobs: 0,
@@ -210,12 +177,9 @@ mod agents_config_tests {
     fn default_values_are_sane() {
         let cfg = AgentsConfig::default();
         assert_eq!(cfg.gc_interval_minutes, 10);
-        assert_eq!(cfg.identity_ttl_hours, 48);
         assert_eq!(cfg.presence_ttl_hours, 24);
         assert_eq!(cfg.scratchpad_default_ttl_hours, 12);
         assert_eq!(cfg.logical_session_ttl_seconds, 180);
-        assert_eq!(cfg.max_concurrent_workers, 12);
-        assert_eq!(cfg.max_concurrent_mutating_workers, 4);
         assert_eq!(cfg.active_worker_lease_seconds, 120);
         // Builds are the user's own: lean-ctx neither queues, throttles nor
         // relocates them unless asked (a shared target made `./target` stale).
@@ -238,7 +202,6 @@ mod agents_config_tests {
         let cfg: AgentsConfig = serde_json::from_str(json).expect("partial");
         assert_eq!(cfg.gc_interval_minutes, 5);
         assert_eq!(cfg.presence_ttl_hours, 12);
-        assert_eq!(cfg.identity_ttl_hours, 48);
     }
 }
 
@@ -278,12 +241,11 @@ pub struct SetupConfig {
     /// `lean-ctx setup` / `init --agent` / `doctor --fix` writes them.
     #[serde(default = "serde_defaults::default_true")]
     pub manage_hooks: bool,
-    /// AI tools that `setup`/`onboard`/`update` may wire up (MCP entry,
-    /// hooks, rules, skills, shell aliases). Entries are agent keys
-    /// (`claude`, `cursor`, …) or display names, matched case-insensitively.
-    /// `None` = every detected tool, including ones installed later — the
-    /// unattended default. `Some([])` = none.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
+    /// AI tools (agent keys, e.g. `claude`, `cursor`) that `setup`, `onboard`
+    /// and the post-update refresh may configure. Written by the setup
+    /// selection or `--agents`. None = no choice recorded yet: setup offers
+    /// every detected tool, an update refreshes only already-connected ones.
+    #[serde(skip_serializing_if = "Option::is_none")]
     pub agents: Option<Vec<String>>,
 }
 
@@ -300,10 +262,6 @@ impl Default for SetupConfig {
 }
 
 impl SetupConfig {
-    /// Whether the agent selection permits configuring this tool.
-    pub fn allows_agent(&self, agent_key: &str, name: &str) -> bool {
-        agent_selection_allows(self.agents.as_deref(), agent_key, name)
-    }
     /// Returns whether rules should be injected, considering legacy installs.
     /// If undecided (None), checks if lean-ctx rules markers already exist
     /// in any agent config — if so, keeps injecting for backward compat.
@@ -355,18 +313,6 @@ impl SetupConfig {
     }
 }
 
-/// `None` allows every agent; otherwise an entry must equal the agent key or
-/// display name (case-insensitive).
-pub fn agent_selection_allows(selection: Option<&[String]>, agent_key: &str, name: &str) -> bool {
-    selection.is_none_or(|list| {
-        list.iter().any(|entry| {
-            let entry = entry.trim();
-            (!agent_key.is_empty() && entry.eq_ignore_ascii_case(agent_key))
-                || entry.eq_ignore_ascii_case(name)
-        })
-    })
-}
-
 impl Default for SecretDetectionConfig {
     fn default() -> Self {
         Self {
@@ -412,23 +358,23 @@ pub struct ArchiveConfig {
 ///
 /// The proxy leaves conversation history byte-for-byte unchanged unless
 /// `compression_enabled` is true and the configured token threshold is met.
+/// Each older message is scored; it is kept verbatim at or above
+/// `min_score_to_preserve`, replaced by a stub below `drop_score_below`, and
+/// summarized to one line in between. Neither a summary nor a stub keeps a
+/// recoverable copy, so the proxy leaves history untouched under protection.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct ConversationConfig {
     /// Enable message-level compression in the proxy. Default: false.
     pub compression_enabled: bool,
-    /// Number of recent user turns (and their following messages) to preserve.
+    /// Number of most recent messages always kept verbatim.
     pub preserve_last_n_turns: usize,
     /// Minimum estimated message-array size before compression starts.
     pub compression_threshold_tokens: usize,
     /// Minimum score for verbatim preservation.
     pub min_score_to_preserve: f64,
-    /// Inclusive lower bound and exclusive upper bound for summaries.
-    pub summarize_score_range: [f64; 2],
-    /// Scores below this value are eligible for drop + CCR.
+    /// Messages scoring below this value are replaced by a one-line stub.
     pub drop_score_below: f64,
-    /// Store dropped messages in the content-addressed recovery store.
-    pub ccr_store_dropped: bool,
 }
 
 impl Default for ConversationConfig {
@@ -438,9 +384,7 @@ impl Default for ConversationConfig {
             preserve_last_n_turns: 10,
             compression_threshold_tokens: 50_000,
             min_score_to_preserve: 0.5,
-            summarize_score_range: [0.2, 0.5],
             drop_score_below: 0.2,
-            ccr_store_dropped: true,
         }
     }
 }
@@ -603,15 +547,11 @@ impl Default for ProviderEntryConfig {
 #[serde(default)]
 pub struct AutonomyConfig {
     pub enabled: bool,
-    pub auto_preload: bool,
-    pub auto_dedup: bool,
-    pub auto_related: bool,
     pub auto_consolidate: bool,
-    pub silent_preload: bool,
-    pub dedup_threshold: usize,
     pub consolidate_every_calls: u32,
     pub consolidate_cooldown_secs: u64,
-    #[serde(default = "serde_defaults::default_true")]
+    /// Background knowledge maintenance loop. Off by default (see `Default`);
+    /// an `[autonomy]` section without this key keeps it off.
     pub cognition_loop_enabled: bool,
     #[serde(default = "serde_defaults::default_cognition_loop_interval")]
     pub cognition_loop_interval_secs: u64,
@@ -627,15 +567,14 @@ impl Default for AutonomyConfig {
     fn default() -> Self {
         Self {
             enabled: true,
-            auto_preload: true,
-            auto_dedup: true,
-            auto_related: true,
             auto_consolidate: true,
-            silent_preload: true,
-            dedup_threshold: 8,
             consolidate_every_calls: 25,
             consolidate_cooldown_secs: 120,
-            cognition_loop_enabled: true,
+            // Off since the focus release (2026-10-15): the background loop
+            // rewrote stored knowledge (synthesis, decay, compaction) without
+            // a recorded decision — a Prove problem. Explicit maintenance
+            // stays available through `ctx_knowledge`.
+            cognition_loop_enabled: false,
             cognition_loop_interval_secs: 3600,
             cognition_loop_max_steps: 9,
             cognition_synthesis_min_cluster: 3,
@@ -677,10 +616,6 @@ impl Default for UpdatesConfig {
 #[serde(default)]
 pub struct ContextConfig {
     pub budget_tokens: usize,
-    pub diet_max_config_tokens: usize,
-    pub diet_relevance_threshold: f64,
-    pub diet_rebalance_on_change: bool,
-    pub diet_staleness_enabled: bool,
     /// Inject matching CCR archives into later tool responses.
     pub proactive_expansion: bool,
     /// Maximum proactive archive content per tool response.
@@ -695,10 +630,6 @@ impl Default for ContextConfig {
     fn default() -> Self {
         Self {
             budget_tokens: 8000,
-            diet_max_config_tokens: 800,
-            diet_relevance_threshold: 0.15,
-            diet_rebalance_on_change: true,
-            diet_staleness_enabled: true,
             proactive_expansion: true,
             proactive_expansion_budget_tokens: 2000,
             proactive_expansion_threshold: 0.6,
@@ -734,25 +665,8 @@ impl AutonomyConfig {
         {
             cfg.enabled = false;
         }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_PRELOAD") {
-            cfg.auto_preload = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_DEDUP") {
-            cfg.auto_dedup = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_RELATED") {
-            cfg.auto_related = v != "false" && v != "0";
-        }
         if let Ok(v) = std::env::var("LEAN_CTX_AUTO_CONSOLIDATE") {
             cfg.auto_consolidate = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_SILENT_PRELOAD") {
-            cfg.silent_preload = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_DEDUP_THRESHOLD")
-            && let Ok(n) = v.parse()
-        {
-            cfg.dedup_threshold = n;
         }
         if let Ok(v) = std::env::var("LEAN_CTX_CONSOLIDATE_EVERY_CALLS")
             && let Ok(n) = v.parse()
@@ -793,23 +707,6 @@ impl AutonomyConfig {
             && (v == "false" || v == "0")
         {
             cfg.enabled = false;
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_PRELOAD") {
-            cfg.auto_preload = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_DEDUP") {
-            cfg.auto_dedup = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_AUTO_RELATED") {
-            cfg.auto_related = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_SILENT_PRELOAD") {
-            cfg.silent_preload = v != "false" && v != "0";
-        }
-        if let Ok(v) = std::env::var("LEAN_CTX_DEDUP_THRESHOLD")
-            && let Ok(n) = v.parse()
-        {
-            cfg.dedup_threshold = n;
         }
         if let Ok(v) = std::env::var("LEAN_CTX_COGNITION_LOOP_ENABLED") {
             cfg.cognition_loop_enabled = v != "false" && v != "0";
@@ -897,68 +794,12 @@ impl TelemetryConfig {
     }
 }
 
-/// Cloud sync and contribution settings (pattern sharing, model pulls).
-#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+/// What remains of the retired `[cloud]` section: the legacy opt-in the
+/// loader turns into `telemetry.enabled`. Read, never written.
+#[derive(Debug, Clone, Default, Deserialize)]
 #[serde(default)]
-pub struct CloudConfig {
+pub struct LegacyCloudConfig {
     pub contribute_enabled: bool,
-    pub last_contribute: Option<String>,
-    /// Allow background upload of aggregate usage statistics. Disabled by default.
-    #[serde(default)]
-    pub sync_stats_enabled: bool,
-    pub last_sync: Option<String>,
-    /// Research-only background upload of aggregate local observations. Disabled by default.
-    #[serde(default)]
-    pub sync_gain_enabled: bool,
-    pub last_gain_sync: Option<String>,
-    /// Research-only hosted model-data retrieval. Disabled by default.
-    #[serde(default)]
-    pub sync_models_enabled: bool,
-    pub last_model_pull: Option<String>,
-    /// Research-only hosted synchronization switch. Inactive in the public
-    /// local Runtime and off by default.
-    pub auto_sync: bool,
-    pub last_auto_sync: Option<String>,
-    /// Research-only hosted retrieval-index synchronization switch. Inactive
-    /// in the public local Runtime and off by default.
-    pub auto_index: bool,
-    /// Per-project debounce: `project_hash → YYYY-MM-DD` of the last
-    /// successful background index push.
-    pub last_index_push: std::collections::HashMap<String, String>,
-}
-
-/// Settings retained for local development evaluation of hosted publication.
-///
-/// Hosted publication and public rankings are Research, not part of the public
-/// LeanCTX Runtime. Both switches default to `false` and require the explicit
-/// `LEAN_CTX_EXPERIMENTAL_PUBLICATION=1` development flag before they can act.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct GainConfig {
-    /// Development-only: automatically publish a local evaluation recap when the
-    /// environment opt-in is present. Off by default.
-    pub auto_publish: bool,
-    /// Development-only: request the Research public-ranking path. Off by default.
-    pub leaderboard: bool,
-    /// Development-only display name for a Research publication evaluation.
-    pub display_name: Option<String>,
-    /// Minimum hours between automatic publishes (throttle).
-    pub auto_publish_interval_hours: u64,
-    /// Runtime state — RFC3339 timestamp of the last automatic publish. Managed by the
-    /// tool, not meant to be set by hand.
-    pub last_auto_publish: Option<String>,
-}
-
-impl Default for GainConfig {
-    fn default() -> Self {
-        Self {
-            auto_publish: false,
-            leaderboard: false,
-            display_name: None,
-            auto_publish_interval_hours: 24,
-            last_auto_publish: None,
-        }
-    }
 }
 
 /// Model declaration for **measured-vs-estimated** cost reporting.
@@ -1116,8 +957,6 @@ pub struct CodeHealthConfig {
     pub annotate_reads: bool,
     /// Run the naming-quality heuristic.
     pub naming: bool,
-    /// Compute module-coupling metrics.
-    pub coupling: bool,
     /// Inject `[CODE HEALTH]` notices as `additionalContext` in PostToolUse stdout.
     /// Default: **false** — prevents prompt-cache invalidation on Anthropic models
     /// (#778: each injection causes 440-520k tokens of cache re-bills when Claude
@@ -1134,7 +973,6 @@ impl Default for CodeHealthConfig {
             gate: "warn".to_string(),
             annotate_reads: true,
             naming: true,
-            coupling: true,
             inject_context: false,
         }
     }
@@ -1170,32 +1008,6 @@ impl Default for IndexConfig {
             respect_gitignore: true,
             exclude: Vec::new(),
             include: Vec::new(),
-        }
-    }
-}
-
-/// Settings for the code graph — in particular the *traversal* (co-access) edges
-/// learned from real agent sessions (#289).
-///
-/// The static AST/import graph captures how code is wired structurally; it cannot
-/// see which files an agent actually opens *together* while solving a task.
-/// Traversal edges add that behavioural signal: files surfaced together are
-/// associated with a decaying weight (Hebbian co-access), folded into the graph
-/// as `co_access` edges and mixed into recall. The store is bounded and decays,
-/// so stale associations fade.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-#[serde(default)]
-pub struct GraphConfig {
-    /// Record co-access between files surfaced together in a session, surface them
-    /// as decaying `co_access` edges in the graph, and boost recall by them.
-    /// On by default; set to `false` for a purely static (AST-only) graph.
-    pub traversal_edges: bool,
-}
-
-impl Default for GraphConfig {
-    fn default() -> Self {
-        Self {
-            traversal_edges: true,
         }
     }
 }
@@ -1287,7 +1099,6 @@ impl Default for LoopDetectionConfig {
         tool_total_limits.insert("ctx_read".to_string(), 100);
         tool_total_limits.insert("ctx_search".to_string(), 80);
         tool_total_limits.insert("ctx_shell".to_string(), 50);
-        tool_total_limits.insert("ctx_semantic_search".to_string(), 60);
         Self {
             normal_threshold: 2,
             reduced_threshold: 4,
@@ -1335,20 +1146,6 @@ pub struct GatewayServerConfig {
     /// bearer token comes from `LEAN_CTX_GATEWAY_ADMIN_TOKEN` (never config).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub admin_url: Option<String>,
-    /// Bind address of the admin listener (dashboard + `/api/admin/*` +
-    /// `/metrics`). Defaults to loopback — **secure by default** (#54/#56):
-    /// exposing the console is an explicit decision. Container deployments set
-    /// `"0.0.0.0"` here (the pod/compose port mapping stays the outer guard).
-    /// `LEAN_CTX_GATEWAY_ADMIN_BIND_HOST` overrides. Invalid values fall back
-    /// to loopback: a typo can only ever narrow exposure, never open it.
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub admin_bind_host: Option<String>,
-    /// Days to keep `usage_events` rows (enterprise#36). `None`/`0` = keep
-    /// forever (the local-free default — retention is a deployment decision).
-    /// A running gateway purges older rows periodically; typical compliance
-    /// values are `365` or `3650` (EU AI Act evidence horizon).
-    #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub usage_retention_days: Option<u32>,
     /// Replace `person` with a stable keyed pseudonym (`p:<hash>`) before it
     /// reaches metering, budgets, dashboards and logs (enterprise#39, GDPR).
     /// The salt lives in `<data_dir>/gateway_pii_salt`; `gateway gdpr`
@@ -1448,25 +1245,6 @@ impl GatewayServerConfig {
         }
         out
     }
-
-    /// Effective admin bind address (see `admin_bind_host`). Precedence:
-    /// `LEAN_CTX_GATEWAY_ADMIN_BIND_HOST` env > config > `127.0.0.1`.
-    #[must_use]
-    pub fn resolved_admin_bind_host(&self) -> std::net::IpAddr {
-        let raw = std::env::var("LEAN_CTX_GATEWAY_ADMIN_BIND_HOST")
-            .ok()
-            .filter(|v| !v.trim().is_empty())
-            .or_else(|| self.admin_bind_host.clone());
-        match raw.as_deref().map(str::trim) {
-            Some(v) if !v.is_empty() => v.parse().unwrap_or_else(|_| {
-                tracing::warn!(
-                    "gateway_server.admin_bind_host '{v}' is not a valid IP address — binding 127.0.0.1"
-                );
-                std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST)
-            }),
-            _ => std::net::IpAddr::V4(std::net::Ipv4Addr::LOCALHOST),
-        }
-    }
 }
 
 /// True when `id` is usable as an MCP registry id: non-empty, lowercase alnum
@@ -1537,31 +1315,6 @@ pub struct EmbeddingConfig {
 mod gateway_server_tests {
     use super::*;
 
-    #[test]
-    fn admin_bind_defaults_to_loopback_and_rejects_garbage() {
-        // Secure by default (#54/#56): unset and invalid both land on loopback.
-        let cfg = GatewayServerConfig::default();
-        assert!(cfg.resolved_admin_bind_host().is_loopback());
-
-        let cfg = GatewayServerConfig {
-            admin_bind_host: Some("not-an-ip".into()),
-            ..Default::default()
-        };
-        assert!(
-            cfg.resolved_admin_bind_host().is_loopback(),
-            "a typo must narrow exposure, never widen it"
-        );
-
-        let cfg = GatewayServerConfig {
-            admin_bind_host: Some("0.0.0.0".into()),
-            ..Default::default()
-        };
-        assert!(
-            !cfg.resolved_admin_bind_host().is_loopback(),
-            "explicit opt-in widens the bind"
-        );
-    }
-
     fn mcp_entry(id: &str, url: &str) -> McpServerEntry {
         McpServerEntry {
             id: id.into(),
@@ -1621,8 +1374,6 @@ mod gateway_server_tests {
 #[cfg(test)]
 mod ocla_tests {
     use super::OclaConfig;
-    use crate::core::ocla::grpc_bridge::GrpcConfig;
-    use crate::core::ocla::sidecar::SidecarConfig;
     use serde::Deserialize;
 
     #[derive(Deserialize)]
@@ -1630,56 +1381,24 @@ mod ocla_tests {
         ocla: OclaConfig,
     }
 
+    /// Configs written for the removed sidecar/gRPC listeners keep loading.
     #[test]
-    fn sidecar_defaults_are_loopback_and_disabled() {
-        let config = SidecarConfig::default();
-        assert_eq!(config.bind_addr, "127.0.0.1:3334");
-        assert!(!config.enabled);
-        assert!(config.auth_token.is_none());
-    }
-
-    #[test]
-    fn nested_sidecar_toml_deserializes() {
+    fn removed_listener_sections_are_ignored() {
         let config: ConfigFile = toml::from_str(
             r#"
                 [ocla.sidecar]
                 bind_addr = "127.0.0.1:9000"
-                auth_token = "wire-secret"
-                tls_cert_path = "/etc/lean-ctx/cert.pem"
-                tls_key_path = "/etc/lean-ctx/key.pem"
                 enabled = true
-            "#,
-        )
-        .expect("OCLA sidecar config");
-
-        let sidecar = config.ocla.sidecar;
-        assert_eq!(sidecar.bind_addr, "127.0.0.1:9000");
-        assert_eq!(sidecar.auth_token.as_deref(), Some("wire-secret"));
-        assert_eq!(
-            sidecar.tls_cert_path.as_deref().unwrap().to_str(),
-            Some("/etc/lean-ctx/cert.pem")
-        );
-        assert_eq!(
-            sidecar.tls_key_path.as_deref().unwrap().to_str(),
-            Some("/etc/lean-ctx/key.pem")
-        );
-        assert!(sidecar.enabled);
-    }
-
-    #[test]
-    fn nested_grpc_toml_deserializes() {
-        let config: ConfigFile = toml::from_str(
-            r#"
                 [ocla.grpc]
                 enabled = true
                 listen = "127.0.0.1:60051"
+                [ocla.delivery]
+                max_entries = 7
             "#,
         )
-        .expect("OCLA gRPC config");
-
-        assert_eq!(config.ocla.grpc.listen, "127.0.0.1:60051");
-        assert!(config.ocla.grpc.enabled);
-        assert_eq!(GrpcConfig::default().listen, "127.0.0.1:50051");
+        .expect("legacy OCLA config");
+        assert_eq!(config.ocla.delivery.max_entries, 7);
+        assert!(config.ocla.delivery.enabled);
     }
 }
 

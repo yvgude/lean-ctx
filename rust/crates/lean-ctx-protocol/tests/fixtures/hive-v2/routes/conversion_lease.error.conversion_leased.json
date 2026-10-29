@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "holder_expires_at": 1792800600000,
+    "message": "Another engine converts this vault.",
+    "reason": "conversion_leased"
+  }
+}

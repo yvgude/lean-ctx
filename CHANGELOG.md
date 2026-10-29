@@ -6,20 +6,158 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
-### Removed
+### Added
 
-- **Role budgets, SLOs, anomaly detection and the degradation policy.** Role token/shell/cost limits (`[limits]` in role files), the session cost cap (`[cost] max_session_cost_usd`, `LEAN_CTX_COST_CAP_OVERRIDE`), budget warnings and nudges, `slos.toml` evaluation, the anomaly detector (`anomaly_detector.json`), and the profile `[degradation]` policy with its context-pressure read-mode downgrade are gone, along with `ctx_session action=budget` / `action=slo`, the dashboard `/api/slos` and `/api/anomaly` routes and their SLO/Anomalies views, the `BudgetWarning`, `BudgetExhausted`, `SloViolation` and `Anomaly` events, the `degradation-policy-v1` contract and proof artifact, and the Prometheus series `lean_ctx_session_cost_usd`, `lean_ctx_session_context_tokens`, `lean_ctx_shell_invocations_total`, `lean_ctx_slo_violations_total`, `lean_ctx_anomalies_total` (Datadog `leanctx.slo.violations`). Existing role, profile and config files that still contain these keys load unchanged (the keys are ignored), and older event journals with the retired event kinds stay readable. Per-agent context budgets (`agent_token_budget`) are unchanged.
+- **`ctx_shell` asks you before refusing an unlisted program.** When a command is refused
+  only because programs in it are not on the shell allowlist, lean-ctx asks in your AI
+  tool's approval dialog (MCP form elicitation): allow once, allow for this session, always
+  allow (written to `shell_allowlist_extra`, like `lean-ctx allow`) or deny. Hard blocks
+  (`eval`, `$()` at command position, inline interpreter code, dangerous flags,
+  self-reconfiguration) are never asked about, and an approval names programs: the command
+  is checked again with exactly those programs counted as listed. A declined command is not
+  asked about again in the session, prompts are rate limited, and every answer is recorded
+  in the audit trail with a digest of the command. Clients without form elicitation keep the
+  earlier behaviour; `shell_approval = "off"` (global only) or `LEAN_CTX_SHELL_APPROVAL=off`
+  turns it off. Idea from #2145.
 
 ### Changed
 
-- **The Engine identifies itself as the Context Gateway for AI Systems.** README, agent instructions, CLI help, MCP server metadata and package descriptions use Select · Control · Learn · Prove, with local knowledge and observable-evidence limits stated. Security and support contacts use `hello@thinkery.ch`.
+- lean-ctx-protocol: `HiveStatusPolicyV1` gains `required_filter_packs` (breaking for
+  struct literals) → 0.5.0. The version bump, its pins and lockfiles, the SBOM and the
+  notices follow in the next release preparation. With the same bump, the status output
+  types (`HiveCliStatusV1`, `HiveStatusPolicyV1` and their siblings) drop
+  `deny_unknown_fields` (or become `#[non_exhaustive]`), as the contract's convention for
+  response types says, so later additive fields are not breaking for typed readers.
 
-- **Usage statistics arrive within half an hour.** While LeanCTX is in use, the anonymous daily totals are now re-sent every 30 minutes (at most 48 times per UTC day) instead of at doubling intervals that stretched to two hours after a handful of sends, which left a day's evening activity unreported until the next morning. Only the timing changes: the same cumulative totals are sent, and nothing new is collected. `lean-ctx telemetry show` states the limit.
-- **`ctx_read` with `engine_interface="v1"` says how to recover.** The engine interface reads one file per call. Its refusal of `paths` now tells the agent to pass `path` once per file or to leave out `engine_interface` for a batch read, and its refusal of other modes says to leave it out; one OpenCode installation had repeated the same refused call 802 times.
-- **Native tool calls are no longer refused by default.** Codex, Cursor, Windsurf, OpenCode, Gemini and CodeBuddy defaulted to Replace mode, whose hooks refused native Bash, Grep and Glob calls. Each refusal cost the agent a whole extra request (in 30 days of Codex sessions: 249 refusals, median 67k prompt tokens re-read per refusal) — mostly for commands like `pwd`, `mkdir -p`, `wc -l` or `shasum` whose native output costs next to nothing — and users found it disruptive. Every hook-capable agent now defaults to Hybrid: lean-ctx steers agents to `ctx_*` tools and rewrites known shell reads and searches, and other native calls go through. Deny hooks check the setting on every call, so hooks installed by earlier versions stand down as soon as the binary updates. Claude Code keeps native Grep and Glob out of its tool list in the default mode: Claude Code drops a tool named in `permissions.deny`, so this costs no error and no retry (0 refusals in 380 measured sessions), and native Glob returned ~12× the tokens of `ctx_glob` for the same patterns. `hook_mode = "hybrid"` gives Claude both tools back; CodeBuddy, which shares that contract, does the same and gets native Bash back (it was hidden too). OpenCode no longer sets native read, grep, glob and bash to `ask`, which prompted on every call and refused them in headless runs; the entries an earlier version wrote are removed on the next MCP server start, also after an update through a package manager. Replace stays available on request: `lean-ctx config set hook_mode replace` or `lean-ctx harden --hard` (which now records the choice), `lean-ctx harden --undo` to go back. `hook_mode` is now part of the config schema (`auto`, `hybrid`, `replace`, `mcp`).
+### Fixed
+
+- **A session can no longer be locked out by the context gateway.** A restricted block is now
+  withheld in place, with a stable id, instead of refusing the whole request; such a refusal
+  answers `400 invalid_request_error` naming the block ids rather than `403 permission_error`,
+  and lowercase banner words no longer mark a block. `lean-ctx gateway why`, `list`,
+  `allow-once` and `revoke` explain a withheld block and let the person at the terminal release
+  it once or undo that.
+
+## [3.12.0] — 2026-10-28
+
+Focus release. The local Engine and the whole Cockpit are free and local, with no
+account and no plan checks; the hosted services that needed an account close. LeanCTX
+Hive (shared knowledge for teams and your own machines) follows with 3.12.1. LeanCTX also keeps what
+selects, controls and proves context and drops what measured no benefit. 3.12.0 includes
+every change prepared for 3.11.5, which is not released separately. Upgrade notes:
+[docs/guides/upgrade-3.12.md](docs/guides/upgrade-3.12.md) (retired services) and
+[docs/migration/focus-2026-10.md](docs/migration/focus-2026-10.md) (focus changes,
+successor tools and restore lines).
+
+**Breaking changes at a glance:** Personal Cloud, the ctxpkg.com registry and the hosted
+per-customer team servers close on the 3.12.0 release day (writes stop, the services answer
+`410`) and their stored data is deleted 30 days after release, without migration; the
+engine's cloud client, the `login`, `register`, `account`, `sync`, `cloud`, `team` and
+`enterprise` commands, remote `pack install|update|publish` and `addon add ns/name` are
+removed; hosted Wrapped publication, the leaderboard, the README badge and the billing CLI
+are gone; the capability registry is schema 3 (price classes `hive` and `retired`); the
+built-in personal-data detectors are email, phone and payment cards. From the focus work:
+36 MCP tools are removed (34 retired plus `ctx_intent` and `ctx_task`; a call names the
+successor); the Autonomy Drivers, Workflow Evidence Ledger, Intent Route,
+invocation-context-binding, invocation-evidence-manifest and tokenizer-translation-driver
+contracts are withdrawn; `ctx_work_graph action="execute"` and `lean-ctx pair` are removed
+(the host starts agents with `action="start"`); `cognitive_mode` and the read-path autonomy
+drivers are retired; role budgets, SLOs and anomaly detection are gone; domain and
+compliance packs moved to Pro/Enterprise; `.lean-ctx.toml` write and read-only keys apply
+only in a trusted workspace; decision receipts are `schema_version: 2` with keyed object
+digests, so SDKs before 3.12.0 reject them (engine and SDK ship together); the engine's
+built-in dashboard UI is replaced by the Cockpit. The SDK Agent Tools v1 contract is
+unchanged. Telemetry is unchanged. `lean-ctx-protocol` renames `hive::project` to
+`hive::vault` (`VaultV1`, `VaultRefV1`, `vault_id`); the published crates need Rust 1.87.
 
 ### Added
 
+- **ctx_execute code needs your approval (GHSA-rxv5-4c3x-g4q6).** Code in any language other
+  than shell runs only after approval in the same dialog as ctx_shell — once, for this
+  session, always (global execute_allowed_languages) or deny, per language; a batch asks once
+  per language and runs nothing if one is denied. Without the dialog (client without
+  elicitation, shell_approval=off) the code is refused — list the language in
+  execute_allowed_languages to run it without asking.
+- **Knowledge from the repository itself.** `lean-ctx import docs [<file|dir>…]` turns
+  `AGENTS.md`, `CLAUDE.md`, `.cursorrules`, `.cursor/rules` and `docs/` into project facts:
+  each bullet or paragraph is one fact, categorised by its nearest heading (conventions,
+  procedures, decisions, architecture, gotchas, dead ends, experiences) and anchored to its file
+  and section. `lean-ctx import git [--limit N]` mines the local history: reverts become dead
+  ends, fixes experiences, and commits that decide, switch or replace something decisions, each
+  anchored to its commit; trailers and lines naming a person by email are dropped first, and no
+  diff or author is read. Every file and every fact passes the same admission as any other import
+  (path rules, project policy, secret and PII detection): a masked value stays masked, a withheld
+  one yields nothing and is counted. A re-import updates the fact at the same anchor instead of
+  adding a second one. Each fact under a heading carries a code anchor on its section, so an edit
+  there marks it *to verify*; a fact whose section (or file) is gone on re-import is marked *to
+  verify* (`source_removed`) and becomes current again when the section returns.
+  `lean-ctx knowledge export-agents-md [--write]` writes these categories as a marked section of
+  `AGENTS.md` (only public facts; the rest of the file is kept), and importing that section yields
+  the same facts again.
+
+- **The whole Cockpit is free and ships with official installs.** Improvements, Spend
+  history, Ledger filters and export, Report, Delivery insights, Memory Care, Package
+  Studio, recipes and comparison always render, without an account, plan check, teaser or
+  trial banner. The Cockpit computes the analyses itself against two lease-free engine
+  routes (`POST /api/dashboard-analysis/inputs` and `/apply`). Every figure carries a
+  trust label (measured, estimated, evidenced, derived) and *Numbers explained* gives each
+  one's formula and price source; *Decisions* lists what the gateway decided on this device,
+  without content. Former `#account` and `#cloud` links land on Settings, and Security
+  shows the active filter packs. `install.sh` (`LEAN_CTX_NO_COCKPIT` skips it), `install.ps1`
+  (`-NoCockpit`), npm and Homebrew install the signed Cockpit bundle beside the Engine;
+  `lean-ctx cockpit install --from <dir|file.tar.gz> [--allow-downgrade]` installs one
+  offline. The Cockpit is a free binary under the LeanCTX Cockpit EULA; its source stays
+  private. Source builds show a page pointing to the official installs.
+- **`GET /api/gateway/detectors`** names what content is screened for:
+  `{"pii": {"sources": [...], "policy_filters": [...]}, "filter_packs": [...]}` —
+  `pii.sources` in every source (the checksum-validated payment cards),
+  `pii.policy_filters` when a policy pack's `[filters] pii` is on (cards, email,
+  phone), and the labels of the installed filter-pack rules. The control
+  document carries the same object as `detectors`.
+- **Knowledge validity classes (S05).** A fact is a `convention` (category convention or
+  decision, or `validity:"convention"`) or `content` (bound to its sources). Checkouts linked
+  to the same team project with `lean-ctx project link` share conventions whatever their
+  branch; a code-bound fact is served there only while its files are identical, otherwise
+  it is withheld as stale. Recall shows the class, `/api/knowledge` adds `validity_class`.
+- **Launcher-bound Workspace authority (#2120).** A launcher starts the MCP server with
+  `LEAN_CTX_WORKSPACE_FILE=<file>`; the file's primary root and up to 64 additional roots
+  (read-write or read-only; `/`, the home directory, its ancestors and agent config
+  directories are refused) are then the only roots that server's tools, MCP resources, search indexes and
+  repo roots reach (lean-ctx's own data directories included). Client roots,
+  `extra_roots`/`allow_paths`, the home jail scope and `ctx_multi_repo` roots grant nothing
+  while bound; response and file caches are not served across revisions. Each tool call
+  takes one snapshot, so a root detached with `lean-ctx workspace remove` is gone on the
+  next call without a restart; concurrent servers with the same primary root keep their
+  own roots. The file is checked fail-closed (owner, mode 0600, no symlink, no
+  foreign-writable directory, outside its own roots and lean-ctx's directories; Unix hosts
+  only for now) and changed only by compare-and-swap on its revision (`lean-ctx workspace
+  create|add|remove|show|diagnose`). Without the variable nothing changes. Guide:
+  `docs/reference/13-security-and-governance.md` §1.6.
+- **Choose and preview what a context package holds.** `pack create` takes `--layers`,
+  `--category`, `--key` and `--fact <category/key>`; `--preview` lists exactly what would be
+  packed (fact titles, status, sources, validity, counts, what is left out) and writes
+  nothing. `ctx_pack action=create` takes the same as `layers`, `categories`, `keys`,
+  `facts` and `preview`. Knowledge facts carry a `status`: `verified` when a provider (or a
+  derivation from sourced facts) backs them, else `assumption`; it is recorded in the
+  package. `--redistributable` (`redistributable: true` over MCP) grants recipients the
+  right to pass the package on. Without a selection, `pack create` builds the same layers as
+  before; at `--level 2` the context graph now follows the chosen layers too.
+- **`lean-ctx project use <path>`.** When several workspace roots
+  were candidates, `ctx_session status` and the Cockpit name the chosen project and how to
+  switch (`lean-ctx project use <path>`); the first root is still chosen by default.
+- **Provider credentials and checks.** `lean-ctx provider check <source> --json --stdin`
+  tests candidate credentials read from stdin; `provider credentials set|list|remove` keeps
+  them in the engine's store (values never printed); `provider init --project-root <dir>`.
+  PostgreSQL connection strings are passed to `psql` through its environment, never argv.
+- **Idempotent retries.** `ctx_agent action=post` and `ctx_handoff action=create` accept a
+  `request_id`: a retry returns the first result, a changed request with the same id is
+  refused. A team knowledge write with `--if-revision` whose reply was lost is sent once
+  more and reported as already stored.
+- **Reproducible context packages.** Package timestamps come from `SOURCE_DATE_EPOCH` or the
+  newest source, so the same input builds the same bytes.
+- **Dashboard stages Connect → Select → Control → Deliver → Prove.** The cockpit is organised along the path context takes. New views: *Sources & Hosts* (each connector's declared capabilities, each configured host's coverage), *Policy & Decisions* (gateway mode, organization and project policy layers, the reasons content was withheld or changed; rule patterns are never shown), *Delivery & Egress* (how far each delivery is known to have gone; an observed model egress kept apart from context handed to a host) and *Audit & Coverage* (audit chain, observations, coverage gaps). Earlier links such as `#context/live` still open the same view.
+- **Connector contract for GitLab, GitHub and Jira.** Every connector declares what it supports (search, list, get, delta, per-item access and revision re-check, delete events); a stored item is reused for another reader only after a re-check with that reader's own credential. GitHub answers are no longer cached; an expired cache entry is never served.
+- **One context decision vocabulary.** `lean-ctx inspect --json` and the dashboard show each receipt's lineage: the request route, the decision per object (allow, deny, redact, transform, unavailable) and how far the delivery is known to have gone. A receipt that records no per-source access check says so (`source_rights: not_recorded`) instead of implying permission.
 - **Pi and Oh My Pi are recognised as AI clients.** Pi has no built-in MCP client and connects through extensions that announce themselves as `pi-lean-ctx`, `pi-mcp-adapter` or `pi-mcp-probe`; Oh My Pi announces itself as `omp-coding-agent`. Both were counted as an unrecognised client (`other`) in the anonymous usage statistics and are now reported as `pi` and `oh_my_pi`. Only the existing client-family field gains two values; no client name is sent and nothing new is collected. Capabilities offered over MCP stay as before.
 - **Semantic search without ONNX Runtime.** A new built-in embedding model, `potion-code` (potion-code-16M, a static model2vec table, MIT), runs in pure Rust: no `libonnxruntime`, no attention pass. When no model is configured, lean-ctx now uses MiniLM where ONNX Runtime is installed and `potion-code` everywhere else — installations without ONNX Runtime previously had no semantic search at all. Measured on 8,086 documented functions of the lean-ctx source (docstring → code, `core/embeddings/eval.rs`): MiniLM reaches MRR 0.348 / recall@10 0.570 and indexed them in 557 s on CPU; `potion-code` reaches MRR 0.247 / recall@10 0.431 and indexed them in 0.07 s, answering a query in 9 µs instead of 26 ms. The model is pinned to an exact revision and the SHA-256 of both files, and its safetensors weights are bounds-checked before any read. Choose explicitly with `[embedding] model = "potion-code"` or `"minilm"`.
 - **lean-ctx results drawn like Claude Code's own.** The Claude Code plugin draws `ctx_patch` evidence through Claude Code's diff renderer (gutters, colored `+`/`-`, syntax highlighting), `ctx_read` code (`lines`, `anchored`, `full`, `raw`, several files) syntax-highlighted and numbered from the real line with anchor hashes hidden on screen, and `ctx_search` hits with a dim `path:line`, the highlighted line and the enclosing symbol. Only the display changes: Claude receives every result unchanged, and output the plugin does not recognise is drawn as before. Turn it off with the plugin's **Color lean-ctx output** setting. Inspired by community member Kirill Naumenko's [leanctx-colored](https://github.com/ReDev1L/leanctx-colored).
@@ -31,9 +169,620 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 - **The cockpit's pulse line and turn cards can be turned off too** (#2057). `/cockpit pulse off` hides the line above the prompt that follows lean-ctx calls while Claude works; `/cockpit cards off` hides the card shown when a turn ends or a milestone is reached, the milestone notification, and the gateway summary added to Claude Code's "done in" line. Both hold for new sessions, `on` brings them back, and both are options in `/config` (**Show the LeanCTX pulse line**, **Show LeanCTX turn and milestone cards**). The sidebar still lists every turn and milestone, and the spinner stays.
 - **Fewer "Prompt from the lean-ctx plugin" wakes, and a switch to turn them off.** Background jobs that finished one after another while Claude was idle each started their own wake, a row in the transcript and a turn each. A job that finishes while an earlier wake still waits for its turn is now held like one that finishes mid-turn: if Claude reads it in that turn, no wake follows; otherwise it wakes once afterwards. A wake that never starts its turn holds nothing back for longer than a minute. The plugin option **Wake Claude when a lean-ctx background job finishes** (`wake_on_job_finish`) turns watching off, and the live skill then tells Claude to check jobs itself. Claude Code keeps plugin prompts in the transcript; it offers no hidden variant.
 - **The proxy's context snapshot says how long it has measured** (#703). The cumulative section of `proxy-introspect.json` gains `measurement_started_at_epoch_seconds` and `measurement_elapsed_seconds` (monotonic, from the first request this proxy process saw), so the vision-encoding go/no-go can tell a normal usage day from a short sample. The file stays local and holds no prompt content; vision encoding stays off.
+- **`ctx_handoff action=export ledger=<path>`** exports a stored ledger (e.g. a merged
+  one) as a signed transfer bundle; with `lean-ctx team artifact publish` and `import`
+  this is the team path for merged ledgers — no extra store.
+- **`ctx_handoff action=merge`: one ledger from several agents.** Parallel agents of one
+  project hand their ledgers to `merge` (2–8); the result is a new ledger another agent
+  pulls. Every input is re-authorized first (a withheld input refuses the merge), the
+  result is a byte-for-byte subset of the inputs (duplicates collapse, conflicting fact
+  values are all kept and reported, nothing is ranked or rewritten), each part keeps the
+  binding it had, every input source is re-read for the result's lineage, and the same
+  set of ledgers always merges to the same bytes and file. The new optional ledger field
+  `merged_from` lists the inputs' content digests. Replaces the never-wired
+  `result_fusion`/`capsule_wire` modules.
+- **Engine:** `lean-ctx engine context-presented-use` — the holder of a presenter
+  capability asks whether text delivered under it is still usable (`check`), keeps a
+  recovery copy (`retain`) and gets a kept copy back (`expand`). Every answer re-checks
+  the capability and the current source rights; the capability enters through
+  `--presenter-capability-file` only. Contract: `docs/contracts/engine-context-sources-v2.md`.
+- **Enterprise suite:** `POST /v1/engine/presented-use`, behind the API key, its tenant
+  and its current rights to exactly the sources the text derives from. Presenter
+  operations have their own audit labels (`materialize_v2`, `presented_use`,
+  `presenter_revoke`); a revocation now leaves an audit record.
+- **SDK:** use and revoke in Python, Go, Rust, JVM, .NET and TypeScript; the TypeScript
+  `EnterpriseEngineClient` gains `contextMaterializeSourcesV2`. V1 methods and routes
+  are unchanged.
+
+### Changed
+
+- **lean-ctx-protocol: vaults (breaking).** `hive::project` is `hive::vault`; `ProjectV1`,
+  `ProjectResolveRequestV1`, `MetricsProjectV1` and `RepoRefV1` are `VaultV1`,
+  `VaultResolveRequestV1`, `MetricsVaultV1` and `VaultRefV1`; `project_id` is `vault_id`,
+  `repo` is `vault` and opt-in `repos` is `vaults` on the wire; schemas
+  `leanctx.hive.vault/v1` and `vault-resolve-request/v1`; bus channels
+  `org:<org>/vault:<vault_id>/<name>`. `invisible()` covers the soft hyphen, the Mongolian
+  vowel separator, the combining grapheme joiner, the Hangul fillers, the Khmer inherent
+  vowels, U+2060–206F, the line and paragraph separators, interlinear annotations and the
+  remaining format controls; `list` value items are text. The identity domain bytes, the
+  vault id value and the sealed AADs are unchanged.
+- **Rust 1.87.** `lean-ctx-protocol`, `lean-ctx-ocla` and `lean-ctx-embed` declare
+  `rust-version = "1.87"` (was 1.85), for ctutils 0.4.4 (see Security).
+- **You choose which AI tools lean-ctx configures, and updates stay inside that choice.**
+  `lean-ctx setup` and the first `lean-ctx onboard` on a terminal (including `install.sh`)
+  ask which of the detected tools to connect and remember the answer as `setup.agents`.
+  `--agents claude,cursor` (or `none`; install.sh: `LEAN_CTX_AGENTS`) sets it without a
+  prompt and rejects unknown names. `lean-ctx update` now refreshes only the chosen tools —
+  or, on installs without a recorded choice, only tools that are already connected — and
+  never configures a newly installed tool; it lists those it left untouched.
+  `lean-ctx init --agent <name>` adds a tool to a recorded choice. New `--dry-run` for
+  `setup`, `onboard` and `update` shows which files and tools a run would touch and writes
+  nothing. Without a terminal and without a choice (npm install, CI), `onboard` configures
+  no new tool and points to `lean-ctx setup`; `LEAN_CTX_AGENTS=all` or `onboard --yes`
+  restores connecting every detected tool.
+- **The local audit trail is sealed into segments.** After the first full verification on
+  3.12.0 the trail rotates at 64 MB or at day change into signed, immutable segments; the
+  existing trail becomes segment 0 and nothing is deleted. Readers no longer hold the trail
+  lock through a pass, so a large trail no longer withholds agent reads while the Cockpit is
+  open. Downgrading to 3.11.x after a rotation is not supported for audit verification (an
+  older engine reports the chain as invalid).
+- **The gateway evidence store is bounded.** Receipts are stored packed, an existing packed
+  store from earlier development builds is read as is, and a background pass keeps the store
+  under its cap by removing the oldest unprotected evidence (the last 24 hours, the latest
+  receipts and open tasks are kept). `lean-ctx doctor` shows the store's size, cap and last
+  maintenance; `lean-ctx inspect --maintain` runs a pass now.
+- **Prompt-injection detection is precise (detector set 2.1.0).** Patterns match instructions
+  rather than words in code or logs, and a flagged object is recorded once per process, so
+  security counts, receipts and Hive metrics no longer multiply one finding.
+- **Intelligence runtime packages need Engine 3.12.0.** New runtime packages no longer declare
+  the retired hosted index; a 3.11.x Engine keeps its installed runtime but does not take new
+  packages. Engine 3.12.0 also accepts an already installed runtime from the 3.11 line.
+
+- **Capability registry schema 3.** New price classes `hive` (with `hive_plan` =
+  `pro`, `team` or `enterprise`) and `retired`, and the delivery `hive_service`; the
+  classes `pro_paid`, `cloud_paid`, `team_paid` and `enterprise_paid` are refused in a
+  schema-3 record. Free and local: `pro.dashboard.knowledge_workflows`,
+  `pro.runtime.adaptive_context`, `memory_curation`, `context_policy`. Hive Pro:
+  `pro.runtime.semantic_detectors`, `code_security`, `personal_protection`. Hive Team:
+  team coordination, artifacts, `private_registry`, `managed_connectors`. Hive Enterprise:
+  `enterprise.*`, `team.sso_oidc`, `team.audit_retention`. Retired: `pro.cloud_sync`,
+  `pro.hosted_index`, `team.revenue_share`. Ids and aliases are unchanged.
+- **Local features never depend on a plan.** Contract
+  [docs/contracts/local-free-invariant-v2.md](docs/contracts/local-free-invariant-v2.md):
+  local decisions do not change under `LEAN_CTX_LICENSE`, `LEAN_CTX_PLAN`,
+  `LEAN_CTX_ACCOUNT` or a forged entitlement cache, every free capability is accountless,
+  and plan checks may only live in `core/hive` (`scripts/check-local-free.py`, wired into
+  preflight and CI).
+- **Built-in personal-data detectors: email, phone and payment cards.** Swiss AHV, IBAN
+  and US SSN with their validators leave the Engine (built-in detector set 2.1.0) and are
+  delivered as Hive filter packs; IBANs no longer raise a text to Confidential. The
+  Cockpit's Security views name the built-in classes and the installed filter packs.
+- **Telemetry is unchanged.** Its transport and send loop moved out of the removed cloud
+  code with the same endpoints, cadence, consent and opt-out; the version is still
+  recorded on the first and every hundredth call.
+- **The optional runtime is licensed through Hive or a commercial licence.** Its own
+  activation, provisioning, renewal and sync services are gone; the runtime disclosure
+  names Hive or a commercial licence.
+- **Session continuity is per agent.** The wake-up briefing, session search results and
+  every other session read or write, including consolidation, use only the agent's own
+  session or an explicit handoff, never the project's latest one. Project knowledge stays shared.
+  Resume your own session after a restart with `ctx_session` `{"action":"load","session_id":"<id>"}`.
+- **There is only the Cockpit.** `lean-ctx cockpit [--no-open] [--port N]` (alias
+  `lean-ctx dashboard`, port 3333) starts or opens the local server that hosts the
+  Cockpit, a signed runtime package. The server stays the single entry point: after its
+  token check it forwards the Cockpit's pages and `/api/gateway/*` to the Cockpit and
+  answers every other `/api/*` route itself. The engine's built-in web UI is removed;
+  without the Cockpit, `/` says how to install it. `lean-ctx gain --web` opens the
+  Savings view, `gain --live` the Calls (Ledger) view of recorded calls (the terminal
+  live loop is gone; there is no separate Live view), and `lean-ctx gain --terminal`
+  is the terminal summary. Reads may name their project with
+  `X-LeanCTX-Project` (workspace pool only, per request; anything else is 403), and slow
+  reads (`/api/roi`, `/api/value`, `/api/health`, …) are served from labelled display
+  snapshots (`X-LeanCTX-Observed-At`, `X-LeanCTX-Snapshot`, `X-LeanCTX-Refreshing`).
+- **Every dashboard command opens the Cockpit.** `lean-ctx cockpit` is the command and
+  `lean-ctx dashboard` an equal alias. On a terminal it reuses the server already running
+  for this data dir or starts one in the background, waits until it answers (bounded),
+  lets it start the Cockpit, opens the browser at the view and returns the prompt
+  (`Opened the Cockpit → #route`; the token goes only to the browser and is never
+  printed). `lean-ctx cockpit --foreground` keeps the server in the terminal (the mode
+  without a terminal, e.g. Docker), and `lean-ctx cockpit stop` stops the background server
+  by its recorded PID. On a terminal, `lean-ctx gain` and its views (`--graph`, `--daily`,
+  `--by-tool`, `--score`, `--tasks`, `--deep`, `--pipeline` → `#savings`; `--cost`,
+  `--agents` → `#spend`; `--heatmap` → `#context?detail=heatmap`), `gain --web`
+  (`#savings`), `gain --live` and `watch` (`#calls`), `wrapped` and `cockpit --export`
+  (`#report`) open the Cockpit. Without a terminal, in CI, with `LEAN_CTX_NO_COCKPIT`, with
+  `--terminal` or a machine format (`--json`, `--md`, `--raw`, `--export`,
+  `--format json|markdown`, `--svg`, `--share`, `--copy`, `--reset`) the text output is
+  unchanged, so agent shells and scripts see what they saw before; `gain --web|--live`
+  there print the view instead of starting a server. Without an installed Cockpit the
+  text report is printed with one line: `Cockpit not installed — lean-ctx cockpit
+  install`. `cockpit --export --output=FILE` keeps writing the offline report, and
+  `gain --wrapped`, `--svg` and `--share` keep exporting. The proxy's `GET /dashboard`
+  page names `lean-ctx cockpit` and links the running Cockpit (`/api/stats` stays).
+- **The Cockpit starts reliably.** The server records itself (PID, process identity,
+  port, version; no secret) in `dashboard.launch.json` in the state dir. A start reuses
+  this data dir's healthy server, restarts its own background server when it hangs,
+  rejects the saved token or runs an older engine version, and moves past a port another
+  program or another LeanCTX data dir holds (also IPv6-only listeners on `localhost`) to
+  the next free one — an explicit `--port`/`LEAN_CTX_PORT` is never swapped but named
+  with the fix. The server ends cleanly on `SIGTERM` and removes its record.
+- **Reports point at the Cockpit.** Setup, onboarding, `help`, the cheat sheet name
+  `lean-ctx cockpit` (Savings · Spend · Proof). On a terminal, the human output of
+  `spend`, `savings`, `roi`, `value`, `output-savings`, `token-report`, `cep`, `heatmap`
+  and `doctor` ends with one dim stderr line naming the matching Cockpit view; never with
+  `--json`, `--md`, `--raw`, `--export` or `--format json|markdown`, never when stdout is
+  redirected, in CI or with `LEAN_CTX_NO_COCKPIT` set. The reports themselves are
+  unchanged.
+- **Decision receipts v2: keyed object digests.** New receipts carry `schema_version: 2`;
+  each `decisions[].object` is an HMAC-SHA256 under the installation's receipt key
+  (`<data>/gateway/receipt.key`), named in the new `object_digest` field (algorithm and key
+  id), so a receipt no longer confirms a guessed plaintext. Version 1 receipts still parse
+  and verify. Without a usable receipt key no receipt is issued: governed and sovereign
+  mode refuse the delivery, developer mode sends without a receipt. All six SDKs parse v1
+  and v2 and offer key-holder verification (`receipt_key_id`, `keyed_object_digest`).
+  Contract: `docs/contracts/context-gateway-v2.md`.
+- **A live provider list is admitted item by item.** Under `classification = "block"` one
+  confidential issue no longer withholds the whole `ctx_provider` answer: that item is
+  left out (title included), an injection-like title stays fenced as data, the rest is
+  delivered, and knowledge is derived from the delivered items only.
+- **Stored context gets a full semantic check later.** When the bounded check of stored
+  context (knowledge, archive, handoff, recovery) stays partial, the text is queued and
+  checked in full while the agent is idle; the next use applies the result (redact,
+  withhold or `not_inspected`). Live reads keep their 2 s budget. A model set that does
+  not declare its languages and document types claims no coverage (`not_inspected`).
+- **`doctor` and `status` report what is really active.** Shadow mode reads "active" only
+  for hosts with installed hooks; `gain` and `doctor` share one proxy check (configured
+  and answering as lean-ctx); `doctor` prints no colour without a TTY, with `NO_COLOR` or
+  `TERM=dumb`, and exits non-zero only for a failed scored check (a fresh install exits 0).
+- **`install.sh` fails closed.** A missing `SHA256SUMS` or a missing entry for the
+  download aborts the install. The script says it does not verify the cosign signature
+  (`lean-ctx update` does) and what onboarding will change (`LEAN_CTX_NO_ONBOARD=1` skips it).
+- **Received packages are passed on only under their author's grant.** `pack export`
+  (signed or not), `pack send`, `pack publish` and `ctx_pack action=export` refuse a package
+  this machine received (import, registry install, receive) unless its manifest carries
+  `redistributable: true` under the full manifest signature. Packages built here with
+  `pack create` export as before; a package stored before 3.12.0 counts as received until it
+  is re-created. Facts merged from a package without that grant stay out of `pack create`.
+- **Auto-loaded packages belong to their project.** A package enabled for auto-load in one
+  project no longer loads in any other project (entries from earlier versions must be
+  re-enabled per project); package facts reach the model fenced as untrusted data and are
+  never written into agent rule files.
+- **Work Graph: the host starts agents, LeanCTX controls them.** New `ctx_work_graph
+  action="start"` binds a host-launched child to its node: fenced claim, node and path
+  leases, verified hand-over of the signed context capsule, and the child's narrow
+  delivery profile as launch environment when the host is configured as delivery issuer.
+  A receipt, `cancel` or lease expiry stops the node and revokes the child's delivery
+  immediately. `receipt` and `cancel` also accept the owner of the delegating parent node
+  ([docs/architecture/work-graph-host-start.md](docs/architecture/work-graph-host-start.md)).
+
+- **Context packages: the signature covers the whole manifest.** Packages are additionally
+  signed over the full manifest (`signature.manifest_value`), so kind, visibility,
+  dependencies, scope, provenance or licence cannot be changed after signing. Older packages
+  verify as "identity only" and say so. The hosted registry and `pack publish` recompute
+  integrity from the bytes instead of trusting the manifest.
+
+- **Cockpit: which project and which knowledge.** The dashboard reports
+  the project it is bound to and where that binding came from (`GET /api/scope`); without a
+  binding it shows no project data instead of the most recently active project. Knowledge
+  shows its visibility and state.
+- **Semantic model sets declare what they cover.** A model set can declare the languages and
+  document types (prose, code, data) it was qualified for; text outside that coverage is
+  reported as not inspected instead of covered, and a host that does not apply declarations is
+  refused by the worker. The built-in floor stays authoritative in every case.
+- **Leases are bound to their project.** Path and symbol leases of `ctx_agent` and the Work
+  Graph name the project, so the same relative path in two projects no longer conflicts, and
+  a Work Graph claim and an agent lease on the same file now exclude each other. Lease paths
+  must lie inside the project. `if_revision` on mutating `ctx_work_graph` actions refuses a
+  write when the graph changed since `observe` (`write_revision`).
+- **Context packages:** the spec's map form for `dependencies` and `optional_dependencies` is
+  read; optional dependencies are attempted and their failures reported instead of skipped;
+  integrity and signature hex must be lowercase; the seven conformance vectors run in CI.
+- **`lean-ctx migrate legacy-context`** lists data from earlier releases that is no longer
+  served because it carries no project (old `ctx_memory` facts, global archived facts,
+  unbound archives, project-less handoff ledgers, quarantined shared knowledge) and adopts
+  chosen items into one project you name, through normal admission, with a journal
+  (`--dry-run` first). Archives and facts whose recorded session proves the project are
+  adopted automatically.
+
+- **The background cognition loop is off by default** (`[autonomy]
+  cognition_loop_enabled`): it rewrote stored knowledge without a recorded decision.
+- **The `[cognitive: high echo ratio]` suffix is removed.**
+- **`structure_first`, `journal_enabled` and `auto_capture` default to `false`
+  everywhere.** Their docs said opt-in and every user with a `config.toml` already got
+  `false`; only installs without a config file got `true`. Set them explicitly to keep
+  the old behaviour.
+- **OCaml, Haskell and Julia tree-sitter grammars are no longer in the default build**
+  (−14.6 MB, −13 % binary). `.ml/.mli/.hs/.jl` signatures fall back to the regex
+  extractors; build with `--features grammars-long-tail` to keep the parsers.
+- **The Engine identifies itself as the Context Gateway for AI Systems.** README, agent instructions, CLI help, MCP server metadata and package descriptions use Select · Control · Learn · Prove, with local knowledge and observable-evidence limits stated. Security and support contacts use `hello@thinkery.ch`.
+
+- **Usage statistics arrive within half an hour.** While LeanCTX is in use, the anonymous daily totals are now re-sent every 30 minutes (at most 48 times per UTC day) instead of at doubling intervals that stretched to two hours after a handful of sends, which left a day's evening activity unreported until the next morning. Only the timing changes: the same cumulative totals are sent, and nothing new is collected. `lean-ctx telemetry show` states the limit.
+- **`ctx_read` with `engine_interface="v1"` says how to recover.** The engine interface reads one file per call. Its refusal of `paths` now tells the agent to pass `path` once per file or to leave out `engine_interface` for a batch read, and its refusal of other modes says to leave it out; one OpenCode installation had repeated the same refused call 802 times.
+- **Native tool calls are no longer refused by default.** Codex, Cursor, Windsurf, OpenCode, Gemini and CodeBuddy defaulted to Replace mode, whose hooks refused native Bash, Grep and Glob calls. Each refusal cost the agent a whole extra request (in 30 days of Codex sessions: 249 refusals, median 67k prompt tokens re-read per refusal) — mostly for commands like `pwd`, `mkdir -p`, `wc -l` or `shasum` whose native output costs next to nothing — and users found it disruptive. Every hook-capable agent now defaults to Hybrid: lean-ctx steers agents to `ctx_*` tools and rewrites known shell reads and searches, and other native calls go through. Deny hooks check the setting on every call, so hooks installed by earlier versions stand down as soon as the binary updates. Claude Code keeps native Grep and Glob out of its tool list in the default mode: Claude Code drops a tool named in `permissions.deny`, so this costs no error and no retry (0 refusals in 380 measured sessions), and native Glob returned ~12× the tokens of `ctx_glob` for the same patterns. `hook_mode = "hybrid"` gives Claude both tools back; CodeBuddy, which shares that contract, does the same and gets native Bash back (it was hidden too). OpenCode no longer sets native read, grep, glob and bash to `ask`, which prompted on every call and refused them in headless runs; the entries an earlier version wrote are removed on the next MCP server start, also after an update through a package manager. Replace stays available on request: `lean-ctx config set hook_mode replace` or `lean-ctx harden --hard` (which now records the choice), `lean-ctx harden --undo` to go back. `hook_mode` is now part of the config schema (`auto`, `hybrid`, `replace`, `mcp`).
+- **`.lean-ctx.toml` follows one rule per key class.** Project keys (compression,
+  read/search, memory, archive, conversation, response shaping, code health,
+  timeouts — about 60) win wherever the project file sets them, also back to the default
+  (before, a value equal to the default was ignored, a key mentioned only in a comment
+  could count as set, and an omitted `silent_preload` reset the global value).
+  User- and machine-level keys (theme, shell hooks, memory profile, proxy timeout) are no
+  longer taken from a repository. **Security:** `write_allow_paths`, `read_only_roots`
+  and `read_redirect = "off"` now apply only in a trusted workspace. A project file
+  without profiles is used as written when a global profile is selected (it used to be
+  skipped as a parse error).
+- **Handoff ledgers are stored only if they can be read back now** — the whole source
+  lineage re-read under one budget, as a reader does.
+- **`.lean-ctx.toml` keys without effect are named.** A project key the merge does not
+  apply (global-only, one-way, or equal to the default while the global differs) is
+  logged as "not applied" instead of being ignored silently.
+- **Settings audit: every setting now does what it says, or is gone.**
+  - Fixed: an `[autonomy]` section without `cognition_loop_enabled` switched the
+    background knowledge loop back on; it now stays off unless set. `[conversation]`
+    bounds (`preserve_last_n_turns`, `compression_threshold_tokens`,
+    `min_score_to_preserve`, `drop_score_below`) were hard-coded and are now applied; the
+    stub for a dropped message no longer promises a recovery that never existed.
+    `[cache] l2_ttl_secs` is applied (it was fixed at one hour), and `[cache]` is the one
+    place for the delivery-cache bounds (`[ocla.delivery.cache]` moves there).
+    `[memory.gotcha] max_gotchas_per_project` is applied, as are a gotcha's own
+    `expires_at` and `decay_rate_override`.
+  - Retired (never applied): `session_token_limit`, `allow_auto_reroot`,
+    `shadow.auto_record`, `shadow.baseline_model`, `agents.identity_ttl_hours`,
+    `agents.max_concurrent_*`, `context.diet_*`, `cloud.last_contribute`,
+    `code_health.coupling`, `boundary_policy.audit_cross_access`,
+    `gateway_server.admin_bind_host`/`usage_retention_days`, `[solution.commercial]`,
+    the `response_shaping` sub-sections, `proxy.reasoning_budget`,
+    `proxy.pipeline.enable_effort`, `conversation.summarize_score_range`/
+    `ccr_store_dropped`, `cache.l1_max_entries`/`l3_gc_threshold`, and four
+    `memory.gotcha` keys. Profiles lose `translation`, `layout`, `budget`, `constraints`,
+    `capabilities`, `pipeline`, `read.max_tokens_per_file`, `read.prefer_cache`,
+    `compression.output_density`/`terse_mode`/`adaptive`/`entropy_threshold`,
+    `routing.max_model_tier` and `autonomy.auto_response`/`response_min_tokens`; the
+    built-in profiles no longer suggest budgets they never enforced.
+  - Migration: older files keep loading. A writable global `config.toml` has retired
+    keys removed automatically (the comments of other keys are kept); `lean-ctx doctor` and
+    `lean-ctx config apply` name any that remain as "retired" instead of "unknown".
+
+### Removed
+
+- **Personal Cloud.** Cloud sync, knowledge and gotcha sync, the hosted personal index and
+  the cloud dashboard metrics close on the 3.12.0 release day: writes stop and the hosted
+  endpoints answer `410` with `{"error":{"code":"personal_cloud_ended"}}`. Stored Personal
+  Cloud content is deleted 30 days after release; there is no export. Local data is unaffected. The engine side goes: the cloud client and cloud sync,
+  `lean-ctx login`, `register`, `forgot-password`, `account`, `sync`, `contribute`, `cloud`
+  and `enterprise`, the knowledge vault and index bundles, and the `[cloud]` config
+  section (a retired key; the legacy `cloud.contribute_enabled` opt-in is still migrated
+  to `telemetry.enabled`).
+- **Hosted index.** `pro.hosted_index` is retired; the hosted index stack (upload,
+  pairing, egress admission, the semantic search shortcut) is removed.
+- **Hosted team servers.** They close on the 3.12.0 release day. Removed: the `team` CLI and its completions, the dashboard's
+  `/api/knowledge/{publish,team}`, the shared-artifact store and team artifact runtime
+  modules, `savings push` and `savings team` with the daemon's savings auto-push, and the
+  `team_url`, `team_token` and `team_auto_push` keys (now retired). Local savings,
+  `savings sign`, `verify-batch` and ROI stay.
+- **ctxpkg.com connection.** ctxpkg.com closes on the 3.12.0 release day and its packages
+  are archived without migration. Removed: the hosted-registry client, the remote
+  dependency resolver, `pack update`, `pack publish`, remote `pack install ns/name`,
+  `addon add ns/name` and `ctxpkg.lock`. Packages and add-ons install from local files; a
+  scoped `ns/name` is refused with that hint. The `.ctxpkg` format, signing and
+  verification stay.
+- **Pro gating and promotion.** The leaderboard route and proxy rank header, the README
+  badge command, Pro conversion nudges (`session dismiss-pro|show-pro`), the billing CLI,
+  the dashboard value-gate summary and `/api/billing-badge`, and hosted Wrapped
+  publication (`gain --publish|--leaderboard|--link|--rejoin|--unpublish`, the publish
+  prompt, startup auto-publish, the weekly nudge and the recovery-phrase identity it
+  used). `[gain]` is a retired config key. Local `gain --wrapped`, `--svg`, `--share`,
+  `--copy` and `--open` stay. In the Cockpit: the Account and Cloud pages, the checkout
+  flow, the team memory tab, team pills, the share sheet, `/api/gateway/entitlement`,
+  `/api/gateway/teasers` and `/api/gateway/pro/*` (now `/api/gateway/analysis/*`). In the
+  engine: the licensed `/api/runtime/pro.dashboard.knowledge_workflows` route, the
+  dashboard exchange, `core::billing` (plans, signed entitlements, metering, settlement
+  evidence) and the savings ledger's evidence projection, and the runtime's personal
+  licence activation, provisioning, renewal, project sync, context sharing and
+  `engine context-personal-sync`.
+- `ctx_work_graph action="execute"` with its `connector`, `model` and `max_attempts`
+  parameters, and the agent connector layer behind it (Claude Code/Codex/Cursor CLI
+  launch, process supervision, cancellation signals, retry, usage parsed from CLI
+  output). Calling `execute` returns the host-start path.
+- `lean-ctx pair`: remote pairing was never implemented; the command prints a pointer.
+
+- **34 retired MCP tools are removed** (30 from this release plus the four #509
+  aliases `ctx_smart_read`, `ctx_multi_read`, `ctx_semantic_search`, `ctx_symbol`).
+  A call — directly or through `ctx_call` — fails with a message naming the
+  successor (`ctx_compose`, `ctx_graph`, `ctx_search`, `ctx_expand`, `ctx_read`) or
+  the way forward. The default profile advertised none of them; every tool with real
+  use had a direct successor. Ledger eviction under context pressure moved to
+  `ctx_control action="evict"`. List: `docs/migration/focus-2026-10.md` §3–4.
+- **The read-path autonomy drivers are removed** (session-start project overview,
+  related-file hint, silent import preload, post-read prefetch, automatic cache dedup).
+  An A/B on the retrieval corpus (3 interleaved repetitions, warm index) returned
+  byte-identical responses and equal R@5/MRR without them, while the first call of a
+  session took 2–14 s longer. The overview carried the wake-up briefing but exceeded the
+  400-token injection cap on real projects, so the briefing never arrived: it is now
+  delivered on its own as `--- AUTO CONTEXT ---` on the first call, its project facts
+  fitted to the cap (most salient first). On 932 real knowledge stores every briefing
+  now arrives; before, the facts block alone exceeded the cap for 19 %. Retired keys:
+  `[autonomy] auto_preload`, `silent_preload`, `auto_related`, `auto_dedup`,
+  `dedup_threshold` (and their `LEAN_CTX_*` variables; profile `[autonomy]` keeps
+  `enabled` and `checkpoint_interval`). **Breaking:** the Autonomy Drivers contract
+  and `ctx_proof`'s `autonomy-drivers-v1` export are withdrawn with their producer.
+- **The workflow evidence ledger is removed** (`workflows/evidence-ledger-v1.json`).
+  `ctx_proof`, `ctx_agent` snapshot and `ctx_handoff` exports indexed their files
+  there, but nothing read it; the contract still described the removed `ctx_workflow`.
+  A snapshot export no longer reports an error when only that index could not be
+  written. Receipts stay in the execution ledger, security events in the audit trail.
+  **Breaking:** the Workflow Evidence Ledger contract and
+  `leanctx.contract.workflow_evidence_ledger_v1.schema_version` are withdrawn.
+- **`ctx_intent` and `ctx_task` are removed** (no call from any installation in the
+  30 days measured). Intent is inferred from the tool calls; `ctx_compose(task=…)`
+  selects context for a task and `ctx_knowledge action="remember"` stores a fact (the
+  JSON `knowledge_fact` intent did the same). Task assignment is host execution:
+  `ctx_work_graph` keeps the shared coordination state, A2A peers keep `/a2a`, and
+  `ctx_agent` still lists an agent's tasks. **Breaking:** the Intent Route contract
+  (v1 historical, v2 `ctx_intent format=json`) is withdrawn with its only surface;
+  `leanctx.contract.intent_route_v2.schema_version` is gone from the contract keys.
+- **Grammar-addon remnants and two OCLA execution modules without callers**
+  (`reference_adapters`, `regression_gate`).
+- **CLI commands `visualize`, `demo`, `calibrate`, `benchmark-run`** and the modules
+  only they used (`visualizer`, `calibrator`, `local_runner`): calling one prints where
+  the measurement lives now and exits with 2.
+- **Domain and compliance packs left the Community engine.** `healthcare` and
+  `finance-eu` are LeanCTX Pro; `eu-ai-act-deployer`, `iso42001-aligned`,
+  `soc2-context` and the EU AI Act / ISO 42001 / SOC 2 mappings are LeanCTX Enterprise.
+  `lean-ctx compliance report` (signed CISO report), `policy coverage --framework` and
+  `audit evidence --framework` stay in the engine and take their framework assessment from
+  the licensed Enterprise runtime; without it they name the tier. New:
+  `lean-ctx compliance facts` prints exactly what the runtime assesses (policy facts, no
+  patterns, no content); `lean-ctx compliance verify` checks a report offline, no license.
+  **Breaking:** a project pack with `extends = "healthcare"` (or another former
+  built-in) no longer loads; the error names the tier. Switch `extends` to
+  `strict-redaction` and add your own patterns, or install the paid pack. Built-ins
+  are now `baseline`, `strict-redaction`, `open-source`; the Community PII filter
+  (IBAN, cards, e-mail, phone, SSN, AHV) is unchanged. Evidence bundles keep
+  `manifest.framework` (always `null`). Released versions up to 3.11.x keep their
+  Apache license.
+- **Hebbian cache-eviction bonus, FEP prefetch and Boltzmann eviction are removed.** A
+  replay of 4,906 real reads showed the bonus lowered re-read cache hits (47.1 % → 51.5 %
+  without it, −11 % resent tokens); the prefetch hint only reached a debug log; Boltzmann
+  eviction had no caller. `ctx_read`/`ctx_search` outputs are otherwise unchanged.
+- **OCLA modules without a production caller are removed:** `runtime`, `wire_middleware`,
+  `openapi` (never mounted; `/openapi` is served by `core::openapi`), `wire_stream`,
+  `ledger_export`, `policy_bundle`, `tracing` (its health component always reported zero
+  spans and is gone from `/ocla/v1/health`), the never-started `sidecar` and `grpc_bridge`
+  listeners, the scheduler cluster (`reference_scheduler`, `scheduler_service`,
+  `policy_constraints`, `catalogue`, `OclaRegistry::discover`), the experiment execution
+  helpers, and the RTK capability manifest whose adapter was already gone. Native
+  `engine_interface` plans keep byte-identical scheduler evidence, so stored plans
+  still validate. `[ocla.sidecar]` and `[ocla.grpc]` in a config are ignored.
+  **Breaking for library users:** the deprecated `lean_ctx::ocla` manifest module
+  (superseded by `lean_ctx_protocol::CapabilityManifestV1`) is removed.
+- **Dead code without a production caller is removed:** five source files that were never
+  compiled, the old `wrap` module (superseded by `lean-ctx wrap`), unused copies of the read
+  reuse / search grouping / inference manifest / provider header logic, the proxy modules
+  `image_compression`, `latency_guard`, `usage_azure` and `sensitive_transport`, nine unused
+  `core` and `context_kernel` modules, and four unused functions in learning modules. The
+  proxy no longer copies every request's message list for the removed `ctx_live_zone` tool.
+  Tool descriptions and the full-tier read hint no longer name removed tools.
+  A second pass removed the blanket `allow(dead_code)` on the proxy and twelve modules, so
+  the compiler guards dead code again, and with it what that exposed: the edit-snapshot
+  and read-provenance stores (every redirected read re-read and kept the file for a guard
+  that was never wired), the never-used stream shaper, the web-app detection middleware
+  and tracker (their per-request result was never read), the agent-execution capability
+  adapter, `benchmark_spec`, `saliency` and two test-only kernel modules.
+- **Never-wired surfaces are withdrawn.** The frozen protocol contracts
+  `invocation-context-binding-v1` and `invocation-evidence-manifest-v1` (types, schemas,
+  vectors) are withdrawn — nothing produced or consumed them — so `lean-ctx-protocol`
+  moves to 0.4.0. The stable contract
+  `tokenizer-translation-driver-v1` is withdrawn: its driver was never called by the
+  engine (no output ever used it). `lean-ctx introspect qubo` (QUBO selection spike) and
+  the deprecated `context_kernel::policy_engine` alias are removed; two internal modules
+  that were never wired (a signed invocation-admission verifier and a reader for a
+  never-written "v2" receipt layout) are removed — Engine receipts remain the canonical v1
+  artifacts. The daemon no longer sends the one-way handshake to an enterprise sidecar,
+  and the sidecar itself is removed: it synced policies only to count them and never
+  recorded metering. The gateway proof register's case 5 now cites only the production
+  enforcement tests (`policy::floor`, config merge).
+- **Commercial leases stop carrying three unused features** (`graph_analysis`,
+  `multi_agent_orchestration`, `quality_experiments`): no runtime ever checked them.
+  Older leases that carry them still decode; `model_routing` stays (older runtimes
+  check it as the base-runtime right).
+- **`cognitive_mode` and its science features are retired.** Measured on the retrieval
+  A/B corpus, `full` (the default of every 3.11 release) produced +74 % read output with
+  no retrieval gain (R@5 and MRR identical). Removed: Wasserstein chunk allocation, the
+  FSRS recency boost in knowledge recall, file-trajectory prediction and cache warming,
+  verbosity learning, anti-interruption events, intent-keyword enrichment in
+  `ctx_compose`, `auto` choosing the `cognitive` view, the cockpit science panel and
+  `lean-ctx cognitive`. `ctx_read mode="cognitive"` and `"mdl"` render the map view.
+  The key is retired: older configs load, the migration removes it.
+- **Learned co-access ranking is retired** (`[graph] traversal_edges`): it wrote on every
+  read, changed no retrieval result in the A/B corpus, made ranking depend on history,
+  and as a cache bonus it lowered the hit rate (−4.4 points, −29 % tokens saved).
+- **Learned compression-threshold shifts are retired.** Since #1910 the rendered read
+  ignored them, yet every entropy read still loaded the feedback and learner stores, the
+  cockpit showed per-extension "learned behavior" and `lean-ctx learning` exported it.
+  The bandit arm that feeds the adaptive planner's weights stays. Learning bundles move
+  to schema 2 (LITM calibration only); v1 bundles still import.
+- **`<data>/evidence_ledger.jsonl` is no longer written.** Nothing ever read it and its
+  savings column was always 0; the existing file can be deleted.
+- **`ctx_compose` drops its "Related (associative)" section.** Measured over 882 replies
+  of the retrieval A/B corpus: it appeared in ~5 % of replies, ~110 tokens each, with
+  ~10 % precision, and never surfaced a relevant file the ranked list had missed. The
+  spreading-activation module and `LEAN_CTX_COMPOSE_GRAPH_BUDGET_MS` go with it.
+- **Retired enterprise leftovers:** the archived platform server, its deploy kit,
+  Dockerfile and installer (`leanctx-cli`), and the unused `engine-integration` copies in
+  `commercial-core`. One canonical JSON helper (`core::canonical`) replaces eight private
+  byte-identical copies.
+- **Capability `pro.result_fusion` is retired** together with the two never-wired
+  `context_kernel` modules behind it (`capsule_wire`, `result_fusion`): no tool, agent
+  or runtime ever called them, and the catalog entry pointed at an unrelated file. It is
+  no longer granted by any plan; entitlements signed with it still verify.
+- **Bare `lean-ctx prove` (simulated decision-loop self-test) is removed**; it runs in the
+  test suite instead. `lean-ctx prove speed`, `ctx_proof` and `lean-ctx audit evidence`
+  stay. `lean-ctx evidence-export` no longer writes `proof_result.json` or the
+  "Decision Loop Proof" and "Semantic Model: READY FOR TRAINING" lines: they reported a
+  simulation (and a fixed string) as evidence.
+- **Role budgets, SLOs, anomaly detection and the degradation policy.** Role token/shell/cost limits (`[limits]` in role files), the session cost cap (`[cost] max_session_cost_usd`, `LEAN_CTX_COST_CAP_OVERRIDE`), budget warnings and nudges, `slos.toml` evaluation, the anomaly detector (`anomaly_detector.json`), and the profile `[degradation]` policy with its context-pressure read-mode downgrade are gone, along with `ctx_session action=budget` / `action=slo`, the dashboard `/api/slos` and `/api/anomaly` routes and their SLO/Anomalies views, the `BudgetWarning`, `BudgetExhausted`, `SloViolation` and `Anomaly` events, the `degradation-policy-v1` contract and proof artifact, and the Prometheus series `lean_ctx_session_cost_usd`, `lean_ctx_session_context_tokens`, `lean_ctx_shell_invocations_total`, `lean_ctx_slo_violations_total`, `lean_ctx_anomalies_total` (Datadog `leanctx.slo.violations`). Existing role, profile and config files that still contain these keys load unchanged (the keys are ignored), and older event journals with the retired event kinds stay readable. Per-agent context budgets (`agent_token_budget`) are unchanged.
+
+### Deprecated
+
+- **`quality-lab` and `eval`** still run and print a one-line notice on stderr.
+- `[shadow] baseline_model` is deprecated and ignored; existing configuration
+  files still load. Reports keep the note that the baseline is simulated.
 
 ### Fixed
 
+- **Claude Code requests through the proxy are no longer refused (HTTP 403).** Anthropic's
+  safeguard metadata carries boolean flags whose key names read like classification
+  markings, so the egress check flagged them as restricted content for a remote destination.
+  On the Anthropic route a known boolean field in the root `safeguards` array is protocol,
+  not a classification banner; project policy and every other detector still apply, and
+  every key a caller chose is still inspected in full.
+- **A busy agent store no longer fails a tool call after 750 ms.** The file lock of the
+  agent registry, the task store, the work graph and agent leases is polled and not a fair
+  queue, so under load a call behind other writers could time out and report
+  `lock … timed out`. It now waits up to 5 s; nothing was lost before, the call failed. A
+  fair lock follows in a later release.
+- **Claude Code: the mod no longer defers `ctx_patch`, `ctx_glob` and `ctx_tree`.** The
+  Claude Code mod kept only six lean-ctx tools in the prompt and deferred the rest behind
+  ToolSearch, overriding `alwaysLoad`, so models fell back to native Edit/Glob although the
+  rules route editing and file finding to lean-ctx. The default `front_loaded_tools` now
+  covers every core tool the rules route to, and a test keeps the two in step.
+- **Two first `ctx_handoff create` calls with one `request_id` store one ledger.** Keyed
+  creates of one agent in one project are serialized under a bounded lock; the second
+  call is served the first call's ledger.
+- **A refused source re-check is in the decision receipt.** When a search serves a
+  provider chunk admitted before and its source now refuses it (revoked, unavailable, …),
+  the call's receipt records a content-free denial with that source state
+  (`source.revoked`, …) instead of a debug log line only.
+- **Concurrent writers no longer lose shared memory entries** (`ctx_memory`): one project's
+  store is now locked from load to save.
+- **A server switching roots no longer takes over another agent's saved session**, and
+  cross-project knowledge search no longer serves other projects' session findings.
+- **Installing a `.ctxpkg` file verifies before it pins.** The original bytes are stored,
+  every check runs before anything is written, and a failed install exits non-zero and
+  leaves nothing installed or pinned. `pack send` refuses packages that fail admission and no
+  longer sends the local path or project hash; uppercase package scopes are refused.
+- **An interrupted legacy adoption or knowledge migration resumes cleanly** instead of
+  duplicating facts or leaving a partial project partition.
+- **A governed proxy request whose every object is withheld** is refused with its reasons
+  and a withheld receipt, like the call routes, instead of failing for want of a receipt.
+- **Crash logs redact secrets** in the panic payload.
+- **`read -m signatures` keeps parameter types** (`fn f0(a:i32)` instead of `a:n`).
+- **`ctx_agent share_knowledge` no longer crosses projects.** Shared facts were kept in one
+  installation-wide file, so a fact shared in one project reached the agents of every other
+  project. Facts are now stored per project, admitted before they are stored and re-authorized
+  for each reader, and written atomically. The old file is moved unread into
+  `agents/shared_knowledge/quarantine/` and never served.
+- A Work Graph child taken with `action="claim"` could never finish: its fenced receipt
+  required a measured connector receipt that nothing produced. Receipts are now bound to
+  the fence and recorded as reported usage (`usage_source: "reported"`), still bounded by
+  the node and chain budgets. Reported figures no longer free the parent's reservation.
+- A started Work Graph child that exhausted its budget kept its concurrency slot and path
+  claims forever; every terminal transition now ends the incarnation. A stopped child's
+  paths stay exclusive until the window granted at start ends.
+- **Projects no longer leak into each other.** Archived facts, `ctx_memory` facts and the
+  hint they add to tool answers, the archive search (`ctx_expand` search, list, count and id
+  lookup), scent and claims, diaries, handoff lists and `clear`, the multi-agent sync counts,
+  and BM25/vector index directories are now partitioned by project; another project's items
+  are neither served nor counted nor named. Two clones of one repository no longer share an
+  index.
+- **A request keeps its project.** A slow call that finishes after the host switched roots
+  writes into the session it started in; tools no longer load "the latest session" of the
+  process directory; configuration, policy helpers and writable roots follow the request's
+  project; the HTTP daemon's shared session ignores client roots; a home directory with a
+  dotfiles `.git` is never adopted as a project root; session restore requires an exact
+  project match.
+- **Concurrent writes are no longer lost** in knowledge import and bridge pull/publish,
+  session summaries and the local package index; a received package version is immutable,
+  while `pack create` replaces your own local build.
+- **Egress:** tool errors pass the release gate like results; the request URL (path and
+  query, percent-decoded) and relayed header values are admitted like the body, with
+  provider credentials exempt only for their own destination; WebSocket frames are checked
+  right before they are sent and observed after; a lost retry observation is stated on the
+  reply (`x-leanctx-egress-evidence`); receipts name the caller by a keyed reference. Logs no
+  longer print error text that may carry content.
+- **Provider sources:** items of two sources with the same id no longer replace each other in
+  the index, and a classification stamp in a provider title is detected.
+- **Adding a git remote or renaming the package no longer empties a project.** The project's
+  knowledge, gotchas, archives, `ctx_memory` facts, shared agent knowledge, diaries and shares
+  are carried into the new identity on first use, proven by the project root they record
+  (copied, never moved). This also repairs knowledge stores an earlier path-only migration had
+  copied but then refused to load.
+- **Background work follows its project:** auto-capture, consolidation, summaries and
+  archives started by a request use that project's configuration; a request without a project
+  gets `project_unresolved` instead of the process directory. Agent presence and messages
+  compare projects by path identity (symlinks, separators), and the dashboard binds a folder
+  exactly as an MCP session would.
+
+- **Context packages marked auto-load apply again.** They were applied only by the
+  session-start project overview, which this release retired, so `ctx_pack
+  auto_load` had no effect over MCP. They now apply once per session on the first
+  call, and the `--- AUTO CONTEXT ---` block names them.
+- **SDK Agent Tools v1 keeps its contract.** The engine had dropped `ctx_symbol`
+  and `ctx_fill` from the negotiated capabilities with their MCP tools, so every
+  published SDK (all six languages) would have refused the handshake. The v1 set
+  is back: `ctx_symbol` runs as `ctx_search action=symbol`; `ctx_fill` answers that
+  it has no successor.
+- **No hint names a removed tool any more:** the `ctx_context` and `ctx_edit`
+  descriptions, the `context-focus`/`context-review` MCP prompts, the semantic-index
+  "building" message, the LSP-missing error, `lean-ctx cheatsheet`, the impact
+  "not found" hint and the removal message for `ctx_analyze`/`ctx_compare` (which
+  named a non-existent `lean-ctx compress --diff`).
+- **Hermes plugin:** it offered `ctx_semantic_search` and `ctx_summary` to the
+  model and called `ctx_summary` at session end; it now exposes `ctx_search`
+  (with `action=semantic`) and saves the session with `ctx_session action=save`.
+- The unused `ctx_semantic_search` entry of the default
+  `[loop_detection] tool_total_limits` and of the lead-gen persona is gone (no
+  behaviour change: semantic search counts against `ctx_search`).
+- Guides and references (`docs/guides`, `docs/reference`, README, llms.txt,
+  package READMEs) name the successors.
+- **`ctx_work_graph` names every missing field at once.** 45 of 64 calls failed in the
+  30 days measured; the largest class was a missing argument reported one field at a
+  time, so agents retried field by field. An incomplete call now lists the fields the
+  action requires and the ones missing; concurrency and duplicate-graph errors say how
+  to proceed.
+- **The project graph is the same on every build.** Orphan files got their "sibling" edge
+  from the first match in hash order, so two builds of an unchanged project differed in
+  about 40 % of their edges, and graph-based impact and
+  ranking changed from run to run. Files are now visited in sorted order; the
+  index backend's symbol lookup also caps its 100 hits in path/line order like the
+  property graph does (#498).
+- **Semantic redaction reaches the agent.** The release point re-ran the advisory semantic
+  detector on text it had already redacted; a model is not idempotent on its own output, so
+  every `ctx_read` with a semantic redaction was withheld as `release.unadmitted_content` and
+  each read paid the model twice. The release point now re-checks with the built-in floor.
+- **Sessions and observations save under a semantic PII detector.** Identifiers, configuration
+  tags and paths must stay exact; a model finding there (a user name in a project path) failed
+  every session save. Exact positions are decided by the built-in floor, content fields keep
+  the semantic stage.
+- **Dense texts are inspected beyond 32 findings.** When the runtime stops at the findings
+  bound, the Engine asks for the rest (with context) within the same time budget.
+
+- **`ctx_search` batch queries accept `path`/`file_path`** — the handler read them,
+  but the key check refused them (265 failures across 74 installations in 30 days).
+  Unambiguous near-misses (`regex`, `query`, `maxResults`, `limit`, `glob`, …) are
+  mapped to the canonical key; other unknown keys are still named.
+
+- **`ctx_read` is about eight to twelve times faster** (release build, 2,500-file repository:
+  p50 1,263 ms → 158 ms on first read, ~1,210 ms → ~100 ms on re-reads). The built-in `coder` profile ran a prefetch — a graph walk plus up to ten
+  admitted file reads under the session-cache lock — after every read, for a result only an
+  internal event saw; it is no longer on by default. `minimal_overhead` now defaults to
+  `true` also when a config.toml does not name it (it read `false` there). The read path no
+  longer loads the code graph per call: post-read enrichment, the session-start hook and
+  the pre-read mode gate use only a built graph and otherwise schedule the background build.
+- **`ctx_compose` no longer refuses unchanged results** with "source authority changed"
+  (a timed-out worker invalidated its caller's ended policy view) and reuses the resident
+  search index instead of loading it from disk per call. While the index of a cold project is
+  still building, ranked sections can still differ between sessions.
+- **The path jail admits the host's own session output read-only** — Claude Code's
+  `tool-results`/`subagents`, Cursor's `agent-tools`/`terminals`, Claude Code's private
+  scratch dir — and `~/.pyenv/versions`; credentials beside them stay jailed.
+- **Gateway refusals name the setting behind them**; **passwords in `https://…` and other
+  URLs are redacted**; `ctx_work_graph` errors say what to do next.
+- **Provider items are found by search again.** Issues, tickets and other provider results were indexed but never returned by `ctx_search` (also with `action=semantic`) in BM25 mode. They are now part of the search view whenever their source still returns them to the current reader; an item the reader may not see adds nothing to the ranking — no title, count, snippet or term statistic.
+- **Governed search is about three times faster and no longer refused by an MCP server's memory target.** Admitted files are chunked in parallel (admission itself stays on the request's thread), freed memory is returned before each search, and a search is refused only at the hard memory level. On a 2,782-file tree: about 7 s per search instead of 19–21 s, and the MCP server answered all 18 searches of the measurement instead of 6 at its default 512 MB target.
+- **A query in words finds `snake_case` identifiers.** `admit_source_typed` is also indexed as `admit`, `source`, `typed`, as camelCase names already were. Only the index splits: a query for `settle_canary` still means that identifier. On 18 labelled code questions recall@5 rose from 0.50 to 0.72 and MRR from 0.32 to 0.54.
+- **Provider results under a symlinked project path are searchable** (macOS `/var` → `/private/var`); they were written to an index no search read. Two provider queries in quick succession no longer race on the index file, and an item queried again replaces its earlier copy.
+- **The Provenance view of the dashboard loads again** (it called an API method that does not exist).
+- **An expired team artifact's kept copy is removed** at the next use, which refuses it.
 - **Agents outside a project are told what is missing (OpenCode).** When a host starts lean-ctx outside a project (OpenCode launched from the home directory) and reports no project directory, a search or tree without `path` said only "active project root is required", and a relative read failed as "file not found: ~/src/main.rs". Both now say that the session has no project yet and to pass the absolute project path, after which that project stays bound. OpenCode installations hit this four times as often per installation as Claude Code.
 - **Rules name only the tools the session is offered.** With no profile pinned, the injected rules and MCP instructions were written for the full tool set, while `tools/list` offers the lean core (OpenCode, Cursor and other clients: 11 tools). They named `ctx_knowledge` and, for native-editor clients, `ctx_patch` as if callable, and agents called tools their list did not contain. Guidance now describes the lean core and points to `ctx_call` for the rest; the skill shows non-core tools in their `ctx_call` form. A pinned profile keeps its full set.
 - **Reading a file in windows is no longer booked as a correction.** A `lines:` window (and the `head`, `tail` and `sed -n` reads the shell hook maps onto it) counted as a compressed read, and `head`/`tail` through `ctx_shell` as a full re-read, so paging through a long file produced a correction for nearly every window — hundreds on a single long instruction file in Codex sessions. A correction is now only a lossy compressed view (`map`, `signatures`, `aggressive`, `entropy`, `task`, `reference`, `cognitive`, `mdl`, `density:`, `auto` resolved to one of them) followed by the full content (`full`, `raw`, whole-file `anchored`, or `cat`/`bat`/`less`/`more` without a range). Windows, `head`, `tail`, `sed -n` ranges and `diff` deltas are partial reads: they neither start nor complete a correction. `anchored`, which is verbatim plus line anchors, no longer starts one either. A failed edit after a window read is no longer charged to a compressed read.
@@ -64,7 +813,7 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
   - The daemon's memory guard only cleared the file-content cache, even at hard pressure. It now runs the same eviction as an MCP server, dropping resident search, graph and embedding indexes too. A new `daemon_max_rss_mb` (2048 MB, env `LEAN_CTX_DAEMON_MAX_RSS_MB`, `0` = percent only) caps its target on large machines, where 5 % of RAM let a daemon reach several GB first.
 - **Windows: rooted reads of a relative path open the file inside the project.** The read checked the path against the project root but then opened it relative to the process's working directory, which for the daemon is not the project; such reads failed or were refused as outside the root. They now open the path the check resolved, as on macOS and Linux. With the path jail off (`path_jail = false`), a relative path was not resolved against the project at all on any platform; it now is.
 
-- **Self-signing after an update can no longer hang.** On macOS, `security` and `codesign` ran without a time limit; a test with an isolated data directory reached the real signing keychain and waited for a password prompt forever. Signing now needs the dedicated keychain's stored password before it queries the identity, and each step is bounded (5 s for `security`, 60 s for `codesign`); a timeout falls back to the ad-hoc signature as before.
+- **Self-signing after an update can no longer hang.** On macOS, `security` and `codesign` ran without a time limit; a test with an isolated data directory reached the real signing keychain and waited for a password prompt forever. Each step is now bounded by its own budget within one shared deadline, and a tool that does not answer is ended before the fallback; a timeout falls back to the ad-hoc signature as before.
 - **Parallel `remember` calls on a busy machine no longer fail.** Knowledge writes waited at most 2 seconds for the project lock, so seven parallel writers on a loaded machine could answer "knowledge lock unavailable" and drop a fact. The wait is now bounded at 10 seconds.
 - **`lean-ctx doctor` names hooks that run a missing program.** A Codex `hooks.json` with an extra `SessionStart` entry pointing at a deleted temporary binary failed every session start with exit 127, while doctor reported the hooks as healthy. Doctor now reports any Codex or Claude Code hook whose absolute program no longer exists, whoever wrote it, and names the file to remove it from; it does not delete entries lean-ctx did not write. A stale lean-ctx binary is also reported when a current one is configured next to it, since every configured hook runs.
 - **`lean-ctx claude-mod install` finds Claude Code when PATH does not show it yet.** A terminal or editor started before Claude Code was installed reported it missing. After PATH, the installers' default locations are checked (`~/.local/bin`, and on Windows `%APPDATA%\npm\claude.cmd`), under the same trusted-location check.
@@ -87,6 +836,286 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 - **`lean-ctx read -m density:X`, `-m reference` and `-m task` return the requested view** instead of the whole file when the CLI renders locally.
 - **`reference` is described as what it is**: a one-line pointer (path, lines, tokens) without content. The tool schema called it "quotes".
 - **The Claude Code plugin no longer announces a background job the agent already read.** A job that finished during a long turn was announced at once; Claude Code held that wake until the turn ended, and by then the agent had usually read the job itself, so the stale wake cost a whole extra turn. Wakes for jobs that finish mid-turn are now held and sent after the turn only for jobs the agent has not read.
+- **Context Gateway:** a CLI tool run stored a Decision Receipt only under
+  protection. In developer mode a stand-alone `lean-ctx read` (no daemon) admitted
+  its source and recorded nothing, so `lean-ctx inspect` could not show the
+  decision. The CLI now follows the MCP call's rule in every mode: a plain receipt
+  when a source was admitted, no sidecar and no anchor duty without protection.
+- **Context Gateway:** the evidence store (`<data>/gateway`) is packed and bounded.
+  Receipts are stored zstd-packed (`<sha256>.json.zst`; plain `.json` receipts still
+  load). A background maintenance pass in the MCP server and the daemon — at startup,
+  hourly and soon after a write that did not fit under the ceiling
+  (`LEAN_CTX_GATEWAY_STORE_MAX_MB`, else 10 % of `max_disk_mb`, else 1024 MB) —
+  counts the store's files and rebuilds its usage ledger from the count, removes
+  receipts older than 30 days (`LEAN_CTX_GATEWAY_RETENTION_DAYS`), brings the store
+  down to 80 % of its ceiling, oldest first, each with its sidecar and observation,
+  and packs the plain receipts that stay; an unfinished pass is continued by the next
+  process. The last 24 hours (`LEAN_CTX_GATEWAY_PROTECT_HOURS`), receipts a project's
+  latest index lists and receipts of a task in progress are always kept; only when a
+  pass found them alone filling the store are new receipts refused (developer mode
+  delivers and logs the missing receipt, protected mode withholds the release). A
+  stale or copied ledger never refuses a write, and the write path never counts
+  files. `lean-ctx inspect --maintain` runs a pass now; `lean-ctx doctor` always shows
+  size, ceiling and the last pass. On the first start after the
+  update a long-used store is brought within its ceiling in the background; see
+  "The store's ceiling" in the security reference.
+- Shadow Mode priced the uncompressed baseline with a fixed reference model
+  (`[shadow] baseline_model`, default `gpt-4o`). Whenever the host used another
+  model, the report labelled the task `model_routing`, recommended "Model
+  routing" between the two models, and counted their price difference as a
+  saving. The baseline now uses the model the host chose for each task, so
+  only context changes count, and no model is ever recommended.
+
+### Security
+
+- **Project provider configs load only in trusted workspaces (GHSA-rrww-7924-w72f, high).** A
+  project-local `.lean-ctx/providers.toml` (or `.lean-ctx/providers/`) is loaded only after the
+  workspace is trusted with `lean-ctx trust`; an untrusted checkout can no longer bring its own
+  provider definitions. Upgrade note: in an untrusted workspace its project providers are no
+  longer available until you run `lean-ctx trust` there (see the upgrade guide). Hardening of
+  workspace trust continues.
+- **Gateway-held provider keys need the lean-ctx token (GHSA-53h5-q4m8-vg3x, medium).** On a
+  loopback proxy with `proxy_require_token = false`, a request carrying any provider key
+  header could reach a `/providers/{id}` route whose key the proxy injects (`api_key_env`,
+  Bedrock), also through a routing alias on `/v1/chat/completions`. Such routes now require
+  the lean-ctx proxy token before the operator's key is injected.
+- **Proof and knowledge export paths stay inside the project (GHSA-pv78-9chr-hj3c, medium).**
+  `ctx_proof` export accepts only a plain file name, and `ctx_knowledge` OKF export and import
+  paths are kept inside the project jail. Upgrade note: a relative OKF `path` now resolves
+  against the project root instead of the server's working directory.
+- **Untrusted project config cannot widen write paths (GHSA-79fg-7cj5-4xmm, low).** An
+  untrusted project's `.lean-ctx.toml` no longer sets `write_allow_paths`, like the other
+  sensitive overrides it already could not set.
+- **Constant-time helpers.** ctutils 0.4.4 (RUSTSEC-2026-0385: mask generation and `u128`
+  comparisons could branch on secret values), in the engine and the cloud and edge services.
+- **TLS certificate verification.** rustls-webpki 0.103.16 and webpki-roots /
+  webpki-root-certs 1.0.10 (RUSTSEC-2026-0381, -0382, -0383).
+- **Agent bus handoffs.** `/v1/a2a/handoff` verifies the envelope HMAC when
+  `LEAN_CTX_HANDOFF_SECRET` is set (`401 signature_required` / `invalid_signature`) and
+  refuses signed envelopes when no secret is configured (fail closed); unsigned handoffs
+  without a secret behave as before. Addressed handoffs reach only their recipient, live
+  and after replay. The task store is read under its file lock, so `ctx_agent` export
+  pruning and concurrent task updates no longer lose writes.
+- **Secret files.** Each owner-only secret-file write uses its own random temporary file,
+  so concurrent writers of the same path no longer collide; on Windows a writer no longer
+  fails when another one already removed the old file.
+
+### Coming in 3.12.1
+
+The Hive connector code ships in 3.12.0 but stays switched off: `lean-ctx hive connect`
+and `lean-ctx hive link` refuse with "LeanCTX Hive comes with 3.12.1; this version does not
+connect to a Hive.", and `hive` is not listed in help or completions. The items below take
+effect with 3.12.1.
+
+- **What leaves for a swarm is checked on the machine.** Results, proposals, verdicts (reason
+  and value) and report notes pass the secret and personal-data screening. For a public
+  swarm they also must not contain text of a repository linked to a vault on this machine
+  (three consecutive lines or about 200 bytes of one file; the refusal names no file, and a
+  check that cannot run refuses). Text fields and every string of a value refuse invisible,
+  direction and control characters; list items are single lines of at most 500 characters.
+  A team swarm of another organization is left out of listings, reported by count only, and
+  refused before anything is sent to it.
+- **Engine metrics for Hive workspaces (not released yet).** A connected engine can send its
+  workspace hourly counts of what the local cockpit shows, per vault: tokens and savings (by
+  trust label), read modes, tool calls by tool name, compression, protection and policy-block
+  counts by rule, sessions, agents used, model spend where it is measured, and redacted secrets
+  as per-workspace fingerprints. It never sends file content, paths, prompts, model output,
+  secret values or command lines: every name on the wire is a closed pattern or `other`. Batches
+  are signed with the engine's instance key, idempotent per hour (`rev`), buffered offline (at
+  most 720 hours / 8 MiB, oldest dropped and counted) and backed off on 429/5xx. Nothing is
+  collected or buffered unless the workspace's "Share engine metrics" rule is on (Team and
+  Business by default; Community and Pro after `lean-ctx hive metrics confirm` in a terminal),
+  and turning it off drops the buffer. `lean-ctx hive status` shows the line "Sharing engine
+  metrics with …", `lean-ctx hive metrics preview [--json]` prints exactly what would be sent
+  for the last hour, `lean-ctx hive metrics delete` removes what the engine buffered. Sending
+  stays switched off in this build until the privacy review is done; the guide follows with
+  3.12.1.
+- **`lean-ctx hive connect` is the one step to Hive.** It signs in through the browser
+  (device flow), where the person chooses the workspace for this machine; then it asks once
+  per workspace what this machine shares with it and lists each channel that is on (captured
+  knowledge, daily usage totals, context receipts, agent presence and bus messages). The
+  answer is kept in `<config_dir>/hive/sharing.json`, so a later connect or session asks
+  nothing; `--yes` answers yes without asking. A "no" turns every outbound channel off in
+  `[hive]` while the workspace's knowledge and policy are still pulled. Without a terminal
+  and without `--yes`, the `[hive]` settings apply unchanged. Running it again on a
+  connected machine only does the steps not yet answered.
+- **Projects find their vault on their own.** At connect, and in the background sync for
+  other projects whose sessions queued knowledge, the engine asks Hive for the vault of the current project from org-salted
+  digests of its identity (`.lean-ctx-id`, the normalized origin URL, the repository's first
+  commit; never a path, user or host name). A vault this machine may already read is mapped
+  at once. A suggested vault, a new private vault for the project, a committed link file, or a
+  vault that moved to another workspace waits for one confirmation by the person: at
+  `hive connect` in a terminal, or with `lean-ctx hive consent approve <id>`. Agents, MCP
+  calls and `--yes` never confirm it; until then the project's knowledge stays on the machine
+  and sync reports `consent_required`. The same repository URL alone never gives access.
+  `lean-ctx hive link <workspace>/<vault>` stays as the manual override. A Hive without
+  the match route keeps the earlier resolve, after the same confirmation.
+- **Knowledge states in delivery.** Knowledge delivered from a vault replica carries one of
+  five states, derived on every read from the folded replica, the same way Hive derives it:
+  `verified`, `provisional`, `outdated`, `conflicting` or `rejected`. Outdated items (anchor
+  changed or gone) are labelled `[outdated: re-verify]` and conflicting ones `[conflicting]`,
+  after the current ones; rejected and superseded items are not delivered.
+- **Citing delivered knowledge.** Each delivered vault item shows its `node:<id>`, and each
+  section says once how to cite it. A claim that names `node:<id>` in
+  `ctx_knowledge action=remember refs` gets a `derived_from` edge to that item, the evidence
+  Hive counts as verified reuse across engines.
+- **`lean-ctx hive maintain <workspace>/<vault> --stale`** re-checks every anchored claim
+  against the code in this checkout and marks changed ones *to verify* and missing ones
+  *gone* (no model, no cost; the same check runs after each capture during sync).
+  `--stale --confirm <node_id>` re-anchors a claim the person checked at the current code.
+  It prints counts, never claim texts.
+- **A task result can be a failure.** `lean-ctx hive tasks submit … --failed` and
+  `ctx_tasks action=submit outcome=failed` end the task as failed; the default stays
+  completed. Against Hive v5 a result ends the task at once, without a person's decision; an
+  Hive before v5 takes no `--failed` (release the task instead).
+- `lean-ctx hive status` names the filter packs the org policy requires and whether each
+  is installed exactly as signed (`policy.required_filter_packs` in `--json`, a
+  `Required:` line in the text output); the Cockpit's organization policy view lists them.
+- **Task claims made with `lean-ctx hive tasks claim` stay alive while their agent works.**
+  The CLI ends right after claiming, so nothing renewed the claim and an agent running a long
+  gate lost it before submitting. The daemon that runs the bus relay now takes over such a
+  claim while its agent is registered and active within 30 minutes, and renews it at
+  half-time; once the agent stops, the claim ends at its expiry.
+- **How Hive helped, in the Hive metrics.** For each vault and day, the metrics
+  upload now also carries counts and durations only: how many Hive facts agents asked for and
+  got, the tokens and list price the project's host sessions used while this machine held a
+  task's claim (per task), and the median time from a session's start to its first Hive
+  knowledge. They are recorded locally in a private file; sealed vaults report the same
+  counts, and no text, path or fact leaves with them.
+- **Hive tasks in the engine.** `ctx_tasks` (MCP) and `lean-ctx hive tasks` read a vault's
+  tasks, claim one, report one-line summaries, submit the result with evidence
+  (commit, receipt, CI run, URL, fact, or a code anchor on a file or symbol as it is now) and
+  give it back; `propose` queues an agent task that a person approves in Hive, sent with the
+  next sync and created once however often it is resent. A claim passes the engine's worker
+  gate (the person's opt-in for the vault, pause, today's budget) and goes out under that opt-in;
+  Hive checks it again, and the engine shows any refusal as it is. The claim's lease id and
+  fencing token stay in a private file on the machine, every write carries them, and the session
+  renews its claims while it runs and gives them back on stop. Summaries, proposals and release
+  reasons pass the outbox screening (a text holding a credential or personal data is not sent)
+  and go out sealed in sealed vaults. Task text from Hive reaches the agent fenced as foreign
+  data, never as an instruction. A session starts with the claims held in the project and its
+  open tasks. Every task call from a tool ends within five seconds; offline or without the
+  `tasks.*` rights the tools answer at once.
+- **Confirmations, auto-merge and rollback for Hive knowledge.** An agent confirms or objects
+  to a knowledge proposal through its own session (`ctx_tasks action=confirm|object`); this
+  counts toward the vault's auto-merge threshold; a session never confirms what it wrote, nor does
+  any session of the machine that wrote it or submitted the task result (in Pro the owner's other
+  machine confirms), and an objection leaves the proposal to a person (in a sealed vault its
+  reason stays on the machine). People confirm on the web. When an agent here judged a fact to contradict another one, the
+  engine objects to a proposal that adds it, once. A sealed proposal that reached its threshold
+  is merged by the next sync of an engine that may merge, since Hive cannot read it.
+  `lean-ctx hive review rollback <workspace>/<vault> <revision>` restores the document of an earlier
+  revision as a new one; in a sealed vault the engine opens it with that revision's key and seals
+  it again under the current key, and says so when this machine holds no key for it.
+- **Sealed vaults (end to end).** A vault marked sealed in Hive is encrypted on the machines
+  that hold its key; Hive stores and relays ciphertext only. A maintainer approves each
+  engine after comparing its fingerprint (`lean-ctx hive status`), and `lean-ctx hive
+  grant` passes the vault key to approved engines. Drafts from a sealed vault carry no readable
+  summary, title, reason or sources, and Hive refuses any that do. `lean-ctx hive review`
+  reads and merges sealed proposals on a machine that holds the key. Removing an engine, its
+  member or its access rotates the key.
+- **Hive metrics and receipts.** A connected engine uploads Cockpit metrics and Decision
+  Receipt summaries (which context went to which model, no content) to Hive for the team
+  statistics and proof views. Both are on by default and can be switched off per machine
+  (`[hive] metrics_upload`, `receipts_upload`) and per organization in Hive; Hive refuses
+  an upload kind that is switched off.
+- **Agents across machines.** `ctx_agent` leases on a file or symbol are coordinated through
+  Hive when the machine is connected and the repository is linked to a vault, and an agent can hand a task
+  to an agent on another machine of the organization. The answer always names the scope
+  (`scope=hive` with a fencing token, or `scope=local` with the reason); Hive sees only a
+  hash of project, kind and repo-relative path. Organization controls (hold, stop, veto,
+  resume) apply to that machine's agents while its lease is valid.
+- **LeanCTX Hive connector.** `lean-ctx hive connect [--url <origin>] [--label <name>]
+  [--no-browser]` enrolls this machine as an engine instance of your organization through a
+  device flow (approve the shown code in the browser). The instance key is generated
+  locally and never leaves the machine; access tokens are minted from signed assertions.
+  Community includes 1 connected engine, Pro 2, Team 2 per seat; Enterprise: contact us; a
+  further machine is refused with a message naming the limit, without retries. `lean-ctx hive status [--json]` shows
+  organization, plan, rights, lease, queued and refused drafts, the organization policy
+  and the filter packs from local state only (`--json` is the shape the Cockpit reads);
+  `lean-ctx hive link <workspace>/<vault>` links this git repository to a vault
+  (`.lean-ctx-hive.json`, plus `.lean-ctx-id` when the repository has no identity);
+  `lean-ctx hive sync` sends queued drafts and pulls reviewed knowledge now;
+  `lean-ctx hive disconnect` frees the seat and removes the credentials, the lease, the
+  keys and the local Hive data (queued drafts, pulled bases, activity), which
+  `--keep-local` keeps. Leases move Valid → Grace → Lapsed; offline or lapsed only pauses
+  Hive, local tools never depend on it. State lives in `<config_dir>/hive` (directories
+  0700, files 0600) and `<data_dir>/hive`. New `[hive]` config section (`enabled`, `url`,
+  `root_key`, `auto_draft`, `pull_interval_minutes`, `metrics_upload`, `receipts_upload`,
+  `bus`, `vault_labels`, `runtime_consent`, `sealed_grants`); a self-hosted Hive needs its
+  `[hive] root_key`.
+- **Vaults.** What you create in Hive is a vault, linked to exactly one git repository:
+  `lean-ctx hive link <workspace>/<vault>`. Commands, help, MCP descriptions and errors say
+  vault; "repository" stays where the git repository is meant. The engine calls
+  `/v1/vaults/…` and sends `Hive-Names: vault` on every request and on the bus upgrade, so
+  Hive answers in vault names. `[hive] vault_labels` replaces `project_labels`: the old key
+  is read as the new one (the new one wins when both are set), the config migration renames
+  it with its comment, and `lean-ctx config validate` and `lean-ctx doctor` name it as renamed
+  instead of unknown. Files on disk keep their earlier names (`.lean-ctx-hive.json` writes
+  `repo`, `<data_dir>/hive/projects.json` and every local Hive file write `project_id`,
+  pulled facts keep the `hive-repo:` tag) and read the new ones too, so a team with mixed
+  engine builds shares one link file and a machine that goes back keeps its Hive state,
+  sealed vault keys included.
+- **Worker mode and swarms.** With worker mode on for an engine in Hive, the engine's own
+  agents pull work: tasks of the vaults you chose and subtasks of swarms, within a daily
+  budget (`lean-ctx hive worker status|pause|resume|stop`; `[hive.worker]` can only lower
+  the budget). `lean-ctx hive swarm list|show|material|claim|renew|release|submit|propose|
+  verifications|commit|reveal|report` and `ctx_tasks scope=swarm` show swarm work the way an
+  agent sees it, everything others wrote fenced as data. Claims and verification commits
+  pass the worker gate (opt-in, budget, pause); a verdict is committed as a hash and revealed
+  later. A public swarm is open to everyone, a team swarm stays inside its organization.
+- **Knowledge channel: drafts out, reviewed revisions in.** At session end, on
+  `ctx_session save` (debounced to 10 minutes per project) and at server shutdown, what
+  the agent learned is screened and queued as one draft proposal; no network call runs
+  inside a tool call or hook. Queued items are durable (`<data_dir>/hive/outbox`, retries
+  with backoff from 30 s to 1 h, refused items stay visible in `hive status`). Reviewed
+  revisions are pulled every `pull_interval_minutes` (default 15) into project knowledge
+  under the category `hive/<ns>/<name>`; nothing is written into the project tree.
+- **Organization policy and filter packs from Hive.** `hive sync` and the daemon pull a
+  signed policy bundle. An organization policy is accepted only when signed by the key the
+  lease pins for the organization, inside its validity window and with a forward-only
+  version (a downgrade, the same version with other bytes, or a silently dropped policy is
+  refused). Filter packs (`leanctx.filter-pack/v1`, `redact` and `block` rules) must be
+  signed by a Hive key, digest-checked and stay within 128 rules in total; the policy
+  runtime applies them as redaction and blocked-content rules, also when no project or
+  organization policy exists. The signed organization policy names the filter packs it
+  requires (pack, version and digest; Hive protocol 1.8): a bundle that lacks one of them
+  or carries another version is refused, the engine keeps the last good bundle, and
+  `hive status` and `lean-ctx doctor` report the policy as not compliant while local work
+  continues. A refused bundle never replaces the last good one. On Team
+  and Enterprise the organization policy is enforced by the optional LeanCTX Intelligence
+  runtime, installed only with explicit consent (`lean-ctx hive runtime install [--yes]`,
+  `[hive] runtime_consent`) and licensed by the Hive lease; without it nothing is
+  written and local work is never gated.
+- **Agent bus across machines.** With `[hive] bus = "auto"` the daemon relays the local
+  agent bus (`ctx_agent post`/`read`) to the other machines of the organization
+  (`lean-ctx hive bus relay [--for <seconds>]` runs it in the foreground). Outgoing
+  messages are screened like every outbound text, replays are deduplicated, and incoming
+  messages pass the normal admission. `bus = "off"` keeps the bus local.
+- **Hive metrics upload again.** `lean-ctx hive sync` reported "metrics not sent: unknown
+  field `project`": a metrics day named its project where the 3.12 contract names its `vault`.
+- **`lean-ctx hive bus relay` no longer panics at start.** The build enables both rustls
+  crypto providers (aws-lc-rs and ring), so rustls could not pick a process default, and the
+  bus WebSocket's TLS client aborted with "Could not automatically determine the process-level
+  CryptoProvider" (without a relay no agent presence reaches Hive, so no task can be claimed).
+  Every lean-ctx process now installs aws-lc-rs first, the provider reqwest and the update
+  verifier already use; the bus connect installs it as well.
+- **An agent's registered role reaches Hive.** An MCP session announces its default role at
+  start; a later `ctx_agent register` with another role changed it only locally, because the
+  relay sent a new `hello` only for a new agent or vault, so Hive refused task claims that need
+  that role. The relay now announces a changed role at once, and announces its agents again
+  every 5 minutes, which also restores presence Hive closed meanwhile.
+- **Hive refuses older engines.** Hive answers requests without a compatible
+  `Hive-Protocol` header with `426 upgrade_required` and `Hive-Min-Engine`, and device
+  enrollment requires engine 3.12.0 or later; 3.12.0 sends protocol 1.8 on every request.
+- **Hive transport and screening.** HTTPS only (loopback HTTP for local testing), no
+  redirects, bounded response bodies, `Hive-Protocol` checked. The trust chain root key →
+  key set → lease is re-verified on every load and leases issued in the future are
+  refused. Screening is the single path into the outbox: credentials (including custom
+  patterns), redaction rules, personal data, card and account numbers, active egress
+  `forbidden_patterns` and home paths drop a fact instead of rewriting it, and drops are
+  counted. An end-to-end test asserts that no canary secret reaches any request body.
+
 ## [3.11.4] — 2026-10-11
 
 A bugfix release: tool calls that an agent gets almost right are now served instead of refused, edits survive indentation slips, and the Claude Code plugin wakes the agent only once per finished background job. Agent Tools protocol and data formats are unchanged.

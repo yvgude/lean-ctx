@@ -1,6 +1,5 @@
 //! `lean-ctx learning` — inspect, export and merge the adaptive learning
-//! state (#550, VIS-4): learned compression thresholds (#538) and LITM
-//! placement calibration (#539). Bundles are secret-free (extensions,
+//! state (#550, VIS-4): LITM placement calibration (#539). Bundles are secret-free (extensions,
 //! profiles and aggregate numbers only) and merge idempotently.
 
 use crate::core;
@@ -25,8 +24,7 @@ pub(in crate::cli::dispatch) fn cmd_learning(rest: &[String]) {
                         std::process::exit(1);
                     }
                     println!(
-                        "Learning bundle written to {path} ({} threshold ext(s), {} litm profile(s)).",
-                        bundle.thresholds.per_ext.len(),
+                        "Learning bundle written to {path} ({} litm profile(s)).",
                         bundle.litm.per_profile.len()
                     );
                 }
@@ -56,9 +54,9 @@ pub(in crate::cli::dispatch) fn cmd_learning(rest: &[String]) {
             };
             match core::learning_sync::import_bundle(&json) {
                 Ok(report) => println!(
-                    "Merged learning bundle: {} threshold ext(s), {} litm profile(s). \
-                     Weighted-average deltas, max-counters — re-importing is a no-op.",
-                    report.threshold_exts, report.litm_profiles
+                    "Merged learning bundle: {} litm profile(s). \
+                     Max-counters — re-importing is a no-op.",
+                    report.litm_profiles
                 ),
                 Err(e) => {
                     eprintln!("Import failed: {e}");
@@ -67,18 +65,9 @@ pub(in crate::cli::dispatch) fn cmd_learning(rest: &[String]) {
             }
         }
         "status" | "" => {
-            let thresholds = core::threshold_learning::report();
             let litm = core::litm_calibration::report();
             let efficacy = core::efficacy::report();
             println!("Adaptive learning state\n{}", "=".repeat(40));
-            println!("\nLearned compression thresholds:");
-            if thresholds.is_empty() {
-                println!("  (none yet — learned from bounces/edit-failures per file type)");
-            } else {
-                for l in thresholds {
-                    println!("  {l}");
-                }
-            }
             println!("\nLITM placement calibration:");
             if litm.is_empty() {
                 println!("  (calibrating — accumulates as wakeup facts get recalled)");

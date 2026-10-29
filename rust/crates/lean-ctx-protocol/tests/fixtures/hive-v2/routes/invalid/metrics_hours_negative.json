@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_negative",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets/0/slices/0/tokens/saved",
+      "value": -5
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "negative counter"
+}

@@ -1,0 +1,18 @@
+{
+  "changes": [
+    {
+      "bucket": "high",
+      "node_id": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+      "review_state": "confirmed",
+      "reviewed_by": "none"
+    },
+    {
+      "bucket": "normal",
+      "node_id": "n_aaaaaaaaaaaaaaaaaaaaaacaaq",
+      "review_state": "confirmed",
+      "reviewed_by": "maintainer"
+    }
+  ],
+  "next_rev": null,
+  "trust_rev": 4
+}

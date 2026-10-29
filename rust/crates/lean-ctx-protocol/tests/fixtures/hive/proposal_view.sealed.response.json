@@ -1,0 +1,28 @@
+{
+  "created_at": "2026-10-20T12:00:00Z",
+  "draft": {
+    "context_patch": {
+      "base_revision": 3,
+      "sealed": {
+        "alg": "xchacha20poly1305",
+        "ciphertext": "WNXEcHmfEUiFquQypb2jPaLO8Naq79ILespZnBktaF/5Ue4G61f9aRAdeWLKWjIssSemiY1vFjgqrhCSri86r28R0FBgUDOEiysN8tHoGHsB8K+wV6C+44MTFxQfqCd7laAeR4n+3aQWpZBaJoymWjZ5gZEoU/aO8r/7TtpTAG+smAF1RTgsgie/oEHAEA/Atl4tQOtUYqbtxnJviYH9oED6HMBSWMmk4NYvyxKPhjVSt+/dor34f8yaRPstoKS1CbwYRy4O9TWBg+WK2/Z86KmMJO3AEA/z2+meWuDDmbW+38m6PzuNlgvSBqo+HfzcMF74A92axxINW6rOfbgwPY8Y8zYPghnL8z6TWbftgdFRQ86py8g0JzCWvjsg9loBDjl65gPvzztkwhmytiEdts1FZ5qvp8E6zk5tYSXOZ+3O0OK5jbOmbn6ztOX5K+Voj4EfroJeAjPdU0b2O6nhJ2ma0paGZENSWzdPHkYjHSRaUqhcJzgPQJEF3JsYuYY5f79DZxWLLAbMMkFvDQwvFarTAFIKkJ2ElJHACzTrMqpdJZW+Axu7a5ATBGFkHuCsJBbxeBP9eXMuTeE+9UdF6XLqg4NH3oBkpczt5Go/3sQQfzOVna4vAKqo7eH2bD/khfWBmIgweTlDuFN4yxUIk6NKuXTuV2l0EzGrXIJflSVBxSjrItzBiJEV/w==",
+        "content_schema": "leanctx.hive.sealed-draft/v1",
+        "epoch": 1,
+        "nonce": "MjIyMjIyMjIyMjIyMjIyMjIyMjIyMjIy"
+      }
+    },
+    "engine_screening": {
+      "items_dropped": 0,
+      "pii_removed": 0,
+      "scanner_version": 1,
+      "secrets_removed": 0
+    },
+    "schema": "leanctx.hive.proposal/v1",
+    "session_ref": "ses_01jb8z7",
+    "state": "draft"
+  },
+  "mine": false,
+  "number": 12,
+  "schema": "leanctx.hive.proposal-view/v1",
+  "state": "draft"
+}

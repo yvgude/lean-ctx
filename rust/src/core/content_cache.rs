@@ -313,11 +313,27 @@ pub mod tests {
     /// env var). Serialize them so they cannot observe each other's state.
     static TEST_LOCK: Mutex<()> = Mutex::new(());
 
-    fn fresh_cache(budget_bytes: usize) {
+    /// Held for the whole test: configuration and policy are process-wide,
+    /// and a change of either clears this cache (see `get_or_read` and
+    /// `insert`). Without these guards a parallel test that switches its data
+    /// directory or policy empties the cache between two reads of this test —
+    /// seen in gate `h15-engine` as a re-read where a hit was asserted.
+    type Stable = (
+        crate::core::data_dir::IsolatedDataDir,
+        crate::core::policy::runtime::TestPolicyOverride,
+    );
+
+    #[must_use]
+    fn fresh_cache(budget_bytes: usize) -> Stable {
+        let stable = (
+            crate::core::data_dir::isolated_data_dir(),
+            crate::core::policy::runtime::TestPolicyOverride::set(None),
+        );
         crate::test_env::remove_var("LEAN_CTX_CONTENT_CACHE_MB");
         crate::test_env::remove_var("LEAN_CTX_DISABLE_CONTENT_CACHE");
         let mut c = lock();
         *c = Cache::new(budget_bytes);
+        stable
     }
 
     fn write(dir: &Path, name: &str, body: &str) -> PathBuf {
@@ -333,7 +349,7 @@ pub mod tests {
         let _g = TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        fresh_cache(1024 * 1024);
+        let _stable = fresh_cache(1024 * 1024);
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "a.rs", "fn main() {}\n");
         let state = FileState::from_path(&p).unwrap();
@@ -350,7 +366,7 @@ pub mod tests {
         let _g = TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        fresh_cache(1024 * 1024);
+        let _stable = fresh_cache(1024 * 1024);
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "cold.rs", "cold\n");
         let state = FileState::from_path(&p).unwrap();
@@ -385,7 +401,7 @@ pub mod tests {
         let _g = TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        fresh_cache(1024 * 1024);
+        let _stable = fresh_cache(1024 * 1024);
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "warm.rs", "warm\n");
         let state = FileState::from_path(&p).unwrap();
@@ -415,7 +431,7 @@ pub mod tests {
         let _g = TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        fresh_cache(1024 * 1024);
+        let _stable = fresh_cache(1024 * 1024);
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "a.rs", "v1\n");
         let s1 = FileState::from_path(&p).unwrap();
@@ -449,7 +465,7 @@ pub mod tests {
         let _g = TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        fresh_cache(1024 * 1024);
+        let _stable = fresh_cache(1024 * 1024);
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "a.rs", "hello world\n");
 
@@ -492,7 +508,7 @@ pub mod tests {
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         // Budget fits ~2 small files; a third insert must evict the LRU one.
-        fresh_cache(64);
+        let _stable = fresh_cache(64);
         let dir = tempfile::tempdir().unwrap();
         let pa = write(dir.path(), "a", "aaaaaaaaaaaaaaaaaaaaaaaaaaaa"); // 28 bytes
         let pb = write(dir.path(), "b", "bbbbbbbbbbbbbbbbbbbbbbbbbbbb");
@@ -536,7 +552,7 @@ pub mod tests {
         let _g = TEST_LOCK
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
-        fresh_cache(1024 * 1024);
+        let _stable = fresh_cache(1024 * 1024);
         crate::test_env::set_var("LEAN_CTX_CONTENT_CACHE_MB", "0");
         let dir = tempfile::tempdir().unwrap();
         let p = write(dir.path(), "a.rs", "x\n");

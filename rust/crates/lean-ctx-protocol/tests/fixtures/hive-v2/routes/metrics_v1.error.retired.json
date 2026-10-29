@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "gone",
+    "message": "POST /v1/metrics is retired; send hourly buckets to POST /v1/metrics/hours",
+    "reason": "use_metrics_hours"
+  }
+}

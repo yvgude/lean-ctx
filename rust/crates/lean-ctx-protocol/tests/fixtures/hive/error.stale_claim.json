@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "This claim is no longer current.",
+    "number": 7,
+    "reason": "stale_claim"
+  }
+}

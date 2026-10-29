@@ -5,12 +5,53 @@
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
-use std::path::PathBuf;
+use std::{
+    collections::HashMap,
+    path::{Path, PathBuf},
+    sync::{Arc, Mutex, OnceLock},
+};
 
 use super::episodic_memory::{Episode, Outcome};
 
+use crate::core::context_admission::stores::StoreAdmission;
 use crate::core::memory_policy::ProceduralPolicy;
+use crate::core::policy::runtime::PublicationAuthority;
+
+fn procedural_lock(project_hash: &str) -> Arc<Mutex<()>> {
+    static LOCKS: OnceLock<Mutex<HashMap<String, Arc<Mutex<()>>>>> = OnceLock::new();
+    let mut locks = LOCKS
+        .get_or_init(|| Mutex::new(HashMap::new()))
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    locks.entry(project_hash.to_string()).or_default().clone()
+}
+
+fn acquire_procedural_file_lock(path: &Path) -> Result<std::fs::File, String> {
+    use fs2::FileExt;
+
+    let parent = path
+        .parent()
+        .ok_or_else(|| "procedural store path has no parent".to_string())?;
+    let name = path
+        .file_name()
+        .ok_or_else(|| "procedural store path has no filename".to_string())?
+        .to_string_lossy();
+    let lock_path = parent.join(format!(".{name}.lock"));
+    let file = std::fs::OpenOptions::new()
+        .create(true)
+        .truncate(false)
+        .write(true)
+        .open(&lock_path)
+        .map_err(|error| format!("procedural store lock unavailable: {error}"))?;
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&lock_path, std::fs::Permissions::from_mode(0o600));
+    }
+    file.try_lock_exclusive()
+        .map_err(|error| format!("procedural store lock unavailable: {error}"))?;
+    Ok(file)
+}
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ProceduralStore {
@@ -144,6 +185,43 @@ impl ProceduralStore {
         }
     }
 
+    pub(crate) fn add_procedure_admitted(
+        &mut self,
+        mut procedure: Procedure,
+        policy: &ProceduralPolicy,
+        admission: &StoreAdmission,
+        authority: &PublicationAuthority,
+    ) -> Result<(), String> {
+        let mut admit =
+            |text: &str| crate::core::session::admission::admit_store_text(admission, text);
+        if !sanitize_procedure(&mut procedure, &mut admit) {
+            return Err("procedure content withheld by current policy".into());
+        }
+        if let Some(existing) = self
+            .procedures
+            .iter_mut()
+            .find(|existing| existing.name == procedure.name)
+        {
+            existing.confidence = existing.confidence.midpoint(procedure.confidence);
+            existing.steps = procedure.steps;
+            existing.activation_keywords = procedure.activation_keywords;
+        } else {
+            self.procedures.push(procedure);
+        }
+
+        crate::core::memory_capacity::reclaim_store_with_authority(
+            crate::core::memory_archive::MemoryStore::Procedures,
+            Some(&self.project_hash),
+            &mut self.procedures,
+            policy.max_procedures,
+            crate::core::memory_lifecycle::DEFAULT_RECLAIM_HEADROOM_PCT,
+            true,
+            (admission, authority),
+            retention_cmp,
+        )?;
+        Ok(())
+    }
+
     pub fn detect_patterns(&mut self, episodes: &[Episode], policy: &ProceduralPolicy) {
         let sequences = extract_tool_sequences(episodes);
         let patterns = find_repeated_sequences(&sequences, policy);
@@ -184,6 +262,65 @@ impl ProceduralStore {
         }
     }
 
+    /// Derive procedures from admitted episodes, sanitize each candidate, then
+    /// route capacity eviction through the authority-checked archive sink.
+    pub(crate) fn detect_patterns_admitted(
+        &mut self,
+        episodes: &[Episode],
+        policy: &ProceduralPolicy,
+        admission: &StoreAdmission,
+        authority: &PublicationAuthority,
+    ) -> Result<(), String> {
+        let sequences = extract_tool_sequences(episodes);
+        let patterns = find_repeated_sequences(&sequences, policy);
+        let success_count = episodes
+            .iter()
+            .filter(|ep| matches!(ep.outcome, Outcome::Success { .. }))
+            .count();
+        let confidence = success_count as f32 / episodes.len().max(1) as f32;
+        let mut candidate_names = std::collections::HashSet::new();
+        let mut candidates = Vec::new();
+
+        for (steps, count, keywords) in patterns {
+            if count < policy.min_repetitions || steps.len() < policy.min_sequence_len {
+                continue;
+            }
+
+            let name = generate_procedure_name(&steps);
+            if self
+                .procedures
+                .iter()
+                .any(|procedure| procedure.name == name)
+                || !candidate_names.insert(name.clone())
+            {
+                continue;
+            }
+            let mut procedure = Procedure {
+                id: format!("proc-{}", md5_short(&name)),
+                name,
+                description: format!("Detected workflow ({count} repetitions)"),
+                steps,
+                activation_keywords: keywords,
+                confidence,
+                times_used: count as u32,
+                times_succeeded: success_count as u32,
+                last_used: Utc::now(),
+                project_specific: true,
+                created_at: Utc::now(),
+            };
+            let mut admit =
+                |text: &str| crate::core::session::admission::admit_store_text(admission, text);
+            if sanitize_procedure(&mut procedure, &mut admit) {
+                candidates.push(procedure);
+            }
+        }
+
+        for procedure in candidates {
+            self.add_procedure_admitted(procedure, policy, admission, authority)?;
+        }
+        Ok(())
+    }
+
     fn store_path(project_hash: &str) -> Option<PathBuf> {
         let dir = crate::core::data_dir::lean_ctx_data_dir()
             .ok()?
@@ -198,8 +335,95 @@ impl ProceduralStore {
         serde_json::from_str(&data).ok()
     }
 
+    /// Load procedures only after every content-bearing field is admitted for
+    /// the trusted project's storage policy.
+    pub(crate) fn load_admitted(
+        project_hash: &str,
+        admission: &StoreAdmission,
+    ) -> Result<Self, String> {
+        let mut store = match Self::store_path(project_hash) {
+            Some(path) => match std::fs::read_to_string(path) {
+                Ok(data) => {
+                    serde_json::from_str::<Self>(&data).map_err(|error| error.to_string())?
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    Self::new(project_hash)
+                }
+                Err(error) => return Err(error.to_string()),
+            },
+            None => return Err("Cannot determine data directory".into()),
+        };
+        if store.project_hash != project_hash {
+            return Err("procedural store project scope mismatch".into());
+        }
+        let mut admit =
+            |text: &str| crate::core::session::admission::admit_store_text(admission, text);
+        store
+            .procedures
+            .retain_mut(|procedure| sanitize_procedure(procedure, &mut admit));
+        if !admission.is_current() {
+            return Err("session admission policy changed; retry".into());
+        }
+        Ok(store)
+    }
+
     pub fn load_or_create(project_hash: &str) -> Self {
         Self::load(project_hash).unwrap_or_else(|| Self::new(project_hash))
+    }
+
+    /// Reload, sanitize, derive and atomically persist under one per-project
+    /// lock so concurrent session completions cannot overwrite each other.
+    pub(crate) fn mutate_locked_admitted<T>(
+        project_hash: &str,
+        admission: &StoreAdmission,
+        mutate: impl FnOnce(&mut Self) -> Result<T, String>,
+    ) -> Result<(Self, T), String> {
+        Self::mutate_locked_admitted_with_authority(project_hash, admission, |store, _| {
+            mutate(store)
+        })
+    }
+
+    /// Admitted mutation variant for derived writes that may archive evictions.
+    /// The scoped authority is supplied to the closure so each archive sink can
+    /// revalidate immediately before publishing its recovery artifact.
+    pub(crate) fn mutate_locked_admitted_with_authority<T>(
+        project_hash: &str,
+        admission: &StoreAdmission,
+        mutate: impl FnOnce(&mut Self, &PublicationAuthority) -> Result<T, String>,
+    ) -> Result<(Self, T), String> {
+        let authority = PublicationAuthority::capture()
+            .map_err(|_| "source authority unavailable".to_string())?;
+        let lock = procedural_lock(project_hash);
+        let _guard = lock
+            .try_lock()
+            .map_err(|_| "procedural store is busy; retry".to_string())?;
+        let path = Self::store_path(project_hash)
+            .ok_or_else(|| "Cannot determine data directory".to_string())?;
+        if let Some(dir) = path.parent() {
+            std::fs::create_dir_all(dir).map_err(|error| error.to_string())?;
+        }
+        let _file_lock = acquire_procedural_file_lock(&path)?;
+        let mut store = match std::fs::read_to_string(&path) {
+            Ok(data) => serde_json::from_str::<Self>(&data).map_err(|error| error.to_string())?,
+            Err(error) if error.kind() == std::io::ErrorKind::NotFound => Self::new(project_hash),
+            Err(error) => return Err(error.to_string()),
+        };
+        if store.project_hash != project_hash {
+            return Err("procedural store project scope mismatch".into());
+        }
+        let mut admit =
+            |text: &str| crate::core::session::admission::admit_store_text(admission, text);
+        store
+            .procedures
+            .retain_mut(|procedure| sanitize_procedure(procedure, &mut admit));
+        let result = mutate(&mut store, &authority)?;
+        store
+            .procedures
+            .retain_mut(|procedure| sanitize_procedure(procedure, &mut admit));
+        let json = serde_json::to_string_pretty(&store).map_err(|error| error.to_string())?;
+        admission.authorize_publication(&authority)?;
+        crate::config_io::write_atomic(&path, &json)?;
+        Ok((store, result))
     }
 
     pub fn save(&self) -> Result<(), String> {
@@ -213,22 +437,80 @@ impl ProceduralStore {
     }
 }
 
-/// Auto-learning hook (GL #478): run pattern detection over the full episode
-/// log and persist the result. Called after every recorded episode, so
-/// recurring workflows surface on the dashboard without anyone ever invoking
-/// `ctx_session action=procedures value=detect` by hand. Best-effort: returns
-/// the number of stored procedures, or `None` when there is nothing to learn
-/// from yet. Detection is cheap (n-grams over <= `max_episodes` sequences),
-/// so no throttling is needed.
+/// Compatibility entry point for callers already running inside a trusted
+/// project source view. Calls without that authority fail closed. New callers
+/// should pass the project root explicitly to avoid relying on ambient state.
 pub fn auto_detect_from_episodes(project_hash: &str, policy: &ProceduralPolicy) -> Option<usize> {
-    let episodes = super::episodic_memory::EpisodicStore::load(project_hash)?;
-    if episodes.episodes.is_empty() {
+    let _authority = PublicationAuthority::capture().ok()?;
+    let project_root = crate::core::policy::runtime::detached_project_root(Path::new("")).ok()?;
+    auto_detect_from_episodes_for_project(&project_root, project_hash, policy)
+}
+
+/// Explicit-project variant for trusted callers outside the session tool.
+pub fn auto_detect_from_episodes_for_project(
+    project_root: &Path,
+    project_hash: &str,
+    policy: &ProceduralPolicy,
+) -> Option<usize> {
+    let project_root_text = project_root.to_str()?;
+    if crate::core::project_hash::hash_project_root(project_root_text) != project_hash {
         return None;
     }
-    let mut procs = ProceduralStore::load_or_create(project_hash);
-    procs.detect_patterns(&episodes.episodes, policy);
-    procs.save().ok()?;
-    Some(procs.procedures.len())
+
+    crate::core::policy::runtime::with_explicit_project_source_view(
+        project_root,
+        |authority| -> Result<Option<usize>, String> {
+            let admission = StoreAdmission::current();
+            let episodes =
+                super::episodic_memory::EpisodicStore::load_admitted(project_hash, &admission)?;
+            if episodes.episodes.is_empty() {
+                return Ok(None);
+            }
+            let (procedures, ()) = ProceduralStore::mutate_locked_admitted_with_authority(
+                project_hash,
+                &admission,
+                |store, store_authority| {
+                    store.detect_patterns_admitted(
+                        &episodes.episodes,
+                        policy,
+                        &admission,
+                        store_authority,
+                    )
+                },
+            )?;
+            admission.authorize_publication(authority)?;
+            Ok(Some(procedures.procedures.len()))
+        },
+    )
+    .ok()?
+    .ok()?
+}
+
+fn sanitize_procedure(
+    procedure: &mut Procedure,
+    admit: &mut impl FnMut(&str) -> Option<String>,
+) -> bool {
+    fn field(value: &mut String, admit: &mut impl FnMut(&str) -> Option<String>) -> bool {
+        if value.is_empty() {
+            return true;
+        }
+        let Some(projected) = admit(value) else {
+            return false;
+        };
+        *value = projected;
+        true
+    }
+
+    field(&mut procedure.name, admit)
+        && field(&mut procedure.description, admit)
+        && procedure
+            .activation_keywords
+            .iter_mut()
+            .all(|keyword| field(keyword, admit))
+        && procedure
+            .steps
+            .iter_mut()
+            .all(|step| field(&mut step.tool, admit) && field(&mut step.description, admit))
 }
 
 fn extract_tool_sequences(episodes: &[Episode]) -> Vec<Vec<String>> {
@@ -368,6 +650,84 @@ pub mod tests {
     }
 
     #[test]
+    fn admitted_procedure_rejects_restricted_candidate_before_archive() {
+        let _data_dir = crate::core::data_dir::isolated_data_dir();
+
+        let project = tempfile::tempdir().expect("project root");
+        let project_path = project.path().to_str().expect("UTF-8 project path");
+        crate::core::policy::runtime::with_project_source_view(project_path, || {
+            let authority = PublicationAuthority::capture().expect("project authority");
+            let admission = StoreAdmission::current();
+            let policy = ProceduralPolicy {
+                max_procedures: 1,
+                ..Default::default()
+            };
+            let mut store = ProceduralStore::new("procedure-admission-test");
+            let candidate = Procedure {
+                id: "restricted".into(),
+                name: "TOP SECRET\ncandidate".into(),
+                description: "safe description".into(),
+                steps: vec![],
+                activation_keywords: vec![],
+                confidence: 0.5,
+                times_used: 1,
+                times_succeeded: 1,
+                last_used: Utc::now(),
+                project_specific: true,
+                created_at: Utc::now(),
+            };
+
+            assert!(
+                store
+                    .add_procedure_admitted(candidate, &policy, &admission, &authority)
+                    .is_err()
+            );
+            assert!(store.procedures.is_empty());
+            assert!(
+                crate::core::memory_archive::list_archives(
+                    crate::core::memory_archive::MemoryStore::Procedures,
+                    Some("procedure-admission-test"),
+                )
+                .is_empty()
+            );
+        })
+        .expect("source view");
+    }
+
+    #[test]
+    fn admission_scrubs_every_procedure_field_or_drops_the_record() {
+        let mut procedure = Procedure {
+            id: "proc-test".into(),
+            name: "NAME PRIVATE".into(),
+            description: "DESCRIPTION PRIVATE".into(),
+            steps: vec![ProcedureStep {
+                tool: "TOOL PRIVATE".into(),
+                description: "STEP PRIVATE".into(),
+                optional: false,
+            }],
+            activation_keywords: vec!["KEYWORD PRIVATE".into()],
+            confidence: 0.8,
+            times_used: 2,
+            times_succeeded: 1,
+            last_used: Utc::now(),
+            project_specific: true,
+            created_at: Utc::now(),
+        };
+        assert!(sanitize_procedure(&mut procedure, &mut |text| {
+            Some(text.replace("PRIVATE", "redacted"))
+        }));
+        assert_eq!(procedure.name, "NAME redacted");
+        assert_eq!(procedure.description, "DESCRIPTION redacted");
+        assert_eq!(procedure.steps[0].tool, "TOOL redacted");
+        assert_eq!(procedure.steps[0].description, "STEP redacted");
+        assert_eq!(procedure.activation_keywords[0], "KEYWORD redacted");
+
+        assert!(!sanitize_procedure(&mut procedure, &mut |text| {
+            (text != "NAME redacted").then(|| text.to_string())
+        }));
+    }
+
+    #[test]
     fn detect_patterns_from_episodes() {
         let policy = ProceduralPolicy::default();
         let episodes: Vec<Episode> = (0..5)
@@ -493,17 +853,12 @@ pub mod tests {
 
     #[test]
     fn auto_detect_learns_from_recorded_episodes() {
-        // Env mutation requires the process-wide lock, or parallel tests that
-        // also touch LEAN_CTX_DATA_DIR race and the store lands elsewhere.
-        let _lock = crate::core::data_dir::test_env_lock();
-        // Isolated data dir so the test never touches the real memory stores.
-        let dir = std::env::temp_dir().join(format!("lctx-procauto-{}", std::process::id()));
-        let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
-
-        let hash = "auto-detect-test";
+        let _isolated = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().expect("project root");
+        let root = project.path().to_str().expect("UTF-8 project root");
+        let hash = crate::core::project_hash::hash_project_root(root);
         let policy = crate::core::memory_policy::MemoryPolicy::default();
-        let mut episodes = crate::core::episodic_memory::EpisodicStore::new(hash);
+        let mut episodes = crate::core::episodic_memory::EpisodicStore::new(&hash);
         for _ in 0..5 {
             episodes.record_episode(
                 make_episode_with_tools(&["ctx_read", "ctx_shell", "ctx_read"]),
@@ -512,17 +867,18 @@ pub mod tests {
         }
         episodes.save().expect("episodic save");
 
-        let learned = auto_detect_from_episodes(hash, &policy.procedural);
         assert!(
-            learned.is_some_and(|n| n > 0),
-            "auto-detect should learn at least one workflow, got {learned:?}"
+            auto_detect_from_episodes(&hash, &policy.procedural).is_none(),
+            "ambient compatibility entry point must fail closed"
         );
-        // The store must be persisted, not just held in memory.
-        let reloaded = ProceduralStore::load(hash).expect("procedural store persisted");
+        let learned =
+            auto_detect_from_episodes_for_project(project.path(), &hash, &policy.procedural);
+        assert!(
+            learned.is_some_and(|count| count > 0),
+            "admitted auto-detect should learn a workflow, got {learned:?}"
+        );
+        let reloaded = ProceduralStore::load(&hash).expect("procedural store persisted");
         assert!(!reloaded.procedures.is_empty());
-
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

@@ -11,7 +11,7 @@ use chrono::DateTime;
 use lean_ctx_protocol::{
     EngineContextSourceDescriptorV1, EngineContextSourceMaterializationRequestV1,
     EngineContextSourceMaterializationResponseV1, EngineContextSourcePlanResponseV1,
-    EngineContextSourceV1, MAX_ENGINE_SOURCE_MATERIALIZED_CONTEXT_BYTES, Sha256Digest,
+    MAX_ENGINE_SOURCE_MATERIALIZED_CONTEXT_BYTES, Sha256Digest,
 };
 
 use super::sources;
@@ -59,7 +59,9 @@ pub(super) fn materialize_source_plan_with_decision(
         return Err("source_plan_changed");
     }
 
-    let selected = selected_source_bodies(&plan, &source_plan.sources)?;
+    // The replay handoff carries bodies admitted against current Gateway and
+    // project policy; never rejoin the unadmitted wire payload here.
+    let selected = selected_source_bodies(&plan, &handoff.admitted_sources)?;
     let joined = render_selected_sources(&selected)?;
     let (content, policy_budget) = apply_delivery_policies(root, &joined)?;
     let effective_budget = policy_budget.map_or(plan.result.plan.budget_tokens, |limit| {
@@ -82,18 +84,53 @@ pub(super) fn materialize_source_plan_with_decision(
     response
         .validate()
         .map_err(|_| "source_materialization_invalid")?;
-    sources::ensure_current_admission(
+    sources::revalidate_admitted_sources(
         root,
         &source_plan.sources,
         &response.plan.source_bindings,
+        &handoff.admitted_sources,
         response.plan.result.plan.budget_tokens,
     )?;
+    // Release point of prepared context: register the exact delivered text
+    // with the caller-supplied sources it was joined from. Nothing is
+    // recorded unless every one of them is bound, presented and admitted now
+    // (a restricted source leaves the whole block without lineage).
+    record_delivery(root, &response.content, &handoff.admitted_sources);
     Ok((response, handoff.decision))
+}
+
+fn record_delivery(root: &Path, delivered: &str, admitted_sources: &[sources::AdmittedSourceBody]) {
+    use crate::core::archive::delivered;
+    let Some(bindings) = sources::presented_bindings(root, admitted_sources) else {
+        return;
+    };
+    let Some(project_root) = root.to_str() else {
+        return;
+    };
+    let lineage = delivered::Lineage::of_presented(bindings);
+    let _ = crate::core::policy::runtime::with_project_source_view(project_root, || {
+        delivered::record_lineage(&delivered::digest(delivered), &lineage)
+    });
+}
+
+/// Register a text the Engine DERIVED from a materialized context (the
+/// compressed view of source execution) with the lineage of that context:
+/// the derivation adds no source. Nothing is recorded when the materialized
+/// text has no lineage on record or a source of it no longer holds.
+pub(crate) fn record_derived_delivery(root: &Path, materialized: &str, derived: &str) {
+    use crate::core::archive::delivered;
+    let Some(project_root) = root.to_str() else {
+        return;
+    };
+    let _ = crate::core::policy::runtime::with_project_source_view(project_root, || {
+        delivered::lineage_of(&delivered::digest(materialized))
+            .is_some_and(|lineage| delivered::record_lineage(&delivered::digest(derived), &lineage))
+    });
 }
 
 fn selected_source_bodies<'a>(
     plan: &EngineContextSourcePlanResponseV1,
-    sources: &'a [EngineContextSourceV1],
+    sources: &'a [sources::AdmittedSourceBody],
 ) -> Result<Vec<(&'a EngineContextSourceDescriptorV1, &'a str)>, &'static str> {
     plan.source_bindings
         .iter()
@@ -102,7 +139,14 @@ fn selected_source_bodies<'a>(
                 .iter()
                 .find(|source| source.descriptor == *binding)
                 .ok_or("source_plan_body_missing")?;
-            Ok((&source.descriptor, source.content.as_str()))
+            Ok((
+                &source.descriptor,
+                source
+                    .candidate
+                    .content
+                    .as_deref()
+                    .ok_or("source_plan_body_missing")?,
+            ))
         })
         .collect()
 }
@@ -188,10 +232,14 @@ fn apply_delivery_policies(
             &config.sensitivity_effective(),
         )
         .into_text();
-        return Ok((
-            crate::core::redaction::redact_text_if_enabled(&text),
-            policy_budget,
-        ));
+        let delivered = crate::core::redaction::redact_text_if_enabled(&text);
+        // The last step before the result exists: the budget above was read
+        // from the policy and the text passed it, but neither is delivered
+        // under a policy whose signed horizon has passed since.
+        if !active.within_horizon() {
+            return Err("source_materialization_policy_rejected");
+        }
+        return Ok((delivered, policy_budget));
     }
     text = crate::core::sensitivity::enforce_text(text, None, &config.sensitivity_effective())
         .into_text();
@@ -230,6 +278,40 @@ mod tests {
         }
     }
 
+    fn admitted_source(
+        descriptor: EngineContextSourceDescriptorV1,
+        content: &str,
+    ) -> sources::AdmittedSourceBody {
+        let tokens = crate::core::tokens::count_tokens(content).max(1);
+        let mut view_costs = crate::core::context_field::ViewCosts::new();
+        view_costs.set(crate::core::context_field::ViewKind::Full, tokens);
+        sources::AdmittedSourceBody {
+            candidate: crate::core::context_kernel::types::ContextObjectV1 {
+                id: crate::core::context_field::ContextItemId(
+                    descriptor.object_ref.as_str().to_owned(),
+                ),
+                kind: crate::core::context_kernel::types::ContextObjectKind::SearchChunk,
+                source: descriptor.source_id.as_str().to_owned(),
+                content_ref: descriptor.content_digest.as_str().to_owned(),
+                title: descriptor.object_ref.as_str().to_owned(),
+                content: Some(content.to_owned()),
+                freshness: crate::core::context_kernel::types::Freshness {
+                    created_at: String::new(),
+                    ttl_secs: None,
+                    stale: true,
+                },
+                confidence: 0.0,
+                sensitivity: crate::core::context_kernel::types::SensitivityLevel::Public,
+                token_estimate: tokens,
+                view_costs,
+                provenance: crate::core::context_field::Provenance::default(),
+                semantic_fingerprint: None,
+                metadata: std::collections::HashMap::new(),
+            },
+            descriptor,
+        }
+    }
+
     #[test]
     fn selected_sources_render_in_canonical_binding_order_without_body_loss() {
         let z_content = "z body\nwith two lines";
@@ -237,14 +319,8 @@ mod tests {
         let z = descriptor("z-ref", "z-source", z_content);
         let a = descriptor("a-ref", "a-source", a_content);
         let sources = [
-            EngineContextSourceV1 {
-                descriptor: z.clone(),
-                content: z_content.into(),
-            },
-            EngineContextSourceV1 {
-                descriptor: a.clone(),
-                content: a_content.into(),
-            },
+            admitted_source(z.clone(), z_content),
+            admitted_source(a.clone(), a_content),
         ];
         let selected = selected_source_bodies(
             &EngineContextSourcePlanResponseV1 {

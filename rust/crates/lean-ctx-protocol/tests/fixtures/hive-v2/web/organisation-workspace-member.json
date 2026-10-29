@@ -1,0 +1,53 @@
+{
+  "route": "W72",
+  "method": "PUT",
+  "path": "/api/v1/companies/acme-group/workspaces/acme-labs/members/1c5a9b63-4d2f-4e8b-8a71-3b9f6c8dae12",
+  "request": {
+    "role": "maintainer"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "user": {
+        "id": "1c5a9b63-4d2f-4e8b-8a71-3b9f6c8dae12",
+        "name": "Bob",
+        "email": "bob@acme.example"
+      },
+      "role": "member",
+      "via": "workspace",
+      "joined_at": "2026-10-21T10:00:00Z",
+      "workspaces": [
+        {
+          "slug": "acme",
+          "role": "contributor"
+        },
+        {
+          "slug": "acme-labs",
+          "role": "maintainer"
+        }
+      ]
+    }
+  },
+  "errors": [
+    {
+      "status": 402,
+      "body": {
+        "error": {
+          "code": "plan_required",
+          "message": "all seats of this workspace are taken — add seats under billing",
+          "plan_needed": "seats"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "this needs the company owner role",
+          "required_role": "owner"
+        }
+      }
+    }
+  ]
+}

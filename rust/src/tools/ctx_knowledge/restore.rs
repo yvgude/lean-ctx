@@ -10,6 +10,7 @@
 //! duplicated, and a live fact never has its key clobbered by an older archived
 //! value.
 
+use crate::core::context_admission::stores::StoreAdmission;
 use crate::core::knowledge::ProjectKnowledge;
 use crate::core::memory_archive::{ArchiveConfig, MemoryStore, reachable_archives, restore_items};
 use crate::core::procedural_memory::ProceduralStore;
@@ -68,6 +69,7 @@ fn collect<T, S>(
     scope: Option<&str>,
     cfg: &ArchiveConfig,
     query: Option<&str>,
+    admission: &crate::core::knowledge::protection::KnowledgeAdmission,
     searchable: S,
 ) -> Vec<T>
 where
@@ -78,7 +80,8 @@ where
     let mut out = Vec::new();
     // Newest archives first: the most recent eviction is the likeliest undo target.
     for path in reachable_archives(store, scope, cfg).into_iter().rev() {
-        let Ok(items) = restore_items::<T>(&path) else {
+        let Ok(items) = crate::core::memory_archive::restore_knowledge_items::<T>(&path, admission)
+        else {
             continue;
         };
         for it in items {
@@ -100,12 +103,14 @@ fn restore_facts(
     cfg: &ArchiveConfig,
     query: Option<&str>,
     remaining: &mut usize,
+    admission: &crate::core::knowledge::protection::KnowledgeAdmission,
 ) -> StoreRestore {
     let archived = collect::<crate::core::knowledge::KnowledgeFact, _>(
         MemoryStore::Facts,
         None,
         cfg,
         None,
+        admission,
         |f| format!("{} {} {}", f.category, f.key, f.value),
     );
     // Authorization precedes query matching and even the reported match count.
@@ -134,7 +139,10 @@ fn restore_facts(
         let already = knowledge
             .facts
             .iter()
-            .chain(&knowledge.withheld)
+            .chain(knowledge.withheld.iter().filter_map(|item| match item {
+                crate::core::knowledge::WithheldKnowledge::Fact(fact) => Some(fact),
+                _ => None,
+            }))
             .any(|e| crate::core::knowledge::source_view::same_record(e, &f));
         if already {
             continue;
@@ -142,7 +150,10 @@ fn restore_facts(
         let key_owned = knowledge
             .facts
             .iter()
-            .chain(&knowledge.withheld)
+            .chain(knowledge.withheld.iter().filter_map(|item| match item {
+                crate::core::knowledge::WithheldKnowledge::Fact(fact) => Some(fact),
+                _ => None,
+            }))
             .any(|e| e.category == f.category && e.key == f.key && e.is_current());
         if key_owned {
             continue;
@@ -165,12 +176,14 @@ fn restore_history(
     cfg: &ArchiveConfig,
     query: Option<&str>,
     remaining: &mut usize,
+    admission: &crate::core::knowledge::protection::KnowledgeAdmission,
 ) -> StoreRestore {
     let cands = collect::<crate::core::knowledge::ConsolidatedInsight, _>(
         MemoryStore::History,
         Some(hash),
         cfg,
         query,
+        admission,
         |h| h.summary.clone(),
     );
     let matched = cands.len();
@@ -205,12 +218,14 @@ fn restore_patterns(
     cfg: &ArchiveConfig,
     query: Option<&str>,
     remaining: &mut usize,
+    admission: &crate::core::knowledge::protection::KnowledgeAdmission,
 ) -> StoreRestore {
     let cands = collect::<crate::core::knowledge::ProjectPattern, _>(
         MemoryStore::Patterns,
         Some(hash),
         cfg,
         query,
+        admission,
         |p| format!("{} {}", p.pattern_type, p.description),
     );
     let matched = cands.len();
@@ -245,38 +260,84 @@ fn restore_procedures(
     cfg: &ArchiveConfig,
     query: Option<&str>,
     remaining: &mut usize,
+    admission: &StoreAdmission,
 ) -> Result<StoreRestore, String> {
-    let cands = collect::<crate::core::procedural_memory::Procedure, _>(
-        MemoryStore::Procedures,
-        Some(hash),
-        cfg,
-        query,
-        |p| format!("{} {}", p.name, p.description),
-    );
+    let cands = collect_admitted_procedures(hash, cfg, query, admission);
     let matched = cands.len();
-    let mut store = ProceduralStore::load(hash).unwrap_or_else(|| ProceduralStore::new(hash));
-    let mut restored = 0;
-    for p in cands {
-        if *remaining == 0 {
-            break;
+    let (_, restored) = ProceduralStore::mutate_locked_admitted(hash, admission, |store| {
+        let mut restored = 0;
+        for procedure in cands {
+            if *remaining == 0 {
+                break;
+            }
+            if store.procedures.iter().any(|live| live.id == procedure.id) {
+                continue;
+            }
+            store.procedures.push(procedure);
+            restored += 1;
+            *remaining -= 1;
         }
-        if store.procedures.iter().any(|e| e.id == p.id) {
-            continue;
-        }
-        store.procedures.push(p);
-        restored += 1;
-        *remaining -= 1;
-    }
-    if restored > 0 {
-        store
-            .save()
-            .map_err(|e| format!("Procedure restore failed: {e}"))?;
-    }
+        Ok(restored)
+    })?;
     Ok(StoreRestore {
         store: MemoryStore::Procedures,
         matched,
         restored,
     })
+}
+
+/// Load archived procedures only after each field is admitted. Query matching
+/// and the reported match count operate on the same safe representation that
+/// may be restored, so a blocked archive item cannot influence the response.
+fn collect_admitted_procedures(
+    hash: &str,
+    cfg: &ArchiveConfig,
+    query: Option<&str>,
+    admission: &StoreAdmission,
+) -> Vec<crate::core::procedural_memory::Procedure> {
+    fn admit_procedure(
+        mut procedure: crate::core::procedural_memory::Procedure,
+        admission: &StoreAdmission,
+    ) -> Option<crate::core::procedural_memory::Procedure> {
+        fn field(value: &mut String, admission: &StoreAdmission) -> Option<()> {
+            *value = crate::core::session::admission::admit_store_text(admission, value)?;
+            Some(())
+        }
+        field(&mut procedure.name, admission)?;
+        field(&mut procedure.description, admission)?;
+        for keyword in &mut procedure.activation_keywords {
+            field(keyword, admission)?;
+        }
+        for step in &mut procedure.steps {
+            field(&mut step.tool, admission)?;
+            field(&mut step.description, admission)?;
+        }
+        Some(procedure)
+    }
+
+    let needle = query.map(str::to_lowercase);
+    let mut out = Vec::new();
+    for path in reachable_archives(MemoryStore::Procedures, Some(hash), cfg)
+        .into_iter()
+        .rev()
+    {
+        let Ok(items) = restore_items::<crate::core::procedural_memory::Procedure>(&path) else {
+            continue;
+        };
+        for item in items {
+            let Some(procedure) = admit_procedure(item, admission) else {
+                continue;
+            };
+            if needle.as_deref().is_none_or(|query| {
+                format!("{} {}", procedure.name, procedure.description)
+                    .to_lowercase()
+                    .contains(query)
+            }) {
+                out.push(procedure);
+            }
+        }
+    }
+    out
 }
 
 /// Restore archived items into the live stores. Facts/history/patterns share one
@@ -285,6 +346,16 @@ pub(crate) fn run_restore(
     project_root: &str,
     opts: &RestoreOptions,
 ) -> Result<RestoreReport, String> {
+    crate::core::policy::runtime::with_explicit_project_source_view(
+        std::path::Path::new(project_root),
+        |_| run_restore_in_view(project_root, opts),
+    )?
+}
+
+fn run_restore_in_view(project_root: &str, opts: &RestoreOptions) -> Result<RestoreReport, String> {
+    let admission = StoreAdmission::current();
+    let knowledge_admission =
+        crate::core::knowledge::protection::KnowledgeAdmission::capture(project_root)?;
     let cfg = ArchiveConfig::from_env();
     let query = opts.query.clone();
     let want = |s: MemoryStore| opts.stores.contains(&s);
@@ -295,34 +366,50 @@ pub(crate) fn run_restore(
     let knowledge_wanted =
         want(MemoryStore::Facts) || want(MemoryStore::History) || want(MemoryStore::Patterns);
 
+    if want(MemoryStore::Facts) {
+        // Legacy facts whose session proves this project join its partition.
+        crate::core::legacy_adoption::auto_adopt_facts(project_root);
+    }
     if knowledge_wanted {
-        let (_k, (results, rem)) = ProjectKnowledge::mutate_locked(project_root, |knowledge| {
-            let hash = knowledge.project_hash.clone();
-            let mut local = Vec::new();
-            let mut rem = remaining;
-            if want(MemoryStore::Facts) {
-                local.push(restore_facts(knowledge, &cfg, query.as_deref(), &mut rem));
-            }
-            if want(MemoryStore::History) {
-                local.push(restore_history(
-                    knowledge,
-                    &hash,
-                    &cfg,
-                    query.as_deref(),
-                    &mut rem,
-                ));
-            }
-            if want(MemoryStore::Patterns) {
-                local.push(restore_patterns(
-                    knowledge,
-                    &hash,
-                    &cfg,
-                    query.as_deref(),
-                    &mut rem,
-                ));
-            }
-            (local, rem)
-        })?;
+        let (_k, (results, rem)) = ProjectKnowledge::mutate_locked_with_admission(
+            project_root,
+            &knowledge_admission,
+            |knowledge| {
+                let hash = knowledge.project_hash.clone();
+                let mut local = Vec::new();
+                let mut rem = remaining;
+                if want(MemoryStore::Facts) {
+                    local.push(restore_facts(
+                        knowledge,
+                        &cfg,
+                        query.as_deref(),
+                        &mut rem,
+                        &knowledge_admission,
+                    ));
+                }
+                if want(MemoryStore::History) {
+                    local.push(restore_history(
+                        knowledge,
+                        &hash,
+                        &cfg,
+                        query.as_deref(),
+                        &mut rem,
+                        &knowledge_admission,
+                    ));
+                }
+                if want(MemoryStore::Patterns) {
+                    local.push(restore_patterns(
+                        knowledge,
+                        &hash,
+                        &cfg,
+                        query.as_deref(),
+                        &mut rem,
+                        &knowledge_admission,
+                    ));
+                }
+                (local, rem)
+            },
+        )?;
         per_store.extend(results);
         remaining = rem;
     }
@@ -334,9 +421,14 @@ pub(crate) fn run_restore(
             &cfg,
             query.as_deref(),
             &mut remaining,
+            &admission,
         )?);
     }
 
+    if !admission.is_current() {
+        return Err("session admission policy changed; retry".into());
+    }
+    knowledge_admission.authorize_gateway()?;
     Ok(RestoreReport {
         per_store,
         query: opts.query.clone(),
@@ -386,33 +478,31 @@ mod tests {
 
     /// Sandbox the data dir and hand the closure a fresh project root inside it.
     fn with_sandbox<T>(f: impl FnOnce(String) -> T) -> T {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let dir = std::env::temp_dir().join(format!(
-            "lctx-restore-{}-{}",
-            std::process::id(),
-            Utc::now().timestamp_nanos_opt().unwrap_or(0)
-        ));
-        let _ = std::fs::create_dir_all(&dir);
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap());
-        let root = dir.join("proj").to_string_lossy().to_string();
-        let _ = std::fs::create_dir_all(&root);
-        let out = f(root);
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-        let _ = std::fs::remove_dir_all(&dir);
-        out
+        let isolated = crate::core::data_dir::isolated_data_dir();
+        // A raw nanosecond timestamp can accidentally pass a payment-card
+        // checksum. Keep this fixture's project identity free of such content
+        // while exercising the normal Gateway PII policy without exemptions.
+        let root = isolated.path().join("proj").to_string_lossy().to_string();
+        std::fs::create_dir_all(&root).unwrap();
+        f(root)
+    }
+
+    /// Archive `facts` into `root`'s partition, as the request that restores
+    /// them resolves it.
+    fn archive_facts_of(root: &str, facts: &[crate::core::knowledge::KnowledgeFact]) {
+        let project = std::path::Path::new(root).canonicalize().unwrap();
+        crate::core::policy::runtime::REQUEST_PROJECT
+            .sync_scope(std::cell::RefCell::new(Some(project)), || {
+                archive_items(MemoryStore::Facts, None, facts, &ArchiveConfig::default())
+            })
+            .unwrap();
     }
 
     /// Archive every current fact, then drop them from the live store — the exact
     /// state a capacity reclaim leaves behind.
     fn archive_then_drop_facts(root: &str) {
         let mut k = ProjectKnowledge::load(root).expect("knowledge");
-        archive_items(
-            MemoryStore::Facts,
-            None,
-            &k.facts,
-            &ArchiveConfig::default(),
-        )
-        .unwrap();
+        archive_facts_of(root, &k.facts);
         k.facts.clear();
         k.save().unwrap();
     }
@@ -493,13 +583,7 @@ mod tests {
             // An older value for auth/token sits in the archive…
             let mut k = ProjectKnowledge::new(&root);
             k.remember("auth", "token", "opaque session token", "s0", 0.7, &policy);
-            archive_items(
-                MemoryStore::Facts,
-                None,
-                &k.facts,
-                &ArchiveConfig::default(),
-            )
-            .unwrap();
+            archive_facts_of(&root, &k.facts);
             // …while a different value currently owns that key.
             k.facts.clear();
             k.remember("auth", "token", "JWT RS256", "s1", 0.9, &policy);
@@ -588,6 +672,55 @@ mod tests {
 
             let again = run_restore(&root, &opts).unwrap();
             assert_eq!(again.total_restored(), 0);
+        });
+    }
+
+    #[test]
+    fn restored_procedure_archive_content_is_admitted_before_matching_and_save() {
+        with_sandbox(|root| {
+            let policy_dir = std::path::Path::new(&root).join(".lean-ctx");
+            std::fs::create_dir_all(&policy_dir).expect("policy directory");
+            std::fs::write(
+                policy_dir.join("policy.toml"),
+                "name = \"memory-admission-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n[redaction]\ncustomer = 'SECRET-[0-9]+'\n",
+            )
+            .expect("redaction policy");
+            let hash = ProjectKnowledge::new(&root).project_hash;
+            let mut archived = make_proc("p1");
+            archived.description = "uses SECRET-123".into();
+            archived
+                .steps
+                .push(crate::core::procedural_memory::ProcedureStep {
+                    tool: "ctx_read".into(),
+                    description: "inspect SECRET-123".into(),
+                    optional: false,
+                });
+            archive_items(
+                MemoryStore::Procedures,
+                Some(&hash),
+                &[archived],
+                &ArchiveConfig::default(),
+            )
+            .unwrap();
+
+            let secret_query =
+                RestoreOptions::new(Some(MemoryStore::Procedures), Some("SECRET-123".into()), 10);
+            let secret_report = run_restore(&root, &secret_query).expect("admit before matching");
+            assert_eq!(secret_report.per_store[0].matched, 0);
+            assert_eq!(secret_report.per_store[0].restored, 0);
+
+            let opts = RestoreOptions::new(Some(MemoryStore::Procedures), None, 10);
+            let report = run_restore(&root, &opts).expect("restore admitted procedure");
+            assert_eq!(report.total_restored(), 1);
+            assert_eq!(report.per_store[0].matched, 1);
+
+            let store = ProceduralStore::load(&hash).expect("procedural store");
+            assert_eq!(store.procedures.len(), 1);
+            assert_eq!(store.procedures[0].description, "uses [REDACTED:customer]");
+            assert_eq!(
+                store.procedures[0].steps[0].description,
+                "inspect [REDACTED:customer]"
+            );
         });
     }
 

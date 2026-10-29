@@ -1,0 +1,45 @@
+{
+  "actor": {
+    "kind": "server"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqbu",
+  "body": {
+    "bus_cascade": [
+      {
+        "bus": {
+          "id": "payments",
+          "kind": "v",
+          "ws": "acme"
+        },
+        "seq": 41
+      }
+    ],
+    "cascade": [],
+    "purge_id": "prg_aaaaaaaaaaaaaaaaaaaaaaezcm",
+    "reason": "leaked_secret",
+    "targets": [
+      "01M5NKA6W8005000000000W005"
+    ]
+  },
+  "body_commit": "b2b9624c0d54b10baafa4347c56c8bfd86b269542311fd9a2311424f5a9874a8",
+  "causal_base": 12,
+  "event_id": "01M5NKAEP8005000000000W00D",
+  "hlc": {
+    "counter": 0,
+    "node": "4fc7bebc302357bd",
+    "wall_ms": 1792800013000
+  },
+  "key_id": "4fc7bebc302357bd",
+  "op": "purge",
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "workspace",
+  "received_at": 1792800013350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "seq": 13,
+  "signature": "4266d51313355f58ca97527c8809451609eaf7e193cc89659599f0116eafb1292feb0189284c367fe331279d1eeb41f6fe0f0044abef9f752c478d59eecac302"
+}

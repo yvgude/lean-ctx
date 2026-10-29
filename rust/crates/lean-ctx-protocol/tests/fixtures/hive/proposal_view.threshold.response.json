@@ -1,0 +1,32 @@
+{
+  "created_at": "2026-10-20T12:00:00Z",
+  "decided_by": {
+    "kind": "threshold"
+  },
+  "draft": {
+    "context_patch": {
+      "base_revision": 4,
+      "ops": [
+        {
+          "id": "hive.drafts-rebase",
+          "op": "retract_fact"
+        }
+      ]
+    },
+    "engine_screening": {
+      "items_dropped": 0,
+      "pii_removed": 0,
+      "scanner_version": 1,
+      "secrets_removed": 0
+    },
+    "schema": "leanctx.hive.proposal/v1",
+    "session_ref": "ses_01jbq9a",
+    "state": "draft",
+    "summary": "Outbox ordering is per project"
+  },
+  "merged_revision": 5,
+  "mine": true,
+  "number": 13,
+  "schema": "leanctx.hive.proposal-view/v1",
+  "state": "merged"
+}

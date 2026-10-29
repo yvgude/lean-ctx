@@ -1,0 +1,31 @@
+{
+  "route": "W71",
+  "method": "GET",
+  "path": "/api/v1/companies/acme-group/workspaces",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "slug": "acme",
+          "name": "Acme AG",
+          "plan": "team",
+          "seats": 10,
+          "members": 6,
+          "engines_connected": 4
+        },
+        {
+          "slug": "acme-labs",
+          "name": "Acme Labs",
+          "plan": "team",
+          "seats": 5,
+          "members": 3,
+          "engines_connected": 1
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "errors": []
+}

@@ -1,0 +1,15 @@
+{
+  "route": "W76",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/activity/handoffs",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "view": "handoffs",
+      "items": [],
+      "next_cursor": null
+    }
+  },
+  "errors": []
+}

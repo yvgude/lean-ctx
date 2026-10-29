@@ -83,7 +83,7 @@ with fresh anchors (retry once). Native Edit/StrReplace stay fine; `ctx_edit` is
 power-profile fallback. Write, Delete, Glob → use normally.
 
 ## Proactive (use without being asked)
-- `ctx_overview(task)` at session start
+- `ctx_compose(task)` at session start
 - `ctx_compress` when context grows large
 
 ## Session Documentation
@@ -129,12 +129,12 @@ ctx_read("src/database/connection.rs", "signatures")
 ### Step 1: Understand the Codebase
 
 ```
-# Start with lean-ctx overview
-ctx_overview("refactor database layer to use connection pooling")
+# Start with task-ranked context
+ctx_compose("refactor database layer to use connection pooling")
 
 # Search for relevant code
 ctx_search("connection", "src/database/")
-ctx_semantic_search("where are database connections created?")
+ctx_search(action="semantic", query="where are database connections created?")
 
 # Map out the files you'll touch
 ctx_read("src/database/mod.rs", "map")
@@ -149,7 +149,7 @@ ctx_read("src/database/query.rs", "map")
 ctx_graph("impact", "src/database/connection.rs")
 
 # Find all references
-ctx_refactor("references", "src/database/connection.rs", "ConnectionPool")
+ctx_search("ConnectionPool", "src/")
 ```
 
 ### Step 3: Add Files to Aider

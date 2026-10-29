@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "swarm_budget",
+    "message": "Today's pledge budget is used up.",
+    "reason": "usd"
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "events_written": 299,
+  "key_id": "47983724220c8521",
+  "last_seq": 300,
+  "part": 1,
+  "parts": 1,
+  "seq_digests": [
+    {
+      "envelope_digest": "1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f1f",
+      "seq": 1
+    },
+    {
+      "envelope_digest": "2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e2e",
+      "seq": 2
+    }
+  ],
+  "signature": "a9af588e384972a14e0b997e6ed356d36ef9be10c62ef38a41f148afda79590ed7361f6ea4ccb34dd0273b924a34599e581890be9099330ced54375cfe7b9d0f",
+  "source": "v2_plain"
+}

@@ -1,0 +1,26 @@
+{
+  "cases": [
+    {
+      "aad": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03|01M5NKA2Z8B000000000000010|leanctx.hive.bus/v2",
+      "ck_hex": "d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1d1",
+      "ck_wrapped": "Dg4ODg4ODg4ODg4ODg4ODg4ODg4ODg4OMhtTaBDCaJqspG8WlB8QuSzdsvTr-Fed4BTR-SZGbvp7cAX1orrgQoHrQo1fDoQd",
+      "client_msg_id": "01M5NKA2Z8B000000000000010",
+      "epoch": 1,
+      "fixture": "bus/message.sealed.json",
+      "nonce_hex": "0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d",
+      "place": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03",
+      "plaintext_body": {
+        "text": "The HSM partition password rotates on the 1st; see the sealed procedure."
+      },
+      "plaintext_canonical": "{\"text\":\"The HSM partition password rotates on the 1st; see the sealed procedure.\"}",
+      "sealed": "DQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NDQ0NbXYTU1Wbud8hSiOtZfJOP6BjU4NJA0EEPGlCqy4RBYakTZ3-lSyYrHNwVeD_7bIXZnvuS7v0OBHEUedV_L2l5mqSEVeBxAI6HhFXjNLOZ0dVFgN03YytqO7urFsUFH2CrTwV",
+      "wrap_aad": "vault:c5e8a1f3-2d7b-4e96-a4c0-7b1d9e3f6a03|01M5NKA2Z8B000000000000010|1|ck",
+      "wrap_nonce_hex": "0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e0e"
+    }
+  ],
+  "rules": {
+    "ck_wrapped": "base64url(wrap_nonce ‖ XChaCha20-Poly1305(epoch key, wrap_nonce, ck, AAD place_ref|client_msg_id|epoch|ck))",
+    "sealed": "base64url(nonce ‖ XChaCha20-Poly1305(ck, nonce, canonical_json(body), AAD place_ref|client_msg_id|leanctx.hive.bus/v2))",
+    "source": "SPEC-ENGINE §3.7.5, RESOLUTIONS R52; epoch keys in vectors/signing.vectors.json places"
+  }
+}

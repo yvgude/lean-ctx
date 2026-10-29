@@ -1,0 +1,44 @@
+{
+  "actor": {
+    "kind": "server"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqae",
+  "body": {
+    "acceptance": [
+      "p95 below 300 ms over 24 h in staging"
+    ],
+    "body_nonce": "1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a1a",
+    "criterion_id": "sc_1",
+    "kind": "subgoal",
+    "order": 1,
+    "parent": "n_aaaaaaaaaaaaaaaaaaaaaadaae",
+    "text": "Success criterion sc_1 of the swarm.",
+    "title": "p95 below 300 ms over 24 h in staging"
+  },
+  "body_commit": "175280439870d2494f3eb9799d3ddc887b03999c8cca2db1dec18f9abf28b6b1",
+  "causal_base": 1,
+  "cause": {
+    "kind": "person_action"
+  },
+  "event_id": "01M5NKA3YG005G00000000W002",
+  "hlc": {
+    "counter": 0,
+    "node": "4fc7bebc302357bd",
+    "wall_ms": 1792800002000
+  },
+  "key_id": "4fc7bebc302357bd",
+  "node_type": "goal",
+  "op": "node.add",
+  "place": {
+    "id": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+    "kind": "swarm"
+  },
+  "provenance": "workspace",
+  "received_at": 1792800002350,
+  "review_state": "confirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "seq": 2,
+  "signature": "ddc1e7f5922df4445a1c480179e253d607efcb09413ba767b98f973dea705ec7d730b7b7461b71f1748d810149d7474396528723b27b8b866caf3d35b7c0690c",
+  "target": "n_aaaaaaaaaaaaaaaaaaaaaadaay"
+}

@@ -1,0 +1,10 @@
+{
+  "applied_digest": "sha256:2222222222222222222222222222222222222222222222222222222222222222",
+  "applied_version": 2,
+  "digest": "sha256:a07526bf5e0389c2e207bc7dcc57dc0d444a082feeaa4bf71d152d8fefe461ba",
+  "reason_code": "key_unavailable",
+  "refused_at": "2026-10-25T12:00:05Z",
+  "schema": "leanctx.hive.policy-ack/v1",
+  "state": "refused",
+  "version": 3
+}

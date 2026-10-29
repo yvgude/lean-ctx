@@ -1,0 +1,40 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "rate_limited",
+          "message": "Too many requests. Try again in 30 s.",
+          "retry_after_s": 30
+        }
+      },
+      "status": 429
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/public/vaults?q=payments&sort=stars",
+  "request": null,
+  "response": {
+    "body": {
+      "items": [
+        {
+          "description": "How refunds, retries and payouts work.",
+          "followers": 4,
+          "forge": {
+            "host": "gitlab.pounce.ch",
+            "repo": "acme/payments"
+          },
+          "license": "CC-BY-4.0",
+          "name": "payments",
+          "stars": 12,
+          "title": "Payments",
+          "updated_at": 1792880156433,
+          "ws": "acme"
+        }
+      ],
+      "next_cursor": null
+    },
+    "status": 200
+  },
+  "route": "W44"
+}

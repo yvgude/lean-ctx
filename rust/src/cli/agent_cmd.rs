@@ -1,7 +1,7 @@
 //! `lean-ctx agent` — first-class agent identities (GL #433).
 //!
-//! Subcommands: register, list, show, heartbeat, ack-drift, suspend, resume,
-//! decommission, offboard-owner, check.
+//! Subcommands: register, list, presence, wait, read, friction, show,
+//! heartbeat, ack-drift, suspend, resume, decommission, offboard-owner, check.
 
 use crate::core::agent_registry::{self, AgentStatus};
 
@@ -90,6 +90,37 @@ pub(crate) fn cmd_agent(args: &[String]) {
             }
         }
         Some("presence") => print_local_presence(as_json, args.iter().any(|arg| arg == "--all")),
+        Some("wait") => {
+            let Some(agent_id) = flag("--id") else {
+                exit_usage("agent wait --id <bus agent id> [--timeout <seconds>]");
+            };
+            let timeout = flag("--timeout").map(|t| {
+                t.parse::<u64>()
+                    .unwrap_or_else(|_| exit_usage("agent wait --timeout takes seconds"))
+            });
+            std::process::exit(wait_cli(&agent_id, timeout));
+        }
+        // One read without waiting (the lead's 'wait --timeout 0'): pages
+        // like wait, prints 'No new messages.' when there are none, exit 0.
+        Some("read") => {
+            let Some(agent_id) = flag("--id") else {
+                exit_usage("agent read --id <bus agent id>");
+            };
+            let root = bus_agent_root(&agent_id);
+            match crate::tools::ctx_agent::read_messages_as(&agent_id, &root, false) {
+                Ok(text) => println!("{text}"),
+                Err(error) => exit_err(&error),
+            }
+        }
+        Some("friction") => {
+            use crate::core::agents::friction;
+            let since = flag("--since").map(|text| {
+                let span = friction::parse_duration(&text)
+                    .unwrap_or_else(|| exit_usage("agent friction [--since <30m|12h|7d|seconds>]"));
+                chrono::Utc::now() - span
+            });
+            println!("{}", friction::render(&friction::summary(since)));
+        }
         Some("show") => {
             let Some(agent_id) = positional(0) else {
                 exit_usage("agent show <agent-id> [--trust-domain org.example]");
@@ -196,13 +227,24 @@ pub(crate) fn cmd_agent(args: &[String]) {
                 std::process::exit(1);
             }
         }
-        _ => {
-            println!(
-                "lean-ctx agent — first-class agent identities (registered, attested, revocable)\n\n\
+        None | Some("help" | "--help" | "-h") => println!("{AGENT_USAGE}"),
+        // An unknown subcommand is an error, not the help with exit 0: a
+        // mistyped `agent reed` looked like an empty read (lead, 25.10.).
+        Some(other) => {
+            eprintln!("lean-ctx agent: unknown subcommand '{other}'\n\n{AGENT_USAGE}");
+            std::process::exit(2);
+        }
+    }
+}
+
+const AGENT_USAGE: &str = "lean-ctx agent — first-class agent identities (registered, attested, revocable)\n\n\
 USAGE:\n\
   lean-ctx agent register --id <agent-id> --role <role> --owner <user@org>\n\
   lean-ctx agent list [--json] [--all]      list active identities (--all: lifecycle history)\n\
   lean-ctx agent presence [--json] [--all]  inspect local MCP agent liveness\n\
+  lean-ctx agent wait --id <bus id> [--timeout <s>]  wait for bus messages (paged; exit 2 = none)\n\
+  lean-ctx agent read --id <bus id>          read bus messages once, without waiting (paged)\n\
+  lean-ctx agent friction [--since <30m|12h|7d>]  local friction summary\n\
   lean-ctx agent show <agent-id> [--trust-domain org.example]\n\
   lean-ctx agent heartbeat <agent-id>        liveness + attestation drift check (exit 3 = unacknowledged drift)\n\
   lean-ctx agent ack-drift <agent-id> --evidence \"<evidence>\"  acknowledge exactly the reported drift\n\
@@ -212,11 +254,7 @@ USAGE:\n\
   lean-ctx agent offboard-owner <user@org>   suspend all agents of an owner (SCIM hook)\n\
   lean-ctx agent check <agent-id>            enforce-path identity check (exit 1 = deny)\n\n\
 Every identity has a mandatory human owner. Lifecycle transitions write\n\
-tamper-evident audit entries. Docs: docs/enterprise/agent-identity.md"
-            );
-        }
-    }
-}
+tamper-evident audit entries. Docs: docs/enterprise/agent-identity.md";
 
 /// Runtime presence is intentionally separate from `agent list`: the latter
 /// is an identity/authorization registry, while this view answers the
@@ -366,6 +404,43 @@ fn exit_usage(usage: &str) -> ! {
     std::process::exit(2);
 }
 
+/// `lean-ctx agent wait --id <agent> [--timeout <s>]`: block until a bus
+/// message for the agent (to it or broadcast, in its project) arrives and
+/// print it like `ctx_agent action=read` (exit 0), or print the stable
+/// timeout line (exit 2). A host runs it in the background to wake an idle
+/// session.
+/// The project a bus agent registered in; exits when it is unknown.
+fn bus_agent_root(agent_id: &str) -> String {
+    let registry = crate::core::agents::AgentRegistry::load_or_create();
+    let Some(root) = registry
+        .list_all()
+        .iter()
+        .find(|agent| agent.agent_id == agent_id)
+        .map(|agent| agent.project_root.clone())
+    else {
+        exit_err(&format!("bus agent '{agent_id}' is not registered"));
+    };
+    root
+}
+
+fn wait_cli(agent_id: &str, timeout: Option<u64>) -> i32 {
+    let root = bus_agent_root(agent_id);
+    match crate::tools::ctx_agent::wait_messages(agent_id, &root, timeout, false) {
+        Ok(Some(text)) => {
+            println!("{text}");
+            0
+        }
+        Ok(None) => {
+            let secs = timeout
+                .unwrap_or(crate::tools::ctx_agent::WAIT_DEFAULT_SECS)
+                .min(crate::tools::ctx_agent::WAIT_MAX_SECS);
+            println!("{}", crate::tools::ctx_agent::wait_timeout_line(secs));
+            2
+        }
+        Err(error) => exit_err(&error),
+    }
+}
+
 fn print_json_or_exit<T: serde::Serialize>(value: &T) {
     match serde_json::to_string_pretty(value) {
         Ok(json) => println!("{json}"),
@@ -458,6 +533,9 @@ mod tests {
                     durable_identity_id: None,
                     status: AgentStatus::Active,
                     status_message: None,
+                    transport: None,
+                    role_source: None,
+                    parent: None,
                 },
                 AgentEntry {
                     agent_id: "idle".to_string(),
@@ -471,6 +549,9 @@ mod tests {
                     durable_identity_id: None,
                     status: AgentStatus::Active,
                     status_message: None,
+                    transport: None,
+                    role_source: None,
+                    parent: None,
                 },
                 AgentEntry {
                     agent_id: "finished".to_string(),
@@ -484,6 +565,9 @@ mod tests {
                     durable_identity_id: None,
                     status: AgentStatus::Finished,
                     status_message: None,
+                    transport: None,
+                    role_source: None,
+                    parent: None,
                 },
             ],
             scratchpad: vec![],

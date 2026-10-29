@@ -246,14 +246,6 @@ impl FeedbackStore {
         }
     }
 
-    pub fn get_learned_entropy(&self, language: &str) -> Option<f64> {
-        self.learned_thresholds.get(language).map(|t| t.entropy)
-    }
-
-    pub fn get_learned_jaccard(&self, language: &str) -> Option<f64> {
-        self.learned_thresholds.get(language).map(|t| t.jaccard)
-    }
-
     pub fn format_report(&self) -> String {
         let mut lines = vec![String::from("Feedback Loop Report")];
         lines.push(format!("Total outcomes tracked: {}", self.outcomes.len()));
@@ -320,6 +312,6 @@ mod tests {
                 timestamp: String::new(),
             });
         }
-        assert!(store.get_learned_entropy("rs").is_none()); // only 3, need 5
+        assert!(!store.learned_thresholds.contains_key("rs")); // only 3, need 5
     }
 }

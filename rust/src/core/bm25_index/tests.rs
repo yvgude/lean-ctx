@@ -578,6 +578,16 @@ fn save_load_roundtrip_uses_zstd() {
     assert_eq!(loaded.doc_count, index.doc_count);
     assert_eq!(loaded.chunks.len(), index.chunks.len());
 
+    // AP05-G8: the recorded root is the authority. Another root's index is
+    // not loaded; the same root spelled differently (canonical) is.
+    let marker = dir.join("project_root.txt");
+    let other = tempdir().expect("other root");
+    std::fs::write(&marker, other.path().to_string_lossy().as_bytes()).expect("marker");
+    assert!(BM25Index::load(root).is_none());
+    let canonical = root.canonicalize().expect("canonical root");
+    std::fs::write(&marker, canonical.join(".").to_string_lossy().as_bytes()).expect("marker");
+    assert!(BM25Index::load(root).is_some());
+
     crate::test_env::remove_var("LEAN_CTX_BM25_MAX_CACHE_MB");
     crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
@@ -1164,6 +1174,35 @@ fn parallel_build_search_parity() {
         assert_eq!(s.start_line, p.start_line);
         assert_eq!(s.score.to_bits(), p.score.to_bits(), "score parity");
     }
+}
+
+/// Evicting a chunk shifts the chunks behind it; their postings must follow.
+/// With stale postings the query below addressed a position past the end.
+#[test]
+fn search_after_eviction_finds_the_chunk_that_moved() {
+    let chunk = |file: &str, symbol: &str, content: &str| CodeChunk {
+        file_path: file.into(),
+        symbol_name: symbol.into(),
+        kind: ChunkKind::Function,
+        start_line: 1,
+        end_line: 1,
+        content: content.into(),
+        tokens: Vec::new(),
+        token_count: 0,
+    };
+    let mut index = BM25Index::from_chunks_for_test(vec![
+        chunk("health://complexity/a", "evicted", "evictedterm only here"),
+        chunk("src/kept.rs", "kept", "survivorterm lives here"),
+    ]);
+
+    assert_eq!(index.remove_chunks_with_prefix("health://"), 1);
+
+    let hits = index.search("survivorterm", 5);
+    assert_eq!(hits.len(), 1);
+    assert_eq!(hits[0].file_path, "src/kept.rs");
+    assert_eq!(hits[0].chunk_idx, 0);
+    assert!(index.search("evictedterm", 5).is_empty());
+    assert!(!index.doc_freqs.contains_key("evictedterm"));
 }
 
 #[test]

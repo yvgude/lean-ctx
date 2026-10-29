@@ -1,0 +1,14 @@
+{
+  "case": "pledge_float_usd",
+  "base": "routes/pledge.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/usd_cents_per_day",
+      "value": 2.5
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

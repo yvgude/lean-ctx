@@ -230,15 +230,10 @@ mod tests {
     }
 
     /// Run `workspace_scope_outcome` with the cwd temporarily set to `dir`.
-    /// Serialized via the shared env lock because `set_current_dir` is
-    /// process-global: every cwd-moving test takes the same lock.
+    /// Under the test environment lock because the cwd is process-global.
     fn with_cwd<T>(dir: &std::path::Path, f: impl FnOnce() -> T) -> T {
-        let _guard = crate::core::data_dir::test_env_lock();
-        let prev = std::env::current_dir().unwrap();
-        std::env::set_current_dir(dir).unwrap();
-        let out = f();
-        std::env::set_current_dir(prev).unwrap();
-        out
+        let _cwd = crate::test_env::CurrentDirGuard::enter(dir);
+        f()
     }
 
     #[test]

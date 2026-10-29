@@ -1,0 +1,37 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "This preview expired or was used; preview again."
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "Confirm with your authenticator app."
+        }
+      },
+      "status": 403
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/vaults/payments/revert",
+  "request": {
+    "preview_id": "pv_rrrrrrrrrrrrrrrrrrrrrrrrra",
+    "reason": "Revert the refund investigation episode; the root cause was wrong."
+  },
+  "response": {
+    "body": {
+      "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqde",
+      "events": 1,
+      "rev": 19
+    },
+    "status": 201
+  },
+  "route": "W20"
+}

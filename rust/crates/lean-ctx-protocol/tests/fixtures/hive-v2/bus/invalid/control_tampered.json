@@ -1,0 +1,14 @@
+{
+  "case": "control_tampered",
+  "base": "bus/control.hold.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/reason",
+      "value": "Holding for no reason at all."
+    }
+  ],
+  "expect": {
+    "layer": "signature"
+  }
+}

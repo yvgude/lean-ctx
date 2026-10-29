@@ -1134,6 +1134,11 @@ export EDITOR=vim
         {
             return;
         }
+        // Isolated from tests that change the process environment or the
+        // config while this one generates and runs the hook: the shared
+        // env lock, and a child shell that inherits nothing but what the
+        // test names.
+        let _env = crate::core::data_dir::test_env_lock();
         assert!(crate::rewrite_registry::shell_alias_list().contains("git"));
         let dir = tempfile::tempdir().unwrap();
         let fake = dir.path().join("lean-ctx");
@@ -1141,22 +1146,16 @@ export EDITOR=vim
         std::fs::set_permissions(&fake, std::fs::Permissions::from_mode(0o755)).unwrap();
         let hook = dir.path().join("shell-hook.bash");
         std::fs::write(&hook, generate_hook_posix(&fake.to_string_lossy())).unwrap();
-        let path = format!(
-            "{}:{}",
-            dir.path().display(),
-            std::env::var("PATH").unwrap_or_default()
-        );
+        let path = format!("{}:/usr/local/bin:/usr/bin:/bin", dir.path().display());
         let out = std::process::Command::new("bash")
             .arg("-c")
             .arg("git --version")
+            .env_clear()
+            .env("HOME", dir.path())
             .env("BASH_ENV", &hook)
             .env("PATH", path)
             .env("LEAN_CTX_AGENT", "1")
             .env("LEAN_CTX_SHELL_ACTIVATION", "always")
-            .env_remove("LEAN_CTX_ACTIVE")
-            .env_remove("LEAN_CTX_DISABLED")
-            .env_remove("LEAN_CTX_ENABLED")
-            .env_remove("LEAN_CTX_NO_HOOK")
             .output()
             .unwrap();
         let stdout = String::from_utf8_lossy(&out.stdout);

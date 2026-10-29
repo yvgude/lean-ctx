@@ -61,7 +61,7 @@ pub const KNOWN_READ_MODES: &[&str] = &[
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct PolicyPack {
-    /// Stable identifier: lowercase, digits and hyphens (`finance-eu`).
+    /// Stable identifier: lowercase, digits and hyphens (`acme-platform`).
     pub name: String,
     /// Semantic version of the pack itself (`1.0.0`).
     pub version: String,
@@ -123,7 +123,7 @@ pub struct ContextRules {
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct FilterRules {
-    /// PII detection (Swiss AHV, IBAN, payment cards, email).
+    /// PII detection (email, phone, payment cards).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub pii: Option<String>,
     /// Data-classification marking gate (confidential/secret banners).
@@ -403,11 +403,14 @@ impl std::fmt::Display for PolicyError {
                 "tools listed in both allow_tools and deny_tools: {}",
                 tools.join(", ")
             ),
-            PolicyError::UnknownParent(p) => write!(
-                f,
-                "extends '{p}' does not name a known pack (built-ins: {})",
-                builtin::names().join(", ")
-            ),
+            PolicyError::UnknownParent(p) => match builtin::paid_tier(p) {
+                Some(_) => write!(f, "extends {}", builtin::unknown_pack_hint(p)),
+                None => write!(
+                    f,
+                    "extends '{p}' does not name a known pack (built-ins: {})",
+                    builtin::names().join(", ")
+                ),
+            },
             PolicyError::ExtendsCycle(chain) => {
                 write!(f, "extends cycle: {}", chain.join(" -> "))
             }
@@ -453,6 +456,9 @@ pub fn parse_file(path: &Path) -> Result<PolicyPack, PolicyError> {
 }
 
 /// Field-level validation of a single (unresolved) pack.
+/// Label prefix of the rules a Hive filter pack adds.
+pub(crate) const HIVE_LABEL_PREFIX: &str = "hive:";
+
 pub fn validate(pack: &PolicyPack) -> Result<(), PolicyError> {
     if pack.name.is_empty()
         || !pack
@@ -498,6 +504,21 @@ pub fn validate(pack: &PolicyPack) -> Result<(), PolicyError> {
         return Err(PolicyError::BadRegex {
             pattern_name: "policy".into(),
             error: "too many policy patterns".into(),
+        });
+    }
+    // `hive:` labels belong to the Hive filter packs; a pack using one
+    // could shadow or be shadowed by a Hive rule.
+    if pack
+        .redaction
+        .keys()
+        .chain(pack.filters.blocked_patterns.keys())
+        .any(|label| label.starts_with(HIVE_LABEL_PREFIX))
+    {
+        return Err(PolicyError::BadRegex {
+            pattern_name: "policy".into(),
+            error: format!(
+                "rule labels starting with `{HIVE_LABEL_PREFIX}` are reserved for Hive filter packs"
+            ),
         });
     }
     if pack.filters.managed_personal_rules.iter().any(|name| {
@@ -913,27 +934,35 @@ alow_tools = ["ctx_read"]
 
     #[test]
     fn resolve_overrides_scalars_and_accumulates_denies() {
-        let mut child = minimal("child", Some("finance-eu"));
+        let mut child = minimal("child", Some("strict-redaction"));
         child.context.default_read_mode = Some("signatures".into());
-        child.context.deny_tools = vec!["ctx_shell".into()];
+        child.context.deny_tools = vec!["ctx_url_read".into(), "ctx_shell".into()];
+        child
+            .redaction
+            .insert("employee_id".into(), r"EMP-\d{4}".into());
         let r = resolve(&child).expect("resolves");
 
         // Scalar overridden by the child.
         assert_eq!(r.default_read_mode.as_deref(), Some("signatures"));
-        // finance-eu's denies survive; the child's add on top.
+        // The child's denies apply.
         assert!(r.deny_tools.contains(&"ctx_url_read".to_string()));
         assert!(r.deny_tools.contains(&"ctx_shell".to_string()));
-        // Redaction accumulated from the whole chain (baseline + strict + finance).
-        assert!(r.redaction.contains_key("iban"));
+        // Redaction accumulated from the whole chain (baseline + strict + child).
+        assert!(r.redaction.contains_key("employee_id"));
         assert!(r.redaction.contains_key("private_key"));
         // Chain is base-most first and excludes the pack itself.
-        assert_eq!(r.chain, vec!["baseline", "strict-redaction", "finance-eu"]);
+        assert_eq!(r.chain, vec!["baseline", "strict-redaction"]);
     }
 
     #[test]
     fn resolve_rejects_unknown_parent_and_cycle() {
         let p = minimal("orphan", Some("no-such-pack"));
         assert!(matches!(resolve(&p), Err(PolicyError::UnknownParent(_))));
+
+        // A former built-in that moved to a paid tier says so.
+        let p = minimal("regulated", Some("healthcare"));
+        let err = resolve(&p).expect_err("not bundled");
+        assert!(err.to_string().contains("LeanCTX Pro"), "{err}");
 
         // Self-reference is the minimal cycle reachable without registering
         // custom packs (built-ins are acyclic by construction + test below).

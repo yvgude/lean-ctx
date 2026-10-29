@@ -175,7 +175,7 @@ fn handle_symbol(
             .to_string()
     };
 
-    render_symbol_snippet(&symbol, &abs_path, &rel_file, cache, crp_mode)
+    render_symbol_snippet(&symbol, &abs_path, &rel_file, root, cache, crp_mode)
 }
 
 /// Resolve a bare symbol name (no `<file>::` qualifier) against the symbol table.
@@ -206,7 +206,7 @@ fn resolve_bare_symbol(
             .join(only.file.trim_start_matches(['/', '\\']))
             .to_string_lossy()
             .to_string();
-        return render_symbol_snippet(only, &abs_path, &only.file, cache, crp_mode);
+        return render_symbol_snippet(only, &abs_path, &only.file, root, cache, crp_mode);
     }
 
     // Several identically-named symbols, or only substring hits → list them.
@@ -234,16 +234,26 @@ fn resolve_bare_symbol(
 
 /// Render a symbol's source snippet with the standard token-savings footer.
 /// Shared by the qualified (`<file>::<symbol>`) and bare-name resolution paths.
+///
+/// The graph index is a discovery hint, not an authorization: the snippet is
+/// cut from the source as the common rooted admitted reader delivers it NOW
+/// (G01), under `root`. A source that is withheld yields its content-free
+/// reason, never the lines the index points at.
 fn render_symbol_snippet(
     symbol: &graph_provider::SymbolInfo,
     abs_path: &str,
     rel_display: &str,
+    root: &str,
     cache: &mut crate::core::cache::SessionCache,
     crp_mode: crate::tools::CrpMode,
 ) -> String {
-    let content = match std::fs::read_to_string(abs_path) {
-        Ok(c) => c,
-        Err(e) => return format!("Cannot read {abs_path}: {e}"),
+    use crate::tools::admitted_sources::SourceRead;
+    let mut remaining = crate::core::limits::max_read_bytes();
+    let content = match crate::tools::admitted_sources::read(abs_path, root, TOOL, &mut remaining) {
+        SourceRead::Admitted(read) => read.content,
+        SourceRead::Withheld(reason) | SourceRead::Unavailable(reason) => {
+            return format!("Cannot read {abs_path}: {reason}");
+        }
     };
 
     let lines: Vec<&str> = content.lines().collect();
@@ -251,7 +261,11 @@ fn render_symbol_snippet(
     let end = symbol.end_line.min(lines.len());
 
     if start >= lines.len() {
-        return crate::tools::ctx_read::handle(cache, abs_path, "full", crp_mode);
+        // The read path admits only inside a request scope; bind it so this
+        // fallback is admitted for every caller (MCP dispatch and the CLI).
+        return crate::tools::admitted_sources::as_agent_acquisition(root, || {
+            crate::tools::ctx_read::handle(cache, abs_path, "full", crp_mode)
+        });
     }
 
     let mut result = format!(
@@ -277,6 +291,21 @@ fn render_symbol_snippet(
     };
 
     format!("{result}[ctx_graph symbol: {tokens} tok (full file: {full_tokens} tok, -{pct}%)]")
+}
+
+/// Tool identity the sources are read for (path jail, role rules, audit).
+const TOOL: &str = "ctx_graph";
+
+/// The admitted text of `path` (relative to `root`, or absolute inside it),
+/// for derivations that only steer matching and are never rendered. `None`
+/// when the source is absent, unreadable or withheld.
+fn admitted_text(path: &str, root: &str) -> Option<String> {
+    let mut remaining = crate::core::limits::max_read_bytes();
+    match crate::tools::admitted_sources::read(path, root, TOOL, &mut remaining) {
+        crate::tools::admitted_sources::SourceRead::Admitted(read) => Some(read.content),
+        crate::tools::admitted_sources::SourceRead::Withheld(_)
+        | crate::tools::admitted_sources::SourceRead::Unavailable(_) => None,
+    }
 }
 
 fn file_path_to_module_prefixes(
@@ -310,9 +339,10 @@ fn file_path_to_module_prefixes(
         module_path
     };
 
-    let crate_name = std::fs::read_to_string(Path::new(project_root).join("Cargo.toml"))
-        .or_else(|_| std::fs::read_to_string(Path::new(project_root).join("package.json")))
-        .ok()
+    // Manifest and source are read through the admitted reader like any other
+    // source: a withheld manifest contributes no crate name.
+    let crate_name = admitted_text("Cargo.toml", project_root)
+        .or_else(|| admitted_text("package.json", project_root))
         .and_then(|c| {
             c.lines()
                 .find(|l| l.contains("\"name\"") || l.starts_with("name"))
@@ -341,8 +371,7 @@ fn file_path_to_module_prefixes(
         prefixes.push(rel_path_slash.clone());
     }
     if matches!(ext, "kt" | "kts") {
-        let abs_path = Path::new(project_root).join(rel_path.trim_start_matches(['/', '\\']));
-        if let Ok(content) = std::fs::read_to_string(abs_path)
+        if let Some(content) = admitted_text(rel_path.trim_start_matches(['/', '\\']), project_root)
             && let Some(package_name) = content.lines().map(str::trim).find_map(|line| {
                 line.strip_prefix("package ")
                     .map(|rest| rest.trim().trim_end_matches(';').to_string())
@@ -491,14 +520,32 @@ fn handle_status(root: &str) -> String {
     )
 }
 
-fn resolve_node_name(graph: &crate::core::property_graph::CodeGraph, node_id: i64) -> String {
+/// The name of the edge end `node_id`, when that reference may be served now
+/// (G04): a file or module node while its file is served, a symbol or test
+/// node while its file still serves the name. `None`: the end is skipped as
+/// if it were not in the graph. A node without a file on record (commit,
+/// knowledge, issue, CI run) follows the originless rule (`serves_node_parts`).
+fn served_node_name(
+    graph: &crate::core::property_graph::CodeGraph,
+    node_id: i64,
+) -> Option<String> {
     let conn = graph.connection();
-    conn.query_row(
-        "SELECT name FROM nodes WHERE id = ?1",
+    let Ok((name, kind, file_path)) = conn.query_row(
+        "SELECT n.name, n.kind, p.path FROM nodes n JOIN paths p ON p.id = n.file_id \
+         WHERE n.id = ?1",
         rusqlite::params![node_id],
-        |row| row.get::<_, String>(0),
-    )
-    .unwrap_or_else(|_| format!("node#{node_id}"))
+        |row| {
+            Ok((
+                row.get::<_, String>(0)?,
+                row.get::<_, String>(1)?,
+                row.get::<_, String>(2)?,
+            ))
+        },
+    ) else {
+        return Some(format!("node#{node_id}"));
+    };
+    let served = graph.serves_node_parts(&kind, &file_path, &name, None);
+    served.then_some(name)
 }
 
 fn handle_enrich(root: &str) -> String {
@@ -533,7 +580,10 @@ fn handle_context_query(query: Option<&str>, root: &str) -> String {
     let gp = graph_provider::open_or_build(root);
     let mut result = Vec::new();
 
-    if let Ok(Some(node)) = graph.get_node_by_path(query) {
+    // A node whose file is no longer served is treated as not in the graph.
+    if let Ok(Some(node)) = graph.get_node_by_path(query)
+        && graph.serves_file(&node.file_path)
+    {
         result.push(format!("## Context for `{query}`\n"));
 
         if let Some(node_id) = node.id {
@@ -547,7 +597,9 @@ fn handle_context_query(query: Option<&str>, root: &str) -> String {
             let mut dependents: Vec<String> = Vec::new();
 
             for edge in &edges_out {
-                let target = resolve_node_name(&graph, edge.target_id);
+                let Some(target) = served_node_name(&graph, edge.target_id) else {
+                    continue;
+                };
                 match edge.kind {
                     crate::core::property_graph::EdgeKind::TestedBy => tests.push(target),
                     crate::core::property_graph::EdgeKind::ChangedIn => commits.push(target),
@@ -560,8 +612,9 @@ fn handle_context_query(query: Option<&str>, root: &str) -> String {
             }
 
             for edge in &edges_in {
-                let source = resolve_node_name(&graph, edge.source_id);
-                if edge.kind == crate::core::property_graph::EdgeKind::Imports {
+                if edge.kind == crate::core::property_graph::EdgeKind::Imports
+                    && let Some(source) = served_node_name(&graph, edge.source_id)
+                {
                     dependents.push(source);
                 }
             }
@@ -613,13 +666,16 @@ fn handle_context_query(query: Option<&str>, root: &str) -> String {
                 ));
             }
 
-            if let Ok(impact) = graph.impact_analysis(query, 3)
-                && !impact.affected_files.is_empty()
-            {
-                result.push(format!(
-                    "**Impact radius:** {} files within 3 hops",
-                    impact.affected_files.len()
-                ));
+            if let Ok(impact) = graph.impact_analysis(query, 3) {
+                // Only files that are served now count toward the radius.
+                let affected = impact
+                    .affected_files
+                    .iter()
+                    .filter(|file| graph.serves_file(file))
+                    .count();
+                if affected > 0 {
+                    result.push(format!("**Impact radius:** {affected} files within 3 hops"));
+                }
             }
         }
     } else {
@@ -840,5 +896,137 @@ mod gdscript_p0_tests {
         assert!(!out.contains("Invalid symbol spec"), "got: {out}");
         assert!(!out.to_lowercase().contains("not found"), "got: {out}");
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+}
+
+/// G01: what `ctx_graph` renders from a source is cut from the admitted text.
+#[cfg(test)]
+mod admission_tests {
+    use super::*;
+    use crate::core::policy::runtime::TestPolicyOverride;
+
+    fn policy(body: &str) -> crate::core::policy::ResolvedPolicy {
+        crate::core::policy::load(&format!(
+            "name = \"ctx-graph-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n{body}"
+        ))
+        .unwrap()
+    }
+
+    fn symbol(
+        file: &str,
+        name: &str,
+        start_line: usize,
+        end_line: usize,
+    ) -> graph_provider::SymbolInfo {
+        graph_provider::SymbolInfo {
+            name: name.to_owned(),
+            file: file.to_owned(),
+            kind: "fn".to_owned(),
+            start_line,
+            end_line,
+            is_exported: true,
+        }
+    }
+
+    /// The old snippet renderer read the file raw (`fs::read_to_string`): a
+    /// value a project rule masks was printed, and a source the policy blocks
+    /// was printed in full. The index entry alone must authorize neither.
+    #[test]
+    fn a_symbol_snippet_is_cut_from_the_admitted_source_or_withheld() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        let billing = project.path().join("billing.rs");
+        std::fs::write(
+            &billing,
+            "pub fn charge() {\n    let customer = \"CUS-1234\";\n}\n",
+        )
+        .unwrap();
+        let billing = billing.to_string_lossy().into_owned();
+        let charge = symbol("billing.rs", "charge", 1, 3);
+        let mut cache = crate::core::cache::SessionCache::new();
+        let off = crate::tools::CrpMode::Off;
+        {
+            // Control: a source no rule touches is rendered as before.
+            let _community = TestPolicyOverride::set(None);
+            let out =
+                render_symbol_snippet(&charge, &billing, "billing.rs", &root, &mut cache, off);
+            assert!(
+                out.contains("   2|    let customer = \"CUS-1234\";\n"),
+                "{out}"
+            );
+            assert!(out.contains("[ctx_graph symbol: "), "{out}");
+        }
+        {
+            let _policy =
+                TestPolicyOverride::set(Some(policy("[redaction]\ncustomer = \"CUS-[0-9]{4}\"\n")));
+            let out =
+                render_symbol_snippet(&charge, &billing, "billing.rs", &root, &mut cache, off);
+            assert!(!out.contains("CUS-1234"), "{out}");
+            assert!(out.contains("[REDACTED:customer]"), "{out}");
+        }
+        {
+            let plan = project.path().join("plan.rs");
+            std::fs::write(
+                &plan,
+                "CONFIDENTIAL\npub fn hidden() {\n    body_marker();\n}\n",
+            )
+            .unwrap();
+            let _policy = TestPolicyOverride::set(Some(policy(
+                "[filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+            )));
+            let out = render_symbol_snippet(
+                &symbol("plan.rs", "hidden", 2, 4),
+                &plan.to_string_lossy(),
+                "plan.rs",
+                &root,
+                &mut cache,
+                off,
+            );
+            assert!(out.starts_with("Cannot read "), "{out}");
+            assert!(out.contains("withheld"), "{out}");
+            assert!(!out.contains("body_marker"), "{out}");
+            assert!(
+                cache.get_full_content(&plan.to_string_lossy()).is_none(),
+                "a withheld source must not be in the session cache"
+            );
+        }
+        assert!(
+            cache.get_full_content(&billing).is_none(),
+            "a snippet does not seed the session cache"
+        );
+    }
+
+    /// A manifest the policy blocks contributes no crate name to matching.
+    #[test]
+    fn a_withheld_manifest_contributes_no_crate_prefix() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        std::fs::write(
+            project.path().join("Cargo.toml"),
+            "# CONFIDENTIAL\n[package]\nname = \"orbital-core\"\n",
+        )
+        .unwrap();
+        let gp = GraphProvider::GraphIndex(crate::core::graph_index::ProjectIndex::new(&root));
+        {
+            let _community = TestPolicyOverride::set(None);
+            let prefixes = file_path_to_module_prefixes("src/core/cache.rs", &root, &gp);
+            assert!(
+                prefixes.contains(&"orbital_core::core::cache".to_string()),
+                "{prefixes:?}"
+            );
+        }
+        let _policy = TestPolicyOverride::set(Some(policy(
+            "[filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )));
+        let prefixes = file_path_to_module_prefixes("src/core/cache.rs", &root, &gp);
+        assert!(
+            !prefixes
+                .iter()
+                .any(|prefix| prefix.contains("orbital_core")),
+            "{prefixes:?}"
+        );
+        assert!(prefixes.contains(&"crate::core::cache".to_string()));
     }
 }

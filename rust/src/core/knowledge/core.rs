@@ -12,29 +12,25 @@ use crate::core::memory_policy::MemoryPolicy;
 
 /// The textual fields of a fact as the context gateway admits them for the
 /// durable store. `None`: a field is withheld or restricted (G5, E3).
-pub(super) fn admit_fact_fields<const N: usize>(fields: [&str; N]) -> Option<[String; N]> {
-    let admission = crate::core::context_admission::stores::StoreAdmission::current();
+pub(super) fn admit_fact_fields<const N: usize>(
+    project_root: &str,
+    fields: [&str; N],
+) -> Option<[String; N]> {
+    let admission = super::protection::KnowledgeAdmission::capture(project_root).ok()?;
     let mut admitted: [String; N] = std::array::from_fn(|_| String::new());
     for (slot, field) in admitted.iter_mut().zip(fields) {
         *slot = admission.admit_text(field)?;
     }
+    admission.authorize_gateway().ok()?;
     Some(admitted)
 }
 
 impl ProjectKnowledge {
-    /// Runs the lifecycle as soon as the store exceeds its budget. `run_lifecycle`
-    /// sorts by importance and drains the excess back down to `max_facts`
-    /// (archiving it), so the store settles at <= max_facts. Every ingestion path
-    /// calls it — `remember` per fact, batch paths of pre-built facts once after
-    /// the batch: the session-save path that skipped it let a store grow to 638
-    /// records against a budget of 200. The earlier `* 2` guard let stores sit at
-    /// 103% (206/200) with no reclamation.
-    pub fn enforce_capacity(&mut self, policy: &MemoryPolicy) {
-        if self.facts.len() > policy.knowledge.max_facts {
-            let _ = self.run_memory_lifecycle(policy);
-        }
-    }
-
+    /// The quality lifecycle (decay, merge of near-duplicates, archival of
+    /// low-confidence and stale facts). There is no count cap: knowledge grows
+    /// without limit (owner decision 24.10.). Writes never run it — a pass over
+    /// the whole store per write does not scale — the background cognition loop
+    /// does, and reports its failures.
     pub fn run_memory_lifecycle(
         &mut self,
         policy: &MemoryPolicy,
@@ -59,8 +55,16 @@ impl ProjectKnowledge {
     /// collapsed. Heavier than [`Self::run_memory_lifecycle`], so it runs only
     /// from the background cognition loop (hourly), never on every write. The
     /// originals are archived and rehydrate on recall — nothing is lost.
+    ///
+    /// A digest is a new text built from several facts and has no source
+    /// binding of its own (`archive::bindings`). While protection is active
+    /// in any layer it would turn the text of a bound, revocable fact into an
+    /// originless one that outlives its source, so nothing is compacted then.
     pub fn compact_low_value_clusters(&mut self, policy: &MemoryPolicy) -> u32 {
-        if !policy.compaction.enabled || super::protection::current(&self.project_root).is_err() {
+        if !policy.compaction.enabled
+            || crate::core::context_admission::stored::source_authority_required()
+            || super::protection::current(&self.project_root).is_err()
+        {
             return 0;
         }
         let cfg = crate::core::memory_lifecycle::ClusterCompactionConfig {
@@ -203,7 +207,9 @@ impl ProjectKnowledge {
         // The durable store holds admitted text only, whichever producer
         // writes it: masked values stay masked, and a fact with a withheld or
         // restricted field is not stored at all (G5, E3).
-        let Some([category, key, value]) = admit_fact_fields([category, key, value]) else {
+        let Some([category, key, value]) =
+            admit_fact_fields(&self.project_root, [category, key, value])
+        else {
             tracing::info!("[knowledge] fact withheld by the context gateway");
             return None;
         };
@@ -231,10 +237,15 @@ impl ProjectKnowledge {
             } else {
                 let superseded = fact_version_id_v1(existing);
                 let next_revision = existing.revision_count + 1;
+                // A new value of a classified fact keeps its class (AP01 §4).
+                let validity = existing.validity;
                 existing.valid_until = Some(now);
                 existing.valid_from = existing.valid_from.or(Some(existing.created_at));
 
                 self.facts.push(KnowledgeFact {
+                    anchors: Vec::new(),
+                    review: None,
+                    capture: Default::default(),
                     origin: origin.clone(),
                     category: category.to_string(),
                     key: key.to_string(),
@@ -258,11 +269,16 @@ impl ProjectKnowledge {
                     archetype: KnowledgeArchetype::infer_from_category(category),
                     fidelity: None,
                     revision_count: next_revision,
+                    status: None,
+                    validity,
                 });
             }
         } else {
             let now = Utc::now();
             self.facts.push(KnowledgeFact {
+                anchors: Vec::new(),
+                review: None,
+                capture: Default::default(),
                 origin,
                 category: category.to_string(),
                 key: key.to_string(),
@@ -286,10 +302,10 @@ impl ProjectKnowledge {
                 archetype: KnowledgeArchetype::infer_from_category(category),
                 fidelity: None,
                 revision_count: 1,
+                status: None,
+                validity: None,
             });
         }
-
-        self.enforce_capacity(policy);
 
         self.updated_at = Utc::now();
         self.rebuild_index();

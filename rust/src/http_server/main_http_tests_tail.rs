@@ -261,8 +261,6 @@ async fn rate_limit_returns_429_when_exhausted() {
         relay_quotas: None,
         a2a_task_authority: Arc::new(crate::core::a2a::task::TaskAuthorityConfigV1::default()),
         concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
-        local_ipc: false,
-        project_servers: crate::http_server::ProjectServers::for_tests(),
         rate: Arc::new(RateLimiter::new(1, 1)),
         remote_replays: Arc::new(remote_replay::RemoteReplayGuard::new(
             ".",
@@ -271,6 +269,8 @@ async fn rate_limit_returns_429_when_exhausted() {
         project_root: ".".to_string(),
         timeout: Duration::from_secs(30),
         server: LeanCtxServer::new_shared_with_context(".", "default", "default"),
+        local_ipc: false,
+        project_servers: crate::http_server::ProjectServers::for_tests(),
     };
 
     let app = Router::new()
@@ -318,8 +318,6 @@ async fn audit_events_endpoint_returns_json() {
         relay_quotas: None,
         a2a_task_authority: Arc::new(crate::core::a2a::task::TaskAuthorityConfigV1::default()),
         concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
-        local_ipc: false,
-        project_servers: crate::http_server::ProjectServers::for_tests(),
         rate: Arc::new(RateLimiter::new(50, 100)),
         remote_replays: Arc::new(remote_replay::RemoteReplayGuard::new(
             &root_str,
@@ -328,6 +326,8 @@ async fn audit_events_endpoint_returns_json() {
         project_root: root_str.clone(),
         timeout: Duration::from_secs(30),
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
+        local_ipc: false,
+        project_servers: crate::http_server::ProjectServers::for_tests(),
     };
 
     let app = Router::new()
@@ -367,8 +367,6 @@ async fn capabilities_endpoint_returns_contract() {
         relay_quotas: None,
         a2a_task_authority: Arc::new(crate::core::a2a::task::TaskAuthorityConfigV1::default()),
         concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
-        local_ipc: false,
-        project_servers: crate::http_server::ProjectServers::for_tests(),
         rate: Arc::new(RateLimiter::new(50, 100)),
         remote_replays: Arc::new(remote_replay::RemoteReplayGuard::new(
             &root_str,
@@ -377,6 +375,8 @@ async fn capabilities_endpoint_returns_contract() {
         project_root: root_str.clone(),
         timeout: Duration::from_secs(30),
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
+        local_ipc: false,
+        project_servers: crate::http_server::ProjectServers::for_tests(),
     };
 
     let app = Router::new()
@@ -439,8 +439,6 @@ async fn openapi_endpoint_returns_spec() {
         relay_quotas: None,
         a2a_task_authority: Arc::new(crate::core::a2a::task::TaskAuthorityConfigV1::default()),
         concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
-        local_ipc: false,
-        project_servers: crate::http_server::ProjectServers::for_tests(),
         rate: Arc::new(RateLimiter::new(50, 100)),
         remote_replays: Arc::new(remote_replay::RemoteReplayGuard::new(
             &root_str,
@@ -449,6 +447,8 @@ async fn openapi_endpoint_returns_spec() {
         project_root: root_str.clone(),
         timeout: Duration::from_secs(30),
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
+        local_ipc: false,
+        project_servers: crate::http_server::ProjectServers::for_tests(),
     };
 
     let app = Router::new()
@@ -495,8 +495,6 @@ async fn events_endpoint_replays_tool_call_event() {
         relay_quotas: None,
         a2a_task_authority: Arc::new(crate::core::a2a::task::TaskAuthorityConfigV1::default()),
         concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
-        local_ipc: false,
-        project_servers: crate::http_server::ProjectServers::for_tests(),
         rate: Arc::new(RateLimiter::new(50, 100)),
         remote_replays: Arc::new(remote_replay::RemoteReplayGuard::new(
             &root_str,
@@ -505,6 +503,8 @@ async fn events_endpoint_replays_tool_call_event() {
         project_root: root_str.clone(),
         timeout: Duration::from_secs(30),
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
+        local_ipc: false,
+        project_servers: crate::http_server::ProjectServers::for_tests(),
     };
 
     let app = Router::new()
@@ -559,8 +559,6 @@ async fn events_endpoint_scopes_directed_events_to_agent_identity() {
         relay_quotas: None,
         a2a_task_authority: Arc::new(crate::core::a2a::task::TaskAuthorityConfigV1::default()),
         concurrency: Arc::new(tokio::sync::Semaphore::new(16)),
-        local_ipc: false,
-        project_servers: crate::http_server::ProjectServers::for_tests(),
         rate: Arc::new(RateLimiter::new(50, 100)),
         remote_replays: Arc::new(remote_replay::RemoteReplayGuard::new(
             &root_str,
@@ -569,6 +567,8 @@ async fn events_endpoint_scopes_directed_events_to_agent_identity() {
         project_root: root_str.clone(),
         timeout: Duration::from_secs(30),
         server: LeanCtxServer::new_shared_with_context(&root_str, "default", "default"),
+        local_ipc: false,
+        project_servers: crate::http_server::ProjectServers::for_tests(),
     };
 
     let app = Router::new()

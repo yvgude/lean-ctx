@@ -1,0 +1,52 @@
+{
+  "route": "W70",
+  "method": "PUT",
+  "path": "/api/v1/companies/acme-group/members/1c5a9b63-4d2f-4e8b-8a71-3b9f6c8dae12",
+  "request": {
+    "role": "admin"
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "user": {
+        "id": "1c5a9b63-4d2f-4e8b-8a71-3b9f6c8dae12",
+        "name": "Bob",
+        "email": "bob@acme.example"
+      },
+      "role": "admin",
+      "via": "admin",
+      "joined_at": "2026-10-21T10:00:00Z",
+      "workspaces": [
+        {
+          "slug": "acme",
+          "role": "contributor"
+        },
+        {
+          "slug": "acme-labs",
+          "role": "maintainer"
+        }
+      ]
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "confirm with your authenticator code first"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "a company needs at least one owner",
+          "state": "last_owner"
+        }
+      }
+    }
+  ]
+}

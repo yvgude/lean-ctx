@@ -1,0 +1,14 @@
+{
+  "assignee": null,
+  "attempts": 0,
+  "criterion_id": null,
+  "id": "g_rrrrrrrrrrrrrrrrrrrrrrrrra",
+  "kind": "root",
+  "lock_until": null,
+  "node": "n_aaaaaaaaaaaaaaaaaaaaaadaae",
+  "parent": null,
+  "results": [],
+  "review": null,
+  "state": "open",
+  "title": "Cut checkout p95 latency below 300 ms"
+}

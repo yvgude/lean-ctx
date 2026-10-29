@@ -1,0 +1,43 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "not found"
+        }
+      },
+      "status": 404
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "This swarm has 50 open invites.",
+          "reason": "too_many_invites"
+        }
+      },
+      "status": 409
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/swarms/9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02/invites",
+  "request": {
+    "handle": "mara"
+  },
+  "response": {
+    "body": {
+      "invite": {
+        "answered_at": null,
+        "created_at": 1792750000000,
+        "expires_at": 1793959600000,
+        "handle": "mara",
+        "id": "inv_01JC0SW4RM1NV1TE00000000A1",
+        "invited_by": "yves",
+        "state": "open"
+      }
+    },
+    "status": 201
+  },
+  "route": "W66"
+}

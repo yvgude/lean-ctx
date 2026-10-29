@@ -602,6 +602,7 @@ impl TaskAutopilotDecision {
         mut self,
         lineage: Option<serde_json::Value>,
         evaluation_time: Option<lean_ctx_protocol::UtcTimestamp>,
+        admission: Option<serde_json::Value>,
     ) -> anyhow::Result<Self> {
         let epoch = evaluation_time.map(|time| {
             serde_json::json!({
@@ -612,6 +613,7 @@ impl TaskAutopilotDecision {
         for (key, value) in [
             ("source_lineage_v1", lineage),
             ("context_plan_evaluation_v1", epoch),
+            ("source_admission_v1", admission),
         ] {
             if let Some(value) = value {
                 anyhow::ensure!(

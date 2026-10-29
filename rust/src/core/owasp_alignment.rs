@@ -23,7 +23,6 @@ pub(crate) struct Mitigation {
 pub(crate) enum Coverage {
     Full,
     Partial,
-    Minimal,
 }
 
 pub(crate) fn alignment() -> Vec<OwaspMapping> {
@@ -321,7 +320,6 @@ pub(crate) fn summary() -> String {
         let icon = match m.coverage {
             Coverage::Full => "●",
             Coverage::Partial => "◐",
-            Coverage::Minimal => "○",
         };
         out.push_str(&format!(
             "\n{icon} {} — {}\n  Mitigations: {}\n",

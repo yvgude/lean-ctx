@@ -13,7 +13,10 @@ use crate::core::session::SessionState;
 use crate::server::registry::{ToolRegistry, build_registry};
 use crate::server::tool_trait::{ShellOutcome, ToolContext, ToolOutput};
 
+mod release;
 mod source;
+
+use release::protect_output;
 
 const SCHEMA_VERSION: u32 = 1;
 const TRANSPORT_VERSION: u32 = 1;
@@ -115,6 +118,10 @@ struct Session {
     autonomy: crate::core::autonomy::AutonomyState,
     accepted_calls: std::sync::atomic::AtomicU32,
     source_authority: Option<String>,
+    /// The `call` whose response frame is not written yet: its admission
+    /// capture travels from the call to the frame writer (`serve`), which
+    /// seals the receipt of the frame's bytes before it writes them.
+    frame_call: Mutex<Option<release::FrameCall>>,
 }
 
 enum InputFrame {
@@ -139,44 +146,18 @@ fn output_withheld() -> ErrorV1 {
     }
 }
 
-fn protect_output(tool: &str, mut output: ToolOutput) -> Result<ToolOutput, ErrorV1> {
-    use crate::server::policy_guard;
-    use rmcp::model::{CallToolResult, ContentBlock};
-
-    if !crate::core::policy::runtime::is_active() {
-        return Ok(output);
+/// The error frame of a `call` whose mandatory receipt could not be sealed
+/// (G08): the frame with the tool result is not written; this one is.
+fn receipt_missing_response(id: &str) -> ResponseV1<Value> {
+    ResponseV1 {
+        id: id.to_string(),
+        ok: false,
+        result: None,
+        error: Some(ErrorV1 {
+            code: "tool_error",
+            message: release::not_persisted_message(),
+        }),
     }
-    if output.mode.as_deref() == Some("error") {
-        return Err(output_withheld());
-    }
-    output.text =
-        policy_guard::protect_result(tool, &output.text).map_err(|_| output_withheld())?;
-    if let Some(blocks) = output.content_blocks.as_mut() {
-        for block in blocks {
-            let Some(text) = block.as_text() else {
-                return Err(output_withheld());
-            };
-            // The SDK has no authorized binary/image inspection path. Text
-            // blocks are rebuilt so unchecked parallel metadata cannot escape.
-            *block = ContentBlock::text(
-                policy_guard::protect_result(tool, &text.text).map_err(|_| output_withheld())?,
-            );
-        }
-    }
-    let mut content = output.content_blocks.clone().unwrap_or_default();
-    content.push(ContentBlock::text(&output.text));
-    let mut released = CallToolResult::success(content);
-    released.structured_content = Some(serde_json::json!({
-        "mode": output.mode,
-        "shell": agent_shell_outcome(output.shell_outcome.as_ref()),
-    }));
-    if policy_guard::release_result(tool, released).is_error == Some(true) {
-        return Err(output_withheld());
-    }
-    output.saved_tokens = output
-        .original_tokens
-        .saturating_sub(crate::core::tokens::count_tokens(&output.text));
-    Ok(output)
 }
 
 impl Session {
@@ -202,7 +183,32 @@ impl Session {
             || (self.policy.allow_exec && EXEC_TOOLS.contains(&tool))
     }
 
+    /// One tool call of the session. It runs inside ONE admission capture
+    /// that carries the call's policy snapshot, taken here at entry (as the
+    /// MCP dispatcher does): source admission in the handler, the release
+    /// point and the frame's receipt decide under it. The capture is left
+    /// for the frame writer.
     fn call(&self, tool: &str, arguments: &Map<String, Value>) -> Result<ToolOutput, ErrorV1> {
+        crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(PathBuf::from(&self.root))),
+            || {
+                let frame_call = release::FrameCall::open(tool);
+                let capture = frame_call.capture();
+                *self
+                    .frame_call
+                    .lock()
+                    .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(frame_call);
+                crate::core::context_admission::capture::ADMISSIONS
+                    .sync_scope(Some(capture), || self.call_released(tool, arguments))
+            },
+        )
+    }
+
+    fn call_released(
+        &self,
+        tool: &str,
+        arguments: &Map<String, Value>,
+    ) -> Result<ToolOutput, ErrorV1> {
         crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
             std::cell::RefCell::new(Some(PathBuf::from(&self.root))),
             || {
@@ -293,6 +299,28 @@ impl Session {
                 message: format!("tool is not permitted: {tool}"),
             });
         }
+        // Agent Tools v1 (`sdk/contracts/agent-tools-v1.json`) negotiates
+        // `ctx_symbol` and `ctx_fill`, whose MCP tools were removed after
+        // 3.11.4. The contract stays: a symbol lookup runs as `ctx_search
+        // action=symbol`, and `ctx_fill` answers that it has no successor.
+        let symbol_arguments;
+        let (tool, arguments) = match tool {
+            "ctx_symbol" => {
+                let mut args = arguments.clone();
+                args.insert("action".into(), Value::String("symbol".into()));
+                symbol_arguments = args;
+                ("ctx_search", &symbol_arguments)
+            }
+            "ctx_fill" => {
+                return Err(ErrorV1 {
+                    code: "tool_error",
+                    message: "ctx_fill was removed; select context with ctx_compose and read it \
+                              with ctx_read"
+                        .into(),
+                });
+            }
+            _ => (tool, arguments),
+        };
         if crate::tools::LeanCtxServer::guard_role_and_policy(tool).is_some() {
             return Err(policy_denied());
         }
@@ -392,16 +420,78 @@ impl Session {
         if crate::tools::LeanCtxServer::guard_role_and_policy("ctx_shell").is_some() {
             return Err(policy_denied());
         }
-        let child = command.spawn().map_err(|_| ErrorV1 {
+        // Q13 (Unix): the call runs in a process group of its own, so a
+        // timeout or output limit ends this call's tree and nothing else
+        // (`wait_with_limits_captured` signals a group only while its leader
+        // is the unreaped child). A guard process is attached to that group:
+        // it ends the group when this Engine lets go of it — after the call,
+        // below — or when the Engine is gone, whatever ended it. A host that
+        // ends the Engine therefore still ends running tool processes.
+        // Windows has no group: the call runs in a Job Object of its own
+        // (below).
+        //
+        // No call runs without its guard, at any moment: the call's program
+        // is executed only once the guard is ready, so an Engine that dies in
+        // between leaves nothing running. If no guard can be attached the
+        // program was never executed and the call is refused.
+        let not_executed = |_: std::io::Error| ErrorV1 {
             code: "tool_error",
             message: "shell process could not be executed".to_string(),
-        })?;
-        let output = crate::shell::exec::wait_with_limits(
+        };
+        #[cfg(unix)]
+        let (child, guard) = {
+            use crate::shell::containment::Refusal;
+            use std::os::unix::process::CommandExt as _;
+            command.process_group(0);
+            match crate::shell::containment::start_behind_guard(&mut command) {
+                Ok((child, guard)) => (child, Some(guard)),
+                Err(Refusal::NotStarted(error)) => return Err(not_executed(error)),
+                Err(refusal) => {
+                    let reason = match refusal {
+                        Refusal::NoGuard(reason) => reason,
+                        Refusal::NotLeader | Refusal::NotStarted(_) => {
+                            "the process does not lead a group of its own".to_string()
+                        }
+                    };
+                    tracing::warn!("ctx_shell refused, no process guard: {reason}");
+                    return Err(ErrorV1 {
+                        code: "tool_error",
+                        message: "shell process could not be contained".to_string(),
+                    });
+                }
+            }
+        };
+        // Windows (B7): the call runs in a kill-on-close job of its own, held
+        // for the call (`ProcessTree::spawn_contained`).
+        #[cfg(not(unix))]
+        let (child, call_tree) =
+            crate::shell::process_tree::ProcessTree::spawn_contained(&mut command)
+                .map_err(not_executed)?;
+        let captured = crate::shell::exec::wait_with_limits_captured(
             child,
             MAX_RESPONSE_BYTES / 2,
             std::time::Duration::from_millis(timeout_ms),
             true,
         );
+        // The call is over: whatever it left running in its group is ended by
+        // the guard, which is then reaped within its own budget.
+        // An end that is not confirmed does not fail the call, but the caller
+        // sees it: a fixed, content-free notice in front of the result.
+        #[cfg(unix)]
+        let containment_notice = guard.and_then(|guard| {
+            let ended = guard.finish();
+            if ended != crate::shell::containment::GuardOutcome::Ended {
+                tracing::warn!("ctx_shell: the call's process group end is {ended:?}");
+            }
+            crate::shell::containment::end_notice(ended)
+        });
+        #[cfg(not(unix))]
+        let containment_notice: Option<&'static str> = {
+            drop(call_tree); // closing the call's job ends what it left running
+            None
+        };
+        let completeness = captured.completeness;
+        let output = captured.output;
         let exit_code = crate::shell::exit_status::exit_code(output.status);
         if crate::core::policy::runtime::is_active()
             && (std::str::from_utf8(&output.stdout).is_err()
@@ -412,7 +502,16 @@ impl Session {
         let mut raw_output = String::from_utf8_lossy(&output.stdout).into_owned();
         raw_output.push_str(&String::from_utf8_lossy(&output.stderr));
         let original_tokens = crate::core::tokens::count_tokens(&raw_output);
-        let raw_output = crate::server::policy_guard::protect_result("ctx_shell", &raw_output)
+        // Admission of the ORIGINAL output, before anything shortens it, and
+        // with what the capture knows about its completeness: a truncated,
+        // timed-out or abandoned capture is decided by the gateway's mode
+        // instead of being compressed as if it were whole.
+        let admission =
+            crate::core::context_admission::admit_tool_output(&raw_output, completeness);
+        let Some(admitted) = admission.text.as_deref() else {
+            return Err(output_withheld());
+        };
+        let raw_output = crate::server::policy_guard::protect_result("ctx_shell", admitted)
             .map_err(|_| output_withheld())?;
         let raw_output = crate::core::redaction::redact_text_if_enabled(&raw_output);
         let text = crate::tools::ctx_shell::handle(
@@ -421,6 +520,18 @@ impl Session {
             exit_code,
             crate::core::protocol::CrpMode::Compact,
         );
+        // The gateway's content-free notice stays in front of the compressed
+        // text; compression never sees or drops it.
+        let text = match &admission.notice {
+            Some(notice) => format!("{notice}\n{text}"),
+            None => text,
+        };
+        // Q13: same place, same rule, for an unconfirmed end of the call's
+        // process group. Fixed text; nothing of the run is in it.
+        let text = match containment_notice {
+            Some(notice) => format!("{notice}\n{text}"),
+            None => text,
+        };
         let output_tokens = crate::core::tokens::count_tokens(&text);
         Ok(ToolOutput {
             text,
@@ -611,6 +722,7 @@ fn run<R: BufRead, W: Write>(args: &[String], reader: R, writer: W) -> Result<()
         autonomy: crate::core::autonomy::AutonomyState::new(),
         accepted_calls: std::sync::atomic::AtomicU32::new(0),
         source_authority,
+        frame_call: Mutex::new(None),
     };
     serve(&session, reader, writer)
 }
@@ -646,13 +758,43 @@ fn serve<R: BufRead, W: Write>(
             ))
             .map_err(|_| "response_write_failed")?;
         }
+        // The frame as it leaves: one line.
+        encoded.push(b'\n');
+        // G08: a `call` frame is a delivery to the host. Its receipt binds
+        // exactly these bytes and is sealed BEFORE they are written; where
+        // it is mandatory and missing, the frame is replaced by an error
+        // frame and the tool result does not leave.
+        let frame_call = session
+            .frame_call
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .take();
+        let prepared = match frame_call {
+            Some(call) => {
+                let sealed = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+                    std::cell::RefCell::new(Some(PathBuf::from(&session.root))),
+                    || call.seal(&session.root, &encoded, !response.ok),
+                );
+                if let Ok(prepared) = sealed {
+                    prepared
+                } else {
+                    encoded = serde_json::to_vec(&receipt_missing_response(&response.id))
+                        .map_err(|_| "response_write_failed")?;
+                    encoded.push(b'\n');
+                    None
+                }
+            }
+            None => None,
+        };
         writer
             .write_all(&encoded)
             .map_err(|_| "response_write_failed")?;
-        writer
-            .write_all(b"\n")
-            .map_err(|_| "response_write_failed")?;
         writer.flush().map_err(|_| "response_write_failed")?;
+        // OBSERVED: the frame was written and flushed to the session
+        // transport. That the host read it is not observable.
+        if let Some(prepared) = &prepared {
+            release::returned(prepared, &encoded);
+        }
         if should_close {
             break;
         }
@@ -749,6 +891,9 @@ fn handle_request(session: &Session, request: RequestV1, hello: &mut bool) -> Re
                 return error_response(&request.id, "invalid_request", "tool is required");
             };
             let arguments = request.arguments.unwrap_or_default();
+            // `changed` of v1: a write tool applied its change (not a dry run).
+            let applied = WRITE_TOOLS.contains(&tool.as_str())
+                && arguments.get("dry_run").and_then(Value::as_bool) != Some(true);
             match session.call(&tool, &arguments) {
                 Ok(output) => {
                     let result = ToolResultV1 {
@@ -758,7 +903,7 @@ fn handle_request(session: &Session, request: RequestV1, hello: &mut bool) -> Re
                         original_tokens: output.original_tokens,
                         saved_tokens: output.saved_tokens,
                         mode: output.mode,
-                        changed: output.changed,
+                        changed: output.changed || applied,
                         shell: agent_shell_outcome(output.shell_outcome.as_ref()),
                         content_blocks: serde_json::to_value(
                             output.content_blocks.unwrap_or_default(),
@@ -912,7 +1057,9 @@ fn is_env_name(value: &str) -> bool {
         value.to_ascii_uppercase().as_str(),
         "COMSPEC"
             | "DYLD_INSERT_LIBRARIES"
+            | "DYLD_LIBRARY_PATH"
             | "HOME"
+            | "LD_LIBRARY_PATH"
             | "LD_PRELOAD"
             | "PATH"
             | "PATHEXT"
@@ -926,334 +1073,8 @@ fn is_env_name(value: &str) -> bool {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
+#[path = "agent_tools_cmd_tests.rs"]
+mod tests;
 
-    #[test]
-    fn protected_output_checks_text_copies_and_withholds_nontext() {
-        let source = "name = 'sdk-output'\nversion = '1.0.0'\ndescription = 'test'\n[redaction]\ncustomer = 'CUS-[0-9]{4}'\n";
-        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(
-            crate::core::policy::resolve(&crate::core::policy::parse(source).unwrap()).unwrap(),
-        ));
-        let output = ToolOutput {
-            text: "CUS-1234".into(),
-            content_blocks: Some(vec![rmcp::model::ContentBlock::text("CUS-5678")]),
-            ..ToolOutput::simple(String::new())
-        };
-        let protected =
-            protect_output("ctx_read", output).unwrap_or_else(|_| panic!("text allowed"));
-        assert_eq!(protected.text, "[REDACTED:customer]");
-        assert!(
-            !serde_json::to_string(&protected.content_blocks)
-                .unwrap()
-                .contains("CUS-")
-        );
-
-        let image = serde_json::from_value(serde_json::json!({
-            "type": "image", "data": "Q1VTLTEyMzQ=", "mimeType": "image/png",
-        }))
-        .unwrap();
-        assert!(
-            protect_output(
-                "ctx_read",
-                ToolOutput {
-                    content_blocks: Some(vec![image]),
-                    ..ToolOutput::simple(String::new())
-                }
-            )
-            .is_err()
-        );
-    }
-
-    #[test]
-    fn release_rechecks_tool_permission_and_parallel_metadata() {
-        let source = "name = 'sdk-release'\nversion = '1.0.0'\ndescription = 'test'\n[context]\ndeny_tools = ['ctx_read']\n[redaction]\ncustomer = 'CUS-[0-9]{4}'\n";
-        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(
-            crate::core::policy::resolve(&crate::core::policy::parse(source).unwrap()).unwrap(),
-        ));
-        assert!(protect_output("ctx_read", ToolOutput::simple(String::new())).is_err());
-        assert!(
-            protect_output(
-                "ctx_tree",
-                ToolOutput {
-                    mode: Some("CUS-1234".into()),
-                    ..ToolOutput::simple(String::new())
-                }
-            )
-            .is_err()
-        );
-    }
-
-    fn policy(write: bool, exec: bool) -> PolicyV1 {
-        PolicyV1 {
-            schema_version: 1,
-            allow_write: write,
-            allow_exec: exec,
-            allowed_executables: if exec {
-                vec!["git".to_string()]
-            } else {
-                Vec::new()
-            },
-            allowed_env: Vec::new(),
-            max_timeout_ms: 30_000,
-            selected_gitlab: None,
-        }
-    }
-
-    fn session(root: &Path, write: bool, exec: bool) -> Session {
-        let root = root.to_string_lossy().into_owned();
-        let mut state = SessionState::new();
-        state.project_root = Some(root.clone());
-        state.shell_cwd = Some(root.clone());
-        Session {
-            root,
-            policy: policy(write, exec),
-            registry: build_registry(),
-            cache: Arc::new(RwLock::new(SessionCache::new())),
-            state: Arc::new(RwLock::new(state)),
-            bm25_cache: Arc::new(Mutex::new(None)),
-            autonomy: crate::core::autonomy::AutonomyState::new(),
-            accepted_calls: std::sync::atomic::AtomicU32::new(0),
-            source_authority: None,
-        }
-    }
-
-    fn request(id: &str, op: &str) -> RequestV1 {
-        RequestV1 {
-            id: id.to_string(),
-            op: op.to_string(),
-            schema_version: None,
-            transport_version: None,
-            agent_tools_interface_version: None,
-            sdk_version: None,
-            tool: None,
-            arguments: None,
-        }
-    }
-
-    #[test]
-    fn permissions_are_fail_closed() {
-        let root = tempfile::tempdir().unwrap();
-        let session = session(root.path(), false, false);
-        assert_eq!(
-            session.call("ctx_patch", &Map::new()).err().unwrap().code,
-            "permission_denied"
-        );
-        assert_eq!(
-            session.call("ctx_shell", &Map::new()).err().unwrap().code,
-            "permission_denied"
-        );
-        assert_eq!(
-            session
-                .call("ctx_provider", &Map::new())
-                .err()
-                .unwrap()
-                .code,
-            "unsupported_capability"
-        );
-    }
-
-    #[test]
-    fn selected_source_rejects_relaxed_and_removed_policy() {
-        // Env before policy (the crate-wide lock order): the protected read
-        // resolves config and project state that concurrent tests move.
-        let _env = crate::core::data_dir::test_env_lock();
-        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
-        let root = tempfile::tempdir().unwrap();
-        fs::create_dir(root.path().join(".lean-ctx")).unwrap();
-        let path = root.path().join(".lean-ctx/policy.toml");
-        let rules = "name=\"source-test\"\nversion=\"1.0.0\"\ndescription=\"test\"\n[redaction]\ncustomer=\"CUS-[0-9]{4}\"\n";
-        fs::write(&path, rules).unwrap();
-        fs::write(root.path().join("note.txt"), "CUS-1234 useful context").unwrap();
-        let mut session = session(root.path(), false, false);
-        session.policy.selected_gitlab = Some(
-            serde_json::from_value(serde_json::json!({
-                "host":"gitlab.example.test", "project":5, "namespace":"group/project",
-                "glab":"/usr/local/bin/glab"
-            }))
-            .unwrap(),
-        );
-        session.source_authority =
-            Some(crate::core::policy::runtime::protected_policy_digest(root.path()).unwrap());
-        let args = serde_json::json!({"path":"note.txt", "mode":"full"})
-            .as_object()
-            .unwrap()
-            .clone();
-        // The test pins authority without reading credentials or making a source request.
-        let initial = session.call("ctx_read", &args);
-        assert!(
-            initial.is_ok(),
-            "pinned selected-source read failed: {:?}",
-            initial.err()
-        );
-        fs::write(
-            &path,
-            "name=\"relaxed\"\nversion=\"1.0.0\"\ndescription=\"test\"\n",
-        )
-        .unwrap();
-        assert_eq!(
-            session.call("ctx_read", &args).err().unwrap().code,
-            "permission_denied"
-        );
-        fs::remove_file(&path).unwrap();
-        assert_eq!(
-            session.call("ctx_read", &args).err().unwrap().code,
-            "permission_denied"
-        );
-        fs::write(&path, rules).unwrap();
-        assert!(session.call("ctx_read", &args).is_ok());
-    }
-
-    #[test]
-    fn hello_is_required_and_close_is_explicit() {
-        let root = tempfile::tempdir().unwrap();
-        let session = session(root.path(), false, false);
-        let mut hello = false;
-        let mut call = request("1", "call");
-        call.tool = Some("ctx_tree".into());
-        assert_eq!(
-            handle_request(&session, call, &mut hello)
-                .error
-                .unwrap()
-                .code,
-            "invalid_state"
-        );
-
-        let mut greeting = request("2", "hello");
-        greeting.schema_version = Some(1);
-        greeting.transport_version = Some(1);
-        greeting.agent_tools_interface_version = Some("1.0.0".into());
-        greeting.sdk_version = Some("1.1.0".into());
-        assert!(handle_request(&session, greeting, &mut hello).ok);
-        assert!(handle_request(&session, request("3", "close"), &mut hello).ok);
-    }
-
-    #[test]
-    fn session_dispatches_real_tools_with_shared_cache() {
-        // This Community cache fixture must not inherit another parallel test's
-        // process-wide policy override while it exercises the real dispatcher.
-        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
-        let root = tempfile::tempdir().unwrap();
-        fs::write(root.path().join("sample.txt"), "alpha\nbeta\n").unwrap();
-        let session = session(root.path(), false, false);
-        let arguments = Map::from_iter([
-            ("path".into(), Value::String("sample.txt".into())),
-            ("mode".into(), Value::String("full".into())),
-        ]);
-        let first = session.call("ctx_read", &arguments).unwrap();
-        let second = session.call("ctx_read", &arguments).unwrap();
-        assert!(!first.text.is_empty(), "`first.text` is empty");
-        assert!(!second.text.is_empty(), "`second.text` is empty");
-        assert!(second.saved_tokens >= first.saved_tokens);
-    }
-
-    #[test]
-    fn malformed_input_gets_a_framed_error() {
-        let root = tempfile::tempdir().unwrap();
-        let session = session(root.path(), false, false);
-        let mut output = Vec::new();
-        serve(&session, "not-json\n".as_bytes(), &mut output).unwrap();
-        let value: Value = serde_json::from_slice(&output).unwrap();
-        assert_eq!(value["ok"], false);
-        assert_eq!(value["error"]["code"], "invalid_request");
-    }
-
-    #[test]
-    fn oversized_frame_is_drained_before_the_next_request() {
-        let mut input = vec![b'x'; MAX_REQUEST_BYTES + 1];
-        input.extend_from_slice(b"\n{}\n");
-        let mut reader = input.as_slice();
-        assert!(matches!(
-            read_frame(&mut reader).unwrap(),
-            Some(InputFrame::TooLarge)
-        ));
-        let Some(InputFrame::Data(next)) = read_frame(&mut reader).unwrap() else {
-            panic!("next frame missing");
-        };
-        assert_eq!(next, b"{}");
-    }
-
-    #[test]
-    fn shell_policy_accepts_only_structured_allowed_argv() {
-        let root = tempfile::tempdir().unwrap();
-        let session = session(root.path(), false, true);
-        let arguments = Map::from_iter([
-            (
-                "argv".into(),
-                serde_json::json!(["git", "status", "--short"]),
-            ),
-            ("cwd".into(), Value::String(".".into())),
-            ("env".into(), serde_json::json!({})),
-            ("timeout_ms".into(), Value::from(1_000)),
-        ]);
-        let prepared = session.prepare_shell(&arguments).unwrap();
-        assert_eq!(
-            prepared["command"],
-            crate::shell::platform::join_command(&[
-                "git".to_string(),
-                "status".to_string(),
-                "--short".to_string(),
-            ])
-        );
-        assert!(prepared.get("argv").is_none());
-
-        let mut denied = arguments;
-        denied.insert("argv".into(), serde_json::json!(["python", "-V"]));
-        assert_eq!(
-            session.prepare_shell(&denied).unwrap_err().code,
-            "permission_denied"
-        );
-        for executable in ["/tmp/git", r"C:\tools\git"] {
-            denied.insert("argv".into(), serde_json::json!([executable, "status"]));
-            assert_eq!(
-                session.prepare_shell(&denied).unwrap_err().code,
-                "permission_denied"
-            );
-        }
-    }
-
-    #[test]
-    fn allowed_executable_resolves_to_absolute_path_outside_project() {
-        let root = tempfile::tempdir().unwrap();
-        let executable = resolve_allowed_executable("git", root.path().to_str().unwrap()).unwrap();
-        assert!(executable.is_absolute());
-        assert!(executable.is_file());
-        assert!(!executable.starts_with(root.path()));
-    }
-
-    #[cfg(unix)]
-    #[test]
-    fn shell_child_cannot_consume_protocol_stdin() {
-        let root = tempfile::tempdir().unwrap();
-        let mut session = session(root.path(), false, true);
-        session.policy.allowed_executables = vec!["sh".to_string()];
-        let arguments = Map::from_iter([
-            (
-                "argv".into(),
-                serde_json::json!([
-                    "sh",
-                    "-c",
-                    "if read value; then exit 9; else printf closed; fi"
-                ]),
-            ),
-            ("cwd".into(), Value::String(".".into())),
-            ("env".into(), serde_json::json!({})),
-            ("timeout_ms".into(), Value::from(1_000)),
-        ]);
-        let result = session.call_shell(&arguments).unwrap();
-        assert_eq!(result.shell_outcome, Some(ShellOutcome::Exit(0)));
-        assert!(result.text.contains("closed"));
-    }
-
-    #[test]
-    fn foreground_shell_exit_is_explicit_for_sdk_clients() {
-        assert_eq!(
-            agent_shell_outcome(Some(&ShellOutcome::Exit(0))),
-            Some(serde_json::json!({ "exitCode": 0 }))
-        );
-        assert_eq!(
-            agent_shell_outcome(Some(&ShellOutcome::Exit(7))),
-            Some(serde_json::json!({ "exitCode": 7 }))
-        );
-    }
-}
+#[cfg(all(test, unix))]
+mod shell_gate_tests;

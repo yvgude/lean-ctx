@@ -129,6 +129,16 @@ fn handle_status() -> (String, usize) {
 }
 
 fn handle_save_config() -> (String, usize) {
+    // `multi-repo.toml` is read by every later server; a Workspace-bound
+    // session must not persist roots for them (#2120).
+    if crate::core::workspace_authority::is_configured() {
+        return (
+            "ERROR: save_config is unavailable while this server is bound to a launcher \
+             Workspace; its roots are managed with `lean-ctx workspace`"
+                .to_string(),
+            0,
+        );
+    }
     let manager = global_manager();
     let Ok(mgr) = manager.lock() else {
         return ("ERROR: failed to acquire multi-repo lock".to_string(), 0);
@@ -176,11 +186,13 @@ mod tests {
 
     #[test]
     fn handle_search_missing_query() {
-        // Search answers "withheld" while any content policy is active, and
-        // policy tests pin one process-wide; pin "none" for this one.
-        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        // The search answers under the process environment and policy (a
+        // pinned protected session, an active pack): both held, in the
+        // order environment then policy, so no other test's state decides.
+        let _env = crate::core::data_dir::test_env_lock();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let (output, _) = handle("search", None, None, None, None, 10, None);
-        assert!(output.contains("query is required"));
+        assert!(output.contains("query is required"), "{output}");
     }
 
     #[test]

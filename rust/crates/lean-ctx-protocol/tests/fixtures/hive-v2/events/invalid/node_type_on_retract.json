@@ -1,0 +1,17 @@
+{
+  "case": "node_type_on_retract",
+  "base": "events/retract.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/node_type",
+      "value": "gotcha"
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/node_type"
+  }
+}

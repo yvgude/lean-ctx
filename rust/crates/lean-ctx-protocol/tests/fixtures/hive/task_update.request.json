@@ -1,0 +1,8 @@
+{
+  "claim": {
+    "fencing_token": 7,
+    "lease_id": "lse_01jbtask7"
+  },
+  "schema": "leanctx.hive.task-update/v1",
+  "summary": "Found the budget constant; checking the call sites"
+}

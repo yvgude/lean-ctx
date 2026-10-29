@@ -24,7 +24,7 @@
 //! - **Scoped data dir** — unless you call [`EngineBuilder::data_dir`], engine
 //!   state goes to a dedicated temp dir, never your real `~/.lean-ctx`.
 //! - **Auto-update off** for the embedded process.
-//! - **Write/exec gated** — `ctx_edit`/`ctx_fill` need [`EngineBuilder::allow_write`];
+//! - **Write/exec gated** — `ctx_edit` needs [`EngineBuilder::allow_write`];
 //!   `ctx_shell`/`ctx_execute` need [`EngineBuilder::allow_exec`].
 //!
 //! Path validation is not an OS sandbox: it does not prevent a concurrent
@@ -55,16 +55,14 @@ use crate::output::Output;
 use crate::read::ReadMode;
 
 /// File-mutating tools, gated behind [`EngineBuilder::allow_write`].
-const WRITE_TOOLS: &[&str] = &["ctx_edit", "ctx_fill"];
+const WRITE_TOOLS: &[&str] = &["ctx_edit"];
 /// Command-executing tools, gated behind [`EngineBuilder::allow_exec`].
 const EXEC_TOOLS: &[&str] = &["ctx_shell", "ctx_execute", "shell"];
 /// Explicitly admitted root-scoped read surfaces. Registering another MCP tool
 /// must not silently grant it embedded write, execution, or host-registry access.
 const READ_TOOLS: &[&str] = &[
     "ctx_read",
-    "ctx_multi_read",
     "ctx_search",
-    "ctx_symbol",
     "ctx_tree",
     "ctx_outline",
     "ctx_glob",
@@ -100,7 +98,7 @@ impl EngineBuilder {
         self
     }
 
-    /// Permit file-mutating tools (`ctx_edit`, `ctx_fill`) via [`Engine::call`].
+    /// Permit the file-mutating tool (`ctx_edit`) via [`Engine::call`].
     #[must_use]
     pub fn allow_write(mut self, yes: bool) -> Self {
         self.allow_write = yes;
@@ -229,8 +227,9 @@ impl Engine {
     /// [`Error::Tool`] on failure.
     pub fn symbol(&self, name: &str) -> Result<String, Error> {
         let mut args = Map::new();
+        args.insert("action".into(), Value::String("symbol".to_string()));
         args.insert("name".into(), Value::String(name.to_string()));
-        self.dispatch("ctx_symbol", args, self.base_ctx())
+        self.dispatch("ctx_search", args, self.base_ctx())
             .map(|o| o.text)
     }
 

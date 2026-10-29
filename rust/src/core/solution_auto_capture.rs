@@ -148,45 +148,6 @@ pub fn capture_edit_decisions(
     }
 }
 
-/// Persist a user-confirmed `ctx_optimize` finding using its reported category.
-pub fn capture_optimize_resolution(
-    project_root: &str,
-    category: &str,
-    chosen: &str,
-) -> Result<(), String> {
-    let cfg = crate::core::config::Config::load();
-    if !cfg.solution.enabled || !cfg.solution.track_decisions {
-        return Ok(());
-    }
-    let kind = SolutionDecisionKind::from_category(category).ok_or_else(|| {
-        format!(
-            "category must be one of: stdlib, native, reuse, yagni, one-line, debt; got `{category}`"
-        )
-    })?;
-    let status = if matches!(kind, SolutionDecisionKind::DebtAccepted) {
-        SolutionStatus::Deferred
-    } else {
-        SolutionStatus::Resolved
-    };
-
-    capture_decision(
-        project_root,
-        &SolutionDecisionMeta {
-            kind,
-            chosen: chosen.to_string(),
-            alternatives: Vec::new(),
-            rationale: Some(format!(
-                "Resolved ctx_optimize finding in category `{category}`."
-            )),
-            status,
-            scope: Vec::new(),
-            loc_impact: None,
-            upgrade_condition: None,
-        },
-    );
-    Ok(())
-}
-
 fn capture_decision(project_root: &str, decision: &SolutionDecisionMeta) {
     let kind = decision.kind.tracker_key();
     let category = if matches!(decision.kind, SolutionDecisionKind::DebtAccepted) {

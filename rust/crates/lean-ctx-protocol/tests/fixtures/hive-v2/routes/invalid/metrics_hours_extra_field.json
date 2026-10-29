@@ -1,0 +1,17 @@
+{
+  "case": "metrics_hours_extra_field",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/buckets/0/slices/0/paths",
+      "value": [
+        "src/lib.rs"
+      ]
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a member outside the field list (paths)"
+}

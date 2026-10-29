@@ -13,10 +13,16 @@ Most tools here are in the **power** profile. Enable them with
 Source files referenced here:
 - `rust/src/tools/registered/ctx_radar.rs`, `ctx_metrics.rs`, `ctx_cost.rs`,
   `ctx_feedback.rs`, `ctx_verify.rs`, `ctx_proof.rs`
-- `rust/src/tools/ctx_control.rs`, `ctx_plan` / `ctx_compile` / `ctx_ledger`
+- `rust/src/tools/ctx_control.rs`
 - `rust/src/tools/ctx_preload.rs`, `ctx_prefetch.rs`, `ctx_dedup.rs`,
-  `ctx_compose.rs`, `ctx_fill`
+  `ctx_compose.rs`
 - `rust/src/cli/context_cmd.rs`, `ledger_cmd.rs`
+
+> **3.11.5:** the MCP tools `ctx_plan`, `ctx_compile`, `ctx_fill`, `ctx_ledger`,
+> `ctx_overview`, `ctx_smart_read`, `ctx_symbol`, `ctx_retrieve`, `ctx_workflow`,
+> `ctx_response`, `ctx_benchmark`, `ctx_analyze` and `ctx_compare` were removed;
+> the CLI commands below remain. Successors:
+> [docs/migration/focus-2026-10.md](../migration/focus-2026-10.md).
 
 ---
 
@@ -73,10 +79,10 @@ lean-ctx control history         # what changed and why
 lean-ctx control reset           # drop overlays
 ```
 
-Actions: `exclude`, `include`, `pin`, `unpin`, `set_view`, `set_priority`,
-`mark_outdated`, `reset`, `list`, `history`.
+Actions: `exclude`, `include`, `pin`, `unpin`, `evict`, `set_view`,
+`set_priority`, `mark_outdated`, `reset`, `list`, `history`.
 
-### `ctx_ledger` / `lean-ctx ledger` — pressure management
+### `lean-ctx ledger` — pressure management
 
 The ledger tracks per-file context "pressure" (token cost vs. recency vs. use)
 and lets you evict the expensive, stale entries.
@@ -88,7 +94,9 @@ lean-ctx ledger prune            # drop low-value entries
 lean-ctx ledger reset
 ```
 
-### `ctx_plan` / `lean-ctx plan` — budget a task up front
+Over MCP, evict with `ctx_control action=evict targets=big.json,large.log`.
+
+### `lean-ctx plan` — budget a task up front
 
 Phi-scored planning: given a task and a token budget, it allocates the budget
 across the files/symbols most worth loading.
@@ -97,9 +105,7 @@ across the files/symbols most worth loading.
 lean-ctx plan "add OAuth login" --budget=4000
 ```
 
-MCP `profile`: `ultra_lean` | `balanced` | `forensic`.
-
-### `ctx_compile` / `lean-ctx compile` — fill the budget optimally
+### `lean-ctx compile` — fill the budget optimally
 
 Knapsack + Boltzmann view-selection: compiles the actual context to send under a
 budget, choosing per-file *views* (handles, compressed, or full).
@@ -116,7 +122,9 @@ same numeric budget. Pinned items cannot exceed the compilation budget: when
 no declared view fits, they are excluded with an explicit reason.
 
 Together these form a pipeline: **radar** (measure) → **plan** (allocate) →
-**compile** (materialize) → **control/ledger** (adjust).
+**compile** (materialize) → **control/ledger** (adjust). Over MCP,
+`ctx_compose` selects under the turn budget and `ctx_read` loads the chosen
+files.
 
 ---
 
@@ -124,11 +132,9 @@ Together these form a pipeline: **radar** (measure) → **plan** (allocate) →
 
 | Tool | What it does |
 |------|--------------|
-| `ctx_overview` | Task-relevant project map (Journey 3) |
 | `ctx_preload` | Load task-relevant files now; compact L-curve summary (~50–100 tok) |
 | `ctx_prefetch` | Predictive prefetch of blast-radius files for changed files |
 | `ctx_compose` | One call: keywords + ranked files + matches + top symbol inline |
-| `ctx_fill` | Fill remaining budget with the most coverage-effective files |
 | `ctx_dedup` | Detect (and optionally remove) duplicated content across files |
 
 ```text
@@ -162,12 +168,11 @@ Beyond `ctx_read` (Journey 2):
 
 | Tool | What it does |
 |------|--------------|
-| `ctx_smart_read` | Auto-pick the optimal read mode for a file |
-| `ctx_symbol` | Read just one named symbol block (fn/struct/class) |
+| `ctx_read mode="auto"` | Auto-pick the optimal read mode for a file (`paths=[…]` batch-reads) |
+| `ctx_search action="symbol"` | Find one named symbol (fn/struct/class) by `name` |
 | `ctx_outline` | List all symbols of a file with signatures |
-| `ctx_retrieve` | Fetch the uncompressed original from cache (CCR) |
 | `ctx_compress_memory` | Compress memory/config files (CLAUDE.md, .cursorrules) |
-| `ctx_expand` | Zero-loss retrieval of an archived tool output by id |
+| `ctx_expand` | Zero-loss retrieval of an archived tool output or withheld content by id |
 
 `ctx_expand` retrieves archived tool output (`retrieve`, `list`, `search_all`)
 while the archive remains available and the caller retains permission. Expired,
@@ -175,23 +180,18 @@ deleted, or inaccessible sources and archives cannot be recovered by this path.
 
 ---
 
-## 5. Execution, workflows & intent
+## 5. Execution
 
 | Tool | What it does |
 |------|--------------|
 | `ctx_execute` | Sandboxed code execution (11 languages); only stdout enters context |
-| `ctx_workflow` | Workflow state machine with evidence tracking |
-| `ctx_intent` | Structured intent input with a routing policy |
-| `ctx_response` | Compress LLM response text (strip filler, TDD) |
 
 ```text
 ctx_execute language=python code="print(sum(range(100)))"
-ctx_workflow action=start name=release spec=...
-ctx_workflow action=transition to=verify
 ```
 
-`ctx_workflow` enforces an evidence-tracked state machine (e.g. plan → implement
-→ verify → ship), so an agent can't claim "done" without recorded evidence.
+Workflow and task execution belong to the host; `ctx_work_graph` keeps the
+shared coordination state between agents.
 
 ---
 
@@ -202,7 +202,7 @@ You don't need the complete tool set loaded to use one. Lazy clients (and `minim
 
 ```text
 ctx_discover_tools query="impact analysis"   # find tools by keyword
-ctx_call name=ctx_impact arguments={...}      # call any tool by name
+ctx_call name=ctx_graph arguments={...}       # call any tool by name
 ctx_load_tools action=load category=arch      # load a category at runtime
 ctx_load_tools action=list                    # what's loaded
 ```
@@ -220,9 +220,8 @@ runtime.
 | `ctx_verify` | `lean-ctx verify` | Verification observability + ContextProofV2 |
 | `ctx_proof` | `lean-ctx proof` | Export machine-readable ContextProofV1 |
 | `ctx_feedback` | — | Record LLM output tokens + latency for harness feedback |
-| `ctx_benchmark` | `lean-ctx benchmark` | Benchmark compression modes for a file/project |
-| `ctx_analyze` | — | Entropy analysis → recommends the optimal compression mode |
-| `ctx_compare` | — | Preview compression — original vs the bytes lean-ctx would emit (read-only) |
+| — | `lean-ctx benchmark` | Benchmark compression modes for a file/project |
+| — | `lean-ctx compress diff <file>` | Preview compression — original vs the bytes lean-ctx would emit (read-only) |
 
 ```bash
 lean-ctx benchmark run            # compare read modes on this repo

@@ -1,0 +1,41 @@
+{
+  "schema": "leanctx.filter-pack-vectors/v1",
+  "note": "Detectors removed from the OSS engine in Hive B5. They need a checksum the OSS regex packs cannot express: ch_ahv = EAN-13 check digit over 13 digits starting 756; iban = ISO 7064 mod-97 == 1 over 15-34 alphanumerics; ssn = no validator. A regex-only pack must accept more false positives or be delivered as a runtime detector.",
+  "detectors": [
+    {
+      "label": "ch_ahv",
+      "pattern": "(?-u:\\b)756[.\\s]?\\d{4}[.\\s]?\\d{4}[.\\s]?\\d{2}(?-u:\\b)",
+      "validator": "ean13_prefix_756",
+      "positive": [
+        "AHV 756.9217.0769.85 on file"
+      ],
+      "negative": [
+        "756.9217.0769.86 is not valid",
+        "756.9217.0769.86",
+        "invalid AHV 756 9217 0769 86"
+      ]
+    },
+    {
+      "label": "iban",
+      "pattern": "(?-u:\\b)[A-Z]{2}\\d{2}(?:[ ]?[A-Z0-9]){11,30}(?-u:\\b)",
+      "validator": "iso7064_mod97",
+      "positive": [
+        "pay to GB82 WEST 1234 5698 7654 32 today"
+      ],
+      "negative": [
+        "ref GB00WEST12345698765432 here",
+        "GB00WEST12345698765432",
+        "invalid IBAN CH00 0076 2011 6238 5295 7"
+      ]
+    },
+    {
+      "label": "ssn",
+      "pattern": "\\d{3}-\\d{2}-\\d{4}",
+      "validator": null,
+      "positive": [
+        "SSN 123-45-6789"
+      ],
+      "negative": []
+    }
+  ]
+}

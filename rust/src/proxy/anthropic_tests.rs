@@ -58,6 +58,8 @@ fn forge_log_body(tool_name: &str) -> Value {
 
 #[test]
 fn forge_shell_tool_result_compresses() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     // A vendor-prefixed foreign shell tool reaches the proxy; its log output
     // must still be compressed (rtk/ctx_* never see another server's tools).
     let body = forge_log_body("forge_shell");
@@ -95,8 +97,11 @@ fn foreign_read_tool_protects_source() {
 #[test]
 fn compress_request_body_is_deterministic() {
     // Config and tee paths are process-global; isolate them so concurrent tests
-    // cannot change proxy behavior between the two identical inputs.
+    // cannot change proxy behavior between the two identical inputs. The
+    // isolated data dir also holds the env lock, so a parallel test never
+    // swaps LEAN_CTX_DATA_DIR between the two compressions.
     let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     // #498: the proxy rewrite must be a pure function of the body so the
     // provider prompt-cache prefix stays byte-identical across turns.
     let bytes = serde_json::to_vec(&forge_log_body("Bash")).unwrap();
@@ -119,6 +124,7 @@ fn inband_ccr_emit_echo_splice_round_trip() {
     // emits an <lc_expand:HASH> marker, the model echoes it, and the proxy
     // splices the verbatim original back inline on the next request.
     let _iso = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     crate::test_env::remove_var("LEAN_CTX_PROXY_CCR_INBAND");
     crate::core::config::Config::update_global(|c| {
         c.proxy.ccr_inband = Some(true);
@@ -341,6 +347,8 @@ fn prose_compression_is_deterministic() {
 
 #[test]
 fn bash_tool_result_still_compresses() {
+    let _data = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let log = {
         let mut s = String::from(
             "$ git status\nOn branch main\nYour branch is up to date with 'origin/main'.\n\nChanges not staged for commit:\n  (use \"git add <file>...\" to update what will be committed)\n",
@@ -365,6 +373,7 @@ fn bash_tool_result_still_compresses() {
 #[test]
 fn json_envelope_tool_result_is_compressed() {
     let _iso = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let log = long_git_status();
     let expected = compress_tool_result(&log, Some("Bash"));
     let envelope = serde_json::to_string(&serde_json::json!({
@@ -433,7 +442,9 @@ fn cached_prefix_body(first_text: &str, prose: &str) -> (Vec<Value>, Value) {
 #[test]
 fn cold_prefix_repack_rewrites_protected_system_prose_when_enabled() {
     let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_PROXY_MODE", "cache");
+    // Restored on drop, before the environment lock above is released: the
+    // mode of this test is not the mode of whatever test runs next.
+    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     crate::test_env::remove_var("LEAN_CTX_PROXY_COLD_PREFIX_REPACK");
     crate::core::config::Config::update_global(|c| {
         c.proxy.role_aggressiveness.system = Some(0.9);
@@ -667,6 +678,8 @@ fn cache_breakpoint_injected_on_unanchored_system_when_opt_in() {
     // #939: opt-in on AND the client set no cache_control of its own → exactly
     // one ephemeral breakpoint lands on `system`, wrapping the verbatim text.
     let _iso = crate::core::data_dir::isolated_data_dir();
+    // Stated, not inherited: like its siblings this test is about cache mode.
+    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_BREAKPOINT");
     let body = serde_json::json!({
         "model": "claude-opus-4-8",
@@ -697,7 +710,9 @@ fn cache_breakpoint_off_by_default_is_byte_unchanged() {
     // Default off → the request must be byte-identical (no system reshape),
     // preserving the meter-only / cache-stable contract.
     let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_PROXY_MODE", "cache");
+    // Restored on drop, before the environment lock above is released: the
+    // mode of this test is not the mode of whatever test runs next.
+    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_BREAKPOINT");
     let body = serde_json::json!({
         "model": "claude-opus-4-8",
@@ -746,7 +761,9 @@ fn cache_aligner_measures_without_mutating_body() {
     // the request byte-identical (measurement, not a rewrite), even on a
     // volatile-field-rich system prompt.
     let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_PROXY_MODE", "cache");
+    // Restored on drop, before the environment lock above is released: the
+    // mode of this test is not the mode of whatever test runs next.
+    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_ALIGNER");
     crate::test_env::remove_var("LEAN_CTX_PROXY_CACHE_BREAKPOINT");
     let body = serde_json::json!({
@@ -783,7 +800,9 @@ fn cache_align_relocate_moves_volatiles_to_tail_when_opt_in() {
     // ephemeral breakpoint.
     let _iso = crate::core::data_dir::isolated_data_dir();
     clear_relocate_env();
-    crate::test_env::set_var("LEAN_CTX_PROXY_MODE", "cache");
+    // Restored on drop, before the environment lock above is released: the
+    // mode of this test is not the mode of whatever test runs next.
+    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     let body = serde_json::json!({
         "model": "claude-opus-4-8",
         "system": cacheable_system_with_date(),
@@ -825,7 +844,9 @@ fn cache_align_relocate_off_by_default_is_byte_unchanged() {
     // Default off → byte-identical request, preserving the cache-stable
     // contract even with a volatile-rich system prompt.
     let _iso = crate::core::data_dir::isolated_data_dir();
-    crate::test_env::set_var("LEAN_CTX_PROXY_MODE", "cache");
+    // Restored on drop, before the environment lock above is released: the
+    // mode of this test is not the mode of whatever test runs next.
+    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     clear_relocate_env();
     let body = serde_json::json!({
         "model": "claude-opus-4-8",
@@ -904,7 +925,9 @@ fn cache_align_relocate_composes_with_breakpoint_to_one_anchor() {
     // breakpoint, on the stable block, with the volatile tail uncached.
     let _iso = crate::core::data_dir::isolated_data_dir();
     clear_relocate_env();
-    crate::test_env::set_var("LEAN_CTX_PROXY_MODE", "cache");
+    // Restored on drop, before the environment lock above is released: the
+    // mode of this test is not the mode of whatever test runs next.
+    let _mode = crate::setup::EnvVarGuard::set("LEAN_CTX_PROXY_MODE", "cache");
     let body = serde_json::json!({
         "model": "claude-opus-4-8",
         "system": cacheable_system_with_date(),
@@ -1015,6 +1038,33 @@ fn copilot_upstream_falls_back_to_openai_upstream() {
         .unwrap();
     let upstream = super::resolve_copilot_upstream(&req, "https://api.githubcopilot.com");
     assert_eq!(upstream, "https://api.githubcopilot.com");
+}
+
+/// A caller header must not choose where an admitted body goes: an endpoint
+/// that is not a GitHub Copilot host is ignored.
+#[test]
+fn copilot_upstream_ignores_a_caller_chosen_foreign_endpoint() {
+    for endpoint in [
+        "collector.example",
+        "githubcopilot.com.collector.example",
+        "api.githubcopilot.com@collector.example",
+        "api.githubcopilot.com:8443",
+        "api.githubcopilot.com/redirect",
+    ] {
+        let req = Request::builder()
+            .uri("/v1/messages")
+            .header(
+                "authorization",
+                format!("Bearer tid=x;exp=9;proxy-ep={endpoint}"),
+            )
+            .body(Body::empty())
+            .unwrap();
+        assert_eq!(
+            super::resolve_copilot_upstream(&req, "https://api.githubcopilot.com"),
+            "https://api.githubcopilot.com",
+            "{endpoint}"
+        );
+    }
 }
 
 #[test]

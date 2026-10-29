@@ -1,0 +1,14 @@
+{
+  "case": "metrics_hours_no_signature",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/signature"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "unsigned batch"
+}

@@ -1,0 +1,28 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "Enter the code from your authenticator app.",
+          "reason": "action_code_required"
+        }
+      },
+      "status": 403
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/vaults/payments/purges",
+  "request": {
+    "approve": true,
+    "confirm_name": "payments",
+    "reason": "leaked_secret",
+    "selector": {
+      "node_ids": [
+        "n_zcjqmmor453nyxqgshlgpogwdm"
+      ]
+    }
+  },
+  "response": null,
+  "route": "W31"
+}

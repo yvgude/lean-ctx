@@ -173,13 +173,29 @@ fn collect_push_files(
     Ok(files)
 }
 
+/// The source a local push hands to the read pipeline. A push seeds the
+/// one-shot cache and persists a read record with an excerpt, so it takes the
+/// ADMITTED text (G01) and only of a source whose original may be kept in a
+/// derived store. The unscoped reader used here before is a raw local read
+/// outside a request scope. `Err` is a content-free reason.
+fn admitted_push_source(path: &str) -> Result<String, String> {
+    let source = ctx_read::read_file_lossy_admitted_for_cli(path).map_err(|e| e.to_string())?;
+    if !source.storable {
+        return Err(crate::core::context_admission::carrier::Withheld::new(&[
+            "store.restricted_content",
+        ])
+        .message("source content"));
+    }
+    Ok(source.text)
+}
+
 fn push_files_locally(files: &[PathBuf]) -> PushSummary {
     let mut cache = SessionCache::new();
     let mut summary = PushSummary::default();
 
     for path in files {
         let path_string = path.to_string_lossy().into_owned();
-        let raw = match ctx_read::read_file_lossy(&path_string) {
+        let raw = match admitted_push_source(&path_string) {
             Ok(content) => content,
             Err(error) => {
                 eprintln!("Skipping {path_string}: {error}");
@@ -406,7 +422,9 @@ pub fn cmd_ledger(args: &[String]) {
 
 #[cfg(test)]
 mod tests {
-    use super::{PushOptions, collect_push_files, ignore_matches, parse_push_args};
+    use super::{
+        PushOptions, admitted_push_source, collect_push_files, ignore_matches, parse_push_args,
+    };
 
     fn args(values: &[&str]) -> Vec<String> {
         values.iter().map(ToString::to_string).collect()
@@ -429,6 +447,32 @@ mod tests {
                 ignore: vec!["*.generated".to_string(), "vendor/**".to_string()],
             })
         );
+    }
+
+    /// G01: a local push read each file with the unscoped reader — raw
+    /// outside a request scope — and persisted a read record with an excerpt
+    /// of it. It now takes the admitted text, and a restricted source is
+    /// skipped with a content-free reason.
+    #[test]
+    fn a_local_push_takes_admitted_storable_sources_only() {
+        const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let dir = tempfile::tempdir().unwrap();
+        let file = |name: &str, content: &str| {
+            let path = dir.path().join(name);
+            std::fs::write(&path, content).unwrap();
+            path.to_string_lossy().into_owned()
+        };
+        let clean = file("clean.rs", "pub fn clean() {}\n");
+        let keyed = file("keyed.rs", &format!("let aws_key = \"{AWS_KEY}\";\n"));
+        let marked = file("marked.rs", "// TOP SECRET\npub fn plan_marker() {}\n");
+
+        assert_eq!(admitted_push_source(&clean).unwrap(), "pub fn clean() {}\n");
+        assert!(!admitted_push_source(&keyed).unwrap().contains(AWS_KEY));
+        let reason = admitted_push_source(&marked).expect_err("restricted source is skipped");
+        assert!(reason.contains("store.restricted_content"), "{reason}");
+        assert!(!reason.contains("plan_marker"), "{reason}");
     }
 
     #[test]

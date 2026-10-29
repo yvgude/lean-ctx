@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "rate_limited",
+    "message": "This question's token budget is used up.",
+    "reason": "swarm_budget"
+  }
+}

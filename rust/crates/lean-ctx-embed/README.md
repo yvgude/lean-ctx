@@ -36,7 +36,7 @@ assert!(again.saved_tokens >= first.saved_tokens);
 Because the `Engine` owns a **shared** `SessionCache`, an unchanged re-read can
 be represented as a smaller delta. This is an implementation observation, not a
 guaranteed token or task outcome. The engine dispatches registered local tools
-(`ctx_read`, `ctx_search`, `ctx_symbol`, …) during experimentation.
+(`ctx_read`, `ctx_search`, `ctx_outline`, …) during experimentation.
 
 ## Safe by default
 
@@ -47,7 +47,7 @@ guaranteed token or task outcome. The engine dispatches registered local tools
 - **Scoped state** — engine data goes to a throwaway temp dir unless you call
   `.data_dir(…)`; your real `~/.lean-ctx` is never touched silently.
 - **Auto-update off** for the embedded process.
-- **Write/exec gated** — `ctx_edit`/`ctx_fill` need `.allow_write(true)`;
+- **Write/exec gated** — `ctx_edit` needs `.allow_write(true)`;
   `ctx_shell`/`ctx_execute` need `.allow_exec(true)`.
 
 It also drops the engine's `jemalloc` feature, so embedding the SDK never forces
@@ -59,7 +59,7 @@ a `#[global_allocator]` onto your binary.
 |-------|-----|-----------|
 | Read | `Engine::read(path, ReadMode)` | `ctx_read` |
 | Search | `Engine::search(pattern, subdir)` | `ctx_search` |
-| Symbol | `Engine::symbol(name)` | `ctx_symbol` |
+| Symbol | `Engine::symbol(name)` | `ctx_search action=symbol` |
 | Outline | `Engine::outline(path)` | `ctx_outline` |
 | Tree | `Engine::tree(subdir)` | `ctx_tree` |
 | Any tool | `Engine::call(name, json_args)` | the registry (write/exec gated) |

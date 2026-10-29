@@ -1,8 +1,8 @@
 [package]
 name = "lean-ctx-ocla"
-version = "3.0.0"
+version = "4.0.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.87"
 license = "Apache-2.0"
 description = "Open Context & Token Lifecycle Architecture — the provider-neutral contract boundary (capability traits, canonical types, token envelopes) shared between lean-ctx-core (OSS) and lean-ctx-enterprise (proprietary)."
 repository = "https://github.com/yvgude/lean-ctx"
@@ -20,7 +20,7 @@ base64 = "0.22"
 blake3 = "1.8"
 ed25519-dalek = "2.2"
 getrandom = "0.4"
-lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.3.0" }
+lean-ctx-protocol = { path = "../lean-ctx-protocol", version = "0.4.0" }
 semver = "1.0.28"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"

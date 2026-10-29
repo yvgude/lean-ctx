@@ -1,0 +1,11 @@
+{
+  "errors": [],
+  "method": "POST",
+  "path": "/api/v1/me/swarm-invites/inv_01JC0SW4RM1NV1TE00000000A1/decline",
+  "request": null,
+  "response": {
+    "body": null,
+    "status": 204
+  },
+  "route": "W66"
+}

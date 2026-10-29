@@ -1,0 +1,15 @@
+{
+  "case": "receipts_v2_tampered",
+  "base": "routes/receipts_v2.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/receipts/0/created_at",
+      "value": "2026-10-26T18:12:00Z"
+    }
+  ],
+  "expect": {
+    "layer": "signature"
+  },
+  "why": "changed after signing"
+}

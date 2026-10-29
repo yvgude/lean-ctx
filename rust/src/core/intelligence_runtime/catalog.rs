@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: Apache-2.0
 //! Signed channel selection; package keys are delegated only for one digest.
 
-use super::{InstallError, Result, channel, install, manifest, sha256, trust_key, verify};
+use super::{InstallError, Result, channel, install, manifest, sha256, trust_key, verify_kind};
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -23,6 +23,14 @@ struct Release {
     archive_url: String,
     manifest_url: String,
     signature_url: String,
+    /// Additive and optional: the base URL of the companion directory of a
+    /// v4 package (`<base>/<file name>`). A catalog without it is read and
+    /// verified exactly as before; the signature covers the catalog bytes,
+    /// so only a newly signed catalog can carry it. It names a location and
+    /// nothing else: which files exist, how long they are and what they
+    /// hash to comes from the signed manifest this entry pins.
+    #[serde(default)]
+    semantic_models_url: Option<String>,
 }
 
 /// Raw, signed authority retained beside each commercial package. This is not
@@ -39,6 +47,20 @@ pub(super) struct Admission {
     pub(super) receipt: ChannelReceipt,
     pub(super) anchor: [u8; 32],
     pub(super) delegation: Option<Delegation>,
+    /// Read from a bundle on disk rather than fetched now.
+    pub(super) bundled: bool,
+    /// The user asked for an older channel sequence than the active one.
+    pub(super) downgrade: bool,
+}
+
+/// A package shipped as files: the root-signed catalog of its channel and
+/// this host target's package, read without any network.
+pub(super) struct Bundle {
+    pub(super) catalog: Vec<u8>,
+    pub(super) catalog_signature: Vec<u8>,
+    pub(super) archive: Vec<u8>,
+    pub(super) manifest: Vec<u8>,
+    pub(super) signature: Vec<u8>,
 }
 
 fn host_target() -> Result<&'static str> {
@@ -47,6 +69,9 @@ fn host_target() -> Result<&'static str> {
         ("x86_64", "macos") => Ok("x86_64-apple-darwin"),
         ("aarch64", "linux") if cfg!(target_env = "gnu") => Ok("aarch64-unknown-linux-gnu"),
         ("x86_64", "linux") if cfg!(target_env = "gnu") => Ok("x86_64-unknown-linux-gnu"),
+        ("aarch64", "linux") if cfg!(target_env = "musl") => Ok("aarch64-unknown-linux-musl"),
+        ("x86_64", "linux") if cfg!(target_env = "musl") => Ok("x86_64-unknown-linux-musl"),
+        ("x86_64", "windows") if cfg!(target_env = "msvc") => Ok("x86_64-pc-windows-msvc"),
         _ => Err(InstallError::Archive),
     }
 }
@@ -149,22 +174,31 @@ impl ChannelReceipt {
         trusted.roots.contains(&self.root_key_sha256)
     }
 
+    /// `fresh`: the catalog must not have expired. A bundled catalog ships
+    /// with the Engine and may be older than its window; root, sequence and
+    /// rollback are checked all the same. An older sequence than the active
+    /// one needs `downgrade` ([`InstallError::Downgrade`] otherwise); the
+    /// root's minimum sequence holds either way.
     pub(super) fn admit(
         &self,
         previous: Option<&Self>,
         trusted: &super::rotation::TrustedRoot,
+        fresh: bool,
+        downgrade: bool,
     ) -> Result<()> {
         if self.sequence == 0
             || self.sequence < trusted.minimum_sequence
             || self.root_key_sha256 != sha256(&trusted.key)
-            || self.expires_unix_ms <= now_ms()?
+            || fresh && self.expires_unix_ms <= now_ms()?
             || previous.is_some_and(|old| {
                 !trusted.roots.contains(&old.root_key_sha256)
-                    || self.sequence < old.sequence
                     || self.sequence == old.sequence && self != old
             })
         {
             return Err(InstallError::State);
+        }
+        if !downgrade && previous.is_some_and(|old| self.sequence < old.sequence) {
+            return Err(InstallError::Downgrade);
         }
         Ok(())
     }
@@ -178,6 +212,18 @@ pub(super) fn now_ms() -> Result<u64> {
 }
 
 pub(super) fn sync(
+    urls: [&str; 2],
+    key: &[u8; 32],
+    root: &std::path::Path,
+    expected: &str,
+) -> Result<serde_json::Value> {
+    sync_kind(super::RuntimeKind::Intelligence, urls, key, root, expected)
+}
+
+/// Install the release of this host's target from the catalog of `kind`;
+/// the package must authenticate as exactly that kind.
+pub(super) fn sync_kind(
+    kind: super::RuntimeKind,
     urls: [&str; 2],
     key: &[u8; 32],
     root: &std::path::Path,
@@ -206,7 +252,7 @@ pub(super) fn sync(
         .find(|release| release.target == target)
         .ok_or(InstallError::Archive)?;
     let receipt = receipt(&catalog, &raw, &trusted.key);
-    receipt.admit(None, &trusted)?;
+    receipt.admit(None, &trusted, true, false)?;
     let artifact_key = trust_key(&release.artifact_key_hex)?;
     let data = channel::download(
         [
@@ -217,7 +263,8 @@ pub(super) fn sync(
         &release.manifest_sha256,
         &artifact_key,
     )?;
-    let package = verify(
+    let package = verify_kind(
+        kind,
         &data.archive,
         &data.manifest,
         &data.signature,
@@ -236,6 +283,8 @@ pub(super) fn sync(
         } else {
             None
         },
+        bundled: false,
+        downgrade: false,
     };
     let mut result = install::install_selected(
         root,
@@ -244,6 +293,106 @@ pub(super) fn sync(
         &data.archive,
         &data.manifest,
         &data.signature,
+        Some(&admission),
+    )?;
+    if package.semantic.is_some() {
+        // The package is installed and selected. Its model set is a separate
+        // step that can only add semantic detectors: a companion that cannot
+        // be fetched or does not verify leaves the package as "set not
+        // present" and every other capability as it is.
+        let outcome = install::install_channel_companions(
+            root,
+            &package,
+            release.semantic_models_url.as_deref(),
+        );
+        let (state, reason) = match outcome {
+            Ok(true) => ("installed", None),
+            Ok(false) => ("set_not_present", Some("no_companion_location")),
+            Err(InstallError::Download) => ("set_not_present", Some("companion_download_failed")),
+            Err(_) => ("set_not_present", Some("companion_refused")),
+        };
+        result["semantic_models"] = state.into();
+        result["semantic_models_reason"] = reason.into();
+    }
+    result["channel"] = serde_json::to_value(&receipt).map_err(|_| InstallError::State)?;
+    result["artifact_key_hex"] = release.artifact_key_hex.clone().into();
+    Ok(result)
+}
+
+/// Install this host target's release of `kind` from a bundle on disk: the
+/// same root, catalog, manifest and package checks as [`sync_kind`], no
+/// network, and no freshness window (the bundle ships with the Engine).
+/// Bundles carry no semantic model companions. `downgrade` admits a catalog
+/// sequence older than the active one.
+pub(super) fn import_kind(
+    kind: super::RuntimeKind,
+    bundle: &Bundle,
+    key: &[u8; 32],
+    root: &std::path::Path,
+    expected: &str,
+    downgrade: bool,
+) -> Result<serde_json::Value> {
+    let production = super::bootstrap::production_key(root)?;
+    if production.is_some_and(|anchor| anchor != *key) {
+        return Err(InstallError::Policy);
+    }
+    let trusted = install::channel_trust(root, expected, key)?;
+    let catalog = authenticated(
+        &bundle.catalog,
+        &bundle.catalog_signature,
+        &trusted.key,
+        production.is_some(),
+    )?;
+    let target = host_target()?;
+    let release = catalog
+        .releases
+        .iter()
+        .find(|release| release.target == target)
+        .ok_or(InstallError::Archive)?;
+    let receipt = receipt(&catalog, &bundle.catalog, &trusted.key);
+    receipt.admit(None, &trusted, false, false)?;
+    let artifact_key = trust_key(&release.artifact_key_hex)?;
+    // An unauthenticated manifest never gets its archive unpacked.
+    manifest::verify_manifest(
+        &bundle.manifest,
+        &bundle.signature,
+        &release.manifest_sha256,
+        &artifact_key,
+    )?;
+    let package = verify_kind(
+        kind,
+        &bundle.archive,
+        &bundle.manifest,
+        &bundle.signature,
+        &release.manifest_sha256,
+        &artifact_key,
+    )?;
+    if package.semantic.is_some() {
+        return Err(InstallError::Manifest);
+    }
+    let admission = Admission {
+        receipt: receipt.clone(),
+        anchor: *key,
+        delegation: if production.is_some() {
+            Some(Delegation {
+                document: String::from_utf8(bundle.catalog.clone())
+                    .map_err(|_| InstallError::Manifest)?,
+                signature_hex: hex::encode(&bundle.catalog_signature),
+                signer_key_hex: hex::encode(trusted.key),
+            })
+        } else {
+            None
+        },
+        bundled: true,
+        downgrade,
+    };
+    let mut result = install::install_selected(
+        root,
+        expected,
+        &package,
+        &bundle.archive,
+        &bundle.manifest,
+        &bundle.signature,
         Some(&admission),
     )?;
     result["channel"] = serde_json::to_value(&receipt).map_err(|_| InstallError::State)?;

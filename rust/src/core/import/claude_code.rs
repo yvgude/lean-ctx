@@ -47,14 +47,14 @@ pub fn import_from_root(root: &Path) -> ImportResult {
         match std::fs::read_dir(&path) {
             Ok(entries) => collect_jsonl_files(entries, &mut files),
             Err(error) => {
-                let mut result = read_jsonl_files(ImportSource::ClaudeCode, files);
+                let mut result = read_jsonl_files(ImportSource::ClaudeCode, root, files);
                 push_error(&mut result, format!("{}: {error}", path.display()));
                 return result;
             }
         }
     }
     files.sort();
-    read_jsonl_files(ImportSource::ClaudeCode, files)
+    read_jsonl_files(ImportSource::ClaudeCode, root, files)
 }
 
 fn collect_jsonl_files(entries: std::fs::ReadDir, files: &mut Vec<PathBuf>) {

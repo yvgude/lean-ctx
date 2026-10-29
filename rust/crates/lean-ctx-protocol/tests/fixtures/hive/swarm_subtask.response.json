@@ -1,0 +1,10 @@
+{
+  "acceptance": "The commit that last changed the retry line.",
+  "expected_kind": "hash",
+  "mine": false,
+  "number": 8,
+  "state": "proposed",
+  "subtask_id": "ss_01jbretry8",
+  "swarm_id": "sw_01jbretry",
+  "title": "Check the runbook's history"
+}

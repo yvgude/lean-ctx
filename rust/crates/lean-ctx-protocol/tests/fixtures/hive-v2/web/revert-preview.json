@@ -1,0 +1,38 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_body",
+          "field": "scope",
+          "message": "Use one scope."
+        }
+      },
+      "status": 400
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/vaults/payments/revert/preview",
+  "request": {
+    "scope": {
+      "kind": "item",
+      "node_id": "n_aaaaaaaaaaaaaaaaaaaaaacaay"
+    }
+  },
+  "response": {
+    "body": {
+      "derived": [],
+      "events": [
+        {
+          "id": "01M5NKA7VG005000000000W006",
+          "kind": "node.add",
+          "statement": "Find why refunds double-post on retries"
+        }
+      ],
+      "expires_at": "2026-10-24T08:15:00Z",
+      "preview_id": "pv_rrrrrrrrrrrrrrrrrrrrrrrrra"
+    },
+    "status": 200
+  },
+  "route": "W19"
+}

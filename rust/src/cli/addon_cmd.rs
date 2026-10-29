@@ -57,7 +57,7 @@ fn print_usage() {
 
   list                    Installed addons, the modules they load, what they wire
   info <name>             The author's manifest and module digests
-  add <pkg | ns/name>     Verify, show, ask, then install (file or registry ref)
+  add <file.ctxpkg>       Verify, show, ask, then install a local package file
   remove <name>           Remove an addon, its modules and its gateway entry
   release <dir>           Build a signed .ctxpkg from a directory
   auth <name>             Browser OAuth login for an HTTP MCP server
@@ -267,104 +267,20 @@ fn cmd_info(args: &[String]) {
 /// the user sees the digests of the exact bytes that will be installed, so the
 /// remote path and the local path have to converge on one file before anything
 /// is shown.
-struct Staged(std::path::PathBuf);
-
-impl Drop for Staged {
-    fn drop(&mut self) {
-        std::fs::remove_file(&self.0).ok();
-    }
-}
-
-/// Fetch `ns/name[@version]` from a package registry into a temp file.
-///
-/// `pack install` refuses executable content and points at `addon add`, which
-/// until now only accepted a local path — so a published addon could be
-/// resolved, downloaded and then not installed by any command. This closes that
-/// loop without adding a second consent path: the artifact lands on disk and
-/// then goes through exactly the same preview, prompt and verification as a
-/// file the user already had.
-fn stage_remote(reference: &str, registry_flag: Option<&str>) -> Result<Staged, String> {
-    use crate::core::context_package::remote;
-
-    let parsed = remote::parse_remote_ref(reference)
-        .ok_or_else(|| format!("'{reference}' is not a file, nor a valid ns/name[@version]"))?;
-    let base = remote::registry_base(registry_flag);
-    let token = remote::publish_token(None);
-    let (ns, name) = (&parsed.namespace, &parsed.name);
-
-    println!("Resolving @{ns}/{name} via {base} …");
-    let versions = remote::fetch_versions(&base, ns, name, token.as_deref())?;
-    let info = remote::select_version(&versions, parsed.version.as_deref())?;
-    if info.yanked {
-        eprintln!(
-            "WARNING: @{ns}/{name}@{} is YANKED — continuing only because the version \
-             was pinned explicitly",
-            info.version
-        );
-    }
-    let bytes = remote::download_verified(&base, ns, name, info, token.as_deref())?;
-    println!(
-        "Downloaded @{ns}/{name}@{} ({} bytes, sha256 verified against the index)",
-        info.version,
-        bytes.len()
-    );
-
-    let tmp = std::env::temp_dir().join(format!("ctxpkg-addon-{}.ctxpkg", std::process::id()));
-    std::fs::write(&tmp, &bytes).map_err(|e| format!("stage artifact: {e}"))?;
-    Ok(Staged(tmp))
-}
-
-/// Does this argument name a file, rather than a registry package?
-///
-/// Decided by shape, not by what happens to exist. `parse_remote_ref` accepts
-/// `./typo.ctxpkg` as a perfectly good `ns/name`, so a mistyped filename used to
-/// be resolved over the network and fail with "package not found in the
-/// registry — private packages need CTXPKG_TOKEN". That answer is wrong twice:
-/// it blames the registry for a local typo, and it tells the user to go find a
-/// token they do not need.
-///
-/// Anything that looks like a path — a `.ctxpkg` name, or a leading `.`, `/` or
-/// `~` — is a file, and a missing one is reported as a missing file.
-fn looks_like_a_path(arg: &str) -> bool {
-    arg.ends_with(".ctxpkg")
-        || arg.starts_with('.')
-        || arg.starts_with('/')
-        || arg.starts_with('~')
-        || arg.starts_with("file:")
-}
-
 fn cmd_add(args: &[String]) {
     let Some(file) = positional(args, "add").or_else(|| positional(args, "install")) else {
-        eprintln!(
-            "Usage: lean-ctx addon add <file.ctxpkg | ns/name[@version]> [--yes] [--allow-unsigned]"
-        );
+        eprintln!("Usage: lean-ctx addon add <file.ctxpkg> [--yes] [--allow-unsigned]");
         std::process::exit(2);
     };
     let assume_yes = args.iter().any(|a| a == "--yes" || a == "-y");
-    let registry_flag = flag_value(args, "--registry");
 
-    // A local file wins over a remote lookup: an argument that names something
-    // on disk must never silently reach the network instead.
-    let local = Path::new(&file);
-    let _staged;
-    let path: &Path = if local.is_file() {
-        local
-    } else if looks_like_a_path(&file) {
+    // Add-ons install from a local file only; remote registries are gone.
+    let path = Path::new(&file);
+    if !path.is_file() {
         eprintln!("ERROR: no such file: {file}");
-        eprintln!("       To install from a registry instead, drop the path and pass ns/name.");
+        eprintln!("       Add-ons install from a local .ctxpkg file.");
         std::process::exit(1);
-    } else {
-        match stage_remote(&file, registry_flag.as_deref()) {
-            Ok(s) => {
-                _staged = s;
-                &_staged.0
-            }
-            Err(e) => {
-                eprintln!("ERROR: {e}");
-                std::process::exit(1);
-            }
-        }
-    };
+    }
 
     let registry = match LocalRegistry::open() {
         Ok(r) => r,
@@ -465,21 +381,11 @@ fn cmd_add(args: &[String]) {
     }
 
     // GHSA-gvg8-285q-m62g: executable content is never installed unsigned
-    // from a registry, and a local file needs an explicit --allow-unsigned.
-    let remote_ns = (!local.is_file())
-        .then(|| crate::core::context_package::remote::parse_remote_ref(&file))
-        .flatten()
-        .map(|r| r.namespace);
-    let policy = match remote_ns.as_deref() {
-        Some(namespace) => {
-            crate::core::context_package::registry::SignaturePolicy::RequirePinnedPublisher {
-                namespace,
-            }
-        }
-        None if args.iter().any(|a| a == "--allow-unsigned") => {
-            crate::core::context_package::registry::SignaturePolicy::AllowUnsigned
-        }
-        None => crate::core::context_package::registry::SignaturePolicy::RequireSigned,
+    // unless the caller vouches for the local file with --allow-unsigned.
+    let policy = if args.iter().any(|a| a == "--allow-unsigned") {
+        crate::core::context_package::registry::SignaturePolicy::AllowUnsigned
+    } else {
+        crate::core::context_package::registry::SignaturePolicy::RequireSigned
     };
     match registry.install_addon_from_file(path, policy) {
         Ok(manifest) => {
@@ -961,30 +867,6 @@ mod tests {
         assert!(err.contains("name is required"), "{err}");
     }
 
-    /// An argument that names something on disk must never reach the network.
-    /// A file called `foo/bar` in the working directory also parses as a valid
-    /// `ns/name` reference, and resolving that remotely instead would install
-    /// something other than what the user pointed at.
-    #[test]
-    fn a_local_file_is_preferred_over_a_remote_reference() {
-        use crate::core::context_package::remote;
-
-        let dir = tempfile::tempdir().unwrap();
-        let ns_dir = dir.path().join("acme");
-        std::fs::create_dir(&ns_dir).unwrap();
-        let file = ns_dir.join("widget");
-        std::fs::write(&file, b"{}").unwrap();
-
-        // The name is a well-formed remote ref …
-        assert!(
-            remote::parse_remote_ref("acme/widget").is_some(),
-            "precondition: this parses as a registry reference"
-        );
-        // … and yet the path on disk is what cmd_add resolves, because
-        // `is_file()` is checked first.
-        assert!(file.is_file());
-    }
-
     /// The disclosure must match the risk. A pin is a statement about a local
     /// binary, so it is meaningless for an http endpoint — printing "none —
     /// whatever `command` resolves to" for a URL describes a `command` that
@@ -1010,41 +892,6 @@ mod tests {
             "https://e.test/mcp",
             "an http addon is described by its endpoint, not a command line"
         );
-    }
-
-    /// A mistyped filename must not be resolved over the network. `./typo.ctxpkg`
-    /// parses as a valid `ns/name`, so without a shape check the user gets
-    /// "package not found in the registry — private packages need CTXPKG_TOKEN"
-    /// for a local typo: the wrong culprit and a pointless instruction.
-    #[test]
-    fn path_shaped_arguments_are_never_treated_as_registry_refs() {
-        for arg in [
-            "./missing.ctxpkg",
-            "../build/x.ctxpkg",
-            "/abs/path/x.ctxpkg",
-            "~/downloads/x.ctxpkg",
-            "demo__squeeze-1.0.0.ctxpkg",
-        ] {
-            assert!(looks_like_a_path(arg), "should be a path: {arg}");
-        }
-        for arg in ["acme/widget", "acme/widget@1.2.0", "widget"] {
-            assert!(!looks_like_a_path(arg), "should be a registry ref: {arg}");
-        }
-    }
-
-    /// The staging guard exists so the downloaded bytes survive the consent
-    /// prompt and are gone afterwards — a leftover .ctxpkg in the temp dir is
-    /// executable content nobody is tracking.
-    #[test]
-    fn staged_artifacts_are_deleted_on_drop() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("staged.ctxpkg");
-        std::fs::write(&path, b"{}").unwrap();
-        {
-            let _guard = Staged(path.clone());
-            assert!(path.is_file(), "available while the guard lives");
-        }
-        assert!(!path.exists(), "removed when the guard drops");
     }
 
     /// `remove` unwires by the manifest's `[addon] name`, and the manifest

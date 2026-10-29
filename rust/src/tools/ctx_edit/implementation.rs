@@ -365,10 +365,17 @@ pub fn run_io(params: &EditParams, last_mode: &str) -> (String, CacheEffect) {
         ""
     };
 
-    let closest_hint = find_closest_line_hint(content, old_str);
+    // Everything this failure quotes from the file is model-visible, so it is
+    // taken from the admitted reading, never from the original bytes the edit
+    // itself works on. A withheld source yields no quote and no cache store.
+    let admitted = crate::tools::ctx_read::read_file_lossy_admitted_for_cli(file_path).ok();
+    let closest_hint = admitted
+        .as_ref()
+        .map(|source| find_closest_line_hint(&source.text, old_str))
+        .unwrap_or_default();
     let cross_file = crate::tools::edit_recovery::cross_file_hint(path, old_str);
 
-    let (escalation, effect) = auto_escalate_reread(last_mode, file_path);
+    let (escalation, effect) = auto_escalate_reread(last_mode, admitted);
 
     (
         format!(
@@ -434,14 +441,23 @@ fn find_closest_line_hint(content: &str, old_str: &str) -> String {
 /// in a compressed mode, re-read in full and return the content so the agent
 /// can immediately retry with the correct old_string. Returns the text to append
 /// plus the [`CacheEffect`] the caller should apply (store full content).
-fn auto_escalate_reread(last_mode: &str, path: &str) -> (String, CacheEffect) {
+///
+/// `admitted` is the Gateway-admitted reading of the file; `None` (withheld or
+/// unreadable) escalates nothing. Restricted text is shown as admitted but
+/// never handed to the cache (E3).
+fn auto_escalate_reread(
+    last_mode: &str,
+    admitted: Option<crate::core::context_admission::SourceAdmission>,
+) -> (String, CacheEffect) {
     if last_mode.is_empty() || last_mode == "full" {
         return (String::new(), CacheEffect::None);
     }
 
-    let Ok(fresh_content) = std::fs::read_to_string(path) else {
+    let Some(admitted) = admitted else {
         return (String::new(), CacheEffect::None);
     };
+    let storable = admitted.storable;
+    let fresh_content = admitted.text;
 
     let line_count = fresh_content.lines().count();
     const MAX_LINES: usize = 300;
@@ -465,7 +481,11 @@ fn auto_escalate_reread(last_mode: &str, path: &str) -> (String, CacheEffect) {
             "\n\n[auto-escalation] Last read used mode=\"{last_mode}\". \
              Full content ({line_count}L) below — retry edit with exact text from here:\n\n{content_preview}"
         ),
-        CacheEffect::StoreFull(fresh_content),
+        if storable {
+            CacheEffect::StoreFull(fresh_content)
+        } else {
+            CacheEffect::None
+        },
     )
 }
 

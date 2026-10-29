@@ -74,7 +74,7 @@ fn unified_tool_defs_raw() -> Vec<Tool> {
         ),
         tool_def(
             "ctx_tree",
-            "Directory tree (replaces ls/find) — compact maps with file counts per directory. depth=N (default 3); paths for multi-root. Use for orientation before ctx_repomap or ctx_compose.",
+            "Directory tree (replaces ls/find) — compact maps with file counts per directory. depth=N (default 3); paths for multi-root. Use for orientation before ctx_compose.",
             json!({
                 "type": "object",
                 "properties": {

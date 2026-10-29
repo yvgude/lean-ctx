@@ -91,6 +91,21 @@ if [ "${PRECOMMIT_FORCE_CARGO:-0}" != "1" ] \
     exit 0
 fi
 
+# Tree stamp: `make precommit-check` runs these checks before the commit; the
+# commit's own hook then skips them when the staged tree is the one checked.
+# Cargo checks the working tree, so a stamp is only written (and only trusted)
+# when rust/ and packages/ have no unstaged changes against the index.
+STAMP="$(git rev-parse --git-path lean-ctx-precommit.stamp)"
+staged_tree=$(git write-tree)
+rust_matches_index() { git diff --quiet -- rust packages; }
+if [ "${PRECOMMIT_FORCE_CARGO:-0}" != "1" ] && rust_matches_index \
+    && [ "$(cat "$STAMP" 2>/dev/null)" = "$staged_tree" ]; then
+    echo "pre-commit: staged tree ${staged_tree:0:12} already passed the checks — skipping cargo."
+    exit 0
+fi
+stamp_ok=0
+rust_matches_index && stamp_ok=1
+
 cd "$REPO_ROOT/rust"
 
 # Each step prints a progress line and logs to its own file, so long clippy
@@ -128,8 +143,10 @@ test_clippy_args=(-A clippy::too_many_lines -A clippy::unwrap_used)
 if clippy-driver -W help 2>/dev/null | grep -F 'clippy::assert-is-empty' >/dev/null; then
     test_clippy_args+=(-A clippy::assert_is_empty)
 fi
+# Same feature set as the production step, so dependencies and build scripts are
+# compiled once for both steps; only the lean-ctx test crates are checked again.
 run_step "clippy (tests)" "Fix warnings before committing." \
-    cargo clippy --tests -- -D warnings "${test_clippy_args[@]}"
+    cargo clippy --all-features --tests -- -D warnings "${test_clippy_args[@]}"
 
 # Generated reference docs must match the tool/config definitions —
 # the CI Documentation job runs the same check and fails otherwise.
@@ -146,3 +163,8 @@ if printf '%s\n' "$staged_names" | grep -qE '^rust/(eval/testbench/|src/core/eva
 fi
 
 rm -rf "$LOG_DIR"
+
+cd "$REPO_ROOT"
+if [ "$stamp_ok" = 1 ] && rust_matches_index && [ "$(git write-tree)" = "$staged_tree" ]; then
+    printf '%s\n' "$staged_tree" >"$STAMP"
+fi

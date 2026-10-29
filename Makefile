@@ -1,6 +1,4 @@
-.PHONY: setup-hooks install install-release build check dev test preflight preflight-fast enterprise-ci-check help
-
-ENTERPRISE_DIR ?= ../lean-ctx-enterprise
+.PHONY: setup-hooks install install-release build check dev test precommit-check preflight preflight-fast help
 
 # ── Setup ─────────────────────────────────────────────────
 
@@ -16,7 +14,8 @@ install-release: ## Production release build + atomic install + restart
 	@mkdir -p "$$HOME/.local/bin"
 	bash rust/dev-install.sh --release
 
-check: ## Type-check changes without linking a binary
+check: ## Type-check changes without linking a binary + local-free invariant
+	python3 scripts/check-local-free.py
 	cd rust && cargo check --locked
 
 build: ## Optimized incremental development build
@@ -33,19 +32,14 @@ test: ## Run all Rust tests + clippy
 # Mirrors .github/workflows/ci.yml so green-here => green-in-CI for the
 # deterministic jobs (fmt/clippy/doc/gen_docs/cross-platform compile).
 
+precommit-check: ## Run the pre-commit checks on the staged tree once; the commit's hook then skips them
+	umask 077; .githooks/pre-commit
+
 preflight: ## Full local CI-parity gate (fmt, clippy, doc, gen_docs, win-check, lib tests)
 	scripts/preflight.sh full
 
 preflight-fast: ## Static CI-parity gate (no full test run) — what pre-push runs
 	scripts/preflight.sh fast
-
-# ── Enterprise CI ────────────────────────────────────────────
-
-enterprise-ci-check: ## Validate the separate enterprise checkout for feature-flag CI
-	@test -d "$(ENTERPRISE_DIR)" || { echo "Enterprise checkout not found: $(ENTERPRISE_DIR)"; exit 1; }
-	@test -f "$(ENTERPRISE_DIR)/Cargo.toml" || { echo "Missing Cargo.toml in $(ENTERPRISE_DIR)"; exit 1; }
-	@cd "$(ENTERPRISE_DIR)" && cargo metadata --no-deps --format-version 1 >/dev/null
-	@echo "Enterprise checkout ready: $(ENTERPRISE_DIR)"
 
 # ── Help ──────────────────────────────────────────────────
 

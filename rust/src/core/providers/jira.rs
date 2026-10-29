@@ -80,9 +80,9 @@ struct ResolvedAuth {
 
 impl JiraConfig {
     pub fn from_env() -> Result<Self, String> {
-        let project = std::env::var("JIRA_PROJECT").ok();
+        let project = super::credentials::var("JIRA_PROJECT").ok();
 
-        let deployment = match std::env::var("JIRA_DEPLOYMENT")
+        let deployment = match super::credentials::var("JIRA_DEPLOYMENT")
             .unwrap_or_default()
             .to_lowercase()
             .as_str()
@@ -93,18 +93,21 @@ impl JiraConfig {
 
         // Prefer OAuth when a credential is already stored for the data source,
         // or when explicitly forced via JIRA_AUTH=oauth.
-        let data_source = std::env::var("JIRA_DATA_SOURCE")
+        let data_source = super::credentials::var("JIRA_DATA_SOURCE")
             .ok()
             .map(|v| v.trim().to_string())
             .filter(|v| !v.is_empty())
             .unwrap_or_else(|| "jira".to_string());
-        let force_oauth = std::env::var("JIRA_AUTH").is_ok_and(|v| v.eq_ignore_ascii_case("oauth"));
-        let has_oauth_cred = jira_oauth::get_credential(&data_source).is_some();
+        let force_oauth =
+            super::credentials::var("JIRA_AUTH").is_ok_and(|v| v.eq_ignore_ascii_case("oauth"));
+        // A candidate check tests the given API token, not a stored OAuth grant.
+        let has_oauth_cred = !super::credentials::candidates_active()
+            && jira_oauth::get_credential(&data_source).is_some();
 
         if force_oauth || has_oauth_cred {
             // OAuth is Jira Cloud only; JIRA_URL is optional and only used as a
             // fallback for browse links if the stored site URL is unavailable.
-            let base_url = std::env::var("JIRA_URL")
+            let base_url = super::credentials::var("JIRA_URL")
                 .unwrap_or_default()
                 .trim_end_matches('/')
                 .to_string();
@@ -116,9 +119,9 @@ impl JiraConfig {
             });
         }
 
-        let base_url = std::env::var("JIRA_URL").map_err(|_| "JIRA_URL not set")?;
-        let email = std::env::var("JIRA_EMAIL").map_err(|_| "JIRA_EMAIL not set")?;
-        let token = std::env::var("JIRA_TOKEN").map_err(|_| "JIRA_TOKEN not set")?;
+        let base_url = super::credentials::var("JIRA_URL").map_err(|_| "JIRA_URL not set")?;
+        let email = super::credentials::var("JIRA_EMAIL").map_err(|_| "JIRA_EMAIL not set")?;
+        let token = super::credentials::var("JIRA_TOKEN").map_err(|_| "JIRA_TOKEN not set")?;
 
         Ok(Self {
             base_url: base_url.trim_end_matches('/').to_string(),
@@ -126,6 +129,29 @@ impl JiraConfig {
             deployment,
             auth: JiraAuth::Basic { email, token },
         })
+    }
+
+    /// Who Jira says these credentials belong to (`/myself`), for a
+    /// connection check. Read-only; nothing is cached.
+    pub(crate) fn whoami(&self) -> Result<String, String> {
+        let auth = self.resolve()?;
+        let body = super::hardened_http::provider_get_with_headers(
+            "jira",
+            &format!("{}/rest/api/2/myself", auth.api_base),
+            &[
+                ("Authorization", &auth.auth_header),
+                ("Accept", "application/json"),
+            ],
+        )
+        .into_body()
+        .map_err(|e| format!("Jira refused the credentials: {e}"))?;
+        let value: serde_json::Value =
+            serde_json::from_str(&body).map_err(|_| "Jira returned no account".to_string())?;
+        Ok(["displayName", "emailAddress", "name"]
+            .iter()
+            .find_map(|key| value.get(*key).and_then(serde_json::Value::as_str))
+            .unwrap_or("signed in")
+            .to_string())
     }
 
     /// Resolves the effective base URLs and `Authorization` header for a request,
@@ -174,6 +200,32 @@ impl JiraProvider {
             config: JiraConfig::from_env(),
         }
     }
+
+    /// Construct with an explicit config, bypassing env discovery.
+    #[must_use]
+    pub fn with_config(config: JiraConfig) -> Self {
+        Self { config: Ok(config) }
+    }
+}
+
+/// A Jira project key as Jira defines it: an uppercase letter, then uppercase
+/// letters, digits or underscores. Anything else is refused, never quoted into
+/// JQL, so a caller value cannot become a JQL clause.
+fn valid_project_key(value: &str) -> bool {
+    let mut bytes = value.bytes();
+    (2..=255).contains(&value.len())
+        && bytes.next().is_some_and(|b| b.is_ascii_uppercase())
+        && bytes.all(|b| b.is_ascii_uppercase() || b.is_ascii_digit() || b == b'_')
+}
+
+/// An issue key `PROJECT-123` with a valid project key and a positive number.
+fn valid_issue_key(value: &str) -> bool {
+    value.rsplit_once('-').is_some_and(|(project, number)| {
+        valid_project_key(project)
+            && !number.is_empty()
+            && !number.starts_with('0')
+            && number.bytes().all(|b| b.is_ascii_digit())
+    })
 }
 
 impl ContextProvider for JiraProvider {
@@ -199,7 +251,70 @@ impl ContextProvider for JiraProvider {
     }
 
     fn cache_ttl_secs(&self) -> u64 {
-        120
+        0
+    }
+
+    fn descriptor(&self) -> super::provider_trait::ConnectorDescriptor {
+        descriptor()
+    }
+
+    /// The source a stored issue came from: site, deployment and the identity
+    /// that read it (API-token user or OAuth data source). Another account or
+    /// site is another source.
+    fn reuse_binding(&self, action: &str, _params: &ProviderParams) -> Option<String> {
+        if action != "issues" {
+            return None;
+        }
+        let config = self.config.as_ref().ok()?;
+        let identity = match &config.auth {
+            JiraAuth::Basic { email, token } => {
+                serde_json::json!({"basic": email, "credential": token})
+            }
+            JiraAuth::OAuth { data_source } => serde_json::json!({"oauth": data_source}),
+        };
+        super::provenance::digest(&serde_json::json!({
+            "version": 1, "provider": "jira", "site": config.base_url,
+            "deployment": matches!(config.deployment, JiraDeployment::Server), "identity": identity,
+        }))
+    }
+
+    fn reacquire_item(
+        &self,
+        action: &str,
+        params: &ProviderParams,
+        item_id: &str,
+    ) -> Result<ProviderResult, String> {
+        if self.reuse_binding(action, params).is_none() {
+            return Err("Jira source is unavailable for item reauthorization".into());
+        }
+        if !valid_issue_key(item_id) {
+            return Err("invalid stored Jira issue key".into());
+        }
+        let config = self.config.as_ref().map_err(Clone::clone)?;
+        let resolved = config.resolve()?;
+        let version = match config.deployment {
+            JiraDeployment::Cloud => 3,
+            JiraDeployment::Server => 2,
+        };
+        // Jira answers 404 for an issue the identity may not see, including
+        // issues behind an issue-security level: that is "no longer accessible".
+        let url = format!(
+            "{}/rest/api/{version}/issue/{item_id}?fields=summary,status,reporter,created,updated,labels,description",
+            resolved.api_base
+        );
+        let text = jira_request(&resolved.auth_header, "GET", &url, None)?;
+        let issue: serde_json::Value =
+            serde_json::from_str(&text).map_err(|_| "invalid Jira issue response")?;
+        if issue["key"].as_str() != Some(item_id) {
+            return Err("stored Jira issue moved or was renamed".into());
+        }
+        Ok(ProviderResult {
+            provider: "jira".into(),
+            resource_type: "issues".into(),
+            items: vec![parse_issue(&issue, &resolved.browse_base)],
+            total_count: Some(1),
+            truncated: false,
+        })
     }
 
     fn requires_auth(&self) -> bool {
@@ -243,6 +358,8 @@ fn jira_request(
     }
 
     resp.into_body()
+        .into_with_config()
+        .limit(super::hardened_http::MAX_RESPONSE_BODY_BYTES)
         .read_to_string()
         .map_err(|e| format!("Jira read error: {e}"))
 }
@@ -303,13 +420,14 @@ fn jira_requests_keep_credentials_and_body_at_selected_origin() {
 // ---------------------------------------------------------------------------
 
 fn list_issues(config: &JiraConfig, params: &ProviderParams) -> Result<ProviderResult, String> {
+    build_jql(config, params)?;
     match config.deployment {
         JiraDeployment::Cloud => list_issues_cloud(config, params),
         JiraDeployment::Server => list_issues_server(config, params),
     }
 }
 
-fn build_jql(config: &JiraConfig, params: &ProviderParams) -> String {
+fn build_jql(config: &JiraConfig, params: &ProviderParams) -> Result<String, String> {
     let project = params
         .state
         .as_deref()
@@ -317,9 +435,11 @@ fn build_jql(config: &JiraConfig, params: &ProviderParams) -> String {
         .unwrap_or("*");
 
     if project == "*" {
-        "ORDER BY updated DESC".to_string()
+        Ok("ORDER BY updated DESC".to_string())
+    } else if valid_project_key(project) {
+        Ok(format!("project={project} ORDER BY updated DESC"))
     } else {
-        format!("project={project} ORDER BY updated DESC")
+        Err("invalid Jira project key".into())
     }
 }
 
@@ -329,7 +449,7 @@ fn list_issues_cloud(
 ) -> Result<ProviderResult, String> {
     let resolved = config.resolve()?;
     let limit = params.limit.unwrap_or(20);
-    let jql = build_jql(config, params);
+    let jql = build_jql(config, params)?;
     let url = format!("{}/rest/api/3/search/jql", resolved.api_base);
 
     let mut all_items = Vec::new();
@@ -382,7 +502,7 @@ fn list_issues_server(
 ) -> Result<ProviderResult, String> {
     let resolved = config.resolve()?;
     let limit = params.limit.unwrap_or(20);
-    let jql = build_jql(config, params);
+    let jql = build_jql(config, params)?;
 
     let url = format!(
         "{}/rest/api/2/search?jql={}&maxResults={limit}",
@@ -454,6 +574,9 @@ fn list_sprints(config: &JiraConfig, params: &ProviderParams) -> Result<Provider
         .state
         .as_deref()
         .ok_or("Sprint listing requires a board ID via the 'state' parameter")?;
+    if board_id.is_empty() || board_id.len() > 19 || !board_id.bytes().all(|b| b.is_ascii_digit()) {
+        return Err("Jira board ID must be a number".into());
+    }
 
     let resolved = config.resolve()?;
     let limit = params.limit.unwrap_or(5);
@@ -490,6 +613,26 @@ fn list_sprints(config: &JiraConfig, params: &ProviderParams) -> Result<Provider
         total_count: Some(sprints.len()),
         truncated: false,
     })
+}
+
+pub(crate) fn descriptor() -> super::provider_trait::ConnectorDescriptor {
+    use super::provider_trait::{CapabilityLevel as L, ConnectorDescriptor as C};
+    C {
+        principal_binding: "API-token user (Basic) or OAuth 3LO data source, bound with site and deployment",
+        search: L::Partial,
+        list: L::Supported,
+        get: L::Supported,
+        delta: L::Unsupported,
+        revalidate_acl: L::Supported,
+        revalidate_revision: L::Supported,
+        delete_event: L::Partial,
+        content_trust: C::UNTRUSTED,
+        write_surface: C::NO_WRITES,
+        failure_policy: C::FAIL_CLOSED,
+        notes: "search = JQL by validated project key only; issues re-checked per item with the principal's \
+                identity (404 incl. issue security = no longer accessible, moved key refused); comments and \
+                attachments not fetched; sprints are list-only; rich-text bodies are not rendered",
+    }
 }
 
 #[cfg(test)]
@@ -608,7 +751,7 @@ mod tests {
         let cfg = basic_cfg("https://x.atlassian.net", Some("PROJ"));
         let params = ProviderParams::default();
         assert_eq!(
-            build_jql(&cfg, &params),
+            build_jql(&cfg, &params).unwrap(),
             "project=PROJ ORDER BY updated DESC"
         );
     }
@@ -617,7 +760,121 @@ mod tests {
     fn build_jql_wildcard() {
         let cfg = basic_cfg("", None);
         let params = ProviderParams::default();
-        assert_eq!(build_jql(&cfg, &params), "ORDER BY updated DESC");
+        assert_eq!(build_jql(&cfg, &params).unwrap(), "ORDER BY updated DESC");
+    }
+
+    #[test]
+    fn a_project_value_cannot_become_a_jql_clause() {
+        let cfg = basic_cfg("https://x.atlassian.net", None);
+        for injected in [
+            "PROJ OR project=SECRET",
+            "PROJ ORDER BY created",
+            "proj",
+            "PROJ\" OR 1=1",
+            "P",
+            "PROJ)",
+            "PROJ-1",
+        ] {
+            let params = ProviderParams {
+                state: Some(injected.into()),
+                ..ProviderParams::default()
+            };
+            assert!(build_jql(&cfg, &params).is_err(), "{injected}");
+        }
+        assert!(valid_issue_key("PROJ-12") && valid_issue_key("A_1-9"));
+        for key in [
+            "PROJ-0",
+            "PROJ-012",
+            "proj-1",
+            "PROJ-",
+            "PROJ-1/../2",
+            "PROJ-1?x=1",
+        ] {
+            assert!(!valid_issue_key(key), "{key}");
+        }
+    }
+
+    fn reachable_cfg(url: &str) -> JiraConfig {
+        JiraConfig {
+            base_url: url.into(),
+            project: Some("PROJ".into()),
+            deployment: JiraDeployment::Server,
+            auth: JiraAuth::Basic {
+                email: "reader@example.test".into(),
+                token: "synthetic-jira-token".into(),
+            },
+        }
+    }
+
+    #[test]
+    fn an_issue_is_reacquired_now_and_a_lost_permission_or_move_is_refused() {
+        use crate::core::providers::hardened_http::redirect_tests::Server;
+        let issue = |key: &str, updated: &str| {
+            serde_json::json!({"key": key, "fields": {"summary": "s", "status": {"name": "Open"},
+                "updated": updated, "description": "body"}})
+            .to_string()
+        };
+        let server = Server::new(200, None, &issue("PROJ-7", "2026-10-14T10:00:00Z"));
+        let provider = JiraProvider::with_config(reachable_cfg(&server.url));
+        let params = ProviderParams::default();
+        let binding = provider.reuse_binding("issues", &params).unwrap();
+        assert!(provider.reuse_binding("sprints", &params).is_none());
+
+        let current = provider
+            .reacquire_item("issues", &params, "PROJ-7")
+            .unwrap();
+        assert_eq!(current.items[0].id, "PROJ-7");
+        assert_eq!(
+            server.last_request_line().unwrap(),
+            "GET /rest/api/2/issue/PROJ-7?fields=summary,status,reporter,created,updated,labels,description HTTP/1.1"
+        );
+
+        // Issue security or a removed project: Jira answers 404.
+        server.respond(404, "{}");
+        assert!(
+            provider
+                .reacquire_item("issues", &params, "PROJ-7")
+                .is_err()
+        );
+        // Moved to another project: the stored key no longer names it.
+        server.respond(200, &issue("OTHER-1", "2026-10-14T11:00:00Z"));
+        assert!(
+            provider
+                .reacquire_item("issues", &params, "PROJ-7")
+                .is_err()
+        );
+        // A malformed stored key never reaches the network.
+        let before = server.count();
+        assert!(
+            provider
+                .reacquire_item("issues", &params, "PROJ-7/../x")
+                .is_err()
+        );
+        assert_eq!(server.count(), before);
+
+        // Another account on the same site is another source.
+        let mut other = reachable_cfg(&server.url);
+        other.auth = JiraAuth::Basic {
+            email: "other@example.test".into(),
+            token: "synthetic-jira-token".into(),
+        };
+        assert_ne!(
+            JiraProvider::with_config(other).reuse_binding("issues", &params),
+            Some(binding)
+        );
+    }
+
+    #[test]
+    fn a_board_id_is_a_number() {
+        let provider = JiraProvider::with_config(reachable_cfg("http://127.0.0.1:9"));
+        let params = ProviderParams {
+            state: Some("1/../../rest/api/2/myself".into()),
+            ..ProviderParams::default()
+        };
+        assert_eq!(
+            provider.execute("sprints", &params).unwrap_err(),
+            "Jira board ID must be a number"
+        );
     }
 
     #[test]

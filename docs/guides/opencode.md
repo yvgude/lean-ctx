@@ -181,7 +181,7 @@ The same selection and cache mechanisms apply where supported:
 ctx_read("src/main.rs", "full")
 
 # Gather task-oriented project context
-ctx_overview("implement user authentication")
+ctx_compose("implement user authentication")
 ```
 
 ## OpenCode-Specific Workflow
@@ -190,7 +190,7 @@ ctx_overview("implement user authentication")
 
 ```
 # 1. Fast project orientation
-ctx_overview("your task description")
+ctx_compose("your task description")
 
 # 2. Understand project structure
 ctx_tree("src/", 3)
@@ -205,7 +205,7 @@ ctx_read("src/main.rs", "map")
 ```
 # Search efficiently
 ctx_search("fn handle_request", "src/")
-ctx_semantic_search("where is user validation?")
+ctx_search(action="semantic", query="where is user validation?")
 
 # Read files you'll edit
 ctx_read("src/api/handler.rs", "full")
@@ -268,13 +268,13 @@ OpenCode can use lean-ctx's full tool suite:
 
 ```
 # Code intelligence
-ctx_callgraph("src/api/mod.rs", "handle_request")  # Call graph analysis
-ctx_refactor("references", "src/models/user.rs", "User")  # Find all references
-ctx_smells("src/api/handler.rs")  # Code smell detection
+ctx_callgraph(action="callers", symbol="handle_request")  # Call graph analysis
+ctx_search(action="symbol", name="User")  # Find the definition
+ctx_search("User", "src/")  # Find all references
 
 # Architecture analysis
-ctx_architecture("src/")  # Architecture overview
-ctx_impact("src/models/user.rs")  # Blast radius analysis
+ctx_graph(action="diagram", kind="deps")  # Dependency diagram (Mermaid)
+ctx_graph(action="impact", path="src/models/user.rs")  # Blast radius analysis
 
 # Context packages
 ctx_pack("create", "feature-auth")  # Bundle context for sharing

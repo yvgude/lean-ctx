@@ -6,24 +6,27 @@ mod bootstrap;
 mod catalog;
 mod channel;
 mod cli;
+pub(crate) mod cockpit;
 pub(crate) mod code_security;
+pub(crate) mod compliance_frameworks;
 mod configuration;
 pub(crate) mod context_policy;
 pub(crate) mod context_selection;
-#[cfg(any(target_os = "macos", target_os = "linux"))]
-mod context_sharing;
+pub(crate) mod dashboard_pro;
+mod exchange;
 pub(crate) mod memory_curation;
+pub(crate) mod org_policy_verifier;
 pub(crate) mod personal_protection;
+pub(crate) mod semantic_coverage;
 pub(crate) mod semantic_detectors;
+mod semantic_worker;
 pub(crate) use configuration::{DISCLOSURE, inspect_setup};
-mod activation;
 mod health;
 mod install;
+mod license;
+// The Hive connector (`core::hive::runtime_lease`) registers the source.
+pub(crate) mod lease;
 mod manifest;
-#[cfg(any(target_os = "macos", target_os = "linux", windows))]
-mod project_sync;
-mod provisioning;
-mod renewal_service;
 mod rotation;
 #[cfg(any(unix, windows))]
 mod session;
@@ -37,7 +40,7 @@ use std::io::Read;
 use std::path::Path;
 
 pub(crate) use cli::run;
-use manifest::{VerifiedPackage, verify};
+use manifest::{VerifiedPackage, verify, verify_kind};
 
 // The signed archive member stays platform-neutral; only materialized files vary.
 const EXECUTABLE_NAME: &str = if cfg!(windows) {
@@ -45,6 +48,37 @@ const EXECUTABLE_NAME: &str = if cfg!(windows) {
 } else {
     "leanctx-intelligence"
 };
+
+/// The signed package kinds the runtime channel delivers. Both share the
+/// archive shape, the signature domains and the trust chain; the signed
+/// `runtime-description.json` names the kind (`engine_id`), and every use
+/// re-authenticates the package as the kind it expects, so one kind never
+/// runs as the other.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RuntimeKind {
+    /// The Pro Intelligence Runtime: licence-bound outside staging.
+    Intelligence,
+    /// The Cockpit web UI: free for everyone, never licence-bound.
+    Cockpit,
+}
+
+impl RuntimeKind {
+    pub(crate) const fn engine_id(self) -> &'static str {
+        match self {
+            Self::Intelligence => "leanctx-intelligence",
+            Self::Cockpit => "leanctx-cockpit",
+        }
+    }
+
+    /// The store directory beside the context data: `<name>` for staging,
+    /// `<name>-production` for production. Kinds never share a store.
+    pub(crate) const fn store_name(self) -> &'static str {
+        match self {
+            Self::Intelligence => "intelligence-runtime",
+            Self::Cockpit => "cockpit-runtime",
+        }
+    }
+}
 
 #[derive(Debug, thiserror::Error)]
 pub(crate) enum InstallError {
@@ -70,34 +104,20 @@ pub(crate) enum InstallError {
     Busy,
     #[error("runtime selection changed or retained package is inconsistent")]
     State,
+    #[error("runtime channel is older than the active one; a downgrade must be requested")]
+    Downgrade,
     #[error("atomic runtime selection write failed")]
     Commit,
     #[error("runtime health check failed or exceeded its bound")]
     Health,
+    #[error("runtime invocation is not supported by the authenticated package and this host")]
+    InvocationAdmission,
     #[error("runtime invocation failed or exceeded its bound")]
     Exchange,
-    #[cfg(any(target_os = "macos", target_os = "linux", windows))]
-    #[error("personal sync failed: {0}")]
-    SyncCycle(&'static str),
     #[error("runtime request or policy input was rejected")]
     Policy,
     #[error("runtime global configuration could not be updated")]
     Configuration,
-    #[error("runtime device provisioning failed; inspect configured device state before retrying")]
-    Provisioning,
-    #[error("runtime license renewal check failed; no renewed access is confirmed")]
-    Renewal,
-    #[error(
-        "runtime user service operation failed; inspect its saved service state before retrying"
-    )]
-    RenewalService,
-    #[cfg(any(unix, windows))]
-    #[error(
-        "personal activation did not finish; check account access and retained personal-license state before retrying"
-    )]
-    Activation,
-    #[error("device provisioned but runtime configuration changed or could not be saved")]
-    ProvisionedConfiguration,
 }
 
 pub(crate) type Result<T> = std::result::Result<T, InstallError>;

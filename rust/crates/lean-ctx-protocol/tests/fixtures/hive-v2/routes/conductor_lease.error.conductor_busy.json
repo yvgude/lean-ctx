@@ -1,0 +1,11 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "holder": {
+      "name": "Claude Code · conductor",
+      "worker_id": "wkr_cxdouocvevdhm22vpdrh"
+    },
+    "message": "Another conductor holds the lease.",
+    "reason": "conductor_busy"
+  }
+}

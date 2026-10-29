@@ -1,0 +1,153 @@
+{
+  "buckets": [
+    {
+      "hour": "2026-10-26T17:00:00Z",
+      "rev": 3,
+      "slices": [
+        {
+          "calls": {
+            "cache_hits": 2,
+            "cache_reads": 2,
+            "tool_calls": 12
+          },
+          "compression": {
+            "compressed": 1900,
+            "original": 6000
+          },
+          "gauges": {
+            "facts_current": 413
+          },
+          "guards": {
+            "content_withheld": 0,
+            "injection_flags": 0,
+            "partial_inspections": 0,
+            "paths_blocked": 0,
+            "pii_redacted": 0,
+            "secrets_redacted": 0,
+            "shell_blocked": 0
+          },
+          "hosts": [
+            {
+              "host": "claude-code",
+              "sessions": 0,
+              "tool_calls": 12
+            }
+          ],
+          "ledger": {
+            "cache_discount": 0,
+            "correction": 0,
+            "edit": 0,
+            "other": 0,
+            "reduction": 5800
+          },
+          "policy_blocks": [],
+          "read_modes": {
+            "auto": 7
+          },
+          "refetch": [],
+          "savings": {
+            "estimated": 0,
+            "estimated_high": 0,
+            "estimated_low": 0,
+            "evidenced": 2100,
+            "measured": 5800,
+            "overhead": 900
+          },
+          "secret_hits": [],
+          "sessions": {
+            "started": 0
+          },
+          "spend": [],
+          "tokens": {
+            "input": 9100,
+            "output": 3300,
+            "saved": 5800
+          },
+          "tools": [
+            {
+              "calls": 12,
+              "saved": 5800,
+              "tool": "ctx_read"
+            }
+          ],
+          "unregulated": [],
+          "vault": "3f9a1c7e5b2d4a6f8e0c1b3d5f7a9c2e"
+        },
+        {
+          "calls": {
+            "cache_hits": 0,
+            "cache_reads": 0,
+            "tool_calls": 9
+          },
+          "compression": {
+            "compressed": 0,
+            "original": 0
+          },
+          "guards": {
+            "content_withheld": 0,
+            "injection_flags": 0,
+            "partial_inspections": 0,
+            "paths_blocked": 0,
+            "pii_redacted": 0,
+            "secrets_redacted": 0,
+            "shell_blocked": 0
+          },
+          "hosts": [
+            {
+              "host": "codex",
+              "sessions": 1,
+              "tool_calls": 9
+            }
+          ],
+          "ledger": {
+            "cache_discount": 0,
+            "correction": 0,
+            "edit": 0,
+            "other": 0,
+            "reduction": 0
+          },
+          "policy_blocks": [],
+          "read_modes": {
+            "auto": 5,
+            "signatures": 4
+          },
+          "refetch": [],
+          "savings": {
+            "estimated": 0,
+            "estimated_high": 0,
+            "estimated_low": 0,
+            "evidenced": 0,
+            "measured": 3000,
+            "overhead": 3400
+          },
+          "secret_hits": [],
+          "sessions": {
+            "started": 1
+          },
+          "spend": [],
+          "tokens": {
+            "input": 5100,
+            "output": 2100,
+            "saved": 3000
+          },
+          "tools": [
+            {
+              "calls": 9,
+              "saved": 3000,
+              "tool": "ctx_read"
+            }
+          ],
+          "unregulated": [],
+          "vault": null
+        }
+      ]
+    }
+  ],
+  "engine": {
+    "engine_version": "3.12.0",
+    "os": "linux"
+  },
+  "key_id": "47983724220c8521",
+  "schema": "leanctx.hive.engine-metrics/v2",
+  "signature": "5d7f62f592f4c074ac862a060374ce6851e108c150074226fc908432358b385eedb115ce64eb791b78beb43ff23b69807e1ca12ae810e6a379b92ad442cde703"
+}

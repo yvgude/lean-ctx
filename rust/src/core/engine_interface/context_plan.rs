@@ -4,6 +4,7 @@
 
 #[path = "context_plan/materialize.rs"]
 pub(crate) mod materialize_impl;
+pub(crate) mod presenter;
 pub(crate) mod sources;
 
 #[cfg(test)]
@@ -32,6 +33,11 @@ use crate::core::context_kernel::{
 };
 
 /// Replan and materialize an explicit source plan using the canonical planner.
+///
+/// The presentations and the lineage recorded here belong to the presenter
+/// of the request in scope (`core::archive::presented`, "Presenters"): this
+/// process, unless [`presenter::materialize_v2`] runs it under an issued
+/// capability. No field of `request` names or selects a presenter.
 pub(crate) fn materialize(
     root: &Path,
     request: &EngineContextSourceMaterializationRequestV1,

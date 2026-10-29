@@ -1,0 +1,65 @@
+{
+  "route": "W92",
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/compute/credit/top-up",
+  "request": {
+    "credits": 500
+  },
+  "response": {
+    "status": 200,
+    "body": {
+      "url": "https://checkout.stripe.com/c/pay/cs_test_a1b2c3"
+    }
+  },
+  "errors": [
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "Credit comes from an operator grant on this Hive; test-mode Stripe is not configured.",
+          "state": "top_up_unavailable"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "human_session_required",
+          "message": "this action needs a person signed in on the web; tokens are refused"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "confirm with your second factor first"
+        }
+      }
+    },
+    {
+      "status": 402,
+      "body": {
+        "error": {
+          "code": "plan_required",
+          "message": "Task Compute: included in Team and Enterprise.",
+          "plan_needed": "team",
+          "feature": "compute"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "feature_disabled",
+          "message": "this feature is switched off on this Hive",
+          "feature": "compute"
+        }
+      }
+    }
+  ]
+}

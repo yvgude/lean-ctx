@@ -455,7 +455,7 @@ pub fn check_server_available(
         format!(
             "Language server '{}' not found in PATH (or not installed behind its rustup proxy).\n\
              \n\
-             ctx_refactor requires an external language server for '{}' files.\n\
+             LSP-backed symbol operations require an external language server for '{}' files.\n\
              Install it with:\n\
              \n\
              \x20   {}\n\

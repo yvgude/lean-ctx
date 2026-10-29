@@ -1,0 +1,15 @@
+{
+  "case": "signature_tampered",
+  "base": "events/node.add.fact.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/causal_base",
+      "value": 7
+    }
+  ],
+  "expect": {
+    "layer": "signature",
+    "code": "sig_invalid"
+  }
+}

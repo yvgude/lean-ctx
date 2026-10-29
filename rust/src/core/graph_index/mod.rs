@@ -104,7 +104,9 @@ fn is_safe_scan_root(path: &str) -> bool {
         return false;
     }
 
-    if let Some(home) = dirs::home_dir() {
+    // Every home spelling (`pathutil::home_dirs`): on Windows the profile
+    // folder and `HOME`/`USERPROFILE` can differ, and both are home.
+    for home in crate::core::pathutil::home_dirs() {
         let home_norm = normalize_project_root(&home.to_string_lossy());
         if normalized == home_norm {
             use std::sync::Once;
@@ -296,6 +298,38 @@ fn default_edge_weight() -> f32 {
 }
 
 impl ProjectIndex {
+    /// Test fixture: moves this index onto a real project directory that
+    /// holds every file it names (and `also`, for files an edge points at
+    /// without an entry), each with the names of its symbols as its text.
+    /// The graph serves a reference only while its file exists inside the
+    /// project root (`property_graph::served`), so an index over invented
+    /// paths serves nothing. Keep the returned directory for the test.
+    #[cfg(test)]
+    pub(crate) fn on_disk(mut self, also: &[&str]) -> (Self, tempfile::TempDir) {
+        let directory = tempfile::tempdir().expect("project directory");
+        let root = std::fs::canonicalize(directory.path()).expect("canonical project root");
+        let mut texts: HashMap<String, String> = self
+            .files
+            .keys()
+            .map(|path| (path.clone(), String::new()))
+            .collect();
+        for path in also {
+            texts.entry((*path).to_owned()).or_default();
+        }
+        for symbol in self.symbols.values() {
+            let text = texts.entry(symbol.file.clone()).or_default();
+            text.push_str(&symbol.name);
+            text.push('\n');
+        }
+        for (path, text) in texts {
+            let file = root.join(&path);
+            std::fs::create_dir_all(file.parent().expect("parent")).expect("directories");
+            std::fs::write(file, text).expect("project file");
+        }
+        self.project_root = Self::new(&root.to_string_lossy()).project_root;
+        (self, directory)
+    }
+
     pub fn new(project_root: &str) -> Self {
         Self {
             version: INDEX_VERSION,
@@ -463,7 +497,22 @@ impl ProjectIndex {
         result
     }
 
+    /// Files reached from `path` within `depth` over the raw index edges —
+    /// for an index scanned in the running call. A stored index is walked
+    /// with `Self::get_related_served`.
     pub fn get_related(&self, path: &str, depth: usize) -> Vec<String> {
+        self.get_related_served(path, depth, &|_: &str| true)
+    }
+
+    /// [`Self::get_related`] under the serve-time source check of the request
+    /// (G04): a file `served` refuses is not reached and nothing is reached
+    /// through it. Files are asked as the walk reaches them.
+    pub(crate) fn get_related_served(
+        &self,
+        path: &str,
+        depth: usize,
+        served: &dyn Fn(&str) -> bool,
+    ) -> Vec<String> {
         let mut result = Vec::new();
         let mut visited = std::collections::HashSet::new();
         let mut queue: Vec<(String, usize)> = vec![(path.to_string(), 0)];
@@ -473,6 +522,9 @@ impl ProjectIndex {
                 continue;
             }
             visited.insert(current.clone());
+            if current != path && !served(&current) {
+                continue;
+            }
             if current != path {
                 result.push(current.clone());
             }

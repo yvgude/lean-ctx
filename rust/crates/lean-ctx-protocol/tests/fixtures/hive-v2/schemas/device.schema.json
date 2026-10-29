@@ -1,0 +1,394 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/device.schema.json",
+  "title": "C0 2.1 device setup",
+  "description": "Connect once (plan v1.1 §4.1): while its device code is pending the engine names the project it runs in, the approval page shares it with the machine, and the new instance's first share is bound to that page instead of a pairing code. Only after POST /v1/device/code listed features: [\"device_setup\"].",
+  "$defs": {
+    "share_code": {
+      "enum": [
+        "knowledge",
+        "usage",
+        "receipts",
+        "bus"
+      ]
+    },
+    "one_line": {
+      "type": "string",
+      "minLength": 1,
+      "pattern": "^[^\\u0000-\\u001f\\u007f]+$"
+    },
+    "setup_request": {
+      "description": "POST /v1/device/setup (no token; the pending device_code). Requester's claims, like instance_label; 204, once per code",
+      "type": "object",
+      "required": [
+        "schema",
+        "device_code",
+        "project",
+        "shares"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.device-setup/v1"
+        },
+        "device_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "project": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "name",
+                "remote"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "allOf": [
+                    {
+                      "$ref": "#/$defs/one_line"
+                    },
+                    {
+                      "maxLength": 64
+                    }
+                  ]
+                },
+                "remote": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "allOf": [
+                        {
+                          "$ref": "#/$defs/one_line"
+                        },
+                        {
+                          "maxLength": 500
+                        }
+                      ]
+                    }
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "shares": {
+          "type": "array",
+          "uniqueItems": true,
+          "maxItems": 4,
+          "items": {
+            "$ref": "#/$defs/share_code"
+          }
+        }
+      }
+    },
+    "setup_result": {
+      "description": "POST /v1/device/setup/result (instance token): how the project step ended; vault = ns/name only for shared; 204",
+      "type": "object",
+      "required": [
+        "schema",
+        "state"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.device-setup-result/v1"
+        },
+        "state": {
+          "enum": [
+            "shared",
+            "kept_local",
+            "no_project",
+            "failed"
+          ]
+        },
+        "vault": {
+          "type": "string",
+          "pattern": "^[^/\\s]+/[^/\\s]+$",
+          "maxLength": 130
+        }
+      }
+    },
+    "device_code_features": {
+      "description": "The features member a C0 2.1 Hive adds to the device code answer (engines ignore unknown members)",
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "contains": {
+        "const": "device_setup"
+      }
+    },
+    "enrollment_sharing": {
+      "description": "sharing of the device token answer, only to an engine that announced a setup: the page's answer to Share this project (null: the page did not ask)",
+      "type": "object",
+      "required": [
+        "share"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "share": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        }
+      }
+    },
+    "lookup_setup": {
+      "description": "setup of the W device lookup (GET /auth/device): the project the engine announced and what it shares; null for an engine that announced none. vault_name is the new vault's name (new/<vault_name>)",
+      "oneOf": [
+        {
+          "type": "null"
+        },
+        {
+          "type": "object",
+          "required": [
+            "project",
+            "shares"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "project": {
+              "oneOf": [
+                {
+                  "type": "null"
+                },
+                {
+                  "type": "object",
+                  "required": [
+                    "name",
+                    "remote",
+                    "vault_name"
+                  ],
+                  "additionalProperties": false,
+                  "properties": {
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 64
+                    },
+                    "remote": {
+                      "type": [
+                        "string",
+                        "null"
+                      ],
+                      "maxLength": 500
+                    },
+                    "vault_name": {
+                      "type": "string",
+                      "pattern": "^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$"
+                    }
+                  }
+                }
+              ]
+            },
+            "shares": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/share_code"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "approve_share": {
+      "description": "share of POST /auth/device/approve: the answer to Share this project, required when the lookup's setup is not null",
+      "type": "boolean"
+    },
+    "status_response": {
+      "description": "W97 GET /api/v1/device/setup?user_code= : the approval page after Approve; only the browser session that approved, for an hour",
+      "type": "object",
+      "required": [
+        "machine",
+        "project",
+        "shares",
+        "share",
+        "setup",
+        "questions",
+        "answer_until"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "machine": {
+          "type": "object",
+          "required": [
+            "label",
+            "connected"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "label": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "connected": {
+              "type": "boolean"
+            }
+          }
+        },
+        "project": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "name",
+                "remote",
+                "vault_name"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 64
+                },
+                "remote": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "maxLength": 500
+                },
+                "vault_name": {
+                  "type": "string",
+                  "pattern": "^[a-z0-9][a-z0-9-]{0,38}[a-z0-9]$"
+                }
+              }
+            }
+          ]
+        },
+        "shares": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/share_code"
+          }
+        },
+        "share": {
+          "type": [
+            "boolean",
+            "null"
+          ]
+        },
+        "setup": {
+          "oneOf": [
+            {
+              "type": "null"
+            },
+            {
+              "type": "object",
+              "required": [
+                "state",
+                "vault"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "state": {
+                  "enum": [
+                    "shared",
+                    "kept_local",
+                    "no_project",
+                    "failed"
+                  ]
+                },
+                "vault": {
+                  "type": [
+                    "string",
+                    "null"
+                  ]
+                }
+              }
+            }
+          ]
+        },
+        "questions": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": [
+              "consent_id",
+              "kind",
+              "subject",
+              "created_at"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "consent_id": {
+                "type": "string",
+                "pattern": "^cns_[a-z2-7]{16,40}$"
+              },
+              "kind": {
+                "const": "link_vault"
+              },
+              "subject": {
+                "type": "object"
+              },
+              "created_at": {
+                "type": "string",
+                "format": "date-time"
+              }
+            }
+          }
+        },
+        "answer_until": {
+          "type": "string",
+          "format": "date-time"
+        }
+      }
+    },
+    "answer_request": {
+      "description": "W98 POST /api/v1/device/setup/answer: the approving session answers a device-bound link_vault request of its new instance, within 10 min of the approval",
+      "type": "object",
+      "required": [
+        "user_code",
+        "consent_id",
+        "answer"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "user_code": {
+          "type": "string",
+          "pattern": "^[A-Z0-9]{4}-[A-Z0-9]{4}$"
+        },
+        "consent_id": {
+          "type": "string",
+          "pattern": "^cns_[a-z2-7]{16,40}$"
+        },
+        "answer": {
+          "enum": [
+            "allow",
+            "deny"
+          ]
+        }
+      }
+    },
+    "answer_response": {
+      "type": "object",
+      "required": [
+        "state"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "state": {
+          "enum": [
+            "approved",
+            "denied"
+          ]
+        }
+      }
+    }
+  }
+}

@@ -5,18 +5,21 @@
 //! In 80+ turn sessions, accumulated conversation history becomes the dominant
 //! token cost. This module scores each message on multiple dimensions and
 //! applies tiered compression: preserve (verbatim), summarize (1-line), or
-//! drop (with CCR handle for recovery).
+//! drop (one-line stub). Neither keeps a recoverable copy.
 //!
-//! Determinism (#498): same messages array → same compression decisions.
-//! Scoring is a pure function of (message_content, position, total_messages).
+//! The bounds come from `[conversation]` (`ConversationConfig`).
+//!
+//! Determinism (#498): same messages array and settings → same compression
+//! decisions. Scoring is a pure function of (message_content, position,
+//! total_messages).
 
 use serde_json::Value;
 
-const PRESERVE_LAST_N_TURNS: usize = 10;
-const COMPRESSION_THRESHOLD_TOKENS: usize = 50000;
+use crate::core::config::ConversationConfig;
+
 const CHARS_PER_TOKEN: usize = 4;
-const PRESERVE_SCORE: f64 = 0.5;
-const SUMMARIZE_SCORE: f64 = 0.2;
+/// Messages whose file mentions count as "recent" when scoring relevance.
+const RECENT_MENTION_WINDOW: usize = 10;
 
 /// Result of conversation compression.
 pub(super) struct CompressionResult {
@@ -28,14 +31,17 @@ pub(super) struct CompressionResult {
 
 /// Compress a conversation's messages array. Returns `None` if compression
 /// is not beneficial (below threshold or too few messages).
-pub(super) fn compress_messages(messages: &[Value]) -> Option<CompressionResult> {
-    if messages.len() <= PRESERVE_LAST_N_TURNS + 2 {
+pub(super) fn compress_messages(
+    messages: &[Value],
+    settings: &ConversationConfig,
+) -> Option<CompressionResult> {
+    if messages.len() <= settings.preserve_last_n_turns + 2 {
         return None;
     }
 
     let total_tokens: usize = messages.iter().map(message_token_estimate).sum();
 
-    if total_tokens < COMPRESSION_THRESHOLD_TOKENS {
+    if total_tokens < settings.compression_threshold_tokens {
         return None;
     }
 
@@ -44,7 +50,9 @@ pub(super) fn compress_messages(messages: &[Value]) -> Option<CompressionResult>
         .take_while(|m| m.get("role").and_then(|r| r.as_str()) == Some("system"))
         .count();
 
-    let compressible_end = messages.len().saturating_sub(PRESERVE_LAST_N_TURNS);
+    let compressible_end = messages
+        .len()
+        .saturating_sub(settings.preserve_last_n_turns);
     if compressible_end <= system_count {
         return None;
     }
@@ -73,9 +81,9 @@ pub(super) fn compress_messages(messages: &[Value]) -> Option<CompressionResult>
         let score = scores[i];
         let msg_tokens = message_token_estimate(msg);
 
-        if score >= PRESERVE_SCORE {
+        if score >= settings.min_score_to_preserve {
             result_messages.push(msg.clone());
-        } else if score >= SUMMARIZE_SCORE {
+        } else if score >= settings.drop_score_below {
             let summary = summarize_message(msg, i);
             let summary_tokens = summary.len() / CHARS_PER_TOKEN;
             tokens_saved += msg_tokens.saturating_sub(summary_tokens);
@@ -84,9 +92,9 @@ pub(super) fn compress_messages(messages: &[Value]) -> Option<CompressionResult>
         } else {
             tokens_saved += msg_tokens;
             messages_dropped += 1;
-            // Dropped messages get a minimal stub
+            // Dropped messages get a minimal stub (no copy is kept).
             let stub = format!(
-                "[Turn {}: {} message compressed — ctx_expand to recover]",
+                "[Turn {}: {} message omitted by conversation compression]",
                 i + 1,
                 msg.get("role")
                     .and_then(|r| r.as_str())
@@ -232,7 +240,7 @@ fn extract_text_content(msg: &Value) -> String {
 }
 
 fn extract_recent_file_mentions(messages: &[Value]) -> Vec<String> {
-    let recent = &messages[messages.len().saturating_sub(PRESERVE_LAST_N_TURNS)..];
+    let recent = &messages[messages.len().saturating_sub(RECENT_MENTION_WINDOW)..];
     let mut files = Vec::new();
     for msg in recent {
         let content = extract_text_content(msg);
@@ -353,16 +361,45 @@ mod tests {
         messages
     }
 
+    /// `[conversation]` bounds were documented but hard-coded until 2026-10-16.
+    #[test]
+    fn configured_bounds_are_applied() {
+        let messages = make_long_conversation(60);
+        let defaults = ConversationConfig::default();
+        assert!(compress_messages(&messages, &defaults).is_some());
+
+        let high_threshold = ConversationConfig {
+            compression_threshold_tokens: usize::MAX,
+            ..defaults.clone()
+        };
+        assert!(compress_messages(&messages, &high_threshold).is_none());
+
+        let keep_everything = ConversationConfig {
+            min_score_to_preserve: 0.0,
+            ..defaults.clone()
+        };
+        assert!(compress_messages(&messages, &keep_everything).is_none());
+
+        let keep_last_100 = ConversationConfig {
+            preserve_last_n_turns: 100,
+            ..defaults
+        };
+        let result = compress_messages(&messages, &keep_last_100).expect("compresses the rest");
+        let tail = messages.len() - 100;
+        assert_eq!(result.messages[tail..], messages[tail..]);
+    }
+
     #[test]
     fn no_compression_below_threshold() {
         let messages = make_long_conversation(5);
-        assert!(compress_messages(&messages).is_none());
+        assert!(compress_messages(&messages, &ConversationConfig::default()).is_none());
     }
 
     #[test]
     fn compresses_long_conversations() {
         let messages = make_long_conversation(60);
-        let result = compress_messages(&messages).expect("should compress");
+        let result =
+            compress_messages(&messages, &ConversationConfig::default()).expect("should compress");
         assert!(result.tokens_saved > 0);
         assert!(result.messages.len() <= messages.len());
     }
@@ -370,7 +407,7 @@ mod tests {
     #[test]
     fn preserves_system_prompt() {
         let messages = make_long_conversation(60);
-        let result = compress_messages(&messages).unwrap();
+        let result = compress_messages(&messages, &ConversationConfig::default()).unwrap();
         let first = &result.messages[0];
         assert_eq!(first["role"].as_str(), Some("system"));
         assert_eq!(
@@ -383,7 +420,7 @@ mod tests {
     fn preserves_last_n_turns() {
         let messages = make_long_conversation(60);
         let original_last = messages[messages.len() - 1].clone();
-        let result = compress_messages(&messages).unwrap();
+        let result = compress_messages(&messages, &ConversationConfig::default()).unwrap();
         let result_last = result.messages.last().unwrap();
         assert_eq!(original_last["content"], result_last["content"]);
     }
@@ -396,7 +433,7 @@ mod tests {
         );
         let score = score_message(&msg, 80, 100, &[]);
         assert!(
-            score > SUMMARIZE_SCORE,
+            score > ConversationConfig::default().drop_score_below,
             "Error message should score above summarize threshold"
         );
     }
@@ -416,8 +453,8 @@ mod tests {
     #[test]
     fn compression_is_deterministic() {
         let messages = make_long_conversation(60);
-        let r1 = compress_messages(&messages).unwrap();
-        let r2 = compress_messages(&messages).unwrap();
+        let r1 = compress_messages(&messages, &ConversationConfig::default()).unwrap();
+        let r2 = compress_messages(&messages, &ConversationConfig::default()).unwrap();
         assert_eq!(r1.tokens_saved, r2.tokens_saved);
         assert_eq!(r1.messages_summarized, r2.messages_summarized);
         assert_eq!(r1.messages_dropped, r2.messages_dropped);

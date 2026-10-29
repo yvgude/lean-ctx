@@ -120,14 +120,17 @@ impl KnowledgeArchetype {
             "architecture" | "arch" | "data_model" | "schema" => Self::Architecture,
             "decision" | "decisions" => Self::Decision,
             // bugs/blockers (provider + auto-capture) are pitfalls → Gotcha.
+            // An approach tried and given up (K1: reverts, "dead ends") is one too.
             "gotcha" | "gotchas" | "known_bugs" | "known_issues" | "bug" | "bugs" | "blocker"
-            | "blockers" => Self::Gotcha,
+            | "blockers" | "dead_end" | "dead_ends" | "dead-end" | "dead-ends" => Self::Gotcha,
             "convention" | "conventions" | "style" => Self::Convention,
             "dependency" | "dependencies" | "deps" => Self::Dependency,
             "pattern" | "patterns" => Self::Pattern,
-            "workflow" | "workflows" => Self::Workflow,
+            "workflow" | "workflows" | "procedure" | "procedures" => Self::Workflow,
             "preference" | "preferences" | "pref" => Self::Preference,
-            "observation" | "finding" | "findings" => Self::Observation,
+            "observation" | "finding" | "findings" | "experience" | "experiences" => {
+                Self::Observation
+            }
             "solution-decision" | "solution_decision" | "solution-debt" | "solution_debt" => {
                 Self::Decision
             }
@@ -247,7 +250,27 @@ pub struct ProjectKnowledge {
     /// Records excluded from this read view. Never serialized or exposed by a
     /// formatter; the checked persistence path retains them without modification.
     #[serde(skip)]
-    pub(crate) withheld: Vec<KnowledgeFact>,
+    pub(crate) withheld: Vec<WithheldKnowledge>,
+}
+
+/// A complete typed record hidden from this read view and retained only so the
+/// checked save path can detect stale views without serializing hidden data.
+// Short-lived and few per view: boxing every withheld fact would only add an
+// allocation per record to make the rarer variants smaller.
+#[allow(clippy::large_enum_variant)]
+#[derive(Clone)]
+pub(crate) enum WithheldKnowledge {
+    Fact(KnowledgeFact),
+    Pattern(ProjectPattern),
+    History(ConsolidatedInsight),
+    JudgedPair(JudgedPair),
+}
+
+impl std::fmt::Debug for WithheldKnowledge {
+    fn fmt(&self, formatter: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        // Debug output is also a disclosure boundary, including nested derives.
+        formatter.write_str("WithheldKnowledge(..)")
+    }
 }
 
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
@@ -258,6 +281,85 @@ pub enum FactOrigin {
     Local,
     Provider(Box<crate::core::providers::provenance::ProviderOrigin>),
     Derived(Vec<FactOrigin>),
+}
+
+/// Whether a fact rests on a source (V01): `verified` when a provider or a
+/// derivation from sourced facts backs it, `assumption` otherwise — what an
+/// agent or a person wrote down without evidence.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FactStatus {
+    Verified,
+    Assumption,
+}
+
+impl FactStatus {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Verified => "verified",
+            Self::Assumption => "assumption",
+        }
+    }
+}
+
+/// Validity class of a fact (AP01 §4, D04): what its reuse is bound to.
+///
+/// - `content`: bound to source files at a revision. Served only while each
+///   source still delivers the bytes the fact was bound to; in another
+///   checkout of the same project only when the same files there are
+///   byte-identical (`ctx_knowledge::linked`).
+/// - `convention`: an explicitly marked rule or decision of the project
+///   (naming rule, process decision). Not bound to a revision: served in
+///   every checkout linked to the same project (D01), until it is replaced.
+///
+/// A fact without a class (written before classes existed, or never
+/// classified) keeps the behaviour it had: it belongs to its own checkout.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FactValidity {
+    Content,
+    Convention,
+}
+
+impl FactValidity {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Content => "content",
+            Self::Convention => "convention",
+        }
+    }
+
+    /// The class a caller names (`validity` of `ctx_knowledge remember`).
+    pub fn parse(raw: &str) -> Option<Self> {
+        match raw.trim().to_ascii_lowercase().as_str() {
+            "content" => Some(Self::Content),
+            "convention" => Some(Self::Convention),
+            _ => None,
+        }
+    }
+
+    /// The class an explicit `remember` of `category` gets when its writer
+    /// names neither a class nor sources: conventions and decisions are the
+    /// project's rules; every other category stays unclassified.
+    pub fn for_remembered_category(category: &str) -> Option<Self> {
+        matches!(
+            category.trim().to_lowercase().as_str(),
+            "convention" | "conventions" | "konvention" | "konventionen" | "decision" | "decisions"
+        )
+        .then_some(Self::Convention)
+    }
+}
+
+impl FactOrigin {
+    /// A source backs this origin: a provider, or a derivation whose every
+    /// input is sourced. Local writes and unknown origins are not evidence.
+    pub fn is_sourced(&self) -> bool {
+        match self {
+            Self::Provider(_) => true,
+            Self::Derived(inputs) => !inputs.is_empty() && inputs.iter().all(Self::is_sourced),
+            Self::Local | Self::Unverified => false,
+        }
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -311,6 +413,208 @@ pub struct KnowledgeFact {
     pub fidelity: Option<FidelityScore>,
     #[serde(default)]
     pub revision_count: u32,
+    /// The recorded status (V01). Absent on facts written before it existed
+    /// and on facts nobody classified; [`KnowledgeFact::status`] then
+    /// derives it from the origin. Omitted when absent (byte-compatible).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub status: Option<FactStatus>,
+    /// Validity class (AP01 §4). Absent on facts written before it existed
+    /// and on unclassified facts, which keep today's behaviour. Omitted when
+    /// absent (byte-compatible).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub validity: Option<FactValidity>,
+    /// Code anchors (J2, C0 1.9 `CodeAnchorV1`): the code this fact is
+    /// about, so a change there makes it *to verify*. Omitted when empty
+    /// (byte-compatible).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub anchors: Vec<super::anchors::CodeAnchor>,
+    /// Review state (C0 1.9 fact states): set when what the fact rests on
+    /// moved under it — an anchor that no longer holds, a removed import
+    /// source, a contradiction. Orthogonal to [`FactStatus`] (evidence): a
+    /// verified fact can be to verify. Omitted when absent (byte-compatible).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub review: Option<FactReview>,
+    /// What the Hive capture gate reads (v4 V1): node type, procedure
+    /// steps and commands, references, evidence. Every field is omitted
+    /// when empty (byte-compatible).
+    #[serde(flatten)]
+    pub capture: FactCapture,
+}
+
+/// Structured fields of a fact for the Hive capture gate (SPEC-ENGINE
+/// §3.1.3), written by `ctx_knowledge remember type= steps= commands=
+/// refs= evidence=`.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FactCapture {
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub node_type: Option<NodeType>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub steps: Vec<String>,
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub commands: Vec<ProcedureCommand>,
+    /// `file:`, `sym:`, `test:`, `commit:`, `node:` or `https://` references.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub refs: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub evidence: Option<EvidenceLevel>,
+    /// When a `remember` last changed these fields (e.g. a second
+    /// `remember` of the same statement that adds `refs`): the capture gate
+    /// considers the fact again although it was created before its
+    /// watermark. `None` for facts whose fields no `remember` set.
+    #[serde(
+        default,
+        rename = "capture_changed_at",
+        skip_serializing_if = "Option::is_none"
+    )]
+    pub changed_at: Option<chrono::DateTime<chrono::Utc>>,
+}
+
+/// Node types a fact can be captured as.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum NodeType {
+    Fact,
+    Decision,
+    Gotcha,
+    Procedure,
+    Finding,
+}
+
+impl NodeType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Fact => "fact",
+            Self::Decision => "decision",
+            Self::Gotcha => "gotcha",
+            Self::Procedure => "procedure",
+            Self::Finding => "finding",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "fact" => Self::Fact,
+            "decision" => Self::Decision,
+            "gotcha" => Self::Gotcha,
+            "procedure" => Self::Procedure,
+            "finding" => Self::Finding,
+            _ => return None,
+        })
+    }
+}
+
+/// How a captured claim is backed.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum EvidenceLevel {
+    Observed,
+    Stated,
+    Imported,
+}
+
+impl EvidenceLevel {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Observed => "observed",
+            Self::Stated => "stated",
+            Self::Imported => "imported",
+        }
+    }
+
+    pub fn parse(s: &str) -> Option<Self> {
+        Some(match s {
+            "observed" => Self::Observed,
+            "stated" => Self::Stated,
+            "imported" => Self::Imported,
+            _ => return None,
+        })
+    }
+}
+
+/// A command of a procedure: data only, never executed by the engine.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ProcedureCommand {
+    pub shell: String,
+    pub cmd: String,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub cwd_hint: Option<String>,
+}
+
+/// Why a fact needs a person's look again (C0 1.9 fact states).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct FactReview {
+    pub state: FactReviewState,
+    pub reason: FactReviewReason,
+    pub since: DateTime<Utc>,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FactReviewState {
+    ToVerify,
+    Contradicted,
+}
+
+/// The contract's reasons; `source_removed` is an imported fact whose
+/// source section is gone (K1).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum FactReviewReason {
+    AnchorChanged,
+    AnchorMoved,
+    AnchorMissing,
+    Contradiction,
+    SourceRemoved,
+}
+
+impl FactReviewReason {
+    /// The reason of an anchor state that does not hold (`None` when current).
+    pub fn of_anchor(state: &super::anchors::AnchorState) -> Option<Self> {
+        match state {
+            super::anchors::AnchorState::Current => None,
+            super::anchors::AnchorState::Changed => Some(Self::AnchorChanged),
+            super::anchors::AnchorState::Moved { .. } => Some(Self::AnchorMoved),
+            super::anchors::AnchorState::Missing => Some(Self::AnchorMissing),
+        }
+    }
+}
+
+impl KnowledgeFact {
+    /// The fact's status: as recorded, else `verified` only when its origin
+    /// names a source, else `assumption`.
+    pub fn status(&self) -> FactStatus {
+        self.status.unwrap_or(if self.origin.is_sourced() {
+            FactStatus::Verified
+        } else {
+            FactStatus::Assumption
+        })
+    }
+
+    /// Mark the fact for review; an existing mark keeps its `since`.
+    pub fn mark_review(
+        &mut self,
+        state: FactReviewState,
+        reason: FactReviewReason,
+        now: DateTime<Utc>,
+    ) {
+        match &mut self.review {
+            Some(review) if review.state == state && review.reason == reason => {}
+            slot => {
+                *slot = Some(FactReview {
+                    state,
+                    reason,
+                    since: now,
+                });
+            }
+        }
+    }
+
+    /// A person or a fresh write confirmed the fact again.
+    pub fn clear_review(&mut self) {
+        self.review = None;
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -382,6 +686,13 @@ mod archetype_tests {
             KnowledgeArchetype::infer_from_category("gotcha"),
             KnowledgeArchetype::Gotcha
         );
+        for (category, archetype) in [
+            ("dead_end", KnowledgeArchetype::Gotcha),
+            ("procedure", KnowledgeArchetype::Workflow),
+            ("experience", KnowledgeArchetype::Observation),
+        ] {
+            assert_eq!(KnowledgeArchetype::infer_from_category(category), archetype);
+        }
         assert_eq!(
             KnowledgeArchetype::infer_from_category("random"),
             KnowledgeArchetype::Fact
@@ -424,6 +735,9 @@ mod archetype_tests {
     #[test]
     fn fidelity_structural_computation() {
         let fact = KnowledgeFact {
+            anchors: Vec::new(),
+            review: None,
+            capture: Default::default(),
             origin: crate::core::knowledge::FactOrigin::Local,
             category: "test".into(),
             key: "k".into(),
@@ -447,6 +761,8 @@ mod archetype_tests {
             archetype: KnowledgeArchetype::default(),
             fidelity: None,
             revision_count: 0,
+            status: None,
+            validity: None,
         };
         let fidelity = fact.compute_structural_fidelity();
         assert!(fidelity >= 0.8);

@@ -32,6 +32,8 @@ use futures::{Sink, SinkExt, Stream, StreamExt};
 use serde_json::{Value, json};
 
 use super::ProxyState;
+use super::admitted::{self, AdmittedBody, GatewayRefusal, Payload};
+use crate::core::context_admission::egress::{EgressTarget, TrustedDestinationBinding};
 use crate::core::execution_lifecycle::{
     CancellationCompletion, CancellationHandler, CompletionObservation, ExecutionDriver,
     ExecutionLifecycle, LifecycleRunError, ProductEntitlements, ProxyEconomicsObservation,
@@ -84,7 +86,13 @@ pub fn upgrade_to(
     path: &'static str,
 ) -> Response {
     let fwd = capture_forward_headers(headers);
-    ws.on_upgrade(move |socket| bridge(socket, state, upstream, path, fwd))
+    // A presenter capability shown on the upgrade is request state of every
+    // turn of this connection. It is not in `fwd` (an allowlist) and so is
+    // never sent upstream.
+    let presenter = super::request_project::shown_presenter(headers);
+    ws.on_upgrade(move |socket| {
+        super::request_project::as_presenter(presenter, bridge(socket, state, upstream, path, fwd))
+    })
 }
 
 fn capture_forward_headers(headers: &HeaderMap) -> Vec<(HeaderName, HeaderValue)> {
@@ -182,10 +190,12 @@ struct WsTurnDriver<'a, S> {
 struct WsLedger {
     result: Option<TurnResult>,
     recorded: bool,
+    /// Project key of the folder the turn's request named, for the spend split.
+    project_key: Option<String>,
 }
 
 fn record_ws_ledger(ledger: &Mutex<WsLedger>, stats: &super::ProxyStats) -> StageDisposition {
-    let result = {
+    let (result, project_key) = {
         let mut ledger = ledger
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
@@ -197,11 +207,23 @@ fn record_ws_ledger(ledger: &Mutex<WsLedger>, stats: &super::ProxyStats) -> Stag
         };
         // Reserve before effects: cancellation/panic must not retry a partial write.
         ledger.recorded = true;
-        result
+        (result, ledger.project_key.clone())
     };
     stats.record_provider_request("OpenAI", result.original_size, result.compressed_size);
     if let Some(usage) = result.usage.as_ref() {
-        super::usage_meter::record(usage);
+        let mut usage = usage.clone();
+        if project_key.is_some() {
+            usage
+                .wire
+                .get_or_insert_with(|| {
+                    Box::new(super::usage::WireContext {
+                        provider: "OpenAI".to_string(),
+                        ..Default::default()
+                    })
+                })
+                .project_key = project_key;
+        }
+        super::usage_meter::record(&usage);
     }
     StageDisposition::Applied
 }
@@ -401,30 +423,103 @@ where
     let original_size = serde_json::to_vec(&doc)
         .expect("parsed JSON document serializes")
         .len();
-    // Same two-stage path as the HTTP handler: cache-aware prune of the frozen
-    // OLD region, then compress the recent outputs.
-    super::openai_responses::prune_responses_input(&mut doc);
-    super::openai_responses::compress_responses_input(&mut doc);
-    // G6: final egress control on the turn that leaves, as on the HTTP rail.
+    // The host's own tool list of this turn, read on the frame as the host
+    // sent it, before the gateway's decision or any pass changes it: the
+    // only thing a recovery stub of this turn may name (see below).
+    let handles = super::sticky_tools::HandleUse::for_request(Some(&doc), true);
+    // G01: the gateway decides on the caller's turn before pruning,
+    // compression or any derived store reads it, as on the HTTP rail.
     let model = doc.get("model").and_then(Value::as_str).map(str::to_owned);
-    let egress = crate::core::context_admission::egress::admit_request(
-        &doc,
-        &crate::core::context_admission::egress::EgressTarget {
-            provider: "OpenAI",
-            model: model.as_deref(),
-            upstream_base: upstream,
-        },
-    );
-    let refusal = match &egress.body {
-        crate::core::context_admission::egress::EgressBody::Rewritten(admitted) => {
-            doc = admitted.clone();
-            None
-        }
-        crate::core::context_admission::egress::EgressBody::Refused(refusal) => {
-            Some(refusal.clone())
-        }
-        crate::core::context_admission::egress::EgressBody::Unchanged => None,
+    let target = EgressTarget {
+        provider: "OpenAI",
+        model: model.as_deref(),
+        upstream_base: upstream,
     };
+    let binding = TrustedDestinationBinding::default();
+    // The caller as the upgrade presented it (its credential is relayed on
+    // every turn), as the HTTP rail tells callers apart (AP10-C6).
+    let presented: HeaderMap = fwd_headers.iter().cloned().collect();
+    let principal = super::forward::principal_of(&presented, None);
+    // The relayed upgrade header values leave with every turn (AP10-C2).
+    if let Err(refusal) =
+        admitted::admit_request_target(path, &presented, &target, binding, principal.as_deref())
+            .await
+    {
+        let flow = send_gateway_refusal(socket, &refusal).await;
+        return refused_turn(flow, original_size);
+    }
+    let mut caller =
+        match admitted::admit_caller(Payload::Document(&doc), &target, binding, principal) {
+            Ok(caller) => caller,
+            Err(refusal) => {
+                let flow = send_gateway_refusal(socket, &refusal).await;
+                return refused_turn(flow, original_size);
+            }
+        };
+    if caller.is_refused() {
+        let refusal = admitted::record_refusal(caller.into_admission(), original_size, None).await;
+        let flow = send_gateway_refusal(socket, &refusal).await;
+        return refused_turn(flow, original_size);
+    }
+    if let Some(admitted_doc) = caller.take_rewritten() {
+        doc = admitted_doc;
+    }
+    // Same two-stage path as the HTTP handler: cache-aware prune of the frozen
+    // OLD region, then compress the recent outputs — of the admitted turn.
+    // Both passes run observed, as on the HTTP rail: under protection a block
+    // is shortened only with a recovery copy bound to its lineage (the same
+    // gate inside both passes), and what stays whole for want of one is
+    // counted by code. A turn has no response header to carry the codes; they
+    // go into its receipt and the log line below.
+    //
+    // The turn is one pass. A block that leaves with a recovery stub names
+    // the Engine's expand tool, and the proxy declares no tool: only a turn
+    // whose own `tools` list names that tool, and whose settings let the
+    // model call it, gets a stub — under the name the host registered. A
+    // turn that relies on tools of an earlier turn of the connection does
+    // not list them here: it hands out no stub and keeps its blocks whole.
+    let mut issued = super::compress::gate::Issued::default();
+    let (((pruned, compressed), mut kept_whole), _handles) =
+        super::sticky_tools::within(handles, || {
+            super::compress::gate::collecting(&mut issued, || {
+                super::compress::observing(super::compress::Reader::Model, || {
+                    super::sticky_tools::begin(super::sticky_tools::Shape::Responses, &doc);
+                    let pruned = super::openai_responses::prune_responses_input(&mut doc);
+                    let compressed = super::openai_responses::compress_responses_input(&mut doc);
+                    (pruned, compressed)
+                })
+            })
+        });
+    // G5: final egress control on the turn that leaves; the receipt binds the
+    // exact payload and upstream URL the dispatch below is limited to. A stub
+    // of this turn that the decision would alter or withhold is taken back:
+    // the block leaves as its original, admitted as such, and is counted.
+    let (egress, readmitted) = match admitted::admit_final_with(
+        Payload::Document(&doc),
+        &target,
+        binding,
+        caller,
+        !(pruned || compressed),
+        |admitted| issued.restore_unadmitted(&doc, admitted, &mut kept_whole),
+    ) {
+        Ok(admission) => admission,
+        Err(refusal) => {
+            let flow = send_gateway_refusal(socket, &refusal).await;
+            return refused_turn(flow, original_size);
+        }
+    };
+    if let Some(admitted_doc) = readmitted {
+        doc = admitted_doc;
+    }
+    if !kept_whole.is_empty() {
+        // Codes and counts only: no id, path, digest or content.
+        tracing::info!(
+            "lean-ctx proxy: Responses WS blocks kept whole under protection, \
+             no recovery copy ({})",
+            kept_whole.summary()
+        );
+    }
+    let project_key = super::project_attribution::project_key(&doc);
     let payload = serde_json::to_vec(&doc).expect("optimized JSON document serializes");
     let compressed_size = payload.len();
     let result = |termination, usage| TurnResult {
@@ -433,51 +528,68 @@ where
         original_size,
         compressed_size,
     };
-    if let Some(refusal) = refusal {
-        crate::core::context_admission::egress::finish_off_runtime(
-            egress,
-            None,
-            original_size,
-            None,
-        )
-        .await;
-        tracing::warn!("lean-ctx proxy: {refusal} (see `lean-ctx inspect --proxy`)");
-        let flow = send_error(socket, 403, "context_gateway", &refusal).await;
-        return result(
-            if flow.is_break() {
-                TurnTermination::ClientDisconnected
-            } else {
-                TurnTermination::UpstreamRejected
-            },
-            None,
-        );
-    }
-    crate::core::context_admission::egress::finish_off_runtime(
+    let url = format!("{upstream}{path}");
+    let egress = egress.note_kept_whole(&kept_whole);
+    let head = admitted::RequestHead::new(
+        reqwest::Method::POST,
+        [
+            (
+                axum::http::header::CONTENT_TYPE,
+                HeaderValue::from_static("application/json"),
+            ),
+            (
+                axum::http::header::ACCEPT,
+                HeaderValue::from_static("text/event-stream"),
+            ),
+        ]
+        .into_iter()
+        .chain(fwd_headers.iter().cloned()),
+    );
+    let admitted_turn = match AdmittedBody::bind(
         egress,
-        Some(payload.clone()),
+        payload,
+        upstream,
+        &url,
+        head,
         original_size,
         None,
     )
-    .await;
-    ledger
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner)
-        .result = Some(result(TurnTermination::ClientDisconnected, None));
-
-    let url = format!("{upstream}{path}");
-    let mut req = state
-        .client
-        .post(&url)
-        .header("content-type", "application/json")
-        .header("accept", "text/event-stream");
-    for (name, value) in fwd_headers {
-        req = req.header(name, value);
+    .await
+    {
+        Ok(admitted_turn) => admitted_turn,
+        Err(refusal) => {
+            let flow = send_gateway_refusal(socket, &refusal).await;
+            return refused_turn(flow, original_size);
+        }
+    };
+    {
+        let mut ledger = ledger
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        ledger.result = Some(result(TurnTermination::ClientDisconnected, None));
+        ledger.project_key = project_key;
     }
 
-    let resp = match req.body(payload).send().await {
+    // This WebSocket-facing adapter dispatches an HTTP POST upstream. The
+    // attempt is recorded before its SSE stream is consumed or relayed, and
+    // it is only made while the turn's authority is still the current one.
+    let attempt = admitted_turn
+        .send(&state.client, 1, |request| request)
+        .await;
+    let response = match attempt {
+        Ok(attempt) => attempt.response,
+        Err(refusal) => {
+            let flow = send_gateway_refusal(socket, &refusal).await;
+            return refused_turn(flow, original_size);
+        }
+    };
+    let resp = match response {
         Ok(resp) => resp,
         Err(e) => {
-            tracing::error!("lean-ctx proxy: OpenAI Responses WS upstream error: {e}");
+            tracing::error!(
+                "lean-ctx proxy: OpenAI Responses WS upstream error: {}",
+                admitted::transport_failure(&e)
+            );
             let flow = send_error(
                 socket,
                 502,
@@ -510,7 +622,15 @@ where
         );
     }
 
-    let (termination, usage) = stream_sse_to_ws(socket, resp.bytes_stream(), Some(ledger)).await;
+    // Sealed items of this turn's response are bound to the turn's context.
+    let mut sealed = admitted_turn.sealed_recorder();
+    let stream = resp.bytes_stream().map(move |chunk| {
+        if let Ok(bytes) = &chunk {
+            sealed.feed(bytes);
+        }
+        chunk
+    });
+    let (termination, usage) = stream_sse_to_ws(socket, stream, Some(ledger)).await;
     result(termination, usage)
 }
 
@@ -652,6 +772,49 @@ where
     ControlFlow::Continue(())
 }
 
+/// Sends the gateway's typed refusal as a Responses-protocol `error` event:
+/// the HTTP-equivalent status, the stable `context_gateway` error type and the
+/// machine-readable reason codes. Content-free; the socket stays open.
+async fn send_gateway_refusal<S>(socket: &mut S, refusal: &GatewayRefusal) -> ControlFlow<()>
+where
+    S: Sink<Message> + Send + Unpin,
+    S::Error: Send,
+{
+    let detail = refusal.detail();
+    let event = json!({
+        "type": "error",
+        "status": refusal.status().as_u16(),
+        "error": {
+            "type": detail["refusal"],
+            "code": detail["reason_codes"][0],
+            "reason_codes": detail["reason_codes"],
+            "message": refusal.message(),
+        },
+    });
+    if socket
+        .send(Message::Text(event.to_string().into()))
+        .await
+        .is_err()
+    {
+        return ControlFlow::Break(());
+    }
+    ControlFlow::Continue(())
+}
+
+/// The result of a turn the gateway did not forward.
+fn refused_turn(flow: ControlFlow<()>, original_size: usize) -> TurnResult {
+    TurnResult {
+        termination: if flow.is_break() {
+            TurnTermination::ClientDisconnected
+        } else {
+            TurnTermination::UpstreamRejected
+        },
+        usage: None,
+        original_size,
+        compressed_size: original_size,
+    }
+}
+
 /// Relays a non-2xx upstream response as a WS `error` event, preserving the
 /// upstream's own `error` object when the body is JSON.
 async fn relay_upstream_error<S>(socket: &mut S, status: u16, detail: &str) -> ControlFlow<()>
@@ -675,728 +838,5 @@ where
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use axum::body::Bytes;
-    use futures::channel::mpsc;
-    use std::sync::{Arc, Mutex, atomic::Ordering};
-
-    fn capture_task(
-        sink: mpsc::UnboundedSender<Message>,
-        task: Arc<Mutex<Option<lean_ctx_protocol::TaskEnvelopeV1>>>,
-    ) -> impl Sink<Message, Error = mpsc::SendError> + Send + Unpin {
-        sink.with(move |message| {
-            *task.lock().unwrap() = crate::core::task_spine::TaskSpine::current();
-            futures::future::ready(Ok(message))
-        })
-    }
-
-    const COMPLETED: &str = r#"{"type":"response.completed","response":{"model":"gpt-5.4","usage":{"input_tokens":120,"input_tokens_details":{"cached_tokens":20},"output_tokens":7}}}"#;
-
-    fn test_state() -> ProxyState {
-        let (_, upstreams) =
-            tokio::sync::watch::channel(Arc::new(crate::core::config::Upstreams {
-                anthropic: "http://127.0.0.1:1".to_owned(),
-                openai: "http://127.0.0.1:1".to_owned(),
-                chatgpt: "http://127.0.0.1:1".to_owned(),
-                gemini: "http://127.0.0.1:1".to_owned(),
-                providers: Vec::new(),
-            }));
-        ProxyState {
-            client: reqwest::Client::builder().no_proxy().build().unwrap(),
-            port: 0,
-            stats: Arc::new(super::super::ProxyStats::default()),
-            break_even: Arc::new(super::super::break_even::BreakEvenCalculator::new(1500)),
-            introspect: Arc::new(super::super::introspect::IntrospectState::default()),
-            ocla_cache: None,
-            upstreams,
-            chatgpt_cookies: super::super::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(
-            ),
-            mcp_servers: Arc::new(Vec::new()),
-            web_app_tracker: Arc::new(std::sync::Mutex::new(
-                super::super::web_app::conversation_tracker::ConversationTracker::default(),
-            )),
-        }
-    }
-
-    async fn upstream(
-        status: axum::http::StatusCode,
-        body: String,
-    ) -> (String, tokio::task::JoinHandle<()>) {
-        let app = axum::Router::new().route(
-            "/v1/responses",
-            axum::routing::post(move || {
-                let body = body.clone();
-                async move { (status, body) }
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let address = listener.local_addr().unwrap();
-        let handle = tokio::spawn(async move {
-            axum::serve(listener, app).await.unwrap();
-        });
-        (format!("http://{address}"), handle)
-    }
-
-    #[tokio::test]
-    async fn relay_preserves_fragmented_frames_and_returns_measured_usage() {
-        let (mut sink, mut messages) = mpsc::unbounded();
-        let chunks: Vec<Result<Bytes, ()>> = vec![
-            Ok(Bytes::from_static(
-                b"event: response.created\r\ndata: {\"type\":\"response.",
-            )),
-            Ok(Bytes::from_static(b"created\"}\r\n\r\n")),
-            Ok(Bytes::from(format!("data: {COMPLETED}"))),
-        ];
-        let (termination, usage) =
-            stream_sse_to_ws(&mut sink, futures::stream::iter(chunks), None).await;
-        assert_eq!(termination, TurnTermination::CleanEof);
-        let usage = usage.unwrap();
-        assert_eq!(
-            (
-                usage.input_tokens,
-                usage.cache_read_tokens,
-                usage.output_tokens
-            ),
-            (100, 20, 7)
-        );
-        assert_eq!(
-            messages.next().await.unwrap().into_text().unwrap(),
-            r#"{"type":"response.created"}"#
-        );
-        assert_eq!(
-            messages.next().await.unwrap().into_text().unwrap(),
-            COMPLETED
-        );
-    }
-
-    #[tokio::test]
-    async fn interrupted_stream_keeps_socket_open_and_retains_terminal_usage() {
-        let (mut sink, mut messages) = mpsc::unbounded();
-        let chunks = vec![Ok(Bytes::from(format!("data: {COMPLETED}\n"))), Err(())];
-        let (termination, usage) =
-            stream_sse_to_ws(&mut sink, futures::stream::iter(chunks), None).await;
-        assert_eq!(termination, TurnTermination::StreamInterrupted);
-        assert_eq!(usage.unwrap().output_tokens, 7);
-        assert_eq!(
-            messages.next().await.unwrap().into_text().unwrap(),
-            COMPLETED
-        );
-        let frame: Value =
-            serde_json::from_str(&messages.next().await.unwrap().into_text().unwrap()).unwrap();
-        assert_eq!(frame["status"], 502);
-        assert_eq!(frame["error"]["type"], "upstream_error");
-    }
-
-    #[tokio::test]
-    async fn disconnect_including_last_unterminated_frame_is_not_clean_eof() {
-        for suffix in ["\n", ""] {
-            let (mut sink, messages) = mpsc::unbounded::<Message>();
-            drop(messages);
-            let chunks: Vec<Result<Bytes, ()>> =
-                vec![Ok(Bytes::from(format!("data: {COMPLETED}{suffix}")))];
-            let (termination, usage) =
-                stream_sse_to_ws(&mut sink, futures::stream::iter(chunks), None).await;
-            assert_eq!(termination, TurnTermination::ClientDisconnected);
-            assert_eq!(usage.unwrap().output_tokens, 7);
-        }
-    }
-
-    #[tokio::test]
-    async fn interrupted_nonterminal_usage_stays_unbooked() {
-        let (mut sink, _messages) = mpsc::unbounded();
-        let partial = COMPLETED.replace("response.completed", "response.in_progress");
-        let chunks = vec![Ok(Bytes::from(format!("data: {partial}\n"))), Err(())];
-        let (termination, usage) =
-            stream_sse_to_ws(&mut sink, futures::stream::iter(chunks), None).await;
-        assert_eq!(termination, TurnTermination::StreamInterrupted);
-        assert!(usage.is_none());
-    }
-
-    #[tokio::test]
-    async fn invalid_frame_does_not_start_a_lifecycle_or_record_a_request() {
-        let state = test_state();
-        let (mut sink, mut messages) = mpsc::unbounded();
-        let before = crate::core::task_spine::TaskSpine::current().map(|task| task.task_id);
-        let flow = run_turn(
-            &mut sink,
-            &state,
-            "http://127.0.0.1:1",
-            "/v1/responses",
-            &[],
-            "not json",
-            "invalid-frame-test",
-        )
-        .await;
-        assert!(flow.is_continue());
-        assert_eq!(state.stats.requests_total.load(Ordering::Relaxed), 0);
-        assert_eq!(
-            crate::core::task_spine::TaskSpine::current().map(|task| task.task_id),
-            before
-        );
-        let frame: Value =
-            serde_json::from_str(&messages.next().await.unwrap().into_text().unwrap()).unwrap();
-        assert_eq!(frame["status"], 400);
-    }
-
-    #[tokio::test]
-    async fn identical_turns_each_dispatch_and_record_once_without_acceptance() {
-        let _isolation = crate::core::data_dir::isolated_data_dir();
-        let state = test_state();
-        let (url, server) = upstream(
-            axum::http::StatusCode::OK,
-            "data: {\"type\":\"response.completed\"}\n".to_owned(),
-        )
-        .await;
-        let (sink, mut messages) = mpsc::unbounded();
-        let mut ids = Vec::new();
-        let captured = Arc::new(Mutex::new(None));
-        let mut sink = capture_task(sink, captured.clone());
-        let outer = crate::core::task_spine::TaskSpine::current().map(|task| task.task_id);
-        for count in 1..=2 {
-            let flow = run_turn(
-                &mut sink,
-                &state,
-                &url,
-                "/v1/responses",
-                &[],
-                r#"{"type":"response.create","input":[]}"#,
-                "same-session",
-            )
-            .await;
-            assert!(flow.is_continue());
-            assert_eq!(state.stats.requests_total.load(Ordering::Relaxed), count);
-            assert_eq!(
-                crate::core::task_spine::TaskSpine::current().map(|task| task.task_id),
-                outer
-            );
-            let task = captured.lock().unwrap().clone().unwrap();
-            let outcome = ExecutionLifecycle::global()
-                .outcome_for(task.task_id.as_str())
-                .unwrap();
-            assert_eq!(
-                outcome.accepted_outcome.accepted,
-                lean_ctx_protocol::AcceptanceState::Unknown
-            );
-            assert!(outcome.assessment.is_none());
-            ids.push(task.task_id);
-            assert_eq!(
-                messages.next().await.unwrap().into_text().unwrap(),
-                r#"{"type":"response.completed"}"#
-            );
-        }
-        assert_ne!(
-            ids[0], ids[1],
-            "identical payloads must not reuse a prior turn"
-        );
-        server.abort();
-    }
-
-    /// Bypass path "WebSocket": a credential in a Responses WebSocket turn is
-    /// masked before the turn leaves, exactly as on the HTTP rail.
-    #[tokio::test]
-    async fn websocket_turn_reaches_the_upstream_without_the_credential() {
-        let _isolation = crate::core::data_dir::isolated_data_dir();
-        let state = test_state();
-        let received = Arc::new(Mutex::new(String::new()));
-        let seen = received.clone();
-        let app = axum::Router::new().route(
-            "/v1/responses",
-            axum::routing::post(move |body: String| {
-                *seen.lock().unwrap() = body;
-                async { "data: {\"type\":\"response.completed\"}\n" }
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let credential = format!("AKIA{}", "Q3EGRZ7WSRAILX4KEY");
-        let frame = serde_json::json!({
-            "type": "response.create",
-            "model": "gpt-5.4",
-            "input": [{"role": "user", "content": [
-                {"type": "input_text", "text": format!("deploy fails with {credential}")}
-            ]}],
-        })
-        .to_string();
-        let (mut sink, _messages) = mpsc::unbounded();
-        let flow = run_turn(
-            &mut sink,
-            &state,
-            &url,
-            "/v1/responses",
-            &[],
-            &frame,
-            "ws-egress",
-        )
-        .await;
-        assert!(flow.is_continue());
-        let forwarded = received.lock().unwrap().clone();
-        assert!(
-            forwarded.contains("deploy fails with"),
-            "the turn was forwarded"
-        );
-        assert!(
-            !forwarded.contains(&credential),
-            "the credential left on the WebSocket rail"
-        );
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn upstream_rejection_preserves_error_and_defers_stats_to_ledger() {
-        let state = test_state();
-        let (url, server) = upstream(
-            axum::http::StatusCode::TOO_MANY_REQUESTS,
-            r#"{"error":{"type":"rate_limit_error","message":"slow down"}}"#.to_owned(),
-        )
-        .await;
-        let (mut sink, mut messages) = mpsc::unbounded();
-        let result = forward_turn(
-            &mut sink,
-            &state,
-            &url,
-            "/v1/responses",
-            &[],
-            json!({"input":[],"stream":true}),
-            &Mutex::new(WsLedger::default()),
-        )
-        .await;
-        assert_eq!(result.termination, TurnTermination::UpstreamRejected);
-        assert!(result.flow().is_continue());
-        assert!(result.usage.is_none());
-        assert_eq!(state.stats.requests_total.load(Ordering::Relaxed), 0);
-        let frame: Value =
-            serde_json::from_str(&messages.next().await.unwrap().into_text().unwrap()).unwrap();
-        assert_eq!(frame["status"], 429);
-        assert_eq!(frame["error"]["type"], "rate_limit_error");
-        let driver = WsTurnDriver {
-            socket: &mut sink,
-            state: &state,
-            upstream: &url,
-            path: "/v1/responses",
-            headers: &[],
-            document: None,
-            model: "gpt-5.4".to_owned(),
-            ledger: Arc::new(Mutex::new(WsLedger::default())),
-        };
-        let observation = driver.observe(&Ok(result));
-        assert!(!observation.success);
-        assert!(
-            observation.outcome_signals.is_empty(),
-            "{:?}",
-            observation.outcome_signals
-        );
-        assert_eq!(observation.provider, "OpenAI");
-        assert_eq!(observation.model, "gpt-5.4");
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn upstream_rejection_finishes_unknown_without_quality_evidence() {
-        let _isolation = crate::core::data_dir::isolated_data_dir();
-        let state = test_state();
-        let (url, server) = upstream(
-            axum::http::StatusCode::TOO_MANY_REQUESTS,
-            r#"{"error":{"type":"rate_limit_error"}}"#.to_owned(),
-        )
-        .await;
-        let (sink, _messages) = mpsc::unbounded();
-        let captured = Arc::new(Mutex::new(None));
-        let mut sink = capture_task(sink, captured.clone());
-        let flow = run_turn(
-            &mut sink,
-            &state,
-            &url,
-            "/v1/responses",
-            &[],
-            r#"{"type":"response.create","input":[]}"#,
-            "rejected-transport",
-        )
-        .await;
-        assert!(flow.is_continue());
-        assert_eq!(state.stats.requests_total.load(Ordering::Relaxed), 1);
-        let task = captured.lock().unwrap().clone().unwrap();
-        let outcome = ExecutionLifecycle::global()
-            .outcome_for(task.task_id.as_str())
-            .unwrap();
-        assert_eq!(
-            outcome.accepted_outcome.accepted,
-            lean_ctx_protocol::AcceptanceState::Unknown
-        );
-        assert!(outcome.assessment.is_none());
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn ws_conversion_and_whitespace_are_not_compression_savings() {
-        let _isolation = crate::core::data_dir::isolated_data_dir();
-        let state = test_state();
-        let (url, server) = upstream(axum::http::StatusCode::OK, String::new()).await;
-        let (mut sink, _messages) = mpsc::unbounded();
-        let event =
-            r#"{ "type": "response.create", "generate": true, "background": false, "input": [] }"#;
-        let baseline = serde_json::to_vec(&build_upstream_body(event).unwrap())
-            .unwrap()
-            .len() as u64;
-        assert_ne!(baseline, event.len() as u64);
-        assert!(
-            run_turn(
-                &mut sink,
-                &state,
-                &url,
-                "/v1/responses",
-                &[],
-                event,
-                "wire-conversion"
-            )
-            .await
-            .is_continue()
-        );
-        assert_eq!(state.stats.bytes_original.load(Ordering::Relaxed), baseline);
-        assert_eq!(
-            state.stats.bytes_compressed.load(Ordering::Relaxed),
-            baseline
-        );
-        assert_eq!(state.stats.tokens_saved.load(Ordering::Relaxed), 0);
-        assert_eq!(state.stats.requests_compressed.load(Ordering::Relaxed), 0);
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn measured_usage_is_booked_once_even_when_quality_is_unknown() {
-        let _isolation = crate::core::data_dir::isolated_data_dir();
-        let state = test_state();
-        let model = "ws-phase5-measured-fixture";
-        let before = super::super::usage_meter::snapshot()
-            .into_iter()
-            .find(|usage| usage.model == model)
-            .map_or(0, |usage| usage.requests);
-        let body = format!("data: {}\n", COMPLETED.replace("gpt-5.4", model));
-        let (url, server) = upstream(axum::http::StatusCode::OK, body).await;
-        let (sink, _messages) = mpsc::unbounded();
-        let captured = Arc::new(Mutex::new(None));
-        let mut sink = capture_task(sink, captured.clone());
-        let flow = run_turn(
-            &mut sink,
-            &state,
-            &url,
-            "/v1/responses",
-            &[],
-            r#"{"type":"response.create","input":[]}"#,
-            "measured-transport",
-        )
-        .await;
-        assert!(flow.is_continue());
-        let usage = super::super::usage_meter::snapshot()
-            .into_iter()
-            .find(|usage| usage.model == model)
-            .unwrap();
-        assert_eq!(usage.requests, before + 1);
-        assert_eq!(
-            (
-                usage.input_tokens,
-                usage.cache_read_tokens,
-                usage.output_tokens
-            ),
-            (100, 20, 7)
-        );
-        assert_eq!(state.stats.requests_total.load(Ordering::Relaxed), 1);
-        let task = captured.lock().unwrap().clone().unwrap();
-        let outcome = ExecutionLifecycle::global()
-            .outcome_for(task.task_id.as_str())
-            .unwrap();
-        assert_eq!(
-            outcome.accepted_outcome.accepted,
-            lean_ctx_protocol::AcceptanceState::Unknown
-        );
-        assert!(outcome.assessment.is_none());
-        server.abort();
-    }
-
-    #[tokio::test]
-    async fn terminal_usage_reaches_lifecycle_ledger_after_upstream_stream_error() {
-        use tokio::io::{AsyncReadExt, AsyncWriteExt};
-
-        let _isolation = crate::core::data_dir::isolated_data_dir();
-        let state = test_state();
-        let model = "ws-terminal-error-lifecycle";
-        let before = super::super::usage_meter::snapshot()
-            .into_iter()
-            .find(|usage| usage.model == model)
-            .map_or(0, |usage| usage.requests);
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let body = format!("data: {}\n", COMPLETED.replace("gpt-5.4", model));
-        let (completion_seen, completion_received) = tokio::sync::oneshot::channel();
-        let server = tokio::spawn(async move {
-            let (mut socket, _) = listener.accept().await.unwrap();
-            let mut request = Vec::new();
-            while !request.windows(4).any(|window| window == b"\r\n\r\n") {
-                let mut bytes = [0; 1024];
-                let count = socket.read(&mut bytes).await.unwrap();
-                assert!(count > 0 && request.len() < 8192);
-                request.extend_from_slice(&bytes[..count]);
-            }
-            let wire = format!(
-                "HTTP/1.1 200 OK\r\nContent-Type: text/event-stream\r\nTransfer-Encoding: chunked\r\nConnection: close\r\n\r\n{:x}\r\n{}\r\n",
-                body.len(),
-                body
-            );
-            socket.write_all(wire.as_bytes()).await.unwrap();
-            socket.flush().await.unwrap();
-            completion_received.await.unwrap();
-            // Missing terminating zero chunk causes a real upstream body error,
-            // only after the WS sink has observed the complete usage event.
-        });
-        let (sink, mut messages) = mpsc::unbounded();
-        let captured = Arc::new(Mutex::new(None));
-        let sink = capture_task(sink, captured.clone());
-        let mut completion_seen = Some(completion_seen);
-        let mut sink = sink.with(move |message: Message| {
-            if matches!(&message, Message::Text(text) if text.contains("response.completed"))
-                && let Some(signal) = completion_seen.take()
-            {
-                signal.send(()).unwrap();
-            }
-            futures::future::ready(Ok::<_, mpsc::SendError>(message))
-        });
-        let flow = tokio::time::timeout(
-            std::time::Duration::from_secs(5),
-            run_turn(
-                &mut sink,
-                &state,
-                &url,
-                "/v1/responses",
-                &[],
-                r#"{"type":"response.create","input":[]}"#,
-                "terminal-error-lifecycle",
-            ),
-        )
-        .await
-        .unwrap();
-        assert!(flow.is_continue());
-        server.await.unwrap();
-        let completed: Value =
-            serde_json::from_str(&messages.next().await.unwrap().into_text().unwrap()).unwrap();
-        assert_eq!(completed["type"], "response.completed");
-        let error: Value =
-            serde_json::from_str(&messages.next().await.unwrap().into_text().unwrap()).unwrap();
-        assert_eq!(error["status"], 502);
-        let measured = super::super::usage_meter::snapshot()
-            .into_iter()
-            .find(|usage| usage.model == model)
-            .unwrap();
-        assert_eq!(measured.requests, before + 1);
-        assert_eq!(
-            (
-                measured.input_tokens,
-                measured.cache_read_tokens,
-                measured.output_tokens
-            ),
-            (100, 20, 7)
-        );
-        assert_eq!(state.stats.requests_total.load(Ordering::Relaxed), 1);
-        let task = captured.lock().unwrap().clone().unwrap();
-        let outcome = ExecutionLifecycle::global()
-            .outcome_for(task.task_id.as_str())
-            .unwrap();
-        assert_eq!(
-            outcome.accepted_outcome.accepted,
-            lean_ctx_protocol::AcceptanceState::Unknown
-        );
-        assert!(outcome.assessment.is_none());
-    }
-
-    async fn cancelled_turn_usage(terminal: bool) {
-        let _isolation = crate::core::data_dir::isolated_data_dir();
-        let state = test_state();
-        let model = if terminal {
-            "ws-cancel-terminal-evidence"
-        } else {
-            "ws-cancel-partial-control"
-        };
-        let before = super::super::usage_meter::snapshot()
-            .into_iter()
-            .find(|usage| usage.model == model)
-            .map_or(0, |usage| usage.requests);
-        let event = if terminal {
-            COMPLETED.replace("gpt-5.4", model)
-        } else {
-            json!({"type":"response.created","response":{
-                "model":model,"usage":{"input_tokens":120,"output_tokens":0}
-            }})
-            .to_string()
-        };
-        let body = Bytes::from(format!("data: {event}\n\n"));
-        let app = axum::Router::new().route(
-            "/v1/responses",
-            axum::routing::post(move || {
-                let body = body.clone();
-                async move {
-                    axum::body::Body::from_stream(
-                        futures::stream::once(
-                            async move { Ok::<_, std::convert::Infallible>(body) },
-                        )
-                        .chain(futures::stream::pending()),
-                    )
-                }
-            }),
-        );
-        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let url = format!("http://{}", listener.local_addr().unwrap());
-        let server = tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
-        let (sink, mut messages) = mpsc::unbounded();
-        let captured = Arc::new(Mutex::new(None));
-        let sink = capture_task(sink, captured.clone());
-        let (seen, received) = tokio::sync::oneshot::channel();
-        let mut seen = Some(seen);
-        let mut sink = sink.with(move |message: Message| {
-            if let Some(signal) = seen.take() {
-                signal.send(()).unwrap();
-            }
-            futures::future::ready(Ok::<_, mpsc::SendError>(message))
-        });
-        let mut turn = Box::pin(run_turn(
-            &mut sink,
-            &state,
-            &url,
-            "/v1/responses",
-            &[],
-            r#"{"type":"response.create","input":[]}"#,
-            model,
-        ));
-        tokio::time::timeout(std::time::Duration::from_secs(5), async {
-            tokio::select! {
-                result = &mut turn => panic!("turn completed before cancellation: {result:?}"),
-                observed = received => observed.unwrap(),
-            }
-        })
-        .await
-        .unwrap();
-        // Cancel the actual lifecycle future while upstream remains open, after
-        // its scanner and WS sink have observed the event; do not fake an error.
-        drop(turn);
-        let message = tokio::time::timeout(std::time::Duration::from_secs(5), messages.next())
-            .await
-            .unwrap()
-            .unwrap();
-        let relayed: Value = serde_json::from_str(&message.into_text().unwrap()).unwrap();
-        assert_eq!(
-            relayed["type"],
-            if terminal {
-                "response.completed"
-            } else {
-                "response.created"
-            }
-        );
-        server.abort();
-        assert!(server.await.unwrap_err().is_cancelled());
-        let task = captured.lock().unwrap().clone().unwrap();
-        let outcome = ExecutionLifecycle::global()
-            .outcome_for(task.task_id.as_str())
-            .expect("canonical guard must finalize cancellation");
-        let after = super::super::usage_meter::snapshot()
-            .into_iter()
-            .find(|usage| usage.model == model);
-        let measured_tokens = after.as_ref().map(|usage| {
-            (
-                usage.input_tokens,
-                usage.cache_read_tokens,
-                usage.output_tokens,
-            )
-        });
-        // Report quality and measurement together: an invalid rejection must
-        // not hide the independently missing provider measurement.
-        assert_eq!(
-            (
-                outcome.accepted_outcome.accepted,
-                outcome.assessment.is_none(),
-                after.map_or(0, |usage| usage.requests) - before,
-                measured_tokens,
-            ),
-            (
-                lean_ctx_protocol::AcceptanceState::Unknown,
-                true,
-                u64::from(terminal),
-                terminal.then_some((100, 20, 7)),
-            ),
-        );
-    }
-
-    #[tokio::test]
-    async fn cancelled_turn_retains_observed_terminal_usage() {
-        cancelled_turn_usage(true).await;
-    }
-
-    #[tokio::test]
-    async fn cancelled_turn_does_not_book_partial_usage() {
-        cancelled_turn_usage(false).await;
-    }
-
-    #[test]
-    fn build_upstream_body_strips_ws_fields_and_forces_stream() {
-        let event = r#"{
-            "type": "response.create",
-            "model": "gpt-5.5",
-            "generate": false,
-            "background": true,
-            "input": [{"type":"message","role":"user","content":[{"type":"input_text","text":"hi"}]}]
-        }"#;
-        let body = build_upstream_body(event).expect("valid response.create");
-        let obj = body.as_object().unwrap();
-        assert!(!obj.contains_key("type"), "WS event type must be stripped");
-        assert!(
-            !obj.contains_key("generate"),
-            "warmup hint must be stripped"
-        );
-        assert!(
-            !obj.contains_key("background"),
-            "background must be stripped"
-        );
-        assert_eq!(obj.get("stream"), Some(&Value::Bool(true)));
-        assert_eq!(obj.get("model").and_then(Value::as_str), Some("gpt-5.5"));
-        assert!(obj.contains_key("input"), "input must be preserved");
-    }
-
-    #[test]
-    fn build_upstream_body_preserves_previous_response_id() {
-        let event = r#"{"type":"response.create","previous_response_id":"resp_123","input":[]}"#;
-        let body = build_upstream_body(event).unwrap();
-        assert_eq!(
-            body.get("previous_response_id").and_then(Value::as_str),
-            Some("resp_123"),
-            "continuation chaining must survive the bridge"
-        );
-    }
-
-    #[test]
-    fn build_upstream_body_rejects_non_create_events() {
-        assert!(build_upstream_body(r#"{"type":"response.cancel"}"#).is_none());
-        assert!(build_upstream_body("not json").is_none());
-        assert!(build_upstream_body("[]").is_none());
-        assert!(build_upstream_body(r#"{"input":[]}"#).is_none());
-    }
-
-    #[test]
-    fn sse_data_payload_extracts_event_json() {
-        assert_eq!(
-            sse_data_payload(b"data: {\"type\":\"response.created\"}"),
-            Some("{\"type\":\"response.created\"}".to_string())
-        );
-        // No space after the colon is still valid SSE.
-        assert_eq!(
-            sse_data_payload(b"data:{\"a\":1}"),
-            Some("{\"a\":1}".to_string())
-        );
-    }
-
-    #[test]
-    fn sse_data_payload_ignores_metadata_and_done() {
-        assert!(sse_data_payload(b"event: response.created").is_none());
-        assert!(sse_data_payload(b": keep-alive comment").is_none());
-        assert!(sse_data_payload(b"id: 42").is_none());
-        assert!(sse_data_payload(b"").is_none());
-        assert!(sse_data_payload(b"data: [DONE]").is_none());
-    }
-}
+#[path = "openai_responses_ws_tests.rs"]
+mod tests;

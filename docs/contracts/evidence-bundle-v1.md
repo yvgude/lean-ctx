@@ -6,7 +6,7 @@ A LeanCTX evidence bundle is a ZIP archive an auditor can verify **without
 LeanCTX, without network access and without our involvement**, using the
 standalone `leanctx-verify` tool (`packages/leanctx-verify/`). It composes
 the engine's existing evidence surfaces — audit chain (OCP Part 4), policy
-packs, framework coverage reports — into one cryptographically linked,
+packs, the CGB coverage report — into one cryptographically linked,
 deterministic artifact.
 
 ## Goals
@@ -25,7 +25,7 @@ manifest.json                 the root of trust (see below)
 audit/trail.jsonl             audit-chain segment for the period
 policies/<name>.resolved.json resolved policy pack(s) in effect
 coverage/cgb.json             CGB automated partial assessment
-coverage/<framework>.json     framework coverage report (when --framework)
+coverage/<framework>.json     framework coverage report — LeanCTX Enterprise only
 ```
 
 Determinism rules (normative):
@@ -38,6 +38,12 @@ Determinism rules (normative):
 * `manifest.json` contains **no wall-clock timestamps**; the period bounds
   are inputs, not observations.
 
+`audit evidence --framework <id>` adds `coverage/<id>.json` and sets
+`manifest.framework` to `<id>`; the assessment comes from the licensed LeanCTX
+Enterprise runtime and is checked by the engine before it is written. Without
+it the engine writes no such entry, keeps `manifest.framework` `null` and
+refuses `--framework` with a pointer to the tier. Verifiers must accept both forms.
+
 ## `manifest.json`
 
 ```json
@@ -46,7 +52,7 @@ Determinism rules (normative):
   "version": 1,
   "period": { "from": "2026-05-01T00:00:00Z", "to": "2026-06-01T00:00:00Z" },
   "subject": { "agent_id": "lean-ctx", "project": "<root dir name>" },
-  "framework": "eu-ai-act",
+  "framework": null,
   "files": [ { "path": "audit/trail.jsonl", "sha256": "<hex>" } ],
   "chain": {
     "entries": 412,

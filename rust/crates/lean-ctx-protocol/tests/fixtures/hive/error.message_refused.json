@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_request",
+    "field": "deadline",
+    "message": "Only questions carry a deadline."
+  }
+}

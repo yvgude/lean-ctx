@@ -18,15 +18,6 @@ pub(crate) struct CapturedOutput {
     pub(crate) cancelled: bool,
 }
 
-#[cfg(test)]
-#[cfg_attr(not(unix), allow(dead_code))] // its only consumer is a cfg(unix) test
-pub(crate) fn run_with_timeout(
-    command: &mut std::process::Command,
-    timeout: std::time::Duration,
-) -> Result<CapturedOutput, String> {
-    wait_for_capture(spawn_capture(command)?, timeout)
-}
-
 /// Bound captured bytes without allowing inherited handles to extend waiting.
 /// Length checks stop oversized writers; temporary-file growth between polls
 /// is not an operating-system disk quota. `None` preserves unlimited waiting.
@@ -66,6 +57,10 @@ pub(crate) struct CapturedChild {
     stderr: std::fs::File,
     bin: String,
     cleanup: ProcessCleanup,
+    /// Q13: ends the child's process group when this capture is over or this
+    /// process is gone. `None`: this process is not the `lean-ctx` binary.
+    #[cfg(unix)]
+    guard: Option<crate::shell::containment::CallGuard>,
 }
 
 impl CapturedChild {
@@ -119,14 +114,38 @@ pub(crate) fn spawn_capture(command: &mut std::process::Command) -> Result<Captu
         use std::os::windows::process::CommandExt;
         command.creation_flags(windows_sys::Win32::System::Threading::CREATE_SUSPENDED);
     }
-    let mut child = command.spawn().map_err(|e| {
+    let spawn_error = |e: std::io::Error| {
         if e.kind() == std::io::ErrorKind::NotFound {
             format!("command '{bin}' not found in PATH")
         } else {
             format!("failed to run '{bin}': {e}")
         }
-    })?;
+    };
+    // Q13: no child runs without its guard. The program is executed only
+    // once the guard is ready, so a caller that dies in between leaves
+    // nothing running; if no guard can be attached the program was never
+    // executed and the command is refused. `None` for the guard: this
+    // process is not the `lean-ctx` binary.
+    #[cfg(unix)]
+    let (mut child, guard) = {
+        use crate::shell::containment::Refusal;
+        match crate::shell::containment::start_guarded_child(command) {
+            Ok(started) => started,
+            Err(Refusal::NotStarted(error)) => return Err(spawn_error(error)),
+            Err(Refusal::NotLeader) => {
+                return Err(format!(
+                    "command '{bin}' could not be contained: the process does not lead a group of its own"
+                ));
+            }
+            Err(Refusal::NoGuard(reason)) => {
+                return Err(format!("command '{bin}' could not be contained: {reason}"));
+            }
+        }
+    };
+    #[cfg(not(unix))]
+    let mut child = command.spawn().map_err(spawn_error)?;
 
+    // A guard that goes out of scope on this path ends the child's group.
     let cleanup = match process_cleanup(&child, bin) {
         Ok(cleanup) => cleanup,
         Err(error) => {
@@ -142,7 +161,22 @@ pub(crate) fn spawn_capture(command: &mut std::process::Command) -> Result<Captu
         stderr,
         bin: bin.to_owned(),
         cleanup,
+        #[cfg(unix)]
+        guard,
     })
+}
+
+/// Whether the child has exited. On Unix it is NOT reaped by this: as a
+/// zombie it keeps its pid — the id of its own process group — from being
+/// reused while that group is still to be signalled.
+#[cfg(unix)]
+fn child_exited(child: &mut std::process::Child) -> std::io::Result<bool> {
+    crate::shell::exec::exited_unreaped(child)
+}
+
+#[cfg(not(unix))]
+fn child_exited(child: &mut std::process::Child) -> std::io::Result<bool> {
+    child.try_wait().map(|status| status.is_some())
 }
 
 #[cfg(windows)]
@@ -273,6 +307,8 @@ fn wait_for_capture_with_limits(
         mut stderr,
         bin,
         mut cleanup,
+        #[cfg(unix)]
+        guard,
     }: CapturedChild,
     timeout: Option<std::time::Duration>,
     limits: Option<(u64, u64)>,
@@ -282,8 +318,9 @@ fn wait_for_capture_with_limits(
 
     let started = std::time::Instant::now();
     let (status, timed_out, cancelled, cleanup_error) = loop {
-        let state = child
-            .try_wait()
+        // Q13: the exit is observed without reaping. Every group signal below
+        // is sent while the child is unreaped; it is reaped right afterwards.
+        let state = child_exited(&mut child)
             .map_err(|error| format!("failed to wait for '{bin}': {error}"))
             .and_then(|state| {
                 if let Some((stdout_limit, stderr_limit)) = limits {
@@ -311,15 +348,17 @@ fn wait_for_capture_with_limits(
                     format!("{wait_error}; {details}")
                 });
             }
-            Ok(Some(status)) => {
+            Ok(true) => {
+                // Exited, not reaped: the leader still pins its group id.
+                let cleanup_error = stop_remaining_process_group(&child, &bin, &mut cleanup).err();
                 break (
-                    status,
+                    reap_child(&mut child, &bin, CLEANUP_GRACE)?,
                     false,
                     false,
-                    stop_remaining_process_group(&child, &bin, &mut cleanup).err(),
+                    cleanup_error,
                 );
             }
-            Ok(None) if cancellation_requested() => {
+            Ok(false) if cancellation_requested() => {
                 let cleanup_error = terminate_process_tree(&mut child, &bin, &mut cleanup).err();
                 break (
                     reap_child(&mut child, &bin, CLEANUP_GRACE)?,
@@ -328,7 +367,7 @@ fn wait_for_capture_with_limits(
                     cleanup_error,
                 );
             }
-            Ok(None) if timeout.is_some_and(|timeout| started.elapsed() >= timeout) => {
+            Ok(false) if timeout.is_some_and(|timeout| started.elapsed() >= timeout) => {
                 let cleanup_error = terminate_process_tree(&mut child, &bin, &mut cleanup).err();
                 break (
                     reap_child(&mut child, &bin, CLEANUP_GRACE)?,
@@ -337,9 +376,18 @@ fn wait_for_capture_with_limits(
                     cleanup_error,
                 );
             }
-            Ok(None) => std::thread::sleep(std::time::Duration::from_millis(10)),
+            Ok(false) => std::thread::sleep(std::time::Duration::from_millis(10)),
         }
     };
+    // The capture is over: the guard ends what is left of the group and is
+    // reaped. (Early returns above drop the guard, which does the same.)
+    #[cfg(unix)]
+    if let Some(guard) = guard {
+        let ended = guard.finish();
+        if ended != crate::shell::containment::GuardOutcome::Ended {
+            tracing::warn!("command '{bin}': the end of its process group is {ended:?}");
+        }
+    }
     let stdout = read_capture(&mut stdout, &bin, "stdout", limits.map(|limits| limits.0))?;
     let stderr = read_capture(&mut stderr, &bin, "stderr", limits.map(|limits| limits.1))?;
 
@@ -419,6 +467,35 @@ fn reap_child(
     }
 }
 
+// Test recorder: for every group signal of this thread, whether the leader
+// was still unreaped at that moment. A signal after the reap would be a
+// signal to a number that may already belong to another group.
+#[cfg(all(test, unix))]
+thread_local! {
+    static GROUP_SIGNAL_LOG: std::cell::RefCell<Vec<bool>> =
+        const { std::cell::RefCell::new(Vec::new()) };
+}
+
+#[cfg(all(test, unix))]
+pub(crate) fn take_group_signal_log() -> Vec<bool> {
+    GROUP_SIGNAL_LOG.with(|log| std::mem::take(&mut *log.borrow_mut()))
+}
+
+#[cfg(all(test, unix))]
+fn leader_unreaped(pid: libc::pid_t) -> bool {
+    // SAFETY: an all-zero siginfo_t is a valid out-parameter; WNOWAIT leaves
+    // the child waitable. The call fails once the child has been reaped.
+    unsafe {
+        let mut info: libc::siginfo_t = std::mem::zeroed();
+        libc::waitid(
+            libc::P_PID,
+            pid as libc::id_t,
+            &raw mut info,
+            libc::WEXITED | libc::WNOHANG | libc::WNOWAIT,
+        ) == 0
+    }
+}
+
 #[cfg(unix)]
 fn stop_remaining_process_group(
     child: &std::process::Child,
@@ -431,12 +508,25 @@ fn stop_remaining_process_group(
             "failed to stop child process group '{bin}': invalid process group id {pgid}"
         ));
     }
-    // SAFETY: the child was spawned as leader of its dedicated process group.
+    // Ownership rule (Q13 steps 1 and 5): the group is addressed by the
+    // child's pid, which is ours only while the child is unreaped. Every
+    // caller observes the exit with `child_exited` (no reap) and reaps after
+    // this returns.
+    #[cfg(test)]
+    GROUP_SIGNAL_LOG.with(|log| log.borrow_mut().push(leader_unreaped(pgid)));
+    // SAFETY: the child was spawned as leader of its dedicated process group
+    // and is unreaped, so its pid cannot name another group.
     if unsafe { libc::killpg(pgid, libc::SIGKILL) } == 0 {
         return Ok(());
     }
     let error = std::io::Error::last_os_error();
-    if error.raw_os_error() == Some(libc::ESRCH) {
+    if error.raw_os_error() == Some(libc::ESRCH)
+        // Darwin answers EPERM for a group whose only member is the exited,
+        // not yet reaped leader. That is settled by looking at the process
+        // table, never by signalling again.
+        || (error.raw_os_error() == Some(libc::EPERM)
+            && crate::shell::containment::live_members(pgid) == Some(0))
+    {
         Ok(())
     } else {
         Err(format!(

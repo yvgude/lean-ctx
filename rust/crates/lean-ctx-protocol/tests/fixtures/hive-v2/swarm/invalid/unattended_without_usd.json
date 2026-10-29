@@ -1,0 +1,14 @@
+{
+  "case": "unattended_without_usd",
+  "base": "routes/pledge.loosen.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/usd_cents_per_day",
+      "value": null
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

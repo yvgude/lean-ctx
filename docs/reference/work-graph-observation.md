@@ -37,6 +37,11 @@ governs execution, not the number of registered agents.
 
 - A connected MCP transport is not proof of an executing model turn.
 - `execution_started` records a start; it does not prove the process is live now.
+- `process_exit` is LeanCTX's view of the incarnation, not an observed process
+  exit: `unconfirmed` while the started node is active, `confirmed` once a
+  receipt, completion or stop has ended LeanCTX's authority over it. The host
+  owns the child process; a stopped child keeps its path claims until the
+  window granted at start ends.
 - Accepted work is distinct from a worker reporting completion.
 - Observed token consumption is accounting, not a measured savings claim.
 - Dashboard `pending_messages` excludes expired, read and recipient-less history;
@@ -44,4 +49,5 @@ governs execution, not the number of registered agents.
 
 This API supplies a compact observation surface. A visual controller must still
 bind its user/session authority to project and graph membership, and use existing
-claim, execute, cancellation and receipt verification paths for mutations.
+claim, start, cancel and receipt paths for mutations
+([host-start lifecycle](../architecture/work-graph-host-start.md)).

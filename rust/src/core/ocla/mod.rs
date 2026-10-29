@@ -16,38 +16,20 @@ pub mod capsule;
 pub mod catalogue;
 pub mod compose_cache;
 pub mod content_port;
-pub mod grpc_bridge;
 pub mod health;
 pub mod invocation;
-pub mod ledger_export;
-pub mod openapi;
-pub mod policy_bundle;
-pub mod policy_constraints;
-pub mod reference_adapters;
-pub mod reference_scheduler;
 pub mod registry;
-pub mod regression_gate;
 pub mod response_cache;
-#[cfg(feature = "http-server")]
-pub mod runtime;
-pub mod scheduler_service;
-pub mod sidecar;
-pub mod tracing;
 #[allow(dead_code)]
 pub mod unified_ledger;
 pub mod wire;
 #[cfg(feature = "http-server")]
 pub mod wire_api;
-#[cfg(feature = "http-server")]
-pub mod wire_middleware;
-pub mod wire_stream;
 
 pub mod traits;
 pub mod types;
 
 pub use catalogue::{CatalogueEntry, ModelEntry, ProviderEntry, TechnicalCatalogue};
-pub use policy_constraints::PolicyConstraints;
-pub use reference_scheduler::ReferenceScheduler;
 pub use registry::OclaRegistry;
 pub use traits::*;
 pub use types::*;

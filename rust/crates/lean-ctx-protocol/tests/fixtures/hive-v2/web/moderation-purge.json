@@ -1,0 +1,78 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "Enter the code from your authenticator app.",
+          "reason": "action_code_required"
+        }
+      },
+      "status": 403
+    },
+    {
+      "body": {
+        "error": {
+          "code": "invalid_body",
+          "field": "statement_of_reasons",
+          "message": "statement_of_reasons has 20 to 2000 characters"
+        }
+      },
+      "status": 400
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/moderation/purges",
+  "request": {
+    "report_id": "rpt_4712",
+    "selector": {
+      "node_ids": [
+        "n_zcjqmmor453nyxqgshlgpogwdm"
+      ]
+    },
+    "statement_of_reasons": "The node published a third party's private address; removed under the illegal-content policy.",
+    "totp_code": "482913"
+  },
+  "response": {
+    "body": {
+      "purge": {
+        "acks": {
+          "m": 2,
+          "n": 1
+        },
+        "approvals": [
+          {
+            "at": "2026-10-24T08:05:00Z",
+            "handle": "thinkery-mod"
+          }
+        ],
+        "backups_clear_at": "2026-11-01T08:05:30Z",
+        "created_at": "2026-10-24T08:00:10Z",
+        "expires_at": "2026-10-27T08:00:10Z",
+        "id": "prg_aaaaaaaaaaaaaaaaaaaaaaezcm",
+        "item_count": 1,
+        "keys_destroyed_at": "2026-10-24T08:05:30Z",
+        "legacy_replicas": 0,
+        "offline_pending": 1,
+        "reason": "illegal_content",
+        "requested_by": {
+          "handle": "thinkery-mod"
+        },
+        "second_approval_required": false,
+        "selector": {
+          "node_ids": [
+            "n_zcjqmmor453nyxqgshlgpogwdm"
+          ]
+        },
+        "state": "propagating",
+        "statement_of_reasons": "The node published a third party's private address; removed under the illegal-content policy.",
+        "vault": {
+          "name": "public-notes",
+          "ws": "acme"
+        }
+      }
+    },
+    "status": 201
+  },
+  "route": "W56"
+}

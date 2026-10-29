@@ -1,0 +1,39 @@
+{
+  "route": "W9",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/vaults/payments",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "vault": {
+        "name": "payments",
+        "title": "Payments",
+        "description": "Knowledge of the payments services.",
+        "visibility": "private",
+        "sealed": false,
+        "sealed_conversion": "none",
+        "presence_public": false,
+        "sealed_grants": "confirm",
+        "frozen": false,
+        "license": null,
+        "forge": {
+          "host": "gitlab.acme.example",
+          "repo": "acme/payments",
+          "state": "unverified"
+        },
+        "viewer": {
+          "role": "maintainer"
+        },
+        "counts": {
+          "nodes": 14,
+          "workers": 3,
+          "open_reviews": 1
+        },
+        "stars": 0,
+        "followers": 0
+      }
+    }
+  },
+  "errors": []
+}

@@ -1,0 +1,26 @@
+{
+  "name": "key-purposes",
+  "values": [
+    {
+      "value": "policy"
+    },
+    {
+      "value": "event"
+    },
+    {
+      "value": "snapshot"
+    },
+    {
+      "value": "revocation"
+    },
+    {
+      "value": "consent"
+    },
+    {
+      "value": "control"
+    },
+    {
+      "value": "purge"
+    }
+  ]
+}

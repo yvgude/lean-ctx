@@ -53,9 +53,12 @@ pub(crate) fn build_briefing_pack(
     // (category, key) ordering. recall_for_task() already filters to current
     // facts and sorts deterministically.
     let ranked = knowledge.recall_for_task(task);
+    // The pack carries fact values to a sub-agent: only facts that may be
+    // delivered now enter it (`ProjectKnowledge::delivery_filter`).
+    let deliverable = knowledge.delivery_filter();
 
     let mut facts: Vec<ContractFact> = Vec::new();
-    for f in ranked {
+    for f in ranked.into_iter().filter(|&f| deliverable(f)) {
         let line_tokens = count_tokens(&format!("{}/{}: {}", f.category, f.key, f.value));
         if used + line_tokens > budget_tokens {
             continue;
@@ -124,9 +127,10 @@ mod tests {
     use super::*;
     use crate::core::memory_policy::MemoryPolicy;
 
-    fn knowledge_with_facts() -> ProjectKnowledge {
+    fn knowledge_with_facts() -> (tempfile::TempDir, ProjectKnowledge) {
         let policy = MemoryPolicy::default();
-        let mut k = ProjectKnowledge::new("/tmp/contract-test");
+        let k_root = tempfile::tempdir().unwrap();
+        let mut k = ProjectKnowledge::new(k_root.path().to_str().unwrap());
         k.remember(
             "architecture",
             "auth",
@@ -144,12 +148,12 @@ mod tests {
             &policy,
         );
         k.remember("deploy", "host", "AWS eu-central-1", "s1", 0.8, &policy);
-        k
+        (k_root, k)
     }
 
     #[test]
     fn briefing_pack_is_deterministic() {
-        let k = knowledge_with_facts();
+        let (_root, k) = knowledge_with_facts();
         let a = serialize_pack(&build_briefing_pack(&k, "fix authentication bug", 500)).unwrap();
         let b = serialize_pack(&build_briefing_pack(&k, "fix authentication bug", 500)).unwrap();
         assert_eq!(a, b, "same input must produce byte-identical packs");
@@ -157,7 +161,7 @@ mod tests {
 
     #[test]
     fn briefing_pack_respects_budget() {
-        let k = knowledge_with_facts();
+        let (_root, k) = knowledge_with_facts();
         let tight = build_briefing_pack(&k, "authentication database deployment", 30);
         assert!(
             tight.used_tokens <= 30,
@@ -170,7 +174,7 @@ mod tests {
 
     #[test]
     fn briefing_pack_includes_relevant_fact() {
-        let k = knowledge_with_facts();
+        let (_root, k) = knowledge_with_facts();
         let pack = build_briefing_pack(&k, "fix authentication bug", 500);
         assert!(
             pack.facts.iter().any(|f| f.key == "auth"),
@@ -185,7 +189,7 @@ mod tests {
     fn briefing_pack_ignores_a_shared_generic_verb() {
         // #1832: "fix" alone must not pull the deploy fact into the briefing.
         let policy = MemoryPolicy::default();
-        let mut k = knowledge_with_facts();
+        let (_root, mut k) = knowledge_with_facts();
         k.remember(
             "deploy",
             "rollout",
@@ -200,6 +204,48 @@ mod tests {
             "{:?}",
             pack.facts
         );
+    }
+
+    /// The pack carries fact values to a sub-agent: a fact bound to a file
+    /// that is gone is not ranked into it; a fact without a binding is.
+    #[test]
+    fn briefing_pack_leaves_out_a_fact_that_is_not_served() {
+        use crate::core::archive::bindings::{self, Item};
+        use crate::core::context_admission::stored::lineage_support::{governed, project, scoped};
+        let _data = governed();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        std::fs::write(format!("{root}/auth.rs"), "pub fn verify_rs256() {}\n").expect("source");
+        let policy = MemoryPolicy::default();
+        let mut k = ProjectKnowledge::new(&root);
+        let bound = "JWT RS256 authentication";
+        let typed = "authentication rows live in PostgreSQL";
+        scoped(&root, || {
+            k.remember("architecture", "auth", bound, "s1", 0.9, &policy);
+            k.remember("architecture", "db", typed, "s1", 0.8, &policy);
+        });
+        let item = Item::KnowledgeFact {
+            project: &root,
+            category: "architecture",
+            key: "auth",
+        };
+        let sources =
+            bindings::sources_at(&root, &["auth.rs"], "ctx_knowledge").expect("readable source");
+        assert!(bindings::bind(&item, bound, &root, sources));
+        let keys = || {
+            scoped(&root, || {
+                build_briefing_pack(&k, "fix authentication bug", 500)
+            })
+            .facts
+            .into_iter()
+            .map(|fact| fact.key)
+            .collect::<Vec<_>>()
+        };
+
+        assert!(keys().contains(&"auth".to_owned()), "{:?}", keys());
+        assert!(keys().contains(&"db".to_owned()), "{:?}", keys());
+        std::fs::remove_file(format!("{root}/auth.rs")).expect("delete");
+        assert_eq!(keys(), ["db".to_owned()]);
     }
 
     #[test]

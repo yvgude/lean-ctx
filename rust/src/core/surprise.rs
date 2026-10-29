@@ -63,29 +63,6 @@ pub fn line_surprise(text: &str) -> f64 {
     total / tokens.len() as f64
 }
 
-/// Classify how surprising a line is relative to the LLM's expected knowledge.
-/// Uses empirically calibrated thresholds for o200k_base.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SurpriseLevel {
-    /// Common patterns — safe to compress aggressively
-    Low,
-    /// Mixed content — standard compression
-    Medium,
-    /// Rare/unique tokens — preserve carefully
-    High,
-}
-
-pub fn classify_surprise(text: &str) -> SurpriseLevel {
-    let s = line_surprise(text);
-    if s < 8.0 {
-        SurpriseLevel::Low
-    } else if s < 12.0 {
-        SurpriseLevel::Medium
-    } else {
-        SurpriseLevel::High
-    }
-}
-
 /// Threshold at which the entropy filter starts dropping lines (#1910).
 const DROP_SHARE_ORIGIN: f64 = 0.4;
 /// Extra share of lines dropped per unit of threshold above the origin.

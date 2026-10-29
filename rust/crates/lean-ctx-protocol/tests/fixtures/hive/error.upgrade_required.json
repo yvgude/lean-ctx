@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "upgrade_required",
+    "message": "This engine is too old for Hive.",
+    "min_engine": "3.12.0"
+  }
+}

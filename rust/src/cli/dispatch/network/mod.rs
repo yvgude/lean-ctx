@@ -1,11 +1,14 @@
 use crate::{core, dashboard};
 
+#[cfg(feature = "http-server")]
 const MAX_A2A_PEERS_BYTES: u64 = 1024 * 1024;
 
+#[cfg(feature = "http-server")]
 fn read_a2a_task_authority(path: &std::path::Path) -> Result<String, String> {
     crate::core::a2a::task::policy_file::read_bounded(path)
 }
 
+#[cfg(feature = "http-server")]
 fn read_a2a_peers(path: &std::path::Path) -> Result<String, String> {
     let raw = read_a2a_task_authority(path)?;
     if raw.len() as u64 > MAX_A2A_PEERS_BYTES {
@@ -16,12 +19,11 @@ fn read_a2a_peers(path: &std::path::Path) -> Result<String, String> {
     Ok(raw)
 }
 
+pub(crate) mod cockpit_start;
 mod provider;
 pub(crate) use provider::*;
 mod proxy;
 pub(crate) use proxy::*;
-mod team;
-pub(crate) use team::*;
 #[cfg(test)]
 mod tests;
 
@@ -34,89 +36,181 @@ fn vscode_fallback_open_mode(no_open: bool) -> &'static str {
     if no_open { "none" } else { "vscode" }
 }
 
+/// Cockpit views opened by other commands (the Cockpit's hash routes).
+pub(crate) const VIEW_SAVINGS: &str = "savings";
+/// The Ledger (calls) view: the recorded call stream. The Cockpit has no
+/// separate Live page, so `gain --live` and `watch` point here.
+pub(crate) const VIEW_CALLS: &str = "calls";
+pub(crate) const VIEW_REPORT: &str = "report";
+
+const COCKPIT_HELP: &str = "\
+Usage: lean-ctx cockpit (also: lean-ctx dashboard) [--port N] [--foreground] [--no-open] [--host=H] [--base-path=PREFIX] [--auth-token=TOKEN] [--no-auth] [--project=PATH] [--vscode] [--export [--output=FILE] [--open]]
+       lean-ctx cockpit stop      Stop the Cockpit server started in the background
+       lean-ctx cockpit install   Install the Cockpit runtime package (signed, proprietary, free)
+       lean-ctx cockpit install --from <dir|file.tar.gz> [--allow-downgrade]   … from a shipped bundle, offline
+
+Opens the local Cockpit (Select · Control · Prove). On a terminal it reuses the
+server already running for this data dir, or starts one in the background, opens
+the browser and returns the prompt. A port another program holds is skipped for
+the next free one (an explicit --port is never swapped). Default: http://localhost:3333
+
+Examples:
+  lean-ctx cockpit
+  lean-ctx cockpit --foreground               Run the server in this terminal (Ctrl+C stops it; the
+                                              mode without a terminal, e.g. in Docker)
+  lean-ctx cockpit stop                       Stop the background server (by its recorded PID)
+  lean-ctx cockpit --no-open --port 3333
+  lean-ctx cockpit --host=0.0.0.0
+  lean-ctx cockpit --base-path=/cockpit       Mount behind a reverse proxy subpath
+  lean-ctx cockpit --auth-token=<token>       Pin the Bearer token (alias --token; overrides LEAN_CTX_HTTP_TOKEN)
+  lean-ctx cockpit --no-auth                  Run without a Bearer token (alias --auth=false).
+                                              Cross-origin/CSRF + DNS-rebinding stay blocked via
+                                              Sec-Fetch-Site/Origin/Host checks. Best on loopback;
+                                              for Docker publish to 127.0.0.1 (-p 127.0.0.1:PORT:PORT).
+  lean-ctx cockpit --export                   On a terminal: open the Cockpit report view (#report);
+                                              otherwise write the offline HTML report (lean-ctx-report.html)
+  lean-ctx cockpit --export --output=FILE     Write the offline HTML report to FILE
+  lean-ctx cockpit --export --open            … write it and open the Cockpit report view
+  lean-ctx cockpit --open=none                Start without launching a browser (also --no-open)
+  lean-ctx cockpit --vscode                   Open as a native editor tab (VS Code/Cursor/VSCodium/Windsurf) via the lean-ctx extension
+  lean-ctx cockpit --open=vscode              Alias for --vscode (falls back to printing how to open it inside the editor — never the external browser)
+  lean-ctx gain --web | --live                Open the Savings or Calls (Ledger) view
+In the terminal: lean-ctx gain --terminal   (on a terminal, plain `lean-ctx gain` opens #savings)
+
+Environment:
+  LEAN_CTX_DASHBOARD_OPEN=browser|none|vscode  Default reveal mode (overridden by --open=).
+  LEAN_CTX_HTTP_TOKEN=<token>   Pin the Bearer token (stable across restarts — ideal behind a reverse proxy). Overridden by --auth-token. Unset → a random token is generated each start.
+  LEAN_CTX_SCRAPE_TOKEN=<token> Read-only token accepted ONLY for GET /metrics — hand this to Prometheus/Datadog agents instead of the dashboard token (docs/integrations/datadog.md).
+  LEAN_CTX_DASHBOARD_AUTH=true|false  Require the Bearer token (default true). false = no-auth mode (overridden by --no-auth/--auth=). Also settable via `lean-ctx config set dashboard_auth`.
+  LEAN_CTX_DASHBOARD_ALLOWED_HOSTS=host:port,…  Extra Host header values accepted in no-auth mode (loopback + bound host are always allowed).";
+
+/// `--port=N`, `--port N`, `-p=N` or `-p N`.
+/// `--project=<dir>` or `--project <dir>`. A missing or empty directory, or a
+/// flag in its place (`--project --port 3334`), is a usage error rather than
+/// a silently unbound dashboard.
+fn project_flag(rest: &[String]) -> Result<Option<String>, String> {
+    for (i, arg) in rest.iter().enumerate() {
+        let value = match arg.strip_prefix("--project=") {
+            Some(value) => Some(value),
+            None if arg == "--project" => rest.get(i + 1).map(String::as_str),
+            None => continue,
+        };
+        return match value.map(str::trim) {
+            Some(dir) if !dir.is_empty() && !dir.starts_with("--") => Ok(Some(dir.to_string())),
+            _ => Err("--project needs a directory: --project=<dir> or --project <dir>".into()),
+        };
+    }
+    Ok(None)
+}
+
+fn port_flag(rest: &[String]) -> Option<u16> {
+    rest.iter().enumerate().find_map(|(i, arg)| {
+        if let Some(value) = arg
+            .strip_prefix("--port=")
+            .or_else(|| arg.strip_prefix("-p="))
+        {
+            return value.parse().ok();
+        }
+        if arg == "--port" || arg == "-p" {
+            return rest.get(i + 1).and_then(|value| value.parse().ok());
+        }
+        None
+    })
+}
+
+/// `lean-ctx cockpit install`: the user's explicit request to install the
+/// Cockpit runtime package from the configured LeanCTX runtime channel.
+fn cockpit_install() {
+    use crate::core::intelligence_runtime::cockpit;
+    println!(
+        "Installing the LeanCTX Cockpit: a signed, proprietary runtime package (free for everyone)\n\
+         from the configured LeanCTX runtime channel. It is verified before it is activated and\n\
+         runs only on 127.0.0.1, started by `lean-ctx cockpit`."
+    );
+    match cockpit::install_cockpit() {
+        Ok(result) => {
+            println!(
+                "{}",
+                serde_json::to_string_pretty(&result).unwrap_or_else(|_| result.to_string())
+            );
+            println!("Open it with: lean-ctx cockpit");
+        }
+        Err(reason) => {
+            eprintln!("lean-ctx cockpit install: {}", reason.message());
+            std::process::exit(1);
+        }
+    }
+}
+
+/// `lean-ctx cockpit` (alias `lean-ctx dashboard`).
 pub(super) fn cmd_dashboard(rest: &[String]) {
+    cmd_cockpit(rest, None);
+}
+
+/// Start or open the Cockpit at `view` (a Cockpit hash route; `None` = start
+/// page).
+pub(crate) fn cmd_cockpit(rest: &[String], view: Option<&str>) {
     if rest.iter().any(|a| a == "--help" || a == "-h") {
-        println!(
-            "Usage: lean-ctx dashboard [--port=N] [--host=H] [--base-path=PREFIX] [--auth-token=TOKEN] [--no-auth] [--project=PATH] [--vscode] [--export]"
-        );
-        println!("Examples:");
-        println!("  lean-ctx dashboard");
-        println!("  lean-ctx dashboard --port=3333");
-        println!("  lean-ctx dashboard --host=0.0.0.0");
-        println!(
-            "  lean-ctx dashboard --base-path=/dashboard   Mount behind a reverse proxy subpath"
-        );
-        println!(
-            "  lean-ctx dashboard --auth-token=<token>     Pin the Bearer token (alias --token; overrides LEAN_CTX_HTTP_TOKEN)"
-        );
-        println!(
-            "  lean-ctx dashboard --no-auth                Run without a Bearer token (alias --auth=false)."
-        );
-        println!(
-            "                                              Cross-origin/CSRF + DNS-rebinding stay blocked via"
-        );
-        println!(
-            "                                              Sec-Fetch-Site/Origin/Host checks. Best on loopback;"
-        );
-        println!(
-            "                                              for Docker publish to 127.0.0.1 (-p 127.0.0.1:PORT:PORT)."
-        );
-        println!("  lean-ctx dashboard --export        Export HTML report (replaces visualize)");
-        println!(
-            "  lean-ctx dashboard --open=none      Start without launching a browser (also --no-open)"
-        );
-        println!(
-            "  lean-ctx dashboard --vscode         Open as a native editor tab (VS Code/Cursor/VSCodium/Windsurf) via the lean-ctx extension"
-        );
-        println!(
-            "  lean-ctx dashboard --open=vscode    Alias for --vscode (falls back to printing how to open it inside the editor — never the external browser)"
-        );
-        println!("Environment:");
-        println!(
-            "  LEAN_CTX_DASHBOARD_OPEN=browser|none|vscode  Default reveal mode (overridden by --open=)."
-        );
-        println!(
-            "  LEAN_CTX_HTTP_TOKEN=<token>   Pin the dashboard Bearer token (stable across restarts — ideal behind a reverse proxy). Overridden by --auth-token. Unset → a random token is generated each start."
-        );
-        println!(
-            "  LEAN_CTX_SCRAPE_TOKEN=<token> Read-only token accepted ONLY for GET /metrics — hand this to Prometheus/Datadog agents instead of the dashboard token (docs/integrations/datadog.md)."
-        );
-        println!(
-            "  LEAN_CTX_DASHBOARD_AUTH=true|false  Require the Bearer token (default true). false = no-auth mode (overridden by --no-auth/--auth=). Also settable via `lean-ctx config set dashboard_auth`."
-        );
-        println!(
-            "  LEAN_CTX_DASHBOARD_ALLOWED_HOSTS=host:port,…  Extra Host header values accepted in no-auth mode (loopback + bound host are always allowed)."
-        );
+        println!("{COCKPIT_HELP}");
         return;
     }
+    if rest.first().map(String::as_str) == Some("install") {
+        if !crate::core::intelligence_runtime::cockpit::install_from_cli(&rest[1..]) {
+            cockpit_install();
+        }
+        return;
+    }
+    if rest.first().map(String::as_str) == Some("stop") {
+        let code = cockpit_start::stop();
+        if code != 0 {
+            std::process::exit(code);
+        }
+        return;
+    }
+    let mut view = view.map(str::to_string);
     if rest.iter().any(|a| a == "--export") {
-        let output = rest
-            .iter()
-            .find_map(|a| a.strip_prefix("--output="))
-            .unwrap_or("lean-ctx-report.html");
-        let open = rest.iter().any(|a| a == "--open");
-        crate::cli::cmd_visualize(&[
-            format!("--output={output}"),
-            if open {
-                "--open".to_string()
-            } else {
-                String::new()
-            },
-        ]);
-        return;
+        let explicit_output = rest.iter().find_map(|a| a.strip_prefix("--output="));
+        let open_after = rest.iter().any(|a| a == "--open");
+        // A person on a terminal gets the report view itself; scripts (and
+        // `--output=FILE`) keep the offline file.
+        let mut install_hint = None;
+        if explicit_output.is_none() && !open_after && super::cockpit_hint::redirect_allowed() {
+            match cockpit_start::open(Some(VIEW_REPORT), rest) {
+                cockpit_start::Outcome::Opened { port, base_path } => {
+                    println!(
+                        "{}",
+                        cockpit_start::opened_line(Some(VIEW_REPORT), port, &base_path)
+                    );
+                    return;
+                }
+                cockpit_start::Outcome::Unavailable(reason) => {
+                    install_hint = Some(cockpit_start::unavailable_line(reason).to_string());
+                }
+                cockpit_start::Outcome::Failed(message) => install_hint = Some(message),
+            }
+        }
+        let output = explicit_output.unwrap_or("lean-ctx-report.html");
+        crate::cli::cmd_visualize(&[format!("--output={output}")]);
+        if let Some(line) = install_hint {
+            eprintln!("\x1b[2m{line}\x1b[0m");
+        }
+        if !open_after {
+            return;
+        }
+        view = Some(VIEW_REPORT.to_string());
     }
-    let port = rest
-        .iter()
-        .find_map(|p| p.strip_prefix("--port=").or_else(|| p.strip_prefix("-p=")))
-        .and_then(|p| p.parse().ok());
+    let port = port_flag(rest);
     let host = rest
         .iter()
         .find_map(|p| p.strip_prefix("--host=").or_else(|| p.strip_prefix("-H=")))
         .map(String::from);
-    let project = rest
-        .iter()
-        .find_map(|p| p.strip_prefix("--project="))
-        .map(String::from);
+    let project = match project_flag(rest) {
+        Ok(project) => project,
+        Err(message) => {
+            eprintln!("{message}\n\n{COCKPIT_HELP}");
+            std::process::exit(2);
+        }
+    };
     if let Some(ref project) = project {
         core::runtime_flags::set_dashboard_project(project.clone());
     }
@@ -186,7 +280,7 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
         let fallback = vscode_fallback_open_mode(rest.iter().any(|a| a == "--no-open"));
         match open_in_editor() {
             EditorOpen::Handed(label) => {
-                println!("\x1b[32m✓\x1b[0m Opening the lean-ctx dashboard in {label}…");
+                println!("\x1b[32m✓\x1b[0m Opening the LeanCTX Cockpit in {label}…");
                 println!(
                     "  \x1b[2mIt opens as a native editor tab via the lean-ctx extension.\x1b[0m"
                 );
@@ -195,7 +289,7 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
             EditorOpen::NeedsExtension(label) => {
                 eprintln!(
                     "  \x1b[33m⚠\x1b[0m {label} detected, but the lean-ctx extension isn't \
-                     installed — showing how to open the dashboard inside {label} instead."
+                     installed — showing how to open the Cockpit inside {label} instead."
                 );
                 eprintln!(
                     "  \x1b[2mInstall \"lean-ctx\" from the {label} Extensions view for a one-step native tab.\x1b[0m"
@@ -207,6 +301,42 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
     } else {
         open_mode
     };
+    // A person on a terminal: background server, browser, prompt back.
+    // `--foreground`, no terminal (Docker, services, scripts), a non-loopback
+    // host or a non-browser reveal mode keep the server in this process.
+    let loopback = host
+        .clone()
+        .or_else(|| std::env::var("LEAN_CTX_HOST").ok())
+        .is_none_or(|h| matches!(h.as_str(), "127.0.0.1" | "localhost" | "::1"));
+    if loopback
+        && !rest.iter().any(|a| a == "--foreground")
+        && cockpit_start::interactive()
+        && dashboard::resolve_open_mode(open_mode.as_deref()) == dashboard::DashboardOpen::Browser
+    {
+        match cockpit_start::open(view.as_deref(), rest) {
+            cockpit_start::Outcome::Opened { port, base_path } => {
+                println!(
+                    "{}",
+                    cockpit_start::opened_line(view.as_deref(), port, &base_path)
+                );
+                if view.is_none() {
+                    println!(
+                        "\x1b[2mRuns in the background \u{b7} stop it: lean-ctx cockpit stop\x1b[0m"
+                    );
+                }
+            }
+            cockpit_start::Outcome::Unavailable(reason) => {
+                eprintln!("{}", cockpit_start::unavailable_line(reason));
+                eprintln!("\x1b[2mIn the terminal: lean-ctx gain --terminal\x1b[0m");
+                std::process::exit(1);
+            }
+            cockpit_start::Outcome::Failed(message) => {
+                eprintln!("{message}");
+                std::process::exit(1);
+            }
+        }
+        return;
+    }
     // GH #450: pin the XDG layout before serving, exactly like the daemon/server
     // start paths do. Without this the dashboard was the only writer that could
     // land config.toml in a divergent (unpinned/legacy) dir while the runtime
@@ -221,6 +351,7 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
         auth_token,
         open_mode,
         auth_enabled,
+        view,
     ));
 }
 
@@ -233,14 +364,20 @@ pub(super) fn cmd_dashboard(rest: &[String]) {
 /// feature. Both paths now say the same thing and name the replacement.
 pub(super) fn cmd_watch(rest: &[String]) {
     const NOTICE: &str = "`lean-ctx watch` (live TUI dashboard) was removed in 3.9.20.\n\
-         Use `lean-ctx dashboard` for the same event stream in the web UI \
-         (http://localhost:3333), or `lean-ctx cep` for the metrics as text.\n\
+         The recorded calls are in the Cockpit: lean-ctx cockpit \u{2192} #calls \
+         (also `lean-ctx gain --live`), or `lean-ctx cep` for the metrics as text.\n\
          For the codebase index watcher, the command is `lean-ctx index watch`.";
     if rest.iter().any(|a| a == "--help" || a == "-h") {
         println!("{NOTICE}");
         return;
     }
+    // On a terminal the recorded calls open in the Cockpit.
+    let hint = match super::cockpit_hint::redirect(Some(VIEW_CALLS), rest) {
+        super::cockpit_hint::Handled::Opened => return,
+        super::cockpit_hint::Handled::Text(hint) => hint,
+    };
     eprintln!("{NOTICE}");
+    super::cockpit_hint::print_hint(hint.as_deref());
     std::process::exit(1);
 }
 
@@ -749,6 +886,7 @@ pub(super) fn cmd_serve(rest: &[String]) {
     }
     #[cfg(not(feature = "http-server"))]
     {
+        let _ = rest;
         eprintln!("lean-ctx serve is not available in this build");
         std::process::exit(1);
     }

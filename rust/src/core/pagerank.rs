@@ -1,11 +1,11 @@
 //! PageRank computation on the Property Graph.
 //!
-//! Provides a reusable `compute` function that can be called by
-//! `ctx_architecture`, `ctx_overview`, and `ctx_fill` for importance-weighted
-//! context selection.
+//! Provides a reusable `compute` function for importance-weighted ranking
+//! (repo map, dashboard architecture views).
 
 use std::collections::{HashMap, HashSet};
 
+#[cfg(test)]
 use rusqlite::Connection;
 
 pub(crate) struct PageRankInput {
@@ -14,6 +14,9 @@ pub(crate) struct PageRankInput {
 }
 
 impl PageRankInput {
+    /// The raw file graph of the store, not checked against current sources
+    /// (test fixture).
+    #[cfg(test)]
     pub(crate) fn from_connection(conn: &Connection) -> Self {
         let mut files: HashSet<String> = HashSet::new();
         let mut forward: HashMap<String, Vec<String>> = HashMap::new();
@@ -159,23 +162,6 @@ pub(crate) fn compute_personalized(
     rank
 }
 
-pub(crate) fn top_files(conn: &Connection, limit: usize) -> Vec<(String, f64)> {
-    top_files_personalized(conn, limit, &[])
-}
-
-pub(crate) fn top_files_personalized(
-    conn: &Connection,
-    limit: usize,
-    seed_files: &[String],
-) -> Vec<(String, f64)> {
-    let input = PageRankInput::from_connection(conn);
-    let ranks = compute_personalized(&input, 0.85, 50, seed_files);
-    let mut sorted: Vec<(String, f64)> = ranks.into_iter().collect();
-    sorted.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
-    sorted.truncate(limit);
-    sorted
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -202,23 +188,6 @@ mod tests {
             rank_c > rank_a,
             "c.rs should rank higher (more incoming): c={rank_c} a={rank_a}"
         );
-    }
-
-    #[test]
-    fn top_files_limit() {
-        let g = CodeGraph::open_in_memory().unwrap();
-        for i in 0..10 {
-            g.upsert_node(&Node::file(&format!("f{i}.rs"))).unwrap();
-        }
-        let top = top_files(g.connection(), 3);
-        assert!(top.len() <= 3);
-    }
-
-    #[test]
-    fn empty_graph() {
-        let g = CodeGraph::open_in_memory().unwrap();
-        let top = top_files(g.connection(), 10);
-        assert!(top.is_empty(), "{top:?}");
     }
 
     #[test]

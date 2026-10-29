@@ -16,9 +16,9 @@ on, what you get, and how to read it. The design is in
 - **`implements` and `extends` edges** from implementations to the
   trait/interface they implement and from subclasses to their base classes,
   so changing a trait or a base class shows what depends on it.
-- **Verified users on demand.** `ctx_impact` asks the backend who really
-  references the symbols of the file you are about to change, and records
-  the answer as `references` edges.
+- **Verified users on demand.** `ctx_pack action=pr` asks the backend who
+  really references the symbols of each changed file, and records the answer
+  as `references` edges.
 - **Evidence on every call edge**, used by ranking (`ctx_compose`, related
   files), impact analysis and `ctx_callgraph`:
 
@@ -36,7 +36,7 @@ used to guess.
 In order of preference, for each language:
 
 1. a **language server lean-ctx already runs** for the project (started by
-   `ctx_refactor`, or by `eager` mode),
+   `eager` mode),
 2. a **JetBrains IDE** with the lean-ctx plugin,
 3. your **editor**, through the lean-ctx extension's semantic bridge — it
    answers with whatever language extensions you have installed (TypeScript is
@@ -71,7 +71,7 @@ trusted workspace can raise it to `eager`.
 
 ## Installing language servers
 
-Needed only for `eager` mode or `ctx_refactor` — with the editor bridge, your
+Needed only for `eager` mode — with the editor bridge, your
 editor's language extensions answer instead. lean-ctx never installs
 anything. Supported standalone servers:
 
@@ -101,17 +101,14 @@ rustup proxy without the installed component is reported as missing.
     typescript  0/310 verified (0%) · typescript-language-server not installed (npm install -g typescript …)
   ```
 
-- `ctx_repomap` ranks files over the same call edges as the graph — verified
+- `lean-ctx repomap` ranks files over the same call edges as the graph — verified
   where a backend answered, never linked by a bare name match.
 
 - `ctx_graph action=enrich` — runs a pass now and reports what it resolved.
 - `ctx_callgraph action=callees symbol=checkout` — each call shows its target:
   `→ save  (src/app.rs:L2)  ⇒ src/b.rs [verified]`.
-- `ctx_impact action=analyze path=…` — with a backend available, first a line
-  like `Semantic check: 4 direct user file(s) verified by references via
-  editor:vscode@1.105.1` (JSON: `semantic_references`); files reachable *only*
-  through name-match guesses are marked `(name match only)` (JSON:
-  `weak_files`).
+- `ctx_graph action=impact path=…` — the files that depend on a file, over
+  the same graph.
 - Dashboard → Graph → per-language legend, column **Semantic**.
 
 ## When does a pass run?
@@ -128,11 +125,11 @@ rustup proxy without the installed component is reported as missing.
   `references` time out until indexing finishes). "No answer" is never
   evidence; later passes and the cache catch up.
 - On demand: `ctx_graph action=enrich`, `ctx_callgraph` for the calls it lists,
-  and `ctx_impact` for the file it analyses (`references`).
+  and `ctx_pack action=pr` for the changed files (`references`).
 
 All passes are bounded — background calls: 1000 lookups / 60 s, 5 s per
 request, the most decisive sites first; `implements`/`extends`: 100 lookups /
-10 s each; `ctx_callgraph`: 20 lookups / 4 s; `ctx_impact` references: 40
+10 s each; `ctx_callgraph`: 20 lookups / 4 s; `references`: 40
 lookups / 8 s per file — and never wait for a backend busy with an
 interactive call. Answers are cached and reused until the code they depend on
 changes, so coverage of a large repository grows pass by pass.
@@ -141,7 +138,7 @@ changes, so coverage of a large repository grows pass by pass.
 
 | Symptom | Cause / fix |
 |---|---|
-| Everything `resolved`/`heuristic`, nothing `verified` | No backend in `auto`: open the project in your editor with the lean-ctx extension, start a server (`ctx_refactor` on a file of that language), open it in a JetBrains IDE, or use `eager` in a trusted workspace. |
+| Everything `resolved`/`heuristic`, nothing `verified` | No backend in `auto`: open the project in your editor with the lean-ctx extension, open it in a JetBrains IDE, or use `eager` in a trusted workspace. |
 | The editor is open but nothing is verified | Check the extension's **lean-ctx** output channel; the bridge needs `lean-ctx` on `PATH` (or `leanctx.binaryPath`) to find where to announce itself, and a language extension for the language. |
 | `extends` stays at 0 | The backend has no type hierarchy for that language (e.g. rust-analyzer, pylsp); JetBrains IDEs, gopls and many editor language extensions have one. |
 | A language shows "not installed" | Install its server (table above); `lean-ctx doctor` confirms. |

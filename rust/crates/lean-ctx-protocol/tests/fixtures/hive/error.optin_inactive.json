@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "This engine is not opted in.",
+    "reason": "optin_inactive"
+  }
+}

@@ -1,0 +1,14 @@
+{
+  "case": "collaboration_count_over_u32",
+  "base": "bus/message.finding.collaboration.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/counts/agent_seconds",
+      "value": 4294967296
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

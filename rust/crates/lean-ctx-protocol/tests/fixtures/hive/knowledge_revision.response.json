@@ -1,0 +1,40 @@
+{
+  "document": {
+    "facts": [
+      {
+        "appliesTo": [
+          "rust/src/core/hive"
+        ],
+        "from_contributions": [
+          "p11"
+        ],
+        "id": "hive.never-blocks",
+        "kind": "decision",
+        "statement": "Hive never blocks a tool call; outbound items go through a durable outbox."
+      },
+      {
+        "appliesTo": [
+          "rust/src/core/hive"
+        ],
+        "id": "hive.screening-first",
+        "kind": "decision",
+        "statement": "Every outbound item passes engine screening before it is queued."
+      }
+    ],
+    "format": "ctxpkg.research-context.v1",
+    "open_gaps": [
+      "How are drafts rebased after a merge?"
+    ],
+    "relations": [
+      {
+        "from": "hive.screening-first",
+        "to": "hive.never-blocks",
+        "type": "supports"
+      }
+    ]
+  },
+  "revision": 3,
+  "schema": "leanctx.hive.knowledge-revision/v1",
+  "updated_at": "2026-10-20T12:00:00Z",
+  "vault_id": "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+}

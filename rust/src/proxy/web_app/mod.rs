@@ -26,6 +26,7 @@ pub struct NormalizedRequest {
     pub parent_message_id: Option<String>,
 }
 
+#[cfg(test)]
 pub(crate) fn detect_web_provider(host: &str, path: &str) -> Option<WebAppProvider> {
     let _ = path;
     let host = host

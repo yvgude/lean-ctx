@@ -1,0 +1,53 @@
+{
+  "cases": [
+    {
+      "input": "Payment retries back off exponentially, with full jitter!",
+      "output": "payment retries back off exponentially with full jitter"
+    },
+    {
+      "input": "  Mixed   CASE\tand\nnewlines  ",
+      "output": "mixed case and newlines"
+    },
+    {
+      "input": "Use `make deploy --env=prod` (not `make release`).",
+      "output": "use `make deploy --env=prod` not `make release`"
+    },
+    {
+      "input": "Unclosed `span keeps, punctuation. here",
+      "output": "unclosed `span keeps, punctuation. here"
+    },
+    {
+      "input": "ﬁle ＡＢＣ ① ２",
+      "output": "file abc 1 2"
+    },
+    {
+      "input": "Straße — “quoted” – dash-separated; done…",
+      "output": "straße quoted dashseparated done"
+    },
+    {
+      "input": "ΣΊΣΥΦΟΣ final sigma",
+      "output": "σίσυφος final sigma"
+    },
+    {
+      "input": "émoji 😀 stays; symbols $ + < > = stay",
+      "output": "émoji 😀 stays symbols $ + < > = stay"
+    },
+    {
+      "input": "Don't strip apostrophes inside `it's` only",
+      "output": "dont strip apostrophes inside `it's` only"
+    },
+    {
+      "input": " non-breaking em space　ideographic",
+      "output": "nonbreaking em space ideographic"
+    },
+    {
+      "input": "İstanbul dotted capital I",
+      "output": "i̇stanbul dotted capital i"
+    },
+    {
+      "input": "",
+      "output": ""
+    }
+  ],
+  "rule": "norm v1 (SPEC-ENGINE §3.1.5): NFKC → Unicode lowercase (full mapping) → remove every character of general category P (Pc Pd Ps Pe Pi Pf Po) outside backtick spans; a backtick (U+0060) toggles a span, backticks are kept, an unclosed span runs to the end → replace each run of White_Space characters by one U+0020 → trim"
+}

@@ -1,0 +1,285 @@
+{
+  "cases": [
+    {
+      "input": {
+        "id": null,
+        "legacy_identity": "git:github.com/acme/payments",
+        "remote_url": "git@github.com:acme/payments.git",
+        "root_commits": [
+          "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        ],
+        "shallow": false
+      },
+      "name": "scp remote with its root commit: exact, legacy and history",
+      "output": {
+        "candidates": [
+          {
+            "digest": "fe7c4812ccdd0ad5d64ef964242d992b52aaa0ab5c79c718705126cf7e6da73c",
+            "kind": "exact",
+            "stable": "0748382109129f7658dfb411417b802ffd8a448f1b479c7071039360f25cabe6"
+          },
+          {
+            "digest": "09d59089077323f5d937145bee0e87aff7555044d3fe16af8ca3d15143823742",
+            "kind": "legacy",
+            "stable": "ff1d854832776e57e94d62775690bb7c657da75d6f90b11ac91e69fa5ae24240"
+          },
+          {
+            "digest": "08e191ad7f9f745ecde926aed9a1ed2286e1030a58bc84d066f66a1cfcae95b3",
+            "kind": "history",
+            "stable": "9accdc697b1454b81542f94ada651e5db71a5165d403e324e5500133511ed0e5"
+          }
+        ],
+        "canonical_text": "leanctx.project-identity.v2\nremote:github.com/acme/payments\nroot:4b825dc642cb6eb9a060e54bf8d69288fbee4904\n",
+        "remote": "github.com/acme/payments",
+        "root": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "stable_v2": "0748382109129f7658dfb411417b802ffd8a448f1b479c7071039360f25cabe6"
+      }
+    },
+    {
+      "input": {
+        "id": null,
+        "legacy_identity": "git:github.com/acme/payments",
+        "remote_url": "https://ci@GitHub.com/acme/payments.git/",
+        "root_commits": [
+          "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        ],
+        "shallow": false
+      },
+      "name": "https spelling of the same remote (user, host case, .git, trailing slash), same root: the same candidates as the first case",
+      "output": {
+        "candidates": [
+          {
+            "digest": "fe7c4812ccdd0ad5d64ef964242d992b52aaa0ab5c79c718705126cf7e6da73c",
+            "kind": "exact",
+            "stable": "0748382109129f7658dfb411417b802ffd8a448f1b479c7071039360f25cabe6"
+          },
+          {
+            "digest": "09d59089077323f5d937145bee0e87aff7555044d3fe16af8ca3d15143823742",
+            "kind": "legacy",
+            "stable": "ff1d854832776e57e94d62775690bb7c657da75d6f90b11ac91e69fa5ae24240"
+          },
+          {
+            "digest": "08e191ad7f9f745ecde926aed9a1ed2286e1030a58bc84d066f66a1cfcae95b3",
+            "kind": "history",
+            "stable": "9accdc697b1454b81542f94ada651e5db71a5165d403e324e5500133511ed0e5"
+          }
+        ],
+        "canonical_text": "leanctx.project-identity.v2\nremote:github.com/acme/payments\nroot:4b825dc642cb6eb9a060e54bf8d69288fbee4904\n",
+        "remote": "github.com/acme/payments",
+        "root": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "stable_v2": "0748382109129f7658dfb411417b802ffd8a448f1b479c7071039360f25cabe6"
+      }
+    },
+    {
+      "input": {
+        "id": null,
+        "legacy_identity": "git:github.com/acme/payments",
+        "remote_url": "https://github.com/acme/payments",
+        "root_commits": [
+          "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        ],
+        "shallow": true
+      },
+      "name": "a shallow clone has no root: exact (remote only) and legacy, no history",
+      "output": {
+        "candidates": [
+          {
+            "digest": "6eef78496779f855636c94aed82bb47217380ee3401d3a4352aa5f5b46d2491a",
+            "kind": "exact",
+            "stable": "6db7b98b875cecbf677f9860e3b25ab56afe7a7a349f7a2b27355ed71662c2e3"
+          },
+          {
+            "digest": "09d59089077323f5d937145bee0e87aff7555044d3fe16af8ca3d15143823742",
+            "kind": "legacy",
+            "stable": "ff1d854832776e57e94d62775690bb7c657da75d6f90b11ac91e69fa5ae24240"
+          }
+        ],
+        "canonical_text": "leanctx.project-identity.v2\nremote:github.com/acme/payments\n",
+        "remote": "github.com/acme/payments",
+        "root": null,
+        "stable_v2": "6db7b98b875cecbf677f9860e3b25ab56afe7a7a349f7a2b27355ed71662c2e3"
+      }
+    },
+    {
+      "input": {
+        "id": null,
+        "legacy_identity": "git:git.example.com/acme/payments",
+        "remote_url": "ssh://git@Git.Example.com:2222/acme/payments.git",
+        "root_commits": [
+          "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        ],
+        "shallow": false
+      },
+      "name": "ssh URL with a port: the port is dropped, the host lowercased",
+      "output": {
+        "candidates": [
+          {
+            "digest": "5aac1fb760cb9a2a6ee61837b365f6b826756ad5ae60dbe490fbc35e73058867",
+            "kind": "exact",
+            "stable": "ffbb14e90d2c12c47a8c7809a050ec9cc32dea12eb2e4dda25b2c6659d1c4617"
+          },
+          {
+            "digest": "3221b8826cca8a5e95f00dec92a13b3ae617d893daf0b80a0af0fc1544660655",
+            "kind": "legacy",
+            "stable": "4d1bbc2339a9e66ffea80c0cbbcce2c51e9e0eac3dd7cbb3cce076465bc6fa8f"
+          },
+          {
+            "digest": "08e191ad7f9f745ecde926aed9a1ed2286e1030a58bc84d066f66a1cfcae95b3",
+            "kind": "history",
+            "stable": "9accdc697b1454b81542f94ada651e5db71a5165d403e324e5500133511ed0e5"
+          }
+        ],
+        "canonical_text": "leanctx.project-identity.v2\nremote:git.example.com/acme/payments\nroot:4b825dc642cb6eb9a060e54bf8d69288fbee4904\n",
+        "remote": "git.example.com/acme/payments",
+        "root": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "stable_v2": "ffbb14e90d2c12c47a8c7809a050ec9cc32dea12eb2e4dda25b2c6659d1c4617"
+      }
+    },
+    {
+      "input": {
+        "id": "3f6c1e9a0b7d4c2e",
+        "legacy_identity": "explicit:3f6c1e9a0b7d4c2e",
+        "remote_url": "git@github.com:acme/payments.git",
+        "root_commits": [
+          "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+          "1e2d3c4b5a69788796a5b4c3d2e1f00112233445",
+          "not-a-sha"
+        ],
+        "shallow": false
+      },
+      "name": "identity file, remote and two root commits: the smallest root counts, invalid entries are ignored",
+      "output": {
+        "candidates": [
+          {
+            "digest": "39210272d10674e62111bf2c85e2a073086f3133f31e93e54597d3add4b05bbc",
+            "kind": "exact",
+            "stable": "27eca845cd6aaef8a960eedaa9ba7ce603701a1a5f02775eced7369c1eedaa1e"
+          },
+          {
+            "digest": "6424be61cdec9bc630dadc87f3deb9c5a407dd08e5586da3639e568778205de7",
+            "kind": "legacy",
+            "stable": "def2bee7cd68f2fda8ac83b540b405b3cd8229560d4d95c10d29c8e04b1bff19"
+          },
+          {
+            "digest": "05a576fcb2cb492995cd1d71492a3ceac9684035ded4cd217ac05313a092ac2a",
+            "kind": "history",
+            "stable": "475e79f6efe4edd2f479f8c0557ec527666a7dce23c3b1eb5b04954ddf88ad78"
+          }
+        ],
+        "canonical_text": "leanctx.project-identity.v2\nid:3f6c1e9a0b7d4c2e\nremote:github.com/acme/payments\nroot:1e2d3c4b5a69788796a5b4c3d2e1f00112233445\n",
+        "remote": "github.com/acme/payments",
+        "root": "1e2d3c4b5a69788796a5b4c3d2e1f00112233445",
+        "stable_v2": "27eca845cd6aaef8a960eedaa9ba7ce603701a1a5f02775eced7369c1eedaa1e"
+      }
+    },
+    {
+      "input": {
+        "id": "3f6c1e9a0b7d4c2e",
+        "legacy_identity": "explicit:3f6c1e9a0b7d4c2e",
+        "remote_url": null,
+        "root_commits": [],
+        "shallow": false
+      },
+      "name": "identity file only (no git): exact and legacy",
+      "output": {
+        "candidates": [
+          {
+            "digest": "80bad4cf26dc3b0d1414471081f6e120dc622fb0a910f76b68cd125cbcb89cb7",
+            "kind": "exact",
+            "stable": "e28eb6563edfcbc45cb0abde6165abb160672fc018f7c4096ee2cb6500b1a511"
+          },
+          {
+            "digest": "6424be61cdec9bc630dadc87f3deb9c5a407dd08e5586da3639e568778205de7",
+            "kind": "legacy",
+            "stable": "def2bee7cd68f2fda8ac83b540b405b3cd8229560d4d95c10d29c8e04b1bff19"
+          }
+        ],
+        "canonical_text": "leanctx.project-identity.v2\nid:3f6c1e9a0b7d4c2e\n",
+        "remote": null,
+        "root": null,
+        "stable_v2": "e28eb6563edfcbc45cb0abde6165abb160672fc018f7c4096ee2cb6500b1a511"
+      }
+    },
+    {
+      "input": {
+        "id": null,
+        "legacy_identity": "cargo:demo",
+        "remote_url": null,
+        "root_commits": [],
+        "shallow": false
+      },
+      "name": "a manifest name only: no v2 identity, the weak legacy candidate alone (never mapped automatically)",
+      "output": {
+        "candidates": [
+          {
+            "digest": "331596b24d57904334da242dc282f7afda0a1505c9a02817258299dc3f2bba2f",
+            "kind": "legacy",
+            "stable": "f4a1e9bb3abb81302866f4768656e33d2b1b5c7a037931f1b9dc3f89236eeaf2"
+          }
+        ],
+        "canonical_text": null,
+        "remote": null,
+        "root": null,
+        "stable_v2": null
+      }
+    },
+    {
+      "input": {
+        "id": null,
+        "legacy_identity": "cargo:demo",
+        "remote_url": null,
+        "root_commits": [
+          "C0FFEEababababababababababababababababababababababababababababab"
+        ],
+        "shallow": false
+      },
+      "name": "a local repository without origin: exact from the root alone, no history (history needs a remote)",
+      "output": {
+        "candidates": [
+          {
+            "digest": "af8ab68f2a4b7f33576fdc58d00cb73824841d98da4e7714210045c007372637",
+            "kind": "exact",
+            "stable": "c9c36fd306f6c2febd1fc04d87fe8625072cf98f27e03c0145778dc14e112d6a"
+          },
+          {
+            "digest": "331596b24d57904334da242dc282f7afda0a1505c9a02817258299dc3f2bba2f",
+            "kind": "legacy",
+            "stable": "f4a1e9bb3abb81302866f4768656e33d2b1b5c7a037931f1b9dc3f89236eeaf2"
+          }
+        ],
+        "canonical_text": "leanctx.project-identity.v2\nroot:c0ffeeababababababababababababababababababababababababababababab\n",
+        "remote": null,
+        "root": "c0ffeeababababababababababababababababababababababababababababab",
+        "stable_v2": "c9c36fd306f6c2febd1fc04d87fe8625072cf98f27e03c0145778dc14e112d6a"
+      }
+    },
+    {
+      "input": {
+        "id": "x\nroot:evil",
+        "legacy_identity": null,
+        "remote_url": "git@github.com:acme/payments.git",
+        "root_commits": [
+          "4b825dc642cb6eb9a060e54bf8d69288fbee4904"
+        ],
+        "shallow": false
+      },
+      "name": "an identity file with a line break makes the canonical text ambiguous: no exact candidate, history still from the root",
+      "output": {
+        "candidates": [
+          {
+            "digest": "08e191ad7f9f745ecde926aed9a1ed2286e1030a58bc84d066f66a1cfcae95b3",
+            "kind": "history",
+            "stable": "9accdc697b1454b81542f94ada651e5db71a5165d403e324e5500133511ed0e5"
+          }
+        ],
+        "canonical_text": null,
+        "remote": "github.com/acme/payments",
+        "root": "4b825dc642cb6eb9a060e54bf8d69288fbee4904",
+        "stable_v2": null
+      }
+    }
+  ],
+  "description": "Project identity v2 (Hive v5, CHECKLIST 2.1.2; lean-ctx rust/src/core/hive/identity_v2.rs). remote = normalize_git_url(remote_url) (scheme, credentials, scp colon, port digits, trailing '/', '.git' removed, host lowercased; empty -> absent). root = the smallest of root_commits that are 40 or 64 hex characters, lowercased; absent when shallow. canonical_text = 'leanctx.project-identity.v2\\n' + 'id:..\\n' 'remote:..\\n' 'root:..\\n' in this order, absent parts left out; null when every part is absent or one is empty or holds CR/LF. stable_v2 = sha256_hex(canonical_text). Candidates, strongest first, without duplicate stables: exact = stable_v2; legacy = sha256_hex('leanctx.project-identity.v1\\n' + legacy_identity) (legacy_identity is the v1 repo identity as the engine's project_identity yields it, an input here); history = the stable of the canonical text with root alone, only when remote and root are both present. digest = hex(HMAC-SHA256(base64-decoded salt, stable as ASCII hex)), what POST /v1/vaults/match and /v1/vaults/resolve carry.",
+  "org_salt_id": "salt_2026_10",
+  "salt": "CgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgo="
+}

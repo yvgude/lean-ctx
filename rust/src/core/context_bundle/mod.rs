@@ -8,6 +8,7 @@
 //! (what chat UIs count) or `o200k_base` tokens.
 
 pub(crate) mod collect;
+pub(crate) mod export;
 pub(crate) mod limit;
 pub(crate) mod rank;
 pub(crate) mod render;
@@ -37,6 +38,8 @@ const KNOWLEDGE_PERCENT: usize = 20;
 const MAX_FILE_PERCENT: usize = 40;
 /// Withheld paths listed by name in the summary; the rest are counted.
 const MAX_LISTED_WITHHELD: usize = 20;
+/// How the root element of every bundle document opens.
+const DOCUMENT_OPEN: &str = "<bundle generator=\"lean-ctx\"";
 
 /// What to bundle and how big it may get.
 #[derive(Debug, Clone)]
@@ -158,7 +161,17 @@ impl Bundle {
 }
 
 /// Build a bundle. Errors are user-facing (bad path, bad glob).
+///
+/// Sources: every file is read through the rooted admitted reader
+/// (`collect`), so ranking, signatures and file bodies are derived from
+/// admitted text only. The document is NOT a delivery of exactly its sources:
+/// it also carries the task text, the directory tree, the summary and
+/// knowledge facts, it reads more files than it renders, and it can read more
+/// than one source set can name (`archive::authority::MAX_SOURCES`). The
+/// call's source capture is therefore marked incomplete — the candidate's
+/// mark for a mixed output — and no lineage is recorded for the result.
 pub(crate) fn build(opts: &BundleOptions) -> Result<Bundle, String> {
+    crate::core::archive::authority::mark_unbound();
     let root = opts
         .root
         .canonicalize()
@@ -282,7 +295,14 @@ fn resolve_scope(root: &Path, scope: Option<&Path>) -> Result<PathBuf, String> {
     Ok(resolved)
 }
 
-/// Record unreadable files and withhold files that look like they hold secrets.
+/// Record the files that are not sources of the bundle and withhold files
+/// that look like they hold secrets.
+///
+/// This is an additional pass over text the admitted reader already decided
+/// on (`collect`), never the only content check: with `security_check` off
+/// the reader's decision still stands. A file the reader withheld is listed
+/// with the reader's own content-free sentence; its name is shown the way the
+/// read tools show the name of a withheld source, never as an absent file.
 fn screen(candidates: &mut [collect::Candidate], security_check: bool) -> Vec<Withheld> {
     let custom = if security_check {
         crate::core::config::Config::load()
@@ -296,7 +316,10 @@ fn screen(candidates: &mut [collect::Candidate], security_check: bool) -> Vec<Wi
         if let Some(reason) = candidate.skipped {
             withheld.push(Withheld {
                 path: candidate.path.clone(),
-                reason: reason.to_string(),
+                reason: candidate
+                    .refusal
+                    .clone()
+                    .unwrap_or_else(|| reason.to_string()),
             });
             continue;
         }
@@ -348,8 +371,9 @@ fn resolve_intent(arg: Option<&str>, root: &str) -> (String, TaskIntent, IntentS
             IntentSource::Argument,
         );
     }
-    let task = crate::core::session::SessionState::load_latest_for_project_root(root)
-        .and_then(|session| session.task)
+    // The caller's own task, never the project's latest session's (I07/S03).
+    let task = crate::core::session::caller::with_for_project(root, |session| session.task.clone())
+        .flatten()
         .filter(|task| !task.description.trim().is_empty());
     match task {
         Some(task) => {
@@ -403,10 +427,14 @@ fn knowledge_facts(
             .iter()
             .any(|w| *w == category || w.strip_suffix('s') == Some(category.as_str()))
     };
+    // The bundle carries fact values into a tool reply or a bundle file: only
+    // facts that may be delivered now enter it
+    // (`ProjectKnowledge::delivery_filter`).
+    let deliverable = knowledge.delivery_filter();
     let mut facts: Vec<&crate::core::knowledge::KnowledgeFact> = knowledge
         .facts
         .iter()
-        .filter(|f| f.is_current())
+        .filter(|&f| f.is_current() && deliverable(f))
         .filter(|f| f.sensitivity == crate::core::sensitivity::SensitivityLevel::Public)
         .filter(|f| with_auto || !crate::core::knowledge::is_machine_derived(&f.category, &f.key))
         .filter(|f| all || matches(&f.category))
@@ -584,7 +612,7 @@ fn assemble(frame: &Frame<'_>, slots: &[Slot<'_>], pad_counts: usize) -> String 
     let mut out = String::new();
     let _ = writeln!(
         out,
-        "<bundle generator=\"lean-ctx\" limit=\"{}\" unit=\"{}\" intent=\"{}\">",
+        "{DOCUMENT_OPEN} limit=\"{}\" unit=\"{}\" intent=\"{}\">",
         frame.limit, frame.unit, frame.intent
     );
     if !frame.intent_text.is_empty() {

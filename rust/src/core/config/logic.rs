@@ -209,14 +209,6 @@ impl Config {
         }
     }
 
-    /// Effective session token limit. 0 = unlimited.
-    pub fn session_token_limit_effective(&self) -> usize {
-        std::env::var("LEAN_CTX_SESSION_TOKEN_LIMIT")
-            .ok()
-            .and_then(|v| v.trim().parse().ok())
-            .unwrap_or(self.session_token_limit)
-    }
-
     /// Effective turn budget (fresh token limit per response). 0 = unlimited.
     pub fn turn_fresh_limit_effective(&self) -> usize {
         std::env::var("LEAN_CTX_TURN_FRESH_LIMIT")
@@ -583,6 +575,37 @@ impl Config {
         }
     }
 
+    /// Effective on-disk ceiling (MB) of the Context Gateway evidence store
+    /// (`<data>/gateway`: receipts, trace sidecars, observations, egress
+    /// records). `0` means no ceiling. The store refuses new receipts at the
+    /// ceiling and deletes nothing (`receipt_store::capacity`, G09).
+    ///
+    /// Priority: `LEAN_CTX_GATEWAY_STORE_MAX_MB` › `max_disk_mb` budget (10%) ›
+    /// `receipt_store::capacity::DEFAULT_STORE_MB`.
+    /// Deliberately not a `[context_gateway]` key: that table is hashed into
+    /// every receipt's policy digest, and a storage ceiling decides no
+    /// admission.
+    pub fn gateway_store_max_mb_effective(&self) -> u64 {
+        if let Some(explicit) = std::env::var("LEAN_CTX_GATEWAY_STORE_MAX_MB")
+            .ok()
+            .and_then(|value| value.trim().parse().ok())
+        {
+            return explicit;
+        }
+        self.gateway_store_configured_mb()
+    }
+
+    /// [`Self::gateway_store_max_mb_effective`] without the environment
+    /// override: what this configuration gives. Noted for the store on every
+    /// load, because the store's writers must not load a configuration.
+    pub(crate) fn gateway_store_configured_mb(&self) -> u64 {
+        let budget = self.max_disk_mb_effective();
+        if budget > 0 {
+            return (budget * 10 / 100).max(1);
+        }
+        crate::core::context_admission::receipt_store::capacity::DEFAULT_STORE_MB
+    }
+
     /// Effective on-disk ceiling (MB) for the persisted BM25 index. Single source
     /// of truth for `save`/`load`, `cache prune`, and the doctor health check.
     ///
@@ -632,11 +655,8 @@ impl Config {
         Self::try_update_global_at(&path, f)
     }
 
-    /// Path-parameterized core of [`Config::update_global`].
-    ///
-    /// Production callers that already know the config path (the cloud
-    /// background persist step) share this with the tests, so the tested code
-    /// path is the shipped one.
+    /// Path-parameterized core of [`Config::update_global`], for tests.
+    #[cfg(test)]
     pub(crate) fn update_global_at<F>(
         path: &Path,
         f: F,

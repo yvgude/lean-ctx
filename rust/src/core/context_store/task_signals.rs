@@ -130,11 +130,11 @@ fn record_as(dir: &Path, origin: &Origin, signal: Signal, process: &str) -> Resu
     if let Some(counter) = counter {
         *counter = counter.saturating_add(1);
     }
-    if let Some(parent) = path.parent() {
-        std::fs::create_dir_all(parent).map_err(|e| e.to_string())?;
-    }
     let bytes = serde_json::to_vec(&signals).map_err(|e| e.to_string())?;
-    crate::core::atomic_fs::try_atomic_write(&path, &bytes, None).map_err(|e| e.to_string())
+    // A file of the gateway evidence store: written under its bound (G09).
+    // Refused, the event is not recorded and the caller marks the task's
+    // signals unknown.
+    crate::core::context_admission::receipt_store::write_atomic(dir, &path, &bytes)
 }
 
 /// Record `signal` for the task whose read caused it. An event that cannot
@@ -145,15 +145,10 @@ pub(crate) fn record(origin: &Origin, signal: Signal) {
     };
     if let Err(error) = record_in(&dir, origin, signal) {
         tracing::debug!("task signal not recorded: {error}");
+        // Zero bytes, set whatever the store's bound says: "unknown" must
+        // not be lost to it.
         let marker = incomplete_marker(&signals_path(&dir, origin));
-        if let Some(parent) = marker.parent() {
-            let _ = std::fs::create_dir_all(parent);
-        }
-        let _ = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(marker);
+        let _ = crate::core::context_admission::receipt_store::capacity::mark(&dir, &marker);
     }
 }
 

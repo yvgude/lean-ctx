@@ -102,19 +102,18 @@ fn produce_redirect_output(kind: RedirectKind, tool_args: Option<&serde_json::Va
 pub(super) enum EditRiskClass {
     /// Instruction/rule files that must never be compressed.
     NeverCompress,
-    /// All other files — compress via auto mode with full safety chain:
+    /// All other files — compress via auto mode with this safety chain:
     ///   1. deny.rs marker guard blocks writes with compression artifacts
-    ///   2. edit_snapshot.rs stores BLAKE3 snapshots of original bytes
-    ///   3. edit_quality.rs escalates to full after edit failures
-    ///   4. edit_health.rs auto-restores from git HEAD on corruption
-    ///   5. auto_mode_resolver returns full for small/diagnostic/suspect files
+    ///   2. edit_quality.rs escalates to full after edit failures
+    ///   3. edit_health.rs auto-restores from git HEAD on corruption
+    ///   4. auto_mode_resolver returns full for small/diagnostic/suspect files
     SafeToCompress,
 }
 
 /// Classify a file path by edit risk.
 ///
-/// Default is `SafeToCompress`: the 4-layer safety net (marker guard,
-/// snapshot store, quality escalation, auto-recovery) prevents corruption.
+/// Default is `SafeToCompress`: the safety net (marker guard, quality
+/// escalation, auto-recovery) prevents corruption.
 /// `should_passthrough()` already filters .cursorrules, .env, AGENTS.md,
 /// binaries, Claude auto-memory and user-excluded paths before this function
 /// runs; instruction files such as CLAUDE.md resolve to full in `-m auto`.
@@ -326,22 +325,6 @@ pub(super) fn redirect_read(tool_input: Option<&serde_json::Value>) -> String {
         );
         if !final_output.is_empty() && std::fs::write(&temp_path, &final_output).is_ok() {
             let temp_str = temp_path.to_str().unwrap_or("");
-
-            // Record provenance and snapshot original bytes so the deny
-            // guard can validate edits after a compressed read.
-            let risk = edit_risk_class(&path);
-            match risk {
-                EditRiskClass::SafeToCompress => {
-                    if let Ok(orig_bytes) = std::fs::read(&path) {
-                        let digest = crate::core::edit_snapshot::store(&path, &orig_bytes);
-                        crate::core::read_provenance::record_read(&path, "auto", true, digest);
-                    }
-                }
-                EditRiskClass::NeverCompress => {
-                    crate::core::read_provenance::record_read(&path, "full", false, None);
-                    crate::core::edit_snapshot::remove(&path);
-                }
-            }
 
             // Warm daemon cache: subsequent ctx_read(mode=full) hits warm
             // BM25/session cache → instant edit-safe content. The redirect

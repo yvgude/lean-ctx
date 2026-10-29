@@ -69,6 +69,23 @@ impl ProcessTree {
         }
     }
 
+    /// Start `command` as one contained call (B7): on Windows its tree goes
+    /// into a private kill-on-close job before its first instruction runs
+    /// (spawned suspended, assigned, resumed). The caller holds the returned
+    /// tree for the call and drops it afterwards, which ends whatever the
+    /// call left running; the tree ends as well should this process die
+    /// first. A job that cannot be created leaves the previous behaviour
+    /// (`taskkill /T` on a limit). A child that cannot be resumed was killed
+    /// without having run, and the error says so. (Unix calls start behind
+    /// their guard instead, `shell::containment::start_behind_guard`.)
+    #[cfg(not(unix))]
+    pub(crate) fn spawn_contained(command: &mut Command) -> std::io::Result<(Child, Self)> {
+        Self::prepare(command);
+        let mut child = command.spawn()?;
+        let tree = Self::start(&mut child).map_err(std::io::Error::other)?;
+        Ok((child, tree))
+    }
+
     /// Kill the command and every descendant it started. Killing only the
     /// leader would leave grandchildren alive and the caller's pipe readers
     /// unable to reach EOF (#995).
@@ -113,6 +130,194 @@ impl ProcessTree {
     }
 }
 
+/// The output of a started shell, wherever its pipes were made.
+type ShellPipe = Option<Box<dyn std::io::Read + Send>>;
+
+fn boxed(pipe: impl std::io::Read + Send + 'static) -> Box<dyn std::io::Read + Send> {
+    Box::new(pipe)
+}
+
+/// A started MCP shell: the process, its output, and what the caller has to
+/// show in front of the result, if anything.
+pub(crate) struct StartedShell {
+    pub(crate) child: ShellChild,
+    pub(crate) stdout: ShellPipe,
+    pub(crate) stderr: ShellPipe,
+    /// A fixed, content-free line (see `shell::containment`).
+    pub(crate) notice: Option<&'static str>,
+}
+
+/// The shell of one MCP shell call, whoever its parent is.
+///
+/// On Unix the parent is this process's spawn helper (`shell::containment`):
+/// it holds the shell's session and ends it should this process die. Where
+/// there is no helper — Windows, a host that is not `lean-ctx`, a helper that
+/// could not be started — this process is the parent, as it always was.
+pub(crate) enum ShellChild {
+    Direct {
+        child: Child,
+        tree: ProcessTree,
+    },
+    #[cfg(unix)]
+    Helped(crate::shell::containment::HelpedChild),
+}
+
+impl ShellChild {
+    /// Starts the shell that `cmd` describes, in a session of its own on
+    /// Unix, with its output piped. `cmd` must have been through
+    /// [`ProcessTree::prepare`] and must not set its own standard streams.
+    pub(crate) fn start(cmd: &mut Command) -> Result<StartedShell, String> {
+        #[cfg(unix)]
+        let notice = {
+            use crate::shell::containment::{HelperSpawn, spawn_shell};
+            match spawn_shell(cmd) {
+                HelperSpawn::Helped {
+                    child,
+                    stdout,
+                    stderr,
+                } => {
+                    return Ok(StartedShell {
+                        child: Self::Helped(child),
+                        stdout: Some(boxed(stdout)),
+                        stderr: Some(boxed(stderr)),
+                        notice: None,
+                    });
+                }
+                HelperSpawn::Direct(notice) => notice,
+            }
+        };
+        #[cfg(not(unix))]
+        let notice = None;
+        #[cfg(unix)]
+        crate::shell::containment::lead_new_session(cmd);
+        let mut child = cmd
+            .stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped())
+            .spawn()
+            .map_err(|error| error.to_string())?;
+        let tree = ProcessTree::start(&mut child)?;
+        let stdout = child.stdout.take().map(boxed);
+        let stderr = child.stderr.take().map(boxed);
+        Ok(StartedShell {
+            child: Self::Direct { child, tree },
+            stdout,
+            stderr,
+            notice,
+        })
+    }
+
+    /// The shell's process id; on Unix also the id of the group it leads.
+    pub(crate) fn id(&self) -> u32 {
+        match self {
+            Self::Direct { child, .. } => child.id(),
+            #[cfg(unix)]
+            Self::Helped(child) => child.id(),
+        }
+    }
+
+    /// The exit status, if the shell has exited. Reaps a direct child.
+    pub(crate) fn try_wait(&mut self) -> std::io::Result<Option<std::process::ExitStatus>> {
+        match self {
+            Self::Direct { child, .. } => child.try_wait(),
+            #[cfg(unix)]
+            Self::Helped(child) => child.try_wait(),
+        }
+    }
+
+    /// Ends the shell and everything it started ([`ProcessTree::kill`]). The
+    /// group is signalled by the shell's parent, while the shell is unreaped.
+    pub(crate) fn kill(&mut self) {
+        match self {
+            Self::Direct { child, tree } => tree.kill(child),
+            #[cfg(unix)]
+            Self::Helped(child) => child.kill(),
+        }
+    }
+
+    /// Waits for a shell that was just killed to be reaped.
+    pub(crate) fn wait(&mut self) {
+        match self {
+            Self::Direct { child, .. } => {
+                let _ = child.wait();
+            }
+            #[cfg(unix)]
+            Self::Helped(child) => child.wait(),
+        }
+    }
+
+    /// Hands the tree back after the command exited on its own
+    /// ([`ProcessTree::release`]): what it left running stays.
+    ///
+    /// `Some`: the fixed notice for a release that could not be handed to
+    /// the shell's helper — whether what the command left running is still
+    /// running is then not known. The caller shows it with the result.
+    pub(crate) fn release(self) -> Option<&'static str> {
+        match self {
+            Self::Direct { tree, .. } => {
+                tree.release();
+                None
+            }
+            #[cfg(unix)]
+            Self::Helped(child) => {
+                (!child.release()).then_some(crate::shell::containment::RELEASE_NOTICE)
+            }
+        }
+    }
+
+    /// The fixed notice for a shell whose helper went away — before it said
+    /// whether the command was started, or before the shell's exit was
+    /// known. The call's outcome is then not known in full. Never the case
+    /// for a direct child.
+    pub(crate) fn lost_notice(&self) -> Option<&'static str> {
+        match self {
+            Self::Direct { .. } => None,
+            #[cfg(unix)]
+            Self::Helped(child) => child.notice(),
+        }
+    }
+}
+
+/// Session containment on Windows (Q13/B7), the counterpart of the Unix
+/// session starter (`shell::containment`).
+///
+/// An SDK asks for it with `LEAN_CTX_SESSION_CONTAINMENT=1` on an `engine …`
+/// start. There is no starter process here: the Engine puts itself into a
+/// kill-on-close job before it does anything else. From then on everything it
+/// starts belongs to that job, and all of it ends when the Engine process
+/// ends — on its own, because the SDK ended it, or because its input closed
+/// after the SDK went away. Only then is the acknowledgement written, the
+/// same first line as on Unix, so an SDK reports containment exactly when it
+/// exists. A job that cannot be created or joined (a host job that forbids
+/// nesting) writes nothing: the Engine runs as before and the SDK reports
+/// `unavailable`.
+///
+/// The request is taken out of the environment first, as the starter does, so
+/// no process the Engine starts sees or repeats it.
+#[cfg(windows)]
+pub(crate) fn contain_requested_session() {
+    use std::io::Write;
+    const SESSION_ENV: &str = "LEAN_CTX_SESSION_CONTAINMENT";
+    const SESSION_ACK: &[u8] = b"{\"leanctx_session_containment\":1}\n";
+
+    let mut args = std::env::args_os();
+    let _program = args.next();
+    if args.next().is_none_or(|first| first != "engine")
+        || std::env::var_os(SESSION_ENV).is_none_or(|value| value != "1")
+    {
+        return;
+    }
+    // SAFETY: called first thing in `run`, before any other thread exists.
+    unsafe { std::env::remove_var(SESSION_ENV) };
+    let Ok(session) = job::ProcessJob::assign_current_process() else {
+        return;
+    };
+    // The handle must live exactly as long as the process: it is never
+    // dropped, and the system closes it when the process ends.
+    std::mem::forget(session);
+    let mut stdout = std::io::stdout().lock();
+    let _ = stdout.write_all(SESSION_ACK).and_then(|()| stdout.flush());
+}
+
 #[cfg(windows)]
 pub(crate) mod job {
     use windows_sys::Win32::Foundation::{CloseHandle, HANDLE};
@@ -150,6 +355,39 @@ pub(crate) mod job {
                 return Err(format!(
                     "failed to assign process {} to its job: {}",
                     child.id(),
+                    std::io::Error::last_os_error()
+                ));
+            }
+            Ok(job)
+        }
+
+        /// Create a kill-on-close job and put THIS process into it. Every
+        /// process it starts from now on is a member (a per-call job of
+        /// [`ProcessJob::assign`] nests inside), and all of them end when the
+        /// last handle closes — which is when this process ends, since the
+        /// handle is private and not inheritable.
+        pub(crate) fn assign_current_process() -> Result<Self, String> {
+            use windows_sys::Win32::System::JobObjects::{
+                AssignProcessToJobObject, CreateJobObjectW,
+            };
+            use windows_sys::Win32::System::Threading::GetCurrentProcess;
+
+            // SAFETY: null attributes/name create a private job owned by Self.
+            let handle = unsafe { CreateJobObjectW(std::ptr::null(), std::ptr::null()) };
+            if handle.is_null() {
+                return Err(format!(
+                    "failed to create job object: {}",
+                    std::io::Error::last_os_error()
+                ));
+            }
+            let job = Self(handle);
+            job.set_limit_flags(JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE)
+                .map_err(|error| format!("failed to configure job object: {error}"))?;
+            // SAFETY: the pseudo-handle of the current process is always valid.
+            let assigned = unsafe { AssignProcessToJobObject(job.0, GetCurrentProcess()) };
+            if assigned == 0 {
+                return Err(format!(
+                    "failed to assign this process to its session job: {}",
                     std::io::Error::last_os_error()
                 ));
             }

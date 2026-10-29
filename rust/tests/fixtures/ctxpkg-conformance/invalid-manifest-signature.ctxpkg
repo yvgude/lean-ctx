@@ -1,0 +1,176 @@
+{
+  "manifest": {
+    "author": "ctxpkg conformance",
+    "conformance_level": 2,
+    "created_at": "2026-10-18T00:00:00Z",
+    "dependencies": {
+      "@ctxpkg/base": "^1.0"
+    },
+    "description": "Cross-implementation vector for signature.manifest_value — Prüfvektor ✓ with\ttab and \"quotes\"",
+    "graph_summary": {
+      "activation_mean": 1.0,
+      "edge_count": 0,
+      "node_count": 3,
+      "node_types": [
+        "fact"
+      ]
+    },
+    "integrity": {
+      "byte_size": 2614,
+      "content_hash": "d411b8a1a9804f370851033d1cab887a7af11464b54eb102ed99b05a2be1de35",
+      "sha256": "7f1b8c1c2799de736393999ec215af2fb77f0a6291819e15e0191dfa9522e16a"
+    },
+    "layers": [
+      "knowledge"
+    ],
+    "name": "@ctxpkg/conformance-manifest-signed",
+    "optional_dependencies": {
+      "@ctxpkg/extra": "~0.3"
+    },
+    "provenance": {
+      "tool": "lean-ctx",
+      "tool_version": "3.11.5"
+    },
+    "schema_version": 2,
+    "signature": {
+      "algorithm": "ed25519",
+      "manifest_value": "fe825ee9fb35a14363ea65729b848f0cb39c59f5beac8b0ffb928432930c3175128c9413f1cd22596ca4ee3dc459df9e69361ef5ad8a03d79c3f6c04313ec60b",
+      "public_key": "ea4a6c63e29c520abef5507b132ec5f9954776aebebe7b92421eea691446d22c",
+      "value": "a059a3a2444518dfaeb2b7169504a70014ef6fe32a29261c83fd80e31bba4341902d407fdcfe2418a94465af1834eb7565806aa6098e492ea9055c57378b7b0a"
+    },
+    "stats": {
+      "compression_ratio": 0.25,
+      "gotcha_count": 0,
+      "graph_edges": 0,
+      "graph_nodes": 0,
+      "knowledge_facts": 3,
+      "pattern_count": 0
+    },
+    "tags": [
+      "conformance",
+      "manifest-signature"
+    ],
+    "version": "1.0.0",
+    "visibility": "private"
+  },
+  "content": {
+    "context_graph": {
+      "edges": [],
+      "format": "ctxpkg-graph-v2",
+      "nodes": [
+        {
+          "activation": 1.0,
+          "category": "facts",
+          "confidence": 0.8,
+          "content": "Conformance vector: a Level-1 reader loads flat typed nodes",
+          "created_at": "2026-06-11T09:45:48.431807Z",
+          "decay_half_life_days": 90,
+          "id": "N1",
+          "source": "cli-19eb612d64b",
+          "type": "fact"
+        },
+        {
+          "activation": 1.0,
+          "category": "facts",
+          "confidence": 0.8,
+          "content": "Readers must reject packages whose integrity hashes do not match",
+          "created_at": "2026-06-11T09:45:48.816823Z",
+          "decay_half_life_days": 90,
+          "id": "N2",
+          "source": "cli-19eb612d7db",
+          "type": "fact"
+        },
+        {
+          "activation": 1.0,
+          "category": "gotcha",
+          "confidence": 0.8,
+          "content": "Unknown node types are preserved on round-trip",
+          "created_at": "2026-06-11T09:45:49.196339Z",
+          "decay_half_life_days": 90,
+          "id": "N3",
+          "source": "cli-19eb612d957",
+          "type": "fact"
+        }
+      ]
+    },
+    "knowledge": {
+      "exported_at": "2026-06-11T09:45:57.905119Z",
+      "facts": [
+        {
+          "archetype": "fact",
+          "category": "facts",
+          "confidence": 0.8,
+          "confirmation_count": 1,
+          "created_at": "2026-06-11T09:45:48.431807Z",
+          "feedback_down": 0,
+          "feedback_up": 0,
+          "fidelity": null,
+          "imported_from": null,
+          "key": "cv-fact-1",
+          "last_confirmed": "2026-06-11T09:45:48.431807Z",
+          "last_feedback": null,
+          "last_retrieved": null,
+          "privacy": "project_only",
+          "retrieval_count": 0,
+          "revision_count": 1,
+          "sensitivity": "public",
+          "source_session": "cli-19eb612d64b",
+          "supersedes": null,
+          "valid_from": "2026-06-11T09:45:48.431807Z",
+          "valid_until": null,
+          "value": "Conformance vector: a Level-1 reader loads flat typed nodes"
+        },
+        {
+          "archetype": "fact",
+          "category": "facts",
+          "confidence": 0.8,
+          "confirmation_count": 1,
+          "created_at": "2026-06-11T09:45:48.816823Z",
+          "feedback_down": 0,
+          "feedback_up": 0,
+          "fidelity": null,
+          "imported_from": null,
+          "key": "cv-fact-2",
+          "last_confirmed": "2026-06-11T09:45:48.816823Z",
+          "last_feedback": null,
+          "last_retrieved": null,
+          "privacy": "project_only",
+          "retrieval_count": 0,
+          "revision_count": 1,
+          "sensitivity": "public",
+          "source_session": "cli-19eb612d7db",
+          "supersedes": null,
+          "valid_from": "2026-06-11T09:45:48.816823Z",
+          "valid_until": null,
+          "value": "Readers must reject packages whose integrity hashes do not match"
+        },
+        {
+          "archetype": "fact",
+          "category": "gotcha",
+          "confidence": 0.8,
+          "confirmation_count": 1,
+          "created_at": "2026-06-11T09:45:49.196339Z",
+          "feedback_down": 0,
+          "feedback_up": 0,
+          "fidelity": null,
+          "imported_from": null,
+          "key": "cv-gotcha-1",
+          "last_confirmed": "2026-06-11T09:45:49.196339Z",
+          "last_feedback": null,
+          "last_retrieved": null,
+          "privacy": "project_only",
+          "retrieval_count": 0,
+          "revision_count": 1,
+          "sensitivity": "public",
+          "source_session": "cli-19eb612d957",
+          "supersedes": null,
+          "valid_from": "2026-06-11T09:45:49.196339Z",
+          "valid_until": null,
+          "value": "Unknown node types are preserved on round-trip"
+        }
+      ],
+      "insights": [],
+      "patterns": []
+    }
+  }
+}

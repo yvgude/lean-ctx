@@ -117,7 +117,7 @@ export function activate(context: vscode.ExtensionContext): void {
     log,
     bridges,
     vscode.commands.registerCommand("leanctx.showProof", () => inTerminal("lean-ctx proof", ["value"])),
-    vscode.commands.registerCommand("leanctx.openDashboard", () => inTerminal("lean-ctx dashboard", ["dashboard"])),
+    vscode.commands.registerCommand("leanctx.openDashboard", () => inTerminal("lean-ctx cockpit", ["cockpit"])),
     vscode.commands.registerCommand("leanctx.refresh", () => void refresh()),
     vscode.window.onDidChangeActiveTextEditor(schedule),
     vscode.workspace.onDidChangeWorkspaceFolders(() => {

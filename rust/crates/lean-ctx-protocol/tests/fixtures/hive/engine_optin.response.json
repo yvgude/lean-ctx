@@ -1,0 +1,34 @@
+{
+  "active": true,
+  "daily_budget": {
+    "tasks": 5,
+    "tokens": 2000000,
+    "usd_micros": 20000000
+  },
+  "networks": [
+    {
+      "channel": "org:org_acme/vault:3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42/general",
+      "kind": "org"
+    },
+    {
+      "kind": "swarm",
+      "swarm_id": "sw_01jbretry"
+    }
+  ],
+  "optin_id": "opt_01jbq7k2",
+  "schema": "leanctx.hive.engine-optin/v1",
+  "topics": [
+    "payments",
+    "retries"
+  ],
+  "updated_at": "2026-10-20T08:00:00Z",
+  "used_today": {
+    "day": "2026-10-20",
+    "tasks": 2,
+    "tokens": 310400,
+    "usd_micros": 1870000
+  },
+  "vaults": [
+    "3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42"
+  ]
+}

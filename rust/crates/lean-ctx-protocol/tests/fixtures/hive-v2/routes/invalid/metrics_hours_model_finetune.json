@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_model_finetune",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets/0/slices/0/spend/0/model",
+      "value": "ft:gpt-4o:acme-corp:proj:id"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a fine-tuned model id names the customer (K2 H3)"
+}

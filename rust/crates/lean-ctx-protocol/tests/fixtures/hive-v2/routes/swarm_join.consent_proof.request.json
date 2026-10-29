@@ -1,0 +1,16 @@
+{
+  "cli": "codex",
+  "consent_proof": {
+    "approved_at": 1792800060000,
+    "consent_id": "cns_cdefgh234567abcd",
+    "kind": "swarm_join",
+    "presence_key_id": "ef1bd9c792ccc768",
+    "signature": "hoXC4GGGmTIb9KoaOs0FSTfd5YSjTo2s9YyuodcTWhflaOKCpJhGjPOdgCZ1xDB4BsdY6Id9R2iKcQt9LGL6CA",
+    "subject": {
+      "cli": "codex",
+      "pledge_digest": "bcdc41b049980096993b60a5058f751cffe19a68382c112b5eb9e18b04a2abfd",
+      "swarm": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02"
+    },
+    "subject_digest": "aadc65c3aeeb5df86987fc43cf88bec7c7bdf4d2beb47558dfe9b8a9cdccf591"
+  }
+}

@@ -6,9 +6,11 @@
 //! outstanding jobs rather than silently orphaning subprocesses.
 
 use std::collections::HashMap;
+use std::path::Path;
 use std::sync::{
     Arc, LazyLock, Mutex,
-    atomic::{AtomicBool, Ordering},
+    atomic::{AtomicBool, AtomicU64, Ordering},
+    mpsc,
 };
 use std::time::{Duration, Instant};
 
@@ -21,25 +23,34 @@ pub enum JobState {
 
 const MAX_RETAINED_COMPLETED_JOBS: usize = 64;
 const MAX_RETAINED_COMPLETED_BYTES: usize = 16 * 1024 * 1024;
+const MAX_FOREGROUND_OUTPUT_RECEIVERS: usize = 64;
 const COMPLETED_JOB_TTL: Duration = Duration::from_mins(5);
 
 struct Job {
     cancel: Arc<AtomicBool>,
     state: JobState,
     finished_at: Option<Instant>,
-    // #1217: shared buffer the worker streams captured output into while the
-    // job runs, so `status` can report progress before the job completes.
-    live: Arc<Mutex<String>>,
+    // Terminal text is storage-admitted only. Running jobs keep no output.
+    generation: u64,
+    actual_exit_code: i32,
+    completeness: crate::core::context_admission::OutputCompleteness,
+    output_withheld: bool,
+    // Q13: the call's fixed, content-free notice. Kept beside the retained
+    // text, never in it: storage admission, scrubbing and replacement do not
+    // touch it, and every delivery puts it in front once.
+    notice: Option<&'static str>,
+    // One-shot raw results go only to foreground receivers that are still alive;
+    // they are never included in JobState or a pollable snapshot.
+    foreground_senders: Vec<mpsc::SyncSender<Arc<crate::server::execute::ShellExecution>>>,
     // #1876: identical launches coalesce onto one entry, so several foreground
-    // calls can wait on it at once. Each reads its result from the entry, so it
-    // is removed only once the last waiter has read it, and never while a
-    // background caller (explicit or detached) may still poll it by id.
+    // calls can wait on it at once. A detached/background owner keeps it pollable.
     foreground_waiters: usize,
     background_owned: bool,
     telemetry_recorded: bool,
 }
 
 static JOBS: LazyLock<Mutex<HashMap<String, Job>>> = LazyLock::new(|| Mutex::new(HashMap::new()));
+static NEXT_GENERATION: AtomicU64 = AtomicU64::new(1);
 
 /// How often a foreground run reports progress to the MCP client (#1173).
 const TICK: Duration = Duration::from_secs(5);
@@ -111,6 +122,17 @@ fn start_inner(
     timeout_ms: Option<u64>,
     foreground: bool,
 ) -> String {
+    start_inner_with_sender(command, cwd, extra_env, timeout_ms, foreground, None)
+}
+
+fn start_inner_with_sender(
+    command: String,
+    cwd: String,
+    extra_env: std::collections::HashMap<String, String>,
+    timeout_ms: Option<u64>,
+    foreground: bool,
+    output_sender: Option<mpsc::SyncSender<Arc<crate::server::execute::ShellExecution>>>,
+) -> String {
     // IDs are content-addressed so tool responses stay deterministic (#498).
     // An identical in-flight launch coalesces onto the same job instead of
     // creating duplicate expensive builds/tests.
@@ -131,8 +153,6 @@ fn start_inner(
     );
     let cancel = Arc::new(AtomicBool::new(false));
     let worker_cancel = Arc::clone(&cancel);
-    let live = Arc::new(Mutex::new(String::new()));
-    let worker_live = Arc::clone(&live);
     {
         let mut jobs = JOBS
             .lock()
@@ -146,6 +166,12 @@ fn start_inner(
         {
             if foreground {
                 job.foreground_waiters += 1;
+                if matches!(job.state, JobState::Running { .. })
+                    && job.foreground_senders.len() < MAX_FOREGROUND_OUTPUT_RECEIVERS
+                    && let Some(sender) = output_sender
+                {
+                    job.foreground_senders.push(sender);
+                }
             } else {
                 job.background_owned = true;
             }
@@ -159,7 +185,12 @@ fn start_inner(
                     output: String::new(),
                 },
                 finished_at: None,
-                live,
+                generation: NEXT_GENERATION.fetch_add(1, Ordering::Relaxed),
+                actual_exit_code: 0,
+                completeness: crate::core::context_admission::OutputCompleteness::complete(),
+                output_withheld: false,
+                notice: None,
+                foreground_senders: output_sender.into_iter().collect(),
                 foreground_waiters: usize::from(foreground),
                 background_owned: !foreground,
                 telemetry_recorded: false,
@@ -168,8 +199,9 @@ fn start_inner(
     }
 
     let worker_id = id.clone();
+    let project_root = crate::core::policy::runtime::detached_project_root(Path::new(&cwd)).ok();
     std::thread::spawn(move || {
-        let (output, exit_code) = crate::server::execute::execute_command_with_env_cancellable(
+        let execution = crate::server::execute::execute_command_with_env_cancellable_captured(
             &command,
             &cwd,
             &extra_env,
@@ -178,16 +210,57 @@ fn start_inner(
             // #1113/#1173: bounded by output, not wall clock — a monitor loop
             // emitting a line every 45s must survive. See `idle_keyed`.
             true,
-            // #1217: stream captured output into the shared buffer as it arrives.
-            Some(&worker_live),
         );
+        let store = crate::core::context_admission::stores::StoreAdmission::current();
+        let stored_output = project_root.as_deref().and_then(|root| {
+            let root = root.to_str()?;
+            crate::core::policy::runtime::with_project_source_view(root, || {
+                // Background output is project-policy filtered before it is
+                // retained. Preserve the existing audit of the original text
+                // at this boundary: later tool-pipeline auditing sees only the
+                // admitted text (or a content-free withheld marker).
+                let policy_outcome = crate::core::policy::runtime::active().map(|policy| {
+                    crate::core::policy::content::evaluate_text(&execution.output, &policy)
+                });
+                let stored = store.admit_shell_output(&execution.output, execution.completeness);
+                if let Some(outcome) = policy_outcome
+                    && !outcome.audit.is_empty()
+                    && (outcome.blocked
+                        || outcome.text != execution.output
+                        || stored.as_deref() != Some(execution.output.as_str()))
+                {
+                    crate::server::policy_guard::audit_filter(
+                        "ctx_shell",
+                        &outcome.audit,
+                        outcome.blocked,
+                    );
+                }
+                stored
+            })
+            .ok()
+            .flatten()
+        });
         let mut jobs = JOBS
             .lock()
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         let Some(job) = jobs.get_mut(&worker_id) else {
             return;
         };
+        // Check epoch while the job insertion lock is held, so a policy change
+        // while waiting for JOBS cannot repopulate terminal state.
+        let stored_output = stored_output.filter(|_| store.is_current());
         let cancelled = worker_cancel.load(Ordering::Acquire);
+        let foreground_result = Arc::new(execution);
+        for sender in job.foreground_senders.drain(..) {
+            let _ = sender.send(Arc::clone(&foreground_result));
+        }
+        let output_withheld = stored_output.is_none();
+        let output = stored_output.unwrap_or_default();
+        let exit_code = foreground_result.exit_code;
+        job.actual_exit_code = exit_code;
+        job.completeness = foreground_result.completeness;
+        job.output_withheld = output_withheld;
+        job.notice = foreground_result.notice;
         job.state = if cancelled {
             JobState::Cancelled { output }
         } else {
@@ -224,17 +297,7 @@ pub enum ForegroundResult {
     Detached { job_id: String },
 }
 
-/// Run `command` as a managed background job but block up to `soft_cap` waiting
-/// for it to finish, so fast commands still return their output inline.
-///
-/// The MCP host aborts a tool call that stays in the foreground too long
-/// (~120s) and hands back a task id that `background_action=status` cannot
-/// resolve. By detaching *before* that deadline we always return a real
-/// `shell_*` job id the caller can poll or cancel (#1106).
-///
-/// `on_tick` is called roughly every `TICK` while the command is still
-/// running, so the caller can emit MCP progress notifications and a 3-minute
-/// build stops being indistinguishable from a hang (#1173).
+/// Legacy tuple-shaped foreground result for existing callers.
 pub fn run_foreground_or_detach(
     command: String,
     cwd: String,
@@ -244,45 +307,99 @@ pub fn run_foreground_or_detach(
     on_tick: Option<&dyn Fn(Duration)>,
     cancel: Option<&tokio_util::sync::CancellationToken>,
 ) -> ForegroundResult {
-    let id = start_inner(command, cwd, extra_env, timeout_ms, true);
+    match run_foreground_or_detach_captured(
+        command, cwd, extra_env, timeout_ms, soft_cap, on_tick, cancel,
+    ) {
+        CapturedForegroundResult::Finished {
+            output,
+            exit_code,
+            notice,
+            ..
+        } => ForegroundResult::Finished {
+            // Nothing shortens the text on this path: the notice goes in
+            // front here.
+            output: crate::server::execute::with_notice(notice, output),
+            exit_code,
+        },
+        CapturedForegroundResult::Detached { job_id } => ForegroundResult::Detached { job_id },
+    }
+}
+
+/// Process output returned only while the original foreground call remains alive.
+pub(crate) enum CapturedForegroundResult {
+    Finished {
+        output: String,
+        exit_code: i32,
+        completeness: crate::core::context_admission::OutputCompleteness,
+        retained_withheld: bool,
+        /// Not part of `output`; see `ShellExecution::notice`.
+        notice: Option<&'static str>,
+    },
+    Detached {
+        job_id: String,
+    },
+}
+
+/// Run a managed job with a one-shot channel for live foreground delivery.
+/// Detached callers drop that receiver; later polls can see only stored text.
+pub(crate) fn run_foreground_or_detach_captured(
+    command: String,
+    cwd: String,
+    extra_env: std::collections::HashMap<String, String>,
+    timeout_ms: Option<u64>,
+    soft_cap: Duration,
+    on_tick: Option<&dyn Fn(Duration)>,
+    cancel: Option<&tokio_util::sync::CancellationToken>,
+) -> CapturedForegroundResult {
+    let (sender, receiver) = mpsc::sync_channel(1);
+    let id = start_inner_with_sender(command, cwd, extra_env, timeout_ms, true, Some(sender));
     let started = Instant::now();
     let deadline = started + soft_cap;
     let mut next_tick = started + TICK;
     loop {
-        match status(&id) {
-            Some(JobState::Completed { output, exit_code }) => {
-                release_foreground(&id, false);
-                return ForegroundResult::Finished { output, exit_code };
-            }
-            // A cancel can only be requested via background_action once the job
-            // is detached, so an inline wait realistically only sees Completed;
-            // handle Cancelled defensively with the timeout exit code.
-            Some(JobState::Cancelled { output }) => {
-                release_foreground(&id, false);
-                return ForegroundResult::Finished {
-                    output,
-                    exit_code: 130,
-                };
-            }
-            _ => {}
+        if let Ok(execution) = receiver.try_recv() {
+            release_foreground(&id, false);
+            return CapturedForegroundResult::Finished {
+                output: execution.output.clone(),
+                exit_code: execution.exit_code,
+                completeness: execution.completeness,
+                retained_withheld: false,
+                notice: execution.notice,
+            };
         }
-        // #1781: when the host abandons the call, free this thread immediately.
-        // The foreground wait runs on the blocking pool — dispatch hands the
-        // handler to `spawn_blocking`, and that pool has
-        // `(workers * 4).clamp(8, 32)` slots. Without this check the loop spun
-        // on until `soft_cap` — five minutes for a `timeout_ms: 300_000` call —
-        // so a burst of abandoned commands could occupy every slot, after which
-        // subsequent tool calls queued behind them until the server restarted.
-        // Detaching rather than killing keeps the job alive under its id, which
-        // the caller already knows how to poll and cancel.
+        if let Some(snapshot) = snapshot(&id) {
+            match snapshot.state {
+                JobState::Completed { output, exit_code } => {
+                    release_foreground(&id, false);
+                    return CapturedForegroundResult::Finished {
+                        output,
+                        exit_code,
+                        completeness: snapshot.completeness,
+                        retained_withheld: snapshot.output_withheld,
+                        notice: snapshot.notice,
+                    };
+                }
+                JobState::Cancelled { output } => {
+                    release_foreground(&id, false);
+                    return CapturedForegroundResult::Finished {
+                        output,
+                        exit_code: snapshot.actual_exit_code,
+                        completeness: snapshot.completeness,
+                        retained_withheld: snapshot.output_withheld,
+                        notice: snapshot.notice,
+                    };
+                }
+                JobState::Running { .. } => {}
+            }
+        }
         if cancel.is_some_and(tokio_util::sync::CancellationToken::is_cancelled) {
             release_foreground(&id, true);
-            return ForegroundResult::Detached { job_id: id };
+            return CapturedForegroundResult::Detached { job_id: id };
         }
         let now = Instant::now();
         if now >= deadline {
             release_foreground(&id, true);
-            return ForegroundResult::Detached { job_id: id };
+            return CapturedForegroundResult::Detached { job_id: id };
         }
         if let Some(tick) = on_tick
             && now >= next_tick
@@ -330,23 +447,78 @@ pub fn running_count() -> usize {
         .count()
 }
 
-pub fn status(id: &str) -> Option<JobState> {
+#[derive(Debug, Clone)]
+pub(crate) struct JobSnapshot {
+    pub(crate) state: JobState,
+    pub(crate) generation: u64,
+    pub(crate) completeness: crate::core::context_admission::OutputCompleteness,
+    pub(crate) output_withheld: bool,
+    pub(crate) actual_exit_code: i32,
+    /// The job's fixed notice, if it has one; not part of the state's text.
+    pub(crate) notice: Option<&'static str>,
+}
+
+/// A running job exposes state only; terminal text was storage-admitted before
+/// it entered the pollable job record.
+pub(crate) fn snapshot(id: &str) -> Option<JobSnapshot> {
     let jobs = JOBS
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
     let job = jobs.get(id)?;
-    Some(match &job.state {
-        // #1217: a running job's output lives in the shared buffer the worker
-        // streams into; surface the captured-so-far snapshot on each poll.
-        JobState::Running { .. } => JobState::Running {
-            output: job
-                .live
-                .lock()
-                .unwrap_or_else(std::sync::PoisonError::into_inner)
-                .clone(),
-        },
-        other => other.clone(),
+    Some(JobSnapshot {
+        state: job.state.clone(),
+        generation: job.generation,
+        completeness: job.completeness,
+        output_withheld: job.output_withheld,
+        actual_exit_code: job.actual_exit_code,
+        notice: job.notice,
     })
+}
+
+pub fn status(id: &str) -> Option<JobState> {
+    snapshot(id).map(|snapshot| snapshot.state)
+}
+
+/// Replace retained terminal text only if the caller still holds the exact
+/// generation and text it inspected. A policy change can therefore scrub a job
+/// without racing a reused content-addressed id or a newer poll.
+pub(crate) fn replace_retained_output_if_generation(
+    id: &str,
+    generation: u64,
+    expected: &str,
+    expected_epoch: u64,
+    replacement: Option<&str>,
+) -> bool {
+    let mut jobs = JOBS
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    let Some(job) = jobs.get_mut(id) else {
+        return false;
+    };
+    if job.generation != generation
+        || (replacement.is_some()
+            && crate::core::context_admission::stores::current_epoch() != expected_epoch)
+    {
+        return false;
+    }
+    let current = match &job.state {
+        JobState::Completed { output, .. } | JobState::Cancelled { output } => output,
+        JobState::Running { .. } => return false,
+    };
+    if current != expected {
+        return false;
+    }
+    match &mut job.state {
+        JobState::Completed { output, .. } | JobState::Cancelled { output } => {
+            output.clear();
+            if let Some(replacement) = replacement {
+                output.push_str(replacement);
+            }
+        }
+        JobState::Running { .. } => return false,
+    }
+    job.output_withheld = replacement.is_none();
+    true
 }
 
 /// Persist one aggregate for a terminal failed job, then mark that concrete
@@ -372,15 +544,21 @@ pub fn record_error_telemetry_once(
     Ok(true)
 }
 
-pub fn cancel(id: &str) -> Option<JobState> {
-    let mut jobs = JOBS
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    let job = jobs.get_mut(id)?;
-    if matches!(job.state, JobState::Running { .. }) {
-        job.cancel.store(true, Ordering::Release);
+pub(crate) fn cancel_snapshot(id: &str) -> Option<JobSnapshot> {
+    {
+        let mut jobs = JOBS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        let job = jobs.get_mut(id)?;
+        if matches!(job.state, JobState::Running { .. }) {
+            job.cancel.store(true, Ordering::Release);
+        }
     }
-    Some(job.state.clone())
+    snapshot(id)
+}
+
+pub fn cancel(id: &str) -> Option<JobState> {
+    cancel_snapshot(id).map(|snapshot| snapshot.state)
 }
 
 #[cfg(test)]
@@ -390,6 +568,21 @@ mod tests {
     };
     use std::time::Duration;
 
+    /// A finished job's text is storage-admitted, on the job's own thread,
+    /// under the process's gateway configuration and project policy, and is
+    /// dropped when that configuration changes meanwhile. A test that reads
+    /// the retained text holds both still: its own data directory (which
+    /// serializes every test that changes the environment) and no project
+    /// policy — environment first, policy second, as everywhere.
+    fn retained_text_held_still() -> (
+        crate::core::data_dir::IsolatedDataDir,
+        crate::core::policy::runtime::TestPolicyOverride,
+    ) {
+        let data = crate::core::data_dir::isolated_data_dir();
+        let community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        (data, community)
+    }
+
     fn completed_job(exit_code: i32) -> super::Job {
         super::Job {
             cancel: std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false)),
@@ -398,11 +591,59 @@ mod tests {
                 exit_code,
             },
             finished_at: Some(std::time::Instant::now()),
-            live: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
+            generation: 0,
+            actual_exit_code: 0,
+            completeness: crate::core::context_admission::OutputCompleteness::complete(),
+            output_withheld: false,
+            notice: None,
+            foreground_senders: Vec::new(),
             foreground_waiters: 0,
             background_owned: true,
             telemetry_recorded: false,
         }
+    }
+
+    #[test]
+    fn retained_output_replacement_checks_epoch_under_the_job_lock() {
+        let id = "shell_epoch_replacement_test";
+        let mut job = completed_job(0);
+        job.generation = 41;
+        super::JOBS
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner)
+            .insert(id.into(), job);
+        let epoch = crate::core::context_admission::stores::current_epoch();
+
+        assert!(
+            !super::replace_retained_output_if_generation(
+                id,
+                41,
+                "opaque output",
+                epoch.wrapping_add(1),
+                Some("stale output"),
+            ),
+            "an old policy snapshot cannot repopulate a terminal job"
+        );
+        assert!(matches!(
+            super::status(id),
+            Some(JobState::Completed { output, .. }) if output == "opaque output"
+        ));
+
+        assert!(
+            super::replace_retained_output_if_generation(
+                id,
+                41,
+                "opaque output",
+                epoch.wrapping_add(1),
+                None,
+            ),
+            "scrubbing remains allowed after an epoch change"
+        );
+        assert!(matches!(
+            super::status(id),
+            Some(JobState::Completed { output, .. }) if output.is_empty()
+        ));
+        super::remove_for_test(id);
     }
 
     #[test]
@@ -582,7 +823,12 @@ mod tests {
                         now.checked_sub(Duration::from_secs((index + 1) as u64))
                             .unwrap(),
                     ),
-                    live: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
+                    generation: 0,
+                    actual_exit_code: 0,
+                    completeness: crate::core::context_admission::OutputCompleteness::complete(),
+                    output_withheld: false,
+                    notice: None,
+                    foreground_senders: Vec::new(),
                     foreground_waiters: 0,
                     background_owned: true,
                     telemetry_recorded: false,
@@ -601,7 +847,12 @@ mod tests {
                     now.checked_sub(super::COMPLETED_JOB_TTL + Duration::from_secs(1))
                         .unwrap(),
                 ),
-                live: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
+                generation: 0,
+                actual_exit_code: 0,
+                completeness: crate::core::context_admission::OutputCompleteness::complete(),
+                output_withheld: false,
+                notice: None,
+                foreground_senders: Vec::new(),
                 foreground_waiters: 0,
                 background_owned: true,
                 telemetry_recorded: false,
@@ -632,7 +883,12 @@ mod tests {
                         now.checked_sub(Duration::from_secs((3 - index) as u64))
                             .unwrap(),
                     ),
-                    live: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
+                    generation: 0,
+                    actual_exit_code: 0,
+                    completeness: crate::core::context_admission::OutputCompleteness::complete(),
+                    output_withheld: false,
+                    notice: None,
+                    foreground_senders: Vec::new(),
                     foreground_waiters: 0,
                     background_owned: true,
                     telemetry_recorded: false,
@@ -649,6 +905,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore)]
     fn foreground_run_finishing_within_cap_returns_inline() {
+        let (_data, _community) = retained_text_held_still();
         let result = run_foreground_or_detach(
             "printf FG_OK".to_string(),
             ".".to_string(),
@@ -661,7 +918,7 @@ mod tests {
         match result {
             ForegroundResult::Finished { output, exit_code } => {
                 assert_eq!(exit_code, 0);
-                assert!(output.contains("FG_OK"));
+                assert!(output.contains("FG_OK"), "got: {output}");
             }
             ForegroundResult::Detached { .. } => panic!("fast command should not detach"),
         }
@@ -778,6 +1035,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore)]
     fn background_job_runs_past_request_and_can_be_observed() {
+        let (_data, _community) = retained_text_held_still();
         let id = start(
             "sleep 0.1; printf BG_JOB_OK".to_string(),
             ".".to_string(),
@@ -788,7 +1046,7 @@ mod tests {
         for _ in 0..40 {
             if let Some(JobState::Completed { output, exit_code }) = status(&id) {
                 assert_eq!(exit_code, 0);
-                assert!(output.contains("BG_JOB_OK"));
+                assert!(output.contains("BG_JOB_OK"), "got: {output}");
                 return;
             }
             std::thread::sleep(Duration::from_millis(25));
@@ -808,7 +1066,10 @@ mod tests {
         assert!(matches!(cancel(&id), Some(JobState::Running { .. })));
         for _ in 0..40 {
             if let Some(JobState::Cancelled { output }) = status(&id) {
-                assert!(output.contains("[cancelled: command stopped on request]"));
+                assert!(
+                    !output.contains("[cancelled: command stopped on request]"),
+                    "cancellation lifecycle belongs to the structured state, not retained output"
+                );
                 return;
             }
             std::thread::sleep(Duration::from_millis(25));
@@ -816,31 +1077,30 @@ mod tests {
         panic!("background job was not cancelled");
     }
 
-    /// #1217: a still-running job's `status` must surface the captured-so-far
-    /// output, not a bare "running" with no signal of progress.
+    /// Running jobs must never retain or expose raw output; only terminal
+    /// StoreAdmission-approved text can appear in a later poll.
     #[test]
     #[cfg_attr(windows, ignore)]
-    fn running_background_job_status_streams_partial_output() {
+    fn running_background_job_status_never_exposes_live_output() {
         let id = start(
-            "printf EARLY_LINE; sleep 5".to_string(),
+            "printf EARLY_LINE; sleep 3".to_string(),
             ".".to_string(),
             std::collections::HashMap::default(),
             Some(10_000),
         );
-        let mut saw_partial = false;
-        for _ in 0..80 {
-            if let Some(JobState::Running { output }) = status(&id)
-                && output.contains("EARLY_LINE")
-            {
-                saw_partial = true;
+        let mut saw_running = false;
+        for _ in 0..20 {
+            if let Some(JobState::Running { output }) = status(&id) {
+                saw_running = true;
+                assert!(output.is_empty(), "running state retained: {output:?}");
                 break;
             }
-            std::thread::sleep(Duration::from_millis(25));
+            std::thread::sleep(Duration::from_millis(10));
         }
         cancel(&id);
         assert!(
-            saw_partial,
-            "status never surfaced the running job's early output"
+            saw_running,
+            "job completed before running state was observed"
         );
     }
 
@@ -850,6 +1110,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore)]
     fn identical_concurrent_foreground_calls_all_observe_completion() {
+        let (_data, _community) = retained_text_held_still();
         const CALLERS: usize = 3;
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(CALLERS));
         let handles: Vec<_> = (0..CALLERS)
@@ -888,6 +1149,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore)]
     fn foreground_join_keeps_a_background_job_pollable() {
+        let (_data, _community) = retained_text_held_still();
         let command = "sleep 0.2; printf GH1876_BG_OK".to_string();
         let id = start(
             command.clone(),
@@ -918,6 +1180,14 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore)]
     fn a_caller_joins_a_finished_entry_its_waiter_has_not_read() {
+        // The retained text is storage-admitted under the process's gateway
+        // configuration and dropped when that configuration changes while the
+        // job finishes (`StoreAdmission::is_current`). This test reads the
+        // retained text, so it holds the configuration still: its own data
+        // directory (which serializes every test that changes one) and no
+        // project policy.
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let launch = || {
             super::start_inner(
                 "printf GH1876_WINDOW".to_string(),
@@ -949,6 +1219,7 @@ mod tests {
     #[test]
     #[cfg_attr(windows, ignore)]
     fn fast_identical_concurrent_foreground_calls_all_return() {
+        let (_data, _community) = retained_text_held_still();
         const CALLERS: usize = 8;
         for _ in 0..5 {
             let barrier = std::sync::Arc::new(std::sync::Barrier::new(CALLERS));
@@ -999,7 +1270,12 @@ mod tests {
                     now.checked_sub(super::COMPLETED_JOB_TTL + Duration::from_secs(1))
                         .unwrap(),
                 ),
-                live: std::sync::Arc::new(std::sync::Mutex::new(String::new())),
+                generation: 0,
+                actual_exit_code: 0,
+                completeness: crate::core::context_admission::OutputCompleteness::complete(),
+                output_withheld: false,
+                notice: None,
+                foreground_senders: Vec::new(),
                 foreground_waiters: 1,
                 background_owned: false,
                 telemetry_recorded: false,

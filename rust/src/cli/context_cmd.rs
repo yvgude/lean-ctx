@@ -50,7 +50,13 @@ pub(crate) fn cmd_control(args: &[String]) {
     super::common::daemon_fallback_hint();
 
     let mut ledger = ContextLedger::load();
-    let project_root = std::env::current_dir().unwrap_or_default();
+    let project_root = match super::common::require_project_root() {
+        Ok(root) => std::path::PathBuf::from(root),
+        Err(error) => {
+            eprintln!("{error}");
+            std::process::exit(1);
+        }
+    };
     let mut overlays = OverlayStore::load_project(&project_root);
 
     let args_map = build_map(&[
@@ -60,11 +66,15 @@ pub(crate) fn cmd_control(args: &[String]) {
         ("reason", reason),
         ("value", value),
     ]);
-    let result = crate::tools::ctx_control::handle(Some(&args_map), &mut ledger, &mut overlays);
+    let root = project_root.to_string_lossy().into_owned();
+    let result = super::common::CliToolRun::new("ctx_control", &root, Some(&args_map))
+        .deliver_text(|| {
+            crate::tools::ctx_control::handle(Some(&args_map), &mut ledger, &mut overlays)
+        });
     ledger.save();
     let _ = overlays.save_project(&project_root);
 
-    println!("{result}");
+    super::common::print_released(&result);
 }
 
 pub(crate) fn cmd_plan(args: &[String]) {
@@ -94,9 +104,11 @@ pub(crate) fn cmd_plan(args: &[String]) {
     let ledger = ContextLedger::load();
     let policies = PolicySet::defaults();
 
-    let result = crate::tools::ctx_plan::handle(json.as_object(), &ledger, &policies);
+    let root = super::common::detect_project_root(args);
+    let result = super::common::CliToolRun::new("ctx_plan", &root, json.as_object())
+        .deliver_text(|| crate::tools::ctx_plan::handle(json.as_object(), &ledger, &policies));
 
-    println!("{result}");
+    super::common::print_released(&result);
 }
 
 pub(crate) fn cmd_compile(args: &[String]) {
@@ -123,9 +135,11 @@ pub(crate) fn cmd_compile(args: &[String]) {
     let ledger = ContextLedger::load();
     let policies = PolicySet::defaults();
 
-    let result = crate::tools::ctx_compile::handle(json.as_object(), &ledger, &policies);
+    let root = super::common::detect_project_root(args);
+    let result = super::common::CliToolRun::new("ctx_compile", &root, json.as_object())
+        .deliver_text(|| crate::tools::ctx_compile::handle(json.as_object(), &ledger, &policies));
 
-    println!("{result}");
+    super::common::print_released(&result);
 }
 
 fn flag_value(args: &[String], flag: &str) -> Option<String> {

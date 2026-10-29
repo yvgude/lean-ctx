@@ -1,0 +1,13 @@
+{
+  "case": "sealed_without_ck_wrapped",
+  "base": "bus/publish.sealed.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/ck_wrapped"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

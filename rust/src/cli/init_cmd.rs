@@ -87,6 +87,11 @@ pub fn cmd_init(args: &[String]) {
             for e in &result.errors {
                 eprintln!("  ✗ {agent_name}: {e}");
             }
+            if result.errors.is_empty()
+                && let Err(e) = crate::setup::agent_selection::remember_connected_agent(agent_name)
+            {
+                eprintln!("  ✗ {agent_name}: {e}");
+            }
             if agent_name.eq_ignore_ascii_case("hermes") {
                 qprintln!("\n  Beyond MCP, lean-ctx can be Hermes' active context engine");
                 qprintln!("  (replaces the built-in ContextCompressor). Install the plugin from");
@@ -100,7 +105,7 @@ pub fn cmd_init(args: &[String]) {
         if !global {
             crate::hooks::install_project_rules_for_agents(&agents);
         }
-        qprintln!("\nRun 'lean-ctx gain' after using some commands to see your savings.");
+        qprintln!("\nRun 'lean-ctx cockpit' after using some commands to see your savings.");
         return;
     }
 

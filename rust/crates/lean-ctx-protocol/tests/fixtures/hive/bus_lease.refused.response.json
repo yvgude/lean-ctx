@@ -1,0 +1,10 @@
+{
+  "granted": false,
+  "holder": {
+    "agent_id": "codex-85",
+    "expires_at": "2026-10-20T12:07:00Z",
+    "instance_id": "inst_01jb8z9"
+  },
+  "schema": "leanctx.hive.bus-lease/v1",
+  "server_time": "2026-10-20T12:00:00Z"
+}

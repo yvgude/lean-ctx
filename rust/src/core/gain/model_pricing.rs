@@ -263,6 +263,12 @@ impl ModelPricing {
         Self { models }
     }
 
+    /// Every priced row (embedded table plus operator overrides), for the
+    /// cockpit's "Numbers explained" price table.
+    pub fn rows(&self) -> Vec<(&str, ModelCost)> {
+        self.models.iter().map(|(k, v)| (k.as_str(), *v)).collect()
+    }
+
     pub fn quote(&self, model: Option<&str>) -> ModelQuote {
         let raw = model.unwrap_or_default();
         // Exact = a direct hit in the loaded table (embedded + operator

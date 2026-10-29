@@ -34,6 +34,17 @@ fn open_graph(root: &str) -> Result<CodeGraph, String> {
     CodeGraph::open(root).map_err(|e| format!("Failed to open graph: {e}"))
 }
 
+/// The findings whose row may be served now (G04): the file, and the symbol
+/// when the finding names one. A finding of a withdrawn file is dropped
+/// before anything is listed or counted, as if it were not in the graph.
+fn served_findings(graph: &CodeGraph, mut findings: Vec<SmellFinding>) -> Vec<SmellFinding> {
+    findings.retain(|f| match f.symbol.as_deref() {
+        Some(symbol) => graph.serves_symbol(&f.file_path, symbol),
+        None => graph.serves_file(&f.file_path),
+    });
+    findings
+}
+
 fn ensure_graph_built(root: &str) {
     let Ok(graph) = CodeGraph::open(root) else {
         return;
@@ -56,11 +67,12 @@ fn handle_scan(rule: Option<&str>, path: Option<&str>, root: &str, fmt: OutputFo
     };
 
     let cfg = SmellConfig::default();
-    let mut findings: Vec<SmellFinding> = if let Some(r) = rule {
-        smells::scan_rule(graph.connection(), r, &cfg)
+    let findings: Vec<SmellFinding> = if let Some(r) = rule {
+        smells::scan_rule(&graph, r, &cfg)
     } else {
-        smells::scan_all(graph.connection(), &cfg)
+        smells::scan_all(&graph, &cfg)
     };
+    let mut findings = served_findings(&graph, findings);
 
     if let Some(p) = path {
         findings.retain(|f| f.file_path.contains(p));
@@ -77,7 +89,7 @@ fn handle_summary(root: &str, fmt: OutputFormat) -> String {
     };
 
     let cfg = SmellConfig::default();
-    let all = smells::scan_all(graph.connection(), &cfg);
+    let all = served_findings(&graph, smells::scan_all(&graph, &cfg));
     let summary = smells::summarize(&all);
     let total: usize = summary.iter().map(|s| s.findings).sum();
 
@@ -152,7 +164,7 @@ fn handle_file(path: Option<&str>, root: &str, fmt: OutputFormat) -> String {
     };
 
     let cfg = SmellConfig::default();
-    let mut findings = smells::scan_all(graph.connection(), &cfg);
+    let mut findings = served_findings(&graph, smells::scan_all(&graph, &cfg));
     findings.retain(|f| f.file_path.contains(target));
 
     format_findings(&findings, None, fmt)

@@ -319,6 +319,7 @@ impl RelayRecordV1 {
             .map_err(|e| RelayError::Malformed(e.to_string()))
     }
 
+    #[cfg(feature = "http-server")]
     pub(crate) fn origin_fingerprint(&self) -> Result<String, RelayError> {
         Ok(Self::payload_digest(&self.origin_bytes()?))
     }

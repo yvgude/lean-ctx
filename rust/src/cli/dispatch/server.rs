@@ -36,6 +36,12 @@ pub(super) fn run_mcp_server() -> Result<()> {
     // below resolves paths through this pin, and it is a no-op once pinned.
     crate::core::layout_pin::heal();
 
+    // Record this server as an instance of this data directory (after the
+    // layout pin, so the record lands where every later start looks). Orphan
+    // cleanup acts on these records only.
+    #[cfg(unix)]
+    let _instance = super::mcp_instances::register();
+
     // Concurrency hardening:
     // - Smooths "thundering herd" MCP startups (multiple agent sessions).
     // - Limits Tokio worker/blocking threads to avoid host degradation.
@@ -116,11 +122,12 @@ pub(super) fn run_mcp_server() -> Result<()> {
         let _housekeeping = tokio::task::spawn_blocking(|| {
             // Kill orphan MCP processes whose parent IDE died (one `ps` per
             // lean-ctx pid). Auto-start the proxy so the dashboard gets exact
-            // token data. Then the throttled (24h), opt-in publish of the
-            // savings recap — silent + detached, never touches stdout.
+            // token data.
             cleanup_orphan_mcp_processes();
             spawn_proxy_if_needed();
-            crate::cli::wrapped_publish::maybe_auto_publish_background();
+            // Keep the gateway evidence store within its bound (packs and
+            // removes old receipts in the background, at most hourly).
+            crate::core::context_admission::receipt_store::retention::maintain_at_startup();
             // GH #2006: keep the session store bounded (daily, off the handshake).
             if let Some(report) = crate::core::session::housekeeping::run_daily() {
                 tracing::debug!(?report, "session housekeeping");
@@ -147,7 +154,8 @@ pub(super) fn run_mcp_server() -> Result<()> {
                 tokio::io::stdout(),
             );
             let wire_protocol = transport.protocol();
-            match server.clone().serve(transport).await {
+            // The handshake future holds the whole server by value; keep it on the heap.
+            match Box::pin(server.clone().serve(transport)).await {
                 Ok(s) => break s,
                 Err(e) => {
                     let msg = e.to_string();
@@ -206,18 +214,24 @@ pub(super) fn run_mcp_server() -> Result<()> {
         }
         // Persist calls since the last periodic fold, then flush them so the
         // session's usage reaches the server today (bounded network wait).
+        let stage = std::time::Instant::now();
         let _ = tokio::task::spawn_blocking(|| {
             core::telemetry_features::record_mcp_session_end();
-            crate::cloud_sync::send_telemetry(core::telemetry_aggregate::SendTrigger::Exit)
+            crate::core::telemetry_send::send_telemetry(
+                core::telemetry_aggregate::SendTrigger::Exit,
+            )
         })
         .await;
+        let stage = crate::tools::shutdown_stage("telemetry", stage);
 
         server_handle.shutdown().await;
+        let stage = crate::tools::shutdown_stage("server shutdown", stage);
 
         // Single source of truth for the buffered-telemetry flush set, shared
         // with the CLI tool arms and the parent watchdog so they can't drift (#550).
         core::tool_lifecycle::flush_all_at_exit();
         core::efficacy::capture();
+        crate::tools::shutdown_stage("final flush", stage);
 
         Ok(())
     });
@@ -271,24 +285,13 @@ fn extract_request_id_from_message(
     ))
 }
 
-/// Kill orphan MCP server processes whose parent (IDE) has died.
-/// These are lean-ctx stdio processes reparented to PID 1 (init).
+/// End MCP servers of this installation whose parent (IDE) has died: stdio
+/// processes reparented to PID 1. Only servers recorded in this data directory
+/// with a still-matching process identity are considered; any other process is
+/// never signalled, whatever its name or parent (see `mcp_instances`).
 fn cleanup_orphan_mcp_processes() {
     #[cfg(unix)]
-    {
-        let my_pid = std::process::id();
-        let pids = crate::ipc::process::find_pids_by_name("lean-ctx");
-        for pid in pids {
-            if pid == my_pid {
-                continue;
-            }
-            if !is_orphan_mcp(pid) {
-                continue;
-            }
-            tracing::info!("[orphan-cleanup] killing orphan MCP process {pid} (parent=1)");
-            let _ = crate::ipc::process::terminate_gracefully(pid);
-        }
-    }
+    super::mcp_instances::terminate_own_orphans(is_orphan_mcp);
 }
 
 #[cfg(unix)]
@@ -381,7 +384,7 @@ fn spawn_parent_watchdog() {
                         // hand-rolled copy here used to miss the predictor + feedback.
                         core::tool_lifecycle::flush_all_at_exit();
                         core::telemetry_features::record_mcp_session_end();
-                        crate::cloud_sync::send_telemetry(
+                        crate::core::telemetry_send::send_telemetry(
                             core::telemetry_aggregate::SendTrigger::Exit,
                         );
                         std::process::exit(0);

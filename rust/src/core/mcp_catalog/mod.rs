@@ -76,15 +76,34 @@ pub async fn proxy(
         .ok_or_else(|| format!("unknown or disabled gateway server `{server_name}`"))?;
     let resolved = server.resolve()?;
     let timeout = std::time::Duration::from_secs(cfg.call_timeout_secs.max(1));
-    let call = client::proxy_call(&resolved, tool, arguments, timeout).await;
+    let call = admitted_call(
+        &downstream(server_name, &resolved, tool),
+        arguments,
+        |arguments| client::proxy_call(&resolved, tool, arguments, timeout),
+    )
+    .await;
     // Per-addon usage metering (P5): attribute every proxied call to its server +
     // tool. A transport failure or a downstream `is_error` counts as an error.
     // Side-channel only — never touches the returned text (output determinism).
     let _ok = matches!(&call, Ok(r) if !r.is_error.unwrap_or(false));
-    let result = call?;
-    // Downstream output is untrusted content (#866): redact secrets + audit it
-    // before it enters the model context.
-    let scrubbed = redact_downstream_output(server_name, &client::result_to_text(&result));
+    let source = format!("mcp://{handle}");
+    // Transport failures may contain remote response text, too. Admit them
+    // before returning an error rather than treating errors as trusted output.
+    let result = call.map_err(|message| {
+        let admitted = crate::core::context_admission::admit_source(&message, &source, false)
+            .unwrap_or_else(|error| error.to_string());
+        redact_downstream_output(server_name, &admitted)
+    })?;
+    // Admit before compression, spill or indexing, including tool error text.
+    let scrubbed = crate::core::context_admission::admit_source(
+        &client::result_to_text(&result),
+        &source,
+        false,
+    )
+    .map_err(|error| error.to_string())?;
+    // GHSA-gvg8-285q-m62g: the configured secret scanner as well, whatever
+    // the gateway setting, with a security event for every hit.
+    let scrubbed = redact_downstream_output(server_name, &scrubbed);
     if result.is_error.unwrap_or(false) {
         // Error text is surfaced verbatim (already scrubbed) — never compressed
         // or spilled, so the failure reason stays fully legible.
@@ -96,7 +115,43 @@ pub async fn proxy(
     // downstream output (compress / spill+handle / index). No-op unless any
     // `gateway.*_output` flag is set.
     let text = postprocess::process(cfg, server, tool, scrubbed, project_root);
-    Ok(text)
+    crate::core::context_admission::admit_source(&text, &source, false)
+        .map_err(|error| error.to_string())
+}
+
+/// The egress destination of a call to `server` over `transport`.
+pub(crate) fn downstream<'a>(
+    server: &'a str,
+    transport: &'a ResolvedTransport,
+    tool: &'a str,
+) -> crate::core::context_admission::carrier::Downstream<'a> {
+    crate::core::context_admission::carrier::Downstream {
+        server,
+        endpoint: match transport {
+            ResolvedTransport::Http { url, .. } => Some(url.as_str()),
+            ResolvedTransport::Stdio { .. } => None,
+        },
+        tool,
+    }
+}
+
+/// The only way a `tools/call` leaves for a downstream server: tool name and
+/// arguments are admitted for that destination first, and `send` receives the
+/// ADMITTED arguments (a value the gateway redacts is sent redacted). A
+/// refusal is typed and content-free, and `send` is not invoked — no session
+/// is acquired, nothing is spawned or connected for a withheld argument.
+pub(crate) async fn admitted_call<Call, Pending>(
+    downstream: &crate::core::context_admission::carrier::Downstream<'_>,
+    mut arguments: Map<String, Value>,
+    send: Call,
+) -> Result<rmcp::model::CallToolResult, String>
+where
+    Call: FnOnce(Map<String, Value>) -> Pending,
+    Pending: std::future::Future<Output = Result<rmcp::model::CallToolResult, String>>,
+{
+    crate::core::context_admission::carrier::admit_downstream_arguments(downstream, &mut arguments)
+        .map_err(|withheld| withheld.message("downstream tool arguments"))?;
+    send(arguments).await
 }
 
 /// Redact secrets in downstream MCP output before it reaches the model
@@ -250,6 +305,82 @@ mod tests {
         o.scored.clear();
         let s = render_cards(&o);
         assert!(s.contains("No matching downstream tools"));
+    }
+
+    /// A downstream stand-in that records every `tools/call` it is handed.
+    fn call_recording(
+        arguments: Map<String, Value>,
+    ) -> (
+        Result<rmcp::model::CallToolResult, String>,
+        Vec<Map<String, Value>>,
+    ) {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let received = std::sync::Mutex::new(Vec::new());
+        let target = crate::core::context_admission::carrier::Downstream {
+            server: "standin",
+            endpoint: None,
+            tool: "echo",
+        };
+        let outcome = tokio::runtime::Builder::new_current_thread()
+            .build()
+            .expect("runtime")
+            .block_on(admitted_call(&target, arguments, |sent| {
+                received.lock().expect("recording").push(sent);
+                async {
+                    Ok(rmcp::model::CallToolResult::success(vec![
+                        rmcp::model::ContentBlock::text("ok"),
+                    ]))
+                }
+            }));
+        let requests = received.lock().expect("recording").clone();
+        (outcome, requests)
+    }
+
+    /// Arguments are admitted before the send. Old code: the stand-in received
+    /// every argument exactly as the caller wrote it.
+    #[test]
+    fn downstream_server_receives_only_admitted_arguments() {
+        // Split so the repository's secret scanners never see a literal key.
+        let key = concat!("AK", "IAIOSFODNN7EXAMPLE");
+
+        // Redacted (the default `secrets = "redact"`): the call proceeds and
+        // the server receives the masked value, never the credential.
+        let mut leaking = Map::new();
+        leaking.insert("note".into(), serde_json::json!({"nested": [key, "kept"]}));
+        let (outcome, requests) = call_recording(leaking);
+        assert!(outcome.is_ok(), "{outcome:?}");
+        assert_eq!(requests.len(), 1);
+        let sent = serde_json::to_string(&requests[0]).expect("sent arguments");
+        assert!(!sent.contains(key), "the credential was sent: {sent}");
+        assert!(
+            sent.contains("[REDACTED:") && sent.contains("kept"),
+            "{sent}"
+        );
+
+        // Withheld: restricted content refuses the call; nothing is sent.
+        let mut restricted = Map::new();
+        restricted.insert("doc".into(), serde_json::json!("*** TOP SECRET ***\nplan"));
+        let (outcome, requests) = call_recording(restricted);
+        let refusal = outcome.expect_err("restricted content is never sent");
+        assert!(requests.is_empty(), "zero requests for a withheld argument");
+        assert!(refusal.contains("egress.restricted_content"), "{refusal}");
+        assert!(!refusal.contains("plan"), "the refusal is content-free");
+
+        // A finding in a key cannot be redacted in place: refused as well.
+        let mut keyed = Map::new();
+        keyed.insert(key.into(), serde_json::json!(1));
+        let (outcome, requests) = call_recording(keyed);
+        let refusal = outcome.expect_err("a credential as an argument name");
+        assert!(requests.is_empty());
+        assert!(refusal.contains("egress.immutable_position"), "{refusal}");
+
+        // Allowed: sent once, byte-identical.
+        let mut clean = Map::new();
+        clean.insert("note".into(), serde_json::json!("build the release notes"));
+        let (outcome, requests) = call_recording(clean.clone());
+        assert!(outcome.is_ok(), "{outcome:?}");
+        assert_eq!(requests, [clean]);
     }
 
     /// GHSA-gvg8-285q-m62g: downstream output (success and `is_error` text go

@@ -1,0 +1,30 @@
+{
+  "body": "Reconstruct the incident timeline from the excerpts.",
+  "licence": "CC-BY-4.0",
+  "material": [
+    {
+      "bytes": 8,
+      "media_type": "text/plain",
+      "name": "timeline.txt",
+      "sha256": "94d192b3a326be1f019b71ef13ea5a367ffe939c5e9a88f1b270e53753d9569a"
+    }
+  ],
+  "schema": "leanctx.hive.swarm-seed/v1",
+  "subtasks": [
+    {
+      "acceptance": "A UTC timestamp from the logs.",
+      "expected_kind": "text",
+      "title": "When did the first alert fire?"
+    },
+    {
+      "acceptance": "The deploy hash.",
+      "expected_kind": "hash",
+      "title": "Which deploy started it?"
+    }
+  ],
+  "title": "HF incident replay",
+  "topics": [
+    "incident",
+    "replay"
+  ]
+}

@@ -6,10 +6,23 @@ LeanCTX is the **Context Gateway for AI Systems**. **Control what your AI can se
 The **LeanCTX SDK** connects your application to a compatible **LeanCTX Engine**;
 you keep your model, workflow and UI.
 
+In this consolidated checkout the SDK has one source tree, `sdk/`, with Python,
+TypeScript, Go, Rust, JVM and .NET bindings. The Python package is
+`thinkery-leanctx-sdk`. The consolidated checkout tests these bindings against
+its own Engine. An Apache-only source export omits this separately licensed SDK
+tree; existing published SDK packages remain at their current registry coordinates.
+
 The standalone [SDK repository](https://github.com/Thinkery-AG/leanctx-sdk)
-owns the stable interface manifest, supported package coordinates, language
-versions and release compatibility. It documents Python, TypeScript, Go, Rust,
+exists next to the in-tree source. For the SDK releases made from it, it holds
+the stable interface manifest, supported package coordinates, language versions
+and release compatibility, and it documents the Python, TypeScript, Go, Rust,
 JVM and .NET interfaces. Registry availability is specific to each package release.
+
+Package versions in this checkout describe release candidates, not proof of
+registry publication. Engine companion wheels and the SDK must pass the
+same-checkout compatibility gate before release. See the SDK's `LICENSE` and
+`COMMERCIAL-LICENSE.md` for its usage rights; moving the source into this
+checkout does not make it Apache-licensed or change existing agreements.
 
 ## Stable and Preview
 

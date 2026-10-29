@@ -1,0 +1,51 @@
+{
+  "route": "W70",
+  "method": "GET",
+  "path": "/api/v1/companies/acme-group/members",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "items": [
+        {
+          "user": {
+            "id": "0b4f8a52-3c1e-4d7a-9f60-2a8e5b7c9d01",
+            "name": "Ada",
+            "email": "ada@acme.example"
+          },
+          "role": "owner",
+          "via": "owner",
+          "joined_at": "2026-10-20T08:00:00Z",
+          "workspaces": [
+            {
+              "slug": "acme",
+              "role": "owner"
+            }
+          ]
+        },
+        {
+          "user": {
+            "id": "1c5a9b63-4d2f-4e8b-8a71-3b9f6c8dae12",
+            "name": "Bob",
+            "email": "bob@acme.example"
+          },
+          "role": "member",
+          "via": "workspace",
+          "joined_at": "2026-10-21T10:00:00Z",
+          "workspaces": [
+            {
+              "slug": "acme",
+              "role": "contributor"
+            },
+            {
+              "slug": "acme-labs",
+              "role": "maintainer"
+            }
+          ]
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "errors": []
+}

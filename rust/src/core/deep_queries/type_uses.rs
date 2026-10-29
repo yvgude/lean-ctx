@@ -12,6 +12,7 @@ use tree_sitter::Node;
 
 #[cfg(feature = "tree-sitter")]
 use super::node_text;
+#[cfg(feature = "tree-sitter")]
 use super::types::TypeUse;
 
 /// Languages whose visibility rules make type-usage edges necessary.

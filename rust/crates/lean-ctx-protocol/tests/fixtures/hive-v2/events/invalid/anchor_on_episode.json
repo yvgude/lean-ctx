@@ -1,0 +1,23 @@
+{
+  "case": "anchor_on_episode",
+  "base": "events/node.add.episode.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/body/anchors",
+      "value": [
+        {
+          "ref": "file:a.rs",
+          "digest": "0000000000000000000000000000000000000000000000000000000000000000",
+          "commit": "0000000000000000000000000000000000000000"
+        }
+      ]
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/body/anchors"
+  }
+}

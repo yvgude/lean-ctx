@@ -1,0 +1,5 @@
+{
+  "access_token": "atl_fixture_not_a_real_token_0000000000",
+  "expires_in": 3600,
+  "schema": "leanctx.hive.access-token/v1"
+}

@@ -1,9 +1,13 @@
+#[cfg(feature = "embeddings")]
 use std::path::Path;
 
+#[cfg(feature = "embeddings")]
 use crate::core::bm25_index::BM25Index;
 #[cfg(any(feature = "qdrant", feature = "pgvector"))]
 use crate::core::bm25_index::ChunkKind;
+#[cfg(feature = "embeddings")]
 use crate::core::hnsw::FlatEmbeddings;
+#[cfg(feature = "embeddings")]
 use crate::core::hybrid_search::{DenseSearchResult, HybridConfig, HybridResult};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -83,17 +87,23 @@ pub fn dense_results_as_hybrid(
     top_k: usize,
     filter: Option<&dyn Fn(&str) -> bool>,
 ) -> Result<Vec<HybridResult>, String> {
-    let dense = dense_results(
-        backend,
-        root,
-        index,
-        engine,
-        aligned_embeddings,
-        changed_files,
-        query,
-        top_k,
-        filter,
-    )?;
+    // Pack and role pinned for the whole search; a change while it ran
+    // returns nothing (`source_gate::pinned`).
+    let dense =
+        crate::core::bm25_index::source_gate::pinned(gate_root(backend, root, index), || {
+            dense_results(
+                backend,
+                root,
+                index,
+                engine,
+                aligned_embeddings,
+                changed_files,
+                query,
+                top_k,
+                filter,
+            )
+        })
+        .unwrap_or_else(|| Ok(Vec::new()))?;
 
     Ok(dense
         .into_iter()
@@ -113,9 +123,61 @@ pub fn dense_results_as_hybrid(
         .collect())
 }
 
+/// The root whose gate a search of `backend` decides under: the root the
+/// index was handed out for (none for a view built in the running call), and
+/// for a remote backend always the project root its rows belong to.
+#[cfg(feature = "embeddings")]
+fn gate_root<'a>(
+    backend: DenseBackendKind,
+    root: &'a Path,
+    index: &'a BM25Index,
+) -> Option<&'a Path> {
+    if matches!(backend, DenseBackendKind::Local) {
+        index.source_root.as_deref()
+    } else {
+        Some(root)
+    }
+}
+
+/// Lexical + dense search with fusion. Pack and role are pinned for the
+/// whole search — both candidate lists and every gate decision — and a
+/// change of either while it ran returns nothing (`source_gate::pinned`).
 #[cfg(feature = "embeddings")]
 #[allow(clippy::too_many_arguments)]
 pub fn hybrid_results(
+    backend: DenseBackendKind,
+    root: &Path,
+    index: &BM25Index,
+    engine: &crate::core::embeddings::EmbeddingEngine,
+    aligned_embeddings: &FlatEmbeddings,
+    changed_files: &[String],
+    query: &str,
+    top_k: usize,
+    config: &HybridConfig,
+    filter: Option<&dyn Fn(&str) -> bool>,
+    graph_file_ranks: Option<&std::collections::HashMap<String, usize>>,
+) -> Result<Vec<HybridResult>, String> {
+    crate::core::bm25_index::source_gate::pinned(gate_root(backend, root, index), || {
+        hybrid_results_pinned(
+            backend,
+            root,
+            index,
+            engine,
+            aligned_embeddings,
+            changed_files,
+            query,
+            top_k,
+            config,
+            filter,
+            graph_file_ranks,
+        )
+    })
+    .unwrap_or_else(|| Ok(Vec::new()))
+}
+
+#[cfg(feature = "embeddings")]
+#[allow(clippy::too_many_arguments)]
+fn hybrid_results_pinned(
     backend: DenseBackendKind,
     root: &Path,
     index: &BM25Index,
@@ -294,7 +356,17 @@ fn dense_results_local(
         .embed_query(query)
         .map_err(|e| format!("embedding failed: {e}"))?;
 
-    let top = top_k_by_similarity(&query_embedding, aligned_embeddings, top_k, |i| {
+    // Serve-time source gate (G04): the vector of a withdrawn source may still
+    // be the nearest one, but its chunk is not served. A gated search fetches
+    // a bounded surplus and cuts after the gate, so such a chunk neither
+    // occupies a slot nor moves the cut.
+    let mut gate = index.source_gate();
+    let fetch = if gate.is_some() {
+        crate::core::bm25_index::source_gate::overfetch(top_k)
+    } else {
+        top_k
+    };
+    let top = top_k_by_similarity(&query_embedding, aligned_embeddings, fetch, |i| {
         let Some(pred) = filter else { return true };
         index.chunks.get(i).is_some_and(|c| pred(&c.file_path))
     });
@@ -303,6 +375,9 @@ fn dense_results_local(
         .into_iter()
         .filter_map(|(idx, sim)| {
             let chunk = index.chunks.get(idx)?;
+            if !crate::core::bm25_index::source_gate::chunk_served(&mut gate, chunk) {
+                return None;
+            }
             let snippet = chunk.content.lines().take(5).collect::<Vec<_>>().join("\n");
             Some(DenseSearchResult {
                 chunk_idx: idx,
@@ -315,6 +390,7 @@ fn dense_results_local(
                 snippet,
             })
         })
+        .take(top_k)
         .collect())
 }
 
@@ -405,15 +481,42 @@ fn dense_results_qdrant(
         .embed_query(query)
         .map_err(|e| format!("embedding failed: {e}"))?;
 
-    let hits = store.search(&collection, &query_vec, top_k)?;
-    let mut out = Vec::with_capacity(hits.len());
+    // A row of a source the admitted reader no longer returns is not served,
+    // path and symbol name included (G04). Where a source authority is
+    // required the backend ranks admitted sources only (`remote_candidates`).
+    let mut gate = crate::core::bm25_index::source_gate::SourceGate::new(root, "ctx_search")
+        .with_origins(&index.provider_origins);
+    let hits = remote_candidates(
+        &mut gate,
+        index,
+        query,
+        top_k,
+        |limit, sources| match sources {
+            Some(sources) => store.search_within(&collection, &query_vec, limit, sources),
+            None => store.search(&collection, &query_vec, limit),
+        },
+    )?;
+    let mut out = Vec::with_capacity(top_k.min(hits.len()));
+    let mut undigested = Vec::new();
     for hit in hits {
+        if out.len() >= top_k {
+            break;
+        }
         if let Some(pred) = filter
             && !pred(&hit.file_path)
         {
             continue;
         }
-        let snippet = snippet_from_disk(root, &hit.file_path, hit.start_line, hit.end_line, 5);
+        let row = RemoteRow {
+            source: &hit.file_path,
+            start_line: hit.start_line,
+            end_line: hit.end_line,
+            content_digest: hit.content_digest.as_deref(),
+        };
+        let Some(snippet) = remote_row_snippet(&mut gate, index, root, &row, &mut undigested)
+        else {
+            continue;
+        };
         out.push(DenseSearchResult {
             chunk_idx: 0,
             similarity: hit.score,
@@ -425,6 +528,12 @@ fn dense_results_qdrant(
             snippet,
         });
     }
+    forget_deleted_sources(root, &gate, |gone| {
+        store.sync_index(&collection, &BM25Index::new(), &[], gone, false)
+    });
+    resync_undigested(undigested, |sources| {
+        store.sync_index(&collection, index, aligned_embeddings, sources, false)
+    });
     Ok(out)
 }
 
@@ -456,15 +565,41 @@ fn dense_results_pgvector(
         .embed_query(query)
         .map_err(|e| format!("embedding failed: {e}"))?;
 
-    let hits = store.search(&table, &query_vec, top_k)?;
-    let mut out = Vec::with_capacity(hits.len());
+    // As `dense_results_qdrant`: admitted sources only where a source
+    // authority is required, a bounded surplus cut after the gate otherwise.
+    let mut gate = crate::core::bm25_index::source_gate::SourceGate::new(root, "ctx_search")
+        .with_origins(&index.provider_origins);
+    let hits = remote_candidates(
+        &mut gate,
+        index,
+        query,
+        top_k,
+        |limit, sources| match sources {
+            Some(sources) => store.search_within(&table, &query_vec, limit, sources),
+            None => store.search(&table, &query_vec, limit),
+        },
+    )?;
+    let mut out = Vec::with_capacity(top_k.min(hits.len()));
+    let mut undigested = Vec::new();
     for hit in hits {
+        if out.len() >= top_k {
+            break;
+        }
         if let Some(pred) = filter
             && !pred(&hit.file_path)
         {
             continue;
         }
-        let snippet = snippet_from_disk(root, &hit.file_path, hit.start_line, hit.end_line, 5);
+        let row = RemoteRow {
+            source: &hit.file_path,
+            start_line: hit.start_line,
+            end_line: hit.end_line,
+            content_digest: hit.content_digest.as_deref(),
+        };
+        let Some(snippet) = remote_row_snippet(&mut gate, index, root, &row, &mut undigested)
+        else {
+            continue;
+        };
         out.push(DenseSearchResult {
             chunk_idx: 0,
             similarity: hit.score,
@@ -476,7 +611,150 @@ fn dense_results_pgvector(
             snippet,
         });
     }
+    forget_deleted_sources(root, &gate, |gone| {
+        store.sync_index(&table, &BM25Index::new(), &[], gone, false)
+    });
+    resync_undigested(undigested, |sources| {
+        store.sync_index(&table, index, aligned_embeddings, sources, false)
+    });
     Ok(out)
+}
+
+/// The rows a remote dense search is served from, best first.
+///
+/// Without protection (Community developer mode): the backend's nearest
+/// rows with a bounded surplus; the caller gates them and cuts afterwards —
+/// today's behaviour.
+///
+/// Where a source authority is required the backend must not rank what may
+/// not be served, and no unrestricted request is sent at all. The admitted
+/// sources are decided FIRST, from what the Engine holds locally — the
+/// sources of `index`, the index the remote table is synchronised from —
+/// through the gate, in the deterministic bounded order of
+/// `BM25Index::admitted_sources` (lexical candidates of the query, then the
+/// rest by path, at most the gate's bound). The ONE request is then
+/// restricted, in the backend, to those sources (`search_within`: a payload
+/// filter in Qdrant, a bound variable in PostgreSQL, on the `file_path`
+/// every row has carried since the tables exist). Rows of refused,
+/// undecided or locally unknown sources are not ranked: no score, no place
+/// before the limit.
+///
+/// No admitted source: no request, nothing served. A restriction the
+/// backend cannot take (too large to bind) is an error, never an unfiltered
+/// ranking. A corpus of more sources than the bound is searched in its
+/// first sources of that order only (truncated closed). Cost under
+/// protection: up to the bound in admitted source reads before the request
+/// (the lexical search of the same call decides through its own gate).
+#[cfg(all(feature = "embeddings", any(feature = "qdrant", feature = "pgvector")))]
+fn remote_candidates<Hit>(
+    gate: &mut crate::core::bm25_index::source_gate::SourceGate,
+    index: &BM25Index,
+    query: &str,
+    top_k: usize,
+    search: impl Fn(usize, Option<&[String]>) -> Result<Vec<Hit>, String>,
+) -> Result<Vec<Hit>, String> {
+    let fetch = crate::core::bm25_index::source_gate::overfetch(top_k);
+    if !gate.protected() {
+        return search(fetch, None);
+    }
+    let admitted = index.admitted_sources(query, gate);
+    if admitted.is_empty() {
+        return Ok(Vec::new());
+    }
+    search(fetch, Some(&admitted))
+}
+
+/// What a remote row says about the chunk it was written for.
+#[cfg(any(feature = "qdrant", feature = "pgvector"))]
+struct RemoteRow<'a> {
+    source: &'a str,
+    start_line: usize,
+    end_line: usize,
+    /// `external_origin::chunk_digest` of the chunk, on rows written since
+    /// the stores keep it.
+    content_digest: Option<&'a str>,
+}
+
+/// The snippet of a remote row that may be served now; `None` when it may
+/// not.
+///
+/// A row of a project file is served while the admitted reader still
+/// returns the lines it names. A row of an external chunk (`scheme://…`)
+/// has no file to read; where a source authority is required it is served
+/// only as the chunk the local index holds: the row's content digest must
+/// be the digest of a chunk of that source in `index`, and the gate must
+/// serve that chunk — for an origin bound to one text that is the digest in
+/// the origin on record. A row without a digest (written before the stores
+/// kept one) is not served there and its source is noted in `undigested`
+/// for re-synchronisation; it is never served unverified.
+#[cfg(any(feature = "qdrant", feature = "pgvector"))]
+fn remote_row_snippet(
+    gate: &mut crate::core::bm25_index::source_gate::SourceGate,
+    index: &BM25Index,
+    root: &Path,
+    row: &RemoteRow<'_>,
+    undigested: &mut Vec<String>,
+) -> Option<String> {
+    use crate::core::bm25_index::external_origin::chunk_digest;
+    if row.source.contains("://") && gate.protected() {
+        let Some(digest) = row.content_digest else {
+            undigested.push(row.source.to_owned());
+            return None;
+        };
+        let chunk = index.chunks.iter().find(|chunk| {
+            chunk.file_path == row.source && chunk_digest(&chunk.content) == digest
+        })?;
+        return gate
+            .serves(&chunk.file_path, &chunk.content)
+            .then(|| chunk.content.lines().take(5).collect::<Vec<_>>().join("\n"));
+    }
+    let snippet = snippet_from_disk(root, row.source, row.start_line, row.end_line, 5);
+    gate.serves(row.source, &snippet).then_some(snippet)
+}
+
+/// Write the rows of external sources that were found without a content
+/// digest again, through the store's replace path (`sync_index` deletes the
+/// source's rows and upserts its current chunks, now with their digest).
+/// Bounded and best effort: until it succeeds those rows stay unserved.
+#[cfg(any(feature = "qdrant", feature = "pgvector"))]
+fn resync_undigested(
+    mut sources: Vec<String>,
+    resync: impl FnOnce(&[String]) -> Result<(), String>,
+) {
+    /// Sources one search writes again.
+    const MAX_RESYNCED_SOURCES: usize = 8;
+    sources.sort();
+    sources.dedup();
+    sources.truncate(MAX_RESYNCED_SOURCES);
+    if !sources.is_empty() && resync(&sources).is_err() {
+        tracing::debug!("[dense] rows without a content digest could not be written again");
+    }
+}
+
+/// Remove the rows of the sources `gate` refused that no longer exist from a
+/// remote table, through the store's own replace path (`sync_index` deletes a
+/// changed file's rows and upserts its chunks — none, for an empty index).
+/// Only a deleted source: admission is the reader's, the table is shared, so
+/// a refusal for this reader must not remove a row for another. Bounded and
+/// best effort — a failed delete leaves rows the gate keeps refusing.
+#[cfg(any(feature = "qdrant", feature = "pgvector"))]
+fn forget_deleted_sources(
+    root: &Path,
+    gate: &crate::core::bm25_index::source_gate::SourceGate,
+    delete: impl FnOnce(&[String]) -> Result<(), String>,
+) {
+    /// Deleted sources one search removes from the remote table.
+    const MAX_DELETED_SOURCES: usize = 8;
+    let mut gone: Vec<String> = gate
+        .refused_sources()
+        .filter(|source| !source.contains("://") && !root.join(source).exists())
+        .map(str::to_owned)
+        .collect();
+    gone.sort();
+    gone.truncate(MAX_DELETED_SOURCES);
+    if !gone.is_empty() && delete(&gone).is_err() {
+        tracing::debug!("[dense] rows of deleted sources could not be removed");
+    }
 }
 
 #[cfg(any(feature = "qdrant", feature = "pgvector"))]

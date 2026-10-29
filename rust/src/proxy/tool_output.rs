@@ -1,8 +1,11 @@
 use serde_json::Value;
 
+#[cfg(test)]
 use crate::core::tokens::TokenizerFamily;
 
-use super::compress::{compress_tool_result, compress_tool_result_for};
+use super::compress::compress_tool_result;
+#[cfg(test)]
+use super::compress::compress_tool_result_for;
 use super::tool_kind::{ToolResultKind, should_protect};
 
 enum JsonRewrite {
@@ -42,6 +45,7 @@ pub(super) fn compress_text(
     false
 }
 
+#[cfg(test)]
 pub(super) fn compress_text_for(
     text: &mut String,
     tool_name: Option<&str>,
@@ -142,13 +146,22 @@ fn rewrite_json_payload_text(
         return JsonRewrite::NotJson;
     };
     let mut touched = false;
-    let mut changed = false;
-    rewrite_json_text_values(&mut value, kind, &mut rewrite, &mut touched, &mut changed);
-    if !touched || !changed {
+    // The strings inside the payload that were replaced, as they were.
+    let mut replaced = Vec::new();
+    rewrite_json_text_values(&mut value, kind, &mut rewrite, &mut touched, &mut replaced);
+    if !touched || replaced.is_empty() {
         return JsonRewrite::Unchanged;
     }
     match serde_json::to_string(&value) {
-        Ok(serialized) if serialized.len() < text.len() => JsonRewrite::Changed(serialized),
+        // The re-serialized text is a new text: the lineage of `text` does
+        // not carry over to it by itself. Under protection it leaves only
+        // when it is on record as derived (the shared gate decides, from the
+        // lineages of `text` and of every replaced string); otherwise `text`
+        // stays whole.
+        Ok(serialized) if serialized.len() < text.len() => {
+            super::compress::gate::rewrapped(text, serialized, &replaced)
+                .map_or(JsonRewrite::Unchanged, JsonRewrite::Changed)
+        }
         _ => JsonRewrite::Unchanged,
     }
 }
@@ -158,7 +171,7 @@ fn rewrite_json_text_values(
     kind: ToolResultKind,
     rewrite: &mut impl FnMut(&str) -> Option<String>,
     touched: &mut bool,
-    changed: &mut bool,
+    replaced: &mut Vec<String>,
 ) {
     match value {
         Value::Object(map) => {
@@ -174,17 +187,16 @@ fn rewrite_json_text_values(
                 {
                     *touched = true;
                     if let Some(next) = rewrite(s) {
-                        *s = next;
-                        *changed = true;
+                        replaced.push(std::mem::replace(s, next));
                     }
                     continue;
                 }
-                rewrite_json_text_values(child, kind, rewrite, touched, changed);
+                rewrite_json_text_values(child, kind, rewrite, touched, replaced);
             }
         }
         Value::Array(items) => {
             for item in items {
-                rewrite_json_text_values(item, kind, rewrite, touched, changed);
+                rewrite_json_text_values(item, kind, rewrite, touched, replaced);
             }
         }
         _ => {}
@@ -198,6 +210,8 @@ mod tests {
 
     #[test]
     fn compress_text_for_uses_selected_tokenizer_family() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
         let paragraph = "Grüezi 世界 means hello in Swiss German, and this repeated sentence carries multilingual text for tokenizer accounting. 🤝";
         let input = format!("{}\n", [paragraph; 20].join("\n\n"));
         let mut cl100k = input.clone();

@@ -46,11 +46,9 @@ pub(super) fn handle(method: &str, body: &str) -> (&'static str, &'static str, S
     // Limit the local operator surface to known agent projects, not arbitrary
     // user-supplied filesystem roots. Finished registrations remain observable.
     let registry = crate::core::agents::AgentRegistry::load_or_create();
-    if !registry
-        .agents
-        .iter()
-        .any(|agent| agent.project_root == request.project_root)
-    {
+    if !registry.agents.iter().any(|agent| {
+        crate::core::pathutil::same_project(&agent.project_root, &request.project_root)
+    }) {
         return (
             "403 Forbidden",
             "application/json",
@@ -96,7 +94,9 @@ fn execute(request: &Request) -> Result<serde_json::Value, String> {
                 .as_deref()
                 .ok_or("expected_revision required")?;
             // The local dashboard bearer authorizes the operator, independently
-            // of worker membership. Durable observers deliver the committed stop.
+            // of worker membership. The persisted stop revokes the child's
+            // delegated delivery; its host ends the child process, whose path
+            // leases stay until its window ends.
             let observation = WorkGraphStore::mutate_graph_if_revision(
                 &request.project_root,
                 &request.graph_id,
@@ -119,7 +119,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn operator_cancel_rejects_stale_revision_and_preserves_unconfirmed_exit() {
+    fn operator_cancel_rejects_stale_revision_and_ends_the_incarnation() {
         use crate::core::work_graph::{BoundedWorkGraph, WorkNodeBudget};
         use crate::core::work_graph_store::ClaimNodeExecution;
         let isolated = crate::core::data_dir::isolated_data_dir();
@@ -173,14 +173,22 @@ mod tests {
             execute(&request).unwrap_err(),
             "work graph revision conflict"
         );
-        assert!(
-            !WorkGraphStore::execution_stop_requested(project, "graph", "child", &fence).unwrap()
-        );
+        let status = |project: &str| {
+            WorkGraphStore::load(project)
+                .unwrap()
+                .graph("graph")
+                .unwrap()
+                .get_node("child")
+                .unwrap()
+                .status
+        };
+        assert_eq!(status(project), crate::core::work_graph::NodeStatus::Active);
         request.expected_revision = Some(observed["write_revision"].as_str().unwrap().into());
         let cancelled = execute(&request).unwrap();
         assert_eq!(cancelled["cancellation_requested"], true);
-        assert!(
-            WorkGraphStore::execution_stop_requested(project, "graph", "child", &fence).unwrap()
+        assert_eq!(
+            status(project),
+            crate::core::work_graph::NodeStatus::Stopped
         );
         let child = cancelled["graph"]["nodes"]
             .as_array()
@@ -188,7 +196,7 @@ mod tests {
             .iter()
             .find(|node| node["node_id"] == "child")
             .unwrap();
-        assert_eq!(child["process_exit"], "unconfirmed");
+        assert_eq!(child["process_exit"], "confirmed");
         assert!(!cancelled.to_string().contains(&fence));
     }
 

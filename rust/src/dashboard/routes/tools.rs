@@ -305,7 +305,24 @@ fn search_building_response(
 }
 
 fn bm25_index_summary_json(index: &crate::core::bm25_index::BM25Index) -> serde_json::Value {
-    let mut sorted: Vec<&crate::core::bm25_index::CodeChunk> = index.chunks.iter().collect();
+    // A loaded index is asked again before anything of a chunk is shown
+    // (G04): one serve-time gate for the request, and only chunks whose
+    // source still admits them are listed or counted by language.
+    // Pack and role are pinned for the whole walk; a view that reports a
+    // change shows no chunk.
+    let served: Vec<&crate::core::bm25_index::CodeChunk> =
+        crate::core::bm25_index::source_gate::pinned(index.source_root.as_deref(), || {
+            let mut gate = index.source_gate();
+            index
+                .chunks
+                .iter()
+                .filter(|chunk| {
+                    crate::core::bm25_index::source_gate::chunk_served(&mut gate, chunk)
+                })
+                .collect()
+        })
+        .unwrap_or_default();
+    let mut sorted = served.clone();
     sorted.sort_by_key(|c| std::cmp::Reverse(c.token_count));
     let top: Vec<serde_json::Value> = sorted
         .into_iter()
@@ -322,7 +339,7 @@ fn bm25_index_summary_json(index: &crate::core::bm25_index::BM25Index) -> serde_
         })
         .collect();
     let mut lang: HashMap<String, usize> = HashMap::new();
-    for c in &index.chunks {
+    for c in served {
         let e = Path::new(&c.file_path)
             .extension()
             .and_then(|e| e.to_str())

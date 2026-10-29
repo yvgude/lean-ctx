@@ -1,0 +1,66 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "Maintainers only.",
+          "reason": "role"
+        }
+      },
+      "status": 403
+    }
+  ],
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/reviews?state=needs_person",
+  "request": null,
+  "response": {
+    "body": {
+      "items": [
+        {
+          "also": [],
+          "command_digests": [
+            "7eebe61a9cb4e8846e4385ac47de89ee5885b5872f7e4874f7bc9e58be2d3e7c"
+          ],
+          "created_at": "2026-10-24T00:00:04Z",
+          "id": "rv_aaaaaaaaaaaaaaaaaaaaaadxaq",
+          "independence": "normal",
+          "item_digest": "ee8ebef8190836e50eb76f8899693eedeef5d4357c391402ffed8021d8678eca",
+          "node_ids": [
+            "n_aaaaaaaaaaaaaaaaaaaaaacaaq"
+          ],
+          "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+          "required_weight": 2,
+          "risk_class": "security_critical",
+          "sla_due_at": "2026-10-25T00:00:00Z",
+          "state": "needs_person",
+          "trigger": "procedure_with_commands",
+          "vault": {
+            "name": "payments",
+            "ws": "acme"
+          },
+          "verdicts": [
+            {
+              "at": "2026-10-24T02:00:00Z",
+              "host_app": "codex",
+              "model": "gpt-6-luna",
+              "reason_code": "correct",
+              "verdict": "accept",
+              "worker": {
+                "id": "wkr_gawyravj36igdp3irdfo",
+                "name": "mara-pc · Codex · reviewer",
+                "owner_handle": "mara",
+                "place_role": "maintainer"
+              }
+            }
+          ],
+          "weight_accept": 3,
+          "weight_reject": 0
+        }
+      ],
+      "next_cursor": null
+    },
+    "status": 200
+  },
+  "route": "W47"
+}

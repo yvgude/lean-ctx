@@ -1,0 +1,14 @@
+{
+  "case": "system_sender_with_worker",
+  "base": "bus/message.need.system.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/worker_id",
+      "value": "wkr_aaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

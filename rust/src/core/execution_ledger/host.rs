@@ -5,25 +5,34 @@
 mod checkpoint;
 mod checkpoint_resume;
 mod checkpoint_transfer;
-use checkpoint_transfer::inspect_personal_sync_payload;
 mod context_decision;
 mod context_protocol;
 mod outcome;
 mod outcome_transport;
-mod personal_sync;
 mod source_recheck;
 mod source_replay;
 mod task_scope;
 pub(crate) use checkpoint::HostCheckpointRequest;
+
+/// G08: the Context Gateway's admission of the narrative of a document that
+/// another component produced and the Engine is about to write out — foreign
+/// content, admitted bound (unchanged, or refused whole) under `tool`, each
+/// text recorded in the call's open capture as `<document><field path>`.
+/// Only where protection is active; without it nothing changes. `Err` is
+/// content-free. Its one caller (`engine runtime invoke`) exists on Unix.
+#[cfg(unix)]
+pub(crate) fn admit_foreign_document_narrative(
+    document: &str,
+    value: &serde_json::Value,
+    tool: &'static str,
+) -> anyhow::Result<()> {
+    checkpoint_transfer::admit_foreign_document_narrative(document, value, tool)
+}
 use checkpoint_resume::CheckpointResumeTarget;
 pub(crate) use checkpoint_resume::HostCheckpointResumeRequest;
 use checkpoint_transfer::CheckpointImportAdmission;
 pub(crate) use checkpoint_transfer::{HostCheckpointImportRequest, HostCheckpointPackageRequest};
 pub(crate) use outcome::HostOutcomeRequest;
-pub(crate) use personal_sync::{
-    PersonalCarrierV1, PersonalSyncAdmission, receive as receive_personal_sync,
-    snapshot as snapshot_personal_sync,
-};
 
 use std::{
     fs::File,

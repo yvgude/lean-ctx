@@ -119,6 +119,10 @@ pub(super) fn materialize_session_bundle(
         // them (#1856). The checkpoint schema carries no such evidence, so a
         // restored session starts at zero instead of inheriting unproven counts.
         security: Default::default(),
+        // Per-day counts and the client belong to the device that observed
+        // them; a restored session reports only what it does from here on.
+        daily: Default::default(),
+        client: None,
     };
     let compression_level = inputs
         .compression_level

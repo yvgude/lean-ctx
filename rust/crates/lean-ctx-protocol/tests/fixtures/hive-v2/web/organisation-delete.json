@@ -1,0 +1,61 @@
+{
+  "route": "W87",
+  "method": "DELETE",
+  "path": "/api/v1/companies/acme-group",
+  "request": null,
+  "response": {
+    "status": 204,
+    "body": null
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "human_session_required",
+          "message": "only a person signed in on the web may do this"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "step_up_required",
+          "message": "confirm with your authenticator code first"
+        }
+      }
+    },
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "this needs the company owner role",
+          "required_role": "owner"
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "remove every team before deleting the company",
+          "state": "workspaces_linked",
+          "workspaces": 2
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "the company's Enterprise contract is in force — talk to us to end it first",
+          "state": "contract_active"
+        }
+      }
+    }
+  ]
+}

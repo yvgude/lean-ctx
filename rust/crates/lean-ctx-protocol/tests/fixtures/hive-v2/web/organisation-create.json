@@ -1,0 +1,24 @@
+{
+  "route": "W69",
+  "method": "POST",
+  "path": "/api/v1/companies",
+  "request": {
+    "slug": "acme-group",
+    "name": "Acme Group"
+  },
+  "response": null,
+  "errors": [
+    {
+      "status": 402,
+      "body": {
+        "error": {
+          "code": "plan_required",
+          "message": "A company comes with Enterprise, on request: send a request and we set it up with you.",
+          "feature": "company",
+          "plan_needed": "enterprise",
+          "contact": true
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+{
+  "comment": "Test-only vendor root for the root-cert fixtures, never a real key. The certified self-host root is root_seed_hex in vectors.json.",
+  "keys": {
+    "vendor_root_ed25519_pub": "svNtQxWkPTGtZtJsooIJH9Y+K7oI1097T644Pc11654=",
+    "vendor_root_seed_hex": "3ca6d1e4f59a4d51c4502589d335f2a21db6c3c3d50cbb1cd344c277cfbd9d00"
+  }
+}

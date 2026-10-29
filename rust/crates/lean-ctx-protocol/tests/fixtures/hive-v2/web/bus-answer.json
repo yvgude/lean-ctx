@@ -1,0 +1,41 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "sealed_plaintext",
+          "message": "Answer from your engine — this bus is encrypted."
+        }
+      },
+      "status": 409
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/buses/v/acme/payments/messages/msg_00000000000000a1/answer",
+  "request": {
+    "text": "Confirmed from the runbook as well."
+  },
+  "response": {
+    "body": {
+      "body": {
+        "text": "Confirmed from the runbook as well."
+      },
+      "client_msg_id": "01M5NKA2Z8B000000000000011",
+      "id": "msg_00000000000000ab",
+      "provenance": "workspace",
+      "received_at": 1792800011000,
+      "reply_to": "msg_00000000000000a1",
+      "schema": "leanctx.hive.bus/v2",
+      "sender": {
+        "handle": "mara",
+        "kind": "person"
+      },
+      "seq": 11,
+      "thread_id": "msg_00000000000000a1",
+      "to": "#acme/payments",
+      "type": "answer"
+    },
+    "status": 201
+  },
+  "route": "W36"
+}

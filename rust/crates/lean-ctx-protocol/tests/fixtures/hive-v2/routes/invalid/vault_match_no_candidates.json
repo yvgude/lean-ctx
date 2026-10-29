@@ -1,0 +1,14 @@
+{
+  "base": "routes/vault_match.request.json",
+  "case": "vault_match_no_candidates",
+  "expect": {
+    "layer": "schema"
+  },
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/candidates",
+      "value": []
+    }
+  ]
+}

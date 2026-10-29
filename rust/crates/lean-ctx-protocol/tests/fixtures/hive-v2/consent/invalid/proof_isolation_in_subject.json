@@ -1,0 +1,14 @@
+{
+  "case": "proof_isolation_in_subject",
+  "base": "consent/proof.ed25519.swarm_join.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/subject/isolation",
+      "value": "full"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

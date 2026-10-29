@@ -1,0 +1,25 @@
+{
+  "route": "W75",
+  "method": "GET",
+  "path": "/api/v1/companies/acme-group/activity/handoffs?workspace=acme",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "view": "handoffs",
+      "items": [
+        {
+          "id": "msg_5e1f0c2a9b7d3e48",
+          "at": "2026-10-25T09:30:00Z",
+          "workspace": "acme",
+          "vault": "payments",
+          "from": "wkr_reviewer",
+          "to": "wkr_builder",
+          "status": "accepted"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "errors": []
+}

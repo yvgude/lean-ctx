@@ -22,7 +22,7 @@ fn archive_store_and_retrieve() {
     with_test_dir(|| {
         let content = "Hello from archive test\nLine 2\nLine 3";
         let id = archive::store("ctx_shell", "echo test", content, None).unwrap();
-        assert!(!id.is_empty(), "`id` is empty");
+        assert_ne!(id, "");
         assert_eq!(archive::retrieve(&id).unwrap(), content);
     });
 }

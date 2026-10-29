@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_instance_in_body",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/engine/instance_id",
+      "value": "inst_00000000000000000000000000000001"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "the instance comes from the token, never the body"
+}

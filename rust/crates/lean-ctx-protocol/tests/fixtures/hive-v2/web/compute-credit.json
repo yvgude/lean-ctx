@@ -1,0 +1,68 @@
+{
+  "route": "W91",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/compute/credit",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "balance": 480,
+      "reserved": 20,
+      "spent_today": 4,
+      "daily_credits": 500,
+      "top_up": "operator",
+      "ledger": [
+        {
+          "kind": "refund",
+          "amount": 16,
+          "balance_after": 480,
+          "job_id": "cj_0b4f9a7e3c2d4e1f8a6b5c4d3e2f1a09",
+          "created_ms": 1792483299000
+        },
+        {
+          "kind": "settle",
+          "amount": 0,
+          "balance_after": 464,
+          "job_id": "cj_0b4f9a7e3c2d4e1f8a6b5c4d3e2f1a09",
+          "created_ms": 1792483299000
+        },
+        {
+          "kind": "reserve",
+          "amount": -20,
+          "balance_after": 464,
+          "job_id": "cj_0b4f9a7e3c2d4e1f8a6b5c4d3e2f1a09",
+          "created_ms": 1792483200000
+        },
+        {
+          "kind": "grant",
+          "amount": 484,
+          "balance_after": 484,
+          "job_id": null,
+          "created_ms": 1792480000000
+        }
+      ]
+    }
+  },
+  "errors": [
+    {
+      "status": 403,
+      "body": {
+        "error": {
+          "code": "forbidden",
+          "message": "this needs the admin role",
+          "required_role": "admin"
+        }
+      }
+    },
+    {
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "feature_disabled",
+          "message": "this feature is switched off on this Hive",
+          "feature": "compute"
+        }
+      }
+    }
+  ]
+}

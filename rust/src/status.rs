@@ -156,8 +156,14 @@ fn build_status_report() -> Result<(StatusReport, std::path::PathBuf), String> {
 fn print_human(report: &StatusReport, path: &std::path::Path) {
     println!("lean-ctx status  v{}", report.version);
     let cfg = crate::core::config::Config::load();
-    if cfg.shadow_mode {
-        println!("  shadow_mode: \x1b[32mactive\x1b[0m");
+    let hosts = dirs::home_dir()
+        .map(|home| crate::doctor::shadow_hosts(&home))
+        .unwrap_or_default();
+    let (state, detail) = crate::doctor::shadow_status(cfg.shadow_mode, &hosts);
+    if state == "active" && !crate::core::theme::no_color() {
+        println!("  shadow_mode: \x1b[32m{state}\x1b[0m {detail}");
+    } else {
+        println!("  shadow_mode: {state} {detail}");
     }
     println!(
         "  doctor: {}/{}",
@@ -173,7 +179,7 @@ fn print_human(report: &StatusReport, path: &std::path::Path) {
     } else if report.doctor_compact_passed == report.doctor_compact_total {
         println!("  last setup: (manual install — all checks pass)");
     } else {
-        println!("  last setup: (none) — run \x1b[1mlean-ctx onboard\x1b[0m to configure");
+        println!("  last setup: (none) — run `lean-ctx onboard` to configure");
     }
 
     let detected = report.mcp_targets.len();

@@ -41,25 +41,6 @@ pub(super) fn handle(
             let json = crate::core::version_check::version_info_json();
             Some(("200 OK", "application/json", json))
         }
-        // Purely cosmetic supporter badge (GL #393): resolved from the local
-        // plan cache only — no network on this hot path, never gates anything.
-        "/api/billing-badge" => {
-            let eff = crate::cloud_client::resolve_effective_plan_cached();
-            let supporter = eff.supporter_recognition;
-            let source = match eff.source {
-                crate::cloud_client::PlanSource::Live => "live",
-                crate::cloud_client::PlanSource::Cached => "cached",
-                crate::cloud_client::PlanSource::Expired => "expired",
-                crate::cloud_client::PlanSource::None => "none",
-            };
-            let payload = serde_json::json!({
-                "plan": eff.plan.as_str(),
-                "supporter": supporter,
-                "source": source,
-            });
-            let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
-            Some(("200 OK", "application/json", json))
-        }
         "/metrics" => {
             let prom = crate::core::telemetry::global_metrics().to_prometheus();
             Some(("200 OK", "text/plain; version=0.0.4; charset=utf-8", prom))
@@ -77,9 +58,13 @@ pub(super) fn handle(
             Some(("200 OK", "application/json", json))
         }
         // Guards that fired: `lean-ctx value --all` as JSON — lifetime counts
-        // re-derived from the verified savings ledger and audit trail.
+        // re-derived from the verified savings ledger and audit trail; for the
+        // project a read names, only that project's entries.
         "/api/value" => {
-            let proof = crate::core::value::proof::build(None, true);
+            let proof = match super::helpers::request_ledger_scope() {
+                Some(scope) => crate::core::value::proof::build_lifetime_for(&scope),
+                None => crate::core::value::proof::build(None, true),
+            };
             let json = serde_json::to_string(&proof).unwrap_or_else(|_| "{}".to_string());
             Some(("200 OK", "application/json", json))
         }

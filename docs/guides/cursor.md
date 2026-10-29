@@ -62,7 +62,7 @@ hook-aware** (GL #1153):
   the mdc carries the *hook-covered* profile. It states honestly that native
   Shell/Read/Grep are already compressed transparently by the hooks, and
   advertises only the tools with no native equivalent — `ctx_compose`,
-  `ctx_symbol` / `ctx_callgraph`, `ctx_semantic_search`,
+  `ctx_search action=symbol|semantic`, `ctx_callgraph`,
   `ctx_knowledge` / `ctx_session`, `ctx_expand`.
 - **No hooks** (MCP-only install): the mdc carries the full tool-mapping
   profile (`ctx_read` over Read, `ctx_search` over Grep, `ctx_shell` over
@@ -137,7 +137,7 @@ In Ask mode (read-only), Cursor benefits from:
 - `ctx_read(path, "map")` — get file structure without reading full content
 - `ctx_read(path, "signatures")` — API surface only
 - `ctx_search(pattern)` — find code patterns efficiently
-- `ctx_semantic_search(query)` — understand code by meaning
+- `ctx_search(action="semantic", query)` — understand code by meaning
 
 ### @-Reference Workflow
 
@@ -156,7 +156,7 @@ For multi-file edits in Composer:
 1. Use `ctx_read(path, "map")` to understand each file's structure first
 2. Use `ctx_read(path, "full")` only for files being edited
 3. After edits, use `ctx_read(path, "diff")` to verify changes
-4. Use `ctx_impact(path)` to find files that might need related changes
+4. Use `ctx_graph("impact", path)` to find files that might need related changes
 
 ## Project-Level Configuration
 
@@ -339,7 +339,7 @@ lean-ctx daemon start
 
 1. **Choose a fitting read mode** — use `map` or `signatures` when structure is enough
 2. **Use unchanged-read caching where supported** — eligible reads may return a compact reference
-3. **Use `ctx_overview` at session start** — gather task-relevant project context
+3. **Use `ctx_compose` at session start** — gather task-relevant project context
 4. **Inspect with `lean-ctx gain --live`** — see local usage and token/cost estimates for observed activity
 5. **Use `ctx_compress` proactively** — when context grows large, create a checkpoint
 

@@ -5,6 +5,21 @@ use std::path::PathBuf;
 use super::data_dir::lean_ctx_data_dir;
 
 pub mod authority;
+pub(crate) mod bindings;
+pub(crate) mod delivered;
+pub(crate) mod presented;
+mod recovery;
+mod register;
+
+pub(crate) use recovery::{
+    RecoveryId, RecoveryRefusal, recovery_lineage, retrieve_recovery_checked,
+    store_recovery_with_lineage,
+};
+
+/// Protection is active in some layer (project policy pack, or the global
+/// gateway in governed or sovereign mode): only source-bound archives are
+/// written, listed or served. One predicate for every store.
+use super::context_admission::stored::source_authority_required;
 
 #[cfg(test)]
 #[path = "archive/source_tests.rs"]
@@ -25,6 +40,109 @@ pub struct ArchiveEntry {
     pub protected_until: Option<DateTime<Utc>>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub aliases: Vec<String>,
+    /// The lineage of a recovery copy that is not derived from project files
+    /// alone (`archive::recovery`). Such an entry has no `authority`, so every
+    /// other read path refuses it; only `retrieve_recovery_checked` serves it.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) lineage: Option<delivered::Lineage>,
+    /// The partition (`project_hash::hash_project_root`) of the project that
+    /// stored this archive. An archive without a source binding is
+    /// addressed by its partition and content, so two projects never share
+    /// one entry, and it is listed, searched and served only there. One
+    /// written before 3.11.5 names none and is never served (AP05-G4); the
+    /// owner adopts it with `lean-ctx migrate legacy-context`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub projects: Vec<String>,
+    /// The request project root the archive was stored for. A partition
+    /// hash also covers the project's identity (remote, package name); when
+    /// that changes, this recorded root proves which project the archive
+    /// belongs to (`legacy_adoption`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub project_root: Option<String>,
+}
+
+/// The partition of the request project, shared by every archive write and
+/// read. Without a bound request project there is none: nothing unbound is
+/// stored or served (the process directory is never a project).
+pub(crate) fn current_partition() -> Option<String> {
+    super::policy::diagnostics::request_project()
+        .map(|root| super::project_hash::hash_project_root(&root.to_string_lossy()))
+}
+
+/// The id of an archive without a source binding: its partition and its
+/// content, so the same text stored by two projects is two entries.
+fn unbound_id(partition: &str, content: &str) -> String {
+    let mut hasher = blake3::Hasher::new();
+    hasher.update(partition.as_bytes());
+    hasher.update(&[0]);
+    hasher.update(content.as_bytes());
+    hasher.finalize().to_hex()[..16].to_string()
+}
+
+/// An archive without a source binding belongs to the projects that stored it.
+fn in_current_partition(entry: &ArchiveEntry) -> bool {
+    current_partition().is_some_and(|partition| entry.projects.contains(&partition))
+}
+
+/// Archives without a source binding that were stored before archives named
+/// their project: served to no project (AP05-G4). Read for the explicit
+/// `lean-ctx migrate legacy-context` adoption only.
+pub(crate) fn legacy_unscoped_entries() -> Vec<ArchiveEntry> {
+    list_entries_raw(None)
+        .into_iter()
+        .filter(|entry| {
+            entry.authority.is_none()
+                && entry.lineage.is_none()
+                && entry.id.len() == 16
+                && (entry.projects.is_empty() || is_drifted(entry))
+        })
+        .collect()
+}
+
+/// An archive whose partition no longer matches the current partition of
+/// the root it recorded: that project's identity (remote, package name)
+/// changed since. Served to no project until adopted.
+pub(crate) fn is_drifted(entry: &ArchiveEntry) -> bool {
+    match (&entry.project_root, entry.projects.first()) {
+        (Some(root), Some(partition)) => super::project_hash::hash_project_root(root) != *partition,
+        _ => false,
+    }
+}
+
+/// The metadata of the unbound archive `id`, whatever project holds it.
+/// For the local owner's `lean-ctx migrate legacy-context` listing only.
+pub(crate) fn unbound_entry(id: &str) -> Option<ArchiveEntry> {
+    read_entry(id)
+        .filter(|entry| entry.authority.is_none() && entry.lineage.is_none() && id.len() == 16)
+}
+
+/// Copy the legacy archive `id` into `project_root`: its stored text passes
+/// the admission of a normal archive write there and gets that project's
+/// own id. The legacy entry is left as it is. `Ok` names the new id; `Err`
+/// is the content-free refusal.
+pub(crate) fn adopt_legacy_entry(
+    id: &str,
+    project_root: &std::path::Path,
+) -> Result<String, String> {
+    let entry = unbound_entry(id)
+        .filter(|entry| entry.projects.is_empty() || is_drifted(entry))
+        .ok_or("not a legacy archive")?;
+    let content = super::atomic_fs::read_store_file(&archive_base_dir(), &content_path(id))
+        .map_err(|_| "archive content unavailable")?;
+    super::policy::runtime::REQUEST_PROJECT
+        .sync_scope(
+            std::cell::RefCell::new(Some(project_root.to_path_buf())),
+            || {
+                store_with_result(
+                    &entry.tool,
+                    &entry.command,
+                    &content,
+                    entry.session_id.as_deref(),
+                )
+            },
+        )
+        .map(|stored| stored.id)
+        .ok_or_else(|| "withheld by the current policy, or archiving is disabled".to_string())
 }
 
 fn archive_base_dir() -> PathBuf {
@@ -161,7 +279,7 @@ pub(crate) fn store_with_authority(
     authority: Option<&authority::ArchiveAuthority>,
 ) -> Option<ArchiveStoreResult> {
     super::policy::runtime::with_source_view(|| {
-        if super::policy::runtime::is_active() && authority.is_none() {
+        if source_authority_required() && authority.is_none() {
             return None;
         }
         if authority.is_some_and(|origin| !origin.admitted()) {
@@ -192,14 +310,15 @@ fn store_admitted(
     }
 
     let (content, mut result) = prepared_content(content);
-    if let Some(authority) = authority {
-        result.id = authority.id(content)?;
-    }
+    result.id = match authority {
+        Some(authority) => authority.id(content)?,
+        None => unbound_id(&current_partition()?, content),
+    };
     let id = result.id.clone();
-    let created = with_archive_lock(|| {
+    with_archive_lock(|| {
         let c_path = content_path(&id);
         if c_path.exists() && meta_path(&id).exists() {
-            return Some(false);
+            return Some(());
         }
         std::fs::create_dir_all(entry_dir(&id)).ok()?;
         if !c_path.exists() {
@@ -213,13 +332,69 @@ fn store_admitted(
             let _ = std::fs::remove_file(c_path);
             return None;
         }
-        Some(true)
+        Some(())
     })
     .flatten()?;
-    if created && authority.is_none() {
+    if authority.is_none() {
         super::archive_fts::index_entry(&id, tool, command, content);
     }
+    if authority.is_some() {
+        super::context_admission::receipt_store::references::note_recovery(&id);
+        // Lets a holder of exactly this text find its source-bound copy
+        // (`bound_recovery_id`). The pointer authorizes nothing: resolving the
+        // id re-admits every source.
+        let pointer = recovery_pointer_path(content);
+        if let Some(directory) = pointer.parent()
+            && std::fs::create_dir_all(directory).is_ok()
+        {
+            let _ = super::atomic_fs::try_atomic_write(&pointer, id.as_bytes(), None);
+        }
+    }
     Some(result)
+}
+
+fn recovery_pointer_path(content: &str) -> PathBuf {
+    archive_base_dir()
+        .join("by-content")
+        .join(format!("{}.id", blake3::hash(content.as_bytes()).to_hex()))
+}
+
+/// Store a source-bound, revocable recovery copy of permitted content whose
+/// sources are known (G02): the copy can be handed back only while every
+/// source in `authority` is still admitted for the reader. Returns the
+/// archive id to put into a recovery handle (`ctx_expand(id="…")`), or `None`
+/// when the content may not be stored (withheld or restricted text, an
+/// incomplete authority, a source that no longer admits, archive disabled).
+///
+/// Content WITHOUT a known source has no such copy: under protection it
+/// stays raw-only (`store` / `store_background` refuse it there).
+pub fn store_recovery_copy(
+    tool: &str,
+    label: &str,
+    content: &str,
+    authority: &authority::ArchiveAuthority,
+) -> Option<String> {
+    store_with_authority(tool, label, content, None, Some(authority)).map(|stored| stored.id)
+}
+
+/// The id of the source-bound recovery copy that holds exactly `content`, if
+/// one was stored (by `store_recovery_copy`, or by the MCP pipeline for a tool
+/// that declares its sources). A lookup only: nothing is authorized here.
+/// Resolve the id with `retrieve_checked`, inside the request's project
+/// scope — that re-admits every source under the current policy and role and
+/// refuses with a typed, content-free reason when rights are gone.
+#[must_use]
+pub fn bound_recovery_id(content: &str) -> Option<String> {
+    let (content, _) = prepared_content(content);
+    let pointer = recovery_pointer_path(content);
+    let id = super::atomic_fs::read_store_file(&archive_base_dir(), &pointer).ok()?;
+    let id = id.trim();
+    (id.len() == 64
+        && id
+            .bytes()
+            .all(|b| b.is_ascii_hexdigit() && !b.is_ascii_uppercase())
+        && read_entry(id).is_some_and(|entry| entry.authority.is_some()))
+    .then(|| id.to_owned())
 }
 
 /// Persist a terminal background-shell result and guarantee that lean-ctx's
@@ -254,7 +429,7 @@ fn store_background_with_limits(
 ) -> Option<ArchiveStoreResult> {
     // Command output has no complete source binding yet. Keep fresh checked
     // output usable, but do not publish a protected recovery handle for it.
-    if super::policy::runtime::is_active() {
+    if source_authority_required() {
         return None;
     }
     if !is_enabled() || content.is_empty() {
@@ -263,7 +438,8 @@ fn store_background_with_limits(
     // Derived store: only admitted text (G5, E3).
     let content = super::context_admission::recovery::admit_for_storage(content)?;
 
-    let (content, result) = prepared_content(&content);
+    let (content, mut result) = prepared_content(&content);
+    result.id = unbound_id(&current_partition()?, content);
     let id = result.id.clone();
     let protected_until = now + chrono::Duration::hours(BACKGROUND_RETENTION_HOURS);
     let (stored, evicted) = with_archive_lock(|| {
@@ -356,7 +532,16 @@ fn new_entry(
         session_id: session_id.map(std::string::ToString::to_string),
         protected_until: None,
         aliases: Vec::new(),
+        lineage: None,
+        projects: current_partition().into_iter().collect(),
+        project_root: super::policy::diagnostics::request_project()
+            .map(|root| root.to_string_lossy().into_owned()),
     }
+}
+
+/// The tool whose output archive `id` holds (engine metrics K10).
+pub(crate) fn tool_of(id: &str) -> Option<String> {
+    read_entry(id).map(|entry| entry.tool)
 }
 
 fn read_entry(id: &str) -> Option<ArchiveEntry> {
@@ -405,7 +590,10 @@ fn retrieve_admitted(id: &str) -> Option<String> {
 pub(crate) fn content_matches_id(id: &str, content: &str) -> bool {
     match read_entry(id).and_then(|entry| entry.authority) {
         Some(origin) => origin.id(content).as_deref() == Some(id),
-        None => compute_id(content) == id,
+        None => match read_entry(id).and_then(|entry| entry.projects.first().cloned()) {
+            Some(partition) => unbound_id(&partition, content) == id,
+            None => compute_id(content) == id,
+        },
     }
 }
 
@@ -425,10 +613,22 @@ fn retrieve_admitted_budgeted(
     }
     let entry = read_entry(id);
     let authority = entry.as_ref().and_then(|entry| entry.authority.as_ref());
-    if authority.is_none() && (id.len() == 64 || super::policy::runtime::is_active()) {
+    if authority.is_none() && (id.len() == 64 || source_authority_required()) {
         return Err(ArchiveResolveError::Refused(
             "stored output has no source authority under the active policy",
         ));
+    }
+    // Another project's output, or one stored before archives named their
+    // project, does not exist for this request.
+    if authority.is_none() && !entry.as_ref().is_some_and(in_current_partition) {
+        // A legacy archive whose recorded session proves this project is
+        // copied into it once and served as that copy.
+        if let Some(adopted) = super::legacy_adoption::adopt_provable_archive(id)
+            && adopted != id
+        {
+            return retrieve_admitted_budgeted(&adopted, source_bytes);
+        }
+        return Err(ArchiveResolveError::Missing);
     }
     if authority.is_some_and(|origin| !origin.admitted_budgeted(source_bytes)) {
         return Err(ArchiveResolveError::Refused(
@@ -460,11 +660,17 @@ fn retrieve_admitted_budgeted(
             "archive content no longer matches its source-bound address",
         ));
     }
-    super::policy::content::protect_active(&content)
+    let released = super::policy::content::protect_active(&content)
         .map(std::borrow::Cow::into_owned)
         .map_err(|_| {
             ArchiveResolveError::Refused("stored output is withheld by current content rules")
-        })
+        })?;
+    // A resolved source-bound copy leaves towards the model again: register
+    // the released text with the lineage that was re-admitted just above.
+    if let Some(origin) = authority {
+        delivered::record_verified(&delivered::digest(&released), origin);
+    }
+    Ok(released)
 }
 
 /// Format a range of lines from content with `{:>6}|` line-number gutter.
@@ -627,17 +833,16 @@ pub(crate) fn describe_json(v: &serde_json::Value) -> String {
 }
 
 pub fn list_entries(session_id: Option<&str>) -> Vec<ArchiveEntry> {
+    super::legacy_adoption::auto_adopt_archives();
     super::policy::runtime::with_source_view(|| {
         let mut entries: Vec<_> = admitted_entries(session_id)
             .into_iter()
             .map(|(entry, _)| entry)
             .collect();
-        if !super::policy::runtime::is_active() {
-            entries.extend(
-                list_entries_raw(session_id)
-                    .into_iter()
-                    .filter(|entry| entry.authority.is_none() && entry.id.len() != 64),
-            );
+        if !source_authority_required() {
+            entries.extend(list_entries_raw(session_id).into_iter().filter(|entry| {
+                entry.authority.is_none() && entry.id.len() != 64 && in_current_partition(entry)
+            }));
             entries.sort_by_key(|entry| std::cmp::Reverse(entry.created_at));
         }
         entries
@@ -952,6 +1157,9 @@ mod tests {
             session_id: None,
             protected_until: None,
             aliases: Vec::new(),
+            lineage: None,
+            projects: current_partition().into_iter().collect(),
+            project_root: None,
         };
         std::fs::write(meta_path(id), serde_json::to_string(&entry).unwrap()).unwrap();
     }
@@ -1038,42 +1246,51 @@ mod tests {
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 
+    /// Unbound archives belong to the request project (AP05-G4).
+    fn in_project<T>(project: &std::path::Path, f: impl FnOnce() -> T) -> T {
+        crate::core::policy::runtime::REQUEST_PROJECT
+            .sync_scope(std::cell::RefCell::new(Some(project.to_path_buf())), f)
+    }
+
     #[test]
     fn background_store_refuses_when_protected_entries_fill_budget() {
         let _lock = crate::core::data_dir::test_env_lock();
         let tmp = tempfile::tempdir().unwrap();
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
         crate::test_env::set_var("LEAN_CTX_ARCHIVE", "1");
-
-        let now = Utc::now();
-        let first = store_background_with_limits(
-            "ctx_shell",
-            "shell_first",
-            "first protected output",
-            None,
-            now,
-            u64::MAX,
-        )
-        .unwrap();
-        let budget = scanned_entries()
-            .into_iter()
-            .find(|entry| entry.id == first.id)
-            .unwrap()
-            .bytes;
-
-        assert!(
-            store_background_with_limits(
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
+        in_project(&project, || {
+            let now = Utc::now();
+            let first = store_background_with_limits(
                 "ctx_shell",
-                "shell_second",
-                "different protected output",
+                "shell_first",
+                "first protected output",
                 None,
                 now,
-                budget,
+                u64::MAX,
             )
-            .is_none()
-        );
-        assert_eq!(resolve_alias("shell_first"), Some(first.id));
-        assert!(resolve_alias("shell_second").is_none());
+            .unwrap();
+            let budget = scanned_entries()
+                .into_iter()
+                .find(|entry| entry.id == first.id)
+                .unwrap()
+                .bytes;
+
+            assert!(
+                store_background_with_limits(
+                    "ctx_shell",
+                    "shell_second",
+                    "different protected output",
+                    None,
+                    now,
+                    budget,
+                )
+                .is_none()
+            );
+            assert_eq!(resolve_alias("shell_first"), Some(first.id));
+            assert!(resolve_alias("shell_second").is_none());
+        });
 
         crate::test_env::remove_var("LEAN_CTX_ARCHIVE");
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
@@ -1086,20 +1303,25 @@ mod tests {
         crate::test_env::set_var("LEAN_CTX_DATA_DIR", tmp.path());
         crate::test_env::set_var("LEAN_CTX_ARCHIVE", "1");
 
+        let project = tmp.path().join("project");
+        std::fs::create_dir_all(&project).unwrap();
         let barrier = std::sync::Arc::new(std::sync::Barrier::new(3));
         let mut writers = Vec::new();
         for job_id in ["shell_alpha", "shell_beta"] {
             let barrier = barrier.clone();
+            let project = project.clone();
             writers.push(std::thread::spawn(move || {
                 barrier.wait();
-                store_background_with_limits(
-                    "ctx_shell",
-                    job_id,
-                    "shared terminal output",
-                    None,
-                    Utc::now(),
-                    0,
-                )
+                in_project(&project, || {
+                    store_background_with_limits(
+                        "ctx_shell",
+                        job_id,
+                        "shared terminal output",
+                        None,
+                        Utc::now(),
+                        0,
+                    )
+                })
                 .unwrap()
             }));
         }
@@ -1108,8 +1330,10 @@ mod tests {
         let second = writers.remove(0).join().unwrap();
 
         assert_eq!(first.id, second.id);
-        assert_eq!(resolve_alias("shell_alpha"), Some(first.id.clone()));
-        assert_eq!(resolve_alias("shell_beta"), Some(first.id));
+        in_project(&project, || {
+            assert_eq!(resolve_alias("shell_alpha"), Some(first.id.clone()));
+            assert_eq!(resolve_alias("shell_beta"), Some(first.id));
+        });
 
         crate::test_env::remove_var("LEAN_CTX_ARCHIVE");
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");

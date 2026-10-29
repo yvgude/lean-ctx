@@ -1,0 +1,15 @@
+{
+  "case": "metrics_insights_small_average",
+  "base": "routes/metrics_insights.response.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/average/persons",
+      "value": 2
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "an average of fewer than 3 people identifies them"
+}

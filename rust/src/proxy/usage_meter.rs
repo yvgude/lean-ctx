@@ -208,6 +208,17 @@ impl CohortUsage {
         self.sum_sq_prompt += prompt.saturating_mul(prompt);
     }
 
+    /// Adds another cohort's running totals — every field, so the sums of
+    /// squares (and with them the variance / CI) survive a proxy restart.
+    fn merge(&mut self, other: &Self) {
+        self.requests += other.requests;
+        self.input_tokens += other.input_tokens;
+        self.output_tokens += other.output_tokens;
+        self.sum_sq_output = self.sum_sq_output.saturating_add(other.sum_sq_output);
+        self.prompt_tokens += other.prompt_tokens;
+        self.sum_sq_prompt = self.sum_sq_prompt.saturating_add(other.sum_sq_prompt);
+    }
+
     /// Average output tokens per turn, or `None` with no observations.
     #[must_use]
     pub fn avg_output(&self) -> Option<f64> {
@@ -247,6 +258,28 @@ pub struct PersistedUsage {
     /// `proxy_usage.json` files (written before the holdout existed) loadable.
     #[serde(default)]
     pub cohorts: HashMap<String, CohortUsage>,
+    /// The foreground model of the most recent finalized turn and when it was
+    /// seen (unix seconds), so other processes can attribute work to the model
+    /// in use now rather than the all-time largest bucket.
+    #[serde(default)]
+    pub last_model: Option<LastModel>,
+    /// The same totals per project key and model (the folder the agent named
+    /// in each request). Turns that named none stay in `models` only, which
+    /// remains the device total.
+    #[serde(default)]
+    pub projects: HashMap<String, HashMap<String, ModelUsage>>,
+}
+
+/// The model the proxy saw last, with the time it saw it.
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
+pub struct LastModel {
+    pub model: String,
+    pub at: u64,
+}
+
+fn last_model_store() -> &'static Mutex<Option<LastModel>> {
+    static STORE: OnceLock<Mutex<Option<LastModel>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(None))
 }
 
 /// Distinct-model bucket cap. `record` keys on the raw response model string, so
@@ -257,6 +290,14 @@ const PROXY_USAGE_FILE: &str = "proxy_usage.json";
 
 fn store() -> &'static Mutex<HashMap<String, ModelUsage>> {
     static STORE: OnceLock<Mutex<HashMap<String, ModelUsage>>> = OnceLock::new();
+    STORE.get_or_init(|| Mutex::new(HashMap::new()))
+}
+
+/// Distinct projects kept apart; turns of further projects stay in the device total.
+const MAX_TRACKED_PROJECTS: usize = 512;
+
+fn project_store() -> &'static Mutex<HashMap<String, HashMap<String, ModelUsage>>> {
+    static STORE: OnceLock<Mutex<HashMap<String, HashMap<String, ModelUsage>>>> = OnceLock::new();
     STORE.get_or_init(|| Mutex::new(HashMap::new()))
 }
 
@@ -272,10 +313,36 @@ pub fn resume_from_disk() {
     let Some(persisted) = load_persisted() else {
         return;
     };
+    {
+        let mut last = last_model_store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        if last.is_none() {
+            last.clone_from(&persisted.last_model);
+        }
+    }
     let mut map = store()
         .lock()
         .unwrap_or_else(std::sync::PoisonError::into_inner);
-    for (model, usage) in persisted.models {
+    merge_models(&mut map, persisted.models);
+    drop(map);
+    let mut projects = project_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for (project, models) in persisted.projects {
+        merge_models(projects.entry(project).or_default(), models);
+    }
+    drop(projects);
+    let mut cohorts = cohort_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    for (arm, usage) in persisted.cohorts {
+        cohorts.entry(arm).or_default().merge(&usage);
+    }
+}
+
+fn merge_models(map: &mut HashMap<String, ModelUsage>, models: HashMap<String, ModelUsage>) {
+    for (model, usage) in models {
         let acc = map.entry(model).or_default();
         acc.requests += usage.requests;
         acc.input_tokens += usage.input_tokens;
@@ -290,16 +357,6 @@ pub fn resume_from_disk() {
         for observation in usage.response_observations {
             acc.add_observation(observation);
         }
-    }
-    drop(map);
-    let mut cohorts = cohort_store()
-        .lock()
-        .unwrap_or_else(std::sync::PoisonError::into_inner);
-    for (arm, usage) in persisted.cohorts {
-        let acc = cohorts.entry(arm).or_default();
-        acc.requests += usage.requests;
-        acc.input_tokens += usage.input_tokens;
-        acc.output_tokens += usage.output_tokens;
     }
 }
 
@@ -378,7 +435,26 @@ pub fn record(u: &super::usage::RealUsage) {
             &u.model,
             u.cache_read_tokens,
             discount_usd,
+            u.wire.as_deref().and_then(|w| w.project_key.as_deref()),
         );
+    }
+
+    // Remember the foreground model for attribution in other processes
+    // (savings ledger). Background models never count as "the model in use".
+    let model = u.model.trim();
+    if !model.is_empty()
+        && model != "unknown"
+        && !crate::core::model_registry::is_background_model(model)
+    {
+        *last_model_store()
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner) = Some(LastModel {
+            model: model.to_string(),
+            at: std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .unwrap_or_default()
+                .as_secs(),
+        });
     }
 
     let key = normalize_key(&u.model);
@@ -391,7 +467,21 @@ pub fn record(u: &super::usage::RealUsage) {
         } else {
             key
         };
-        map.entry(key).or_default().add(u);
+        map.entry(key.clone()).or_default().add(u);
+        drop(map);
+        if let Some(project) = u.wire.as_deref().and_then(|w| w.project_key.as_deref()) {
+            let mut projects = project_store()
+                .lock()
+                .unwrap_or_else(std::sync::PoisonError::into_inner);
+            if projects.contains_key(project) || projects.len() < MAX_TRACKED_PROJECTS {
+                projects
+                    .entry(project.to_string())
+                    .or_default()
+                    .entry(key)
+                    .or_default()
+                    .add(u);
+            }
+        }
     }
     if u.cohort.output.is_some() || u.cohort.compression.is_some() {
         let mut cohorts = cohort_store()
@@ -560,6 +650,14 @@ fn persist() {
             .unwrap_or_else(std::sync::PoisonError::into_inner);
         map.clone()
     };
+    let last_model = last_model_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
+    let projects = project_store()
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+        .clone();
     let payload = PersistedUsage {
         ts: std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -567,6 +665,8 @@ fn persist() {
             .as_secs(),
         models,
         cohorts,
+        last_model,
+        projects,
     };
     let Ok(json) = serde_json::to_string(&payload) else {
         return;
@@ -589,6 +689,34 @@ pub fn persisted_snapshot() -> Vec<ModelSpend> {
     load_persisted()
         .map(|p| price_models(&p.models))
         .unwrap_or_default()
+}
+
+/// Priced spend rows of the projects whose key `keep` accepts, summed per model.
+pub fn persisted_snapshot_where(keep: impl Fn(&str) -> bool) -> Vec<ModelSpend> {
+    let Some(persisted) = load_persisted() else {
+        return Vec::new();
+    };
+    let mut models: HashMap<String, ModelUsage> = HashMap::new();
+    for (project, usage) in persisted.projects {
+        if keep(&project) {
+            merge_models(&mut models, usage);
+        }
+    }
+    price_models(&models)
+}
+
+/// Priced spend per project key (the device view's split).
+pub fn persisted_projects() -> Vec<(String, Vec<ModelSpend>)> {
+    let Some(persisted) = load_persisted() else {
+        return Vec::new();
+    };
+    let mut rows: Vec<(String, Vec<ModelSpend>)> = persisted
+        .projects
+        .iter()
+        .map(|(project, models)| (project.clone(), price_models(models)))
+        .collect();
+    rows.sort_by(|a, b| a.0.cmp(&b.0));
+    rows
 }
 
 /// The model carrying the most measured tokens (excludes the "unknown" bucket).
@@ -622,6 +750,68 @@ mod tests {
             cache_read_tokens: cache_read,
             ..Default::default()
         }
+    }
+
+    /// #895: resuming from disk must carry the sums of squares and prompt
+    /// totals; dropping them zeroed the variance after every proxy restart and
+    /// turned the CI into a zero-width "measurement".
+    #[test]
+    fn cohort_merge_keeps_every_running_total() {
+        let mut persisted = CohortUsage::default();
+        for (out, cached) in [(150, 900), (210, 1_200), (180, 0)] {
+            persisted.add(&usage("claude-sonnet-4.5", 1_000, out, cached));
+        }
+        let mut resumed = CohortUsage::default();
+        resumed.merge(&persisted);
+        assert_eq!(resumed, persisted, "every field survives the restart");
+        assert!(resumed.variance_output().is_some_and(|v| v > 0.0));
+
+        // Merging into live in-memory totals adds field by field.
+        let mut live = CohortUsage::default();
+        live.add(&usage("claude-sonnet-4.5", 500, 100, 0));
+        let expected_sum_sq = live.sum_sq_output + persisted.sum_sq_output;
+        live.merge(&persisted);
+        assert_eq!(live.requests, 4);
+        assert_eq!(live.sum_sq_output, expected_sum_sq);
+        assert_eq!(live.prompt_tokens, 500 + persisted.prompt_tokens);
+    }
+
+    /// A turn whose request named a project is booked to the device total and
+    /// to that project; one that named none to the device total only. Both
+    /// survive the file round trip.
+    #[test]
+    fn spend_is_split_per_project_and_persisted() {
+        let _dir = crate::core::data_dir::isolated_data_dir();
+        let project = format!("{:016x}", std::process::id() as u64 * 7919 + 17);
+        let other = format!("{:016x}", std::process::id() as u64 * 7919 + 18);
+        let turn = |key: Option<&str>, input| super::super::usage::RealUsage {
+            wire: Some(Box::new(super::super::usage::WireContext {
+                project_key: key.map(str::to_string),
+                ..Default::default()
+            })),
+            ..usage("claude-sonnet-4.5", input, 10, 0)
+        };
+        record(&turn(Some(&project), 1_000));
+        record(&turn(Some(&project), 500));
+        record(&turn(Some(&other), 200));
+        record(&turn(None, 100));
+
+        let mine = persisted_snapshot_where(|key| key == project);
+        assert_eq!(mine.len(), 1);
+        assert_eq!(mine[0].requests, 2);
+        assert_eq!(mine[0].input_tokens, 1_500);
+        let persisted = load_persisted().expect("persisted");
+        let device = &persisted.models["claude-sonnet-4.5"];
+        let split: u64 = persisted_projects()
+            .iter()
+            .filter(|(key, _)| *key == project || *key == other)
+            .flat_map(|(_, models)| models.iter().map(|m| m.input_tokens))
+            .sum();
+        assert_eq!(split, 1_700);
+        assert!(
+            device.input_tokens >= 1_800,
+            "the device total keeps every turn, named or not"
+        );
     }
 
     /// #701: the verified pair is recorded only when the probe answered — both

@@ -52,97 +52,44 @@ pub fn handle(
     }
 }
 
-#[allow(clippy::too_many_arguments)]
-pub fn handle_create(
+/// `create`, or with `preview` only what create would store (V01): the
+/// same build, nothing written.
+pub(crate) fn handle_create(
     project_root: &str,
-    name: &str,
-    version: Option<&str>,
-    description: Option<&str>,
-    author: Option<&str>,
-    tags: Option<&[String]>,
-    layers: Option<&[String]>,
-    level: Option<u32>,
-    scope: Option<&str>,
+    request: &crate::core::context_package::selection::PackRequest,
+    preview: bool,
 ) -> String {
-    let version = version.unwrap_or("1.0.0");
-    let description = description.unwrap_or("");
-    let level = level.unwrap_or(1).clamp(1, 3);
-
-    let requested_layers: Vec<&str> = layers.map_or_else(
-        || vec!["knowledge", "graph", "session", "gotchas"],
-        |l| l.iter().map(String::as_str).collect(),
-    );
-
-    let mut builder = crate::core::context_package::PackageBuilder::new(name, version)
-        .description(description)
-        .tags(tags.unwrap_or(&[]).to_vec())
-        .level(level);
-
-    if let Some(a) = author {
-        builder = builder.author(a);
+    let session = request
+        .selection
+        .wants("session")
+        // The caller's own session, never the project's latest (I07/S03).
+        .then(|| crate::core::session::caller::with_for_project(project_root, Clone::clone))
+        .flatten();
+    let plan = match crate::core::context_package::selection::plan(
+        project_root,
+        request,
+        session.as_ref(),
+    ) {
+        Ok(plan) => plan,
+        Err(e) => return format!("ERROR: build failed: {e}"),
+    };
+    if preview {
+        return plan.render(true);
     }
-    if let Some(s) = scope {
-        builder = builder.scope(s);
-    }
-
-    let phash = crate::core::project_hash::hash_project_root(project_root);
-    builder = builder.project_hash(&phash);
-
-    if level >= 2 {
-        builder.build_context_graph(project_root);
-    }
-
-    if requested_layers.contains(&"knowledge") || requested_layers.contains(&"patterns") {
-        builder = builder.add_knowledge_from_project(project_root);
-    }
-    if requested_layers.contains(&"patterns") {
-        builder = builder.add_patterns_from_project(project_root);
-    }
-    if requested_layers.contains(&"graph") {
-        builder = builder.add_graph_from_project(project_root);
-    }
-    if requested_layers.contains(&"session")
-        && let Some(session) = crate::core::session::SessionState::load_latest()
-    {
-        builder = builder.add_session(&session);
-    }
-    if requested_layers.contains(&"gotchas") {
-        builder = builder.add_gotchas_from_project(project_root);
-    }
-
-    match builder.build() {
-        Ok((manifest, content)) => {
-            let registry = match crate::core::context_package::LocalRegistry::open() {
-                Ok(r) => r,
-                Err(e) => return format!("ERROR: cannot open registry: {e}"),
-            };
-
-            match registry.install(&manifest, &content) {
-                Ok(dir) => {
-                    let layers_str = manifest
-                        .layers
-                        .iter()
-                        .map(crate::core::context_package::PackageLayer::as_str)
-                        .collect::<Vec<_>>()
-                        .join(", ");
-                    format!(
-                        "Package created:\n  Name: {}\n  Version: {}\n  Level: {}\n  Layers: {}\n  Knowledge facts: {}\n  Graph nodes: {}\n  Patterns: {}\n  Gotchas: {}\n  Size: {} bytes\n  Stored: {}",
-                        manifest.name,
-                        manifest.version,
-                        manifest.conformance_level.unwrap_or(1),
-                        layers_str,
-                        manifest.stats.knowledge_facts,
-                        manifest.stats.graph_nodes,
-                        manifest.stats.pattern_count,
-                        manifest.stats.gotcha_count,
-                        manifest.integrity.byte_size,
-                        dir.display()
-                    )
-                }
-                Err(e) => format!("ERROR: install failed: {e}"),
-            }
-        }
-        Err(e) => format!("ERROR: build failed: {e}"),
+    let registry = match crate::core::context_package::LocalRegistry::open() {
+        Ok(r) => r,
+        Err(e) => return format!("ERROR: cannot open registry: {e}"),
+    };
+    match registry.install_local_build(&plan.manifest, &plan.content) {
+        Ok(dir) => format!(
+            "Package created: {}@{} (level {})\n{}  Stored: {}",
+            plan.manifest.name,
+            plan.manifest.version,
+            plan.manifest.conformance_level.unwrap_or(1),
+            plan.render(false),
+            dir.display()
+        ),
+        Err(e) => format!("ERROR: install failed: {e}"),
     }
 }
 
@@ -281,9 +228,9 @@ pub fn handle_install(name: &str, version: Option<&str>, project_root: &str) -> 
         &resolved_ver
     };
 
-    match registry.load_package(name, ver) {
-        Ok((manifest, content)) => {
-            match crate::core::context_package::load_package(&manifest, &content, project_root) {
+    match registry.load_admitted(name, ver) {
+        Ok(package) => {
+            match crate::core::context_package::load_admitted_package(&package, project_root) {
                 Ok(report) => format!("{report}\nPackage applied successfully."),
                 Err(e) => format!("ERROR: load failed: {e}"),
             }
@@ -341,8 +288,8 @@ pub fn handle_import(file_path: &str, apply: bool, project_root: &str) -> String
     } else {
         crate::core::context_package::registry::SignaturePolicy::RequireTrustedSigner
     };
-    match registry.import_from_file(std::path::Path::new(file_path), policy) {
-        Ok(manifest) => {
+    match registry.import_from_file_checked(std::path::Path::new(file_path), policy) {
+        Ok((manifest, coverage)) => {
             let layers_str = manifest
                 .layers
                 .iter()
@@ -357,11 +304,18 @@ pub fn handle_import(file_path: &str, apply: bool, project_root: &str) -> String
                 layers_str,
                 manifest.integrity.byte_size,
             );
+            // K02: local installs take unsigned and identity-only packages.
+            if let Some(gap) = crate::core::context_package::signing::signature_gap(coverage) {
+                out.push_str(&format!("  WARNING: package is {gap}\n"));
+            }
             if apply {
                 match crate::core::context_package::LocalRegistry::open() {
-                    Ok(reg) => match reg.load_package(&manifest.name, &manifest.version) {
-                        Ok((m, c)) => {
-                            match crate::core::context_package::load_package(&m, &c, project_root) {
+                    Ok(reg) => match reg.load_admitted(&manifest.name, &manifest.version) {
+                        Ok(package) => {
+                            match crate::core::context_package::load_admitted_package(
+                                &package,
+                                project_root,
+                            ) {
                                 Ok(report) => {
                                     out.push_str(&format!("{report}\nPackage applied."));
                                 }
@@ -379,19 +333,26 @@ pub fn handle_import(file_path: &str, apply: bool, project_root: &str) -> String
     }
 }
 
-pub fn handle_auto_load(name: Option<&str>, version: Option<&str>, enable: bool) -> String {
+/// Auto-load is bound to `project_root` (V03): enabling or disabling it, and
+/// the listing, concern this project only.
+pub fn handle_auto_load(
+    project_root: &str,
+    name: Option<&str>,
+    version: Option<&str>,
+    enable: bool,
+) -> String {
     let registry = match crate::core::context_package::LocalRegistry::open() {
         Ok(r) => r,
         Err(e) => return format!("ERROR: {e}"),
     };
 
     let Some(name) = name else {
-        return match registry.auto_load_packages() {
+        return match registry.auto_load_packages(project_root) {
             Ok(entries) => {
                 if entries.is_empty() {
-                    "No packages set for auto-load.".to_string()
+                    "No packages set for auto-load in this project.".to_string()
                 } else {
-                    let mut out = "Auto-load packages:\n".to_string();
+                    let mut out = "Auto-load packages (this project):\n".to_string();
                     for e in &entries {
                         out.push_str(&format!("- {} v{}\n", e.name, e.version));
                     }
@@ -420,12 +381,12 @@ pub fn handle_auto_load(name: Option<&str>, version: Option<&str>, enable: bool)
         &resolved_ver
     };
 
-    match registry.set_auto_load(name, ver, enable) {
+    match registry.set_auto_load(name, ver, enable, project_root) {
         Ok(()) => {
             if enable {
-                format!("Auto-load enabled for {name}@{ver}")
+                format!("Auto-load enabled for {name}@{ver} in this project")
             } else {
-                format!("Auto-load disabled for {name}@{ver}")
+                format!("Auto-load disabled for {name}@{ver} in this project")
             }
         }
         Err(e) => format!("ERROR: {e}"),
@@ -454,12 +415,19 @@ pub fn handle_summary(project_root: &str) -> String {
                 e.name,
                 e.version,
                 e.layers.join(", "),
-                if e.auto_load { " [auto-load]" } else { "" }
+                if e.auto_loads_into(project_root) {
+                    " [auto-load]"
+                } else {
+                    ""
+                }
             ));
         }
     }
 
-    let auto_count = matching.iter().filter(|e| e.auto_load).count();
+    let auto_count = matching
+        .iter()
+        .filter(|e| e.auto_loads_into(project_root))
+        .count();
     out.push_str(&format!("Auto-load: {auto_count} package(s)\n"));
     out
 }
@@ -627,7 +595,7 @@ fn format_markdown(
 fn collect_related_tests(changed: &[ChangedFile], project_root: &str) -> Vec<String> {
     let mut all: BTreeSet<String> = BTreeSet::new();
     for c in changed {
-        for t in crate::tools::ctx_review::find_related_tests(&c.path, project_root) {
+        for t in find_related_tests(&c.path, project_root) {
             all.insert(t);
         }
     }
@@ -831,4 +799,93 @@ fn dedup_changes(changes: Vec<ChangedFile>) -> Vec<ChangedFile> {
         }
     }
     out
+}
+
+/// Finds test files related to the given source file by naming conventions.
+fn find_related_tests(file_path: &str, root: &str) -> Vec<String> {
+    let p = std::path::Path::new(file_path);
+    let Some(stem) = p.file_stem().and_then(|s| s.to_str()) else {
+        return vec![];
+    };
+
+    let ext = p.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+    let patterns = vec![
+        format!("{stem}_test.{ext}"),
+        format!("{stem}.test.{ext}"),
+        format!("{stem}.spec.{ext}"),
+        format!("{stem}_spec.{ext}"),
+        format!("test_{stem}.{ext}"),
+        format!("{stem}_tests.{ext}"),
+        format!("{stem}.test.ts"),
+        format!("{stem}.test.tsx"),
+        format!("{stem}.spec.ts"),
+        format!("{stem}.spec.tsx"),
+        format!("{stem}_test.rs"),
+        format!("{stem}_test.py"),
+        format!("test_{stem}.py"),
+        format!("{stem}_test.go"),
+    ];
+
+    let root_path = std::path::Path::new(root);
+    let mut found = Vec::new();
+
+    fn walk_for_tests(
+        dir: &std::path::Path,
+        patterns: &[String],
+        root: &std::path::Path,
+        found: &mut Vec<String>,
+        max_depth: usize,
+    ) {
+        if max_depth == 0 {
+            return;
+        }
+        let Ok(entries) = std::fs::read_dir(dir) else {
+            return;
+        };
+        for entry in entries.flatten() {
+            let path = entry.path();
+            let name = entry.file_name().to_string_lossy().to_string();
+
+            if name.starts_with('.') || name == "node_modules" || name == "target" {
+                continue;
+            }
+
+            if path.is_dir() {
+                walk_for_tests(&path, patterns, root, found, max_depth - 1);
+            } else if patterns.contains(&name) {
+                let rel = path
+                    .strip_prefix(root)
+                    .unwrap_or(&path)
+                    .to_string_lossy()
+                    .to_string();
+                found.push(rel);
+            }
+        }
+    }
+
+    walk_for_tests(root_path, &patterns, root_path, &mut found, 8);
+    found.sort();
+    found.dedup();
+    found
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn find_related_tests_patterns() {
+        let dir = tempfile::tempdir().unwrap();
+        let src = dir.path().join("utils.ts");
+        std::fs::write(&src, "export function foo() {}").unwrap();
+        let test_file = dir.path().join("utils.test.ts");
+        std::fs::write(&test_file, "test('foo', () => {})").unwrap();
+        let spec_file = dir.path().join("utils.spec.ts");
+        std::fs::write(&spec_file, "describe('foo', () => {})").unwrap();
+
+        let found = find_related_tests("utils.ts", dir.path().to_str().unwrap());
+        assert!(found.iter().any(|f| f.contains("utils.test.ts")));
+        assert!(found.iter().any(|f| f.contains("utils.spec.ts")));
+    }
 }

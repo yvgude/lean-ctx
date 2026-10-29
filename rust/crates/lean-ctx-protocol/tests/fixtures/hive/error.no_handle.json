@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "forbidden_right",
+    "message": "Choose a Swarm handle first.",
+    "reason": "no_handle"
+  }
+}

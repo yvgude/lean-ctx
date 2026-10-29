@@ -1,0 +1,19 @@
+{
+  "cursors": {
+    "#acme/payments": 41,
+    "~checkout-latency": 7
+  },
+  "presence": [
+    {
+      "role": "backend",
+      "state": "active",
+      "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+    }
+  ],
+  "protocol": "2.0",
+  "subscribe": [
+    "#acme/payments",
+    "~checkout-latency"
+  ],
+  "t": "hello"
+}

@@ -194,6 +194,15 @@ fn corpus() -> Vec<Case> {
             "b3BlbnNzaC1rZXktdjEAAAAABGZha2U=".into(),
         ),
         Case::supported(
+            "url_credentials",
+            "https_password_url",
+            wrap(&format!(
+                "REMOTE={}deploy:{db_password}@git.example.test/team/repo.git",
+                "https://"
+            )),
+            db_password.clone(),
+        ),
+        Case::supported(
             "db_url",
             "postgres_password_url",
             wrap(&format!(

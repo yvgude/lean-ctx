@@ -1,0 +1,13 @@
+{
+  "case": "publish_without_worker",
+  "base": "bus/publish.question.json",
+  "patch": [
+    {
+      "op": "remove",
+      "path": "/worker_id"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

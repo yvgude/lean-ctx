@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "This vault converts from another source.",
+    "reason": "conversion_source"
+  }
+}

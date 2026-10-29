@@ -1,0 +1,8 @@
+{
+  "error": {
+    "actual": 4,
+    "code": "revision_conflict",
+    "expected": 3,
+    "message": "Knowledge moved on."
+  }
+}

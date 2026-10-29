@@ -1,0 +1,20 @@
+{
+  "mode": "unattended",
+  "tasks_per_day": 10,
+  "tokens_per_day": 2000000,
+  "usd_cents_per_day": 500,
+  "window": {
+    "from": "22:00",
+    "to": "06:00",
+    "days": [
+      "mon",
+      "tue",
+      "wed",
+      "thu",
+      "fri"
+    ],
+    "tz": "Europe/Zurich"
+  },
+  "max_sessions": 2,
+  "engine_approved": false
+}

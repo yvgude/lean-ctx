@@ -1,0 +1,20 @@
+{
+  "action": "veto",
+  "created_at": 1792800021000,
+  "id": "ctl_vvvvvvvvvvvvvvvvvvvvvvvvva",
+  "issued_by": {
+    "kind": "person",
+    "label": "yves",
+    "user_id": "2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f"
+  },
+  "key_id": "fac2346807329f09",
+  "lifted_at": 1792800030000,
+  "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+  "reason": "The migration needs a maintainer, not a reviewer.",
+  "ref": {
+    "id": "msg_00000000000000a4",
+    "kind": "handoff"
+  },
+  "signature": "e172f754bed8d9d38c4314185aa4d54e8262b616cf4defd42d3f1c0739a9a3b05761480dc5da7016d986ddd0aa32c1d6a403638338f2f62b5bb98c9e01d64f0a",
+  "target": "bus"
+}

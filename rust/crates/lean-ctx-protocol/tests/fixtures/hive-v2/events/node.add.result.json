@@ -1,0 +1,65 @@
+{
+  "actor": {
+    "kind": "worker"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqaq",
+  "body": {
+    "artefacts": [
+      {
+        "kind": "material",
+        "ref": "flamegraph-checkout.svg",
+        "sha256": "d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7d7"
+      }
+    ],
+    "body_nonce": "17171717171717171717171717171717",
+    "goal": "n_aaaaaaaaaaaaaaaaaaaaaadaai",
+    "summary": "Flame graph attached; JSON encoding, the tax lookup and TLS session setup dominate.",
+    "usage": {
+      "source": "cli_summary",
+      "tasks": 1,
+      "tokens": 182000,
+      "usd_cents": 41
+    }
+  },
+  "body_commit": "c63e8f41e9a2cde6eb9d9eff40f249907b2eb8fdbec76e50902332444a2e4b52",
+  "capture": {
+    "evidence": "observed",
+    "gate_version": 1,
+    "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+  },
+  "causal_base": 3,
+  "event_id": "01M5NKA5X0005G00000000W004",
+  "hlc": {
+    "counter": 0,
+    "node": "0e9c7f2455744dc1",
+    "wall_ms": 1792800004000
+  },
+  "key_id": "a81b399e9440c8ad",
+  "node_type": "result",
+  "op": "node.add",
+  "place": {
+    "id": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02",
+    "kind": "swarm"
+  },
+  "provenance": "workspace",
+  "provenance_claim": "workspace",
+  "received_at": 1792800004350,
+  "review_id": "rv_aaaaaaaaaaaaaaaaaaaaaadxam",
+  "review_state": "unconfirmed",
+  "reviewed_by": "none",
+  "schema": "leanctx.hive.event/v2",
+  "screening": {
+    "counts": {
+      "forbidden": 0,
+      "local_path": 0,
+      "pii": 0,
+      "redaction": 0,
+      "secret": 0
+    },
+    "scanner_version": 1
+  },
+  "seq": 4,
+  "signature": "c63da3b70d0d0a9bf3f0b17ae6d84c0d43d7fd3b73c496d872f7ef886ed2093851fd7c5a4ba40759d0c7b62a6bfe88ba102d2392e0c3f9acfa63363d6bbcaf02",
+  "target": "n_aaaaaaaaaaaaaaaaaaaaaadaam",
+  "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+}

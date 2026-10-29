@@ -4,6 +4,7 @@ use serde_json::{Map, Value, json};
 
 use crate::server::tool_trait::{
     McpTool, ToolContext, ToolOutput, get_bool, get_int, get_str, get_str_array, get_usize,
+    tool_execution_error,
 };
 use crate::tool_defs::tool_def;
 
@@ -22,6 +23,7 @@ impl McpTool for CtxPackTool {
             Context Package Manager — create, install, manage portable context packages\n\
             with knowledge, graph, session patterns, and gotchas.\n\
             Actions: pr, create, list, info, remove, install, export, import, auto_load, summary, bundle.\n\
+            create: select layers/categories/keys/facts; preview:true lists what would be packed, writes nothing.\n\
             bundle: one budgeted XML document (task-ranked files, signatures, tree) that fits a chat input box.\n\
             Saves tokens: pre-built context state (avoids re-building).",
             json!({
@@ -106,6 +108,29 @@ impl McpTool for CtxPackTool {
                         "type": "array",
                         "items": { "type": "string" },
                         "description": "Layers to include: knowledge|graph|session|patterns|gotchas"
+                    },
+                    "categories": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Only facts of these categories (create)"
+                    },
+                    "keys": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Only facts with these keys (create)"
+                    },
+                    "facts": {
+                        "type": "array",
+                        "items": { "type": "string" },
+                        "description": "Explicit facts as category/key (create)"
+                    },
+                    "preview": {
+                        "type": "boolean",
+                        "description": "Show what create would pack (items, status, sources, validity); writes nothing"
+                    },
+                    "redistributable": {
+                        "type": "boolean",
+                        "description": "Grant recipients the right to pass the package on (create)"
                     },
                     "level": {
                         "type": "integer",
@@ -216,24 +241,29 @@ impl McpTool for CtxPackTool {
             "create" => {
                 let name = get_str(args, "name")
                     .ok_or_else(|| ErrorData::invalid_params("name is required for create", None))?;
-                let version = get_str(args, "version");
-                let description = get_str(args, "description");
-                let author = get_str(args, "author");
-                let tags = get_str_array(args, "tags");
-                let layers = get_str_array(args, "layers");
-                let level = get_int(args, "level").and_then(|l| u32::try_from(l).ok());
-                let scope = get_str(args, "scope");
-                crate::tools::ctx_pack::handle_create(
-                    &project_root,
-                    &name,
-                    version.as_deref(),
-                    description.as_deref(),
-                    author.as_deref(),
-                    tags.as_deref(),
-                    layers.as_deref(),
-                    level,
-                    scope.as_deref(),
-                )
+                use crate::core::context_package::selection::{PackRequest, PackSelection};
+                let request = PackRequest {
+                    name,
+                    version: get_str(args, "version").unwrap_or_else(|| "1.0.0".into()),
+                    description: get_str(args, "description").unwrap_or_default(),
+                    author: get_str(args, "author"),
+                    tags: get_str_array(args, "tags").unwrap_or_default(),
+                    level: get_int(args, "level")
+                        .and_then(|l| u32::try_from(l).ok())
+                        .unwrap_or(1)
+                        .clamp(1, 3),
+                    scope: get_str(args, "scope"),
+                    private: false,
+                    redistributable: get_bool(args, "redistributable").unwrap_or(false),
+                    selection: PackSelection {
+                        layers: get_str_array(args, "layers").unwrap_or_default(),
+                        categories: get_str_array(args, "categories").unwrap_or_default(),
+                        keys: get_str_array(args, "keys").unwrap_or_default(),
+                        facts: get_str_array(args, "facts").unwrap_or_default(),
+                    },
+                };
+                let preview = get_bool(args, "preview").unwrap_or(false);
+                crate::tools::ctx_pack::handle_create(&project_root, &request, preview)
             }
             "list" => crate::tools::ctx_pack::handle_list(),
             "info" => {
@@ -260,12 +290,17 @@ impl McpTool for CtxPackTool {
                     ErrorData::invalid_params("name is required for export", None)
                 })?;
                 let version = get_str(args, "version");
-                let file = get_str(args, "file");
+                let file = get_str(args, "file")
+                    .map(|raw| crate::core::workspace_authority::confine(&raw, &project_root, true))
+                    .transpose()
+                    .map_err(|error| ErrorData::invalid_params(error, None))?;
                 crate::tools::ctx_pack::handle_export(&name, version.as_deref(), file.as_deref())
             }
             "import" => {
                 let file = get_str(args, "file")
                     .ok_or_else(|| ErrorData::invalid_params("file is required for import", None))?;
+                let file = crate::core::workspace_authority::confine(&file, &project_root, false)
+                    .map_err(|error| ErrorData::invalid_params(error, None))?;
                 let apply = get_bool(args, "apply").unwrap_or(false);
                 crate::tools::ctx_pack::handle_import(&file, apply, &project_root)
             }
@@ -274,6 +309,7 @@ impl McpTool for CtxPackTool {
                 let version = get_str(args, "version");
                 let enable = get_bool(args, "enable").unwrap_or(true);
                 crate::tools::ctx_pack::handle_auto_load(
+                    &project_root,
                     name.as_deref(),
                     version.as_deref(),
                     enable,
@@ -340,16 +376,36 @@ fn handle_bundle(
             "emit must be xml, plain or both (got '{emit}')"
         )));
     }
-    let bundle = context_bundle::build(&opts).map_err(invalid)?;
+    // The reads of the build run in the request's project scope and source
+    // capture (dispatch binds both). A bundle is a mixed output — tree,
+    // summary, task and knowledge text around the files — so `build` marks
+    // the capture incomplete and this tool declares no source set
+    // (`publishes_every_source` stays `false`). A bundle that could not be
+    // built, or that does not fit its limit, is an error result.
+    let bundle = context_bundle::build(&opts).map_err(tool_execution_error)?;
     let report = bundle.report();
+    if !bundle.fits() {
+        return Err(tool_execution_error(format!(
+            "{report}bundle is {} {} but the limit is {} — raise limit or narrow path",
+            bundle.size, bundle.unit, bundle.limit
+        )));
+    }
 
     if let Some(file) = ctx.resolved_path("file") {
         if emit == "plain" {
             return Err(invalid("emit=plain writes no bundle; drop file".into()));
         }
-        ctx.ensure_writable(file).map_err(invalid)?;
-        std::fs::write(file, &bundle.xml)
-            .map_err(|e| ErrorData::internal_error(format!("cannot write {file}: {e}"), None))?;
+        // A file leaves the delivery path of this result: it stays inside
+        // the project (the export rule) and receives the released text.
+        let output = context_bundle::export::destination(
+            "ctx_pack",
+            std::path::Path::new(project_root),
+            std::path::Path::new(file),
+        )
+        .map_err(invalid)?;
+        let released = released_bundle(bundle.xml).map_err(tool_execution_error)?;
+        std::fs::write(&output, released)
+            .map_err(|e| tool_execution_error(format!("cannot write {file}: {e}")))?;
         return Ok(format!("{report}written: {file}"));
     } else if let Some(err) = ctx.path_error("file") {
         return Err(invalid(format!("file: {err}")));
@@ -359,6 +415,28 @@ fn handle_bundle(
         "both" => format!("{report}\n{}", bundle.xml),
         _ => bundle.xml,
     })
+}
+
+/// The bundle as the release point lets it leave, for a destination that is
+/// not this call's result (the `file`): the same sequence every tool result
+/// passes — release, then the output redaction. `Err` is the content-free
+/// notice of a refused release; nothing is written then.
+fn released_bundle(xml: String) -> Result<String, String> {
+    use rmcp::model::{CallToolResult, ContentBlock};
+    let released = crate::server::policy_guard::release_result(
+        "ctx_pack",
+        CallToolResult::success(vec![ContentBlock::text(xml)]),
+    );
+    let text = released
+        .content
+        .iter()
+        .filter_map(|block| block.as_text().map(|text| text.text.clone()))
+        .collect::<Vec<_>>()
+        .join("\n");
+    if released.is_error == Some(true) {
+        return Err(text);
+    }
+    Ok(crate::server::policy_guard::redact_model_text(&text))
 }
 
 #[cfg(test)]
@@ -447,5 +525,93 @@ mod tests {
             !out.exists(),
             "no bundle may be written into a read-only root"
         );
+    }
+
+    /// V01: `create` with a selection packs exactly the selected facts, each
+    /// with its status; `preview` lists exactly that and writes nothing. A
+    /// fact merged from a package without a redistribution grant stays out
+    /// (V02).
+    #[test]
+    fn create_packs_the_selection_and_preview_shows_it_without_writing() {
+        use crate::core::context_package::LocalRegistry;
+        use crate::core::knowledge::{FactStatus, ProjectKnowledge};
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let dir = project();
+        let root = dir.path().to_string_lossy().into_owned();
+        ProjectKnowledge::mutate_locked(&root, |k| {
+            let policy = crate::core::memory_policy::MemoryPolicy::default();
+            for (category, key, value) in [
+                ("architecture", "db", "orders live in postgres 16"),
+                ("architecture", "cache", "sessions are cached in redis"),
+                ("architecture", "queue", "jobs run on a vendor queue"),
+                ("decision", "style", "the parser is hand-written"),
+            ] {
+                k.remember(category, key, value, "fixture", 0.9, &policy);
+                let fact = k.facts.last_mut().unwrap();
+                match key {
+                    "db" => fact.status = Some(FactStatus::Verified),
+                    "queue" => fact.imported_from = Some("vendor-notes@1.0.0".into()),
+                    _ => {}
+                }
+            }
+        })
+        .unwrap();
+        let ctx = ctx_for(dir.path(), None);
+        let create = |preview: bool| {
+            let args = json!({
+                "action": "create", "name": "selected", "layers": ["knowledge"],
+                "categories": ["architecture"], "preview": preview,
+            });
+            CtxPackTool
+                .handle(args.as_object().unwrap(), &ctx)
+                .unwrap()
+                .text
+        };
+
+        let preview = create(true);
+        assert!(
+            LocalRegistry::open().unwrap().list().unwrap().is_empty(),
+            "a preview writes nothing: {preview}"
+        );
+        assert!(
+            preview.contains("Knowledge facts: 2 (1 verified, 1 assumption)"),
+            "{preview}"
+        );
+        assert!(preview.contains("[verified] architecture/db: orders live in postgres 16"));
+        assert!(
+            preview.contains("[assumption] architecture/cache"),
+            "{preview}"
+        );
+        assert!(preview.contains("Not selected: 1 fact(s)"), "{preview}");
+        assert!(
+            preview.contains("Withheld: architecture/queue — merged from vendor-notes@1.0.0"),
+            "{preview}"
+        );
+        assert!(!preview.contains("decision/style"), "{preview}");
+
+        let created = create(false);
+        let (_, content) = LocalRegistry::open()
+            .unwrap()
+            .load_package("selected", "1.0.0")
+            .unwrap_or_else(|e| panic!("{e}: {created}"));
+        let packed: Vec<_> = content
+            .knowledge
+            .unwrap()
+            .facts
+            .into_iter()
+            .map(|f| (format!("{}/{}", f.category, f.key), f.status))
+            .collect();
+        assert_eq!(
+            packed,
+            [
+                ("architecture/db".into(), Some(FactStatus::Verified)),
+                ("architecture/cache".into(), Some(FactStatus::Assumption)),
+            ]
+        );
+        for (fact, status) in &packed {
+            let line = format!("[{}] {fact}:", status.unwrap().as_str());
+            assert!(preview.contains(&line), "preview lacks {line}: {preview}");
+        }
     }
 }

@@ -57,10 +57,33 @@ fn bazsi_workflow_spec() -> WorkflowSpec {
     }
 }
 
+/// The `LEAN_CTX_DATA_DIR` this test process was started with, kept while a
+/// test has replaced it. Restoring it (instead of removing the variable)
+/// keeps later tests of this binary on the data directory the runner chose,
+/// not on the developer's real one.
+static AMBIENT_DATA_DIR: std::sync::Mutex<AmbientDataDir> =
+    std::sync::Mutex::new(AmbientDataDir::InPlace);
+
+enum AmbientDataDir {
+    /// No test has replaced the variable (or it was restored).
+    InPlace,
+    /// Replaced; the value it had before (`None`: it was not set).
+    Replaced(Option<std::ffi::OsString>),
+}
+
 fn setup_data_dir() -> std::path::PathBuf {
     let dir = std::env::temp_dir().join("lean_ctx_bazsi_test");
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
+    {
+        let mut ambient = AMBIENT_DATA_DIR
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner);
+        // A test that failed before its cleanup leaves the first value saved.
+        if matches!(*ambient, AmbientDataDir::InPlace) {
+            *ambient = AmbientDataDir::Replaced(std::env::var_os("LEAN_CTX_DATA_DIR"));
+        }
+    }
     // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
     unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", dir.to_str().unwrap()) };
     dir
@@ -69,8 +92,19 @@ fn setup_data_dir() -> std::path::PathBuf {
 fn cleanup_data_dir() {
     let dir = std::env::temp_dir().join("lean_ctx_bazsi_test");
     let _ = std::fs::remove_dir_all(&dir);
-    // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
-    unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    let ambient = std::mem::replace(
+        &mut *AMBIENT_DATA_DIR
+            .lock()
+            .unwrap_or_else(std::sync::PoisonError::into_inner),
+        AmbientDataDir::InPlace,
+    );
+    if let AmbientDataDir::Replaced(Some(value)) = ambient {
+        // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
+        unsafe { std::env::set_var("LEAN_CTX_DATA_DIR", value) };
+    } else {
+        // SAFETY: `#[serial]` (serial_test) ensures no other test in this binary runs concurrently.
+        unsafe { std::env::remove_var("LEAN_CTX_DATA_DIR") };
+    }
 }
 
 // ==========================================================================
@@ -257,7 +291,11 @@ fn scenario_is_workflow_stale_hours() {
 // Bazsi's problem: "the cache even if invalidated sometimes returns that
 // the content has already been cached, while i did not see the read"
 
+// `#[serial]`: the read cache's stub decision depends on the data directory
+// (conversation scope) and on `LEAN_CTX_META`, both of which the serial tests
+// of this binary replace while they run.
 #[test]
+#[serial]
 fn scenario_cache_hit_message_format() {
     use lean_ctx::core::cache::SessionCache;
 

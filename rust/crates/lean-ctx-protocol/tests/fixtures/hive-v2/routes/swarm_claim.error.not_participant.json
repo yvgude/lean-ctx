@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "forbidden",
+    "message": "Join the swarm first.",
+    "reason": "not_participant"
+  }
+}

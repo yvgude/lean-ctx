@@ -1,0 +1,8 @@
+{
+  "claim": {
+    "fencing_token": 7,
+    "lease_id": "lse_01jbtask7"
+  },
+  "reason": "Needs access to the payments sandbox",
+  "schema": "leanctx.hive.task-release/v1"
+}

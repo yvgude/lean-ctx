@@ -1,5 +1,6 @@
 use chrono::Utc;
 use serde::Deserialize;
+use std::path::Path;
 
 use super::helpers::{detect_project_root_for_dashboard, extract_query_param, json_err, json_ok};
 
@@ -18,14 +19,166 @@ pub(super) fn handle(
     }
 }
 
+fn with_dashboard_project<T>(
+    root: &str,
+    operation: impl FnOnce(
+        &str,
+        &crate::core::context_admission::stores::StoreAdmission,
+        &crate::core::policy::runtime::PublicationAuthority,
+    ) -> Result<T, String>,
+) -> Result<T, String> {
+    let root_path = Path::new(root);
+    if crate::core::pathutil::is_broad_or_unsafe_root(root_path) {
+        return Err("dashboard project scope unavailable".into());
+    }
+    let canonical_root = root_path
+        .canonicalize()
+        .map_err(|_| "dashboard project scope unavailable".to_string())?;
+    let project_hash = crate::core::project_hash::hash_project_root(root);
+    let admission = crate::core::context_admission::stores::StoreAdmission::current();
+
+    crate::core::policy::runtime::with_explicit_project_source_view(&canonical_root, |authority| {
+        let result = operation(&project_hash, &admission, authority)?;
+        admission.authorize_publication(authority)?;
+        Ok(result)
+    })?
+}
+
+fn admitted_dashboard_text(text: &str) -> Result<String, String> {
+    let result = crate::core::context_admission::admit_tool_output(
+        text,
+        crate::core::context_admission::OutputCompleteness::complete(),
+    );
+    result
+        .text
+        .ok_or_else(|| "dashboard content withheld by current policy".to_string())
+}
+
+fn admitted_dashboard_json(value: &serde_json::Value) -> Result<String, String> {
+    let raw =
+        serde_json::to_string(value).map_err(|_| "dashboard response unavailable".to_string())?;
+    let admitted = admitted_dashboard_text(&raw)?;
+    if admitted != raw {
+        return Err("dashboard response would require policy redaction".into());
+    }
+    Ok(raw)
+}
+
+fn dashboard_json_response(
+    response: Result<String, String>,
+) -> (&'static str, &'static str, String) {
+    match response {
+        Ok(json) => ("200 OK", "application/json", json),
+        Err(_) => (
+            "503 Service Unavailable",
+            "application/json",
+            json_err("dashboard memory unavailable under current policy"),
+        ),
+    }
+}
+
+fn episodes_json(root: &str) -> Result<String, String> {
+    with_dashboard_project(root, |hash, admission, _authority| {
+        let store = crate::core::episodic_memory::EpisodicStore::load_admitted(hash, admission)?;
+        let stats = store.stats();
+        let recent: Vec<_> = store.recent(20).into_iter().cloned().collect();
+        admitted_dashboard_json(&serde_json::json!({
+            "project_root": root,
+            "project_hash": hash,
+            "stats": {
+                "total_episodes": stats.total_episodes,
+                "successes": stats.successes,
+                "failures": stats.failures,
+                "success_rate": stats.success_rate,
+                "total_tokens": stats.total_tokens,
+            },
+            "recent": recent,
+        }))
+    })
+}
+
+fn procedures_json(root: &str, query_str: &str) -> Result<String, String> {
+    with_dashboard_project(root, |hash, admission, _authority| {
+        let store =
+            crate::core::procedural_memory::ProceduralStore::load_admitted(hash, admission)?;
+        let raw_task = extract_query_param(query_str, "task").or_else(|| {
+            crate::core::session::SessionState::load_latest_for_project_root(root)
+                .and_then(|session| session.task.map(|task| task.description))
+        });
+        let task = raw_task
+            .map(|task| admitted_dashboard_text(&task))
+            .transpose()?;
+        let suggestions: Vec<serde_json::Value> = task.as_deref().map_or(Vec::new(), |task| {
+            store
+                .suggest(task)
+                .into_iter()
+                .take(10)
+                .map(|procedure| {
+                    serde_json::json!({
+                        "id": procedure.id,
+                        "name": procedure.name,
+                        "description": procedure.description,
+                        "confidence": procedure.confidence,
+                        "times_used": procedure.times_used,
+                        "times_succeeded": procedure.times_succeeded,
+                        "success_rate": procedure.success_rate(),
+                        "steps": procedure.steps,
+                        "activation_keywords": procedure.activation_keywords,
+                        "last_used": procedure.last_used,
+                        "created_at": procedure.created_at,
+                    })
+                })
+                .collect()
+        });
+        admitted_dashboard_json(&serde_json::json!({
+            "project_root": root,
+            "project_hash": hash,
+            "total_procedures": store.procedures.len(),
+            "task": task,
+            "suggestions": suggestions,
+            "procedures": store.procedures,
+        }))
+    })
+}
+
+fn intent_json(root: &str) -> Result<String, String> {
+    with_dashboard_project(root, |_hash, _admission, _authority| {
+        let session = crate::core::session::SessionState::load_latest_for_project_root(root)
+            .map(|session| crate::core::session::admission::for_delivery(&session))
+            .transpose()?
+            .filter(|session| session.active_structured_intent.is_some());
+        let payload = match session {
+            Some(session) => serde_json::json!({
+                "active": true,
+                "intent": session.active_structured_intent,
+            }),
+            None => serde_json::json!({ "active": false }),
+        };
+        admitted_dashboard_json(&payload)
+    })
+}
+
 /// #1284: today's (UTC) totals from metering.jsonl. Unlike the savings ledger,
 /// metering records EVERY ctx_* call including zero-saving ones, so this is
 /// the honest denominator. Only today's tail of the file is read; the result is
 /// cached on (file length, day) because the Live view polls every few seconds.
-fn today_metering_summary() -> crate::core::metering::DayTotals {
+/// Today's metered totals: the device's, or for a named project its share.
+fn today_metering_summary(
+    scope: Option<&crate::core::savings_ledger::ProjectScope>,
+) -> crate::core::metering::DayTotals {
     use crate::core::metering::{DayTotals, MeterStore};
     use std::sync::Mutex;
     static CACHE: Mutex<Option<(u64, chrono::NaiveDate, DayTotals)>> = Mutex::new(None);
+
+    if let Some(scope) = scope {
+        let Ok(store) = MeterStore::from_data_dir() else {
+            return DayTotals::default();
+        };
+        let keys = scope.repo_hashes();
+        return store.day_totals_where(Utc::now().date_naive(), |key| {
+            key.is_some_and(|key| keys.iter().any(|k| k == key))
+        });
+    }
 
     let Ok(store) = MeterStore::from_data_dir() else {
         return DayTotals::default();
@@ -52,65 +205,11 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
     match path {
         "/api/episodes" => {
             let root = detect_project_root_for_dashboard();
-            let hash = crate::core::project_hash::hash_project_root(&root);
-            let store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
-            let stats = store.stats();
-            let recent: Vec<_> = store.recent(20).into_iter().cloned().collect();
-            let payload = serde_json::json!({
-                "project_root": root,
-                "project_hash": hash,
-                "stats": {
-                    "total_episodes": stats.total_episodes,
-                    "successes": stats.successes,
-                    "failures": stats.failures,
-                    "success_rate": stats.success_rate,
-                    "total_tokens": stats.total_tokens,
-                },
-                "recent": recent,
-            });
-            let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
-            Some(("200 OK", "application/json", json))
+            Some(dashboard_json_response(episodes_json(&root)))
         }
         "/api/procedures" => {
             let root = detect_project_root_for_dashboard();
-            let hash = crate::core::project_hash::hash_project_root(&root);
-            let store = crate::core::procedural_memory::ProceduralStore::load_or_create(&hash);
-            let task = extract_query_param(query_str, "task").or_else(|| {
-                crate::core::session::SessionState::load_latest_for_project_root(&root)
-                    .and_then(|s| s.task.map(|t| t.description))
-            });
-            let suggestions: Vec<serde_json::Value> = task.as_deref().map_or(Vec::new(), |t| {
-                store
-                    .suggest(t)
-                    .into_iter()
-                    .take(10)
-                    .map(|p| {
-                        serde_json::json!({
-                            "id": p.id,
-                            "name": p.name,
-                            "description": p.description,
-                            "confidence": p.confidence,
-                            "times_used": p.times_used,
-                            "times_succeeded": p.times_succeeded,
-                            "success_rate": p.success_rate(),
-                            "steps": p.steps,
-                            "activation_keywords": p.activation_keywords,
-                            "last_used": p.last_used,
-                            "created_at": p.created_at,
-                        })
-                    })
-                    .collect()
-            });
-            let payload = serde_json::json!({
-                "project_root": root,
-                "project_hash": hash,
-                "total_procedures": store.procedures.len(),
-                "task": task,
-                "suggestions": suggestions,
-                "procedures": store.procedures,
-            });
-            let json = serde_json::to_string(&payload).unwrap_or_else(|_| "{}".to_string());
-            Some(("200 OK", "application/json", json))
+            Some(dashboard_json_response(procedures_json(&root, query_str)))
         }
         "/api/session" => {
             // The status bar promises "the task your most recent agent session
@@ -120,8 +219,17 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
             // showed "No session" while agents were active. Fall back to the
             // most recently updated session rooted in a real project
             // (skipping broad/unsafe roots like HOME or test-sandbox temp dirs).
+            // A read for a named project (`X-LeanCTX-Project`) never falls
+            // back to another project's session.
+            let named_project = matches!(
+                super::helpers::dashboard_project_binding().1,
+                super::helpers::DashboardProjectSource::Request
+            );
             let mut session = crate::core::session::SessionState::load_latest()
                 .or_else(|| {
+                    if named_project {
+                        return None;
+                    }
                     crate::core::session::SessionState::list_sessions()
                         .iter()
                         .find_map(|summary| {
@@ -142,8 +250,11 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
                 serde_json::to_value(&session.stats).unwrap_or_else(|_| serde_json::json!({}));
 
             // Today's verified savings from the savings ledger (written by all
-            // processes — MCP server, proxy, CLI). This is the source of truth.
-            let summary = crate::core::savings_ledger::summary();
+            // processes — MCP server, proxy, CLI). This is the source of truth;
+            // for a named project, only its events.
+            let summary = crate::core::savings_ledger::summary_for(
+                super::helpers::request_ledger_scope().as_ref(),
+            );
             let today = chrono::Utc::now().format("%Y-%m-%d").to_string();
             let (today_saved, today_usd, today_baseline) = summary
                 .by_day
@@ -156,7 +267,7 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
             // agent did". Ship the metering view (ALL metered ctx_* calls,
             // zero-saving ones included) and the native-passthrough count next
             // to it so the panel can label the denominator honestly.
-            let metered = today_metering_summary();
+            let metered = today_metering_summary(super::helpers::request_ledger_scope().as_ref());
             let (metered_input, metered_saved) = (metered.input_tokens, metered.savings_tokens);
             let reach =
                 crate::core::gain::reach::reach_view(crate::core::gain::reach::ReachCounts {
@@ -182,7 +293,12 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
                 "reach": reach,
             });
 
-            let global = crate::core::stats::load_for_display();
+            // A named project's session is enriched with that project's own
+            // counters, never the device's.
+            let global = match super::helpers::request_ledger_scope() {
+                Some(scope) if named_project => crate::core::stats::load_for_project(&scope),
+                _ => crate::core::stats::load_for_display(),
+            };
             let g_cmds = global.total_commands;
             let g_input = global.total_input_tokens;
             let g_output = global.total_output_tokens;
@@ -269,39 +385,8 @@ fn get_routes(path: &str, query_str: &str) -> Option<(&'static str, &'static str
             Some(("200 OK", "application/json", json))
         }
         "/api/intent" => {
-            let session_path = crate::core::data_dir::lean_ctx_data_dir()
-                .ok()
-                .map(|d| d.join("sessions"));
-            let mut intent_data = serde_json::json!({"active": false});
-            if let Some(dir) = session_path
-                && let Ok(entries) = std::fs::read_dir(&dir)
-            {
-                let mut newest: Option<(std::time::SystemTime, std::path::PathBuf)> = None;
-                for e in entries.flatten() {
-                    if e.path().extension().is_some_and(|ext| ext == "json")
-                        && let Ok(meta) = e.metadata()
-                    {
-                        let mtime = meta.modified().unwrap_or(std::time::UNIX_EPOCH);
-                        if newest.as_ref().is_none_or(|(t, _)| mtime > *t) {
-                            newest = Some((mtime, e.path()));
-                        }
-                    }
-                }
-                if let Some((_, path)) = newest
-                    && let Ok(content) = std::fs::read_to_string(&path)
-                    && let Ok(session) = serde_json::from_str::<serde_json::Value>(&content)
-                    && let Some(intent) = session.get("active_structured_intent")
-                    && !intent.is_null()
-                {
-                    intent_data = serde_json::json!({
-                        "active": true,
-                        "intent": intent,
-                        "session_file": path.file_name().unwrap_or_default().to_string_lossy(),
-                    });
-                }
-            }
-            let json = serde_json::to_string(&intent_data).unwrap_or_else(|_| "{}".to_string());
-            Some(("200 OK", "application/json", json))
+            let root = detect_project_root_for_dashboard();
+            Some(dashboard_json_response(intent_json(&root)))
         }
         _ => None,
     }
@@ -363,29 +448,16 @@ struct EpisodeAnnotateReq {
 
 fn post_episodes_annotate(body: &str) -> (&'static str, &'static str, String) {
     let req: EpisodeAnnotateReq = match serde_json::from_str(body) {
-        Ok(r) => r,
-        Err(e) => {
+        Ok(request) => request,
+        Err(error) => {
             return (
                 "400 Bad Request",
                 "application/json",
-                json_err(&format!("invalid JSON: {e}")),
+                json_err(&format!("invalid JSON: {error}")),
             );
         }
     };
-    let root = detect_project_root_for_dashboard();
-    let hash = crate::core::project_hash::hash_project_root(&root);
-    let mut store = crate::core::episodic_memory::EpisodicStore::load_or_create(&hash);
-    let n = store.episodes.len();
-    if n == 0 || req.episode_index >= n {
-        return (
-            "400 Bad Request",
-            "application/json",
-            json_err("episode_index out of range (newest-first: 0 = most recent)"),
-        );
-    }
-    // Align with /api/episodes `recent` ordering (most recent first).
-    let real_idx = n - 1 - req.episode_index;
-    let new_outcome = match req.outcome.to_lowercase().as_str() {
+    let outcome = match req.outcome.to_lowercase().as_str() {
         "success" => crate::core::episodic_memory::Outcome::Success {
             tests_passed: false,
         },
@@ -401,15 +473,45 @@ fn post_episodes_annotate(body: &str) -> (&'static str, &'static str, String) {
             );
         }
     };
-    store.episodes[real_idx].outcome = new_outcome;
-    if let Err(e) = store.save() {
-        return (
-            "500 Internal Server Error",
+
+    let root = detect_project_root_for_dashboard();
+    match annotate_episode_in_project(&root, req.episode_index, outcome) {
+        Ok(true) => ("200 OK", "application/json", json_ok()),
+        Ok(false) => (
+            "400 Bad Request",
             "application/json",
-            json_err(&e),
-        );
+            json_err("episode_index out of range (newest-first: 0 = most recent)"),
+        ),
+        Err(_) => (
+            "503 Service Unavailable",
+            "application/json",
+            json_err("episode annotation unavailable under current policy"),
+        ),
     }
-    ("200 OK", "application/json", json_ok())
+}
+
+fn annotate_episode_in_project(
+    root: &str,
+    episode_index: usize,
+    outcome: crate::core::episodic_memory::Outcome,
+) -> Result<bool, String> {
+    with_dashboard_project(root, |project_hash, admission, _authority| {
+        let (_, updated) = crate::core::episodic_memory::EpisodicStore::mutate_locked_admitted(
+            project_hash,
+            admission,
+            |text| crate::core::session::admission::admit_store_text(admission, text),
+            |store| {
+                let len = store.episodes.len();
+                if len == 0 || episode_index >= len {
+                    return Ok(false);
+                }
+                let real_idx = len - 1 - episode_index;
+                store.episodes[real_idx].outcome = outcome;
+                Ok(true)
+            },
+        )?;
+        Ok(updated)
+    })
 }
 
 /// Canonical grouping key for a workspace root (#717). Sessions persisted on
@@ -613,5 +715,167 @@ mod workspace_tests {
             let found = &collect_workspaces(Utc::now(), sessions, None);
             assert!(found.is_empty(), "{found:?}");
         }
+    }
+}
+
+#[cfg(test)]
+mod dashboard_memory_admission_tests {
+    use super::*;
+    use crate::core::data_dir::isolated_data_dir;
+    use crate::core::episodic_memory::{Episode, EpisodicStore, Outcome};
+    use crate::core::procedural_memory::{ProceduralStore, Procedure};
+
+    fn episode(id: &str, task_description: &str) -> Episode {
+        Episode {
+            id: id.to_string(),
+            session_id: "dashboard-test-session".to_string(),
+            timestamp: Utc::now(),
+            task_description: task_description.to_string(),
+            actions: Vec::new(),
+            outcome: Outcome::Unknown,
+            affected_files: Vec::new(),
+            summary: "safe summary".to_string(),
+            duration_secs: 0,
+            tokens_used: 0,
+            agent_id: None,
+        }
+    }
+
+    #[test]
+    fn dashboard_intent_reads_only_admitted_project_session() {
+        let _isolated = isolated_data_dir();
+        let project = tempfile::tempdir().expect("project root");
+        let root = project.path().to_str().expect("UTF-8 project root");
+        let mut session = crate::core::session::SessionState::new();
+        session.project_root = Some(root.to_string());
+        session.shell_cwd = session.project_root.clone();
+        let mut intent = crate::core::intent_engine::StructuredIntent::from_query("ordinary task");
+        intent.keywords = vec!["TOP SECRET\nprivate intent".to_string()];
+        session.active_structured_intent = Some(intent);
+
+        let sessions_dir = crate::core::data_dir::lean_ctx_data_dir()
+            .expect("isolated data directory")
+            .join("sessions");
+        std::fs::create_dir_all(&sessions_dir).expect("create sessions directory");
+        let path = sessions_dir.join(format!("{}.json", session.id));
+        std::fs::write(
+            &path,
+            serde_json::to_string(&session).expect("serialize raw fixture"),
+        )
+        .expect("write raw session fixture");
+
+        let body = intent_json(root).expect("admitted intent response");
+        assert!(!body.contains("TOP SECRET"), "restricted intent escaped");
+        let payload: serde_json::Value =
+            serde_json::from_str(&body).expect("dashboard response remains JSON");
+        assert_eq!(payload["active"], true);
+        assert!(payload["intent"]["keywords"].as_array().unwrap().is_empty());
+    }
+
+    #[test]
+    fn dashboard_episode_read_and_annotation_admit_before_delivery_and_write() {
+        let _isolated = isolated_data_dir();
+        let project = tempfile::tempdir().expect("project root");
+        let root = project.path().to_str().expect("UTF-8 project root");
+        let hash = crate::core::project_hash::hash_project_root(root);
+        let mut store = EpisodicStore::new(&hash);
+        store.episodes = vec![
+            episode("restricted-old", "TOP SECRET\nprivate finding"),
+            episode("safe-new", "ordinary task"),
+        ];
+        store.save().expect("write raw fixture");
+
+        let body = episodes_json(root).expect("admitted dashboard response");
+        assert!(!body.contains("TOP SECRET"), "restricted content escaped");
+        let json: serde_json::Value =
+            serde_json::from_str(&body).expect("dashboard response remains JSON");
+        assert_eq!(json["recent"].as_array().unwrap().len(), 1);
+        assert_eq!(json["recent"][0]["task_description"], "ordinary task");
+
+        assert!(
+            annotate_episode_in_project(
+                root,
+                0,
+                Outcome::Failure {
+                    error: "annotated failure".to_string(),
+                },
+            )
+            .expect("admitted annotation")
+        );
+        let persisted = EpisodicStore::load(&hash).expect("cleaned store persisted");
+        assert_eq!(persisted.episodes.len(), 1);
+        assert_eq!(persisted.episodes[0].task_description, "ordinary task");
+        assert_eq!(
+            persisted.episodes[0].outcome,
+            Outcome::Failure {
+                error: "annotated failure".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn dashboard_procedure_read_omits_restricted_records() {
+        let _isolated = isolated_data_dir();
+        let project = tempfile::tempdir().expect("project root");
+        let root = project.path().to_str().expect("UTF-8 project root");
+        let hash = crate::core::project_hash::hash_project_root(root);
+        let mut store = ProceduralStore::new(&hash);
+        store.procedures.push(Procedure {
+            id: "restricted-procedure".to_string(),
+            name: "TOP SECRET\nprivate workflow".to_string(),
+            description: "safe description".to_string(),
+            steps: Vec::new(),
+            activation_keywords: Vec::new(),
+            confidence: 0.5,
+            times_used: 1,
+            times_succeeded: 1,
+            last_used: Utc::now(),
+            project_specific: true,
+            created_at: Utc::now(),
+        });
+        store.save().expect("write raw fixture");
+
+        let body = procedures_json(root, "").expect("admitted dashboard response");
+        assert!(!body.contains("TOP SECRET"), "restricted content escaped");
+        let json: serde_json::Value =
+            serde_json::from_str(&body).expect("dashboard response remains JSON");
+        assert_eq!(json["procedures"].as_array().unwrap().len(), 0);
+    }
+
+    #[test]
+    fn dashboard_rejects_policy_change_before_returning_content() {
+        let _isolated = isolated_data_dir();
+        let project = tempfile::tempdir().expect("project root");
+        let root = project.path().to_str().expect("UTF-8 project root");
+        let config_dir = crate::core::paths::config_dir_read_only().expect("isolated config dir");
+        std::fs::create_dir_all(&config_dir).expect("create config dir");
+        std::fs::write(
+            config_dir.join("config.toml"),
+            "[context_gateway]\nenabled = true\nmode = \"developer\"\n",
+        )
+        .expect("initial gateway policy");
+
+        let result = with_dashboard_project(root, |_hash, _admission, _authority| {
+            std::fs::write(
+                config_dir.join("config.toml"),
+                "[context_gateway]\nenabled = true\nmode = \"governed\"\n",
+            )
+            .map_err(|error| error.to_string())?;
+            Ok(())
+        });
+        assert!(result.is_err(), "stale policy snapshot was accepted");
+    }
+
+    #[test]
+    fn dashboard_rejects_foreign_request_project() {
+        let _isolated = isolated_data_dir();
+        let project = tempfile::tempdir().expect("selected project");
+        let foreign = tempfile::tempdir().expect("foreign project");
+        let selected_root = project.path().to_str().expect("selected root");
+        let result = crate::core::policy::runtime::REQUEST_PROJECT.sync_scope(
+            std::cell::RefCell::new(Some(foreign.path().to_path_buf())),
+            || intent_json(selected_root),
+        );
+        assert!(result.is_err(), "foreign request root was accepted");
     }
 }

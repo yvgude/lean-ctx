@@ -2,10 +2,22 @@ use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::time::UNIX_EPOCH;
 
+use crate::core::bm25_index::external_origin::{ChunkOrigin, DocumentOrigin, MAX_DOCUMENT_BYTES};
 use crate::core::bm25_index::{BM25Index, ChunkKind, CodeChunk, IndexedFileState};
+use crate::core::context_admission::stores::StoreAdmission;
 
-const MAX_ARTIFACT_BYTES: u64 = 2_000_000;
+const MAX_ARTIFACT_BYTES: u64 = MAX_DOCUMENT_BYTES;
 const MAX_CHUNKS_PER_FILE: usize = 50;
+/// Tool identity a document artifact is read for (path decision, events).
+const ARTIFACT_TOOL: &str = "ctx_artifacts";
+
+/// The origin on record for the document `rel`, if `idx` has one.
+fn document_origin<'a>(idx: &'a BM25Index, rel: &str) -> Option<&'a DocumentOrigin> {
+    match idx.provider_origins.get(rel) {
+        Some(ChunkOrigin::Document(origin)) => Some(origin),
+        _ => None,
+    }
+}
 
 pub(crate) fn index_file_path(project_root: &Path) -> PathBuf {
     let code_idx = BM25Index::index_file_path(project_root);
@@ -13,10 +25,19 @@ pub(crate) fn index_file_path(project_root: &Path) -> PathBuf {
     dir.join("bm25_artifacts_index.json")
 }
 
+/// The persisted artifact index, handed out for `project_root`: a search over
+/// it serves a chunk only while the admitted reader still returns its text
+/// (`bm25_index::source_gate`, G04).
 pub(crate) fn load(project_root: &Path) -> Option<BM25Index> {
     let path = index_file_path(project_root);
-    let data = std::fs::read_to_string(path).ok()?;
-    serde_json::from_str(&data).ok()
+    let data = std::fs::read_to_string(&path).ok()?;
+    let index: BM25Index = serde_json::from_str(&data).ok()?;
+    // Only an index admitted under the current policy: one built under
+    // another policy, or before the builder admitted its sources (no digest),
+    // is neither served nor reused — the rule of `BM25Index::load`.
+    let admission = StoreAdmission::current();
+    (index.admission_policy.as_deref() == Some(admission.digest()))
+        .then(|| index.rooted_at(project_root).with_artifact_origins(&path))
 }
 
 pub(crate) fn save(project_root: &Path, idx: &BM25Index) -> std::io::Result<()> {
@@ -28,21 +49,17 @@ pub(crate) fn save(project_root: &Path, idx: &BM25Index) -> std::io::Result<()> 
     let tmp = path.with_extension("json.tmp");
     std::fs::write(&tmp, data)?;
     std::fs::rename(&tmp, &path)?;
+    // The document origins, beside the index and after it.
+    idx.save_artifact_origins(&path);
     Ok(())
 }
 
 pub(crate) fn load_or_build(project_root: &Path) -> (BM25Index, Vec<String>) {
     let (files_now, mut warnings) = list_artifact_files(project_root);
     if files_now.is_empty() {
-        // An index persisted before secret-like paths were excluded is not
-        // served (GHSA-rxv5-4c3x-g4q6 A); with files present the staleness
-        // check below rebuilds it without them.
-        let prev = load(project_root).filter(|idx| {
-            !idx.files
-                .keys()
-                .any(|rel| crate::core::io_boundary::is_secret_like(Path::new(rel)).is_some())
-        });
-        return (prev.unwrap_or_default(), warnings);
+        // No artifact is declared or present now: nothing derived from
+        // artifacts is served. The persisted index is not handed out.
+        return (BM25Index::new(), warnings);
     }
 
     if let Some(prev) = load(project_root) {
@@ -55,12 +72,12 @@ pub(crate) fn load_or_build(project_root: &Path) -> (BM25Index, Vec<String>) {
             rebuild_incremental(project_root, &prev, &files_now, &mut warnings)
         };
         let _ = save(project_root, &rebuilt);
-        return (rebuilt, warnings);
+        return (rebuilt.rooted_at(project_root), warnings);
     }
 
     let built = build_full(project_root, &files_now, &mut warnings);
     let _ = save(project_root, &built);
-    (built, warnings)
+    (built.rooted_at(project_root), warnings)
 }
 
 pub(crate) fn rebuild_from_scratch(project_root: &Path) -> (BM25Index, Vec<String>) {
@@ -94,6 +111,15 @@ fn index_looks_stale(idx: &BM25Index, project_root: &Path, files_now: &[String])
         if !now_set.contains(rel.as_str()) {
             return true;
         }
+        // A document without an origin on record (extracted before origins
+        // were kept), or whose bytes are no longer the ones that were
+        // extracted although size and mtime match, is extracted again.
+        if is_pdf(&abs)
+            && !document_origin(idx, rel)
+                .is_some_and(|origin| origin.unchanged(project_root, rel, ARTIFACT_TOOL))
+        {
+            return true;
+        }
     }
 
     for rel in files_now {
@@ -107,19 +133,29 @@ fn index_looks_stale(idx: &BM25Index, project_root: &Path, files_now: &[String])
 
 fn build_full(project_root: &Path, files: &[String], warnings: &mut Vec<String>) -> BM25Index {
     let mut idx = BM25Index::new();
+    // One policy for the whole build, recorded with the index (G5, E3).
+    let admission = StoreAdmission::current();
+    idx.admission_policy = Some(admission.digest().to_owned());
 
     for rel in files {
         let abs = project_root.join(rel);
         let Some(state) = file_state(&abs) else {
             continue;
         };
-        let content = match read_artifact_text(&abs) {
-            Ok(s) => s,
+        let (content, origin) = match read_artifact(project_root, rel) {
+            Ok(read) => read,
             Err(e) => {
                 warnings.push(format!("artifact read failed: {rel} ({e})"));
                 continue;
             }
         };
+        // Derived store: only admitted text, never restricted.
+        let Some(content) = admission.admit(&content, &abs) else {
+            continue;
+        };
+        if let Some(origin) = origin {
+            idx.record_origin(rel, ChunkOrigin::Document(origin));
+        }
 
         let mut chunks = extract_artifact_chunks(rel, &content);
         chunks.sort_by(|a, b| {
@@ -161,6 +197,10 @@ fn rebuild_incremental(
     }
 
     let mut idx = BM25Index::new();
+    let admission = StoreAdmission::current();
+    idx.admission_policy = Some(admission.digest().to_owned());
+    // Reused chunks must have been admitted under the current policy.
+    let reusable = prev.admission_policy.as_deref() == Some(admission.digest());
 
     for rel in files {
         let abs = project_root.join(rel);
@@ -168,22 +208,38 @@ fn rebuild_incremental(
             continue;
         };
 
-        let unchanged = prev.files.get(rel).is_some_and(|old| *old == state);
+        // A document's chunks are reused only with the origin of the bytes
+        // they were extracted from, and only while the file still holds them.
+        let recorded = document_origin(prev, rel);
+        let unchanged = reusable
+            && prev.files.get(rel).is_some_and(|old| *old == state)
+            && (!is_pdf(&abs)
+                || recorded
+                    .is_some_and(|origin| origin.unchanged(project_root, rel, ARTIFACT_TOOL)));
         if unchanged && let Some(chunks) = old_by_file.get(rel) {
             for chunk in chunks {
                 add_chunk(&mut idx, chunk.clone());
             }
             idx.files.insert(rel.clone(), state);
+            if let Some(origin) = recorded {
+                idx.record_origin(rel, ChunkOrigin::Document(origin.clone()));
+            }
             continue;
         }
 
-        let content = match read_artifact_text(&abs) {
-            Ok(s) => s,
+        let (content, origin) = match read_artifact(project_root, rel) {
+            Ok(read) => read,
             Err(e) => {
                 warnings.push(format!("artifact read failed: {rel} ({e})"));
                 continue;
             }
         };
+        let Some(content) = admission.admit(&content, &abs) else {
+            continue;
+        };
+        if let Some(origin) = origin {
+            idx.record_origin(rel, ChunkOrigin::Document(origin));
+        }
 
         let mut chunks = extract_artifact_chunks(rel, &content);
         chunks.sort_by(|a, b| {
@@ -382,6 +438,24 @@ fn read_artifact_text(path: &Path) -> Result<String, String> {
     std::fs::read_to_string(path).map_err(|e| e.to_string())
 }
 
+/// Read the artifact `rel` of `project_root` as indexable text. A document
+/// (PDF) is read through the rooted reader's path decision and no-follow
+/// open (`DocumentOrigin::read` — the read the serve-time gate repeats) and
+/// comes with the origin of the bytes that were extracted; its chunks are
+/// served only while the file still holds exactly those bytes.
+fn read_artifact(
+    project_root: &Path,
+    rel: &str,
+) -> Result<(String, Option<DocumentOrigin>), String> {
+    let abs = project_root.join(rel);
+    if !is_pdf(&abs) {
+        return read_artifact_text(&abs).map(|text| (text, None));
+    }
+    let (bytes, origin) = DocumentOrigin::read(project_root, rel, ARTIFACT_TOOL)
+        .ok_or_else(|| "document is not readable under the project root".to_string())?;
+    crate::core::web::pdf::extract_text(&bytes).map(|text| (text, Some(origin)))
+}
+
 fn file_state(path: &Path) -> Option<IndexedFileState> {
     let meta = path.metadata().ok()?;
     let size_bytes = meta.len();
@@ -502,6 +576,29 @@ mod tests {
         dir
     }
 
+    /// An artifact the storage admission withholds (a restricted marking)
+    /// contributes no chunk, and nothing of it reaches the persisted index.
+    #[test]
+    fn an_artifact_the_admission_withholds_is_not_persisted() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let dir = project_with_docs(&[
+            (
+                "plan.md",
+                b"TOP SECRET\nroadmap canary 7319 ships in spring".as_slice(),
+            ),
+            ("notes.md", b"public notes about the release train"),
+        ]);
+
+        let (index, _) = load_or_build(dir.path());
+        assert!(index.files.contains_key("docs/notes.md"));
+        assert!(!index.files.contains_key("docs/plan.md"));
+        assert!(index.chunks.iter().all(|c| c.file_path != "docs/plan.md"));
+        let persisted = std::fs::read_to_string(index_file_path(dir.path())).unwrap();
+        assert!(persisted.contains("release train"));
+        assert!(!persisted.contains("7319"), "withheld text was persisted");
+    }
+
     #[test]
     fn artifact_text_file_accepts_pdf_and_rejects_env() {
         assert!(is_artifact_text_file(Path::new("docs/spec.pdf")));
@@ -606,5 +703,48 @@ mod tests {
         assert!(w.is_empty(), "{w:?}");
         assert_eq!(full.chunks.len(), rebuilt.chunks.len());
         assert!(rebuilt.files.contains_key("docs/spec.pdf"));
+    }
+
+    /// A chunk extracted from a document is served where a source authority
+    /// is required while the file is admitted and still holds the extracted
+    /// bytes; not once the project policy rewrites its text, and not once
+    /// the file changed (the next build extracts it again). Before, a
+    /// document chunk had no source on record and was withheld as a whole.
+    #[test]
+    fn a_document_chunk_is_served_only_while_its_file_is_admitted_and_unchanged() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _live_policy = crate::core::policy::runtime::lock_test_override();
+        let pdf = tiny_pdf("Latency budget heliodor is 42ms");
+        let dir = project_with_docs(&[("spec.pdf", pdf.as_slice())]);
+        let root = dir.path().canonicalize().expect("canonical root");
+        let policy = root.join(".lean-ctx").join("policy.toml");
+        let pack = "name='document-origin'\nversion='1.0.0'\ndescription='fixture'\n";
+        std::fs::create_dir_all(root.join(".lean-ctx")).expect("policy directory");
+        std::fs::write(&policy, pack).expect("policy pack");
+
+        let (index, warnings) = load_or_build(&root);
+        assert!(warnings.is_empty(), "{warnings:?}");
+        let served = |index: &BM25Index, term: &str| !index.search(term, 5).is_empty();
+        assert!(served(&index, "heliodor"), "admitted and unchanged");
+        assert!(served(&load(&root).expect("persisted"), "heliodor"));
+
+        // The pack now rewrites the chunk's text: not the copy that is held.
+        std::fs::write(&policy, format!("{pack}[redaction]\nbudget = 'heliodor'\n"))
+            .expect("tightened pack");
+        assert!(!served(&index, "heliodor"), "refused by the project policy");
+        std::fs::write(&policy, pack).expect("pack restored");
+        assert!(served(&index, "heliodor"));
+
+        // The file changes: the resident chunk is stale, the next build
+        // extracts the new bytes through admission.
+        std::fs::write(
+            root.join("docs").join("spec.pdf"),
+            tiny_pdf("Latency budget tourmaline is 7ms"),
+        )
+        .expect("changed document");
+        assert!(!served(&index, "heliodor"), "extracted from other bytes");
+        let (rebuilt, _) = load_or_build(&root);
+        assert!(served(&rebuilt, "tourmaline"));
+        assert!(!served(&rebuilt, "heliodor"));
     }
 }

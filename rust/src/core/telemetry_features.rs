@@ -62,7 +62,9 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("repomap", &["repo-map"]),
     ("cep", &[]),
     ("demo", &[]),
-    ("dashboard", &[]),
+    // `cockpit` is the Cockpit's name since 3.12; it stays one feature with
+    // its `dashboard` alias under the existing `cli.dashboard` code.
+    ("dashboard", &["cockpit"]),
     ("team", &[]),
     ("provider", &[]),
     ("serve", &[]),
@@ -105,7 +107,6 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("benchmark", &[]),
     ("benchmark_run", &["benchmark-run", "bench-run"]),
     ("calibrate", &[]),
-    ("pair", &[]),
     ("compact", &[]),
     ("profile", &[]),
     ("tools", &[]),
@@ -135,7 +136,6 @@ const COMMANDS: &[(&str, &[&str])] = &[
     ("export_rules", &["export-rules"]),
     ("gotchas", &["bugs"]),
     ("learn", &[]),
-    ("buddy", &["pet"]),
     ("report_issue", &["report-issue", "report"]),
     ("uninstall", &[]),
     ("safety_levels", &["safety-levels", "safety"]),
@@ -259,10 +259,11 @@ fn segment(word: &str) -> String {
 }
 
 /// The feature code for a CLI invocation, or `None` when it is not counted.
+/// A `--dry-run` promises to write nothing, the usage counter included.
 #[must_use]
 pub fn cli_code(args: &[String]) -> Option<String> {
     let first = args.get(1)?.as_str();
-    if NOT_COUNTED.contains(&first) {
+    if NOT_COUNTED.contains(&first) || args.iter().skip(2).any(|a| a == "--dry-run") {
         return None;
     }
     let (command, _) = COMMANDS.iter().find(|(name, aliases)| {
@@ -396,6 +397,19 @@ mod tests {
     }
 
     #[test]
+    fn dry_runs_are_not_counted() {
+        for words in [
+            &["setup", "--dry-run"][..],
+            &["onboard", "--agents", "cursor", "--dry-run"][..],
+            &["update", "--dry-run"][..],
+            &["uninstall", "--dry-run"][..],
+        ] {
+            assert_eq!(cli_code(&args(words)), None, "{words:?}");
+        }
+        assert_eq!(cli_code(&args(&["setup"])).as_deref(), Some("cli.setup"));
+    }
+
+    #[test]
     fn commands_and_registry_verbs_become_codes() {
         assert_eq!(
             cli_code(&args(&["pack", "export", "my-secret-pack"])).as_deref(),
@@ -424,6 +438,10 @@ mod tests {
         assert_eq!(
             cli_code(&args(&["--self-update"])).as_deref(),
             Some("cli.update")
+        );
+        assert_eq!(
+            cli_code(&args(&["cockpit"])).as_deref(),
+            Some("cli.dashboard")
         );
         assert_eq!(
             cli_code(&args(&["telemetry", "off"])).as_deref(),

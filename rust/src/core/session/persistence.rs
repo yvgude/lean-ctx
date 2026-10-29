@@ -353,26 +353,45 @@ fn persist_session_facts(session: &SessionState) -> Result<(), String> {
         return Ok(());
     };
 
-    let facts = extract_session_facts(session);
-    if facts.is_empty() {
+    if extract_session_facts(session).is_empty() {
         return Ok(());
     }
 
+    // A fact derived from a finding keeps that finding's source binding, and a
+    // finding that is not served now derives none: the save path must not
+    // turn a bound finding into an unbound fact.
     let mut knowledge = crate::core::knowledge::ProjectKnowledge::load_or_create(project_root);
-    for fact in facts {
-        knowledge.add_fact(fact);
-    }
-    if let Ok(policy) = crate::core::config::Config::load().memory_policy_effective() {
-        knowledge.enforce_capacity(&policy);
-    }
+    crate::core::consolidation_engine::store_session_facts(&mut knowledge, session, false);
     knowledge.save()
 }
 
+/// Run `operation` under the request project that was bound when the save was
+/// prepared. A background writer has no request scope of its own; without this
+/// the admission would silently fall back to a different project authority.
+fn in_request_scope<T>(
+    request_project: Option<std::path::PathBuf>,
+    operation: impl FnOnce() -> T,
+) -> T {
+    crate::core::policy::runtime::REQUEST_PROJECT
+        .sync_scope(std::cell::RefCell::new(request_project), operation)
+}
+
+/// The commit side: `AdmittedSave`, the authority check inside the commit's
+/// locks and the writes. Split out to keep this file under the LOC gate.
+#[path = "persistence_commit.rs"]
+mod commit;
+pub(crate) use commit::AdmittedSave;
+
 impl PreparedSave {
-    /// Writes the pre-serialized session data, latest pointer, and compaction
-    /// snapshot to disk atomically. A per-session file lock and version check
-    /// make deferred saves monotonic even when background tasks finish out of
-    /// order.
+    /// Admits the detached session for storage, then writes the session data,
+    /// latest pointer, compaction snapshot and project index atomically. A
+    /// per-session file lock and version check make deferred saves monotonic
+    /// even when background tasks finish out of order.
+    ///
+    /// This is the step that reads configuration and policy inputs and the
+    /// disk; run it after the live session lock has been released. Nothing is
+    /// written when admission refuses the session or when the admitting
+    /// authority no longer holds at the commit.
     ///
     /// The lock has a deadline. A save that cannot get it reports that instead
     /// of waiting, because `SessionState::save` restores `unsaved_changes` on
@@ -380,165 +399,83 @@ impl PreparedSave {
     /// unbounded wait keeps whatever it holds until the other side lets go
     /// (#1783).
     pub fn write_to_disk(self) -> Result<(), String> {
+        self.publish().map_err(String::from)
+    }
+
+    /// [`write_to_disk`](Self::write_to_disk) with the refusal classified.
+    pub fn publish(self) -> Result<(), SaveError> {
         self.write_to_disk_with_policy(false).result
     }
 
     pub(super) fn write_to_disk_with_policy(self, require_new: bool) -> SaveOutcome {
-        let mut outcome = SaveOutcome::new(&self);
-        outcome.result = self.write_primary_and_pointers(require_new, &mut outcome);
+        let mut outcome =
+            SaveOutcome::new(&self.id, self.version, self.expected_storage_digest.clone());
+        let result = self
+            .admit()
+            .and_then(|admitted| admitted.commit(require_new, &mut outcome));
+        outcome.result = result;
         outcome
+    }
+
+    /// Storage admission of the detached copy: project-root checks, one
+    /// Gateway snapshot, one verified project policy snapshot, serialization.
+    /// Writes nothing. The returned save carries the admitting authority.
+    pub(crate) fn admit(self) -> Result<AdmittedSave, SaveError> {
+        let request_project = self.request_project.clone();
+        in_request_scope(request_project, || self.admit_in_scope())
+    }
+
+    fn admit_in_scope(self) -> Result<AdmittedSave, SaveError> {
+        let session = &*self.snapshot;
+        if session
+            .project_root
+            .as_deref()
+            .is_some_and(|root| normalized_safe_project_root(root).is_none())
+        {
+            return Err(SaveError::AdmissionRefused(
+                "refusing to persist a session for a broad or unsafe project root".to_string(),
+            ));
+        }
+        let dir = sessions_dir()
+            .ok_or_else(|| SaveError::Storage("cannot determine home directory".to_string()))?;
+        let (admitted, authority) = super::admission::for_storage_with_authority(session)
+            .map_err(SaveError::AdmissionRefused)?;
+        let compaction_snapshot = if admitted.stats.total_tool_calls > 0 {
+            Some(admitted.build_compaction_snapshot())
+        } else {
+            None
+        };
+        let (json, _) = admitted.storage_json().map_err(SaveError::Storage)?;
+        let pointer_json = serde_json::to_string(&LatestPointer {
+            id: self.id.clone(),
+        })
+        .map_err(|error| SaveError::Storage(error.to_string()))?;
+        Ok(AdmittedSave {
+            canonical: session.canonical_checkpoint.is_some(),
+            expected_storage_digest: self.expected_storage_digest.clone(),
+            dir,
+            id: self.id.clone(),
+            version: self.version,
+            json,
+            pointer_json,
+            compaction_snapshot,
+            project_index_root: session
+                .project_root
+                .as_deref()
+                .and_then(normalized_safe_project_root),
+            request_project: self.request_project.clone(),
+            authority,
+        })
     }
 
     fn write_new_if_project_head(
         self,
         expected: Option<&(String, String)>,
     ) -> Result<Option<SaveOutcome>, String> {
-        let Some(project_root) = self.project_index_root.clone() else {
-            return Err("project head publication requires a safe project root".to_string());
-        };
-        let dir = self.dir.clone();
-        let mut outcome = SaveOutcome::new(&self);
-        let published = with_project_index_lock(&dir, &project_root, |index_path| {
-            let current = read_project_head_locked(&dir, &project_root)?;
-            if current.as_ref() != expected {
-                return Ok(false);
-            }
-            outcome.result = self.write_primary_and_pointers_locked(
-                true,
-                &mut outcome,
-                Some((&project_root, index_path)),
-            );
-            Ok(true)
-        })?;
-        if published {
-            Ok(Some(outcome))
-        } else {
-            Ok(None)
-        }
+        self.admit()
+            .map_err(String::from)?
+            .write_new_if_project_head(expected)
     }
-
-    fn write_primary_and_pointers(
-        self,
-        require_new: bool,
-        outcome: &mut SaveOutcome,
-    ) -> Result<(), String> {
-        if !self.dir.exists() {
-            std::fs::create_dir_all(&self.dir).map_err(|e| e.to_string())?;
-        }
-        if let Some(project_root) = self.project_index_root.clone() {
-            let dir = self.dir.clone();
-            return with_project_index_lock(&dir, &project_root, |index_path| {
-                self.write_primary_and_pointers_locked(
-                    require_new,
-                    outcome,
-                    Some((&project_root, index_path)),
-                )
-            });
-        }
-        self.write_primary_and_pointers_locked(require_new, outcome, None)
-    }
-
-    fn write_primary_and_pointers_locked(
-        self,
-        require_new: bool,
-        outcome: &mut SaveOutcome,
-        project_index: Option<(&str, &std::path::Path)>,
-    ) -> Result<(), String> {
-        use fs2::FileExt;
-        let lock_path = self.dir.join(format!(".{}.save.lock", self.id));
-        let lock = std::fs::OpenOptions::new()
-            .create(true)
-            .truncate(false)
-            .write(true)
-            .open(lock_path)
-            .map_err(|e| format!("open session save lock: {e}"))?;
-        crate::core::file_lock::acquire_exclusive_timeout(&lock, SAVE_LOCK_TIMEOUT)
-            .map_err(|e| format!("lock session save: {e}"))?;
-
-        let result = (|| {
-            let path = self.dir.join(format!("{}.json", self.id));
-            if require_new && path.try_exists().map_err(|error| error.to_string())? {
-                return Err("import destination already exists".to_string());
-            }
-            if !self.canonical
-                && persisted_session_version(&path).is_some_and(|version| version > self.version)
-            {
-                return Ok(());
-            }
-            let previous = match std::fs::read(&path) {
-                Ok(bytes) => Some(bytes),
-                Err(error) if error.kind() == std::io::ErrorKind::NotFound => None,
-                Err(error) => return Err(error.to_string()),
-            };
-            let json = crate::core::context_checkpoint::prepare_session_checkpoint_commit(
-                &self.json,
-                previous.as_deref(),
-            )?;
-            let committed = SessionState::from_storage_json(&json)?.canonical_checkpoint;
-            outcome.primary_sha256 = Some(hex::encode(Sha256::digest(json.as_bytes())));
-            let tmp = self.dir.join(format!(".{}.json.tmp", self.id));
-            if require_new {
-                use std::io::Write as _;
-                let mut options = std::fs::OpenOptions::new();
-                options.write(true).create_new(true);
-                #[cfg(unix)]
-                {
-                    use std::os::unix::fs::OpenOptionsExt as _;
-                    options.mode(0o600);
-                }
-                let mut file = options.open(&tmp).map_err(|error| error.to_string())?;
-                file.write_all(json.as_bytes())
-                    .map_err(|error| error.to_string())?;
-                file.sync_all().map_err(|error| error.to_string())?;
-            } else {
-                std::fs::write(&tmp, &json).map_err(|e| e.to_string())?;
-            }
-            restrict_file_permissions(&tmp);
-            if require_new {
-                // Atomic no-replace publication, including non-cooperating
-                // writers that do not acquire this session's file lock.
-                std::fs::hard_link(&tmp, &path).map_err(|error| error.to_string())?;
-                outcome.committed = committed;
-                std::fs::remove_file(&tmp).map_err(|error| error.to_string())?;
-            } else {
-                std::fs::rename(&tmp, &path).map_err(|e| e.to_string())?;
-                outcome.committed = committed;
-            }
-
-            let latest_path = self.dir.join("latest.json");
-            let latest_tmp = self.dir.join(format!(".{}.latest.tmp", self.id));
-            std::fs::write(&latest_tmp, &self.pointer_json).map_err(|e| e.to_string())?;
-            restrict_file_permissions(&latest_tmp);
-            std::fs::rename(&latest_tmp, &latest_path).map_err(|e| e.to_string())?;
-
-            if let Some(snapshot) = self.compaction_snapshot {
-                let snap_path = self.dir.join(format!("{}_snapshot.txt", self.id));
-                if let Err(error) = crate::core::atomic_fs::write_bytes_with_fallback(
-                    &snap_path,
-                    snapshot.as_bytes(),
-                    None,
-                ) {
-                    tracing::debug!("lean-ctx: compaction snapshot update skipped: {error}");
-                } else {
-                    restrict_file_permissions(&snap_path);
-                }
-            }
-            if let Some((project_root, index_path)) = project_index
-                && let Err(error) =
-                    update_project_index_locked(&self.dir, project_root, index_path, &self.id)
-            {
-                tracing::debug!("lean-ctx: session warm-history index update skipped: {error}");
-            }
-            Ok(())
-        })();
-        let _ = FileExt::unlock(&lock);
-        result
-    }
-}
-
-fn persisted_session_version(path: &std::path::Path) -> Option<u32> {
-    let value: serde_json::Value = serde_json::from_slice(&std::fs::read(path).ok()?).ok()?;
-    value["version"].as_u64()?.try_into().ok()
 }
 
 impl SessionState {
@@ -553,40 +490,6 @@ impl SessionState {
         let dir = sessions_dir().ok_or("cannot determine home directory")?;
         with_project_index_lock(&dir, &project_root, |_| {
             read_project_head_locked(&dir, &project_root)
-        })
-    }
-
-    /// Load the selected session and hash the exact primary file bytes together.
-    /// If the primary changes after head selection, fail closed for caller retry.
-    pub(crate) fn load_project_head_snapshot(
-        project_root: &str,
-    ) -> Result<Option<(Self, String)>, String> {
-        let Some(project_root) = normalized_safe_project_root(project_root) else {
-            return Err("unsafe project root".to_string());
-        };
-        let dir = sessions_dir().ok_or("cannot determine home directory")?;
-        with_project_index_lock(&dir, &project_root, |_| {
-            let Some((id, expected_digest)) = read_project_head_locked(&dir, &project_root)? else {
-                return Ok(None);
-            };
-            let path = dir.join(format!("{id}.json"));
-            let bytes = std::fs::read(path)
-                .map_err(|_| "project session head changed; retry".to_string())?;
-            let actual_hex = hex::encode(Sha256::digest(&bytes));
-            if expected_digest != format!("sha256:{actual_hex}") {
-                return Err("project session head changed; retry".to_string());
-            }
-            let json = std::str::from_utf8(&bytes)
-                .map_err(|_| "corrupt project session head".to_string())?;
-            let session = SessionState::from_storage_json(json)
-                .map(normalize_loaded_session)
-                .map_err(|_| "corrupt project session head".to_string())?;
-            if session.id != id
-                || !session_matches_project_root(&session, std::path::Path::new(&project_root))
-            {
-                return Err("project session head changed; retry".to_string());
-            }
-            Ok(Some((session, actual_hex)))
         })
     }
 
@@ -678,47 +581,32 @@ impl SessionState {
         }
     }
 
-    /// Serialize session state while holding the lock (CPU-only), retaining the
-    /// unsaved counter until acknowledged, and return I/O that can be deferred
-    /// to a background thread via `write_to_disk()`.
+    /// Take a detached copy of the session for a later save. Safe to call while
+    /// holding the live session lock: it validates the ID and copies memory —
+    /// no file, configuration or policy input is read and nothing here can
+    /// wait on a policy refresh (#1783). The unsaved counter is retained until
+    /// a write is acknowledged.
+    ///
+    /// The copy is not admitted for storage. Project-root checks, storage
+    /// admission, serialization and the commit happen in
+    /// `PreparedSave::write_to_disk()`, which belongs after the lock is
+    /// released (a background thread, or `save_shared`). A session whose
+    /// project root is unsafe, deleted or unreadable therefore prepares here
+    /// and is refused there, with nothing written.
     pub fn prepare_save(&mut self) -> Result<PreparedSave, String> {
         validate_session_id(&self.id)?;
-        if self
-            .project_root
-            .as_deref()
-            .is_some_and(|root| normalized_safe_project_root(root).is_none())
-        {
-            return Err(
-                "refusing to persist a session for a broad or unsafe project root".to_string(),
-            );
-        }
-        let dir = sessions_dir().ok_or("cannot determine home directory")?;
-        let compaction_snapshot = if self.stats.total_tool_calls > 0 {
-            Some(self.build_compaction_snapshot())
-        } else {
-            None
-        };
-        let (json, _) = self.storage_json()?;
-        let pointer_json = serde_json::to_string(&LatestPointer {
-            id: self.id.clone(),
-        })
-        .map_err(|e| e.to_string())?;
         Ok(PreparedSave {
-            canonical: self.canonical_checkpoint.is_some(),
             expected_storage_digest: self
                 .canonical_checkpoint
                 .as_ref()
                 .and_then(|binding| binding.storage_digest.clone()),
-            dir,
             id: self.id.clone(),
             version: self.version,
-            json,
-            pointer_json,
-            compaction_snapshot,
-            project_index_root: self
-                .project_root
-                .as_deref()
-                .and_then(normalized_safe_project_root),
+            request_project: crate::core::policy::runtime::REQUEST_PROJECT
+                .try_with(|slot| slot.borrow().clone())
+                .ok()
+                .flatten(),
+            snapshot: Box::new(self.clone()),
         })
     }
 
@@ -769,6 +657,14 @@ impl SessionState {
     /// Also refuses to scope to a broad/unsafe cwd (e.g. the MCP daemon's HOME),
     /// which would otherwise resurrect the contaminated "HOME mega-session".
     pub fn load_latest() -> Option<Self> {
+        // Inside a request its bound project is the only scope: the serving
+        // process's cwd may be another project, and a request without a
+        // project has no latest session (AP01 §3, AP04-G2).
+        if let Ok(project) =
+            crate::core::policy::runtime::REQUEST_PROJECT.try_with(|slot| slot.borrow().clone())
+        {
+            return Self::load_latest_for_project_root(&project?.to_string_lossy());
+        }
         let cwd = std::env::current_dir().ok()?;
         if crate::core::pathutil::is_broad_or_unsafe_root(&cwd) {
             return None;
@@ -1055,6 +951,10 @@ impl SessionState {
 }
 
 #[cfg(test)]
+#[path = "storage_boundary_tests.rs"]
+mod storage_boundary_tests;
+
+#[cfg(test)]
 mod tests {
     use super::{
         ProjectSessionIndex, SessionState, normalized_safe_project_root, project_index_path,
@@ -1186,6 +1086,49 @@ mod tests {
                 .expect("load indexed session")
                 .id,
             "indexed"
+        );
+    }
+
+    /// AP04-G2: inside a request the latest session is the request project's,
+    /// never the one of the serving process's working directory; a request
+    /// without a project has none.
+    #[test]
+    fn latest_session_inside_a_request_follows_the_request_project() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().expect("project tempdir");
+        let mut session = SessionState::new();
+        session.id = "request-project".to_string();
+        session.project_root = Some(project.path().to_string_lossy().to_string());
+        session.save().expect("save session");
+        let in_request = |project: Option<std::path::PathBuf>| {
+            crate::core::policy::runtime::REQUEST_PROJECT
+                .sync_scope(std::cell::RefCell::new(project), SessionState::load_latest)
+                .map(|session| session.id)
+        };
+
+        assert_eq!(
+            in_request(Some(project.path().to_path_buf())).as_deref(),
+            Some("request-project")
+        );
+        assert_eq!(in_request(None), None);
+    }
+
+    /// AP04-G8: a nested directory's session is not restored into its parent
+    /// project because its working directory lies below the parent.
+    #[test]
+    fn a_nested_directorys_session_is_not_the_parent_projects() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let parent = tempfile::tempdir().expect("project tempdir");
+        let nested = parent.path().join("tools");
+        std::fs::create_dir(&nested).expect("nested dir");
+        let nested = nested.to_string_lossy().to_string();
+        let mut session = SessionState::new();
+        session.project_root = Some(nested.clone());
+        session.shell_cwd = Some(nested);
+        session.save().expect("save nested session");
+
+        assert!(
+            SessionState::load_latest_for_project_root(&parent.path().to_string_lossy()).is_none()
         );
     }
 
@@ -1383,7 +1326,11 @@ mod tests {
     #[test]
     fn deferred_save_cannot_replace_a_newer_session_version() {
         let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().expect("project root");
+        let project_root = project.path().to_string_lossy().into_owned();
         let mut session = SessionState::new();
+        session.project_root = Some(project_root.clone());
+        session.shell_cwd = Some(project_root);
         let id = session.id.clone();
         let older = session.prepare_save().expect("prepare older save");
         session.increment();

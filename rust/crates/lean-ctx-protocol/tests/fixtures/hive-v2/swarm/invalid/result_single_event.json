@@ -1,0 +1,14 @@
+{
+  "case": "result_single_event",
+  "base": "routes/swarm_result.v2.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/events",
+      "value": []
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  }
+}

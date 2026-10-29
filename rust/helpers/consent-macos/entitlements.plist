@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<!-- Hardened runtime, no sandbox exceptions, no network, no virtualization:
+     only the keychain access group that holds the presence key
+     (SPEC-ENGINE §3.8.5). @TEAM_ID@ is the release Team ID. -->
+<dict>
+	<key>keychain-access-groups</key>
+	<array>
+		<string>@TEAM_ID@.ch.thinkery.leanctx.consent</string>
+	</array>
+</dict>
+</plist>

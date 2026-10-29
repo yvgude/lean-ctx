@@ -14,6 +14,7 @@ mod path_id;
 mod queries;
 mod schema;
 pub mod semantic_cache;
+pub(crate) mod served;
 pub mod snapshot;
 mod sync;
 
@@ -22,9 +23,11 @@ pub use file_catalog::FileCatalogEntry;
 pub use meta::{PropertyGraphMetaV1, load_meta, meta_path, write_meta};
 pub use node::{Node, NodeKind};
 pub use queries::{
-    DependencyChain, GraphQuery, ImpactResult, edge_weight, file_connectivity, related_files,
+    DependencyChain, GraphQuery, ImpactResult, Served, edge_weight, file_connectivity,
+    related_files,
 };
 pub use semantic_cache::CachedResolution;
+pub use served::GraphSource;
 pub use sync::{mirror_index, parse_symbol_metadata, populate_from_project_index};
 
 use rusqlite::Connection;
@@ -91,13 +94,16 @@ fn migrate_if_needed(project_root: &str, new_dir: &Path) {
 ///   rebuild.
 pub const GRAPH_ENGINE_VERSION: u32 = 8;
 
-/// `true` when the persisted graph was built by an engine older than
-/// [`GRAPH_ENGINE_VERSION`] — or predates the version stamp entirely (missing or
-/// unreadable meta) — and must therefore be rebuilt before its edges can be
-/// trusted. Callers pair this with a node-count check: an empty graph is rebuilt
-/// regardless; a non-empty-but-outdated graph is rebuilt by this gate.
+/// `true` when the persisted graph was built by another engine generation than
+/// [`GRAPH_ENGINE_VERSION`] — older, NEWER, or before the version stamp existed
+/// (missing or unreadable meta) — and must therefore be rebuilt before its
+/// edges can be trusted. A newer stamp is what an installation finds after a
+/// rollback to an earlier release: that graph holds edges this engine's rules
+/// did not produce and cannot interpret, so it is rebuilt, not read. Callers
+/// pair this with a node-count check: an empty graph is rebuilt regardless; a
+/// non-empty graph of another generation is rebuilt by this gate.
 pub fn engine_outdated(project_root: &str) -> bool {
-    load_meta(project_root).is_none_or(|m| m.engine_version < GRAPH_ENGINE_VERSION)
+    load_meta(project_root).is_none_or(|m| m.engine_version != GRAPH_ENGINE_VERSION)
 }
 
 /// Whether an open error is a transient SQLite lock (BUSY/LOCKED) that a brief
@@ -120,6 +126,9 @@ fn is_transient_lock(err: &anyhow::Error) -> bool {
 pub struct CodeGraph {
     conn: Connection,
     db_path: PathBuf,
+    /// Serve-time source check of a graph opened for a project root
+    /// (`served`, G04); `None` for an in-memory graph.
+    gate: Option<served::GraphGate>,
 }
 
 impl CodeGraph {
@@ -140,7 +149,10 @@ impl CodeGraph {
         loop {
             attempt += 1;
             match Self::try_open(&db_path) {
-                Ok(graph) => return Ok(graph),
+                Ok(mut graph) => {
+                    graph.gate = Some(served::GraphGate::for_root(project_root));
+                    return Ok(graph);
+                }
                 Err(e) if attempt < MAX_ATTEMPTS && is_transient_lock(&e) => {
                     std::thread::sleep(std::time::Duration::from_millis(40 * u64::from(attempt)));
                 }
@@ -157,6 +169,7 @@ impl CodeGraph {
         Ok(Self {
             conn,
             db_path: db_path.to_path_buf(),
+            gate: None,
         })
     }
 
@@ -166,6 +179,7 @@ impl CodeGraph {
         Ok(Self {
             conn,
             db_path: PathBuf::from(":memory:"),
+            gate: None,
         })
     }
 
@@ -205,12 +219,16 @@ impl CodeGraph {
         edge::to_node(&self.conn, node_id)
     }
 
+    // The five queries below run under this graph's serve-time source check
+    // (`served`, G04): a file that is not served now is neither returned nor
+    // walked through, and contributes no weight, count or rank slot.
+
     pub fn dependents(&self, file_path: &str) -> anyhow::Result<Vec<String>> {
-        queries::dependents(&self.conn, file_path)
+        Ok(self.served_neighbours(file_path, queries::dependents(&self.conn, file_path)?))
     }
 
     pub fn dependencies(&self, file_path: &str) -> anyhow::Result<Vec<String>> {
-        queries::dependencies(&self.conn, file_path)
+        Ok(self.served_neighbours(file_path, queries::dependencies(&self.conn, file_path)?))
     }
 
     pub fn impact_analysis(
@@ -218,7 +236,9 @@ impl CodeGraph {
         file_path: &str,
         max_depth: usize,
     ) -> anyhow::Result<ImpactResult> {
-        queries::impact_analysis(&self.conn, file_path, max_depth)
+        queries::impact_analysis(&self.conn, file_path, max_depth, &|path: &str| {
+            self.serves_file(path)
+        })
     }
 
     pub fn dependency_chain(
@@ -226,7 +246,7 @@ impl CodeGraph {
         from: &str,
         to: &str,
     ) -> anyhow::Result<Option<DependencyChain>> {
-        queries::dependency_chain(&self.conn, from, to)
+        queries::dependency_chain(&self.conn, from, to, &|path: &str| self.serves_file(path))
     }
 
     pub fn related_files(
@@ -234,14 +254,16 @@ impl CodeGraph {
         file_path: &str,
         limit: usize,
     ) -> anyhow::Result<Vec<(String, f64)>> {
-        queries::related_files(&self.conn, file_path, limit)
+        queries::related_files(&self.conn, file_path, limit, &|path: &str| {
+            self.serves_file(path)
+        })
     }
 
     pub fn file_connectivity(
         &self,
         file_path: &str,
     ) -> anyhow::Result<std::collections::HashMap<String, (usize, usize)>> {
-        queries::file_connectivity(&self.conn, file_path)
+        queries::file_connectivity(&self.conn, file_path, &|path: &str| self.serves_file(path))
     }
 
     pub fn node_count(&self) -> anyhow::Result<usize> {
@@ -252,22 +274,30 @@ impl CodeGraph {
         edge::count(&self.conn)
     }
 
-    /// Cached semantic answer for a call site, if the caller is unchanged.
+    /// Cached semantic answer for a call site, if the caller is unchanged and
+    /// every file the answer derives from — the caller and each target — is
+    /// served now (`semantic_cache::lookup_served`, G04). A withheld answer
+    /// is a miss: the backend is asked again.
     pub fn semantic_lookup(
         &self,
         site: semantic_cache::SiteKey<'_>,
         caller_hash: &str,
     ) -> anyhow::Result<Option<CachedResolution>> {
-        semantic_cache::lookup(&self.conn, site, caller_hash)
+        semantic_cache::lookup_served(&self.conn, site, caller_hash, |file| self.serves_file(file))
     }
 
+    /// Keeps a semantic answer when its persisted text passes storage
+    /// admission under `admission` — one policy snapshot per enrichment run,
+    /// taken where the run starts, not per row. `Ok(false)`: admission
+    /// refused the row and nothing was written.
     pub fn semantic_store(
         &self,
         site: semantic_cache::SiteKey<'_>,
         caller_hash: &str,
         value: &CachedResolution,
-    ) -> anyhow::Result<()> {
-        semantic_cache::store(&self.conn, site, caller_hash, value)
+        admission: &crate::core::context_admission::stores::StoreAdmission,
+    ) -> anyhow::Result<bool> {
+        semantic_cache::store_admitted(&self.conn, site, caller_hash, value, admission)
     }
 
     /// Whether a semantic backend has answered for this graph at all.
@@ -926,6 +956,14 @@ mod tests {
         assert!(
             !engine_outdated(root),
             "current engine_version must read as up to date"
+        );
+
+        // Meta stamped by a later engine (the state after a rollback) -> rebuilt.
+        meta.engine_version = GRAPH_ENGINE_VERSION + 1;
+        write_meta(root, &meta).unwrap();
+        assert!(
+            engine_outdated(root),
+            "a graph of a newer engine must not be read by this one"
         );
     }
 }

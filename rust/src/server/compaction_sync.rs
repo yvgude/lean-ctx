@@ -51,7 +51,6 @@ pub fn sync_if_compacted(cache: &mut SessionCache, data_dir: &Path) -> bool {
     LAST_COMPACTION_TS.store(latest_compaction_ts, Ordering::Relaxed);
     crate::core::search_delta::reset();
     let reset_count = cache.reset_delivery_flags();
-    crate::core::cache_telemetry::record_compaction(reset_count as u64);
     // Drop the persistent stub index too (#955): the conversation's context was
     // summarised away, so neither a warm nor a cold stub may claim "you already
     // have this". Writes the emptied index synchronously so a restart in the
@@ -72,13 +71,21 @@ pub fn sync_if_compacted(cache: &mut SessionCache, data_dir: &Path) -> bool {
         );
     }
 
-    std::thread::spawn(|| {
-        if let Some(session) = crate::core::session::SessionState::load_latest()
-            && let Some(ref root) = session.project_root
-            && (!session.findings.is_empty() || !session.decisions.is_empty())
-        {
-            crate::tools::startup::auto_consolidate_knowledge(root);
-        }
+    // The caller's own session, never the project's latest saved one, which
+    // may be another agent's (I07/S03).
+    let caller = crate::core::session::caller::current();
+    std::thread::spawn(move || {
+        crate::core::session::caller::scope(caller, || {
+            let root = crate::core::session::caller::with(|session| {
+                (!session.findings.is_empty() || !session.decisions.is_empty())
+                    .then(|| session.project_root.clone())
+                    .flatten()
+            })
+            .flatten();
+            if let Some(root) = root {
+                crate::tools::startup::auto_consolidate_knowledge(&root);
+            }
+        });
     });
 
     true

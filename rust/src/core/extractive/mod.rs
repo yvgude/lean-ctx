@@ -26,14 +26,17 @@
 //! build or OS regresses.
 
 mod ranker;
+#[cfg(feature = "embeddings")]
 mod segment;
 
 pub(crate) use ranker::RankMode;
 
 /// Too few units to rank meaningfully → let the caller fall back.
+#[cfg(feature = "embeddings")]
 const MIN_SEGMENTS: usize = 3;
 /// Centrality is `O(n²·d)`; above this many segments the cost is not worth it
 /// for a prose block, so we fall back to the linear truncating squeeze.
+#[cfg(feature = "embeddings")]
 const MAX_SEGMENTS: usize = 512;
 
 /// Rank the sentences of `text` and keep the highest-value ones within
@@ -86,7 +89,7 @@ pub(crate) fn rank_and_squeeze(
 /// Stub when the `embeddings` feature is disabled: always falls back.
 #[cfg(not(feature = "embeddings"))]
 #[must_use]
-pub fn rank_and_squeeze(
+pub(crate) fn rank_and_squeeze(
     _text: &str,
     _budget_chars: usize,
     _mode: RankMode,

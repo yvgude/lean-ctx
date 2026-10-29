@@ -14,15 +14,52 @@ const MAX_FILES: usize = 600;
 /// is rarely the intent and parsing it is needlessly expensive.
 const MAX_FILE_BYTES: u64 = 1_500_000;
 
-pub(super) fn outline_dir(dir: &str, opts: &OutlineOpts) -> (String, usize) {
-    let (files, total_tokens, truncated) = collect(dir, opts);
+/// Original bytes one directory outline may read in total. The rooted reader
+/// charges every source against it, also one it then withholds.
+const MAX_TOTAL_BYTES: usize = 256 * 1024 * 1024;
+
+/// What one directory walk acquired.
+struct Collected {
+    /// Files with at least one surviving symbol, sorted by relative path.
+    files: Vec<FileSymbols>,
+    /// Full-read token baseline of those files (admitted text).
+    total_tokens: usize,
+    /// The file cap was hit.
+    truncated: bool,
+    /// The byte budget ran out before every file was read.
+    budget_exhausted: bool,
+    /// Sources a path rule, the project policy or the gateway withheld.
+    withheld: usize,
+}
+
+/// The line that stands for withheld sources. Content-free and stable: a
+/// count, never a path or a reason that could describe the content.
+fn withheld_note(withheld: usize) -> String {
+    format!("[{withheld} file(s) withheld by policy — not outlined]")
+}
+
+pub(super) fn outline_dir(dir: &str, root: &str, opts: &OutlineOpts) -> (String, usize) {
+    let Collected {
+        files,
+        total_tokens,
+        truncated,
+        budget_exhausted,
+        withheld,
+    } = collect(dir, root, opts);
 
     if opts.as_json {
-        return (super::json::dir_json(dir, &files, truncated), total_tokens);
+        return (
+            super::json::dir_json(dir, &files, truncated || budget_exhausted, withheld),
+            total_tokens,
+        );
     }
 
     if files.is_empty() {
-        return (super::no_match_message(dir, opts), 0);
+        let message = super::no_match_message(dir, opts);
+        if withheld > 0 {
+            return (format!("{message}\n{}", withheld_note(withheld)), 0);
+        }
+        return (message, 0);
     }
 
     let crp = CrpMode::effective();
@@ -41,6 +78,13 @@ pub(super) fn outline_dir(dir: &str, opts: &OutlineOpts) -> (String, usize) {
             "[truncated at {MAX_FILES} files — narrow the path for the rest]\n"
         ));
     }
+    if budget_exhausted {
+        out.push_str("[read budget exhausted — narrow the path for the rest]\n");
+    }
+    if withheld > 0 {
+        out.push_str(&withheld_note(withheld));
+        out.push('\n');
+    }
     // Located symbols are addressable as stable handles (#607): one self-
     // describing hint for the whole listing (path is each file's group header).
     out.push_str(crate::core::handle::USAGE_HINT);
@@ -54,7 +98,12 @@ pub(super) fn outline_dir(dir: &str, opts: &OutlineOpts) -> (String, usize) {
 /// Walk `dir` (gitignore/vendor aware), extract + filter per file, and return
 /// the files with ≥1 surviving symbol — sorted by relative path for
 /// determinism — plus the full-read token baseline and whether the cap hit.
-fn collect(dir: &str, opts: &OutlineOpts) -> (Vec<FileSymbols>, usize, bool) {
+///
+/// Each file is acquired through the common rooted admitted reader (G01), so
+/// the symbols come from the admitted text and a withheld source is counted,
+/// not silently dropped.
+fn collect(dir: &str, read_root: &str, opts: &OutlineOpts) -> Collected {
+    use crate::tools::admitted_sources::SourceRead;
     let mut paths: Vec<std::path::PathBuf> = ignore::WalkBuilder::new(dir)
         .hidden(true)
         .git_ignore(true)
@@ -79,13 +128,30 @@ fn collect(dir: &str, opts: &OutlineOpts) -> (Vec<FileSymbols>, usize, bool) {
     let root = std::path::Path::new(dir);
     let mut files = Vec::new();
     let mut total_tokens = 0usize;
+    let mut withheld = 0usize;
+    let mut budget_exhausted = false;
+    let mut remaining = MAX_TOTAL_BYTES;
 
     for path in paths {
         if std::fs::metadata(&path).is_ok_and(|m| m.len() > MAX_FILE_BYTES) {
             continue;
         }
-        let Ok(content) = std::fs::read_to_string(&path) else {
-            continue;
+        if remaining == 0 {
+            budget_exhausted = true;
+            break;
+        }
+        let content = match crate::tools::admitted_sources::read(
+            &path.to_string_lossy(),
+            read_root,
+            super::TOOL,
+            &mut remaining,
+        ) {
+            SourceRead::Admitted(read) => read.content,
+            SourceRead::Withheld(_) => {
+                withheld += 1;
+                continue;
+            }
+            SourceRead::Unavailable(_) => continue,
         };
         let ext = path
             .extension()
@@ -108,7 +174,13 @@ fn collect(dir: &str, opts: &OutlineOpts) -> (Vec<FileSymbols>, usize, bool) {
             sigs: filtered,
         });
     }
-    (files, total_tokens, truncated)
+    Collected {
+        files,
+        total_tokens,
+        truncated,
+        budget_exhausted,
+        withheld,
+    }
 }
 
 /// Path relative to `root`, normalized to forward slashes for deterministic,

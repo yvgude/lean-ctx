@@ -369,6 +369,26 @@ pub(crate) fn resolve_name_path_scoped(
 /// `ctx_read(mode=signatures)` had listed the symbol seconds earlier. When the
 /// caller names the file, the file itself is authority enough — same tree-sitter
 /// extractor the signature view uses, so the two can no longer disagree.
+/// The ORIGINAL text of a refactor target, for a request that may read it.
+///
+/// Refactors compute LSP positions, plan hashes and edits, so they need the
+/// bytes that are on disk — an admitted (possibly redacted) text would shift
+/// columns, and nothing redacted may ever be written back. What admission
+/// decides here (G01) is whether the running request may operate on the
+/// source at all: the read path is asked first, and a source it withholds is
+/// not read for a preview, a hash or an edit. Inside a request scope that is
+/// the project policy and the gateway; outside one the read path is a plain
+/// local read, as for every other reader. The returned text is never rendered
+/// by this module — it feeds positions, digests and the edit engine only.
+pub(crate) fn read_original_if_admitted(abs_path: &str) -> std::io::Result<String> {
+    if let Err(error) = crate::tools::ctx_read::read_file_lossy(abs_path)
+        && error.kind() == std::io::ErrorKind::PermissionDenied
+    {
+        return Err(error);
+    }
+    std::fs::read_to_string(abs_path)
+}
+
 pub(crate) fn resolve_name_path_in_file(
     name_path: &str,
     project_root: &str,
@@ -376,7 +396,7 @@ pub(crate) fn resolve_name_path_in_file(
 ) -> Result<Resolved, String> {
     let abs = crate::core::path_resolve::resolve_tool_path(Some(project_root), None, path)
         .map_err(|e| format!("NO_SYMBOL: path blocked by jail: {e}"))?;
-    let content = std::fs::read_to_string(&abs)
+    let content = read_original_if_admitted(&abs)
         .map_err(|e| format!("NO_SYMBOL: cannot read '{path}': {e}"))?;
     let ext = std::path::Path::new(&abs)
         .extension()
@@ -420,7 +440,7 @@ pub(crate) fn usage_range_text(
     let abs = crate::core::path_resolve::resolve_tool_path(Some(project_root), None, &u.path)
         .map_err(|e| format!("CONFLICT: usage path blocked by jail: {e}"))?;
     let content =
-        std::fs::read_to_string(&abs).map_err(|e| format!("FILE_NOT_FOUND: {abs}: {e}"))?;
+        read_original_if_admitted(&abs).map_err(|e| format!("FILE_NOT_FOUND: {abs}: {e}"))?;
     let s = crate::lsp::edit_apply::offset_of(&content, u.range.start_line, u.range.start_char)?;
     let e = crate::lsp::edit_apply::offset_of(&content, u.range.end_line, u.range.end_char)?;
     if e < s {
@@ -596,7 +616,7 @@ fn handle_symbol_edit(action: &str, args: &Value, project_root: &str) -> String 
         return e;
     }
 
-    let content = match std::fs::read_to_string(&abs_path) {
+    let content = match read_original_if_admitted(&abs_path) {
         Ok(c) => c,
         Err(e) => return format!("ERROR: FILE_NOT_FOUND: {abs_path}: {e}"),
     };

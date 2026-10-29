@@ -291,10 +291,7 @@ fn write_tools_are_not_readonly() {
     let write_tools = [
         "ctx_edit",
         "ctx_shell",
-        "ctx_compile",
-        "ctx_cache",
         "ctx_control",
-        "ctx_fill",
         "ctx_execute",
         "ctx_expand",
         "ctx_pack",
@@ -302,7 +299,6 @@ fn write_tools_are_not_readonly() {
         "ctx_prefetch",
         "ctx_agent",
         "ctx_handoff",
-        "ctx_workflow",
     ];
     for tool in &write_tools {
         assert!(

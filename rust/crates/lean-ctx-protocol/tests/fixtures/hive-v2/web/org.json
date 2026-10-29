@@ -1,0 +1,30 @@
+{
+  "route": "W7",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "id": "4b6d8f0a-2c4e-4f6a-8b0c-2e4f6a8c0e1a",
+      "slug": "acme",
+      "name": "Acme",
+      "plan": "team",
+      "retention_class": "standard",
+      "data_region_label": "CH",
+      "time_zone": "Europe/Zurich",
+      "c0_1x_instances": 2,
+      "c0_1x_sunset_at": null,
+      "organisation": {
+        "slug": "acme-group",
+        "name": "Acme Group"
+      },
+      "company": {
+        "slug": "acme-group",
+        "name": "Acme Group"
+      },
+      "plan_inherited": false
+    }
+  },
+  "errors": []
+}

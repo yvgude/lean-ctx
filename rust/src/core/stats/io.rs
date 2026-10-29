@@ -115,8 +115,11 @@ pub(super) fn load_from_dir(dir: &std::path::Path) -> StatsStore {
 
 fn write_to_disk(store: &StatsStore) -> bool {
     let Some(dir) = stats_dir() else { return false };
+    write_to_dir(&dir, store)
+}
 
-    if !dir.exists() && std::fs::create_dir_all(&dir).is_err() {
+fn write_to_dir(dir: &std::path::Path, store: &StatsStore) -> bool {
+    if !dir.exists() && std::fs::create_dir_all(dir).is_err() {
         return false;
     }
 
@@ -125,6 +128,57 @@ fn write_to_disk(store: &StatsStore) -> bool {
     serde_json::to_string(store).is_ok_and(|json| {
         std::fs::write(&tmp, json).is_ok() && std::fs::rename(&tmp, &path).is_ok()
     })
+}
+
+/// The folder of one project's own `stats.json` (`<data>/project-stats/<key>`).
+/// `None` for a key that is not a ledger project key (16 hex digits).
+pub(super) fn project_dir(key: &str) -> Option<PathBuf> {
+    (key.len() == 16 && key.bytes().all(|b| b.is_ascii_hexdigit()))
+        .then(|| stats_dir().map(|d| d.join("project-stats").join(key)))
+        .flatten()
+}
+
+/// Applies one accounting event to a project's own store, under its lock.
+/// The device store (`stats.json`) keeps counting everything; this copy is
+/// the project's share of it.
+pub(super) fn update_project(key: &str, apply: impl FnOnce(&mut StatsStore)) -> bool {
+    let Some(dir) = project_dir(key) else {
+        return false;
+    };
+    if !dir.exists() && std::fs::create_dir_all(&dir).is_err() {
+        return false;
+    }
+    let Some(_lock) = acquire_file_lock(&dir.join(".stats.lock")) else {
+        return false;
+    };
+    let mut store = load_from_dir(&dir);
+    apply(&mut store);
+    write_to_dir(&dir, &store)
+}
+
+/// The stores of the given project keys that exist.
+pub(super) fn load_projects<'a>(keys: impl Iterator<Item = &'a str>) -> Vec<StatsStore> {
+    keys.filter_map(project_dir)
+        .filter(|dir| dir.join("stats.json").exists())
+        .map(|dir| load_from_dir(&dir))
+        .collect()
+}
+
+/// Every project key with its own store.
+pub(super) fn project_keys() -> Vec<String> {
+    let Some(root) = stats_dir().map(|d| d.join("project-stats")) else {
+        return Vec::new();
+    };
+    let Ok(entries) = std::fs::read_dir(root) else {
+        return Vec::new();
+    };
+    let mut keys: Vec<String> = entries
+        .filter_map(Result::ok)
+        .filter_map(|e| e.file_name().into_string().ok())
+        .filter(|key| project_dir(key).is_some())
+        .collect();
+    keys.sort();
+    keys
 }
 
 pub(super) fn locked_write(store: &StatsStore) {

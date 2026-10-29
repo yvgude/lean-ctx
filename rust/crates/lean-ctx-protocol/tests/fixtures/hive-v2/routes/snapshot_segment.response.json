@@ -1,0 +1,200 @@
+{
+  "n": 0,
+  "place": "vault:3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+  "records": [
+    {
+      "body": {
+        "applies_to": [
+          "services/payments/retry.rs"
+        ],
+        "body_nonce": "01010101010101010101010101010101",
+        "evidence": "observed",
+        "sensitivity": "internal",
+        "statement": "Payment retries back off exponentially with full jitter, capped at 64 seconds."
+      },
+      "envelope": {
+        "actor": {
+          "kind": "worker"
+        },
+        "body_commit": "8822df5777f67d58e2588e368ec433905afb8641635dbdb476d74330c2787b9d",
+        "capture": {
+          "evidence": "observed",
+          "gate_version": 1,
+          "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+        },
+        "causal_base": 0,
+        "event_id": "01M5NKA2Z8005000000000W001",
+        "hlc": {
+          "counter": 0,
+          "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+          "wall_ms": 1792800001000
+        },
+        "key_id": "47983724220c8521",
+        "node_type": "fact",
+        "op": "node.add",
+        "place": {
+          "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+          "kind": "vault"
+        },
+        "provenance_claim": "own",
+        "schema": "leanctx.hive.event/v2",
+        "screening": {
+          "counts": {
+            "forbidden": 0,
+            "local_path": 0,
+            "pii": 0,
+            "redaction": 0,
+            "secret": 0
+          },
+          "scanner_version": 1
+        },
+        "signature": "65d47c5c54d12c756e23348f2b7a45ec08f8c0b939e6832e24dc13a23969ba1be2525d420dbed5de82c43a0aa8b0618191cbddfe53c4b989c67ae79e9782660e",
+        "target": "n_tyvnza7clspg4cpmb7ew7fvl7b",
+        "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+      },
+      "seq": 1,
+      "server_fields": {
+        "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqae",
+        "provenance": "own",
+        "received_at": 1792800001350,
+        "review_state": "confirmed",
+        "reviewed_by": "none",
+        "seq": 1
+      }
+    },
+    {
+      "leaf": "3fc7197f86285c5ed407002b33e8f691133044d8fd6b53cbaf39e56ab94fbb0f",
+      "seq": 4,
+      "withheld": true
+    },
+    {
+      "envelope": {
+        "actor": {
+          "kind": "worker"
+        },
+        "body_commit": "70babf18d78229b1e1d306f17a33d185bfe3b91d86bc681c47e1f5c16d25043e",
+        "capture": {
+          "evidence": "observed",
+          "gate_version": 1,
+          "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+        },
+        "causal_base": 4,
+        "event_id": "01M5NKA6W8005000000000W005",
+        "hlc": {
+          "counter": 0,
+          "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+          "wall_ms": 1792800005000
+        },
+        "key_id": "47983724220c8521",
+        "node_type": "finding",
+        "op": "node.add",
+        "place": {
+          "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+          "kind": "vault"
+        },
+        "provenance_claim": "own",
+        "schema": "leanctx.hive.event/v2",
+        "screening": {
+          "counts": {
+            "forbidden": 0,
+            "local_path": 0,
+            "pii": 0,
+            "redaction": 0,
+            "secret": 0
+          },
+          "scanner_version": 1
+        },
+        "signature": "94167819cd51ffe65b5aff42b5969e217f696151c936d6f3fa28bb55a3da44b3e3cf99c5a0138bccc522f3e4cfafcab20248b22bbf85448bc14dacee566be508",
+        "target": "n_zcjqmmor453nyxqgshlgpogwdm",
+        "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+      },
+      "purged": true,
+      "seq": 5,
+      "server_fields": {
+        "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqau",
+        "provenance": "own",
+        "purged": true,
+        "received_at": 1792800005350,
+        "review_state": "confirmed",
+        "reviewed_by": "none",
+        "seq": 5
+      }
+    },
+    {
+      "body": {
+        "body_nonce": "06060606060606060606060606060606",
+        "commits": [
+          "3e9f0c1a7b"
+        ],
+        "dead_ends": [
+          "Suspected clock skew between workers"
+        ],
+        "ended_at": 1792799940000,
+        "goal": "Find why refunds double-post on retries",
+        "outcome": "succeeded",
+        "outcome_note": "Root cause was a missing idempotency key on refund calls.",
+        "session_ref": "mcp-4242-0001",
+        "started_at": 1792796400000,
+        "summary": "Added idempotency keys to refund calls; double posts stopped in staging.",
+        "touched": [
+          {
+            "digest": "c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4c4",
+            "lang": "rust",
+            "path": "services/payments/refund.rs",
+            "symbol": "post_refund"
+          }
+        ]
+      },
+      "envelope": {
+        "actor": {
+          "kind": "worker"
+        },
+        "body_commit": "648ef57d8e2ba709f4a43a830f68de9b38b36bfaab14492acb801b3a609dd233",
+        "capture": {
+          "evidence": "observed",
+          "gate_version": 1,
+          "reasons_passed_hash": "a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3a3"
+        },
+        "causal_base": 5,
+        "event_id": "01M5NKA7VG005000000000W006",
+        "hlc": {
+          "counter": 0,
+          "node": "6f2b9c4e-1a3d-4e5f-8a7b-0c1d2e3f4a5b",
+          "wall_ms": 1792800006000
+        },
+        "key_id": "47983724220c8521",
+        "node_type": "episode",
+        "op": "node.add",
+        "place": {
+          "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+          "kind": "vault"
+        },
+        "provenance_claim": "own",
+        "schema": "leanctx.hive.event/v2",
+        "screening": {
+          "counts": {
+            "forbidden": 0,
+            "local_path": 0,
+            "pii": 0,
+            "redaction": 0,
+            "secret": 0
+          },
+          "scanner_version": 1
+        },
+        "signature": "3ecc37402864601084cc44b21a1166014180b5784e76bf8a3670bc4bc1f1c4639dafb34f8f0dad2493a8bd519acea554c2952681b0d573ea628541759e06690f",
+        "target": "n_aaaaaaaaaaaaaaaaaaaaaacaay",
+        "worker_id": "wkr_vk4oelpv5lzjmev44hun"
+      },
+      "seq": 6,
+      "server_fields": {
+        "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqay",
+        "provenance": "own",
+        "received_at": 1792800006350,
+        "review_state": "confirmed",
+        "reviewed_by": "none",
+        "seq": 6
+      }
+    }
+  ],
+  "rev": 1
+}

@@ -42,6 +42,22 @@ brew tap yvgude/lean-ctx && brew install lean-ctx
 cargo install lean-ctx
 ```
 
+## LeanCTX Cockpit
+
+The postinstall step also adds the free LeanCTX Cockpit (`lean-ctx cockpit`, a
+local web UI) from the same GitHub release as the engine. Its bundle must match
+the release's `COCKPIT_SHA256SUMS` and is then verified offline by
+`lean-ctx cockpit install --from`; any problem only prints a warning and the
+engine install still succeeds. Skip it with `LEAN_CTX_NO_COCKPIT=1`.
+
+## License
+
+This npm package and the LeanCTX Engine (`lean-ctx`) are licensed under
+Apache-2.0. The LeanCTX Cockpit binary is not open source: it is free to use,
+including commercially, under the LeanCTX Cockpit EULA
+(`LicenseRef-LeanCTX-Cockpit-EULA`, shipped inside the Cockpit package as
+`LICENSE.md`).
+
 ## Links
 
 - [Documentation](https://leanctx.com/docs/getting-started)

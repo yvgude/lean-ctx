@@ -1,0 +1,919 @@
+{
+  "cases": [
+    {
+      "match": true,
+      "paths": [
+        "src/auth/login.rs"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "services/payments/security/limits.rs"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "crates/crypto/aead.rs"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "deploy/secrets/README.md"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "app/iam/roles.py"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "lib/sandbox/run.ts"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/oauth_client.rs"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/tls_config.go"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "web/redactor.js"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "ops/kms_rotate.sh"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "api/acl.rs"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        ".github/workflows/ci.yml"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "repo/.gitlab-ci.yml"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "CODEOWNERS"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "docs/SECURITY.md"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "plan/THREAT-MODEL-hive.md"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "docs/authors.md"
+      ],
+      "rule": "R1",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "Never log the database password in debug builds."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "The API key is read from the environment at start."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "Rotate the signing key every 90 days."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "CSRF tokens are checked on every form post."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "The CVE fix needs a rebuild of the image."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "Egress is blocked except for the mirror."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "PII is removed before export."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "GDPR erasure runs through the purge flow."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "The CSP header forbids inline scripts."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "Use sudo only inside the provisioning step."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "SSRF guard rejects private ranges."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "The allowlist covers the three build hosts."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "A Privilege Escalation path existed via the helper."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "TLS 1.3 is required for the checkout client."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R2",
+      "texts": [
+        "Store the private key in the keychain."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R3",
+      "texts": [
+        "The admin role can change the session scope."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R3",
+      "texts": [
+        "Audit every token refresh."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R3",
+      "texts": [
+        "Decrypt the cookie before reading the session."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R3",
+      "texts": [
+        "The policy needs a compliance check."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R3",
+      "texts": [
+        "Root may change the CORS rules."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R3",
+      "texts": [
+        "Authentication happens before authorization."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R3",
+      "texts": [
+        "The key and its signature are stored together."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R3",
+      "texts": [
+        "Encrypt the export; admin users only."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R3",
+      "texts": [
+        "Permission checks use the role table."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Session cookies expire after an hour."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R3",
+      "texts": [
+        "Authorization scope is checked per route."
+      ]
+    },
+    {
+      "match": true,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "R3",
+      "texts": [
+        "Audit logs record every admin login."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refunds post twice when the retry fires early."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "The cart serialiser is the slowest step of checkout."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Keyboard shortcuts open the command palette."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "The author list lives in the README."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Authority records are imported nightly."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Use the monkey patch only in tests."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Tokenizer speed doubled after the change."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "The admin page loads slowly on Safari."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "One session per worker is enough."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Rotate the log files daily."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "The root cause was a missing index."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Signatures of the PDF export look blurry."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Cookies of the demo shop are cleared nightly."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Scope creep delayed the release by a week."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Policy text moved to the legal repo."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "The roles of the reviewers are listed in the wiki."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Compliance training is due in March."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "The key frame interval is two seconds."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "The certificateless build still works."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Secretary notes go to the shared drive."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Exploitative pricing was removed from the plan."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Injectable services are wired by the container."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Passwordless sign-in is planned for later."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "TLSF allocator reduces fragmentation."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Sandboxes in the playground reset hourly."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/report/render.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "services/payments/retry.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "web/pages/index.astro"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "docs/guide/getting-started.md"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "crates/hive-wire/src/graph.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "scripts/build.sh"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "migrations/0001_init.sql"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "tests/fixtures/data.json"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/authority/mod.rs"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/certification"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/tlsf/alloc.c"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "docs/policy-notes"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "lib/kms"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/secrets"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/redactor"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    },
+    {
+      "match": false,
+      "paths": [
+        "src/acl"
+      ],
+      "rule": "none",
+      "texts": [
+        "Refactor the module layout for readability."
+      ]
+    }
+  ],
+  "rules": {
+    "matching": "R1: any reference target or file/symbol anchor path matches a glob case-insensitively (** = any directories, * and ? stay inside one path segment, {a,b} = alternatives); R2: statement, title, steps or rationale contains one strong term as whole words (case-insensitive, words split at non-alphanumerics); R3: ≥ 2 distinct weak terms as whole words; match = R1 or R2 or R3 (first rule reported)",
+    "r1_globs": [
+      "**/{security,auth,authn,authz,crypto,secrets,policy,policies,iam,permissions,sandbox,pathjail}/**",
+      "**/*{auth,crypto,secret,policy,sandbox,jail,egress,redact,permission,acl,rbac,tls,cert,keyring,kms}*.*",
+      "**/.github/workflows/**",
+      "**/.gitlab-ci.yml",
+      "**/CODEOWNERS",
+      "**/SECURITY.md",
+      "**/THREAT-MODEL*"
+    ],
+    "r2_strong": [
+      "password",
+      "secret",
+      "credential",
+      "api key",
+      "private key",
+      "access token",
+      "encryption key",
+      "signing key",
+      "certificate",
+      "tls",
+      "csrf",
+      "xss",
+      "ssrf",
+      "cve",
+      "vulnerability",
+      "exploit",
+      "injection",
+      "privilege escalation",
+      "sudo",
+      "firewall",
+      "allowlist",
+      "denylist",
+      "pathjail",
+      "sandbox",
+      "egress",
+      "redaction",
+      "pii",
+      "gdpr",
+      "csp"
+    ],
+    "r3_weak": [
+      "auth",
+      "authentication",
+      "authorization",
+      "permission",
+      "role",
+      "token",
+      "key",
+      "encrypt",
+      "decrypt",
+      "signature",
+      "policy",
+      "compliance",
+      "audit",
+      "root",
+      "admin",
+      "scope",
+      "session",
+      "cookie",
+      "cors"
+    ],
+    "source": "SPEC-CONTRACT-SERVER §3.15.2"
+  }
+}

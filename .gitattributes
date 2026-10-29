@@ -16,7 +16,18 @@ rust/eval/testbench/** text eol=lf
 rust/data/addon_registry.json text eol=lf
 rust/data/grammar_registry.json text eol=lf
 
+# The packaged capability registry is compared with the repository one as text
+# (`product_capabilities::tests`, scripts/check-capabilities.py).
+product/capabilities.toml text eol=lf
+rust/data/product-capabilities.toml text eol=lf
+
 # Signed release assets: the signatures cover the exact downloaded bytes, so a
 # CRLF checkout on Windows would make genuine fixtures fail verification.
 rust/src/core/updater/testdata/** -text
 
+
+# Shipped database migrations are immutable: deployed databases recorded their
+# bytes (ee/governance/migrations/legacy-history.txt). A whitespace "fix" changes
+# the checksum, so `git diff --check` must not ask for one.
+ee/governance/migrations/002_request_log.sql -whitespace
+ee/governance/migrations/014_stripe_billing.sql -whitespace

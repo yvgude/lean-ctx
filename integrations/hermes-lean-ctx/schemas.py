@@ -14,40 +14,27 @@ from typing import Any, Dict, List
 CTX_SEARCH: Dict[str, Any] = {
     "name": "ctx_search",
     "description": (
-        "Regex code/content search across the project (compact, .gitignore-aware). "
-        "Use to locate code instead of keeping files in context."
+        "Code/content search across the project (compact, .gitignore-aware). "
+        "Regex by default; action=semantic for concept search (hybrid BM25 + "
+        "embeddings) when keywords are insufficient."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "pattern": {"type": "string", "description": "Regex pattern"},
+            "action": {"type": "string", "description": "regex (default)|semantic|symbol"},
+            "pattern": {"type": "string", "description": "Regex pattern (action=regex)"},
+            "query": {"type": "string", "description": "Concept query (action=semantic)"},
             "path": {"type": "string", "description": "Directory to search"},
             "include": {"type": "string", "description": "Glob filter, e.g. *.ts, src/**/*.rs"},
-            "max_results": {"type": "integer", "description": "Default 20"},
-        },
-        "required": ["pattern"],
-    },
-}
-
-CTX_SEMANTIC_SEARCH: Dict[str, Any] = {
-    "name": "ctx_semantic_search",
-    "description": (
-        "Concept/semantic search (hybrid BM25 + embeddings) over the codebase. "
-        "Use when keyword search is insufficient."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "query": {"type": "string", "description": "Natural-language or symbol query"},
-            "path": {"type": "string", "description": "Project root (default: .)"},
             "mode": {
                 "type": "string",
                 "enum": ["bm25", "dense", "hybrid"],
-                "description": "Default hybrid",
+                "description": "Semantic ranking (default hybrid)",
             },
-            "top_k": {"type": "integer", "description": "Result count (default 10)"},
+            "max_results": {"type": "integer", "description": "Default 20"},
+            "top_k": {"type": "integer", "description": "Semantic result count (default 10)"},
         },
-        "required": ["query"],
+        "required": [],
     },
 }
 
@@ -114,31 +101,12 @@ CTX_KNOWLEDGE: Dict[str, Any] = {
     },
 }
 
-CTX_SUMMARY: Dict[str, Any] = {
-    "name": "ctx_summary",
-    "description": (
-        "Recall or record AI session summaries across sessions. Use recall with a "
-        "query to retrieve what earlier sessions did."
-    ),
-    "parameters": {
-        "type": "object",
-        "properties": {
-            "action": {"type": "string", "description": "recall (default)|record|list"},
-            "query": {"type": "string", "description": "Recall query"},
-            "top_k": {"type": "integer", "description": "Result count (default 5)"},
-        },
-        "required": [],
-    },
-}
-
 # Order is stable for deterministic tool-list injection.
 ALL_SCHEMAS: List[Dict[str, Any]] = [
     CTX_SEARCH,
-    CTX_SEMANTIC_SEARCH,
     CTX_READ,
     CTX_EXPAND,
     CTX_KNOWLEDGE,
-    CTX_SUMMARY,
 ]
 
 TOOL_NAMES: List[str] = [s["name"] for s in ALL_SCHEMAS]

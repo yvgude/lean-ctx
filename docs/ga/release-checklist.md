@@ -79,7 +79,7 @@ release assets, and verification commands.
   fails closed for drift/path violations.
 
   ```bash
-  cargo test --manifest-path rust/Cargo.toml --lib benchmark_spec::types
+  cargo test --manifest-path rust/Cargo.toml --lib eval_ab::safe_paths
   ```
 
 - [ ] If a release exposes a profile/Kit selection or rollback path, rehearse

@@ -92,7 +92,17 @@ pub(super) fn has_project_marker(dir: &Path) -> bool {
 /// accepts a broad/unsafe root (HOME, filesystem root, agent sandbox dirs),
 /// which would otherwise contaminate sessions across projects.
 pub fn best_root_from_uris(uris: &[String]) -> Option<String> {
-    best_root_from_paths(uris.iter().filter_map(|u| uri_to_path(u)).collect())
+    root_selection_from_uris(uris).map(|selection| selection.chosen_root)
+}
+
+/// [`best_root_from_uris`] with the other candidates, so a choice among
+/// several roots can be named (AP04-G7).
+pub(crate) fn root_selection_from_uris(
+    uris: &[String],
+) -> Option<crate::core::root_selection::RootSelection> {
+    crate::core::root_selection::select_with_preferences(
+        uris.iter().filter_map(|u| uri_to_path(u)).collect(),
+    )
 }
 
 /// Pick the best project root from a list of candidate directory paths.
@@ -101,26 +111,12 @@ pub fn best_root_from_uris(uris: &[String]) -> Option<String> {
 /// falls back to the first *safe* directory. A caller that reports its workspace
 /// root as HOME (some do) must not turn HOME into the project root — that is the
 /// root cause of cross-project session contamination — so a broad/unsafe root is
-/// never accepted as a marker-less fallback.
+/// never accepted as a marker-less fallback. A root the user chose with
+/// `lean-ctx project use` wins when it is among the candidates
+/// (`core::root_selection`).
+#[cfg(test)]
 fn best_root_from_paths(paths: Vec<String>) -> Option<String> {
-    let paths: Vec<String> = paths
-        .into_iter()
-        .filter(|p| Path::new(p).is_dir())
-        .collect();
-
-    if paths.is_empty() {
-        return None;
-    }
-
-    for p in &paths {
-        if has_project_marker(Path::new(p)) {
-            return Some(p.clone());
-        }
-    }
-
-    paths
-        .into_iter()
-        .find(|p| !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(p)))
+    crate::core::root_selection::select_with_preferences(paths).map(|s| s.chosen_root)
 }
 
 /// Filter and validate URIs to existing directories only.
@@ -184,11 +180,20 @@ pub fn session_root(env_root: Option<String>, cwd_root: Option<String>) -> Optio
     reconcile_session_root(env_root, env_is_pin, cwd_root)
 }
 
+/// The CLI's project under a `LEAN_CTX_PROJECT_ROOT` pin: the same rule as a
+/// session's — a command run inside another real project acts for that
+/// project, not for the pinned one (AP04-G10).
+pub(crate) fn reconcile_pinned_root(pin: String, cwd_root: Option<String>) -> String {
+    reconcile_session_root(Some(pin.clone()), true, cwd_root).unwrap_or(pin)
+}
+
 fn reconcile_session_root(
     env_root: Option<String>,
     env_is_pin: bool,
     cwd_root: Option<String>,
 ) -> Option<String> {
+    let cwd_root =
+        cwd_root.filter(|cwd| !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(cwd)));
     if let (true, Some(pin), Some(cwd)) = (env_is_pin, env_root.as_deref(), cwd_root.as_deref()) {
         let pin_path = crate::core::pathutil::safe_canonicalize_or_self(Path::new(pin));
         let cwd_path = crate::core::pathutil::safe_canonicalize_or_self(Path::new(cwd));
@@ -203,6 +208,20 @@ fn reconcile_session_root(
         }
     }
     env_root.or(cwd_root)
+}
+
+/// The project root the operator pinned with `LEAN_CTX_PROJECT_ROOT`.
+///
+/// The IDE variables in [`root_from_env`] are hints a host injects and may
+/// name an agent or sandbox directory; this one is set on purpose and is a
+/// boundary. `Some` only under the conditions `root_from_env` accepts it.
+pub fn pinned_root() -> Option<String> {
+    let pinned = std::env::var("LEAN_CTX_PROJECT_ROOT").ok()?;
+    let pinned = pinned.trim();
+    (!pinned.is_empty()
+        && Path::new(pinned).is_dir()
+        && !crate::core::pathutil::is_broad_or_unsafe_root(Path::new(pinned)))
+    .then(|| pinned.to_string())
 }
 
 /// Split a `WORKSPACE_FOLDER_PATHS` value into individual paths.
@@ -231,12 +250,16 @@ fn split_workspace_paths(raw: &str) -> Vec<String> {
 /// unsafe directory and relative tool paths resolve against the wrong tree
 /// (#699). This variable is the Cursor-sanctioned way to learn the active
 /// workspace folder(s). The same broad/unsafe-root guards as MCP roots apply.
-pub fn root_from_workspace_env() -> Option<String> {
+///
+/// Returned as the selection, with the other candidates, so a choice among
+/// several folders can be named (AP04-G7).
+pub(crate) fn workspace_selection_from_env() -> Option<crate::core::root_selection::RootSelection> {
     for var in ["WORKSPACE_FOLDER_PATHS", "VSCODE_WORKSPACE_FOLDER"] {
-        if let Ok(raw) = std::env::var(var) {
-            if let Some(root) = best_root_from_paths(split_workspace_paths(&raw)) {
-                return Some(root);
-            }
+        if let Ok(raw) = std::env::var(var)
+            && let Some(selection) =
+                crate::core::root_selection::select_with_preferences(split_workspace_paths(&raw))
+        {
+            return Some(selection);
         }
     }
     None
@@ -595,7 +618,7 @@ mod tests {
     #[test]
     fn workspace_env_readers_do_not_panic() {
         // Smoke test: both env readers tolerate the variable being set or unset.
-        let _ = root_from_workspace_env();
+        let _ = workspace_selection_from_env();
         let _ = workspace_roots_from_env();
     }
 }

@@ -1,0 +1,352 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/receipts.schema.json",
+  "title": "Engine receipts v2 (Release C, K2 review M3)",
+  "description": "POST /v1/receipts from the C line: closed engine receipt documents (invocation + observation) without any path, reference or unsalted digest of content. Input and output are HMAC-SHA256 values under an engine-local key Hive never receives; source references are reduced to a count; failure recovery references are dropped. The batch is signed by the instance key like metrics hours. v1 receipt documents (leanctx.engine-receipt/v1, free-form) are refused.",
+  "$defs": {
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "hmac": {
+      "type": "string",
+      "pattern": "^hmac-sha256:[0-9a-f]{64}$",
+      "description": "HMAC-SHA256 with the engine-local receipt key (per instance, never uploaded): opaque to Hive, re-verifiable by the engine"
+    },
+    "receipt_id": {
+      "type": "string",
+      "pattern": "^rcpt_[0-9a-z]{1,64}$"
+    },
+    "invocation_id": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{32,64}$",
+      "description": "opaque id the engine derives by hashing; never a path or name"
+    },
+    "semver": {
+      "type": "string",
+      "pattern": "^[0-9]{1,4}\\.[0-9]{1,4}\\.[0-9]{1,6}(-[0-9A-Za-z.]{1,32})?$"
+    },
+    "measurement": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "unit",
+        "classification"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "pattern": "^[a-z0-9_-]{1,64}$",
+          "not": {
+            "pattern": "[A-Za-z0-9]{24,}"
+          }
+        },
+        "unit": {
+          "enum": [
+            "tokens",
+            "bytes",
+            "ms",
+            "count",
+            "lines",
+            "ratio_ppm"
+          ]
+        },
+        "classification": {
+          "enum": [
+            "measured",
+            "estimated",
+            "unavailable"
+          ]
+        },
+        "value": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        }
+      }
+    },
+    "invocation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "invocation_id",
+        "engine",
+        "operation",
+        "input_hmac",
+        "source_count",
+        "policy_admission"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "invocation_id": {
+          "$ref": "#/$defs/invocation_id"
+        },
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "engine_id",
+            "engine_version"
+          ],
+          "properties": {
+            "engine_id": {
+              "const": "lean-ctx-local"
+            },
+            "engine_version": {
+              "$ref": "#/$defs/semver"
+            }
+          }
+        },
+        "operation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "capability_id",
+            "capability_version"
+          ],
+          "properties": {
+            "capability_id": {
+              "enum": [
+                "capability://leanctx/context-optimization"
+              ]
+            },
+            "capability_version": {
+              "$ref": "#/$defs/semver"
+            }
+          }
+        },
+        "input_hmac": {
+          "$ref": "#/$defs/hmac"
+        },
+        "source_count": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 256
+        },
+        "policy_admission": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "policy_digest = the effective-policy digest Hive issued (it knows it), or null",
+          "required": [
+            "decision",
+            "policy_digest"
+          ],
+          "properties": {
+            "decision": {
+              "enum": [
+                "admitted",
+                "rejected"
+              ]
+            },
+            "policy_digest": {
+              "anyOf": [
+                {
+                  "type": "string",
+                  "pattern": "^sha256:[0-9a-f]{64}$"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        }
+      }
+    },
+    "observation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema_version",
+        "invocation_id",
+        "status",
+        "output_hmac",
+        "source_count",
+        "measurements",
+        "failure"
+      ],
+      "properties": {
+        "schema_version": {
+          "const": 1
+        },
+        "invocation_id": {
+          "$ref": "#/$defs/invocation_id"
+        },
+        "status": {
+          "enum": [
+            "succeeded",
+            "degraded",
+            "rejected",
+            "failed"
+          ]
+        },
+        "output_hmac": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/hmac"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "source_count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "measurements": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/measurement"
+          }
+        },
+        "failure": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "code",
+                "retryable_by_host"
+              ],
+              "properties": {
+                "code": {
+                  "enum": [
+                    "policy_rejected",
+                    "source_unavailable",
+                    "source_integrity_mismatch",
+                    "resource_limit",
+                    "unsupported_operation",
+                    "internal"
+                  ]
+                },
+                "retryable_by_host": {
+                  "type": "boolean"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "document": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "the receipt artifact as uploaded; invocation_id must equal in both parts",
+      "required": [
+        "schema",
+        "invocation",
+        "observation"
+      ],
+      "properties": {
+        "schema": {
+          "const": "leanctx.engine-receipt/v2"
+        },
+        "invocation": {
+          "$ref": "#/$defs/invocation"
+        },
+        "observation": {
+          "$ref": "#/$defs/observation"
+        }
+      }
+    },
+    "item": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "receipt_id",
+        "kind",
+        "vault_id",
+        "created_at",
+        "digest",
+        "document"
+      ],
+      "properties": {
+        "receipt_id": {
+          "$ref": "#/$defs/receipt_id"
+        },
+        "kind": {
+          "const": "engine"
+        },
+        "vault_id": {
+          "$ref": "common.schema.json#/$defs/hex32"
+        },
+        "created_at": {
+          "$ref": "#/$defs/time"
+        },
+        "digest": {
+          "type": "string",
+          "pattern": "^sha256:[0-9a-f]{64}$",
+          "description": "sha256 of canonical_json(document): binds the item to its document (over HMAC values only)"
+        },
+        "document": {
+          "$ref": "#/$defs/document"
+        }
+      }
+    },
+    "request": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "POST /v1/receipts body, at most 1 MiB",
+      "required": [
+        "schema",
+        "receipts",
+        "key_id",
+        "signature"
+      ],
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.receipts/v2"
+        },
+        "receipts": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/item"
+          }
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        },
+        "signature": {
+          "$ref": "common.schema.json#/$defs/signature",
+          "description": "Ed25519 over \"leanctx.hive.receipts.v2\\n\" || canonical_json(body without signature)"
+        }
+      }
+    },
+    "ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "accepted",
+        "duplicates"
+      ],
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.receipts-ack/v2"
+        },
+        "accepted": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        },
+        "duplicates": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 256
+        }
+      }
+    }
+  }
+}

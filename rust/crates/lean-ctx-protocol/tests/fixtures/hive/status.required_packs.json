@@ -1,0 +1,39 @@
+{
+  "available": true,
+  "connected": true,
+  "drafts": {
+    "queued": 0,
+    "refused": 0
+  },
+  "filter_packs": [
+    {
+      "pack_id": "ch-identifiers",
+      "version": 3
+    }
+  ],
+  "instance": {
+    "id": "inst_01jb8z3k4m5n6p7q8r9s0t1v2w",
+    "label": "studio-mac"
+  },
+  "last_seen": "2026-10-20T12:00:00Z",
+  "org": {
+    "name": "Acme AG"
+  },
+  "policy": {
+    "enforced": true,
+    "not_after": "2026-11-20T12:00:00Z",
+    "required_filter_packs": [
+      {
+        "installed": true,
+        "pack_id": "ch-identifiers",
+        "version": 3
+      }
+    ],
+    "state": "required",
+    "verified_at": "2026-10-20T12:00:00Z",
+    "version": 2
+  },
+  "policy_refusal": null,
+  "url": "https://hive.leanctx.com",
+  "web_url": "https://hive.leanctx.com"
+}

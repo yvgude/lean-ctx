@@ -69,6 +69,9 @@ pub(crate) struct QdrantHit {
     pub kind: crate::core::bm25_index::ChunkKind,
     pub start_line: usize,
     pub end_line: usize,
+    /// `external_origin::chunk_digest` of the chunk the point was written
+    /// for; `None` on a point written before the payload kept it.
+    pub content_digest: Option<String>,
 }
 
 impl QdrantStore {
@@ -174,14 +177,30 @@ impl QdrantStore {
         query_vec: &[f32],
         limit: usize,
     ) -> Result<Vec<QdrantHit>, String> {
+        self.search_points(collection, &search_body(query_vec, limit, None))
+    }
+
+    /// [`Self::search`] restricted to the points of `sources`: the backend
+    /// ranks only rows whose `file_path` payload is one of them, so a row of
+    /// any other source neither scores nor takes a place before the limit.
+    /// The paths travel as JSON values of a payload filter.
+    pub(crate) fn search_within(
+        &self,
+        collection: &str,
+        query_vec: &[f32],
+        limit: usize,
+        sources: &[String],
+    ) -> Result<Vec<QdrantHit>, String> {
+        self.search_points(collection, &search_body(query_vec, limit, Some(sources)))
+    }
+
+    fn search_points(
+        &self,
+        collection: &str,
+        payload: &serde_json::Value,
+    ) -> Result<Vec<QdrantHit>, String> {
         let url = format!("{}/collections/{collection}/points/search", self.cfg.url);
-        let payload = serde_json::json!({
-            "vector": query_vec,
-            "limit": limit,
-            "with_payload": true,
-            "with_vector": false,
-        });
-        let payload_bytes = serde_json::to_vec(&payload).map_err(|e| e.to_string())?;
+        let payload_bytes = serde_json::to_vec(payload).map_err(|e| e.to_string())?;
 
         let mut req = self
             .agent
@@ -217,6 +236,7 @@ impl QdrantStore {
                 kind: crate::core::dense_backend::kind_from_str(&payload.kind),
                 start_line: payload.start_line,
                 end_line: payload.end_line,
+                content_digest: payload.content_digest,
             });
         }
         Ok(out)
@@ -332,6 +352,23 @@ impl QdrantStore {
 
 const UPSERT_BATCH_POINTS: usize = 256;
 
+/// The search request: the nearest `limit` points, of `sources` only when
+/// given (`match.any` on the `file_path` payload every point carries).
+fn search_body(query_vec: &[f32], limit: usize, sources: Option<&[String]>) -> serde_json::Value {
+    let mut body = serde_json::json!({
+        "vector": query_vec,
+        "limit": limit,
+        "with_payload": true,
+        "with_vector": false,
+    });
+    if let Some(sources) = sources {
+        body["filter"] = serde_json::json!({
+            "must": [ { "key": "file_path", "match": { "any": sources } } ]
+        });
+    }
+    body
+}
+
 #[derive(Debug, Deserialize)]
 struct QdrantResponse<T> {
     result: T,
@@ -350,6 +387,8 @@ struct QdrantPayload {
     kind: String,
     start_line: usize,
     end_line: usize,
+    #[serde(default)]
+    content_digest: Option<String>,
 }
 
 #[derive(Debug, Serialize)]
@@ -371,6 +410,10 @@ struct QdrantPointPayload<'a> {
     kind: &'a str,
     start_line: usize,
     end_line: usize,
+    /// Identifies the chunk text without holding it: a row of an external
+    /// chunk is served only as the chunk with this digest that the local
+    /// index holds and its origin admits.
+    content_digest: String,
 }
 
 fn point_for_chunk<'a>(chunk: &'a CodeChunk, vector: &'a [f32]) -> QdrantPoint<'a> {
@@ -383,6 +426,7 @@ fn point_for_chunk<'a>(chunk: &'a CodeChunk, vector: &'a [f32]) -> QdrantPoint<'
             kind: crate::core::dense_backend::kind_to_str(&chunk.kind),
             start_line: chunk.start_line,
             end_line: chunk.end_line,
+            content_digest: crate::core::bm25_index::external_origin::chunk_digest(&chunk.content),
         },
     }
 }

@@ -5,23 +5,28 @@ not a release, availability, licensing, or revenue-readiness claim.
 
 ## Product thesis
 
-LeanCTX monetizes two compounding decisions:
-
-1. What context should a task receive?
-2. How should that task execute?
+LeanCTX is the Context Gateway for AI systems: it selects the context a task
+may receive, controls its use and destination, and proves what was delivered
+(Select → Control → Prove). The host keeps the model, the agent loop and the
+decision how a task executes.
 
 The local Rust engine remains the inspectable trust base. Paid tiers add
-adaptive intelligence, coordinated shared execution, and organizational
-governance without making Community unsafe or unusable.
+adaptive context intelligence, shared and coordinated team context, and
+organizational governance without making Community unsafe or unusable.
+
+Coordination context is part of the gateway: agent presence, leases, the agent
+bus and the work graph tell agents who works on what, what is held, what was
+handed over and what is done. LeanCTX delivers that state as governed context;
+it does not start, schedule, assign or retry agent work.
 
 ## Canonical tiers
 
 | Tier | Product boundary | Required invariant | Current evidence class |
 |---|---|---|---|
 | Community | Context Toolkit + deterministic reference runtime | Useful local-first operation without account or hosted dependency | Production and preview primitives exist; full V4 gate open |
-| Pro | Context + Execution Autopilot, Local Agent Bus, bounded local Work Graph | Material adaptive/automation gain; clean deterministic fallback when disabled | Multiple local slices tested; complete paid lifecycle not proven |
-| Team | Shared organizational context + distributed workspace Work Graph | Cross-user/device scope, provenance, authority, bounded budgets and conflict handling | Partial isolated work; shared-context product gate open |
-| Enterprise | Governed context and agent execution infrastructure | Identity, owner, policy, audit, deployment and compliance controls | Governance slices exist; complete surface and integration open |
+| Pro | Context Autopilot, local coordination context (Local Agent Bus, presence, leases, bounded local Work Graph) | Material adaptive context gain; clean deterministic fallback when disabled | Multiple local slices tested; complete paid lifecycle not proven |
+| Team | Authorized shared context + team coordination context (workspace bus, presence, leases, shared Work Graph) | Cross-user/device scope; a shared artifact is released only against the receiver's own checkout of its source; provenance, authority and conflict handling | Team journeys pass against a real Hub; release gate open |
+| Enterprise | Governed context and governed coordination for agents | Identity, owner, policy, audit, deployment and compliance controls | Governance slices exist; complete surface and integration open |
 | SDK/OEM | Stable commercial integration channel | Public contracts and trust boundary remain interoperable | Requires final licensing/package/release evidence |
 
 An implementation file, schema, test or dashboard does not by itself promote a
@@ -55,23 +60,27 @@ must fall back to deterministic Community behavior without data loss. The
 planner contract, safety invariants and learning bounds are in
 [`autopilot.md`](autopilot.md).
 
-### Execution Autopilot and capability fabric
+### Execution Autopilot and capability fabric (maintenance only)
 
-Execution selection is bounded by supported connectors, capability manifests,
+An existing contract, kept compatible and not expanded: execution, model choice
+and task scheduling belong to the host. Execution selection is bounded by supported connectors, capability manifests,
 policy, cost, latency, quality and reversibility. OCLA candidates run in shadow
 until evidence justifies promotion. A private optimizer may improve decisions;
 the public contract and receipts remain sufficient for audit/interoperability.
 The selection and binding contract is in
-[`execution-autopilot.md`](execution-autopilot.md); the adapter layer it
-executes through is in [`agent-connectors.md`](agent-connectors.md).
+[`execution-autopilot.md`](execution-autopilot.md); the host launches agents,
+and how LeanCTX binds and controls a host-launched child is in
+[`work-graph-host-start.md`](work-graph-host-start.md).
 
-### Orchestration
+### Coordination context
 
 Pro owns live single-user Local Agent Bus and bounded local Work Graph. Team
 extends these across users, devices and machines with explicit parent/child
-lineage, fan-out/depth/concurrency limits, inherited budgets, leases,
-cancellation, resumability, result fusion and accepted-path/waste attribution.
-Unlimited agent spawning is outside the product contract.
+lineage, leases, presence, handoff and accepted-path attribution. A message
+leaves a machine only through the egress admission; what a member wrote is
+foreign content to its readers. LeanCTX records and serves the coordination
+state; agents and their hosts act on it. Spawning, scheduling and executing
+agents is outside the product contract.
 
 ### State and synchronization
 
@@ -101,7 +110,7 @@ Telemetry defaults and migration must be explicit, privacy-bounded and
 inspectable. Content, paths and secrets never enter telemetry. Explicit opt-out
 must survive upgrades; deletion needs a real remote or documented admin path.
 
-The entitlement model is in [`entitlements.md`](entitlements.md); the telemetry
+Plans and their rights live in LeanCTX Hive; the telemetry
 contract is in [`telemetry.md`](telemetry.md), with per-field definitions in
 [`../privacy/TELEMETRY-DATA-DICTIONARY.md`](../privacy/TELEMETRY-DATA-DICTIONARY.md).
 

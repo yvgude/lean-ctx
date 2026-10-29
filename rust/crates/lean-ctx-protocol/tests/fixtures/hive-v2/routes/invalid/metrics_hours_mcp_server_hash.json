@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_mcp_server_hash",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets/0/slices/0/unregulated/1/name",
+      "value": "3f9a1c7e5b2d4a6f8e0c1b3d5f7a9c2e"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "an MCP server is named only when the workspace's policy names it, else other; never a hash (K13)"
+}

@@ -1,0 +1,52 @@
+{
+  "bind": [
+    {
+      "alg": "p256_ecdsa_sha256",
+      "card_bind_signature": "MEQCIDiT8i3kzLcDDKVO-ITw8S_DPJV9BQvpJUM6fojgMDPBAiA4fydtFtFo6hR0oApAhbph_dwnKEUt-7EUSwulCYC4Bg",
+      "instance": "instance_b",
+      "key": "presence_mac",
+      "signing_input": "leanctx.hive.presence_bind.v1\n{\"alg\":\"p256_ecdsa_sha256\",\"instance_id\":\"8e3c0d5f-2b4e-4f60-9b8c-1d2e3f4a5b6c\",\"key_id\":\"70daf6041ffc7219\",\"public_key\":\"MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYNLOCGP6vuOHk9DHfH-D017v9_AVlxuXP0DbuDjd-0xqVCw_ciOKDxuQFcpsQ6zjnfgSUlUeXmsk5E6vuNsTLQ\"}",
+      "statement": {
+        "alg": "p256_ecdsa_sha256",
+        "instance_id": "8e3c0d5f-2b4e-4f60-9b8c-1d2e3f4a5b6c",
+        "key_id": "70daf6041ffc7219",
+        "public_key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYNLOCGP6vuOHk9DHfH-D017v9_AVlxuXP0DbuDjd-0xqVCw_ciOKDxuQFcpsQ6zjnfgSUlUeXmsk5E6vuNsTLQ"
+      }
+    }
+  ],
+  "cases": [
+    {
+      "fixture": "consent/proof.ed25519.swarm_join.json",
+      "key": "presence_a",
+      "signature": "hoXC4GGGmTIb9KoaOs0FSTfd5YSjTo2s9YyuodcTWhflaOKCpJhGjPOdgCZ1xDB4BsdY6Id9R2iKcQt9LGL6CA",
+      "signing_input": "leanctx.hive.consent_proof.v1\n{\"approved_at\":1792800060000,\"consent_id\":\"cns_cdefgh234567abcd\",\"kind\":\"swarm_join\",\"subject_digest\":\"aadc65c3aeeb5df86987fc43cf88bec7c7bdf4d2beb47558dfe9b8a9cdccf591\"}"
+    },
+    {
+      "fixture": "consent/proof.p256_ecdsa_sha256.pledge_change.json",
+      "key": "presence_mac",
+      "signature": "MEUCIG9muzYAcbwh5nLuQT-Filqpt4v_shRk61BN8BzTPqINAiEAh3qaNzV5AmqgVAWEbyCaDYjkAPBkYBPRgYNgDIu4W6c",
+      "signing_input": "leanctx.hive.consent_proof.v1\n{\"approved_at\":1792800090000,\"consent_id\":\"cns_defgh234567abcde\",\"kind\":\"pledge_change\",\"subject_digest\":\"5e70d4b4818b6a359c23db2920c314cf8b1536818514d1396188e39b4e5973af\"}"
+    }
+  ],
+  "keys": {
+    "presence_a": {
+      "alg": "ed25519",
+      "key_id": "ef1bd9c792ccc768",
+      "public_key": "PvCJWQMwKMj8b8bUkaElSOeN9q77LXwsGQw_eM7z9Qs",
+      "seed": "signing.vectors.json keys.presence_a"
+    },
+    "presence_mac": {
+      "alg": "p256_ecdsa_sha256",
+      "key_id": "70daf6041ffc7219",
+      "note": "test-only P-256 key (PKCS#8, generated once), as the macOS Secure Enclave helper signs: ECDSA P-256 SHA-256, ASN.1 DER signature",
+      "pkcs8_hex": "308187020100301306072a8648ce3d020106082a8648ce3d030107046d306b0201010420301ca1fc0609a11897bde8417496bf2b994a44227022c52ad6995d8d9d625b45a1440342000460d2ce0863fabee38793d0c77c7f83d35eeff7f015971b973f40dbb838ddfb4c6a542c3f72238a0f1b9015ca6c43ace39df81252551e5e6b24e44eafb8db132d",
+      "public_key": "MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEYNLOCGP6vuOHk9DHfH-D017v9_AVlxuXP0DbuDjd-0xqVCw_ciOKDxuQFcpsQ6zjnfgSUlUeXmsk5E6vuNsTLQ"
+    }
+  },
+  "rules": {
+    "bind": "card_bind_signature over \"leanctx.hive.presence_bind.v1\\n\" ‖ canonical_json({instance_id, key_id, alg, public_key})",
+    "public_key": "base64url of raw 32 bytes (ed25519) or SPKI DER (P-256, RSA); key_id = hex(sha256(public_key bytes))[..16]",
+    "signature": "base64url (no padding): ed25519 64 bytes; p256_ecdsa_sha256 ASN.1 DER (randomised: verify, never compare bytes); rsa2048_pkcs1_sha256 not covered by a vector (no RSA key generation in the test toolchain)",
+    "signing_input": "\"leanctx.hive.consent_proof.v1\\n\" ‖ canonical_json({consent_id, kind, subject_digest, approved_at})"
+  }
+}

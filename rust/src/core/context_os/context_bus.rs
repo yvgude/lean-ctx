@@ -522,6 +522,7 @@ impl ContextBus {
         let payload_json = serde_json::to_string(&record.event)?;
         // JSON maps non-finite numbers to null; require a readable typed payload.
         let _: OclaEvent = serde_json::from_str(&payload_json)?;
+        super::observation::admit_payload(&payload_json)?;
         self.insert_local_observation(
             LocalObservationSource::Ocla,
             producer_instance,
@@ -540,6 +541,7 @@ impl ContextBus {
     ) -> Result<i64, ObservationPersistenceError> {
         let payload_json = serde_json::to_string(event)?;
         let _: LeanCtxEvent = serde_json::from_str(&payload_json)?;
+        super::observation::admit_payload(&payload_json)?;
         self.insert_local_observation(
             LocalObservationSource::Legacy,
             producer_instance,
@@ -827,6 +829,10 @@ impl ContextBus {
     }
 
     /// Atomically append at most one event for an authenticated delivery ID.
+    ///
+    /// `target_agents` scopes the event like [`Self::append_directed`]: when
+    /// set, only subscribers and readers identifying as one of the targets see
+    /// it, live and on replay.
     pub fn append_delivery_once(
         &self,
         workspace_id: &str,
@@ -835,9 +841,11 @@ impl ContextBus {
         actor: Option<&str>,
         payload: Value,
         delivery_id: &str,
+        target_agents: Option<Vec<String>>,
     ) -> Result<bool, String> {
         let ts = Utc::now();
         let payload_json = payload.to_string();
+        let target_agents_json = encode_target_agents(target_agents.as_deref());
         let (id, version) = {
             let conn = self
                 .inner
@@ -849,9 +857,9 @@ impl ContextBus {
             let version = self.inner.next_version(workspace_id, channel_id);
             let inserted = conn
                 .execute(
-                    "INSERT OR IGNORE INTO context_events (workspace_id, channel_id, kind, actor, timestamp, payload_json, version, parent_id, delivery_id)
-                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8)",
-                    params![workspace_id, channel_id, kind.as_str(), actor, ts.to_rfc3339(), payload_json, version, delivery_id],
+                    "INSERT OR IGNORE INTO context_events (workspace_id, channel_id, kind, actor, timestamp, payload_json, version, parent_id, delivery_id, target_agents_json)
+                     VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, NULL, ?8, ?9)",
+                    params![workspace_id, channel_id, kind.as_str(), actor, ts.to_rfc3339(), payload_json, version, delivery_id, target_agents_json],
                 )
                 .map_err(|error| error.to_string());
             let inserted = match inserted {
@@ -888,7 +896,7 @@ impl ContextBus {
             version,
             parent_id: None,
             payload,
-            target_agents: None,
+            target_agents,
         });
         Ok(true)
     }
@@ -1091,6 +1099,7 @@ mod tests {
                         Some("agent"),
                         serde_json::json!({"delivery_id":"delivery-1"}),
                         "delivery-1",
+                        None,
                     )
                     .expect("delivery append")
                 })
@@ -1104,6 +1113,49 @@ mod tests {
 
         let bus = ContextBus::open_at(td.path().join("delivery-context-os.db"));
         assert_eq!(bus.read("ws", "a2a", 0, 10).len(), 1);
+    }
+
+    #[test]
+    fn directed_delivery_reaches_only_its_target_live_and_on_replay() {
+        let td = tempdir().expect("tempdir");
+        let path = td.path().join("directed-delivery-context-os.db");
+        let bus = ContextBus::open_at(path.clone());
+        let target_filter = || TopicFilter {
+            agent_id: Some("agent-a".to_string()),
+            ..TopicFilter::default()
+        };
+        let other_filter = || TopicFilter {
+            agent_id: Some("agent-b".to_string()),
+            ..TopicFilter::default()
+        };
+        let mut target_rx = bus.subscribe("ws", "a2a").expect("subscribe");
+        let targets = vec!["agent-a".to_string()];
+        assert!(
+            bus.append_delivery_once(
+                "ws",
+                "a2a",
+                &ContextEventKindV1::SessionMutated,
+                Some("sender"),
+                serde_json::json!({"delivery_id":"directed-1"}),
+                "directed-1",
+                Some(targets.clone()),
+            )
+            .expect("delivery append")
+        );
+        let live = target_rx.try_recv().expect("live delivery event");
+        assert_eq!(live.target_agents, Some(targets.clone()));
+        assert!(target_filter().matches(&live));
+        assert!(!other_filter().matches(&live));
+        assert!(!TopicFilter::broadcast_only().matches(&live));
+        drop(bus);
+
+        let reopened = ContextBus::open_at(path);
+        let replayed = reopened.read("ws", "a2a", 0, 10);
+        assert_eq!(replayed.len(), 1);
+        assert_eq!(replayed[0].target_agents, Some(targets));
+        assert!(target_filter().matches(&replayed[0]));
+        assert!(!other_filter().matches(&replayed[0]));
+        assert!(!TopicFilter::broadcast_only().matches(&replayed[0]));
     }
 
     #[test]

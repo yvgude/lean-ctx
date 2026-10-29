@@ -233,29 +233,6 @@ pub enum CompressionLevel {
     Raw,
 }
 
-/// Science-driven context intelligence features that can be individually toggled.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize, Default)]
-#[serde(rename_all = "lowercase")]
-pub enum CognitiveMode {
-    /// All science features disabled.
-    Off,
-    /// Only basic features (IB, chunking).
-    Basic,
-    /// Full science suite (IB, chunking, FSRS, OT allocation, graph expansion, verbosity learning).
-    #[default]
-    Full,
-}
-
-impl std::fmt::Display for CognitiveMode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_str(match self {
-            Self::Off => "off",
-            Self::Basic => "basic",
-            Self::Full => "full",
-        })
-    }
-}
-
 /// Outcome of [`CompressionLevel::degrade_action`]: what to do with the session
 /// degrade given the current re-fetch pressure. Split from the dispatch so the
 /// threshold logic is a pure, testable function.

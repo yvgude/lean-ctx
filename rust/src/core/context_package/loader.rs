@@ -2,8 +2,11 @@ use crate::core::knowledge::ProjectKnowledge;
 use crate::core::memory_policy::MemoryPolicy;
 use crate::core::property_graph::{CodeGraph, Edge, EdgeKind, Node, NodeKind};
 
+use super::admission::AdmittedPackage;
 use super::composition;
-use super::content::{GraphLayer, KnowledgeLayer, PackageContent, PatternsLayer, SessionLayer};
+#[cfg(test)]
+use super::content::PackageContent;
+use super::content::{GraphLayer, KnowledgeLayer, PatternsLayer, SessionLayer};
 use super::graph_model::ContextGraph;
 use super::manifest::{PackageLayer, PackageManifest};
 
@@ -101,11 +104,15 @@ impl std::fmt::Display for LoadReport {
     }
 }
 
-pub(crate) fn load_package(
-    manifest: &PackageManifest,
-    content: &PackageContent,
+/// Apply an admitted package to the project's stores (knowledge, graph,
+/// patterns, gotchas, session). The type is the gate: an [`AdmittedPackage`]
+/// exists only for content that passed the current admission unchanged.
+pub(crate) fn load_admitted_package(
+    package: &AdmittedPackage,
     project_root: &str,
 ) -> Result<LoadReport, String> {
+    let manifest = package.manifest();
+    let content = package.content();
     if manifest.has_layer(PackageLayer::Checkpoint) || content.checkpoint.is_some() {
         return Err(
             "checkpoint packages require the explicit checkpoint-aware SDK seed path; generic load is unsupported"
@@ -171,6 +178,19 @@ pub(crate) fn load_package(
     }
 
     Ok(report)
+}
+
+/// Test-only entry with the former signature: admits the given parts, then
+/// loads. Product code has no way around [`load_admitted_package`].
+#[cfg(test)]
+pub(crate) fn load_package(
+    manifest: &PackageManifest,
+    content: &PackageContent,
+    project_root: &str,
+) -> Result<LoadReport, String> {
+    let package = AdmittedPackage::admit(manifest.clone(), content.clone())
+        .map_err(|refusal| refusal.to_string())?;
+    load_admitted_package(&package, project_root)
 }
 
 fn import_v2_graph(incoming: &ContextGraph, project_root: &str, report: &mut LoadReport) {
@@ -572,6 +592,7 @@ mod tests {
             signature: None,
             graph_summary: None,
             marketplace: None,
+            redistributable: None,
         }
     }
 

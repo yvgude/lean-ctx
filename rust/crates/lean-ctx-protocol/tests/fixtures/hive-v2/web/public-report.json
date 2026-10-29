@@ -1,0 +1,39 @@
+{
+  "errors": [
+    {
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "You reported this already.",
+          "reason": "report_exists"
+        }
+      },
+      "status": 409
+    },
+    {
+      "body": {
+        "error": {
+          "code": "rate_limited",
+          "message": "Too many reports. Try again later.",
+          "retry_after_s": 600
+        }
+      },
+      "status": 429
+    }
+  ],
+  "method": "POST",
+  "path": "/api/v1/public/vaults/acme/payments/report",
+  "request": {
+    "note": "The episode quotes a customer's card number.",
+    "reason": "secret_or_pii",
+    "target_id": "n_zcjqmmor453nyxqgshlgpogwdm",
+    "target_kind": "vault_node"
+  },
+  "response": {
+    "body": {
+      "report_id": "rpt_4711"
+    },
+    "status": 201
+  },
+  "route": "W46"
+}

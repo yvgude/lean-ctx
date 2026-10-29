@@ -30,6 +30,9 @@ pub struct OutlineOpts<'a> {
     pub as_json: bool,
 }
 
+/// Tool identity the sources are read for (path jail, role rules, audit).
+const TOOL: &str = "ctx_outline";
+
 /// Per-file extracted + filtered symbols, shared by the directory text and JSON
 /// renderers. `rel` is the path relative to the outlined directory (forward
 /// slashes for deterministic, OS-independent output).
@@ -42,8 +45,24 @@ struct FileSymbols {
 
 /// Outline a file or directory. Returns `(rendered_output, original_tokens)`,
 /// where `original_tokens` is the full-read baseline used for savings reporting.
+///
+/// Test entry point: the fixture's own directory is the explicit root.
+/// Production callers name the call's project root ([`run_rooted`]); no root
+/// is ever derived from the path there.
+#[cfg(test)]
 #[must_use]
 pub fn run(path: &str, opts: &OutlineOpts) -> (String, usize) {
+    let root = crate::tools::admitted_sources::fixture_root(path);
+    run_rooted(path, &root, opts)
+}
+
+/// Outline under an explicit root. Every source is acquired through the common
+/// rooted admitted reader (G01): symbols are extracted from the ADMITTED text,
+/// so a name or signature a rule masks is masked in the outline, and a source
+/// the policy withholds contributes no symbol — it is reported as withheld,
+/// never as a file without symbols.
+#[must_use]
+pub fn run_rooted(path: &str, root: &str, opts: &OutlineOpts) -> (String, usize) {
     // Path containment is enforced upstream by the resolution layer
     // (`require_resolved_path` → `resolve_path`), the sole caller of `run` on the
     // live MCP path: an escaping path (absolute, `..`, or a symlink whose target
@@ -54,16 +73,20 @@ pub fn run(path: &str, opts: &OutlineOpts) -> (String, usize) {
     // the live path. `metadata()` (not `symlink_metadata()`) follows the link.
     let p = std::path::Path::new(path);
     match p.metadata() {
-        Ok(m) if m.is_dir() => dir::outline_dir(path, opts),
-        Ok(_) => outline_file(path, opts),
+        Ok(m) if m.is_dir() => dir::outline_dir(path, root, opts),
+        Ok(_) => outline_file(path, root, opts),
         Err(e) => (format!("ERROR: Cannot read {path}: {e}"), 0),
     }
 }
 
-fn outline_file(path: &str, opts: &OutlineOpts) -> (String, usize) {
-    let content = match std::fs::read_to_string(path) {
-        Ok(c) => c,
-        Err(e) => return (format!("ERROR: Cannot read {path}: {e}"), 0),
+fn outline_file(path: &str, root: &str, opts: &OutlineOpts) -> (String, usize) {
+    use crate::tools::admitted_sources::SourceRead;
+    let mut remaining = crate::core::limits::max_read_bytes();
+    let content = match crate::tools::admitted_sources::read(path, root, TOOL, &mut remaining) {
+        SourceRead::Admitted(read) => read.content,
+        SourceRead::Withheld(reason) | SourceRead::Unavailable(reason) => {
+            return (format!("ERROR: Cannot read {path}: {reason}"), 0);
+        }
     };
     let full_tokens = count_tokens(&content);
     let ext = ext_of(path);

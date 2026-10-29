@@ -210,7 +210,7 @@ mod hnsw_performance {
     fn scenario_topk_handles_edge_cases() {
         // Empty vectors
         let result = brute_force_topk(&FlatEmbeddings::from_vecs(vec![]), &[1.0, 0.0], 5);
-        assert!(result.is_empty(), "{result:?}");
+        assert_eq!(result, [] as [(usize, f32); 0]);
 
         // top_k > num vectors
         let vectors = vec![vec![1.0, 0.0], vec![0.0, 1.0]];
@@ -249,107 +249,6 @@ mod hnsw_performance {
             elapsed.as_millis() < 1000,
             "brute_force_topk took {}ms for {n} vectors — too slow",
             elapsed.as_millis()
-        );
-    }
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
-// 3. HEBBIAN CACHE + BOLTZMANN EVICTION
-// ═══════════════════════════════════════════════════════════════════════════════
-
-mod hebbian_boltzmann {
-    use lean_ctx::core::hebbian_cache::*;
-
-    #[test]
-    fn scenario_frequent_coaccessed_files_resist_eviction() {
-        let mut matrix = CoAccessMatrix::new();
-        let main_rs = path_hash("src/main.rs");
-        let lib_rs = path_hash("src/lib.rs");
-        let config_rs = path_hash("src/config.rs");
-        let unrelated = path_hash("docs/readme.md");
-
-        for _ in 0..10 {
-            matrix.record_access(main_rs);
-            matrix.record_access(lib_rs);
-            matrix.end_burst();
-        }
-
-        // config.rs accessed separately once
-        matrix.record_access(config_rs);
-        matrix.end_burst();
-
-        // Active set: currently working on main.rs
-        let active = vec![main_rs];
-
-        // lib.rs should have high association (co-accessed with active file)
-        let lib_assoc = matrix.association_strength(lib_rs, &active);
-        // config.rs should have lower association
-        let config_assoc = matrix.association_strength(config_rs, &active);
-        // unrelated should have zero
-        let unrelated_assoc = matrix.association_strength(unrelated, &active);
-
-        assert!(
-            lib_assoc > config_assoc,
-            "lib.rs ({lib_assoc}) should have higher association than config.rs ({config_assoc})"
-        );
-        assert_eq!(unrelated_assoc, 0.0);
-    }
-
-    #[test]
-    fn scenario_boltzmann_under_pressure_evicts_weakest() {
-        // Simulate cache with varying entry values
-        let energies = vec![
-            8.0, // frequently used, recent, high association
-            2.0, // rarely used, old
-            6.0, // moderate use
-            1.0, // barely touched
-            9.0, // very active
-        ];
-
-        let evictions = boltzmann_select_evictions(&energies, 2, 0.05);
-        assert_eq!(evictions.len(), 2);
-        assert!(
-            evictions.contains(&3),
-            "Expected idx 3 (lowest energy) to be evicted, got {evictions:?}"
-        );
-        assert!(
-            evictions.contains(&1),
-            "Expected idx 1 (2nd lowest energy) to be evicted, got {evictions:?}"
-        );
-    }
-
-    #[test]
-    fn scenario_boltzmann_low_pressure_is_lenient() {
-        let energies = vec![5.0, 4.0, 6.0, 3.0, 7.0];
-
-        let evictions = boltzmann_select_evictions(&energies, 2, 50.0);
-        assert_eq!(evictions.len(), 2);
-    }
-
-    #[test]
-    fn scenario_entry_energy_computation() {
-        let active = EntryEnergy {
-            read_count: 15,
-            recency_secs: 10.0,
-            association_strength: 4.0,
-            token_size: 1000,
-            graph_centrality: 0.9,
-        };
-
-        let stale = EntryEnergy {
-            read_count: 1,
-            recency_secs: 7200.0,
-            association_strength: 0.0,
-            token_size: 50000,
-            graph_centrality: 0.0,
-        };
-
-        let active_e = active.compute();
-        let stale_e = stale.compute();
-
-        assert!(
-            active_e > stale_e * 5.0,
-            "Active file energy ({active_e:.2}) should be much higher than stale ({stale_e:.2})"
         );
     }
 }

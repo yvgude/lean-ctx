@@ -4,37 +4,12 @@ use super::{
     constant_time_eq, download_bytes, execute_prepared_transaction, extract_binary, fetch_release,
     find_asset_url, gpu_build_already_installed, gpu_next_steps, gpu_platform_asset_name,
     load_update_receipt, looks_like_version, parse_target_version, platform_asset_name,
-    post_update_rewire, prepare_update_transaction, recover_pending_transaction,
+    post_update_rewire, prepare_update_transaction, print_rewire_plan, recover_pending_transaction,
     rollback_to_previous, sha256_hex, verify_download_integrity,
 };
 
-/// Flags that change state on their own; `--dry-run` must not run them.
-const STATEFUL_FLAGS: &[&str] = &[
-    "--schedule",
-    "--rollback",
-    "--unpin",
-    "--pin",
-    "--recover-update",
-];
-
-/// The stateful flag combined with `--dry-run`, if any.
-fn dry_run_conflict(args: &[String]) -> Option<&str> {
-    if !args.iter().any(|a| a == "--dry-run") {
-        return None;
-    }
-    args.iter()
-        .map(String::as_str)
-        .find(|a| STATEFUL_FLAGS.contains(a))
-}
-
 pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
-    if let Some(flag) = dry_run_conflict(args) {
-        eprintln!("  \x1b[31m✗\x1b[0m --dry-run cannot be combined with {flag}");
-        std::process::exit(2);
-    }
-    // `--dry-run` = `--check` plus a preview of the setup refresh.
-    let dry_run = args.iter().any(|a| a == "--dry-run");
-    let mut check_only = dry_run || args.iter().any(|a| a == "--check");
+    let mut check_only = args.iter().any(|a| a == "--check");
     let quiet = args.iter().any(|a| a == "--quiet");
     let skip_rules = args.iter().any(|a| a == "--skip-rules");
     let force = args.iter().any(|a| a == "--force");
@@ -42,6 +17,20 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
     // marks an automatic run for backward compatibility with schedulers that
     // were installed before `--scheduled` existed.
     let scheduled = args.iter().any(|a| a == "--scheduled");
+    // `--dry-run`: report the release and the setup refresh; change nothing.
+    let dry_run = args.iter().any(|a| a == "--dry-run");
+    if dry_run {
+        if let Some(flag) = args.iter().find(|a| {
+            matches!(
+                a.as_str(),
+                "--schedule" | "--rollback" | "--pin" | "--unpin" | "--recover-update"
+            )
+        }) {
+            eprintln!("  \x1b[31m✗\x1b[0m `--dry-run` cannot be combined with `{flag}`.");
+            std::process::exit(2);
+        }
+        check_only = true;
+    }
 
     if args.iter().any(|a| a == "--insecure") {
         eprintln!(
@@ -313,11 +302,9 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
                     "  \x1b[36m\x1b[1mRefreshing setup (shell hook, MCP configs, rules)…\x1b[0m"
                 );
             }
-            post_update_rewire(skip_rules);
+            post_update_rewire(skip_rules, quiet);
             println!();
-        }
-        if dry_run {
-            println!("  Running `lean-ctx update` would refresh this setup:");
+        } else if dry_run {
             print_rewire_plan(skip_rules);
         }
         return;
@@ -356,6 +343,13 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
         },
     };
 
+    if dry_run {
+        println!(
+            "  \x1b[2mDry run: would install {asset_name} (v{target_tag}), then refresh setup.\x1b[0m"
+        );
+        print_rewire_plan(skip_rules);
+        return;
+    }
     if check_only {
         match mode {
             UpdateMode::Normal if pinned => {
@@ -363,10 +357,6 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
             }
             UpdateMode::Normal => println!("Run 'lean-ctx update' to install."),
             UpdateMode::EnableGpu => println!("Run 'lean-ctx enable-gpu' to install {asset_name}."),
-        }
-        if dry_run {
-            println!("  After installing {asset_name} it would refresh this setup:");
-            print_rewire_plan(skip_rules);
         }
         return;
     }
@@ -488,7 +478,7 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
             println!("  \x1b[36m\x1b[1mRefreshing setup (shell hook, MCP configs, rules)…\x1b[0m");
         }
     }
-    post_update_rewire(skip_rules);
+    post_update_rewire(skip_rules, quiet);
 
     if !quiet {
         println!();
@@ -533,32 +523,6 @@ pub(super) fn run_with_mode(args: &[String], mode: UpdateMode) {
                 crate::core::update_scheduler::set_auto_update(false, false, 6);
                 println!("  \x1b[2m○ Skipped — enable later: lean-ctx update --schedule\x1b[0m");
             }
-        }
-    }
-}
-
-/// Preview of `post_update_rewire`: it runs setup with the saved agent
-/// selection, so the setup plan is exactly what it would touch.
-fn print_rewire_plan(skip_rules: bool) {
-    let selection = crate::core::config::Config::load().setup.agents;
-    if let Err(e) = crate::setup::run_dry_run(selection.as_deref(), skip_rules, false) {
-        eprintln!("  \x1b[31m✗\x1b[0m {e}");
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn dry_run_refuses_stateful_flags() {
-        let args = |a: &[&str]| a.iter().map(|s| (*s).to_string()).collect::<Vec<_>>();
-        assert_eq!(super::dry_run_conflict(&args(&["--dry-run"])), None);
-        assert_eq!(super::dry_run_conflict(&args(&["--rollback"])), None);
-        for flag in super::STATEFUL_FLAGS {
-            assert_eq!(
-                super::dry_run_conflict(&args(&["--dry-run", flag])),
-                Some(*flag),
-                "{flag}"
-            );
         }
     }
 }

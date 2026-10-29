@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "Another agent holds this task.",
+    "number": 7,
+    "reason": "task_claimed"
+  }
+}

@@ -1,0 +1,17 @@
+{
+  "account": {
+    "handle": "yves",
+    "user_id": "2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f"
+  },
+  "card": {
+    "consent_channel": "os_presence",
+    "engine_version": "3.12.0",
+    "updated_at": 1792800000000
+  },
+  "presence_key": {
+    "alg": "ed25519",
+    "bound_at": 1792713600000,
+    "hardware": false,
+    "key_id": "ef1bd9c792ccc768"
+  }
+}

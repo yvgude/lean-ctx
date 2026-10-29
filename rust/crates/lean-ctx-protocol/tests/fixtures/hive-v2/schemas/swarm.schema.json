@@ -1,0 +1,1223 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/swarm.schema.json",
+  "title": "Private swarms v2 on host sessions: swarm, goal tree, claims, conductor, results, pledge (SPEC-CONTRACT-SERVER §3.20; E22–E29; RESOLUTIONS R107)",
+  "$defs": {
+    "usd_cents_day": {
+      "type": "integer",
+      "minimum": 50,
+      "maximum": 50000,
+      "description": "USD 0.50–500 per day as integer cents (C0 carries integers only)"
+    },
+    "swarm_state": {
+      "enum": [
+        "open",
+        "running",
+        "paused",
+        "done",
+        "archived"
+      ]
+    },
+    "goal_state": {
+      "enum": [
+        "open",
+        "claimed",
+        "working",
+        "in_review",
+        "done",
+        "blocked",
+        "dropped"
+      ]
+    },
+    "goal_kind": {
+      "enum": [
+        "root",
+        "subgoal",
+        "task",
+        "synthesis"
+      ]
+    },
+    "holder": {
+      "type": "object",
+      "required": [
+        "worker_id",
+        "name"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "name": {
+          "$ref": "worker.schema.json#/$defs/name"
+        }
+      }
+    },
+    "swarm": {
+      "description": "Swarm object (§3.20.1); private in 3.12.0: visibility is always team, public → 409 invalid_state reason public_swarms_later",
+      "type": "object",
+      "required": [
+        "id",
+        "slug",
+        "title",
+        "goal",
+        "visibility",
+        "org_id",
+        "owner_user",
+        "state",
+        "success_criteria",
+        "participant_task_cap",
+        "review_sla_hours",
+        "conductor_workers",
+        "delegates",
+        "repos",
+        "coordinator",
+        "max_workers",
+        "max_workers_effective",
+        "created_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "slug": {
+          "type": "string",
+          "pattern": "^[a-z0-9-]{3,40}$"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 120
+        },
+        "goal": {
+          "type": "string",
+          "minLength": 20,
+          "maxLength": 2000
+        },
+        "visibility": {
+          "const": "team"
+        },
+        "org_id": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "owner_user": {
+          "$ref": "common.schema.json#/$defs/uuid"
+        },
+        "state": {
+          "$ref": "#/$defs/swarm_state"
+        },
+        "success_criteria": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "required": [
+              "id",
+              "text",
+              "goal"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "id": {
+                "$ref": "common.schema.json#/$defs/criterion_id"
+              },
+              "text": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 300
+              },
+              "goal": {
+                "$ref": "common.schema.json#/$defs/goal_id"
+              }
+            }
+          }
+        },
+        "participant_task_cap": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 50
+        },
+        "review_sla_hours": {
+          "enum": [
+            4,
+            24,
+            72
+          ]
+        },
+        "conductor_workers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "common.schema.json#/$defs/worker_id"
+          }
+        },
+        "delegates": {
+          "type": "array",
+          "maxItems": 5,
+          "items": {
+            "$ref": "common.schema.json#/$defs/worker_id"
+          }
+        },
+        "repos": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "object",
+            "required": [
+              "host",
+              "path",
+              "private"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "host": {
+                "type": "string",
+                "pattern": "^[a-z0-9.-]{1,253}(:[0-9]{1,5})?$"
+              },
+              "path": {
+                "type": "string",
+                "pattern": "^[A-Za-z0-9._-]+(/[A-Za-z0-9._-]+){1,4}$"
+              },
+              "private": {
+                "type": "boolean"
+              }
+            }
+          }
+        },
+        "coordinator": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/worker_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_workers": {
+          "type": "integer",
+          "minimum": 2,
+          "maximum": 5000
+        },
+        "max_workers_effective": {
+          "$ref": "common.schema.json#/$defs/u16"
+        },
+        "created_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    },
+    "goal_node": {
+      "description": "Operational goal-node row (swarm_goal_nodes, S11); its content (title, text, acceptance) is the goal node `node` in the swarm log",
+      "type": "object",
+      "required": [
+        "id",
+        "node",
+        "parent",
+        "kind",
+        "title",
+        "state",
+        "assignee",
+        "lock_until",
+        "results",
+        "review",
+        "attempts",
+        "criterion_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "$ref": "common.schema.json#/$defs/goal_id"
+        },
+        "node": {
+          "$ref": "common.schema.json#/$defs/node_id"
+        },
+        "parent": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/goal_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "kind": {
+          "$ref": "#/$defs/goal_kind"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 120
+        },
+        "state": {
+          "$ref": "#/$defs/goal_state"
+        },
+        "assignee": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/worker_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "lock_until": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/ms"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "common.schema.json#/$defs/node_id"
+          }
+        },
+        "review": {
+          "anyOf": [
+            {
+              "type": "object",
+              "required": [
+                "review_id",
+                "state"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "review_id": {
+                  "$ref": "common.schema.json#/$defs/review_id"
+                },
+                "state": {
+                  "enum": [
+                    "waiting_for_reviewer",
+                    "reviewer_working",
+                    "reviewers_disagree",
+                    "needs_person",
+                    "decided"
+                  ]
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "attempts": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 3
+        },
+        "criterion_id": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/criterion_id"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "kind": {
+                "const": "root"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "parent": {
+                "type": "null"
+              }
+            }
+          },
+          "else": {
+            "properties": {
+              "parent": {
+                "$ref": "common.schema.json#/$defs/goal_id"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "state": {
+                "enum": [
+                  "claimed",
+                  "working"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "assignee": {
+                "$ref": "common.schema.json#/$defs/worker_id"
+              },
+              "lock_until": {
+                "$ref": "common.schema.json#/$defs/ms"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "goal_response": {
+      "description": "E22 GET /v1/swarms/{id}/goal?scope=subtree:g_…&worker_id=",
+      "type": "object",
+      "required": [
+        "swarm",
+        "nodes",
+        "epoch"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "swarm": {
+          "$ref": "#/$defs/swarm"
+        },
+        "nodes": {
+          "type": "array",
+          "maxItems": 10000,
+          "items": {
+            "$ref": "#/$defs/goal_node"
+          }
+        },
+        "epoch": {
+          "$ref": "common.schema.json#/$defs/u64",
+          "description": "current conductor epoch (0 before the first lease)"
+        }
+      }
+    },
+    "consent_ref": {
+      "description": "consent_id of a web-relayed consent, or a presence-signed consent_proof (consent section, §3.21)",
+      "oneOf": [
+        {
+          "type": "object",
+          "required": [
+            "consent_id"
+          ],
+          "properties": {
+            "consent_id": {
+              "$ref": "common.schema.json#/$defs/consent_id"
+            }
+          },
+          "not": {
+            "required": [
+              "consent_proof"
+            ]
+          }
+        },
+        {
+          "type": "object",
+          "required": [
+            "consent_proof"
+          ],
+          "properties": {
+            "consent_proof": {
+              "$ref": "consent.schema.json#/$defs/proof"
+            }
+          },
+          "not": {
+            "required": [
+              "consent_id"
+            ]
+          }
+        }
+      ]
+    },
+    "join_request": {
+      "description": "E23 POST /v1/swarms/{id}/join (swarm_join consent, subject {swarm, pledge_digest, cli}, every plan)",
+      "type": "object",
+      "required": [
+        "cli"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "cli": {
+          "$ref": "worker.schema.json#/$defs/host_app"
+        },
+        "consent_id": true,
+        "consent_proof": true
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/consent_ref"
+        }
+      ]
+    },
+    "window": {
+      "type": "object",
+      "required": [
+        "from",
+        "to",
+        "days",
+        "tz"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "from": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "to": {
+          "type": "string",
+          "pattern": "^([01][0-9]|2[0-3]):[0-5][0-9]$"
+        },
+        "days": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 7,
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "mon",
+              "tue",
+              "wed",
+              "thu",
+              "fri",
+              "sat",
+              "sun"
+            ]
+          }
+        },
+        "tz": {
+          "type": "string",
+          "pattern": "^[A-Za-z_]+(/[A-Za-z0-9_+-]+){0,2}$|^UTC$",
+          "description": "IANA zone"
+        }
+      }
+    },
+    "pledge_fields": {
+      "type": "object",
+      "required": [
+        "mode",
+        "tasks_per_day",
+        "tokens_per_day",
+        "usd_cents_per_day",
+        "window",
+        "max_sessions"
+      ],
+      "properties": {
+        "mode": {
+          "enum": [
+            "interactive",
+            "unattended"
+          ]
+        },
+        "tasks_per_day": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 200
+        },
+        "tokens_per_day": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 10000,
+              "maximum": 50000000
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "usd_cents_per_day": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/usd_cents_day"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "window": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/window"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "max_sessions": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4
+        }
+      },
+      "if": {
+        "properties": {
+          "mode": {
+            "const": "unattended"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "usd_cents_per_day": {
+            "$ref": "#/$defs/usd_cents_day"
+          }
+        }
+      }
+    },
+    "pledge": {
+      "description": "E24 GET response: the six pledge fields + engine_approved (R83)",
+      "allOf": [
+        {
+          "$ref": "#/$defs/pledge_fields"
+        }
+      ],
+      "required": [
+        "engine_approved"
+      ],
+      "properties": {
+        "engine_approved": {
+          "type": "boolean"
+        }
+      },
+      "unevaluatedProperties": false
+    },
+    "pledge_put": {
+      "description": "E24 PUT: the six fields; first pledge carries a swarm_join proof over its pledge_digest, a loosening carries pledge_change, lowering none",
+      "allOf": [
+        {
+          "$ref": "#/$defs/pledge_fields"
+        }
+      ],
+      "properties": {
+        "consent_id": {
+          "$ref": "common.schema.json#/$defs/consent_id"
+        },
+        "consent_proof": {
+          "$ref": "consent.schema.json#/$defs/proof"
+        }
+      },
+      "not": {
+        "required": [
+          "consent_id",
+          "consent_proof"
+        ]
+      },
+      "unevaluatedProperties": false
+    },
+    "claim_request": {
+      "description": "E25 POST /v1/swarms/{id}/claims; the first claim in unattended mode carries an unattended_start proof",
+      "type": "object",
+      "required": [
+        "goal",
+        "worker_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "goal": {
+          "$ref": "common.schema.json#/$defs/goal_id"
+        },
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "consent_id": {
+          "$ref": "common.schema.json#/$defs/consent_id"
+        },
+        "consent_proof": {
+          "$ref": "consent.schema.json#/$defs/proof"
+        }
+      },
+      "not": {
+        "required": [
+          "consent_id",
+          "consent_proof"
+        ]
+      }
+    },
+    "claim_response": {
+      "type": "object",
+      "required": [
+        "claim_id",
+        "fencing_token",
+        "expires_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "$ref": "common.schema.json#/$defs/claim_id"
+        },
+        "fencing_token": {
+          "$ref": "common.schema.json#/$defs/u64"
+        },
+        "expires_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    },
+    "claim_renew_request": {
+      "type": "object",
+      "required": [
+        "fencing_token"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "fencing_token": {
+          "$ref": "common.schema.json#/$defs/u64"
+        }
+      }
+    },
+    "conductor_lease_request": {
+      "type": "object",
+      "required": [
+        "worker_id"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        }
+      }
+    },
+    "conductor_renew_request": {
+      "type": "object",
+      "required": [
+        "worker_id",
+        "epoch"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "epoch": {
+          "$ref": "common.schema.json#/$defs/u64"
+        }
+      }
+    },
+    "conductor_lease_response": {
+      "type": "object",
+      "required": [
+        "epoch",
+        "expires_at",
+        "holder"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "epoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "expires_at": {
+          "$ref": "common.schema.json#/$defs/ms"
+        },
+        "holder": {
+          "$ref": "#/$defs/holder"
+        }
+      }
+    },
+    "child": {
+      "type": "object",
+      "required": [
+        "title",
+        "text",
+        "acceptance",
+        "kind"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "title": {
+          "type": "string",
+          "minLength": 4,
+          "maxLength": 120
+        },
+        "text": {
+          "type": "string",
+          "maxLength": 2000
+        },
+        "acceptance": {
+          "type": "array",
+          "maxItems": 10,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300
+          }
+        },
+        "kind": {
+          "enum": [
+            "subgoal",
+            "task"
+          ]
+        }
+      }
+    },
+    "reason": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 500
+    },
+    "conductor_action": {
+      "description": "E29 POST /v1/swarms/{id}/conductor/actions: {worker_id (lease holder), epoch, action, ...arguments}; assign names its worker `assignee`",
+      "type": "object",
+      "required": [
+        "worker_id",
+        "epoch",
+        "action"
+      ],
+      "properties": {
+        "worker_id": {
+          "$ref": "common.schema.json#/$defs/worker_id"
+        },
+        "epoch": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "action": {
+          "enum": [
+            "split",
+            "assign",
+            "synthesize",
+            "block",
+            "unblock",
+            "drop",
+            "reopen",
+            "edit"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "split"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "parent",
+              "children"
+            ],
+            "properties": {
+              "parent": {
+                "$ref": "common.schema.json#/$defs/goal_id"
+              },
+              "children": {
+                "type": "array",
+                "minItems": 1,
+                "maxItems": 50,
+                "items": {
+                  "$ref": "#/$defs/child"
+                }
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "assign"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "goal",
+              "assignee"
+            ],
+            "properties": {
+              "goal": {
+                "$ref": "common.schema.json#/$defs/goal_id"
+              },
+              "assignee": {
+                "$ref": "common.schema.json#/$defs/worker_id"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "synthesize"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "parent",
+              "title"
+            ],
+            "properties": {
+              "parent": {
+                "$ref": "common.schema.json#/$defs/goal_id"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 120
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "enum": [
+                  "block",
+                  "drop",
+                  "reopen"
+                ]
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "goal",
+              "reason"
+            ],
+            "properties": {
+              "goal": {
+                "$ref": "common.schema.json#/$defs/goal_id"
+              },
+              "reason": {
+                "$ref": "#/$defs/reason"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "unblock"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "goal"
+            ],
+            "properties": {
+              "goal": {
+                "$ref": "common.schema.json#/$defs/goal_id"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "action": {
+                "const": "edit"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "goal"
+            ],
+            "anyOf": [
+              {
+                "required": [
+                  "title"
+                ]
+              },
+              {
+                "required": [
+                  "text"
+                ]
+              },
+              {
+                "required": [
+                  "acceptance"
+                ]
+              }
+            ],
+            "properties": {
+              "goal": {
+                "$ref": "common.schema.json#/$defs/goal_id"
+              },
+              "title": {
+                "type": "string",
+                "minLength": 4,
+                "maxLength": 120
+              },
+              "text": {
+                "type": "string",
+                "maxLength": 2000
+              },
+              "acceptance": {
+                "$ref": "#/$defs/child/properties/acceptance"
+              }
+            }
+          }
+        }
+      ],
+      "propertyNames": {
+        "enum": [
+          "worker_id",
+          "epoch",
+          "action",
+          "parent",
+          "children",
+          "goal",
+          "assignee",
+          "title",
+          "text",
+          "acceptance",
+          "reason"
+        ]
+      }
+    },
+    "conductor_action_response": {
+      "description": "the changed goal-node rows and the seqs of the system events appended to the swarm log (actor server, cause conductor)",
+      "type": "object",
+      "required": [
+        "nodes",
+        "seqs"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "nodes": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/goal_node"
+          }
+        },
+        "seqs": {
+          "type": "array",
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    },
+    "results_request": {
+      "description": "E26: a result node with its result_of edge (+ optional knowledge nodes), signed by the participant's swarm alias key",
+      "type": "object",
+      "required": [
+        "claim_id",
+        "fencing_token",
+        "events"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "claim_id": {
+          "$ref": "common.schema.json#/$defs/claim_id"
+        },
+        "fencing_token": {
+          "$ref": "common.schema.json#/$defs/u64"
+        },
+        "events": {
+          "type": "array",
+          "minItems": 2,
+          "maxItems": 200,
+          "items": {
+            "$ref": "event.schema.json"
+          }
+        }
+      }
+    },
+    "event_status": {
+      "type": "object",
+      "required": [
+        "event_id",
+        "status"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "event_id": {
+          "$ref": "common.schema.json#/$defs/event_id"
+        },
+        "status": {
+          "enum": [
+            "accepted",
+            "held",
+            "duplicate",
+            "refused"
+          ]
+        },
+        "seq": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "review_state": {
+          "$ref": "common.schema.json#/$defs/review_state"
+        },
+        "review_id": {
+          "$ref": "common.schema.json#/$defs/review_id"
+        },
+        "code": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "reason": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "retry_after_s": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "field": {
+          "type": "string",
+          "pattern": "^(/[^/]+)+$",
+          "description": "invalid_event reason shape: JSON Pointer (RFC 6901) of the first failing member, e.g. /body/statement; a missing required member is named by its own pointer"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "accepted"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "seq",
+              "review_state"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "duplicate"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "seq"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "held"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "review_id"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "refused"
+              }
+            }
+          },
+          "then": {
+            "required": [
+              "code"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "enum": [
+                  "retract_rate_limited",
+                  "rate_limited"
+                ]
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "required": [
+              "retry_after_s"
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "code": {
+                "const": "invalid_event"
+              }
+            },
+            "required": [
+              "code"
+            ]
+          },
+          "then": {
+            "required": [
+              "reason"
+            ]
+          }
+        },
+        {
+          "$comment": "shape refusals name the failing member",
+          "if": {
+            "properties": {
+              "code": {
+                "const": "invalid_event"
+              },
+              "reason": {
+                "const": "shape"
+              }
+            },
+            "required": [
+              "code",
+              "reason"
+            ]
+          },
+          "then": {
+            "required": [
+              "field"
+            ]
+          }
+        }
+      ],
+      "description": "per-event push result (E5, E26): refusals carry code (and reason for invalid_event: shape, use_restore, target_state, ...); a rate-limited event (retract_rate_limited, rate_limited) carries retry_after_s and the batch continues with the next event"
+    },
+    "results_response": {
+      "description": "per-event results in batch order (§3.11) and server_time",
+      "type": "object",
+      "required": [
+        "results",
+        "server_time"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "results": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/event_status"
+          }
+        },
+        "server_time": {
+          "$ref": "common.schema.json#/$defs/ms"
+        }
+      }
+    }
+  }
+}

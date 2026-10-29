@@ -1,0 +1,14 @@
+{
+  "base": "routes/vault_match.request.json",
+  "case": "vault_match_label",
+  "expect": {
+    "layer": "schema"
+  },
+  "patch": [
+    {
+      "op": "add",
+      "path": "/label",
+      "value": "payments"
+    }
+  ]
+}

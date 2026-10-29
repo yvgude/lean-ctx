@@ -1,0 +1,15 @@
+{
+  "code_expires_at": 1792800600000,
+  "code_hash": "2ab679b409abfc54367f767206440330ed55608f735522b4d714dcefa6f0fe50",
+  "consent_id": "cns_bcdefgh234567abc",
+  "expires_at": 1792886400000,
+  "kind": "procedure_confirm",
+  "subject": {
+    "command_digests": [
+      "6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f6f"
+    ],
+    "item_digest": "5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e5e",
+    "item_id": "rv_pppppppppppppppppppppppppa"
+  },
+  "subject_digest": "453d83bb1900960e3e7b870ac1912faf8f03b95d408b14f0e55972cb5084263e"
+}

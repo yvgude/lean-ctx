@@ -1,0 +1,32 @@
+{
+  "consent_proof": {
+    "approved_at": 1792800090000,
+    "consent_id": "cns_defgh234567abcde",
+    "kind": "pledge_change",
+    "presence_key_id": "70daf6041ffc7219",
+    "signature": "MEUCIG9muzYAcbwh5nLuQT-Filqpt4v_shRk61BN8BzTPqINAiEAh3qaNzV5AmqgVAWEbyCaDYjkAPBkYBPRgYNgDIu4W6c",
+    "subject": {
+      "after_digest": "c674b3ffdffcd4fdc4cb1a8601af8c4d390bcad0c9ea63ef1d9fdc08844ea471",
+      "before_digest": "bcdc41b049980096993b60a5058f751cffe19a68382c112b5eb9e18b04a2abfd",
+      "swarm": "9a4d7e21-6b3c-4f58-8e09-1d2c3b4a5f02"
+    },
+    "subject_digest": "5e70d4b4818b6a359c23db2920c314cf8b1536818514d1396188e39b4e5973af"
+  },
+  "max_sessions": 2,
+  "mode": "unattended",
+  "tasks_per_day": 10,
+  "tokens_per_day": 2000000,
+  "usd_cents_per_day": 500,
+  "window": {
+    "days": [
+      "mon",
+      "tue",
+      "wed",
+      "thu",
+      "fri"
+    ],
+    "from": "22:00",
+    "to": "06:00",
+    "tz": "Europe/Zurich"
+  }
+}

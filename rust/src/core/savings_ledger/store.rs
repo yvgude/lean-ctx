@@ -10,17 +10,11 @@ use std::fs::{self, OpenOptions};
 use std::io::{BufRead, BufReader, Read, Seek, SeekFrom, Write};
 use std::path::{Path, PathBuf};
 
-#[cfg(unix)]
-use std::os::unix::fs::OpenOptionsExt;
-
 use fs2::FileExt;
 
 use super::event::{
     CustomerApproval, EvidenceClass, MeasurementMethod, SavingsEvent, SettlementStatus,
     compute_hash,
-};
-use super::evidence_projection::{
-    LedgerProjectionErrorV2, MAX_LEDGER_SNAPSHOT_BYTES_V2, VerifiedLedgerSnapshotV2,
 };
 
 pub const GENESIS: &str = "genesis";
@@ -32,98 +26,6 @@ pub fn default_path() -> Option<PathBuf> {
     let sub = dir.join("savings");
     fs::create_dir_all(&sub).ok()?;
     Some(sub.join("ledger.jsonl"))
-}
-
-/// Read, parse and verify one bounded ledger snapshot from a single locked file handle.
-///
-/// This is the file-backed entry point for evidence projection. It refuses symlinks and
-/// non-regular files, takes the same advisory lock used by ledger writers, reads at most
-/// 4 MiB, and validates chain plus event semantics before returning an opaque verified type.
-pub fn read_verified_snapshot_v2(
-    path: &Path,
-) -> Result<VerifiedLedgerSnapshotV2, LedgerSnapshotReadErrorV2> {
-    let link_metadata = fs::symlink_metadata(path)
-        .map_err(|error| LedgerSnapshotReadErrorV2::Io(error.to_string()))?;
-    if link_metadata.file_type().is_symlink() || !link_metadata.file_type().is_file() {
-        return Err(LedgerSnapshotReadErrorV2::NotRegular);
-    }
-
-    let mut options = OpenOptions::new();
-    options.read(true);
-    #[cfg(unix)]
-    options.custom_flags(libc::O_CLOEXEC | libc::O_NOFOLLOW | libc::O_NONBLOCK);
-    let mut file = options
-        .open(path)
-        .map_err(|error| LedgerSnapshotReadErrorV2::Io(error.to_string()))?;
-    FileExt::lock_shared(&file)
-        .map_err(|error| LedgerSnapshotReadErrorV2::Io(error.to_string()))?;
-
-    let result = (|| {
-        let before = file
-            .metadata()
-            .map_err(|error| LedgerSnapshotReadErrorV2::Io(error.to_string()))?;
-        if !before.file_type().is_file() {
-            return Err(LedgerSnapshotReadErrorV2::NotRegular);
-        }
-        if before.len() > MAX_LEDGER_SNAPSHOT_BYTES_V2 {
-            return Err(LedgerSnapshotReadErrorV2::TooLarge);
-        }
-
-        let mut bytes = Vec::with_capacity(before.len() as usize);
-        (&mut file)
-            .take(MAX_LEDGER_SNAPSHOT_BYTES_V2 + 1)
-            .read_to_end(&mut bytes)
-            .map_err(|error| LedgerSnapshotReadErrorV2::Io(error.to_string()))?;
-        if bytes.len() as u64 > MAX_LEDGER_SNAPSHOT_BYTES_V2 {
-            return Err(LedgerSnapshotReadErrorV2::TooLarge);
-        }
-
-        let after = file
-            .metadata()
-            .map_err(|error| LedgerSnapshotReadErrorV2::Io(error.to_string()))?;
-        if before.len() != after.len()
-            || before
-                .modified()
-                .ok()
-                .zip(after.modified().ok())
-                .is_some_and(|(before_modified, after_modified)| before_modified != after_modified)
-        {
-            return Err(LedgerSnapshotReadErrorV2::ChangedDuringRead);
-        }
-
-        let text = std::str::from_utf8(&bytes).map_err(|_| LedgerSnapshotReadErrorV2::Utf8)?;
-        let mut events = Vec::new();
-        for (line_index, line) in text.lines().enumerate() {
-            if line.is_empty() {
-                return Err(LedgerSnapshotReadErrorV2::MalformedJson { line_index });
-            }
-            let event = serde_json::from_str::<SavingsEvent>(line)
-                .map_err(|_| LedgerSnapshotReadErrorV2::MalformedJson { line_index })?;
-            events.push(event);
-        }
-        VerifiedLedgerSnapshotV2::try_from_events(events).map_err(LedgerSnapshotReadErrorV2::from)
-    })();
-
-    let _ = FileExt::unlock(&file);
-    result
-}
-
-#[derive(Clone, Debug, Eq, PartialEq, thiserror::Error)]
-pub enum LedgerSnapshotReadErrorV2 {
-    #[error("ledger snapshot I/O failed: {0}")]
-    Io(String),
-    #[error("ledger snapshot is not a regular file")]
-    NotRegular,
-    #[error("ledger snapshot exceeds byte bound")]
-    TooLarge,
-    #[error("ledger snapshot is not UTF-8")]
-    Utf8,
-    #[error("ledger snapshot contains malformed JSON at line {line_index}")]
-    MalformedJson { line_index: usize },
-    #[error("ledger snapshot changed while it was read")]
-    ChangedDuringRead,
-    #[error(transparent)]
-    Projection(#[from] LedgerProjectionErrorV2),
 }
 
 /// Reads the most recent `entry_hash` by scanning only the file tail. Returns
@@ -391,15 +293,47 @@ pub fn summarize(path: &Path) -> LedgerSummary {
             }
         }
     }
-    let result = summarize_uncached(path);
+    let result = summarize_uncached(path, |_| true);
     if let Ok(mut guard) = SUMMARY_CACHE.lock() {
         *guard = Some((file_len, result.clone()));
     }
     result
 }
 
-/// Full re-parse of the ledger file (expensive for large files).
-fn summarize_uncached(path: &Path) -> LedgerSummary {
+/// Per-project summaries: `(project, ledger path, file_len, summary)`, a few
+/// projects at a time, invalidated like [`SUMMARY_CACHE`].
+static SCOPED_SUMMARY_CACHE: std::sync::Mutex<Vec<(PathBuf, PathBuf, u64, LedgerSummary)>> =
+    std::sync::Mutex::new(Vec::new());
+const SCOPED_SUMMARY_LIMIT: usize = 8;
+
+/// [`summarize`] over the events of one project.
+pub fn summarize_scoped(path: &Path, scope: &super::ProjectScope) -> LedgerSummary {
+    let file_len = fs::metadata(path).map(|m| m.len()).unwrap_or(0);
+    let mut cache = SCOPED_SUMMARY_CACHE
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner);
+    if let Some((_, _, _, summary)) = cache.iter().find(|(project, ledger, len, _)| {
+        project == scope.project() && ledger == path && *len == file_len
+    }) {
+        return summary.clone();
+    }
+    let result = summarize_uncached(path, |ev| scope.holds_event(ev));
+    cache.retain(|(project, ledger, _, _)| !(project == scope.project() && ledger == path));
+    if cache.len() >= SCOPED_SUMMARY_LIMIT {
+        cache.remove(0);
+    }
+    cache.push((
+        scope.project().to_path_buf(),
+        path.to_path_buf(),
+        file_len,
+        result.clone(),
+    ));
+    result
+}
+
+/// Full re-parse of the ledger file (expensive for large files), counting the
+/// events `keep` accepts.
+fn summarize_uncached(path: &Path, keep: impl Fn(&SavingsEvent) -> bool) -> LedgerSummary {
     use std::collections::HashMap;
     let Ok(file) = fs::File::open(path) else {
         return LedgerSummary::default();
@@ -418,6 +352,9 @@ fn summarize_uncached(path: &Path) -> LedgerSummary {
         let Ok(ev) = serde_json::from_str::<SavingsEvent>(&line) else {
             continue;
         };
+        if !keep(&ev) {
+            continue;
+        }
         s.total_events += 1;
         s.saved_tokens = s.saved_tokens.saturating_add(ev.saved_tokens);
         s.saved_usd += ev.saved_usd;

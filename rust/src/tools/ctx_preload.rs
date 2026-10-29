@@ -4,7 +4,10 @@ use crate::core::protocol;
 use crate::core::task_relevance::{RelevanceScore, compute_relevance, parse_task_hints};
 use crate::core::tokens::count_tokens;
 use crate::tools::CrpMode;
+use crate::tools::admitted_sources::SourceRead;
 
+/// Tool identity the sources are read for (path jail, role rules, audit).
+const TOOL: &str = "ctx_preload";
 const MAX_PRELOAD_FILES: usize = 8;
 const MAX_CRITICAL_LINES: usize = 15;
 const SIGNATURES_BUDGET: usize = 10;
@@ -31,14 +34,16 @@ pub fn handle(
 
     let Some(open) = graph_provider::open_or_build(&project_root) else {
         return (
-            format!("[task: {task}]\nNo graph available. Use ctx_overview for project map."),
+            format!(
+                "[task: {task}]\nNo graph available. Use ctx_compose(task=…) for a ranked project map."
+            ),
             false,
         );
     };
     let gp = &open.provider;
 
     let session_intent =
-        crate::core::session::SessionState::load_latest().and_then(|s| s.active_structured_intent);
+        crate::core::session::caller::with(|s| s.active_structured_intent.clone()).flatten();
 
     let (task_files, task_keywords) = parse_task_hints(task);
     let mut relevance = if let Some(ref intent) = session_intent {
@@ -68,7 +73,7 @@ pub fn handle(
     if candidates.is_empty() {
         return (
             format!(
-                "[task: {task}]\nNo directly relevant files found. Use ctx_overview for project map."
+                "[task: {task}]\nNo directly relevant files found. Use ctx_compose(task=…) for a ranked project map."
             ),
             false,
         );
@@ -83,7 +88,7 @@ pub fn handle(
     if max_score < MIN_USEFUL_SCORE {
         return (
             format!(
-                "[task: {task}]\nNo sufficiently relevant files (max score {max_score:.1} < {MIN_USEFUL_SCORE}). Use ctx_overview for project map."
+                "[task: {task}]\nNo sufficiently relevant files (max score {max_score:.1} < {MIN_USEFUL_SCORE}). Use ctx_compose(task=…) for a ranked project map."
             ),
             false,
         );
@@ -100,26 +105,27 @@ pub fn handle(
 
     let allocations = boltzmann_allocate(&candidates, TOTAL_TOKEN_BUDGET, temperature);
 
+    // Every candidate is acquired ONCE, through the common rooted admitted
+    // reader (G01). The briefing, the critical lines, the signatures and the
+    // session cache below all derive from these admitted acquisitions; no
+    // second, raw read of a candidate exists.
+    let mut remaining =
+        crate::core::limits::max_read_bytes().saturating_mul(MAX_PRELOAD_FILES + 10);
+    let acquired: std::collections::HashMap<&str, Acquired> = candidates
+        .iter()
+        .filter_map(|c| {
+            acquire(&c.path, &project_root, jail_root, &mut remaining)
+                .map(|acquired| (c.path.as_str(), acquired))
+        })
+        .collect();
+
     let file_context: Vec<(String, usize)> = candidates
         .iter()
         .filter_map(|c| {
-            let Ok((jailed, warning)) = crate::core::io_boundary::jail_and_check_path(
-                "ctx_preload",
-                std::path::Path::new(&c.path),
-                jail_root,
-            ) else {
-                return None;
-            };
-            if warning.is_some() {
-                return None;
-            }
-            // Don't hydrate cloud placeholders during automatic preload (#363).
-            if crate::core::cloud_files::is_cloud_placeholder(&jailed) {
-                return None;
-            }
-            std::fs::read_to_string(&jailed)
-                .ok()
-                .map(|content| (c.path.clone(), content.lines().count()))
+            acquired
+                .get(c.path.as_str())
+                .and_then(|acquired| acquired.read.text())
+                .map(|text| (c.path.clone(), text.lines().count()))
         })
         .collect();
     let briefing = crate::core::task_briefing::build_briefing(task, &file_context);
@@ -178,34 +184,37 @@ pub fn handle(
             break;
         }
 
-        let Ok((jailed, warning)) = crate::core::io_boundary::jail_and_check_path(
-            "ctx_preload",
-            std::path::Path::new(&rel.path),
-            jail_root,
-        ) else {
+        let Some(source) = acquired.get(rel.path.as_str()) else {
             continue;
         };
-        if warning.is_some() {
-            continue;
-        }
+        let jailed_s = source.path.as_str();
+        let short = protocol::shorten_path(jailed_s);
 
-        let jailed_s = jailed.to_string_lossy().to_string();
-        let Ok(content) = std::fs::read_to_string(&jailed) else {
-            continue;
+        // The session cache is a derived store: it receives the admitted
+        // text of a source whose ORIGINAL may be kept, and nothing else.
+        seed_cache(cache, source);
+
+        let content = match &source.read {
+            SourceRead::Admitted(read) => read.content.as_str(),
+            SourceRead::Withheld(reason) => {
+                output.push(format!(
+                    "\n{}",
+                    crate::tools::admitted_sources::withheld_line(&short, reason)
+                ));
+                continue;
+            }
+            SourceRead::Unavailable(_) => continue,
         };
 
-        let file_ref = cache.get_file_ref(&jailed_s);
-        let short = protocol::shorten_path(&jailed_s);
+        let file_ref = cache.get_file_ref(jailed_s);
         let line_count = content.lines().count();
-        let file_tokens = count_tokens(&content);
-
-        let _ = cache.store(&jailed_s, &content);
+        let file_tokens = count_tokens(content);
 
         let mode = budget_to_mode(*token_budget, file_tokens);
 
-        let critical_lines = extract_critical_lines(&content, &task_keywords, MAX_CRITICAL_LINES);
-        let sigs = extract_key_signatures(&content, SIGNATURES_BUDGET);
-        let imports = extract_imports(&content);
+        let critical_lines = extract_critical_lines(content, &task_keywords, MAX_CRITICAL_LINES);
+        let sigs = extract_key_signatures(content, SIGNATURES_BUDGET);
+        let imports = extract_imports(content);
 
         // Surface the git signal so the agent knows WHY a file ranked up (#497).
         let git_marker = {
@@ -298,6 +307,53 @@ pub fn handle(
 
     let body = format!("{preload_result}\n{savings}");
     (body, true)
+}
+
+/// One preload candidate as it was acquired: the jailed path it is cached and
+/// rendered under, and the outcome of the admitted read.
+struct Acquired {
+    path: String,
+    read: SourceRead,
+}
+
+/// Acquire one candidate under the project root. `None`: the path is outside
+/// the jail, is a secret-like path the role may only read with a warning, or
+/// is a cloud placeholder that an automatic preload must not hydrate (#363).
+fn acquire(
+    candidate: &str,
+    project_root: &str,
+    jail_root: &std::path::Path,
+    remaining: &mut usize,
+) -> Option<Acquired> {
+    let (jailed, warning) = crate::core::io_boundary::jail_and_check_path(
+        TOOL,
+        std::path::Path::new(candidate),
+        jail_root,
+    )
+    .ok()?;
+    if warning.is_some() || crate::core::cloud_files::is_cloud_placeholder(&jailed) {
+        return None;
+    }
+    let path = jailed.to_string_lossy().into_owned();
+    let read = crate::tools::admitted_sources::read(&path, project_root, TOOL, remaining);
+    Some(Acquired { path, read })
+}
+
+/// Seed the session cache from one acquisition. Only the admitted text of a
+/// source whose original is storable (complete, not restricted) enters it. A
+/// source that is withheld, restricted or incompletely decoded is not cached,
+/// and a copy an earlier call cached for the same path is dropped — the
+/// cache must not keep serving what the current policy no longer lets in.
+fn seed_cache(cache: &mut SessionCache, source: &Acquired) {
+    match (&source.read, source.read.storable()) {
+        (_, Some(text)) => {
+            let _ = cache.store(&source.path, text);
+        }
+        (SourceRead::Admitted(_) | SourceRead::Withheld(_), None) => {
+            let _ = cache.invalidate(&source.path);
+        }
+        (SourceRead::Unavailable(_), None) => {}
+    }
 }
 
 /// Boltzmann distribution for token budget allocation across files.
@@ -518,6 +574,86 @@ mod tests {
             !usable,
             "a preload with no candidate files carries no context: {body}"
         );
+    }
+
+    const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+
+    fn project_file(root: &std::path::Path, name: &str, content: &str) {
+        std::fs::write(root.join(name), content).unwrap();
+    }
+
+    /// G01: the old preload read each candidate with `fs::read_to_string` and
+    /// stored those raw bytes in the session cache — a key `ctx_read` masks
+    /// was served from the cache afterwards, and a restricted source was
+    /// kept. The cache now receives the admitted text of a storable original
+    /// only.
+    #[test]
+    fn the_session_cache_is_seeded_with_admitted_storable_sources_only() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        project_file(project.path(), "clean.rs", "pub fn clean() {}\n");
+        project_file(
+            project.path(),
+            "keyed.rs",
+            &format!("pub fn connect() {{\n    let aws_key = \"{AWS_KEY}\";\n}}\n"),
+        );
+        project_file(
+            project.path(),
+            "marked.rs",
+            "// TOP SECRET\npub fn plan() {}\n",
+        );
+        let mut cache = SessionCache::new();
+        let mut remaining = crate::core::limits::max_read_bytes().saturating_mul(4);
+
+        // Control: a clean source is cached byte-identically, as before.
+        let clean = acquire("clean.rs", &root, project.path(), &mut remaining).unwrap();
+        seed_cache(&mut cache, &clean);
+        assert_eq!(
+            cache.get_full_content(&clean.path).as_deref(),
+            Some("pub fn clean() {}\n")
+        );
+
+        let keyed = acquire("keyed.rs", &root, project.path(), &mut remaining).unwrap();
+        seed_cache(&mut cache, &keyed);
+        let cached = cache
+            .get_full_content(&keyed.path)
+            .expect("the masked source is cached");
+        assert!(!cached.contains(AWS_KEY), "the cache holds a raw key");
+        assert!(cached.contains("pub fn connect"), "{cached}");
+
+        // A restricted original is delivered to its reader, never retained;
+        // a copy cached before is dropped.
+        let marked = acquire("marked.rs", &root, project.path(), &mut remaining).unwrap();
+        let _ = cache.store(&marked.path, "// TOP SECRET\npub fn plan() {}\n");
+        seed_cache(&mut cache, &marked);
+        assert!(marked.read.text().is_some_and(|text| text.contains("plan")));
+        assert!(cache.get_full_content(&marked.path).is_none());
+    }
+
+    #[test]
+    fn a_withheld_candidate_is_not_cached_and_loses_its_earlier_copy() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let policy = crate::core::policy::load(
+            "name = \"ctx-preload-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )
+        .unwrap();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        let source = "CONFIDENTIAL\npub fn hidden_marker() {}\n";
+        project_file(project.path(), "plan.rs", source);
+        let mut cache = SessionCache::new();
+        let mut remaining = crate::core::limits::max_read_bytes();
+
+        let plan = acquire("plan.rs", &root, project.path(), &mut remaining).unwrap();
+        let _ = cache.store(&plan.path, source);
+        seed_cache(&mut cache, &plan);
+        let reason = plan.read.withheld().expect("blocked by the policy");
+        assert!(!reason.contains("hidden_marker"), "{reason}");
+        assert!(cache.get_full_content(&plan.path).is_none());
     }
 
     #[test]

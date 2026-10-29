@@ -93,10 +93,6 @@ pub(super) fn default_turn_fresh_limit_verbatim() -> usize {
     32_768
 }
 
-pub(super) fn default_session_token_limit() -> usize {
-    200_000
-}
-
 pub(super) fn default_progressive_threshold_lines() -> u32 {
     100
 }

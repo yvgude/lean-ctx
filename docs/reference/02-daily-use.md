@@ -98,8 +98,8 @@ symbol's exact line span — so `map` and `signatures` convey both the file's
 jump straight to a function instead of issuing a follow-up search. The line-range
 suffix is emitted only in these navigation modes; compression-first modes
 (`aggressive`, `entropy`, full reads) stay byte-identical. The first read in a
-session may also prepend an `--- AUTO CONTEXT ---` block with related files and
-graph edges.
+session may also prepend an `--- AUTO CONTEXT ---` block with the wake-up
+briefing: last task, recent decisions, project facts and active peers.
 
 ### `lean-ctx diff <a> <b>` / `ctx_delta`
 
@@ -143,10 +143,10 @@ output are redacted when `[secret_detection]` is on (default). Set
 | `lean-ctx find <pat> [path]` | — | Find files by glob/substring |
 | `lean-ctx ls [path]` | `ctx_tree` | Compact directory map with counts |
 | `lean-ctx deps [path]` | — | Project dependencies |
-| — | `ctx_semantic_search` | Meaning-based search (BM25 + embeddings) |
+| — | `ctx_search action="semantic"` | Meaning-based search (BM25 + embeddings) |
 
 **Regex vs. semantic:** use `ctx_search`/`grep` when you know the string; use
-`ctx_semantic_search` when you know the *concept* ("where do we validate auth
+`ctx_search action="semantic"` when you know the *concept* ("where do we validate auth
 tokens?"). Semantic search needs an index — it builds on first use and updates
 in the background.
 

@@ -1,0 +1,1177 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/policy.schema.json",
+  "title": "Unified Control policies (Release B, BAUPLAN v1.1 §7)",
+  "description": "Policy documents per hierarchy level (org -> workspace -> vault -> engine), their effective merge and the signed per-engine bundle. Every member has `x-merge` (its merge rule = tightening direction: union = deny wins, intersection = allowed values every level allows, groups = every allowlist must match, min = stricter limit, true_wins/false_wins, rank = later enum value is stricter, equal = levels must agree else non_mergeable) and `x-enforcement`: `engine` = enforced by the engine's gateway policy pack field `x-engine`, `server` = enforced by Hive itself at the point `x-server` names (403 policy_denied {member, level}), whatever the engine does, `advisory` = distributed and shown, not enforced yet. Enforcement covers access through LeanCTX only.",
+  "$defs": {
+    "level": {
+      "enum": [
+        "org",
+        "workspace",
+        "vault",
+        "engine"
+      ],
+      "description": "hierarchy level, outermost first; lower levels can only tighten"
+    },
+    "action": {
+      "enum": [
+        "off",
+        "warn",
+        "redact",
+        "block"
+      ],
+      "description": "filter action, loosest first"
+    },
+    "read_mode": {
+      "enum": [
+        "auto",
+        "full",
+        "map",
+        "signatures",
+        "diff",
+        "task",
+        "reference",
+        "aggressive",
+        "entropy"
+      ]
+    },
+    "data_class": {
+      "enum": [
+        "secrets",
+        "pii",
+        "confidential",
+        "customer_data",
+        "source_code"
+      ]
+    },
+    "personal_workspace_mode": {
+      "enum": [
+        "allow",
+        "forbid"
+      ],
+      "description": "sharing.personal_workspace, loosest first"
+    },
+    "claim_role": {
+      "enum": [
+        "reader",
+        "contributor",
+        "maintainer",
+        "admin",
+        "owner"
+      ],
+      "description": "member role, loosest first"
+    },
+    "consent_action": {
+      "enum": [
+        "trust_boundary",
+        "permission_expansion",
+        "security_command",
+        "destructive_change",
+        "team_sharing",
+        "external_model"
+      ]
+    },
+    "name": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9_.:-]{0,63}$"
+    },
+    "glob": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 256,
+      "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]+$"
+    },
+    "model_pattern": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128,
+      "pattern": "^[^\\x00-\\x1f\\x7f-\\x9f]+$"
+    },
+    "digest": {
+      "type": "string",
+      "pattern": "^sha256:[0-9a-f]{64}$",
+      "description": "\"sha256:\" + hex(sha256(canonical_json(value)))"
+    },
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "org_id": {
+      "type": "string",
+      "pattern": "^org_[0-9a-f]{32}$"
+    },
+    "instance_id": {
+      "type": "string",
+      "pattern": "^inst_[0-9a-f]{32}$"
+    },
+    "security": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "excluded_paths": {
+          "description": "Path globs (gitignore style) whose content never enters context or shared knowledge.",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/glob"
+          },
+          "x-merge": "union",
+          "x-enforcement": "server",
+          "x-server": "unsealed vaults: a push, task result, draft or code graph with a code anchor path the globs match is refused; sealed vaults stay advisory (the server cannot read their anchors)"
+        },
+        "block_secrets": {
+          "description": "Block agent writes and actions that carry detected secrets or PII.",
+          "type": "boolean",
+          "x-merge": "true_wins",
+          "x-enforcement": "engine",
+          "x-engine": "egress.block_secrets"
+        },
+        "pii": {
+          "description": "PII detector action on inbound content; redact = anonymise.",
+          "$ref": "#/$defs/action",
+          "x-merge": "rank",
+          "x-enforcement": "engine",
+          "x-engine": "filters.pii"
+        },
+        "classification": {
+          "description": "Data-classification banner gate (confidential/secret markings).",
+          "$ref": "#/$defs/action",
+          "x-merge": "rank",
+          "x-enforcement": "engine",
+          "x-engine": "filters.classification"
+        },
+        "blocked_labels": {
+          "description": "Classification labels that gate content.",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "x-merge": "union",
+          "x-enforcement": "engine",
+          "x-engine": "filters.blocked_labels"
+        },
+        "allowed_models": {
+          "description": "Model allowlists (glob-lite, '*' wildcard): a model is allowed when it matches a pattern of every group; an empty group allows no model.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 4,
+          "uniqueItems": true,
+          "items": {
+            "type": "array",
+            "maxItems": 32,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/model_pattern"
+            }
+          },
+          "x-merge": "groups",
+          "x-enforcement": "engine",
+          "x-engine": "routing.model_ceiling_groups"
+        },
+        "external_model_excluded_classes": {
+          "description": "Data classes that are never sent to an external (remote) model.",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/data_class"
+          },
+          "x-merge": "union",
+          "x-enforcement": "advisory"
+        },
+        "confidential_out_of_sharing": {
+          "description": "Keep content classified confidential out of team sharing.",
+          "type": "boolean",
+          "x-merge": "true_wins",
+          "x-enforcement": "advisory"
+        }
+      }
+    },
+    "security_effective": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "excluded_paths": {
+          "description": "Path globs (gitignore style) whose content never enters context or shared knowledge.",
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/glob"
+          },
+          "x-merge": "union",
+          "x-enforcement": "server",
+          "x-server": "unsealed vaults: a push, task result, draft or code graph with a code anchor path the globs match is refused; sealed vaults stay advisory (the server cannot read their anchors)"
+        },
+        "block_secrets": {
+          "description": "Block agent writes and actions that carry detected secrets or PII.",
+          "type": "boolean",
+          "x-merge": "true_wins",
+          "x-enforcement": "engine",
+          "x-engine": "egress.block_secrets"
+        },
+        "pii": {
+          "description": "PII detector action on inbound content; redact = anonymise.",
+          "$ref": "#/$defs/action",
+          "x-merge": "rank",
+          "x-enforcement": "engine",
+          "x-engine": "filters.pii"
+        },
+        "classification": {
+          "description": "Data-classification banner gate (confidential/secret markings).",
+          "$ref": "#/$defs/action",
+          "x-merge": "rank",
+          "x-enforcement": "engine",
+          "x-engine": "filters.classification"
+        },
+        "blocked_labels": {
+          "description": "Classification labels that gate content.",
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "x-merge": "union",
+          "x-enforcement": "engine",
+          "x-engine": "filters.blocked_labels"
+        },
+        "allowed_models": {
+          "description": "Model allowlists (glob-lite, '*' wildcard): a model is allowed when it matches a pattern of every group; an empty group allows no model.",
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 16,
+          "uniqueItems": true,
+          "items": {
+            "type": "array",
+            "maxItems": 32,
+            "uniqueItems": true,
+            "items": {
+              "$ref": "#/$defs/model_pattern"
+            }
+          },
+          "x-merge": "groups",
+          "x-enforcement": "engine",
+          "x-engine": "routing.model_ceiling_groups"
+        },
+        "external_model_excluded_classes": {
+          "description": "Data classes that are never sent to an external (remote) model.",
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/data_class"
+          },
+          "x-merge": "union",
+          "x-enforcement": "advisory"
+        },
+        "confidential_out_of_sharing": {
+          "description": "Keep content classified confidential out of team sharing.",
+          "type": "boolean",
+          "x-merge": "true_wins",
+          "x-enforcement": "advisory"
+        }
+      }
+    },
+    "context": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_context_tokens": {
+          "description": "Upper bound on tokens one context assembly may spend.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000,
+          "x-merge": "min",
+          "x-enforcement": "engine",
+          "x-engine": "context.max_context_tokens"
+        },
+        "injection_filter": {
+          "description": "Filter level of the prompt-injection detector on inbound content.",
+          "$ref": "#/$defs/action",
+          "x-merge": "rank",
+          "x-enforcement": "engine",
+          "x-engine": "filters.injection"
+        },
+        "read_mode": {
+          "description": "Default read mode; levels that set it must agree.",
+          "$ref": "#/$defs/read_mode",
+          "x-merge": "equal",
+          "x-enforcement": "engine",
+          "x-engine": "context.default_read_mode"
+        },
+        "ranking_profile": {
+          "description": "Ranking profile name; levels that set it must agree.",
+          "$ref": "#/$defs/name",
+          "x-merge": "equal",
+          "x-enforcement": "advisory"
+        },
+        "allowed_tools": {
+          "description": "Tool allowlist; only these tools may be called.",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "x-merge": "intersection",
+          "x-enforcement": "engine",
+          "x-engine": "context.allow_tools"
+        },
+        "denied_tools": {
+          "description": "Tool denylist.",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "x-merge": "union",
+          "x-enforcement": "engine",
+          "x-engine": "context.deny_tools"
+        },
+        "allowed_sources": {
+          "description": "Context source kinds that may be used (e.g. files, shell, web, knowledge, provider:github).",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "x-merge": "intersection",
+          "x-enforcement": "advisory"
+        },
+        "max_writes_per_min": {
+          "description": "Agent write/action tool calls per 60 s.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000,
+          "x-merge": "min",
+          "x-enforcement": "engine",
+          "x-engine": "egress.max_writes_per_min"
+        },
+        "max_cost_cents_per_person_per_day": {
+          "description": "Measured model spend per person per UTC day, in US cents (engine: /100 USD).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000,
+          "x-merge": "min",
+          "x-enforcement": "engine",
+          "x-engine": "budgets.max_cost_usd_per_person_per_day"
+        },
+        "max_cost_cents_per_project_per_month": {
+          "description": "Measured model spend per project per UTC month, in US cents (engine: /100 USD).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000,
+          "x-merge": "min",
+          "x-enforcement": "engine",
+          "x-engine": "budgets.max_cost_usd_per_project_per_month"
+        },
+        "max_requests_per_minute_per_person": {
+          "description": "Accepted gateway requests per person per minute.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000,
+          "x-merge": "min",
+          "x-enforcement": "engine",
+          "x-engine": "budgets.max_requests_per_minute_per_person"
+        },
+        "auto_extraction": {
+          "description": "Agents may extract knowledge automatically (extraction rule).",
+          "type": "boolean",
+          "x-merge": "false_wins",
+          "x-enforcement": "advisory"
+        },
+        "extraction_requires_source_anchor": {
+          "description": "Extracted knowledge must carry a source or code anchor (extraction rule).",
+          "type": "boolean",
+          "x-merge": "true_wins",
+          "x-enforcement": "advisory"
+        },
+        "max_source_age_days": {
+          "description": "Freshness requirement: knowledge older than this many days is not used without re-verification.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650,
+          "x-merge": "min",
+          "x-enforcement": "advisory"
+        }
+      }
+    },
+    "context_effective": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "max_context_tokens": {
+          "description": "Upper bound on tokens one context assembly may spend.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 10000000,
+          "x-merge": "min",
+          "x-enforcement": "engine",
+          "x-engine": "context.max_context_tokens"
+        },
+        "injection_filter": {
+          "description": "Filter level of the prompt-injection detector on inbound content.",
+          "$ref": "#/$defs/action",
+          "x-merge": "rank",
+          "x-enforcement": "engine",
+          "x-engine": "filters.injection"
+        },
+        "read_mode": {
+          "description": "Default read mode; levels that set it must agree.",
+          "$ref": "#/$defs/read_mode",
+          "x-merge": "equal",
+          "x-enforcement": "engine",
+          "x-engine": "context.default_read_mode"
+        },
+        "ranking_profile": {
+          "description": "Ranking profile name; levels that set it must agree.",
+          "$ref": "#/$defs/name",
+          "x-merge": "equal",
+          "x-enforcement": "advisory"
+        },
+        "allowed_tools": {
+          "description": "Tool allowlist; only these tools may be called.",
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "x-merge": "intersection",
+          "x-enforcement": "engine",
+          "x-engine": "context.allow_tools"
+        },
+        "denied_tools": {
+          "description": "Tool denylist.",
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "x-merge": "union",
+          "x-enforcement": "engine",
+          "x-engine": "context.deny_tools"
+        },
+        "allowed_sources": {
+          "description": "Context source kinds that may be used (e.g. files, shell, web, knowledge, provider:github).",
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/name"
+          },
+          "x-merge": "intersection",
+          "x-enforcement": "advisory"
+        },
+        "max_writes_per_min": {
+          "description": "Agent write/action tool calls per 60 s.",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 10000,
+          "x-merge": "min",
+          "x-enforcement": "engine",
+          "x-engine": "egress.max_writes_per_min"
+        },
+        "max_cost_cents_per_person_per_day": {
+          "description": "Measured model spend per person per UTC day, in US cents (engine: /100 USD).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000,
+          "x-merge": "min",
+          "x-enforcement": "engine",
+          "x-engine": "budgets.max_cost_usd_per_person_per_day"
+        },
+        "max_cost_cents_per_project_per_month": {
+          "description": "Measured model spend per project per UTC month, in US cents (engine: /100 USD).",
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 100000000,
+          "x-merge": "min",
+          "x-enforcement": "engine",
+          "x-engine": "budgets.max_cost_usd_per_project_per_month"
+        },
+        "max_requests_per_minute_per_person": {
+          "description": "Accepted gateway requests per person per minute.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 1000000,
+          "x-merge": "min",
+          "x-enforcement": "engine",
+          "x-engine": "budgets.max_requests_per_minute_per_person"
+        },
+        "auto_extraction": {
+          "description": "Agents may extract knowledge automatically (extraction rule).",
+          "type": "boolean",
+          "x-merge": "false_wins",
+          "x-enforcement": "advisory"
+        },
+        "extraction_requires_source_anchor": {
+          "description": "Extracted knowledge must carry a source or code anchor (extraction rule).",
+          "type": "boolean",
+          "x-merge": "true_wins",
+          "x-enforcement": "advisory"
+        },
+        "max_source_age_days": {
+          "description": "Freshness requirement: knowledge older than this many days is not used without re-verification.",
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 3650,
+          "x-merge": "min",
+          "x-enforcement": "advisory"
+        }
+      }
+    },
+    "sharing": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed_vaults": {
+          "description": "Vault ids an engine may use.",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/hex32"
+          },
+          "x-merge": "intersection",
+          "x-enforcement": "server",
+          "x-server": "every engine route that names a vault (resolve, match, reads, pushes, tasks, reviews, bus v1/v2, presence, metrics): a vault outside the list is refused, a new vault too"
+        },
+        "cross_team_sharing": {
+          "description": "Results may be shared with other team workspaces.",
+          "type": "boolean",
+          "x-merge": "false_wins",
+          "x-enforcement": "server",
+          "x-server": "false: moving a vault to another workspace (W11) and making it public (W26) are refused"
+        },
+        "task_claim_min_role": {
+          "description": "Lowest member role whose agents may claim tasks.",
+          "$ref": "#/$defs/claim_role",
+          "x-merge": "rank",
+          "x-enforcement": "server",
+          "x-server": "task claim and claim renew by an engine whose owner's role is lower are refused"
+        },
+        "auto_merge_results": {
+          "description": "Agent results merge into shared knowledge without a person.",
+          "type": "boolean",
+          "x-merge": "false_wins",
+          "x-enforcement": "server",
+          "x-server": "false: a task result's plain ops are held as a proposal for a person instead of entering the shared log"
+        },
+        "consent_required_for": {
+          "description": "Actions that need a person's consent outside the agent context.",
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/consent_action"
+          },
+          "x-merge": "union",
+          "x-enforcement": "server",
+          "x-server": "trust_boundary: an engine linking a project to an existing vault is refused (a person links it); the other actions stay advisory"
+        },
+        "personal_workspace": {
+          "description": "Whether the team's project knowledge may go to a person's own Personal workspace.",
+          "$ref": "#/$defs/personal_workspace_mode",
+          "x-merge": "rank",
+          "x-enforcement": "server",
+          "x-server": "forbid: a vault of the team is never moved to a personal workspace (W11), and an engine enrolled in a team never reaches a personal vault; engines from the C line on also refuse to give a project they worked on in the team a vault in a personal workspace (older engines: advisory)"
+        },
+        "share_engine_metrics": {
+          "description": "Share engine metrics (hourly aggregated counters, never content) with Hive Insights; absent = the plan default.",
+          "type": "boolean",
+          "x-merge": "false_wins",
+          "x-enforcement": "server",
+          "x-server": "POST /v1/metrics/hours and POST /v1/metrics: an engine whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices and day entries refused; absent at every level = the plan default (Team, Business on; Community, Pro off until the person confirms once, 403 sharing_not_confirmed)"
+        }
+      }
+    },
+    "sharing_effective": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "allowed_vaults": {
+          "description": "Vault ids an engine may use.",
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "common.schema.json#/$defs/hex32"
+          },
+          "x-merge": "intersection",
+          "x-enforcement": "server",
+          "x-server": "every engine route that names a vault (resolve, match, reads, pushes, tasks, reviews, bus v1/v2, presence, metrics): a vault outside the list is refused, a new vault too"
+        },
+        "cross_team_sharing": {
+          "description": "Results may be shared with other team workspaces.",
+          "type": "boolean",
+          "x-merge": "false_wins",
+          "x-enforcement": "server",
+          "x-server": "false: moving a vault to another workspace (W11) and making it public (W26) are refused"
+        },
+        "task_claim_min_role": {
+          "description": "Lowest member role whose agents may claim tasks.",
+          "$ref": "#/$defs/claim_role",
+          "x-merge": "rank",
+          "x-enforcement": "server",
+          "x-server": "task claim and claim renew by an engine whose owner's role is lower are refused"
+        },
+        "auto_merge_results": {
+          "description": "Agent results merge into shared knowledge without a person.",
+          "type": "boolean",
+          "x-merge": "false_wins",
+          "x-enforcement": "server",
+          "x-server": "false: a task result's plain ops are held as a proposal for a person instead of entering the shared log"
+        },
+        "consent_required_for": {
+          "description": "Actions that need a person's consent outside the agent context.",
+          "type": "array",
+          "maxItems": 256,
+          "uniqueItems": true,
+          "items": {
+            "$ref": "#/$defs/consent_action"
+          },
+          "x-merge": "union",
+          "x-enforcement": "server",
+          "x-server": "trust_boundary: an engine linking a project to an existing vault is refused (a person links it); the other actions stay advisory"
+        },
+        "personal_workspace": {
+          "description": "Whether the team's project knowledge may go to a person's own Personal workspace.",
+          "$ref": "#/$defs/personal_workspace_mode",
+          "x-merge": "rank",
+          "x-enforcement": "server",
+          "x-server": "forbid: a vault of the team is never moved to a personal workspace (W11), and an engine enrolled in a team never reaches a personal vault; engines from the C line on also refuse to give a project they worked on in the team a vault in a personal workspace (older engines: advisory)"
+        },
+        "share_engine_metrics": {
+          "description": "Share engine metrics (hourly aggregated counters, never content) with Hive Insights; absent = the plan default.",
+          "type": "boolean",
+          "x-merge": "false_wins",
+          "x-enforcement": "server",
+          "x-server": "POST /v1/metrics/hours and POST /v1/metrics: an engine whose rule is false is refused (403 policy_denied), a vault whose rule is false has its slices and day entries refused; absent at every level = the plan default (Team, Business on; Community, Pro off until the person confirms once, 403 sharing_not_confirmed)"
+        }
+      }
+    },
+    "document": {
+      "description": "one level's policy document (W routes); every member optional, absent = this level adds no rule; at most 8 KiB canonical JSON",
+      "type": "object",
+      "required": [
+        "schema"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.policy/v1"
+        },
+        "security": {
+          "$ref": "#/$defs/security"
+        },
+        "context": {
+          "$ref": "#/$defs/context"
+        },
+        "sharing": {
+          "$ref": "#/$defs/sharing"
+        }
+      }
+    },
+    "effective": {
+      "description": "merge of at most one document per level, in normal form: all three sections present, every set sorted ascending (bytewise), groups sorted, absent member = no level sets it",
+      "type": "object",
+      "required": [
+        "schema",
+        "security",
+        "context",
+        "sharing"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.policy/v1"
+        },
+        "security": {
+          "$ref": "#/$defs/security_effective"
+        },
+        "context": {
+          "$ref": "#/$defs/context_effective"
+        },
+        "sharing": {
+          "$ref": "#/$defs/sharing_effective"
+        }
+      }
+    },
+    "source": {
+      "description": "a document that went into the bundle: org/workspace scope = org_id (an organisation's org-level document: orgn_ + its id), vault = vault id, engine = instance_id",
+      "type": "object",
+      "required": [
+        "level",
+        "scope",
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "level": {
+          "$ref": "#/$defs/level"
+        },
+        "scope": {
+          "type": "string",
+          "pattern": "^(org_[0-9a-f]{32}|orgn_[0-9a-f]{32}|inst_[0-9a-f]{32}|[0-9a-f]{32})$"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        }
+      }
+    },
+    "bundle": {
+      "description": "signed effective policy of one engine (purpose key `policy` of key set v3): Ed25519 over \"leanctx.hive.effective-policy.v1\\n\" || canonical_json(bundle without signature), signature lowercase hex. `version` grows strictly per engine; an engine refuses a lower version or the same version with another digest (downgrade), a bundle for another org_id/instance_id, and treats it as expired after not_after (sensitive actions fail closed, the last valid rules keep restricting local work).",
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "schema",
+        "org_id",
+        "instance_id",
+        "version",
+        "issued_at",
+        "not_after",
+        "sources",
+        "policy",
+        "digest",
+        "key_id",
+        "signature"
+      ],
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.effective-policy/v1"
+        },
+        "org_id": {
+          "$ref": "#/$defs/org_id"
+        },
+        "instance_id": {
+          "$ref": "#/$defs/instance_id"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "issued_at": {
+          "$ref": "#/$defs/time"
+        },
+        "not_after": {
+          "$ref": "#/$defs/time"
+        },
+        "sources": {
+          "type": "array",
+          "maxItems": 35,
+          "items": {
+            "$ref": "#/$defs/source"
+          }
+        },
+        "policy": {
+          "type": "object",
+          "required": [
+            "effective",
+            "vaults"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "effective": {
+              "$ref": "#/$defs/effective",
+              "description": "org ∧ workspace ∧ engine: applies to every vault without an entry in `vaults`"
+            },
+            "vaults": {
+              "type": "array",
+              "maxItems": 32,
+              "description": "per vault with a vault-level document: org ∧ workspace ∧ vault ∧ engine, ascending by vault_id",
+              "items": {
+                "type": "object",
+                "required": [
+                  "vault_id",
+                  "effective"
+                ],
+                "additionalProperties": false,
+                "properties": {
+                  "vault_id": {
+                    "$ref": "common.schema.json#/$defs/hex32"
+                  },
+                  "effective": {
+                    "$ref": "#/$defs/effective"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "digest": {
+          "$ref": "#/$defs/digest",
+          "description": "digest of `policy`; the engine acks it"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/key_id"
+        },
+        "signature": {
+          "$ref": "common.schema.json#/$defs/signature"
+        }
+      }
+    },
+    "bundle_response": {
+      "description": "GET /v1/policy/bundle for Hive-Protocol 2.x: the C0 1.x members unchanged plus `effective_policy` (null only when this server has no lease signing key)",
+      "type": "object",
+      "required": [
+        "schema",
+        "policy_version",
+        "org_policy",
+        "unpin",
+        "filter_packs",
+        "effective_policy"
+      ],
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.policy-bundle/v1"
+        },
+        "policy_version": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "org_policy": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "unpin": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "filter_packs": {
+          "type": "array",
+          "maxItems": 64
+        },
+        "effective_policy": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/bundle"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "ack_request": {
+      "description": "POST /v1/policy/ack: the engine applied this bundle; `unenforced` lists the members this engine cannot enforce (`x-enforcement: engine`); server-enforced members are never listed. With `refused`: the engine received this bundle (`version`, `digest` as received) but refused it and keeps applying the bundle `refused.applied_version` (null: it holds no valid bundle); `unenforced` is then absent",
+      "type": "object",
+      "required": [
+        "version",
+        "digest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "unenforced": {
+          "type": "array",
+          "maxItems": 64,
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "pattern": "^(security|context|sharing)\\.[a-z_]{1,64}$"
+          }
+        },
+        "refused": {
+          "$ref": "#/$defs/ack_refusal"
+        }
+      },
+      "if": {
+        "required": [
+          "refused"
+        ]
+      },
+      "then": {
+        "not": {
+          "required": [
+            "unenforced"
+          ]
+        }
+      }
+    },
+    "ack_refusal": {
+      "type": "object",
+      "required": [
+        "reason_code",
+        "applied_version",
+        "applied_digest"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "reason_code": {
+          "$ref": "#/$defs/refusal_reason"
+        },
+        "detail": {
+          "description": "the engine's diagnostic line, no content",
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300,
+          "pattern": "^[^\\x00-\\x1f\\x7f]+$"
+        },
+        "applied_version": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "applied_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "if": {
+        "properties": {
+          "applied_version": {
+            "type": "null"
+          }
+        }
+      },
+      "then": {
+        "properties": {
+          "applied_digest": {
+            "type": "null"
+          }
+        }
+      },
+      "else": {
+        "properties": {
+          "applied_digest": {
+            "$ref": "#/$defs/digest"
+          }
+        }
+      }
+    },
+    "refusal_reason": {
+      "description": "why an engine refused a received bundle: invalid_bundle (does not parse or validate), wrong_target (issued for another org or engine), key_unavailable (no verified key set v3 or no valid policy key for key_id), signature_invalid, digest_mismatch (digest is not the policy's), downgrade (older version, or the same version with another digest), expired (not_after already passed), install_failed (verified but could not be stored)",
+      "enum": [
+        "invalid_bundle",
+        "wrong_target",
+        "key_unavailable",
+        "signature_invalid",
+        "digest_mismatch",
+        "downgrade",
+        "expired",
+        "install_failed"
+      ]
+    },
+    "ack_response": {
+      "type": "object",
+      "required": [
+        "schema",
+        "version",
+        "digest",
+        "state",
+        "acked_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.policy-ack/v1"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "state": {
+          "enum": [
+            "acked",
+            "outdated"
+          ],
+          "description": "outdated: a newer bundle was issued to this engine since"
+        },
+        "acked_at": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "ack_refused_response": {
+      "description": "POST /v1/policy/ack answer to a refusal (`refused` in the request): recorded; the normal ack answer is ack_response",
+      "type": "object",
+      "required": [
+        "schema",
+        "version",
+        "digest",
+        "state",
+        "reason_code",
+        "applied_version",
+        "applied_digest",
+        "refused_at"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.policy-ack/v1"
+        },
+        "version": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "state": {
+          "const": "refused"
+        },
+        "reason_code": {
+          "$ref": "#/$defs/refusal_reason"
+        },
+        "applied_version": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 1
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "applied_digest": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/digest"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "refused_at": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "merge_vectors": {
+      "description": "vectors/policy_merge.vectors.json",
+      "type": "object",
+      "required": [
+        "name",
+        "cases"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "name": {
+          "const": "policy_merge"
+        },
+        "note": {
+          "type": "string"
+        },
+        "cases": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/merge_case"
+          }
+        }
+      }
+    },
+    "merge_case": {
+      "type": "object",
+      "required": [
+        "case",
+        "levels"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "case": {
+          "type": "string"
+        },
+        "levels": {
+          "type": "array",
+          "maxItems": 4,
+          "items": {
+            "type": "object",
+            "required": [
+              "level",
+              "document"
+            ],
+            "additionalProperties": false,
+            "properties": {
+              "level": {
+                "$ref": "#/$defs/level"
+              },
+              "document": {
+                "type": "object"
+              }
+            }
+          }
+        },
+        "effective": {
+          "$ref": "#/$defs/effective"
+        },
+        "effective_digest": {
+          "$ref": "#/$defs/digest"
+        },
+        "error": {
+          "type": "object",
+          "required": [
+            "code",
+            "field"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "code": {
+              "enum": [
+                "invalid_policy",
+                "non_mergeable"
+              ]
+            },
+            "field": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "oneOf": [
+        {
+          "required": [
+            "effective",
+            "effective_digest"
+          ]
+        },
+        {
+          "required": [
+            "error"
+          ]
+        }
+      ]
+    }
+  }
+}

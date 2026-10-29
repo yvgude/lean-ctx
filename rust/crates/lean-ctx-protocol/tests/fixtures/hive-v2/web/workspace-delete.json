@@ -1,0 +1,35 @@
+{
+  "route": "W7d",
+  "method": "POST",
+  "path": "/api/v1/orgs/acme/delete",
+  "request": {
+    "confirm": "acme"
+  },
+  "response": {
+    "status": 204,
+    "body": null
+  },
+  "errors": [
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "delete or move the workspace's vaults first",
+          "state": "vaults_present",
+          "vaults": 2
+        }
+      }
+    },
+    {
+      "status": 409,
+      "body": {
+        "error": {
+          "code": "invalid_state",
+          "message": "your Personal workspace lasts as long as your account",
+          "state": "personal_org"
+        }
+      }
+    }
+  ]
+}

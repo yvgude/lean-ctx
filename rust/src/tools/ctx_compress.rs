@@ -35,7 +35,16 @@ pub fn handle(cache: &SessionCache, include_signatures: bool, crp_mode: CrpMode)
                 .extension()
                 .and_then(|e| e.to_str())
                 .unwrap_or("");
-            let Some(content) = entry.content() else {
+            // Signatures are a derivation of the cached copy: they come from
+            // what the cache's current-rights accessor releases NOW (G04),
+            // never from the raw entry. An entry that is not released keeps
+            // its metadata line below and contributes no signature.
+            let Some(content) = crate::tools::admitted_sources::released_cache_content(cache, path)
+            else {
+                sections.push(format!(
+                    "{file_ref} {short} [{}L]: [withheld]",
+                    entry.line_count
+                ));
                 continue;
             };
             let sigs = signatures::extract_signatures(&content, ext);
@@ -87,7 +96,10 @@ pub fn handle(cache: &SessionCache, include_signatures: bool, crp_mode: CrpMode)
 
     let contents: Vec<(String, String)> = entries
         .iter()
-        .filter_map(|(p, e)| Some(((*p).clone(), e.content()?)))
+        .filter_map(|(p, _)| {
+            let released = crate::tools::admitted_sources::released_cache_content(cache, p)?;
+            Some(((*p).clone(), released))
+        })
         .collect();
     let files_for_codebook: Vec<(&str, &str)> = contents
         .iter()
@@ -121,13 +133,15 @@ pub fn handle(cache: &SessionCache, include_signatures: bool, crp_mode: CrpMode)
     )
 }
 
-/// Grow-and-refine (#541): fold the latest session findings, decisions and
-/// modified files into the playbook as deltas (dedup confirms instead of
-/// duplicating), evict locally, persist, and return the rendered block.
+/// Grow-and-refine (#541): fold the caller's own session findings, decisions
+/// and modified files into its playbook as deltas (dedup confirms instead of
+/// duplicating), evict locally, and return the rendered block. Never the
+/// project's latest saved session, which may be another agent's (I07/S03);
+/// without a caller session (CLI) there is no playbook.
 fn update_playbook_from_session() -> Option<String> {
     use crate::core::session::EntryKind;
 
-    let mut session = crate::core::session::SessionState::load_latest()?;
+    let mut session = crate::core::session::caller::with(Clone::clone)?;
     let turn = session.stats.total_tool_calls;
 
     let findings: Vec<String> = session
@@ -202,10 +216,52 @@ fn update_playbook_from_session() -> Option<String> {
     session.playbook.evict(turn);
 
     let rendered = session.playbook.render(20);
-    let _ = session.save();
+    // The server's save cadence persists the caller's session.
+    crate::core::session::caller::with_mut(|own| {
+        own.playbook = session.playbook;
+        own.increment();
+    });
     if rendered.is_empty() {
         None
     } else {
         Some(rendered)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    /// G04: the checkpoint derived signatures from the raw cache entry — also
+    /// when the source behind it was gone. It now derives only from what the
+    /// cache's current-rights accessor releases.
+    #[test]
+    fn signatures_come_only_from_released_cache_entries() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let project = tempfile::tempdir().unwrap();
+        let kept = project.path().join("kept.rs");
+        let gone = project.path().join("gone.rs");
+        std::fs::write(&kept, "pub fn kept_symbol() {}\n").unwrap();
+        std::fs::write(&gone, "pub fn gone_symbol() {}\n").unwrap();
+        let (kept, gone) = (
+            kept.to_string_lossy().into_owned(),
+            gone.to_string_lossy().into_owned(),
+        );
+        let mut cache = SessionCache::new();
+        cache.store(&kept, "pub fn kept_symbol() {}\n");
+        cache.store(&gone, "pub fn gone_symbol() {}\n");
+
+        let out = handle(&cache, true, CrpMode::Off);
+        assert!(
+            out.contains("kept_symbol") && out.contains("gone_symbol"),
+            "{out}"
+        );
+
+        std::fs::remove_file(&gone).unwrap();
+        let out = handle(&cache, true, CrpMode::Off);
+        assert!(out.contains("kept_symbol"), "{out}");
+        assert!(!out.contains("gone_symbol"), "{out}");
+        assert!(out.contains("[withheld]"), "{out}");
     }
 }

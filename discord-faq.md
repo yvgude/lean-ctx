@@ -3,7 +3,7 @@
 **LeanCTX — Context Gateway for AI Systems. Control what your AI can see.**
 See the [current product definition](docs/POSITIONING_CANONICAL.md).
 
-> **Latest version: 3.11.4** — complete MCP tool set · 16 read modes · 85+ shell patterns
+> **Latest version: 3.12.0** — complete MCP tool set · 16 read modes · 85+ shell patterns
 > Docs: https://leanctx.com/docs/getting-started
 
 ---

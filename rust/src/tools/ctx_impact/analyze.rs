@@ -116,9 +116,9 @@ fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize, fmt: OutputF
     let rel_target = graph_target_key(target, root);
 
     // 1) Direct file-node match — the documented contract (a file path).
-    if graph.get_node_by_path(&rel_target).ok().flatten().is_some() {
+    if super::served_file_node(&graph, &rel_target) {
         let semantic = verify_references(&graph, root, std::slice::from_ref(&rel_target));
-        let impact = match graph.impact_analysis(&rel_target, max_depth) {
+        let impact = match super::served_impact(&graph, &rel_target, max_depth) {
             Ok(r) => r,
             Err(e) => return format!("Impact analysis failed: {e}"),
         };
@@ -132,7 +132,7 @@ fn handle_analyze(path: Option<&str>, root: &str, max_depth: usize, fmt: OutputF
     //    misleading "leaf node" answer a non-file target produced before.
     let symbol = symbol_query_name(target);
     if !symbol.is_empty()
-        && let Ok(def_files) = graph.resolve_symbol_def_files(&symbol)
+        && let Ok(def_files) = super::served_def_files(&graph, &symbol)
         && !def_files.is_empty()
     {
         return analyze_symbol(&graph, &symbol, &def_files, root, max_depth, fmt);
@@ -238,7 +238,10 @@ fn verify_references(graph: &CodeGraph, root: &str, files: &[String]) -> Option<
         .ok()?;
         for e in pass.edges {
             check.backend.get_or_insert(e.backend);
-            check.users.insert(e.from);
+            // A user file is named and counted only while it is served (G04).
+            if graph.serves_file(&e.from) {
+                check.users.insert(e.from);
+            }
         }
     }
     tracing::debug!(
@@ -290,7 +293,7 @@ fn analyze_symbol(
     let mut edges_traversed = 0usize;
     let semantic = verify_references(graph, root, def_files);
     for f in def_files {
-        if let Ok(r) = graph.impact_analysis(f, max_depth) {
+        if let Ok(r) = super::served_impact(graph, f, max_depth) {
             max_depth_reached = max_depth_reached.max(r.max_depth_reached);
             edges_traversed += r.edges_traversed;
             affected.extend(r.affected_files);
@@ -391,7 +394,7 @@ fn analyze_unresolved(
                 "'{target}' is not a known file or symbol in the graph \
                  ({files} files, {symbols} symbols indexed).\n  \
                  - As a file: pass a path relative to the project root (looked up '{rel_target}').\n  \
-                 - As a class/type: check the spelling, or run ctx_impact action='build' to (re)index."
+                 - As a class/type: check the spelling, or run ctx_graph action='build' to (re)index."
             );
             let tokens = count_tokens(&result);
             format!("{result}\n[ctx_impact: {tokens} tok]")
@@ -572,7 +575,7 @@ fn compute_diff_impact(
 
     for file in changed {
         let rel = graph_target_key(file, root);
-        if let Ok(impact) = graph.impact_analysis(&rel, max_depth) {
+        if let Ok(impact) = super::served_impact(graph, &rel, max_depth) {
             let mut affected: Vec<String> = impact
                 .affected_files
                 .into_iter()
@@ -662,7 +665,7 @@ fn handle_chain(path: Option<&str>, root: &str, fmt: OutputFormat) -> String {
     let rel_from = graph_target_key(from, root);
     let rel_to = graph_target_key(to, root);
 
-    match graph.dependency_chain(&rel_from, &rel_to) {
+    match super::served_chain(&graph, &rel_from, &rel_to) {
         Ok(Some(chain)) => format_chain(&chain, root, fmt),
         Ok(None) => match fmt {
             OutputFormat::Json => {

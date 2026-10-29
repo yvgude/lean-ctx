@@ -50,7 +50,6 @@ Set `fresh=true` on ctx_read to bypass cache. Use when: spawned as a subagent, a
 
 - `ctx_compress` at >10 turns — creates memory checkpoint
 - `ctx_metrics` — hard numbers on what was saved
-- `ctx_benchmark` — find optimal mode for a file
 - `ctx_session load` — on new chat, restore previous session
 - `ctx_dedup` — analyze or apply cross-file deduplication
 

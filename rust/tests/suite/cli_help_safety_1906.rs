@@ -9,8 +9,10 @@
 //! where the test sees it. Generalises the `init`-only check of #1849.
 #![cfg(unix)]
 
+use std::io::Read;
 use std::path::{Path, PathBuf};
-use std::process::{Command, Output};
+use std::process::{Child, Command, ExitStatus, Output, Stdio};
+use std::time::{Duration, Instant};
 
 /// Arms the guard deliberately leaves alone: passthroughs whose arguments
 /// belong to the wrapped command, the help/version entry points, the
@@ -31,8 +33,6 @@ const NOT_SWEPT: &[&str] = &[
     "wrapped",
     "plugin",
     "plugins",
-    "buddy",
-    "pet",
     "watch",
 ];
 
@@ -60,6 +60,19 @@ fn dispatcher_names() -> Vec<String> {
         );
     }
     names
+}
+
+/// How long a command on a pty may run before the test gives up on it.
+const TERMINAL_RUN_LIMIT: Duration = Duration::from_secs(30);
+
+/// A child this test started: ended and reaped on every way out, a panic included.
+struct OwnedChild(Child);
+
+impl Drop for OwnedChild {
+    fn drop(&mut self) {
+        let _ = self.0.kill();
+        let _ = self.0.wait();
+    }
 }
 
 struct Sandbox {
@@ -93,8 +106,73 @@ impl Sandbox {
             .env_remove("CODEX_HOME")
             .env_remove("XDG_CONFIG_HOME")
             .env_remove("ZDOTDIR")
+            // Everything else derives from the sandbox HOME, whatever
+            // another test in this process has pointed these at.
+            .env_remove("LEAN_CTX_STATE_DIR")
+            .env_remove("LEAN_CTX_CONFIG_DIR")
+            .env_remove("LEAN_CTX_CACHE_DIR")
             .output()
             .expect("spawn lean-ctx")
+    }
+
+    /// Like `run`, but with a terminal on stdin and stderr — a person typing
+    /// the command — and telemetry eligible also on a CI runner, so the
+    /// first-command disclosure is reachable.
+    fn run_on_terminal(&self, args: &[&str]) -> ExitStatus {
+        let (master, slave) = super::mcp_pty_startup_1595::openpty_pair();
+        let stdin = slave.try_clone().expect("dup pty slave for stdin");
+        let mut command = Command::new(env!("CARGO_BIN_EXE_lean-ctx"));
+        command
+            .args(args)
+            .current_dir(self.dir("work"))
+            .env("HOME", self.dir("home"))
+            .env("LEAN_CTX_DATA_DIR", self.dir("data"))
+            .env("LEAN_CTX_HOOK_CHILD", "1")
+            .env("LEAN_CTX_NO_UPDATE_CHECK", "1")
+            .env("LEAN_CTX_TELEMETRY_IN_CI", "1")
+            .env("SHELL", "/bin/zsh")
+            .env_remove("DO_NOT_TRACK")
+            .env_remove("LEAN_CTX_TELEMETRY")
+            .env_remove("CLAUDE_CONFIG_DIR")
+            .env_remove("CODEX_HOME")
+            .env_remove("XDG_CONFIG_HOME")
+            .env_remove("ZDOTDIR")
+            // Everything else derives from the sandbox HOME, whatever
+            // another test in this process has pointed these at.
+            .env_remove("LEAN_CTX_STATE_DIR")
+            .env_remove("LEAN_CTX_CONFIG_DIR")
+            .env_remove("LEAN_CTX_CACHE_DIR")
+            .stdin(Stdio::from(stdin))
+            .stdout(Stdio::null())
+            .stderr(Stdio::from(slave));
+        let mut child = OwnedChild(command.spawn().expect("spawn lean-ctx on a pty"));
+        // The parent keeps no slave end: the reader below ends when the
+        // child's last one closes.
+        drop(command);
+        // Somebody reads a terminal. Unread, the pty takes no output and the
+        // child blocks in its first stderr line. Not joined: it ends with the
+        // child, and a join must not be what this run waits for.
+        std::thread::spawn(move || {
+            let mut shown = Vec::new();
+            let _ = std::fs::File::from(master).read_to_end(&mut shown);
+        });
+        let until = Instant::now() + TERMINAL_RUN_LIMIT;
+        loop {
+            match child.0.try_wait().expect("wait for lean-ctx on a pty") {
+                Some(status) => return status,
+                None if Instant::now() >= until => {
+                    panic!("`lean-ctx {args:?}` on a pty still ran after {TERMINAL_RUN_LIMIT:?}")
+                }
+                None => std::thread::sleep(Duration::from_millis(20)),
+            }
+        }
+    }
+
+    fn written(&self) -> Vec<PathBuf> {
+        ["home", "data", "work"]
+            .iter()
+            .flat_map(|d| files_under(&self.dir(d)))
+            .collect()
     }
 }
 
@@ -149,6 +227,33 @@ fn every_command_long_help_is_side_effect_free() {
 #[test]
 fn every_command_short_help_is_side_effect_free() {
     sweep("-h");
+}
+
+/// The piped sweeps above never reach the first-command telemetry disclosure,
+/// which needs a terminal. On one, a help request must still write nothing —
+/// while the same sandbox shape with an ordinary command does record the
+/// disclosure as shown, so the first half cannot pass by the disclosure being
+/// unreachable here.
+#[test]
+fn first_interactive_help_writes_nothing_and_an_ordinary_command_still_discloses() {
+    for flag in ["--help", "-h"] {
+        let sandbox = Sandbox::new();
+        let status = sandbox.run_on_terminal(&["gain", flag]);
+        assert!(status.success(), "`gain {flag}`: {status}");
+        let written = sandbox.written();
+        assert!(written.is_empty(), "`gain {flag}` wrote files: {written:?}");
+    }
+
+    let sandbox = Sandbox::new();
+    let status = sandbox.run_on_terminal(&["cheat"]);
+    assert!(status.success(), "`cheat`: {status}");
+    let written = sandbox.written();
+    assert!(
+        written
+            .iter()
+            .any(|path| path.ends_with("telemetry_notice_version")),
+        "an ordinary first command left no disclosure marker: {written:?}"
+    );
 }
 
 #[test]

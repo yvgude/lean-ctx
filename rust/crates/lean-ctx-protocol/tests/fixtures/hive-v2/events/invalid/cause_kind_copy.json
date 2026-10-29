@@ -1,0 +1,19 @@
+{
+  "case": "cause_kind_copy",
+  "base": "events/system.retract.person.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/cause",
+      "value": {
+        "kind": "copy"
+      }
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/cause/kind"
+  }
+}

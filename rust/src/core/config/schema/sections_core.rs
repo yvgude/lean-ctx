@@ -105,7 +105,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             key(
                 "bool",
                 serde_json::json!(cfg.enable_wakeup_ctx),
-                "Append wakeup briefing (facts, session summary) to ctx_overview output. Set false to reduce context bloat when calling ctx_overview frequently.",
+                "Append wakeup briefing (facts, session summary) to the session-start overview. Set false to reduce context bloat.",
             ),
         );
     root.insert(
@@ -360,7 +360,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_with_env(
             "bool",
             serde_json::json!(false),
-            "Opt-in: let adaptive learning signals (predictor, bandit, heatmap, adaptive policy, bounce/path memory) influence `auto` mode. Off by default for a deterministic, I/O-light cascade (capability guards + size/task heuristic only) that keeps output byte-stable for prompt caching. Override via LEAN_CTX_AUTO_MODE_LEARNING",
+            "Opt-in: let adaptive learning signals (predictor, bandit, heatmap, adaptive policy, in-session bounce rates) influence `auto` mode. Per-path bounce memory always applies. Off by default for a deterministic, I/O-light cascade (capability guards + size/task heuristic only) that keeps output byte-stable for prompt caching. Override via LEAN_CTX_AUTO_MODE_LEARNING",
             "LEAN_CTX_AUTO_MODE_LEARNING",
         ),
     );
@@ -381,27 +381,11 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     root.insert(
-        "team_url".into(),
-        key(
-            "string?",
-            serde_json::json!(cfg.team_url),
-            "Research-only organization roll-up URL. Inactive in the public local Runtime.",
-        ),
-    );
-    root.insert(
-        "team_token".into(),
-        key(
-            "string?",
-            serde_json::json!(cfg.team_token),
-            "Research-only organization roll-up credential. Inactive in the public local Runtime.",
-        ),
-    );
-    root.insert(
-        "team_auto_push".into(),
+        "team_share_content".into(),
         key(
             "bool",
-            serde_json::json!(cfg.team_auto_push),
-            "Research-only organization roll-up switch. Off by default and inactive in the public local Runtime.",
+            serde_json::json!(cfg.team_share_content),
+            "Team content sharing. false: no bus post, work-graph write, knowledge entry or artifact publication leaves for the hosted Team service; presence, leases and reads continue.",
         ),
     );
     root.insert(
@@ -486,6 +470,23 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "auto",
             "Controls the PostToolUse native-Read re-read dedup. auto (default): replace only re-reads of unchanged files with the compact stub, and only on guard hosts (Claude Code / CodeBuddy) where the PreToolUse redirect is off — first reads stay byte-identical and the read-before-write guard is untouched. on: dedup wherever the hook fires. off: never replace a Read result",
             "LEAN_CTX_READ_DEDUP",
+        ),
+    );
+    root.insert(
+        "shell_approval".into(),
+        key_enum_with_env(
+            &["ask", "off"],
+            "ask",
+            "Whether ctx_shell may ask you to approve a command the shell allowlist does not name. ask (default): when the MCP client supports elicitation, a command refused only for unlisted programs is put to you (allow once, for this session, always, or deny); hard blocks (eval, inline interpreter code, dangerous flags) are never asked about. off: refuse without asking. Global only",
+            "LEAN_CTX_SHELL_APPROVAL",
+        ),
+    );
+    root.insert(
+        "execute_allowed_languages".into(),
+        key(
+            "array",
+            serde_json::json!([]),
+            "Languages ctx_execute runs without asking (python, javascript, ...). Written when you answer its approval prompt with always allow; shell code follows the shell allowlist instead. Global only",
         ),
     );
     root.insert(
@@ -729,15 +730,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "normal",
             "Controls how verbose tool responses are",
             "LEAN_CTX_RESPONSE_VERBOSITY",
-        ),
-    );
-    root.insert(
-        "allow_auto_reroot".into(),
-        key_with_env(
-            "bool",
-            serde_json::json!(false),
-            "Allow automatic project-root re-rooting when absolute paths outside the jail are seen",
-            "LEAN_CTX_ALLOW_REROOT",
         ),
     );
     for (name, schema) in super::signer_trust_keys() {
@@ -1052,28 +1044,9 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     sections.insert("search".into(), SectionSchema {
-            description: "Hybrid search weights for ctx_semantic_search (BM25 + dense vector + SPLADE + graph proximity)".into(),
+            description: "Hybrid search weights for ctx_search action=semantic (BM25 + dense vector + SPLADE + graph proximity)".into(),
             keys: search,
         });
-
-    let mut graph = BTreeMap::new();
-    graph.insert(
-        "traversal_edges".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.graph.traversal_edges),
-            "Learn co-access edges from real sessions (files surfaced together), surface them as decaying `co_access` graph edges, and boost recall by them. Set false for a purely static AST-only graph.",
-        ),
-    );
-    sections.insert(
-        "graph".into(),
-        SectionSchema {
-            description:
-                "Code-graph settings, including traversal (co-access) edges learned from sessions"
-                    .into(),
-            keys: graph,
-        },
-    );
 
     let mut index = BTreeMap::new();
     index.insert(
@@ -1183,100 +1156,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         },
     );
 
-    // --- solution.commercial ---
-    let mut sol_commercial = BTreeMap::new();
-    sol_commercial.insert(
-        "fingerprints_enabled".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.solution.commercial.fingerprints_enabled),
-            "Enable solution fingerprint prediction (commercial)",
-        ),
-    );
-    sol_commercial.insert(
-        "cross_project_patterns".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.solution.commercial.cross_project_patterns),
-            "Enable cross-project pattern analysis (commercial)",
-        ),
-    );
-    sections.insert(
-        "solution.commercial".into(),
-        SectionSchema {
-            description: "Commercial solution features (require enterprise license)".into(),
-            keys: sol_commercial,
-        },
-    );
-
-    // --- solution.commercial.adaptive ---
-    let mut sol_adaptive = BTreeMap::new();
-    sol_adaptive.insert(
-        "enabled".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.solution.commercial.adaptive.enabled),
-            "Enable adaptive intensity ML model (commercial)",
-        ),
-    );
-    sol_adaptive.insert(
-        "learning_rate".into(),
-        key(
-            "f64",
-            serde_json::json!(cfg.solution.commercial.adaptive.learning_rate),
-            "Learning rate for adaptive intensity model",
-        ),
-    );
-    sol_adaptive.insert(
-        "min_observations".into(),
-        key(
-            "u64",
-            serde_json::json!(cfg.solution.commercial.adaptive.min_observations),
-            "Minimum observations before adaptive recommendations",
-        ),
-    );
-    sections.insert(
-        "solution.commercial.adaptive".into(),
-        SectionSchema {
-            description: "Adaptive intensity ML settings (commercial)".into(),
-            keys: sol_adaptive,
-        },
-    );
-
-    // --- solution.commercial.team_policy ---
-    let mut sol_team = BTreeMap::new();
-    sol_team.insert(
-        "enabled".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.solution.commercial.team_policy.enabled),
-            "Enable team-wide solution policy enforcement (commercial)",
-        ),
-    );
-    sol_team.insert(
-        "min_intensity".into(),
-        key_enum(
-            &["off", "minimal", "balanced", "aggressive"],
-            &cfg.solution.commercial.team_policy.min_intensity,
-            "Minimum solution intensity enforced for team members",
-        ),
-    );
-    sol_team.insert(
-        "require_decision_logging".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.solution.commercial.team_policy.require_decision_logging),
-            "Require decision logging for all team members",
-        ),
-    );
-    sections.insert(
-        "solution.commercial.team_policy".into(),
-        SectionSchema {
-            description: "Team-wide solution policy (commercial)".into(),
-            keys: sol_team,
-        },
-    );
-
     let mut provenance = BTreeMap::new();
     provenance.insert(
         "enabled".into(),
@@ -1369,7 +1248,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
     sections.insert(
         "cross_agent".into(),
         SectionSchema {
-            description: "Cross-agent memory sharing and semantic retrieval (Atlas adaptation)"
+            description: "Cross-agent memory sharing and semantic retrieval (Hive adaptation)"
                 .into(),
             keys: cross_agent,
         },
@@ -1458,7 +1337,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             key_with_env(
                 "string",
                 serde_json::json!("minilm"),
-                "Local embedding model for ctx_semantic_search. Unset: minilm where ONNX Runtime is installed, potion-code otherwise. One of: minilm (all-MiniLM-L6-v2, 384d), potion-code (potion-code-16M, 256d static model2vec, pure Rust — no ONNX Runtime, indexes thousands of chunks per second), nomic (768d) — or any HuggingFace repo with an ONNX export via hf:org/repo[@revision] (e.g. hf:jinaai/jina-embeddings-v2-base-code for code). Switching models re-indexes once on the next search.",
+                "Local embedding model for ctx_search action=semantic. Unset: minilm where ONNX Runtime is installed, potion-code otherwise. One of: minilm (all-MiniLM-L6-v2, 384d), potion-code (potion-code-16M, 256d static model2vec, pure Rust — no ONNX Runtime, indexes thousands of chunks per second), nomic (768d) — or any HuggingFace repo with an ONNX export via hf:org/repo[@revision] (e.g. hf:jinaai/jina-embeddings-v2-base-code for code). Switching models re-indexes once on the next search.",
                 "LEAN_CTX_EMBEDDING_MODEL",
             ),
         );
@@ -1492,7 +1371,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         "embedding".into(),
         SectionSchema {
             description:
-                "Semantic-embedding engine settings (model selection for ctx_semantic_search)"
+                "Semantic-embedding engine settings (model selection for ctx_search action=semantic)"
                     .into(),
             keys: embedding,
         },

@@ -15,6 +15,7 @@ use tree_sitter::Node;
 
 #[cfg(feature = "tree-sitter")]
 use super::node_text;
+#[cfg(feature = "tree-sitter")]
 use super::types::ExtMethodDef;
 
 #[cfg(feature = "tree-sitter")]

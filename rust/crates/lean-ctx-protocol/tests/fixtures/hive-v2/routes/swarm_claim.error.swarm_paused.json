@@ -1,0 +1,6 @@
+{
+  "error": {
+    "code": "swarm_paused",
+    "message": "The swarm is paused."
+  }
+}

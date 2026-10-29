@@ -110,6 +110,7 @@ fn decision(disposition: ContextDispositionV1, fill: char) -> ContextDecisionV1 
 fn receipt() -> ContextDecisionReceiptV1 {
     ContextDecisionReceiptV1 {
         schema_version: V1_SCHEMA_VERSION,
+        object_digest: None,
         receipt_id: reference("rcpt-1"),
         mode: GatewayModeV1::Governed,
         principal: person(),
@@ -454,6 +455,41 @@ fn receipt_counts_must_match_its_decisions() {
     assert!(delivered_nothing.validate().is_err());
 }
 
+/// AP10-C4: a v1 receipt stays valid; a v2 receipt names its object key,
+/// and only a v2 receipt does. Both versions parse; others are refused.
+#[test]
+fn receipt_schema_version_two_names_its_object_key_and_one_stays_valid() {
+    let keyed = ReceiptObjectDigestV2 {
+        algorithm: ObjectDigestAlgorithmV2::HmacSha256,
+        key_id: format!("rk-{}", "0a".repeat(16)),
+    };
+    let mut v2 = receipt();
+    v2.schema_version = RECEIPT_V2_SCHEMA_VERSION;
+    assert!(v2.validate().is_err(), "v2 without its key id");
+    v2.object_digest = Some(keyed.clone());
+    assert!(v2.validate().is_ok());
+    let json = serde_json::to_value(&v2).expect("serialize");
+    assert_eq!(json["object_digest"]["algorithm"], "hmac-sha256");
+    assert_eq!(
+        serde_json::from_value::<ContextDecisionReceiptV1>(json.clone()).expect("v2 parses"),
+        v2
+    );
+
+    let mut v1_with_key = receipt();
+    v1_with_key.object_digest = Some(keyed);
+    assert!(v1_with_key.validate().is_err());
+    let mut bad_id = v2.clone();
+    bad_id.object_digest.as_mut().unwrap().key_id = "rk-KEY".into();
+    assert!(bad_id.validate().is_err());
+
+    let mut v3 = json;
+    v3["schema_version"] = serde_json::json!(3);
+    assert!(serde_json::from_value::<ContextDecisionReceiptV1>(v3).is_err());
+    let v1 = serde_json::to_value(receipt()).expect("serialize");
+    assert!(v1.get("object_digest").is_none());
+    assert!(serde_json::from_value::<ContextDecisionReceiptV1>(v1).is_ok());
+}
+
 #[test]
 fn receipt_digest_is_deterministic_and_content_sensitive() {
     let first = receipt().canonical_digest().expect("digest");
@@ -466,6 +502,172 @@ fn receipt_digest_is_deterministic_and_content_sensitive() {
     let mut changed = receipt();
     changed.tokens.delivered = 301;
     assert_ne!(changed.canonical_digest().expect("digest"), first);
+}
+
+fn egress_admission_receipt(outcome: EgressAdmissionOutcomeV1) -> EgressAdmissionReceiptV1 {
+    EgressAdmissionReceiptV1 {
+        schema_version: V1_SCHEMA_VERSION,
+        receipt_id: reference("eadm-1"),
+        decision_receipt_digest: (outcome != EgressAdmissionOutcomeV1::Failed).then(|| digest('a')),
+        outcome,
+        prepared_bytes_digest: (outcome == EgressAdmissionOutcomeV1::Prepared).then(|| digest('b')),
+    }
+}
+
+#[test]
+fn egress_admission_receipt_round_trips_without_changing_legacy_v1() {
+    let prepared = egress_admission_receipt(EgressAdmissionOutcomeV1::Prepared);
+    assert!(prepared.validate().is_ok());
+    let encoded = serde_json::to_string(&prepared).expect("serialize");
+    assert!(encoded.contains("\"outcome\":\"prepared\""));
+    assert!(encoded.contains("\"prepared_bytes_digest\""));
+    let decoded: EgressAdmissionReceiptV1 =
+        serde_json::from_str(&encoded).expect("parse prepared admission");
+    assert_eq!(decoded, prepared);
+    assert_eq!(
+        decoded.canonical_digest().expect("digest"),
+        prepared.canonical_digest().expect("digest")
+    );
+
+    let mut changed = prepared.clone();
+    changed.prepared_bytes_digest = Some(digest('c'));
+    assert_ne!(
+        changed.canonical_digest().expect("changed digest"),
+        prepared.canonical_digest().expect("original digest")
+    );
+
+    let legacy = serde_json::to_value(receipt()).expect("serialize legacy V1");
+    assert_eq!(legacy["outcome"], "delivered");
+    assert!(legacy.get("prepared_bytes_digest").is_none());
+}
+
+#[test]
+fn egress_admission_receipt_rejects_inconsistent_states_and_unknown_schema() {
+    let mut prepared_without_digest = egress_admission_receipt(EgressAdmissionOutcomeV1::Prepared);
+    prepared_without_digest.prepared_bytes_digest = None;
+    assert!(prepared_without_digest.validate().is_err());
+
+    let mut withheld_with_digest = egress_admission_receipt(EgressAdmissionOutcomeV1::Withheld);
+    withheld_with_digest.prepared_bytes_digest = Some(digest('b'));
+    assert!(withheld_with_digest.validate().is_err());
+
+    let mut withheld_without_decision =
+        egress_admission_receipt(EgressAdmissionOutcomeV1::Withheld);
+    withheld_without_decision.decision_receipt_digest = None;
+    assert!(withheld_without_decision.validate().is_err());
+
+    let mut failed_with_digest = egress_admission_receipt(EgressAdmissionOutcomeV1::Failed);
+    failed_with_digest.prepared_bytes_digest = Some(digest('b'));
+    assert!(failed_with_digest.validate().is_err());
+
+    let mut future =
+        serde_json::to_value(egress_admission_receipt(EgressAdmissionOutcomeV1::Prepared))
+            .expect("serialize");
+    future["schema_version"] = serde_json::json!(2);
+    assert!(serde_json::from_value::<EgressAdmissionReceiptV1>(future).is_err());
+}
+
+fn transport_observation(
+    admission_receipt_digest: Sha256Digest,
+    transport: EgressTransportV1,
+    observer: EgressTransportObserverV1,
+    result: EgressTransportResultV1,
+    http_status: Option<u16>,
+    failure: Option<EgressTransportFailureV1>,
+) -> EgressTransportObservationV1 {
+    EgressTransportObservationV1 {
+        schema_version: V1_SCHEMA_VERSION,
+        admission_receipt_digest,
+        attempt: 1,
+        transport,
+        observer,
+        result,
+        http_status,
+        failure,
+    }
+}
+
+#[test]
+fn transport_observations_are_linked_per_attempt_and_do_not_claim_delivery() {
+    let admission = egress_admission_receipt(EgressAdmissionOutcomeV1::Prepared);
+    let admission_digest = admission.canonical_digest().expect("admission digest");
+    let response = transport_observation(
+        admission_digest.clone(),
+        EgressTransportV1::Http,
+        EgressTransportObserverV1::EngineObserved,
+        EgressTransportResultV1::ResponseObserved,
+        Some(503),
+        None,
+    );
+    assert!(response.validate_for(&admission).is_ok());
+    let encoded = serde_json::to_string(&response).expect("serialize response");
+    assert!(encoded.contains("\"response_observed\""));
+    assert!(encoded.contains("\"http_status\":503"));
+    assert_eq!(
+        serde_json::from_str::<EgressTransportObservationV1>(&encoded).expect("parse"),
+        response
+    );
+
+    let timeout = transport_observation(
+        admission_digest,
+        EgressTransportV1::Http,
+        EgressTransportObserverV1::HostReported,
+        EgressTransportResultV1::NoResponseObserved,
+        None,
+        Some(EgressTransportFailureV1::Timeout),
+    );
+    assert!(timeout.validate_for(&admission).is_ok());
+    let host_report = serde_json::to_value(&timeout).expect("serialize host report");
+    assert_eq!(host_report["observer"], "host_reported");
+    assert_eq!(host_report["failure"], "timeout");
+
+    let mut wrong_link = response.clone();
+    wrong_link.admission_receipt_digest = digest('c');
+    assert!(wrong_link.validate_for(&admission).is_err());
+
+    let withheld = egress_admission_receipt(EgressAdmissionOutcomeV1::Withheld);
+    assert!(response.validate_for(&withheld).is_err());
+
+    let mut invalid_status = response.clone();
+    invalid_status.http_status = Some(600);
+    assert!(invalid_status.validate().is_err());
+
+    let mut contradictory = response;
+    contradictory.failure = Some(EgressTransportFailureV1::Other);
+    assert!(contradictory.validate().is_err());
+}
+
+#[test]
+fn transport_observation_rejects_unknown_fields_and_invalid_no_response_shape() {
+    let admission = egress_admission_receipt(EgressAdmissionOutcomeV1::Prepared);
+    let mut value = serde_json::to_value(transport_observation(
+        admission.canonical_digest().expect("digest"),
+        EgressTransportV1::WebSocket,
+        EgressTransportObserverV1::EngineObserved,
+        EgressTransportResultV1::ResponseObserved,
+        None,
+        None,
+    ))
+    .expect("serialize");
+    value
+        .as_object_mut()
+        .expect("object")
+        .insert("delivery_claim".into(), serde_json::json!("delivered"));
+    assert!(serde_json::from_value::<EgressTransportObservationV1>(value).is_err());
+
+    let mut invalid = transport_observation(
+        admission.canonical_digest().expect("digest"),
+        EgressTransportV1::Http,
+        EgressTransportObserverV1::EngineObserved,
+        EgressTransportResultV1::NoResponseObserved,
+        None,
+        None,
+    );
+    assert!(invalid.validate().is_err());
+    invalid.failure = Some(EgressTransportFailureV1::Timeout);
+    assert!(invalid.validate().is_ok());
+    invalid.http_status = Some(504);
+    assert!(invalid.validate().is_err());
 }
 
 #[test]

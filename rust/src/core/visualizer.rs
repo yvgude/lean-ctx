@@ -160,6 +160,12 @@ fn collect_graph(project_root: &str) -> GraphData {
     let mut edges = Vec::new();
 
     for (src, tgt, kind, weight) in &flat_edges {
+        // Serve-time source check (G04): both ends must still be served; a
+        // `path::symbol` end is checked by its file.
+        let served = |end: &str| cg.serves_file(end.split_once("::").map_or(end, |(file, _)| file));
+        if !served(src) || !served(tgt) {
+            continue;
+        }
         for path in [src, tgt] {
             if node_set.insert(path.clone()) {
                 let label = path.rsplit('/').next().unwrap_or(path).to_string();
@@ -185,8 +191,13 @@ fn collect_knowledge(project_root: &str) -> Vec<KnowledgeEntry> {
     let Some(pk) = ProjectKnowledge::load(project_root) else {
         return Vec::new();
     };
+    // The report is written with a plain file write, not through the export
+    // jail: it carries only facts that may be delivered now
+    // (`ProjectKnowledge::delivery_filter`).
+    let deliverable = pk.delivery_filter();
     pk.facts
         .iter()
+        .filter(|&f| deliverable(f))
         .map(|f: &KnowledgeFact| KnowledgeEntry {
             category: f.category.clone(),
             key: f.key.clone(),
@@ -239,9 +250,7 @@ fn collect_savings() -> SavingsData {
 }
 
 fn collect_session(project_root: &str) -> SessionHistory {
-    let session = SessionState::load_latest_for_project_root(project_root)
-        .or_else(SessionState::load_global_latest_pointer)
-        .unwrap_or_default();
+    let session = SessionState::load_latest_for_project_root(project_root).unwrap_or_default();
 
     map_session(&session)
 }
@@ -370,5 +379,26 @@ mod tests {
             label: "main.rs".to_string(),
         };
         assert_eq!(node.label, "main.rs");
+    }
+
+    /// The report carries only facts that are served now.
+    #[test]
+    fn a_fact_that_is_not_served_is_not_in_the_report() {
+        use crate::core::context_admission::stored::lineage_support::{
+            BOUND_FACT, TYPED_FACT, governed, project, scoped, two_facts, withdraw_source,
+        };
+        let _data = governed();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let (_directory, root) = project();
+        two_facts(&root, "architecture");
+        let values = || -> Vec<String> {
+            scoped(&root, || collect_knowledge(&root))
+                .into_iter()
+                .map(|entry| entry.value)
+                .collect()
+        };
+        assert!(values().contains(&BOUND_FACT.to_owned()));
+        withdraw_source(&root);
+        assert_eq!(values(), [TYPED_FACT.to_owned()]);
     }
 }

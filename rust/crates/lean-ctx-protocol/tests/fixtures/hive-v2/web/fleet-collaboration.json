@@ -1,0 +1,62 @@
+{
+  "route": "W67",
+  "method": "GET",
+  "path": "/api/v1/orgs/acme/fleet/collaboration?days=2",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "days": [
+        {
+          "day": "2026-10-23",
+          "workers": 3,
+          "agent_hours": 6.5,
+          "idle_hours": 1.25,
+          "claims": 9,
+          "time_to_claim_p50_s": 240,
+          "claim_refused": 1,
+          "claim_expired": 2,
+          "registration_renewed": 2,
+          "wait_timeout": 1,
+          "merge_conflict": 0,
+          "gate_reruns": 3,
+          "friction_per_agent_hour": 1.38
+        },
+        {
+          "day": "2026-10-24",
+          "workers": 0,
+          "agent_hours": 0,
+          "idle_hours": 0,
+          "claims": 0,
+          "time_to_claim_p50_s": null,
+          "claim_refused": 0,
+          "claim_expired": 0,
+          "registration_renewed": 0,
+          "wait_timeout": 0,
+          "merge_conflict": 0,
+          "gate_reruns": 0,
+          "friction_per_agent_hour": null
+        }
+      ],
+      "retros": [
+        {
+          "day": "2026-10-23",
+          "number": 1,
+          "rate": 1.38
+        }
+      ]
+    }
+  },
+  "errors": [
+    {
+      "status": 400,
+      "body": {
+        "error": {
+          "code": "invalid_request",
+          "message": "days must be 1 to 90.",
+          "field": "days"
+        }
+      }
+    }
+  ]
+}

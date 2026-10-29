@@ -1,0 +1,15 @@
+{
+  "case": "metrics_insights_ratio_field",
+  "base": "routes/metrics_insights.response.json",
+  "patch": [
+    {
+      "op": "add",
+      "path": "/totals/cache_hit_rate",
+      "value": 76
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "ratios are computed by the client, never sent"
+}

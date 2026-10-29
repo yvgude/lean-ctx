@@ -1,12 +1,10 @@
+pub(crate) mod admitted_sources;
 pub mod autonomy;
 pub mod ctx_agent;
-pub mod ctx_analyze;
 pub mod ctx_architecture;
 pub mod ctx_artifacts;
-pub mod ctx_benchmark;
 pub mod ctx_callgraph;
 #[allow(dead_code, unreachable_pub)]
-pub mod ctx_cognitive;
 pub mod ctx_compile;
 pub mod ctx_compose;
 pub mod ctx_compress;
@@ -22,7 +20,6 @@ pub mod ctx_execute;
 pub mod ctx_expand;
 pub mod ctx_explore;
 pub mod ctx_feedback;
-pub mod ctx_fill;
 pub mod ctx_gain;
 pub mod ctx_glob;
 pub mod ctx_graph;
@@ -33,13 +30,11 @@ pub mod ctx_handoff;
 pub mod ctx_heatmap;
 pub mod ctx_impact;
 pub mod ctx_index;
-pub mod ctx_intent;
 pub mod ctx_knowledge;
 pub mod ctx_knowledge_relations;
 pub mod ctx_metrics;
 pub mod ctx_multi_read;
 pub mod ctx_multi_repo;
-pub mod ctx_optimize;
 pub mod ctx_outline;
 pub mod ctx_overview;
 pub mod ctx_pack;
@@ -50,14 +45,9 @@ pub mod ctx_prefetch;
 pub mod ctx_preload;
 pub mod ctx_proof;
 pub mod ctx_provider;
-pub mod ctx_quality;
 pub mod ctx_read;
 pub mod ctx_refactor;
-pub mod ctx_repomap;
 pub mod ctx_response;
-pub mod ctx_review;
-pub mod ctx_routes;
-pub mod ctx_rules;
 pub mod ctx_search;
 pub mod ctx_semantic_search;
 pub mod ctx_session;
@@ -68,13 +58,12 @@ pub mod ctx_smart_read;
 pub mod ctx_smells;
 pub mod ctx_summary;
 pub mod ctx_symbol;
-pub mod ctx_task;
+pub(crate) mod ctx_tasks_swarm;
 pub mod ctx_tools;
 pub mod ctx_transcript_compact;
 pub mod ctx_tree;
 pub mod ctx_verify;
 pub mod ctx_work_graph;
-pub mod ctx_workflow;
 pub(crate) mod edit_io;
 pub(crate) mod edit_recovery;
 pub(crate) mod graph_meta;
@@ -87,6 +76,7 @@ pub(crate) mod walk_guard;
 
 mod server;
 mod server_lifecycle;
+pub(crate) use server_lifecycle::shutdown_stage;
 mod server_metrics;
 mod server_paths;
 pub(crate) mod startup;
@@ -189,6 +179,118 @@ mod resolve_path_tests {
             .unwrap_or_default();
         let expected = other.canonicalize().unwrap_or(other.clone());
         assert_eq!(actual, expected, "should have rerooted to real project");
+    }
+
+    /// AP04 review S4: a re-root goes through the session switch — the call
+    /// continues in the corrected project's own session with a request
+    /// project to match, and the stale session's data stays behind.
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    #[allow(clippy::await_holding_lock)]
+    async fn a_reroot_moves_the_call_and_leaves_the_stale_sessions_data_behind() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let stale = tmp.path().join("stale");
+        std::fs::create_dir_all(&stale).unwrap();
+        let repo = tmp.path().join("repo");
+        let repo_root = create_git_root(&repo);
+        std::fs::write(repo.join("a.txt"), "a").unwrap();
+        let server = LeanCtxServer::new_with_startup(
+            None,
+            None,
+            SessionMode::Personal,
+            "default",
+            "default",
+        );
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(stale.to_string_lossy().to_string());
+            session.shell_cwd = Some(stale.to_string_lossy().to_string());
+            session.record_manual_evidence("ap04:stale", None);
+        }
+
+        let call = async {
+            server.session.pin();
+            server
+                .resolve_path(&repo.join("a.txt").to_string_lossy())
+                .await
+                .unwrap();
+            let project = crate::core::policy::runtime::REQUEST_PROJECT
+                .with(|slot| slot.borrow().clone())
+                .map(|project| project.to_string_lossy().into_owned());
+            let bound = server.session.read().await;
+            assert_eq!(bound.project_root.as_deref(), Some(repo_root.as_str()));
+            assert_eq!(project, bound.project_root);
+            assert!(bound.evidence.iter().all(|e| e.key != "ap04:stale"));
+        };
+        server
+            .session
+            .scope(
+                crate::core::policy::runtime::REQUEST_PROJECT
+                    .scope(std::cell::RefCell::new(Some(stale.clone())), call),
+            )
+            .await;
+    }
+
+    /// AP04 review S3: a path one client of a shared session names never
+    /// re-roots that session, not even away from a markerless root.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn resolve_path_never_reroots_a_shared_session() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let markerless = tmp.path().join("shared");
+        std::fs::create_dir_all(&markerless).unwrap();
+        let repo = tmp.path().join("repo");
+        create_git_root(&repo);
+        std::fs::write(repo.join("a.txt"), "a").unwrap();
+        let server =
+            LeanCtxServer::new_shared_with_context(&markerless.to_string_lossy(), "ap04-s3", "s3");
+        let root = server.session.read().await.project_root.clone();
+        assert!(root.is_some());
+
+        let _ = server
+            .resolve_path(&repo.join("a.txt").to_string_lossy())
+            .await;
+
+        assert_eq!(server.session.read().await.project_root, root);
+    }
+
+    /// AP04-G6: the outermost marker above a path can be `~` itself (a
+    /// dotfiles repository); a markerless session root is never rerooted to it.
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn resolve_path_never_reroots_to_the_home_directory() {
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        create_git_root(&home);
+        let home = home.canonicalize().unwrap();
+        let stale = tmp.path().join("stale");
+        std::fs::create_dir_all(&stale).unwrap();
+        std::fs::create_dir_all(home.join("notes")).unwrap();
+        std::fs::write(home.join("notes/a.md"), "notes").unwrap();
+        let home_guard = crate::test_env::VarGuard::set("HOME", &home);
+
+        let server = LeanCtxServer::new_with_startup(
+            None,
+            None,
+            SessionMode::Personal,
+            "default",
+            "default",
+        );
+        let stale = stale.to_string_lossy().to_string();
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(stale.clone());
+            session.shell_cwd = Some(stale.clone());
+        }
+        let _ = server
+            .resolve_path(&home.join("notes/a.md").to_string_lossy())
+            .await;
+        drop(home_guard);
+
+        let session = server.session.read().await;
+        assert_eq!(session.project_root.as_deref(), Some(stale.as_str()));
     }
 
     #[cfg(not(feature = "no-jail"))]
@@ -321,6 +423,51 @@ mod resolve_path_tests {
 
         let session = server.session.read().await;
         assert_eq!(session.project_root.as_deref(), Some(real_root.as_str()));
+    }
+
+    #[cfg(not(feature = "no-jail"))]
+    #[tokio::test]
+    #[allow(clippy::await_holding_lock)]
+    async fn resolve_path_keeps_a_pinned_markerless_root_inside_a_checkout() {
+        // A directory pinned with LEAN_CTX_PROJECT_ROOT that carries no marker
+        // and lies inside a checkout stays the root: neither a path below it nor
+        // one in the surrounding checkout may widen the jail to that checkout.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let tmp = tempfile::tempdir().unwrap();
+        let checkout = tmp.path().join("checkout");
+        create_git_root(&checkout);
+        let pinned = checkout.join("runs").join("one");
+        std::fs::create_dir_all(&pinned).unwrap();
+        std::fs::write(pinned.join("note.md"), "ok").unwrap();
+        std::fs::write(checkout.join("outside.md"), "no").unwrap();
+        let pinned_root = pinned.to_string_lossy().to_string();
+        crate::test_env::set_var("LEAN_CTX_PROJECT_ROOT", &pinned_root);
+
+        let server = LeanCtxServer::new_with_startup(
+            None,
+            None,
+            SessionMode::Personal,
+            "default",
+            "default",
+        );
+        {
+            let mut session = server.session.write().await;
+            session.project_root = Some(pinned_root.clone());
+            session.shell_cwd = Some(pinned_root.clone());
+        }
+
+        let inside = server
+            .resolve_path(&pinned.join("note.md").to_string_lossy())
+            .await;
+        let outside = server
+            .resolve_path(&checkout.join("outside.md").to_string_lossy())
+            .await;
+        let root = server.session.read().await.project_root.clone();
+        crate::test_env::remove_var("LEAN_CTX_PROJECT_ROOT");
+
+        assert!(inside.is_ok_and(|path| path.ends_with("/note.md")));
+        assert!(outside.is_err(), "a path above the pin is refused");
+        assert_eq!(root.as_deref(), Some(pinned_root.as_str()));
     }
 
     #[cfg(not(feature = "no-jail"))]

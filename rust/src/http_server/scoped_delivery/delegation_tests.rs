@@ -63,8 +63,9 @@ async fn delegated_http_requires_current_attempt_and_certificate_bound_signature
     .unwrap();
     certificate.execution.fence = fence.clone();
     certificate.project_root = dir.path().canonicalize().unwrap();
-    let task = crate::core::work_graph_executor::execution_key(dir.path(), "graph", "node", &fence)
-        .unwrap();
+    let task =
+        crate::core::work_graph_delegation::execution_key(dir.path(), "graph", "node", &fence)
+            .unwrap();
     certificate.execution.task_id = format!("{task}:attempt-1");
     certificate.sign(&host_key);
     let cfg = crate::http_server::HttpServerConfig {

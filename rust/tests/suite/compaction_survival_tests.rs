@@ -3,7 +3,15 @@ use lean_ctx::core::session::SessionState;
 fn make_session_with_data() -> SessionState {
     let mut session = SessionState::default();
     session.id = "test-session-compaction".to_string();
-    session.project_root = Some("/home/user/myproject".to_string());
+    // A real project root: the reply of a session whose project does not
+    // exist is withheld (`ctx_session resume` admits its text under that
+    // project's policy). One directory for the whole test process; its last
+    // component is the short project name the resume block shows.
+    let project = std::env::temp_dir()
+        .join("lean-ctx-compaction-survival-project")
+        .join("myproject");
+    std::fs::create_dir_all(&project).expect("project root");
+    session.project_root = Some(project.to_str().expect("utf-8 root").to_string());
     session.task = Some(lean_ctx::core::session::TaskInfo {
         description: "Implement auth module".to_string(),
         intent: None,

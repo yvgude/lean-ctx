@@ -1,0 +1,22 @@
+{
+  "nonce": "7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e7e",
+  "usage": {
+    "source": "cli_summary",
+    "tasks": 1,
+    "tokens": 18000,
+    "usd_cents": 4
+  },
+  "verdict": {
+    "checked_refs": [
+      {
+        "kind": "file",
+        "ref": "services/payments/Makefile"
+      }
+    ],
+    "confidence": "high",
+    "item_id": "rv_aaaaaaaaaaaaaaaaaaaaaadxaq",
+    "reason_code": "correct",
+    "verdict": "accept"
+  },
+  "worker_id": "wkr_gawyravj36igdp3irdfo"
+}

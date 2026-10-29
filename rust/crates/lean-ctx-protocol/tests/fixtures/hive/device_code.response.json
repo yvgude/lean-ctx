@@ -1,0 +1,9 @@
+{
+  "device_code": "dc_9f2c4e7a1b3d5f8e0a2c4e6f8a1b3d5e",
+  "expires_in": 900,
+  "interval": 5,
+  "schema": "leanctx.hive.device-code/v1",
+  "user_code": "WDJB-MJHT",
+  "verification_uri": "https://hive.leanctx.com/device",
+  "verification_uri_complete": "https://hive.leanctx.com/device?user_code=WDJB-MJHT"
+}

@@ -51,7 +51,7 @@ pub(crate) fn check_syntax(content: &str, ext: &str) -> Option<SyntaxCheck> {
 }
 
 #[cfg(not(feature = "tree-sitter"))]
-pub fn check_syntax(_content: &str, _ext: &str) -> Option<SyntaxCheck> {
+pub(crate) fn check_syntax(_content: &str, _ext: &str) -> Option<SyntaxCheck> {
     None
 }
 

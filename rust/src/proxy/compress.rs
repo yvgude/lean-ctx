@@ -1,7 +1,14 @@
+use std::cell::RefCell;
+use std::collections::BTreeMap;
+
 use super::ccr;
 use super::prose_compress::compress_prose;
+use crate::core::archive::{RecoveryId, RecoveryRefusal, delivered};
 use crate::core::tokens::{COUNTING_FAMILY, TokenizerFamily, count_tokens_for};
 use crate::core::web::distill;
+
+#[path = "compress_gate.rs"]
+pub(crate) mod gate;
 
 /// Byte-ish budget for the research-prose squeeze (~5k tokens on English prose).
 /// Only oversized prose is truncated; the squeeze's main job is dedup + blank-collapse,
@@ -80,6 +87,9 @@ pub fn compress_tool_result_for(
     tool_name: Option<&str>,
     family: TokenizerFamily,
 ) -> String {
+    if carries_recovery_stub(content) {
+        return content.to_owned();
+    }
     let compressed = compress_inner(content, tool_name, family);
     attach_ccr(content, compressed, CcrAudience::Local)
 }
@@ -92,15 +102,45 @@ pub fn compress_tool_result_for(
 /// path runs (success compresses, failure keeps its diagnostics); without one
 /// the engine's unknown-outcome guard applies. Lossy results carry the same
 /// deterministic CCR recovery handle (#482, #498).
+///
+/// The same rules as the wire funnel hold: an output that already ends with
+/// its way back is returned whole, and every shorter form leaves through
+/// `attach_ccr` — under protection only with a recovery copy bound to the
+/// output's lineage, otherwise whole and noted with its code.
+///
+/// This route is no request: it holds no tool list of the host that will
+/// read the result. It therefore runs as a pass that knows no expand tool
+/// (`sticky_tools::in_pass`) instead of outside any pass, where the bare
+/// name `ctx_expand` would stand in. Under protection no stub is issued
+/// then: the output stays whole with `recovery.handle_not_followable`, and
+/// nothing is stored. Unprotected, the Community tee handle is unchanged.
 pub fn shape_command_output(command: &str, output: &str, exit_code: Option<i32>) -> String {
     if output.trim().is_empty() || output.len() < 200 {
+        return output.to_string();
+    }
+    if carries_recovery_stub(output) {
         return output.to_string();
     }
     let compressed = match exit_code {
         Some(code) => crate::shell::compress::engine::compress_for_outcome(command, output, code),
         None => crate::shell::compress::engine::compress_if_beneficial_pub(command, output),
     };
-    attach_ccr(output, compressed, CcrAudience::Local)
+    super::sticky_tools::in_pass(|| attach_ccr(output, compressed, CcrAudience::Local))
+}
+
+/// [`compress_tool_result`] for a caller that is no request of this proxy:
+/// the output of a host-native tool handed in after it ran (`ctx_shape`,
+/// every tool whose command line is not known).
+///
+/// Such a caller holds no tool list of the host that will read the result,
+/// so no expand tool is known to be followable there. The compression runs
+/// as a pass that knows no tool (`sticky_tools::in_pass`), never outside any
+/// pass, where the bare name `ctx_expand` would stand in. Under protection
+/// no stub is issued then: the text stays whole with
+/// `recovery.handle_not_followable`, and nothing is stored. Unprotected, the
+/// result and its Community tee handle are those of [`compress_tool_result`].
+pub fn shape_tool_output(output: &str, tool_name: Option<&str>) -> String {
+    super::sticky_tools::in_pass(|| compress_tool_result(output, tool_name))
 }
 
 /// [`compress_tool_result`] for the `/v1/compress` gateway contract (#702):
@@ -121,6 +161,10 @@ pub fn compress_tool_result_gateway_for(
     tool_name: Option<&str>,
     family: TokenizerFamily,
 ) -> String {
+    // Before the footer strip below: a local stub has the footer's shape.
+    if carries_recovery_stub(content) {
+        return content.to_owned();
+    }
     let compressed = compress_inner(content, tool_name, family);
     let clean = crate::core::protocol::strip_trailing_savings_footer(&compressed).to_string();
     attach_ccr(content, clean, CcrAudience::Gateway)
@@ -134,20 +178,296 @@ enum CcrAudience {
     Gateway,
 }
 
+/// Who reads what a compression pass sends, as the route that runs the pass
+/// knows it ([`observing`]).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Reader {
+    /// A model behind a provider: it can call `ctx_expand`, never a route of
+    /// this proxy.
+    #[cfg(feature = "http-server")]
+    Model,
+    /// The caller of `/v1/compress`: it can call this proxy's routes.
+    GatewayCaller,
+}
+
+/// The blocks a compression pass left whole under protection because no
+/// recovery copy could back a shorter form, and why. Content-free towards
+/// every reader: a block is held by its digest only to count it once, and
+/// only codes and counts leave this type.
+#[derive(Debug, Default, Clone, PartialEq, Eq)]
+pub(crate) struct KeptWhole {
+    blocks: BTreeMap<[u8; 32], &'static str>,
+}
+
+impl KeptWhole {
+    /// The first code noted for a block stands: a later pass over the same
+    /// bytes does not count it again.
+    fn note(&mut self, block: &str, code: &'static str) {
+        self.blocks
+            .entry(*blake3::hash(block.as_bytes()).as_bytes())
+            .or_insert(code);
+    }
+
+    #[cfg(feature = "http-server")]
+    pub(crate) fn merge(&mut self, other: Self) {
+        for (block, code) in other.blocks {
+            self.blocks.entry(block).or_insert(code);
+        }
+    }
+
+    #[cfg(feature = "http-server")]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.blocks.is_empty()
+    }
+
+    /// Blocks per code, in code order.
+    #[cfg(feature = "http-server")]
+    pub(crate) fn counts(&self) -> BTreeMap<&'static str, usize> {
+        let mut counts = BTreeMap::new();
+        for code in self.blocks.values() {
+            *counts.entry(*code).or_insert(0) += 1;
+        }
+        counts
+    }
+
+    /// The distinct codes, comma-separated in code order — the value of the
+    /// `x-leanctx-reason-codes` header of a reply that was NOT refused.
+    /// `None`: nothing stayed whole for want of a recovery copy.
+    #[cfg(feature = "http-server")]
+    pub(crate) fn codes(&self) -> Option<String> {
+        let counts = self.counts();
+        (!counts.is_empty()).then(|| counts.keys().copied().collect::<Vec<_>>().join(","))
+    }
+
+    /// `code=count` pairs for a log line.
+    #[cfg(feature = "http-server")]
+    pub(crate) fn summary(&self) -> String {
+        self.counts()
+            .iter()
+            .map(|(code, count)| format!("{code}={count}"))
+            .collect::<Vec<_>>()
+            .join(", ")
+    }
+}
+
+struct Observation {
+    reader: Reader,
+    kept: KeptWhole,
+}
+
+thread_local! {
+    /// The compression pass running on this thread, if a route observes it.
+    /// Compression is synchronous from the route down to [`attach_ccr`].
+    static OBSERVATION: RefCell<Option<Observation>> = const { RefCell::new(None) };
+}
+
+/// Run one synchronous compression pass for `reader` and return, next to its
+/// result, the blocks it left whole under protection. An inner pass reports
+/// to its own caller only.
+#[cfg(feature = "http-server")]
+pub(crate) fn observing<T>(reader: Reader, compression: impl FnOnce() -> T) -> (T, KeptWhole) {
+    struct Restore(Option<Observation>);
+    impl Drop for Restore {
+        fn drop(&mut self) {
+            let outer = self.0.take();
+            OBSERVATION.with(|slot| *slot.borrow_mut() = outer);
+        }
+    }
+    let restore = Restore(OBSERVATION.with(|slot| {
+        slot.replace(Some(Observation {
+            reader,
+            kept: KeptWhole::default(),
+        }))
+    }));
+    let result = compression();
+    let kept = OBSERVATION
+        .with(|slot| slot.borrow_mut().take())
+        .map_or_else(KeptWhole::default, |observation| observation.kept);
+    drop(restore);
+    (result, kept)
+}
+
+/// The reader of the pass running on this thread; `None` outside a route.
+fn observed_reader() -> Option<Reader> {
+    OBSERVATION.with(|slot| slot.borrow().as_ref().map(|observation| observation.reader))
+}
+
+/// `block` stays whole under protection for the content-free reason `code`.
+/// Counted for the route that observes the pass; logged otherwise.
+pub(crate) fn note_kept_whole(block: &str, code: &'static str) {
+    OBSERVATION.with(|slot| {
+        if let Some(observation) = slot.borrow_mut().as_mut() {
+            observation.kept.note(block, code);
+        } else {
+            tracing::debug!("lean-ctx proxy: block kept whole, no recovery copy ({code})");
+        }
+    });
+}
+
+/// Whether nothing may be shortened without a recovery copy bound to its
+/// lineage: a policy pack, governed or sovereign mode, or an unloadable
+/// configuration.
+pub(crate) fn protected() -> bool {
+    crate::core::context_admission::stored::source_authority_required()
+}
+
+/// How a lineage-bound recovery stub opens. Deliberately not the
+/// savings-footer shape (`[lean-ctx: `): a footer strip must never eat it.
+///
+/// The grammar of the stub, stated once: one line,
+/// `[lean-ctx recovery: full original archived — <tool>(id="<64 hex>",
+/// head=N|search="…"|json_path="…") for a slice]`. `<tool>` is the Engine's
+/// expand tool under the name the host of the request registered it with
+/// ([`expand_tool_name`]: at most 128 characters of `[A-Za-z0-9_.:/-]`), so
+/// it can hold neither `]` nor a line break. Everything that recognises a
+/// stub ([`carries_recovery_stub`]) reads the fixed opening and the closing
+/// bracket only, whatever the tool is called.
+const RECOVERY_STUB_OPEN: &str = "[lean-ctx recovery: ";
+
+/// The Engine tool that resolves a recovery id, by its bare name.
+const EXPAND_TOOL: &str = "ctx_expand";
+
+/// The last line of a block that was compressed under protection, for a
+/// model: `tool` — the Engine's expand tool as the host registered it —
+/// resolves the 64-hex `id` under the authority that holds then. A pure
+/// function of the name and the id, so the block stays byte-stable while the
+/// host keeps the name.
+pub(crate) fn recovery_stub_for(tool: &str, id: &RecoveryId) -> String {
+    format!(
+        "{RECOVERY_STUB_OPEN}full original archived — \
+         {tool}(id=\"{}\", head=N|search=\"…\"|json_path=\"…\") for a slice]",
+        id.as_str()
+    )
+}
+
+/// [`recovery_stub_for`] with the tool's bare name.
+#[cfg(test)]
+pub(crate) fn recovery_stub(id: &RecoveryId) -> String {
+    recovery_stub_for(EXPAND_TOOL, id)
+}
+
+/// [`recovery_stub_for`] for the caller of `/v1/compress`, which can follow a
+/// route of this proxy. No `hash=`: the id is not a tee hash, and a LiteLLM
+/// guardrail must not send it to `/v1/retrieve`.
+fn reference_stub(id: &RecoveryId) -> String {
+    format!(
+        "[lean-ctx CCR: full original archived — GET /v1/references/{} on this gateway \
+         returns it while its sources are admitted]",
+        id.as_str()
+    )
+}
+
+/// Upper bound of the length in bytes of a stub with the bare tool name: a
+/// shrink below it gains nothing. A stub with a longer, prefixed name is
+/// caught where it is attached — a block that would not get shorter with its
+/// stub stays as it is.
+const STUB_MAX_BYTES: usize = 256;
+
+/// Text that already ends with a way back to its original. A second pass
+/// passes it through: compressing it again could drop the handle, and the
+/// local stubs have the shape of a savings footer the gateway funnel strips.
+fn carries_recovery_stub(content: &str) -> bool {
+    let last = content
+        .trim_end_matches('\n')
+        .rsplit('\n')
+        .next()
+        .unwrap_or_default();
+    last.ends_with(']')
+        && [
+            RECOVERY_STUB_OPEN,
+            "[lean-ctx CCR: full original ",
+            "[lean-ctx: full original ",
+        ]
+        .iter()
+        .any(|open| last.starts_with(open))
+}
+
 /// Make a live-compressed `tool_result` non-lossy (#482): when compression
 /// removed a meaningful amount, tee the verbatim original to the shared
 /// content-addressed store and append a deterministic recovery handle. The
 /// handle is a pure function of the content hash, so the rewritten result is
 /// byte-stable across turns and never invalidates the provider cache prefix
 /// (#448). Passthrough / verbatim results (no real shrink) keep their bytes.
+/// When no recovery copy can be written (an active policy keeps no originless
+/// copies, or the store fails) the original is returned instead of the lossy
+/// form: a fresh result is never shortened without a way back.
 fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
     use super::sticky_tools;
-    if original.len() < ccr::MIN_TEE_BYTES
-        || original.len().saturating_sub(result.len()) < ccr::MIN_TEE_BYTES
-    {
+    if result == original {
         return result;
     }
-    match ccr::persist(original) {
+    let shrink = original.len().saturating_sub(result.len());
+    if original.len() < ccr::MIN_TEE_BYTES || shrink < ccr::MIN_TEE_BYTES {
+        // Too small for a tee: unprotected, the result leaves as it is.
+        if !protected() {
+            return result;
+        }
+        // Under protection a changed block leaves only with the stub of a
+        // recovery copy. Where the stub costs more than this pass saved,
+        // nothing is gained and nothing is changed — not a refusal, no code.
+        if shrink <= STUB_MAX_BYTES {
+            return original.to_string();
+        }
+    }
+    // The gateway funnel on a route whose reader is a model (the forward
+    // pipeline) or is unknown: neither the tee hash nor a proxy route is a
+    // way back that reader can follow. Neither is a stub naming a tool the
+    // host of this request did not list itself, or — under protection — a
+    // stub for a block whose own tool call is not on record in this store
+    // as answered by an Engine of this store (`sticky_tools::expand_tool_for`
+    // states the whole decision). Decided before anything is stored.
+    let tool = (audience == CcrAudience::Local)
+        .then(|| sticky_tools::expand_tool_for(original))
+        .flatten();
+    let followable =
+        tool.is_some() || observed_reader() == Some(Reader::GatewayCaller) || !protected();
+    if !followable {
+        note_kept_whole(original, HANDLE_NOT_FOLLOWABLE);
+        return original.to_string();
+    }
+    match recovery_copy(original) {
+        Some(RecoveryCopy::Bound {
+            id,
+            lineage,
+            project,
+        }) => {
+            let stub = if audience == CcrAudience::Local {
+                recovery_stub_for(tool.as_deref().unwrap_or(EXPAND_TOOL), &id)
+            } else {
+                reference_stub(&id)
+            };
+            let sent = format!("{result}\n{stub}");
+            if sent.len() >= original.len() {
+                return original.to_string();
+            }
+            // The one record a site other than an Engine release point makes
+            // (`delivered::record_derived`). Guaranteed here:
+            // 1. `lineage` came from `lineage_of` for exactly `original`, in
+            //    this request, inside the same project scope (`bound_copy`);
+            // 2. `sent` derives from `original` alone: `result` is the
+            //    compressor's output for that one block, and the rest is the
+            //    fixed stub text with the id of its recovery copy;
+            // 3. no second block takes part, so there is nothing to join —
+            //    a block without a lineage never reaches this arm.
+            let recorded = super::request_project::in_project(&project, || {
+                delivered::record_derived(&delivered::digest(&sent), &lineage)
+            });
+            if recorded {
+                // The model's stub names the expand tool the host listed:
+                // the request's pass holds the stubbed block next to its
+                // original until the request has left (`gate::Issued`). The
+                // gateway caller's stub names a route, not a tool.
+                if audience == CcrAudience::Local {
+                    gate::note_issued(original, &sent);
+                }
+                sent
+            } else {
+                // The shortened block would be of unknown lineage for every
+                // later turn; the original is not.
+                note_kept_whole(original, DERIVED_NOT_RECORDED);
+                original.to_string()
+            }
+        }
         // Gateway (#702): the reader is a model behind a LiteLLM-style gateway.
         // A local path is useless there; advertise the 24-hex retrieval hash in
         // the exact shape the guardrail's marker regex captures. The hash is a
@@ -155,7 +475,7 @@ fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
         // The `[lean-ctx CCR:` prefix is deliberately NOT the savings-footer
         // shape (`[lean-ctx: `): this line is functional content — a footer
         // strip must never eat it.
-        Some(handle) if audience == CcrAudience::Gateway => {
+        Some(RecoveryCopy::Tee(handle)) if audience == CcrAudience::Gateway => {
             sticky_tools::mark_ccr_active(0);
             let hash = ccr::litellm_hash(original);
             format!(
@@ -163,7 +483,7 @@ fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
                  retrieve tool with hash={hash}, or read {handle} locally]"
             )
         }
-        Some(handle) => {
+        Some(RecoveryCopy::Tee(handle)) => {
             sticky_tools::mark_ccr_active(0);
             match ccr::inband_locator(&handle) {
                 Some(marker) => format!(
@@ -176,8 +496,165 @@ fn attach_ccr(original: &str, result: String, audience: CcrAudience) -> String {
                 ),
             }
         }
-        None => result,
+        None => original.to_string(),
     }
+}
+
+/// The one place a compressed result gets its way back: store a recovery
+/// copy of `original` and return its handle, or `None` when no copy may
+/// exist — in which case the caller forwards the original instead of the
+/// lossy form.
+///
+/// - Unprotected (Community, developer mode): the originless tee store, as
+///   before.
+/// - Protected (a policy pack, governed or sovereign mode, an unloadable
+///   configuration): a copy exists only for a block whose sources are known
+///   ([`bound_copy`]). The proxy only sees a request body and observed no
+///   read; permission to read is not permission to retain. Without a known,
+///   currently admitted lineage there is no copy and the caller keeps the
+///   original.
+fn recovery_copy(original: &str) -> Option<RecoveryCopy> {
+    if !crate::core::context_admission::stored::source_authority_required() {
+        return ccr::persist(original).map(RecoveryCopy::Tee);
+    }
+    match bound_copy(original) {
+        Ok(copy) => Some(copy),
+        Err(code) => {
+            note_kept_whole(original, code);
+            None
+        }
+    }
+}
+
+/// The gate of every transformation other than the compressor that replaces
+/// a block by a shorter form under protection (history pruning, truncation):
+/// `shortened` followed by the stub of a recovery copy of `original`, on
+/// record under the original's lineage — or `None`, and the caller keeps
+/// `original` whole. `None` is noted with its code, except where the form
+/// with its stub would not be shorter at all.
+pub(crate) fn shorten_with_copy(original: &str, shortened: &str) -> Option<String> {
+    // Decided before anything is stored: a request whose host did not list
+    // the expand tool itself hands out no stub that names it, and under
+    // protection neither does text that is not one tool-result block whose
+    // call this store's Engine answered (`sticky_tools::expand_tool_for`).
+    let Some(tool) = super::sticky_tools::expand_tool_for(original) else {
+        note_kept_whole(original, HANDLE_NOT_FOLLOWABLE);
+        return None;
+    };
+    let copy = match bound_copy(original) {
+        Ok(copy) => copy,
+        Err(code) => {
+            note_kept_whole(original, code);
+            return None;
+        }
+    };
+    let RecoveryCopy::Bound {
+        id,
+        lineage,
+        project,
+    } = copy
+    else {
+        return None;
+    };
+    let sent = format!("{shortened}\n{}", recovery_stub_for(&tool, &id));
+    if sent.len() >= original.len() {
+        return None;
+    }
+    // `record_derived`, as in `attach_ccr`: the lineage is that of exactly
+    // `original`, looked up in this request and scope; `sent` is a cut of
+    // that one block plus fixed text of the cutting code and the stub.
+    let recorded = super::request_project::in_project(&project, || {
+        delivered::record_derived(&delivered::digest(&sent), &lineage)
+    });
+    if recorded {
+        // This stub names the host's expand tool as well (see `attach_ccr`).
+        gate::note_issued(original, &sent);
+        Some(sent)
+    } else {
+        note_kept_whole(original, DERIVED_NOT_RECORDED);
+        None
+    }
+}
+
+/// A block that an earlier request already carried may not be replaced by a
+/// pointer to that request: nothing in THIS request holds its content.
+pub(crate) const DEDUP_WITHOUT_COPY: &str = "recovery.dedup_without_copy";
+/// The conversation may not be replaced by a summary: no copy backs it.
+#[cfg(feature = "http-server")]
+pub(crate) const SUMMARY_WITHOUT_COPY: &str = "recovery.summary_without_copy";
+
+/// The reader of this pass cannot follow any handle a copy would have.
+const HANDLE_NOT_FOLLOWABLE: &str = "recovery.handle_not_followable";
+/// The copy exists, but the shortened block could not be put on record
+/// under the lineage of its original.
+const DERIVED_NOT_RECORDED: &str = "recovery.derived_not_recorded";
+/// No project of the proxy that sources could be admitted for.
+const NO_PROJECT: &str = "recovery.no_project";
+/// The block is not text the Engine delivered with a complete lineage.
+const UNKNOWN_LINEAGE: &str = "recovery.unknown_lineage";
+
+/// The recovery copy of `original` under protection, or the content-free
+/// code of why there is none. Inside the scope of the proxy's own project
+/// (operator configuration, `request_project`): the Engine's lineage of
+/// exactly this text, and a copy stored under it — which the store accepts
+/// only while every source of that lineage is admitted now. A file-only
+/// lineage lands on the Engine's existing source-bound archive entry for the
+/// same text, so no second copy is written.
+fn bound_copy(original: &str) -> Result<RecoveryCopy, &'static str> {
+    let project = super::request_project::current_source_project().ok_or(NO_PROJECT)?;
+    super::request_project::in_project(&project, || {
+        let lineage = delivered::lineage_of(&delivered::digest(original))
+            .filter(delivered::Lineage::is_complete)
+            .ok_or(UNKNOWN_LINEAGE)?;
+        let id = crate::core::archive::store_recovery_with_lineage(original, &lineage)
+            .map_err(recovery_code)?;
+        Ok((id, lineage))
+    })
+    .map(|(id, lineage)| RecoveryCopy::Bound {
+        id,
+        lineage: Box::new(lineage),
+        project,
+    })
+}
+
+/// The content-free code of a recovery refusal.
+pub(crate) fn recovery_code(refusal: RecoveryRefusal) -> &'static str {
+    match refusal {
+        RecoveryRefusal::UnknownLineage => UNKNOWN_LINEAGE,
+        RecoveryRefusal::SourceNotPresented => "recovery.source_not_presented",
+        RecoveryRefusal::SourceNoLongerAdmitted => "recovery.source_no_longer_admitted",
+        RecoveryRefusal::NotStorable => "recovery.not_storable",
+        RecoveryRefusal::Missing => "recovery.missing",
+    }
+}
+
+/// Resolve a recovery id under the authority that holds now, for the proxy's
+/// own project. `None`: `id` is not a recovery id at all. Without a project
+/// nothing is looked up.
+#[cfg(feature = "http-server")]
+pub(crate) fn resolve_recovery(id: &str) -> Option<Result<String, &'static str>> {
+    let id = RecoveryId::parse(id)?;
+    let Some(project) = super::request_project::current_source_project() else {
+        // Unprotected deployments hold no recovery copies: not a recovery id.
+        return crate::core::context_admission::stored::source_authority_required()
+            .then_some(Err(NO_PROJECT));
+    };
+    Some(super::request_project::in_project(&project, || {
+        crate::core::archive::retrieve_recovery_checked(&id).map_err(recovery_code)
+    }))
+}
+
+/// Where the way back of a compressed result leads.
+enum RecoveryCopy {
+    /// A tee file of the originless store; the value is its handle.
+    Tee(String),
+    /// A copy in the Engine's archive, bound to the lineage of the original
+    /// and stored for `project`.
+    Bound {
+        id: RecoveryId,
+        lineage: Box<delivered::Lineage>,
+        project: std::path::PathBuf,
+    },
 }
 
 fn compress_inner(content: &str, tool_name: Option<&str>, family: TokenizerFamily) -> String {
@@ -374,14 +851,32 @@ fn squeeze_research_prose_body(content: &str) -> String {
 /// `mcp__lean-ctx__ctx_shell`, others use `lean-ctx:ctx_read`. Strip the client
 /// prefix down to the bare tool segment before matching.
 fn is_lean_ctx_tool(name: &str) -> bool {
-    let bare = name
-        .rsplit("__")
+    bare_tool_name(name).starts_with("ctx_") || name.starts_with("ctx_")
+}
+
+/// The tool segment of a name a client namespaced: what follows the last
+/// `__` and, in that, the last `:`, `/` or `.`.
+pub(crate) fn bare_tool_name(name: &str) -> &str {
+    name.rsplit("__")
         .next()
         .unwrap_or(name)
         .rsplit([':', '/', '.'])
         .next()
-        .unwrap_or(name);
-    bare.starts_with("ctx_") || name.starts_with("ctx_")
+        .unwrap_or(name)
+}
+
+/// Whether `name` — a tool name as a host listed it — is the Engine's expand
+/// tool under a name a recovery stub can carry: the bare segment is
+/// `ctx_expand` (the stripping of [`is_lean_ctx_tool`]) and the whole name
+/// is at most 128 characters of `[A-Za-z0-9_.:/-]`, so it cannot break the
+/// one-line grammar of the stub. Anything else is not the tool.
+#[cfg(feature = "http-server")]
+pub(crate) fn expand_tool_name(name: &str) -> bool {
+    bare_tool_name(name) == EXPAND_TOOL
+        && name.len() <= 128
+        && name
+            .bytes()
+            .all(|byte| byte.is_ascii_alphanumeric() || b"_.:/-".contains(&byte))
 }
 
 fn infer_command(content: &str, tool_name: Option<&str>) -> String {
@@ -416,325 +911,9 @@ fn extract_command_hint(content: &str) -> Option<String> {
 }
 
 #[cfg(test)]
-mod tests {
-    use super::ccr;
-    use super::{
-        RESEARCH_PROSE_CAP, RESEARCH_PROSE_CAP_ENV, compress_tool_result,
-        compress_tool_result_gateway, extract_command_hint, infer_command, looks_like_prose,
-        output_looks_like_build_failure, output_looks_like_test_run, research_prose_cap,
-    };
-    use serial_test::serial;
+#[path = "compress_tests.rs"]
+mod tests;
 
-    /// #980/#985: search tool results must compress without corrupting source.
-    #[test]
-    fn search_tool_result_is_compressed_without_corrupting_source() {
-        let raw = (0..60)
-            .map(|i| {
-                format!(
-                    "src/h.go:{i}:func handler{i}(ctx context.Context) (api.Result, error) \
-                     {{ return doWork(ctx) }}"
-                )
-            })
-            .collect::<Vec<_>>()
-            .join("\n");
-        let out = compress_tool_result(&raw, Some("search_files"));
-
-        assert!(
-            out.len() < raw.len(),
-            "search results must still compress ({} -> {})",
-            raw.len(),
-            out.len()
-        );
-        for keyword in ["context.Context", "(api.Result, error)", "return"] {
-            assert!(
-                out.contains(keyword),
-                "the terse dictionary rewrote `{keyword}` out of a search result:\n{out}"
-            );
-        }
-    }
-
-    #[test]
-    fn short_content_unchanged() {
-        let short = "hello world";
-        assert_eq!(compress_tool_result(short, None), short);
-    }
-
-    #[test]
-    fn empty_content_unchanged() {
-        assert_eq!(compress_tool_result("", None), "");
-        assert_eq!(compress_tool_result("   ", None), "   ");
-    }
-
-    #[test]
-    fn command_hint_extraction() {
-        assert_eq!(
-            extract_command_hint("$ cargo build\nCompiling foo"),
-            Some("cargo build".to_string())
-        );
-        assert_eq!(extract_command_hint("no prefix here"), None);
-    }
-
-    #[test]
-    fn tool_name_inference() {
-        assert_eq!(infer_command("some text", Some("bash_execute")), "shell");
-        assert_eq!(infer_command("some text", Some("search_files")), "grep");
-        assert_eq!(infer_command("some text", Some("unknown_tool")), "");
-    }
-
-    #[test]
-    fn lean_ctx_tool_results_pass_through_verbatim() {
-        // A ctx_shell result the tool already produced (raw=true, or its own
-        // compression). The proxy must NOT re-compress / re-truncate it — that
-        // was the #479 defect where `raw=true` was silently undone on the wire.
-        let raw = (1..=120)
-            .map(|i| format!("Line {i:04}: the quick brown fox jumps over the lazy dog"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        assert!(raw.len() > 200);
-        // Bare names AND the namespaced forms real MCP clients emit (Claude Code
-        // `mcp__lean-ctx__ctx_shell`, colon-style `lean-ctx:ctx_read`).
-        for tool in [
-            "ctx_shell",
-            "ctx_read",
-            "ctx_search",
-            "ctx_grep",
-            "mcp__lean-ctx__ctx_shell",
-            "lean-ctx:ctx_read",
-        ] {
-            assert_eq!(
-                compress_tool_result(&raw, Some(tool)),
-                raw,
-                "{tool} output must pass through the proxy verbatim"
-            );
-        }
-        // A foreign tool with identical output is still compressed: the proxy
-        // keeps adding value for non-lean-ctx tools.
-        assert_ne!(
-            compress_tool_result(&raw, Some("bash")),
-            raw,
-            "foreign-tool output should still be compressed by the proxy"
-        );
-    }
-
-    #[test]
-    fn cited_research_output_is_preserved_verbatim() {
-        let cited = format!(
-            "Rust is a language.\n\n---\nSource: Rust — https://x.com/a\n\
-             Site: x.com · Retrieved: 2026-06-06T00:00:00Z\n{}",
-            "Extra body line that would otherwise be touched. ".repeat(20)
-        );
-        assert_eq!(compress_tool_result(&cited, Some("ctx_url_read")), cited);
-    }
-
-    #[test]
-    fn prose_is_squeezed_and_deduped() {
-        let para = "Rust is a multi-paradigm systems programming language that \
-                    emphasizes performance, type safety, and fearless concurrency, \
-                    achieving memory safety without a garbage collector at runtime.";
-        // Repeated paragraph (well over the 600-char prose floor) → dedup keeps one.
-        let input = format!("{}\n", [para; 8].join("\n\n"));
-        assert!(input.len() > 600);
-        let out = compress_tool_result(&input, Some("web_fetch"));
-        assert_eq!(out.matches("fearless concurrency").count(), 1);
-        assert!(out.contains("performance, type safety"));
-    }
-
-    #[test]
-    #[serial]
-    fn research_prose_cap_env_overrides_default() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        crate::test_env::set_var(RESEARCH_PROSE_CAP_ENV, "1234");
-        assert_eq!(research_prose_cap(), 1234);
-        crate::test_env::remove_var(RESEARCH_PROSE_CAP_ENV);
-    }
-
-    #[test]
-    #[serial]
-    fn research_prose_cap_env_invalid_falls_back() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        for value in ["", "not_a_number", "0"] {
-            crate::test_env::set_var(RESEARCH_PROSE_CAP_ENV, value);
-            assert_eq!(research_prose_cap(), RESEARCH_PROSE_CAP);
-        }
-        crate::test_env::remove_var(RESEARCH_PROSE_CAP_ENV);
-    }
-
-    #[test]
-    fn code_output_is_not_treated_as_prose() {
-        let code = "fn main() {\n    let x = vec![1, 2, 3];\n    \
-                    for i in &x { println!(\"{}\", i); }\n}\n"
-            .repeat(20);
-        assert!(!looks_like_prose(&code));
-    }
-
-    #[test]
-    fn shell_log_is_not_treated_as_prose() {
-        let log = "$ cargo build\n   Compiling foo v0.1.0\n    Finished dev\n".repeat(20);
-        assert!(!looks_like_prose(&log));
-    }
-
-    #[test]
-    fn foreign_shell_build_failure_preserved_verbatim() {
-        // A forge/pi-style shell tool: the name says "shell" and the output has
-        // no `$ cmd` hint, so the engine's command-gated guards cannot fire. The
-        // compiler error must still reach the model intact for a bug-fix task.
-        let mut log = String::from("gcc -O2 -c src/versioncmp.c -o versioncmp.o\n");
-        log.push_str("src/versioncmp.c: In function 'version_cmp':\n");
-        log.push_str(
-            "src/versioncmp.c:142:17: error: invalid operands to binary < (have 'char *' and 'int')\n",
-        );
-        for i in 0..40 {
-            log.push_str(&format!("  note: expansion context line {i}\n"));
-        }
-        log.push_str("make: *** [Makefile:23: versioncmp.o] Error 1\n");
-
-        let out = compress_tool_result(&log, Some("shell"));
-        assert!(
-            out.contains("versioncmp.c:142:17: error:"),
-            "compiler error must survive the proxy"
-        );
-        assert!(
-            out.contains("make: ***"),
-            "make failure summary must survive"
-        );
-    }
-
-    #[test]
-    fn foreign_shell_test_failure_preserved_verbatim() {
-        let mut log = String::from("running 3 tests\n");
-        log.push_str("test version::tests::sorts_numeric ... FAILED\n");
-        for i in 0..40 {
-            log.push_str(&format!("note line {i} with some filler content here\n"));
-        }
-        log.push_str("test result: FAILED. 2 passed; 1 failed; 0 ignored\n");
-
-        let out = compress_tool_result(&log, Some("bash"));
-        assert!(
-            out.contains("test result: FAILED"),
-            "test summary must survive the proxy"
-        );
-        assert!(out.contains("sorts_numeric ... FAILED"));
-    }
-
-    #[test]
-    fn plain_shell_log_not_forced_verbatim() {
-        let log = "Listening on port 8080\nRequest received from 10.0.0.2\n".repeat(20);
-        assert!(!output_looks_like_test_run(&log));
-        assert!(!output_looks_like_build_failure(&log));
-    }
-
-    fn big_compressible_log() -> String {
-        (1..=400)
-            .map(|i| format!("[info] processed item {i:04} ok"))
-            .collect::<Vec<_>>()
-            .join("\n")
-    }
-
-    #[test]
-    fn live_compression_is_recoverable_via_ccr_handle() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let log = big_compressible_log();
-        let out = compress_tool_result(&log, Some("bash"));
-        assert!(
-            out.len() < log.len(),
-            "a large foreign log must be compressed"
-        );
-
-        // The compressed result carries the content-addressed handle, and the
-        // handle points at the *verbatim* original — live compression is now
-        // non-lossy (#482), recoverable with a plain native file read.
-        let handle = ccr::persist(&log).expect("same content -> same handle");
-        assert!(out.contains(&handle), "CCR handle must be embedded: {out}");
-        let recovered = std::fs::read_to_string(&handle).expect("tee file readable");
-        assert!(
-            recovered.contains("processed item 0007 ok")
-                && recovered.contains("processed item 0400 ok"),
-            "verbatim original must be fully recoverable"
-        );
-    }
-
-    #[test]
-    fn live_compression_output_is_byte_stable_across_turns() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let log = big_compressible_log();
-        let a = compress_tool_result(&log, Some("bash"));
-        let b = compress_tool_result(&log, Some("bash"));
-        assert_eq!(
-            a, b,
-            "the CCR handle is content-addressed, so the rewritten result must be \
-             byte-identical across turns (provider cache prefix stays valid, #448)"
-        );
-    }
-
-    /// Contract test for #702, pinned to LiteLLM's marker regex: the headroom
-    /// guardrail scans compressed text with `hash=([a-f0-9]{24})`
-    /// (BerriAI/litellm#31681). If our gateway stub ever drifts from that
-    /// shape, the CCR agentic loop silently stops firing — this test fails
-    /// first.
-    #[test]
-    fn gateway_stub_matches_litellm_marker_regex_and_retrieves() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let log = big_compressible_log();
-        let out = compress_tool_result_gateway(&log, Some("bash"));
-        assert!(out.len() < log.len(), "gateway funnel must still compress");
-
-        // Exactly the pattern LiteLLM compiles (`_HASH_PATTERN`).
-        let litellm_regex = regex::Regex::new(r"hash=([a-f0-9]{24})").unwrap();
-        let captured = litellm_regex
-            .captures(&out)
-            .unwrap_or_else(|| panic!("gateway stub must carry a hash= marker: {out}"))
-            .get(1)
-            .unwrap()
-            .as_str();
-        assert_eq!(captured, ccr::litellm_hash(&log));
-
-        // The captured hash resolves through the /v1/retrieve/{hash} resolver
-        // to the verbatim original — the full guardrail round-trip.
-        let recovered = ccr::retrieve_litellm(captured).expect("captured hash must resolve");
-        assert!(
-            recovered.contains("processed item 0007 ok")
-                && recovered.contains("processed item 0400 ok"),
-            "retrieve must return the verbatim original"
-        );
-
-        // Byte-stable across calls (#498): the marker is content-addressed.
-        assert_eq!(out, compress_tool_result_gateway(&log, Some("bash")));
-
-        // The functional CCR line must survive the savings-footer strip that
-        // /v1/compress applies to every payload.
-        assert_eq!(
-            crate::core::protocol::strip_trailing_savings_footer(&out),
-            out
-        );
-    }
-
-    #[test]
-    fn gateway_stub_absent_for_passthrough_and_ctx_output() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        // Below the compress floor: no marker.
-        assert!(!compress_tool_result_gateway("short output", Some("bash")).contains("hash="));
-        // lean-ctx tool output passes through verbatim — a gateway must never
-        // see a retrieval marker for content that was not rewritten.
-        let raw = (1..=120)
-            .map(|i| format!("Line {i:04}: lorem ipsum dolor sit amet consectetur"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let out = compress_tool_result_gateway(&raw, Some("ctx_shell"));
-        assert_eq!(out, raw);
-    }
-
-    #[test]
-    fn small_or_passthrough_output_gets_no_ccr_handle() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        // Below the 200-char compress floor: passes through, no handle.
-        let tiny = "ok\n".repeat(10);
-        assert!(!compress_tool_result(&tiny, Some("bash")).contains("full original at"));
-        // lean-ctx tool output passes through verbatim (no handle either).
-        let raw = (1..=120)
-            .map(|i| format!("Line {i:04}: lorem ipsum dolor sit amet consectetur"))
-            .collect::<Vec<_>>()
-            .join("\n");
-        let out = compress_tool_result(&raw, Some("ctx_shell"));
-        assert_eq!(out, raw, "lean-ctx tool result must stay verbatim (no CCR)");
-    }
-}
+#[cfg(test)]
+#[path = "compress_recovery_tests.rs"]
+mod recovery_tests;

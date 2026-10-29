@@ -1,0 +1,7 @@
+{
+  "error": {
+    "code": "review_cap_reached",
+    "message": "Today's review limit for this place is reached.",
+    "retry_after_s": 3600
+  }
+}

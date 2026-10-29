@@ -1,0 +1,40 @@
+{
+  "route": "W75",
+  "method": "GET",
+  "path": "/api/v1/companies/acme-group/activity/sync",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "view": "sync",
+      "items": [
+        {
+          "id": "r5a9edfa7-8163-4c2f-8eb5-7fd3a0c12456:3e7cbd85-6f41-4a0d-8c93-5db18eaf0234",
+          "at": "2026-10-23T18:00:00Z",
+          "kind": "replica_stale",
+          "workspace": "acme",
+          "vault": "payments",
+          "engine": {
+            "id": "3e7cbd85-6f41-4a0d-8c93-5db18eaf0234",
+            "label": "ada-mbp"
+          },
+          "purge_id": null
+        },
+        {
+          "id": "pprg_abcdefghijklmnopqrstuvwxyz:3e7cbd85-6f41-4a0d-8c93-5db18eaf0234",
+          "at": "2026-10-22T12:00:00Z",
+          "kind": "purge_unacked",
+          "workspace": "acme",
+          "vault": "payments",
+          "engine": {
+            "id": "3e7cbd85-6f41-4a0d-8c93-5db18eaf0234",
+            "label": "ada-mbp"
+          },
+          "purge_id": "prg_abcdefghijklmnopqrstuvwxyz"
+        }
+      ],
+      "next_cursor": null
+    }
+  },
+  "errors": []
+}

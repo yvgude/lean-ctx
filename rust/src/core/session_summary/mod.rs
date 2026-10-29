@@ -39,12 +39,17 @@ pub(crate) fn maybe_record_periodic(
     if !cfg.enabled || !candidate.has_content {
         return None;
     }
-    let store = SummaryStore::load_or_create(project_root);
-    if candidate.tool_calls < store.last_recorded_calls + u64::from(cfg.every_n_turns) {
-        return None;
-    }
-    let mut store = store;
-    record_into(&mut store, candidate, cfg.max_kept as usize)
+    // The cadence watermark is read and advanced under the same store lock.
+    SummaryStore::mutate_locked(project_root, |store| {
+        if candidate.tool_calls < store.last_recorded_calls + u64::from(cfg.every_n_turns) {
+            return None;
+        }
+        record_into(store, candidate, cfg.max_kept as usize)
+    })
+    .unwrap_or_else(|error| {
+        tracing::warn!(event = "session_summary_not_recorded", %error);
+        None
+    })
 }
 
 /// Force-record a summary now (explicit action), ignoring the turn cadence.
@@ -56,11 +61,16 @@ pub(crate) fn record_now(
         return Err("session has nothing to summarize yet".to_string());
     }
     let cfg = config();
-    let mut store = SummaryStore::load_or_create(project_root);
-    record_into(&mut store, candidate, cfg.max_kept as usize)
-        .ok_or_else(|| "failed to persist summary".to_string())
+    match SummaryStore::mutate_locked(project_root, |store| {
+        record_into(store, candidate, cfg.max_kept as usize)
+    }) {
+        Ok(Some(title)) => Ok(title),
+        Ok(None) => Err("failed to persist summary".to_string()),
+        Err(error) => Err(format!("failed to persist summary: {error}")),
+    }
 }
 
+/// Adds the admitted record to `store`; the caller persists it.
 fn record_into(
     store: &mut SummaryStore,
     candidate: SummaryCandidate,
@@ -68,17 +78,31 @@ fn record_into(
 ) -> Option<String> {
     let calls = candidate.tool_calls;
     let seq = store.next_seq();
-    let rec = candidate.into_record(seq);
+    // Stored bytes: the ADMITTED record only. A candidate with a field the
+    // gateway withholds or classifies as restricted is not recorded at all.
+    let rec = candidate.into_record(seq).admitted_for_store()?;
     let title = rec.title.clone();
     store.last_recorded_calls = calls;
     store.push(rec, max_kept);
-    store.save().ok()?;
     Some(title)
 }
 
-/// All stored summaries for a project (oldest first).
+/// The stored summaries of a project as they may be served NOW (oldest
+/// first): each record through the originless rule, a record that is not
+/// released left out. The store on disk is not touched by this view.
 pub(crate) fn list(project_root: &str) -> Vec<SummaryRecord> {
-    SummaryStore::load_or_create(project_root).summaries
+    served(SummaryStore::load_or_create(project_root)).summaries
+}
+
+/// `store` reduced to the records that may be served now. A read-only view:
+/// callers never save it.
+pub(crate) fn served(mut store: SummaryStore) -> SummaryStore {
+    store.summaries = store
+        .summaries
+        .iter()
+        .filter_map(SummaryRecord::served)
+        .collect();
+    store
 }
 
 #[cfg(test)]
@@ -117,6 +141,77 @@ mod tests {
         assert_eq!(list(&root).len(), 1);
 
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+    }
+
+    /// E3 / G04: a summary was persisted exactly as it was distilled and
+    /// recalled exactly as it was stored. It is now stored admitted (a masked
+    /// value stays masked on disk) and served under the originless rule (not
+    /// at all once a project policy is active).
+    #[test]
+    fn summaries_are_stored_admitted_and_served_under_the_originless_rule() {
+        const AWS_KEY: &str = concat!("AK", "IAIOSFODNN7EXAMPLE");
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().to_string();
+        {
+            let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+            let mut session = session_with_work(3);
+            session.add_decision(&format!("Rotate the deploy key {AWS_KEY} weekly"), None);
+            record_now(&root, build_candidate(&session)).unwrap();
+
+            let on_disk = SummaryStore::load_or_create(&root);
+            assert_eq!(on_disk.summaries.len(), 1);
+            let stored = serde_json::to_string(&on_disk.summaries).unwrap();
+            assert!(!stored.contains(AWS_KEY), "the store holds a raw key");
+
+            // Control: a clean summary is recalled as before.
+            let hits = recall(&root, "traversal edges", 5);
+            assert!(!hits.is_empty());
+            assert!(hits[0].record.title.contains("traversal"));
+            assert_eq!(list(&root).len(), 1);
+        }
+        let policy = crate::core::policy::load(
+            "name = \"session-summary-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n",
+        )
+        .unwrap();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+        assert!(list(&root).is_empty(), "no source authority, not served");
+        assert!(recall(&root, "traversal edges", 5).is_empty());
+        assert_eq!(
+            SummaryStore::load_or_create(&root).summaries.len(),
+            1,
+            "the served view never changes the store"
+        );
+    }
+
+    /// AP07-G7: the store was loaded and written without a lock (and not
+    /// atomically), so parallel recorders dropped each other's summaries.
+    #[test]
+    fn parallel_recorders_keep_every_summary() {
+        use std::sync::{Arc, Barrier};
+        const RECORDERS: usize = 8;
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().to_string();
+        let barrier = Arc::new(Barrier::new(RECORDERS));
+        let recorders: Vec<_> = (0..RECORDERS)
+            .map(|_| {
+                let candidate = build_candidate(&session_with_work(3));
+                let (barrier, root) = (Arc::clone(&barrier), root.clone());
+                std::thread::spawn(move || {
+                    barrier.wait();
+                    record_now(&root, candidate)
+                })
+            })
+            .collect();
+        for recorder in recorders {
+            recorder.join().unwrap().unwrap();
+        }
+        assert_eq!(
+            SummaryStore::load_or_create(&root).summaries.len(),
+            RECORDERS
+        );
     }
 
     #[test]

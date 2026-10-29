@@ -232,7 +232,7 @@ fn print_summary(result: &MigrationResult, dry_run: bool) {
     if !dry_run {
         println!();
         println!("You're now running lean-ctx!");
-        println!("Tip: run 'lean-ctx dashboard' to see your historical savings.");
+        println!("Tip: run 'lean-ctx cockpit' to see your historical savings (Savings view).");
     }
 }
 

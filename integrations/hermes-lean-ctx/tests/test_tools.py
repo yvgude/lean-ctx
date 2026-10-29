@@ -17,7 +17,7 @@ def _offline_gateway() -> ToolGateway:
 
 
 def test_schemas_are_wellformed():
-    assert len(schemas.ALL_SCHEMAS) == 6
+    assert len(schemas.ALL_SCHEMAS) == 4
     for s in schemas.ALL_SCHEMAS:
         assert set(s) >= {"name", "description", "parameters"}
         params = s["parameters"]
@@ -29,7 +29,7 @@ def test_schemas_are_wellformed():
 def test_get_tool_schemas_respects_toggle():
     on = LeanCtxConfig(base_url="http://x", enable_tools=True)
     off = LeanCtxConfig(base_url="http://x", enable_tools=False)
-    assert len(tools.get_tool_schemas(on)) == 6
+    assert len(tools.get_tool_schemas(on)) == 4
     assert tools.get_tool_schemas(off) == []
     # returns copies, not the shared schema objects
     got = tools.get_tool_schemas(on)

@@ -21,7 +21,6 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "conformance",
     "selftest",
     "health",
-    "billing",
     "finops",
     "roi",
     "output-savings",
@@ -40,15 +39,14 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "value",
     "statusline",
     "inspect",
+    "gateway",
     "claude-mod",
     "prompt-segment",
     "verify",
     "eval",
     "verify-cache",
     "cache-selftest",
-    "visualize",
     "audit",
-    "compliance",
     "agent",
     "instructions",
     "index",
@@ -58,8 +56,8 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "repomap",
     "repo-map",
     "cep",
+    "cockpit",
     "dashboard",
-    "team",
     "provider",
     "serve",
     "watch",
@@ -98,15 +96,14 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "compress",
     "wrapped",
     "benchmark",
-    "benchmark-run",
-    "calibrate",
-    "pair",
     "compact",
     "profile",
     "tools",
     "config",
     "allow",
     "allow-path",
+    "project",
+    "workspace",
     "security",
     "yolo",
     "secure",
@@ -133,8 +130,7 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
     "completions",
     "gotchas",
     "learn",
-    "buddy",
-    "cloud",
+    "hive",
     "telemetry",
     "wrap",
     "unwrap",
@@ -147,7 +143,12 @@ pub(crate) const KNOWN_COMMANDS: &[&str] = &[
 /// shared [`crate::core::levenshtein`] helper (#712), so CLI commands, config
 /// keys and MCP tool names all suggest with identical semantics.
 pub(super) fn closest_command(input: &str) -> Option<&'static str> {
-    crate::core::levenshtein::closest(input, KNOWN_COMMANDS.iter().copied())
+    // `hive` is not suggested until the release switch is on (3.12.1).
+    let visible = KNOWN_COMMANDS
+        .iter()
+        .copied()
+        .filter(|cmd| crate::core::hive::HIVE_AVAILABLE || *cmd != "hive");
+    crate::core::levenshtein::closest(input, visible)
 }
 
 #[cfg(test)]
@@ -160,6 +161,12 @@ mod tests {
         assert_eq!(closest_command("doctr"), Some("doctor"));
         assert_eq!(closest_command("statuss"), Some("status"));
         assert_eq!(closest_command("upgrad"), Some("upgrade"));
+    }
+
+    #[test]
+    fn hive_is_suggested_only_when_available() {
+        let hive = closest_command("hiv") == Some("hive");
+        assert_eq!(hive, crate::core::hive::HIVE_AVAILABLE);
     }
 
     #[test]

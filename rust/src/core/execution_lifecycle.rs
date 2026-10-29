@@ -132,8 +132,6 @@ pub struct CompletionObservation {
     pub success: bool,
     /// Evidence-bearing legacy signals. An empty set never implies acceptance.
     pub outcome_signals: Vec<OutcomeSignal>,
-    pub shadow_auto_record: bool,
-    pub shadow_tokens: Option<(u64, u64)>,
     pub proxy_economics: Option<ProxyEconomicsObservation>,
     pub heatmap: Option<HeatmapObservation>,
 }
@@ -314,8 +312,6 @@ impl CompletionObservation {
             success,
             // Transport status does not establish compiler or task-quality evidence.
             outcome_signals: Vec::new(),
-            shadow_auto_record: false,
-            shadow_tokens: None,
             proxy_economics: None,
             heatmap: None,
         }
@@ -907,18 +903,11 @@ impl ExecutionLifecycle {
             provider,
             success: _,
             outcome_signals,
-            shadow_auto_record,
-            shadow_tokens,
             proxy_economics,
             heatmap,
         } = observation;
         #[cfg(test)]
-        let _ = (
-            output_tokens,
-            &outcome_signals,
-            shadow_auto_record,
-            shadow_tokens,
-        );
+        let _ = (output_tokens, &outcome_signals);
 
         // Transport success/failure is not a quality signal or policy violation.
         let accepted_outcome =
@@ -953,11 +942,9 @@ impl ExecutionLifecycle {
         // an evictable lookup map cannot be the sole authority during recovery.
         let _ = context.shared.computed_outcome.set(outcome.clone());
 
-        if let Some(assessment) = outcome.assessment.as_ref() {
-            #[cfg(not(test))]
-            self.record_evidence(context, output_tokens, shadow_tokens, assessment);
-            #[cfg(test)]
-            let _ = assessment;
+        // The assessment is the evidence (`computed_outcome` above); the
+        // former `evidence_ledger.jsonl` copy was written but never read.
+        if outcome.assessment.is_some() {
             let _ = context.advance(LifecycleStage::RecordEvidence);
         } else {
             let _ = context.skip(
@@ -983,15 +970,6 @@ impl ExecutionLifecycle {
         {
             #[cfg(not(test))]
             crate::core::value_gate::record_assessment(assessment);
-            #[cfg(not(test))]
-            self.record_shadow(
-                context,
-                output_tokens,
-                &outcome_signals,
-                shadow_auto_record,
-                shadow_tokens,
-                assessment,
-            );
             #[cfg(test)]
             let _ = assessment;
             let _ = context.advance(LifecycleStage::UpdateLearning);
@@ -1179,62 +1157,6 @@ impl ExecutionLifecycle {
             .unwrap_or_else(std::sync::PoisonError::into_inner)
             .insert(context.task_id.clone(), outcome.clone());
         outcome
-    }
-
-    #[cfg(not(test))]
-    fn record_evidence(
-        &self,
-        context: &TaskContext,
-        output_tokens: u64,
-        shadow_tokens: Option<(u64, u64)>,
-        assessment: &ValueAssessment,
-    ) {
-        let (raw_input_tokens, compressed_input_tokens) =
-            shadow_tokens.unwrap_or((output_tokens, output_tokens));
-        let entry = crate::core::live_evidence_ledger::EvidenceLedgerEntry::completed(
-            &context.task_id,
-            &context.session_id,
-            &context.triage_class,
-            raw_input_tokens.saturating_sub(compressed_input_tokens),
-            compressed_input_tokens,
-            assessment.cpao_micros,
-            assessment.outcome_accepted,
-        );
-        if let Err(error) = crate::core::live_evidence_ledger::append_completion(&entry) {
-            tracing::warn!("failed to persist evidence ledger entry: {error}");
-        }
-    }
-
-    #[cfg(not(test))]
-    fn record_shadow(
-        &self,
-        context: &TaskContext,
-        output_tokens: u64,
-        outcome_signals: &[OutcomeSignal],
-        shadow_auto_record: bool,
-        shadow_tokens: Option<(u64, u64)>,
-        assessment: &ValueAssessment,
-    ) {
-        let (raw_input_tokens, compressed_input_tokens) =
-            shadow_tokens.unwrap_or((output_tokens, output_tokens));
-        if !shadow_auto_record || !assessment.outcome_accepted {
-            return;
-        }
-        let duration_ms =
-            u64::try_from(context.start_time.elapsed().as_millis()).unwrap_or(u64::MAX);
-        let task = crate::core::shadow::ShadowTask {
-            task_id: assessment.task_id.clone(),
-            query: format!("{}: {}", context.profile_intent, context.profile_complexity),
-            raw_input_tokens,
-            compressed_input_tokens,
-            output_tokens,
-            model_used: assessment.model.clone(),
-            outcome_signals: outcome_signals.to_vec(),
-            duration_ms,
-        };
-        let _ = std::thread::Builder::new()
-            .name("lean-ctx-shadow".into())
-            .spawn(move || crate::core::shadow::runtime::ShadowRuntime::on_task_complete(&task));
     }
 
     pub fn profile_for_session(&self, session_id: &str) -> Option<TaskProfileLocal> {

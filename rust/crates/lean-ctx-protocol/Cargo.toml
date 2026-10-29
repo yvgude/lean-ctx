@@ -1,8 +1,8 @@
 [package]
 name = "lean-ctx-protocol"
-version = "0.3.0"
+version = "0.4.0"
 edition = "2024"
-rust-version = "1.85"
+rust-version = "1.87"
 license = "Apache-2.0"
 description = "Open wire contracts for lean-ctx: events, observations, assignments, evidence gaps."
 repository = "https://github.com/yvgude/lean-ctx"
@@ -14,3 +14,12 @@ regex = "1.11"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 sha2 = "0.11"
+
+[dev-dependencies]
+# Hive golden fixtures carry real signatures from fixed test-only keys.
+base64 = "0.22"
+ed25519-dalek = "2.2"
+hmac = "0.13"
+# The sealed key-wrap vector (X25519 + HKDF), reproduced by every engine.
+curve25519-dalek = "4.1"
+hkdf = "0.13"

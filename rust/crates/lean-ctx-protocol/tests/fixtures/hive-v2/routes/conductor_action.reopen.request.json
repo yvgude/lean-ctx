@@ -1,0 +1,7 @@
+{
+  "action": "reopen",
+  "epoch": 3,
+  "goal": "g_ttttttttttttttttttttttttta",
+  "reason": "The flame graph missed the tax lookup.",
+  "worker_id": "wkr_cxdouocvevdhm22vpdrh"
+}

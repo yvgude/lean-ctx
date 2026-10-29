@@ -28,7 +28,7 @@ def check_proxy(run, record, root, installed, common, target, digest, binary, en
     class Provider(BaseHTTPRequestHandler):
         def do_POST(self):
             body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
-            served.append(body)
+            served.append({'body': body, 'header_names': sorted(name.lower() for name in self.headers.keys())})
             payload = json.dumps({'id': 'fixture-completion', 'object': 'chat.completion',
                                   'model': body['model'], 'choices': [{'index': 0, 'finish_reason': 'stop',
                                   'message': {'role': 'assistant', 'content': 'loopback fixture'}}],
@@ -60,18 +60,8 @@ def check_proxy(run, record, root, installed, common, target, digest, binary, en
     policy_file.parent.mkdir(parents=True, exist_ok=True)
     opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
 
-    def evidence():
-        found = {}
-        for path in root.rglob('execution/evidence/*.json'):
-            raw = path.read_bytes()
-            value = json.loads(raw)
-            if 'enhancement' in value:
-                found[hashlib.sha256(raw).hexdigest()] = value
-        return found
-
-    def case(name, expected_status=200, expected_model=None, enhancement=None, policy='', alias=False, enabled=True,
+    def case(name, expected_status=200, expected_model='gpt-4o', policy='', alias=False, enabled=True,
              fixed_prompt=None, lineage_headers=None):
-        before_evidence = evidence()
         before_requests = len(served)
         policy_file.write_text(policy)
         routing = ('\n[proxy]\nallow_custom_upstream = true\n'
@@ -87,7 +77,9 @@ def check_proxy(run, record, root, installed, common, target, digest, binary, en
         argv = [str(binary), 'proxy', 'start', '--port=' + str(port)]
         process = subprocess.Popen(argv, cwd=root, env=proxy_env, stdin=subprocess.DEVNULL,
                                    stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        row = {'name': 'proxy-' + name, 'argv': argv, 'provider_fixture': True}
+        row = {'name': 'proxy-' + name, 'argv': argv, 'provider_fixture': True,
+               'gateway_receipt_inspected': False,
+               'spoofed_control_header_names': sorted((lineage_headers or {}).keys())}
         try:
             deadline = time.monotonic() + 15
             while True:
@@ -109,31 +101,21 @@ def check_proxy(run, record, root, installed, common, target, digest, binary, en
                     status, raw_response = response.status, response.read()
             except urllib.error.HTTPError as error:
                 status, raw_response = error.code, error.read()
-            after_evidence = evidence()
-            delta = {key: value for key, value in after_evidence.items() if key not in before_evidence}
             row.update(http_status=status, request=payload, response=raw_response.decode(),
-                       lineage_headers=lineage_headers or {},
                        request_sha256=hashlib.sha256(raw_request).hexdigest(),
                        response_sha256=hashlib.sha256(raw_response).hexdigest(),
-                       upstream_requests=served[before_requests:], evidence=delta)
+                       upstream_requests=served[before_requests:])
             assert status == expected_status, row
-            if enhancement is None:
-                assert not delta, row
             if status == 200:
-                assert len(served) == before_requests + 1
-                selected = served[-1]['model']
-                assert selected in ('gpt-4o', 'gpt-4o-mini')
-                if expected_model:
-                    assert selected == expected_model, row
-                if enhancement:
-                    assert len(delta) == 1, row
-                    proof = next(iter(delta.values()))
-                    assert proof['enhancement'] == enhancement, row
-                    assert proof['decision']['selected']['model'] == selected
-                    if enhancement == 'private_runtime':
-                        projection = proof['evidence']['request']['input']
-                        assert prompt not in projection and 'gpt-4o' not in projection
-                        assert proof['evidence']['execution']['status'] == 'executed'
+                assert len(served) == before_requests + 1, row
+                forwarded = served[-1]['body']
+                assert forwarded['model'] == expected_model, row
+                response = json.loads(raw_response)
+                assert response['model'] == expected_model, row
+                forwarded_headers = set(served[-1]['header_names'])
+                assert not (set(row['spoofed_control_header_names']) & forwarded_headers), row
+                assert not any(name.startswith('x-leanctx-') and name.endswith('-id')
+                               for name in forwarded_headers), row
             else:
                 assert len(served) == before_requests, row
         finally:
@@ -151,7 +133,7 @@ def check_proxy(run, record, root, installed, common, target, digest, binary, en
     try:
         base_config = original_config
         if scope_only:
-            rows = [case('scope-' + label, enhancement='private_runtime',
+            rows = [case('spoofed-control-headers-' + label,
                          fixed_prompt='Summarize this short text. Same body across scoped requests.',
                          lineage_headers={'x-leanctx-request-id': 'spoofed-request',
                                           'x-leanctx-session-id': 'spoofed-session',
@@ -160,39 +142,35 @@ def check_proxy(run, record, root, installed, common, target, digest, binary, en
                                           'x-leanctx-tenant-id': 'spoofed-tenant'})
                     for label in ('a', 'b')]
             assert rows[0]['request_sha256'] == rows[1]['request_sha256']
-            plans = [next(iter(row['evidence'].values()))['decision']['selected'] for row in rows]
-            assert plans[0]['task_id'] != plans[1]['task_id']
-            assert plans[0]['plan_id'] != plans[1]['plan_id']
-            for row, plan in zip(rows, plans):
-                assert plan['task_id'].startswith('mcp-task-')
-                assert plan['executor_agent_id'] == 'OpenAI'
-                assert 'spoofed-' not in json.dumps(row['evidence'])
+            assert all(not row['gateway_receipt_inspected'] for row in rows)
             return
-        case('disabled-reference', expected_model='gpt-4o-mini')
-        config.write_bytes(original_config)
-        run('proxy-runtime-activate', ['activate', *common, *target, '--expected-active', digest], True,
-            prefix=('setup', 'runtime'))
-        base_config = config.read_bytes()
-        case('signed-private', enhancement='private_runtime')
+        case('tier-targets-do-not-rewrite-caller-model')
+        case('explicit-alias-target', expected_model='gpt-4o-mini', alias=True)
+        case('allowlisted-alias-target', expected_model='gpt-4o-mini',
+             policy='model_allowlist = ["gpt-4o-mini"]\n', alias=True)
+        case('alias-target-not-on-allowlist', 403, policy='model_allowlist = ["gpt-4o"]\n', alias=True)
+        case('denylist-checks-routed-target', 403,
+             policy='model_denylist = ["gpt-4o-mini"]\n', alias=True)
+        case('denylist-checks-caller-model', 403,
+             policy='model_denylist = ["gpt-4o"]\n', enabled=False)
+        case('malformed-policy-fails-closed', 403, policy='model_allowlist = [broken', enabled=False)
+        case('unknown-policy-field-fails-closed', 403,
+             policy='model_allowlst = ["gpt-4o"]\n', enabled=False)
+        case('unverified-cost-ceiling-fails-closed', 403,
+             policy='max_cost_micros = 1\n', alias=True)
         valid_config = base_config
         key = tomllib.loads(base_config.decode())['intelligence_runtime']['trust_key_hex'].encode()
         base_config = base_config.replace(key, b'invalid-independent-trust')
-        case('invalid-trust-reference', expected_model='gpt-4o-mini')
+        case('invalid-runtime-trust-preserves-caller-model')
         base_config = valid_config
         original = installed.read_bytes()
         installed.chmod(0o600)
         installed.write_bytes(original + b'corrupt')
         try:
-            case('tamper-fallback', expected_model='gpt-4o-mini', enhancement='runtime_unavailable_reference_fallback')
+            case('tampered-runtime-preserves-caller-model')
         finally:
             installed.write_bytes(original)
             installed.chmod(0o500)
-        case('denied-tier', 403, policy='model_denylist = ["gpt-4o-mini"]\n')
-        case('denied-alias', 403, policy='model_denylist = ["gpt-4o-mini"]\n', alias=True)
-        case('denied-passthrough', 403, policy='model_denylist = ["gpt-4o"]\n', enabled=False)
-        case('malformed-policy', 403, policy='model_allowlist = [broken', enabled=False)
-        case('unknown-policy-field', 403, policy='model_allowlst = ["gpt-4o"]\n', enabled=False)
-        case('unverified-cost', 403, policy='max_cost_micros = 1\n', alias=True)
     finally:
         config.write_bytes(original_config)
         server.shutdown()

@@ -1,0 +1,24 @@
+{
+  "body": {
+    "deadline": 1792800012000,
+    "text": "Is the TLS session cache shared between checkout pods?"
+  },
+  "client_msg_id": "01M5NKA2Z8B000000000000014",
+  "id": "msg_00000000000000b4",
+  "provenance": "workspace",
+  "received_at": 1792800004000,
+  "schema": "leanctx.hive.bus/v2",
+  "sender": {
+    "host_app": "codex",
+    "kind": "worker",
+    "name": "Codex · general",
+    "owner_handle": "yves",
+    "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+  },
+  "seq": 12,
+  "thread_id": "msg_00000000000000b4",
+  "thread_status": "became_task",
+  "to": "~checkout-latency",
+  "type": "question",
+  "worker_id": "wkr_76aa2uwmpczt3cqkhfed"
+}

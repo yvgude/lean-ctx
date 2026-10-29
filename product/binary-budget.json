@@ -1,0 +1,10 @@
+{
+  "_comment": "Ceilings for the stripped release binary, in bytes, per release artifact (focus plan item 15, 2026-10-15). Only measured artifacts carry a ceiling; the others are reported, not gated, until measured. Raise a ceiling only together with a CHANGELOG line that names the cause.",
+  "artifacts": {
+    "x86_64-unknown-linux-gnu": {
+      "max_bytes": 100000000,
+      "measured_bytes": 95300000,
+      "measured": "2026-10-15, default features without grammars-long-tail, release profile"
+    }
+  }
+}

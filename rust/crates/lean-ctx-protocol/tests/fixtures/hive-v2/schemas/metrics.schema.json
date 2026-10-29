@@ -1,0 +1,2748 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://contracts.leanctx.com/hive-v2/schemas/metrics.schema.json",
+  "title": "Engine metrics v2 (Release C, telemetry SPEC)",
+  "description": "Hourly engine metric buckets (POST /v1/metrics/hours, signed by the instance key), the sharing state (GET /v1/metrics/sharing, POST /v1/metrics/sharing/confirm, W104), the Insights responses (W99 workspace, W100 company, GET /v1/metrics/insights for the engine), export (W101), delete (W102; engine DELETE /v1/metrics/hours) and settings (W103). Aggregated counters only: never content, paths, prompts, model output, secret values, command lines or free text; unknown members are refused. Bucket key (instance from the bearer token, hour, vault); a higher rev replaces the hour. Retention: until the account is deleted or the customer deletes it. Gate: policy member sharing.share_engine_metrics (false_wins, server) and the plan default.",
+  "$defs": {
+    "time": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z$"
+    },
+    "hour": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:00:00Z$",
+      "description": "UTC hour start"
+    },
+    "point": {
+      "type": "string",
+      "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:00:00Z$",
+      "description": "start of an hourly, daily (T00:00:00Z) or weekly (Monday T00:00:00Z) point"
+    },
+    "slug": {
+      "type": "string",
+      "pattern": "^[a-z0-9][a-z0-9-]{0,63}$"
+    },
+    "instance_id": {
+      "type": "string",
+      "pattern": "^inst_[0-9a-f]{32}$"
+    },
+    "person_ref": {
+      "type": "string",
+      "pattern": "^p_[0-9a-f]{16}$"
+    },
+    "count": {
+      "type": "integer",
+      "minimum": 0,
+      "maximum": 9007199254740992
+    },
+    "read_mode": {
+      "enum": [
+        "auto",
+        "full",
+        "map",
+        "signatures",
+        "diff",
+        "task",
+        "reference",
+        "aggressive",
+        "entropy",
+        "lines",
+        "other"
+      ]
+    },
+    "level": {
+      "enum": [
+        "org",
+        "workspace",
+        "vault",
+        "engine"
+      ]
+    },
+    "range": {
+      "enum": [
+        "24h",
+        "7d",
+        "30d",
+        "90d",
+        "365d"
+      ]
+    },
+    "resolution": {
+      "enum": [
+        "hour",
+        "day",
+        "week"
+      ]
+    },
+    "metric_name": {
+      "enum": [
+        "tokens.input",
+        "tokens.output",
+        "tokens.saved",
+        "savings.measured",
+        "savings.estimated",
+        "savings.estimated_low",
+        "savings.estimated_high",
+        "savings.evidenced",
+        "savings.overhead",
+        "calls.tool_calls",
+        "calls.cache_reads",
+        "calls.cache_hits",
+        "compression.original",
+        "compression.compressed",
+        "ledger.reduction",
+        "ledger.cache_discount",
+        "ledger.correction",
+        "ledger.edit",
+        "ledger.other",
+        "guards.secrets_redacted",
+        "guards.pii_redacted",
+        "guards.injection_flags",
+        "guards.content_withheld",
+        "guards.paths_blocked",
+        "guards.shell_blocked",
+        "guards.partial_inspections",
+        "policy.blocked",
+        "policy.would_block",
+        "refetch.truncated",
+        "refetch.refetched",
+        "unregulated.calls",
+        "sessions.started",
+        "hosts.tool_calls",
+        "spend.requests",
+        "spend.input_tokens",
+        "spend.output_tokens",
+        "spend.cached_tokens",
+        "spend.usd_micros",
+        "knowledge.facts_current",
+        "engines.active"
+      ]
+    },
+    "trust_label": {
+      "enum": [
+        "measured",
+        "estimated",
+        "evidenced",
+        "derived"
+      ]
+    },
+    "tool": {
+      "enum": [
+        "cli_deps",
+        "cli_diff",
+        "cli_find",
+        "cli_full",
+        "cli_glob",
+        "cli_grep",
+        "cli_ls",
+        "cli_read",
+        "cli_read_dedup",
+        "cli_shell",
+        "cli_signatures",
+        "ctx_agent",
+        "ctx_analyze",
+        "ctx_architecture",
+        "ctx_artifacts",
+        "ctx_benchmark",
+        "ctx_call",
+        "ctx_callgraph",
+        "ctx_checkpoint",
+        "ctx_compose",
+        "ctx_compress",
+        "ctx_compress_memory",
+        "ctx_compute",
+        "ctx_context",
+        "ctx_control",
+        "ctx_cost",
+        "ctx_dedup",
+        "ctx_delta",
+        "ctx_discover",
+        "ctx_discover_tools",
+        "ctx_edit",
+        "ctx_execute",
+        "ctx_expand",
+        "ctx_feedback",
+        "ctx_gain",
+        "ctx_git_read",
+        "ctx_glob",
+        "ctx_graph",
+        "ctx_handoff",
+        "ctx_heatmap",
+        "ctx_impact",
+        "ctx_index",
+        "ctx_intent",
+        "ctx_knowledge",
+        "ctx_load_tools",
+        "ctx_memory",
+        "ctx_metrics",
+        "ctx_multi_read",
+        "ctx_multi_repo",
+        "ctx_outline",
+        "ctx_overview",
+        "ctx_pack",
+        "ctx_package",
+        "ctx_patch",
+        "ctx_prefetch",
+        "ctx_preload",
+        "ctx_proof",
+        "ctx_provider",
+        "ctx_radar",
+        "ctx_read",
+        "ctx_review",
+        "ctx_search",
+        "ctx_semantic_search",
+        "ctx_session",
+        "ctx_shape",
+        "ctx_share",
+        "ctx_shell",
+        "ctx_smart_read",
+        "ctx_symbol",
+        "ctx_tasks",
+        "ctx_tools",
+        "ctx_transcript_compact",
+        "ctx_tree",
+        "ctx_url_read",
+        "ctx_verify",
+        "ctx_work_graph",
+        "ctx_wrapped",
+        "ocla_savings",
+        "shell",
+        "other"
+      ],
+      "description": "closed registry: the engine's KNOWN_TOOLS (lean-ctx-protocol metrics_v2); anything else is `other`"
+    },
+    "rule": {
+      "enum": [
+        "context.allowed_sources",
+        "context.allowed_tools",
+        "context.auto_extraction",
+        "context.denied_tools",
+        "context.extraction_requires_source_anchor",
+        "context.injection_filter",
+        "context.max_context_tokens",
+        "context.max_cost_cents_per_person_per_day",
+        "context.max_cost_cents_per_project_per_month",
+        "context.max_requests_per_minute_per_person",
+        "context.max_source_age_days",
+        "context.max_writes_per_min",
+        "context.ranking_profile",
+        "context.read_mode",
+        "security.allowed_models",
+        "security.block_secrets",
+        "security.blocked_labels",
+        "security.classification",
+        "security.confidential_out_of_sharing",
+        "security.excluded_paths",
+        "security.external_model_excluded_classes",
+        "security.pii",
+        "sharing.allowed_vaults",
+        "sharing.auto_merge_results",
+        "sharing.consent_required_for",
+        "sharing.cross_team_sharing",
+        "sharing.personal_workspace",
+        "sharing.share_engine_metrics",
+        "sharing.task_claim_min_role",
+        "gateway.budget_exceeded",
+        "gateway.cross_project",
+        "gateway.path_jail",
+        "gateway.rate_limited",
+        "gateway.security_violation",
+        "gateway.tool_denied",
+        "gateway.destination",
+        "gateway.egress",
+        "other"
+      ],
+      "description": "closed registry: a policy member path or a gateway rule id; anything else is `other`"
+    },
+    "filter": {
+      "enum": [
+        "auto",
+        "full",
+        "map",
+        "signatures",
+        "diff",
+        "task",
+        "reference",
+        "aggressive",
+        "entropy",
+        "lines",
+        "shell_output",
+        "search_output",
+        "other"
+      ],
+      "description": "closed registry: a read mode or an output class; anything else is `other`"
+    },
+    "host": {
+      "enum": [
+        "amp",
+        "antigravity",
+        "augment",
+        "chatgpt",
+        "claude-code",
+        "claude-desktop",
+        "cline",
+        "codebuddy",
+        "codewhale",
+        "codex",
+        "continue",
+        "copilot-cli",
+        "crush",
+        "cursor",
+        "emacs",
+        "factory",
+        "gemini-cli",
+        "goose",
+        "jetbrains",
+        "kilo-code",
+        "kiro",
+        "lm-studio",
+        "neovim",
+        "oh-my-pi",
+        "opencode",
+        "pi",
+        "qwen-code",
+        "roo-code",
+        "trae",
+        "visual-studio",
+        "vscode-copilot",
+        "warp",
+        "windsurf",
+        "zed",
+        "unknown",
+        "other"
+      ],
+      "description": "closed registry: the engine's KNOWN_HOSTS (MCP client ids); anything else is `other`"
+    },
+    "provider": {
+      "enum": [
+        "anthropic",
+        "openai",
+        "google",
+        "microsoft",
+        "deepseek",
+        "meta",
+        "unknown",
+        "other"
+      ],
+      "description": "closed registry: the engine's KNOWN_PROVIDERS; anything else is `other`"
+    },
+    "model": {
+      "enum": [
+        "claude-fable-5",
+        "claude-opus-4.5",
+        "claude-sonnet-4.5",
+        "claude-haiku-4.5",
+        "claude-sonnet-4-5",
+        "claude-3.5-sonnet",
+        "claude-3-opus",
+        "claude-3-haiku",
+        "gpt-5",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-nano",
+        "gemini-2.5-pro",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "phi-4",
+        "phi-4-mini",
+        "deepseek-v3.2",
+        "deepseek-v3",
+        "llama-3.3-70b",
+        "llama-4-maverick",
+        "fallback-blended",
+        "other"
+      ],
+      "description": "closed registry: the engine's KNOWN_MODELS (price-table keys); anything else (fine-tuned, custom) is `other`"
+    },
+    "name": {
+      "enum": [
+        "amp",
+        "anthropic",
+        "antigravity",
+        "augment",
+        "chatgpt",
+        "claude-3-haiku",
+        "claude-3-opus",
+        "claude-3.5-sonnet",
+        "claude-code",
+        "claude-desktop",
+        "claude-fable-5",
+        "claude-haiku-4.5",
+        "claude-opus-4.5",
+        "claude-sonnet-4-5",
+        "claude-sonnet-4.5",
+        "cline",
+        "codebuddy",
+        "codewhale",
+        "codex",
+        "continue",
+        "copilot-cli",
+        "crush",
+        "cursor",
+        "deepseek",
+        "deepseek-v3",
+        "deepseek-v3.2",
+        "emacs",
+        "factory",
+        "fallback-blended",
+        "gemini-2.5-flash",
+        "gemini-2.5-flash-lite",
+        "gemini-2.5-pro",
+        "gemini-cli",
+        "google",
+        "goose",
+        "gpt-5",
+        "gpt-5.4",
+        "gpt-5.4-mini",
+        "gpt-5.4-nano",
+        "jetbrains",
+        "kilo-code",
+        "kiro",
+        "llama-3.3-70b",
+        "llama-4-maverick",
+        "lm-studio",
+        "meta",
+        "microsoft",
+        "neovim",
+        "oh-my-pi",
+        "openai",
+        "opencode",
+        "other",
+        "phi-4",
+        "phi-4-mini",
+        "pi",
+        "qwen-code",
+        "roo-code",
+        "trae",
+        "unknown",
+        "visual-studio",
+        "vscode-copilot",
+        "warp",
+        "windsurf",
+        "zed"
+      ],
+      "description": "the engine's WireName rule: a known host, provider or model, or `other` (host/provider/model fields use their own narrower registries)"
+    },
+    "program": {
+      "enum": [
+        "git",
+        "cargo",
+        "rustc",
+        "npm",
+        "npx",
+        "pnpm",
+        "yarn",
+        "node",
+        "deno",
+        "bun",
+        "python",
+        "python3",
+        "pip",
+        "uv",
+        "go",
+        "make",
+        "cmake",
+        "docker",
+        "kubectl",
+        "helm",
+        "terraform",
+        "aws",
+        "gcloud",
+        "az",
+        "gh",
+        "curl",
+        "wget",
+        "ssh",
+        "scp",
+        "rsync",
+        "psql",
+        "mysql",
+        "redis-cli",
+        "java",
+        "mvn",
+        "gradle",
+        "dotnet",
+        "ruby",
+        "bundle",
+        "php",
+        "composer",
+        "swift",
+        "xcodebuild",
+        "bash",
+        "sh",
+        "zsh",
+        "other"
+      ],
+      "description": "closed registry of known programs; never a command line"
+    },
+    "host_family": {
+      "enum": [
+        "amp",
+        "claude",
+        "cline",
+        "codex",
+        "continue",
+        "copilot",
+        "cursor",
+        "gemini",
+        "goose",
+        "jetbrains",
+        "kilo",
+        "kiro",
+        "opencode",
+        "pi",
+        "qwen",
+        "roo",
+        "windsurf",
+        "zed",
+        "other"
+      ],
+      "description": "closed registry: the engine's HOST_FAMILIES (agent host families, from the MCP client id); anything else is `other`"
+    },
+    "detector": {
+      "enum": [
+        "aws_access_key",
+        "aws_secret_key",
+        "gcp_key",
+        "azure_key",
+        "github_token",
+        "gitlab_token",
+        "slack_token",
+        "stripe_key",
+        "openai_key",
+        "anthropic_key",
+        "private_key",
+        "jwt",
+        "password_assignment",
+        "connection_string",
+        "generic_api_key",
+        "other"
+      ],
+      "description": "closed registry of secret detectors"
+    },
+    "tool_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "tool",
+        "calls",
+        "saved"
+      ],
+      "properties": {
+        "tool": {
+          "$ref": "#/$defs/tool"
+        },
+        "calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "saved": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        }
+      }
+    },
+    "block_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "rule",
+        "blocked",
+        "would_block"
+      ],
+      "properties": {
+        "rule": {
+          "$ref": "#/$defs/rule"
+        },
+        "blocked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "would_block": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        }
+      }
+    },
+    "refetch_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "filter",
+        "truncated",
+        "refetched"
+      ],
+      "properties": {
+        "filter": {
+          "$ref": "#/$defs/filter"
+        },
+        "truncated": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "refetched": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        }
+      }
+    },
+    "unregulated_row": {
+      "oneOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "name",
+            "calls"
+          ],
+          "properties": {
+            "kind": {
+              "const": "program"
+            },
+            "name": {
+              "$ref": "#/$defs/program"
+            },
+            "calls": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "name",
+            "calls"
+          ],
+          "properties": {
+            "kind": {
+              "const": "host"
+            },
+            "name": {
+              "$ref": "#/$defs/host_family"
+            },
+            "calls": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            }
+          }
+        },
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "name",
+            "calls"
+          ],
+          "properties": {
+            "kind": {
+              "const": "mcp_server"
+            },
+            "name": {
+              "type": "string",
+              "pattern": "^[a-z0-9][a-z0-9_-]{0,47}$",
+              "not": {
+                "pattern": "[A-Za-z0-9]{24,}"
+              },
+              "description": "an MCP server named in the workspace's own signed policy (allowed/denied tool entries) or `other`; never a hash and never a run of 24+ letters or digits (token-like); Hive refuses any other name (x-server)"
+            },
+            "calls": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            }
+          }
+        }
+      ]
+    },
+    "secret_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "K21 after the K2 review (H1): redactions per detector only; no fingerprint or any other value-derived datum leaves the device",
+      "required": [
+        "detector",
+        "count"
+      ],
+      "properties": {
+        "detector": {
+          "$ref": "#/$defs/detector"
+        },
+        "count": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        }
+      }
+    },
+    "host_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "sessions",
+        "tool_calls"
+      ],
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/host"
+        },
+        "sessions": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "tool_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        }
+      }
+    },
+    "spend_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "model",
+        "provider",
+        "requests",
+        "input_tokens",
+        "output_tokens",
+        "cached_tokens",
+        "usd_micros"
+      ],
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/model"
+        },
+        "provider": {
+          "$ref": "#/$defs/provider"
+        },
+        "requests": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "cached_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "usd_micros": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        }
+      }
+    },
+    "slice": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "counters of one engine, one UTC hour, one vault: absolute values for the hour, not deltas",
+      "required": [
+        "vault",
+        "tokens",
+        "savings",
+        "calls",
+        "read_modes",
+        "tools",
+        "compression",
+        "ledger",
+        "guards",
+        "policy_blocks",
+        "refetch",
+        "unregulated",
+        "secret_hits",
+        "sessions",
+        "hosts",
+        "spend"
+      ],
+      "properties": {
+        "vault": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/hex32"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "description": "Hive vault id; null = work outside every vault of the workspace, accepted only by a Personal workspace"
+        },
+        "tokens": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "input = baseline tokens without LeanCTX (estimate), output = tokens delivered (counted), saved = input - output",
+          "required": [
+            "input",
+            "output",
+            "saved"
+          ],
+          "properties": {
+            "input": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "output": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "saved": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            }
+          }
+        },
+        "savings": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "K7/K8 own savings by trust class: measured + estimated = saved (estimated with its low/high range), evidenced = part backed by receipt or provider reconciliation, overhead = tokens LeanCTX itself added (instructions, schemas, hints); net own savings = measured + estimated - overhead (may be negative); the provider cache is ledger.cache_discount, never part of it",
+          "required": [
+            "measured",
+            "estimated",
+            "estimated_low",
+            "estimated_high",
+            "evidenced",
+            "overhead"
+          ],
+          "properties": {
+            "measured": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "estimated": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "estimated_low": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "estimated_high": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "evidenced": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "overhead": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            }
+          }
+        },
+        "calls": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "tool_calls",
+            "cache_reads",
+            "cache_hits"
+          ],
+          "properties": {
+            "tool_calls": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "cache_reads": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "cache_hits": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            }
+          }
+        },
+        "read_modes": {
+          "type": "object",
+          "additionalProperties": false,
+          "propertyNames": {
+            "enum": [
+              "auto",
+              "full",
+              "map",
+              "signatures",
+              "diff",
+              "task",
+              "reference",
+              "aggressive",
+              "entropy",
+              "lines",
+              "other"
+            ]
+          },
+          "patternProperties": {
+            "^[a-z]+$": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            }
+          },
+          "description": "ctx_read calls per read mode (closed set; unknown modes count as other)"
+        },
+        "tools": {
+          "type": "array",
+          "maxItems": 48,
+          "items": {
+            "$ref": "#/$defs/tool_row"
+          },
+          "description": "unique tool; beyond 47 rows the rest merges into `other`"
+        },
+        "compression": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "original",
+            "compressed"
+          ],
+          "properties": {
+            "original": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "compressed": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            }
+          }
+        },
+        "ledger": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "reduction",
+            "cache_discount",
+            "correction",
+            "edit",
+            "other"
+          ],
+          "properties": {
+            "reduction": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "cache_discount": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "correction": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "edit": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "other": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            }
+          }
+        },
+        "guards": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "secrets_redacted",
+            "pii_redacted",
+            "injection_flags",
+            "content_withheld",
+            "paths_blocked",
+            "shell_blocked",
+            "partial_inspections"
+          ],
+          "properties": {
+            "secrets_redacted": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "pii_redacted": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "injection_flags": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "content_withheld": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "paths_blocked": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "shell_blocked": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "partial_inspections": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            }
+          }
+        },
+        "policy_blocks": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/block_row"
+          },
+          "description": "K12: per rule, refusals in force (blocked) and refusals a rule in monitor mode would make (would_block)"
+        },
+        "refetch": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/refetch_row"
+          },
+          "description": "K10: per filter (read mode or compression pattern name), outputs truncated and fetched back in full by the agent"
+        },
+        "unregulated": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/unregulated_row"
+          },
+          "description": "K13: activity no rule covers, by kind and name; program = a name of the engine's known-program table, never a command line; anything else is `other`"
+        },
+        "secret_hits": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/secret_row"
+          },
+          "description": "K21: redactions per secret detector; never the value or anything derived from it"
+        },
+        "sessions": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "started"
+          ],
+          "properties": {
+            "started": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            }
+          }
+        },
+        "hosts": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "$ref": "#/$defs/host_row"
+          }
+        },
+        "spend": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "$ref": "#/$defs/spend_row"
+          },
+          "description": "measured model spend only; list price, never an invoice"
+        },
+        "hive": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "X4 Hive help, hourly (moved from v1 POST /v1/metrics, which is retired): facts delivered and then used, median time to the first Hive context over first_context_sessions sessions (null with none), ledger usage per claimed task",
+          "required": [
+            "knowledge_hits_referenced",
+            "first_context_sessions",
+            "first_context_ms_p50",
+            "task_usage"
+          ],
+          "properties": {
+            "knowledge_hits_referenced": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "first_context_sessions": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "first_context_ms_p50": {
+              "anyOf": [
+                {
+                  "type": "integer",
+                  "minimum": 0,
+                  "maximum": 3600000
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "task_usage": {
+              "type": "array",
+              "maxItems": 64,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "number",
+                  "input_tokens",
+                  "output_tokens",
+                  "list_usd_micros"
+                ],
+                "properties": {
+                  "number": {
+                    "type": "integer",
+                    "minimum": 1,
+                    "maximum": 9007199254740992
+                  },
+                  "input_tokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740992
+                  },
+                  "output_tokens": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740992
+                  },
+                  "list_usd_micros": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740992
+                  }
+                }
+              },
+              "description": "per Hive task number (an integer id, never a title), sorted, unique"
+            }
+          }
+        },
+        "gauges": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "levels at the end of the hour (or at sending time for the current hour)",
+          "required": [],
+          "properties": {
+            "facts_current": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            }
+          }
+        }
+      }
+    },
+    "bucket": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "hour",
+        "rev",
+        "slices"
+      ],
+      "properties": {
+        "hour": {
+          "$ref": "#/$defs/hour"
+        },
+        "rev": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 4294967295,
+          "description": "grows per (engine, hour) each time the engine rebuilds the hour; Hive keeps the highest"
+        },
+        "slices": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 33,
+          "items": {
+            "$ref": "#/$defs/slice"
+          },
+          "description": "unique vault (at most one null)"
+        }
+      }
+    },
+    "hours_request": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "POST /v1/metrics/hours body, at most 512 KiB; the instance is the bearer token's; counts against the transfer quota",
+      "required": [
+        "schema",
+        "engine",
+        "buckets",
+        "key_id",
+        "signature"
+      ],
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.engine-metrics/v2"
+        },
+        "engine": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "engine_version",
+            "os"
+          ],
+          "properties": {
+            "engine_version": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9.+-]{1,32}$"
+            },
+            "os": {
+              "enum": [
+                "macos",
+                "linux",
+                "windows"
+              ]
+            }
+          }
+        },
+        "buckets": {
+          "type": "array",
+          "minItems": 1,
+          "maxItems": 168,
+          "items": {
+            "$ref": "#/$defs/bucket"
+          },
+          "description": "unique hour"
+        },
+        "key_id": {
+          "$ref": "common.schema.json#/$defs/key_id",
+          "description": "the enrolled instance key (must be the bearer token's instance)"
+        },
+        "signature": {
+          "$ref": "common.schema.json#/$defs/signature",
+          "description": "Ed25519 over \"leanctx.hive.engine-metrics.v2\\n\" || canonical_json(body without signature)"
+        }
+      }
+    },
+    "refusal": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "one refused slice (vault set) or bucket (too_old/future/before_sharing: vault null); level names who turned the rule off for policy_denied",
+      "required": [
+        "hour",
+        "vault",
+        "reason",
+        "level"
+      ],
+      "properties": {
+        "hour": {
+          "$ref": "#/$defs/hour"
+        },
+        "vault": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/hex32"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "reason": {
+          "enum": [
+            "too_old",
+            "future",
+            "before_sharing",
+            "policy_denied",
+            "vault_not_allowed",
+            "vault_unknown",
+            "unattributed_not_personal"
+          ]
+        },
+        "level": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/level"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "hours_ack": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "accepted/unchanged count buckets; a bucket with some refused slices is accepted with the rest",
+      "required": [
+        "schema",
+        "accepted",
+        "unchanged",
+        "refused",
+        "sharing"
+      ],
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.engine-metrics-ack/v2"
+        },
+        "accepted": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 168
+        },
+        "unchanged": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 168
+        },
+        "refused": {
+          "type": "array",
+          "maxItems": 5544,
+          "items": {
+            "$ref": "#/$defs/refusal"
+          }
+        },
+        "sharing": {
+          "$ref": "#/$defs/sharing_state"
+        }
+      }
+    },
+    "sharing_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "whether this engine (engine routes) or this workspace (web) shares metrics now; policy = the level that set sharing.share_engine_metrics (null: no level sets it); since = start of the current sharing period: no hour before it is sent or accepted",
+      "required": [
+        "state",
+        "plan_default",
+        "policy",
+        "confirmed_at",
+        "since"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "on",
+            "off",
+            "needs_confirmation"
+          ]
+        },
+        "plan_default": {
+          "enum": [
+            "on",
+            "off"
+          ],
+          "description": "Team and Business: on; Community and Pro: off until the person confirms once"
+        },
+        "policy": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "value",
+                "level"
+              ],
+              "properties": {
+                "value": {
+                  "type": "boolean"
+                },
+                "level": {
+                  "$ref": "#/$defs/level"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "confirmed_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "since": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "person": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "pseudonymised by default; name only when names_visible",
+      "required": [
+        "ref",
+        "label",
+        "name",
+        "you"
+      ],
+      "properties": {
+        "ref": {
+          "type": "string",
+          "pattern": "^p_[0-9a-f]{16}$",
+          "description": "stable pseudonymous id per workspace (HMAC of the user id); filters use it"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120,
+          "description": "the name when names are visible, else a pseudonym (`Person 4F2A`); `You` for the caller"
+        },
+        "name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "you": {
+          "type": "boolean"
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "flat metric names (SPEC §1.2); sums except knowledge.facts_current (gauge) and engines.active (distinct engines, derived)",
+      "required": [
+        "tokens.input",
+        "tokens.output",
+        "tokens.saved",
+        "savings.measured",
+        "savings.estimated",
+        "savings.estimated_low",
+        "savings.estimated_high",
+        "savings.evidenced",
+        "savings.overhead",
+        "calls.tool_calls",
+        "calls.cache_reads",
+        "calls.cache_hits",
+        "compression.original",
+        "compression.compressed",
+        "ledger.reduction",
+        "ledger.cache_discount",
+        "ledger.correction",
+        "ledger.edit",
+        "ledger.other",
+        "guards.secrets_redacted",
+        "guards.pii_redacted",
+        "guards.injection_flags",
+        "guards.content_withheld",
+        "guards.paths_blocked",
+        "guards.shell_blocked",
+        "guards.partial_inspections",
+        "policy.blocked",
+        "policy.would_block",
+        "refetch.truncated",
+        "refetch.refetched",
+        "unregulated.calls",
+        "sessions.started",
+        "hosts.tool_calls",
+        "spend.requests",
+        "spend.input_tokens",
+        "spend.output_tokens",
+        "spend.cached_tokens",
+        "spend.usd_micros",
+        "knowledge.facts_current",
+        "engines.active"
+      ],
+      "properties": {
+        "tokens.input": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "tokens.output": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "tokens.saved": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "savings.measured": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "savings.estimated": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "savings.estimated_low": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "savings.estimated_high": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "savings.evidenced": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "savings.overhead": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "calls.tool_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "calls.cache_reads": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "calls.cache_hits": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "compression.original": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "compression.compressed": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "ledger.reduction": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "ledger.cache_discount": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "ledger.correction": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "ledger.edit": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "ledger.other": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "guards.secrets_redacted": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "guards.pii_redacted": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "guards.injection_flags": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "guards.content_withheld": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "guards.paths_blocked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "guards.shell_blocked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "guards.partial_inspections": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "policy.blocked": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "policy.would_block": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "refetch.truncated": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "refetch.refetched": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "unregulated.calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "sessions.started": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "hosts.tool_calls": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "spend.requests": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "spend.input_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "spend.output_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "spend.cached_tokens": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "spend.usd_micros": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "knowledge.facts_current": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "engines.active": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        }
+      }
+    },
+    "labels": {
+      "type": "object",
+      "additionalProperties": false,
+      "propertyNames": {
+        "$ref": "#/$defs/metric_name"
+      },
+      "patternProperties": {
+        "^[a-z_.]+$": {
+          "$ref": "#/$defs/trust_label"
+        }
+      },
+      "description": "K7 trust label of every metric (SPEC §1.2 table); the same on every response"
+    },
+    "delta": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "abs = current - previous; pct = abs / previous x 100 (one decimal), null when previous is 0",
+      "required": [
+        "abs",
+        "pct"
+      ],
+      "properties": {
+        "abs": {
+          "type": "integer"
+        },
+        "pct": {
+          "anyOf": [
+            {
+              "type": "number"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "row": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "key",
+        "metrics",
+        "previous"
+      ],
+      "properties": {
+        "key": {
+          "oneOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "engine"
+              ],
+              "properties": {
+                "engine": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "label",
+                    "owner",
+                    "yours"
+                  ],
+                  "properties": {
+                    "id": {
+                      "$ref": "#/$defs/instance_id"
+                    },
+                    "label": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120,
+                      "description": "the engine label when names are visible or it is the caller's, else a pseudonym (`Engine 2C9E`)"
+                    },
+                    "owner": {
+                      "$ref": "#/$defs/person"
+                    },
+                    "yours": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "person"
+              ],
+              "properties": {
+                "person": {
+                  "$ref": "#/$defs/person"
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "vault"
+              ],
+              "properties": {
+                "vault": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "id",
+                    "name"
+                  ],
+                  "properties": {
+                    "id": {
+                      "$ref": "common.schema.json#/$defs/hex32"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    }
+                  }
+                }
+              }
+            },
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "workspace"
+              ],
+              "properties": {
+                "workspace": {
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "slug",
+                    "name"
+                  ],
+                  "properties": {
+                    "slug": {
+                      "$ref": "#/$defs/slug"
+                    },
+                    "name": {
+                      "type": "string",
+                      "minLength": 1,
+                      "maxLength": 120
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        "metrics": {
+          "$ref": "#/$defs/metrics"
+        },
+        "previous": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/metrics"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "window": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "from",
+        "to"
+      ],
+      "properties": {
+        "from": {
+          "$ref": "#/$defs/time"
+        },
+        "to": {
+          "$ref": "#/$defs/time"
+        }
+      }
+    },
+    "insights_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "W99, W100 and GET /v1/metrics/insights",
+      "required": [
+        "schema",
+        "scope",
+        "range",
+        "resolution",
+        "group",
+        "filters",
+        "from",
+        "to",
+        "previous",
+        "names_visible",
+        "sharing",
+        "coverage",
+        "labels",
+        "totals",
+        "previous_totals",
+        "deltas",
+        "self",
+        "average",
+        "series",
+        "breakdowns",
+        "rows",
+        "hidden_rows",
+        "budget_usd_micros",
+        "prices"
+      ],
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.insights/v1"
+        },
+        "scope": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "kind",
+            "slug",
+            "name",
+            "plan"
+          ],
+          "properties": {
+            "kind": {
+              "enum": [
+                "workspace",
+                "company"
+              ]
+            },
+            "slug": {
+              "$ref": "#/$defs/slug"
+            },
+            "name": {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            "plan": {
+              "enum": [
+                "community",
+                "personal",
+                "team",
+                "enterprise"
+              ]
+            }
+          }
+        },
+        "range": {
+          "$ref": "#/$defs/range"
+        },
+        "resolution": {
+          "$ref": "#/$defs/resolution"
+        },
+        "group": {
+          "enum": [
+            "total",
+            "engine",
+            "person",
+            "vault",
+            "workspace"
+          ]
+        },
+        "filters": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "the engine route accepts engine=self (the calling instance); totals are exact integer sums of the stored buckets (K24 parity)",
+          "required": [
+            "vault",
+            "engine",
+            "person",
+            "workspace"
+          ],
+          "properties": {
+            "vault": {
+              "anyOf": [
+                {
+                  "$ref": "common.schema.json#/$defs/hex32"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "engine": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/instance_id"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "person": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/person_ref"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "workspace": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/slug"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            }
+          }
+        },
+        "from": {
+          "$ref": "#/$defs/time"
+        },
+        "to": {
+          "$ref": "#/$defs/time"
+        },
+        "previous": {
+          "$ref": "#/$defs/window"
+        },
+        "names_visible": {
+          "type": "boolean"
+        },
+        "sharing": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/sharing_state"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "coverage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "engines_reporting",
+            "engines_connected",
+            "sharing_off_engines",
+            "first_bucket_at",
+            "engines"
+          ],
+          "properties": {
+            "engines_reporting": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "engines_connected": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "sharing_off_engines": {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            "first_bucket_at": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/time"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "engines": {
+              "type": "array",
+              "maxItems": 2000,
+              "items": {
+                "$ref": "#/$defs/coverage_engine"
+              },
+              "description": "every engine of the scope the caller may see (same visibility as rows), with its sharing state"
+            }
+          }
+        },
+        "labels": {
+          "$ref": "#/$defs/labels"
+        },
+        "totals": {
+          "$ref": "#/$defs/metrics"
+        },
+        "previous_totals": {
+          "$ref": "#/$defs/metrics"
+        },
+        "deltas": {
+          "type": "object",
+          "additionalProperties": false,
+          "propertyNames": {
+            "$ref": "#/$defs/metric_name"
+          },
+          "patternProperties": {
+            "^[a-z_.]+$": {
+              "$ref": "#/$defs/delta"
+            }
+          }
+        },
+        "self": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/metrics"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "average": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "persons",
+                "metrics"
+              ],
+              "properties": {
+                "persons": {
+                  "type": "integer",
+                  "minimum": 3
+                },
+                "metrics": {
+                  "$ref": "#/$defs/metrics"
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "series": {
+          "type": "array",
+          "maxItems": 366,
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "at",
+              "metrics"
+            ],
+            "properties": {
+              "at": {
+                "$ref": "#/$defs/point"
+              },
+              "metrics": {
+                "$ref": "#/$defs/metrics"
+              }
+            }
+          },
+          "description": "oldest first, one point per resolution step, empty points included"
+        },
+        "breakdowns": {
+          "type": "object",
+          "additionalProperties": false,
+          "description": "largest first; overflow merged into `other`",
+          "required": [
+            "tools",
+            "read_modes",
+            "policy_blocks",
+            "refetch",
+            "unregulated",
+            "secret_hits",
+            "models",
+            "hosts"
+          ],
+          "properties": {
+            "tools": {
+              "type": "array",
+              "maxItems": 48,
+              "items": {
+                "$ref": "#/$defs/tool_row"
+              }
+            },
+            "read_modes": {
+              "type": "array",
+              "maxItems": 11,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "mode",
+                  "calls"
+                ],
+                "properties": {
+                  "mode": {
+                    "$ref": "#/$defs/read_mode"
+                  },
+                  "calls": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740992
+                  }
+                }
+              }
+            },
+            "policy_blocks": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "$ref": "#/$defs/block_row"
+              }
+            },
+            "refetch": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "$ref": "#/$defs/refetch_row"
+              }
+            },
+            "unregulated": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "$ref": "#/$defs/unregulated_row"
+              }
+            },
+            "secret_hits": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "detector",
+                  "count",
+                  "engines"
+                ],
+                "properties": {
+                  "detector": {
+                    "$ref": "#/$defs/detector"
+                  },
+                  "count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740992
+                  },
+                  "engines": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740992
+                  }
+                }
+              }
+            },
+            "models": {
+              "type": "array",
+              "maxItems": 32,
+              "items": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": [
+                  "model",
+                  "provider",
+                  "requests",
+                  "usd_micros"
+                ],
+                "properties": {
+                  "model": {
+                    "$ref": "#/$defs/model"
+                  },
+                  "provider": {
+                    "$ref": "#/$defs/provider"
+                  },
+                  "requests": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740992
+                  },
+                  "usd_micros": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 9007199254740992
+                  }
+                }
+              }
+            },
+            "hosts": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "$ref": "#/$defs/host_row"
+              }
+            }
+          }
+        },
+        "rows": {
+          "type": "array",
+          "maxItems": 2000,
+          "items": {
+            "$ref": "#/$defs/row"
+          },
+          "description": "empty for group=total; only rows the caller's role may see (SPEC §7)"
+        },
+        "hidden_rows": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "budget_usd_micros": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "prices": {
+          "type": "array",
+          "maxItems": 256,
+          "items": {
+            "$ref": "#/$defs/price_row"
+          },
+          "description": "list prices Hive estimates cost and model conversion with (K23); the same table the engine's Numbers explained shows"
+        }
+      }
+    },
+    "coverage_engine": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "one engine of the scope; workspace is set in company scope; level names who switched sharing off",
+      "required": [
+        "id",
+        "label",
+        "owner",
+        "yours",
+        "workspace",
+        "sharing",
+        "level",
+        "last_bucket_at",
+        "connected"
+      ],
+      "properties": {
+        "id": {
+          "$ref": "#/$defs/instance_id"
+        },
+        "label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "owner": {
+          "$ref": "#/$defs/person"
+        },
+        "yours": {
+          "type": "boolean"
+        },
+        "workspace": {
+          "anyOf": [
+            {
+              "type": "object",
+              "additionalProperties": false,
+              "required": [
+                "slug",
+                "name"
+              ],
+              "properties": {
+                "slug": {
+                  "$ref": "#/$defs/slug"
+                },
+                "name": {
+                  "type": "string",
+                  "minLength": 1,
+                  "maxLength": 120
+                }
+              }
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "sharing": {
+          "enum": [
+            "on",
+            "off",
+            "needs_confirmation"
+          ]
+        },
+        "level": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/level"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "last_bucket_at": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/time"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "connected": {
+          "type": "boolean"
+        }
+      }
+    },
+    "price_row": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "USD micros per 1M tokens, list price",
+      "required": [
+        "model",
+        "provider",
+        "input",
+        "output",
+        "cached"
+      ],
+      "properties": {
+        "model": {
+          "$ref": "#/$defs/model"
+        },
+        "provider": {
+          "$ref": "#/$defs/provider"
+        },
+        "input": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "output": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "cached": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        }
+      }
+    },
+    "field": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "type",
+        "purpose",
+        "source",
+        "label",
+        "retention"
+      ],
+      "properties": {
+        "path": {
+          "type": "string",
+          "pattern": "^[a-z][a-z0-9_]*(\\[\\])?(\\.[a-z][a-z0-9_]*(\\[\\])?)*$"
+        },
+        "type": {
+          "enum": [
+            "count",
+            "integer",
+            "string",
+            "hex32_or_null",
+            "hour",
+            "enum",
+            "name",
+            "rule",
+            "tool",
+            "filter",
+            "key_id",
+            "signature",
+            "object"
+          ]
+        },
+        "purpose": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 300
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        },
+        "label": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/trust_label"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "retention": {
+          "enum": [
+            "hourly_and_daily_until_deleted"
+          ]
+        }
+      }
+    },
+    "metric_doc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "label",
+        "formula",
+        "source"
+      ],
+      "properties": {
+        "name": {
+          "$ref": "#/$defs/metric_name"
+        },
+        "label": {
+          "$ref": "#/$defs/trust_label"
+        },
+        "formula": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        },
+        "source": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 200
+        }
+      }
+    },
+    "field_list": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "K1 fixed field list and K9 formulas: records/metrics_fields.json",
+      "required": [
+        "schema",
+        "fields",
+        "metrics",
+        "never_sent",
+        "sent_only_when",
+        "retention"
+      ],
+      "properties": {
+        "schema": {
+          "const": "leanctx.hive.metrics-fields/v1"
+        },
+        "fields": {
+          "type": "array",
+          "maxItems": 200,
+          "items": {
+            "$ref": "#/$defs/field"
+          },
+          "description": "every member a slice may carry (K1); anything else is refused"
+        },
+        "metrics": {
+          "type": "array",
+          "maxItems": 64,
+          "items": {
+            "$ref": "#/$defs/metric_doc"
+          },
+          "description": "every flat metric with its formula (K9 Numbers explained, shared by the engine and Hive)"
+        },
+        "never_sent": {
+          "type": "array",
+          "maxItems": 32,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "sent_only_when": {
+          "type": "array",
+          "maxItems": 16,
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 120
+          }
+        },
+        "retention": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 400
+        }
+      }
+    },
+    "export_line": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "W101 one JSONL line per (hour, engine, vault); CSV has the same columns with metrics flattened to their names; labels pseudonymised unless names are visible",
+      "required": [
+        "hour",
+        "engine",
+        "engine_label",
+        "person",
+        "person_label",
+        "vault",
+        "vault_name",
+        "metrics"
+      ],
+      "properties": {
+        "hour": {
+          "$ref": "#/$defs/hour"
+        },
+        "engine": {
+          "$ref": "#/$defs/instance_id"
+        },
+        "engine_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "person": {
+          "$ref": "#/$defs/person_ref"
+        },
+        "person_label": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 120
+        },
+        "vault": {
+          "anyOf": [
+            {
+              "$ref": "common.schema.json#/$defs/hex32"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "vault_name": {
+          "anyOf": [
+            {
+              "type": "string",
+              "minLength": 1,
+              "maxLength": 120
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "metrics": {
+          "$ref": "#/$defs/metrics"
+        }
+      }
+    },
+    "delete_response": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "W102 and engine DELETE /v1/metrics/hours (every bucket of the calling instance)",
+      "required": [
+        "deleted_buckets",
+        "engines"
+      ],
+      "properties": {
+        "deleted_buckets": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        },
+        "engines": {
+          "type": "integer",
+          "minimum": 0,
+          "maximum": 9007199254740992
+        }
+      }
+    },
+    "insights_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "description": "W103 response; PUT body has person_names and/or budget_usd_micros (K23 monthly budget line, null = none)",
+      "required": [
+        "person_names",
+        "managed_by",
+        "budget_usd_micros"
+      ],
+      "properties": {
+        "person_names": {
+          "type": "boolean",
+          "description": "false (default): people and engines are pseudonymised in every view and export"
+        },
+        "managed_by": {
+          "enum": [
+            "company",
+            "workspace"
+          ]
+        },
+        "budget_usd_micros": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      }
+    },
+    "insights_settings_put": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [],
+      "properties": {
+        "person_names": {
+          "type": "boolean"
+        },
+        "budget_usd_micros": {
+          "anyOf": [
+            {
+              "type": "integer",
+              "minimum": 0,
+              "maximum": 9007199254740992
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "minProperties": 1
+    }
+  }
+}

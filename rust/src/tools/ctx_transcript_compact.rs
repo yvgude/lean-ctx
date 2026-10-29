@@ -202,7 +202,7 @@ fn build_summary_text(to_summarize: &[Value], focus_topic: Option<&str>) -> Stri
 
     lines.push(String::new());
     lines.push(
-        "Recover detail: ctx_search(), ctx_semantic_search(), ctx_read(), ctx_expand(), ctx_knowledge(), ctx_summary().".to_string(),
+        "Recover detail: ctx_search(), ctx_read(), ctx_expand(), ctx_knowledge().".to_string(),
     );
 
     lines.join("\n")

@@ -42,8 +42,6 @@ pub struct ProxyState {
     /// mounted with the `gateway-server` feature. Startup snapshot, restart
     /// to reload — the same lifecycle as `gateway-keys.toml`.
     pub mcp_servers: Arc<Vec<crate::core::config::ResolvedMcpServer>>,
-    pub(crate) web_app_tracker:
-        Arc<std::sync::Mutex<web_app::conversation_tracker::ConversationTracker>>,
 }
 
 impl ProxyState {
@@ -362,7 +360,15 @@ pub(super) fn effective_auth_token(auth_token: Option<String>) -> String {
 /// so we match it here. Idempotent: a prior install just returns the provider
 /// back as `Err`, which we ignore.
 pub(super) fn install_default_crypto_provider() {
-    let _ = rustls::crypto::aws_lc_rs::default_provider().install_default();
+    crate::core::crypto_provider::install_default();
+}
+
+/// Admission binds one configured destination. A redirect must not replay the
+/// admitted body elsewhere, and ambient proxy settings must not add a route hop.
+pub(super) fn upstream_http_client_builder() -> reqwest::ClientBuilder {
+    reqwest::Client::builder()
+        .redirect(reqwest::redirect::Policy::none())
+        .no_proxy()
 }
 
 pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> anyhow::Result<()> {
@@ -379,7 +385,7 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     // alive stream is never cut off. Both are configurable for edge networks.
     let chatgpt_cookies = chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store();
     let client = chatgpt_cookies::with_chatgpt_cloudflare_cookie_store(
-        reqwest::Client::builder(),
+        upstream_http_client_builder(),
         chatgpt_cookies.clone(),
     )
     .connect_timeout(std::time::Duration::from_secs(connect_timeout_secs()))
@@ -471,9 +477,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         upstreams: upstream_rx,
         chatgpt_cookies,
         mcp_servers: mcp_servers.clone(),
-        web_app_tracker: Arc::new(std::sync::Mutex::new(
-            web_app::conversation_tracker::ConversationTracker::default(),
-        )),
     };
 
     web_app::dashboard::mark_proxy_started();
@@ -541,9 +544,6 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
         .fallback(fallback_router);
 
     let mut app = app
-        .layer(axum::middleware::from_fn(
-            web_app_middleware::detect_web_app,
-        ))
         .layer(axum::middleware::from_fn(move |req, next| {
             let allowed = allowed_hosts.clone();
             host_guard(req, next, allowed)
@@ -674,6 +674,12 @@ pub async fn start_proxy_with_token(port: u16, auth_token: Option<String>) -> an
     }
 
     let listener = tokio::net::TcpListener::bind(addr).await?;
+    // The address the socket is really bound to, not the configured wish:
+    // only a loopback listener serves local callers only. A listener whose
+    // address cannot be read stays unknown, which is not loopback.
+    if let Ok(bound) = listener.local_addr() {
+        store_binding::note_listener(bound.ip());
+    }
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
@@ -720,15 +726,36 @@ async fn health() -> impl IntoResponse {
     (StatusCode::OK, axum::Json(body))
 }
 
+/// `GET /v1/references/{id}`. Handing a stored reference back is a new
+/// delivery: the store applies the current project rules and re-admits the
+/// content under the current gateway policy before it is returned (G5). A
+/// gateway refusal is answered as the typed refusal; every other reason looks
+/// like an absent reference, so the route says nothing about what is stored.
 pub(super) async fn v1_resolve_reference(
     axum::extract::Path(id): axum::extract::Path<String>,
-) -> impl IntoResponse {
-    match crate::server::reference_store::resolve(&id) {
-        Some(content) => (StatusCode::OK, content),
-        None => (
-            StatusCode::NOT_FOUND,
-            "Reference expired or not found".to_string(),
-        ),
+) -> Response {
+    use crate::server::reference_store::ReferenceResolveError;
+    match crate::server::reference_store::resolve_checked(&id) {
+        Ok(admitted) => (StatusCode::OK, admitted).into_response(),
+        Err(ReferenceResolveError::Gateway(reason)) => {
+            admitted::GatewayRefusal::from_reason(&reason).response("OpenAI")
+        }
+        // Not a stored reference. An id of recovery-copy shape resolves
+        // through the Engine's checked recovery read, for the proxy's own
+        // project and under the authority that holds now: each refusal has
+        // its own typed, content-free answer; a copy that does not exist
+        // (and an id of any other shape) looks like an absent reference.
+        Err(_) => match compress::resolve_recovery(&id) {
+            Some(Ok(original)) => (StatusCode::OK, original).into_response(),
+            Some(Err(code)) if code != "recovery.missing" => {
+                admitted::GatewayRefusal::withheld(code).response("OpenAI")
+            }
+            Some(Err(_)) | None => (
+                StatusCode::NOT_FOUND,
+                "Reference expired or not found".to_string(),
+            )
+                .into_response(),
+        },
     }
 }
 

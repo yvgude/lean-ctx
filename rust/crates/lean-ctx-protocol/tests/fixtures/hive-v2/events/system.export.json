@@ -1,0 +1,48 @@
+{
+  "actor": {
+    "kind": "person",
+    "user_id": "2d4f6a8c-0e1b-4c3d-8e5f-7a9b1c3d5e7f"
+  },
+  "batch_id": "b_aaaaaaaaaaaaaaaaaaaaaafqby",
+  "body": {
+    "applies_to": [
+      "services/checkout"
+    ],
+    "body_nonce": "19191919191919191919191919191919",
+    "evidence": "observed",
+    "sensitivity": "internal",
+    "statement": "Checkout spends 40 percent of its time serialising the cart with serde_json."
+  },
+  "body_commit": "973c098086d6b767cd0d77295a14a7ea55bc9bcc5d509a7f0bf317c38d7f9c3d",
+  "causal_base": 13,
+  "cause": {
+    "id": "rv_aaaaaaaaaaaaaaaaaaaaaadxam",
+    "kind": "export"
+  },
+  "event_id": "01M5NKAFNG005000000000W00E",
+  "hlc": {
+    "counter": 0,
+    "node": "4fc7bebc302357bd",
+    "wall_ms": 1792800014000
+  },
+  "key_id": "4fc7bebc302357bd",
+  "node_type": "fact",
+  "op": "node.add",
+  "origin": {
+    "event_digest": "03ecb350b8b7f2ffa69287ff68027f3a6ab9ac609c7e30a168a278cf338c6ab2",
+    "key_id": "a81b399e9440c8ad",
+    "signature": "fd936f03901a6ede61f041bcdd55b6216c457c07fd28e32f8cea98bbe40f6ef171fbd599b059573ad94e7a9dfd24d70420db272a7da3f1319dfe094d8f6c1f0e"
+  },
+  "place": {
+    "id": "3f1c2b6a-8d4e-4a7b-9c10-5e2f6a7b8c01",
+    "kind": "vault"
+  },
+  "provenance": "foreign",
+  "received_at": 1792800014350,
+  "review_state": "confirmed",
+  "reviewed_by": "reviewer",
+  "schema": "leanctx.hive.event/v2",
+  "seq": 14,
+  "signature": "c862b397f4c8a9207222f5893492c2fcf04488bd8e00eab0c86ba55de659408c7e5b57217227b6cd2de2e2691a1fe5e9be7782b62d8e0e0e9f0c9f54a444be0e",
+  "target": "n_uoidj7gv5cqztwfo7cnktpagnh"
+}

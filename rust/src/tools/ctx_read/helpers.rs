@@ -33,6 +33,7 @@ fn is_builtin_instruction_file(path: &str) -> bool {
         filename,
         "skill.md"
             | "agents.md"
+            | "agents.override.md"
             | "claude.md"
             | "claude.local.md"
             | "gemini.md"
@@ -43,7 +44,8 @@ fn is_builtin_instruction_file(path: &str) -> bool {
             | ".windsurfrules"
             | "lean-ctx.md"
             | "lean-ctx.mdc"
-    ) {
+    ) || filename.ends_with(".instructions.md")
+    {
         return true;
     }
 
@@ -57,6 +59,9 @@ fn is_builtin_instruction_file(path: &str) -> bool {
         "/.claude/rules/",
         "/.claude/agents/",
         "/.claude/commands/",
+        "/.clinerules/",
+        "/.windsurf/rules/",
+        "/.github/instructions/",
     ]
     .iter()
     .any(|dir| rooted.contains(dir));
@@ -148,6 +153,9 @@ pub(super) fn find_similar_and_update_semantic_index(path: &str, content: &str) 
         return None;
     }
 
+    if crate::core::protocol::request_project_unresolved() {
+        return None;
+    }
     let project_root = detect_project_root(path);
     let session_id = format!("{}", std::process::id());
     let mut index = crate::core::semantic_cache::SemanticCacheIndex::load_or_create(&project_root);

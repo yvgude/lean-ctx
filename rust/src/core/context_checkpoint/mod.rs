@@ -15,8 +15,8 @@ mod migration;
 mod projections;
 mod session_storage;
 
+pub(crate) use session_storage::CanonicalSession;
 pub(crate) use session_storage::prepare_commit as prepare_session_checkpoint_commit;
-pub(crate) use session_storage::{CanonicalSession, PersonalCheckpointLineageV1};
 
 pub use adapters::*;
 pub use branch_merge::*;

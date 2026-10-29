@@ -6,7 +6,7 @@ const HERMES_BLOCK_END: &str = "<!-- /lean-ctx -->";
 /// Hermes-specific extras after the canonical block. Only publicly advertised
 /// tools (the old text named the deprecated `ctx_semantic_search` and hidden
 /// `ctx_agent` actions); `ctx_search` covers semantic/symbol lookup.
-pub const HERMES_TOOL_EXTRAS: &str = "Also available: ctx_overview, ctx_preload, ctx_dedup, \
+pub const HERMES_TOOL_EXTRAS: &str = "Also available: ctx_compose, ctx_preload, ctx_dedup, \
      ctx_compress, ctx_session, ctx_knowledge, ctx_search(action=semantic|symbol).\n";
 
 fn hermes_marked_block(mode: HookMode) -> String {

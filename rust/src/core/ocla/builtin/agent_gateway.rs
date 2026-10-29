@@ -141,7 +141,7 @@ impl BuiltinAgentGateway {
         registry: &mut AgentRegistry,
         request: &AgentMessageRequest,
     ) -> Result<String, String> {
-        registry.post_message_scoped(
+        registry.post_message_keyed(
             Some(&request.project_root),
             &request.from_agent_id,
             request.to_agent_id.as_deref(),
@@ -150,6 +150,7 @@ impl BuiltinAgentGateway {
             request.privacy.clone(),
             request.priority.clone(),
             request.ttl_hours,
+            request.request_id.as_deref(),
         )
     }
 }
@@ -236,6 +237,7 @@ mod tests {
             privacy: PrivacyLevel::Private,
             priority: MessagePriority::High,
             ttl_hours: Some(2),
+            request_id: None,
         }
     }
 

@@ -135,6 +135,8 @@ fn bm25_ingest_content_chunks_increases_doc_count() {
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
         admission_policy: None,
+        source_root: None,
+        provider_origins: std::sync::Arc::default(),
     };
 
     let chunks = vec![
@@ -179,6 +181,8 @@ fn bm25_search_finds_ingested_provider_chunks() {
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
         admission_policy: None,
+        source_root: None,
+        provider_origins: std::sync::Arc::default(),
     };
 
     index.ingest_content_chunks(vec![
@@ -221,6 +225,8 @@ fn bm25_mixed_code_and_provider_chunks() {
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
         admission_policy: None,
+        source_root: None,
+        provider_origins: std::sync::Arc::default(),
     };
 
     index.ingest_content_chunks(vec![
@@ -270,6 +276,8 @@ fn bm25_external_chunk_count_accurate() {
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
         admission_policy: None,
+        source_root: None,
+        provider_origins: std::sync::Arc::default(),
     };
 
     index.ingest_content_chunks(vec![
@@ -321,6 +329,8 @@ fn bm25_ingest_zero_chunks_is_noop() {
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
         admission_policy: None,
+        source_root: None,
+        provider_origins: std::sync::Arc::default(),
     };
 
     let ingested = index.ingest_content_chunks(Vec::<ContentChunk>::new());
@@ -692,6 +702,8 @@ fn end_to_end_provider_to_bm25_search() {
         dirs: std::collections::HashMap::new(),
         content_truncated: false,
         admission_policy: None,
+        source_root: None,
+        provider_origins: std::sync::Arc::default(),
     };
 
     let ingested = index.ingest_content_chunks(chunks);

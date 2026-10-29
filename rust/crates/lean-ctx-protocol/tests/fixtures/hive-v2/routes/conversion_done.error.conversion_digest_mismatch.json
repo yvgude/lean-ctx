@@ -1,0 +1,8 @@
+{
+  "error": {
+    "code": "invalid_state",
+    "message": "An envelope digest does not match the stored event.",
+    "reason": "conversion_digest_mismatch",
+    "seq": 17
+  }
+}

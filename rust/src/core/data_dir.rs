@@ -215,18 +215,27 @@ pub fn test_env_lock() -> TestEnvGuard {
         }
         depth.set(depth.get() + 1);
     });
-    TestEnvGuard { _private: () }
+    TestEnvGuard {
+        _not_send_sync: std::marker::PhantomData,
+    }
 }
 
-/// Whether the current thread holds [`test_env_lock`].
-pub fn holds_test_env_lock() -> bool {
+/// Whether the current thread holds [`test_env_lock`]. The lock belongs to
+/// the thread that took it: a guard held by another thread does not count.
+#[cfg(test)]
+pub(crate) fn holds_test_env_lock() -> bool {
     TEST_ENV_DEPTH.with(|depth| depth.get() > 0)
 }
 
 /// RAII guard for [`test_env_lock`]. Dropping the outermost one releases the
 /// underlying mutex; nested guards just decrement the depth.
+///
+/// The lock and its depth live in the acquiring thread's own storage, so the
+/// guard must be dropped on that thread: it is neither `Send` nor `Sync`.
+/// Moved to another thread it would decrement that thread's depth and leave
+/// the lock held here.
 pub struct TestEnvGuard {
-    _private: (),
+    _not_send_sync: std::marker::PhantomData<*const ()>,
 }
 
 impl Drop for TestEnvGuard {

@@ -906,7 +906,10 @@ mod knowledge_system {
     #[test]
     fn remember_recall_roundtrip() {
         let policy = MemoryPolicy::default();
-        let mut kb = ProjectKnowledge::new("/tmp/knowledge-test-ultimate");
+        // A real project root: knowledge of a root that does not exist is
+        // withheld (a deleted project revokes what was derived from it).
+        let project = tempfile::tempdir().expect("project root");
+        let mut kb = ProjectKnowledge::new(project.path().to_str().expect("utf-8 root"));
         kb.remember(
             "architecture",
             "auth_jwt",
@@ -945,7 +948,9 @@ mod knowledge_system {
     #[test]
     fn knowledge_multi_category_recall() {
         let policy = MemoryPolicy::default();
-        let mut kb = ProjectKnowledge::new("/tmp/knowledge-multi-cat-ultimate");
+        // A real project root (see `remember_recall_roundtrip`).
+        let project = tempfile::tempdir().expect("project root");
+        let mut kb = ProjectKnowledge::new(project.path().to_str().expect("utf-8 root"));
         kb.remember(
             "security",
             "cors_policy",

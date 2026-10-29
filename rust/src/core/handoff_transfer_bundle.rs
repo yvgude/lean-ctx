@@ -202,6 +202,7 @@ impl VerifiedSignature {
     }
 
     /// Stable machine status for JSON responses.
+    #[cfg(any(test, feature = "http-server"))]
     pub(crate) fn status(&self) -> &'static str {
         if self.trusted {
             "verified"
@@ -526,6 +527,9 @@ mod tests {
                 content: "fn a() {}".to_string(),
             }],
             active_overlays: Vec::new(),
+            merged_from: Vec::new(),
+            request_id: None,
+            request_digest: None,
         }
     }
 

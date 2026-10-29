@@ -25,7 +25,13 @@ pub fn select_mode_with_task(cache: &SessionCache, path: &str, task: Option<&str
         .filter(|e| !crate::core::cache::is_cache_entry_stale(path, e.stored_mtime))
         .map(|e| e.original_tokens)
         .filter(|t| *t > 0)
-        .unwrap_or_else(|| std::fs::read_to_string(path).map_or(0, |c| count_tokens(&c)));
+        // Counted on what the read path itself returns for this request (G01):
+        // inside a request scope that is the admitted text, and a source that
+        // is withheld counts as 0 — the mode is never picked from raw bytes
+        // the read that follows would not deliver.
+        .unwrap_or_else(|| {
+            crate::tools::ctx_read::read_file_lossy(path).map_or(0, |c| count_tokens(&c))
+        });
 
     let ctx = AutoModeContext {
         path,
@@ -84,5 +90,41 @@ mod tests {
         assert!(is_code_ext("py"));
         assert!(is_code_ext("tsx"));
         assert!(!is_code_ext("json"));
+    }
+
+    /// G01: the mode was picked from the token count of the raw file
+    /// (`fs::read_to_string`), also for a source the request may not read.
+    /// Inside a request the count now comes from the read path: a withheld
+    /// source counts as nothing, exactly like a file that does not exist.
+    #[test]
+    fn a_withheld_source_does_not_steer_the_mode() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let policy = crate::core::policy::load(
+            "name = \"ctx-smart-read-test\"\nversion = \"1.0.0\"\ndescription = \"test\"\n\
+             [filters]\nclassification = \"block\"\nblocked_labels = [\"CONFIDENTIAL\"]\n",
+        )
+        .unwrap();
+        let _policy = crate::core::policy::runtime::TestPolicyOverride::set(Some(policy));
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        let body = "pub fn generated_handler(input: &str) -> usize { input.len() }\n".repeat(4000);
+        let blocked = project.path().join("blocked.rs");
+        let open = project.path().join("open.rs");
+        std::fs::write(&blocked, format!("CONFIDENTIAL\n{body}")).unwrap();
+        std::fs::write(&open, &body).unwrap();
+        let missing = project.path().join("missing.rs");
+        let cache = SessionCache::new();
+        let mode = |path: &std::path::Path| {
+            crate::tools::admitted_sources::as_agent_acquisition(&root, || {
+                select_mode(&cache, &path.to_string_lossy())
+            })
+        };
+        assert_eq!(mode(&blocked), mode(&missing));
+        // Control: a readable source of the same size is still measured.
+        let counted = crate::tools::admitted_sources::as_agent_acquisition(&root, || {
+            crate::tools::ctx_read::read_file_lossy(&open.to_string_lossy())
+                .map_or(0, |text| count_tokens(&text))
+        });
+        assert!(counted > 10_000, "{counted}");
     }
 }

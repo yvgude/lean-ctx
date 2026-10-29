@@ -1,8 +1,10 @@
 //! Curated built-in policy packs (GL #489), embedded at compile time.
 //!
-//! These are real, adoptable governance baselines — not samples. Each TOML
-//! lives next to this file so users can copy one as the starting point for an
-//! org-specific pack (`lean-ctx policy show <name> --toml`).
+//! The Community engine ships the deterministic floor only: `baseline`,
+//! `strict-redaction` and `open-source`. Domain packs (health, finance, legal,
+//! company-specific) and compliance-framework packs are commercial and are
+//! delivered by LeanCTX Pro / Enterprise, never from this source tree
+//! (`scripts/check-private-paths.py` enforces the list).
 
 use std::sync::OnceLock;
 
@@ -16,21 +18,38 @@ const BUILTIN_SOURCES: &[(&str, &str)] = &[
         "strict-redaction",
         include_str!("builtin/strict-redaction.toml"),
     ),
-    ("finance-eu", include_str!("builtin/finance-eu.toml")),
-    ("healthcare", include_str!("builtin/healthcare.toml")),
     ("open-source", include_str!("builtin/open-source.toml")),
-    // Framework template packs (GL #424): enforceable slices of EU AI Act /
-    // ISO 42001 / SOC 2 — the residual gaps live in data/compliance/mappings/.
-    (
-        "eu-ai-act-deployer",
-        include_str!("builtin/eu-ai-act-deployer.toml"),
-    ),
-    (
-        "iso42001-aligned",
-        include_str!("builtin/iso42001-aligned.toml"),
-    ),
-    ("soc2-context", include_str!("builtin/soc2-context.toml")),
 ];
+
+/// Packs that earlier releases bundled and that now belong to a paid tier,
+/// with that tier. Naming one yields a pointer instead of "unknown pack", so
+/// an existing `extends = "healthcare"` fails with an actionable message.
+const PAID_PACKS: &[(&str, &str)] = &[
+    ("healthcare", "Pro"),
+    ("finance-eu", "Pro"),
+    ("eu-ai-act-deployer", "Enterprise"),
+    ("iso42001-aligned", "Enterprise"),
+    ("soc2-context", "Enterprise"),
+];
+
+/// The paid tier a former built-in now belongs to, if any.
+pub fn paid_tier(name: &str) -> Option<&'static str> {
+    PAID_PACKS
+        .iter()
+        .find(|(pack, _)| *pack == name)
+        .map(|(_, tier)| *tier)
+}
+
+/// Why `name` is not a built-in: the paid-tier pointer, or the list of built-ins.
+pub fn unknown_pack_hint(name: &str) -> String {
+    match paid_tier(name) {
+        Some(tier) => format!(
+            "'{name}': this pack is part of LeanCTX {tier} and no longer ships with the \
+             Community engine (docs/guides/policy-packs.md)"
+        ),
+        None => format!("no pack named '{name}' (built-ins: {})", names().join(", ")),
+    }
+}
 
 fn registry() -> &'static Vec<PolicyPack> {
     static REGISTRY: OnceLock<Vec<PolicyPack>> = OnceLock::new();
@@ -90,34 +109,13 @@ mod tests {
     }
 
     #[test]
-    fn regulated_packs_deny_web_fetches_and_pin_budgets() {
-        for name in ["finance-eu", "healthcare"] {
-            let resolved =
-                crate::core::policy::resolve(&get(name).expect("exists")).expect("resolves");
-            assert!(
-                resolved.deny_tools.contains(&"ctx_url_read".to_string()),
-                "'{name}' must deny ctx_url_read"
-            );
-            assert_eq!(resolved.max_context_tokens, Some(12_000));
-            assert!(resolved.audit_retention_days.unwrap_or(0) >= 365);
+    fn community_ships_only_the_floor_and_points_paid_packs_to_their_tier() {
+        assert_eq!(names(), vec!["baseline", "strict-redaction", "open-source"]);
+        for (pack, tier) in PAID_PACKS {
+            assert!(get(pack).is_none(), "'{pack}' must not be bundled");
+            assert!(unknown_pack_hint(pack).contains(&format!("LeanCTX {tier}")));
         }
-        // GHSA-jhf9-3pv4-m469: every pack that restricts egress blocks all
-        // egress-capable tools, not just the URL reader.
-        for name in [
-            "finance-eu",
-            "healthcare",
-            "soc2-context",
-            "iso42001-aligned",
-            "eu-ai-act-deployer",
-        ] {
-            let resolved =
-                crate::core::policy::resolve(&get(name).expect("exists")).expect("resolves");
-            assert_eq!(
-                crate::core::policy::coverage::egress_tools_permitted(&resolved),
-                Vec::<&str>::new(),
-                "'{name}' leaves egress open"
-            );
-        }
+        assert!(unknown_pack_hint("no-such-pack").contains("built-ins: baseline"));
     }
 
     #[test]

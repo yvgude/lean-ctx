@@ -10,7 +10,7 @@ use std::fmt;
 /// effective profile falls back to `Power` — which acts as a pure call-gate
 /// ("everything reachable via ctx_call"), not as an advertisement list.
 /// Pinning a profile makes the advertised set explicit and authoritative
-/// (#358), which costs schema tokens: `standard` advertises its 16 full
+/// (#358), which costs schema tokens: `standard` advertises its 15 full
 /// schemas, `power` the whole registry (#575).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ToolProfile {
@@ -45,7 +45,7 @@ impl ToolProfile {
     pub fn description(&self) -> &str {
         match self {
             Self::Minimal => "5 surgical tools — each irreplaceable (recommended)",
-            Self::Standard => "16 balanced tools (adds compose, explore, callgraph, patch, more)",
+            Self::Standard => "15 balanced tools (adds compose, callgraph, graph, patch, more)",
             Self::Power => "All tools exposed",
             Self::Auto => "Starts minimal, escalates based on session complexity",
             Self::Custom(v) => {
@@ -238,7 +238,6 @@ const STANDARD_TOOLS: &[&str] = &[
     "ctx_glob",
     "ctx_tree",
     "ctx_compose",
-    "ctx_explore",
     "ctx_knowledge",
     "ctx_session",
     "ctx_callgraph",
@@ -246,7 +245,6 @@ const STANDARD_TOOLS: &[&str] = &[
     "ctx_delta",
     "ctx_execute",
     "ctx_expand",
-    "ctx_overview",
     "ctx_url_read",
     "ctx_patch",
 ];
@@ -269,7 +267,7 @@ pub fn list_profiles() -> Vec<ProfileInfo> {
         },
         ProfileInfo {
             name: "standard",
-            tool_count: "17",
+            tool_count: "15",
             description: "Balanced set — adds compose, knowledge, session, callgraph, patch, more",
         },
         ProfileInfo {
@@ -399,10 +397,7 @@ mod tests {
         assert!(profile.is_tool_enabled("ctx_tree"));
         // #509: symbol/semantic lookups are now ctx_search actions, not their
         // own minimal tools.
-        assert!(!profile.is_tool_enabled("ctx_symbol"));
-        assert!(!profile.is_tool_enabled("ctx_semantic_search"));
         assert!(!profile.is_tool_enabled("ctx_callgraph"));
-        assert!(!profile.is_tool_enabled("ctx_benchmark"));
     }
 
     #[test]
@@ -410,7 +405,6 @@ mod tests {
         let profile = ToolProfile::Standard;
         assert!(profile.is_tool_enabled("ctx_read"));
         assert!(profile.is_tool_enabled("ctx_compose"));
-        assert!(profile.is_tool_enabled("ctx_explore"));
         assert!(profile.is_tool_enabled("ctx_glob"));
         assert!(profile.is_tool_enabled("ctx_callgraph"));
         assert!(profile.is_tool_enabled("ctx_graph"));
@@ -418,18 +412,12 @@ mod tests {
         assert!(profile.is_tool_enabled("ctx_delta"));
         assert!(profile.is_tool_enabled("ctx_expand"));
         assert!(profile.is_tool_enabled("ctx_execute"));
-        assert!(profile.is_tool_enabled("ctx_overview"));
+        // Focus 2026-10-15: folded into ctx_compose, dropped from Standard.
         // #509: ctx_symbol + ctx_semantic_search folded into ctx_search (action=…),
         // ctx_multi_read into ctx_read (paths=…) — all dropped from Standard.
-        assert!(!profile.is_tool_enabled("ctx_symbol"));
-        assert!(!profile.is_tool_enabled("ctx_semantic_search"));
-        assert!(!profile.is_tool_enabled("ctx_multi_read"));
         assert!(profile.is_tool_enabled("ctx_url_read"));
         // #1008: anchored editing is part of the pinned Standard surface.
         assert!(profile.is_tool_enabled("ctx_patch"));
-        assert!(!profile.is_tool_enabled("ctx_benchmark"));
-        assert!(!profile.is_tool_enabled("ctx_analyze"));
-        assert!(!profile.is_tool_enabled("ctx_refactor"));
         assert!(!profile.is_tool_enabled("ctx_edit"));
     }
 

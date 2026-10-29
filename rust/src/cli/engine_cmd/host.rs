@@ -4,7 +4,7 @@
 
 use std::{
     io::{BufRead, Read},
-    path::Path,
+    path::{Path, PathBuf},
 };
 
 use lean_ctx_protocol::{ExecutionPlanV1, TaskEnvelopeV1};
@@ -26,7 +26,6 @@ use crate::core::{
 const REQUEST_LIMIT: usize = 1024 * 1024;
 
 mod outcome;
-mod personal_sync;
 mod sources;
 
 #[derive(Deserialize)]
@@ -41,10 +40,123 @@ struct HostRequest {
     plan: ExecutionPlanV1,
 }
 
-pub(super) fn run(args: &[String], input: &mut impl Read) -> Result<String, EngineCliError> {
-    if args == ["context-personal-sync", "--host-stdin"] {
-        return personal_sync::run(input);
+/// Operator settings are at most this long, as a document or as the first
+/// line of a framed input.
+const SETTINGS_LIMIT: usize = 16 * 1024;
+
+/// Whether `args` name an operation of this module.
+pub(super) fn is_host_operation(args: &[String]) -> bool {
+    matches!(
+        args.first().map(String::as_str),
+        Some(
+            "context-view-receipt"
+                | "context-sources-receipt"
+                | "context-sources-receipt-v2"
+                | "context-outcome"
+                | "context-outcome-receipt"
+                | "context-checkpoint"
+                | "context-checkpoint-resume"
+                | "context-checkpoint-package"
+                | "context-checkpoint-import"
+                | "context-checkpoint-continue"
+                | "context-checkpoint-sources"
+                | "signer-info"
+        )
+    )
+}
+
+/// Everything a host operation will read from stdin, read ONCE: the project
+/// it works on is learned from these bytes ([`project_root`]) before it
+/// runs, and the same bytes are then handed to [`run`].
+///
+/// Bounded by what any operation accepts — a settings line and one request,
+/// each one byte over its own limit — so an operation's own bound still
+/// sees an oversized input as oversized. Only an invocation that names
+/// stdin (`--host-stdin`, `--key-stdin`) is read; every other one is a
+/// usage error that reads nothing. A read that fails hands on what was
+/// read, and the operation refuses the truncated input with its own code.
+/// The bytes carry operator credentials and are wiped when dropped.
+pub(super) fn read_input(args: &[String], input: &mut impl Read) -> Zeroizing<Vec<u8>> {
+    let mut bytes = Zeroizing::new(Vec::new());
+    if args
+        .iter()
+        .any(|arg| matches!(arg.as_str(), "--host-stdin" | "--key-stdin"))
+    {
+        let request = REQUEST_LIMIT.max(lean_ctx_protocol::MAX_ENGINE_OUTCOME_REQUEST_BYTES);
+        let limit = (SETTINGS_LIMIT + 1 + request + 1) as u64;
+        let _ = input.take(limit).read_to_end(&mut bytes);
     }
+    bytes
+}
+
+/// The root-bearing fields of the operator settings and nothing else of
+/// them: the signing key and every other field are skipped, never loaded.
+#[derive(Deserialize)]
+struct ScopeSettings {
+    #[serde(default)]
+    checkpoint_resume: Option<ScopeRoot>,
+    #[serde(default)]
+    checkpoint_import: Option<ReceivingScope>,
+}
+
+#[derive(Deserialize)]
+struct ScopeRoot {
+    project_root: PathBuf,
+}
+
+#[derive(Deserialize)]
+struct ReceivingScope {
+    receiving: ScopeRoot,
+}
+
+/// The project a host operation works on, learned from what it will execute
+/// — before it runs, so that its request scope and its gateway receipt are
+/// that project's:
+///
+/// - `context-view-receipt`, `context-sources-receipt[-v2]`: the
+///   `--project-root` argument;
+/// - `context-checkpoint-package`: the working directory, which is the
+///   project that operation selects itself;
+/// - `context-checkpoint-resume`: the operator's `checkpoint_resume` target;
+/// - `context-checkpoint-import`, `-continue`, `-sources`: the operator's
+///   `checkpoint_import.receiving` scope;
+/// - `context-checkpoint`, `context-outcome`, `context-outcome-receipt`,
+///   `signer-info`: none — they work on the host ledger, the Engine's
+///   artifact store, or a key, and name no project.
+///
+/// The root is resolved as the operations resolve it
+/// (`std::fs::canonicalize`); they compare the request scope with exactly
+/// that path. A root that is absent, unreadable, not a directory or too
+/// broad to be a project yields `None`: the operation then runs unscoped
+/// and refuses the root itself.
+pub(super) fn project_root(args: &[String], input: &[u8]) -> Option<PathBuf> {
+    let settings = || -> Option<ScopeSettings> {
+        // A framed invocation (`<operation> --host-stdin`) carries the
+        // settings as its first line; every other one as the whole input.
+        let document = if args.len() == 2 {
+            input.split_inclusive(|byte| *byte == b'\n').next()?
+        } else {
+            input
+        };
+        serde_json::from_slice(document).ok()
+    };
+    let configured = match args.first().map(String::as_str)? {
+        "context-view-receipt" | "context-sources-receipt" | "context-sources-receipt-v2" => args
+            .windows(2)
+            .find(|pair| pair[0] == "--project-root")
+            .map(|pair| PathBuf::from(&pair[1]))?,
+        "context-checkpoint-package" => std::env::current_dir().ok()?,
+        "context-checkpoint-resume" => settings()?.checkpoint_resume?.project_root,
+        "context-checkpoint-import"
+        | "context-checkpoint-continue"
+        | "context-checkpoint-sources" => settings()?.checkpoint_import?.receiving.project_root,
+        _ => return None,
+    };
+    let root = std::fs::canonicalize(configured).ok()?;
+    (root.is_dir() && !crate::core::pathutil::is_broad_or_unsafe_root(&root)).then_some(root)
+}
+
+pub(super) fn run(args: &[String], input: &mut impl Read) -> Result<String, EngineCliError> {
     if args == ["context-checkpoint-continue", "--host-stdin"] {
         let mut reader = std::io::BufReader::new(input);
         let authority = read_framed_authority(&mut reader, None)?;

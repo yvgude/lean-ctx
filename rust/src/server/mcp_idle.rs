@@ -11,17 +11,24 @@
 //!
 //! "Idle" means no tool call in flight, no running background shell job, and
 //! no call finished within the window.
+//!
+//! The same poll drains the deferred full semantic checks of stored context
+//! (`context_admission::semantic_deferred`) whenever no call is in flight.
 
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::time::{Duration, Instant};
 
 static IN_FLIGHT: AtomicUsize = AtomicUsize::new(0);
 /// Milliseconds since [`base`] at which the last call started or finished.
 static LAST_ACTIVITY_MS: AtomicU64 = AtomicU64::new(0);
+/// Set once this process serves an MCP session ([`spawn`]).
+static SERVING: AtomicBool = AtomicBool::new(false);
 
 /// How often the idle task samples activity.
 const POLL: Duration = Duration::from_secs(30);
+/// Deferred full semantic checks started per idle poll (AP11, variant c).
+const DEFERRED_CHECKS_PER_POLL: usize = 4;
 
 fn base() -> Instant {
     static BASE: OnceLock<Instant> = OnceLock::new();
@@ -47,6 +54,20 @@ impl Drop for CallActivity {
         LAST_ACTIVITY_MS.store(now_ms(), Ordering::SeqCst);
         IN_FLIGHT.fetch_sub(1, Ordering::SeqCst);
     }
+}
+
+/// How long this MCP server has had no tool call in flight; `None` while a
+/// call runs or when this process serves no MCP session.
+pub(crate) fn idle_for_now() -> Option<Duration> {
+    if !SERVING.load(Ordering::SeqCst) {
+        return None;
+    }
+    idle_for(
+        now_ms(),
+        LAST_ACTIVITY_MS.load(Ordering::SeqCst),
+        IN_FLIGHT.load(Ordering::SeqCst),
+        0,
+    )
 }
 
 /// Idle time, or `None` while a call or a background job keeps the server busy.
@@ -91,6 +112,7 @@ pub(crate) fn spawn(server: crate::tools::LeanCtxServer) {
     );
     let release_after = server.idle_ttl();
     LAST_ACTIVITY_MS.store(now_ms(), Ordering::SeqCst);
+    SERVING.store(true, Ordering::SeqCst);
     tokio::spawn(async move {
         // Activity stamp of the idle stretch that was released, so a stretch
         // is released once and a new call re-arms the release.
@@ -110,7 +132,21 @@ pub(crate) fn spawn(server: crate::tools::LeanCtxServer) {
                 release_after,
                 exit_after,
             ) {
-                IdleStep::Wait => {}
+                IdleStep::Wait => {
+                    // Deferred full semantic checks of stored context run
+                    // only while no tool call is in flight, and stop before
+                    // the next bounded runtime call once one starts.
+                    if idle.is_some()
+                        && crate::core::context_admission::semantic_deferred::pending()
+                    {
+                        tokio::task::spawn_blocking(|| {
+                            crate::core::context_admission::semantic_deferred::drain(
+                                DEFERRED_CHECKS_PER_POLL,
+                                || IN_FLIGHT.load(Ordering::SeqCst) == 0,
+                            )
+                        });
+                    }
+                }
                 IdleStep::Release => {
                     tracing::info!(
                         "[mcp-idle] no tool call for {}s — releasing caches and indexes",
@@ -129,7 +165,7 @@ pub(crate) fn spawn(server: crate::tools::LeanCtxServer) {
                     let _ = tokio::task::spawn_blocking(|| {
                         crate::core::tool_lifecycle::flush_all_at_exit();
                         crate::core::telemetry_features::record_mcp_session_end();
-                        crate::cloud_sync::send_telemetry(
+                        crate::core::telemetry_send::send_telemetry(
                             crate::core::telemetry_aggregate::SendTrigger::Exit,
                         );
                     })

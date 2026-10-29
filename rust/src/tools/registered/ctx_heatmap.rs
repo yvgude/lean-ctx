@@ -31,10 +31,13 @@ impl McpTool for CtxHeatmapTool {
     fn handle(
         &self,
         args: &Map<String, Value>,
-        _ctx: &ToolContext,
+        ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
         let action = get_str(args, "action").unwrap_or_else(|| "status".to_string());
-        let path = get_str(args, "path");
+        let path = get_str(args, "path")
+            .map(|raw| crate::core::workspace_authority::confine(&raw, &ctx.project_root, false))
+            .transpose()
+            .map_err(|error| ErrorData::invalid_params(error, None))?;
         let result = crate::tools::ctx_heatmap::handle(&action, path.as_deref());
         Ok(ToolOutput {
             text: result,

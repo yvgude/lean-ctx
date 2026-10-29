@@ -7,7 +7,7 @@
 | **Created** | 2026-06-07 |
 | **Tracking** | GitLab `[LeanCTX][EPIC 12]` (open core) + `[LeanCTX][EPIC 13]` (commercial plane) |
 | **Supersedes** | — |
-| **Related** | `docs/cognition-interface.md`, `docs/contracts/http-mcp-contract-v1.md`, `docs/contracts/provider-framework-contract-v1.md`, `docs/contracts/context-ir-v1.md`, `docs/contracts/team-server-contract-v1.md`, `docs/reference/09-team-cloud-ci.md`, `docs/reference/16-signed-savings-ledger.md` |
+| **Related** | `docs/cognition-interface.md`, `docs/contracts/http-mcp-contract-v1.md`, `docs/contracts/provider-framework-contract-v1.md`, `docs/contracts/context-ir-v1.md`, `docs/contracts/team-server-contract-v1.md`, `docs/reference/16-signed-savings-ledger.md` |
 
 ---
 
@@ -98,11 +98,11 @@ already half-lives it:
 - `lean-ctx-enterprise` hosts the full account backend (`cloud_server/`) — accounts,
   email verification, auth (ADR-023).
 - Team/Cloud server capabilities moved to `lean-ctx-enterprise` (ADR-023).
-- `lean-ctx upgrade` already models a plan-upgrade flow (`docs/reference/09-team-cloud-ci.md`).
+- `lean-ctx upgrade` already models a plan-upgrade flow (former team/cloud reference, removed in 3.12.0 when the cloud services closed; see `docs/guides/upgrade-3.12.md`).
 - The Ed25519-**signed savings ledger** (`rust/src/core/savings_ledger/`,
   `rust/src/core/agent_identity.rs`) is a ready-made ROI / metering substrate.
 - The docs already state the principle: *"LeanCTX Cloud is an optional, account-based sync
-  … It is not required for any local feature."* (`docs/reference/09-team-cloud-ci.md`).
+  … It is not required for any local feature."* (former team/cloud reference, removed in 3.12.0 when the cloud services closed; see `docs/guides/upgrade-3.12.md`).
 
 The invariant is **enforced by a CI conformance test** (see §6.3 and ticket 12.19) — it is
 proven, not merely promised. That proof is the trust moat for a developer tool.
@@ -383,5 +383,4 @@ prerequisite for any local feature.
 - `docs/contracts/provider-framework-contract-v1.md` — provider framework.
 - `docs/contracts/context-ir-v1.md` — context intermediate representation.
 - `docs/contracts/team-server-contract-v1.md` — team server contract.
-- `docs/reference/09-team-cloud-ci.md` — team/cloud/CI surfaces.
 - `docs/reference/16-signed-savings-ledger.md` — signed savings ledger (ROI/metering substrate).

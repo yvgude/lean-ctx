@@ -138,6 +138,12 @@ pub(crate) fn migrate_legacy_package(path: &Path) -> Result<PackageMigrationResu
     }
 
     let bytes = std::fs::read(path).map_err(|error| format!("read legacy package: {error}"))?;
+    // The migration copies these bytes under a new name. They are copied
+    // only if the package they hold passes the CURRENT admission as it is —
+    // a package that would be refused today never becomes a fresh `.ctxpkg`.
+    // Nothing has been written at this point; the legacy file is not touched
+    // by a refusal (nor by a migration: it is retained for rollback).
+    super::registry::admit_package_bytes(&bytes)?;
     let digest = crate::core::agent_identity::hex_encode(&Sha256::digest(&bytes));
     let output_path = path.with_extension(crate::core::contracts::PACKAGE_EXTENSION);
     let receipt_path = output_path.with_extension("ctxpkg.migration.json");
@@ -302,6 +308,7 @@ mod tests {
             signature: None,
             graph_summary: None,
             marketplace: None,
+            redistributable: None,
         };
         if signed {
             let key = ed25519_dalek::SigningKey::from_bytes(&[11; 32]);

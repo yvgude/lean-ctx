@@ -439,13 +439,13 @@ fn is_outside_project_path_tests() {
     // #1903: anything the jailed `lean-ctx read` refuses stays native. With the
     // `no-jail` feature nothing is refused, so those reads are rewritten.
     let jailed = !cfg!(feature = "no-jail");
-    assert_eq!(
-        is_outside_project_path("../../../../../../../../etc/hosts"),
-        jailed
-    );
+    // Enough `..` to reach `/` from any checkout depth (deep worktrees stay
+    // inside the home jail with only eight).
+    let traversal = format!("{}etc/hosts", "../".repeat(32));
+    assert_eq!(is_outside_project_path(&traversal), jailed);
     assert_eq!(is_outside_project_path("/etc/hosts"), jailed);
     assert_eq!(
-        rewrite_file_read_command("cat ../../../../../../../../etc/hosts", "lean-ctx").is_none(),
+        rewrite_file_read_command(&format!("cat {traversal}"), "lean-ctx").is_none(),
         jailed
     );
 }

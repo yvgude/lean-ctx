@@ -1,0 +1,17 @@
+{
+  "case": "hlc_counter_overflow",
+  "base": "events/node.add.fact.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/hlc/counter",
+      "value": 65536
+    }
+  ],
+  "expect": {
+    "layer": "schema",
+    "code": "invalid_event",
+    "reason": "shape",
+    "field": "/hlc/counter"
+  }
+}

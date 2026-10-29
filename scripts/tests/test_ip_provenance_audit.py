@@ -207,22 +207,6 @@ class WorkflowProvenanceGateTests(unittest.TestCase):
         )
         self.assertIn("ip-provenance-gate", _workflow_needs(jobs["build"]))
 
-    def test_grammar_addon_publication_requires_strict_gate(self) -> None:
-        jobs = _workflow_jobs(
-            (WORKFLOW_ROOT / "grammar-addons.yml").read_text(encoding="utf-8")
-        )
-        gate = jobs["ip-provenance-gate"]
-        self.assertNotRegex(gate, re.compile(r"^    if:", re.MULTILINE))
-        self.assertIn("fetch-depth: 0", gate)
-        self.assertIn(self.CHECKER_TEST, gate)
-        self.assertIn(self.AUDIT_COMMAND, " ".join(gate.split()))
-        self.assertNotIn("continue-on-error: true", gate)
-        self.assertNotRegex(gate, re.compile(r"\|\|\s*true"))
-        self.assertIn("ip-provenance-gate", _workflow_needs(jobs["publish"]))
-        self.assertIn("build", _workflow_needs(jobs["publish"]))
-        self.assertIn("if: always()", gate)
-        self.assertIn(f"actions/upload-artifact@{self.UPLOAD_SHA}", gate)
-
     def test_history_dependent_workflow_jobs_use_full_checkout(self) -> None:
         ci_jobs = _workflow_jobs((WORKFLOW_ROOT / "ci.yml").read_text(encoding="utf-8"))
         self.assertIn("fetch-depth: 0", ci_jobs["ip-provenance"])
@@ -328,13 +312,35 @@ class CheckerUnitTests(unittest.TestCase):
 
     def test_apache_host_rejects_private_implementation_and_draft_reintroduction(self) -> None:
         matrix = _current_matrix()
-        paths = ["rust/src/commercial/feature.py", "LEGAL_REVIEW_REQUIRED.md", "legal/cla/CLA-v2.md", "ee/LICENSE"]
+        paths = ["rust/src/commercial/feature.py", "LEGAL_REVIEW_REQUIRED.md", "legal/cla/CLA-v2.md", "ee/LICENSE",
+                 "ee/README.md", "ee/governance/crates/commercial-core/src/nested/deep.rs",
+                 "ee/governance/docs/vendor/RUNBOOK.md", "ee/intelligence/generated/client.rs",
+                 "ee/intelligence/api.generated.ts"]
         for path in paths:
             _write(self.root, path, "# SPDX-License-Identifier: Apache-2.0\n")
         errors: list[str] = []
         CHECKER.validate_paths(self.root, paths, matrix, matrix["rules"], set(), errors)
         for path in paths:
             self.assertIn(f"{path}: private_service paths are forbidden in public tree", errors)
+        # Every ee/ path has exactly one owning rule that is itself forbidden_public;
+        # ee/LICENSE keeps its licence-text rule. Not an any-error or unknown-rule refusal.
+        owners = {"ee/LICENSE": "enterprise-license", "ee/README.md": "enterprise-private-source",
+                  "ee/governance/crates/commercial-core/src/nested/deep.rs": "enterprise-private-source",
+                  "ee/governance/docs/vendor/RUNBOOK.md": "enterprise-private-source",
+                  "ee/intelligence/generated/client.rs": "enterprise-private-source",
+                  "ee/intelligence/api.generated.ts": "enterprise-private-source"}
+        for path, name in owners.items():
+            with self.subTest(path=path):
+                selected = [rule for rule in matrix["rules"] if CHECKER.matches(path, rule)]
+                self.assertEqual([rule["name"] for rule in selected], [name])
+                self.assertIs(selected[0]["forbidden_public"], True)
+                self.assertFalse([error for error in errors if error.startswith(f"{path}: expected exactly one")])
+        # Outside ee/ the generic vendor/generated rules keep their old classification.
+        public = {"vendor/pkg/lib.js": "vendored-third-party", "rust/vendor/pkg/lib.rs": "vendored-third-party",
+                  "rust/src/generated/schema.rs": "generated-artifacts", "docs/generated/api.md": "generated-artifacts"}
+        for path, name in public.items():
+            with self.subTest(path=path):
+                self.assertEqual([rule["name"] for rule in matrix["rules"] if CHECKER.matches(path, rule)], [name])
 
     def test_required_artifact_inventory_rejects_missing_and_empty_files(self) -> None:
         matrix = {"required_artifacts": {"paths": list(CHECKER.PRESERVED_PATHS)}}
@@ -491,6 +497,172 @@ class CheckerUnitTests(unittest.TestCase):
         finally:
             link.unlink(missing_ok=True)
             outside.unlink(missing_ok=True)
+
+    def _snapshot_fixture(self) -> str:
+        _init_repo(self.root)
+        matrix_raw = (ROOT / "LICENSE_MATRIX.toml").read_bytes()
+        matrix = CHECKER.load_toml(matrix_raw)
+        _write(self.root, "LICENSE_MATRIX.toml", matrix_raw)
+        for spec in matrix["licenses"].values():
+            text_path = spec.get("text") if isinstance(spec, dict) else None
+            if isinstance(text_path, str) and CHECKER.safe_relpath(text_path):
+                _write(self.root, text_path, b"snapshot license fixture\n")
+        _write(self.root, "rust/src/snapshot.rs", b"// SPDX-License-Identifier: Apache-2.0\ncommitted\n")
+        return _commit(self.root, "immutable audit fixture")
+
+    def test_exact_ref_reads_matrix_and_files_from_commit_not_dirty_worktree(self) -> None:
+        if not GIT:
+            self.skipTest("git is required for immutable tree reads")
+        commit = self._snapshot_fixture()
+        source = CHECKER.AuditTree(self.root, commit)
+        matrix, errors = CHECKER.validate_matrix(source, self.root / "LICENSE_MATRIX.toml")
+        self.assertEqual(errors, [])
+        self.assertEqual(matrix["distribution"], "apache-host")
+
+        committed_bytes, problem = CHECKER.target_bytes(source, "rust/src/snapshot.rs", 4096)
+        self.assertIsNone(problem)
+        self.assertEqual(committed_bytes, b"// SPDX-License-Identifier: Apache-2.0\ncommitted\n")
+        path_errors: list[str] = []
+        rows, _, _ = CHECKER.validate_paths(
+            source, ["rust/src/snapshot.rs"], matrix, matrix["rules"], set(), path_errors
+        )
+        self.assertEqual(path_errors, [])
+        self.assertEqual(rows[0]["spdx_header"], "Apache-2.0")
+
+        _write(self.root, "LICENSE_MATRIX.toml", b"schema = [\n")
+        _write(self.root, "rust/src/snapshot.rs", b"cleaner")
+        worktree_matrix, worktree_errors = CHECKER.validate_matrix(self.root, self.root / "LICENSE_MATRIX.toml")
+        self.assertFalse(worktree_matrix)
+        self.assertTrue(worktree_errors)
+        self.assertEqual(CHECKER.target_bytes(source, "rust/src/snapshot.rs", 4096)[0], committed_bytes)
+        self.assertEqual(CHECKER.target_bytes(self.root, "rust/src/snapshot.rs", 4096)[0], b"cleaner")
+
+        _write(self.root, "rust/src/snapshot.rs", b"dirtier current worktree contents")
+        _write(self.root, "worktree-only.py", b"not in selected commit")
+        self.assertEqual(CHECKER.target_bytes(source, "rust/src/snapshot.rs", 4096)[0], committed_bytes)
+        self.assertEqual(CHECKER.target_bytes(source, "worktree-only.py", 4096), (None, "file is missing from audited commit"))
+        self.assertNotIn("worktree-only.py", CHECKER.enumerate_paths(self.root, commit, 1000))
+
+    def test_run_audit_ref_is_reproducible_across_dirty_worktree_changes(self) -> None:
+        if not GIT:
+            self.skipTest("git is required for immutable tree reads")
+        _init_repo(self.root)
+        _write(self.root, "LICENSE_MATRIX.toml", "policy = committed\n")
+        _write(self.root, "tracked.py", "committed bytes\n")
+        commit = _commit(self.root, "run audit snapshot")
+
+        def snapshot_matrix(source, matrix_path):
+            raw, problem = CHECKER.target_bytes(source, "LICENSE_MATRIX.toml", 4096)
+            self.assertIsNone(problem)
+            return {
+                "policy": raw.decode("utf-8"),
+                "limits": {"max_tracked_files": 100},
+                "pre_v4_apache_cut": commit,
+                "rules": [],
+                "distribution": "apache-host",
+            }, []
+
+        def snapshot_paths(source, paths, matrix, rules, cut_paths, errors):
+            raw, problem = CHECKER.target_bytes(source, "tracked.py", 4096)
+            self.assertIsNone(problem)
+            return [{"path": "tracked.py", "policy": matrix["policy"], "bytes": raw.decode("utf-8")}], 0, 0
+
+        with (
+            mock.patch.object(CHECKER, "validate_matrix", side_effect=snapshot_matrix),
+            mock.patch.object(CHECKER, "validate_paths", side_effect=snapshot_paths),
+            mock.patch.object(CHECKER, "validate_artifacts"),
+            mock.patch.object(CHECKER, "validate_notice", return_value=None),
+            mock.patch.object(CHECKER, "validate_notice_generation"),
+            mock.patch.object(CHECKER, "resolve_commit", wraps=CHECKER.resolve_commit) as resolve_ref,
+        ):
+            first = CHECKER.run_audit(self.root, "HEAD", False)
+            _write(self.root, "LICENSE_MATRIX.toml", "policy = cleaner\n")
+            _write(self.root, "tracked.py", "cleaner")
+            second = CHECKER.run_audit(self.root, commit, False)
+            _write(self.root, "LICENSE_MATRIX.toml", "policy = dirtier\n")
+            _write(self.root, "tracked.py", "dirtier uncommitted state")
+            _write(self.root, "extra.py", "untracked")
+            third = CHECKER.run_audit(self.root, commit, False)
+
+        self.assertEqual(first["ref"], commit)
+        self.assertEqual(first, second)
+        self.assertEqual(second, third)
+        self.assertEqual(resolve_ref.call_count, 3)
+        self.assertEqual(first["classification"][0]["policy"], "policy = committed\n")
+        self.assertEqual(first["classification"][0]["bytes"], "committed bytes\n")
+
+    def test_wrong_checkout_ref_fails_without_worktree_fallback(self) -> None:
+        if not GIT:
+            self.skipTest("git is required for immutable tree reads")
+        commit = self._snapshot_fixture()
+        other = self.root / "other-repo"
+        other.mkdir()
+        _init_repo(other)
+        _write(other, "LICENSE_MATRIX.toml", "apparently usable local matrix\n")
+        _write(other, "rust/src/snapshot.rs", "apparently usable local source\n")
+        _commit(other, "unrelated repository")
+        with mock.patch.object(CHECKER, "validate_matrix") as validate_matrix:
+            report = CHECKER.run_audit(other, commit, False)
+        self.assertEqual(report["result"], "FAIL")
+        self.assertEqual(report["errors"], ["git ref cannot be resolved to a commit in this repository"])
+        validate_matrix.assert_not_called()
+
+    def test_ref_notice_validation_never_executes_snapshot_script(self) -> None:
+        if not GIT:
+            self.skipTest("git is required for immutable tree reads")
+        _init_repo(self.root)
+        _write(self.root, "scripts/generate-third-party-notices.py", "raise SystemExit(91)\n")
+        commit = _commit(self.root, "untrusted snapshot generator")
+        source = CHECKER.AuditTree(self.root, commit)
+        self.assertEqual(source._entry("scripts/generate-third-party-notices.py")[1], "blob")
+        self.assertEqual(source.read_bytes("scripts/generate-third-party-notices.py", 4096), b"raise SystemExit(91)\n")
+        warnings: list[str] = []
+        errors: list[str] = []
+        with mock.patch.object(CHECKER.subprocess, "run", wraps=subprocess.run) as run:
+            CHECKER.validate_notice_generation(source, errors, warnings)
+        self.assertEqual(errors, [])
+        self.assertEqual(warnings, [
+            "THIRD_PARTY_NOTICES: generator execution skipped for immutable ref audit"
+        ])
+        self.assertTrue(run.call_args_list)
+        self.assertTrue(all(call.args[0][0] == "git" for call in run.call_args_list))
+        strict_errors: list[str] = []
+        CHECKER.validate_notice_generation(source, strict_errors, [], strict=True)
+        self.assertEqual(strict_errors, [
+            "THIRD_PARTY_NOTICES: generator execution skipped for immutable ref audit"
+        ])
+
+    def test_ref_tree_rejects_symlinks_and_preflights_file_size(self) -> None:
+        if not GIT:
+            self.skipTest("git is required for immutable tree reads")
+        _init_repo(self.root)
+        outside = self.root.parent / f"{self.root.name}-outside.txt"
+        outside.write_text("outside", encoding="utf-8")
+        link = self.root / "linked.txt"
+        try:
+            link.symlink_to(outside)
+        except OSError as exc:
+            self.skipTest(f"symlink test requires a supported filesystem: {exc}")
+        _write(self.root, "large.txt", b"0123456789")
+        commit = _commit(self.root, "symlink and size fixture")
+        self.assertEqual(
+            CHECKER.target_bytes(CHECKER.AuditTree(self.root, commit), "linked.txt", 4096)[1],
+            "tracked symlink is not allowed",
+        )
+
+        with mock.patch.object(CHECKER, "git", wraps=CHECKER.git) as git_call:
+            source = CHECKER.AuditTree(self.root, commit)
+            with self.assertRaisesRegex(CHECKER.AuditError, "file exceeds configured size limit"):
+                source.read_bytes("large.txt", 4)
+        calls = [call.args for call in git_call.call_args_list]
+        self.assertTrue(any(args[1] == "ls-tree" and "-l" in args for args in calls))
+        self.assertFalse(any(args[1:3] == ("cat-file", "blob") for args in calls))
+        self.assertEqual(
+            CHECKER.target_bytes(CHECKER.AuditTree(self.root, commit), "large.txt", 4)[1],
+            "file exceeds configured size limit",
+        )
+        link.unlink()
+        outside.unlink()
 
     def test_bounded_file_git_input_and_malformed_toml_json(self) -> None:
         bounded = _write(self.root, "small.bin", b"1234")

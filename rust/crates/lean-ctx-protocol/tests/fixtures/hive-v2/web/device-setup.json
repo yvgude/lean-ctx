@@ -1,0 +1,52 @@
+{
+  "route": "W97",
+  "method": "GET",
+  "path": "/api/v1/device/setup?user_code=WDJB-MJHT",
+  "request": null,
+  "response": {
+    "status": 200,
+    "body": {
+      "machine": {
+        "label": "ada-mbp",
+        "connected": true
+      },
+      "project": {
+        "name": "journey-demo",
+        "remote": "git@github.com:acme/journey-demo.git",
+        "vault_name": "journey-demo"
+      },
+      "shares": [
+        "bus",
+        "knowledge"
+      ],
+      "share": true,
+      "setup": null,
+      "questions": [
+        {
+          "consent_id": "cns_abcdefgh234567ab",
+          "kind": "link_vault",
+          "subject": {
+            "bound_repo": "journey-demo",
+            "link_digest": "2123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+            "remote_seen": "git@github.com:acme/journey-demo.git",
+            "target_vault": null,
+            "vault": "acme/payments"
+          },
+          "created_at": "2026-10-26T09:00:05Z"
+        }
+      ],
+      "answer_until": "2026-10-26T09:10:00Z"
+    }
+  },
+  "errors": [
+    {
+      "status": 404,
+      "body": {
+        "error": {
+          "code": "not_found",
+          "message": "No approval of this code in this browser."
+        }
+      }
+    }
+  ]
+}

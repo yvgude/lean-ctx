@@ -33,6 +33,9 @@ pub enum JailState {
     /// turned it off (`path_jail = false`, the `no-jail` build, or
     /// `allow_paths = ["/"]`).
     Disabled(String),
+    /// Bound to a launcher Workspace (#2120): only its roots, regardless of
+    /// every widening knob and off-switch. Carries the binding for display.
+    Workspace(String),
 }
 
 impl JailState {
@@ -101,8 +104,8 @@ impl SecurityPosture {
         if containment_off {
             return PostureLevel::Open;
         }
-        let strict =
-            matches!(self.jail, JailState::Enforced) && self.shell == ShellSecurity::Enforce;
+        let strict = matches!(self.jail, JailState::Enforced | JailState::Workspace(_))
+            && self.shell == ShellSecurity::Enforce;
         if strict {
             PostureLevel::Strict
         } else {
@@ -122,6 +125,18 @@ impl SecurityPosture {
 /// here as the single classifier so CLI and doctor agree on what "disabled"
 /// means.
 fn detect_jail(cfg: &Config) -> JailState {
+    match crate::core::workspace_authority::load_current() {
+        crate::core::workspace_authority::Authority::Legacy => {}
+        crate::core::workspace_authority::Authority::Workspace(snapshot) => {
+            return JailState::Workspace(format!(
+                "Workspace {} rev {}",
+                snapshot.id, snapshot.revision
+            ));
+        }
+        crate::core::workspace_authority::Authority::Unavailable(_) => {
+            return JailState::Workspace("Workspace unavailable — every path denied".to_string());
+        }
+    }
     if cfg!(feature = "no-jail") {
         return JailState::Disabled("no-jail build feature".to_string());
     }

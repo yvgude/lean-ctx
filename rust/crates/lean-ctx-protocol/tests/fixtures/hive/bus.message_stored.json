@@ -1,0 +1,13 @@
+{
+  "client_msg_id": "01JBMSGQ1",
+  "expires_at": "2026-11-19T12:00:00Z",
+  "gid": "msg_01jbq1",
+  "network": {
+    "channel": "org:org_acme/vault:3f6c1e9a0b7d4c2e8f5a1b6c9d0e7f42/general",
+    "kind": "org"
+  },
+  "seq": 42,
+  "server_time": "2026-10-20T12:00:00Z",
+  "t": "message.stored",
+  "thread_id": "msg_01jbq1"
+}

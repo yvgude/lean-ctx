@@ -88,7 +88,7 @@ fn parallel_build_must_stop(what: &str, files_done: usize) -> bool {
 /// merge only has to update the shared maps.
 fn prepare_chunk(mut chunk: CodeChunk) -> PreparedChunk {
     let enriched = enrich_for_bm25(&chunk);
-    let tokens = tokenize(&enriched);
+    let tokens = super::chunking::index_terms(&enriched);
     let lowered: Vec<String> = tokens.iter().map(|t| t.to_lowercase()).collect();
     let token_count = tokens.len();
 

@@ -15,7 +15,7 @@ that memory back in losslessly.
 | | built-in `ContextCompressor` | hermes-lcm | **hermes-lean-ctx** |
 |---|---|---|---|
 | Strategy | summarize + drop | DAG + SQLite + FTS | BM25 + graph + knowledge + semantic + LITM placement |
-| Recall after compaction | lossy | lossless (grep/expand) | lossless (`ctx_search`/`ctx_semantic_search`/`ctx_expand`/`ctx_read`/`ctx_knowledge`) |
+| Recall after compaction | lossy | lossless (grep/expand) | lossless (`ctx_search`/`ctx_expand`/`ctx_read`/`ctx_knowledge`) |
 | Cross-session memory | no | per-project | yes (sessions, knowledge, handoff ledgers) |
 | Determinism / prompt-cache | n/a | partial | deterministic, byte-stable output (prompt-cache friendly) |
 | Engine location | in-agent | in-plugin | in the lean-ctx daemon (Single Source of Truth) |
@@ -41,11 +41,11 @@ Hermes agent loop
 - **`tool_call`/`tool_result` pairs are never split** across the compaction
   boundary — this invariant is enforced and tested on both the daemon and plugin
   side.
-- **Native tools** (`get_tool_schemas`/`handle_tool_call`) expose `ctx_search`,
-  `ctx_semantic_search`, `ctx_read`, `ctx_expand`, `ctx_knowledge`, `ctx_summary`
-  so the agent can page detail back in on demand.
+- **Native tools** (`get_tool_schemas`/`handle_tool_call`) expose `ctx_search`
+  (regex, `action=semantic` for concept search), `ctx_read`, `ctx_expand` and
+  `ctx_knowledge` so the agent can page detail back in on demand.
 - **Cross-session persistence** via session lifecycle hooks: `resume` on start,
-  `ctx_summary` + a deterministic `ctx_handoff` ledger on end.
+  `ctx_session action=save` + a deterministic `ctx_handoff` ledger on end.
 
 ## Requirements
 

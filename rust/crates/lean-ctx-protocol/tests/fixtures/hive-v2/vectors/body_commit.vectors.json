@@ -1,0 +1,73 @@
+{
+  "cases": [
+    {
+      "body": {
+        "body_nonce": "00000000000000000000000000000000",
+        "reason": "Superseded."
+      },
+      "body_commit": "a05260d25934e6d4619f97f77ea6d00cfbd5e5a08532b666eaa0d363d6ba5d0d",
+      "canonical": "{\"body_nonce\":\"00000000000000000000000000000000\",\"reason\":\"Superseded.\"}",
+      "id_salt_hex": "0000000000000000000000000000000000000000000000000000000000000000"
+    },
+    {
+      "body": {
+        "body_nonce": "01010101010101010101010101010101",
+        "evidence": "observed",
+        "statement": "Payment retries back off exponentially with full jitter, capped at 64 seconds."
+      },
+      "body_commit": "d032aa85259c6c769044febb3055fe91c3586169e835b76215129ecaeebcddd5",
+      "canonical": "{\"body_nonce\":\"01010101010101010101010101010101\",\"evidence\":\"observed\",\"statement\":\"Payment retries back off exponentially with full jitter, capped at 64 seconds.\"}",
+      "id_salt_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    {
+      "body": {
+        "body_nonce": "02020202020202020202020202020202",
+        "evidence": "observed",
+        "statement": "Payment retries back off exponentially with full jitter, capped at 64 seconds."
+      },
+      "body_commit": "48199e75e9c40628f57bf3a54e6725867bbed67ffd075e8b2668cb0f93839767",
+      "canonical": "{\"body_nonce\":\"02020202020202020202020202020202\",\"evidence\":\"observed\",\"statement\":\"Payment retries back off exponentially with full jitter, capped at 64 seconds.\"}",
+      "id_salt_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    },
+    {
+      "body": {
+        "body_nonce": "09090909090909090909090909090909",
+        "field": "applies_to",
+        "value": [
+          "ü",
+          "a\"b"
+        ]
+      },
+      "body_commit": "0f388c4c33aec3b4e21db1bc4e265939cc56629e8a9b2372df2c94181582f039",
+      "canonical": "{\"body_nonce\":\"09090909090909090909090909090909\",\"field\":\"applies_to\",\"value\":[\"ü\",\"a\\\"b\"]}",
+      "id_salt_hex": "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f"
+    }
+  ],
+  "rule": "body_commit = hex(blake3_keyed(id_salt, canonical_json(body))); every op body except purge carries body_nonce (16 bytes, hex); sealed places use the engine-held pk_id over the plaintext body",
+  "rule_sealed_tombstone": "purge tombstones (actor.kind = server) in SEALED places: body_commit = hex(blake3(canonical_json(body))), unkeyed (the server holds no id_salt there); non-sealed tombstones stay keyed with id_salt; engines verify sealed tombstones with this rule",
+  "sealed_tombstone": [
+    {
+      "body": {
+        "bus_cascade": [
+          {
+            "bus": {
+              "id": "card-vault",
+              "kind": "v",
+              "ws": "acme"
+            },
+            "seq": 10
+          }
+        ],
+        "cascade": [],
+        "purge_id": "prg_aaaaaaaaaaaaaaaaaaaaaaezym",
+        "reason": "leaked_secret",
+        "targets": [
+          "01M5NKA2Z8006000000000W001"
+        ]
+      },
+      "body_commit": "3c1943efbd31110bae09ff4e2c1db50dc51535a93bf20bc6d04d8ec872e33d66",
+      "canonical": "{\"bus_cascade\":[{\"bus\":{\"id\":\"card-vault\",\"kind\":\"v\",\"ws\":\"acme\"},\"seq\":10}],\"cascade\":[],\"purge_id\":\"prg_aaaaaaaaaaaaaaaaaaaaaaezym\",\"reason\":\"leaked_secret\",\"targets\":[\"01M5NKA2Z8006000000000W001\"]}",
+      "fixture": "events/purge.sealed.json"
+    }
+  ]
+}

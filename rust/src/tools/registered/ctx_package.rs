@@ -58,7 +58,12 @@ impl McpTool for CtxPackageTool {
         ctx: &ToolContext,
     ) -> Result<ToolOutput, ErrorData> {
         let action = get_str(args, "action").unwrap_or_else(|| "save".to_string());
-        let path = get_str(args, "path");
+        let path = get_str(args, "path")
+            .map(|raw| {
+                crate::core::workspace_authority::confine(&raw, &ctx.project_root, action == "save")
+            })
+            .transpose()
+            .map_err(|error| ErrorData::invalid_params(error, None))?;
         let description = get_str(args, "description");
 
         let guard = ctx

@@ -1,0 +1,18 @@
+{
+  "case": "restore_live_node",
+  "description": "restore of a live node",
+  "base": "events/restore.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/seq",
+      "value": 19
+    }
+  ],
+  "resign_with": "instance_a",
+  "expect": {
+    "layer": "target_state",
+    "code": "invalid_event",
+    "reason": "target_state"
+  }
+}

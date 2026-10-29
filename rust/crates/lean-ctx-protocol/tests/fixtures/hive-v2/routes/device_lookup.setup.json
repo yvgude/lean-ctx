@@ -1,0 +1,11 @@
+{
+  "project": {
+    "name": "journey-demo",
+    "remote": "git@github.com:acme/journey-demo.git",
+    "vault_name": "journey-demo"
+  },
+  "shares": [
+    "bus",
+    "knowledge"
+  ]
+}

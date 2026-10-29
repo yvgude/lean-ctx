@@ -31,8 +31,8 @@ FinOps dashboards.
 **Top-level modules:** `proxy`, `proxy_autostart`, `proxy_setup` (OSS);
 `gateway_server` (enterprise).
 
-**Feature flags:** `engine-integration` (enterprise) — links OSS proxy to
-enterprise gateway admin + usage store.
+The self-hosted enterprise gateway process (`gateway_server`) and its
+`engine-integration` feature were retired on 2026-10-16; the proxy runs alone.
 
 ### Cloud (lean-ctx-enterprise)
 
@@ -62,18 +62,6 @@ CLI, IPC, config, diagnostics — consumed by all three pillars.
    OSS `proxy` and enterprise `gateway_server` / `cloud_server` / `cloud_sync`.
 5. **`http_server` (OSS)** — Engine HTTP MCP transport only. Team/Cloud
    HTTP surfaces live in `lean-ctx-enterprise`.
-
-## Cross-pillar coupling (documented exceptions)
-
-### proxy ↔ gateway_server (lean-ctx-enterprise)
-
-The self-hosted org gateway runs as a single enterprise process:
-- `gateway_server::serve` (enterprise) calls `proxy::start_proxy` (OSS)
-- `proxy` mounts enterprise `gateway_server::user_api` and
-  `gateway_server::mcp::proxy` routes via `engine-integration`
-
-This cross-repo dependency is intentional (ADR-023) and documented in both
-repositories.
 
 ## Local-Free Invariant
 

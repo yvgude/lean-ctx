@@ -1,0 +1,7 @@
+{
+  "confirmations": 1,
+  "number": 12,
+  "required": 1,
+  "schema": "leanctx.hive.proposal-confirm-ack/v1",
+  "state": "ready"
+}

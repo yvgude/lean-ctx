@@ -4,13 +4,25 @@ use std::time::UNIX_EPOCH;
 
 use serde::{Deserialize, Serialize};
 mod build;
+mod carry_over;
 mod chunking;
 pub use chunking::*;
 mod coordinator;
 pub(crate) mod coverage;
+mod evict;
+pub(crate) mod external_origin;
 pub use coordinator::{SearchIndexBuildProgress, get_or_start_build};
+mod provider_origin;
+pub use provider_origin::ChunkOrigins;
+mod served_ranking;
+pub(crate) mod source_gate;
 #[cfg(test)]
 mod tests;
+mod walk;
+pub use walk::is_code_file;
+use walk::{admitted_scoped_source_paths, list_code_files};
+#[cfg(test)]
+use walk::{list_code_files_with, list_scoped_code_files};
 
 pub(crate) const MAX_BM25_FILES: usize = 5000;
 const CHUNK_COUNT_WARNING: usize = 50_000;
@@ -154,6 +166,17 @@ pub struct BM25Index {
     /// truncated bodies (see `ensure_embeddings`).
     #[serde(default, skip)]
     pub content_truncated: bool,
+    /// Project root of an index its store loaded or handed out (`load`,
+    /// `load_or_build*`): `search` then serves a chunk only while the admitted
+    /// reader still returns its text (`source_gate`, G04). Resident only;
+    /// `None` for a view built in the running call.
+    #[serde(default, skip)]
+    pub source_root: Option<PathBuf>,
+    /// Where each chunk without a readable text file came from, by chunk
+    /// `file_path`. A reference, never a grant (`provider_origin`). Kept
+    /// beside the index file, not in it: the postcard layout is unchanged.
+    #[serde(default, skip)]
+    pub provider_origins: std::sync::Arc<ChunkOrigins>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -214,6 +237,65 @@ impl Default for BM25Index {
     }
 }
 
+/// Sources admitted, then chunked in parallel, per batch of a fresh view.
+const ADMITTED_BATCH: usize = 256;
+/// Chunks one file may add to a fresh view.
+const FILE_CHUNK_COUNT: usize = 4096;
+
+type ChunkedFile = (Vec<CodeChunk>, usize, usize);
+
+/// The chunks of one admitted file in line order, charged against the given
+/// budgets, as a fresh view adds them.
+fn extract_sorted_chunks(
+    path: &str,
+    content: &str,
+    chunk_bytes: &mut usize,
+    chunk_count: &mut usize,
+) -> Result<Vec<CodeChunk>, String> {
+    let mut chunks = extract_admitted_chunks(path, content, chunk_bytes, chunk_count)?;
+    chunks.sort_by(|a, b| {
+        (a.start_line, a.end_line, &a.symbol_name).cmp(&(b.start_line, b.end_line, &b.symbol_name))
+    });
+    Ok(chunks)
+}
+
+/// Each admitted file's own byte allowance and its chunks under that
+/// allowance and the per-file chunk count, computed in parallel: chunking is
+/// a pure function of path and text. `None` for a file the memory guard
+/// stopped before it was chunked; the fold then chunks it itself.
+fn parallel_admitted_chunks(
+    admitted: &[(&str, String)],
+) -> Vec<(usize, Option<Result<ChunkedFile, String>>)> {
+    use rayon::prelude::*;
+    admitted
+        .par_iter()
+        .map(|(path, content)| {
+            let full_allowance =
+                (64 * 1024 * 1024usize).min(content.len().saturating_mul(5).max(64 * 1024));
+            if crate::core::memory_guard::abort_requested() {
+                return (full_allowance, None);
+            }
+            let mut bytes = full_allowance;
+            let mut count = FILE_CHUNK_COUNT;
+            let result = extract_sorted_chunks(path, content, &mut bytes, &mut count)
+                .map(|chunks| (chunks, full_allowance - bytes, FILE_CHUNK_COUNT - count));
+            (full_allowance, Some(result))
+        })
+        .collect()
+}
+
+/// One load–change–save of a persisted index at a time in this process. Two
+/// writers (two provider ingests a moment apart, an eviction after a search)
+/// otherwise each saved their own copy through the one temp file and could
+/// leave an index no reader loads, or drop the other's chunks.
+static PERSIST: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+pub(crate) fn persist_lock() -> std::sync::MutexGuard<'static, ()> {
+    PERSIST
+        .lock()
+        .unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 impl BM25Index {
     pub fn new() -> Self {
         Self {
@@ -226,6 +308,8 @@ impl BM25Index {
             dirs: HashMap::new(),
             admission_policy: None,
             content_truncated: false,
+            source_root: None,
+            provider_origins: std::sync::Arc::default(),
         }
     }
 
@@ -261,6 +345,7 @@ impl BM25Index {
         self.doc_freqs = HashMap::new();
         self.files = HashMap::new();
         self.dirs = HashMap::new();
+        self.provider_origins = std::sync::Arc::default();
         self.avg_doc_len = 0.0;
         self.doc_count = 0;
         tracing::info!(
@@ -330,10 +415,21 @@ impl BM25Index {
     /// tokenization. Never consult metadata-only caches or persist this view.
     ///
     /// `subdir` / `in_scope` narrow the walk itself (see
-    /// [`list_scoped_code_files`]), so the file budget counts only sources the
+    /// [`walk::list_scoped_code_files`]), so the file budget counts only sources the
     /// caller asked about.
     pub(crate) fn build_from_admitted_sources(
         root: &Path,
+        subdir: Option<&str>,
+        in_scope: &dyn Fn(&str) -> bool,
+        admit: impl FnMut(&str) -> Result<Option<String>, String>,
+    ) -> Result<Self, String> {
+        let rules = CorpusRules::load();
+        Self::build_scoped_from_admitted_sources(root, &rules, subdir, in_scope, admit)
+    }
+
+    fn build_scoped_from_admitted_sources(
+        root: &Path,
+        rules: &CorpusRules,
         subdir: Option<&str>,
         in_scope: &dyn Fn(&str) -> bool,
         mut admit: impl FnMut(&str) -> Result<Option<String>, String>,
@@ -344,55 +440,85 @@ impl BM25Index {
         let mut index = Self::new();
         let mut chunk_bytes = 64 * 1024 * 1024;
         let mut chunk_count = 100_000;
-        let sources = list_scoped_code_files(root, &CorpusRules::load(), true, subdir, in_scope)?;
-        for path in sources {
-            if crate::core::memory_guard::abort_requested()
-                || crate::core::memory_guard::is_under_pressure()
-            {
-                return Err("source search withheld under memory pressure".into());
-            }
-            let Some(content) = admit(&path)? else {
-                continue;
-            };
-            if looks_minified(&content) {
-                continue;
-            }
-            let allowance = chunk_bytes.min(content.len().saturating_mul(5).max(64 * 1024));
-            if !crate::core::index_admission::admit(
-                crate::core::index_admission::BuildKind::Bm25,
-                allowance as u64,
-            )
-            .parallel_ok
-            {
-                return Err("source search exceeds available memory headroom".into());
-            }
-            let mut file_chunk_bytes = allowance;
-            let count_allowance = chunk_count.min(4096);
-            let mut file_chunk_count = count_allowance;
-            let mut chunks = extract_admitted_chunks(
-                &path,
-                &content,
-                &mut file_chunk_bytes,
-                &mut file_chunk_count,
-            )?;
-            chunk_bytes -= allowance - file_chunk_bytes;
-            chunk_count -= count_allowance - file_chunk_count;
-            chunks.sort_by(|a, b| {
-                (a.start_line, a.end_line, &a.symbol_name).cmp(&(
-                    b.start_line,
-                    b.end_line,
-                    &b.symbol_name,
-                ))
-            });
-            for chunk in chunks {
-                if crate::core::memory_guard::abort_requested()
-                    || crate::core::memory_guard::is_under_pressure()
-                {
+        // Memory a finished search dropped is not pressure: return it first.
+        if crate::core::memory_guard::is_under_pressure() {
+            crate::core::memory_guard::reclaim_now();
+        }
+        let paths = admitted_scoped_source_paths(root, rules, subdir, in_scope)?;
+        // Admission runs here, on the request's thread and in its scopes, one
+        // source after the other. Only the chunking of what was admitted — a
+        // pure function of path and text — runs in parallel, per batch; the
+        // fold below applies the budgets in path order exactly as a
+        // sequential build would, so the view is the same either way.
+        for batch in paths.chunks(ADMITTED_BATCH) {
+            let mut admitted = Vec::with_capacity(batch.len());
+            for path in batch {
+                // The working set of one search is freed when it ends: it is
+                // refused at the hard level, not at the soft target the
+                // guardian keeps idle memory under (the build reclaimed above).
+                if crate::core::memory_guard::abort_requested() {
                     return Err("source search withheld under memory pressure".into());
                 }
-                // This ephemeral view already charges the full admitted chunk
-                // against its byte budget; retain it for query-centred previews.
-                index.add_chunk_with_content_limit(chunk, None);
+                let Some(content) = admit(path)? else {
+                    continue;
+                };
+                if looks_minified(&content) {
+                    continue;
+                }
+                admitted.push((path.as_str(), content));
+            }
+            let chunked = parallel_admitted_chunks(&admitted);
+            for ((path, content), (full_allowance, unbounded)) in admitted.iter().zip(chunked) {
+                let allowance = chunk_bytes.min(full_allowance);
+                if !crate::core::index_admission::admit(
+                    crate::core::index_admission::BuildKind::Bm25,
+                    allowance as u64,
+                )
+                .parallel_ok
+                {
+                    return Err("source search exceeds available memory headroom".into());
+                }
+                let count_allowance = chunk_count.min(FILE_CHUNK_COUNT);
+                // The parallel result holds only where this file's budgets
+                // were not capped by what earlier files used; otherwise it is
+                // recomputed here under the capped budgets.
+                let (chunks, used_bytes, used_count) = match unbounded {
+                    Some(Ok(result))
+                        if allowance == full_allowance && count_allowance == FILE_CHUNK_COUNT =>
+                    {
+                        result
+                    }
+                    Some(Err(error))
+                        if allowance == full_allowance && count_allowance == FILE_CHUNK_COUNT =>
+                    {
+                        return Err(error);
+                    }
+                    _ => {
+                        let mut file_chunk_bytes = allowance;
+                        let mut file_chunk_count = count_allowance;
+                        let chunks = extract_sorted_chunks(
+                            path,
+                            content,
+                            &mut file_chunk_bytes,
+                            &mut file_chunk_count,
+                        )?;
+                        (
+                            chunks,
+                            allowance - file_chunk_bytes,
+                            count_allowance - file_chunk_count,
+                        )
+                    }
+                };
+                chunk_bytes -= used_bytes;
+                chunk_count -= used_count;
+                for chunk in chunks {
+                    if crate::core::memory_guard::abort_requested() {
+                        return Err("source search withheld under memory pressure".into());
+                    }
+                    // This ephemeral view already charges the full admitted chunk
+                    // against its byte budget; retain it for query-centred previews.
+                    index.add_chunk_with_content_limit(chunk, None);
+                }
             }
         }
         index.finalize();
@@ -569,9 +695,11 @@ impl BM25Index {
                     Err(_) => continue,
                 }
             } else {
-                match crate::core::text_decode::read_text(&abs) {
-                    Ok(c) => c,
-                    Err(_) => continue,
+                // An incompletely decoded source (replaced or dropped bytes)
+                // is never a complete source: it does not enter the index.
+                match crate::core::text_decode::read_text_checked(&abs) {
+                    Ok(decoded) if decoded.complete() => decoded.text,
+                    _ => continue,
                 }
             };
             if content.is_empty() {
@@ -611,7 +739,7 @@ impl BM25Index {
         let idx = self.chunks.len();
 
         let enriched = enrich_for_bm25(&chunk);
-        let tokens = tokenize(&enriched);
+        let tokens = chunking::index_terms(&enriched);
         for token in &tokens {
             let lower = token.to_lowercase();
             let postings = self.inverted.entry(lower.clone()).or_default();
@@ -650,9 +778,21 @@ impl BM25Index {
         self.avg_doc_len = total_len as f64 / self.doc_count as f64;
     }
 
-    pub fn search(&self, query: &str, top_k: usize) -> Vec<SearchResult> {
+    /// Every chunk matching `query`, best first. With `excluded` (one flag
+    /// per chunk) the flagged chunks do not enter the ranking at all: they
+    /// get no score and are left out of the corpus statistics (document
+    /// count, average length, document frequencies), so the result is the
+    /// ranking of an index that never held them (`served_ranking`).
+    fn rank(&self, query: &str, excluded: Option<&[bool]>) -> Vec<SearchResult> {
         let query_tokens = tokenize(query);
         if query_tokens.is_empty() || self.doc_count == 0 {
+            return Vec::new();
+        }
+        let (doc_count, avg_doc_len) = match excluded {
+            None => (self.doc_count, self.avg_doc_len),
+            Some(excluded) => self.served_corpus(excluded),
+        };
+        if doc_count == 0 {
             return Vec::new();
         }
 
@@ -664,25 +804,33 @@ impl BM25Index {
 
         for token in &query_tokens {
             let lower = token.to_lowercase();
-            let df = *self.doc_freqs.get(&lower).unwrap_or(&0) as f64;
+            let Some(postings) = self.inverted.get(&lower) else {
+                continue;
+            };
+            let df = match excluded {
+                None => *self.doc_freqs.get(&lower).unwrap_or(&0),
+                Some(excluded) => served_ranking::doc_freq(postings, excluded),
+            };
+            let df = df as f64;
             if df == 0.0 {
                 continue;
             }
 
-            let idf = ((self.doc_count as f64 - df + 0.5) / (df + 0.5) + 1.0).ln();
+            let idf = ((doc_count as f64 - df + 0.5) / (df + 0.5) + 1.0).ln();
 
-            if let Some(postings) = self.inverted.get(&lower) {
-                for &(idx, weight) in postings {
-                    let doc_len = self.chunks[idx].token_count as f64;
-                    let norm_len = doc_len / self.avg_doc_len.max(1.0);
-                    let bm25 = idf * (weight * (BM25_K1 + 1.0))
-                        / (weight + BM25_K1 * (1.0 - BM25_B + BM25_B * norm_len));
-
-                    if scores[idx] == 0.0 {
-                        touched.push(idx);
-                    }
-                    scores[idx] += bm25;
+            for &(idx, weight) in postings {
+                if excluded.is_some_and(|excluded| served_ranking::is_excluded(excluded, idx)) {
+                    continue;
                 }
+                let doc_len = self.chunks[idx].token_count as f64;
+                let norm_len = doc_len / avg_doc_len.max(1.0);
+                let bm25 = idf * (weight * (BM25_K1 + 1.0))
+                    / (weight + BM25_K1 * (1.0 - BM25_B + BM25_B * norm_len));
+
+                if scores[idx] == 0.0 {
+                    touched.push(idx);
+                }
+                scores[idx] += bm25;
             }
         }
 
@@ -718,7 +866,6 @@ impl BM25Index {
                 .then_with(|| a.start_line.cmp(&b.start_line))
                 .then_with(|| a.end_line.cmp(&b.end_line))
         });
-        results.truncate(top_k);
         results
     }
 
@@ -778,6 +925,7 @@ impl BM25Index {
             dir.join("project_root.txt"),
             root.to_string_lossy().as_bytes(),
         );
+        self.save_provider_origins(&dir);
 
         Ok(SaveOutcome::Persisted { compressed_bytes })
     }
@@ -787,8 +935,19 @@ impl BM25Index {
     /// index built from raw sources) are never served or reused (G5, E3).
     pub fn load(root: &Path) -> Option<Self> {
         let admission = crate::core::context_admission::stores::StoreAdmission::current();
+        // The directory name is a hash of this checkout; the root recorded at
+        // save is the authority. An index recorded for another root is
+        // rebuilt instead of served. (A restored hosted bundle carries no
+        // record; its directory is already this checkout's partition.)
+        let canonical = |path: &Path| crate::core::pathutil::safe_canonicalize_bounded(path, 2000);
+        if std::fs::read_to_string(index_dir(root).join("project_root.txt"))
+            .is_ok_and(|stored| canonical(Path::new(stored.trim())) != canonical(root))
+        {
+            return None;
+        }
         Self::load_persisted(root)
             .filter(|idx| idx.admission_policy.as_deref() == Some(admission.digest()))
+            .map(|idx| idx.rooted_at(root).with_provider_origins(&index_dir(root)))
     }
 
     fn load_persisted(root: &Path) -> Option<Self> {
@@ -901,14 +1060,15 @@ impl BM25Index {
                 Self::build_from_directory(root)
             } else {
                 Self::rebuild_incremental(root, &idx)
-            };
+            }
+            .carrying_external_from(&idx);
             let _ = rebuilt.save(root);
-            return rebuilt;
+            return rebuilt.rooted_at(root);
         }
 
         let built = Self::build_from_directory(root);
         let _ = built.save(root);
-        built
+        built.rooted_at(root)
     }
 
     pub fn index_file_path(root: &Path) -> PathBuf {
@@ -947,46 +1107,6 @@ impl BM25Index {
             }
         }
         None
-    }
-
-    /// Ingest external `ContentChunk`s into the BM25 index.
-    /// Converts each chunk to a `CodeChunk` (backward-compatible) and
-    /// rebuilds the inverted index. Returns the number of chunks ingested.
-    pub fn ingest_content_chunks(
-        &mut self,
-        chunks: impl IntoIterator<Item = super::content_chunk::ContentChunk>,
-    ) -> usize {
-        let mut count = 0usize;
-        for cc in chunks {
-            self.add_chunk(cc.into());
-            count += 1;
-        }
-        if count > 0 {
-            self.finalize();
-        }
-        count
-    }
-
-    /// Number of chunks originating from external providers.
-    pub fn external_chunk_count(&self) -> usize {
-        self.chunks
-            .iter()
-            .filter(|c| c.file_path.contains("://"))
-            .count()
-    }
-
-    /// Remove every chunk whose `file_path` starts with `prefix` (e.g.
-    /// `health://`) and rebuild the inverted index. Lets a recomputed source
-    /// (like the code-health fabric) evict its prior pass so stale entries never
-    /// linger in search. Returns the number of chunks removed.
-    pub fn remove_chunks_with_prefix(&mut self, prefix: &str) -> usize {
-        let before = self.chunks.len();
-        self.chunks.retain(|c| !c.file_path.starts_with(prefix));
-        let removed = before - self.chunks.len();
-        if removed > 0 {
-            self.finalize();
-        }
-        removed
     }
 }
 
@@ -1293,156 +1413,4 @@ impl CorpusRules {
     fn filter_excludes(&self, rel: &str) -> bool {
         self.filter.is_excluded(&rel.replace('\\', "/"))
     }
-}
-
-fn list_code_files(root: &Path) -> Vec<String> {
-    list_code_files_with(root, &CorpusRules::load())
-}
-
-fn list_code_files_with(root: &Path, rules: &CorpusRules) -> Vec<String> {
-    list_code_files_bounded(root, rules, false).unwrap_or_default()
-}
-
-/// The persisted-index corpus walk. `bounded` fails closed on a walk or file
-/// budget instead of silently truncating.
-///
-/// Secret-like paths (`.env`, `*.pem`, `.ssh/`, …) never enter the persisted
-/// index, whatever the role or gateway setting (GHSA-rxv5-4c3x-g4q6 A): the
-/// index is shared across roles, served by dense/hybrid search and uploaded
-/// by `sync index push`. Store admission already refuses them while the
-/// context gateway is on; this keeps the guarantee when it is switched off.
-/// Role-aware fresh views use [`list_scoped_code_files`] and admit per read.
-fn list_code_files_bounded(
-    root: &Path,
-    rules: &CorpusRules,
-    bounded: bool,
-) -> Result<Vec<String>, String> {
-    list_scoped_code_files(root, rules, bounded, None, &|rel| {
-        crate::core::io_boundary::is_secret_like(Path::new(rel)).is_none()
-    })
-}
-
-/// [`list_code_files_bounded`] restricted to the caller's scope: the walk
-/// starts at `subdir` (project-relative) and only paths `in_scope` accepts
-/// count against the walk and file budgets. A search scoped to a 20-file
-/// directory used to walk the whole project and fail its 5000-file budget
-/// before the scope was ever applied. Returned paths stay project-relative.
-fn list_scoped_code_files(
-    root: &Path,
-    rules: &CorpusRules,
-    bounded: bool,
-    subdir: Option<&str>,
-    in_scope: &dyn Fn(&str) -> bool,
-) -> Result<Vec<String>, String> {
-    let walk_root = subdir
-        .map(|s| root.join(s))
-        .filter(|p| p.is_dir())
-        .unwrap_or_else(|| root.to_path_buf());
-    let walker = rules
-        .walker(&walk_root)
-        .filter_entry(crate::core::walk_filter::keep_entry)
-        .build();
-
-    let mut files: Vec<String> = Vec::new();
-    let mut filtered_out = 0usize;
-    for (visited, entry) in walker.enumerate() {
-        if bounded && visited >= 100_000 {
-            return Err("source discovery budget exceeded; narrow the search scope".into());
-        }
-        let entry = match entry {
-            Ok(entry) => entry,
-            Err(_) if bounded => return Err("source discovery could not be completed".into()),
-            Err(_) => continue,
-        };
-        let path = entry.path();
-        if !path.is_file() {
-            continue;
-        }
-        if !crate::core::ingestion::is_ingestible(path) {
-            continue;
-        }
-        let rel = path
-            .strip_prefix(root)
-            .unwrap_or(path)
-            .to_string_lossy()
-            .to_string();
-        if rel.is_empty() {
-            continue;
-        }
-        if rules.ignore_pattern_for(&rel).is_some() {
-            continue;
-        }
-        if rules.filter_excludes(&rel) {
-            filtered_out += 1;
-            continue;
-        }
-        if !in_scope(&rel) {
-            continue;
-        }
-        if files.len() >= rules.max_files {
-            if bounded {
-                return Err(format!(
-                    "source file budget exceeded ({} files); narrow the search with path=, \
-                     languages= or a glob, or raise bm25_max_files (0 = unlimited)",
-                    rules.max_files
-                ));
-            }
-            tracing::warn!(
-                "[bm25] file cap reached ({}), skipping remaining files in {}. \
-                 Set bm25_max_files in config (0 = unlimited) to index more.",
-                rules.max_files,
-                root.display()
-            );
-            break;
-        }
-        files.push(rel);
-    }
-
-    if filtered_out > 0 {
-        tracing::info!(
-            "[bm25] index filter excluded {filtered_out} files ({})",
-            rules.filter.summary().unwrap_or_default()
-        );
-    }
-
-    files.sort();
-    files.dedup();
-    Ok(files)
-}
-
-pub fn is_code_file(path: &Path) -> bool {
-    let ext = path
-        .extension()
-        .and_then(|e| e.to_str())
-        .unwrap_or("")
-        .to_lowercase();
-    matches!(
-        ext.as_str(),
-        "rs" | "ts"
-            | "tsx"
-            | "js"
-            | "jsx"
-            | "py"
-            | "go"
-            | "java"
-            | "c"
-            | "cc"
-            | "cpp"
-            | "h"
-            | "hpp"
-            | "rb"
-            | "cs"
-            | "kt"
-            | "swift"
-            | "php"
-            | "scala"
-            | "sql"
-            | "ex"
-            | "exs"
-            | "zig"
-            | "lua"
-            | "dart"
-            | "vue"
-            | "svelte"
-    )
 }

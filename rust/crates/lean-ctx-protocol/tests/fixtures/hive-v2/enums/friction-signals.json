@@ -1,0 +1,39 @@
+{
+  "name": "friction-signals",
+  "values": [
+    {
+      "value": "claim_refused",
+      "friction": true
+    },
+    {
+      "value": "claim_expired",
+      "friction": true
+    },
+    {
+      "value": "registration_renewed",
+      "friction": true
+    },
+    {
+      "value": "wait_timeout",
+      "friction": true
+    },
+    {
+      "value": "merge_conflict",
+      "friction": true
+    },
+    {
+      "value": "gate_reruns",
+      "friction": true
+    },
+    {
+      "value": "agent_seconds",
+      "friction": false
+    },
+    {
+      "value": "idle_seconds",
+      "friction": false
+    }
+  ],
+  "rule": "friction_per_agent_hour = (sum of the friction signals) × 3600 ÷ agent_seconds, rounded to 2 decimals; null when agent_seconds = 0",
+  "statement_template": "Collaboration friction from {from} to {to}: {n} signals in {h} agent-hours."
+}

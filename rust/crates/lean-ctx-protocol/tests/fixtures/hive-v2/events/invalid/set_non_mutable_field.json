@@ -1,0 +1,24 @@
+{
+  "case": "set_non_mutable_field",
+  "description": "status is not a mutable field of a fact",
+  "base": "events/field.set.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/body/field",
+      "value": "status"
+    },
+    {
+      "op": "replace",
+      "path": "/body/value",
+      "value": "active"
+    }
+  ],
+  "recommit": true,
+  "resign_with": "instance_a",
+  "expect": {
+    "layer": "target_state",
+    "code": "invalid_event",
+    "reason": "target_state"
+  }
+}

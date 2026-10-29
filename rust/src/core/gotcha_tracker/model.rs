@@ -3,6 +3,7 @@ use serde::{Deserialize, Serialize};
 use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
+/// Default for `[memory.gotcha] max_gotchas_per_project`.
 pub(super) const MAX_GOTCHAS: usize = 100;
 pub(super) const MAX_SESSION_LOGS: usize = 20;
 pub(super) const MAX_PENDING: usize = 10;
@@ -288,6 +289,15 @@ pub struct GotchaStore {
     // keeps older gotchas.json files (written without the field) loadable.
     #[serde(default)]
     pub pending_errors: Vec<PendingError>,
+
+    /// Most gotchas kept (`[memory.gotcha] max_gotchas_per_project`), set when
+    /// the store is loaded; not persisted.
+    #[serde(skip, default = "default_capacity")]
+    pub(super) capacity: usize,
+}
+
+fn default_capacity() -> usize {
+    MAX_GOTCHAS
 }
 
 impl GotchaStore {
@@ -299,6 +309,7 @@ impl GotchaStore {
             stats: GotchaStats::default(),
             updated_at: Utc::now(),
             pending_errors: Vec::new(),
+            capacity: MAX_GOTCHAS,
         }
     }
 

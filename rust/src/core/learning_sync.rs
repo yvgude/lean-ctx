@@ -1,34 +1,29 @@
 //! Team sync of the learning layers (#550, VIS-4).
 //!
-//! Bundles the machine-local learning state — learned compression-threshold
-//! deltas (#538) and LITM placement calibration (#539) — into a versioned,
-//! secret-free JSON document that can be shared across a team and merged
-//! back without double counting:
-//!
-//! - threshold deltas merge as **sample-weighted averages** (clamped),
-//! - LITM counters merge as **element-wise maxima**,
-//!
-//! both of which make `export → import` on the same machine a no-op
-//! (idempotent roundtrip). The bundle deliberately contains only file
+//! Bundles the machine-local LITM placement calibration (#539) into a
+//! versioned, secret-free JSON document that can be shared across a team and
+//! merged back without double counting: counters merge as **element-wise
+//! maxima**, so `export → import` on the same machine is a no-op. Learned
+//! compression-threshold deltas (#538) were retired on 2026-10-16 (they no
+//! longer changed any read); a v1 bundle that still carries them imports, and
+//! its `thresholds` part is ignored. The bundle deliberately contains only file
 //! extensions, client-profile names and aggregate numbers — no paths, no
 //! file contents, no identifiers.
 
 use serde::{Deserialize, Serialize};
 
-pub(crate) const BUNDLE_SCHEMA_VERSION: u32 = 1;
+pub(crate) const BUNDLE_SCHEMA_VERSION: u32 = 2;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub(crate) struct LearningBundle {
     pub schema_version: u32,
     /// RFC3339 export timestamp (informational).
     pub exported_at: String,
-    pub thresholds: crate::core::threshold_learning::ThresholdLearner,
     pub litm: crate::core::litm_calibration::LitmCalibration,
 }
 
 #[derive(Debug, Clone, Default)]
 pub(crate) struct MergeReport {
-    pub threshold_exts: usize,
     pub litm_profiles: usize,
 }
 
@@ -37,7 +32,6 @@ pub(crate) fn export_bundle() -> LearningBundle {
     LearningBundle {
         schema_version: BUNDLE_SCHEMA_VERSION,
         exported_at: chrono::Utc::now().to_rfc3339(),
-        thresholds: crate::core::threshold_learning::export_state(),
         litm: crate::core::litm_calibration::export_state(),
     }
 }
@@ -47,16 +41,14 @@ pub(crate) fn export_bundle() -> LearningBundle {
 pub(crate) fn import_bundle(json: &str) -> Result<MergeReport, String> {
     let bundle: LearningBundle =
         serde_json::from_str(json).map_err(|e| format!("invalid learning bundle: {e}"))?;
-    if bundle.schema_version != BUNDLE_SCHEMA_VERSION {
+    if !(1..=BUNDLE_SCHEMA_VERSION).contains(&bundle.schema_version) {
         return Err(format!(
             "unsupported bundle schema {} (this build speaks {})",
             bundle.schema_version, BUNDLE_SCHEMA_VERSION
         ));
     }
-    crate::core::threshold_learning::merge_state(&bundle.thresholds);
     crate::core::litm_calibration::merge_state(&bundle.litm);
     Ok(MergeReport {
-        threshold_exts: bundle.thresholds.per_ext.len(),
         litm_profiles: bundle.litm.per_profile.len(),
     })
 }
@@ -65,46 +57,6 @@ pub(crate) fn import_bundle(json: &str) -> Result<MergeReport, String> {
 mod tests {
     use super::*;
     use crate::core::litm_calibration::LitmCalibration;
-    use crate::core::threshold_learning::{LearnedDelta, ThresholdLearner};
-
-    fn learner(ext: &str, delta: f64, samples: u32) -> ThresholdLearner {
-        let mut l = ThresholdLearner::default();
-        l.per_ext.insert(
-            ext.to_string(),
-            LearnedDelta {
-                delta_entropy: delta,
-                samples,
-                last_decay_day: 20_000,
-            },
-        );
-        l
-    }
-
-    #[test]
-    fn threshold_merge_is_sample_weighted_and_idempotent() {
-        let mut a = learner("rs", 0.10, 30);
-        let b = learner("rs", -0.05, 10);
-        a.merge_from(&b);
-        let d = &a.per_ext["rs"];
-        // (0.10*30 + -0.05*10) / 40 = 0.0625
-        assert!((d.delta_entropy - 0.0625).abs() < 1e-9);
-        assert_eq!(d.samples, 30);
-
-        // Re-merging the merged state with itself must not move anything.
-        let frozen = a.clone();
-        a.merge_from(&frozen);
-        assert!((a.per_ext["rs"].delta_entropy - 0.0625).abs() < 1e-9);
-        assert_eq!(a.per_ext["rs"].samples, 30);
-    }
-
-    #[test]
-    fn threshold_merge_clamps_foreign_deltas() {
-        let mut a = ThresholdLearner::default();
-        // A hand-edited or corrupt bundle cannot push past the clamp.
-        let b = learner("py", 9.0, 50);
-        a.merge_from(&b);
-        assert!(a.per_ext["py"].delta_entropy <= 0.15 + 1e-9);
-    }
 
     #[test]
     fn litm_merge_takes_elementwise_max() {
@@ -136,11 +88,21 @@ mod tests {
         let bundle = LearningBundle {
             schema_version: 99,
             exported_at: "2026-06-11T00:00:00Z".to_string(),
-            thresholds: ThresholdLearner::default(),
             litm: LitmCalibration::default(),
         };
         let json = serde_json::to_string(&bundle).unwrap();
         assert!(import_bundle(&json).is_err());
+    }
+
+    /// A v1 bundle still carries the retired threshold deltas: it imports,
+    /// and only its LITM part is merged.
+    #[test]
+    fn v1_bundle_with_retired_thresholds_imports() {
+        let json = r#"{"schema_version":1,"exported_at":"2026-06-11T00:00:00Z",
+            "thresholds":{"per_ext":{"rs":{"delta_entropy":0.1,"samples":3,"last_decay_day":1}}},
+            "litm":{"per_profile":{},"schema_version":1}}"#;
+        let report = import_bundle(json).expect("v1 bundle imports");
+        assert_eq!(report.litm_profiles, 0);
     }
 
     #[test]
@@ -148,7 +110,6 @@ mod tests {
         let bundle = LearningBundle {
             schema_version: BUNDLE_SCHEMA_VERSION,
             exported_at: "2026-06-11T00:00:00Z".to_string(),
-            thresholds: learner("rs", 0.05, 12),
             litm: LitmCalibration::default(),
         };
         let json = serde_json::to_string(&bundle).unwrap();

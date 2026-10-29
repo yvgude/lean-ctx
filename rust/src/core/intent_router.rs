@@ -1,18 +1,18 @@
 use serde::Serialize;
 
 use crate::core::context_ledger::PressureAction;
-use crate::core::intent_engine::{IntentDimension, ModelTier, TaskType, classify, route_intent};
+use crate::core::intent_engine::{IntentDimension, TaskType, classify, route_intent};
 
+/// Context strategy only (the read view `ctx_plan` uses). Model and provider
+/// selection belong to the caller.
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct IntentRouteV1 {
-    pub schema_version: u32,
-    pub created_at: String,
-    pub inputs: IntentRouteInputsV1,
-    pub decision: IntentRouteDecisionV1,
+pub(crate) struct IntentRouteV2 {
+    pub inputs: IntentRouteInputsV2,
+    pub decision: IntentRouteDecisionV2,
 }
 
 #[derive(Debug, Clone, Serialize)]
-pub(crate) struct IntentRouteInputsV1 {
+pub(crate) struct IntentRouteInputsV2 {
     pub query_md5: String,
     pub query_redacted: String,
     pub role: String,
@@ -51,13 +51,10 @@ impl PressureActionV1 {
     }
 }
 
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct IntentRouteDecisionV1 {
-    pub recommended_model_tier: ModelTier,
-    pub effective_model_tier: ModelTier,
+#[derive(Debug, Clone, PartialEq, Eq, Serialize)]
+pub(crate) struct IntentRouteDecisionV2 {
     pub recommended_read_mode: String,
     pub effective_read_mode: String,
-    pub degraded_by_tier_cap: bool,
     pub degraded_by_pressure: bool,
     pub reason: String,
 }
@@ -69,7 +66,7 @@ pub(crate) struct RouteInputs {
     pub pressure_remaining_tokens: usize,
 }
 
-pub(crate) fn route_v1(query: &str) -> IntentRouteV1 {
+pub(crate) fn route_v2(query: &str) -> IntentRouteV2 {
     let ledger = crate::core::context_ledger::ContextLedger::load();
     let pressure = ledger.pressure();
     let profile_name = crate::core::profiles::active_profile_name();
@@ -82,72 +79,43 @@ pub(crate) fn route_v1(query: &str) -> IntentRouteV1 {
         pressure_remaining_tokens: pressure.remaining_tokens,
     };
 
-    route_v1_with(
-        query,
-        &role_name,
-        &profile_name,
-        &profile.routing,
-        &inputs,
-        None,
-    )
+    route_v2_with(query, &role_name, &profile_name, &profile.routing, &inputs)
 }
 
-pub(crate) fn route_v1_with(
+fn route_v2_with(
     query: &str,
     role_name: &str,
     profile_name: &str,
     routing: &crate::core::profiles::RoutingConfig,
     inputs: &RouteInputs,
-    created_at_override: Option<&str>,
-) -> IntentRouteV1 {
-    let created_at = created_at_override.map_or_else(
-        || chrono::Utc::now().to_rfc3339(),
-        std::string::ToString::to_string,
-    );
-
+) -> IntentRouteV2 {
     let classification = classify(query);
     let base = route_intent(query, &classification);
-
     let query_redacted = truncate(&crate::core::redaction::redact_text(query), 180);
     let query_md5 = crate::core::hasher::hash_str(query);
-
     let policy_md5 = crate::core::hasher::hash_str(&format!(
-        "max_model_tier={};degrade_under_pressure={}",
-        routing.max_model_tier_effective(),
+        "context_strategy_v2;degrade_under_pressure={}",
         routing.degrade_under_pressure_effective()
     ));
 
-    let recommended_model_tier = base.model_tier;
-    let effective_model_tier = cap_to(
-        recommended_model_tier,
-        parse_tier_cap(routing.max_model_tier_effective()),
-    );
-    let degraded_by_tier_cap = effective_model_tier != recommended_model_tier;
-
-    let recommended_read_mode =
-        read_mode_for_tier(recommended_model_tier, classification.task_type);
+    let recommended_read_mode = read_mode_for_task(classification.task_type);
     let (effective_read_mode, degraded_by_pressure) = if routing.degrade_under_pressure_effective()
     {
         apply_pressure_degrade(&recommended_read_mode, inputs.pressure_action)
     } else {
         (recommended_read_mode.clone(), false)
     };
+    let reason = format!(
+        "task={} dim={} read={} pressure={:?} degraded_by_pressure={}",
+        classification.task_type.as_str(),
+        base.dimension.as_str(),
+        effective_read_mode,
+        inputs.pressure_action,
+        degraded_by_pressure
+    );
 
-    let reason = build_reason(&ReasonInputs {
-        task_type: classification.task_type,
-        dimension: base.dimension,
-        recommended_tier: recommended_model_tier,
-        effective_tier: effective_model_tier,
-        read_mode: effective_read_mode.clone(),
-        degraded_by_tier_cap,
-        degraded_by_pressure,
-        pressure: inputs.pressure_action,
-    });
-
-    IntentRouteV1 {
-        schema_version: crate::core::contracts::INTENT_ROUTE_V1_SCHEMA_VERSION,
-        created_at,
-        inputs: IntentRouteInputsV1 {
+    IntentRouteV2 {
+        inputs: IntentRouteInputsV2 {
             query_md5,
             query_redacted,
             role: role_name.to_string(),
@@ -162,59 +130,21 @@ pub(crate) fn route_v1_with(
             },
             policy_md5,
         },
-        decision: IntentRouteDecisionV1 {
-            recommended_model_tier,
-            effective_model_tier,
+        decision: IntentRouteDecisionV2 {
             recommended_read_mode,
             effective_read_mode,
-            degraded_by_tier_cap,
             degraded_by_pressure,
             reason,
         },
     }
 }
 
-fn parse_tier_cap(s: &str) -> ModelTier {
-    match s.trim().to_lowercase().as_str() {
-        "fast" => ModelTier::Fast,
-        "standard" => ModelTier::Standard,
-        _ => ModelTier::Premium,
-    }
-}
-
-fn cap_to(tier: ModelTier, cap: ModelTier) -> ModelTier {
-    match cap {
-        ModelTier::Fast => ModelTier::Fast,
-        ModelTier::Standard => match tier {
-            ModelTier::Premium => ModelTier::Standard,
-            _ => tier,
-        },
-        ModelTier::Premium => tier,
-    }
-}
-
-pub(crate) fn read_mode_for_tier(tier: ModelTier, task_type: TaskType) -> String {
-    // Editing tasks need the real, complete file — never an abbreviated,
-    // signature-only, or identifier-obfuscated view — otherwise the agent is
-    // forced into follow-up re-reads mid-edit. This holds across every tier
-    // (a Fast-tier bugfix still has to see the code it changes).
-    if matches!(
-        task_type,
-        TaskType::Refactor | TaskType::FixBug | TaskType::Generate
-    ) {
-        return "full".to_string();
-    }
-    // Science-driven: use cognitive mode for exploration/review tasks when
-    // semantic chunking is available — returns code bodies, not just signatures.
-    let science = crate::core::cognitive_gate::basic_science_enabled();
-    match (tier, task_type) {
-        (ModelTier::Fast, _) => "signatures".to_string(),
-        (ModelTier::Standard, TaskType::Explore | TaskType::Review) if science => {
-            "cognitive".to_string()
-        }
-        (ModelTier::Standard, TaskType::Explore | TaskType::Review) => "map".to_string(),
-        (ModelTier::Standard, _) => "full".to_string(),
-        (ModelTier::Premium, _) => "auto".to_string(),
+pub(crate) fn read_mode_for_task(task_type: TaskType) -> String {
+    // Editing and debugging require complete source, independently of the
+    // caller's model. Exploration/review can use a structural or semantic view.
+    match task_type {
+        TaskType::Explore | TaskType::Review => "map".to_string(),
+        _ => "full".to_string(),
     }
 }
 
@@ -224,31 +154,6 @@ fn apply_pressure_degrade(mode: &str, pressure: PressureAction) -> (String, bool
     } else {
         (mode.to_string(), false)
     }
-}
-
-struct ReasonInputs {
-    task_type: TaskType,
-    dimension: IntentDimension,
-    recommended_tier: ModelTier,
-    effective_tier: ModelTier,
-    read_mode: String,
-    degraded_by_tier_cap: bool,
-    degraded_by_pressure: bool,
-    pressure: PressureAction,
-}
-
-fn build_reason(i: &ReasonInputs) -> String {
-    format!(
-        "task={} dim={} tier={}→{} read={} pressure={:?} degrade(tier_cap={},pressure={})",
-        i.task_type.as_str(),
-        i.dimension.as_str(),
-        i.recommended_tier.as_str(),
-        i.effective_tier.as_str(),
-        i.read_mode,
-        i.pressure,
-        i.degraded_by_tier_cap,
-        i.degraded_by_pressure
-    )
 }
 
 fn truncate(s: &str, max: usize) -> String {
@@ -262,57 +167,67 @@ fn truncate(s: &str, max: usize) -> String {
 mod tests {
     use super::*;
 
-    #[test]
-    fn routing_is_deterministic_for_same_inputs() {
-        let r = crate::core::profiles::RoutingConfig::default();
-        let inputs = RouteInputs {
+    fn no_pressure() -> RouteInputs {
+        RouteInputs {
             pressure_action: PressureAction::NoAction,
             pressure_utilization: 0.1,
             pressure_remaining_tokens: 1000,
-        };
-        let a = route_v1_with(
+        }
+    }
+
+    #[test]
+    fn routing_is_deterministic_for_same_inputs() {
+        let routing = crate::core::profiles::RoutingConfig::default();
+        let inputs = no_pressure();
+        let a = route_v2_with(
             "fix bug in src/lib.rs",
             "coder",
             "bugfix",
-            &r,
+            &routing,
             &inputs,
-            Some("2026-01-01T00:00:00Z"),
         );
-        let b2 = route_v1_with(
+        let b = route_v2_with(
             "fix bug in src/lib.rs",
             "coder",
             "bugfix",
-            &r,
+            &routing,
             &inputs,
-            Some("2026-01-01T00:00:00Z"),
         );
         assert_eq!(
             serde_json::to_string(&a).unwrap(),
-            serde_json::to_string(&b2).unwrap()
+            serde_json::to_string(&b).unwrap()
         );
     }
 
     #[test]
-    fn profile_tier_cap_limits_model_tier() {
-        let routing = crate::core::profiles::RoutingConfig {
-            max_model_tier: Some("fast".to_string()),
-            ..Default::default()
-        };
-        let inputs = RouteInputs {
-            pressure_action: PressureAction::NoAction,
-            pressure_utilization: 0.1,
-            pressure_remaining_tokens: 1000,
-        };
-        let r = route_v1_with(
+    fn route_carries_no_model_or_budget_fields() {
+        let inputs = no_pressure();
+        let routing = crate::core::profiles::RoutingConfig::default();
+        for query in [
+            "explore the codebase",
+            "fix bug in src/lib.rs",
             "implement feature x",
-            "coder",
-            "exploration",
-            &routing,
-            &inputs,
-            Some("2026-01-01T00:00:00Z"),
-        );
-        assert_eq!(r.decision.effective_model_tier, ModelTier::Fast);
-        assert!(r.decision.degraded_by_tier_cap);
+        ] {
+            let route = route_v2_with(query, "coder", "same-profile", &routing, &inputs);
+            let payload = serde_json::to_value(&route).unwrap();
+            assert!(payload.get("created_at").is_none());
+            assert!(payload["inputs"].get("budgets").is_none());
+            for removed in [
+                "recommended_model_tier",
+                "effective_model_tier",
+                "degraded_by_budget",
+            ] {
+                assert!(payload["decision"].get(removed).is_none());
+            }
+        }
+        for task in [
+            TaskType::Generate,
+            TaskType::FixBug,
+            TaskType::Refactor,
+            TaskType::Debug,
+        ] {
+            assert_eq!(read_mode_for_task(task), "full");
+        }
     }
 
     #[test]
@@ -323,21 +238,21 @@ mod tests {
             pressure_utilization: 0.95,
             pressure_remaining_tokens: 100,
         };
-        let r = route_v1_with(
+        let route = route_v2_with(
             "review the auth module",
             "coder",
             "review",
             &routing,
             &inputs,
-            Some("2026-01-01T00:00:00Z"),
         );
         assert!(
-            r.decision.effective_read_mode == "signatures"
-                || r.decision.effective_read_mode == "cognitive"
-                || r.decision.effective_read_mode == "reference",
+            matches!(
+                route.decision.effective_read_mode.as_str(),
+                "signatures" | "cognitive" | "reference"
+            ),
             "expected degraded mode, got: {}",
-            r.decision.effective_read_mode
+            route.decision.effective_read_mode
         );
-        assert!(r.decision.degraded_by_pressure);
+        assert!(route.decision.degraded_by_pressure);
     }
 }

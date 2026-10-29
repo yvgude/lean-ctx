@@ -17,8 +17,10 @@
 /// store (`"archive"`, `"tee"`, `"reference"`, `"session-cache"`); it never
 /// carries content. The error is content-free and names the reason codes.
 pub fn admit_recovered(text: &str, origin: &str) -> Result<String, String> {
-    super::admit_source(text, &format!("recovery:{origin}"), false)
-        .map_err(|error| format!("stored output withheld by the context gateway: {error}"))
+    super::semantic_deferred::for_stored_context(|| {
+        super::admit_source(text, &format!("recovery:{origin}"), false)
+    })
+    .map_err(|error| format!("stored output withheld by the context gateway: {error}"))
 }
 
 /// Admit tool output before it is persisted to a recovery store. `None`:

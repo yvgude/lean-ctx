@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! End-to-end coverage for the Solution Intelligence `ctx_optimize` surface.
+//! End-to-end coverage for Solution Intelligence (tracker, auto-capture, license gates).
 
 use std::path::PathBuf;
 use std::process::{Command, Output};
@@ -8,10 +8,6 @@ use lean_ctx::core::config::solution::{SolutionConfig, SolutionIntensity};
 use lean_ctx::core::edit_metering::EditMetrics;
 use lean_ctx::core::knowledge::KnowledgeArchetype;
 use lean_ctx::core::solution_auto_capture::{detect_debt_marker, detect_stdlib_choice};
-use lean_ctx::core::solution_commercial::{
-    analyze_cross_project_patterns, append_solution_audit_event, commercial_features_available,
-    verify_attribution,
-};
 use lean_ctx::core::solution_tracker;
 use lean_ctx::core::solution_types::{SolutionDecisionKind, SolutionStatus};
 use lean_ctx::instructions::solution::solution_ladder_text;
@@ -39,14 +35,6 @@ fn solution_config_defaults_are_sane() {
     assert!(config.track_decisions);
     assert!(config.track_loc);
     assert!(config.platform_hints);
-    assert!(!config.commercial.adaptive.enabled);
-    assert_eq!(config.commercial.adaptive.learning_rate, 0.1);
-    assert_eq!(config.commercial.adaptive.min_observations, 20);
-    assert!(!config.commercial.team_policy.enabled);
-    assert_eq!(config.commercial.team_policy.min_intensity, "balanced");
-    assert!(!config.commercial.team_policy.require_decision_logging);
-    assert!(!config.commercial.fingerprints_enabled);
-    assert!(!config.commercial.cross_project_patterns);
 }
 
 #[test]
@@ -203,66 +191,6 @@ fn edit_metrics_exposes_real_refactor_delta_fields() {
     assert_eq!(metrics.files_touched, 2);
 }
 
-#[test]
-fn commercial_features_return_license_error() {
-    let features = commercial_features_available();
-    assert!(features.is_empty(), "{features:?}");
-    assert!(features.iter().all(|(_, available)| !available));
-
-    for result in [
-        analyze_cross_project_patterns("integration-test-org"),
-        verify_attribution("integration-test-event"),
-        append_solution_audit_event("integration-test-project"),
-    ] {
-        let error = result.expect_err("commercial capability must remain license-gated");
-        let normalized = error.to_ascii_lowercase();
-        assert!(normalized.contains("enterprise"));
-        assert!(normalized.contains("license"));
-    }
-}
-
-#[test]
-fn every_commercial_solution_api_returns_its_license_error() {
-    use lean_ctx::core::solution_commercial::{
-        AdaptiveConfig, TeamPolicyConfig, predict_rung, recommend_intensity, validate_team_policy,
-    };
-
-    let decisions = solution_tracker::snapshot();
-    let gates = [
-        (
-            "adaptive_intensity",
-            recommend_intensity(&AdaptiveConfig::default(), &decisions).map(|_| ()),
-        ),
-        (
-            "solution_fingerprints",
-            predict_rung("Replace a custom request index with HashMap").map(|_| ()),
-        ),
-        (
-            "team_policy",
-            validate_team_policy(&TeamPolicyConfig::default(), "balanced"),
-        ),
-        (
-            "cross_project_patterns",
-            analyze_cross_project_patterns("acme-platform-engineering"),
-        ),
-        (
-            "verified_attribution",
-            verify_attribution("build-2026-08-16"),
-        ),
-        (
-            "solution_audit_trail",
-            append_solution_audit_event("request-pipeline-refactor"),
-        ),
-    ];
-
-    for (feature, result) in gates {
-        assert_eq!(
-            result.expect_err("OSS commercial APIs must be license-gated"),
-            format!("requires enterprise license: {feature}")
-        );
-    }
-}
-
 struct Sandbox {
     _root: tempfile::TempDir,
     home: PathBuf,
@@ -325,17 +253,6 @@ impl Sandbox {
             .output()
             .expect("run tool through the CLI registry")
     }
-
-    fn optimize(&self, args: &Value) -> String {
-        let output = self.call("ctx_optimize", args);
-
-        assert!(
-            output.status.success(),
-            "ctx_optimize failed: {}",
-            String::from_utf8_lossy(&output.stderr)
-        );
-        String::from_utf8(output.stdout).expect("ctx_optimize must return UTF-8")
-    }
 }
 
 #[test]
@@ -380,54 +297,6 @@ fn ctx_edit_records_loc_as_a_ledger_edit_event() {
     assert_eq!(
         event["net"], 1,
         "removals must produce positive net LOC savings"
-    );
-}
-
-#[test]
-fn solution_intelligence_actions_persist_across_real_tool_calls() {
-    let sandbox = Sandbox::new();
-
-    let ladder = sandbox.optimize(&json!({ "action": "ladder" }));
-    assert!(ladder.contains("Solution efficiency ladder:"));
-    assert!(ladder.contains("3. Stdlib:"));
-    assert!(ladder.contains("7. Minimum:"));
-
-    let decision = sandbox.optimize(&json!({
-        "action": "decide",
-        "category": "stdlib",
-        "decision": "Use HashMap from the standard library"
-    }));
-    assert_eq!(
-        decision.trim(),
-        "Recorded stdlib decision: Use HashMap from the standard library"
-    );
-
-    let tracker_path = sandbox.data.join("solution_tracker.json");
-    let tracker: Value = serde_json::from_slice(
-        &std::fs::read(&tracker_path).expect("decision must persist tracker state"),
-    )
-    .expect("persisted tracker must be JSON");
-    assert_eq!(tracker["decisions_total"], 1);
-    assert_eq!(tracker["decisions_stdlib"], 1);
-
-    let report = sandbox.optimize(&json!({ "action": "report" }));
-    assert!(
-        report.contains("1 decisions; 0 net LOC saved; 0% output-token reduction"),
-        "unexpected report: {report}"
-    );
-
-    let fingerprint = sandbox.optimize(&json!({
-        "action": "fingerprint",
-        "decision": "Refactor the request pipeline"
-    }));
-    assert!(fingerprint.contains("Prediction:"));
-    assert!(fingerprint.contains("rung='reuse'"));
-    assert!(fingerprint.contains("pattern='refactor'"));
-
-    let policy = sandbox.optimize(&json!({ "action": "policy-check" }));
-    assert!(
-        policy.contains("Policy check passed. Intensity 'balanced' is compliant."),
-        "unexpected policy result: {policy}"
     );
 }
 

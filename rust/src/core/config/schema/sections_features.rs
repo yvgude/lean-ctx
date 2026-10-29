@@ -18,51 +18,11 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     autonomy.insert(
-        "auto_preload".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.autonomy.auto_preload),
-            "Auto-preload related files on first read",
-        ),
-    );
-    autonomy.insert(
-        "auto_dedup".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.autonomy.auto_dedup),
-            "Auto-deduplicate repeated reads",
-        ),
-    );
-    autonomy.insert(
-        "auto_related".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.autonomy.auto_related),
-            "Auto-load graph-related files",
-        ),
-    );
-    autonomy.insert(
         "auto_consolidate".into(),
         key(
             "bool",
             serde_json::json!(cfg.autonomy.auto_consolidate),
             "Auto-consolidate knowledge periodically",
-        ),
-    );
-    autonomy.insert(
-        "silent_preload".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.autonomy.silent_preload),
-            "Suppress preload notifications in output",
-        ),
-    );
-    autonomy.insert(
-        "dedup_threshold".into(),
-        key(
-            "usize",
-            serde_json::json!(cfg.autonomy.dedup_threshold),
-            "Number of repeated reads before dedup triggers",
         ),
     );
     autonomy.insert(
@@ -270,7 +230,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "tool_total_limits".into(),
             key(
                 "table",
-                serde_json::json!({"ctx_read": 100, "ctx_search": 80, "ctx_shell": 50, "ctx_semantic_search": 60}),
+                serde_json::json!({"ctx_read": 100, "ctx_search": 80, "ctx_shell": 50}),
                 "Per-tool total call limits within a session. Keys are tool names, values are max calls",
             ),
         );
@@ -392,14 +352,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         ),
     );
     boundary.insert(
-        "audit_cross_access".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.boundary_policy.audit_cross_access),
-            "Log audit events when cross-project access occurs",
-        ),
-    );
-    boundary.insert(
         "universal_gotchas_enabled".into(),
         key(
             "bool",
@@ -518,11 +470,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             gw.secrets,
             "credentials and keys (patterns from [secret_detection])",
         ),
-        (
-            "pii",
-            gw.pii,
-            "checksum-validated PII: AHV, IBAN, payment cards",
-        ),
+        ("pii", gw.pii, "checksum-validated PII: payment cards"),
         (
             "injection",
             gw.injection,
@@ -557,6 +505,22 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
             "u64",
             serde_json::json!(gw.detector_timeout_ms),
             "Per-detector time budget; a detector that runs out reports timed_out, never clean",
+        ),
+    );
+    context_gateway.insert(
+        "destination_constraints".into(),
+        key(
+            "array",
+            serde_json::to_value(&gw.destination_constraints).unwrap_or_default(),
+            "Hard final-egress placement constraints: local_only and organization_private; independent of content scanning",
+        ),
+    );
+    context_gateway.insert(
+        "allowed_destinations".into(),
+        key(
+            "array",
+            serde_json::to_value(&gw.allowed_destinations).unwrap_or_default(),
+            "Optional target allow-list using DestinationV1 fields; provider/locality are required, and configured account_ref/region must be bound by trusted route metadata",
         ),
     );
     context_gateway.insert(
@@ -772,74 +736,6 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         SectionSchema {
             description: "Privacy-safe default-on telemetry with explicit opt-out".into(),
             keys: telemetry,
-        },
-    );
-
-    let mut cloud = BTreeMap::new();
-    cloud.insert(
-        "auto_sync".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.cloud.auto_sync),
-            "Research-only hosted synchronization setting. Inactive in the public local Runtime; use only with an explicit development evaluation flag.",
-        ),
-    );
-    sections.insert(
-        "cloud".into(),
-        SectionSchema {
-            description:
-                "Research-only hosted settings. They are inactive in the public local Runtime."
-                    .into(),
-            keys: cloud,
-        },
-    );
-
-    let mut gain = BTreeMap::new();
-    gain.insert(
-            "auto_publish".into(),
-            key(
-                "bool",
-                serde_json::json!(cfg.gain.auto_publish),
-                "Research-only hosted publication setting. Off by default and inactive unless LEAN_CTX_EXPERIMENTAL_PUBLICATION=1 is set for a local development evaluation.",
-            ),
-        );
-    gain.insert(
-        "leaderboard".into(),
-        key(
-            "bool",
-            serde_json::json!(cfg.gain.leaderboard),
-            "Research-only public-ranking setting. Off by default and inactive in the public local Runtime.",
-        ),
-    );
-    gain.insert(
-        "display_name".into(),
-        key(
-            "string?",
-            serde_json::json!(cfg.gain.display_name),
-            "Optional development-evaluation display name for a hosted publication experiment",
-        ),
-    );
-    gain.insert(
-        "auto_publish_interval_hours".into(),
-        key(
-            "u64",
-            serde_json::json!(cfg.gain.auto_publish_interval_hours),
-            "Minimum hours between development-evaluation publishes (throttle; default 24)",
-        ),
-    );
-    gain.insert(
-        "last_auto_publish".into(),
-        key(
-            "string?",
-            serde_json::json!(null),
-            "Timestamp of the last development-evaluation publish (written for throttling — not meant to be edited)",
-        ),
-    );
-    sections.insert(
-        "gain".into(),
-        SectionSchema {
-            description: "Research-only hosted publication settings (inactive by default)".into(),
-            keys: gain,
         },
     );
 

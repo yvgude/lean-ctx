@@ -2,7 +2,8 @@ use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use super::graph_index::{self, ProjectIndex};
-use super::property_graph::CodeGraph;
+use super::property_graph::served::GraphGate;
+use super::property_graph::{CodeGraph, GraphSource};
 
 static GRAPH_BUILD_TRIGGERED: AtomicBool = AtomicBool::new(false);
 
@@ -83,6 +84,9 @@ pub enum GraphProviderSource {
     GraphIndex,
 }
 
+// One provider lives for one call on the stack; boxing the graph would add an
+// allocation per open and touch every construction site for no gain.
+#[allow(clippy::large_enum_variant)]
 pub enum GraphProvider {
     PropertyGraph(CodeGraph),
     GraphIndex(ProjectIndex),
@@ -93,7 +97,205 @@ pub struct OpenGraphProvider {
     pub provider: GraphProvider,
 }
 
+/// The file an edge end names: a file path, or the file of a
+/// `path::symbol` key (a file path never contains `::`).
+fn edge_file(end: &str) -> &str {
+    end.split_once("::").map_or(end, |(file, _)| file)
+}
+
+/// The tool-facing surface. Every file, symbol and edge it returns has passed
+/// the serve-time source check (`property_graph::served`, G04): the property
+/// graph carries its gate for the request that opened it, the index backend
+/// gets one per call. The `*_unchecked` accessors below are the raw store
+/// reads and stay private to this facade.
 impl GraphProvider {
+    fn index_gate(&self) -> Option<GraphGate> {
+        match self {
+            GraphProvider::PropertyGraph(_) => None,
+            GraphProvider::GraphIndex(i) => Some(GraphGate::for_root(&i.project_root)),
+        }
+    }
+
+    fn file_served(&self, gate: Option<&GraphGate>, path: &str) -> bool {
+        match self {
+            GraphProvider::PropertyGraph(g) => g.serves_file(path),
+            GraphProvider::GraphIndex(_) => gate.is_none_or(|gate| gate.file(path)),
+        }
+    }
+
+    fn symbol_served(&self, gate: Option<&GraphGate>, path: &str, name: &str) -> bool {
+        match self {
+            GraphProvider::PropertyGraph(g) => g.serves_symbol(path, name),
+            GraphProvider::GraphIndex(_) => gate.is_none_or(|gate| gate.symbol(path, name)),
+        }
+    }
+
+    /// `paths` found for `anchor`: nothing when the anchor itself may not be
+    /// served, otherwise the paths that may.
+    fn served_from(&self, anchor: Option<&str>, paths: Vec<String>) -> Vec<String> {
+        let gate = self.index_gate();
+        if anchor.is_some_and(|anchor| !self.file_served(gate.as_ref(), anchor)) {
+            return Vec::new();
+        }
+        paths
+            .into_iter()
+            .filter(|path| self.file_served(gate.as_ref(), path))
+            .collect()
+    }
+
+    fn served_symbols(&self, symbols: Vec<SymbolInfo>) -> Vec<SymbolInfo> {
+        let gate = self.index_gate();
+        symbols
+            .into_iter()
+            .filter(|symbol| self.symbol_served(gate.as_ref(), &symbol.file, &symbol.name))
+            .collect()
+    }
+
+    pub fn dependencies(&self, file_path: &str) -> Vec<String> {
+        self.served_from(Some(file_path), self.dependencies_unchecked(file_path))
+    }
+
+    pub fn dependents(&self, file_path: &str) -> Vec<String> {
+        self.served_from(Some(file_path), self.dependents_unchecked(file_path))
+    }
+
+    /// Files reached from `file_path` within `depth`. The walk itself runs
+    /// over served files only: nothing is reached through a file that is not
+    /// served now (`property_graph::queries::impact_analysis`,
+    /// `ProjectIndex::get_related_served`).
+    pub fn related(&self, file_path: &str, depth: usize) -> Vec<String> {
+        let gate = self.index_gate();
+        let served = |path: &str| self.file_served(gate.as_ref(), path);
+        if !served(file_path) {
+            return Vec::new();
+        }
+        match self {
+            GraphProvider::PropertyGraph(g) => g
+                .impact_analysis(file_path, depth)
+                .map(|r| r.affected_files)
+                .unwrap_or_default(),
+            GraphProvider::GraphIndex(i) => i.get_related_served(file_path, depth, &served),
+        }
+    }
+
+    /// The file graph a computation over the whole graph may use — community
+    /// detection, a ranking: the files served now and the edges between two
+    /// of them, decided by one gate (`GraphGate::ranking_files`; under
+    /// protection a graph too large to decide in full yields nothing).
+    pub(crate) fn ranking_graph(&self) -> (Vec<String>, Vec<EdgeInfo>) {
+        let mut files = self.file_paths_unchecked();
+        files.sort();
+        files.dedup();
+        let edges = self.edges_unchecked();
+        let pairs: Vec<(String, String)> = edges
+            .iter()
+            .map(|e| (edge_file(&e.from).to_owned(), edge_file(&e.to).to_owned()))
+            .collect();
+        let served = match self {
+            GraphProvider::PropertyGraph(g) => g.rankable_files(files.clone(), &pairs, &[]),
+            GraphProvider::GraphIndex(i) => {
+                GraphGate::for_root(&i.project_root).ranking_files(files.clone(), &pairs, &[])
+            }
+        };
+        files.retain(|file| served.contains(file));
+        let edges = edges
+            .into_iter()
+            .filter(|e| served.contains(edge_file(&e.from)) && served.contains(edge_file(&e.to)))
+            .collect();
+        (files, edges)
+    }
+
+    pub fn file_paths(&self) -> Vec<String> {
+        self.served_from(None, self.file_paths_unchecked())
+    }
+
+    pub fn find_symbols(
+        &self,
+        name: &str,
+        file_filter: Option<&str>,
+        kind_filter: Option<&str>,
+    ) -> Vec<SymbolInfo> {
+        self.served_symbols(self.find_symbols_unchecked(name, file_filter, kind_filter))
+    }
+
+    /// Every symbol with its file + line span (unfiltered by name).
+    pub fn all_symbols(&self) -> Vec<SymbolInfo> {
+        self.served_symbols(self.all_symbols_unchecked())
+    }
+
+    pub fn get_symbol(&self, key: &str) -> Option<SymbolInfo> {
+        let gate = self.index_gate();
+        self.get_symbol_unchecked(key)
+            .filter(|symbol| self.symbol_served(gate.as_ref(), &symbol.file, &symbol.name))
+    }
+
+    pub fn edges(&self) -> Vec<EdgeInfo> {
+        let gate = self.index_gate();
+        let served = |end: &str| self.file_served(gate.as_ref(), edge_file(end));
+        self.edges_unchecked()
+            .into_iter()
+            .filter(|edge| served(edge.from.as_str()) && served(edge.to.as_str()))
+            .collect()
+    }
+
+    pub fn get_file_entry(&self, path: &str) -> Option<FileInfo> {
+        let gate = self.index_gate();
+        self.file_served(gate.as_ref(), path)
+            .then(|| self.get_file_entry_unchecked(path))
+            .flatten()
+    }
+
+    /// Scored related files using multi-edge weights (unscored deps and
+    /// dependents for the index backend). Only served neighbours are ranked,
+    /// and `limit` is applied after the check: a file that is not served now
+    /// takes no slot from one that is.
+    pub fn related_files_scored(&self, file_path: &str, limit: usize) -> Vec<(String, f64)> {
+        let gate = self.index_gate();
+        self.related_files_scored_with(gate.as_ref(), file_path, limit)
+    }
+
+    /// [`Self::related_files_scored`] under the caller's request gate: the
+    /// opened property graph carries its own; the index backend has none and
+    /// is decided by the gate the caller creates once per request, so each
+    /// file is decided once and one bound is spent.
+    pub(crate) fn related_files_scored_with(
+        &self,
+        gate: Option<&GraphGate>,
+        file_path: &str,
+        limit: usize,
+    ) -> Vec<(String, f64)> {
+        match self {
+            GraphProvider::PropertyGraph(g) => {
+                g.related_files(file_path, limit).unwrap_or_default()
+            }
+            GraphProvider::GraphIndex(_) => {
+                let served = |path: &str| self.file_served(gate, path);
+                let mut result: Vec<(String, f64)> = Vec::new();
+                if !served(file_path) {
+                    return result;
+                }
+                let neighbours = self
+                    .dependencies_unchecked(file_path)
+                    .into_iter()
+                    .map(|dep| (dep, 1.0))
+                    .chain(
+                        self.dependents_unchecked(file_path)
+                            .into_iter()
+                            .map(|dep| (dep, 0.5)),
+                    );
+                for (dep, score) in neighbours {
+                    if result.len() >= limit {
+                        break;
+                    }
+                    if !result.iter().any(|(path, _)| *path == dep) && served(&dep) {
+                        result.push((dep, score));
+                    }
+                }
+                result
+            }
+        }
+    }
+
     pub fn node_count(&self) -> Option<usize> {
         match self {
             GraphProvider::PropertyGraph(g) => g.node_count().ok(),
@@ -108,7 +310,7 @@ impl GraphProvider {
         }
     }
 
-    pub fn dependencies(&self, file_path: &str) -> Vec<String> {
+    fn dependencies_unchecked(&self, file_path: &str) -> Vec<String> {
         match self {
             GraphProvider::PropertyGraph(g) => g.dependencies(file_path).unwrap_or_default(),
             GraphProvider::GraphIndex(i) => i
@@ -120,7 +322,7 @@ impl GraphProvider {
         }
     }
 
-    pub fn dependents(&self, file_path: &str) -> Vec<String> {
+    fn dependents_unchecked(&self, file_path: &str) -> Vec<String> {
         match self {
             GraphProvider::PropertyGraph(g) => g.dependents(file_path).unwrap_or_default(),
             GraphProvider::GraphIndex(i) => i
@@ -132,17 +334,7 @@ impl GraphProvider {
         }
     }
 
-    pub fn related(&self, file_path: &str, depth: usize) -> Vec<String> {
-        match self {
-            GraphProvider::PropertyGraph(g) => g
-                .impact_analysis(file_path, depth)
-                .map(|r| r.affected_files)
-                .unwrap_or_default(),
-            GraphProvider::GraphIndex(i) => i.get_related(file_path, depth),
-        }
-    }
-
-    pub fn file_paths(&self) -> Vec<String> {
+    fn file_paths_unchecked(&self) -> Vec<String> {
         match self {
             GraphProvider::PropertyGraph(g) => g.file_catalog_paths().unwrap_or_default(),
             GraphProvider::GraphIndex(i) => {
@@ -167,7 +359,7 @@ impl GraphProvider {
         }
     }
 
-    pub fn find_symbols(
+    fn find_symbols_unchecked(
         &self,
         name: &str,
         file_filter: Option<&str>,
@@ -191,11 +383,23 @@ impl GraphProvider {
                 .collect(),
             GraphProvider::GraphIndex(i) => {
                 let name_lower = name.to_lowercase();
-                i.symbols
+                // Same order and cap as the property graph's SQL (path, line):
+                // a cap over hash order would pick a different 100 per process.
+                let mut hits: Vec<_> = i
+                    .symbols
                     .values()
                     .filter(|s| s.name.to_lowercase().contains(&name_lower))
                     .filter(|s| file_filter.is_none_or(|f| s.file.contains(f)))
                     .filter(|s| kind_filter.is_none_or(|k| s.kind == k))
+                    .collect();
+                hits.sort_by(|a, b| {
+                    (a.file.as_str(), a.start_line, a.name.as_str()).cmp(&(
+                        b.file.as_str(),
+                        b.start_line,
+                        b.name.as_str(),
+                    ))
+                });
+                hits.into_iter()
                     .take(100)
                     .map(|s| SymbolInfo {
                         name: s.name.clone(),
@@ -213,7 +417,7 @@ impl GraphProvider {
     /// Every symbol with its file + line span (unfiltered). Backend-agnostic
     /// equivalent of iterating `ProjectIndex::symbols` — used by the call-graph
     /// builder to attribute call sites to their enclosing symbol.
-    pub fn all_symbols(&self) -> Vec<SymbolInfo> {
+    fn all_symbols_unchecked(&self) -> Vec<SymbolInfo> {
         match self {
             GraphProvider::PropertyGraph(g) => g
                 .all_symbols()
@@ -236,7 +440,7 @@ impl GraphProvider {
         }
     }
 
-    pub fn get_symbol(&self, key: &str) -> Option<SymbolInfo> {
+    fn get_symbol_unchecked(&self, key: &str) -> Option<SymbolInfo> {
         match self {
             GraphProvider::PropertyGraph(g) => {
                 // Keys are `rel_path::sym_name` (graph_index, see `mod.rs`). A
@@ -316,7 +520,7 @@ impl GraphProvider {
         candidates.into_iter().next()
     }
 
-    pub fn edges(&self) -> Vec<EdgeInfo> {
+    fn edges_unchecked(&self) -> Vec<EdgeInfo> {
         match self {
             // Normalize the raw property-graph edge-kind vocabulary back to the
             // graph_index vocabulary every consumer speaks (notably `imports` →
@@ -362,25 +566,28 @@ impl GraphProvider {
             GraphProvider::PropertyGraph(_) => self
                 .file_paths()
                 .into_iter()
-                .filter_map(|p| self.get_file_entry(&p))
+                .filter_map(|p| self.get_file_entry_unchecked(&p))
                 .collect(),
-            GraphProvider::GraphIndex(i) => i
-                .files
-                .values()
-                .map(|e| FileInfo {
-                    path: e.path.clone(),
-                    hash: e.hash.clone(),
-                    language: e.language.clone(),
-                    line_count: e.line_count,
-                    token_count: e.token_count,
-                    exports: e.exports.clone(),
-                    summary: e.summary.clone(),
-                })
-                .collect(),
+            GraphProvider::GraphIndex(i) => {
+                let gate = self.index_gate();
+                i.files
+                    .values()
+                    .filter(|e| self.file_served(gate.as_ref(), &e.path))
+                    .map(|e| FileInfo {
+                        path: e.path.clone(),
+                        hash: e.hash.clone(),
+                        language: e.language.clone(),
+                        line_count: e.line_count,
+                        token_count: e.token_count,
+                        exports: e.exports.clone(),
+                        summary: e.summary.clone(),
+                    })
+                    .collect()
+            }
         }
     }
 
-    pub fn get_file_entry(&self, path: &str) -> Option<FileInfo> {
+    fn get_file_entry_unchecked(&self, path: &str) -> Option<FileInfo> {
         match self {
             GraphProvider::PropertyGraph(g) => {
                 g.get_file_catalog(path).ok().flatten().map(|e| FileInfo {
@@ -422,7 +629,19 @@ impl GraphProvider {
     /// the index it already holds.
     pub fn materialize_project_index(&self, project_root: &str) -> ProjectIndex {
         if let GraphProvider::GraphIndex(i) = self {
-            return i.clone();
+            // The index it already holds, without what may not be served now.
+            let gate = self.index_gate();
+            let served = |path: &str| self.file_served(gate.as_ref(), path);
+            let mut index = i.clone();
+            index.files.retain(|path, _| served(path.as_str()));
+            index
+                .symbols
+                .retain(|_, symbol| self.symbol_served(gate.as_ref(), &symbol.file, &symbol.name));
+            index
+                .edges
+                .retain(|edge| served(edge_file(&edge.from)) && served(edge_file(&edge.to)));
+            index.rebuild_interner();
+            return index;
         }
         let mut idx = ProjectIndex::new(project_root);
         // Stamp `last_scan` from the graph's build time (graph.meta.json) so the
@@ -481,29 +700,6 @@ impl GraphProvider {
 
     pub fn index_dir(project_root: &str) -> Option<std::path::PathBuf> {
         graph_index::ProjectIndex::index_dir(project_root)
-    }
-
-    /// Scored related files using multi-edge weights.
-    /// Falls back to unscored deps/dependents for GraphIndex backend.
-    pub fn related_files_scored(&self, file_path: &str, limit: usize) -> Vec<(String, f64)> {
-        match self {
-            GraphProvider::PropertyGraph(g) => {
-                g.related_files(file_path, limit).unwrap_or_default()
-            }
-            GraphProvider::GraphIndex(_) => {
-                let mut result: Vec<(String, f64)> = Vec::new();
-                for dep in self.dependencies(file_path) {
-                    result.push((dep, 1.0));
-                }
-                for dep in self.dependents(file_path) {
-                    if !result.iter().any(|(p, _)| *p == dep) {
-                        result.push((dep, 0.5));
-                    }
-                }
-                result.truncate(limit);
-                result
-            }
-        }
     }
 }
 
@@ -587,6 +783,33 @@ pub fn open_best_effort(project_root: &str) -> Option<OpenGraphProvider> {
         trigger_lazy_graph_build(project_root);
     }
     existing
+}
+
+/// Hot-path open for optional enrichment (post-read hints, silent preload):
+/// only a fully populated property graph, opened from SQLite. Never parses the
+/// JSON index and never builds synchronously — when the graph is not ready it
+/// schedules the background build and returns `None`, so the caller simply
+/// skips its optional work. A read must not wait seconds (or a 30 s build) for
+/// a hint it may not even show.
+pub fn open_ready(project_root: &str) -> Option<OpenGraphProvider> {
+    let ready = if crate::core::property_graph::engine_outdated(project_root) {
+        None
+    } else {
+        // Nodes and catalog, not edges: a built graph of a project without
+        // imports (a single file) legitimately has none.
+        CodeGraph::open(project_root).ok().filter(|pg| {
+            pg.node_count().unwrap_or(0) > 0 && pg.file_catalog_count().unwrap_or(0) > 0
+        })
+    };
+    if let Some(pg) = ready {
+        Some(OpenGraphProvider {
+            source: GraphProviderSource::PropertyGraph,
+            provider: GraphProvider::PropertyGraph(pg),
+        })
+    } else {
+        trigger_lazy_graph_build(project_root);
+        None
+    }
 }
 
 fn log_source_selection(
@@ -731,6 +954,9 @@ mod tests {
         let project_root = tmp.path().join("proj");
         std::fs::create_dir_all(&project_root).expect("mkdir proj");
         let root = project_root.to_string_lossy().to_string();
+        // The index serves a file only while it exists in the project.
+        std::fs::create_dir_all(project_root.join("src")).expect("mkdir src");
+        std::fs::write(project_root.join("src/main.rs"), "fn main() {}\n").expect("source");
 
         let mut idx = ProjectIndex::new(&root);
         idx.files.insert(
@@ -771,7 +997,7 @@ mod tests {
         crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
     }
 
-    fn handle_provider() -> GraphProvider {
+    fn handle_provider() -> (GraphProvider, tempfile::TempDir) {
         let mut idx = ProjectIndex::new("/test");
         for (key, file, name, kind, start, end) in [
             (
@@ -804,12 +1030,13 @@ mod tests {
                 },
             );
         }
-        GraphProvider::GraphIndex(idx)
+        let (idx, files) = idx.on_disk(&[]);
+        (GraphProvider::GraphIndex(idx), files)
     }
 
     #[test]
     fn handle_resolves_exact_file_and_name() {
-        let gp = handle_provider();
+        let (gp, _files) = handle_provider();
         let h = crate::core::handle::SymbolHandle::new("src/lib.rs", "Config::load", 22);
         let sym = gp.find_symbol_by_handle(&h).expect("resolves");
         assert_eq!(sym.name, "Config::load");
@@ -820,7 +1047,7 @@ mod tests {
     fn handle_resolves_after_line_drift() {
         // Same (path, name) but a stale, drifted line — must still resolve to
         // the current symbol at its real line (robust beyond line-only refs).
-        let gp = handle_provider();
+        let (gp, _files) = handle_provider();
         let h = crate::core::handle::SymbolHandle::new("src/lib.rs", "Config::load", 999);
         let sym = gp
             .find_symbol_by_handle(&h)
@@ -832,7 +1059,7 @@ mod tests {
     fn handle_resolves_by_unqualified_tail() {
         // Handle carries only the unqualified tail `load`; the exact key misses,
         // so the same-file tail match + line tiebreak recovers `Config::load`.
-        let gp = handle_provider();
+        let (gp, _files) = handle_provider();
         let h = crate::core::handle::SymbolHandle::new("src/lib.rs", "load", 22);
         let sym = gp.find_symbol_by_handle(&h).expect("resolves by tail");
         assert_eq!(sym.name, "Config::load");
@@ -840,7 +1067,7 @@ mod tests {
 
     #[test]
     fn handle_unknown_file_returns_none() {
-        let gp = handle_provider();
+        let (gp, _files) = handle_provider();
         let h = crate::core::handle::SymbolHandle::new("src/nope.rs", "Config::load", 22);
         assert!(gp.find_symbol_by_handle(&h).is_none());
     }
@@ -917,6 +1144,7 @@ mod tests {
         });
 
         let pg_deps = GraphProvider::PropertyGraph(pg);
+        let (idx, _files) = idx.on_disk(&[]);
         let gi_deps = GraphProvider::GraphIndex(idx);
 
         let mut pg_result = pg_deps.dependencies("src/a.rs");

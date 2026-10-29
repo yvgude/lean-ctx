@@ -5,10 +5,14 @@ use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 
+use super::admission::AdmittedPackage;
 use super::content::{CheckpointPackageContentV1, PackageContent};
 use super::manifest::PackageManifest;
 
 const INDEX_FILE: &str = "package-index.json";
+const INDEX_LOCK_FILE: &str = ".package-index.lock";
+/// An install materializes its files under the lock; bounded all the same.
+const INDEX_LOCK_WAIT: std::time::Duration = std::time::Duration::from_secs(30);
 pub(crate) const PACKAGES_DIR: &str = "packages";
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -31,6 +35,43 @@ pub(crate) struct PackageEntry {
     pub tags: Vec<String>,
     #[serde(default)]
     pub auto_load: bool,
+    /// The projects (`project_hash::hash_project_root`) this package is
+    /// auto-loaded into (V03). Auto-load is bound to the project it was
+    /// enabled in; an entry written before the binding existed has
+    /// `auto_load` set and no project here, and is auto-loaded nowhere until
+    /// it is enabled again in a project (fail-safe).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub auto_load_projects: Vec<String>,
+    /// How the package came to this machine (V02). An entry written before
+    /// this was recorded has none and counts as received.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub origin: Option<PackageOrigin>,
+}
+
+/// How a stored package came to this machine (V02).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub(crate) enum PackageOrigin {
+    /// Built here from this machine's own sources (`pack create`).
+    Built,
+    /// Imported, installed from a registry, received or added as an addon.
+    Received,
+}
+
+impl PackageEntry {
+    /// Whether this package is auto-loaded into `project_root`.
+    pub(crate) fn auto_loads_into(&self, project_root: &str) -> bool {
+        self.auto_load
+            && self
+                .auto_load_projects
+                .contains(&crate::core::project_hash::hash_project_root(project_root))
+    }
+
+    /// Auto-load is set, but bound to no project (an index entry from before
+    /// the binding): it loads nowhere.
+    pub(crate) fn auto_load_unbound(&self) -> bool {
+        self.auto_load && self.auto_load_projects.is_empty()
+    }
 }
 
 impl PackageIndex {
@@ -45,6 +86,16 @@ impl PackageIndex {
 
 pub(crate) struct LocalRegistry {
     root: PathBuf,
+}
+
+/// What an install may do to an already installed name@version, decided
+/// under the index lock.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum InstallMode {
+    /// Received packages: different content at an installed version is refused.
+    Immutable,
+    /// A build of this machine's own sources replaces its previous build.
+    ReplaceLocalBuild,
 }
 
 impl LocalRegistry {
@@ -66,12 +117,97 @@ impl LocalRegistry {
         &self.root
     }
 
+    /// Installs a package received from elsewhere (import, remote, transfer,
+    /// addon add): an installed name@version never changes its content.
     pub(crate) fn install(
         &self,
         manifest: &PackageManifest,
         content: &PackageContent,
     ) -> Result<PathBuf, String> {
+        self.install_with(manifest, content, InstallMode::Immutable, None)
+    }
+
+    /// Installs a package this machine just built from its own sources
+    /// (`pack create`, skills pack create): a rebuild at the same
+    /// name@version replaces the previous local build.
+    pub(crate) fn install_local_build(
+        &self,
+        manifest: &PackageManifest,
+        content: &PackageContent,
+    ) -> Result<PathBuf, String> {
+        self.install_with(manifest, content, InstallMode::ReplaceLocalBuild, None)
+    }
+
+    /// `written` is the content member exactly as a package file carries
+    /// it. It is what gets stored: the content hash binds the writer's
+    /// bytes, and this engine's re-serialization of them — another writer's
+    /// field set, defaults, number forms — need not hash the same.
+    fn install_with(
+        &self,
+        manifest: &PackageManifest,
+        content: &PackageContent,
+        mode: InstallMode,
+        written: Option<&str>,
+    ) -> Result<PathBuf, String> {
         manifest.validate().map_err(|errs| errs.join("; "))?;
+
+        // E3: nothing of a package is stored — no blob, no module, no
+        // content file, no index entry — unless its content passes the
+        // current admission as it is. Every install door (import, addon
+        // install, remote, `pack create`) ends here, after its hash check.
+        admitted(manifest, content)?;
+
+        // What is stored must verify as it will be loaded: checked before
+        // anything is written, so an install that could not be loaded
+        // leaves nothing behind (no files, no index entry, no lock pin).
+        let content_json = match written {
+            Some(text) => text.to_owned(),
+            None => serde_json::to_string_pretty(content).map_err(|e| e.to_string())?,
+        };
+        verify_integrity(manifest, &content_json)?;
+
+        // From the version check to the index entry, one install at a time:
+        // a parallel install of the same name@version must not interleave
+        // its files with ours or drop our index entry.
+        let _lock = self.lock_index()?;
+        let installed = self
+            .load_index()?
+            .entries
+            .into_iter()
+            .find(|e| e.name == manifest.name && e.version == manifest.version);
+        let auto_load = installed.as_ref().is_some_and(|e| e.auto_load);
+        let auto_load_projects = installed
+            .as_ref()
+            .map(|e| e.auto_load_projects.clone())
+            .unwrap_or_default();
+        // V02: a local build is this machine's own; anything else arrived.
+        // Re-importing the very bytes of a local build keeps it a build.
+        let origin = match mode {
+            InstallMode::ReplaceLocalBuild => PackageOrigin::Built,
+            InstallMode::Immutable => installed
+                .as_ref()
+                .filter(|e| e.sha256 == manifest.integrity.sha256)
+                .and_then(|e| e.origin)
+                .unwrap_or(PackageOrigin::Received),
+        };
+        if let Some(installed) = &installed
+            && installed.sha256 != manifest.integrity.sha256
+        {
+            if mode == InstallMode::Immutable {
+                return Err(format!(
+                    "package {}@{} is already installed with different content; \
+                     install it under a new version or remove the installed one first",
+                    manifest.name, manifest.version
+                ));
+            }
+            // A local rebuild: nothing of the previous build may linger. The
+            // skills/addon materializers rebuild their version dirs below.
+            let previous = self.package_dir(&manifest.name, &manifest.version);
+            if previous.exists() {
+                std::fs::remove_dir_all(&previous)
+                    .map_err(|e| format!("remove previous build: {e}"))?;
+            }
+        }
 
         // kind=skills (GH #727): materialize the verified blobs under the
         // store *before* touching the index — a tampered blob aborts the
@@ -115,7 +251,6 @@ impl LocalRegistry {
         let manifest_json = serde_json::to_string_pretty(manifest).map_err(|e| e.to_string())?;
         atomic_write(&pkg_dir.join("manifest.json"), manifest_json.as_bytes())?;
 
-        let content_json = serde_json::to_string_pretty(content).map_err(|e| e.to_string())?;
         atomic_write(&pkg_dir.join("content.json"), content_json.as_bytes())?;
 
         let mut index = self.load_index()?;
@@ -135,7 +270,9 @@ impl LocalRegistry {
             sha256: manifest.integrity.sha256.clone(),
             byte_size: manifest.integrity.byte_size,
             tags: manifest.tags.clone(),
-            auto_load: false,
+            auto_load,
+            auto_load_projects,
+            origin: Some(origin),
         });
         index.updated_at = Utc::now();
         self.save_index(&index)?;
@@ -144,6 +281,7 @@ impl LocalRegistry {
     }
 
     pub(crate) fn remove(&self, name: &str, version: Option<&str>) -> Result<u32, String> {
+        let _lock = self.lock_index()?;
         let mut index = self.load_index()?;
         let before = index.entries.len();
 
@@ -184,7 +322,7 @@ impl LocalRegistry {
 
     pub(crate) fn list(&self) -> Result<Vec<PackageEntry>, String> {
         let index = self.load_index()?;
-        Ok(index.entries)
+        Ok(index.entries.into_iter().map(served).collect())
     }
 
     pub(crate) fn get(
@@ -196,14 +334,28 @@ impl LocalRegistry {
         Ok(index
             .entries
             .into_iter()
-            .find(|e| e.name == name && version.is_none_or(|v| e.version == v)))
+            .find(|e| e.name == name && version.is_none_or(|v| e.version == v))
+            .map(served))
     }
 
+    /// The stored package as its two parts. Admitted like
+    /// [`Self::load_admitted`]; for callers that render or export the parts.
     pub(crate) fn load_package(
         &self,
         name: &str,
         version: &str,
     ) -> Result<(PackageManifest, PackageContent), String> {
+        self.load_admitted(name, version)
+            .map(AdmittedPackage::into_parts)
+    }
+
+    /// The stored package, hash verified first and then admitted under the
+    /// CURRENT policy — the only way to obtain what the loader applies.
+    pub(crate) fn load_admitted(
+        &self,
+        name: &str,
+        version: &str,
+    ) -> Result<AdmittedPackage, String> {
         let pkg_dir = self.package_dir(name, version);
         if !pkg_dir.exists() {
             return Err(format!("package {name}@{version} not found"));
@@ -220,23 +372,34 @@ impl LocalRegistry {
             serde_json::from_str(&content_json).map_err(|e| format!("parse content: {e}"))?;
 
         verify_integrity(&manifest, &content_json)?;
-
-        Ok((manifest, content))
+        // The stored bytes are the bound ones. Whether they may be used is
+        // decided under the CURRENT policy, not the one at install time.
+        AdmittedPackage::admit(manifest, content).map_err(|refusal| refusal.to_string())
     }
 
+    /// Enable or disable auto-load of `name@version` for `project_root` only
+    /// (V03): other projects — a same-named one at another root included —
+    /// are not affected.
     pub(crate) fn set_auto_load(
         &self,
         name: &str,
         version: &str,
         auto_load: bool,
+        project_root: &str,
     ) -> Result<(), String> {
+        let project = crate::core::project_hash::hash_project_root(project_root);
+        let _lock = self.lock_index()?;
         let mut index = self.load_index()?;
         if let Some(entry) = index
             .entries
             .iter_mut()
             .find(|e| e.name == name && e.version == version)
         {
-            entry.auto_load = auto_load;
+            entry.auto_load_projects.retain(|bound| *bound != project);
+            if auto_load {
+                entry.auto_load_projects.push(project);
+            }
+            entry.auto_load = !entry.auto_load_projects.is_empty();
             index.updated_at = Utc::now();
             self.save_index(&index)?;
         } else {
@@ -245,11 +408,25 @@ impl LocalRegistry {
         Ok(())
     }
 
-    pub(crate) fn auto_load_packages(&self) -> Result<Vec<PackageEntry>, String> {
+    /// The packages auto-loaded into `project_root` (V03). An entry bound to
+    /// no project loads nowhere.
+    pub(crate) fn auto_load_packages(
+        &self,
+        project_root: &str,
+    ) -> Result<Vec<PackageEntry>, String> {
         let index = self.load_index()?;
-        Ok(index.entries.into_iter().filter(|e| e.auto_load).collect())
+        Ok(index
+            .entries
+            .into_iter()
+            .filter(|e| e.auto_loads_into(project_root))
+            .map(served)
+            .collect())
     }
 
+    /// Export copies a stored package out. It goes through
+    /// [`Self::load_package`]: hash first, then the current admission — a
+    /// package that would be refused today is not exported, and nothing is
+    /// written to `output` (the write is the last step).
     pub(crate) fn export_to_file(
         &self,
         name: &str,
@@ -257,6 +434,7 @@ impl LocalRegistry {
         output: &Path,
     ) -> Result<u64, String> {
         let (manifest, content) = self.load_package(name, version)?;
+        self.may_pass_on(&manifest)?;
 
         let bundle = ExportBundle { manifest, content };
         let json = serde_json::to_string_pretty(&bundle).map_err(|e| e.to_string())?;
@@ -264,6 +442,15 @@ impl LocalRegistry {
 
         atomic_write(output, bytes)?;
         Ok(bytes.len() as u64)
+    }
+
+    /// V02: a stored package leaves only as a local build or under its
+    /// author's signed grant (see [`super::rights`]).
+    fn may_pass_on(&self, manifest: &PackageManifest) -> Result<(), String> {
+        let origin = self
+            .get(&manifest.name, Some(&manifest.version))?
+            .and_then(|entry| entry.origin);
+        super::rights::check_stored(manifest, origin)
     }
 
     /// Export with a fresh ed25519 signature over the manifest (GL #406) —
@@ -279,6 +466,9 @@ impl LocalRegistry {
         private: bool,
     ) -> Result<u64, String> {
         let (mut manifest, content) = self.load_package(name, version)?;
+        // V02: checked on the stored manifest, before re-signing — a fresh
+        // signature of this machine must not turn into the author's grant.
+        self.may_pass_on(&manifest)?;
 
         if private {
             manifest.visibility = Some("private".to_string());
@@ -330,6 +520,20 @@ impl LocalRegistry {
         path: &Path,
         policy: SignaturePolicy<'_>,
     ) -> Result<PackageManifest, String> {
+        self.import_from_file_checked(path, policy)
+            .map(|(manifest, _)| manifest)
+    }
+
+    /// [`Self::import_from_file`], also returning what the package's
+    /// signature covers as written (`None` = unsigned). An unsigned package
+    /// is admitted only under [`SignaturePolicy::AllowUnsigned`], the
+    /// caller's explicit opt-in (GHSA-gvg8-285q-m62g); an identity-only
+    /// signature is admitted with a warning (K02).
+    pub(crate) fn import_from_file_checked(
+        &self,
+        path: &Path,
+        policy: SignaturePolicy<'_>,
+    ) -> Result<(PackageManifest, Option<super::signing::SignatureCoverage>), String> {
         let (bundle, json) = Self::read_bundle(path)?;
 
         bundle.manifest.validate().map_err(|errs| errs.join("; "))?;
@@ -355,9 +559,9 @@ impl LocalRegistry {
             ));
         }
 
-        let pending = Self::verify_bundle_integrity(&bundle, &json, policy)?;
-        self.install_then_pin(&bundle, pending)?;
-        Ok(bundle.manifest)
+        let (coverage, pending) = Self::verify_bundle_integrity(&bundle, &json, policy)?;
+        self.install_then_pin(&bundle, &json, pending)?;
+        Ok((bundle.manifest, coverage))
     }
 
     /// Install a `kind=addon` package.
@@ -391,8 +595,8 @@ impl LocalRegistry {
             ));
         }
 
-        let pending = Self::verify_bundle_integrity(&bundle, &json, policy)?;
-        self.install_then_pin(&bundle, pending)?;
+        let (_, pending) = Self::verify_bundle_integrity(&bundle, &json, policy)?;
+        self.install_then_pin(&bundle, &json, pending)?;
         Ok(bundle.manifest)
     }
 
@@ -402,18 +606,30 @@ impl LocalRegistry {
         bundle: &ExportBundle,
         json: &str,
         policy: SignaturePolicy<'_>,
-    ) -> Result<Option<PendingPin>, String> {
+    ) -> Result<
+        (
+            Option<super::signing::SignatureCoverage>,
+            Option<PendingPin>,
+        ),
+        String,
+    > {
         let content_text = extract_top_level_value_text(json, "content")
             .ok_or_else(|| "package has no top-level content member".to_string())?;
         verify_integrity(&bundle.manifest, content_text)?;
 
         // A present-but-invalid signature is always tampering (the file was
-        // modified after signing) — reject.
+        // modified after signing) — reject. The manifest signature is checked
+        // over the manifest as written, so a field this engine does not know
+        // (a newer writer's) stays covered instead of failing the check.
+        let raw_manifest = serde_json::from_str::<serde_json::Value>(json)
+            .ok()
+            .and_then(|document| document.get("manifest").cloned())
+            .ok_or_else(|| "package has no top-level manifest member".to_string())?;
         let Some(signature) = bundle.manifest.signature.as_ref() else {
             // GHSA-gvg8-285q-m62g: unsigned content is only admitted on an
             // explicit opt-in; remote and network paths never opt in.
             return match policy {
-                SignaturePolicy::AllowUnsigned => Ok(None),
+                SignaturePolicy::AllowUnsigned => Ok((None, None)),
                 SignaturePolicy::RequireTrustedSigner => Err(format!(
                     "`{}` is unsigned — its origin cannot be checked. {MCP_UNVERIFIED_HINT}",
                     bundle.manifest.name
@@ -428,11 +644,11 @@ impl LocalRegistry {
                 }
             };
         };
-        if !super::signing::verify_signature(&bundle.manifest)? {
+        let Some(coverage) = super::signing::signature_coverage_of(&raw_manifest)? else {
             return Err(
                 "signature verification failed — the package was modified after signing".into(),
             );
-        }
+        };
         if policy == SignaturePolicy::RequireTrustedSigner
             && let Some(fingerprint) = untrusted_package_signer(&bundle.manifest)
         {
@@ -467,23 +683,34 @@ impl LocalRegistry {
                     &pinned_fingerprint,
                 ));
             }
-            return Ok(Some(PendingPin {
-                subject,
-                public_key: signature.public_key.clone(),
-            }));
+            return Ok((
+                Some(coverage),
+                Some(PendingPin {
+                    subject,
+                    public_key: signature.public_key.clone(),
+                }),
+            ));
         }
-        Ok(None)
+        Ok((Some(coverage), None))
     }
 
-    /// Install, then record the TOFU publisher pin (GHSA-gvg8-285q-m62g):
-    /// a failed install must not leave a pin for a key nothing was installed
-    /// from.
+    /// Install the package as written, then record the TOFU publisher pin
+    /// (GHSA-gvg8-285q-m62g): a failed install must not leave a pin for a key
+    /// nothing was installed from.
     fn install_then_pin(
         &self,
         bundle: &ExportBundle,
+        json: &str,
         pending: Option<PendingPin>,
     ) -> Result<(), String> {
-        self.install(&bundle.manifest, &bundle.content)?;
+        let written = extract_top_level_value_text(json, "content")
+            .ok_or_else(|| "package has no top-level content member".to_string())?;
+        self.install_with(
+            &bundle.manifest,
+            &bundle.content,
+            InstallMode::Immutable,
+            Some(written),
+        )?;
         let Some(pin) = pending else {
             return Ok(());
         };
@@ -514,6 +741,14 @@ impl LocalRegistry {
 
     fn package_dir(&self, name: &str, version: &str) -> PathBuf {
         self.root.join(format!("{name}-{version}"))
+    }
+
+    /// Serializes index read-modify-writes across threads and processes.
+    fn lock_index(&self) -> Result<crate::core::agents::FileLock, String> {
+        crate::core::agents::FileLock::acquire_with_timeout(
+            &self.root.join(INDEX_LOCK_FILE),
+            INDEX_LOCK_WAIT,
+        )
     }
 
     fn load_index(&self) -> Result<PackageIndex, String> {
@@ -562,6 +797,7 @@ pub(crate) fn write_checkpoint_bundle(
     {
         return Err("checkpoint bundle contains credential-shaped material".into());
     }
+    admitted(&manifest, &content)?;
     if let Some(key) = signing_key {
         super::signing::sign_package(&mut manifest, &content, key);
     }
@@ -594,6 +830,7 @@ pub(crate) fn read_checkpoint_bundle(
     }
     let bundle: ExportBundle =
         serde_json::from_str(&json).map_err(|error| format!("parse package: {error}"))?;
+    admitted(&bundle.manifest, &bundle.content)?;
     let checkpoint = bundle
         .content
         .checkpoint
@@ -624,7 +861,50 @@ pub(crate) fn parse_context_transfer(
     }
     // GHSA-rxv5-4c3x-g4q6 (P): a network peer never delivers unsigned content.
     LocalRegistry::verify_bundle_integrity(&bundle, json, SignaturePolicy::RequireSigned)?;
+    admitted(&bundle.manifest, &bundle.content)?;
     Ok((bundle.manifest, bundle.content))
+}
+
+/// Admission of a package document that is about to be copied byte for byte
+/// (the legacy-name migration). The caller has verified the document's
+/// hashes; this parses the same bytes and admits manifest and content as
+/// they are. Nothing is written here.
+pub(super) fn admit_package_bytes(bytes: &[u8]) -> Result<(), String> {
+    let bundle: ExportBundle =
+        serde_json::from_slice(bytes).map_err(|error| format!("parse package: {error}"))?;
+    admitted(&bundle.manifest, &bundle.content)
+}
+
+/// An index entry as it is handed to a reader. The index is lean-ctx's own
+/// file, but two of its fields are caller text copied from the manifest at
+/// install: the description and the tags. They are stored copies without a
+/// source, so they are served under the originless rule — in a protected
+/// deployment the description is replaced by the content-free notice and
+/// the tags are dropped; otherwise they pass admission as stored text.
+/// Name and version are identifiers restricted to `[a-zA-Z0-9._@/-]` by
+/// `PackageManifest::validate`; layers, digest, size and dates are not text.
+/// Writers (`install`, `remove`, `set_auto_load`) work on the raw index, so
+/// a notice is never written back.
+fn served(mut entry: PackageEntry) -> PackageEntry {
+    use crate::core::context_admission::stored::serve_stored;
+    if !entry.description.is_empty() {
+        entry.description = serve_stored(&entry.description, None, None)
+            .unwrap_or_else(|withheld| withheld.notice());
+    }
+    entry.tags = entry
+        .tags
+        .into_iter()
+        .filter_map(|tag| serve_stored(&tag, None, None).ok())
+        .collect();
+    entry
+}
+
+/// Verify-only admission of hash-bound content, for every door of this
+/// module: the content is used as it is or the package is refused as a whole
+/// (see [`super::admission`]). Always called AFTER the door's hash check. The
+/// error is the typed refusal's content-free sentence.
+fn admitted(manifest: &PackageManifest, content: &PackageContent) -> Result<(), String> {
+    super::admission::admit_parts(manifest, content).map_err(|refusal| refusal.to_string())
 }
 
 /// A TOFU publisher pin to record once the install succeeded.
@@ -774,474 +1054,11 @@ fn atomic_write(path: &Path, data: &[u8]) -> Result<(), String> {
             path.display()
         ));
     }
-    let parent = path.parent().ok_or_else(|| "invalid path".to_string())?;
-    let tmp = parent.join(format!(
-        ".{}.tmp",
-        path.file_name().and_then(|s| s.to_str()).unwrap_or("pkg")
-    ));
-    std::fs::write(&tmp, data).map_err(|e| format!("write tmp: {e}"))?;
-    std::fs::rename(&tmp, path).map_err(|e| format!("rename: {e}"))?;
-    Ok(())
+    // Unique, synced temp file + rename: parallel writers never share a temp
+    // name, and the published file survives a crash.
+    crate::core::atomic_fs::try_atomic_write(path, data, None).map_err(|e| format!("write: {e}"))
 }
 
 #[cfg(test)]
-mod tests {
-    use super::*;
-    use crate::core::context_package::manifest::{CompatibilitySpec, PackageStats};
-
-    #[test]
-    fn registry_round_trip() {
-        let dir = tempfile::tempdir().unwrap();
-        let reg = LocalRegistry::open_at(dir.path()).unwrap();
-
-        assert!(reg.list().unwrap().is_empty());
-
-        let manifest = PackageManifest {
-            schema_version: crate::core::contracts::CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
-            conformance_level: None,
-            kind: crate::core::context_package::manifest::PackageKind::default(),
-            name: "test-pkg".into(),
-            version: "1.0.0".into(),
-            description: "test".into(),
-            author: None,
-            scope: None,
-            created_at: Utc::now(),
-            updated_at: None,
-            layers: vec![super::super::manifest::PackageLayer::Knowledge],
-            dependencies: vec![],
-            tags: vec!["rust".into()],
-            visibility: None,
-            integrity: {
-                let c = PackageContent::default();
-                let j = serde_json::to_string(&c).unwrap();
-                let mut h = Sha256::new();
-                h.update(j.as_bytes());
-                let ch = crate::core::agent_identity::hex_encode(&h.finalize());
-                let composite = format!("test-pkg:1.0.0:{ch}");
-                let mut h2 = Sha256::new();
-                h2.update(composite.as_bytes());
-                let sha = crate::core::agent_identity::hex_encode(&h2.finalize());
-                super::super::manifest::PackageIntegrity {
-                    sha256: sha,
-                    content_hash: ch,
-                    byte_size: j.len() as u64,
-                }
-            },
-            provenance: super::super::manifest::PackageProvenance {
-                tool: "lean-ctx".into(),
-                tool_version: "0.0.0".into(),
-                project_hash: None,
-                source_session_id: None,
-            },
-            compatibility: CompatibilitySpec::default(),
-            stats: PackageStats::default(),
-            signature: None,
-            graph_summary: None,
-            marketplace: None,
-        };
-
-        let content = PackageContent::default();
-
-        reg.install(&manifest, &content).unwrap();
-        let list = reg.list().unwrap();
-        assert_eq!(list.len(), 1);
-        assert_eq!(list[0].name, "test-pkg");
-
-        let (loaded_m, _loaded_c) = reg.load_package("test-pkg", "1.0.0").unwrap();
-        assert_eq!(loaded_m.name, "test-pkg");
-
-        let removed = reg.remove("test-pkg", None).unwrap();
-        assert_eq!(removed, 1);
-        assert!(reg.list().unwrap().is_empty());
-    }
-
-    #[test]
-    fn export_import_round_trip() {
-        let dir = tempfile::tempdir().unwrap();
-        let reg = LocalRegistry::open_at(dir.path()).unwrap();
-
-        let content = PackageContent::default();
-        let content_json = serde_json::to_string(&content).unwrap();
-        let mut h = Sha256::new();
-        h.update(content_json.as_bytes());
-        let content_hash = crate::core::agent_identity::hex_encode(&h.finalize());
-
-        let manifest = PackageManifest {
-            schema_version: crate::core::contracts::CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
-            conformance_level: None,
-            kind: crate::core::context_package::manifest::PackageKind::default(),
-            name: "export-test".into(),
-            version: "2.0.0".into(),
-            description: "round trip test".into(),
-            author: Some("test".into()),
-            scope: None,
-            created_at: Utc::now(),
-            updated_at: None,
-            layers: vec![super::super::manifest::PackageLayer::Knowledge],
-            dependencies: vec![],
-            tags: vec![],
-            visibility: None,
-            integrity: {
-                let composite = format!("export-test:2.0.0:{content_hash}");
-                let mut h2 = Sha256::new();
-                h2.update(composite.as_bytes());
-                super::super::manifest::PackageIntegrity {
-                    sha256: crate::core::agent_identity::hex_encode(&h2.finalize()),
-                    content_hash,
-                    byte_size: content_json.len() as u64,
-                }
-            },
-            provenance: super::super::manifest::PackageProvenance {
-                tool: "lean-ctx".into(),
-                tool_version: "0.0.0".into(),
-                project_hash: None,
-                source_session_id: None,
-            },
-            compatibility: CompatibilitySpec::default(),
-            stats: PackageStats::default(),
-            signature: None,
-            graph_summary: None,
-            marketplace: None,
-        };
-
-        reg.install(&manifest, &content).unwrap();
-
-        let export_path = dir.path().join("test.ctxpkg");
-        let bytes = reg
-            .export_to_file("export-test", "2.0.0", &export_path)
-            .unwrap();
-        assert!(bytes > 0);
-
-        let reg2 = LocalRegistry::open_at(&dir.path().join("other")).unwrap();
-        let json = std::fs::read_to_string(&export_path).unwrap();
-        // GHSA-rxv5-4c3x-g4q6 (P): the network door never accepts unsigned content.
-        assert!(
-            parse_context_transfer(&json)
-                .unwrap_err()
-                .contains("unsigned")
-        );
-        for key in ["content", "cont\\u0065nt", "manifest"] {
-            let duplicate = format!(
-                "{},\"{key}\":{{}}}}",
-                json.trim_end().strip_suffix('}').unwrap()
-            );
-            let error = parse_context_transfer(&duplicate).unwrap_err();
-            assert!(error.contains("duplicate field"), "{key}: {error}");
-        }
-        // GHSA-gvg8-285q-m62g: unsigned local import needs the explicit opt-in.
-        let err = reg2
-            .import_from_file(&export_path, SignaturePolicy::RequireSigned)
-            .unwrap_err();
-        assert!(err.contains("--allow-unsigned"), "{err}");
-        assert!(reg2.list().unwrap().is_empty());
-        let imported = reg2
-            .import_from_file(&export_path, SignaturePolicy::AllowUnsigned)
-            .unwrap();
-        assert_eq!(imported.name, "export-test");
-        assert_eq!(reg2.list().unwrap().len(), 1);
-    }
-
-    #[test]
-    fn import_rejects_tampered_signature() {
-        let dir = tempfile::tempdir().unwrap();
-        let reg = LocalRegistry::open_at(dir.path()).unwrap();
-
-        let content = PackageContent::default();
-        let content_json = serde_json::to_string(&content).unwrap();
-        let mut h = Sha256::new();
-        h.update(content_json.as_bytes());
-        let content_hash = crate::core::agent_identity::hex_encode(&h.finalize());
-        let composite = format!("signed-test:1.0.0:{content_hash}");
-        let mut h2 = Sha256::new();
-        h2.update(composite.as_bytes());
-
-        let mut manifest = PackageManifest {
-            schema_version: crate::core::contracts::CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
-            conformance_level: None,
-            kind: crate::core::context_package::manifest::PackageKind::default(),
-            name: "signed-test".into(),
-            version: "1.0.0".into(),
-            description: "signature gate test".into(),
-            author: None,
-            scope: None,
-            created_at: Utc::now(),
-            updated_at: None,
-            layers: vec![super::super::manifest::PackageLayer::Knowledge],
-            dependencies: vec![],
-            tags: vec![],
-            visibility: None,
-            integrity: super::super::manifest::PackageIntegrity {
-                sha256: crate::core::agent_identity::hex_encode(&h2.finalize()),
-                content_hash,
-                byte_size: content_json.len() as u64,
-            },
-            provenance: super::super::manifest::PackageProvenance {
-                tool: "lean-ctx".into(),
-                tool_version: "0.0.0".into(),
-                project_hash: None,
-                source_session_id: None,
-            },
-            compatibility: CompatibilitySpec::default(),
-            stats: PackageStats::default(),
-            signature: None,
-            graph_summary: None,
-            marketplace: None,
-        };
-
-        let signing_key = ed25519_dalek::SigningKey::from_bytes(&[7u8; 32]);
-        super::super::signing::sign_package(&mut manifest, &content, &signing_key);
-
-        // Valid signature imports fine.
-        let bundle = ExportBundle {
-            manifest: manifest.clone(),
-            content: content.clone(),
-        };
-        let good = dir.path().join("good.ctxpkg");
-        std::fs::write(&good, serde_json::to_string(&bundle).unwrap()).unwrap();
-        let reg_good = LocalRegistry::open_at(&dir.path().join("good-reg")).unwrap();
-        assert!(
-            reg_good
-                .import_from_file(&good, SignaturePolicy::RequireSigned)
-                .is_ok()
-        );
-        parse_context_transfer(&std::fs::read_to_string(&good).unwrap()).unwrap();
-
-        // Corrupted signature value must be rejected.
-        let mut tampered = manifest.clone();
-        if let Some(sig) = tampered.signature.as_mut() {
-            sig.value = format!("0000{}", &sig.value[4..]);
-        }
-        let bundle = ExportBundle {
-            manifest: tampered,
-            content,
-        };
-        let bad = dir.path().join("bad.ctxpkg");
-        std::fs::write(&bad, serde_json::to_string(&bundle).unwrap()).unwrap();
-        let err = reg
-            .import_from_file(&bad, SignaturePolicy::AllowUnsigned)
-            .unwrap_err();
-        assert!(
-            err.contains("signature verification failed"),
-            "unexpected error: {err}"
-        );
-    }
-
-    #[test]
-    fn legacy_lctxpkg_extension_accepted() {
-        let dir = tempfile::tempdir().unwrap();
-        let reg = LocalRegistry::open_at(dir.path()).unwrap();
-
-        let content = PackageContent::default();
-        let content_json = serde_json::to_string(&content).unwrap();
-        let mut h = Sha256::new();
-        h.update(content_json.as_bytes());
-        let content_hash = crate::core::agent_identity::hex_encode(&h.finalize());
-        let composite = format!("legacy-test:1.0.0:{content_hash}");
-        let mut h2 = Sha256::new();
-        h2.update(composite.as_bytes());
-
-        let manifest = PackageManifest {
-            schema_version: crate::core::contracts::CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
-            conformance_level: None,
-            kind: crate::core::context_package::manifest::PackageKind::default(),
-            name: "legacy-test".into(),
-            version: "1.0.0".into(),
-            description: "legacy extension test".into(),
-            author: None,
-            scope: None,
-            created_at: Utc::now(),
-            updated_at: None,
-            layers: vec![super::super::manifest::PackageLayer::Knowledge],
-            dependencies: vec![],
-            tags: vec![],
-            visibility: None,
-            integrity: super::super::manifest::PackageIntegrity {
-                sha256: crate::core::agent_identity::hex_encode(&h2.finalize()),
-                content_hash,
-                byte_size: content_json.len() as u64,
-            },
-            provenance: super::super::manifest::PackageProvenance {
-                tool: "lean-ctx".into(),
-                tool_version: "0.0.0".into(),
-                project_hash: None,
-                source_session_id: None,
-            },
-            compatibility: CompatibilitySpec::default(),
-            stats: PackageStats::default(),
-            signature: None,
-            graph_summary: None,
-            marketplace: None,
-        };
-
-        reg.install(&manifest, &content).unwrap();
-
-        let legacy_path = dir.path().join("test.lctxpkg");
-        reg.export_to_file("legacy-test", "1.0.0", &legacy_path)
-            .unwrap();
-
-        let reg2 = LocalRegistry::open_at(&dir.path().join("other")).unwrap();
-        let imported = reg2
-            .import_from_file(&legacy_path, SignaturePolicy::AllowUnsigned)
-            .unwrap();
-        assert_eq!(imported.name, "legacy-test");
-    }
-
-    #[test]
-    fn unsupported_extension_rejected() {
-        let dir = tempfile::tempdir().unwrap();
-        let reg = LocalRegistry::open_at(dir.path()).unwrap();
-        let bad_path = dir.path().join("test.json");
-        std::fs::write(&bad_path, "{}").unwrap();
-        assert!(
-            reg.import_from_file(&bad_path, SignaturePolicy::AllowUnsigned)
-                .is_err()
-        );
-    }
-
-    /// A signed `kind=context` package file named `name`, signed by `key`.
-    fn write_signed_package(dir: &Path, name: &str, key: &ed25519_dalek::SigningKey) -> PathBuf {
-        let content = PackageContent::default();
-        let content_json = serde_json::to_string(&content).unwrap();
-        let content_hash = crate::core::agent_identity::hex_encode(&Sha256::digest(&content_json));
-        let composite = format!("{name}:1.0.0:{content_hash}");
-        let mut manifest = PackageManifest {
-            schema_version: crate::core::contracts::CONTEXT_PACKAGE_V1_SCHEMA_VERSION,
-            conformance_level: None,
-            kind: crate::core::context_package::manifest::PackageKind::default(),
-            name: name.into(),
-            version: "1.0.0".into(),
-            description: "publisher pin test".into(),
-            author: None,
-            scope: None,
-            created_at: Utc::now(),
-            updated_at: None,
-            layers: vec![super::super::manifest::PackageLayer::Knowledge],
-            dependencies: vec![],
-            tags: vec![],
-            visibility: None,
-            integrity: super::super::manifest::PackageIntegrity {
-                sha256: crate::core::agent_identity::hex_encode(&Sha256::digest(&composite)),
-                content_hash,
-                byte_size: content_json.len() as u64,
-            },
-            provenance: super::super::manifest::PackageProvenance {
-                tool: "lean-ctx".into(),
-                tool_version: "0.0.0".into(),
-                project_hash: None,
-                source_session_id: None,
-            },
-            compatibility: CompatibilitySpec::default(),
-            stats: PackageStats::default(),
-            signature: None,
-            graph_summary: None,
-            marketplace: None,
-        };
-        super::super::signing::sign_package(&mut manifest, &content, key);
-        let path = dir.join(format!(
-            "{}-{}.ctxpkg",
-            name.replace(['@', '/'], "_"),
-            crate::core::agent_identity::hex_encode(&key.verifying_key().to_bytes()[..4])
-        ));
-        let bundle = ExportBundle { manifest, content };
-        std::fs::write(&path, serde_json::to_string(&bundle).unwrap()).unwrap();
-        path
-    }
-
-    /// GHSA-gvg8-285q-m62g: the TOFU publisher pin is recorded only after the
-    /// install succeeded; a failed install leaves no trust anchor behind.
-    #[test]
-    fn failed_install_leaves_no_publisher_pin() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let data = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
-        let dir = tempfile::tempdir().unwrap();
-        let publisher = ed25519_dalek::SigningKey::from_bytes(&[14u8; 32]);
-        let pk = crate::core::agent_identity::hex_encode(&publisher.verifying_key().to_bytes());
-        let pinned = SignaturePolicy::RequirePinnedPublisher { namespace: "acme" };
-        let file = write_signed_package(dir.path(), "@acme/broken", &publisher);
-
-        // A regular file where the package directory must go fails the install.
-        let reg = LocalRegistry::open_at(&dir.path().join("reg")).unwrap();
-        std::fs::write(dir.path().join("reg").join("@acme"), b"not a dir").unwrap();
-        assert!(reg.import_from_file(&file, pinned).is_err());
-        assert!(
-            !crate::core::signer_trust::is_trusted("@acme", &pk),
-            "a failed install must not pin the publisher key"
-        );
-
-        // A successful install pins it.
-        let reg2 = LocalRegistry::open_at(&dir.path().join("reg2")).unwrap();
-        reg2.import_from_file(&file, pinned).unwrap();
-        assert!(crate::core::signer_trust::is_trusted("@acme", &pk));
-
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-    }
-
-    /// GHSA-gvg8-285q-m62g: the MCP door admits only packages whose signer
-    /// key is anchored for the publisher; any self-made key is refused.
-    #[test]
-    fn mcp_imports_require_an_anchored_signer() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let data = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
-        let dir = tempfile::tempdir().unwrap();
-        let publisher = ed25519_dalek::SigningKey::from_bytes(&[13u8; 32]);
-        let reg = LocalRegistry::open_at(&dir.path().join("reg")).unwrap();
-        let file = write_signed_package(dir.path(), "@acme/mcp", &publisher);
-
-        let err = reg
-            .import_from_file(&file, SignaturePolicy::RequireTrustedSigner)
-            .unwrap_err();
-        assert!(err.contains("not pinned"), "{err}");
-        assert!(err.contains("mcp_import_allow_unverified"), "{err}");
-        assert!(reg.list().unwrap().is_empty());
-        assert!(
-            reg.import_from_file(&file, SignaturePolicy::RequireSigned)
-                .is_ok(),
-            "the CLI door still accepts a valid signature"
-        );
-
-        let reg2 = LocalRegistry::open_at(&dir.path().join("reg2")).unwrap();
-        let pk = crate::core::agent_identity::hex_encode(&publisher.verifying_key().to_bytes());
-        crate::core::signer_trust::pin_if_absent("@acme", &pk, "test").unwrap();
-        let manifest = reg2
-            .import_from_file(&file, SignaturePolicy::RequireTrustedSigner)
-            .unwrap();
-        assert!(untrusted_package_signer(&manifest).is_none());
-
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-    }
-
-    /// GHSA-gvg8-285q-m62g: a remote install pins the namespace's publisher
-    /// key on first use and refuses a re-signed artifact or a foreign
-    /// namespace afterwards.
-    #[test]
-    fn remote_installs_pin_the_publisher_key() {
-        let _lock = crate::core::data_dir::test_env_lock();
-        let data = tempfile::tempdir().unwrap();
-        crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
-        let dir = tempfile::tempdir().unwrap();
-        let publisher = ed25519_dalek::SigningKey::from_bytes(&[11u8; 32]);
-        let attacker = ed25519_dalek::SigningKey::from_bytes(&[12u8; 32]);
-        let pinned = SignaturePolicy::RequirePinnedPublisher { namespace: "acme" };
-
-        let reg = LocalRegistry::open_at(&dir.path().join("reg")).unwrap();
-        let first = write_signed_package(dir.path(), "@acme/ctx", &publisher);
-        reg.import_from_file(&first, pinned).unwrap();
-        let manifest = reg.list().unwrap();
-        assert_eq!(manifest.len(), 1);
-
-        let resigned = write_signed_package(dir.path(), "@acme/ctx", &attacker);
-        let err = reg.import_from_file(&resigned, pinned).unwrap_err();
-        assert!(err.contains("publisher key mismatch"), "{err}");
-
-        let foreign = write_signed_package(dir.path(), "@other/ctx", &publisher);
-        let err = reg.import_from_file(&foreign, pinned).unwrap_err();
-        assert!(err.contains("requested namespace"), "{err}");
-
-        // The same publisher key keeps working.
-        assert!(reg.import_from_file(&first, pinned).is_ok());
-
-        crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
-    }
-}
+#[path = "registry_tests.rs"]
+mod tests;

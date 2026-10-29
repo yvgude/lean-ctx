@@ -273,7 +273,7 @@ pub fn audit_report() -> DeterminismAuditReport {
 }
 
 fn canonical_messages(messages: &[Value]) -> Vec<u8> {
-    canonical_json(&Value::Array(messages.to_vec()))
+    crate::core::canonical::canonical_json_bytes(&Value::Array(messages.to_vec()))
 }
 
 fn canonical_message_prefix_len(messages: &[Value], count: usize) -> usize {
@@ -285,44 +285,9 @@ fn canonical_message_prefix_len(messages: &[Value], count: usize) -> usize {
         if index > 0 {
             bytes.push(b',');
         }
-        write_canonical_json(message, &mut bytes);
+        bytes.extend(crate::core::canonical::canonical_json_bytes(message));
     }
     bytes.len()
-}
-
-fn canonical_json(value: &Value) -> Vec<u8> {
-    let mut bytes = Vec::new();
-    write_canonical_json(value, &mut bytes);
-    bytes
-}
-
-fn write_canonical_json(value: &Value, out: &mut Vec<u8>) {
-    match value {
-        Value::Array(items) => {
-            out.push(b'[');
-            for (index, item) in items.iter().enumerate() {
-                if index > 0 {
-                    out.push(b',');
-                }
-                write_canonical_json(item, out);
-            }
-            out.push(b']');
-        }
-        Value::Object(map) => {
-            out.push(b'{');
-            let sorted = map.iter().collect::<BTreeMap<_, _>>();
-            for (index, (key, item)) in sorted.into_iter().enumerate() {
-                if index > 0 {
-                    out.push(b',');
-                }
-                out.extend(serde_json::to_vec(key).expect("JSON object keys serialize"));
-                out.push(b':');
-                write_canonical_json(item, out);
-            }
-            out.push(b'}');
-        }
-        _ => out.extend(serde_json::to_vec(value).expect("JSON scalar serializes")),
-    }
 }
 
 fn common_prefix_len(before: &[u8], after: &[u8]) -> usize {

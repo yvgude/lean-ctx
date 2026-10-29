@@ -24,10 +24,8 @@ pub struct BundleSpec {
     pub from: String,
     /// RFC 3339 inclusive upper bound.
     pub to: String,
-    /// Framework mapping to include a coverage report for.
-    pub framework: Option<String>,
-    /// Pack name/path override; defaults to the framework reference pack,
-    /// the project pack, or `baseline` (first match wins).
+    /// Pack name/path override; defaults to the project pack, else
+    /// `baseline`.
     pub pack: Option<String>,
     pub out: Option<PathBuf>,
 }
@@ -143,97 +141,24 @@ fn sha256_hex(bytes: &[u8]) -> String {
     crate::core::agent_identity::hex_encode(&hasher.finalize())
 }
 
-/// The attested window of the audit trail.
-struct AuditWindow {
-    segment_lines: Vec<String>,
-    anchor_prev_hash: Option<String>,
-    head_hash: String,
-}
-
-/// Collect the in-window entries of the trail at `trail_path` across every
-/// rotated archive segment (oldest first) and the active segment
-/// (GHSA-jhf9-3pv4-m469). The trail is streamed one line at a time; only
-/// the in-window entries, which form the bundle itself, are retained.
-fn collect_audit_window(
-    trail_path: &Path,
-    from: chrono::DateTime<chrono::FixedOffset>,
-    to: chrono::DateTime<chrono::FixedOffset>,
-) -> Result<AuditWindow, String> {
-    let mut window = AuditWindow {
-        segment_lines: Vec::new(),
-        anchor_prev_hash: None,
-        head_hash: String::new(),
-    };
-    let present =
-        crate::core::audit_trail::for_each_line_at(trail_path, |segment, lineno, line| {
-            let at = || {
-                format!(
-                    "line {lineno} of {}",
-                    segment.file_name().map_or_else(
-                        || segment.display().to_string(),
-                        |n| n.to_string_lossy().into_owned()
-                    )
-                )
-            };
-            // Concurrent appends have historically produced lines holding two
-            // back-to-back JSON objects (`…}{…`). A stream deserializer splits
-            // them losslessly — entry hashes are untouched, so the chain still
-            // proves integrity. Lines that don't parse AT ALL are tolerated
-            // only outside the attested window; inside it they are a hard
-            // error — an evidence artifact must never paper over a gap.
-            let mut stream =
-                serde_json::Deserializer::from_str(line).into_iter::<serde_json::Value>();
-            let mut parsed_any = false;
-            loop {
-                let value = match stream.next() {
-                    None => break,
-                    Some(Ok(v)) => v,
-                    Some(Err(e)) => {
-                        if window.segment_lines.is_empty() && !parsed_any {
-                            break; // pre-window garbage
-                        }
-                        return Err(format!(
-                            "corrupt trail {} inside the attested period: {e}",
-                            at()
-                        ));
-                    }
-                };
-                parsed_any = true;
-                let entry: AuditEntry = match serde_json::from_value(value) {
-                    Ok(e) => e,
-                    Err(e) => {
-                        if window.segment_lines.is_empty() {
-                            continue;
-                        }
-                        return Err(format!("malformed audit entry at {}: {e}", at()));
-                    }
-                };
-                let ts = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
-                    .map_err(|e| format!("corrupt trail timestamp at {}: {e}", at()))?;
-                if ts < from || ts > to {
-                    continue;
-                }
-                if window.anchor_prev_hash.is_none() {
-                    window.anchor_prev_hash = Some(entry.prev_hash.clone());
-                }
-                window.head_hash.clone_from(&entry.entry_hash);
-                // Re-serialize one-object-per-line; field order is the struct's
-                // declaration order, identical to what `record()` writes.
-                window
-                    .segment_lines
-                    .push(serde_json::to_string(&entry).map_err(|e| e.to_string())?);
-            }
-            Ok(())
-        })?;
-    if !present {
-        return Err(format!("no audit trail at {}", trail_path.display()));
-    }
-    Ok(window)
-}
-
 /// Generate the bundle. Fails loudly on every inconsistency — an evidence
 /// artifact with silently missing parts would be worse than none.
+/// Answers the framework part of a bundle (the licensed runtime in production).
+pub type AssessFrameworks =
+    fn(
+        &crate::core::compliance_evidence::facts::ComplianceFactsV1,
+    ) -> Result<crate::core::compliance_evidence::frameworks::FrameworksAnswer, String>;
+
 pub fn generate(spec: &BundleSpec) -> Result<BundleResult, String> {
+    generate_with(spec, None)
+}
+
+/// [`generate`], plus the coverage report of one framework (`coverage/<id>.json`,
+/// `manifest.framework`) when `framework` names it and how to assess it.
+pub fn generate_with(
+    spec: &BundleSpec,
+    framework: Option<(&str, AssessFrameworks)>,
+) -> Result<BundleResult, String> {
     let from = chrono::DateTime::parse_from_rfc3339(&spec.from)
         .map_err(|e| format!("--from is not RFC 3339: {e}"))?;
     let to = chrono::DateTime::parse_from_rfc3339(&spec.to)
@@ -247,11 +172,61 @@ pub fn generate(spec: &BundleSpec) -> Result<BundleResult, String> {
         .map_err(|e| format!("data dir: {e}"))?
         .join("audit")
         .join("trail.jsonl");
-    let AuditWindow {
-        segment_lines,
-        anchor_prev_hash,
-        head_hash,
-    } = collect_audit_window(&trail_path, from, to)?;
+    // Sealed segments that end before the period are not read.
+    let trail_raw = crate::core::audit_trail::read_trail_since(&trail_path, Some(from.to_utc()))
+        .map_err(|e| format!("no audit trail at {}: {e}", trail_path.display()))?
+        .ok_or_else(|| format!("no audit trail at {}", trail_path.display()))?;
+
+    let mut segment_lines: Vec<String> = Vec::new();
+    let mut anchor_prev_hash: Option<String> = None;
+    let mut head_hash = String::new();
+    for (lineno, line) in trail_raw.lines().enumerate() {
+        // Concurrent appends have historically produced lines holding two
+        // back-to-back JSON objects (`…}{…`). A stream deserializer splits
+        // them losslessly — entry hashes are untouched, so the chain still
+        // proves integrity. Lines that don't parse AT ALL are tolerated
+        // only outside the attested window; inside it they are a hard
+        // error — an evidence artifact must never paper over a gap.
+        let mut stream = serde_json::Deserializer::from_str(line).into_iter::<serde_json::Value>();
+        let mut parsed_any = false;
+        loop {
+            let value = match stream.next() {
+                None => break,
+                Some(Ok(v)) => v,
+                Some(Err(e)) => {
+                    if segment_lines.is_empty() && !parsed_any {
+                        break; // pre-window garbage
+                    }
+                    return Err(format!(
+                        "corrupt trail line {} inside the attested period: {e}",
+                        lineno + 1
+                    ));
+                }
+            };
+            parsed_any = true;
+            let entry: AuditEntry = match serde_json::from_value(value) {
+                Ok(e) => e,
+                Err(e) => {
+                    if segment_lines.is_empty() {
+                        continue;
+                    }
+                    return Err(format!("malformed audit entry at line {}: {e}", lineno + 1));
+                }
+            };
+            let ts = chrono::DateTime::parse_from_rfc3339(&entry.timestamp)
+                .map_err(|e| format!("corrupt trail timestamp at line {}: {e}", lineno + 1))?;
+            if ts < from || ts > to {
+                continue;
+            }
+            if anchor_prev_hash.is_none() {
+                anchor_prev_hash = Some(entry.prev_hash.clone());
+            }
+            head_hash.clone_from(&entry.entry_hash);
+            // Re-serialize one-object-per-line; field order is the struct's
+            // declaration order, identical to what `record()` writes.
+            segment_lines.push(serde_json::to_string(&entry).map_err(|e| e.to_string())?);
+        }
+    }
     if segment_lines.is_empty() {
         return Err(format!(
             "no audit entries between {} and {} — nothing to attest",
@@ -263,19 +238,11 @@ pub fn generate(spec: &BundleSpec) -> Result<BundleResult, String> {
 
     // ── policy pack (resolved view) ──────────────────────────────────────
     let pack_name = spec.pack.clone().unwrap_or_else(|| {
-        spec.framework
-            .as_deref()
-            .and_then(|fw| crate::core::compliance::get(fw))
-            .map_or_else(
-                || {
-                    if Path::new(".lean-ctx/policy.toml").exists() {
-                        ".lean-ctx/policy.toml".to_string()
-                    } else {
-                        "baseline".to_string()
-                    }
-                },
-                |m| m.reference_pack.clone(),
-            )
+        if Path::new(".lean-ctx/policy.toml").exists() {
+            ".lean-ctx/policy.toml".to_string()
+        } else {
+            "baseline".to_string()
+        }
     });
     let pack = if Path::new(&pack_name)
         .extension()
@@ -285,7 +252,7 @@ pub fn generate(spec: &BundleSpec) -> Result<BundleResult, String> {
             .map_err(|e| format!("pack {pack_name}: {e}"))?
     } else {
         crate::core::policy::builtin::get(&pack_name)
-            .ok_or_else(|| format!("unknown builtin pack '{pack_name}'"))?
+            .ok_or_else(|| crate::core::policy::builtin::unknown_pack_hint(&pack_name))?
     };
     let resolved =
         crate::core::policy::resolve(&pack).map_err(|e| format!("pack {pack_name}: {e}"))?;
@@ -313,16 +280,15 @@ pub fn generate(spec: &BundleSpec) -> Result<BundleResult, String> {
         ),
     ];
 
-    if let Some(fw) = &spec.framework {
-        let mapping = crate::core::compliance::get(fw).ok_or_else(|| {
-            format!(
-                "unknown framework '{fw}' (supported: {})",
-                crate::core::compliance::names().join(", ")
-            )
-        })?;
-        let report = crate::core::compliance::report(mapping, Some(&resolved));
+    if let Some((id, assess)) = framework {
+        let mut answer = crate::core::compliance_evidence::assess_frameworks(
+            &[id.to_string()],
+            Some(&resolved),
+            assess,
+        )?;
+        let report = answer.frameworks.remove(0);
         let value = serde_json::to_value(&report).map_err(|e| e.to_string())?;
-        files.push((format!("coverage/{fw}.json"), canonical_serialize(&value)));
+        files.push((format!("coverage/{id}.json"), canonical_serialize(&value)));
     }
 
     files.sort_by(|a, b| a.0.cmp(&b.0));
@@ -351,7 +317,8 @@ pub fn generate(spec: &BundleSpec) -> Result<BundleResult, String> {
         "version": 1,
         "period": { "from": spec.from, "to": spec.to },
         "subject": { "agent_id": SIGNING_AGENT, "project": project },
-        "framework": spec.framework,
+        // Framework coverage is LeanCTX Enterprise; without it the v1 field is null.
+        "framework": framework.map(|(id, _)| id),
         "files": file_hashes,
         "chain": {
             "entries": segment_lines.len(),
@@ -407,64 +374,4 @@ pub fn generate(spec: &BundleSpec) -> Result<BundleResult, String> {
         entries: segment_lines.len(),
         files: files.into_iter().map(|(p, _)| p).collect(),
     })
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    fn line(ts: &str, tool: &str, prev: &str, hash: &str) -> String {
-        format!(
-            r#"{{"timestamp":"{ts}","agent_id":"a","tool":"{tool}","action":null,"input_hash":"x","output_tokens":0,"role":"r","event_type":"tool_call","prev_hash":"{prev}","entry_hash":"{hash}"}}"#
-        )
-    }
-
-    fn ts(s: &str) -> chrono::DateTime<chrono::FixedOffset> {
-        chrono::DateTime::parse_from_rfc3339(s).unwrap()
-    }
-
-    /// GHSA-jhf9-3pv4-m469: a bundle over a rotated trail attests the
-    /// archived segments too, in chain order, and only the requested window.
-    #[test]
-    fn audit_window_spans_rotated_archive_segments() {
-        let dir = tempfile::tempdir().unwrap();
-        let path = dir.path().join("trail.jsonl");
-        std::fs::write(
-            dir.path().join("trail.000001.jsonl"),
-            format!(
-                "{}\n{}\n",
-                line("2026-05-01T10:00:00+00:00", "before", "genesis", "h0"),
-                line("2026-06-01T10:00:00+00:00", "archived", "h0", "h1")
-            ),
-        )
-        .unwrap();
-        std::fs::write(
-            &path,
-            format!(
-                "{}\n{}\n",
-                line("2026-06-01T11:00:00+00:00", "active", "h1", "h2"),
-                line("2026-07-01T11:00:00+00:00", "after", "h2", "h3")
-            ),
-        )
-        .unwrap();
-
-        let window = collect_audit_window(
-            &path,
-            ts("2026-06-01T00:00:00+00:00"),
-            ts("2026-06-30T00:00:00+00:00"),
-        )
-        .unwrap();
-        assert_eq!(window.segment_lines.len(), 2);
-        assert!(window.segment_lines[0].contains("\"archived\""));
-        assert!(window.segment_lines[1].contains("\"active\""));
-        assert_eq!(window.anchor_prev_hash.as_deref(), Some("h0"));
-        assert_eq!(window.head_hash, "h2");
-
-        let missing = collect_audit_window(
-            &dir.path().join("absent.jsonl"),
-            ts("2026-06-01T00:00:00+00:00"),
-            ts("2026-06-30T00:00:00+00:00"),
-        );
-        assert!(missing.is_err_and(|e| e.starts_with("no audit trail at")));
-    }
 }

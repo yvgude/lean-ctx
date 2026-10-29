@@ -1,0 +1,15 @@
+{
+  "case": "metrics_hours_tool_command",
+  "base": "routes/metrics_hours.request.json",
+  "patch": [
+    {
+      "op": "replace",
+      "path": "/buckets/0/slices/0/tools/2/tool",
+      "value": "git push --force"
+    }
+  ],
+  "expect": {
+    "layer": "schema"
+  },
+  "why": "a command line in a tool name"
+}

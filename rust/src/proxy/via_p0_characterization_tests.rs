@@ -98,15 +98,13 @@ fn proxy_state(anthropic_upstream: String) -> super::ProxyState {
         upstreams,
         chatgpt_cookies: super::chatgpt_cookies::shared_chatgpt_cloudflare_cookie_store(),
         mcp_servers: Arc::new(Vec::new()),
-        web_app_tracker: Arc::new(std::sync::Mutex::new(
-            super::web_app::conversation_tracker::ConversationTracker::default(),
-        )),
     }
 }
 
 #[test]
 fn p0_anthropic_characterization_pins_tool_reduction_and_protected_fields() {
     let _isolation = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let (original, original_bytes) = parse_fixture(ANTHROPIC_FIXTURE);
 
     let (output, original_size, compressed_size) =
@@ -164,6 +162,7 @@ fn p0_anthropic_characterization_pins_tool_reduction_and_protected_fields() {
 #[test]
 fn p0_openai_responses_characterization_pins_tool_reduction_and_protected_fields() {
     let _isolation = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     let (original, original_bytes) = parse_fixture(OPENAI_RESPONSES_FIXTURE);
 
     let (output, original_size, compressed_size) =
@@ -214,6 +213,7 @@ async fn p0_anthropic_edge_forwards_auth_and_transformed_body_to_fake_provider()
     use axum::http::{Request, StatusCode, header::CONTENT_TYPE};
 
     let _isolation = crate::core::data_dir::isolated_data_dir();
+    let _community = crate::core::policy::runtime::TestPolicyOverride::set(None);
     super::prefix_replay::clear();
     let (upstream, server) = capture_one_provider_request().await;
     let (original, original_bytes) = parse_fixture(ANTHROPIC_FIXTURE);

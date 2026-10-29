@@ -43,7 +43,7 @@ pub fn handle(
     };
     let temperature = budget.temperature();
 
-    let intent_route = crate::core::intent_router::route_v1(&task);
+    let intent_route = crate::core::intent_router::route_v2(&task);
     let intent_mode = &intent_route.decision.effective_read_mode;
 
     let mut plan_items: Vec<PlanItem> = Vec::new();

@@ -17,18 +17,8 @@
 //! Adding a language therefore means: a pinned optional dep in `Cargo.toml`
 //! under the `tree-sitter` feature, a `get_language`/`get_query` arm here, a
 //! `QUERY_*` const, and tests in `signatures_ts`.
-//!
-//! **One deliberate exception (#690):** long-tail grammars behind an
-//! installed, SHA-256-pinned addon dylib. `get_language`'s final `_` arm
-//! defers to [`super::grammar_loader::get_addon_language`] before giving up
-//! — see that module's doc comment for how this narrows the three objections
-//! above rather than abandoning them. `get_query`'s arms are unaffected:
-//! query text for those languages stays a bundled `&'static str` here either
-//! way, addon or not.
 
 use tree_sitter::Language;
-
-use super::grammar_loader::get_addon_language;
 
 const QUERY_RUST: &str = r"
 (function_item name: (identifier) @name) @def
@@ -340,14 +330,18 @@ pub(super) fn get_language(ext: &str) -> Option<Language> {
         "gd" => tree_sitter_gdscript::LANGUAGE.into(),
         "lua" => tree_sitter_lua::LANGUAGE.into(),
         "luau" => tree_sitter_luau::LANGUAGE.into(),
+        #[cfg(feature = "grammar-ocaml")]
         "ml" => tree_sitter_ocaml::LANGUAGE_OCAML.into(),
+        #[cfg(feature = "grammar-ocaml")]
         "mli" => tree_sitter_ocaml::LANGUAGE_OCAML_INTERFACE.into(),
+        #[cfg(feature = "grammar-haskell")]
         "hs" => tree_sitter_haskell::LANGUAGE.into(),
+        #[cfg(feature = "grammar-julia")]
         "jl" => tree_sitter_julia::LANGUAGE.into(),
         "sol" => tree_sitter_solidity::LANGUAGE.into(),
         "nix" => tree_sitter_nix::LANGUAGE.into(),
         "ps1" | "psm1" => tree_sitter_powershell::LANGUAGE.into(),
-        _ => return get_addon_language(ext),
+        _ => return None,
     })
 }
 
