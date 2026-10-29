@@ -296,14 +296,21 @@ jobs:
           matrix.artifact != 'x86_64-unknown-linux-gnu-cuda'
         working-directory: rust
         shell: bash
+        # The same suite and settings as ci.yml's test job: libtest's default
+        # parallelism (the serial `--test-threads=1` was an env-race legacy of
+        # v3.3.5, fixed at the source) and 64 proptest cases. Serial, it held
+        # every macOS release build for about 90 minutes.
+        env:
+          PROPTEST_CASES: 64
+          CARGO_PROFILE_TEST_DEBUG: line-tables-only
         run: |
           umask 077
           if [[ "${{ matrix.jemalloc }}" == "true" ]]; then
             JEMALLOC_OVERRIDE="${{ steps.jemalloc.outputs.jemalloc-override }}" \
               CARGO_TARGET_X86_64_PC_WINDOWS_GNU_RUSTFLAGS="-L ${{ steps.jemalloc.outputs.dummy-dir }}" \
-              cargo test --lib --target x86_64-pc-windows-gnu --all-features --locked -- --test-threads=1
+              cargo test --lib --target x86_64-pc-windows-gnu --all-features --locked
           else
-            cargo test --lib --all-features --locked -- --test-threads=1
+            cargo test --lib --all-features --locked
           fi
 
       - name: Setup Zig
@@ -817,9 +824,50 @@ jobs:
     name: Publish GitHub Release
     needs: [release, cockpit-assets]
     runs-on: ubuntu-latest
+    timeout-minutes: 75
     permissions:
       contents: write
     steps:
+      # Official engines install a missing Cockpit from the production Cockpit
+      # channel by themselves (an update from a release without one). Publish
+      # only once that channel serves exactly this draft's catalog and every
+      # file it names, so no new engine finds an empty channel.
+      - name: Require the Cockpit channel live
+        env:
+          GH_TOKEN: ${{ github.token }}
+          CHANNEL_URL: ${{ vars.LEANCTX_PRODUCTION_COCKPIT_CHANNEL_URL }}
+          SIGNATURE_URL: ${{ vars.LEANCTX_PRODUCTION_COCKPIT_CHANNEL_SIGNATURE_URL }}
+        run: |
+          set -euo pipefail
+          [[ "$CHANNEL_URL" == https://* && "$SIGNATURE_URL" == https://* ]] \
+            || { echo "::error::Set the production Cockpit channel variables"; exit 1; }
+          mkdir channel && cd channel
+          gh release download "${GITHUB_REF_NAME}" --repo "${GITHUB_REPOSITORY}" \
+            --pattern 'lean-ctx-cockpit-channel.json' --pattern 'lean-ctx-cockpit-channel.sig'
+          live() {
+            curl -fsS --proto '=https' --max-time 20 "$CHANNEL_URL" -o live.json \
+              && curl -fsS --proto '=https' --max-time 20 "$SIGNATURE_URL" -o live.sig \
+              && cmp -s live.json lean-ctx-cockpit-channel.json \
+              && cmp -s live.sig lean-ctx-cockpit-channel.sig \
+              && python3 - <<'PY'
+          import json, subprocess
+          catalog = json.load(open("lean-ctx-cockpit-channel.json"))
+          for release in catalog["releases"]:
+              for key in ("archive_url", "manifest_url", "signature_url"):
+                  subprocess.run(["curl", "-fsS", "--proto", "=https", "--max-time", "30",
+                                  "-o", "/dev/null", release[key]], check=True)
+          PY
+          }
+          deadline=$(( $(date +%s) + 60 * 60 ))
+          until live; do
+            if [[ $(date +%s) -ge $deadline ]]; then
+              echo "::error::${CHANNEL_URL} does not serve this release's Cockpit catalog"; exit 1
+            fi
+            echo "::notice::Waiting for the production Cockpit channel to serve this release's catalog"
+            sleep 30
+          done
+          echo "Cockpit channel serves this release's catalog and all its files"
+
       - name: Publish the verified draft
         env:
           GH_TOKEN: ${{ github.token }}

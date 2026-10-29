@@ -247,11 +247,11 @@
    "size": 3565
   },
   {
-   "blob": "b962de77b78546a9d7b5ff1fe0a87230454f78db",
+   "blob": "baaad32011a5fa47b828ba7ce3d66bfa67336fb6",
    "mode": "100644",
    "path": ".github/workflows/release.yml",
-   "sha256": "d0690278df389b075e5ed6536a233d53dd23630932c3cfc528499bb0f0405bce",
-   "size": 55816
+   "sha256": "afc288cf252f338870d5268f57a6af08eb19bb70200c1aced82bee6f91349e62",
+   "size": 58410
   },
   {
    "blob": "75a4d6a3ea3e0e6bf69efff80c68bc5cca72e7b4",
@@ -5686,10 +5686,10 @@
    "size": 4024
   },
   {
-   "blob": "c79bda431062485e8b3e98c7887f10121ac345e5",
+   "blob": "17aee035f1915a6167189f1a174719920c839cef",
    "mode": "100644",
    "path": "docs/contracts/delivery-evidence-v1.json",
-   "sha256": "4b16507368818a088af251e4af5b2481ac32c93d518413f461ea0d31d4a6076a",
+   "sha256": "746b50bf0ef3712f10d499729cd803f53aeaadf2cb036315c4bbc557084d93e1",
    "size": 6892
   },
   {
@@ -17943,11 +17943,11 @@
    "size": 47644
   },
   {
-   "blob": "f46de9350224b21597089dcddd49d261cbd47b0a",
+   "blob": "023492c6ad0a0ca004dc9bd2cf8816dafda26ac1",
    "mode": "100644",
    "path": "rust/src/cli/dispatch/network/cockpit_start.rs",
-   "sha256": "c29b622eb2ebfc79a9e2bcf2a5d7c6c91a37bcd724a8ea6b7a606994bb89ffd9",
-   "size": 13793
+   "sha256": "67974d24120b81c0e5d21bde0a5fa228f1cb4c9ba5a83e9582fb176b086b44e4",
+   "size": 13803
   },
   {
    "blob": "6990d43503feee26d7df3338f9d18aaf63bad4aa",
@@ -17978,11 +17978,11 @@
    "size": 5215
   },
   {
-   "blob": "a9bba354a8056946f12f2d16880ca547606c86f9",
+   "blob": "17f76676c0ff35901206852e82d1972bba4df2ed",
    "mode": "100644",
    "path": "rust/src/cli/dispatch/server.rs",
-   "sha256": "ccb48892bb33e6546a98f97e7b8e144510b2a6ee255b92228caec62fed843b9e",
-   "size": 24443
+   "sha256": "9ffc365d217e6f20a7700449c93cf157752cf9b09d098fd0a66d3e664caabb7c",
+   "size": 24671
   },
   {
    "blob": "1977bec7871c1997a2abe2a8a4349d7be2582888",
@@ -25328,11 +25328,11 @@
    "size": 11320
   },
   {
-   "blob": "a33167387247b25c39f924e0f97da6e82264e8c1",
+   "blob": "703751d84ba86ce08b0edbd04779e9942f8cb821",
    "mode": "100644",
    "path": "rust/src/core/intelligence_runtime/cockpit.rs",
-   "sha256": "b43aa714a650c81ba6e7b33f27b6857dbcdb843e11f895e9755f19572748a6e9",
-   "size": 36060
+   "sha256": "b2e8edfd52434cdc5712d6c1f8a8f86a4d5ef06b33157bdf3cc1e18beee1157b",
+   "size": 40426
   },
   {
    "blob": "6506519647bd70c5d2b3f1b0548e014787024075",
@@ -29892,11 +29892,11 @@
    "size": 8505
   },
   {
-   "blob": "e959ffcda045b1ab08d54dfb2212a57e3956a3ab",
+   "blob": "1afcbe189ed4a979e946af6c248cdcda30fabca2",
    "mode": "100644",
    "path": "rust/src/core/updater/rewire.rs",
-   "sha256": "bf851f0eb2c54487057bd7a089a07c483e6ba88d4fd17123b8c2b79b88ded068",
-   "size": 11001
+   "sha256": "fde04ce2bf3ed5d2f552fb2eedac46f75eaa03c0e9a7277c9557b1ccf5c3ddf6",
+   "size": 11270
   },
   {
    "blob": "b361c1ffdd61294114ddd7e52123e2045164b7a1",
@@ -30354,11 +30354,11 @@
    "size": 11309
   },
   {
-   "blob": "4d1fd04177ff6e1d0793cf38821b6607a7211b2d",
+   "blob": "92357c0c8bc80272e2dc14c630002cd5dfc33f75",
    "mode": "100644",
    "path": "rust/src/daemon.rs",
-   "sha256": "c5f2ab132035c2fc4009e709b34406556e61711877cb4122aeb1ed5efdb19aba",
-   "size": 10969
+   "sha256": "785d79623ea5c804e003380740d0783c5f1d50a54662d4a797feff33cbbd1a18",
+   "size": 11197
   },
   {
    "blob": "1fdbf48984f52ebc1bc8843d95fb2c678505e539",
@@ -39004,7 +39004,7 @@
  ],
  "manifest_sha256": "d7df663439f72fdd9b269838830cf88f48f7de72b549ab572f7955d84482b58d",
  "schema": 1,
- "source_commit": "aac6332f0f2f3422f7f11d9dc87e6a696d0eb763",
+ "source_commit": "5b798e2d23677e08170b2543758240cad6a4ffda",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "1f7f3361f77d5f16e79192abf8b70dc29e39e7fd17039b5c558e475cb817204d"
+ "tree_sha256": "749d97bc805341dfd3010bfe87a36184b0d4ff38f2217ba2f79c7f5bdd302046"
 }

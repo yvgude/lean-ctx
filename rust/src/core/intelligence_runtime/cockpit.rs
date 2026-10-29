@@ -465,6 +465,92 @@ pub(crate) fn availability() -> std::result::Result<(), CockpitUnavailable> {
     }
 }
 
+/// `LEAN_CTX_NO_COCKPIT=1` (as for install.sh) keeps every automatic install off.
+fn installs_opted_out() -> bool {
+    std::env::var_os("LEAN_CTX_NO_COCKPIT").is_some_and(|value| !value.is_empty() && value != "0")
+}
+
+/// `availability`, but a missing Cockpit of an official build is installed
+/// first: the person asked to open it, and the Cockpit ships with LeanCTX.
+pub(crate) fn available_or_installed() -> std::result::Result<(), CockpitUnavailable> {
+    match availability() {
+        Err(CockpitUnavailable::NotInstalled) if !installs_opted_out() => {
+            eprintln!(
+                "Installing the LeanCTX Cockpit (signed, free) from the LeanCTX runtime channel…"
+            );
+            install_cockpit()?;
+            availability()
+        }
+        other => other,
+    }
+}
+
+/// After a failed automatic install, the next automatic attempt waits a day.
+const AUTO_RETRY: Duration = Duration::from_hours(24);
+
+fn auto_attempt_marker() -> Option<PathBuf> {
+    crate::core::data_dir::resolve_data_dir()
+        .ok()
+        .map(|dir| dir.join("cockpit-auto-install.failed"))
+}
+
+/// Whether a failed attempt recorded at `failed_at` still blocks one at `now`.
+fn retry_blocked(failed_at: Option<std::time::SystemTime>, now: std::time::SystemTime) -> bool {
+    failed_at
+        .and_then(|failed_at| now.duration_since(failed_at).ok())
+        .is_some_and(|elapsed| elapsed < AUTO_RETRY)
+}
+
+/// Install the Cockpit without being asked when an official build has none:
+/// after an update from a release without it, or an install path that ships
+/// only the Engine, nobody has to run a command. Only when none is installed
+/// (a deactivated Cockpit stays deactivated), outside CI, and after a failure
+/// at most once a day unless `retry_now`. Returns whether it installed one.
+pub(crate) fn install_if_missing(retry_now: bool) -> bool {
+    if installs_opted_out()
+        || crate::core::telemetry_consent::ci_detected(crate::core::host_env::var)
+    {
+        return false;
+    }
+    if !matches!(availability(), Err(CockpitUnavailable::NotInstalled)) {
+        return false;
+    }
+    let marker = auto_attempt_marker();
+    let failed_at = marker
+        .as_deref()
+        .and_then(|path| std::fs::metadata(path).ok())
+        .and_then(|metadata| metadata.modified().ok());
+    if !retry_now && retry_blocked(failed_at, std::time::SystemTime::now()) {
+        return false;
+    }
+    match install_cockpit() {
+        Ok(_) => {
+            if let Some(path) = &marker {
+                let _ = std::fs::remove_file(path);
+            }
+            tracing::info!("installed the cockpit automatically");
+            true
+        }
+        Err(reason) => {
+            if let Some(path) = &marker {
+                let _ = std::fs::write(path, reason.as_str());
+            }
+            tracing::debug!("automatic cockpit install failed: {}", reason.as_str());
+            false
+        }
+    }
+}
+
+/// `install_if_missing` on its own thread: an MCP or daemon start never waits
+/// for the download.
+pub(crate) fn install_if_missing_in_background() {
+    let _ = std::thread::Builder::new()
+        .name("cockpit-install".into())
+        .spawn(|| {
+            install_if_missing(false);
+        });
+}
+
 /// What `setup runtime status --kind cockpit` reports; starts nothing and
 /// uses no network.
 pub(crate) fn status() -> serde_json::Value {
@@ -952,5 +1038,32 @@ mod tests {
             assert_eq!(refused.err(), Some(CockpitUnavailable::StartFailed));
             assert!(begun.elapsed() < Duration::from_secs(5), "{body}");
         }
+    }
+
+    #[test]
+    fn a_failed_automatic_install_is_retried_after_a_day() {
+        let now = std::time::SystemTime::now();
+        assert!(!retry_blocked(None, now));
+        assert!(retry_blocked(Some(now - Duration::from_secs(60)), now));
+        assert!(retry_blocked(
+            Some(now - AUTO_RETRY + Duration::from_secs(1)),
+            now
+        ));
+        assert!(!retry_blocked(Some(now - AUTO_RETRY), now));
+        // A clock that went backwards never blocks.
+        assert!(!retry_blocked(Some(now + Duration::from_secs(60)), now));
+    }
+
+    #[test]
+    fn no_cockpit_opt_out_and_a_source_build_install_nothing() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let _off = crate::test_env::VarGuard::set("LEAN_CTX_NO_COCKPIT", "1");
+        assert!(installs_opted_out());
+        assert!(!install_if_missing(true));
+        drop(_off);
+        let _on = crate::test_env::VarGuard::set("LEAN_CTX_NO_COCKPIT", "0");
+        assert!(!installs_opted_out());
+        // A test build carries no Cockpit channel: nothing to install from.
+        assert!(!install_if_missing(true));
     }
 }

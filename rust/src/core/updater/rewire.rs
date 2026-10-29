@@ -123,6 +123,11 @@ pub(super) fn post_update_rewire(skip_rules: bool, quiet: bool) {
     if !quiet {
         print_unconnected_tools_hint();
     }
+
+    // The Cockpit ships with LeanCTX: an update installs it when it is missing.
+    if crate::core::intelligence_runtime::cockpit::install_if_missing(true) && !quiet {
+        eprintln!("  \u{2713} LeanCTX Cockpit installed (open it with: lean-ctx cockpit).");
+    }
 }
 
 fn rewire_options(

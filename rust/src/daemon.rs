@@ -302,6 +302,9 @@ pub fn init_foreground_daemon() -> Result<()> {
     // maintenance. Starting this in every short-lived MCP process creates a
     // reaper swarm precisely when many coding agents connect at once.
     crate::core::agents::reaper::spawn_reaper();
+    // The daemon starts at login: an Engine without its Cockpit (an update
+    // from a release without one) gets it here, without a command.
+    crate::core::intelligence_runtime::cockpit::install_if_missing_in_background();
     let pid = std::process::id();
     write_pid_file(pid)?;
     Ok(())

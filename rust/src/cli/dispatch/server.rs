@@ -125,6 +125,9 @@ pub(super) fn run_mcp_server() -> Result<()> {
             // token data.
             cleanup_orphan_mcp_processes();
             spawn_proxy_if_needed();
+            // An update from a release without the Cockpit (or an Engine-only
+            // install) gets it here, without a command.
+            crate::core::intelligence_runtime::cockpit::install_if_missing_in_background();
             // Keep the gateway evidence store within its bound (packs and
             // removes old receipts in the background, at most hourly).
             crate::core::context_admission::receipt_store::retention::maintain_at_startup();

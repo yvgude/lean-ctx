@@ -89,7 +89,7 @@ fn base_path_of(rest: &[String]) -> String {
 
 /// Open the Cockpit at `view` (a hash route; `None` = start page).
 pub(crate) fn open(view: Option<&str>, rest: &[String]) -> Outcome {
-    if let Err(reason) = crate::core::intelligence_runtime::cockpit::availability() {
+    if let Err(reason) = crate::core::intelligence_runtime::cockpit::available_or_installed() {
         return Outcome::Unavailable(reason);
     }
     crate::core::layout_pin::heal();
