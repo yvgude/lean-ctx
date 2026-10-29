@@ -1,5 +1,5 @@
 schema = "leanctx.third-party-notices-approval/v1"
-approved_content_sha256 = "e12d06d59d681e1592a62c8905c7ec805dff74c5b81ba3ea408205fecba1fc65"
+approved_content_sha256 = "314f805c4ab3e4a7ce2425b9594ad6dd9ea140199d3fb5090e40378b28c042f3"
 approving_owner = "Yves Gugger"
-approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for the engine C line after merging GitHub main 0c9134e880 (#2150) as e81d39b1c5: zstd 0.14.3, SBOM 558 -> 556 packages. Owner okay in the Atlas lead session on 2026-10-27 (answer \"Freigeben\" to the notices digest question)."
-approved_at = "2026-10-27"
+approval_evidence = "Copyright owner approval of the generated THIRD_PARTY_NOTICES (GENERATED AND APPROVED variant of scripts/generate-third-party-notices.py) for the 3.12.0 release after taking Dependabot #2155 (zip 9.0.4 -> 9.0.5), #2154 and #2156 into the private source; the only notice change is zip 9.0.5 and the input digests. Owner okay in the Hive lead session on 2026-10-29 (answer \"Into 3.12.0\" to the zip bump question naming the notices re-approval)."
+approved_at = "2026-10-29"

@@ -25,7 +25,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]
 name = "rustls"
-version = "0.23.19"
+version = "0.23.46"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 
 [[package]]

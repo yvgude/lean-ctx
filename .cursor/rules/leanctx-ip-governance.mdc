@@ -1,0 +1,6 @@
+---
+description: LeanCTX Context Gateway source/decision scope, Apache IP and private EE safety gate for all coding, docs and releases.
+alwaysApply: true
+---
+
+Before editing, read `.agents/skills/leanctx-ip-governance/SKILL.md` and `AGENTS.md`, including `references/PRODUCT_SCOPE.md` and `references/CONNECTOR_AND_DECISION_SECURITY.md`. LeanCTX is Context Gateway (Select → Control → Prove); new work must map authorized source→decision→bundle/receipt. General agent/model orchestration is not product scope; team coordination context (presence, leases, workspace bus, shared work graph) is. Preserve existing Apache rights, do not auto-delete OSS, keep new EE private, no public publish without real founder+independent release approval. State source ACL, integration coverage, affected licence, tests and rollback.

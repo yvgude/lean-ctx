@@ -145,30 +145,34 @@ async function downloadToFileNode(url, dest) {
 // Node.js's bundled OpenSSL does not.
 // ---------------------------------------------------------------------------
 
-function powershellGetJson(url) {
-  const ps = `
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
-    (Invoke-RestMethod -Uri '${url}' -Headers @{'User-Agent'='lean-ctx-bin-npm'} -TimeoutSec 15) | ConvertTo-Json -Depth 10 -Compress
-  `;
-  const out = execSync(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`, {
-    encoding: "utf8",
-    timeout: 20000,
+// The script text is constant; the URL and path reach PowerShell as
+// environment variables, never spliced into the command, and no shell runs.
+function powershell(script, values, options) {
+  return execFileSync("powershell", ["-NoProfile", "-NonInteractive", "-Command", script], {
+    ...options,
+    env: { ...process.env, ...values },
     windowsHide: true,
   });
+}
+
+function powershellGetJson(url) {
+  const out = powershell(
+    "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; " +
+      "(Invoke-RestMethod -Uri $env:LEANCTX_URL -Headers @{'User-Agent'='lean-ctx-bin-npm'} -TimeoutSec 15) | ConvertTo-Json -Depth 10 -Compress",
+    { LEANCTX_URL: url },
+    { encoding: "utf8", timeout: 20000 },
+  );
   return JSON.parse(out);
 }
 
 function powershellDownload(url, dest) {
-  const ps = `
-    [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13
-    $ProgressPreference = 'SilentlyContinue'
-    Invoke-WebRequest -Uri '${url}' -OutFile '${dest.replace(/'/g, "''")}' -Headers @{'User-Agent'='lean-ctx-bin-npm'} -TimeoutSec 120
-  `;
-  execSync(`powershell -NoProfile -NonInteractive -Command "${ps.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`, {
-    stdio: "inherit",
-    timeout: 180000,
-    windowsHide: true,
-  });
+  powershell(
+    "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12 -bor [Net.SecurityProtocolType]::Tls13; " +
+      "$ProgressPreference = 'SilentlyContinue'; " +
+      "Invoke-WebRequest -Uri $env:LEANCTX_URL -OutFile $env:LEANCTX_DEST -Headers @{'User-Agent'='lean-ctx-bin-npm'} -TimeoutSec 120",
+    { LEANCTX_URL: url, LEANCTX_DEST: dest },
+    { stdio: "inherit", timeout: 180000 },
+  );
 }
 
 function powershellDownloadDirect(releaseUrl, assetName, dest) {

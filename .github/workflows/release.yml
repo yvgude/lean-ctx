@@ -611,10 +611,14 @@ jobs:
       - name: Verify release SBOM artifact
         run: |
           test -s SBOM.cdx.json
-          # Audit the tagged tree, not the worktree: the downloaded release
+          # Audit a clean checkout of the tagged commit: the downloaded release
           # archives and wheels sit untracked in the root by now, and the
           # worktree mode rejected every one of them as oversized (3.11.0).
-          python3 scripts/ip-provenance-audit.py --root . --release-strict --ref HEAD \
+          # Not `--ref`: a ref audit never runs the notices generator, so
+          # `--release-strict` refuses it by design.
+          git worktree add --detach "$RUNNER_TEMP/tagged-tree" HEAD
+          cd "$RUNNER_TEMP/tagged-tree"
+          python3 scripts/ip-provenance-audit.py --root . --release-strict \
             --output "$RUNNER_TEMP/ip-provenance-release-build-report.json"
 
       - name: Upload post-build provenance report

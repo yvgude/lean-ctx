@@ -2,16 +2,16 @@
 Schema: leanctx.third-party-notices/v1
 Status: GENERATED AND APPROVED
 Content-Digest-Scope: SHA-256 of this file with the Content-Digest value zeroed
-Content-Digest: sha256:f76d44aea9141a66c36fa602403c5280e9365082c3c6015fe5b5636b890c033e
+Content-Digest: sha256:e9c5859787a9f0920a2156a01115ae74191fb1307754431f25ff783ba9062a92
 Source inventory: rust/Cargo.lock + cargo metadata --locked --offline --all-features + SBOM.cdx.json + legal/third-party-assets.toml + packages/pi-lean-ctx/package-lock.json
 Generation command: cargo metadata --locked --offline --all-features --manifest-path rust/Cargo.toml --format-version 1
 Approval contract: legal/third-party-notices-approval.toml binds approved_content_sha256 to this file's exact SHA-256
-Cargo.lock SHA-256: c11dfc5b8166dc8eed9d1e678c95e6f59c0701a64f56c34355e3840ecf683231
-Cargo metadata inventory SHA-256: 2d8bd2c895ecc07dd98a4af25a32a1d1bdd72fc9d3dc7689005dc6e63d196345
-SBOM.cdx.json SHA-256: 894304fa553ce89c49ecae98bcc3c958e8fc5b2c54eb32fc5d56bdc825bb9e65
+Cargo.lock SHA-256: ab95a1ce51461a272918914edecb4838f362c03b5dd469480667c668dbc8e36a
+Cargo metadata inventory SHA-256: b0504af9ad059d6f4dfba87105dad910660ee265eee16bea5ad9db478802113f
+SBOM.cdx.json SHA-256: fc4645d8027dd03fe57cb4fa1cc7723af906daaffb2d9144378f8ffa542d2dc8
 SBOM components: 556
-Asset manifest SHA-256: d1687b3f8892a1ab8d5a2f35b643d3a79408b1aed4442820b7589b6855564d7c
-npm package-lock.json SHA-256: 35e87ec565ae4e71802703536ea2ea2bd6309fdf9d50e41203876084ab46306c
+Asset manifest SHA-256: 30f965c12dbec317a375d4a37c8ec011b3c278899c3294990e435cb94652bb9d
+npm package-lock.json SHA-256: 2698eb8bcaf09c3ff275826b3be2e28e5fb6044b3245cd6ec23475e06d1744a1
 Bundled MCP SDK: @modelcontextprotocol/sdk 1.32.1 (sha512-2DdE+SJDtzLEEWzY1ZjY7Q+VcPhcV1KisD3zI4u0XZyktsjHum1mwbMI+JaulUBi2OZk+KJAi2uPXzxichPkdw==)
 Cargo graph packages: 611
 Third-party Cargo packages: 603
@@ -4785,7 +4785,7 @@ Targets: derives[example], make[example], make_var[example], zerovec_derive[proc
 Features: (none)
 Dependencies: proc-macro2, quote, syn
 
-### zip 9.0.4
+### zip 9.0.5
 Source: registry+https://github.com/rust-lang/crates.io-index
 Package source: https://github.com/zip-rs/zip2
 SPDX-License-Identifier: MIT

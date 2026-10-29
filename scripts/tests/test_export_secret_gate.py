@@ -17,9 +17,10 @@ TOOL = SCRIPTS / "export-secret-gate.py"
 GATE = SCRIPTS / "history-policy-gate.py"
 # Assembled at run time: this file must not itself match the secret rule.
 TOKEN = "AK" + "IA" + "X" * 16
-# The repository's own SEC001 rule: the gate validates the full rule contract.
-SECRET_RULE = json.loads((SCRIPTS.parent / "security" / "history-policy-v1.json")
-                         .read_text(encoding="utf-8"))["secret_rule"]
+# The repository's own policy: its SEC001 rule is the full rule contract the
+# gate validates; every other field is the fixture's own (write_policy).
+REPOSITORY_POLICY = json.loads((SCRIPTS.parent / "security" / "history-policy-v1.json")
+                               .read_text(encoding="utf-8"))
 
 
 def sha256(path: Path) -> str:
@@ -58,11 +59,11 @@ class ExportSecretGateTest(unittest.TestCase):
         baseline = self.tree / "security" / "baseline.json"
         baseline.write_text(json.dumps({"current_tree_finding_ids": inherited}), encoding="utf-8")
         policy = {
+            **REPOSITORY_POLICY,
             "schema_version": "leanctx.history-policy/v1",
             "limits": {"max_commits": 10, "max_objects": 100, "max_findings": 10,
                        "command_timeout_seconds": 30},
             "forbidden_paths": [{"id": "IP001", "prefix": "cloud/"}],
-            "secret_rule": SECRET_RULE,
             "policy_source_path": "security/history-policy-v1.json",
             "scanner_source_paths": ["security/history-policy-v1.json",
                                      "scripts/history-policy-gate.py"],

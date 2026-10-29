@@ -247,11 +247,11 @@
    "size": 3565
   },
   {
-   "blob": "50178a38e4788009d064b05054dc07b5739a74f0",
+   "blob": "b962de77b78546a9d7b5ff1fe0a87230454f78db",
    "mode": "100644",
    "path": ".github/workflows/release.yml",
-   "sha256": "ce3c5aded766f107f402dba944c9a14d473aebf7da4ba9c7ae248f1717d5b77e",
-   "size": 55588
+   "sha256": "d0690278df389b075e5ed6536a233d53dd23630932c3cfc528499bb0f0405bce",
+   "size": 55816
   },
   {
    "blob": "75a4d6a3ea3e0e6bf69efff80c68bc5cca72e7b4",
@@ -471,10 +471,10 @@
    "size": 39281
   },
   {
-   "blob": "f16fc5fc88c9a35e862ec5e2ed7c359475d70dfb",
+   "blob": "c7565f8b7b2ea38c5846c8ce435f97dcfb7d29ff",
    "mode": "100644",
    "path": "SBOM.cdx.json",
-   "sha256": "894304fa553ce89c49ecae98bcc3c958e8fc5b2c54eb32fc5d56bdc825bb9e65",
+   "sha256": "fc4645d8027dd03fe57cb4fa1cc7723af906daaffb2d9144378f8ffa542d2dc8",
    "size": 684664
   },
   {
@@ -485,10 +485,10 @@
    "size": 32033
   },
   {
-   "blob": "d7b64b53eefc9544c58cdba2e873cea03d20e8fb",
+   "blob": "5dc4c2f5d1ae1be56f4df2bc4bd9e7c7bdc2e7d7",
    "mode": "100644",
    "path": "THIRD_PARTY_NOTICES",
-   "sha256": "e12d06d59d681e1592a62c8905c7ec805dff74c5b81ba3ea408205fecba1fc65",
+   "sha256": "314f805c4ab3e4a7ce2425b9594ad6dd9ea140199d3fb5090e40378b28c042f3",
    "size": 331533
   },
   {
@@ -4328,10 +4328,10 @@
    "size": 757
   },
   {
-   "blob": "7413d30599551222ad40f49f18e57383a603cce1",
+   "blob": "c25de73a82745124aec502fcae8242de5fb8636c",
    "mode": "100644",
    "path": "_archive/vscode-extension/package-lock.json",
-   "sha256": "7cd66404122af639dd5dde96edfd7fd4ae0ec205466978dbdc745b1002bcafe0",
+   "sha256": "5dbdd0dec43f1d5a489e9c45f67f407b18ce75754df185bf63f19035add13a29",
    "size": 168476
   },
   {
@@ -5686,10 +5686,10 @@
    "size": 4024
   },
   {
-   "blob": "95eb4d786059eff04b40126d1cf1fc4b28a51d34",
+   "blob": "c79bda431062485e8b3e98c7887f10121ac345e5",
    "mode": "100644",
    "path": "docs/contracts/delivery-evidence-v1.json",
-   "sha256": "8a85a07b618f906934dd271d7eccd1ed7769284b401689a73ce5fb03db9615f3",
+   "sha256": "4b16507368818a088af251e4af5b2481ac32c93d518413f461ea0d31d4a6076a",
    "size": 6892
   },
   {
@@ -8024,18 +8024,18 @@
    "size": 193663
   },
   {
-   "blob": "22df90af68d6c8e50c7624f74c847bd7a50e02dc",
+   "blob": "450f157d17bd6574f007940f2ef0ef51b3daf19c",
    "mode": "100644",
    "path": "legal/third-party-assets.toml",
-   "sha256": "d1687b3f8892a1ab8d5a2f35b643d3a79408b1aed4442820b7589b6855564d7c",
+   "sha256": "30f965c12dbec317a375d4a37c8ec011b3c278899c3294990e435cb94652bb9d",
    "size": 3792
   },
   {
-   "blob": "852fe51f09d9bf372449dd0c3698f3f94f671bdb",
+   "blob": "7c30e8899d558cc2fb80f83f63217b7d4aa43210",
    "mode": "100644",
    "path": "legal/third-party-notices-approval.toml",
-   "sha256": "7d2abc2ff0073a3a759febd59a9b64a6890a7662015cd3873935f27f2ee0ddbb",
-   "size": 590
+   "sha256": "8fc22ce19776b7a5f7dca383e71eeca6107db8002c8828bfb3ae2e8548daa460",
+   "size": 670
   },
   {
    "blob": "69c2d986d2ebf64b9151a844298227e6ccf2258b",
@@ -8087,11 +8087,11 @@
    "size": 1603
   },
   {
-   "blob": "3132746d61f5dbf376250cfbfe2dcd79495a2a3c",
+   "blob": "c824ff16201ba847a2ef3c9261a9572118fa0054",
    "mode": "100644",
    "path": "packages/lean-ctx-bin/postinstall.js",
-   "sha256": "72033fa468fafb05de0ca58ebba3f5134e317fe76e4cdbce129ed2341fc0648f",
-   "size": 23924
+   "sha256": "2d41d43c001752bf8bf0a58ece63dbbb3217b1661a98db5615c7b615d1540c75",
+   "size": 24114
   },
   {
    "blob": "0a85eb889ebb3a1923e7d7b322b24c9c236e8707",
@@ -8423,11 +8423,11 @@
    "size": 443
   },
   {
-   "blob": "9c84a53e31b59a6f96508681678a7c13f932cf53",
+   "blob": "7efd7e3db2363d02d12227cf9ff9485346146c9a",
    "mode": "100644",
    "path": "packages/pi-lean-ctx/package-lock.json",
-   "sha256": "35e87ec565ae4e71802703536ea2ea2bd6309fdf9d50e41203876084ab46306c",
-   "size": 145319
+   "sha256": "2698eb8bcaf09c3ff275826b3be2e28e5fb6044b3245cd6ec23475e06d1744a1",
+   "size": 145355
   },
   {
    "blob": "2fb04622cc3f0f408787f09bcddd58247e983f1d",
@@ -8738,10 +8738,10 @@
    "size": 94
   },
   {
-   "blob": "0f18ae32a9707bc63eef08fd0da82ce28d633b4a",
+   "blob": "ad7ee40ffb844385d8eccf0461ad102a4cf00445",
    "mode": "100644",
    "path": "rust/Cargo.lock",
-   "sha256": "c11dfc5b8166dc8eed9d1e678c95e6f59c0701a64f56c34355e3840ecf683231",
+   "sha256": "ab95a1ce51461a272918914edecb4838f362c03b5dd469480667c668dbc8e36a",
    "size": 151490
   },
   {
@@ -17040,10 +17040,10 @@
    "size": 557
   },
   {
-   "blob": "baac5a10a6610970f74ddbfe999c13591e080399",
+   "blob": "67ba1d1abe8af6573b7e5dc7ca877804d13e7694",
    "mode": "100644",
    "path": "rust/eval/quality/dependency_tracing/Cargo.lock",
-   "sha256": "3a68988d62f0a65fba6d9ef8a80a5fc922e2e2c3a459ab537824554771f19356",
+   "sha256": "c379598be840e1b2fe60e6fdb1fd8d7a3141e24fe7fe1146cf3881be0fc6c3ac",
    "size": 1447
   },
   {
@@ -37970,11 +37970,11 @@
    "size": 6494
   },
   {
-   "blob": "f6deb910cb338903dcc174b04a1e99740fde10f8",
+   "blob": "4bb5de18d367dd7ed824a2e4b49a74a9a6d463ce",
    "mode": "100644",
    "path": "scripts/tests/test_export_secret_gate.py",
-   "sha256": "952caf67e66ae83e87f5c951683211a9c8cc15a667c2d33f30ecebb4ec312599",
-   "size": 11947
+   "sha256": "63ddd10d507e21369c8660747598174855a7614046707d5f71769fc67dbdf8df",
+   "size": 12008
   },
   {
    "blob": "81609e459cf120775aa86b74de7b508521851f17",
@@ -39004,7 +39004,7 @@
  ],
  "manifest_sha256": "d7df663439f72fdd9b269838830cf88f48f7de72b549ab572f7955d84482b58d",
  "schema": 1,
- "source_commit": "9eba6f97eb805ae7795212cf9f8d415569160553",
+ "source_commit": "aac6332f0f2f3422f7f11d9dc87e6a696d0eb763",
  "tool_sha256": "86ea08dc440cce975409b9f805c74bf5beb402284f3200800381def3714c8f3c",
- "tree_sha256": "9021327fdd5d6d23936169198f8eb3e10f7018abb31154e17e6a6c7f97048941"
+ "tree_sha256": "1f7f3361f77d5f16e79192abf8b70dc29e39e7fd17039b5c558e475cb817204d"
 }

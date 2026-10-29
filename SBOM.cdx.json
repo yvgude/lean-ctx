@@ -16634,7 +16634,7 @@
     },
     {
       "author": "Mathijs van de Nes <git@mathijs.vd-nes.nl>, Marli Frost <marli@frost.red>, Ryan Levick <ryan.levick@gmail.com>, Chris Hennick <hennickc@amazon.com>",
-      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.4",
+      "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.5",
       "description": "Library to support the reading and writing of zip files.",
       "externalReferences": [
         {
@@ -16645,7 +16645,7 @@
       "hashes": [
         {
           "alg": "SHA-256",
-          "content": "a954114b47a54df49f83d2722814e86b23d4bb1b54a1b90fb7d92b41619ddc22"
+          "content": "6e04976da629d3b04204ba8105b396a193af8ad2583b2c79bfb3ab8af580a11e"
         }
       ],
       "licenses": [
@@ -16654,10 +16654,10 @@
         }
       ],
       "name": "zip",
-      "purl": "pkg:cargo/zip@9.0.4",
+      "purl": "pkg:cargo/zip@9.0.5",
       "scope": "required",
       "type": "library",
-      "version": "9.0.4"
+      "version": "9.0.5"
     },
     {
       "bom-ref": "registry+https://github.com/rust-lang/crates.io-index#zlib-rs@0.6.7",
@@ -16948,7 +16948,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#windows-sys@0.61.2",
         "registry+https://github.com/rust-lang/crates.io-index#yaml_serde@0.10.4",
         "registry+https://github.com/rust-lang/crates.io-index#zeroize@1.9.0",
-        "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.4",
+        "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.5",
         "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3"
       ],
       "ref": "path+file://./rust#lean-ctx@3.12.0"
@@ -20728,7 +20728,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#zopfli@0.8.3",
         "registry+https://github.com/rust-lang/crates.io-index#zstd@0.14.3"
       ],
-      "ref": "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.4"
+      "ref": "registry+https://github.com/rust-lang/crates.io-index#zip@9.0.5"
     },
     {
       "ref": "registry+https://github.com/rust-lang/crates.io-index#zlib-rs@0.6.7"
@@ -20813,7 +20813,7 @@
       },
       {
         "name": "leanctx:cargo-lock-sha256",
-        "value": "c11dfc5b8166dc8eed9d1e678c95e6f59c0701a64f56c34355e3840ecf683231"
+        "value": "ab95a1ce51461a272918914edecb4838f362c03b5dd469480667c668dbc8e36a"
       }
     ],
     "tools": [
