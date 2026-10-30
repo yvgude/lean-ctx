@@ -111,12 +111,11 @@ fn scan_claude_rules_dir(out: &mut Vec<RulesFileCost>, dir: &Path) {
 pub(crate) fn collect_rules_files(home: &Path, project: &Path) -> Vec<RulesFileCost> {
     let mut out = Vec::new();
 
-    // Global, per-client.
-    push_rules_file(
-        out.as_mut(),
-        &home.join(".claude/CLAUDE.md"),
-        vec!["claude"],
-    );
+    // Global, per-client. Claude honours `$CLAUDE_CONFIG_DIR` and auto-loads
+    // its global `rules/*.md` exactly like the project ones.
+    let claude_dir = crate::core::editor_registry::claude_state_dir(home);
+    push_rules_file(out.as_mut(), &claude_dir.join("CLAUDE.md"), vec!["claude"]);
+    scan_claude_rules_dir(out.as_mut(), &claude_dir.join("rules"));
     push_rules_file(
         out.as_mut(),
         &home.join(".codebuddy/CODEBUDDY.md"),
@@ -129,6 +128,16 @@ pub(crate) fn collect_rules_files(home: &Path, project: &Path) -> Vec<RulesFileC
         vec!["gemini"],
     );
     scan_mdc_dir(out.as_mut(), &home.join(".cursor/rules"), &["cursor"]);
+    push_rules_file(
+        out.as_mut(),
+        &home.join(".config/opencode/AGENTS.md"),
+        vec!["opencode"],
+    );
+    push_rules_file(
+        out.as_mut(),
+        &home.join(".config/opencode/rules/lean-ctx.md"),
+        vec!["opencode"],
+    );
 
     // Project root + parent chain (stop at home or filesystem root).
     let mut dir = Some(project.to_path_buf());
@@ -138,7 +147,14 @@ pub(crate) fn collect_rules_files(home: &Path, project: &Path) -> Vec<RulesFileC
         scan_claude_rules_dir(out.as_mut(), &d.join(".claude/rules"));
         // AGENTS.md is the shared instruction file: Cursor, Codex and several
         // other agents auto-load it.
-        push_rules_file(out.as_mut(), &d.join("AGENTS.md"), vec!["cursor", "codex"]);
+        // Claude Code reads AGENTS.md only through an `@AGENTS.md` import in
+        // the sibling CLAUDE.md — then the block rides every Claude session too.
+        let agents_readers = if claude_md_imports_agents_md(&d) {
+            vec!["cursor", "codex", "claude"]
+        } else {
+            vec!["cursor", "codex"]
+        };
+        push_rules_file(out.as_mut(), &d.join("AGENTS.md"), agents_readers);
         push_rules_file(out.as_mut(), &d.join("CLAUDE.md"), vec!["claude"]);
         push_rules_file(out.as_mut(), &d.join("CODEBUDDY.md"), vec!["codebuddy"]);
         push_rules_file(out.as_mut(), &d.join("GEMINI.md"), vec!["gemini"]);
@@ -161,6 +177,106 @@ pub(crate) fn collect_rules_files(home: &Path, project: &Path) -> Vec<RulesFileC
     });
 
     out
+}
+
+/// True when `dir/CLAUDE.md` imports the sibling AGENTS.md (`@AGENTS.md`);
+/// Claude Code expands such imports inline at session start.
+fn claude_md_imports_agents_md(dir: &Path) -> bool {
+    std::fs::read_to_string(dir.join("CLAUDE.md")).is_ok_and(|c| {
+        c.lines()
+            .any(|l| matches!(l.trim(), "@AGENTS.md" | "@./AGENTS.md"))
+    })
+}
+
+/// One host whose session receives lean-ctx *rules* (the tool mapping)
+/// through more than one channel (A3: exactly one channel per host).
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize)]
+pub(crate) struct DuplicateChannel {
+    /// Client key as in [`RulesFileCost::clients`] (`claude`, `cursor`, …).
+    pub client: String,
+    /// Auto-loaded files carrying a lean-ctx rules block: (path, lean-ctx tokens).
+    pub files: Vec<(String, usize)>,
+    /// Tokens of the full MCP instructions skeleton the host still receives
+    /// next to those files; 0 when it gets the one-line anchor.
+    pub instruction_tokens: usize,
+}
+
+impl DuplicateChannel {
+    /// Channels this host pays for every session.
+    #[must_use]
+    pub(crate) fn channel_count(&self) -> usize {
+        self.files.len() + usize::from(self.instruction_tokens > 0)
+    }
+
+    /// Tokens billed beyond the cheapest single channel.
+    #[must_use]
+    pub(crate) fn excess_tokens(&self) -> usize {
+        let mut costs: Vec<usize> = self.files.iter().map(|(_, t)| *t).collect();
+        if self.instruction_tokens > 0 {
+            costs.push(self.instruction_tokens);
+        }
+        let total: usize = costs.iter().sum();
+        total.saturating_sub(costs.into_iter().max().unwrap_or(0))
+    }
+}
+
+/// The MCP `clientInfo.name` a client key stands for, so the instructions
+/// channel can be priced with the same anchor decision the server makes.
+fn mcp_client_name(client: &str) -> Option<&'static str> {
+    Some(match client {
+        "claude" => "claude-code",
+        "cursor" => "cursor",
+        "codex" => "codex",
+        "gemini" => "gemini-cli",
+        "opencode" => "opencode",
+        "codebuddy" => "codebuddy",
+        _ => return None,
+    })
+}
+
+/// Hosts that load the lean-ctx rules block more than once per session:
+/// several auto-loaded files carrying it, or one such file *plus* the full
+/// MCP instructions skeleton (the server only collapses it to the anchor
+/// when the host's canonical carrier holds the block,
+/// `rules_channel::client_autoloads_rules`). `instruction_tokens_for` prices
+/// the skeleton a client receives (doctor passes the live builder).
+pub(crate) fn duplicate_channels(
+    home: &Path,
+    files: &[RulesFileCost],
+    instruction_tokens_for: &dyn Fn(&str) -> usize,
+) -> Vec<DuplicateChannel> {
+    let mut by_client: std::collections::BTreeMap<&'static str, Vec<(String, usize)>> =
+        std::collections::BTreeMap::new();
+    for f in files {
+        let carries_rules = std::fs::read_to_string(&f.path)
+            .is_ok_and(|c| crate::core::rules_channel::carries_rules_block(&c));
+        if !carries_rules {
+            continue;
+        }
+        for c in &f.clients {
+            by_client
+                .entry(c)
+                .or_default()
+                .push((f.path.clone(), f.lean_ctx_tokens));
+        }
+    }
+    by_client
+        .into_iter()
+        .filter_map(|(client, files)| {
+            let instruction_tokens = match mcp_client_name(client) {
+                Some(name) if !crate::core::rules_channel::client_autoloads_rules(name, home) => {
+                    instruction_tokens_for(name)
+                }
+                _ => 0,
+            };
+            let dup = DuplicateChannel {
+                client: client.to_string(),
+                files,
+                instruction_tokens,
+            };
+            (dup.channel_count() > 1).then_some(dup)
+        })
+        .collect()
 }
 
 /// Clients that auto-load more than one file carrying a *full* lean-ctx

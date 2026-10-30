@@ -210,7 +210,7 @@ fn forget_snapshots_first_and_removes_only_this_projects_facts() {
 }
 
 #[test]
-fn restore_refuses_to_push_memory_over_max_facts() {
+fn restore_is_not_limited_by_a_fact_count() {
     let iso = crate::core::data_dir::isolated_data_dir();
     let (_dir, scope) = project(iso.path());
     for key in ["a", "b", "c"] {
@@ -235,18 +235,11 @@ fn restore_refuses_to_push_memory_over_max_facts() {
         )
     };
 
+    // Knowledge has no fact limit: the legacy cap env var no longer refuses
+    // a restore that grows the store past it.
     crate::test_env::set_var("LEAN_CTX_KNOWLEDGE_MAX_FACTS", "2");
-    let refused = restore();
-    crate::test_env::remove_var("LEAN_CTX_KNOWLEDGE_MAX_FACTS");
-    assert_eq!(refused.status, 409, "{}", refused.body);
-    assert_eq!(current(&scope), vec!["arch/c".to_string()]);
-    assert_eq!(
-        snapshots::list(&scope, 30).len(),
-        1,
-        "no safety snapshot when refused"
-    );
-
     let restored = restore();
+    crate::test_env::remove_var("LEAN_CTX_KNOWLEDGE_MAX_FACTS");
     assert_eq!(restored.status, 200, "{}", restored.body);
     let mut back = current(&scope);
     back.sort();

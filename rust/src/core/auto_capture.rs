@@ -121,7 +121,10 @@ pub(crate) fn extract_extra(tool_name: &str, output: &str) -> Option<AutoFinding
 
 fn extract_edit_finding(output: &str) -> Option<AutoFinding> {
     let first_line = output.lines().next()?;
-    if first_line.contains("Applied") || first_line.contains("✓") {
+    if first_line.contains("Applied")
+        || first_line.contains("✓")
+        || first_line.starts_with("patched ")
+    {
         let file = first_line
             .split_whitespace()
             .find(|w| w.contains('/') || w.contains('.'))

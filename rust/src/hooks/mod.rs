@@ -597,7 +597,8 @@ case "$CMD" in
     SHELL_ESC=$(printf '%s' "$CMD" | sed 's/\\/\\\\/g;s/"/\\"/g')
     REWRITE="\"$LEAN_CTX_BIN\" -c \"$SHELL_ESC\""
     JSON_CMD=$(printf '%s' "$REWRITE" | sed 's/\\/\\\\/g;s/"/\\"/g')
-    printf '{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{{"command":"%s"}}}}}}' "$JSON_CMD"
+    # No permissionDecision: the host's permission flow decides on the rewrite.
+    printf '{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","updatedInput":{{"command":"%s"}}}}}}' "$JSON_CMD"
     ;;
   *) exit 0 ;;
 esac
@@ -622,7 +623,7 @@ case "$CMD" in
     SHELL_ESC=$(printf '%s' "$CMD" | sed 's/\\/\\\\/g;s/"/\\"/g')
     REWRITE="\"$LEAN_CTX_BIN\" -c \"$SHELL_ESC\""
     JSON_CMD=$(printf '%s' "$REWRITE" | sed 's/\\/\\\\/g;s/"/\\"/g')
-    printf '{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","permissionDecision":"allow","updatedInput":{{"command":"%s"}}}}}}' "$JSON_CMD" ;;
+    printf '{{"hookSpecificOutput":{{"hookEventName":"PreToolUse","updatedInput":{{"command":"%s"}}}}}}' "$JSON_CMD" ;;
   *) exit 0 ;;
 esac
 "#
@@ -744,14 +745,13 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
         // CLAUDE.md block (12k+ token memory footprints in the field). The
         // AGENTS.md block + on-demand skill carry the same guidance, so the
         // lean-ctx-owned copy is removed instead of refreshed.
+        // A3: text a user added outside the lean-ctx markers survives.
         let claude_rules_file = cwd.join(".claude").join("rules").join("lean-ctx.md");
-        if let Ok(existing) = std::fs::read_to_string(&claude_rules_file)
-            && existing.contains(crate::core::rules_canonical::RULES_MARKER_PREFIX)
-            && std::fs::remove_file(&claude_rules_file).is_ok()
+        if let Some(line) = crate::cli::rules_dedup::retire_rules_file(&claude_rules_file)
             && !mcp_server_quiet_mode()
         {
             eprintln!(
-                "Removed .claude/rules/lean-ctx.md (always-loaded duplicate; AGENTS.md block + skill replace it)."
+                "{line} (always-loaded duplicate of .claude/rules; AGENTS.md block + skill replace it)."
             );
         }
 
@@ -760,14 +760,10 @@ pub fn install_project_rules_for_agents(agents: &[&str]) {
 
     if wants("codebuddy") {
         let codebuddy_rules_file = cwd.join(".codebuddy").join("rules").join("lean-ctx.md");
-        if let Ok(existing) = std::fs::read_to_string(&codebuddy_rules_file)
-            && existing.contains(crate::core::rules_canonical::RULES_MARKER_PREFIX)
-            && std::fs::remove_file(&codebuddy_rules_file).is_ok()
+        if let Some(line) = crate::cli::rules_dedup::retire_rules_file(&codebuddy_rules_file)
             && !mcp_server_quiet_mode()
         {
-            eprintln!(
-                "Removed .codebuddy/rules/lean-ctx.md (always-loaded duplicate; CODEBUDDY.md block + skill replace it)."
-            );
+            eprintln!("{line} (always-loaded duplicate; CODEBUDDY.md block + skill replace it).");
         }
 
         install_codebuddy_project_hooks(&cwd);

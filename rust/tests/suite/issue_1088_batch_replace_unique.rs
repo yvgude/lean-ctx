@@ -47,6 +47,12 @@ async fn batched_replace_unique_applies_sequentially() {
         out.text
     );
     assert_eq!(std::fs::read_to_string(&path).unwrap(), "gamma\ndelta\n");
+    // Each receipt names its file; a one-file batch repeats no path label.
+    assert!(
+        !out.text.contains('[') && out.text.matches("seq.txt").count() == 2,
+        "one-file batch receipts carry no path label: {}",
+        out.text
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
@@ -68,10 +74,16 @@ async fn batched_replace_unique_spans_files_without_top_level_path() {
     .unwrap()
     .clone();
 
-    tokio::task::block_in_place(|| CtxPatchTool.handle(&args, &ctx))
+    let out = tokio::task::block_in_place(|| CtxPatchTool.handle(&args, &ctx))
         .unwrap_or_else(|e| panic!("cross-file batch rejected: {}", e.message));
     assert_eq!(std::fs::read_to_string(&a).unwrap(), "uno\n");
     assert_eq!(std::fs::read_to_string(&b).unwrap(), "dos\n");
+    // Cross-file receipts are labelled with the project-relative path.
+    assert!(
+        out.text.contains("[a.txt]\n") && out.text.contains("[b.txt]\n"),
+        "cross-file labels are project-relative: {}",
+        out.text
+    );
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

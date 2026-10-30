@@ -10,19 +10,20 @@ use crate::core::context_kernel::autopilot::learning_store::{
     AdaptiveLearningStore, MAX_HISTORY, MAX_ROUTING_HISTORY,
 };
 
-const HELP: &str = "Usage: lean-ctx autopilot <status|export|history|explain|evidence|policy|reset> [--project-id ID] [--tenant-id ID]\n\
-history: [--limit 1..1000]; explain: [--receipt-id ID]; evidence: [--learn];\n\
-policy: [status|promote|monitor|rollback]; reset: --yes\n\
+const HELP: &str = "Usage: lean-ctx autopilot <status|export|history|explain|evidence|reset> [--project-id ID] [--tenant-id ID]\n\
+history: [--limit 1..1000]; explain: [--receipt-id ID]; reset: --yes\n\
 Default project ID is the current directory; use the exact TaskEnvelope project ID for another scope.\n\
 Output is JSON. History/explain cover committed learning outcomes, not all executions.\n\
-evidence: content-free read-strategy evidence per workload; --learn asks the optional\n\
-licensed runtime for a candidate recommendation. Candidates are shown, never applied.\n\
-policy: the scope's promoted read-strategy policy. promote/monitor keep the runtime's\n\
-verdict on this scope's evidence (monitoring starts with a second promotion); rollback\n\
-restores the last stable policy, or none. Planning\n\
-records it in shadow unless intelligence_runtime.context_policy_apply is set.\n\
+evidence: content-free read-strategy evidence per workload, next to the planner's learned mode.\n\
+Deprecated, no effect: `policy [status|promote|monitor|rollback]` and `evidence --learn`.\n\
 Reset removes this scope's learning, replay memory and history; backups are not erased.\n\
-This command does not enable Pro or establish organization authorization.";
+This command does not establish organization authorization.";
+
+/// `autopilot policy` and `evidence --learn` asked the licensed runtime for a
+/// learned read strategy, which the engine no longer uses. They stay accepted
+/// until their announced removal (DEPRECATIONS.toml) and report `retired`.
+const RETIRED_NOTE: &str = "Learned read-strategy policies are retired; read strategy is chosen locally. \
+This option has no effect and will be removed (see `lean-ctx doctor`).";
 
 struct Options {
     action: String,
@@ -31,7 +32,6 @@ struct Options {
     receipt: Option<String>,
     limit: usize,
     learn: bool,
-    policy_action: String,
 }
 
 fn parse(rest: &[String]) -> Result<Options> {
@@ -44,7 +44,6 @@ fn parse(rest: &[String]) -> Result<Options> {
         "{HELP}"
     );
     let mut flags = &rest[rest.len().min(1)..];
-    let mut policy_action = "status";
     if action == "policy"
         && let Some(sub) = flags.first().filter(|sub| !sub.starts_with("--"))
     {
@@ -52,7 +51,6 @@ fn parse(rest: &[String]) -> Result<Options> {
             matches!(sub.as_str(), "status" | "promote" | "monitor" | "rollback"),
             "unknown policy action: {sub}"
         );
-        policy_action = sub;
         flags = &flags[1..];
     }
     let mut project = None;
@@ -122,7 +120,6 @@ fn parse(rest: &[String]) -> Result<Options> {
         receipt,
         limit: limit.unwrap_or(20),
         learn,
-        policy_action: policy_action.to_owned(),
     })
 }
 
@@ -149,6 +146,9 @@ pub(super) fn cmd_autopilot(rest: &[String]) -> i32 {
 fn execute(rest: &[String]) -> Result<String> {
     // Parse fully before opening storage, especially for reset and unknown flags.
     let options = parse(rest)?;
+    if options.action == "policy" || options.learn {
+        eprintln!("Autopilot: {RETIRED_NOTE}");
+    }
     let mut store =
         AdaptiveLearningStore::open_default(options.project.clone(), options.tenant.clone())?;
     let output = render(&options, &mut store)?;
@@ -197,18 +197,13 @@ fn render(options: &Options, store: &mut AdaptiveLearningStore) -> Result<Value>
         }
         "evidence" => {
             let evidence = store.policy_evidence()?;
-            // Shadow view: the planner's current learned mode next to what a
-            // runtime would recommend. Nothing here changes planning.
+            // The planner's current learned mode next to its evidence.
             output["learned_mode"] = serde_json::to_value(store.load()?)?["learned_mode"].take();
-            output["runtime"] = if options.learn {
-                learn_view(&evidence)
-            } else {
-                json!({"requested": false})
-            };
+            output["runtime"] = json!({"requested": options.learn, "status": "retired"});
             output["evidence"] = serde_json::to_value(evidence)?;
         }
         "policy" => {
-            output["policy"] = policy_view(options, store)?;
+            output["policy"] = json!({"status": "retired", "note": RETIRED_NOTE});
         }
         "reset" => {
             store.reset()?;
@@ -218,126 +213,6 @@ fn render(options: &Options, store: &mut AdaptiveLearningStore) -> Result<Value>
         _ => bail!("unsupported autopilot action"),
     }
     Ok(output)
-}
-
-fn learn_view(
-    evidence: &lean_ctx_protocol::context_policy_evidence::ContextPolicyEvidenceV1,
-) -> Value {
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_or(0, |elapsed| elapsed.as_secs());
-    match crate::core::intelligence_runtime::context_policy::learn(evidence, now) {
-        None => json!({"requested": true, "state": "not_configured"}),
-        Some(Err(error)) => {
-            json!({"requested": true, "state": "unavailable", "reason": error.to_string()})
-        }
-        Some(Ok(output)) => json!({
-            "requested": true,
-            "state": "answered",
-            "applied": false,
-            "result": output
-        }),
-    }
-}
-
-/// The scope's promoted read-strategy policy. Promotion and monitoring ask
-/// the optional runtime for its verdict on this scope's evidence; this
-/// command only keeps the result.
-fn policy_view(options: &Options, store: &AdaptiveLearningStore) -> Result<Value> {
-    use crate::core::context_store::policy_store::{self, PolicyEntry};
-    use crate::core::intelligence_runtime::context_policy::{self, Operation};
-
-    let scope = crate::core::context_store::task_scope(options.tenant.as_ref(), &options.project);
-    let mut policies = policy_store::load(&scope);
-    let apply = crate::core::config::Config::load_global()
-        .intelligence_runtime
-        .context_policy_apply;
-    let mut view = json!({"mode": if apply { "apply" } else { "shadow" }});
-    match options.policy_action.as_str() {
-        "status" => {}
-        "rollback" => {
-            ensure!(policies.active.is_some(), "no active policy to roll back");
-            // Without a stable predecessor, the stable state is no policy:
-            // planning returns to the Engine's own modes.
-            policies = policy_store::update(&scope, &policies, |stored| {
-                match stored.last_stable.clone() {
-                    Some(restored) => stored.roll_back_to(restored),
-                    None => stored.active = None,
-                }
-            })
-            .map_err(anyhow::Error::msg)?;
-            view["rolled_back"] = json!(true);
-        }
-        action @ ("promote" | "monitor") => {
-            let operation = if action == "promote" {
-                Operation::Promote
-            } else {
-                ensure!(
-                    policies.active.is_some() && policies.last_stable.is_some(),
-                    "monitoring needs an active and a last stable policy"
-                );
-                Operation::Monitor
-            };
-            let evidence = store.policy_evidence()?;
-            let now = std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .map_or(0, |elapsed| elapsed.as_secs());
-            let answer = match context_policy::run(
-                operation,
-                &evidence,
-                now,
-                policies.active.as_ref().map(|entry| &entry.artifact),
-                policies.last_stable.as_ref().map(|entry| &entry.artifact),
-            ) {
-                None => bail!("no licensed runtime is configured"),
-                Some(Err(error)) => bail!("runtime unavailable: {error}"),
-                Some(Ok(answer)) => answer,
-            };
-            let verdict = answer.policy.clone().map(|entry| PolicyEntry {
-                policy: entry.policy,
-                artifact: entry.artifact,
-            });
-            // The runtime's verdict must fit the state it judged: a promotion
-            // succeeds the active policy, a rollback restores the stable one.
-            // It is then kept against that state: a concurrent change fails
-            // this command instead of being overwritten.
-            let active = policies.active.as_ref().map(|entry| &entry.policy);
-            let stable = policies.last_stable.as_ref().map(|entry| &entry.policy);
-            match (answer.status.as_str(), &verdict) {
-                ("promoted", Some(entry)) => ensure!(
-                    active.is_none_or(|active| entry.policy.version > active.version)
-                        && entry.policy.parent_version == active.map(|active| active.version),
-                    "the runtime promoted a policy that does not succeed the active one"
-                ),
-                ("rolled_back", Some(entry)) => ensure!(
-                    Some(&entry.policy) == stable,
-                    "the runtime restored a policy other than the last stable one"
-                ),
-                _ => {}
-            }
-            match (answer.status.as_str(), verdict) {
-                ("promoted", Some(entry)) => {
-                    policies = policy_store::update(&scope, &policies, |stored| {
-                        stored.promote(entry);
-                    })
-                    .map_err(anyhow::Error::msg)?;
-                }
-                ("rolled_back", Some(entry)) => {
-                    policies = policy_store::update(&scope, &policies, |stored| {
-                        stored.roll_back_to(entry);
-                    })
-                    .map_err(anyhow::Error::msg)?;
-                }
-                _ => {}
-            }
-            view["runtime"] = serde_json::to_value(&answer)?;
-        }
-        other => bail!("unknown policy action: {other}"),
-    }
-    view["active"] = serde_json::to_value(policies.active.as_ref().map(|entry| &entry.policy))?;
-    view["last_stable"] =
-        serde_json::to_value(policies.last_stable.as_ref().map(|entry| &entry.policy))?;
-    Ok(view)
 }
 
 #[cfg(test)]
@@ -360,30 +235,19 @@ mod tests {
             vec!["status", "--project-id", "a", "--project-id", "b"],
             vec!["export", "unexpected-file"],
             vec!["unknown"],
+            vec!["policy", "bogus"],
             vec!["status", "--learn"],
-            vec!["evidence", "--learn", "--learn"],
-            vec!["policy", "apply"],
-            vec!["status", "promote"],
         ] {
             assert!(parse(&args(&invalid)).is_err(), "{invalid:?}");
         }
-        assert!(
-            parse(&args(&["evidence", "--learn", "--project-id", "p"]))
-                .expect("valid evidence options")
-                .learn
-        );
-        let policy = parse(&args(&["policy", "rollback", "--project-id", "p"]))
-            .expect("valid policy options");
-        assert_eq!(
-            (policy.action.as_str(), policy.policy_action.as_str()),
-            ("policy", "rollback")
-        );
-        assert_eq!(
-            parse(&args(&["policy", "--project-id", "p"]))
-                .expect("policy defaults to status")
-                .policy_action,
-            "status"
-        );
+        // Deprecated surfaces keep parsing until their announced removal.
+        for deprecated in [
+            vec!["policy"],
+            vec!["policy", "promote"],
+            vec!["evidence", "--learn"],
+        ] {
+            assert!(parse(&args(&deprecated)).is_ok(), "{deprecated:?}");
+        }
         let options = parse(&args(&[
             "reset",
             "--yes",
@@ -424,7 +288,6 @@ mod tests {
             }
             if action == "evidence" {
                 assert_eq!(first["evidence"]["records"], json!([]));
-                assert_eq!(first["runtime"], json!({"requested": false}));
                 assert!(first["learned_mode"].is_null());
             }
         }

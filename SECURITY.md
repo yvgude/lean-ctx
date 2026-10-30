@@ -44,16 +44,16 @@ lean-ctx enforces a **filesystem boundary** for tool I/O:
 
 - **PathJail**: all tool path inputs are resolved (symlinks and `..` included) and checked
   against the jail scope (`path_jail_scope`, global-only):
-  - `home` (default since v3.11.1; read **and write** below `~` since v3.11.3): every path
-    below the user's home directory, except the protected zones — every top-level dot entry (`~/.ssh`, `~/.aws`, `~/.gnupg`,
+  - `projects` (default; also the default of v3.11.1–v3.11.2): only paths inside a project
+    below `~` (a folder between it and `~` holds `.git`, `Cargo.toml`, `package.json` or another
+    project marker) are readable; loose personal files stay jailed, and writes stay limited to
+    the session's project, host-declared roots and explicit allow entries.
+  - `home` (opt-in; the default of v3.11.3–v3.12.0, reported as a jail relaxation): every path
+    below the user's home directory, read **and write**, except the protected zones — every top-level dot entry (`~/.ssh`, `~/.aws`, `~/.gnupg`,
     `~/.config`, shell rc files, other agents' `~/.claude` / `~/.codex` / `~/.cursor`),
     `~/Library`, `~/AppData` / `NTUSER.DAT*` and `~/snap`. Everything outside `~` stays jailed.
     Zones are a hard deny: a root or allow entry that merely contains a zone does not open it.
     An implausible `$HOME` (`/`, `/root`, `/tmp`, not owned by the user) disables the scope.
-  - `projects` (the default of v3.11.1–v3.11.2): only paths inside a project below `~` (a folder
-    between it and `~` holds `.git`, `Cargo.toml`, `package.json` or another project marker) are
-    readable; loose personal files stay jailed, and writes stay limited to the session's project,
-    host-declared roots and explicit allow entries.
   - `project`: only the current `project_root` plus the explicit allow roots below.
   - If a path would escape, the call fails naming the single command that admits it
     (`lean-ctx allow-path <dir>`) and asks the agent to defer to the user.
@@ -285,11 +285,11 @@ proof of OS isolation. Inspect `rust/src/core/sandbox.rs` for the release in use
 - **interpreter inline-code blocking**: `bash -c`, `sh -c`, `python -c`, `node -e`, … are rejected (including via delegation wrappers like `env`, `timeout`, `xargs`) — quoting a payload inside `bash -c '…'` does not bypass the file-write or allowlist checks because the interpreter call itself is refused,
 - file-write detection (`>`, `>>`, `tee`, heredoc-to-file, `dd of=`, `curl -o/-O`, `wget` to file) — output capture (`>`, `>>`, `tee`) may go to the session's project, `allow_paths` / `extra_roots`, `write_allow_paths` or a scratch path (never `/`, `~`, an ancestor of `~` or a `read_only_roots` entry); downloads only to scratch paths and `write_allow_paths`; everything else belongs to the editor's native Write/Edit tools where the agent's permission UI governs them,
 - dangerous-flag blocking (`git --upload-pack`, `tar --to-command`, `find -exec`, `awk system()`), inline env hijack blocking (`PATH=`, `LD_PRELOAD=`, `GIT_SSH_COMMAND=`, …), and dangerous env-key filtering on the MCP `env` parameter,
-- **no self-loosening** (allowlist mode, the default): lean-ctx subcommands that widen its own guardrails — `yolo`, `allow <cmd>`, `allow-path <dir>`, `trust`, `security open`, `security secrets off`, `config set` of a security or path/allowlist key — are refused, so an agent cannot undo a refusal it just received. Listing, `--remove`, `secure`, `untrust` and `security secrets on` still run. The user runs the blocked commands in their own terminal (warn-only there, see below). `ctx_execute` is not covered — see the next paragraph.
+- **no self-loosening** (allowlist mode, the default): lean-ctx subcommands that widen its own guardrails — `yolo`, `allow <cmd>`, `allow-path <dir>`, `trust`, `security open`, `security secrets off`, `config set` of a security or path/allowlist key — are refused, so an agent cannot undo a refusal it just received. Listing, `--remove`, `secure`, `untrust` and `security secrets on` still run. The user runs the blocked commands in their own terminal (warn-only there, see below). Shell code in `ctx_execute` is covered as well — see the next paragraph.
 
 Enforcement applies to the MCP path, hook-child mode and every non-interactive CLI invocation; an interactive human terminal gets a warning instead (`LEAN_CTX_ALLOWLIST_WARN_ONLY=1` opts out explicitly). Cloud/infra mutation CLIs (terraform, kubectl, aws, …) are excluded from the default allowlist and require per-tool opt-in (`lean-ctx allow <cmd>`). Commands inside a substitution in an argument (`$(…)`, backticks, `<(…)`/`>(…)`) are gated like top-level commands in every enforce-mode call. `shell_strict_mode = true` upgrades the remaining warn-only heuristic (pipe to a bare interpreter) to a hard block.
 
-**`ctx_execute(language=shell)` is deliberately NOT allowlisted (GH #905).** The checks above gate `ctx_shell` and `lean-ctx -c` only. `ctx_execute` is the trusted script path: calling it is an explicit decision to write and run a script, the same decision a native Write plus `bash script.sh` would express, so re-running the allowlist there would only tax the sanctioned route. The consequence must be stated plainly rather than assumed: **the two tools are one trust tier, not a boundary and a bypass.** Any agent that can call `ctx_execute` has full shell reach no matter how `shell_allowlist` is configured — tightening the allowlist does not constrain it. Where that reach is unacceptable, deny the tool by role (`denied: ["ctx_execute"]`) or run the stack in an OS sandbox; those are the only controls that bind it.
+**`ctx_execute` is not a way around the shell gate.** Shell code (`language` `shell`, `bash`, `sh`, in any case, single or batch) is checked by the same `check_shell_allowlist` as `ctx_shell` before anything runs, including the self-loosening refusal; a batch is preflighted as a whole. Code in any other language (Python, JavaScript, TypeScript, …) cannot be read by the command allowlist, so under `shell_security = "enforce"` it runs only after the user approves it in the client's approval dialog, or when its language is listed in the global `execute_allowed_languages` (GHSA-rxv5-4c3x-g4q6). Outside `enforce` neither tool refuses anything. An approved script has the reach of its interpreter; where that is unacceptable, deny the tool by role (`denied: ["ctx_execute"]`) or run the stack in an OS sandbox.
 
 **Constructs the gate refuses (GHSA-rxv5-4c3x-g4q6 E).** The command runs in the user's `$SHELL`, which may be bash, dash or zsh. Where these shells read the same text differently, or where the gate cannot tell which commands a construct runs, the command is refused rather than guessed at. Rewrite the command without the construct:
 
@@ -372,7 +372,7 @@ policy — per-session I/O limits live on the active role, which is selected via
 ```toml
 update_check_disabled = true   # no daily update check
 path_jail = true               # keep the filesystem jail on (default)
-path_jail_scope = "project"    # only the active project (default "home": all of ~ except protected zones)
+path_jail_scope = "project"    # only the active project (default "projects": read every project below ~, write the active one)
 
 [telemetry]
 enabled = false                # explicitly disable telemetry

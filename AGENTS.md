@@ -110,10 +110,11 @@ lean-ctx automatically persists session context across restarts:
 - **Files**: Touched files with summaries and modification status
 - **Progress**: Task completion state and next steps
 
-This data is delivered through the first tool call's `--- AUTO CONTEXT ---`
-briefing (default `minimal_overhead = true`: initialize instructions stay
-byte-stable for provider prompt caching, #498). With `minimal_overhead = false`
-it is additionally injected at session start via the `ACTIVE SESSION` LITM block.
+This data is delivered as a `--- AUTO CONTEXT ---` briefing on the first
+`ctx_session` call with `action="load"`, `"status"` or `"show"` — never
+prepended to other tool results, which stay deterministic for provider prompt
+caching (#498). With `minimal_overhead = false` it is additionally injected at
+session start via the `ACTIVE SESSION` LITM block.
 
 Continuity is per agent: the briefing (last task, recent decisions), session
 findings in `ctx_knowledge search` and every other session-continuity read come
@@ -247,27 +248,14 @@ change-aware fast gate (the pre-push hook runs it too).
 ## Output Determinism (#498)
 
 Tool outputs MUST be deterministic functions of (file content, mode, CRP mode, task).
-Provider-side prompt caching (Anthropic 90%, OpenAI 50% discount) rewards byte-stable text;
+Provider-side prompt caching (a cache hit bills at 0.1× input on Anthropic and OpenAI GPT-5.6+,
+a miss rewrites the prefix at 1.25× or more) rewards byte-stable text;
 any timestamp, counter or random element in tool output bodies defeats it.
 
 - No timestamps/counters in output bodies. Artifact paths are content-addressed
   (see `save_tee`: `{cmd_slug}_{blake3(cmd)[..8]}.log`).
 - Dynamic additions (hints, checkpoints) only as state-triggered suffixes with stable headers.
 - Regression guard: determinism tests in `ctx_read/tests.rs`, `ctx_search.rs`, `shell/redact.rs`.
-
-<!-- lean-ctx -->
-## lean-ctx
-
-lean-ctx is active — the MCP tools replace native equivalents.
-Full rules: LEAN-CTX.md (open on demand — do not auto-load).
-<!-- /lean-ctx -->
-<!-- lean-ctx-compression -->
-OUTPUT STYLE: concise
-- Bullet points over paragraphs
-- Skip filler words and hedging ("I think", "probably", "it seems")
-- 1-sentence explanations max, then code/action
-- No repeating what the user said
-<!-- /lean-ctx-compression -->
 
 ## LeanCTX Context Gateway product-scope, source-security and IP guard — REQUIRED FOR ALL AGENTS
 

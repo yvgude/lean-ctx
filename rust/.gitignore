@@ -3,9 +3,6 @@
 *.swo
 .DS_Store
 
-# Local build-speed tuning (linker, sccache path) — machine-specific, not a team default.
-/.cargo/config.toml
-
 # eval A/B quality gate: CI regenerates the suite + report each run; only the
 # committed recording (eval/recording.json) is tracked for deterministic replay.
 /eval-suite/

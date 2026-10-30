@@ -90,6 +90,81 @@ fn reported_inline_scripts_are_gated_like_top_level_inline_code() {
     }
 }
 
+/// Owner decision 2026-10-29: a `;`/newline list runs its allowed statements
+/// and names each blocked one; anything where skipping changes meaning, or
+/// where quoting could hide a separator, keeps the whole-call rejection.
+#[test]
+fn a_blocked_statement_in_an_independent_list_is_skipped_not_the_line() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    crate::test_env::set_var(
+        "LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE",
+        "echo,python3,ls,git,rm",
+    );
+    let plan = |cmd: &str| super::partial_run(cmd, &[]);
+    let split = plan("ls -la; python3 -c 'print(1)'\necho done");
+    let quoted = plan(r#"echo "a; python3 -c 'print(1)'"; python3 -c x"#);
+    // Whole-line rejection: each of these would run something else, or run
+    // later statements differently, if the blocked part were cut out.
+    let rejected = [
+        // `&&`/`||` are never cut, and a skipped part must be a bare call.
+        "ls && python3 -c 'print(1)'; echo done",
+        "cd /tmp && python3 -c x; ls",
+        "command cd /tmp && python3 -c x; ls",
+        "python3 -c x || exit 1\nls",
+        // Error mode and early exits change what the rest does.
+        "set -e; python3 -c x; ls",
+        "python3 -c x; exit 0; ls",
+        // A substitution or redirect in the skipped part feeds later ones.
+        "read -r D < <(python3 -c x); rm -rf \"$D/cache\"",
+        // Comment text must never become a command (review repro A and B,
+        // the second with an apostrophe that shifts quote parity).
+        "ls  # later: git reset --hard; git clean -fdx\npython3 -c 'print(1)'",
+        "ls # don't\npython3 -c x\necho 'a; git clean -fdx; b'",
+        "if true; then python3 -c x; fi; ls",
+        "python3 -c x; python3 -c y",
+    ]
+    .map(|cmd| (cmd, plan(cmd)));
+    let python_module = super::enforce_shell_allowlist("python3 -m pytest -q -p no:cacheprovider");
+    let pdb_code = super::enforce_shell_allowlist("python3 -m pdb -c 'import os' x.py");
+    let timeit = super::enforce_shell_allowlist("python3 -m timeit \"import os\"");
+    // Combined short flags carry the module too (review L1).
+    let combined = [
+        "python3 -Im timeit \"x\"",
+        "python3 -mIPython --InteractiveShellApp.exec_lines=x",
+    ]
+    .map(|cmd| (cmd, super::enforce_shell_allowlist(cmd).is_err()));
+    crate::test_env::remove_var("LEAN_CTX_SHELL_ALLOWLIST_OVERRIDE");
+
+    for (cmd, result) in rejected {
+        assert_eq!(result, None, "must stay rejected as a whole: {cmd}");
+    }
+    if cfg!(windows) {
+        // Partial runs are POSIX-shell only; Windows keeps the whole-line rejection.
+        assert!(split.is_none() && quoted.is_none());
+    } else {
+        let split = split.expect("independent statements run partially");
+        assert_eq!(split.run, "ls -la\necho done");
+        assert_eq!(split.skipped.len(), 1, "{:?}", split.skipped);
+        assert!(
+            split.skipped[0].starts_with("skipped: python3 -c 'print(1)' (python3 -c: inline code"),
+            "{:?}",
+            split.skipped
+        );
+        // A quoted `;` is data: the echo runs with its quotes intact, nothing in
+        // the string is treated as its own statement.
+        let quoted = quoted.expect("only the unquoted statement is skipped");
+        assert_eq!(quoted.run, r#"echo "a; python3 -c 'print(1)'""#);
+        assert_eq!(quoted.skipped.len(), 1);
+    }
+    // `-m pytest` ends python's option list; `-m pdb` and `-m timeit` run code.
+    assert!(python_module.is_ok(), "{python_module:?}");
+    assert!(pdb_code.is_err());
+    assert!(timeit.is_err(), "timeit runs its argument as code");
+    for (cmd, blocked) in combined {
+        assert!(blocked, "must be blocked: {cmd}");
+    }
+}
+
 /// The other half of #1646, pinned so a future change to the splitter cannot
 /// quietly move it: commands a substitution genuinely *runs* are found by
 /// `check_substitution_in_args`, not by splitting the outer line. That scanner

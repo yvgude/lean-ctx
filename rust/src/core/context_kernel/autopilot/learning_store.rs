@@ -15,7 +15,6 @@ use rusqlite::{Connection, OptionalExtension, TransactionBehavior, params};
 use serde::{Deserialize, Serialize};
 
 mod policy_evidence;
-pub(crate) use policy_evidence::workload_of;
 mod routing;
 mod storage;
 pub use routing::{MAX_ROUTING_HISTORY, RoutingHistoryEntry};
@@ -203,7 +202,6 @@ impl AdaptiveLearningStore {
         self.validate_scope(&task.project_id, task.tenant_id.as_ref())?;
         let mut input = input.clone();
         input.learning = self.load()?;
-        input.context_policy = super::ScopeContextPolicy::load(&self.scope);
         controller.plan_for_task(task.task_id.clone(), &input, bandit)
     }
 

@@ -51,7 +51,6 @@ impl PreparedKernelContext {
             task_class,
             explicit_mode,
             None,
-            None,
         )
     }
 
@@ -66,11 +65,6 @@ impl PreparedKernelContext {
     ) -> anyhow::Result<Self> {
         let evaluation_time = DateTime::parse_from_rfc3339(&envelope.created_at)
             .map_err(|_| anyhow::anyhow!("invalid task evaluation timestamp"))?;
-        // The scope the task's outcomes are learned under, and so its policy.
-        let scope = crate::core::context_store::task_scope(
-            envelope.tenant_id.as_ref(),
-            &envelope.project_id,
-        );
         Self::plan_with_evaluation_time(
             envelope.task_id,
             query,
@@ -79,7 +73,6 @@ impl PreparedKernelContext {
             task_class,
             explicit_mode,
             Some(evaluation_time),
-            Some(&scope),
         )
     }
 
@@ -91,7 +84,6 @@ impl PreparedKernelContext {
         task_class: TaskClass,
         explicit_mode: Option<String>,
         evaluation_time: Option<DateTime<FixedOffset>>,
-        scope: Option<&str>,
     ) -> anyhow::Result<Self> {
         let budget = budget.min(150);
         anyhow::ensure!(budget > 0, "kernel context budget is disabled");
@@ -112,7 +104,6 @@ impl PreparedKernelContext {
         input.task_class = task_class;
         input.overrides.read_mode = explicit_mode;
         input.evaluation_time = evaluation_time;
-        input.context_policy = scope.and_then(super::super::autopilot::ScopeContextPolicy::load);
         let decision =
             AutopilotController::for_project(&project_root).plan_for_task(task_id, &input, None)?;
         Ok(Self {

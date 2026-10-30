@@ -76,29 +76,24 @@ cross-platform evidence before product acceptance.
 
 ## Product boundaries
 
-### Community
+### LeanCTX OSS
 
-Community retains manual handoff and open interoperability contracts. It does
-not receive the complete live Scent Field product merely because historical
-experimental code exists under Apache licensing.
+LeanCTX OSS includes manual handoff, the open interoperability contracts and the
+local Scent Field for multiple agents on one machine, free and without an
+account. It may expose bounded claim, done, stuck, hot and avoid signals through
+the Local Agent Bus and the local Cockpit. It must work without transmitting
+message or source payloads.
 
-### Pro
+### LeanCTX Hive Team
 
-Pro includes the local Scent Field for one paying account using multiple local
-agents. It may expose bounded claim, done, stuck, hot and avoid signals through
-Agent Bus sync and dashboards. It must work without transmitting message or
-source payloads.
-
-### Team
-
-Team adds durable workspace-scoped scents across users, devices and machines.
+LeanCTX Hive Team adds durable workspace-scoped scents across users, devices and machines.
 The shared projection requires membership, role and seat enforcement; bounded
 retention; deterministic conflict resolution; reconnect/resume behavior; and no
 cross-workspace leakage.
 
-### Enterprise
+### LeanCTX Hive Enterprise
 
-Enterprise adds governed identity, RBAC, classification, region, retention,
+LeanCTX Hive Enterprise adds governed identity, RBAC, classification, region, retention,
 audit and deployment policy. Organization policy may restrict which agents can
 deposit or observe signals for a target. Audit records remain payload-free and
 must not claim hardware attestation without measured evidence.
@@ -147,16 +142,16 @@ These metrics cannot establish accepted outcome without the Outcome Evaluator.
 
 ## Acceptance gates
 
-1. Pro proves two supported local agents avoiding duplicate work through scent
+1. LeanCTX OSS proves two supported local agents avoiding duplicate work through scent
    signals while leases continue to fence mutation.
 2. Crash, corrupt-file, concurrent writer, stale PID, clock shift, capacity and
    decay behavior are tested on supported platforms.
-3. Team proves authenticated shared scents across two users and machines with
+3. LeanCTX Hive Team proves authenticated shared scents across two users and machines with
    no cross-workspace access and deterministic reconnect behavior.
-4. Enterprise proves policy denial, identity revocation, retention and
+4. LeanCTX Hive Enterprise proves policy denial, identity revocation, retention and
    payload-free audit.
-5. Capability and entitlement gates match Community/Pro/Team/Enterprise
-   packaging and every CLI/MCP/HTTP entry point.
+5. Capability gates match the OSS / Hive (Team, Enterprise) packaging at every
+   CLI/MCP/HTTP entry point; nothing local is gated.
 6. Telemetry fixtures prove no raw target, path, prompt, message, source or
    secret leakage.
 7. Downgrade and offline behavior preserve safe local operation and export

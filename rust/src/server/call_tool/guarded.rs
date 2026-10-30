@@ -923,6 +923,8 @@ impl crate::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
         };
         *self.server.task_envelope.write().await = Some(context.envelope.clone());
         call.minimal = call.config.minimal_overhead_effective();
+        // The briefing goes only to `ctx_session` load/status; every other
+        // result stays free of per-run session text (#498).
         if !call.machine_readable {
             let (task, project_root) = {
                 let session = self.server.session.read().await;
@@ -931,6 +933,13 @@ impl crate::core::execution_lifecycle::ExecutionDriver for McpDriver<'_> {
                     session.project_root.clone(),
                 )
             };
+            if !crate::tools::autonomy::delivers_session_briefing(&call.name, call.args.as_ref()) {
+                crate::tools::autonomy::apply_auto_load_packages_once(
+                    &self.server.autonomy,
+                    project_root.as_deref(),
+                );
+                return Ok(crate::core::execution_lifecycle::StageDisposition::Applied);
+            }
             // Built from this caller's own session instance only (I07/S03).
             call.auto_context =
                 crate::core::session::caller::scope(Some(self.server.session.instance()), || {

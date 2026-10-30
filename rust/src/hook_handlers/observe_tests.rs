@@ -371,6 +371,34 @@ fn session_start_honoured_for_cursor_payload() {
     assert!(session_start_honours_additional_context(&v));
 }
 
+/// A3: in shared mode the SessionStart nudge repeats the mapping the host's
+/// rules file already carries — it only ships while that carrier is missing.
+#[test]
+fn shared_session_start_nudge_only_without_rules_carrier() {
+    let _iso = crate::core::data_dir::isolated_data_dir();
+    let tmp = tempfile::tempdir().unwrap();
+    let old_home = std::env::var_os("HOME");
+    crate::test_env::set_var("HOME", tmp.path());
+    let payload = serde_json::json!({
+        "hook_event_name": "SessionStart",
+        "conversation_id": "0e1f4ed8-d858-4557-9fc5-6cbf5298eb8b"
+    })
+    .to_string();
+
+    let without = dedicated_session_context(&payload);
+    let mdc = tmp.path().join(".cursor/rules/lean-ctx.mdc");
+    std::fs::create_dir_all(mdc.parent().unwrap()).unwrap();
+    std::fs::write(&mdc, crate::rules_inject::rules_dedicated_markdown()).unwrap();
+    let with = dedicated_session_context(&payload);
+
+    match old_home {
+        Some(h) => crate::test_env::set_var("HOME", h),
+        None => crate::test_env::remove_var("HOME"),
+    }
+    assert_eq!(without.as_deref(), Some(SHARED_SESSION_CONTEXT));
+    assert_eq!(with, None, "carrier present → no third channel");
+}
+
 #[test]
 fn claude_code_gets_full_mapping_not_shadow_minimal() {
     let profile = crate::core::tool_profiles::ToolProfile::Standard;

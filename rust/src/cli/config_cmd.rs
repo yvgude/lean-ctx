@@ -1298,10 +1298,7 @@ fn cmd_show_effective() {
         cfg.graph_index_max_files
     ));
     box_row("");
-    box_row(&format!(
-        " memory.knowledge.max_facts     = {:>6}",
-        policy.knowledge.max_facts
-    ));
+    box_row(" memory.knowledge facts         = no limit");
     box_row(&format!(
         " memory.knowledge.max_patterns  = {:>6}",
         policy.knowledge.max_patterns

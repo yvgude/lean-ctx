@@ -15,9 +15,13 @@ historical record.
 Consequences:
 
 1. Every `free` capability in `product/capabilities.toml` has
-   `account_required = false`. Former Pro cockpit views
+   `account_required = false`. Former Pro capabilities
    (`pro.dashboard.knowledge_workflows`, `pro.runtime.adaptive_context`,
-   `pro.runtime.memory_curation`, `pro.runtime.context_policy`) are `free`.
+   `pro.runtime.memory_curation`, `pro.runtime.context_policy`) are `free`; the
+   ids keep their historical prefix. Since 2026-10-29 the Engine never invokes
+   the last three in a runtime: context ranking, memory selection and read
+   strategy are always the local behaviour (a runtime may still declare them so
+   it installs).
 2. Paid capabilities use price class `hive` with `hive_plan = personal | team |
    enterprise`. Personal Cloud (`pro.cloud_sync`, `pro.hosted_index`) and
    `team.revenue_share` are `retired`: known lookup names, granted by no plan.
@@ -55,5 +59,5 @@ if the plan catalog is kept as data.
 ## Instance limits
 
 Hive enforces connected Engine instances per plan (`product/tier-map.json`
-`instance_limits`): Community 1 per account, Pro 2 per account, Team 2 per seat,
-Enterprise 3 per seat (contract).
+`instance_limits`): without a plan 1 per account, Personal (map key `pro`) 2 per
+account, Team 2 per seat, Enterprise 3 per seat (contract).

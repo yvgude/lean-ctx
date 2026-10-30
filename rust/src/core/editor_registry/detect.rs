@@ -1074,7 +1074,7 @@ mod footgun_audit_tests {
             "nudge must mention exclusive tools"
         );
         assert!(
-            block.contains("auto-route") || block.contains("NEVER use native"),
+            block.contains("auto-route") || block.contains("lean-ctx routing"),
             "nudge must indicate native tools are handled"
         );
     }

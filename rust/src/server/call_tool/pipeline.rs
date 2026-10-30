@@ -246,6 +246,11 @@ pub(in crate::server) async fn reversible_post_process(
         content_blocks,
         tool_start,
     } = raw;
+    // Classified from the tool's own message, before any decoration, so the
+    // category agrees with the failure class `McpPrimitive::failure` reports.
+    let tool_error_category = tool_error.then(|| {
+        tool_execution_error_category(crate::core::telemetry_failure::classify(&result_text))
+    });
     let mut shell_outcome = shell_outcome;
     // Admission and dispatch retain the outer wrapper's gates. Delivery belongs
     // to the resolved leaf tool, including raw flags and source-bound recovery.
@@ -776,15 +781,9 @@ pub(in crate::server) async fn reversible_post_process(
     //
     // DYNAMIC ZONE: Session-dependent decorations appended/prepended below.
     //
-    // KNOWN ISSUE: auto_context is PREPENDED (line below), which places
-    // session-specific content at the START of the tool result. This breaks
-    // provider prefix caching for the first tool call of each session. Since
-    // auto_context fires only once per session (gated), this is acceptable:
-    // the first call is always a cache miss anyway. All subsequent calls have
-    // a stable prefix.
-    //
-    // Future optimization: move auto_context to MCP _meta or a separate
-    // notification channel to preserve the stable prefix even on first call.
+    // auto_context (the wake-up briefing) and the shared-context hint are
+    // session-specific; they decorate only `ctx_session` load/status/show
+    // (`delivers_session_briefing`), never a read, search or compose result.
     // ═══════════════════════════════════════════════════════════════════════
     if !is_raw_shell && let Some(ctx) = auto_context {
         let ctx_tokens = crate::core::tokens::count_tokens(&ctx);
@@ -795,7 +794,10 @@ pub(in crate::server) async fn reversible_post_process(
 
     // Shared memory is partitioned by project: only the request project's own
     // facts may decorate this result.
-    let hint_root = if !is_raw_shell && legacy_context_allowed && name != "ctx_memory" {
+    let hint_root = if !is_raw_shell
+        && legacy_context_allowed
+        && crate::tools::autonomy::delivers_session_briefing(name, args)
+    {
         match crate::core::policy::diagnostics::request_project() {
             Some(root) => Some(root.to_string_lossy().into_owned()),
             None => server.session.read().await.project_root.clone(),
@@ -1276,9 +1278,9 @@ pub(in crate::server) async fn reversible_post_process(
     crate::tools::ctx_provider::ensure_snapshot_output(name, args, &result_text)?;
     record_shell_error_category(shell_outcome.as_ref(), &result_text);
     let mut result = finalize_call_result(&result_text, shell_outcome);
-    if tool_error {
+    if let Some(category) = tool_error_category {
         result.is_error = Some(true);
-        record_error_category(crate::core::telemetry_v2::ErrorCategory::Internal);
+        record_error_category(category);
     }
     // Delivered-content lineage (G03/G04): this is the release point — the
     // text blocks of `result` are the bytes the client receives (a later
@@ -1352,7 +1354,10 @@ mod telemetry;
 #[cfg(test)]
 use telemetry::shell_error_category;
 pub(in crate::server) use telemetry::{error_failure, result_failure};
-use telemetry::{mcp_error_category, record_error_category, record_shell_error_category};
+use telemetry::{
+    mcp_error_category, record_error_category, record_shell_error_category,
+    tool_execution_error_category,
+};
 
 #[path = "pipeline_shell_effects.rs"]
 mod shell_effects;

@@ -634,14 +634,14 @@ impl LocalRegistry {
                     "`{}` is unsigned — its origin cannot be checked. {MCP_UNVERIFIED_HINT}",
                     bundle.manifest.name
                 )),
-                SignaturePolicy::RequireSigned | SignaturePolicy::RequirePinnedPublisher { .. } => {
-                    Err(format!(
-                        "`{}` is unsigned — its origin cannot be checked. Re-export it with \
+                SignaturePolicy::RequireSigned
+                | SignaturePolicy::RequireTrustedPublisher
+                | SignaturePolicy::RequirePinnedPublisher { .. } => Err(format!(
+                    "`{}` is unsigned — its origin cannot be checked. Re-export it with \
                          `lean-ctx pack export --sign`, or pass --allow-unsigned to import a \
                          local file you trust",
-                        bundle.manifest.name
-                    ))
-                }
+                    bundle.manifest.name
+                )),
             };
         };
         let Some(coverage) = super::signing::signature_coverage_of(&raw_manifest)? else {
@@ -656,6 +656,20 @@ impl LocalRegistry {
                 "`{}` is signed by key {fingerprint}, which is not pinned for `{}` in \
                  trusted-signers.toml — a valid signature from an unknown key proves \
                  nothing about the publisher. {MCP_UNVERIFIED_HINT}",
+                bundle.manifest.name,
+                publisher_subject(&bundle.manifest.name),
+            ));
+        }
+        if policy == SignaturePolicy::RequireTrustedPublisher
+            && let Some(fingerprint) = untrusted_package_signer(&bundle.manifest)
+        {
+            // The key travels inside the package, so a valid signature alone
+            // proves only that *someone* signed it (F8).
+            return Err(format!(
+                "`{}` is signed by key {fingerprint}, which is not pinned for `{}` in \
+                 trusted-signers.toml — a valid signature from an unknown key proves \
+                 nothing about the publisher. Pin the publisher key there, or pass \
+                 --allow-untrusted-signer to import a local file you trust",
                 bundle.manifest.name,
                 publisher_subject(&bundle.manifest.name),
             ));
@@ -925,8 +939,8 @@ fn publisher_mismatch(subject: &str, public_key: &str, pinned_fingerprint: &str)
 
 /// How a user admits an unverified package that an MCP import refused.
 const MCP_UNVERIFIED_HINT: &str = "The user can pin the publisher key in trusted-signers.toml, \
-     run `lean-ctx pack import <file>` (with --allow-unsigned for an unsigned file) in their own \
-     terminal, or set `mcp_import_allow_unverified = true` in the global config. A tool \
+     run `lean-ctx pack import <file> --allow-untrusted-signer` (--allow-unsigned for an unsigned \
+     file) in their own terminal, or set `mcp_import_allow_unverified = true` in the global config. A tool \
      argument cannot grant this.";
 
 /// How strictly an install door treats package signatures
@@ -935,8 +949,14 @@ const MCP_UNVERIFIED_HINT: &str = "The user can pin the publisher key in trusted
 pub(crate) enum SignaturePolicy<'a> {
     /// Local file the caller explicitly vouched for (`--allow-unsigned`).
     AllowUnsigned,
-    /// A valid signature is required (default for local imports).
+    /// A valid signature is required, from any key (local imports with
+    /// `--allow-untrusted-signer`; network peers whose admission adds its
+    /// own checks).
     RequireSigned,
+    /// A valid signature from a key anchored for the package's publisher
+    /// subject or this machine's own publisher key (default for local CLI
+    /// imports of third-party files).
+    RequireTrustedPublisher,
     /// A valid signature from a key anchored for the package's publisher
     /// subject (MCP imports: the model cannot vouch for a file).
     RequireTrustedSigner,
@@ -957,13 +977,15 @@ fn publisher_subject(package_name: &str) -> String {
 }
 
 /// Whether the package signer key is anchored for its publisher subject
-/// (pinned in `trusted-signers.toml`, or held by a local agent identity).
+/// (pinned in `trusted-signers.toml`, held by a local agent identity, or
+/// this machine's own ctxpkg publisher key).
 fn package_signer_trusted(manifest: &PackageManifest) -> bool {
     manifest.signature.as_ref().is_some_and(|signature| {
         crate::core::signer_trust::is_trusted(
             &publisher_subject(&manifest.name),
             &signature.public_key,
-        )
+        ) || super::keys::existing_public_key_hex()
+            .is_some_and(|own| own.eq_ignore_ascii_case(signature.public_key.trim()))
     })
 }
 
@@ -988,7 +1010,7 @@ pub(crate) fn describe_package_signature(manifest: &PackageManifest) -> String {
     };
     let fingerprint = crate::core::signer_trust::key_fingerprint(&signature.public_key);
     let subject = publisher_subject(&manifest.name);
-    if crate::core::signer_trust::is_trusted(&subject, &signature.public_key) {
+    if package_signer_trusted(manifest) {
         format!("integrity ok, signer key {fingerprint} (trusted for {subject})")
     } else {
         format!("integrity ok, signer key {fingerprint} (untrusted)")

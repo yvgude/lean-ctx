@@ -85,6 +85,14 @@ pub(crate) fn public_key_hex(key: &SigningKey) -> String {
     hex_encode(key.verifying_key().as_bytes())
 }
 
+/// Public key of this machine's publisher key, if one exists. Read-only:
+/// never creates a key, so a verifier cannot mint the identity it checks.
+pub(crate) fn existing_public_key_hex() -> Option<String> {
+    let hex_seed = std::fs::read_to_string(key_path().ok()?).ok()?;
+    let seed = parse_seed(hex_seed.trim()).ok()?;
+    Some(public_key_hex(&SigningKey::from_bytes(&seed)))
+}
+
 fn parse_seed(s: &str) -> Result<[u8; 32], String> {
     if s.len() != 64 || !s.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(format!(

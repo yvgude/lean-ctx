@@ -2,7 +2,7 @@
 
 Status: V4-Zielarchitektur. Die Entscheidungs- und Bindungsprimitive existieren
 (`TaskAutopilotDecision`), ein durchgehender Auswahl-, Ausführungs- und
-Lernpfad ist nicht abgenommen. Kein Release- oder Pro-Verfügbarkeitsnachweis.
+Lernpfad ist nicht abgenommen. Kein Release- oder Verfügbarkeitsnachweis.
 
 **Produkt-Scope (2026-10-14): nur Wartung.** LeanCTX ist das Context Gateway;
 Modellwahl, Ausführung und Task-Scheduling gehören dem Host. Der bestehende
@@ -23,8 +23,9 @@ Er ist nicht der Context Autopilot, der den Kontextplan wählt
 ([autopilot.md](autopilot.md)), und nicht der Work Graph, der eine Aufgabe in
 einen Baum zerlegt ([work-graph.md](work-graph.md)).
 
-**Pro fächert nicht auf.** Pro fährt einen gewählten Ausführungspfad plus
-begrenzte Verifikations- und Fallback-Pfade. Team-Fan-out ist der Work Graph.
+**Kein Auffächern.** Der Execution Autopilot fährt einen gewählten
+Ausführungspfad plus begrenzte Verifikations- und Fallback-Pfade. Team-Fan-out
+ist der Work Graph.
 
 ## Entscheidungsraum
 
@@ -128,7 +129,8 @@ Lernzustand (nur bei validierter Evidenz)
 - Kostenschätzung gegen Ist-Kosten und der Baseline-Vergleich sind nicht als
   durchgehender Produktivpfad belegt.
 - Fallback-Ketten und deren Wirksamkeitsmessung sind nicht abgenommen.
-- Die Pro-Entitlement-Kopplung ist nicht Ende-zu-Ende nachgewiesen.
+- Der Vertrag hängt an keinem bezahlten Plan; er ist Teil von LeanCTX OSS
+  (nur Wartung).
 
 ## Mindestabnahme
 

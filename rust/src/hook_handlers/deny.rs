@@ -1025,14 +1025,23 @@ mod tests {
     fn should_allow_claude_auto_memory_paths() {
         let _env = crate::core::data_dir::test_env_lock();
         crate::test_env::set_var("LEAN_CTX_HOOK_MODE", "replace");
-        let memory = should_allow(
+        // The exception is anchored to the harness under this user's home, so
+        // the fixture is built from it rather than a fixed /home path.
+        let home = dirs::home_dir().expect("home dir");
+        let memory_path = home.join(".claude/projects/-slug/memory/MEMORY.md");
+        let memory = should_allow("Read", Some(&memory_path.to_string_lossy()), "{}");
+        let lookalike = should_allow(
             "Read",
-            Some("/home/jules/.claude/projects/-slug/memory/MEMORY.md"),
+            Some("/srv/copy/.claude/projects/-slug/memory/MEMORY.md"),
             "{}",
         );
         let project = should_allow("Read", Some("/home/jules/project/src/main.rs"), "{}");
         crate::test_env::remove_var("LEAN_CTX_HOOK_MODE");
         assert!(memory, "auto memory stays readable even under Replace");
+        assert!(
+            !lookalike,
+            "a look-alike memory directory outside the harness home stays denied"
+        );
         assert!(
             !project,
             "ordinary project files stay denied under replace deny hooks"

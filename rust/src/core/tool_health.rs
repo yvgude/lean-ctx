@@ -38,8 +38,9 @@ const CROSS_LAYER_POINTER_MAX: usize = 120;
 const POINTER_TOKENS: usize = 40;
 /// Clients that receive the full lean-ctx mapping via MCP `instructions` +
 /// SessionStart context (dedicated hosts) — their static rules files only
-/// need a pointer.
-const DEDICATED_INSTRUCTION_CLIENTS: &[&str] = &["claude", "codex", "codebuddy"];
+/// need a pointer. Claude Code is not one: its `CLAUDE.md` block is the single
+/// rules channel and the instructions collapse to an anchor (A3).
+const DEDICATED_INSTRUCTION_CLIENTS: &[&str] = &["codex", "codebuddy"];
 
 #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
@@ -689,18 +690,18 @@ mod tests {
         assert_eq!(report.rules_tokens, 350);
     }
 
-    /// Cross-layer dedup: a dedicated-host carrier (claude) holding more than a
+    /// Cross-layer dedup: a dedicated-host carrier (codebuddy) holding more than a
     /// pointer duplicates what MCP instructions already deliver — flagged with
     /// the reclaimable size. Non-dedicated clients (gemini) are left alone.
     #[test]
     fn build_report_flags_dedicated_carrier_exceeding_pointer() {
         let rules = vec![
             RulesFileCost {
-                path: "/home/u/.claude/CLAUDE.md".into(),
+                path: "/home/u/.codebuddy/CODEBUDDY.md".into(),
                 file_tokens: 700,
                 lean_ctx_tokens: 384,
                 carries_full: false,
-                clients: vec!["claude"],
+                clients: vec!["codebuddy"],
             },
             RulesFileCost {
                 path: "/home/u/.gemini/GEMINI.md".into(),
@@ -719,20 +720,20 @@ mod tests {
             "lean (default)".to_string(),
             KnowledgeHealth::default(),
         );
-        let claude = report
+        let codebuddy = report
             .rules
             .iter()
-            .find(|r| r.path.contains("CLAUDE"))
+            .find(|r| r.path.contains("CODEBUDDY"))
             .unwrap();
         assert!(
-            claude.action.contains("thin to a pointer"),
+            codebuddy.action.contains("thin to a pointer"),
             "dedicated carrier above pointer size must be flagged: {}",
-            claude.action
+            codebuddy.action
         );
         assert!(
-            claude.action.contains("~344 tok"),
+            codebuddy.action.contains("~344 tok"),
             "reclaimable size = lean tokens minus pointer: {}",
-            claude.action
+            codebuddy.action
         );
         let gemini = report
             .rules

@@ -23,10 +23,10 @@ it does not start, schedule, assign or retry agent work.
 
 | Tier | Product boundary | Required invariant | Current evidence class |
 |---|---|---|---|
-| Community | Context Toolkit + deterministic reference runtime | Useful local-first operation without account or hosted dependency | Production and preview primitives exist; full V4 gate open |
-| Pro | Context Autopilot, local coordination context (Local Agent Bus, presence, leases, bounded local Work Graph) | Material adaptive context gain; clean deterministic fallback when disabled | Multiple local slices tested; complete paid lifecycle not proven |
-| Team | Authorized shared context + team coordination context (workspace bus, presence, leases, shared Work Graph) | Cross-user/device scope; a shared artifact is released only against the receiver's own checkout of its source; provenance, authority and conflict handling | Team journeys pass against a real Hub; release gate open |
-| Enterprise | Governed context and governed coordination for agents | Identity, owner, policy, audit, deployment and compliance controls | Governance slices exist; complete surface and integration open |
+| LeanCTX OSS | The complete local engine: Context Toolkit, context ranking, Context Autopilot planner, memory and consolidation, local coordination context (Local Agent Bus, presence, leases, bounded local Work Graph), local Cockpit | Free and complete; useful local-first operation without account, licence or hosted dependency; no paid-better variant of a local behaviour | Production and preview primitives exist; full V4 gate open |
+| LeanCTX Hive Personal | Control and proof for one person: filter packs, personal protection rules, code-security hints, semantic detectors | Adds governance on top of OSS; removing it leaves OSS behaviour unchanged | Runtime slices tested; complete paid lifecycle not proven |
+| LeanCTX Hive Team | Authorized shared context + team coordination context (workspace bus, presence, leases, shared Work Graph), Cockpit across engines | Cross-user/device scope; a shared artifact is released only against the receiver's own checkout of its source; provenance, authority and conflict handling | Team journeys pass against a real Hub; release gate open |
+| LeanCTX Hive Enterprise | Governed context and governed coordination for agents | Identity, owner, org policy, audit, deployment and compliance controls | Governance slices exist; complete surface and integration open |
 | SDK/OEM | Stable commercial integration channel | Public contracts and trust boundary remain interoperable | Requires final licensing/package/release evidence |
 
 An implementation file, schema, test or dashboard does not by itself promote a
@@ -48,15 +48,18 @@ Enterprise services.
 One canonical lineage connects task admission to ContextPlan, ExecutionPlan,
 capability/connector execution, receipts, outcomes, Value Gate and learning.
 Legacy planners, ledgers and policy engines are inputs or adapters, not parallel
-authorities. Community uses deterministic reference decisions; Pro may learn
-within policy and evidence bounds.
+authorities. The OSS engine uses deterministic reference decisions and learns
+only locally, within policy and evidence bounds; no licensed runtime changes
+a planning decision.
 
 ### Context Autopilot
 
-Pro selects sources, read modes, budgets, preload, relevance, pressure,
-consolidation, memory injection and checkpoints using measured outcomes.
-Explicit user choices and policy override learning. Disabled or unavailable Pro
-must fall back to deterministic Community behavior without data loss. The
+The OSS planner selects sources, read modes, budgets, preload, relevance,
+pressure, consolidation, memory injection and checkpoints locally. Explicit user
+choices and policy override learning. An adaptive variant that learns from
+measured outcomes is off until an A/B result against the deterministic planner
+justifies it; it is never a paid tier, and disabling it must fall back to
+deterministic behaviour without data loss. The
 planner contract, safety invariants and learning bounds are in
 [`autopilot.md`](autopilot.md).
 
@@ -74,8 +77,8 @@ and how LeanCTX binds and controls a host-launched child is in
 
 ### Coordination context
 
-Pro owns live single-user Local Agent Bus and bounded local Work Graph. Team
-extends these across users, devices and machines with explicit parent/child
+LeanCTX OSS owns the live single-user Local Agent Bus and bounded local Work
+Graph. LeanCTX Hive Team extends these across users, devices and machines with explicit parent/child
 lineage, leases, presence, handoff and accepted-path attribution. A message
 leaves a machine only through the egress admission; what a member wrote is
 foreign content to its readers. LeanCTX records and serves the coordination
@@ -134,8 +137,8 @@ The authoritative capability census records source-level maturity and intended
 V4 decisions. The central V4 status records tested/deployed slices and their
 limits. Neither shows all hard gates complete.
 
-Known open fronts include the complete paid revenue lifecycle, Pro adaptive and
-execution lineage, shared Team authority/conflicts, Enterprise integration,
+Known open fronts include the complete paid revenue lifecycle, adaptive
+planning evidence and execution lineage, shared Team authority/conflicts, Enterprise integration,
 telemetry privacy/offline completion, licensing/legal artifacts, packaging,
 cross-platform gates, migrations, repository consolidation and final public
 claim verification.

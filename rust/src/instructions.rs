@@ -578,17 +578,10 @@ pub fn claude_code_instructions() -> String {
 }
 
 /// One-line anchor for clients whose rule file carries the canonical block (#578).
-/// Profile-aware (#756): only mentions tools the profile exposes.
-fn skeleton_anchor(tp: &crate::core::tool_profiles::ToolProfile) -> String {
-    if tp.is_tool_enabled("ctx_compose") {
-        "lean-ctx active — your auto-loaded lean-ctx rules apply: \
-         ctx_* tools replace native Read/Grep/Shell/Glob (ctx_compose first)."
-            .into()
-    } else {
-        "lean-ctx active — your auto-loaded lean-ctx rules apply: \
-         ctx_* tools replace native Read/Grep/Shell/Glob."
-            .into()
-    }
+/// States the routing once, neutrally (A3): the rules file carries the detail,
+/// and an "orient first" push added steps on short tasks (pilot P6).
+fn skeleton_anchor(_tp: &crate::core::tool_profiles::ToolProfile) -> String {
+    SKELETON_ANCHOR.into()
 }
 
 /// Anchor for hook-covered hosts (GL #1153). Profile-aware (#756).
@@ -632,10 +625,8 @@ fn is_shadow_surface_active() -> bool {
     }
 }
 
-// Test-only backward-compat constants for assertion substrings.
-#[cfg(test)]
 const SKELETON_ANCHOR: &str = "lean-ctx active — your auto-loaded lean-ctx rules apply: \
-    ctx_* tools replace native Read/Grep/Shell/Glob (ctx_compose first).";
+    ctx_* tools replace native Read/Grep/Shell/Glob.";
 
 fn client_loads_compression_from_file(client_name: &str) -> bool {
     crate::core::home::resolve_home_dir().is_some_and(|home| {
@@ -708,6 +699,70 @@ pub(crate) fn max_shell_hint_tokens() -> usize {
 mod tests {
     use super::*;
     use crate::core::tokens::count_tokens;
+
+    /// The per-turn prefix a provider caches — advertised tool schemas, the
+    /// initialize instructions and the rules block — must be byte-identical for
+    /// two sessions with different state in different data dirs; any drift
+    /// re-writes the cache on every session start (Optimierungsplan P2, #498).
+    #[test]
+    fn default_prefix_is_byte_identical_across_sessions() {
+        use crate::core::session::SessionState;
+
+        fn busy_session() -> SessionState {
+            let mut s = SessionState::default();
+            s.set_task("refactor the payment retry loop", Some("edit"));
+            s.touch_file("src/payments/retry.rs", None, "full", 812);
+            s.add_finding(
+                Some("src/payments/retry.rs"),
+                Some(42),
+                "backoff ignores jitter",
+            );
+            s.add_decision("keep exponential backoff", None);
+            s
+        }
+        fn prefix(session: &SessionState) -> String {
+            let tools = serde_json::to_string(
+                &crate::server::tool_visibility::advertised_tool_defs_default(),
+            )
+            .expect("tool defs serialize");
+            let instructions = build_instructions_with_client_and_session(
+                CrpMode::effective(),
+                "claude-code",
+                session,
+            );
+            format!(
+                "{tools}\n{instructions}\n{}",
+                crate::rules_inject::canonical_rules_block()
+            )
+        }
+
+        let fresh = {
+            let _iso = crate::core::data_dir::isolated_data_dir();
+            prefix(&SessionState::default())
+        };
+        let busy = {
+            let _iso = crate::core::data_dir::isolated_data_dir();
+            prefix(&busy_session())
+        };
+        assert!(fresh == busy, "default prefix depends on session state");
+
+        // Negative probe: the same comparison must see session state once the
+        // instructions do carry it (minimal off), or it compares nothing. No
+        // client cap here: Claude Code's 2048-char cut would drop the block.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let render = |s: &SessionState| {
+            build_full_instructions(
+                CrpMode::Off,
+                "",
+                false,
+                CompressionLevel::Off,
+                false,
+                "",
+                Some(s),
+            )
+        };
+        assert_ne!(render(&SessionState::default()), render(&busy_session()));
+    }
 
     /// Claude Code's 2048 cap is in characters; a byte count over-trims text
     /// with em-dashes/arrows, and a mid-line cut is exactly the host behaviour
@@ -822,7 +877,7 @@ mod tests {
             );
         } else {
             assert!(
-                !covered.contains("MANDATORY MAPPING"),
+                !covered.contains("lean-ctx routing"),
                 "covered client must not re-pay the skeleton:\n{covered}"
             );
         }
@@ -840,12 +895,12 @@ mod tests {
                 "#987: uncovered client WITHOUT hooks must NOT get shadow nudge:\n{uncovered}"
             );
             assert!(
-                uncovered.contains("MANDATORY MAPPING") || uncovered.contains("ctx_"),
+                uncovered.contains("lean-ctx routing") || uncovered.contains("ctx_"),
                 "uncovered client without hooks gets explicit tool mapping:\n{uncovered}"
             );
         } else {
             assert!(
-                uncovered.contains("MANDATORY MAPPING"),
+                uncovered.contains("lean-ctx routing"),
                 "uncovered client keeps the full skeleton:\n{uncovered}"
             );
         }
@@ -907,7 +962,7 @@ mod tests {
         );
         assert!(
             !covered.contains("ctx_* tools replace native")
-                && !covered.contains("MANDATORY MAPPING"),
+                && !covered.contains("lean-ctx routing"),
             "hook-covered client must not carry the replace-native wording:\n{covered}"
         );
     }

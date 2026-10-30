@@ -6,17 +6,21 @@
 //! root" on every cross-project read, and the suggested fixes — one allow entry
 //! per directory, or env vars that need an MCP restart — did not scale.
 //!
-//! - `home` (**default**, since 3.11.3): everything below the user's home
-//!   directory is admitted for reading and writing, except the protected zones
+//! - `projects` (**default**; also the default of 3.11.1 and 3.11.2): only
+//!   paths inside a project below `~` (a directory between it and `~` holds
+//!   `.git`, `Cargo.toml`, …) are admitted, for reading; loose personal files
+//!   are not, and writes stay in the session's project, host-declared roots
+//!   and allow entries — an agent working in repo A cannot plant
+//!   `~/code/B/.git/hooks/pre-commit`.
+//! - `home` (opt-in; the default of 3.11.3 to 3.12.0): everything below the
+//!   user's home directory is admitted for reading and writing, except the
+//!   protected zones
 //!   where credentials and other programs' private state live (every
 //!   top-level dot entry such as `~/.ssh`, `~/.aws`, `~/.config`, `~/.zshrc` or
 //!   other agents' `~/.claude`, plus `~/Library` on macOS, `~/AppData` and the
 //!   `NTUSER.DAT*` registry hive on Windows). Paths outside the home directory
-//!   stay jailed.
-//! - `projects` (the default of 3.11.1 and 3.11.2): only paths inside a
-//!   project below `~` (a directory between it and `~` holds `.git`,
-//!   `Cargo.toml`, …) are admitted, for reading; loose personal files are not,
-//!   and writes stay in the session's project.
+//!   stay jailed. It admits writes wherever it admits reads, so it is reported
+//!   as a jail relaxation.
 //! - `project`: the classic boundary — the project root plus allow-lists.
 //!
 //! Explicit allow-lists (`allow_paths`, `extra_roots`, `read_only_roots`) and
@@ -25,7 +29,7 @@
 //! `path_jail = false` keeps disabling the jail entirely.
 //!
 //! Resolution precedence (first hit wins): `LEAN_CTX_PATH_JAIL_SCOPE` env →
-//! `path_jail_scope` in the global `config.toml` → `home`. Like `path_jail` it
+//! `path_jail_scope` in the global `config.toml` → `projects`. Like `path_jail` it
 //! is global-only: a project-local `.lean-ctx.toml` is never merged for it.
 
 use std::path::{Path, PathBuf};
@@ -46,9 +50,9 @@ tokio::task_local! {
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum PathJailScope {
     /// Everything below `$HOME` except the protected zones, read and write.
-    #[default]
     Home,
     /// Projects below `$HOME`, read-only outside the session's project.
+    #[default]
     Projects,
     /// Only the project root plus the configured allow-lists.
     Project,
@@ -73,7 +77,7 @@ impl PathJailScope {
         }
     }
 
-    /// Active scope: env override → config → default (`home`). A
+    /// Active scope: env override → config → default (`projects`). A
     /// launcher-bound Workspace (#2120) always means `project`: its roots,
     /// not the home directory, bound every path.
     pub fn resolve() -> Self {
@@ -377,17 +381,18 @@ pub(crate) fn escape_hint(candidate: &Path, base: &Path, root: &Path) -> String 
     )
 }
 
-/// What the one-time notice says about the widened default.
+/// What the one-time notice says about the default scope.
 fn default_notice_text() -> String {
-    "\x1b[1mPathJail now opens your home directory:\x1b[0m agents may read and write \
-     anything below ~ except protected locations (~/.ssh, ~/.aws, ~/.config, every other \
-     dot folder, ~/Library, ~/AppData).\n  \x1b[2mPrevious behaviour (other projects \
-     read-only): lean-ctx config set path_jail_scope projects · active project only: \
+    "\x1b[1mPathJail now writes only in the active project:\x1b[0m agents may read every \
+     project below ~, but write only in the session's project and allowed paths; \
+     protected locations (~/.ssh, ~/.aws, ~/.config, every other dot folder, ~/Library, \
+     ~/AppData) stay closed.\n  \x1b[2mPrevious behaviour (read and write all of ~): \
+     lean-ctx config set path_jail_scope home · active project only: \
      lean-ctx config set path_jail_scope project\x1b[0m\n"
         .to_string()
 }
 
-/// Tells a user once that the default scope widened in 3.11.3, on the first
+/// Tells a user once that the default scope narrowed to `projects`, on the first
 /// interactive command. Never for MCP, hooks or piped use, and never when the
 /// user chose a scope or turned the jail off: an explicit choice is kept.
 pub fn maybe_show_default_notice() {
@@ -399,7 +404,7 @@ pub fn maybe_show_default_notice() {
         return;
     }
     let Ok(marker) =
-        crate::core::paths::state_dir().map(|dir| dir.join("path_jail_home_default_notice"))
+        crate::core::paths::state_dir().map(|dir| dir.join("path_jail_projects_default_notice"))
     else {
         return;
     };
@@ -431,7 +436,7 @@ mod tests {
             Some(PathJailScope::Projects)
         );
         assert_eq!(PathJailScope::parse("anything"), None);
-        assert_eq!(PathJailScope::default(), PathJailScope::Home);
+        assert_eq!(PathJailScope::default(), PathJailScope::Projects);
         for s in [
             PathJailScope::Home,
             PathJailScope::Projects,
@@ -448,7 +453,7 @@ mod tests {
             "~/.ssh",
             "~/.aws",
             "~/Library",
-            "path_jail_scope projects",
+            "path_jail_scope home",
             "path_jail_scope project",
         ] {
             assert!(text.contains(needle), "{needle}");
@@ -494,10 +499,10 @@ mod tests {
         );
     }
 
-    /// End-to-end through the real jail with a throwaway `$HOME`: `home` opens
-    /// all of ~ for reading and writing except protected zones, `projects`
-    /// restores the read-only project scope, and `project` the single-project
-    /// boundary.
+    /// End-to-end through the real jail with a throwaway `$HOME`: the default
+    /// `projects` scope reads across projects but writes only in the session's
+    /// project, `home` opens all of ~ for reading and writing except protected
+    /// zones, and `project` the single-project boundary.
     #[cfg(all(unix, not(feature = "no-jail")))]
     #[test]
     fn jail_admits_sibling_projects_but_not_protected_zones() {
@@ -524,7 +529,28 @@ mod tests {
         crate::test_env::set_var("HOME", &home);
         crate::test_env::remove_var("LEAN_CTX_PATH_JAIL_SCOPE");
         let jail = super::super::pathjail::jail_path;
+        let write = super::super::pathjail::enforce_writable;
 
+        // The default scope is `projects`: no write into another project's
+        // git hooks (or anywhere else in it) from the session in `a`.
+        assert_eq!(PathJailScope::resolve(), PathJailScope::Projects);
+        assert!(jail(&b.join("lib.rs"), &a).is_ok(), "reads across projects");
+        assert!(write(&b.join(".git/hooks/pre-commit")).is_err());
+        assert!(write(&b.join("lib.rs")).is_err());
+        assert!(
+            super::super::pathjail::active_relaxations()
+                .iter()
+                .all(|r| !r.source.contains("path_jail_scope")),
+            "the default scope is not a relaxation"
+        );
+
+        crate::test_env::set_var("LEAN_CTX_PATH_JAIL_SCOPE", "home");
+        assert!(
+            super::super::pathjail::active_relaxations()
+                .iter()
+                .any(|r| r.source.contains("LEAN_CTX_PATH_JAIL_SCOPE")),
+            "the home scope is reported as a relaxation"
+        );
         assert!(
             jail(&b.join("lib.rs"), &a).is_ok(),
             "sibling project under ~"
@@ -533,7 +559,7 @@ mod tests {
             jail(&b.join("src/lib.rs"), &a).is_ok(),
             "nested file of a sibling project"
         );
-        // The default `home` scope opens all of ~, loose files included.
+        // The `home` scope opens all of ~, loose files included.
         assert!(
             jail(&docs.join("2025.pdf"), &a).is_ok(),
             "loose file under ~"
@@ -560,7 +586,6 @@ mod tests {
 
         // `home` writes wherever it reads; protected zones stay closed because
         // every write resolves its path through the jail first.
-        let write = super::super::pathjail::enforce_writable;
         assert!(write(&b.join("lib.rs")).is_ok(), "another project");
         assert!(write(&docs.join("notes.md")).is_ok(), "a loose folder");
         assert!(

@@ -838,14 +838,18 @@ fn heredoc_block_message_names_the_workaround() {
     let _lock = crate::core::data_dir::test_env_lock();
     let list = allow(&["python3"]);
     let err = check_all_segments("python3 - <<'PY'", &list).unwrap_err();
-    assert!(err.contains("[BLOCKED — DO NOT RETRY]"), "got: {err}");
+    assert!(err.message().starts_with("[BLOCKED]"), "got: {err}");
     assert!(
         err.contains("python3 /tmp/lean-ctx-snippet.py"),
         "must name the runnable workaround: {err}"
     );
     assert!(
-        err.contains("write the code to a file"),
+        err.contains("Write the code to /tmp/lean-ctx-snippet.py"),
         "must explain the recovery path: {err}"
+    );
+    assert!(
+        err.message().lines().count() <= 2,
+        "the block stays short: {err}"
     );
 }
 

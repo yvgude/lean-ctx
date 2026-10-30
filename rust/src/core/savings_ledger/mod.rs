@@ -242,6 +242,7 @@ fn new_event(tool: &str) -> SavingsEvent {
         is_first_inject: None,
         cache_read_per_m_usd: None,
         cache_write_per_m_usd: None,
+        governor: None,
     }
 }
 
@@ -354,6 +355,37 @@ pub fn record_tool_event(
         .map(str::to_owned)
         .or_else(|| compression_quality_signal(baseline_tokens, actual_tokens));
     append_with_unified(&path, event, efficiency_etpao);
+}
+
+/// Best-effort append of one governor decision receipt (`hook govern`,
+/// governor design v1 §5). `delivered_tokens` is what the model actually got:
+/// the smaller result for an `applied` decision, the unchanged baseline for a
+/// `shadow` one (so a shadow receipt saves nothing in the totals and carries
+/// its would-save only in the receipt). Counts are o200k, as the hook measures.
+pub fn record_governor_event(
+    baseline_tokens: usize,
+    delivered_tokens: usize,
+    receipt: event::GovernorReceipt,
+) {
+    if !enabled() {
+        return;
+    }
+    let Some(path) = store::default_path() else {
+        return;
+    };
+    let saved = baseline_tokens.saturating_sub(delivered_tokens);
+    let mut event = new_event("hook:govern");
+    "o200k_base".clone_into(&mut event.tokenizer);
+    event.attribution_group = Some(
+        crate::core::attribution::attribution_group_for_mechanism(&event.mechanism).to_string(),
+    );
+    event.baseline_tokens = baseline_tokens as u64;
+    event.actual_tokens = delivered_tokens as u64;
+    event.saved_tokens = saved as u64;
+    event.saved_usd = saved as f64 / 1_000_000.0 * event.unit_price_per_m_usd;
+    event.confidence = Some(1.0);
+    event.governor = Some(receipt);
+    append_with_unified(&path, event, None);
 }
 
 /// Like `record_tool_event` but with G8 token-stream attribution (#1191).

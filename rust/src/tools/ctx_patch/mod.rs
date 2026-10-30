@@ -28,7 +28,6 @@ pub(crate) use symbol::{build_refactor_args, is_replace_symbol};
 use std::path::{Path, PathBuf};
 
 use crate::core::cache::SessionCache;
-use crate::core::tokens::count_tokens;
 use crate::tools::ctx_edit::{CacheEffect, apply_cache_effect, build_diff_evidence};
 use crate::tools::edit_io::{
     default_backup_path, ensure_preimage_still_matches, read_preimage,
@@ -50,6 +49,9 @@ pub struct PatchParams {
     pub backup: bool,
     pub backup_path: Option<String>,
     pub evidence: bool,
+    /// Without `evidence`: archive the diff for a host renderer, named by a
+    /// `[diff:<id>]` trailer (see `ctx_edit::diff_artifact_trailer`).
+    pub diff_artifact: bool,
     pub diff_max_lines: usize,
     pub allow_lossy_utf8: bool,
     /// Post-edit tree-sitter gate (#1008): reject a write that turns a cleanly
@@ -177,7 +179,6 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
     let lines_removed = edits.iter().fold(0u64, |total, edit| {
         total.saturating_add(u64::try_from(edit.remove_count).unwrap_or(u64::MAX))
     });
-    let lines_before = lines.len();
     let new_lines = apply::apply_edits(lines.clone(), edits);
     let new_content = format!("{bom}{}", apply::join_lines(&new_lines, sep, trailing));
 
@@ -243,13 +244,10 @@ pub fn run_io(params: &PatchParams, _last_mode: &str) -> (String, CacheEffect) {
 
     let mut out = render_success(
         params,
-        &pre.text,
+        &pre,
         &new_content,
-        pre.fp.size,
-        pre.fp.mtime_ms,
-        &pre.fp.blake3,
-        lines_before,
         new_lines.len(),
+        (lines_added, lines_removed),
         n_edits,
         backup_path,
     );
@@ -321,18 +319,28 @@ fn handle_create(params: &PatchParams, path: &Path, content: &str) -> (String, C
     }
 
     let lines = content.lines().count();
-    let tokens = count_tokens(content);
     let short = output::short_name(&params.path);
-    let post_md5 = crate::core::hasher::hash_hex(content.as_bytes());
-    let mut out = format!(
-        "✓ created {short}: {lines} lines, {tokens} tok\npostimage: bytes={}, md5={post_md5}",
-        content.len()
-    );
+    let mut out = format!("created {short}: {lines} lines");
     if params.evidence {
+        out.push_str(&format!(
+            "\npostimage: bytes={}, blake3={}",
+            content.len(),
+            crate::core::hasher::hash_hex(content.as_bytes())
+        ));
         let diff = build_diff_evidence("", content, &short, params.diff_max_lines);
         out.push_str("\n\nevidence (diff, redacted, bounded):\n```diff\n");
         out.push_str(&diff);
         out.push_str("\n```");
+    } else if params.diff_artifact
+        && let Some(trailer) = crate::tools::ctx_edit::diff_artifact_trailer(
+            "",
+            content,
+            &short,
+            params.diff_max_lines,
+        )
+    {
+        out.push('\n');
+        out.push_str(&trailer);
     }
     (out, CacheEffect::Invalidate)
 }
@@ -358,53 +366,49 @@ fn make_backup(
     Ok(Some(bp.to_string_lossy().to_string()))
 }
 
-#[allow(clippy::too_many_arguments)]
+/// The success receipt: one line (`patched <file>: N lines (+a -b)[, k edits]`)
+/// by default. With `evidence` the pre/postimage digests, the per-op ledger of
+/// a batch and the bounded diff follow.
 fn render_success(
     params: &PatchParams,
-    old_content: &str,
+    pre: &crate::tools::edit_io::FilePreimage,
     new_content: &str,
-    pre_size: u64,
-    pre_mtime_ms: u64,
-    pre_md5: &str,
-    lines_before: usize,
     lines_after: usize,
+    (lines_added, lines_removed): (u64, u64),
     n_edits: usize,
     backup_path: Option<String>,
 ) -> String {
     let short = output::short_name(&params.path);
-    let line_delta = lines_after as i64 - lines_before as i64;
-    let delta_str = if line_delta >= 0 {
-        format!("+{line_delta}")
-    } else {
-        format!("{line_delta}")
-    };
-    let old_tokens = count_tokens(old_content);
-    let new_tokens = count_tokens(new_content);
-
-    let post_mtime_ms = std::fs::metadata(&params.path)
-        .ok()
-        .and_then(|m| m.modified().ok())
-        .map_or(0, crate::tools::edit_io::system_time_to_millis);
-    let post_md5 = crate::core::hasher::hash_hex(new_content.as_bytes());
-
-    let edit_word = if n_edits == 1 { "edit" } else { "edits" };
-    let mut out = format!(
-        "✓ {short}: {n_edits} anchored {edit_word}, {delta_str} lines ({old_tokens}→{new_tokens} tok)\n\
-preimage: bytes={pre_size}, mtime_ms={pre_mtime_ms}, md5={pre_md5}\n\
-postimage: bytes={}, mtime_ms={post_mtime_ms}, md5={post_md5}",
-        new_content.len()
+    let detail = (n_edits > 1).then(|| format!("{n_edits} edits"));
+    let mut out = crate::tools::ctx_edit::edit_summary_line(
+        &short,
+        lines_after,
+        lines_added,
+        lines_removed,
+        detail.as_deref(),
     );
     if let Some(bp) = backup_path {
         out.push_str(&format!("\nbackup: {bp}"));
     }
-    // A single op needs no ledger: the header above already names the one edit,
-    // and this is the overwhelmingly common receipt — spending tokens to repeat
-    // it there would work against the tool's own purpose.
-    if params.ops.len() > 1 {
-        out.push('\n');
-        out.push_str(&render_op_ledger(&params.ops));
-    }
     if params.evidence {
+        let post_mtime_ms = std::fs::metadata(&params.path)
+            .ok()
+            .and_then(|m| m.modified().ok())
+            .map_or(0, crate::tools::edit_io::system_time_to_millis);
+        out.push_str(&format!(
+            "\npreimage: bytes={}, mtime_ms={}, blake3={}\n\
+postimage: bytes={}, mtime_ms={post_mtime_ms}, blake3={}",
+            pre.fp.size,
+            pre.fp.mtime_ms,
+            pre.fp.blake3,
+            new_content.len(),
+            crate::core::hasher::hash_hex(new_content.as_bytes())
+        ));
+        if params.ops.len() > 1 {
+            out.push('\n');
+            out.push_str(&render_op_ledger(&params.ops));
+        }
+        let old_content = pre.text.as_str();
         let diff = build_diff_evidence(old_content, new_content, &short, params.diff_max_lines);
         out.push_str("\n\nevidence (diff, redacted, bounded):\n```diff\n");
         out.push_str(&diff);
@@ -418,6 +422,16 @@ postimage: bytes={}, mtime_ms={post_mtime_ms}, md5={post_md5}",
                 balance.abs()
             ));
         }
+    } else if params.diff_artifact
+        && let Some(trailer) = crate::tools::ctx_edit::diff_artifact_trailer(
+            &pre.text,
+            new_content,
+            &short,
+            params.diff_max_lines,
+        )
+    {
+        out.push('\n');
+        out.push_str(&trailer);
     }
     out
 }

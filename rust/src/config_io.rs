@@ -92,14 +92,24 @@ impl ConfigWriteGuard {
     }
 }
 
-fn config_migration_lock_path(path: &Path) -> Result<PathBuf, String> {
+/// The lock file for one config target. It lives in the lean-ctx state dir
+/// (`<data>/locks/`), keyed by the canonical target path, never beside the
+/// target: the same writer serves project files (`CLAUDE.md`, `.mcp.json` …),
+/// and a sibling lock left a `*.v4-migration.lock` in every user's git status.
+/// Only when no data dir resolves does it fall back to the sibling file.
+pub(crate) fn config_migration_lock_path(path: &Path) -> Result<PathBuf, String> {
     let target = canonicalize_existing_prefix(&resolve_write_target(path)?)?;
     let filename = target
         .file_name()
         .and_then(|name| name.to_str())
         .ok_or_else(|| "config path must end in a UTF-8 filename".to_string())?;
-    let lock_path = target.with_file_name(format!("{filename}.v4-migration.lock"));
-    Ok(lock_path)
+    if let Ok(data_dir) = crate::core::data_dir::lean_ctx_data_dir() {
+        let key = blake3::hash(target.to_string_lossy().as_bytes()).to_hex();
+        return Ok(data_dir
+            .join("locks")
+            .join(format!("{}.{filename}.v4-migration.lock", &key[..32])));
+    }
+    Ok(target.with_file_name(format!("{filename}.v4-migration.lock")))
 }
 
 /// Atomically prepares a recoverable v3→v4 config journal before replacing the
@@ -960,6 +970,33 @@ enabled = true
             "compression_level = \"max\"\n"
         );
         let _ = std::fs::remove_dir_all(&tmp);
+    }
+
+    /// `init --agent …` writes project files (`CLAUDE.md`, `.mcp.json`, rules)
+    /// through these writers; the lock must never land in the project tree,
+    /// where it showed up in every `git status`.
+    #[test]
+    fn writes_leave_no_lock_file_beside_the_target() {
+        // Holds the env lock: the data dir (where the lock goes) stays fixed.
+        let _iso = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let file = project.path().join("CLAUDE.md");
+        write_atomic_with_backup(&file, "first\n").unwrap();
+        write_atomic_with_backup(&file, "second\n").unwrap();
+        write_toml_preserving_minimal(&project.path().join("x.toml"), "a = 1\n", "").unwrap();
+        let locks: Vec<String> = std::fs::read_dir(project.path())
+            .unwrap()
+            .filter_map(|e| e.ok()?.file_name().into_string().ok())
+            .filter(|n| n.contains("migration.lock"))
+            .collect();
+        assert!(locks.is_empty(), "lock files in the project: {locks:?}");
+        let lock = config_migration_lock_path(&file).unwrap();
+        assert!(
+            !lock.starts_with(project.path()),
+            "lock lives in the state dir: {}",
+            lock.display()
+        );
+        assert!(lock.exists(), "the lock still exists, in the state dir");
     }
 }
 

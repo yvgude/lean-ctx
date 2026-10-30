@@ -145,12 +145,6 @@ fn handle_inner(
             }
             results.truncate(top_k);
 
-            let selection = if tool == "ctx_compose" {
-                crate::tools::ctx_compose::selection::rank(&mut results, query, compact)
-            } else {
-                None
-            };
-
             // #1259: never call a lexical fallback "semantic". When no mode was
             // requested and the dense index was never built, name the
             // degradation and the one command that fixes it.
@@ -183,11 +177,7 @@ fn handle_inner(
                     crate::core::pathutil::strip_verbatim(root.to_path_buf()).display(),
                 )
             };
-            let explanation = selection.map_or_else(String::new, |text| format!("{text}\n"));
-            format!(
-                "{header}{explanation}{}",
-                format_search_results(&results, compact)
-            )
+            format!("{header}{}", format_search_results(&results, compact))
         }
         "dense" => {
             let out = dense_search_mode(query, root, &index, top_k, compact, &filter);

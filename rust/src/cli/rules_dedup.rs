@@ -87,6 +87,38 @@ fn is_owned_legacy_rules_file(content: &str) -> bool {
     content[idx + end + 3..].trim().is_empty()
 }
 
+/// #1289/A3: the lean-ctx-written region of a legacy versioned rules file
+/// (`# lean-ctx …` heading + `<!-- lean-ctx-rules-vN -->` … `<!-- /lean-ctx -->`)
+/// that a user (or agent) extended below the closing marker. Returns the text
+/// after the region — the user's part — or `None` when the file does not start
+/// with such a region. Only the leading lean-ctx region is ever removed.
+fn strip_legacy_owned_prefix(content: &str) -> Option<String> {
+    let trimmed = content.trim_start();
+    let mut lines = trimmed.lines();
+    let first = lines.next()?.trim();
+    let marker_line = if first.starts_with("# lean-ctx") {
+        lines.next().unwrap_or_default().trim()
+    } else {
+        first
+    };
+    if !marker_line.starts_with(crate::core::rules_canonical::RULES_MARKER_PREFIX)
+        || marker_line.starts_with(BLOCK_START)
+    {
+        return None;
+    }
+    let mut offset = 0usize;
+    for line in trimmed.split_inclusive('\n') {
+        offset += line.len();
+        let t = line.trim();
+        if t == crate::core::rules_canonical::AGENTS_BLOCK_END
+            || t.starts_with("<!-- /lean-ctx-rules")
+        {
+            return Some(trimmed[offset..].to_string());
+        }
+    }
+    None
+}
+
 /// Line-based marker pair detection (GL #1158): prose mentions of a marker
 /// must not count as a block.
 fn has_marker_pair(content: &str, start: &str, end: &str) -> bool {
@@ -101,7 +133,7 @@ fn has_marked_block(content: &str) -> bool {
 
 /// Strips every lean-ctx-marked block (rules + compression) from `content`.
 pub(crate) fn strip_lean_ctx_blocks(content: &str) -> String {
-    let mut out = content.to_string();
+    let mut out = strip_legacy_owned_prefix(content).unwrap_or_else(|| content.to_string());
     // Repeat until stable — a file can contain both block kinds (and in
     // pathological cases several of the same kind).
     loop {
@@ -121,12 +153,58 @@ pub(crate) fn strip_lean_ctx_blocks(content: &str) -> String {
         }
         out = next;
     }
-    let trimmed = out.trim_end();
+    let trimmed = out.trim();
     if trimmed.is_empty() {
         String::new()
     } else {
-        format!("{trimmed}\n")
+        format!("{}\n", out.trim_end().trim_start_matches('\n'))
     }
+}
+
+/// A file that lean-ctx wrote whole: owned by [`is_owned_rules_file`], or one
+/// that opens with a lean-ctx rules marker and never closes it (a whole-file
+/// block, as `rules_overhead::lean_ctx_block_tokens` counts it) — nothing in
+/// it lies outside the lean-ctx region.
+fn is_whole_lean_ctx_file(content: &str) -> bool {
+    if is_owned_rules_file(content) {
+        return true;
+    }
+    content
+        .trim_start()
+        .starts_with(crate::core::rules_canonical::RULES_MARKER_PREFIX)
+        && !content
+            .lines()
+            .any(|l| l.trim_start().starts_with("<!-- /lean-ctx"))
+}
+
+/// True when `content` holds lean-ctx-written text that [`strip_lean_ctx_blocks`]
+/// can remove without touching anything outside the markers.
+fn has_strippable_region(content: &str) -> bool {
+    has_marked_block(content) || strip_legacy_owned_prefix(content).is_some()
+}
+
+/// Retire a lean-ctx rules file that duplicates a host's single rules channel
+/// (A3): a wholly lean-ctx-owned file is deleted; a file a user extended keeps
+/// every line outside the lean-ctx markers (backup at `<file>.bak`). Returns a
+/// result line when something changed. Shared by `setup`/`init` writers and
+/// `rules dedup`, so no path ever deletes user text.
+pub(crate) fn retire_rules_file(path: &Path) -> Option<String> {
+    let content = std::fs::read_to_string(path).ok()?;
+    let action = if is_whole_lean_ctx_file(&content) {
+        Action::DeleteFile {
+            path: path.to_path_buf(),
+            reason: String::new(),
+        }
+    } else if has_strippable_region(&content) {
+        Action::StripBlocks {
+            path: path.to_path_buf(),
+            reason: String::new(),
+        }
+    } else {
+        return None;
+    };
+    let line = apply(&action);
+    (!line.starts_with("unchanged")).then_some(line)
 }
 
 /// Strips only the compression block, keeping the `<!-- lean-ctx -->` pointer
@@ -162,10 +240,53 @@ fn project_owned_candidates(dir: &Path) -> Vec<PathBuf> {
     ]
 }
 
+/// Plans one duplicate rules file: owned → delete, user-extended with a
+/// lean-ctx region → strip that region only, anything else → report.
+fn plan_duplicate_file(actions: &mut Vec<Action>, candidate: PathBuf, reason: &str) {
+    let Ok(content) = std::fs::read_to_string(&candidate) else {
+        return;
+    };
+    if is_whole_lean_ctx_file(&content) {
+        actions.push(Action::DeleteFile {
+            path: candidate,
+            reason: reason.into(),
+        });
+    } else if has_strippable_region(&content) {
+        actions.push(Action::StripBlocks {
+            path: candidate,
+            reason: format!("{reason}; text outside the lean-ctx markers is kept"),
+        });
+    } else if !content.trim().is_empty() {
+        actions.push(Action::Report {
+            path: candidate,
+            note: "contains custom edits — not lean-ctx-owned, left untouched".into(),
+        });
+    }
+}
+
+/// Global lean-ctx rule files that duplicate a host's single channel: Claude
+/// Code and CodeBuddy carry their rules in the `CLAUDE.md` / `CODEBUDDY.md`
+/// block and auto-load every `rules/*.md` on top (GL #555, A3).
+fn global_duplicate_candidates(home: &Path) -> Vec<PathBuf> {
+    vec![
+        crate::core::editor_registry::claude_rules_dir(home).join("lean-ctx.md"),
+        home.join(".codebuddy/rules/lean-ctx.md"),
+    ]
+}
+
 /// Plans the dedup for `project` (walking parents up to, excluding, `home`).
 pub(crate) fn plan(home: &Path, project: &Path) -> Vec<Action> {
     let mut actions = Vec::new();
     let canonical_cursor_mdc = home.join(".cursor/rules/lean-ctx.mdc");
+
+    // 0. Global always-loaded duplicates of the CLAUDE.md / CODEBUDDY.md block.
+    for candidate in global_duplicate_candidates(home) {
+        plan_duplicate_file(
+            &mut actions,
+            candidate,
+            "always-loaded duplicate of the host's CLAUDE.md/CODEBUDDY.md rules block",
+        );
+    }
 
     // 1. Owned dedicated duplicates in the project + parent chain.
     let mut dir = Some(project.to_path_buf());
@@ -177,20 +298,18 @@ pub(crate) fn plan(home: &Path, project: &Path) -> Vec<Action> {
             if candidate == canonical_cursor_mdc {
                 continue;
             }
-            let Ok(content) = std::fs::read_to_string(&candidate) else {
-                continue;
-            };
-            if is_owned_rules_file(&content) {
-                actions.push(Action::DeleteFile {
-                    path: candidate,
-                    reason: "lean-ctx-owned duplicate of the global rules file".into(),
-                });
-            } else if !content.trim().is_empty() {
-                actions.push(Action::Report {
-                    path: candidate,
-                    note: "contains custom edits — not lean-ctx-owned, left untouched".into(),
-                });
-            }
+            plan_duplicate_file(
+                &mut actions,
+                candidate,
+                "lean-ctx-owned duplicate of the global rules file",
+            );
+        }
+        // The parent walk stays inside `home`: a project outside it (a CI
+        // checkout, a test run with a temp HOME) must not reach directories
+        // that belong to a different home or user — only the project itself
+        // is checked there.
+        if !d.starts_with(home) {
+            break;
         }
         dir = d.parent().map(Path::to_path_buf);
     }
@@ -478,6 +597,31 @@ mod tests {
             a,
             Action::Report { path, .. } if path.ends_with(".claude/rules/lean-ctx.md")
         )));
+    }
+
+    /// A project outside `home` (a CI checkout, a test run with a temp HOME)
+    /// must not let the parent walk reach another user's directories: before,
+    /// it ran to the filesystem root and rewrote the real checkout's rules.
+    #[test]
+    fn plan_parent_walk_stays_inside_home() {
+        let tmp = tempfile::tempdir().unwrap();
+        let home = tmp.path().join("home");
+        let outside = tmp.path().join("elsewhere");
+        let project = outside.join("app");
+        std::fs::create_dir_all(&home).unwrap();
+        std::fs::create_dir_all(outside.join(".cursor/rules")).unwrap();
+        std::fs::create_dir_all(project.join(".cursor/rules")).unwrap();
+        std::fs::write(outside.join(".cursor/rules/lean-ctx.mdc"), owned_mdc()).unwrap();
+        std::fs::write(project.join(".cursor/rules/lean-ctx.mdc"), owned_mdc()).unwrap();
+
+        let paths: Vec<PathBuf> = plan(&home, &project)
+            .into_iter()
+            .filter_map(|a| match a {
+                Action::DeleteFile { path, .. } | Action::StripBlocks { path, .. } => Some(path),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(paths, vec![project.join(".cursor/rules/lean-ctx.mdc")]);
     }
 
     #[test]

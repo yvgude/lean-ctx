@@ -32,8 +32,10 @@ fn parse_register() -> Result<Register, toml::de::Error> {
     toml::from_str(REGISTER)
 }
 
-/// One scored doctor line: green when the shipping build deprecates nothing,
-/// yellow with the full list otherwise (each entry names its replacement).
+/// One doctor line: green when the shipping build deprecates nothing, yellow
+/// with the full list otherwise (each entry names its replacement). An
+/// announcement is information, not a fault: it never fails `doctor`, so a
+/// fresh install that uses none of the surfaces stays clean.
 pub(super) fn deprecations_outcome() -> Outcome {
     match parse_register() {
         Ok(reg) if reg.deprecation.is_empty() => Outcome {
@@ -63,7 +65,7 @@ pub(super) fn deprecations_outcome() -> Outcome {
                     d.surface, d.subject, d.id, d.announced_in, d.earliest_removal
                 ));
             }
-            Outcome { ok: false, line }
+            Outcome { ok: true, line }
         }
         Err(e) => Outcome {
             ok: false,
@@ -99,9 +101,12 @@ mod tests {
     }
 
     #[test]
-    fn outcome_is_green_without_active_deprecations() {
+    fn announced_deprecations_are_listed_but_never_fail_doctor() {
         let reg = parse_register().expect("parseable");
         let outcome = deprecations_outcome();
-        assert_eq!(outcome.ok, reg.deprecation.is_empty());
+        assert!(outcome.ok);
+        for d in &reg.deprecation {
+            assert!(outcome.line.contains(&d.id), "{}", d.id);
+        }
     }
 }

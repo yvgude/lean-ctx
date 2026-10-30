@@ -185,8 +185,12 @@ Key defaults worth knowing:
   enabled. The value surface (`[value_display]`, `lean-ctx value`) shows the
   savings without spending model context.
 - `memory_profile = "performance"`, `memory_cleanup = "aggressive"`.
-- `[memory.knowledge] max_facts = 200` — the source of doctor's "facts at
-  capacity" warning.
+- Knowledge has no fact limit. `[memory.knowledge] max_facts` is deprecated
+  and ignored since 3.12.1: an existing value still loads, but facts are
+  archived only by quality (decay, near-duplicate merge, low confidence,
+  staleness), never by count. `doctor` checks capacity only for the stores
+  that keep a cap (such as patterns, history and the embedding index), never
+  for facts.
 
 ### AI Value Gate configuration
 
@@ -250,8 +254,16 @@ configured extra roots do not bypass this check.
 All tool file access (`ctx_read`, `ctx_edit`, `ctx_tree`, …) is checked by
 **PathJail**. What it admits is set by `path_jail_scope` (since v3.11.1):
 
-- **`home` (default):** everything below your home directory is readable and,
-  since v3.11.3, writable — so all your projects and files work at once. Excepted
+- **`projects` (default):** the default of v3.11.1–v3.11.2 and again since
+  v3.12.1. Only paths inside a *project*
+  below `~` are readable — a folder between it and `~` holds a project marker
+  (`.git`, `Cargo.toml`, `package.json`, `go.mod`, `pyproject.toml`,
+  `Makefile`, …); loose personal files (`~/Documents/taxes.pdf`, `~/Downloads`,
+  `~/Desktop`) stay jailed, and *writes* stay limited to the session's project,
+  host-declared roots and allow entries.
+- **`home`:** the default of v3.11.3–v3.12.0, reported as a jail relaxation.
+  Everything below your home directory is readable and writable — so all your
+  projects and files work at once. Excepted
   are the protected zones: every
   top-level dot entry (`~/.ssh`, `~/.aws`, `~/.config`, `~/.zshrc`, other
   agents' `~/.claude` / `~/.codex` / `~/.cursor`, …) plus `~/Library` (macOS),
@@ -261,12 +273,6 @@ All tool file access (`ctx_read`, `ctx_edit`, `ctx_tree`, …) is checked by
   or allow entry contains them; only an entry inside a zone opens it. With an
   implausible `$HOME` (`/`, `/root`, `/tmp`, not owned by you) the scope falls
   back to `project`.
-- **`projects`:** the default of v3.11.1–v3.11.2. Only paths inside a *project*
-  below `~` are readable — a folder between it and `~` holds a project marker
-  (`.git`, `Cargo.toml`, `package.json`, `go.mod`, `pyproject.toml`,
-  `Makefile`, …); loose personal files (`~/Documents/taxes.pdf`, `~/Downloads`,
-  `~/Desktop`) stay jailed, and *writes* stay limited to the session's project,
-  host-declared roots and allow entries.
 - **`project`:** only the session's `project_root` plus the knobs below — the
   pre-3.11.1 behaviour.
 

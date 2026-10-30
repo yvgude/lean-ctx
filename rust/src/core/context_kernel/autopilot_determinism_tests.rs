@@ -160,7 +160,6 @@ fn fixture_input(entitled_to_adaptive: bool) -> AutopilotInput {
         local_providers: BTreeSet::new(),
         cached_preloads: BTreeSet::new(),
         preload_budget: PreloadBudget::default(),
-        context_policy: None,
     }
 }
 

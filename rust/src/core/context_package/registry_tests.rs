@@ -832,3 +832,41 @@ fn remote_installs_pin_the_publisher_key() {
 
     crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
 }
+
+/// F8: the CLI default refuses a third-party file signed by an unpinned key
+/// (the key travels inside the package), and still accepts this machine's
+/// own exports and pinned publishers.
+#[test]
+fn cli_default_requires_a_trusted_publisher() {
+    let _lock = crate::core::data_dir::test_env_lock();
+    let data = tempfile::tempdir().unwrap();
+    crate::test_env::set_var("LEAN_CTX_DATA_DIR", data.path());
+    let dir = tempfile::tempdir().unwrap();
+    let policy = SignaturePolicy::RequireTrustedPublisher;
+
+    let stranger = ed25519_dalek::SigningKey::from_bytes(&[15u8; 32]);
+    let foreign = write_signed_package(dir.path(), "@acme/cli", &stranger);
+    let reg = LocalRegistry::open_at(&dir.path().join("reg")).unwrap();
+    let err = reg.import_from_file(&foreign, policy).unwrap_err();
+    assert!(err.contains("not pinned"), "{err}");
+    assert!(err.contains("--allow-untrusted-signer"), "{err}");
+    assert!(reg.list().unwrap().is_empty());
+    assert!(
+        reg.import_from_file(&foreign, SignaturePolicy::RequireSigned)
+            .is_ok(),
+        "the explicit opt-out keeps the old behaviour"
+    );
+
+    let (own, _) = super::super::keys::load_or_create().unwrap();
+    let mine = write_signed_package(dir.path(), "@me/notes", &own);
+    let reg2 = LocalRegistry::open_at(&dir.path().join("reg2")).unwrap();
+    let manifest = reg2.import_from_file(&mine, policy).unwrap();
+    assert!(untrusted_package_signer(&manifest).is_none());
+
+    let pk = crate::core::agent_identity::hex_encode(&stranger.verifying_key().to_bytes());
+    crate::core::signer_trust::pin_if_absent("@acme", &pk, "test").unwrap();
+    let reg3 = LocalRegistry::open_at(&dir.path().join("reg3")).unwrap();
+    assert!(reg3.import_from_file(&foreign, policy).is_ok());
+
+    crate::test_env::remove_var("LEAN_CTX_DATA_DIR");
+}

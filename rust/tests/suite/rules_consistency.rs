@@ -12,7 +12,7 @@ fn tp() -> ToolProfile {
 }
 
 #[test]
-fn shared_non_shadow_contains_never() {
+fn shared_non_shadow_contains_scope_line() {
     let content = rules_canonical::render(
         false,
         rules_canonical::Wrapper::Shared,
@@ -20,13 +20,13 @@ fn shared_non_shadow_contains_never() {
         &tp(),
     );
     assert!(
-        content.contains("NEVER"),
-        "shared non-shadow must contain NEVER"
+        content.contains(rules_canonical::NEVER),
+        "shared non-shadow must carry the scope line"
     );
 }
 
 #[test]
-fn dedicated_non_shadow_contains_never() {
+fn dedicated_non_shadow_contains_scope_line() {
     let content = rules_canonical::render(
         false,
         rules_canonical::Wrapper::Dedicated,
@@ -34,13 +34,13 @@ fn dedicated_non_shadow_contains_never() {
         &tp(),
     );
     assert!(
-        content.contains("NEVER"),
-        "dedicated non-shadow must contain NEVER"
+        content.contains(rules_canonical::NEVER),
+        "dedicated non-shadow must carry the scope line"
     );
 }
 
 #[test]
-fn dedicated_non_shadow_contains_intent_and_anti() {
+fn dedicated_non_shadow_contains_intent() {
     let content = rules_canonical::render(
         false,
         rules_canonical::Wrapper::Dedicated,
@@ -48,8 +48,8 @@ fn dedicated_non_shadow_contains_intent_and_anti() {
         &tp(),
     );
     assert!(
-        content.contains("Anti-patterns"),
-        "dedicated must have anti-patterns"
+        content.contains("By task:"),
+        "dedicated must have the intent table"
     );
     assert!(
         content.contains("ctx_compose"),
@@ -66,7 +66,7 @@ fn shared_non_shadow_contains_mapping() {
         &tp(),
     );
     assert!(
-        content.contains("MANDATORY MAPPING"),
+        content.contains(rules_canonical::BULLETS),
         "shared must have mapping"
     );
 }
@@ -81,7 +81,7 @@ fn dedicated_has_markers() {
     );
     assert!(content.contains(rules_canonical::START_MARK));
     assert!(content.contains(rules_canonical::END_MARK));
-    assert!(content.contains("CRITICAL"));
+    assert!(content.contains(rules_canonical::CRITICAL));
 }
 
 #[test]
@@ -112,7 +112,7 @@ fn every_steering_profile_states_what_it_governs() {
     ] {
         let content = rules_canonical::render(false, wrapper, CompressionLevel::Off, &tp());
         // Only profiles that actually steer need the boundary.
-        if !content.contains("NEVER use") && !content.contains("CRITICAL:") {
+        if !content.contains(rules_canonical::CRITICAL) {
             continue;
         }
         assert!(
@@ -120,7 +120,7 @@ fn every_steering_profile_states_what_it_governs() {
             "{wrapper:?} steers but never says the rule is about built-in tools:\n{content}"
         );
         assert!(
-            content.contains("Other MCP servers keep their own jobs."),
+            content.contains("other MCP servers keep their own jobs."),
             "{wrapper:?} steers but never exempts other MCP servers:\n{content}"
         );
     }
@@ -137,11 +137,11 @@ fn the_boundary_does_not_weaken_the_built_in_tool_rule() {
         &tp(),
     );
     assert!(
-        content.contains("NEVER use built-in Read/Grep/Shell/Glob"),
-        "the built-in mapping must stay absolute:\n{content}"
+        content.contains(rules_canonical::CRITICAL) && content.contains("built-in tools map to"),
+        "the built-in mapping must stay stated:\n{content}"
     );
     assert!(
-        content.contains("MANDATORY MAPPING"),
+        content.contains(rules_canonical::BULLETS),
         "the mapping itself must survive the rewording:\n{content}"
     );
 }

@@ -348,20 +348,15 @@ fn runtime_preparation_accepts_context_without_routing_and_rejects_unknown_contr
     let (prepared, command) = super::health::prepare(&verified, root.path()).unwrap();
     drop(command);
     prepared.close().unwrap();
-    assert!(super::health::supports_context(&verified));
-    assert!(super::health::supports_memory(&verified));
+    assert!(super::health::validate_capabilities(&verified).is_ok());
     assert!(super::health::supports_protection(&verified));
     assert!(super::health::supports_code_security(&verified));
-    assert_eq!(
-        super::health::context_policy_version(&verified),
-        Some("1.1.0")
-    );
     assert!(!super::health::supports_semantic_detectors(&verified));
 
     let mut invocation = json!({
-        "schema_version": 1, "invocation_id": "context-policy-admission",
+        "schema_version": 1, "invocation_id": "capability-admission",
         "engine": {"engine_id": "leanctx-intelligence", "engine_version": "0.1.0"},
-        "operation": {"capability_id": "pro.runtime.context_policy", "capability_version": "1.0.0"},
+        "operation": {"capability_id": "pro.runtime.code_security", "capability_version": "1.0.0"},
         "input_ref": "projection:test", "input_digest": format!("sha256:{}", sha256(b"hello")),
         "source_refs": ["projection:test"],
         "policy_admission": {"policy_ref": "policy:test", "decision": "admitted"}
@@ -372,16 +367,28 @@ fn runtime_preparation_accepts_context_without_routing_and_rejects_unknown_contr
             &serde_json::from_value(invocation.clone()).unwrap(),
         )
     };
-    for version in ["1.0.0", "1.1.0"] {
-        invocation["operation"]["capability_version"] = json!(version);
-        assert!(admit(&verified, &invocation).is_ok());
+    assert!(admit(&verified, &invocation).is_ok());
+    // Ranking, memory selection and read-strategy policies are free and
+    // local: declared for installation, never invoked.
+    for (id, version) in [
+        ("pro.runtime.adaptive_context", "1.0.0"),
+        ("pro.runtime.memory_curation", "1.0.0"),
+        ("pro.runtime.context_policy", "1.0.0"),
+        ("pro.runtime.context_policy", "1.1.0"),
+    ] {
+        let mut other = invocation.clone();
+        other["operation"] = json!({"capability_id": id, "capability_version": version});
+        assert!(matches!(
+            admit(&verified, &other),
+            Err(super::InstallError::InvocationAdmission)
+        ));
     }
     invocation["operation"]["capability_version"] = json!("99.0.0");
     assert!(matches!(
         admit(&verified, &invocation),
         Err(super::InstallError::InvocationAdmission)
     ));
-    invocation["operation"]["capability_version"] = json!("1.1.0");
+    invocation["operation"]["capability_version"] = json!("1.0.0");
     invocation["engine"]["engine_version"] = json!("0.2.0");
     assert!(matches!(
         admit(&verified, &invocation),
@@ -400,7 +407,7 @@ fn runtime_preparation_accepts_context_without_routing_and_rejects_unknown_contr
         super::health::prepare(&verified, root.path()),
         Err(super::InstallError::Manifest)
     ));
-    assert!(!super::health::supports_context(&verified));
+    assert!(super::health::validate_capabilities(&verified).is_err());
     verified.description["capabilities"] = capabilities.clone();
     verified.description["capabilities"]
         .as_array_mut()
@@ -423,12 +430,9 @@ fn runtime_preparation_accepts_context_without_routing_and_rejects_unknown_contr
     let (prepared, command) = super::health::prepare(&verified, root.path()).unwrap();
     drop(command);
     prepared.close().unwrap();
-    assert!(super::health::supports_context(&verified));
-    assert_eq!(super::health::context_policy_version(&verified), None);
-    assert!(matches!(
-        admit(&verified, &invocation),
-        Err(super::InstallError::InvocationAdmission)
-    ));
+    assert!(super::health::validate_capabilities(&verified).is_ok());
+    // The legacy set still serves the capabilities it declares.
+    assert!(admit(&verified, &invocation).is_ok());
     invocation["operation"] = json!({
         "capability_id": "pro.runtime.adaptive_routing", "capability_version": "2.0.0"
     });
@@ -436,10 +440,6 @@ fn runtime_preparation_accepts_context_without_routing_and_rejects_unknown_contr
         admit(&verified, &invocation),
         Err(super::InstallError::InvocationAdmission)
     ));
-    invocation["operation"] = json!({
-        "capability_id": "pro.runtime.adaptive_context", "capability_version": "1.0.0"
-    });
-    assert!(admit(&verified, &invocation).is_ok());
 }
 
 /// The 3.12 runtime declares the six context capabilities without the
@@ -1415,7 +1415,7 @@ fn v4_companions_install_verified_and_any_mismatch_leaves_nothing() {
     let loosened = install::verified_active(&root, &item.selected, &item.key).unwrap();
     assert_eq!(install::semantic_state(&loosened).as_str(), "unverified");
     assert!(!super::health::supports_semantic_detectors(&loosened));
-    assert!(super::health::supports_context(&loosened));
+    assert!(super::health::validate_capabilities(&loosened).is_ok());
 }
 
 #[test]
@@ -1447,7 +1447,7 @@ fn v4_without_companions_serves_the_other_capabilities_and_takes_the_set_later()
     assert_ne!(started.description, active.description);
     assert!(super::health::validate_capabilities(&started).is_ok());
     assert!(super::health::complete_capability_set(&active));
-    assert!(super::health::supports_context(&active));
+    assert!(super::health::validate_capabilities(&active).is_ok());
     assert!(super::health::supports_code_security(&active));
     let (prepared, command) = super::health::prepare(&active, &root).unwrap();
     drop(command);
@@ -1735,7 +1735,7 @@ fn channel_companions_are_verified_like_files_and_never_block_the_package() {
     assert_eq!(entries(), before);
     let active = install::verified_active(&root, &item.selected, &item.key).unwrap();
     assert_eq!(install::semantic_state(&active).as_str(), "set_not_present");
-    assert!(super::health::supports_context(&active));
+    assert!(super::health::validate_capabilities(&active).is_ok());
 
     assert!(matches!(fetch(Some(&served(false))), Ok(true)));
     let active = install::verified_active(&root, &item.selected, &item.key).unwrap();

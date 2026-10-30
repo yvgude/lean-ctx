@@ -8,7 +8,6 @@ Source files referenced here:
 - `rust/src/cli/dispatch/analytics.rs` — `graph`, `smells`
 - `rust/src/cli/repomap_cmd.rs` — `repomap`
 - `rust/src/cli/index_cmd.rs` — `index`
-- `rust/src/cli/visualize_cmd.rs` — `visualize`
 - `rust/src/heatmap.rs` — `heatmap`
 - `rust/src/tools/registered/ctx_graph.rs`, `ctx_callgraph.rs`, `ctx_patch.rs`
 

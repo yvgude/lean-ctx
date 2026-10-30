@@ -15,5 +15,30 @@
 #   earliest_removal = "3.10.0"      # >= 2 minor releases after announced_in
 #   replacement = "lean-ctx bar"     # what to use instead ("" if none)
 #   note = "optional free-text detail"
-#
-# No active deprecations. lean-ctx 3.x has removed nothing since the freeze.
+
+[[deprecation]]
+id = "cli-autopilot-policy"
+surface = "cli"
+subject = "lean-ctx autopilot policy [status|promote|monitor|rollback]"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "Learned read-strategy policies are retired; read strategy is chosen locally. The command reports `retired` and has no effect."
+
+[[deprecation]]
+id = "cli-autopilot-evidence-learn"
+surface = "cli"
+subject = "lean-ctx autopilot evidence --learn"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = "lean-ctx autopilot evidence"
+note = "The flag no longer asks a runtime for a recommendation; the output reports runtime.status = retired."
+
+[[deprecation]]
+id = "config-intelligence-runtime-context-policy-apply"
+surface = "config"
+subject = "intelligence_runtime.context_policy_apply"
+announced_in = "3.13.0"
+earliest_removal = "3.15.0"
+replacement = ""
+note = "Accepted so existing configs keep loading; it has no effect."

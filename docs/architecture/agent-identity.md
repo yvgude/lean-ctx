@@ -110,32 +110,29 @@ deployment target.
 
 ## Product boundaries
 
-### Community
+### LeanCTX OSS
 
-Community retains open task, A2A, AgentGateway and signature contracts plus
-manual handoff. Local process labels and explicit keys may support those
-contracts, but no Enterprise governance claim is implied.
+LeanCTX OSS includes open task, A2A, AgentGateway and signature contracts,
+manual handoff and local multi-agent presence and coordination on one machine,
+free. Local process labels and explicit keys may support those contracts, but no
+Enterprise governance claim is implied. Local identity may remain device-scoped,
+but process reuse, stale presence and explicit binding rules still apply.
 
-### Pro
+### LeanCTX Hive Team
 
-Pro adds local multi-agent presence and coordination for one account. Local
-identity may remain device-scoped, but process reuse, stale presence and
-explicit binding rules still apply.
-
-### Team
-
-Team adds workspace identity, membership, multiple users, shared presence,
+LeanCTX Hive Team adds workspace identity, membership, multiple users, shared presence,
 roles, seats, cross-device/machine routing and durable workspace history.
 Personal agents or context require explicit promotion into workspace scope.
 
-### Enterprise
+### LeanCTX Hive Enterprise
 
-Enterprise adds mandatory accountable ownership, durable Ed25519 identities,
+LeanCTX Hive Enterprise adds mandatory accountable ownership, durable Ed25519 identities,
 RBAC/capability claims, SSO/SCIM, offboarding, lifecycle governance, attestation,
 drift policy, audit, tenant/region/classification boundaries and supported
 VPC/on-premise/air-gap identity operation.
 
-Required capability equivalents include `pro.agent_presence.local`,
+Required capability equivalents include `pro.agent_presence.local` (a free
+OSS capability; the id keeps its historical prefix),
 `team.agent_presence.shared`, `enterprise.agent_identity.governed` and
 `enterprise.agent_attestation`.
 

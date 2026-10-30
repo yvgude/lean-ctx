@@ -19,8 +19,8 @@ pub struct IntelligenceRuntimeConfig {
     pub channel_root_key_hex: String,
     /// Explicit user-global handoff to the private verifier, never project input.
     pub license_configuration: String,
-    /// Let the planner apply a promoted read-strategy policy instead of only
-    /// recording it (shadow). Security and explicit choices still win.
+    /// No effect: read-strategy policies are no longer learned by a runtime.
+    /// Kept so an existing config (`deny_unknown_fields`) still loads.
     pub context_policy_apply: bool,
     /// The projects of this user that read shared team artifacts, each with
     /// its team identity. Empty by default: a project without an entry uses

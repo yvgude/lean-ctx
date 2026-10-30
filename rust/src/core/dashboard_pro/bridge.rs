@@ -143,10 +143,14 @@ pub(crate) fn prepare(
         body: Value::Object(request.body.clone()),
         inputs: collected.inputs,
     };
-    let size = if request.op == Op::WorkAnalysis {
-        fit_newest_episodes(&mut payload, MAX_FRAME_BYTES)?
-    } else {
-        encoded_len(&payload)?
+    let size = match request.op {
+        Op::WorkAnalysis => fit_newest_episodes(&mut payload, MAX_FRAME_BYTES)?,
+        // Knowledge has no fact limit: a review reads the newest facts that
+        // fit; `facts_total` still counts them all.
+        Op::MemoryAnalyze | Op::MemorySnapshot => {
+            fit_newest(&mut payload, "facts", MAX_FRAME_BYTES)?
+        }
+        _ => encoded_len(&payload)?,
     };
     if size > MAX_FRAME_BYTES {
         return Err(ProError::new(
@@ -167,16 +171,22 @@ fn encoded_len(payload: &wire::Request) -> ProResult<usize> {
 /// reads the newest sessions that fit, dropping the oldest a tenth at a time.
 /// Returns the encoded size it ends with.
 pub(crate) fn fit_newest_episodes(payload: &mut wire::Request, max: usize) -> ProResult<usize> {
+    fit_newest(payload, "episodes", max)
+}
+
+/// Drops the oldest tenth of the oldest-first list input `key` until the
+/// request fits `max` bytes. Returns the encoded size it ends with.
+pub(crate) fn fit_newest(payload: &mut wire::Request, key: &str, max: usize) -> ProResult<usize> {
     let mut size = encoded_len(payload)?;
     while size > max {
-        let Some(Value::Array(episodes)) = payload.inputs.get_mut("episodes") else {
+        let Some(Value::Array(items)) = payload.inputs.get_mut(key) else {
             break;
         };
-        if episodes.is_empty() {
+        if items.is_empty() {
             break;
         }
-        let drop = episodes.len().div_ceil(10);
-        episodes.drain(..drop);
+        let drop = items.len().div_ceil(10);
+        items.drain(..drop);
         size = encoded_len(payload)?;
     }
     Ok(size)

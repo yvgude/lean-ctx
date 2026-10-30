@@ -962,7 +962,7 @@ alow_tools = ["ctx_read"]
         // A former built-in that moved to a paid tier says so.
         let p = minimal("regulated", Some("healthcare"));
         let err = resolve(&p).expect_err("not bundled");
-        assert!(err.to_string().contains("LeanCTX Pro"), "{err}");
+        assert!(err.to_string().contains("LeanCTX Hive"), "{err}");
 
         // Self-reference is the minimal cycle reachable without registering
         // custom packs (built-ins are acyclic by construction + test below).

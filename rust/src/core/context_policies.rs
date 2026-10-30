@@ -174,6 +174,10 @@ impl PolicySet {
     }
 
     /// Determine the effective state for an item after policy evaluation.
+    ///
+    /// Actions fold in order (the last match wins), except that a matching
+    /// security-default `Exclude` always wins: no later `Pin`, `Include` or
+    /// `MarkOutdated` re-admits a secret, key or credential file.
     pub fn effective_state(
         &self,
         path: &str,
@@ -201,6 +205,13 @@ impl PolicySet {
                 PolicyAction::SetView { .. } | PolicyAction::Redact | PolicyAction::Audit => {}
             }
         }
+        let security = Self::security_defaults();
+        if evals.iter().any(|eval| {
+            matches!(eval.action, PolicyAction::Exclude)
+                && security.policies.iter().any(|p| p.name == eval.policy_name)
+        }) {
+            return ContextState::Excluded;
+        }
         state
     }
 
@@ -221,15 +232,30 @@ impl PolicySet {
     }
 
     /// Load policies from a project's .lean-ctx/policies.json file.
+    ///
+    /// The security defaults always come first and cannot be removed or
+    /// redefined by the project file: a project policy reusing one of their
+    /// names is dropped.
     pub fn load_project(project_root: &std::path::Path) -> Self {
         if crate::core::pathutil::is_data_dir_collision(project_root) {
             return Self::defaults();
         }
         let path = project_root.join(".lean-ctx").join("policies.json");
-        std::fs::read_to_string(&path)
+        let Some(project) = std::fs::read_to_string(&path)
             .ok()
-            .and_then(|s| serde_json::from_str(&s).ok())
-            .unwrap_or_else(Self::defaults)
+            .and_then(|s| serde_json::from_str::<Self>(&s).ok())
+        else {
+            return Self::defaults();
+        };
+        let mut policies = Self::security_defaults().policies;
+        let reserved: Vec<String> = policies.iter().map(|p| p.name.clone()).collect();
+        policies.extend(
+            project
+                .policies
+                .into_iter()
+                .filter(|p| !reserved.contains(&p.name)),
+        );
+        Self { policies }
     }
 
     /// Save policies to a project's .lean-ctx/policies.json file.
@@ -467,6 +493,59 @@ mod tests {
         let ps = PolicySet::new();
         let state = ps.effective_state("src/main.rs", ContextState::Included, false, 100);
         assert_eq!(state, ContextState::Included);
+    }
+
+    #[test]
+    fn project_file_cannot_drop_or_override_security_defaults() {
+        let tmp = tempfile::tempdir().unwrap();
+        let dir = tmp.path().join(".lean-ctx");
+        std::fs::create_dir_all(&dir).unwrap();
+        // Omits every security default, redefines one of them as Include, and
+        // pins everything after them.
+        std::fs::write(
+            dir.join("policies.json"),
+            r#"{"policies":[
+                {"name":"never_include_secrets","match":"**/.env*","action":"include"},
+                {"name":"pin_all","match":"**/*","action":"pin"}
+            ]}"#,
+        )
+        .unwrap();
+        let ps = PolicySet::load_project(tmp.path());
+        for secret in [".env", "config/private_key.pem", "aws/credentials"] {
+            assert_eq!(
+                ps.effective_state(secret, ContextState::Candidate, false, 100),
+                ContextState::Excluded,
+                "{secret}"
+            );
+        }
+        assert_eq!(
+            ps.effective_state("src/main.rs", ContextState::Candidate, false, 100),
+            ContextState::Pinned,
+            "project policies still apply elsewhere"
+        );
+        assert_eq!(
+            ps.policies
+                .iter()
+                .filter(|p| p.name == "never_include_secrets")
+                .count(),
+            1
+        );
+    }
+
+    #[test]
+    fn security_exclude_wins_over_a_later_pin() {
+        let mut ps = PolicySet::defaults();
+        ps.policies.push(ContextPolicy {
+            name: "pin_all".to_string(),
+            match_pattern: "**/*".to_string(),
+            action: PolicyAction::Pin,
+            condition: None,
+            reason: None,
+        });
+        assert_eq!(
+            ps.effective_state(".env", ContextState::Candidate, false, 100),
+            ContextState::Excluded
+        );
     }
 
     #[test]

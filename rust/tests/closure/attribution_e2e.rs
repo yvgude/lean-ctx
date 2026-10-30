@@ -51,6 +51,7 @@ fn event(saved_tokens: u64, attribution_group: &str) -> SavingsEvent {
         is_first_inject: None,
         cache_read_per_m_usd: None,
         cache_write_per_m_usd: None,
+        governor: None,
     }
 }
 

@@ -113,6 +113,67 @@ fn test_valid_bundle_passes_verification() {
     assert!(result.errors.is_empty(), "{result:?}");
 }
 
+/// A withheld read is in the bundle's trail with its reason class only, and
+/// the bundle still verifies.
+#[test]
+#[serial]
+fn a_withheld_read_is_in_the_bundle_trail_by_class_only() {
+    use lean_ctx::core::security_events::{RefusalClass, record_refusals};
+    let temp = tempfile::tempdir().expect("tempdir");
+    let _data_dir = DataDirGuard::set(temp.path());
+    record_refusals("ctx_read", "tamper-test-agent", RefusalClass::SecretPath, 1);
+    record_refusals(
+        "ctx_search",
+        "tamper-test-agent",
+        RefusalClass::SecretPath,
+        2,
+    );
+    record_refusals(
+        "ctx_read",
+        "tamper-test-agent",
+        RefusalClass::OutsideRoot,
+        1,
+    );
+    let bundle = generate_test_bundle(&temp);
+
+    let result = execute_verify(&verify_command(bundle.clone())).expect("verify bundle");
+    assert!(result.bundle_valid, "{result:?}");
+
+    let (_, trail) = read_zip_entries(&bundle)
+        .into_iter()
+        .find(|(name, _)| name == "audit/trail.jsonl")
+        .expect("trail in bundle");
+    let trail = String::from_utf8(trail).expect("utf-8 trail");
+    let actions: Vec<(String, String)> = trail
+        .lines()
+        .map(|line| serde_json::from_str::<serde_json::Value>(line).expect("json line"))
+        .filter_map(|entry| {
+            Some((
+                entry["tool"].as_str()?.to_string(),
+                entry["action"].as_str()?.to_string(),
+            ))
+        })
+        .collect();
+    let has = |tool: &str, prefix: &str| {
+        actions
+            .iter()
+            .any(|(t, action)| t == tool && action.starts_with(prefix))
+    };
+    assert!(
+        has("ctx_read", "content_withheld:1|reason=secret_path"),
+        "{actions:?}"
+    );
+    assert!(
+        has("ctx_search", "content_withheld:2|reason=secret_path"),
+        "{actions:?}"
+    );
+    assert!(
+        has("ctx_read", "path_blocked:1|reason=outside_root"),
+        "{actions:?}"
+    );
+    assert!(!trail.contains(".env"), "no path in the trail");
+}
+
 #[test]
 #[serial]
 fn test_tampered_file_fails_verification() {

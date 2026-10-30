@@ -180,7 +180,7 @@ fn config_provider_redirects_never_forward_any_supported_method() {
     };
     for status in [301, 302, 303, 307, 308] {
         let origin = Server::new(status, Some(&target.url), CANARY);
-        for method in ["GET", "DELETE", "POST", "PUT", "PATCH"] {
+        for method in ["GET", "POST"] {
             let resource: ResourceConfig = serde_json::from_value(serde_json::json!({
                 "method": method, "path": "/issues", "response": {"mapping": {"id":"id", "title":"title"}}
             })).unwrap();
@@ -189,7 +189,7 @@ fn config_provider_redirects_never_forward_any_supported_method() {
             assert!(error.contains(&status.to_string()), "{method}: {error}");
             assert!(!error.contains(CANARY));
         }
-        assert_eq!(origin.count(), 5);
+        assert_eq!(origin.count(), 2);
         assert!(origin.received_canary());
         assert_eq!(target.count(), 0);
     }
@@ -198,22 +198,26 @@ fn config_provider_redirects_never_forward_any_supported_method() {
 #[test]
 fn direct_config_provider_requests_still_authenticate_and_return_json() {
     let origin = Server::new(200, None, "[{\"id\":1,\"title\":\"Login bug\"}]");
-    for method in ["GET", "DELETE", "POST", "PUT", "PATCH"] {
+    let auth = http::ResolvedAuth::ApiKeyQuery {
+        param: "key".into(),
+        value: CANARY.into(),
+    };
+    for method in ["GET", "POST"] {
         let resource: ResourceConfig = serde_json::from_value(serde_json::json!({
             "method": method, "path": "/issues", "response": {"mapping": {"id":"id", "title":"title"}}
         })).unwrap();
-        let value = http::execute_request(
-            &origin.url,
-            &resource,
-            &http::ResolvedAuth::ApiKeyQuery {
-                param: "key".into(),
-                value: CANARY.into(),
-            },
-            &HashMap::new(),
-        )
-        .unwrap();
+        let value = http::execute_request(&origin.url, &resource, &auth, &HashMap::new()).unwrap();
         assert_eq!(value[0]["id"], 1);
     }
-    assert_eq!(origin.count(), 5);
+    // Connectors are read-only: a write method never reaches the source.
+    for method in ["DELETE", "PUT", "PATCH"] {
+        let resource: ResourceConfig = serde_json::from_value(serde_json::json!({
+            "method": method, "path": "/issues", "response": {"mapping": {"id":"id", "title":"title"}}
+        })).unwrap();
+        let error =
+            http::execute_request(&origin.url, &resource, &auth, &HashMap::new()).unwrap_err();
+        assert!(error.contains("read-only"), "{method}: {error}");
+    }
+    assert_eq!(origin.count(), 2);
     assert!(origin.received_canary());
 }

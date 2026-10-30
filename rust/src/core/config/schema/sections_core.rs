@@ -446,11 +446,11 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_enum_with_env(
             &["auto", "on", "off"],
             "auto",
-            "Per-turn tool-precedence reinjection (#1288): the UserPromptSubmit hook \
-             emits a one-line additionalContext reminder that ctx_* tools are the \
-             mandated path, so it always post-dates session-level harness \
-             instructions preferring native Bash. auto (default): active only while \
-             shadow_mode is on. Costs ~45 tokens per turn when active",
+            "Per-turn tool-routing reinjection (#1288): the UserPromptSubmit hook \
+             emits a one-line additionalContext reminder of the ctx_* routing, so it \
+             post-dates session-level harness instructions preferring native Bash. \
+             auto (default): off — the rules channel already carries the routing \
+             once (A3); on: every turn. Costs ~45 tokens per turn when active",
             "LEAN_CTX_PROMPT_REINJECT",
         ),
     );
@@ -757,7 +757,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key_with_env(
             "string?",
             serde_json::json!(null),
-            "What the enforced path jail admits. null/\"home\" (default since 3.11.3) = everything below your home directory, read and write, except protected zones: top-level dot entries (~/.ssh, ~/.aws, ~/.config, other agents' dirs), ~/Library, ~/AppData, ~/snap. \"projects\" (the default of 3.11.1–3.11.2) = every project below ~ is readable (a path counts when a folder between it and ~ holds .git, Cargo.toml, package.json, …; loose personal files do not); writes stay in the session's project + allow entries. \"project\" = only the active project + allow_paths/extra_roots/read_only_roots. Open one more dir with `lean-ctx allow-path <dir>`. Falls back to \"project\" for an implausible $HOME. Global-only",
+            "What the enforced path jail admits. null/\"projects\" (default since 3.12.1) = every project below ~ is readable (a path counts when a folder between it and ~ holds .git, Cargo.toml, package.json, …; loose personal files do not); writes stay in the session's project + allow entries. \"home\" (the default of 3.11.3–3.12.0, reported as a jail relaxation) = everything below your home directory, read and write, except protected zones: top-level dot entries (~/.ssh, ~/.aws, ~/.config, other agents' dirs), ~/Library, ~/AppData, ~/snap. \"project\" = only the active project + allow_paths/extra_roots/read_only_roots. Open one more dir with `lean-ctx allow-path <dir>`. Falls back to \"project\" for an implausible $HOME. Global-only",
             "LEAN_CTX_PATH_JAIL_SCOPE",
         ),
     );
@@ -1105,7 +1105,7 @@ pub(super) fn build(sections: &mut BTreeMap<String, SectionSchema>) {
         key(
             "bool",
             serde_json::json!(cfg.solution.inject_in_instructions),
-            "Inject solution-efficiency guidance into MCP instructions",
+            "Inject solution-efficiency guidance into MCP instructions and rules files (off by default: per-turn coding advice, not routing)",
         ),
     );
     solution.insert(

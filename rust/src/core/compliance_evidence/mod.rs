@@ -173,22 +173,24 @@ fn build_owasp() -> OwaspSection {
 
 /// Retention posture: the pack's declared intent vs. the plan window. The
 /// engine verifies no plan of its own (accounts live in LeanCTX Hive), so
-/// the window is the local one, reported as unverified.
+/// the plan window is reported as unverified. An unverified window cannot
+/// answer whether it covers the pack's intent, so `plan_covers_policy` stays
+/// unset instead of claiming `false` for every pack (F11); the local trail
+/// itself never deletes sealed segments.
 fn build_retention(resolved: &ResolvedPolicy) -> RetentionSection {
     let plan = crate::core::product_capabilities::Plan::Community;
-    // The local window: Community keeps no audit retention of its own.
-    let plan_days = 0;
     RetentionSection {
         policy_pack: Some(facts::pack_label(resolved)),
         policy_audit_retention_days: resolved.audit_retention_days,
         plan: plan.as_str().to_string(),
-        plan_source: "unverified".to_string(),
-        plan_audit_retention_days: plan_days,
-        plan_covers_policy: resolved
-            .audit_retention_days
-            .map(|declared| plan_days >= declared),
+        plan_source: UNVERIFIED_PLAN.to_string(),
+        plan_audit_retention_days: 0,
+        plan_covers_policy: None,
     }
 }
+
+/// `plan_source` of a plan window the engine could not verify.
+pub(crate) const UNVERIFIED_PLAN: &str = "unverified";
 
 /// Default artifact location: `<data_dir>/compliance/report-v1_<utc-stamp>.json`.
 pub fn default_artifact_path() -> Result<PathBuf, String> {
@@ -270,5 +272,23 @@ mod tests {
         assert!(build(&spec(year.0, year.1, &["framework-a"]), foreign).is_err());
         assert!(build(&spec(year.1, year.0, &[]), inverted).is_err());
         assert!(build(&spec(year.0, year.1, &["../etc"]), inverted).is_err());
+    }
+
+    /// F11: an unverified plan window never claims it fails to cover the
+    /// pack's declared retention, and renders as unverified, not 0 days.
+    #[test]
+    fn unverified_plan_makes_no_retention_coverage_claim() {
+        let resolved = resolve_pack(Some("strict-redaction")).unwrap();
+        assert_eq!(resolved.audit_retention_days, Some(180));
+        let retention = build_retention(&resolved);
+        assert_eq!(retention.plan_source, UNVERIFIED_PLAN);
+        assert_eq!(retention.plan_covers_policy, None);
+
+        let mut report = model::tests::sample();
+        report.retention = retention;
+        let text = render::to_text(&report);
+        assert!(text.contains("Plan retention:     unverified"), "{text}");
+        assert!(!text.contains("Plan covers intent"), "{text}");
+        assert!(render::to_csv(&report).contains("plan=unverified"));
     }
 }

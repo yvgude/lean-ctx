@@ -6,8 +6,119 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ## [Unreleased]
 
+### Security
+
+- **Native Read and Grep now follow the secret-path rule.** `ctx_read` and `ctx_search`
+  refused `.env`, keys and credential files, but the host's own Read and Grep did not:
+  Claude Code keeps the Read redirect off and the redirect hook passed `.env` straight to
+  the native tool. The PreToolUse `hook redirect` now denies a native read or search whose
+  file, search root, file glob or symlink target is secret-like, with the same detector,
+  role switch (`io.allow_secret_paths`), warn/enforce mode and policy event as `ctx_read`,
+  in Hybrid mode and on the shadow surface too, on Claude Code, CodeBuddy, Cursor, Copilot
+  CLI and Gemini CLI. Behaviour change: native reads of files such as `*.pem` test
+  certificates or a `.npmrc` are now denied under the default role; allow them through the
+  role. Not covered: a directory-wide search, shell reads (`cat .env`), Windsurf and
+  Antigravity; see Security & Governance §4.0.
+
+- **LeanCTX approves a shell command only when your AI tool would have run it without
+  asking.** The shell and file hooks answered "allow" for every call they passed through or
+  wrapped, which skipped the AI tool's permission prompt for any command. They now mirror the
+  AI tool's own decision instead of granting one. Claude Code gets every rewrite, with "allow"
+  only when its permission settings (allow rules, its built-in read-only commands,
+  `bypassPermissions`) would have run the original command without a prompt; a command that a
+  deny or ask rule names, or may name, is left unchanged so the rule still applies. Cursor,
+  Copilot CLI and Codex, which take a rewrite only as an approval, get one only for a fixed set
+  of side-effect-free commands (`git status`/`log`/`diff`/`show`, `cat`, `ls`, `grep`, `rg`,
+  `find` without actions, …); builds, tests and every other command run unchanged under their
+  own approval. Gemini CLI never gets an approval, and a command its settings allow or
+  restrict by name is left unchanged. Unhandled calls and the timeout fallback carry no
+  decision.
+- **`report-issue` redacts secrets before a report can become a public issue.** The whole
+  report body, including the raw tee excerpt that `--include-tee` attaches, now goes through
+  the engine's secret redaction (tokens, keys, credentials become `[REDACTED:…]`), whatever
+  the role or `[secret_detection]` settings; before, only home paths and the user name were
+  masked. The GitHub token it asks for when `gh` is missing is read without echo.
+- **PathJail writes stay in the active project by default.** The default `path_jail_scope`
+  is `projects` again instead of `home`: every project below `~` stays readable, but tools
+  write only in the session's project, host-declared roots and allowed paths, so an agent
+  working in one repository can no longer plant `~/code/other/.git/hooks/pre-commit`.
+  `lean-ctx config set path_jail_scope home` (or `LEAN_CTX_PATH_JAIL_SCOPE=home`) restores
+  the 3.11.3 behaviour, and `lean-ctx doctor` and the server's startup warning now list it as
+  a jail relaxation. The Claude Code and CodeBuddy auto-memory exception
+  (`.claude/projects/<slug>/memory/`) now applies only under your own home directory (or
+  `CLAUDE_CONFIG_DIR`), not to a look-alike directory anywhere on disk. Upgrade note: see the
+  upgrade guide.
+- **`ctx_multi_repo add_root` passes PathJail.** The root was taken from the raw `path`
+  argument, so an agent could register `/` or `~` and then search and read it through
+  `repo=<alias>`. The root is now resolved through the jail like every other path argument,
+  and a root the jail refuses is not registered; `allow-path` and the other allow entries
+  still admit one.
+- **Project policies cannot drop the security defaults.** A project's
+  `.lean-ctx/policies.json` replaced the built-in exclusions for `.env*`, private keys and
+  credentials, and a later `Pin` or `Include` overrode them. The security defaults are now
+  always loaded ahead of the project's policies (a project policy reusing their names is
+  ignored), and their `Exclude` wins over any later action.
+- **`ctx_patch op="replace_all"` writes through the shared edit boundary.** It now takes the
+  per-file lock before reading, reads with the edit size cap and symlink refusal, refuses to
+  write when the file changed since it was read (TOCTOU guard), keeps the file's permissions
+  and invalidates the read dedup state, like every other `ctx_edit` and `ctx_patch` write.
+- **No approximate edit after a lossy read.** When the last read of a file was a compressed or
+  reduced view (`map`, `signatures`, `aggressive`, `entropy`, `task`, density or reference
+  modes), `ctx_edit` applies only an exact match against the file on disk; the
+  whitespace-tolerant and re-indent matchers are skipped, and a miss asks for a re-read with
+  `mode="full"`, so text quoted from a summary can no longer be written back into the file.
+- **A context capsule is delivered only with a verified signature.** `capsule_transport`
+  checked a capsule's structure and key and signature lengths, then queued it; it now
+  verifies the signature against the pinned signer first and refuses a forged, tampered or
+  foreign-key capsule.
+- **Every signed audit-trail entry is verified.** The audit chain checked signatures only on
+  drift and seal entries; any entry that carries a signature is now checked against the
+  LeanCTX key, so a forged signature on an ordinary entry fails verification. Unsigned
+  entries from older versions still verify, and the first pass after the update re-reads the
+  whole chain once.
+- **Context packages need a trusted publisher by default.** `pack import`, `pack install
+  --file` and `pack receive` used to accept any package signed with the key embedded in the
+  package itself; they now require a publisher pinned in `trusted-signers.toml`, a local
+  identity or this machine's own key. `--allow-untrusted-signer` restores the old check.
+  Restoring a context snapshot checks out only a full hex commit id, so an imported snapshot
+  can no longer pass an option or refspec to `git checkout`.
+- **`compliance verify` checks who signed the report.** A compliance report was "verified"
+  against the public key it carried itself, so a re-signed report passed. `compliance verify`
+  now checks against this installation's key, or the key given with `--pubkey`; a valid
+  signature from any other key is reported as `SELF-SIGNED / UNPINNED` (exit code 3), a
+  mismatch with `--pubkey` as invalid. An unverified plan no longer reports a 0-day retention
+  coverage; it shows as unverified.
+
 ### Added
 
+- **`ctx_read` reads one function or class by name.** `symbol="name"` (or
+  `"Class.method"`) serves exactly that definition's lines, located by its tree-sitter
+  span, instead of a `full` read or a run of scrolling `lines:` windows; with
+  `mode="anchored"` the window is edit-ready for `ctx_patch`. An unknown name returns the
+  file's outline in the same call. Files without a tree-sitter grammar, `raw=true` and an
+  active context policy refuse `symbol=`. The `ctx_read` description now tells the model
+  to omit `mode` when exploring (auto: small files whole, large code as an outline), and
+  the compact-view footer points at `symbol=`/`lines:` instead of a full re-read and names
+  the path once (auto reads 7 % smaller). Offline replay of a 42-run Haiku pilot's 151
+  reads: 90.6k → 80.3k tokens (−11 %), counting a follow-up window for every outline served
+  in place of a `full` read.
+
+- **Opt-in governor setup for Claude Code.** `lean-ctx init --agent claude --mode governor`
+  installs a near-zero-prefix setup: no MCP server, no instructions, no skill listing and a
+  two-line rule block (86 tokens per turn instead of 2,952 for the default setup). `--mode
+  governor-mcp` keeps the MCP server with no instructions and schemas deferred behind Tool
+  Search. One PostToolUse hook, `lean-ctx hook govern` (explicit 5 s timeout, 1.5 s internal
+  deadline, native output on any miss), may replace only the newest Read or Bash result:
+  R1 turns an identical re-read or re-run into an `[unchanged]` stub, R2 collapses runs of
+  identical lines losslessly (`expand` restores every byte), R3 notes output already in
+  context. Errors, diffs and test results are recognised by content and never touched.
+  R1 for Read keeps today's read-dedup behaviour; R1 for Bash, R2 and R3 only write
+  decision receipts for now (`LEAN_CTX_GOVERNOR_R1_BASH=on` / `LEAN_CTX_GOVERNOR_R2=on`
+  enable them, `LEAN_CTX_GOVERNOR=off|shadow` caps every rule). Each decision is a
+  savings-ledger event with a new optional `governor` receipt (rule, decision, would-save
+  tokens). The PreToolUse hook keeps only security: the shell-allowlist wrap, now with raw
+  output, and the secret-path deny for native Read, Grep and Glob. `--mode hybrid` reverts
+  the setup; the default setup is unchanged.
 - **`ctx_shell` asks you before refusing an unlisted program.** When a command is refused
   only because programs in it are not on the shell allowlist, lean-ctx asks in your AI
   tool's approval dialog (MCP form elicitation): allow once, allow for this session, always
@@ -22,21 +133,213 @@ Current positioning: [LeanCTX Engine — Context Gateway for AI Systems](docs/PO
 
 ### Changed
 
+- **Knowledge has no fact limit.** The Cockpit no longer shows slots, a budget or a
+  capacity share, and the Engine no longer archives facts by count, refuses a snapshot
+  restore for size, or scales a fact cap with the disk budget; facts leave memory only by
+  quality (decay, near-duplicate merge, low confidence, staleness). An existing
+  `max_facts` setting (or `LEAN_CTX_KNOWLEDGE_MAX_FACTS`) is ignored and still loads.
+- **Edits read only the region they change, and paths are project-relative.** In a
+  42-run Haiku pilot 13 of 130 `ctx_read` calls were whole-file `mode="anchored"` reads
+  (the Claude Code rules block said so), a quarter of all `ctx_read` output, yet 72 of the 78
+  `ctx_patch` ops that followed were `replace_unique`, which needs no anchors; and about
+  90 % of each `ctx_read` input was the absolute repository path the schema asked for.
+  The Claude Code block (v13), the `ctx_read` and `ctx_patch` descriptions now say: read the
+  region (`symbol=` or `lines:N-M`), edit with `replace_unique`, use `anchored:N-M` only for
+  line+hash ops, and name paths relative to the project root (absolute paths still work).
+  A cross-file `ctx_patch` batch labels each receipt with the project-relative path, and a
+  one-file batch no longer repeats a label its receipts already carry. Offline replay of the
+  pilot's 190 `ctx_read`/`ctx_patch` calls: identical reads and edited files with absolute
+  or relative paths; `ctx_patch` receipts 275 → 105 chars per run; relative paths would cut
+  the model-written `ctx_read` input by 69 % and `ctx_patch` input by 17 % (a replay cannot
+  show how far the model follows the new wording).
+
+- **Nothing in the open engine is "Pro" any more.** Context ranking in `ctx_compose`,
+  `ctx_semantic_search` and the context planner is always the free local ranking; the engine
+  no longer asks an installed licensed runtime to rescore context (that path also no longer
+  adds a `private_context_*` reason or an `adaptive_context_v1` plan extension). Messages that
+  said "Pro" now say "LeanCTX Hive" where the feature is the separately licensed runtime
+  (code hints, personal rules, paid policy packs) or are neutral otherwise.
+- **Memory selection and read-strategy policies are local only.** `knowledge consolidate`
+  (including `--adaptive` and the scheduled pass) always uses the local salience- and
+  budget-based import; no runtime selects memories any more. The planner no longer reads a
+  runtime-promoted read-strategy policy. `lean-ctx autopilot policy` and
+  `lean-ctx autopilot evidence --learn` (both needed the licensed runtime) are deprecated and
+  have no effect (see Deprecated); `autopilot evidence` still shows the local evidence. The config key
+  `intelligence_runtime.context_policy_apply` is still accepted but has no effect, and a
+  previously promoted policy file under `context-policy/` in the data directory is ignored.
 - lean-ctx-protocol: `HiveStatusPolicyV1` gains `required_filter_packs` (breaking for
   struct literals) → 0.5.0. The version bump, its pins and lockfiles, the SBOM and the
   notices follow in the next release preparation. With the same bump, the status output
   types (`HiveCliStatusV1`, `HiveStatusPolicyV1` and their siblings) drop
   `deny_unknown_fields` (or become `#[non_exhaustive]`), as the contract's convention for
   response types says, so later additive fields are not breaking for typed readers.
+- `lean-ctx gain` and the savings ROI report a higher, more honest prefix overhead.
+  A cached prefix token now costs 0.1× input instead of nothing, and a cache miss
+  costs the 1.25× write (Anthropic, OpenAI GPT-5.6+). At the default 75% hit rate the
+  per-turn factor goes from 0.25 to 0.39. The ~2,400-token native-tool baseline is
+  subtracted only in Replace mode; Hybrid and MCP keep the native tools, so their
+  prefix adds to lean-ctx's. `gain --deep` explains both.
+- **One lean-ctx rules channel per host.** Claude Code and Gemini CLI now get the
+  one-line anchor in the MCP `instructions` once their own rules file (`CLAUDE.md` block,
+  `GEMINI.md`) carries the lean-ctx block, as Cursor, Codex and OpenCode already did.
+  Before, the same tool mapping arrived twice, and the two copies could disagree. Together
+  with the cuts below, the Claude Code MCP instructions drop from 468 to 112 tokens per
+  turn, and the default per-turn prefix drops from 2969 to 2548 tokens (Codex: 2770 to
+  2548, Cursor: 3248 to 2499). `lean-ctx doctor`
+  has a new "Rules channels" line, and `lean-ctx doctor overhead` lists each host that
+  still loads the rules more than once, with the files, the estimated tokens and the fix
+  (`lean-ctx rules dedup --apply`, which `setup` and `doctor --fix` also run). The dedup
+  now also retires `~/.claude/rules/lean-ctx.md` and user-extended `rules-v9` copies. In
+  shared mode, the SessionStart hook nudge now goes out only while the host's rules file
+  lacks the block, because otherwise it is a third copy. The channel matrix is in the
+  setup reference.
+- The Claude Code `CLAUDE.md` block (now `lean-ctx-claude-v12`) and the setup message no
+  longer say "Replace mode" when the default Hybrid install hides native Grep/Glob.
+- **Less steering in the per-turn text.** In benchmark pilot P6, on short tasks,
+  "ALWAYS use ctx_*" and "orient with ctx_compose FIRST" added model steps. The
+  per-turn text now states the routing once and neutrally:
+  - The MCP instructions anchor, the `CLAUDE.md` block and the SessionStart/UserPromptSubmit
+    hook texts are reworded, and the Claude Code mod recognizes both the old and the new
+    hook texts.
+  - The "SOLUTION EFFICIENCY" coding advice is no longer in the MCP instructions or the
+    rules files by default (`[solution] inject_in_instructions` / `inject_in_subagents`
+    now default to `false`). The on-demand `LEAN-CTX.md` keeps it.
+  - The rules themselves (rules version 13) state the routing once: a short header, the
+    tool map, a scope line and a short "by task" table. "CRITICAL: ALWAYS",
+    "NEVER … SELF-CORRECT", "ACTUALLY EMIT" and "orient FIRST" are gone. The
+    anti-pattern, parallel-call and end-of-file preference lines now appear only in the
+    on-demand `LEAN-CTX.md`. Every rules file is rewritten on the next sync.
+  - In dedicated mode (`rules_injection = "dedicated"`), the MCP instructions shrink to the
+    anchor when the SessionStart hook carries the rules.
+  - `lean-ctx doctor` no longer counts the MCP instructions as a channel for a host that
+    has no lean-ctx MCP entry.
+  - `prompt_reinject = "auto"` (the default) now means off. `"on"` restores the per-turn
+    reminder of about 45 tokens.
+- **Leaner tool results.** The session wake-up briefing (`--- AUTO CONTEXT ---`) and
+  the shared-context hint are no longer prepended to the first `ctx_compose`,
+  `ctx_search` or `ctx_read` result; they come with the first `ctx_session` call with
+  `action="load"`, `"status"` or `"show"`, so every other result stays a byte-stable
+  function of its inputs (#498). Auto-load context packages are still applied on the
+  first call. `ctx_patch` and `ctx_edit` answer a successful edit with one line
+  (`patched <file>: N lines (+a -b)`); the pre/postimage digests and the diff come only
+  with `evidence=true` (which now defaults to `false`). In Claude Code with the lean-ctx
+  mod installed, the diff goes to the content-addressed tool archive instead and the
+  receipt names it in a `[diff:<id>]` line (about 13 tokens); the mod reads it from there and
+  still draws the diff, while the model does not read it unless it asks. Like every
+  archive entry, the stored diff (redacted, bounded) is also found by archive search and
+  `ctx_expand`, and follows the archive's retention. A direct `ctx_edit` gets no trailer. `ctx_search` carries at most one
+  note: the `Results span … directories` hint is gone and the legend for `∈` is left out
+  when a coverage note (result cap, deadline, budget) is shown, and that note is shorter.
+- **A blocked inline script no longer rejects the whole shell line.** When a `ctx_shell`
+  command is a list of independent statements (separated by `;` or newlines) and each
+  blocked statement is a bare interpreter call (`python3 -c …` with no `&&`, `||`, pipe,
+  redirect or substitution), the other statements run and each skipped one is named in
+  a line `skipped: <statement> (<reason>)`; the call reports exit 126 unless the part
+  that ran failed. Everything else is still rejected as a whole: comments, heredocs,
+  line continuations, control structures, and any use of `exit`, `return`, `set`,
+  `command`, `builtin`, `eval`, `exec`, `source` or `trap`. What runs is checked again
+  as one command. Inline-script blocks are two lines instead of seven.
+
+### Deprecated
+
+- `lean-ctx autopilot policy`, `lean-ctx autopilot evidence --learn` and the config key
+  `intelligence_runtime.context_policy_apply` have no effect any more: learned
+  read-strategy policies are retired and the read strategy is chosen locally. They stay
+  accepted, report `retired` and warn on stderr; earliest removal 3.15.0
+  (`rust/data/DEPRECATIONS.toml`, shown by `lean-ctx doctor`).
 
 ### Fixed
 
+- **`policy org uninstall` restores the endpoint.** It now also removes the trust pins of the
+  removed policy's organization. Before, `install --trust` followed by `uninstall` left the
+  pin behind, and a pinned organization without a policy refuses every governed call, so
+  reads stayed "withheld by the project or organization policy". Pins of other
+  organizations stay, and `uninstall` lists them with the `untrust` command that removes them.
+- **Custom REST connectors are read-only.** A provider config whose resource uses `PUT`,
+  `PATCH` or `DELETE` is rejected with a message that says why; `GET` and a body-less `POST`
+  for search endpoints remain, and the request layer refuses any other method as well.
+- **The security docs describe `ctx_execute` as it works.** They said its scripts run outside
+  the shell allowlist. Shell code in `ctx_execute` is checked by the same allowlist as
+  `ctx_shell`, and code in other languages runs under `shell_security = "enforce"` only after
+  you approve it.
+- **A compression addon's answer is redacted.** The output of a downstream compression addon
+  now goes through the same secret scanner as every other gateway result
+  (GHSA-gvg8-285q-m62g); before, it was admitted but not scanned.
+- **A withheld read is in the audit trail.** When the I/O boundary refuses a read, the trail
+  records it for the calling tool with its reason class and never the path or content:
+  `content_withheld:1|reason=secret_path` for a secret-like path such as `.env`,
+  `path_blocked:1|reason=outside_root` (or `protected_path`) for the path jail, which before
+  was recorded as `resolve_path` with no agent. `ctx_read` with `paths` records its refusals
+  the same way, and a `ctx_search` that skipped secret-like files records one entry with
+  their count. The status line, `lean-ctx value` and the evidence bundle count them as
+  withheld or blocked; a missing file is no refusal and is not recorded.
+- **`cockpit --export` writes the Cockpit report, not the old Visualizer page.** Without a
+  terminal, or with `--output=FILE`, it writes a self-contained `LeanCTX Report` page: what
+  was delivered, withheld, redacted and blocked (audit trail, savings ledger), the savings
+  with their trust labels (measured, derived, estimated), the top tools and models with a
+  recorded saving, and the state of both chains, from the same verified sources as
+  `lean-ctx value` and `lean-ctx roi`. The dependency graph and the per-file "0 tokens
+  saved" rows are gone, with the unused Visualizer module.
+- **Retiring a stale lean-ctx rules file no longer deletes user text.** `setup`, `init` and
+  the Claude Code sync used to delete `.claude/rules/lean-ctx.md` (and the CodeBuddy
+  equivalent) whenever it carried a lean-ctx marker, including any lines a user had added.
+  Now they remove only the lean-ctx region and keep a `.bak` backup.
+
+- **No more `*.v4-migration.lock` files in your project.** `lean-ctx init --agent …` writes
+  project files such as `CLAUDE.md` through the config writer, whose lock file sat beside
+  each written file and showed up in `git status`. Locks now live under the lean-ctx data
+  directory (`locks/`), keyed by the file's resolved path; existing stray lock files can
+  be deleted.
+- **Governor setup: identical re-reads are stubbed by default.** With `--mode governor`,
+  R1 for Read only applied when `LEAN_CTX_READ_DEDUP=on` was set; it now applies unless
+  `read_dedup = off`. `lean-ctx doctor overhead` now measures the installed governor setup
+  (rule block, plus deferred tool names for `governor-mcp`) instead of the default prefix.
+- `python -m pytest -p no:cacheprovider` (and `-m unittest`, `pip`, `venv`, `mypy`) is no
+  longer blocked as inline code: `-m` ends python's own options, so the module's flags
+  are not interpreter eval flags. Options before `-m` are still checked.
+- `python -m timeit "<code>"` (and `-m pdb`, `-m IPython`, `-m code`) is now blocked as
+  inline code execution, like `python -c`; it ran its argument as code unchecked.
+- `ctx_patch` accepts the argument shapes models send most often instead of failing:
+  `ops` as a JSON-encoded string, `new_string`/`content` for `create`, `new_string` for
+  anchored ops, and `find`/`replace` for `replace_unique`. An ambiguous
+  `replace_unique`/`ctx_edit` match names the lines it was found on.
 - **A session can no longer be locked out by the context gateway.** A restricted block is now
   withheld in place, with a stable id, instead of refusing the whole request; such a refusal
   answers `400 invalid_request_error` naming the block ids rather than `403 permission_error`,
   and lowercase banner words no longer mark a block. `lean-ctx gateway why`, `list`,
   `allow-once` and `revoke` explain a withheld block and let the person at the terminal release
   it once or undo that.
+- **Failure templates keep only LeanCTX's own wording.** Before a failure message is counted,
+  every word that is not part of LeanCTX's messages becomes a placeholder, and a path with
+  spaces in it (`./My Notes/list.md`) collapses into one `‹path›`, so no word of a file or
+  folder name reaches telemetry.
+- **Refused requests are no longer counted as LeanCTX errors.** A tool call refused for a stale
+  edit, a bad argument, a missing file, a size limit or a policy counts as a validation error,
+  a timeout as a timeout; only an unexplained failure stays an internal error. Words are
+  matched whole, so "unexpected" is no longer read as "expected".
+- **`ctx_edit` gives clearer answers.** An `old_string` found several times names the lines
+  it was found on; repeating an edit this process already applied answers "No change"
+  instead of "not found"; and an empty `old_string` creates a missing or empty file, while a
+  file with content is refused instead of replaced.
+- **A project policy's block now holds in Claude Code.** When `.lean-ctx/policy.toml` blocked a
+  native shell or file call, the `hook rewrite`/`redirect`/`copilot` verdict carried a
+  top-level `decision: "deny"`, which Claude Code rejects as invalid output and ignores, so
+  the call ran. Claude Code now gets the deny in its own `hookSpecificOutput` form; other AI
+  tools keep the shared form.
+- **Shell rewrites now apply in Gemini CLI.** Gemini reads a hook's new arguments from
+  `hookSpecificOutput.tool_input`, not `updatedInput`, so it ran every command unrewritten. It
+  now gets the rewrite in its own field and no decision, since a Gemini hook cannot approve a
+  call and Gemini checks its policy on the rewritten command. File-tool redirects stay off on
+  Gemini, whose file tools refuse the temp file outside the workspace.
+- **A fresh clone builds with `cargo fast` again.** The alias that `make build`, the README
+  and `dev-install` use lived only in a configuration file the public repository did not
+  carry; `rust/.cargo/config.toml` now ships it (the alias only, no job or target settings,
+  so your own Cargo configuration still applies). `rust/scripts/setup-fast-build.sh` writes
+  its machine-local linker and sccache settings to the repository-root `.cargo/config.toml`.
+- **Tool descriptions stay with their tools for Cursor, VS Code and Zed.** The description
+  optimizer for these clients re-sorts and trims its list; descriptions were then paired with
+  tools by position, so tools got another tool's description and the tail of the list lost its
+  text. They are now matched by name, and a tool the optimizer skipped keeps its own description.
 
 ## [3.12.0] — 2026-10-28
 

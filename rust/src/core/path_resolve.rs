@@ -95,9 +95,60 @@ pub fn resolve_tool_path_with_roots(
     raw: &str,
     extra_roots: &[String],
 ) -> Result<String, String> {
+    resolve_tool_path_refusing(project_root, shell_cwd, raw, extra_roots)
+        .map_err(|refusal| refusal.message)
+}
+
+/// A path that did not resolve: the message the caller returns, and the
+/// boundary class when the I/O boundary refused it (`None` for a path that is
+/// merely missing or malformed). The class is what the audit trail records.
+#[derive(Debug)]
+pub struct PathRefusal {
+    pub message: String,
+    pub class: Option<crate::core::security_events::RefusalClass>,
+}
+
+impl From<String> for PathRefusal {
+    fn from(message: String) -> Self {
+        Self {
+            message,
+            class: None,
+        }
+    }
+}
+
+impl PathRefusal {
+    /// The refusal of the secret-path I/O boundary (enforce mode).
+    pub fn secret_path(message: String) -> Self {
+        Self {
+            message,
+            class: Some(crate::core::security_events::RefusalClass::SecretPath),
+        }
+    }
+
+    /// The refusal of the path jail, classified by
+    /// [`crate::core::security_events::RefusalClass::of_jail_error`].
+    pub fn jail(error: &crate::core::error::PathJailError) -> Self {
+        Self {
+            message: error.to_string(),
+            class: crate::core::security_events::RefusalClass::of_jail_error(error),
+        }
+    }
+}
+
+/// [`resolve_tool_path_with_roots`], saying which boundary refused the path.
+pub fn resolve_tool_path_refusing(
+    project_root: Option<&str>,
+    shell_cwd: Option<&str>,
+    raw: &str,
+    extra_roots: &[String],
+) -> Result<String, PathRefusal> {
     let normalized = crate::core::pathutil::normalize_tool_path(raw);
     if normalized.is_empty() || normalized == "." {
-        return crate::core::workspace_authority::project_dot(&normalized, project_root);
+        return Ok(crate::core::workspace_authority::project_dot(
+            &normalized,
+            project_root,
+        )?);
     }
 
     let p = Path::new(&normalized);
@@ -133,14 +184,15 @@ pub fn resolve_tool_path_with_roots(
     if project_root.is_none()
         && let Some(error) = unbound_relative_path(raw, &resolved, shell_cwd.unwrap_or(&jail_root))
     {
-        return Err(error);
+        return Err(error.into());
     }
 
     let jail_root_path = Path::new(&jail_root);
     let jailed =
         crate::core::pathjail::jail_path_auto_admitting(&resolved, jail_root_path, extra_roots)
-            .map_err(|e| e.to_string())?;
-    crate::core::io_boundary::check_secret_path_for_tool("resolve_path", &jailed)?;
+            .map_err(|e| PathRefusal::jail(&e))?;
+    crate::core::io_boundary::check_secret_path_for_tool("resolve_path", &jailed)
+        .map_err(PathRefusal::secret_path)?;
 
     Ok(crate::core::pathutil::normalize_tool_path(
         &jailed.to_string_lossy().replace('\\', "/"),
@@ -452,6 +504,42 @@ mod tests {
                 !rendered.contains("C:/"),
                 "drive translation must not run on unix hosts (raw={raw}): {rendered}"
             );
+        }
+    }
+
+    // What the audit trail records for a refused path: the boundary's class,
+    // and none for a path that merely does not resolve.
+    #[test]
+    fn a_refusal_names_the_boundary_that_refused() {
+        use crate::core::security_events::RefusalClass;
+        let _environment = crate::core::data_dir::test_env_lock();
+        let tmp = tempfile::tempdir().unwrap();
+        let root = tmp.path().canonicalize().unwrap();
+        fs::write(root.join(".env"), "TOKEN=x").unwrap();
+        let root = root.to_string_lossy().into_owned();
+        let prev = std::env::var("LEAN_CTX_IO_BOUNDARY_MODE").ok();
+        crate::test_env::set_var("LEAN_CTX_IO_BOUNDARY_MODE", "enforce");
+        let secret = resolve_tool_path_refusing(Some(&root), None, ".env", &[]);
+        let outside =
+            resolve_tool_path_refusing(Some(&root), None, &format!("{root}/../outside.txt"), &[]);
+        match prev {
+            Some(v) => crate::test_env::set_var("LEAN_CTX_IO_BOUNDARY_MODE", v),
+            None => crate::test_env::remove_var("LEAN_CTX_IO_BOUNDARY_MODE"),
+        }
+        let secret = secret.expect_err("enforce mode refuses a secret path");
+        assert_eq!(secret.class, Some(RefusalClass::SecretPath));
+        assert!(
+            secret.message.contains("Secret-like path"),
+            "{}",
+            secret.message
+        );
+        if !cfg!(feature = "no-jail") {
+            let outside = outside.expect_err("the jail refuses a path outside the root");
+            assert_eq!(outside.class, Some(RefusalClass::OutsideRoot));
+        }
+        let unbound = resolve_tool_path_refusing(None, None, "src/no_such_file_lc_9c1.rs", &[]);
+        if let Err(refusal) = unbound {
+            assert_eq!(refusal.class, None, "{}", refusal.message);
         }
     }
 }

@@ -3,6 +3,22 @@ use serde::{Deserialize, Serialize};
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
+/// Average relations per current fact the graph may hold before its weakest
+/// edges are pruned. Knowledge has no fact limit; this bounds edge *density*
+/// (an edge-producing loop cannot grow the graph faster than the facts it
+/// links), so the bound grows with the store instead of capping it.
+pub const EDGES_PER_FACT: usize = 8;
+/// Floor of [`edge_bound`], so a young store keeps room for relations (the
+/// bound the old default of 200 facts gave).
+pub const MIN_EDGE_BOUND: usize = 1_600;
+
+/// The relation-edge bound for a store with `current_facts` current facts.
+pub fn edge_bound(current_facts: usize) -> usize {
+    current_facts
+        .saturating_mul(EDGES_PER_FACT)
+        .max(MIN_EDGE_BOUND)
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct KnowledgeNodeRef {
     pub category: String,

@@ -74,7 +74,10 @@ pub const SOLUTION_BLOCK_END: &str = "<!-- /lean-ctx-solution -->";
 /// The solution-efficiency guidance shared by rule-file generators that do not
 /// use [`render`] directly.
 pub fn enabled_solution_rules_block() -> String {
-    if !crate::core::config::Config::load().solution.enabled {
+    // A3: rules files ride every turn like the instructions, so the ladder
+    // follows the same opt-in as the instructions channel.
+    let solution = crate::core::config::Config::load().solution;
+    if !solution.enabled || !solution.inject_in_instructions {
         return String::new();
     }
 
@@ -114,7 +117,10 @@ Never skip: validation, security, error handling.\n\
 /// v11 (#1849): the shadow edit line names no host tool — "native
 /// Edit/StrReplace" was wrong for Codex, which edits through `apply_patch`.
 /// v12: identify the Context Gateway and remove ungrounded savings/count claims.
-pub const RULES_VERSION: usize = 12;
+/// v13 (A3): routing stated once, neutrally. No "ALWAYS"/"NEVER"/"SELF-CORRECT"
+/// shouting and no "orient FIRST" push (pilot P6: on short tasks it added model
+/// steps); anti-patterns, parallel and end-preference lines move to LONGFORM.
+pub const RULES_VERSION: usize = 13;
 
 /// Product identity for the on-demand guide; injected profiles keep their budget.
 pub const GATEWAY_IDENTITY: &str = "LeanCTX (lean-ctx) — Context Gateway for AI Systems.";
@@ -128,7 +134,9 @@ pub const GATEWAY_IDENTITY: &str = "LeanCTX (lean-ctx) — Context Gateway for A
 /// lever, and the instructions channel is guarded on it); what goes is the
 /// unbounded object. "as mapped below" hands the scope to `BULLETS`, which
 /// names the four tools this actually governs.
-pub const CRITICAL: &str = "CRITICAL: ALWAYS use lean-ctx ctx_* tools as mapped below.";
+///
+/// v13 (A3): a neutral routing header instead of the "CRITICAL: ALWAYS" banner.
+pub const CRITICAL: &str = "lean-ctx routing — the host's built-in tools map to:";
 
 /// Weak-model adherence nudge (#1067 / GH #593). Smaller models (e.g. GLM 5.2 in
 /// Windsurf) often read the tool-mapping rules yet still answer from memory or
@@ -140,12 +148,10 @@ pub const CRITICAL: &str = "CRITICAL: ALWAYS use lean-ctx ctx_* tools as mapped 
 /// carries its own copy. It is omitted where it would be dead weight: shadow
 /// mode enforces routing at the call layer, and the `Bare`/instructions channel
 /// is capped separately.
-pub const MUST_INVOKE: &str = "ACTUALLY EMIT the ctx_* tool call (ctx_compose first) — \
-    describing a tool is not calling it.";
+pub const MUST_INVOKE: &str = "Call the tool; describing a call does not run it.";
 
 /// Compact bullet-list mapping (for both dedicated and shared contexts).
 pub const BULLETS: &str = "\
-MANDATORY MAPPING:\n\
 • Read/cat -> ctx_read(path, mode)\n\
 • Grep -> ctx_search(pattern, path)\n\
 • Shell/bash -> ctx_shell(command)\n\
@@ -163,22 +169,21 @@ MANDATORY MAPPING:\n\
 /// token savings cannot pay for its own disclaimer twice. It is paid for, not
 /// added: "for these jobs" replaces "when a ctx_* equivalent exists", which
 /// restated the mapping printed directly above it.
-pub const NEVER: &str = "NEVER use built-in Read/Grep/Shell/Glob for these jobs. \
-    SELF-CORRECT: the moment you reach for one, stop and call the ctx_* tool \
-    instead. Other MCP servers keep their own jobs.";
+///
+/// v13 (A3): the scope boundary only — the imperative went with the shouting.
+pub const NEVER: &str = "This covers built-in file/search/shell tools only; \
+    other MCP servers keep their own jobs.";
 
 /// Intent-to-tool playbook — maps common agent questions to the right tool.
 /// Since v5 it also absorbs the agent-loop phases (#609) and the navigation
 /// paradox one-liner, replacing the separate verbose sections in the injected
 /// profile (they stay verbatim in LONGFORM).
 pub const INTENT: &str = "\
-Tool selection by intent:\n\
-• Orient in this codebase (call FIRST) -> ctx_compose\n\
-• Read a file -> ctx_read(path, mode=signatures|map|full); edit after reading -> ctx_patch\n\
-• Exact symbol -> ctx_search(action=symbol); pattern -> ctx_search; by meaning -> ctx_search(action=semantic)\n\
-• Files by glob -> ctx_glob; structure -> ctx_tree; callers/impact -> ctx_callgraph\n\
-• Verify after edits -> ctx_shell(test/build); memory -> ctx_session / ctx_knowledge\n\
-Semantic questions -> search tools, not whole-file reads: reading more ≠ understanding more.";
+By task:\n\
+• Unfamiliar code -> ctx_compose (search + read + symbols in one call)\n\
+• Read -> ctx_read(mode=signatures|map|full); edit -> ctx_patch\n\
+• Symbol -> ctx_search(action=symbol); meaning -> ctx_search(action=semantic)\n\
+• Callers/impact -> ctx_callgraph; memory -> ctx_session / ctx_knowledge";
 
 /// Anti-patterns that waste tokens and round-trips.
 pub const ANTI: &str = "\
@@ -265,7 +270,7 @@ pub const LITM_END: &str = "TOOL PREFERENCE (END): ctx_compose>chain ctx_read>Re
 pub const SHADOW_MINIMAL: &str = "\
 lean-ctx shadow mode: native read/search/shell calls auto-route to ctx_* — no tool-mapping needed.\n\
 File editing → the host's native edit tool (lean-ctx only handles reads); if denied, use ctx_patch.\n\
-Exclusive tools (no native trigger): ctx_compose (understand code, call first), ctx_search(action=symbol) (exact symbol), ctx_search(action=semantic) (by meaning), ctx_callgraph (callers), ctx_knowledge / ctx_session (memory).";
+Exclusive tools (no native trigger): ctx_compose (search + read + symbols), ctx_search(action=symbol) (exact symbol), ctx_search(action=semantic) (by meaning), ctx_callgraph (callers), ctx_knowledge / ctx_session (memory).";
 
 /// Hook-covered header (GL #1153): the honest replacement for the
 /// `CRITICAL`/`BULLETS`/`NEVER` mapping on hosts whose *installed hooks*
@@ -275,25 +280,21 @@ Exclusive tools (no native trigger): ctx_compose (understand code, call first), 
 /// native tools anyway and the hooks compress them transparently. Saying so
 /// removes the instruction dissonance instead of losing the battle silently.
 pub const HOOK_COVERED_HEADER: &str = "\
-CRITICAL: ALWAYS prefer lean-ctx ctx_* tools over native equivalents for task-relevant \
-context, caching and session memory. Hooks compress native \
-Shell/Read/Grep as fallback, but direct ctx_* calls are the primary path.\n\
-ACTUALLY EMIT the ctx_* tool call (ctx_compose first) — describing a tool is not calling it.\n\
-WHY ctx_read: choose read depth per file (map/signatures/lines); eligible unchanged \
-full/auto re-reads return a compact reference. Recover detail from an authorized source or archive.";
+lean-ctx hooks compress native Shell/Read/Grep. Direct ctx_* calls add read depth \
+per file (map/signatures/lines), cached re-reads and session memory.";
 
 /// The tools worth an explicit MCP call on a hook-covered host: capabilities
 /// with *no* native equivalent the hooks could intercept. Kept in sync with
 /// [`SHADOW_MINIMAL`]'s exclusive-tools line (same rationale, different cause).
 pub const HOOK_COVERED_TOOLS: &str = "\
-MANDATORY MAPPING (always use ctx_* instead of native):\n\
-• Read/cat -> ctx_read(path, mode) — structural views, caching, source references\n\
-• Grep/search -> ctx_search(pattern, path) — also action=symbol|semantic for definitions/meaning\n\
-• Shell/bash -> ctx_shell(command) — command-specific output shaping\n\
-• ctx_compose — orient in code FIRST (bundles search + read + symbols) — call before editing/debugging\n\
-• ctx_callgraph — callers, callees, blast radius — use instead of manual file reading\n\
-• ctx_session / ctx_knowledge — persistent memory — record decisions & progress after milestones\n\
-• ctx_expand — recover full text from [Archived]/compressed output";
+lean-ctx tools:\n\
+• Read/cat -> ctx_read(path, mode) — structural views, cached re-reads\n\
+• Grep/search -> ctx_search(pattern, path) — also action=symbol|semantic\n\
+• Shell/bash -> ctx_shell(command) — shaped command output\n\
+• ctx_compose — search + read + symbols in one call\n\
+• ctx_callgraph — callers, callees, blast radius\n\
+• ctx_session / ctx_knowledge — persistent memory\n\
+• ctx_expand — full text of [Archived]/compressed output";
 
 // ── Output-style compression prompts ───────────────────────────
 
@@ -362,14 +363,17 @@ fn s(c: &str) -> String {
     c.to_string()
 }
 
+/// The routing block: header, mapping and scope line as one section (A3).
+fn routing() -> String {
+    format!("{CRITICAL}\n{BULLETS}\n{NEVER}")
+}
+
 fn longform_non_shadow_sections(p: &super::tool_profiles::ToolProfile) -> Vec<String> {
     use super::rules_sections as rs;
     let mut v = vec![
-        s(CRITICAL),
         s(GATEWAY_IDENTITY),
+        routing(),
         rs::must_invoke_section(p),
-        s(BULLETS),
-        s(NEVER),
         rs::intent_section(p),
         s(AGENT_LOOP), // verbose teaching — LONGFORM only
         rs::anti_section(p),
@@ -389,18 +393,15 @@ fn longform_non_shadow_sections(p: &super::tool_profiles::ToolProfile) -> Vec<St
 
 fn full_non_shadow_sections(p: &super::tool_profiles::ToolProfile) -> Vec<String> {
     use super::rules_sections as rs;
+    // v13 (A3): every line here ships per request on dedicated-file hosts —
+    // routing facts once; anti-patterns/parallel/end-preference are LONGFORM.
     let mut v = vec![
-        s(CRITICAL),
+        routing(),
         rs::must_invoke_section(p),
-        s(BULLETS),
-        s(NEVER),
         rs::intent_section(p),
-        rs::anti_section(p),
-        rs::parallel_section(p),
         s(AUTO),
         s(RECOVER_COMPACT),
         s(ROOT_RESTRICTION),
-        rs::litm_end_section(p),
     ];
     if let Some(fb) = rs::ctx_call_fallback(p) {
         v.push(fb);
@@ -418,7 +419,6 @@ fn hook_covered_non_shadow_sections(p: &super::tool_profiles::ToolProfile) -> Ve
     let mut v = vec![
         s(HOOK_COVERED_HEADER),
         rs::hook_covered_tools_section(p),
-        rs::parallel_section(p),
         s(RECOVER_COMPACT),
         s(ROOT_RESTRICTION),
     ];
@@ -431,12 +431,8 @@ fn hook_covered_non_shadow_sections(p: &super::tool_profiles::ToolProfile) -> Ve
 fn compact_non_shadow_sections(p: &super::tool_profiles::ToolProfile) -> Vec<String> {
     use super::rules_sections as rs;
     let mut v = vec![
-        s(CRITICAL),
-        s(BULLETS),
-        s(NEVER),
+        routing(),
         rs::intent_section(p),
-        rs::anti_section(p),
-        rs::parallel_section(p),
         s(RECOVER_COMPACT),
         s(ROOT_RESTRICTION),
     ];
@@ -556,8 +552,14 @@ pub(crate) fn render_with_solution(
         }
     }
 
-    // Solution Intelligence block: inject efficiency ladder when enabled.
-    let ladder = solution.ladder_text();
+    // Solution Intelligence block: inject efficiency ladder when enabled. The
+    // per-turn profiles carry it only on opt-in (`inject_in_instructions`, A3);
+    // the on-demand LONGFORM guide always does.
+    let ladder = if matches!(wrapper, Wrapper::Longform) || solution.inject_in_instructions {
+        solution.ladder_text()
+    } else {
+        ""
+    };
     if !ladder.is_empty() {
         body.push('\n');
         if matches!(wrapper, Wrapper::Bare) {
@@ -704,10 +706,6 @@ mod tests {
             !full.contains("NAVIGATION PARADOX: reading"),
             "injected FULL must not inline the multi-line NAV_PARADOX block"
         );
-        assert!(
-            full.contains('≠'),
-            "INTENT must keep the reading≠understanding thesis in FULL"
-        );
         // #509: ctx_symbol folded into ctx_search(action=symbol)
         for phase_tool in [
             "ctx_compose",
@@ -769,10 +767,6 @@ mod tests {
         assert!(
             !out.contains("NAVIGATION PARADOX: reading"),
             "COMPACT must not inline the multi-line NAV_PARADOX block"
-        );
-        assert!(
-            out.contains('≠'),
-            "COMPACT keeps the reading≠understanding thesis via INTENT"
         );
     }
 
@@ -844,7 +838,7 @@ mod tests {
         assert!(out.contains(END_MARK));
         assert!(out.contains(BULLETS));
         assert!(out.contains(NEVER));
-        assert!(out.contains("CRITICAL"));
+        assert!(out.contains(CRITICAL));
     }
 
     #[test]
@@ -853,11 +847,11 @@ mod tests {
         // interception makes them redundant. Only the exclusive-tool advert remains.
         let out = render(true, Wrapper::Dedicated, CompressionLevel::Off, &tp());
         assert!(out.contains(START_MARK));
-        assert!(!out.contains("MANDATORY MAPPING"), "no BULLETS in shadow");
+        assert!(!out.contains(BULLETS), "no BULLETS in shadow");
         assert!(!out.contains(NEVER), "no NEVER in shadow");
-        assert!(!out.contains("CRITICAL"), "no CRITICAL banner in shadow");
+        assert!(!out.contains(CRITICAL), "no routing header in shadow");
         assert!(
-            !out.contains("Tool selection by intent"),
+            !out.contains("By task:"),
             "routing INTENT block is redundant under interception"
         );
         assert!(
@@ -888,16 +882,13 @@ mod tests {
         let out = render(false, Wrapper::Dedicated, CompressionLevel::Off, &tp());
         let lines: Vec<&str> = out.lines().collect();
         let first_5 = lines[..5.min(lines.len())].join("\n");
+        // v13 (A3): the routing header leads; the end-of-file preference
+        // repeat is LONGFORM-only (it restated the mapping on every request).
         assert!(
-            first_5.contains("CRITICAL") || first_5.contains("MUST"),
-            "LITM: MUST/CRITICAL instruction near start"
+            first_5.contains(CRITICAL),
+            "LITM: routing near start, head={first_5:?}"
         );
-        // LITM_END or NEVER should appear in the final content lines (before END_MARK).
-        let tail = lines[lines.len().saturating_sub(8)..].join("\n");
-        assert!(
-            tail.contains("PREFERENCE") || tail.contains("NEVER"),
-            "LITM: reinforcement near end, tail={tail:?}"
-        );
+        assert!(!out.contains("TOOL PREFERENCE (END)"));
     }
 
     #[test]
@@ -928,7 +919,7 @@ mod tests {
         let out = render(false, Wrapper::Shared, CompressionLevel::Off, &tp());
         assert!(out.contains(START_MARK));
         assert!(out.contains(END_MARK));
-        assert!(out.contains("MANDATORY MAPPING"));
+        assert!(out.contains(CRITICAL));
         assert!(out.contains(BULLETS));
     }
 
@@ -936,14 +927,8 @@ mod tests {
     fn shared_shadow_omits_mapping() {
         let out = render(true, Wrapper::Shared, CompressionLevel::Off, &tp());
         assert!(out.contains(START_MARK));
-        assert!(
-            !out.contains("MANDATORY MAPPING"),
-            "shadow must not have header"
-        );
-        assert!(
-            !out.contains("MANDATORY MAPPING"),
-            "shadow must not contain BULLETS"
-        );
+        assert!(!out.contains(CRITICAL), "shadow must not have header");
+        assert!(!out.contains(BULLETS), "shadow must not contain BULLETS");
     }
 
     // --- render() — Bare ---
@@ -962,10 +947,7 @@ mod tests {
     fn bare_shadow_only_read_modes() {
         let out = render(true, Wrapper::Bare, CompressionLevel::Off, &tp());
         assert!(!out.contains(NEVER), "shadow Bare must not have NEVER");
-        assert!(
-            !out.contains("MANDATORY MAPPING"),
-            "shadow Bare must not have BULLETS"
-        );
+        assert!(!out.contains(BULLETS), "shadow Bare must not have BULLETS");
     }
 
     // --- Compression level tests ---
@@ -1212,32 +1194,40 @@ mod tests {
     }
 
     #[test]
-    fn never_carries_self_correction() {
-        // Self-correction reinforces the redirect harder than a bare prohibition.
-        assert!(
-            NEVER.contains("SELF-CORRECT"),
-            "NEVER must teach self-correction"
-        );
-        assert!(
-            NEVER.contains("call"),
-            "NEVER must spell out the corrective action"
-        );
-    }
-
-    #[test]
-    fn critical_names_ctx_family() {
-        assert!(
-            CRITICAL.contains("ctx_*"),
-            "CRITICAL must name the ctx_* family"
-        );
+    fn injected_rules_state_routing_without_shouting() {
+        // v13 (A3): routing facts once, neutrally — pilot P6 showed the
+        // "ALWAYS"/"NEVER"/"orient FIRST" pushes adding steps on short tasks.
+        // The #1788 scope boundary (other MCP servers) stays.
+        assert!(NEVER.contains("other MCP servers keep their own jobs"));
+        for wrapper in [
+            Wrapper::Dedicated,
+            Wrapper::Shared,
+            Wrapper::Bare,
+            Wrapper::HookCovered,
+        ] {
+            let out = render(false, wrapper, CompressionLevel::Off, &tp());
+            for shout in [
+                "ALWAYS",
+                "NEVER",
+                "SELF-CORRECT",
+                "FIRST",
+                "MANDATORY",
+                "CRITICAL",
+            ] {
+                assert!(
+                    !out.contains(shout),
+                    "{wrapper:?} carries {shout:?}:\n{out}"
+                );
+            }
+        }
     }
 
     // --- HookCovered profile (GL #1153) ---
 
     #[test]
     fn hook_covered_carries_strict_mapping() {
-        // v8: HookCovered is strict — always prefer ctx_* over native tools.
-        // The MANDATORY MAPPING replaces the old "no native equivalent" list.
+        // v13 (A3): HookCovered lists the tools neutrally; hooks cover the
+        // native calls, direct ctx_* calls add read depth and memory.
         let out = render(false, Wrapper::HookCovered, CompressionLevel::Off, &tp());
         assert!(
             !out.contains(NEVER),
@@ -1248,7 +1238,7 @@ mod tests {
             "must carry the strict preference header"
         );
         assert!(
-            out.contains("MANDATORY MAPPING")
+            out.contains("lean-ctx tools:")
                 && out.contains("ctx_read")
                 && out.contains("ctx_search"),
             "must carry the full mandatory mapping"

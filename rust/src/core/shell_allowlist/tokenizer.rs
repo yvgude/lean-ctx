@@ -267,6 +267,30 @@ pub fn segments_with_separators(command: &str) -> Vec<(String, Option<Separator>
         .collect()
 }
 
+/// The top-level statements of a command line: the original text between
+/// `;`/newline separators, each still holding its `&&`, `||`, `|` and `&`
+/// verbatim. Same scanner as [`segments_with_separators`].
+pub(super) fn sequence_statements(command: &str) -> Vec<&str> {
+    let base = command.as_ptr() as usize;
+    let mut out = Vec::new();
+    let mut start: Option<usize> = None;
+    for (segment, sep) in split_with_separators(command) {
+        let at = segment.as_ptr() as usize - base;
+        let begin = *start.get_or_insert(at);
+        if matches!(sep, Some(Separator::Sequence) | None) {
+            out.push(&command[begin..at + segment.len()]);
+            start = None;
+        }
+    }
+    if let Some(begin) = start {
+        out.push(&command[begin..]);
+    }
+    out.into_iter()
+        .map(str::trim)
+        .filter(|statement| !statement.is_empty())
+        .collect()
+}
+
 fn split_with_separators(command: &str) -> Vec<(&str, Option<Separator>)> {
     let mut segments = Vec::new();
     let mut start = 0;

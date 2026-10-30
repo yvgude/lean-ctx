@@ -71,6 +71,10 @@ remains open for both adapters; no credential-transport fix is claimed here.
 
 Custom REST APIs via TOML/JSON in `~/.config/lean-ctx/providers/` or `.lean-ctx/providers/`.
 Supports 6 auth methods (bearer, API key, basic, header, query param, none).
+Connectors are read-only: a resource uses `GET` (the default) or `POST` for a
+read API that takes its query as a POST, sent with an empty body (for example
+Notion's `/v1/search`). `PUT`, `PATCH` and `DELETE` are rejected when the
+config is validated, and the request layer refuses any other method as well.
 
 Built-in HTTP providers using `HardenedClient`, Jira data and OAuth requests,
 provider health probes, and config-based REST providers do not follow HTTP

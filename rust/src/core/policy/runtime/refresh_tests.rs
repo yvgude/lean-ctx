@@ -176,6 +176,64 @@ fn current_signed_organization_and_trust_are_rechecked() {
     assert!(cache.refresh(root.path()).unwrap().is_none());
 }
 
+/// `policy org install --trust`, then `policy org uninstall`: the endpoint
+/// decides again what a fresh one decides. Old code removed only the artifact;
+/// the pin it left is a pinned organization without a policy, which is
+/// deny-all, so every read was "withheld by the project or organization policy".
+#[test]
+fn uninstall_restores_the_state_before_install() {
+    let _isolation = crate::core::data_dir::isolated_data_dir();
+    let (root, _) = project();
+    let enforced = |tool: &str| {
+        REQUEST_PROJECT.sync_scope(std::cell::RefCell::new(Some(root.path().into())), || {
+            active().is_none_or(|policy| policy.tool_allowed(tool))
+        })
+    };
+    let mut cache = RefreshCache::default();
+    assert!(
+        cache.refresh(root.path()).unwrap().is_none(),
+        "fresh endpoint"
+    );
+    assert!(enforced("ctx_read"));
+
+    // What `install --trust` does: pin the signer for its organization, install.
+    let key = ed25519_dalek::SigningKey::from_bytes(&[57; 32]);
+    let pack = format!("{BASE}[context]\ndeny_tools = ['ctx_shell']\n");
+    let mut artifact = org::OrgPolicyV1::build("acme", "1", true, &pack).unwrap();
+    artifact.sign_with_key(&key);
+    let signer = artifact.signer_public_key.clone().unwrap();
+    org::trust::pin("acme", &signer).unwrap();
+    org::store::install(&artifact).unwrap();
+    assert!(!enforced("ctx_shell"), "the floor is enforced");
+    assert!(enforced("ctx_read"));
+
+    let uninstalled = org::uninstall().unwrap();
+    assert!(uninstalled.artifact);
+    assert_eq!(uninstalled.org.as_deref(), Some("acme"));
+    assert_eq!(uninstalled.unpinned, std::slice::from_ref(&signer));
+    assert!(uninstalled.remaining.is_empty());
+    assert!(cache.refresh(root.path()).unwrap().is_none(), "as fresh");
+    assert!(enforced("ctx_read") && enforced("ctx_shell"));
+    assert_eq!(org::uninstall().unwrap(), org::Uninstalled::default());
+
+    // A pin of another organization is not this artifact's to lift: it stays,
+    // is reported, and keeps refusing until it is removed deliberately.
+    org::trust::pin("acme", &signer).unwrap();
+    org::store::install(&artifact).unwrap();
+    let other = ed25519_dalek::SigningKey::from_bytes(&[58; 32]);
+    let other = crate::core::agent_identity::hex_encode(&other.verifying_key().to_bytes());
+    org::trust::pin("other", &other).unwrap();
+    let uninstalled = org::uninstall().unwrap();
+    assert_eq!(uninstalled.unpinned, [signer]);
+    assert_eq!(uninstalled.remaining.len(), 1);
+    assert_eq!(uninstalled.remaining[0].org, "other");
+    assert!(cache.refresh(root.path()).is_err());
+    assert!(!enforced("ctx_read"));
+    org::trust::remove(&other).unwrap();
+    assert!(cache.refresh(root.path()).unwrap().is_none());
+    assert!(enforced("ctx_read"));
+}
+
 #[test]
 fn bounded_inputs_and_project_separation_cannot_reuse_prior_policy() {
     let _isolation = crate::core::data_dir::isolated_data_dir();

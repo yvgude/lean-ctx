@@ -96,6 +96,7 @@ pub fn warn_only_reason(msg: &str) -> &str {
     let first = msg.lines().next().unwrap_or_default();
     let reason = first
         .strip_prefix("[BLOCKED — DO NOT RETRY] ")
+        .or_else(|| first.strip_prefix("[BLOCKED] "))
         .unwrap_or(first);
     reason
         .split(" This is a permanent restriction")
@@ -350,19 +351,46 @@ fn check_interpreter_inner(
     // GH #1466: also skip when Claude settings explicitly allow this interpreter.
     let claude_ok = super::config::claude_allows_interpreter_inline(&base);
     if INTERPRETER_COMMANDS.contains(&base.as_str()) && !inline_ok && !claude_ok {
-        for tok in &tokens[1..] {
+        let python = base.starts_with("python") || base.starts_with("pypy");
+        for (i, tok) in tokens.iter().enumerate().skip(1) {
+            // Modules that run code given as an argument (`python -m timeit
+            // "<code>"`) are inline code execution like `-c`, also behind
+            // combined short flags (`-Im timeit`, `-mIPython`): the module is
+            // the rest of the token after `m`, or the next token.
+            if python
+                && let Some(module) = python_module_of(tok, tokens.get(i + 1))
+                && PYTHON_EVAL_MODULES.contains(&module)
+            {
+                return Err(format!(
+                    "[BLOCKED] {base} -m {module}: inline code execution is blocked.\n{}",
+                    script_file_recipe(&base)
+                )
+                .into());
+            }
+            // Python's `-m module` ends the interpreter's option list: what
+            // follows are the module's own arguments (`python -m pytest -p
+            // no:cacheprovider`), not interpreter flags. Only modules whose
+            // flags never take code end the scan; `-m pdb -c …` or `-m
+            // IPython -c …` run code and stay checked. Options before `-m`
+            // (`python -I -c …`) are always checked.
+            if python
+                && tok == "-m"
+                && tokens
+                    .get(i + 1)
+                    .is_some_and(|module| PYTHON_NON_EVAL_MODULES.contains(&module.as_str()))
+            {
+                break;
+            }
             if EVAL_FLAGS.contains(&tok.as_str()) {
                 return Err(format!(
-                    "[BLOCKED — DO NOT RETRY] Interpreter '{base}' with inline code execution \
-                     flag '{tok}' is blocked. Use a script file instead.\n{}",
+                    "[BLOCKED] {base} {tok}: inline code execution is blocked.\n{}",
                     script_file_recipe(&base)
                 )
                 .into());
             }
             if has_eval_flag_prefix(tok) {
                 return Err(format!(
-                    "[BLOCKED — DO NOT RETRY] Interpreter '{base}' with combined flag '{tok}' \
-                     containing eval flag is blocked.\n{}",
+                    "[BLOCKED] {base} {tok}: a combined flag with inline code execution is blocked.\n{}",
                     script_file_recipe(&base)
                 )
                 .into());
@@ -430,8 +458,7 @@ fn check_interpreter_inner(
 /// instead of leaving the agent to rediscover it by trial and error.
 fn heredoc_blocked_message(base: &str) -> String {
     format!(
-        "[BLOCKED — DO NOT RETRY] Interpreter '{base}' with heredoc stdin is blocked. \
-         Inline code in the command string leaves no auditable artifact.\n{}",
+        "[BLOCKED] {base} <<: heredoc stdin is inline code execution and is blocked.\n{}",
         script_file_recipe(base)
     )
 }
@@ -450,14 +477,34 @@ fn script_file_recipe(base: &str) -> String {
         _ => "txt",
     };
     format!(
-        "Do this instead — write the code to a file, then run it (one call each):\n\
-           1. create /tmp/lean-ctx-snippet.{ext} with your code (Write/Edit tool)\n\
-           2. {base} /tmp/lean-ctx-snippet.{ext}\n\
-         To change text in files, use the Edit tool or ctx_patch instead of an inline script.\n\
-         This is a permanent security restriction; only the user can lift it \
-         (shell_allow_inline_scripts = true)."
+        "Write the code to /tmp/lean-ctx-snippet.{ext}, then run `{base} /tmp/lean-ctx-snippet.{ext}` \
+         (edit files with ctx_patch; only the user can set shell_allow_inline_scripts = true)."
     )
 }
+
+/// Python modules run with `-m` whose own options never carry inline code
+/// (test runners, package tools). Their flags (`pytest -p plugin`, `-c
+/// file.ini`) are not interpreter eval flags.
+const PYTHON_NON_EVAL_MODULES: &[&str] = &["pytest", "unittest", "pip", "venv", "mypy"];
+
+/// The module a python short-flag token selects: `-m mod`, `-mmod`, or a
+/// combined `-Im mod` / `-Immod`. Every single-dash token holding an `m` is
+/// read this way, even where an earlier letter takes an argument: blocking
+/// too much is the safe side.
+fn python_module_of<'a>(tok: &'a str, next: Option<&'a String>) -> Option<&'a str> {
+    let flags = tok.strip_prefix('-').filter(|f| !f.starts_with('-'))?;
+    let at = flags.find('m')?;
+    let rest = &flags[at + 1..];
+    if rest.is_empty() {
+        next.map(String::as_str)
+    } else {
+        Some(rest)
+    }
+}
+
+/// Python modules that execute code passed as an argument or read from the
+/// terminal: blocked like `-c`, whatever follows.
+const PYTHON_EVAL_MODULES: &[&str] = &["timeit", "pdb", "IPython", "code"];
 
 /// Commands that are unconditionally blocked regardless of allowlist membership.
 /// These provide direct arbitrary code execution or re-enter the shell.
@@ -481,7 +528,7 @@ pub(super) const SHELL_BUILTINS: &[&str] = &[
 ];
 
 /// Interpreters that can execute arbitrary code via -c/-e flags.
-const INTERPRETER_COMMANDS: &[&str] = &[
+pub(super) const INTERPRETER_COMMANDS: &[&str] = &[
     "python", "python3", "python2", "node", "ruby", "perl", "lua", "php", "bash", "sh", "zsh",
     "fish", "dash", "ksh",
 ];

@@ -161,7 +161,8 @@ pub struct Config {
     #[serde(default = "serde_defaults::default_true")]
     pub dashboard_auth: bool,
     /// Provider prompt-cache hit rate for net-of-injection calculation (#1104).
-    /// Anthropic ~90%, OpenAI ~50%. Default 0.75 (conservative cross-provider).
+    /// Share of turns whose prefix is served from the provider cache; an
+    /// estimate, default 0.75. Prices: `context_overhead::prefix_cost_factor`.
     #[serde(default)]
     pub dashboard_cache_hit_rate: Option<f64>,
     #[serde(default = "serde_defaults::default_buddy_enabled")]
@@ -442,11 +443,11 @@ pub struct Config {
     /// choice survives reinstalls and updates.
     #[serde(default)]
     pub shell_hook_mode: Option<String>,
-    /// Per-turn tool-precedence reinjection (#1288): the UserPromptSubmit hook
-    /// emits a one-line `additionalContext` reminder that ctx_* tools are the
-    /// mandated path, so it always post-dates any session-level harness
-    /// instruction preferring native Bash. `on` | `off` | `auto` (default:
-    /// auto = active only while `shadow_mode` is on). Env override:
+    /// Per-turn tool-routing reinjection (#1288): the UserPromptSubmit hook
+    /// emits a one-line `additionalContext` reminder of the ctx_* routing, so it
+    /// post-dates any session-level harness instruction preferring native Bash.
+    /// `on` | `off` | `auto` (default: auto = off, since the host's rules channel
+    /// already carries the routing once, A3). Env override:
     /// `LEAN_CTX_PROMPT_REINJECT`. Costs ~45 tokens per turn when active.
     #[serde(default)]
     pub prompt_reinject: Option<String>,
@@ -757,8 +758,9 @@ pub struct Config {
     #[serde(default)]
     pub path_jail: Option<bool>,
     /// What the enforced jail admits besides the project + allow-lists:
-    /// `home` (default — every project below `$HOME`, read-only, except dot
-    /// entries, `~/Library`, `~/AppData`) or `project`. See `core::pathjail_scope`.
+    /// `projects` (default — every project below `$HOME` readable, writes only
+    /// in the session's project), `home` (all of `$HOME` read and write, except
+    /// dot entries, `~/Library`, `~/AppData`) or `project`. See `core::pathjail_scope`.
     #[serde(default)]
     pub path_jail_scope: Option<String>,
     /// Sandbox level for code execution (ctx_exec).

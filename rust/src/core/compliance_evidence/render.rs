@@ -12,6 +12,16 @@ use super::frameworks::{Coverage, FrameworkReport, RowStatus};
 
 use super::model::ComplianceReportV1;
 
+/// The plan's audit-retention window, or `unverified` when the engine could
+/// not verify the plan (a 0-day figure there would be a false claim).
+fn plan_retention(r: &ComplianceReportV1) -> String {
+    if r.retention.plan_source == super::UNVERIFIED_PLAN {
+        super::UNVERIFIED_PLAN.to_string()
+    } else {
+        format!("{} days", r.retention.plan_audit_retention_days)
+    }
+}
+
 fn coverage_label(c: Coverage) -> &'static str {
     match c {
         Coverage::Full => "full",
@@ -104,11 +114,7 @@ pub fn to_text(r: &ComplianceReportV1) -> String {
         "  Plan:               {} ({})",
         r.retention.plan, r.retention.plan_source
     );
-    let _ = writeln!(
-        o,
-        "  Plan retention:     {} days",
-        r.retention.plan_audit_retention_days
-    );
+    let _ = writeln!(o, "  Plan retention:     {}", plan_retention(r));
     if let Some(covers) = r.retention.plan_covers_policy {
         let _ = writeln!(
             o,
@@ -305,11 +311,11 @@ pub fn to_csv(r: &ComplianceReportV1) -> String {
             "",
             "",
             &format!(
-                "pack={}d, plan={}d",
+                "pack={}d, plan={}",
                 r.retention
                     .policy_audit_retention_days
                     .map_or_else(|| "-".to_string(), |d| d.to_string()),
-                r.retention.plan_audit_retention_days
+                plan_retention(r)
             ),
         ])
     );

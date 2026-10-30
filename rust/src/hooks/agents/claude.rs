@@ -11,6 +11,11 @@ pub(crate) fn install_claude_hook_with_mode(global: bool, mode: HookMode) {
         tracing::error!("Cannot resolve home directory");
         return;
     };
+    // Opt-in governor profile is sticky until `init --mode <standard>` reverts it.
+    if super::claude_governor::is_installed(&home) {
+        super::claude_governor::refresh(&home);
+        return;
+    }
 
     install_claude_hook_scripts(&home);
     install_claude_hook_config(&home);
@@ -133,7 +138,8 @@ fn ensure_claude_mcp_entry_defaults(config_path: &std::path::Path, content: &str
     }
 }
 
-/// In Replace mode, deny Grep/Glob via Claude Code's `permissions.deny` so
+/// Whenever native search is hidden (`claude_hides_native_search`: Replace and
+/// the default Hybrid mode), deny Grep/Glob via Claude Code's `permissions.deny` so
 /// search/listing go through `ctx_*`. Native `Read` is intentionally NOT denied:
 /// Claude Code's read-before-write edit gate and auto memory
 /// (`~/.claude/projects/<slug>/memory/`) both require native Read (GH #637,
@@ -141,6 +147,9 @@ fn ensure_claude_mcp_entry_defaults(config_path: &std::path::Path, content: &str
 /// carve out memory paths — remove it instead and steer exploration via
 /// CLAUDE.md + hooks.
 pub(crate) fn install_claude_permissions_deny_replace(home: &std::path::Path) {
+    if super::claude_governor::is_installed(home) {
+        return; // the governor keeps the host's own tool list
+    }
     let settings_path = home.join(".claude").join("settings.json");
 
     let mut json = if settings_path.exists() {
@@ -201,7 +210,7 @@ pub(crate) fn install_claude_permissions_deny_replace(home: &std::path::Path) {
         }
         if !mcp_server_quiet_mode() {
             eprintln!(
-                "  \x1b[32m✓\x1b[0m Claude Code: denied native Grep/Glob (Replace mode; Read kept for edit gate + auto memory)"
+                "  \x1b[32m✓\x1b[0m Claude Code: denied native Grep/Glob (Read kept for edit gate + auto memory)"
             );
         }
     }
@@ -277,7 +286,7 @@ pub(crate) fn install_claude_permissions_allow_mcp(home: &std::path::Path) {
 /// appended a duplicate (GH #549).
 pub(crate) const CLAUDE_MD_BLOCK_START: &str = crate::core::rules_canonical::AGENTS_BLOCK_START;
 const CLAUDE_MD_BLOCK_END: &str = crate::core::rules_canonical::AGENTS_BLOCK_END;
-const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v11";
+const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v13";
 
 // v3 (GL #555): self-contained, no `@rules/lean-ctx.md` import. Claude Code
 // expands `@` imports inline at launch ("imports do not reduce context usage"
@@ -314,9 +323,20 @@ const CLAUDE_MD_BLOCK_VERSION: &str = "lean-ctx-claude-v11";
 // v10 (#1909): drop the "~13 tokens" re-read claim. Under Claude Code the
 // scope is process-derived and sub-agents share the MCP process, so re-read
 // stubs are withheld (#1801) and the claim did not hold.
+//
+// v12 (A3): the search-hidden block dropped its "(Replace mode)" header — the
+// default Hybrid install writes it too (it hides Grep/Glob as well), and the
+// label told Hybrid users they were in Replace mode; "ALWAYS use ctx_read"
+// became a plain routing line.
+//
+// v13 (read volume, pilot P7): the edit line sent agents to whole-file
+// `mode="anchored"` reads, yet 72 of 78 measured ctx_patch ops were
+// replace_unique, which needs no anchors — the anchored body was paid for and
+// unused. Edits now read only the region (symbol= / lines:N-M) and name paths
+// relative to the project root; anchored stays for line+hash ops, windowed.
 const CLAUDE_MD_BLOCK_CONTENT_MCP: &str = "\
 <!-- lean-ctx -->
-<!-- lean-ctx-claude-v11 -->
+<!-- lean-ctx-claude-v13 -->
 ## LeanCTX (lean-ctx) — Context Gateway for AI Systems
 
 When the `ctx_*` MCP tools are listed in this session, prefer them over native equivalents:
@@ -324,7 +344,7 @@ When the `ctx_*` MCP tools are listed in this session, prefer them over native e
 - `ctx_shell` instead of `bash` / `Shell` (command-specific output shaping)
 - `ctx_search` instead of `Grep` / `rg` (compact results)
 - `ctx_tree` instead of `ls` / `find` (compact directory maps)
-- Edits: `ctx_read(mode=\"anchored\")` → `ctx_patch` (line+hash anchors, never echo old text; `op=create` for new files). `ctx_edit` (str_replace) is the legacy power-profile fallback.
+- Edits: `ctx_read` the region (`symbol=`/`lines:N-M`) → `ctx_patch` replace_unique; `anchored:N-M` for line+hash ops; `op=create` for new files; relative paths. `ctx_edit` (str_replace) is the legacy power-profile fallback.
 
 Native `Read` → `Edit`/`StrReplace` stays fully supported — the edit gate requires a
 prior native Read of the same file path. Auto memory under
@@ -338,8 +358,8 @@ Details live in the `lean-ctx` skill (loads on demand — keep this file lean).
 
 const CLAUDE_MD_BLOCK_CONTENT_REPLACE: &str = "\
 <!-- lean-ctx -->
-<!-- lean-ctx-claude-v11 -->
-## LeanCTX (lean-ctx) — Context Gateway for AI Systems (Replace mode)
+<!-- lean-ctx-claude-v13 -->
+## LeanCTX (lean-ctx) — Context Gateway for AI Systems
 
 Native Grep/Glob are denied by policy. Prefer `ctx_*` MCP tools for project work:
 - `ctx_read` for task-relevant exploration (cached structural views)
@@ -347,10 +367,9 @@ Native Grep/Glob are denied by policy. Prefer `ctx_*` MCP tools for project work
 - `ctx_search` instead of Grep/rg (compact results)
 - `ctx_tree` instead of ls/find (compact directory maps)
 - `ctx_glob` instead of Glob (file pattern matching)
-- Project edits: `ctx_read(mode=\"anchored\")` → `ctx_patch` (line+hash anchors; `op=create` for new files).
+- Project edits: `ctx_read` the region (`symbol=`/`lines:N-M`) → `ctx_patch` replace_unique; `anchored:N-M` for line+hash ops; `op=create` for new files; relative paths.
 
-Native `Read` is reserved for the edit gate (read-before-write) only.
-For exploration, orientation, and code understanding: ALWAYS use `ctx_read`.
+Native `Read` is reserved for the edit gate (read-before-write); explore with `ctx_read`.
 Claude auto memory (`~/.claude/projects/<slug>/memory/` — MEMORY.md and topic
 files) uses native Read/Edit internally; do NOT call MCP `resources/read` with
 file:// URIs (lean-ctx resources are `lean-ctx://context/*` only). Native Delete is fine.
@@ -505,20 +524,17 @@ fn remove_claude_skill(home: &std::path::Path) {
 /// 12k+ tokens of memory files from stacked lean-ctx instructions. The
 /// CLAUDE.md block is self-contained and detail docs live in the on-demand
 /// skill; only files carrying our rules marker are touched.
+///
+/// A3: a user-extended copy keeps every line outside the lean-ctx markers
+/// (`.bak` backup); only the lean-ctx region goes.
 fn remove_claude_rules_file(home: &std::path::Path) -> bool {
     let rules_path = crate::core::editor_registry::claude_rules_dir(home).join("lean-ctx.md");
-    let Ok(existing) = std::fs::read_to_string(&rules_path) else {
+    let Some(line) = crate::cli::rules_dedup::retire_rules_file(&rules_path) else {
         return false;
     };
-    if !existing.contains(crate::core::rules_canonical::RULES_MARKER_PREFIX)
-        || std::fs::remove_file(&rules_path).is_err()
-    {
-        return false;
-    }
     if !super::super::mcp_server_quiet_mode() {
         eprintln!(
-            "Removed {} (always-loaded duplicate; the CLAUDE.md block + on-demand skill replace it)",
-            rules_path.display()
+            "{line} (always-loaded duplicate; the CLAUDE.md block + on-demand skill replace it)"
         );
     }
     true
@@ -755,6 +771,9 @@ fn ensure_claude_observe_hooks(
 }
 
 pub(crate) fn install_claude_hook_config(home: &std::path::Path) {
+    if super::claude_governor::is_installed(home) {
+        return super::claude_governor::refresh(home);
+    }
     let hooks_dir = crate::core::editor_registry::claude_state_dir(home).join("hooks");
     let binary = resolve_hook_command_binary();
 

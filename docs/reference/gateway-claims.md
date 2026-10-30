@@ -59,7 +59,7 @@ applies to explicit-source plans only.
 
 - Semantic detectors behind the detector seam (contract
   `pro.runtime.semantic_detectors@1.1.0`): a local ONNX model backend in the
-  Pro Runtime, asked by the warm worker of one long-lived process, exists in
+  LeanCTX Hive runtime, asked by the warm worker of one long-lived process, exists in
   source and has been exercised with a TEST package only. Not shipped, and
   nothing is claimed for it: the one model set tried examines prompt injection
   only (personal data and secrets are reported as not inspected by it), a

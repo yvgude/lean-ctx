@@ -54,8 +54,11 @@ pub(crate) fn tier() -> RecoveryHints {
 pub(crate) fn read_footer(file_path: &str) -> Option<String> {
     match tier() {
         RecoveryHints::Off => None,
+        // Points at the one-call follow-ups (a symbol body or a line window)
+        // before `full`: a compact view re-read in full costs more than the
+        // full read the view replaced.
         RecoveryHints::Minimal => Some(format!(
-            "[lean-ctx] full source: read \"{file_path}\" directly (no MCP)  ·  or ctx_read(\"{file_path}\", mode=\"full\")"
+            "[lean-ctx] full source: read \"{file_path}\" directly (no MCP)  ·  exact part: ctx_read same path, symbol=\"Name\" or mode=\"lines:N-M\""
         )),
         // The header line is the SSOT [`COMPACT_VIEW_HEADER`] (also in `tdd_schema`);
         // the ladder now leads with the native path before the MCP shortcuts.
@@ -188,7 +191,8 @@ mod tests {
         assert!(minimal.lines().count() == 1, "minimal is a single line");
         // Non-MCP path must come before the MCP shortcut.
         let native = minimal.find("read \"src/x.rs\" directly").unwrap();
-        let mcp = minimal.find("ctx_read(").unwrap();
+        let mcp = minimal.find("ctx_read").unwrap();
+        assert!(minimal.contains("symbol=") && minimal.contains("lines:N-M"));
         assert!(native < mcp, "native path must precede the MCP route");
 
         crate::test_env::set_var("LEAN_CTX_RECOVERY_HINTS", "full");

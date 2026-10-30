@@ -3,7 +3,7 @@
 //! The Community engine ships the deterministic floor only: `baseline`,
 //! `strict-redaction` and `open-source`. Domain packs (health, finance, legal,
 //! company-specific) and compliance-framework packs are commercial and are
-//! delivered by LeanCTX Pro / Enterprise, never from this source tree
+//! delivered by LeanCTX Hive / Enterprise, never from this source tree
 //! (`scripts/check-private-paths.py` enforces the list).
 
 use std::sync::OnceLock;
@@ -25,8 +25,8 @@ const BUILTIN_SOURCES: &[(&str, &str)] = &[
 /// with that tier. Naming one yields a pointer instead of "unknown pack", so
 /// an existing `extends = "healthcare"` fails with an actionable message.
 const PAID_PACKS: &[(&str, &str)] = &[
-    ("healthcare", "Pro"),
-    ("finance-eu", "Pro"),
+    ("healthcare", "Hive"),
+    ("finance-eu", "Hive"),
     ("eu-ai-act-deployer", "Enterprise"),
     ("iso42001-aligned", "Enterprise"),
     ("soc2-context", "Enterprise"),

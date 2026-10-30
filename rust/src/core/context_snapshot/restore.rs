@@ -141,6 +141,13 @@ fn checkout_anchor(snapshot: &ContextSnapshotV1, project_root: &str) -> GitResto
     let Some(commit) = snapshot.git.commit.as_deref().filter(|c| !c.is_empty()) else {
         return GitRestore::NoAnchor;
     };
+    // An imported snapshot is untrusted input: only a full object id may
+    // reach git, never an option (`--orphan=…`), a ref or a refspec.
+    if !is_full_object_id(commit) {
+        return GitRestore::Failed(
+            "snapshot git anchor is not a full hex commit id — refusing to check it out".into(),
+        );
+    }
     if !crate::core::git::git_available() {
         return GitRestore::NoAnchor;
     }
@@ -155,11 +162,26 @@ fn checkout_anchor(snapshot: &ContextSnapshotV1, project_root: &str) -> GitResto
     if dirty {
         return GitRestore::DirtyTree;
     }
-    match crate::core::git::run_git(&["checkout", commit], root, Duration::from_secs(20), &[]) {
+    // `--` ends the revision: git never reads the id as a pathspec.
+    match crate::core::git::run_git(
+        &["checkout", "--detach", commit, "--"],
+        root,
+        Duration::from_secs(20),
+        &[],
+    ) {
         Ok(o) if o.success => GitRestore::CheckedOut(commit.to_string()),
         Ok(o) => GitRestore::Failed(o.stderr.trim().to_string()),
         Err(e) => GitRestore::Failed(e),
     }
+}
+
+/// A full SHA-1 (40) or SHA-256 (64) object id in lowercase hex, as
+/// `git rev-parse HEAD` writes it into the anchor.
+fn is_full_object_id(commit: &str) -> bool {
+    matches!(commit.len(), 40 | 64)
+        && commit
+            .bytes()
+            .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
 }
 
 #[cfg(test)]
@@ -228,6 +250,32 @@ mod tests {
         let report = merge_session(&mut session, &s);
         assert_eq!(report.files_added, 1);
         assert!(session.files_touched.iter().any(|f| f.path == "src/b.rs"));
+    }
+
+    #[test]
+    fn only_full_hex_object_ids_reach_git_checkout() {
+        assert!(is_full_object_id(&"a1".repeat(20)));
+        assert!(is_full_object_id(&"0f".repeat(32)));
+        for hostile in [
+            "--orphan=x",
+            "-b",
+            "abc1234",
+            "main",
+            "HEAD~1",
+            "refs/heads/main:refs/heads/x",
+            &"A1".repeat(20),
+            &format!("-{}", "a".repeat(39)),
+        ] {
+            assert!(!is_full_object_id(hostile), "{hostile}");
+        }
+
+        let mut snapshot = ContextSnapshotV1::new("2026-06-28T00:00:00Z".into(), "9.9.9".into());
+        snapshot.git.commit = Some("--orphan=pwned".into());
+        let outcome = checkout_anchor(&snapshot, "/nonexistent-project-root");
+        assert!(
+            matches!(&outcome, GitRestore::Failed(e) if e.contains("full hex commit id")),
+            "{outcome:?}"
+        );
     }
 
     #[test]

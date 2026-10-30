@@ -43,7 +43,6 @@ pub enum KernelPlanError {
 pub struct ContextKernel {
     providers: Vec<Box<dyn CandidateProvider>>,
     field: ContextField,
-    private_selection: bool,
     relevance_floor: bool,
 }
 
@@ -56,7 +55,6 @@ impl ContextKernel {
         Self {
             providers,
             field,
-            private_selection: false,
             relevance_floor: false,
         }
     }
@@ -65,13 +63,6 @@ impl ContextKernel {
     /// (explicit-source plans; see [`super::relevance_floor`]).
     pub(crate) fn with_relevance_floor(mut self) -> Self {
         self.relevance_floor = true;
-        self
-    }
-
-    /// The canonical task planner may use an explicitly enabled installed peer;
-    /// pure/reference kernels never discover or execute optional components.
-    pub(crate) fn with_private_selection(mut self) -> Self {
-        self.private_selection = true;
         self
     }
 
@@ -139,16 +130,6 @@ impl ContextKernel {
         policy: &ContextPolicy,
         evaluation_time: Option<&DateTime<FixedOffset>>,
     ) -> Result<(ContextPlanV1, Vec<BlockedEntry>), KernelPlanError> {
-        self.plan_with_selection_at(ctx, policy, evaluation_time)
-            .map(|(plan, blocked, _)| (plan, blocked))
-    }
-
-    pub(crate) fn plan_with_selection_at(
-        &self,
-        ctx: &RetrievalContext,
-        policy: &ContextPolicy,
-        evaluation_time: Option<&DateTime<FixedOffset>>,
-    ) -> Result<(ContextPlanV1, Vec<BlockedEntry>, Option<&'static str>), KernelPlanError> {
         let mut offered = self.candidates(ctx);
         offered.sort_by(|a, b| {
             a.object
@@ -260,38 +241,6 @@ impl ContextKernel {
         }
         // Past usage cannot be undone: a lower ceiling permits zero new tokens.
         budget.total = budget.total.max(budget.used);
-        let selection = if self.private_selection && scored.len() > 1 && budget.total > budget.used
-        {
-            use crate::core::intelligence_runtime::context_selection;
-            let candidates = scored
-                .iter()
-                .enumerate()
-                .map(|(index, (object, _))| {
-                    let signals = signals_from_object(object, ctx, &set);
-                    context_selection::Candidate {
-                        candidate_id: index,
-                        relevance_milli: (signals.relevance.clamp(0.0, 1.0) * 1000.0).round()
-                            as u16,
-                        confidence_milli: (signals.history_signal.clamp(0.0, 1.0) * 1000.0).round()
-                            as u16,
-                        tokens: to_compile_candidate(object, 0.0).selected_tokens.max(1),
-                        stale: object.freshness.stale,
-                    }
-                })
-                .collect::<Vec<_>>();
-            match context_selection::scores(&candidates, budget.total - budget.used) {
-                Some(Ok(scores)) => {
-                    for ((_, phi), score) in scored.iter_mut().zip(scores) {
-                        *phi = score;
-                    }
-                    Some("private_context_budget_relevance")
-                }
-                Some(Err(_)) => Some("private_context_unavailable"),
-                None => None,
-            }
-        } else {
-            None
-        };
         let compile_candidates: Vec<_> = scored
             .iter()
             .map(|(object, phi)| to_compile_candidate(object, *phi))
@@ -310,7 +259,6 @@ impl ContextKernel {
                 evaluation_time,
             )?,
             observations,
-            selection,
         ))
     }
 

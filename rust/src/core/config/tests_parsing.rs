@@ -318,8 +318,8 @@ mod simplified_config_tests {
             ..Default::default()
         };
         let policy = cfg.memory_policy_effective().unwrap();
-        // factor = 2000/500 = 4.0
-        assert_eq!(policy.knowledge.max_facts, 800);
+        // factor = 2000/500 = 4.0; facts have no limit to scale.
+        assert_eq!(policy.knowledge.max_facts, None);
         assert_eq!(policy.knowledge.max_patterns, 200);
         assert_eq!(policy.episodic.max_episodes, 2000);
         assert_eq!(policy.procedural.max_procedures, 400);
@@ -333,7 +333,7 @@ mod simplified_config_tests {
         };
         let policy = cfg.memory_policy_effective().unwrap();
         // factor clamped at 10.0
-        assert_eq!(policy.knowledge.max_facts, 2000);
+        assert_eq!(policy.knowledge.max_patterns, 500);
         assert_eq!(policy.episodic.max_episodes, 5000);
     }
 
@@ -341,8 +341,28 @@ mod simplified_config_tests {
     fn memory_limits_unchanged_when_no_budget() {
         let cfg = Config::default();
         let policy = cfg.memory_policy_effective().unwrap();
-        assert_eq!(policy.knowledge.max_facts, 200);
+        assert_eq!(policy.knowledge.max_patterns, 50);
         assert_eq!(policy.episodic.max_episodes, 500);
+    }
+
+    /// Knowledge has no fact limit (3.12.1). A config written for an older
+    /// release that still sets `max_facts` (even to 0, which used to fail
+    /// validation) must load, and the value is carried but never applied.
+    #[test]
+    fn legacy_knowledge_max_facts_still_loads_and_is_ignored() {
+        for legacy in ["200", "0"] {
+            let toml = format!("[memory.knowledge]\nmax_facts = {legacy}\nmax_patterns = 70\n");
+            let cfg: Config = toml::from_str(&toml).expect("legacy config parses");
+            let policy = cfg
+                .memory_policy_effective()
+                .expect("legacy max_facts never fails validation");
+            assert_eq!(policy.knowledge.max_facts, legacy.parse().ok());
+            assert_eq!(policy.knowledge.max_patterns, 70);
+        }
+        // A profile override with `max_facts` is skipped as an unknown key.
+        let overrides: crate::core::memory_policy::KnowledgePolicyOverrides =
+            toml::from_str("max_facts = 10\nmax_history = 9\n").expect("override parses");
+        assert_eq!(overrides.max_history, Some(9));
     }
 
     #[test]

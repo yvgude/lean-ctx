@@ -34,11 +34,15 @@ pub(crate) struct Collected {
     pub(crate) inputs: Map<String, Value>,
 }
 
-pub(crate) fn max_facts() -> usize {
-    crate::core::config::Config::load()
-        .memory_policy_effective()
-        .map_or(super::DEFAULT_MAX_FACTS, |p| p.knowledge.max_facts)
-}
+/// Current facts one analysis reviews, newest first kept. Knowledge has no
+/// fact limit, so this bounds the *review*, never the store: one analysis
+/// request must fit [`super::bridge::MAX_FRAME_BYTES`] (the bridge trims the
+/// oldest further when it does not) and Memory Care's duplicate scan is
+/// pairwise. Every fact stays stored and counted (`facts_total`).
+pub(crate) const MAX_REVIEWED_FACTS: usize = 1_000;
+/// Current facts the work analysis reads next to the sessions (same reason:
+/// the sessions share its one frame).
+const MAX_WORK_FACTS: usize = 200;
 
 /// Every record of the project's knowledge store, history included.
 pub(crate) fn knowledge_records(
@@ -47,15 +51,48 @@ pub(crate) fn knowledge_records(
     crate::core::knowledge::ProjectKnowledge::load_or_create(&scope.root).facts
 }
 
-/// The newest `max_facts` current facts.
-fn current_facts(scope: &ProjectScope) -> Value {
+/// The newest `limit` current facts and the number of all current facts.
+fn newest_current(scope: &ProjectScope, limit: usize) -> (Value, usize) {
     let mut facts: Vec<_> = knowledge_records(scope)
         .into_iter()
         .filter(crate::core::knowledge::KnowledgeFact::is_current)
         .collect();
-    let skip = facts.len().saturating_sub(max_facts());
+    let total = facts.len();
+    let skip = total.saturating_sub(limit);
     facts.drain(..skip);
-    serde_json::to_value(facts).unwrap_or(Value::Array(Vec::new()))
+    (
+        serde_json::to_value(facts).unwrap_or(Value::Array(Vec::new())),
+        total,
+    )
+}
+
+/// The newest [`MAX_REVIEWED_FACTS`] current facts and the number of all
+/// current facts.
+fn current_facts(scope: &ProjectScope) -> (Value, usize) {
+    newest_current(scope, MAX_REVIEWED_FACTS)
+}
+
+fn newest_current_facts(scope: &ProjectScope, limit: usize) -> Value {
+    newest_current(scope, limit).0
+}
+
+/// The current facts a forget names (at most 100 refs), whatever their age,
+/// and the number of all current facts.
+fn named_current_facts(scope: &ProjectScope, refs: &[Value]) -> (Value, usize) {
+    let wanted: std::collections::HashSet<&str> = refs.iter().filter_map(Value::as_str).collect();
+    let current: Vec<_> = knowledge_records(scope)
+        .into_iter()
+        .filter(crate::core::knowledge::KnowledgeFact::is_current)
+        .collect();
+    let total = current.len();
+    let named: Vec<_> = current
+        .into_iter()
+        .filter(|f| wanted.contains(format!("{}/{}", f.category, f.key).as_str()))
+        .collect();
+    (
+        serde_json::to_value(named).unwrap_or(Value::Array(Vec::new())),
+        total,
+    )
 }
 
 /// Every record, history included (compare and restore count them all; the
@@ -299,7 +336,9 @@ pub(crate) fn inputs(
             put("profiles", json!(state.profiles()));
         }
         Op::MemoryAnalyze => {
-            put("facts", current_facts(scope));
+            let (facts, total) = current_facts(scope);
+            put("facts", facts);
+            put("facts_total", json!(total));
             // Only contradictions are analyzed.
             let edges: Vec<Value> = routes
                 .get("/api/knowledge-relations")
@@ -310,7 +349,6 @@ pub(crate) fn inputs(
                 .collect();
             put("relations", json!({ "edges": edges }));
             put("snapshots", snapshot_list(scope));
-            put("max_facts", json!(max_facts()));
         }
         Op::MemoryCompare => {
             let saved = snapshots::read_facts(scope, request.q("id"))?;
@@ -319,7 +357,6 @@ pub(crate) fn inputs(
                 serde_json::to_value(saved).unwrap_or(Value::Null),
             );
             put("facts", all_facts(scope));
-            put("max_facts", json!(max_facts()));
         }
         Op::AdaptiveState => {
             for (key, value) in adaptive_inputs(scope, routes, &state)? {
@@ -389,7 +426,7 @@ pub(crate) fn inputs(
                 "knowledge",
                 json!({
                     "project_hash": knowledge.project_hash,
-                    "facts": current_facts(scope),
+                    "facts": newest_current_facts(scope, MAX_WORK_FACTS),
                     "history": serde_json::to_value(&knowledge.history[skip..]).unwrap_or(Value::Null),
                 }),
             );
@@ -434,13 +471,26 @@ pub(crate) fn inputs(
             );
         }
         Op::MemorySnapshot | Op::MemoryForget | Op::MemoryRestore => {
-            if request.op == Op::MemoryRestore {
-                put("facts", all_facts(scope));
-            } else {
-                put("facts", current_facts(scope));
+            match request.op {
+                Op::MemoryRestore => put("facts", all_facts(scope)),
+                Op::MemoryForget => {
+                    // Only the named facts: a forget may name a fact of any age.
+                    let refs = request
+                        .body
+                        .get("refs")
+                        .and_then(Value::as_array)
+                        .map_or(&[][..], Vec::as_slice);
+                    let (facts, total) = named_current_facts(scope, refs);
+                    put("facts", facts);
+                    put("facts_total", json!(total));
+                }
+                _ => {
+                    let (facts, total) = current_facts(scope);
+                    put("facts", facts);
+                    put("facts_total", json!(total));
+                }
             }
             put("snapshots", snapshot_list(scope));
-            put("max_facts", json!(max_facts()));
             if request.op == Op::MemoryRestore {
                 let saved = snapshots::read_facts(scope, request.b_str("id"))?;
                 put(

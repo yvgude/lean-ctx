@@ -13,7 +13,6 @@ use super::knowledge::KnowledgeFact;
 use super::memory_archive::{ArchiveConfig, MemoryStore};
 
 const DEFAULT_DECAY_RATE: f32 = 0.01;
-const DEFAULT_MAX_FACTS: usize = 1000;
 const LOW_CONFIDENCE_THRESHOLD: f32 = 0.3;
 const STALE_DAYS: i64 = 30;
 /// Default proactive headroom on a capacity reclaim: settle a full store at 75%
@@ -63,7 +62,6 @@ impl ForgettingModel {
 #[derive(Debug, Clone)]
 pub struct LifecycleConfig {
     pub decay_rate_per_day: f32,
-    pub max_facts: usize,
     pub low_confidence_threshold: f32,
     pub stale_days: i64,
     pub consolidation_similarity: f32,
@@ -81,9 +79,10 @@ pub struct LifecycleConfig {
     /// `None` disables it (the default, so existing tuning is unchanged); the
     /// production policy can opt in. Reversible: pruned facts go to the archive.
     pub prune_unretrieved_after_days: Option<i64>,
-    /// Proactive headroom on a capacity reclaim (#995): when a store reaches its
-    /// cap, drop down to `reclaim_target(max_facts, reclaim_headroom_pct)` so it
-    /// settles with working room instead of churning at the cap. `0.25` = 75%.
+    /// Proactive headroom on a capacity reclaim of the capped non-fact stores
+    /// (#995; patterns, history, procedures): drop down to
+    /// `reclaim_target(max, reclaim_headroom_pct)`. Facts have no cap and never
+    /// reach a capacity reclaim. `0.25` = 75%.
     pub reclaim_headroom_pct: f32,
     /// Master switch for the proactive capacity reclaim (#995). `false` restores
     /// the legacy "trim only the overflow" behavior — the documented escape
@@ -95,7 +94,6 @@ impl Default for LifecycleConfig {
     fn default() -> Self {
         Self {
             decay_rate_per_day: DEFAULT_DECAY_RATE,
-            max_facts: DEFAULT_MAX_FACTS,
             low_confidence_threshold: LOW_CONFIDENCE_THRESHOLD,
             stale_days: STALE_DAYS,
             consolidation_similarity: 0.85,
@@ -116,7 +114,6 @@ impl LifecycleConfig {
     /// cognition callers).
     pub fn from_policy(policy: &crate::core::memory_policy::MemoryPolicy) -> Self {
         Self {
-            max_facts: policy.knowledge.max_facts,
             decay_rate_per_day: policy.lifecycle.decay_rate,
             low_confidence_threshold: policy.lifecycle.low_confidence_threshold,
             stale_days: policy.lifecycle.stale_days,
@@ -137,10 +134,6 @@ pub struct LifecycleReport {
     pub consolidated_count: usize,
     pub archived_count: usize,
     pub compacted_count: usize,
-    /// Of `archived_count`, how many facts were evicted purely for capacity
-    /// (the proactive reclaim) versus quality (low-confidence/stale/unretrieved).
-    /// Lets callers report per-store capacity reclaim distinctly (#995).
-    pub capacity_archived: usize,
     pub remaining_facts: usize,
 }
 
@@ -593,7 +586,6 @@ pub fn run_lifecycle(
         consolidated_count: consolidated,
         archived_count: archived.len(),
         compacted_count: compacted,
-        capacity_archived: 0,
         remaining_facts: facts.len(),
     })
 }
@@ -940,14 +932,9 @@ pub mod tests {
 
     #[test]
     fn compact_is_quality_only_and_ignores_capacity() {
-        // Post-#995: capacity reclaim moved out of `compact` into the single
-        // capacity manager (driven by `run_lifecycle`). A store full of healthy,
-        // current, high-confidence facts is a *capacity* concern, so `compact`
-        // (quality only) must leave it untouched.
-        let config = LifecycleConfig {
-            max_facts: 8,
-            ..Default::default()
-        };
+        // Knowledge has no fact limit: `compact` archives by quality only, so a
+        // store full of healthy, current, high-confidence facts stays untouched.
+        let config = LifecycleConfig::default();
         let mut facts: Vec<KnowledgeFact> = (0..8)
             .map(|i| make_fact("finding", &format!("k{i}"), &format!("value {i}"), 0.8))
             .collect();
@@ -962,23 +949,27 @@ pub mod tests {
     #[test]
     fn run_lifecycle_never_reclaims_capacity() {
         with_temp_data_dir(|| {
-            // Owner decision 24.10.: knowledge has no count limit. A store over
-            // `max_facts` with only healthy facts keeps all of them, the
-            // expired one included (only quality rules archive).
-            let config = LifecycleConfig {
-                max_facts: 4,
-                ..Default::default()
-            };
-            let mut facts: Vec<KnowledgeFact> = (0..8)
-                .map(|i| make_fact("finding", &format!("k{i}"), &format!("value {i}"), 0.8))
+            // Owner decision 24.10.: knowledge has no count limit. A store far
+            // over the old default cap (200) with only healthy facts keeps all
+            // of them, the expired one included (only quality rules archive).
+            let config = LifecycleConfig::default();
+            let mut facts: Vec<KnowledgeFact> = (0..450)
+                .map(|i| {
+                    make_fact(
+                        "finding",
+                        &format!("k{i}"),
+                        &format!("distinct finding number {i} about module m{i}"),
+                        0.8,
+                    )
+                })
                 .collect();
             facts[0].valid_until = Some(Utc::now() - Duration::seconds(1));
 
             let report = run_lifecycle(&mut facts, &config).expect("lifecycle succeeds");
 
-            assert_eq!(report.capacity_archived, 0);
-            assert_eq!(facts.len(), 8);
-            assert_eq!(report.remaining_facts, 8);
+            assert_eq!(report.archived_count, 0);
+            assert_eq!(facts.len(), 450);
+            assert_eq!(report.remaining_facts, 450);
         });
     }
 
@@ -1041,10 +1032,7 @@ pub mod tests {
     #[test]
     fn full_lifecycle_run() {
         with_temp_data_dir(|| {
-            let config = LifecycleConfig {
-                max_facts: 5,
-                ..Default::default()
-            };
+            let config = LifecycleConfig::default();
 
             let mut facts = vec![
                 make_fact("arch", "db", "PostgreSQL", 0.9),

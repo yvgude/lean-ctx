@@ -389,9 +389,7 @@ impl Config {
         if budget > 0 {
             let scale_factor = (budget as f64 / 500.0).clamp(0.5, 10.0);
             let default_policy = MemoryPolicy::default();
-            if policy.knowledge.max_facts == default_policy.knowledge.max_facts {
-                policy.knowledge.max_facts = (200.0 * scale_factor) as usize;
-            }
+            // Facts are not scaled: knowledge has no fact limit.
             if policy.knowledge.max_patterns == default_policy.knowledge.max_patterns {
                 policy.knowledge.max_patterns = (50.0 * scale_factor) as usize;
             }

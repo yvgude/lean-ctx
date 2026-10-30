@@ -16,7 +16,9 @@ security and failover policy remain separate Gateway responsibilities.
   compatibility. Invocation separately permits only the exact context
   capabilities advertised by that verified package. Routing invocations fail.
 - Routing-free packages advertise adaptive context, memory curation, personal
-  protection, code security and the supported context-policy versions.
+  protection, code security and the supported context-policy versions. Since
+  2026-10-29 the Engine invokes only personal protection and code security of
+  these: context ranking, memory selection and read-strategy policies are local.
 - The private runtime's signed enum wire value `ModelRouting` remains a legacy
   base-entitlement name. It is not an executable routing capability. Renaming
   signed bytes or reissuing customer licenses is not part of this migration.

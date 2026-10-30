@@ -736,6 +736,7 @@ mod tests {
             is_first_inject: None,
             cache_read_per_m_usd: None,
             cache_write_per_m_usd: None,
+            governor: None,
         };
         let mut second_savings_event = savings_event.clone();
         second_savings_event.ts = "2026-08-09T12:00:01Z".to_owned();

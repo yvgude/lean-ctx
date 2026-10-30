@@ -128,13 +128,13 @@ fn project_keys_win_and_global_keys_are_reported() {
             "checkpoint_interval = {default_interval}\nturn_fresh_limit = 7\n\
              session_token_limit = 9\ntheme = \"repo-theme\"\n\
              [autonomy]\nenabled = true\n\
-             [memory.knowledge]\nmax_facts = 77\n"
+             [memory.knowledge]\nmax_history = 77\n"
         ),
         true,
     );
     assert_eq!(cfg.checkpoint_interval, default_interval);
     assert_eq!(cfg.turn_fresh_limit, 7);
-    assert_eq!(cfg.memory.knowledge.max_facts, 77);
+    assert_eq!(cfg.memory.knowledge.max_history, 77);
     assert_eq!(cfg.theme, "user-theme");
     assert!(!cfg.autonomy.enabled);
     ignored.sort();

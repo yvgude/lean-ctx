@@ -252,6 +252,31 @@ pub struct SavingsEvent {
     /// Cache-write rate for the model, if known at recording time.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub cache_write_per_m_usd: Option<f64>,
+
+    // ── Governor decision receipt (governor design v1 §5) ──
+    /// Which governor rule decided on a native tool result and how. `None` for
+    /// every non-governor event. Not part of the hash chain (`canonical_content`
+    /// stays v7): the receipt annotates an event whose token numbers are
+    /// committed as usual.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub governor: Option<GovernorReceipt>,
+}
+
+/// One governor decision (`hook govern`). The receipt never reaches the model.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
+pub struct GovernorReceipt {
+    /// `R1.read`, `R1.bash`, `R2` or `R3`.
+    pub rule_id: String,
+    /// Version of the rule's trigger and thresholds.
+    pub rule_version: u32,
+    /// `applied` (the model saw the smaller result) or `shadow` (logged only).
+    pub decision: String,
+    /// Host whose hook made the decision, e.g. `claude-code`.
+    pub host: String,
+    /// Truncated BLAKE3 of the host session id (never the id itself).
+    pub session_hash: String,
+    /// Tokens the rule removed or, for `shadow`, would have removed.
+    pub would_save_tokens: u64,
 }
 
 impl SavingsEvent {
@@ -536,6 +561,7 @@ mod tests {
             is_first_inject: None,
             cache_read_per_m_usd: None,
             cache_write_per_m_usd: None,
+            governor: None,
         }
     }
 
@@ -797,6 +823,36 @@ mod tests {
         assert_eq!(parsed.settlement_status, Some(SettlementStatus::Eligible));
         assert_eq!(parsed.confidence, Some(0.95));
         assert_eq!(parsed.attribution_id, Some("blake3_abc".into()));
+    }
+
+    #[test]
+    fn governor_receipt_is_optional_and_outside_the_hash_chain() {
+        let plain = ev();
+        let json = serde_json::to_string(&plain).unwrap();
+        assert!(
+            !json.contains("governor"),
+            "absent receipt is not serialised"
+        );
+        let parsed: SavingsEvent = serde_json::from_str(&json).unwrap();
+        assert_eq!(parsed.governor, None, "pre-governor events still parse");
+
+        let mut with = plain.clone();
+        with.governor = Some(GovernorReceipt {
+            rule_id: "R1.bash".into(),
+            rule_version: 1,
+            decision: "shadow".into(),
+            host: "claude-code".into(),
+            session_hash: "0123456789abcdef".into(),
+            would_save_tokens: 900,
+        });
+        let back: SavingsEvent =
+            serde_json::from_str(&serde_json::to_string(&with).unwrap()).unwrap();
+        assert_eq!(back.governor, with.governor);
+        assert_eq!(
+            with.canonical_content(),
+            plain.canonical_content(),
+            "the v7 chain contract is unchanged"
+        );
     }
 
     #[test]

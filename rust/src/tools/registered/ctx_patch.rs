@@ -10,6 +10,31 @@ use crate::tool_defs::tool_def;
 
 pub struct CtxPatchTool;
 
+/// Whether this host draws edit diffs from the archive: Claude Code with the
+/// lean-ctx mod in its plugin cache (file-only probe, once per process). Any
+/// other host gets the bare one-line receipt.
+pub(crate) fn host_draws_diffs(ctx: &ToolContext) -> bool {
+    static MOD_PRESENT: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    let claude = ctx
+        .client_name
+        .as_ref()
+        .and_then(|name| {
+            name.try_read()
+                .ok()
+                .map(|n| n.to_ascii_lowercase().contains("claude"))
+        })
+        .unwrap_or(false);
+    claude
+        && *MOD_PRESENT.get_or_init(|| {
+            std::env::var_os("CLAUDE_CONFIG_DIR")
+                .map(std::path::PathBuf::from)
+                .or_else(|| dirs::home_dir().map(|home| home.join(".claude")))
+                .is_some_and(|dir| {
+                    !crate::hooks::agents::claude_mod::cached_versions(&dir).is_empty()
+                })
+        })
+}
+
 impl McpTool for CtxPatchTool {
     fn name(&self) -> &'static str {
         "ctx_patch"
@@ -24,11 +49,11 @@ impl McpTool for CtxPatchTool {
     fn tool_def(&self) -> Tool {
         tool_def(
             "ctx_patch",
-            "Safe file edit. Anchored ops use line+hash from ctx_read(mode=\"anchored\"); \
-             CONFLICT means re-read. replace_unique(path,old_text,new_text) is a no-read, \
-             exact unique replacement. replace_symbol/create/replace_all supported as \
-             top-level ops. Cross-file ops[] batch (incl. replace_unique) supported; \
-             replace_all and create must be sent as separate top-level calls, not inside ops[].",
+            "Safe file edit, project-relative paths. replace_unique(path,old_text,new_text): \
+             exact unique replacement, needs no anchors. Line ops take line+hash from \
+             ctx_read(mode=\"anchored:N-M\"); CONFLICT means re-read. ops[] batch \
+             (cross-file, incl. replace_unique/replace_symbol); create and replace_all only \
+             as top-level calls.",
             json!({
                 "type": "object",
                 "properties": {
@@ -142,7 +167,8 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
         .map(|p| crate::core::workspace_authority::confine(&p, &ctx.project_root, true))
         .transpose()
         .map_err(|error| ErrorData::invalid_params(error, None))?;
-    let evidence = get_bool(args, "evidence").unwrap_or(true);
+    // The diff and digests are opt-in: the default receipt is one line.
+    let evidence = get_bool(args, "evidence").unwrap_or(false);
     let diff_max_lines = get_int(args, "diff_max_lines")
         .and_then(|v| usize::try_from(v.max(0)).ok())
         .unwrap_or(200);
@@ -155,6 +181,10 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
     let groups = plan_groups(args, ctx)?;
     validate_cross_file_options(args, groups.len())?;
     let output_path = (groups.len() == 1).then(|| groups[0].0.clone());
+    // A one-file receipt already names its file; only a cross-file batch
+    // labels each part with its full path.
+    let label_parts = groups.len() > 1;
+    let diff_artifact = host_draws_diffs(ctx);
 
     let mut texts = Vec::with_capacity(groups.len());
     for (path, ops) in groups {
@@ -165,13 +195,18 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
             backup,
             backup_path: backup_path.clone(),
             evidence,
+            diff_artifact,
             diff_max_lines,
             allow_lossy_utf8,
             validate_syntax,
         };
         let output =
             apply_one(ctx, &patch_params).map_err(|error| with_prior_edits(error, &texts))?;
-        texts.push(format!("[{path}]\n{output}"));
+        texts.push(if label_parts {
+            format!("[{}]\n{output}", receipt_label(&path, &ctx.project_root))
+        } else {
+            output
+        });
     }
 
     Ok(ToolOutput {
@@ -186,10 +221,15 @@ fn handle_anchored(args: &Map<String, Value>, ctx: &ToolContext) -> Result<ToolO
     })
 }
 
-/// An edit that carries old and new text but no `op` can only be
-/// `replace_unique` (every other op needs line numbers or a symbol). Infer it,
-/// at the top level and per `ops[]` entry, instead of rejecting the call with
-/// "missing 'op'". `None` when nothing needed inferring.
+/// Repairs the argument shapes models send most often instead of rejecting
+/// the call (the pilot's ctx_patch errors were all shape errors, not stale
+/// anchors): `ops` sent as a JSON-encoded string, the text keys of the other
+/// edit tools (`new_string`/`content` for `create` and anchored ops,
+/// `find`/`replace` for `replace_unique`), and an edit that carries old and
+/// new text but no `op`, which can only be `replace_unique` (every other op
+/// needs line numbers or a symbol). Only key names and the array encoding
+/// change; paths are still resolved per op downstream. `None` when nothing
+/// needed repairing.
 fn infer_replace_unique(args: &Map<String, Value>) -> Option<Map<String, Value>> {
     fn is_text_replacement(obj: &Map<String, Value>) -> bool {
         let text = |keys: [&str; 2]| keys.iter().find_map(|key| obj.get(*key)?.as_str());
@@ -197,21 +237,56 @@ fn infer_replace_unique(args: &Map<String, Value>) -> Option<Map<String, Value>>
             && text(["old_text", "old_string"]).is_some_and(|old| !old.is_empty())
             && text(["new_text", "new_string"]).is_some()
     }
+    /// Copies the first present alias into `key` when `key` is absent.
+    fn alias(obj: &mut Map<String, Value>, key: &str, aliases: &[&str]) -> bool {
+        if obj.contains_key(key) {
+            return false;
+        }
+        let Some(value) = aliases
+            .iter()
+            .find_map(|alias| obj.get(*alias).filter(|v| v.is_string()).cloned())
+        else {
+            return false;
+        };
+        obj.insert(key.to_string(), value);
+        true
+    }
+    fn repair(obj: &mut Map<String, Value>) -> bool {
+        let mut changed = false;
+        if is_text_replacement(obj) {
+            obj.insert("op".into(), json!("replace_unique"));
+            changed = true;
+        }
+        match obj.get("op").and_then(Value::as_str) {
+            Some("replace_unique") => {
+                changed |= alias(obj, "old_text", &["old_string", "find"]);
+                changed |= alias(obj, "new_text", &["new_string", "replace"]);
+            }
+            Some("create") => changed |= alias(obj, "new_text", &["new_string", "content"]),
+            Some("set_line" | "replace_lines" | "insert_after") => {
+                changed |= alias(obj, "new_text", &["new_string"]);
+            }
+            _ => {}
+        }
+        changed
+    }
     let mut out = args.clone();
-    let mut inferred = false;
-    if !out.contains_key("ops") && is_text_replacement(&out) {
-        out.insert("op".into(), json!("replace_unique"));
-        inferred = true;
+    let mut repaired = false;
+    if let Some(Value::String(encoded)) = out.get("ops")
+        && let Ok(Value::Array(ops)) = serde_json::from_str::<Value>(encoded)
+    {
+        out.insert("ops".into(), Value::Array(ops));
+        repaired = true;
+    }
+    if !out.contains_key("ops") {
+        repaired |= repair(&mut out);
     }
     if let Some(Value::Array(ops)) = out.get_mut("ops") {
         for op in ops.iter_mut().filter_map(Value::as_object_mut) {
-            if is_text_replacement(op) {
-                op.insert("op".into(), json!("replace_unique"));
-                inferred = true;
-            }
+            repaired |= repair(op);
         }
     }
-    inferred.then_some(out)
+    repaired.then_some(out)
 }
 
 /// `Some(op)` when a batch op must be dispatched through its own single-op
@@ -259,6 +334,25 @@ fn handle_mixed_batch(
         }
     }
 
+    // Every receipt already names its file ("patched cli.py: …"); a label is
+    // only needed to tell files apart, so a one-file batch carries none.
+    let top_path = get_str(args, "path");
+    let mut targets = std::collections::BTreeSet::new();
+    let mut unknown_target = false;
+    for v in arr {
+        match v
+            .get("path")
+            .and_then(Value::as_str)
+            .or(top_path.as_deref())
+        {
+            Some(p) => {
+                targets.insert(p);
+            }
+            None => unknown_target = true,
+        }
+    }
+    let label_parts = unknown_target || targets.len() > 1;
+
     let mut texts: Vec<String> = Vec::new();
     let mut run: Vec<Value> = Vec::new();
     for (i, v) in arr.iter().enumerate() {
@@ -282,12 +376,53 @@ fn handle_mixed_batch(
             e.message = format!("ops[{i}] ({kind}): {}", e.message).into();
             with_prior_edits(e, &texts)
         })?;
-        let label = get_str(&sub_args, "path").unwrap_or_else(|| kind.to_string());
-        texts.push(format!("[{label}]\n{}", out.text));
+        if label_parts {
+            let label = sub_ctx.resolved_path("path").map_or_else(
+                || kind.to_string(),
+                |resolved| receipt_label(resolved, &ctx.project_root),
+            );
+            texts.push(format!("[{label}]\n{}", out.text));
+        } else {
+            texts.push(out.text);
+        }
     }
     flush_anchored_run(args, ctx, &mut run, &mut texts)?;
 
     Ok(ToolOutput::simple(texts.join("\n\n")))
+}
+
+/// The label of one file's receipt in a cross-file batch: the path relative to
+/// the project root (the spelling the model can send back), or the full path
+/// for a file outside it. The root is tried as given and canonicalized, since
+/// the resolved path may carry the canonical spelling (`/private/var` on macOS,
+/// the long name without `\\?\` on Windows, where paths compare case-insensitively).
+fn receipt_label(resolved: &str, project_root: &str) -> String {
+    let display = crate::core::protocol::display_path(resolved);
+    let canonical_root = std::fs::canonicalize(project_root).ok().map(|p| {
+        crate::core::pathutil::strip_verbatim(p)
+            .to_string_lossy()
+            .into_owned()
+    });
+    for root in std::iter::once(project_root.to_string()).chain(canonical_root) {
+        let root = crate::core::protocol::display_path(&root);
+        let root = root.trim_end_matches('/');
+        let (Some(head), Some(rest)) = (display.get(..root.len()), display.get(root.len()..))
+        else {
+            continue;
+        };
+        if root.is_empty() || rest.len() < 2 {
+            continue;
+        }
+        let same_root = if cfg!(windows) {
+            head.eq_ignore_ascii_case(root)
+        } else {
+            head == root
+        };
+        if same_root && let Some(rel) = rest.strip_prefix('/') {
+            return rel.to_string();
+        }
+    }
+    display
 }
 
 /// Flush buffered anchored ops through the anchored pipeline as one batch.
@@ -394,7 +529,7 @@ fn delegate_replace_unique(
         )));
     }
 
-    crate::tools::registered::ctx_edit::CtxEditTool.handle(&edit_args, ctx)
+    crate::tools::registered::ctx_edit::handle_edit(&edit_args, ctx, host_draws_diffs(ctx))
 }
 
 fn build_unique_edit_args(args: &Map<String, Value>) -> Result<Map<String, Value>, String> {
@@ -709,9 +844,19 @@ fn aliased(
 /// would confirm a guess of a masked value, and replacing would edit content
 /// the caller cannot see — the operation is refused and nothing is written.
 /// Admitted or redacted text is never written to disk.
-fn replace_all_plan(path: &str, root: &str, find: &str) -> Result<(String, usize), String> {
+///
+/// The original is read through the shared edit boundary (`edit_io`: symlink
+/// rejection, size cap, strict UTF-8), and its fingerprint is what the write
+/// is later checked against.
+fn replace_all_plan(
+    path: &str,
+    root: &str,
+    find: &str,
+) -> Result<(crate::tools::edit_io::FilePreimage, usize), String> {
     use crate::tools::admitted_sources::SourceRead;
-    let mut remaining = crate::core::limits::max_read_bytes();
+    let cap = crate::core::limits::max_read_bytes();
+    let original = crate::tools::edit_io::read_preimage(std::path::Path::new(path), cap, false)?;
+    let mut remaining = cap;
     let admitted =
         match crate::tools::admitted_sources::read(path, root, "ctx_patch", &mut remaining) {
             SourceRead::Admitted(read) => read.content,
@@ -719,15 +864,35 @@ fn replace_all_plan(path: &str, root: &str, find: &str) -> Result<(String, usize
                 return Err(format!("cannot read {path}: {reason}"));
             }
         };
-    let original = std::fs::read_to_string(path).map_err(|e| format!("cannot read {path}: {e}"))?;
     let count = admitted.matches(find).count();
-    if count != original.matches(find).count() {
+    if count != original.text.matches(find).count() {
         return Err(format!(
             "replace_all refused for {path}: the pattern overlaps content the context gateway \
              masks; nothing was changed"
         ));
     }
     Ok((original, count))
+}
+
+/// Writes a bulk replace through the shared edit boundary: the file must still
+/// match the fingerprint it was planned from (TOCTOU guard), and the write
+/// rejects symlinks and read-only roots and keeps the file's permissions.
+fn replace_all_write(
+    path: &str,
+    pre: &crate::tools::edit_io::FilePreimage,
+    new_content: &str,
+) -> Result<(), String> {
+    let path = std::path::Path::new(path);
+    crate::tools::edit_io::ensure_preimage_still_matches(
+        path,
+        &pre.fp,
+        crate::core::limits::max_read_bytes(),
+    )?;
+    crate::tools::edit_io::write_atomic_bytes_with_permissions(
+        path,
+        new_content.as_bytes(),
+        Some(&pre.permissions),
+    )
 }
 
 /// #825: Bulk literal find-and-replace — no anchors needed.
@@ -740,8 +905,15 @@ fn handle_replace_all(
         resolve_find_replace(args).map_err(|e| ErrorData::invalid_params(e, None))?;
     let dry_run = get_bool(args, "dry_run").unwrap_or(false);
 
+    // The per-file lock is held from the read through the write, so another
+    // edit of this file in this process cannot land between them.
+    let file_lock = crate::core::path_locks::per_file_lock(&path);
+    let _guard = file_lock
+        .lock()
+        .map_err(|_| ErrorData::internal_error(format!("lock contention for {path}"), None))?;
+
     let root = crate::tools::admitted_sources::root_in_context(&path, ctx);
-    let (content, count) = replace_all_plan(&path, &root, &find).map_err(tool_execution_error)?;
+    let (pre, count) = replace_all_plan(&path, &root, &find).map_err(tool_execution_error)?;
     if count == 0 {
         return Ok(ToolOutput::simple(format!(
             "No matches for {find:?} in {path}"
@@ -754,29 +926,23 @@ fn handle_replace_all(
         )));
     }
 
-    let file_lock = crate::core::path_locks::per_file_lock(&path);
-    let _guard = file_lock
-        .lock()
-        .map_err(|_| ErrorData::internal_error(format!("lock contention for {path}"), None))?;
+    let new_content = pre.text.replace(find.as_str(), &replace);
+    replace_all_write(&path, &pre, &new_content).map_err(tool_execution_error)?;
+    super::ctx_edit::observe_mcp_edit(ctx, &path, "ctx_patch", &pre.bytes, new_content.as_bytes());
 
-    let new_content = content.replace(find.as_str(), &replace);
-    crate::core::pathjail::enforce_writable(std::path::Path::new(&path))
-        .map_err(|e| ErrorData::invalid_params(e, None))?;
-    crate::config_io::write_atomic(std::path::Path::new(&path), &new_content)
-        .map_err(|e| tool_execution_error(format!("write failed: {e}")))?;
-    super::ctx_edit::observe_mcp_edit(
-        ctx,
-        &path,
-        "ctx_patch",
-        content.as_bytes(),
-        new_content.as_bytes(),
-    );
-
+    crate::tools::ctx_read::dedup_hook::on_write(&path);
     if let Some(cache) = ctx.cache.as_ref() {
         if let Some(mut c) =
             crate::server::bounded_lock::write(cache, "ctx_patch replace_all cache invalidate")
         {
             c.invalidate(&path);
+        }
+    }
+    if let Some(session_lock) = ctx.session.as_ref() {
+        if let Some(mut session) =
+            crate::server::bounded_lock::write(session_lock, "ctx_patch replace_all session")
+        {
+            session.mark_modified(&path);
         }
     }
 
@@ -876,20 +1042,17 @@ mod replace_all_tests {
         let original = "let owner = \"CUS-1234\";\nlet mode = old_mode();\nold_mode();\n";
         let orders = file("orders.rs", original);
         let plan = file("plan.rs", "CONFIDENTIAL\nold_mode();\n");
+        let planned = |path: &str, find: &str| {
+            replace_all_plan(path, &root, find).map(|(pre, count)| (pre.text, count))
+        };
         {
             // Control without a pack: original and count as before.
             let _community = TestPolicyOverride::set(None);
-            assert_eq!(
-                replace_all_plan(&orders, &root, "old_mode"),
-                Ok((original.to_string(), 2))
-            );
+            assert_eq!(planned(&orders, "old_mode"), Ok((original.to_string(), 2)));
         }
         let _policy = TestPolicyOverride::set(Some(policy));
         // Unmasked content: the ORIGINAL is returned for the write.
-        assert_eq!(
-            replace_all_plan(&orders, &root, "old_mode"),
-            Ok((original.to_string(), 2))
-        );
+        assert_eq!(planned(&orders, "old_mode"), Ok((original.to_string(), 2)));
         // A guess of the masked value is neither confirmed nor replaced.
         let refused = replace_all_plan(&orders, &root, "CUS-1234").unwrap_err();
         assert!(refused.contains("refused"), "{refused}");
@@ -899,6 +1062,48 @@ mod replace_all_tests {
         assert!(withheld.contains("withheld"), "{withheld}");
         // No project root: nothing is read.
         assert!(replace_all_plan(&orders, "", "old_mode").is_err());
+    }
+
+    /// F4: replace_all reads and writes through the shared edit boundary, so a
+    /// symlink is refused on the read and a file that changed after planning
+    /// is not overwritten (TOCTOU guard).
+    #[test]
+    fn replace_all_uses_the_edit_boundary() {
+        let _data = crate::core::data_dir::isolated_data_dir();
+        let project = tempfile::tempdir().unwrap();
+        let root = project.path().to_string_lossy().into_owned();
+        let target = project.path().join("a.rs");
+        std::fs::write(&target, "old();\nold();\n").unwrap();
+        let target_str = target.to_string_lossy().into_owned();
+
+        #[cfg(unix)]
+        {
+            let link = project.path().join("link.rs");
+            std::os::unix::fs::symlink(&target, &link).unwrap();
+            let err = replace_all_plan(&link.to_string_lossy(), &root, "old").unwrap_err();
+            assert!(err.contains("symlink"), "{err}");
+        }
+
+        let (pre, count) = replace_all_plan(&target_str, &root, "old").unwrap();
+        assert_eq!(count, 2);
+        // A concurrent writer changes the file after the plan was read.
+        std::fs::write(&target, "old();\nnewer();\n").unwrap();
+        let new_content = pre.text.replace("old", "new");
+        let err = replace_all_write(&target_str, &pre, &new_content).unwrap_err();
+        assert!(err.contains("TOCTOU"), "{err}");
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "old();\nnewer();\n"
+        );
+
+        // Unchanged since the plan: the write lands.
+        let (pre, _) = replace_all_plan(&target_str, &root, "old").unwrap();
+        let new_content = pre.text.replace("old", "new");
+        replace_all_write(&target_str, &pre, &new_content).unwrap();
+        assert_eq!(
+            std::fs::read_to_string(&target).unwrap(),
+            "new();\nnewer();\n"
+        );
     }
 }
 
@@ -1026,5 +1231,23 @@ mod batch_grouping_tests {
         ] {
             assert!(infer_replace_unique(unchanged.as_object().unwrap()).is_none());
         }
+
+        // The shapes behind every ctx_patch error of the pilot benchmark.
+        let encoded = json!({"ops": "[{\"op\":\"replace_unique\",\"path\":\"a.rs\",\"old_text\":\"a\",\"new_text\":\"b\"}]"});
+        let repaired = infer_replace_unique(encoded.as_object().unwrap()).expect("ops decoded");
+        assert_eq!(repaired["ops"][0]["old_text"], json!("a"));
+        let create = json!({"op": "create", "path": "n.py", "new_string": "x = 1\n"});
+        let repaired = infer_replace_unique(create.as_object().unwrap()).expect("create aliased");
+        assert_eq!(repaired["new_text"], json!("x = 1\n"));
+        let find_replace =
+            json!({"op": "replace_unique", "path": "a.rs", "find": "a", "replace": "b"});
+        let repaired = infer_replace_unique(find_replace.as_object().unwrap()).expect("aliased");
+        assert_eq!(
+            (&repaired["old_text"], &repaired["new_text"]),
+            (&json!("a"), &json!("b"))
+        );
+        // replace_all keeps its own find/replace keys.
+        let replace_all = json!({"op": "replace_all", "path": "a.rs", "find": "a", "replace": "b"});
+        assert!(infer_replace_unique(replace_all.as_object().unwrap()).is_none());
     }
 }

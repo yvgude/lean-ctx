@@ -115,11 +115,6 @@ pub(super) fn merge_profiles(parent: Profile, child: Profile) -> Profile {
     };
     let memory = crate::core::memory_policy::MemoryPolicyOverrides {
         knowledge: crate::core::memory_policy::KnowledgePolicyOverrides {
-            max_facts: child
-                .memory
-                .knowledge
-                .max_facts
-                .or(parent.memory.knowledge.max_facts),
             max_patterns: child
                 .memory
                 .knowledge

@@ -50,15 +50,11 @@ fn get_routes(path: &str, _query_str: &str) -> Option<(&'static str, &'static st
                     let _ = knowledge.save();
                 }
             }
-            // Expose the store cap so the UI can say "newest N kept" instead
-            // of presenting a capped list as the complete history (#492).
+            // Knowledge has no fact limit, so no `max_facts` is reported: the
+            // list is the complete store.
             let mut value =
                 serde_json::to_value(&knowledge).unwrap_or_else(|_| serde_json::json!({}));
             if let Some(obj) = value.as_object_mut() {
-                obj.insert(
-                    "max_facts".to_string(),
-                    serde_json::json!(policy.knowledge.max_facts),
-                );
                 if let Some(facts) = obj.get_mut("facts").and_then(|f| f.as_array_mut()) {
                     for (fact, json) in knowledge.facts.iter().zip(facts.iter_mut()) {
                         describe_scope(fact, json);
@@ -70,10 +66,6 @@ fn get_routes(path: &str, _query_str: &str) -> Option<(&'static str, &'static st
         }
         "/api/knowledge-relations" => {
             let project_root = detect_project_root_for_dashboard();
-            let policy = crate::core::config::Config::load()
-                .memory_policy_effective()
-                .unwrap_or_default();
-
             let knowledge = crate::core::knowledge::ProjectKnowledge::load_or_create(&project_root);
             let graph = crate::core::knowledge_relations::KnowledgeRelationGraph::load_or_create(
                 &knowledge.project_hash,
@@ -190,8 +182,10 @@ fn get_routes(path: &str, _query_str: &str) -> Option<(&'static str, &'static st
                 }
             }
 
-            let max_edges = policy.knowledge.max_facts.saturating_mul(8);
-            if max_edges > 0 && edges.len() > max_edges {
+            let max_edges = crate::core::knowledge_relations::edge_bound(
+                knowledge.facts.iter().filter(|f| f.is_current()).count(),
+            );
+            if edges.len() > max_edges {
                 edges.truncate(max_edges);
             }
 
@@ -352,12 +346,9 @@ fn post_knowledge_relations_edit(body: &str) -> (&'static str, &'static str, Str
     match req.action.as_str() {
         "add" => {
             let _ = graph.upsert_edge(from, to, kind, "dashboard");
-            let max_edges = crate::core::config::Config::load()
-                .memory_policy_effective()
-                .unwrap_or_default()
-                .knowledge
-                .max_facts
-                .saturating_mul(8);
+            let max_edges = crate::core::knowledge_relations::edge_bound(
+                knowledge.facts.iter().filter(|f| f.is_current()).count(),
+            );
             let _ = graph.enforce_cap(max_edges);
             if let Err(e) = graph.save() {
                 return (

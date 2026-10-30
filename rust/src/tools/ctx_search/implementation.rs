@@ -46,6 +46,9 @@ pub struct SearchOutcome {
     /// callers act on — never the wording of `text`: a search whose output
     /// merely begins with "ERROR" is a result, and "0 matches" is one too.
     pub failed: bool,
+    /// Files the secret-path boundary kept out of the scan (the result names
+    /// them). The `ctx_search` handler records the count once per call.
+    pub secret_paths_withheld: usize,
 }
 
 impl SearchOutcome {
@@ -56,6 +59,7 @@ impl SearchOutcome {
             modeled_baseline: 0,
             observed_tokens: 0,
             failed: true,
+            secret_paths_withheld: 0,
         }
     }
 
@@ -66,6 +70,7 @@ impl SearchOutcome {
             modeled_baseline: 0,
             observed_tokens: 0,
             failed: false,
+            secret_paths_withheld: 0,
         }
     }
 
@@ -76,7 +81,13 @@ impl SearchOutcome {
             modeled_baseline: modeled.max(observed_tokens),
             observed_tokens,
             failed: false,
+            secret_paths_withheld: 0,
         }
+    }
+
+    fn withholding(mut self, secret_paths: usize) -> Self {
+        self.secret_paths_withheld = secret_paths;
+        self
     }
 }
 
@@ -654,7 +665,7 @@ fn search_compiled_pattern(
         if budget_hit {
             msg.push_str(&budget_note(files_covered));
         }
-        return SearchOutcome::without_matches(msg);
+        return SearchOutcome::without_matches(msg).withholding(skipped_boundary_files.len());
     }
 
     // Prefix-cache-friendly: structural file list before per-query match content
@@ -697,8 +708,9 @@ fn search_compiled_pattern(
         result.push_str("[anchored: path:line:hh → edit via ctx_patch]\n");
     }
     // Self-describing output (GL #580 / #608): explain the `∈` enclosing tag and
-    // how to turn it into a handle. Emitted only when at least one hit carries it.
-    if any_enclosing {
+    // how to turn it into a handle. At most one note per result: a coverage
+    // note (cap, deadline, budget) below says more than this legend.
+    if any_enclosing && !(cap_hit || deadline_hit || budget_hit) {
         result.push_str(
             "[∈ enclosing symbol → ctx_search(action=symbol, handle=\"path#name@Lstart\")]\n",
         );
@@ -746,19 +758,14 @@ fn search_compiled_pattern(
     // scan had in fact stopped after the first file of 32.
     if cap_hit {
         result.push_str(&format!(
-            "\n(stopped at the max_results={max_results} cap — {files_covered} of {files_in_scope} \
-             files scanned; the counts above are a floor, not a total. Raise max_results, \
-             narrow with include=/path=, or split the pattern.)"
+            "\n(stopped at max_results={max_results}: {files_covered} of {files_in_scope} \
+             files scanned; counts are a floor, not a total)"
         ));
     }
 
-    // Determinism contract (#498): the hint must be a pure function of the
-    // results. A show-once AtomicBool here made the first call differ from
-    // every repeat, breaking byte-stability for provider prompt caches.
-    let scope_hint = monorepo_scope_hint(&matches, dir);
-
     if let Some(delta) = crate::core::search_delta::compute_delta(pattern, &matches) {
-        return SearchOutcome::from_observed(delta, raw_tokens_accum);
+        return SearchOutcome::from_observed(delta, raw_tokens_accum)
+            .withholding(skipped_boundary_files.len());
     }
 
     if symbol_map::substitution_enabled() {
@@ -781,11 +788,7 @@ fn search_compiled_pattern(
         }
     }
 
-    if let Some(hint) = scope_hint {
-        result.push_str(&hint);
-    }
-
-    SearchOutcome::from_observed(result, raw_tokens_accum)
+    SearchOutcome::from_observed(result, raw_tokens_accum).withholding(skipped_boundary_files.len())
 }
 
 /// `a.log, b.log, +3 more` — the size-skipped files by name (#1917), so a
@@ -1105,41 +1108,6 @@ fn extract_file_from_match(line: &str) -> &str {
     match line[start..].find(':') {
         Some(pos) => &line[..start + pos],
         None => line,
-    }
-}
-
-fn monorepo_scope_hint(matches: &[String], search_dir: &str) -> Option<String> {
-    let top_dirs: HashSet<&str> = matches
-        .iter()
-        .filter_map(|m| {
-            let path = extract_file_from_match(m);
-            let relative = path.strip_prefix("./").unwrap_or(path);
-            let relative = relative.strip_prefix(search_dir).unwrap_or(relative);
-            let relative = relative.strip_prefix('/').unwrap_or(relative);
-            relative.split('/').next()
-        })
-        .collect();
-
-    if top_dirs.len() > 3 {
-        let mut dirs: Vec<&&str> = top_dirs.iter().collect();
-        dirs.sort();
-        let dir_list: Vec<String> = dirs.iter().take(6).map(|d| format!("'{d}'")).collect();
-        let extra = if top_dirs.len() > 6 {
-            format!(", +{} more", top_dirs.len() - 6)
-        } else {
-            String::new()
-        };
-        Some(format!(
-            "\n\nResults span {} directories ({}{}). \
-             Use the 'path' parameter to scope to a specific service, \
-             e.g. path=\"{}/\".",
-            top_dirs.len(),
-            dir_list.join(", "),
-            extra,
-            dirs[0]
-        ))
-    } else {
-        None
     }
 }
 

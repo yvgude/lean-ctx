@@ -108,10 +108,10 @@ pub fn handle_relate(
         Err(e) => return e,
     };
 
-    let policy = match load_policy_or_error() {
-        Ok(p) => p,
-        Err(e) => return e,
-    };
+    // An invalid memory policy still refuses the write.
+    if let Err(e) = load_policy_or_error() {
+        return e;
+    }
 
     let knowledge = ProjectKnowledge::load_or_create(project_root);
     if !ensure_current_fact_exists(&knowledge, &from) {
@@ -129,7 +129,9 @@ pub fn handle_relate(
 
     let mut graph = KnowledgeRelationGraph::load_or_create(&knowledge.project_hash);
     let created = graph.upsert_edge(from.clone(), to.clone(), kind, session_id);
-    let max_edges = policy.knowledge.max_facts.saturating_mul(8);
+    let max_edges = crate::core::knowledge_relations::edge_bound(
+        knowledge.facts.iter().filter(|f| f.is_current()).count(),
+    );
     let capped = graph.enforce_cap(max_edges);
 
     match graph.save() {

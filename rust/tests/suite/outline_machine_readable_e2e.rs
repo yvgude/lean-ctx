@@ -323,15 +323,16 @@ fn json_first_call_is_pure_and_preserves_wakeup_briefing() {
     // (without consuming the once-per-session briefing flag).
     session.warm_overview();
 
-    // Call A is json (machine-readable) and is the first *flag-eligible* tool
-    // call; B and C are plain-text outlines.
+    // Call A is json (machine-readable); B is `ctx_session status`, the only
+    // call that delivers the briefing; C is a plain-text outline; D repeats B.
     let call_a = session.call(
         2,
         "ctx_outline",
         &json!({ "path": "sample.rs", "format": "json" }),
     );
-    let call_b = session.call(3, "ctx_outline", &json!({ "path": "sample.rs" }));
+    let call_b = session.call(3, "ctx_session", &json!({ "action": "status" }));
     let call_c = session.call(4, "ctx_outline", &json!({ "path": "sample.rs" }));
+    let call_d = session.call(5, "ctx_session", &json!({ "action": "status" }));
     session.shutdown();
 
     // (1) Machine-readable purity: A is byte-exact JSON, no prose decoration.
@@ -354,14 +355,12 @@ fn json_first_call_is_pure_and_preserves_wakeup_briefing() {
         "outline must list symbols:\n{call_a}"
     );
 
-    // (2) Flag survival: because the json call skipped the once-per-session
-    // pre-hook, the wake-up briefing must still fire on the next text call.
-    // (Without the #990 fix the json call would burn the flag here and B would
-    // be briefing-less — that is exactly what this asserts against.)
+    // (2) Flag survival: the json call does not burn the once-per-session
+    // briefing (#990); `ctx_session status` delivers it.
     assert!(
         call_b.contains("AUTO CONTEXT"),
-        "wake-up briefing must survive a json-first call and fire on the next \
-         human-facing call (#990); got:\n{call_b}"
+        "wake-up briefing must survive a json-first call and arrive with \
+         ctx_session status (#990); got:\n{call_b}"
     );
     // The briefing carries the stored fact: it used to ride on a full project
     // overview that exceeded the 400-token injection cap on real projects.
@@ -369,16 +368,18 @@ fn json_first_call_is_pure_and_preserves_wakeup_briefing() {
         call_b.contains("engine power to 100"),
         "the wake-up briefing must carry the stored project fact; got:\n{call_b}"
     );
-    // Auto-load packages were applied by the retired session-start overview;
-    // the first human-facing call applies them now.
     assert!(
         call_b.contains("CONTEXT PACKAGES AUTO-LOADED: e2e-pack v1.0.0"),
-        "an auto-load context package must be applied on the first call; got:\n{call_b}"
+        "an auto-load context package must be applied and named; got:\n{call_b}"
     );
 
-    // (3) Once-per-session semantics intact: the briefing fires exactly once.
+    // (3) Other tools never carry the briefing, and it arrives only once.
     assert!(
-        !call_c.contains("AUTO CONTEXT"),
-        "briefing must fire only once per session; the third call must be clean:\n{call_c}"
+        !call_c.contains("AUTO CONTEXT") && !call_c.contains("WAKE-UP"),
+        "an outline must not carry the session briefing:\n{call_c}"
+    );
+    assert!(
+        !call_d.contains("AUTO CONTEXT"),
+        "briefing must fire only once per session:\n{call_d}"
     );
 }

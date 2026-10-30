@@ -61,7 +61,7 @@ before interpreting them as a current product or licensing statement.
 ### Evidence & Billing
 
 - [billing-plane-v1-catalog.json](billing-plane-v1-catalog.json) — Billing-plane v1 catalog.
-- [billing-plane-v2-catalog.json](billing-plane-v2-catalog.json) — Canonical v4 Community/Pro/Team/Enterprise catalog; v1 remains frozen for compatibility.
+- [billing-plane-v2-catalog.json](billing-plane-v2-catalog.json) — v4 plan catalog with the legacy wire names Community/Pro/Team/Enterprise (today: LeanCTX OSS and LeanCTX Hive Personal · Team · Enterprise); v1 remains frozen for compatibility.
 - [billing-plane-v1.md](billing-plane-v1.md) — Billing-plane v1.
 - [billing-plane-v2.md](billing-plane-v2.md) — Billing-plane v2.
 - [billing-plane-v3.md](billing-plane-v3.md) — Billing-plane v3.

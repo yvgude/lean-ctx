@@ -53,7 +53,8 @@ pub struct MemoryPolicyOverrides {
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
 #[serde(default)]
 pub struct KnowledgePolicyOverrides {
-    pub max_facts: Option<usize>,
+    // A profile's `max_facts` (removed fact cap) is an unknown key here and
+    // skipped by serde; see `KnowledgePolicy::max_facts`.
     pub max_patterns: Option<usize>,
     pub max_history: Option<usize>,
     pub contradiction_threshold: Option<f32>,
@@ -78,7 +79,13 @@ pub struct LifecyclePolicyOverrides {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct KnowledgePolicy {
-    pub max_facts: usize,
+    /// Deprecated and ignored (3.12.1): knowledge has no fact limit (owner
+    /// decision 2026-10-24). Kept only so an existing `max_facts` in a
+    /// config.toml still loads and round-trips; nothing reads it. Facts leave
+    /// the active store by quality alone (decay, near-duplicate merge,
+    /// low-confidence/stale archival), never by count.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_facts: Option<usize>,
     pub max_patterns: usize,
     pub max_history: usize,
     pub contradiction_threshold: f32,
@@ -95,7 +102,7 @@ pub struct KnowledgePolicy {
 impl Default for KnowledgePolicy {
     fn default() -> Self {
         Self {
-            max_facts: 200,
+            max_facts: None,
             max_patterns: 50,
             max_history: 100,
             contradiction_threshold: 0.5,
@@ -109,11 +116,7 @@ impl Default for KnowledgePolicy {
 
 impl KnowledgePolicy {
     fn apply_env_overrides(&mut self) {
-        if let Ok(v) = std::env::var("LEAN_CTX_KNOWLEDGE_MAX_FACTS")
-            && let Ok(n) = v.parse()
-        {
-            self.max_facts = n;
-        }
+        // `LEAN_CTX_KNOWLEDGE_MAX_FACTS` is ignored: knowledge has no fact limit.
         if let Ok(v) = std::env::var("LEAN_CTX_KNOWLEDGE_MAX_PATTERNS")
             && let Ok(n) = v.parse()
         {
@@ -152,9 +155,7 @@ impl KnowledgePolicy {
     }
 
     fn validate(&self) -> Result<(), String> {
-        if self.max_facts == 0 {
-            return Err("memory.knowledge.max_facts must be > 0".to_string());
-        }
+        // `max_facts` is ignored, so any value (0 included) is accepted.
         if self.max_patterns == 0 {
             return Err("memory.knowledge.max_patterns must be > 0".to_string());
         }
@@ -182,9 +183,6 @@ impl KnowledgePolicy {
     }
 
     fn apply_overrides(&mut self, o: &KnowledgePolicyOverrides) {
-        if let Some(v) = o.max_facts {
-            self.max_facts = v;
-        }
         if let Some(v) = o.max_patterns {
             self.max_patterns = v;
         }
@@ -766,7 +764,8 @@ mod tests {
         let mut p = MemoryPolicy::default();
         p.apply_env_overrides();
 
-        assert_eq!(p.knowledge.max_facts, 123);
+        // The fact cap is gone: its env var no longer sets anything.
+        assert_eq!(p.knowledge.max_facts, None);
         assert_eq!(p.lifecycle.stale_days, 7);
         assert_eq!(p.procedural.min_repetitions, 4);
 
@@ -778,8 +777,13 @@ mod tests {
     #[test]
     fn validate_rejects_invalid_values() {
         let mut p = MemoryPolicy::default();
-        p.knowledge.max_facts = 0;
+        p.knowledge.max_patterns = 0;
         assert!(p.validate().is_err());
+
+        // The ignored fact cap never fails validation, even at 0.
+        let mut p = MemoryPolicy::default();
+        p.knowledge.max_facts = Some(0);
+        assert!(p.validate().is_ok());
 
         let mut p = MemoryPolicy::default();
         p.lifecycle.decay_rate = 2.0;

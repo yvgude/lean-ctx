@@ -33,7 +33,7 @@ Commit `.lean-ctx/policy.toml`. From now on, governance changes are diffs.
 
 Domain packs (health, finance, legal, company-specific) and the
 compliance-framework packs (EU AI Act, ISO 42001, SOC 2) are part of
-LeanCTX Pro / Enterprise and no longer ship with the Community engine. A pack
+LeanCTX Hive / Enterprise and no longer ship with the Community engine. A pack
 that `extends` a former built-in (`healthcare`, `finance-eu`, `soc2-context`,
 `iso42001-aligned`, `eu-ai-act-deployer`) now fails to load with a pointer to
 its tier: switch `extends` to `strict-redaction` and add your own patterns
@@ -100,12 +100,12 @@ lean-ctx policy show project        # the resolved, effective policy
 - `extends` to unknown packs, cycles, chains deeper than 8
 - allow/deny overlaps
 
-## Personal Pro rules (staging)
+## Personal LeanCTX Hive rules (staging)
 
-The installed Pro runtime prepares personal mask/block rules; their resulting
+The installed LeanCTX Hive runtime prepares personal mask/block rules; their resulting
 policy stays in the existing `.lean-ctx/policy.toml`. Existing OSS regex rules
 remain available. Published protection keeps working after a license expires;
-preparing or publishing a new Pro rule set requires `personal_protection`.
+preparing or publishing a new LeanCTX Hive rule set requires `personal_protection`.
 
 ```json
 {"schema_version":1,"rules":[
@@ -301,8 +301,12 @@ file content). `policy coverage --framework <id>` and
 `audit evidence --framework <id>` use the same assessment. Without Enterprise these
 commands name the tier and change nothing.
 
-`lean-ctx compliance verify <report.json>` checks the Ed25519 signature offline and
-needs no license. The Community engine also keeps the raw evidence:
+`lean-ctx compliance verify <report.json> [--pubkey <hex>]` checks the Ed25519
+signature offline and needs no license. It checks the signer against `--pubkey` (the
+producer's key, received out of band) or this installation's own key; a report signed by
+any other key is reported as SELF-SIGNED / UNPINNED (exit code 3), because a key embedded
+in the report proves integrity, not who produced it. The Community engine also keeps the
+raw evidence:
 `lean-ctx audit evidence` writes the offline-verifiable bundle
 (`docs/contracts/evidence-bundle-v1.md`) and `lean-ctx policy coverage` runs the CGB
 assessment.

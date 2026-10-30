@@ -490,41 +490,6 @@ pub(super) fn supports_protection(package: &VerifiedPackage) -> bool {
             })
 }
 
-pub(super) fn supports_memory(package: &VerifiedPackage) -> bool {
-    validate_capabilities(package).is_ok()
-        && package.description["capabilities"]
-            .as_array()
-            .is_some_and(|capabilities| {
-                capabilities.iter().any(|capability| capability
-                == &serde_json::json!({"id": "pro.runtime.memory_curation", "version": "1.0.0"}))
-            })
-}
-
-/// The context-policy capability version the package advertises: `1.0.0`
-/// learns only, `1.1.0` also promotes and monitors.
-pub(super) fn context_policy_version(package: &VerifiedPackage) -> Option<&'static str> {
-    if validate_capabilities(package).is_err() {
-        return None;
-    }
-    let capabilities = package.description["capabilities"].as_array()?;
-    ["1.1.0", "1.0.0"].into_iter().find(|version| {
-        capabilities.iter().any(|capability| {
-            capability
-                == &serde_json::json!({"id": "pro.runtime.context_policy", "version": version})
-        })
-    })
-}
-
-pub(super) fn supports_context(package: &VerifiedPackage) -> bool {
-    validate_capabilities(package).is_ok()
-        && package.description["capabilities"]
-            .as_array()
-            .is_some_and(|capabilities| {
-                capabilities.iter().any(|capability| capability
-                == &serde_json::json!({"id": "pro.runtime.adaptive_context", "version": "1.0.0"}))
-            })
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;

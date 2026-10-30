@@ -94,9 +94,11 @@ lean-ctx security secrets on    # re-enable masking
 ## 1. PathJail — your projects, not your secrets
 
 **What it does:** confines lean-ctx's file tools to your own files. The default
-scope is **`home`**: everything below your home directory is **readable and
-writable** (writes since v3.11.3), so working across several repositories and
-folders needs no configuration. What stays jailed entirely:
+scope is **`projects`**: every project below your home directory is
+**readable**, so working across several repositories needs no configuration,
+while **writes** stay in the session's project, host-declared roots and allowed
+paths. With `path_jail_scope = home` everything below `~` is readable and
+writable (the default of v3.11.3–v3.12.0). What stays jailed entirely:
 
 | Zone | Examples | Why |
 |------|----------|-----|
@@ -110,13 +112,15 @@ Protected zones are a hard deny: a project root or allow entry that merely
 it — only a root or allow entry *inside* the zone does (`~/.codex/worktrees/x`,
 `lean-ctx allow-path ~/.config/myapp`). Path traversal (`../../`) and symlinks
 are resolved before every check. If `$HOME` is implausible (`/`, a single
-component like `/root` or `/tmp`, or not owned by you), the `home` scope stays
-off and the project boundary applies.
+component like `/root` or `/tmp`, or not owned by you), the `projects` and
+`home` scopes stay off and the project boundary applies.
 
-- **Previous default (read other projects, write only the active one, loose
-  personal files jailed):** `lean-ctx config set path_jail_scope projects` —
-  stops a prompt-injected agent in repo A from planting
-  `~/code/B/.git/hooks/pre-commit` or reading `~/Documents/taxes.pdf`.
+- **Default (read other projects, write only the active one, loose personal
+  files jailed):** `path_jail_scope = projects` stops a prompt-injected agent in
+  repo A from planting `~/code/B/.git/hooks/pre-commit` or reading
+  `~/Documents/taxes.pdf`.
+- **All of `~`, read and write:** `lean-ctx config set path_jail_scope home` —
+  the default of v3.11.3–v3.12.0; `lean-ctx doctor` lists it as a relaxation.
 - **Classic single-project boundary:** `lean-ctx config set path_jail_scope project`
   confines tools to the active project plus your allow-lists.
 - **Open one more directory:** `lean-ctx allow-path <dir>` — read *and* write
@@ -269,18 +273,16 @@ and hook-rewritten Bash): `yolo`, `allow <cmd>`, `allow-path <dir>`, `trust`,
 allowlist key. Otherwise an agent could undo the refusal it just received.
 Listing (`--list`, `status`, `config show`), narrowing (`--remove`) and tightening
 (`secure`, `untrust`, `security secrets on`) still work. Run the blocked commands
-in your own terminal. `ctx_execute` runs scripts outside the allowlist by design
-and is not covered; deny it by role where that matters.
+in your own terminal.
 
-**No self-loosening (since v3.11.1).** `lean-ctx` itself is allowlisted, but the
-subcommands that widen its guardrails are refused from agent shells (ctx_shell
-and hook-rewritten Bash): `yolo`, `allow <cmd>`, `allow-path <dir>`, `trust`,
-`security open`, `security secrets off`, and `config set` of a security, path or
-allowlist key. Otherwise an agent could undo the refusal it just received.
-Listing (`--list`, `status`, `config show`), narrowing (`--remove`) and tightening
-(`secure`, `untrust`, `security secrets on`) still work. Run the blocked commands
-in your own terminal. `ctx_execute` runs scripts outside the allowlist by design
-and is not covered; deny it by role where that matters.
+**`ctx_execute` follows the same gate.** Shell code in `ctx_execute`
+(`language` `shell`, `bash` or `sh`) is checked by the same allowlist as
+`ctx_shell`, self-loosening refusal included, before anything runs. Code in
+another language cannot be read by the allowlist, so under
+`shell_security = "enforce"` it runs only after you approve it in your AI
+tool's approval dialog, or when its language is in `execute_allowed_languages`
+(global config). An approved script has the reach of its interpreter; deny the
+tool by role where that matters.
 
 **Pipelines & chains (`|`, `&&`, `||`, `;`):** a compound command is wrapped as a
 *single* `lean-ctx -c "<whole>"` only when **every** stage is gate-clean — then
@@ -633,6 +635,29 @@ identifier/property references (`serverEnv.getStripeSecretKey`), camelCase
 subwords (`superuserPassword:` as a key), and obvious placeholders
 (`ghp_change_me`, `your_key_here`). Quoted string literals and digit-bearing
 values remain protected.
+
+### 4.0 Secret-like paths on native Read and Grep
+
+`ctx_read` and `ctx_search` refuse secret-like paths (`.env`, `.env.*` except
+`.example`/`.sample`/`.template`/`.dist`/`.defaults`, `.ssh/`, `.aws/`,
+`.gnupg/`, `*.pem`, `*.key`, credential files) unless the active role sets
+`io.allow_secret_paths = true`. The PreToolUse `hook redirect` applies the same
+rule to the host's **native** read and search tools on Claude Code, CodeBuddy,
+Cursor, Copilot CLI and Gemini CLI, including in Hybrid mode and on the shadow
+surface: a call whose file, search root or file glob — or the target of a
+symlink it names — is secret-like is denied with the reason, and a policy
+violation is recorded. `boundary_mode = "warn"` logs instead of denying. The
+role is resolved in the hook's own environment: a `LEAN_CTX_ROLE` set only in
+the MCP server's `env` block does not reach it.
+
+This covers ordinary project files with secret-like names too, for example a
+`*.pem` test certificate or a `.npmrc`; allow them through the role.
+
+Limits: a search over a whole directory can still match a secret file that the
+host does not ignore; shell commands (`cat .env`) are not covered; Windsurf and
+Antigravity native reads do not pass this hook. On the hook's 15-second
+timeout the call is allowed (fail-open). `LEAN_CTX_DISABLED=1` turns all hooks
+off.
 
 ### 4.1 Sensitivity policy floor — per-item levels
 

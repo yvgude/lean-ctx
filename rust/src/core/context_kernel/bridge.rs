@@ -136,9 +136,6 @@ pub(crate) fn reference_input(
             max_items: 0,
             ..PreloadBudget::default()
         },
-        // A promoted policy belongs to one tenant/project scope; only callers
-        // that know the task's scope (its envelope) may attach it.
-        context_policy: None,
     })
 }
 

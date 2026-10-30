@@ -7,14 +7,16 @@
 # Measured on this crate (~700 dependencies): clean build 3m18s -> ~2m15s,
 # incremental single-crate rebuild 46s -> 21s.
 #
-# This only writes rust/.cargo/config.toml, which is gitignored on purpose
-# (it assumes clang/lld/sccache are installed — a bare `cargo build` must
-# keep working for anyone without them). Run this script once per machine.
+# This only writes the repository-root .cargo/config.toml, which is gitignored
+# on purpose (it assumes clang/lld/sccache are installed — a bare `cargo build`
+# must keep working for anyone without them). rust/.cargo/config.toml is the
+# tracked team config (the `cargo fast` alias); Cargo merges both when it runs
+# from rust/. Run this script once per machine.
 set -euo pipefail
 
 cd "$(dirname "${BASH_SOURCE[0]}")/.."
 
-CONFIG_DIR=".cargo"
+CONFIG_DIR="../.cargo"
 CONFIG_FILE="$CONFIG_DIR/config.toml"
 
 if [[ -f "$CONFIG_FILE" ]]; then

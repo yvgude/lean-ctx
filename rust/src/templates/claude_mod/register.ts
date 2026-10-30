@@ -55,12 +55,60 @@ type LeanCtxHookTextSignature = { start: string; ends: readonly LeanCtxHookTextE
 // the cross-language drift test there whenever an authored hook text changes.
 const LEAN_CTX_HOOK_TEXT_SIGNATURES: readonly LeanCtxHookTextSignature[] = [
   {
+    start: "lean-ctx tools for this session: ctx_read for Read, ctx_search for Grep, ctx_shell for Shell, ctx_glob for Glob, ctx_tree for ls.",
+    ends: [
+      { end: "Native Read stays available for editing." },
+    ],
+  },
+  {
+    start: "lean-ctx routing: reads/searches via ctx_read/ctx_search/ctx_glob/ctx_tree, commands via ctx_shell;",
+    ends: [
+      { end: "Bash/cat/sed/grep." },
+    ],
+  },
+  {
     start: "lean-ctx active: ALWAYS use ctx_* MCP tools instead of native equivalents.",
     ends: [
       { end: "Exclusive tools: ctx_compose, ctx_callgraph, ctx_knowledge, ctx_session." },
     ],
   },
   {
+    // Rules v13 (A3) and later.
+    start: "lean-ctx routing — the host's built-in tools map to:",
+    ends: [
+      {
+        end: "Use native Read for out-of-root; `lean-ctx doctor` shows effective roots.",
+        continues: [
+          "Other tools: ctx_call(tool=<name>).",
+          "Advanced tools not in your profile are available via ctx_call(tool=<name>) gateway.",
+          "Prefer stdlib and native platform alternatives before adding code or dependencies.",
+          "Solution efficiency ladder:",
+          "challenge every requirement, prefer deletion.",
+        ],
+      },
+      {
+        end: "Other tools: ctx_call(tool=<name>).",
+        continues: [
+          "Prefer stdlib and native platform alternatives before adding code or dependencies.",
+          "Solution efficiency ladder:",
+          "challenge every requirement, prefer deletion.",
+        ],
+      },
+      {
+        // Emitted by lean-ctx 3.11.4 and earlier.
+        end: "Advanced tools not in your profile are available via ctx_call(tool=<name>) gateway.",
+        continues: [
+          "Prefer stdlib and native platform alternatives before adding code or dependencies.",
+          "Solution efficiency ladder:",
+          "challenge every requirement, prefer deletion.",
+        ],
+      },
+      { end: "Prefer stdlib and native platform alternatives before adding code or dependencies." },
+      { end: "Preserve validation, security, and error-handling." },
+    ],
+  },
+  {
+    // Rules v12 and earlier.
     start: "CRITICAL: ALWAYS use lean-ctx ctx_* tools as mapped below.",
     ends: [
       {

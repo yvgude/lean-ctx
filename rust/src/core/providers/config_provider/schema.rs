@@ -58,7 +58,7 @@ pub enum AuthConfig {
 /// Configuration for a single API resource/endpoint.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct ResourceConfig {
-    /// HTTP method. Defaults to `"GET"`.
+    /// HTTP method: one of [`READ_METHODS`]. Defaults to `"GET"`.
     #[serde(default = "default_method")]
     pub method: String,
     /// URL path appended to `base_url` (supports `{param}` interpolation).
@@ -76,6 +76,13 @@ pub struct ResourceConfig {
 fn default_method() -> String {
     "GET".into()
 }
+
+/// The methods a custom REST resource may use. Connectors read and never
+/// write to the source, so the write verbs (PUT, PATCH, DELETE) are refused
+/// when the config is validated. POST stays for read APIs that take their
+/// query as a POST, such as Notion's `POST /v1/search`; it is sent with an
+/// empty body, has no reuse binding and is withheld from governed reuse.
+pub const READ_METHODS: [&str; 2] = ["GET", "POST"];
 
 /// Describes how to map a JSON response to `ProviderItem`s.
 #[derive(Debug, Clone, Deserialize, Serialize)]
@@ -135,7 +142,14 @@ impl ProviderConfig {
                 ));
             }
             let method = res.method.to_uppercase();
-            if !["GET", "POST", "PUT", "PATCH", "DELETE"].contains(&method.as_str()) {
+            if matches!(method.as_str(), "PUT" | "PATCH" | "DELETE") {
+                return Err(format!(
+                    "Provider '{}' resource '{}': method '{}' writes to the source; \
+                     connectors are read-only, use GET (or POST for a search/query endpoint)",
+                    self.id, name, res.method
+                ));
+            }
+            if !READ_METHODS.contains(&method.as_str()) {
                 return Err(format!(
                     "Provider '{}' resource '{}': unsupported method '{}'",
                     self.id, name, res.method
@@ -327,5 +341,45 @@ title = "name"
 "#;
         let cfg: ProviderConfig = toml::from_str(toml_str).unwrap();
         assert_eq!(cfg.resources["items"].method, "GET");
+    }
+
+    fn with_method(method: &str) -> ProviderConfig {
+        let toml_str = format!(
+            r#"
+id = "test"
+name = "Test"
+base_url = "https://example.com"
+
+[resources.items]
+method = "{method}"
+path = "/items"
+[resources.items.response.mapping]
+id = "id"
+title = "name"
+"#
+        );
+        toml::from_str(&toml_str).unwrap()
+    }
+
+    /// Connectors never write to the source: a write verb is refused at
+    /// validation, with a message that says why. Old code accepted all three.
+    #[test]
+    fn write_methods_are_rejected() {
+        for method in ["PUT", "patch", "Delete"] {
+            let err = with_method(method).validate().unwrap_err();
+            assert!(err.contains("writes to the source"), "{method}: {err}");
+            assert!(err.contains("read-only"), "{method}: {err}");
+        }
+    }
+
+    #[test]
+    fn read_methods_are_accepted_and_unknown_ones_rejected() {
+        for method in ["GET", "get", "POST"] {
+            assert!(with_method(method).validate().is_ok(), "{method}");
+        }
+        for method in ["HEAD", "OPTIONS", "TRACE", ""] {
+            let err = with_method(method).validate().unwrap_err();
+            assert!(err.contains("unsupported method"), "{method}: {err}");
+        }
     }
 }

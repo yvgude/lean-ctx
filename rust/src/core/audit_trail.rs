@@ -900,7 +900,16 @@ impl ChainState {
 
     /// Verify one parsed entry and advance. `Err` leaves `total`/`unknown`
     /// at the values a report of the failure must carry.
-    fn advance(&mut self, value: serde_json::Value) -> Result<(), ()> {
+    ///
+    /// Every signature present is verified against the local `lean-ctx`
+    /// key, not only the ones drift and seal entries must carry: a forged
+    /// or foreign signature on an ordinary entry is tampering too. The key
+    /// is loaded once per pass into `key`.
+    fn advance(
+        &mut self,
+        value: serde_json::Value,
+        key: &mut Option<Result<ed25519_dalek::VerifyingKey, ()>>,
+    ) -> Result<(), ()> {
         let (Some(entry_prev), Some(entry_hash)) = (
             value.get("prev_hash").and_then(serde_json::Value::as_str),
             value.get("entry_hash").and_then(serde_json::Value::as_str),
@@ -926,16 +935,24 @@ impl ChainState {
         } else {
             None
         };
-        if seal
+        let signature_required = seal
             || matches!(
                 &entry.event_type,
                 AuditEventType::AgentDriftDetected | AuditEventType::AgentDriftAcknowledged
-            )
-        {
-            let signature = entry.signature.as_deref().ok_or(())?;
+            );
+        if signature_required && entry.signature.is_none() {
+            return Err(());
+        }
+        if let Some(signature) = entry.signature.as_deref() {
             let signature = crate::core::agent_identity::hex_decode(signature).map_err(|_| ())?;
-            let public_key =
-                crate::core::agent_identity::load_public_key("lean-ctx").map_err(|_| ())?;
+            let Ok(public_key) = key
+                .get_or_insert_with(|| {
+                    crate::core::agent_identity::load_public_key("lean-ctx").map_err(|_| ())
+                })
+                .as_ref()
+            else {
+                return Err(());
+            };
             if !crate::core::agent_identity::verify_signature(
                 public_key.as_bytes(),
                 entry.entry_hash.as_bytes(),
@@ -988,6 +1005,7 @@ impl ChainState {
         let mut consumed = 0u64;
         let mut ends_on_newline = true;
         let mut buf = Vec::new();
+        let mut key = None;
         loop {
             buf.clear();
             let read = reader.read_until(b'\n', &mut buf).map_err(|_| ())?;
@@ -1007,7 +1025,7 @@ impl ChainState {
             for parsed in serde_json::Deserializer::from_str(line).into_iter::<serde_json::Value>()
             {
                 saw_value = true;
-                self.advance(parsed.map_err(|_| ())?)?;
+                self.advance(parsed.map_err(|_| ())?, &mut key)?;
             }
             if !saw_value {
                 return Err(());

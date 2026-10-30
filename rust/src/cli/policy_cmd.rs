@@ -48,7 +48,7 @@ USAGE:\n\
                                        policy (deny/egress/redact/filter) and\n\
                                        record audit evidence — no server needed\n\
   lean-ctx policy personal <status|preview|apply>\n\
-                                       Prepare and publish personal Pro rules;\n\
+                                       Prepare and publish personal Hive rules;\n\
                                        see 'policy personal --help'\n\
   lean-ctx policy org <key|sign|verify|trust|install|status>\n\
                                        Central, signed org policy distribution\n\

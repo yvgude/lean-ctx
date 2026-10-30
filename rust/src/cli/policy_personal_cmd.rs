@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: Apache-2.0
-//! Personal Pro rule preparation; published safety rules remain ordinary policy data.
+//! Personal LeanCTX Hive rule preparation; published safety rules remain ordinary policy data.
 #[cfg(windows)]
 use crate::core::windows_private::{Directory, Privacy};
 use crate::core::{intelligence_runtime::personal_protection, policy};
@@ -68,8 +68,9 @@ fn execute(args: &[String]) -> Result<serde_json::Value, &'static str> {
     let raw = policy::files::read_protected(Path::new(&args[1]), true)
         .map_err(|_| ERROR)?
         .ok_or(ERROR)?;
-    let compiled = personal_protection::compile(&raw)
-        .map_err(|_| "Pro rule preparation unavailable; existing protection is unchanged")?;
+    let compiled = personal_protection::compile(&raw).map_err(
+        |_| "LeanCTX Hive rule preparation unavailable; existing protection is unchanged",
+    )?;
     if command == "preview" {
         return policy::runtime::with_project_source_view(root.to_str().ok_or(ERROR)?, || {
             let current = read_current(&path)?;

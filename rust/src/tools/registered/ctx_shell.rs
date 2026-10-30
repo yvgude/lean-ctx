@@ -156,10 +156,29 @@ impl McpTool for CtxShellTool {
             });
         }
 
-        if let Err(msg) = crate::core::shell_allowlist::check_shell_allowlist_granted(
-            &command,
-            &crate::server::shell_approval::current_grant(),
-        ) {
+        let grant = crate::server::shell_approval::current_grant();
+        if let Err(msg) =
+            crate::core::shell_allowlist::check_shell_allowlist_granted(&command, &grant)
+        {
+            // Independent `;`/newline statements: run the allowed ones and
+            // name each skipped one, instead of refusing the whole line.
+            if let Some(plan) = crate::core::shell_allowlist::partial_run(&command, &grant) {
+                let mut sub = args.clone();
+                sub.insert("command".into(), Value::String(plan.run));
+                let mut output = self.handle(&sub, ctx)?;
+                for note in &plan.skipped {
+                    output.text.push('\n');
+                    output.text.push_str(note);
+                }
+                // Part of the line did not run: never report the call as a
+                // success. 126 is the shell's "found but cannot execute"; a
+                // failure of the part that ran keeps its own code. The
+                // ShellBlocked event was counted by the refusal above.
+                if matches!(output.shell_outcome, None | Some(ShellOutcome::Exit(0))) {
+                    output.shell_outcome = Some(ShellOutcome::Exit(126));
+                }
+                return Ok(output);
+            }
             return Ok(ToolOutput {
                 shell_outcome: Some(ShellOutcome::Blocked),
                 content_blocks: None,

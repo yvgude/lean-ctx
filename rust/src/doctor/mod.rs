@@ -491,6 +491,9 @@ fn run_inner(json: bool) -> u32 {
     let skill = skill_files_outcome();
     setup_item(&mut board, &skill);
 
+    // 9a0) One lean-ctx rules channel per host (A3): advisory, names the fix.
+    board.check(&overhead::rules_channels_outcome());
+
     // 9a) Optional Claude Code mod (informational; never fails doctor).
     if let Some(claude_mod) = checks::claude_mod_outcome() {
         board.check(&claude_mod);

@@ -151,7 +151,7 @@ impl ConfigSchema {
                 ("channel_signature_url", key("string", serde_json::json!(""), "Detached staging catalog signature URL")),
                 ("channel_root_key_hex", key("string", serde_json::json!(""), "Independently provisioned catalog root; never learned from a download")),
                 ("license_configuration", key("string", serde_json::json!(""), "Explicit user-global path to private license configuration; saved after installed device provisioning")),
-                ("context_policy_apply", key("bool", serde_json::json!(false), "Apply the promoted read-strategy policy in planning instead of recording it in shadow; security and explicit choices still win")),
+                ("context_policy_apply", key("bool", serde_json::json!(false), "No effect (kept so existing configs load): read-strategy policies are no longer learned by a runtime; planning always uses the local modes")),
                 ("team_artifact_projects", key("array", serde_json::json!([]), "Projects that read shared team artifacts: tables of root (absolute), organization_id, project_id and repository_id. Empty: no project uses an artifact")),
             ].into_iter().map(|(name, value)| (name.into(), value)).collect(),
         });

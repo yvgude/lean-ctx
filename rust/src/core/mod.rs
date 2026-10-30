@@ -488,7 +488,6 @@ pub(crate) mod updater;
 pub mod value;
 pub mod value_gate;
 pub(crate) mod version_check;
-pub(crate) mod visualizer;
 pub(crate) mod walk_filter;
 /// WASM extension runtime (`wasm-abi-v1`): sandboxed, language-independent
 /// compressors and providers. Feature-gated behind `wasm`.

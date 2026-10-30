@@ -256,6 +256,24 @@ pub fn active_relaxations() -> Vec<JailRelaxation> {
         });
     }
 
+    // `home` admits writes wherever it admits reads (every project below ~);
+    // the default `projects` keeps writes in the session's project.
+    if super::pathjail_scope::PathJailScope::resolve() == super::pathjail_scope::PathJailScope::Home
+    {
+        out.push(JailRelaxation {
+            source: if std::env::var("LEAN_CTX_PATH_JAIL_SCOPE")
+                .ok()
+                .and_then(|v| super::pathjail_scope::PathJailScope::parse(&v))
+                .is_some()
+            {
+                "LEAN_CTX_PATH_JAIL_SCOPE=home"
+            } else {
+                "path_jail_scope = home (config.toml)"
+            },
+            detail: "reads and writes anywhere below ~ outside protected zones, not only in the active project",
+        });
+    }
+
     out
 }
 
@@ -415,26 +433,57 @@ fn is_under_prefix(path: &Path, prefix: &Path) -> bool {
 /// True for Claude Code / CodeBuddy auto-memory files under
 /// `~/.claude/projects/<slug>/memory/` (and the CodeBuddy twin).
 ///
+/// Anchored to the harness home — the current user's `~/.claude` /
+/// `~/.codebuddy`, or `$CLAUDE_CONFIG_DIR` — so a look-alike
+/// `…/.claude/projects/<slug>/memory` elsewhere on disk (a cloned repo, `/tmp`)
+/// is not admitted. `..` components never match.
+///
 /// Auto memory uses the host's native Read/Edit/Write on these paths
 /// (code.claude.com/docs/en/memory). Replace-mode PathJail must not force
 /// agents to shell out or hit MCP `resources/read` with file URIs (GH #1228).
 /// Scoped to the `memory/` subdirectory only — session transcripts and
 /// credentials under `projects/<slug>/` stay jailed.
 pub fn is_harness_auto_memory_path(path: &Path) -> bool {
-    let lower = path.to_string_lossy().replace('\\', "/").to_lowercase();
-    for marker in ["/.claude/projects/", "/.codebuddy/projects/"] {
-        if let Some(idx) = lower.find(marker) {
-            let after = &lower[idx + marker.len()..];
-            let mut parts = after.split('/');
-            let Some(_slug) = parts.next() else {
-                continue;
-            };
-            if parts.next() == Some("memory") {
-                return true;
-            }
+    use std::path::Component;
+    harness_project_dirs().iter().any(|projects| {
+        let Ok(rest) = path.strip_prefix(projects) else {
+            return false;
+        };
+        if rest
+            .components()
+            .any(|c| !matches!(c, Component::Normal(_)))
+        {
+            return false;
         }
+        let mut parts = rest.components();
+        parts.next().is_some()
+            && parts
+                .next()
+                .is_some_and(|c| c.as_os_str().eq_ignore_ascii_case("memory"))
+    })
+}
+
+/// The harness `projects/` directories auto memory lives in, as configured and
+/// canonical (hook payloads carry the spelled path, the jail the canonical one).
+fn harness_project_dirs() -> Vec<PathBuf> {
+    let mut configs = Vec::new();
+    if let Some(home) = dirs::home_dir() {
+        configs.push(home.join(".claude"));
+        configs.push(home.join(".codebuddy"));
     }
-    false
+    if let Some(dir) = std::env::var_os("CLAUDE_CONFIG_DIR").filter(|v| !v.is_empty()) {
+        configs.push(PathBuf::from(dir));
+    }
+    let mut out = Vec::new();
+    for config in configs.into_iter().filter(|c| c.is_absolute()) {
+        let projects = config.join("projects");
+        let canonical = canonicalize_secure(&projects);
+        if canonical != projects {
+            out.push(canonical);
+        }
+        out.push(projects);
+    }
+    out
 }
 
 fn path_allowed_by_jail(base: &Path, root: &Path, allow: &[PathBuf]) -> bool {

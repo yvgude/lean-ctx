@@ -109,28 +109,23 @@ budget, policy or lineage.
 
 ## Product boundaries
 
-### Community
+### LeanCTX OSS
 
-Community retains manual handoff/export and public task/context/evidence
-contracts. It may construct explicit local briefing data, but does not receive
-the complete automatic multi-agent execution and synthesis product.
+LeanCTX OSS includes manual handoff/export, the public task/context/evidence
+contracts and, free on one machine, deterministic local briefing packs, bounded
+Work Graph children (the host launches them), structured return synthesis, child
+receipts, outcome evaluation and accepted-path/waste attribution.
 
-### Pro
+### LeanCTX Hive Team
 
-Pro includes deterministic local briefing packs, supported connector launch,
-bounded Work Graph children, structured return synthesis, child receipts,
-outcome evaluation and accepted-path/waste attribution for one account.
-
-### Team
-
-Team adds authenticated workspace-scoped briefing sources, shared checkpoints,
+LeanCTX Hive Team adds authenticated workspace-scoped briefing sources, shared checkpoints,
 multiple users, roles, seat enforcement, durable child history and
 cross-machine synthesis. Personal facts require explicit promotion before they
 become shared workspace context.
 
-### Enterprise
+### LeanCTX Hive Enterprise
 
-Enterprise adds governed identity, RBAC, capability and delegation policy,
+LeanCTX Hive Enterprise adds governed identity, RBAC, capability and delegation policy,
 classification/region/provider restrictions, retention, audit, offboarding and
 supported VPC/on-premise/air-gap execution.
 

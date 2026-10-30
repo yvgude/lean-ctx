@@ -61,16 +61,25 @@ mod schema_qa_tests;
 
 /// Resolve a relative path against session state (sync version).
 /// Must be called within `tokio::task::block_in_place`.
+///
+/// A boundary refusal is noted for the running call's audit entry (its class,
+/// never the path): the dispatch layer only resolves single-path arguments.
 pub(crate) fn resolve_path_sync(
     session: &crate::core::session::SessionState,
     raw: &str,
 ) -> Result<String, String> {
-    crate::core::path_resolve::resolve_tool_path_with_roots(
+    crate::core::path_resolve::resolve_tool_path_refusing(
         session.project_root.as_deref(),
         session.shell_cwd.as_deref(),
         raw,
         &session.extra_roots,
     )
+    .map_err(|refusal| {
+        if let Some(class) = refusal.class {
+            crate::core::security_events::note_refusals(class, 1);
+        }
+        refusal.message
+    })
 }
 
 // #168 removed: tool descriptions no longer steer toward ctx_* over native.

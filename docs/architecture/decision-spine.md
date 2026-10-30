@@ -43,8 +43,9 @@ region/model policy and the outcome contract.
 There is one ContextPlan authority. The Context Control Kernel gathers and
 deduplicates candidates, scores them using explicit signals, applies policy,
 compiles under a token budget and records selected, excluded and deferred
-sources with reason codes. Pro may choose adaptive strategies around that
-authority; it does not create a second ContextPlan model.
+sources with reason codes. An adaptive strategy, when enabled, works around that
+authority locally; it does not create a second ContextPlan model, and no
+licensed runtime rescores or reorders the plan.
 
 A context receipt binds candidate inputs, policy, budget, decisions and the
 resulting context artifact to the task. Outcome evidence feeds future decisions
@@ -112,8 +113,8 @@ contracts are allowed; incomparable rewards are not collapsed into one scalar
 without evidence.
 
 Learning updates require stable task/plan/outcome lineage and cannot override
-hard policy. Explicit user choices take precedence where permitted. With Pro
-disabled or unavailable, deterministic Community planning and execution remain.
+hard policy. Explicit user choices take precedence where permitted. With
+adaptive planning disabled, deterministic planning and execution remain.
 
 ## Existing implementation families
 
@@ -152,7 +153,7 @@ dependency and migration proof. Merely renaming duplicates is not consolidation.
    migration and dependency evidence.
 3. Run a real bounded supported agent path from admission through accepted
    outcome and learning, with exact lineage assertions.
-4. Prove Community deterministic fallback after Pro is disabled mid-flow.
+4. Prove deterministic fallback after adaptive planning is disabled mid-flow.
 5. Prove policy denial, budget exhaustion, unknown outcome, cancellation,
    retry/fallback and rollback without false acceptance or double effects.
 6. Demonstrate accepted-path versus waste attribution across a bounded local and

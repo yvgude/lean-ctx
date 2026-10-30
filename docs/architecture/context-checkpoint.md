@@ -119,27 +119,27 @@ cross-workspace cases fail closed.
 
 ## Product boundaries
 
-### Community
+### LeanCTX OSS
 
-Community retains local/manual snapshots, session export/import and handoff.
-Local shadow-Git code checkpoints remain a developer safety tool; they are not a
-hosted continuity promise.
+LeanCTX OSS includes local/manual snapshots, session export/import, handoff and
+automatic local semantic checkpoints with knowledge/gotcha/learning continuity,
+history and recovery on one machine, free. Local shadow-Git code checkpoints
+remain a developer safety tool; they are not a hosted continuity promise.
 
-### Pro
+### LeanCTX Hive Personal
 
-Pro adds automatic local semantic checkpoints and encrypted personal
-cross-device push/pull, knowledge/gotcha/learning continuity, history, conflict
-handling and recovery for one account.
+LeanCTX Hive Personal adds encrypted personal cross-device push/pull and its
+conflict handling for one account.
 
-### Team
+### LeanCTX Hive Team
 
-Team adds `WorkspaceCheckpoint`, authenticated shared authority, membership,
+LeanCTX Hive Team adds `WorkspaceCheckpoint`, authenticated shared authority, membership,
 roles, seat enforcement, personal-to-workspace promotion and shared conflict
 resolution. A personal checkpoint never becomes shared implicitly.
 
-### Enterprise
+### LeanCTX Hive Enterprise
 
-Enterprise adds governed identity, RBAC, classification, region, retention,
+LeanCTX Hive Enterprise adds governed identity, RBAC, classification, region, retention,
 legal hold, audit, customer-controlled deployment and offline/air-gap policy.
 
 ## Current implementation map

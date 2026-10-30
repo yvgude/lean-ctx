@@ -28,7 +28,7 @@ pub fn classify(key: &str) -> Option<ConfigRisk> {
             "Path jail confines agent file access to your projects. Disabling it lets tools read and write any path on this machine."
         }
         "path_jail_scope" => {
-            "Jail scope decides what tools may reach: \"home\" admits every project below your home directory (protected dot dirs and ~/Library excepted), \"project\" only the active project."
+            "Jail scope decides what tools may reach: \"projects\" (default) reads every project below your home directory and writes only the active one, \"home\" reads and writes all of it (protected dot dirs and ~/Library excepted), \"project\" only the active project."
         }
         "shell_security" => {
             "Shell gating blocks dangerous commands via an allowlist. Lowering it (warn/off) lets the agent run any command."

@@ -301,7 +301,7 @@ Parameters: `action`, `description`, `path`
 
 ## `ctx_patch`
 
-Safe file edit. Anchored ops use line+hash from ctx_read(mode="anchored"); CONFLICT means re-read. replace_unique(path,old_text,new_text) is a no-read, exact unique replacement. replace_symbol/create/replace_all supported as top-level ops. Cross-file ops[] batch (incl. replace_unique) supported; replace_all and create must be sent as separate top-level calls, not inside ops[].
+Safe file edit, project-relative paths. replace_unique(path,old_text,new_text): exact unique replacement, needs no anchors. Line ops take line+hash from ctx_read(mode="anchored:N-M"); CONFLICT means re-read. ops[] batch (cross-file, incl. replace_unique/replace_symbol); create and replace_all only as top-level calls.
 
 Parameters: `dry_run`, `end_hash`, `end_line`, `find`, `hash`, `line`, `name`, `new_text`, `old_text`, `op`, `ops`, `path`, `replace`, `start_hash`, `start_line`
 
@@ -357,11 +357,11 @@ Parameters: `format`
 
 ## `ctx_read`
 
-Read source files. mode recommended — choose by intent (see `mode` below); defaults to auto when omitted.
-To UNDERSTAND code run ctx_compose FIRST; ctx_read after it identified files.
-anchored → edit by reference via ctx_patch (no exact-recall).
+Read files. Omit mode to explore: auto gives small files whole, large code as outline.
+symbol=Name or lines:N-M reads just that part, also for edits.
+To UNDERSTAND code run ctx_compose FIRST.
 
-Parameters: `aggressiveness`, `engine_interface`, `fresh`, `limit`, `mode`, `offset`, `path`, `paths`, `protect`, `raw`, `start_line`
+Parameters: `aggressiveness`, `engine_interface`, `fresh`, `limit`, `mode`, `offset`, `path`, `paths`, `protect`, `raw`, `start_line`, `symbol`
 
 ## `ctx_search`
 

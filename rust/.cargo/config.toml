@@ -1,0 +1,3 @@
+# SPDX-License-Identifier: Apache-2.0
+[alias]
+fast = "build --locked --profile dev-fast --config build.incremental=true --timings"

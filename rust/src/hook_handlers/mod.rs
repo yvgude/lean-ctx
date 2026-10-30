@@ -18,6 +18,10 @@ pub const OBSERVE_HOOK_BUDGET: Duration = Duration::from_secs(2);
 const HOOK_GATING_TIMEOUT: Duration = Duration::from_secs(15);
 // One admission decision on the original hook payload, before any derivation.
 mod admission;
+// "Mirror, don't grant": would the host have run the original command
+// without a prompt? Claude Code settings, Gemini settings, and the built-in
+// side-effect-free set for hosts that can only rewrite while approving.
+mod claude_permissions;
 mod codex;
 mod dedup;
 mod deny;
@@ -25,6 +29,10 @@ mod edit_health;
 // Command-rewrite (#660/#966 LOC gate): file-read rewrites, compound wrapping,
 // and the rewrite_candidate dispatch every rewrite entry point funnels through.
 mod file_rewrite;
+mod gemini_permissions;
+mod govern;
+pub(crate) use govern::HOST_TIMEOUT_SECS as GOVERN_HOST_TIMEOUT_SECS;
+pub use govern::{handle_govern, handle_rewrite_enforce};
 mod observe;
 mod payload;
 // PowerShell-tool rewrites: PowerShell quoting, no `lean-ctx -c` wrap (#1848).
@@ -34,9 +42,12 @@ pub(crate) use protected::handle_protected_gate;
 // Redirect decision logic (#660/#966 LOC gate) for Read/Grep/Glob.
 mod read_dedup;
 mod redirect;
+mod safe_commands;
 // Search/dir-list rewriting and shell tokenization extracted to
 // `search_rewrite` submodule (#660 LOC gate).
 mod search_rewrite;
+// Native Read/Grep on secret-like paths follow the `ctx_read` secret rule.
+mod secret_gate;
 pub mod solution_capture;
 mod value_recap;
 mod vibe;
@@ -163,17 +174,18 @@ pub fn arm_fail_open_watchdog(timeout: Duration) {
 /// Run a command-gating hook's decision logic under a hard wall-clock timeout and
 /// print the result exactly once.
 ///
-/// On timeout the hook FAILS OPEN — it prints the allow/pass-through decision so a
-/// slow or hung hook (a stalled subprocess, a wedged dedup wait, a saturated host)
-/// can never block the host's tool call: the command simply runs unmodified
-/// (#1035). The worker thread is abandoned on timeout (it only sends to a channel,
-/// never prints, and dies with the process), so there is no double-output race —
+/// On timeout the hook FAILS OPEN — it prints the neutral pass-through so a slow
+/// or hung hook (a stalled subprocess, a wedged dedup wait, a saturated host) can
+/// never block the host's tool call: the command goes through the host's normal
+/// permission flow unmodified (#1035). Failing open never means approving. The
+/// worker thread is abandoned on timeout (it only sends to a channel, never
+/// prints, and dies with the process), so there is no double-output race —
 /// `emit_gating_decision` is the single writer to stdout.
 fn emit_gating_decision<F>(timeout: Duration, work: F)
 where
     F: FnOnce() -> String + Send + 'static,
 {
-    let out = decide_with_timeout(timeout, build_dual_allow_output(), work);
+    let out = decide_with_timeout(timeout, build_passthrough_output(), work);
     print!("{out}");
 }
 
@@ -207,13 +219,137 @@ fn read_stdin_with_timeout(timeout: Duration) -> Option<String> {
     }
 }
 
-fn build_dual_allow_output() -> String {
+/// The hook has no decision: the host runs the call through its normal
+/// permission flow (rules, modes, prompts), exactly as without LeanCTX.
+///
+/// A permission decision is never a pass-through. `"allow"` skips the user's
+/// prompt on Claude Code ("allow skips the permission prompt"), Cursor and
+/// Copilot CLI, so emitting it for a command the hook did not handle silently
+/// auto-approved every shell command. An empty JSON object carries no decision
+/// in any supported dialect: Claude Code ("exit 0 … no decision; normal
+/// permission flow applies"), Copilot CLI ("empty output uses default
+/// behavior"), Cursor (the same `{}` the deny hook has always emitted for
+/// admitted tools), Gemini and CodeBuddy. Codex keeps its own empty output.
+fn build_passthrough_output() -> String {
+    "{}".to_string()
+}
+
+/// Whether a substitution may carry an approval on hosts that only take a
+/// rewrite together with one ("mirror, don't grant").
+///
+/// Cursor (`updated_input`), Copilot CLI (`modifiedArgs`) and Codex
+/// (`updatedInput`) honour a rewrite only next to `"allow"`, which also skips
+/// the user's prompt. On those hosts a rewrite is an approval, so LeanCTX
+/// delivers one only when the ORIGINAL command is in the built-in
+/// side-effect-free set ([`safe_commands`]: `git status`, `cat`, `ls`, …;
+/// never builds or tests) or the substitution is a Read/Grep redirect to a
+/// LeanCTX-produced copy. Everything else passes through unchanged and runs
+/// under the host's own approval, uncompressed.
+///
+/// Claude Code and Gemini apply a rewrite without a decision and evaluate
+/// their own rules on the new input; their delivery is decided per host by
+/// [`deliver_rewrite`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(super) enum RewriteSafety {
+    ReadOnly,
+    Arbitrary,
+}
+
+/// `tool_input` with its `command` replaced by `command`.
+fn substituted_input(tool_input: Option<&serde_json::Value>, command: &str) -> serde_json::Value {
+    if let Some(obj) = tool_input.and_then(|v| v.as_object()) {
+        let mut m = obj.clone();
+        m.insert(
+            "command".to_string(),
+            serde_json::Value::String(command.to_string()),
+        );
+        serde_json::Value::Object(m)
+    } else {
+        serde_json::json!({ "command": command })
+    }
+}
+
+/// A Claude Code PreToolUse rewrite. `allow` is set only when Claude Code
+/// would have run the original command without a prompt
+/// ([`claude_permissions`]); Claude still applies its deny and ask rules.
+fn build_claude_rewrite_output(updated_input: &serde_json::Value, allow: bool) -> String {
+    let mut hook = serde_json::json!({
+        "hookEventName": "PreToolUse",
+        "updatedInput": updated_input,
+    });
+    if allow {
+        hook["permissionDecision"] = serde_json::json!("allow");
+        hook["permissionDecisionReason"] = serde_json::json!(
+            "LeanCTX rewrite of a command your Claude Code permissions already run without a prompt"
+        );
+    }
+    serde_json::json!({ "hookSpecificOutput": hook }).to_string()
+}
+
+/// The stdout for a shell rewrite on the host that sent `payload`, or `None`
+/// when the rewrite must not be delivered and the call passes through
+/// unchanged. Never approves what the host would have asked about.
+fn deliver_rewrite(
+    tool_name: &str,
+    cmd: &str,
+    tool_input: Option<&serde_json::Value>,
+    rewrite: &file_rewrite::Rewrite,
+    payload: &serde_json::Value,
+) -> Option<String> {
+    let updated = substituted_input(tool_input, &rewrite.command);
+    if is_claude_pretooluse_payload(payload) {
+        return match claude_permissions::verdict_for_payload(tool_name, cmd, payload) {
+            claude_permissions::ClaudeVerdict::PassThrough => None,
+            claude_permissions::ClaudeVerdict::Allow => {
+                Some(build_claude_rewrite_output(&updated, true))
+            }
+            claude_permissions::ClaudeVerdict::NoDecision => {
+                Some(build_claude_rewrite_output(&updated, false))
+            }
+        };
+    }
+    if is_gemini_beforetool_payload(payload) {
+        // A Gemini hook cannot approve; a rewrite must only never add a prompt.
+        return (!gemini_permissions::may_run_without_prompt(cmd, payload))
+            .then(|| gemini_output(&build_claude_rewrite_output(&updated, false)));
+    }
+    (rewrite.safety == RewriteSafety::ReadOnly)
+        .then(|| build_substitute_output(&updated, RewriteSafety::ReadOnly, None))
+}
+
+/// Substitute a tool's input without making a permission decision for the
+/// Claude dialect, adding the approving Cursor/Copilot fields only for
+/// read-only substitutions (see [`RewriteSafety`]).
+fn build_substitute_output(
+    updated_input: &serde_json::Value,
+    safety: RewriteSafety,
+    additional_context: Option<&str>,
+) -> String {
+    // Claude Code / CodeBuddy: `updatedInput` without `permissionDecision`
+    // "still applies and flows through the normal permission evaluation"
+    // (Agent SDK hooks guide); rules are evaluated against the new input.
+    let mut hook_specific = serde_json::json!({
+        "hookEventName": "PreToolUse",
+        "updatedInput": updated_input,
+    });
+    if let Some(note) = additional_context {
+        hook_specific["additionalContext"] = serde_json::Value::String(note.to_string());
+    }
+    if safety == RewriteSafety::Arbitrary {
+        return serde_json::json!({ "hookSpecificOutput": hook_specific }).to_string();
+    }
     serde_json::json!({
+        // Cursor hook output format: `updated_input` is honoured only with a
+        // `permission`, and `"ask"` is not enforced for preToolUse.
         "permission": "allow",
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow"
-        }
+        "updated_input": updated_input,
+        // GitHub Copilot CLI preToolUse format: top-level `permissionDecision`
+        // + `modifiedArgs` (a full substitute-args object). Copilot ignores
+        // `hookSpecificOutput`, so without these fields it runs the command
+        // unmodified even after the camelCase payload parses correctly (#551).
+        "permissionDecision": "allow",
+        "modifiedArgs": updated_input,
+        "hookSpecificOutput": hook_specific
     })
     .to_string()
 }
@@ -247,6 +383,43 @@ fn is_claude_pretooluse_payload(v: &serde_json::Value) -> bool {
         && v.get("hook_event_name").and_then(serde_json::Value::as_str) == Some("PreToolUse")
 }
 
+/// Gemini CLI (and Antigravity, which installs Gemini's hooks) sends
+/// `hook_event_name: "BeforeTool"`.
+fn is_gemini_beforetool_payload(v: &serde_json::Value) -> bool {
+    v.get("hook_event_name").and_then(serde_json::Value::as_str) == Some("BeforeTool")
+}
+
+/// Re-express a shared shell-rewrite output in the form Gemini CLI reads.
+/// (File redirects pass through on Gemini, see `redirect::compute_redirect`.)
+///
+/// Gemini's BeforeTool hook takes the new arguments from
+/// `hookSpecificOutput.tool_input` ("merges with and overrides the model's
+/// arguments", geminicli.com/docs/hooks/reference) and ignores `updatedInput`,
+/// so without this our rewrites never applied there. No hook decision approves
+/// a Gemini call: the scheduler only acts on `ask` and `deny`/`block`, and runs
+/// its policy check and confirmation on the hook-modified arguments
+/// (`scheduler.ts`, `hook-utils.ts`). The Gemini form therefore carries the new
+/// input only and no `decision`, for every rewrite, read-only or not. Deny and
+/// pass-through outputs (no `updatedInput`) are returned unchanged: Gemini
+/// reads the shared top-level `decision: "deny"` + `reason`.
+fn gemini_output(shared: &str) -> String {
+    serde_json::from_str::<serde_json::Value>(shared)
+        .ok()
+        .and_then(|v| v.get("hookSpecificOutput")?.get("updatedInput").cloned())
+        .map_or_else(
+            || shared.to_string(),
+            |tool_input| {
+                serde_json::json!({
+                    "hookSpecificOutput": {
+                        "hookEventName": "BeforeTool",
+                        "tool_input": tool_input
+                    }
+                })
+                .to_string()
+            },
+        )
+}
+
 /// The deny verdict for one concrete payload. Claude Code validates hook output
 /// strictly: a top-level `decision` other than the legacy `approve|block` makes
 /// it discard the whole object as a non-blocking error, so the verdict and its
@@ -266,36 +439,14 @@ fn build_deny_output(msg: &str, payload: &serde_json::Value) -> String {
     build_dual_deny_output(msg)
 }
 
-fn build_dual_rewrite_output(tool_input: Option<&serde_json::Value>, rewritten: &str) -> String {
-    let updated_input = if let Some(obj) = tool_input.and_then(|v| v.as_object()) {
-        let mut m = obj.clone();
-        m.insert(
-            "command".to_string(),
-            serde_json::Value::String(rewritten.to_string()),
-        );
-        serde_json::Value::Object(m)
-    } else {
-        serde_json::json!({ "command": rewritten })
-    };
-
-    serde_json::json!({
-        // Cursor hook output format.
-        "permission": "allow",
-        "updated_input": updated_input.clone(),
-        // GitHub Copilot CLI preToolUse format: top-level `permissionDecision`
-        // + `modifiedArgs` (a full substitute-args object). Copilot ignores
-        // `hookSpecificOutput`, so without these fields it runs the command
-        // unmodified even after the camelCase payload parses correctly (#551).
-        "permissionDecision": "allow",
-        "modifiedArgs": updated_input.clone(),
-        // Claude Code / CodeBuddy hook output format (other hosts ignore it).
-        "hookSpecificOutput": {
-            "hookEventName": "PreToolUse",
-            "permissionDecision": "allow",
-            "updatedInput": updated_input
-        }
-    })
-    .to_string()
+/// The multi-dialect output for a rewritten shell command; never a permission
+/// grant beyond what [`RewriteSafety`] allows.
+fn build_dual_rewrite_output(
+    tool_input: Option<&serde_json::Value>,
+    rewrite: &file_rewrite::Rewrite,
+) -> String {
+    let updated_input = substituted_input(tool_input, &rewrite.command);
+    build_substitute_output(&updated_input, rewrite.safety, None)
 }
 
 /// True when a host tool name denotes a shell/terminal command tool.
@@ -397,15 +548,18 @@ pub fn handle_copilot() {
         return;
     };
 
-    let rewritten = if powershell_rewrite::is_powershell_tool(&tool_name) {
+    let rewrite = if powershell_rewrite::is_powershell_tool(&tool_name) {
         powershell_rewrite::rewrite_candidate_powershell(&cmd, &binary)
+            .map(|rewritten| file_rewrite::Rewrite::for_original(&cmd, rewritten))
     } else {
-        file_rewrite::rewrite_candidate(&cmd, &binary)
+        file_rewrite::classify_rewrite(&cmd, &binary)
     };
-    if let Some(rewritten) = rewritten {
+    // Copilot takes `modifiedArgs` only with an approval: rewrite only what
+    // is in the side-effect-free set, leave everything else to Copilot.
+    if let Some(rewrite) = rewrite.filter(|r| r.safety == RewriteSafety::ReadOnly) {
         print!(
             "{}",
-            build_dual_rewrite_output(tool_args.as_ref(), &rewritten)
+            build_dual_rewrite_output(tool_args.as_ref(), &rewrite)
         );
     }
 }

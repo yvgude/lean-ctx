@@ -174,8 +174,19 @@ pub fn classify(message: &str) -> FailureKind {
     let lowered = message.to_ascii_lowercase();
     RULES
         .iter()
-        .find(|(_, needles)| needles.iter().any(|needle| lowered.contains(needle)))
+        .find(|(_, needles)| needles.iter().any(|needle| contains_word(&lowered, needle)))
         .map_or(FailureKind::Other, |(kind, _)| *kind)
+}
+
+/// `needle` in `haystack` starting at a word boundary, so `unexpected` is not
+/// read as `expected`.
+fn contains_word(haystack: &str, needle: &str) -> bool {
+    haystack.match_indices(needle).any(|(at, _)| {
+        haystack[..at]
+            .chars()
+            .next_back()
+            .is_none_or(|c| !c.is_ascii_alphanumeric())
+    })
 }
 
 /// Failure counts indexed like [`FAILURE_KINDS`].
